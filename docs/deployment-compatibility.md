@@ -232,6 +232,202 @@ Old and new versions during deploy:
 
 No API rollback floor is needed.
 
+## Unified chat queue (release 7): legacy steer and Pi API-first removal
+
+Release 7 completes the unified queue and removes compatibility code made
+unreachable by release 6:
+
+- The reserve and receipt endpoints
+  (`POST /api/runners/runs/:runId/active-inputs/reserve` and
+  `.../active-inputs/deliveries/:deliveryId/receipt`), their contracts and Rust
+  bindings, and `activeInputDeliveryIds` with its completion-time settlement.
+  Only `steerable-inputs/next` and `steerable-inputs/:eventId/steered` remain.
+  They also steer run-targeted `input.budget` events: a replacement retains
+  its type and gains the current `runId`, with the revoke edge providing
+  idempotence. Completion revokes any unconsumed warning. The Runner/Guest
+  response shape remains the existing event ID and prompt.
+  The completion body is not strict, so a stray `activeInputDeliveryIds` is
+  stripped.
+- The four API-first steps listed under release 6: the Sandbox CLI no longer
+  writes the `vm0_pi_api_first_turn_boundary` startup record; the API no longer
+  writes `piLaunchConfig.apiFirstTurn` (removed from the strict contract),
+  `pi-sandbox-handoff.service.ts`, the completion-time handoff object deletion
+  and the `pi-api-first-turn/` sweep in the sandbox cleanup cron; the Guest
+  reads the installed-CLI requirement only from `piInstalledCliRequirement` and
+  no longer parses the startup record or launch config. The Runner's generated
+  `PiLaunchConfig` has no `deny_unknown_fields`, so it tolerates the removed
+  slot; only the installed release 7 CLI's strict launch schema rejects it.
+  `okou run usage` accepts only the `sandboxProxy` source.
+- `PI_SANDBOX_INSTALLED_CLI_MIN_VERSION` rises to the first CLI release without
+  the slot, because release 6 installed CLIs parse the launch config strictly
+  and require `apiFirstTurn`. The value is the last released CLI version plus
+  one patch; if another release ships before this change merges, raise it
+  again so it stays above every release 6 CLI.
+
+**Merge gate:** every release 6 Runner is live and earlier Runners have drained
+(no reserve or receipt calls in production since 2026-09-28 05:30 UTC).
+
+Mixed versions during rollout (API first, then Runner with its Guest; old
+Runners drain for up to about two hours; the Sandbox CLI is either the
+commit-addressed `CLI_PKG_URL` of the API that created the run or the CLI
+preinstalled in the Runner image):
+
+- New API with a release 6 Runner and Guest: the API writes no slot and the new
+  CLI floor, so the release 6 Guest rejects its installed release 6 CLI and
+  launches the new commit-addressed CLI. That CLI accepts the slot-free launch
+  config and writes no startup record, which release 6 Guests tolerate. The
+  release 6 Runner validates the launch config without the slot, steers only
+  through the remaining endpoints and reports no `apiFirstTurn` usage source.
+- New Guest with an old CLI that still writes the startup record: reachable only
+  when a new Guest launches a release 6 CLI, which needs a launch context
+  written by a release 6 API. The Guest treats the record as an unknown JSON
+  record: it is written to the local transcript only, takes no event sequence,
+  and public events still start at 1.
+- Old Guest with the new CLI: release 6 Guests start at sequence 1 without the
+  startup record.
+- Pi runs queued by a release 6 API and claimed after the new API is promoted:
+  their stored `piLaunchConfig` still carries `apiFirstTurn`, which the strict
+  claim reader rejects, so the claim fails the run. This affects only Pi runs
+  created before promotion and not yet claimed; runs are normally claimed
+  within seconds and the pending timeout bounds the window at five minutes.
+  This is accepted; release at low traffic.
+- No reader remains for handoff objects that earlier APIs wrote under
+  `pi-api-first-turn/`. The one-time
+  [`019-pi-api-first-turn-cleanup`](../turbo/packages/db/scripts/migrations/019-pi-api-first-turn-cleanup/README.md)
+  script inventories this fixed prefix in `R2_USER_STORAGES_BUCKET_NAME` by
+  default and deletes it only with `--execute`. Operations runs it after
+  release 7 promotion and old API writer drain; deployment and cron do not
+  invoke it. It paginates, stops on request or per-object errors without
+  retries, and independently verifies the prefix is empty. This PR has not
+  executed remote cleanup; canonical session history outside the prefix is
+  untouched.
+
+**API rollback floor: this release**, pinned by the marker
+`.github/rollback-floors/pi-api-first-turn-retired` in
+`resolve-production-rollback-target.sh`. Earlier APIs write `apiFirstTurn` and
+the old CLI floor on every Pi run: a release 7 Guest would launch its
+preinstalled release 7 CLI, which rejects the slot, so every Pi run fails until
+the Runners are rolled back as well. This rejection comes from the installed
+CLI, not the Runner's generated type or the Guest. Earlier APIs also require
+the slot when they decode contexts queued by this release. The release 6
+Runner protocol is the minimum supported predecessor; the stricter release 7
+API floor subsumes it.
+
+### Integration DM threads and org default agent
+
+- **DM routes (migration 1279).** The main direct-message conversation of each
+  integration identity now maps to one chat thread through the fixed route key
+  `direct-message:main` (Slack `thread_ts`, Feishu and Teams `thread_id`,
+  Discord `session_key`, official Telegram and AgentPhone `root_message_id`).
+  The migration keeps the most recently used `direct-message:%` route per
+  connection/link ID (regardless of older channel IDs), rewrites its key to
+  the constant. It preserves every thread's model, provider and service-tier
+  selection and writes no thread or chat-thread events. It deletes the other
+  DM route rows; their chat threads and canonical input
+  messages remain as history. Existing Discord route foreign keys also cascade
+  deletion to the detached route's private launch context and ingress rows.
+  No new table, column or constraint is introduced. Deploy window:
+  the migration runs before the new API, so an old API instance that receives a
+  DM in that window no longer finds its `direct-message:<agentId>:<model>` key,
+  creates a new thread and inserts an old-style route. After promotion the new
+  API uses the `direct-message:main` thread; the window thread stays as
+  history and its old-style route is unused. Rollback to an earlier API has the
+  same effect: each DM opens one new old-style thread, and replaying the
+  migration later folds it back in by recency.
+- **Model selection at enqueue (migration 1281).** Web and every integration
+  use the same rule. Existing threads use their stored model, or the org
+  default when that model is unavailable. New threads initialize their model
+  from the member preference, then the org default; explicit web model choices
+  remain normal thread edits. Each input captures the effective model, tier
+  and reasoning effort in the nullable server-only JSONB
+  `chat_events.model_selection`. A thread's unavailable choice is not
+  overwritten merely because an input uses the org default. Pick validates
+  the captured choice without consulting current thread/member preferences;
+  if it is unavailable, the input becomes `input.rejected` without fallback.
+  `direct-message:main` is only a route key and has no model semantics.
+  Model settings update the thread normally. Integration `/model` commands
+  still set the member default for newly created threads; `/new_session`
+  remains an intentional conversation reset.
+  The additive column is separate from the strict public event payload, so
+  old API/App/SharedWorker readers and archive paths can ignore it. Migrations
+  precede new code; old writers omit the column and remain valid. No hot-table
+  backfill is performed: pending inputs from an outgoing API lack a captured
+  model and are rejected by the new pick instead of being re-resolved. Steering
+  inputs into an already-running run uses that run's existing model. Keep the
+  column on rollback; the existing Release 7 API floor remains unchanged.
+- **Org default agent only.** Integrations no longer read or write the
+  `*_user_agent_preferences` tables or installation-level `default_agent_id`;
+  every integration message runs the org default agent. The tables and columns
+  are not dropped in this release because the migration runs before the new
+  code and earlier APIs still read them; a later release or the daily
+  compatibility cleanup drops them. Rolling back restores the old per-user
+  selections, which were left untouched. A legacy integration thread bound to
+  a former per-user preference moves once to the immutable org default at pick,
+  in the same transaction as the new run and session binding. The single-row
+  CAS matches thread ID, owner and former agent; it has no default-change
+  subquery or visibility branch. Rebinding starts a new native/Pi session. The existing
+  `sort_touched` event carries an explicit optional `reassignedAgentId`;
+  updated clients replay that identity update without resetting other metadata.
+  Ordinary activity and optimistic pin-order events may carry an old `agentId`
+  and never reassign the thread. Older clients ignore the additive field and
+  retain their previous agent until they load a newer canonical snapshot.
+- **Feishu/Lark installation binding (migration 1279).** Every physical
+  `feishu_org_installations.default_agent_id` is set to its org default for
+  both platforms. The default cannot change or be deleted, so the retained
+  `ON DELETE CASCADE` foreign key no longer follows a retired user selection.
+  Old instances read the same default; the new runtime mapping omits the
+  retired column, which is dropped only in a later compatibility cleanup.
+  The migration changes routes and installation bindings only, with no
+  `chat_threads` or event-table updates and no lock-timeout adjustment.
+- **Agent reassignment events (migration 1280).** The nullable UUID column
+  `chat_thread_events.reassigned_agent_id` records only canonical reassignment
+  facts, in the same transaction as the thread and run binding. No DM routing
+  table changes. Existing events and outgoing API INSERTs leave the column
+  null; the new API omits it from ordinary event responses. Both full and
+  incremental event reads include it on reassignment events. The migration
+  runs before the new API, so outgoing API statements remain valid; the new
+  API requires the column before promotion. App/SharedWorker/IndexedDB use the
+  optional contract field and keep accepting earlier events without it. An old
+  App may also omit the field from cached events; upgrading does not change
+  those cached facts, and a newer canonical snapshot resolves their identity.
+  This field adds no rollback floor beyond the release 7 API floor above. Keep the
+  column on rollback; older APIs and Apps can ignore it, while snapshots read
+  the canonical thread agent directly. It is a permanent event fact with no
+  compatibility fallback or removal deadline.
+- **Self-hosted Telegram bots retired.** Only the official shared bot remains.
+  The API no longer reads or writes `telegram_installations` or
+  `telegram_user_links`, and the register, setup-status, bot delete and bot
+  default-agent routes are removed; bot-scoped Telegram routes answer `404` for
+  any bot other than `official`. Webhooks that the nine self-hosted bots still
+  have registered with Telegram are not deleted and receive `404`. Their chat
+  threads remain as history. Dropping the two tables is left to a later
+  release, like the preference tables. The Discord agent-preference route is
+  removed as well; an old App tab calling it receives `404`.
+  The Telegram CLI no longer has `bot list`, `--bot-id` or `--as`: message
+  send, upload and download use the official bot directly. The unified `--to`,
+  `--reply-to`, `--topic` and `--json` options remain, including `--to me`. The existing official
+  bot API paths remain usable by deployed CLIs. Integration notes and CLI
+  help no longer ask the user to choose a bot.
+
+### Pi memory and queue cleanup
+
+Maintenance admission and job binding run through `persistProducerRunBinding`
+in the launch transaction. The core accepts a generic no-agent identity,
+threadless session parameters and an explicitly empty secret namespace; claim
+validates session owner and organization without reading Pi jobs. Pi memory
+retains its own leases, fences, retries, result publication and cleanup/cancel
+protection. Only maintenance completion takes the existing memory-storage
+lock. The bypass still occupies a slot without applying the org concurrency
+limit, and releases through the same org-pick path.
+
+An idle queued head that cannot launch is consumed as `input.rejected`, even
+when assembly or rejection formatting fails. Only an actual active run leaves
+an unchanged head for a later pick. Concurrency admission stays in the picker;
+there is no create-time 429/waiting result. Stripe capacity changes schedule
+org picks through `waitUntil`. Entry-owned context rows commit with their input,
+and idempotent sends that append nothing do not touch `queued_chat_threads`.
+The existing runless-input predicate and index from #37193 are unchanged.
+
 ## Unified chat queue (release 6): Runner, Guest and Sandbox CLI
 
 The Runner reads steerable input from

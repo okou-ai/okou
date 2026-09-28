@@ -44,8 +44,6 @@ describe("okou telegram message send command", () => {
     await sendCommand.parseAsync([
       "node",
       "cli",
-      "--as",
-      "123456789",
       "--to",
       "-1001234567890",
       "--text",
@@ -57,7 +55,7 @@ describe("okou telegram message send command", () => {
     ]);
 
     expect(capturedBody).toMatchObject({
-      botId: "123456789",
+      botId: "official",
       chatId: "-1001234567890",
       text: "hello world",
       replyToMessageId: 42,
@@ -81,8 +79,6 @@ describe("okou telegram message send command", () => {
     await sendCommand.parseAsync([
       "node",
       "cli",
-      "--as",
-      "123456789",
       "--to",
       "@channel",
       "--text",
@@ -100,14 +96,7 @@ describe("okou telegram message send command", () => {
 
   it("errors when text is missing", async () => {
     await expect(async () => {
-      await sendCommand.parseAsync([
-        "node",
-        "cli",
-        "--as",
-        "123456789",
-        "--to",
-        "-1001234567890",
-      ]);
+      await sendCommand.parseAsync(["node", "cli", "--to", "-1001234567890"]);
     }).rejects.toThrow("process.exit called");
 
     expect(mockConsoleError).toHaveBeenCalledWith(
@@ -120,8 +109,6 @@ describe("okou telegram message send command", () => {
       await sendCommand.parseAsync([
         "node",
         "cli",
-        "--as",
-        "123456789",
         "--to",
         "-1001234567890",
         "--text",
@@ -151,15 +138,13 @@ describe("okou telegram message send command", () => {
     await sendCommand.parseAsync([
       "node",
       "cli",
-      "--as",
-      "123456789",
       "--to",
       "me",
       "--text",
       "hello",
     ]);
 
-    expect(capturedBody).toMatchObject({ botId: "123456789", chatId: "me" });
+    expect(capturedBody).toMatchObject({ botId: "official", chatId: "me" });
   });
 
   it("surfaces API errors", async () => {
@@ -181,8 +166,6 @@ describe("okou telegram message send command", () => {
       await sendCommand.parseAsync([
         "node",
         "cli",
-        "--as",
-        "123456789",
         "--to",
         "-1001234567890",
         "--text",

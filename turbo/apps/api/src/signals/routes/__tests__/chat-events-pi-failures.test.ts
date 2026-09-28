@@ -1,6 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
 import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
-import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { env } from "../../../lib/env";
@@ -21,7 +20,7 @@ const {
   claimChatRun,
   cancelChatRun,
   mockPiCheckpointObjectStore,
-  expectPiSandboxHandoff,
+  piSandboxBaseSession,
   completeSandboxFirstPiRun,
 } = createChatEventsFixture(context);
 
@@ -49,22 +48,10 @@ describe("CHAT-02: model-first provider policies", () => {
       },
       usagePricingResolution,
     );
-    // Run creation hands the first turn to the Sandbox without inference.
-    const firstHandoff = expectPiSandboxHandoff(first.runId, objects);
-    expect(firstHandoff.manifest).toMatchObject({
-      schemaVersion: 3,
-      baseSession: { sessionId: first.threadId, sha256: null },
-      sandboxEventSequenceStart: 1,
-    });
-    if (!firstHandoff.session) {
-      throw new Error("Expected the first-turn Pi session object");
-    }
-    expect(
-      MemoryPiSession.fromJsonl(
-        firstHandoff.session.toString("utf8"),
-      ).buildSessionContext().messages,
-    ).toStrictEqual([]);
     const firstClaim = await claimChatRun(runnerGroup, first.runId);
+    // The first turn has no stored history, so the Sandbox starts fresh.
+    expect(firstClaim.claim.resumeSession).toBeNull();
+    expect(firstClaim.claim.piSessionId).toBe(first.threadId);
     await completeSandboxFirstPiRun({
       actor,
       answer,
@@ -92,34 +79,19 @@ describe("CHAT-02: model-first provider policies", () => {
       },
       usagePricingResolution,
     );
-    const { manifest, session } = expectPiSandboxHandoff(
-      resumed.runId,
-      objects,
-    );
-    expect(manifest).toMatchObject({
-      schemaVersion: 4,
-      baseSession: { sessionId: first.threadId, sha256: h0Hash },
-      session: { sessionId: first.threadId, sha256: h0Hash },
-    });
-    if (manifest.schemaVersion !== 4) {
-      throw new Error("Expected v4 history reference");
-    }
-    expect(session).toBeUndefined();
-    const objectKey = new URL(manifest.history.url).searchParams.get("object");
-    expect(objectKey).toBe(
-      `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${h0Hash}.blob`,
-    );
-    expect(objects.get(objectKey ?? "")).toStrictEqual(h0);
-    expect(
-      objects.has(
-        `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${resumed.runId}/session.jsonl`,
-      ),
-    ).toBeFalsy();
     const claimed = await claimChatRun(runnerGroup, resumed.runId);
-    expect(claimed.claim.resumeSession).toMatchObject({
+    const resumeSession = claimed.claim.resumeSession;
+    expect(resumeSession).toMatchObject({
       sessionId: first.threadId,
-      historyRef: { hash: h0Hash },
+      historyRef: { kind: "blob", hash: h0Hash, rawSize: h0.length },
     });
+    if (!resumeSession || !("historyRef" in resumeSession)) {
+      throw new Error("Expected a referenced resume history");
+    }
+    expect(
+      new URL(resumeSession.historyRef.url).searchParams.get("object"),
+    ).toBe(`${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${h0Hash}.blob`);
+    expect(piSandboxBaseSession(claimed.claim, objects)).toStrictEqual(h0);
     await cancelChatRun(actor, resumed.runId, claimed.sandboxHeaders);
     expect(blobEntriesOf(objects)).toStrictEqual(blobEntries);
   }, 90_000);
@@ -167,48 +139,34 @@ describe("CHAT-02: model-first provider policies", () => {
       },
       [201],
     );
-    const reserved = await api.reserveRunnerActiveInputs(
+    const steerable = await api.nextSteerableInput(
       claim.sandboxToken,
       run.runId,
     );
-    if (reserved.outcome !== "reserved") {
-      throw new Error("Expected one reserved active input");
-    }
-    const { manifest } = expectPiSandboxHandoff(run.runId, checkpointObjects);
-    expect(manifest).toMatchObject({
-      schemaVersion: 4,
-      baseSession: { sessionId: first.threadId, sha256: expect.any(String) },
-      session: { sessionId: first.threadId, sha256: expect.any(String) },
+    expect(steerable).toStrictEqual({
+      input: {
+        eventId: activeInputEventId,
+        prompt: "preserve this in-flight active input",
+      },
     });
-    if (manifest.schemaVersion !== 4) {
-      throw new Error("Expected referenced subscription history");
-    }
     expect(claim.prompt).toBe(prompt);
     expect(claim.resumeSession).toMatchObject({
       sessionId: first.threadId,
-      historyRef: { hash: manifest.baseSession.sha256 },
+      historyRef: { kind: "blob", hash: expect.any(String) },
     });
-    const objectKey = new URL(manifest.history.url).searchParams.get("object");
-    const h0 = objectKey ? checkpointObjects.get(objectKey) : undefined;
-    expect(h0?.toString("utf8")).toContain(
-      "previous settled subscription answer",
-    );
-    expect(h0?.toString("utf8")).not.toContain(prompt);
-    expect(
-      checkpointObjects.has(
-        `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${run.runId}/session.jsonl`,
-      ),
-    ).toBeFalsy();
+    const h0 = piSandboxBaseSession(claim, checkpointObjects).toString("utf8");
+    expect(h0).toContain("previous settled subscription answer");
+    expect(h0).not.toContain(prompt);
     await expect(
-      api.reserveRunnerActiveInputs(claim.sandboxToken, run.runId),
-    ).resolves.toStrictEqual(reserved);
+      api.nextSteerableInput(claim.sandboxToken, run.runId),
+    ).resolves.toStrictEqual(steerable);
     await expect(
-      api.recordRunnerActiveInputDelivery(
+      api.declareSteeredInput(
         claim.sandboxToken,
         run.runId,
-        reserved.deliveryId,
+        activeInputEventId,
       ),
-    ).resolves.toStrictEqual({ outcome: "delivered" });
+    ).resolves.toStrictEqual({ outcome: "steered" });
     const events = (await chat.listThreadEvents(actor, run.threadId)).events;
     expect(
       events.filter((event) => {

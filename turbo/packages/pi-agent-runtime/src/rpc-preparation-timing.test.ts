@@ -49,7 +49,6 @@ describe("Pi sandbox RPC preparation observability", () => {
         cwd,
         agentDir: join(directory, "agent"),
         appendSystemPrompt: null,
-        ownershipTransferMode: "sandbox-first",
         model: {
           provider: "openai",
           model: "gpt-5.6-terra",

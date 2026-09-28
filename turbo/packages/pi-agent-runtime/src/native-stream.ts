@@ -5,7 +5,7 @@ import { streamSimple as streamMessages } from "@earendil-works/pi-ai/api/anthro
 import { streamSimple as streamBedrock } from "@earendil-works/pi-ai/api/bedrock-converse-stream";
 import { resolveHttpProxyUrlForTarget } from "@earendil-works/pi-ai/utils/node-http-proxy";
 import type { Api, Model, TranscriptContext } from "@earendil-works/pi-ai";
-import { observePiUsageFetch, PiBedrockHttpHandler } from "./usage-transport";
+import { PiBedrockHttpHandler } from "./bedrock-http-handler";
 import { HttpProxyAgent } from "http-proxy-agent";
 import { HttpsProxyAgent } from "https-proxy-agent";
 
@@ -75,11 +75,7 @@ export function streamPiNative(
     ...options,
     maxRetries: 0,
     fetch: observePiResponseStatus(
-      observePiUsageFetch(
-        options.fetch ?? nativePublicFetch,
-        "messages",
-        options.usageObserver,
-      ),
+      options.fetch ?? nativePublicFetch,
       options.onObservedResponseStatus,
     ),
     // Neither ambient cache policy nor provider authentication is inherited.
@@ -146,7 +142,6 @@ export function streamPiNative(
           httpAgent: new HttpAgent({ lookup: nativePublicLookup }),
           httpsAgent: new HttpsAgent({ lookup: nativePublicLookup }),
         },
-    options.usageObserver,
     observation,
     options.onObservedResponseStatus,
   );

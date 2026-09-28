@@ -11,10 +11,8 @@ import {
   rustTypeBindings,
 } from "../types";
 import { modelProviderCodexRuntimeConfigSchema } from "../../contracts/model-providers";
-import { MAX_EVENT_SEQUENCE_NUMBER } from "../../contracts/runs";
 import {
   piLaunchConfigSchema,
-  piApiFirstTurnConfigSchema,
   piModelConfigLegacySchema,
   piModelConfigV2Schema,
   sessionHistoryEncodingSchema,
@@ -101,16 +99,6 @@ const expectedBindings = [
   {
     rustModulePath: ["runners", "runs"],
     rustTypeName: "PiModelConfigV4",
-    direction: "response",
-  },
-  {
-    rustModulePath: ["runners", "runs", "active_inputs", "reserve"],
-    rustTypeName: "Response",
-    direction: "response",
-  },
-  {
-    rustModulePath: ["runners", "runs", "active_inputs", "receipt"],
-    rustTypeName: "Response",
     direction: "response",
   },
   {
@@ -421,10 +409,6 @@ describe("Rust type bindings", () => {
     expect(firstRender).toContain("pub struct StorageMountEntry {");
     expect(firstRender).toContain("pub struct CodexRuntimeConfig {");
     expect(firstRender).toContain("pub struct PiLaunchConfig {");
-    expect(firstRender).toContain("pub struct PiLaunchConfigApiFirstTurn {");
-    expect(firstRender).toContain(
-      "pub struct PiLaunchConfigApiFirstTurnBaseSession {",
-    );
     expect(firstRender).toContain("pub struct PiModelConfig {");
     expect(firstRender).toContain("pub enum PiModelConfigProvider {");
     expect(firstRender).toContain("pub enum PiModelConfigThinkingLevel {");
@@ -463,7 +447,7 @@ describe("Rust type bindings", () => {
       "pub missing_root_policy: Option<ArtifactEntryMissingRootPolicy>,",
     );
     expect(firstRender).toMatch(
-      /#\[derive\(\n\s+Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize,\n\s+\)\]\n\s+pub enum ResponseRejectedReason \{/,
+      /#\[derive\(\n\s+Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize,\n\s+\)\]\n\s+pub enum SessionHistoryEncoding \{/,
     );
     expect(firstRender).toContain(
       "/// Request body for creating a recoverable agent checkpoint.",
@@ -570,43 +554,16 @@ describe("Rust type bindings", () => {
     );
 
     if (!launchBinding) {
-      throw new Error("Missing legacy Pi launch binding");
+      throw new Error("Missing Pi launch binding");
     }
-    const legacyLaunchSchema = piLaunchConfigSchema
-      .unwrap()
-      .safeExtend({ apiFirstTurn: piApiFirstTurnConfigSchema });
     expect(z.toJSONSchema(launchBinding.schema)).toEqual(
-      z.toJSONSchema(legacyLaunchSchema),
+      z.toJSONSchema(piLaunchConfigSchema.unwrap()),
     );
     expect(modelBinding?.schema).toBe(piModelConfigLegacySchema);
     expect(modelV2Binding?.schema).toBe(piModelConfigV2Schema);
-    expect(z.toJSONSchema(legacyLaunchSchema)).toMatchObject({
-      required: ["schemaVersion", "apiFirstTurn"],
-      properties: {
-        schemaVersion: { const: 2 },
-        apiFirstTurn: {
-          required: [
-            "schemaVersion",
-            "resourceSnapshotDigest",
-            "manifestUrl",
-            "sessionUrl",
-            "deadlineAt",
-            "baseSession",
-            "sandboxEventSequenceStart",
-          ],
-          properties: {
-            schemaVersion: { const: 1 },
-            sandboxEventSequenceStart: {
-              type: "integer",
-              minimum: 1,
-              maximum: MAX_EVENT_SEQUENCE_NUMBER,
-            },
-            baseSession: {
-              required: ["sessionId", "sha256"],
-            },
-          },
-        },
-      },
+    expect(z.toJSONSchema(piLaunchConfigSchema.unwrap())).toMatchObject({
+      required: ["schemaVersion"],
+      properties: { schemaVersion: { const: 2 } },
     });
     expect(z.toJSONSchema(piModelConfigLegacySchema)).toMatchObject({
       required: [

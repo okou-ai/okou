@@ -271,7 +271,6 @@ describe("native Pi history structural boundaries", () => {
       cwd: directory,
       agentDir: join(directory, "agent"),
       appendSystemPrompt: null,
-      ownershipTransferMode: "sandbox-first" as const,
       model: {
         provider: "openai",
         model: "gpt-5.6-terra",

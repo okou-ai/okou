@@ -106,12 +106,24 @@ import {
 } from "../../../test-fixtures/chat-event-search";
 import { createRouteMocks } from "./helpers/route-test";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
+import { setOrgDefaultAgentFixture } from "../../../test-fixtures/org-metadata";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import {
+  deleteFeatureSwitchesForUser,
+  updateFeatureSwitchesForUser,
+} from "./helpers/feature-switches";
+import { deleteDiscordFixture } from "./helpers/discord";
+import {
+  discordChatThreads,
+  discordMessageForTest,
+  mockDiscordProvider,
+  postDiscordMessage,
+  setupConnectedDiscordActor,
+} from "./helpers/discord-fixture";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import {
   seedBuiltInModelCandidateKeys,
@@ -1452,9 +1464,9 @@ describe("MCP chat discovery and creation", () => {
       agentId: f.defaultAgentId,
       title: null,
       model: {
-        selectedModel: null,
+        selectedModel: "claude-sonnet-5",
         effectiveModel: "claude-sonnet-5",
-        source: "org_default",
+        source: "thread",
         admission: "checked_on_send",
       },
       replayed: false,
@@ -1484,9 +1496,9 @@ describe("MCP chat discovery and creation", () => {
       agentId: f.defaultAgentId,
       title: null,
       model: {
-        selectedModel: null,
+        selectedModel: "claude-sonnet-5",
         effectiveModel: "claude-sonnet-5",
-        source: "org_default",
+        source: "thread",
         admission: "checked_on_send",
       },
       replayed: false,
@@ -1891,6 +1903,93 @@ describe("MCP chat discovery and creation", () => {
         model: { selectedModel: null, effectiveModel: "claude-sonnet-5" },
       },
     });
+  });
+
+  it("replays accepted metadata after an integration thread moves to a new default agent", async () => {
+    const auth = fixture();
+    const actor = await setupConnectedDiscordActor(context, auth);
+    const provider = mockDiscordProvider(actor);
+    const chat = createChatFilesBddApi(context);
+    const runs = createRunsApi(context);
+    onTestFinished(async () => {
+      await flushWaitUntilForTest();
+      await deleteDiscordFixture(context, actor.fixture);
+      await deleteFeatureSwitchesForUser(context, actor);
+    });
+    const firstMessage = discordMessageForTest(actor, {
+      channelId: provider.dmChannelId,
+      guild: false,
+      content: "start the main DM before the default agent changes",
+    });
+    provider.messages.set(firstMessage.id, firstMessage);
+    await postDiscordMessage(context, firstMessage);
+    await flushWaitUntilForTest();
+    const [thread] = await discordChatThreads(context, actor);
+    if (!thread) {
+      throw new Error("Expected the main Discord DM thread");
+    }
+    const token = auth.token({ scope: defaultScopes });
+    const args = {
+      requestId: randomUUID(),
+      threadId: thread.id,
+      patch: { title: "Accepted MCP title", model: NATIVE_RUNNER_MODEL },
+    };
+    const accepted = await updateThread(token, args);
+    const firstRunId = (await getStatus(token, { threadId: thread.id }))
+      .messages?.arguments.runId;
+    if (!firstRunId) {
+      throw new Error("Expected the original DM run");
+    }
+    await runs.requestCancelRun(actor.actor, firstRunId, [200]);
+    await flushWaitUntilForTest();
+
+    const replacement = await createBddApi(context).createAgent(actor.actor, {
+      displayName: "Replacement default for MCP replay",
+      visibility: "public",
+    });
+    // Default reassignment has no public API; admission and metadata replay
+    // use their real entry points after this historical-state transition.
+    await setOrgDefaultAgentFixture({
+      orgId: actor.orgId,
+      agentId: replacement.agentId,
+    });
+    const nextMessage = discordMessageForTest(actor, {
+      channelId: provider.dmChannelId,
+      guild: false,
+      content: "continue the existing DM with the current default agent",
+    });
+    provider.messages.set(nextMessage.id, nextMessage);
+    await postDiscordMessage(context, nextMessage);
+    await flushWaitUntilForTest();
+    await expect(discordChatThreads(context, actor)).resolves.toMatchObject([
+      { id: thread.id, agentId: replacement.agentId },
+    ]);
+    await chat.renameThread(actor.actor, thread.id, "Newer web title");
+    const before = await chat.requestThreadEvents(actor.actor, {}, [200]);
+
+    await expect(updateThread(token, args)).resolves.toMatchObject({
+      acceptedAt: accepted.acceptedAt,
+      retryUntil: accepted.retryUntil,
+      title: "Newer web title",
+      replayed: true,
+    });
+    expect(
+      structuredToolError(
+        await callTool(token, "update_chat_thread", {
+          ...args,
+          patch: { ...args.patch, title: "Conflicting retry" },
+        }),
+      ),
+    ).toMatchObject({ code: "request_id_conflict", retryable: false });
+    await expect(
+      chat.requestThreadEvents(actor.actor, {}, [200]),
+    ).resolves.toMatchObject({ body: before.body });
+    const nextRunId = (await getStatus(token, { threadId: thread.id })).messages
+      ?.arguments.runId;
+    if (!nextRunId) {
+      throw new Error("Expected the rebound DM run");
+    }
+    await runs.requestCancelRun(actor.actor, nextRunId, [200]);
   });
 
   it("preserves Fast, reasoning, image model and browser settings", async () => {
@@ -3987,7 +4086,7 @@ describe("MCP chat mutations", () => {
     });
   });
 
-  it("reports steered input as associated with the same active run after its receipt", async () => {
+  it("reports steered input as associated with the same active run after its declaration", async () => {
     const auth = await fixture();
     const f = createChatEventsFixture(context);
     const actor = await nativeRunnerChatActor(f, auth);
@@ -4015,15 +4114,15 @@ describe("MCP chat mutations", () => {
     };
     const sent = await sendMessage(token, args);
     expect(sent).toMatchObject({ disposition: "queued", runId: null });
-    const reserved = await f.api.reserveRunnerActiveInputs(
-      claimed.claim.sandboxToken,
-      active.runId,
-    );
-    if (reserved.outcome !== "reserved") {
-      throw new Error("Expected the runner to reserve MCP input");
-    }
-    expect(reserved.eventIds).toStrictEqual([args.requestId]);
-    // Reservation is read-only: the input stays queued until the receipt.
+    await expect(
+      f.api.nextSteerableInput(claimed.claim.sandboxToken, active.runId),
+    ).resolves.toStrictEqual({
+      input: {
+        eventId: args.requestId,
+        prompt: expect.stringContaining(args.text),
+      },
+    });
+    // Reading is read-only: the input stays queued until it is declared steered.
     await expect(sendMessage(token, args)).resolves.toMatchObject({
       inputRef: sent.inputRef,
       replayed: true,
@@ -4031,12 +4130,12 @@ describe("MCP chat mutations", () => {
       runId: null,
     });
     await expect(
-      f.api.recordRunnerActiveInputDelivery(
+      f.api.declareSteeredInput(
         claimed.claim.sandboxToken,
         active.runId,
-        reserved.deliveryId,
+        args.requestId,
       ),
-    ).resolves.toStrictEqual({ outcome: "delivered" });
+    ).resolves.toStrictEqual({ outcome: "steered" });
     await expect(sendMessage(token, args)).resolves.toMatchObject({
       inputRef: sent.inputRef,
       replayed: true,
@@ -6386,7 +6485,7 @@ describe("external MCP entry", () => {
                   {
                     name: "create_chat_thread",
                     description: expect.stringContaining(
-                      "omitted model pins the then-current default at first run admission",
+                      "omitted model stores the current member or organization default at creation",
                     ),
                     inputSchema: {
                       properties: {
@@ -6411,7 +6510,7 @@ describe("external MCP entry", () => {
                   {
                     name: "update_chat_thread",
                     description: expect.stringContaining(
-                      "model:null clears the pin; next run admission pins the then-current default",
+                      "model:null clears the pin; future inputs capture the organization default at enqueue without changing the pin",
                     ),
                     inputSchema: {
                       properties: {
@@ -7379,7 +7478,7 @@ describe("external MCP entry", () => {
       effectiveModel: "claude-sonnet-5",
       admission: "checked_on_send",
     });
-    expect(["member_default", "org_default"]).toContain(model.source);
+    expect(model.source).toBe("org_default");
     await expect(
       f.chat.readThreadMetadata(f.actor, created.id),
     ).resolves.toStrictEqual(before);

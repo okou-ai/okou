@@ -90,6 +90,111 @@ describe("archive event replay", () => {
   });
 });
 
+describe("integration thread agent changes", () => {
+  it("rebinds an existing thread without resetting its conversation metadata", () => {
+    const renamed = {
+      ...created,
+      kind: "renamed" as const,
+      title: "An existing conversation",
+      createdAt: "2026-09-09T00:00:01.000Z",
+    };
+    const pinned = {
+      ...created,
+      kind: "pinned" as const,
+      pinOrder: "a",
+      createdAt: "2026-09-09T00:00:02.000Z",
+    };
+    const archived = {
+      ...created,
+      kind: "archived" as const,
+      createdAt: "2026-09-09T00:00:03.000Z",
+    };
+    const snapshot = replayChatThreadEvents(
+      [],
+      [created, renamed, pinned, archived],
+    );
+    const rebound = {
+      ...created,
+      kind: "sort_touched" as const,
+      agentId: "00000000-0000-4000-8000-000000000099",
+      reassignedAgentId: "00000000-0000-4000-8000-000000000099",
+      createdAt: "2026-09-09T00:00:04.000Z",
+    };
+
+    const expected = {
+      agentId: rebound.agentId,
+      title: renamed.title,
+      createdAt: created.createdAt,
+      renamedAt: renamed.createdAt,
+      pinnedAt: pinned.createdAt,
+      pinOrder: pinned.pinOrder,
+      archived: true,
+      selectedModel: created.selectedModel,
+      modelSettings: created.modelSettings,
+      sortAt: rebound.createdAt,
+    };
+    expect(replayChatThreadEvents(snapshot, [rebound])[0]).toMatchObject(
+      expected,
+    );
+    expect(
+      replayChatThreadEvents(
+        [],
+        [created, renamed, pinned, archived, rebound],
+      )[0],
+    ).toMatchObject(expected);
+  });
+
+  it("keeps the new agent when later non-identity events carry the former agent", () => {
+    const rebound = {
+      ...created,
+      kind: "sort_touched" as const,
+      agentId: "00000000-0000-4000-8000-000000000099",
+      reassignedAgentId: "00000000-0000-4000-8000-000000000099",
+      createdAt: "2026-09-09T00:00:04.000Z",
+    };
+    expect(
+      replayChatThreadEvents([], [created, rebound, selected])[0],
+    ).toMatchObject({
+      agentId: rebound.agentId,
+      selectedModel: selected.selectedModel,
+    });
+  });
+
+  it.each(["2026-09-09T00:00:03.000Z", "2026-09-09T00:00:05.000Z"])(
+    "ignores a former agent on a later committed activity touch at %s",
+    (createdAt) => {
+      const rebound = {
+        ...created,
+        seqId: 2,
+        kind: "sort_touched" as const,
+        agentId: "00000000-0000-4000-8000-000000000099",
+        reassignedAgentId: "00000000-0000-4000-8000-000000000099",
+        createdAt: "2026-09-09T00:00:04.000Z",
+      };
+      // The activity writer captured the former agent before reassignment,
+      // then appended after the reassignment transaction committed.
+      const lateActivity = {
+        ...created,
+        seqId: 3,
+        kind: "sort_touched" as const,
+        createdAt,
+      };
+      const expected = {
+        agentId: rebound.reassignedAgentId,
+        sortAt: createdAt > rebound.createdAt ? createdAt : rebound.createdAt,
+      };
+      expect(
+        replayChatThreadEvents([], [created, rebound, lateActivity])[0],
+      ).toMatchObject(expected);
+      expect(
+        replayChatThreadEvents(replayChatThreadEvents([], [created, rebound]), [
+          lateActivity,
+        ])[0],
+      ).toMatchObject(expected);
+    },
+  );
+});
+
 describe("independently committed activity touches", () => {
   it("keeps maximum activity time when sequence order differs from commit time", () => {
     const later = {

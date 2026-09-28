@@ -2,16 +2,14 @@ import {
   captureIntegrationInputUploads,
   expectIntegrationInputPreview,
 } from "./helpers/integration-input-assets";
-import {
-  seedLegacyMissingDefaultAgentFixture,
-  seedLegacyPrivateDefaultAgentFixture,
-} from "../../../test-fixtures/legacy-default-agent";
+import { seedLegacyMissingDefaultAgentFixture } from "../../../test-fixtures/legacy-default-agent";
 import { createHash, createHmac, randomInt, randomUUID } from "node:crypto";
 
 import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integrations-telegram";
-import { piApiFirstTurnManifestSchema } from "@okouai/api-contracts/contracts/runners";
+import { CANONICAL_WORKING_DIR } from "@okouai/api-contracts/contracts/runners";
 import type { ChatEvent } from "@okouai/api-contracts/contracts/chat-threads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { createPiSessionJsonl } from "@okouai/pi-agent-runtime/api";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { HttpResponse, http } from "msw";
 import { createStore } from "ccstate";
@@ -19,7 +17,7 @@ import { describe, expect, it, beforeEach } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
 import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
-import { now, withMockNowForTest } from "../../../lib/time";
+import { now, nowDate, withMockNowForTest } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
 import { installLegacySlackChatCallbackBrandFixture } from "../../../test-fixtures/chat-terminal-retry";
@@ -63,8 +61,6 @@ helper gap:
 - INT-01 Slack channel, message, upload, and download-file happy paths still
   need public API setup journeys for externally observable Slack channel/file
   state without diagnostic fixture routes.
-- INT-02 Telegram linked-bot, message/upload success, internal callback, and
-  cleanup flows still need public API setup helpers for bot installation state.
 - INT-03 GitHub installed-app and AgentPhone linked-send happy paths need public
   setup APIs for provider installation and downstream agent state before they
   can be covered without diagnostic fixture routes.
@@ -80,8 +76,6 @@ const misc = createMiscRoutesApi(context);
 const runs = createRunsApi(context);
 const webhooks = createWebhookCallbackApi(context);
 const callbackStore = createStore();
-const TELEGRAM_BOT_ID = 99_887_766;
-const TELEGRAM_BOT_TOKEN = `${TELEGRAM_BOT_ID}:bdd-token`;
 const TELEGRAM_OFFICIAL_WEBHOOK_SECRET = "telegram-official-bdd-secret";
 
 interface SlackEphemeralBody {
@@ -806,39 +800,36 @@ type CanonicalSlackPiScenario = Awaited<
 type SlackPiClaim = Awaited<ReturnType<typeof runs.claimRunnerJob>>;
 
 /**
- * Read the no-inference launch handoff run creation published for the
- * Sandbox, and the H0 session bytes it names.
+ * Rebuild the session a claimed Slack Pi Sandbox starts from, as the CLI does:
+ * the claim's inline or blob-referenced resume history, else a fresh session.
  */
-function readSlackPiSandboxHandoff(
+function readSlackPiSandboxBaseSession(
   scenario: CanonicalSlackPiScenario,
-  runId: string,
-) {
-  const prefix = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${runId}/`;
-  const manifestBytes = scenario.checkpointObjects.get(
-    `${prefix}manifest.json`,
-  );
-  if (!manifestBytes) {
-    throw new Error("Expected a Slack Pi sandbox handoff manifest");
+  claim: SlackPiClaim,
+): string {
+  const resume = claim.resumeSession;
+  if (!resume) {
+    if (!claim.piSessionId) {
+      throw new Error("Expected a claimed Slack Pi session id");
+    }
+    return createPiSessionJsonl({
+      cwd: CANONICAL_WORKING_DIR,
+      sessionId: claim.piSessionId,
+      timestamp: nowDate().toISOString(),
+    });
   }
-  const manifest = piApiFirstTurnManifestSchema.parse(
-    JSON.parse(manifestBytes.toString("utf8")),
-  );
-  expect(manifest).toMatchObject({
-    outcome: "ownership-transfer",
-    mode: "sandbox-first",
-    apiUsage: { schemaVersion: 1, state: "no-inference" },
-  });
-  const sessionObjectKey =
-    manifest.schemaVersion === 4
-      ? new URL(manifest.history.url).searchParams.get("object")
-      : `${prefix}session.jsonl`;
-  const sessionBytes = sessionObjectKey
-    ? scenario.checkpointObjects.get(sessionObjectKey)
+  if (!("historyRef" in resume)) {
+    return resume.sessionHistory;
+  }
+  expect(resume.historyRef.encoding).toBe("identity");
+  const objectKey = new URL(resume.historyRef.url).searchParams.get("object");
+  const sessionBytes = objectKey
+    ? scenario.checkpointObjects.get(objectKey)
     : undefined;
   if (!sessionBytes) {
-    throw new Error("Expected the Slack Pi handoff session bytes");
+    throw new Error("Expected the referenced Slack Pi session bytes");
   }
-  return { manifest, session: sessionBytes.toString("utf8") };
+  return sessionBytes.toString("utf8");
 }
 
 /** Complete a claimed Slack Pi turn the way the Sandbox does. */
@@ -849,8 +840,9 @@ async function completeSlackPiTurnInSandbox(args: {
   readonly prompt: string;
   readonly answer: string;
 }): Promise<void> {
-  const handoff = readSlackPiSandboxHandoff(args.scenario, args.runId);
-  const session = MemoryPiSession.fromJsonl(handoff.session);
+  const session = MemoryPiSession.fromJsonl(
+    readSlackPiSandboxBaseSession(args.scenario, args.claim),
+  );
   session.appendMessage({ role: "user", content: args.prompt, timestamp: 1 });
   session.appendMessage({
     role: "assistant",
@@ -887,19 +879,18 @@ async function completeSlackPiTurnInSandbox(args: {
     `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${historyHash}.blob`,
     Buffer.from(history, "utf8"),
   );
-  const sequenceStart = handoff.manifest.sandboxEventSequenceStart;
   await webhooks.requestAgentEvents(
     {
       runId: args.runId,
       events: [
         {
           type: "assistant",
-          sequenceNumber: sequenceStart,
+          sequenceNumber: 1,
           message: { content: [{ type: "text", text: args.answer }] },
         },
         {
           type: "result",
-          sequenceNumber: sequenceStart + 1,
+          sequenceNumber: 2,
           result: args.answer,
         },
       ],
@@ -911,7 +902,7 @@ async function completeSlackPiTurnInSandbox(args: {
     {
       runId: args.runId,
       exitCode: 0,
-      lastEventSequence: sequenceStart + 1,
+      lastEventSequence: 2,
       checkpoint: {
         cliAgentType: "pi",
         cliAgentSessionId: args.scenario.chatThreadId,
@@ -1113,35 +1104,9 @@ async function claimContinuedSlackPiTurn(args: {
     args.scenario.chatThreadId,
   );
   expect(binding.agent_session_id).toBe(args.firstSessionId);
-  const manifestBytes = args.scenario.checkpointObjects.get(
-    `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${runId}/manifest.json`,
-  );
-  if (!manifestBytes) {
-    throw new Error("Expected continued Slack Pi handoff manifest");
-  }
-  const manifest = piApiFirstTurnManifestSchema.parse(
-    JSON.parse(manifestBytes.toString("utf8")),
-  );
-  expect(manifest).toMatchObject({
-    schemaVersion: 4,
-    mode: "sandbox-first",
-    baseSession: {
-      sessionId: args.scenario.chatThreadId,
-      sha256: history.historyRef.hash,
-    },
-  });
-  if (manifest.schemaVersion !== 4) {
-    throw new Error("Expected referenced Slack Pi history");
-  }
-  const objectKey = new URL(manifest.history.url).searchParams.get("object");
-  const resumeBytes = objectKey
-    ? args.scenario.checkpointObjects.get(objectKey)
-    : undefined;
-  if (!resumeBytes) {
-    throw new Error("Expected referenced Slack Pi session bytes");
-  }
-  expect(resumeBytes.toString("utf8")).toContain(args.firstPrompt);
-  expect(resumeBytes.toString("utf8")).toContain("Canonical Slack Pi answer");
+  const resumeBytes = readSlackPiSandboxBaseSession(args.scenario, claim);
+  expect(resumeBytes).toContain(args.firstPrompt);
+  expect(resumeBytes).toContain("Canonical Slack Pi answer");
   await expect(readRunUsageEventsFixture(runId)).resolves.toStrictEqual([]);
   return { claim, runId };
 }
@@ -1218,10 +1183,13 @@ async function runSuccessfulContinuedSlackPiTurn(args: {
   const claim = await runs.claimRunnerJob(completedRunId, {
     capabilities: { piModelConfigGenerations: [1, 2] },
   });
-  const handoff = readSlackPiSandboxHandoff(args.scenario, completedRunId);
-  expect(handoff.manifest.schemaVersion).toBe(4);
-  expect(handoff.session).toContain(args.firstPrompt);
-  expect(handoff.session).toContain("Canonical Slack Pi answer");
+  expect(claim.resumeSession).toMatchObject({
+    sessionId: args.scenario.chatThreadId,
+    historyRef: { kind: "blob" },
+  });
+  const resumed = readSlackPiSandboxBaseSession(args.scenario, claim);
+  expect(resumed).toContain(args.firstPrompt);
+  expect(resumed).toContain("Canonical Slack Pi answer");
   await completeSlackPiTurnInSandbox({
     scenario: args.scenario,
     runId: completedRunId,
@@ -1288,31 +1256,6 @@ async function expectSlackPiMemoryCandidate(args: {
     }),
   ).resolves.toBe(1);
   return candidate;
-}
-
-function telegramDomainProbe() {
-  return http.head("https://oauth.telegram.org/auth", () => {
-    return new HttpResponse(null, {
-      status: 200,
-      headers: { "content-length": "2001" },
-    });
-  });
-}
-
-function telegramSendMessage(onBody?: (body: unknown) => void) {
-  return http.post(
-    `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`,
-    async ({ request }) => {
-      onBody?.(await request.json());
-      return HttpResponse.json({
-        ok: true,
-        result: {
-          message_id: 321,
-          chat: { id: 12_345 },
-        },
-      });
-    },
-  );
 }
 
 function agentPhoneVerificationSend(
@@ -3603,15 +3546,9 @@ describe("INT-01: Slack app deep webhook flows", () => {
     beforeEach(async () => {
       preparedScenario = await prepareScenario();
     });
-    it("keeps Slack DM sessions scoped to the selected agent", async () => {
-      const {
-        teamId,
-        slackUserId,
-        firstMessageTs,
-        channelId,
-        runnerGroup,
-        actor,
-      } = preparedScenario;
+    it("resumes the main Slack DM session with the org default agent", async () => {
+      const { teamId, slackUserId, firstMessageTs, channelId, runnerGroup } =
+        preparedScenario;
       await integrations.postSlackEvent(teamId, {
         type: "message",
         channel_type: "im",
@@ -3628,42 +3565,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
         sandboxToken: firstClaim.sandboxToken,
         cliAgentType: firstClaim.cliAgentType,
       });
-
-      const alternateAgent = await bdd.createAgent(actor, {
-        displayName: "BDD alternate Slack DM agent",
-      });
-      await integrations.postSlackInteractive(
-        integrations.agentPickerSubmission({
-          workspaceId: teamId,
-          slackUserId,
-          selectedValue: alternateAgent.agentId,
-          channelId,
-        }),
-      );
-      await integrations.postSlackEvent(teamId, {
-        type: "message",
-        channel_type: "im",
-        user: slackUserId,
-        text: "use an alternate Slack DM agent",
-        ts: "2950.000200",
-        channel: channelId,
-      });
-      const alternateRunId = await pollSlackRun(runnerGroup);
-      const alternateClaim = await runs.claimRunnerJob(alternateRunId);
-      expect(alternateClaim.resumeSession).toBeNull();
-      await completeSlackTriggeredRun({
-        runId: alternateRunId,
-        sandboxToken: alternateClaim.sandboxToken,
-        cliAgentType: alternateClaim.cliAgentType,
-      });
-      await integrations.postSlackInteractive(
-        integrations.agentPickerSubmission({
-          workspaceId: teamId,
-          slackUserId,
-          selectedValue: "__org_default__",
-          channelId,
-        }),
-      );
 
       const returnMessageTs = "2950.000300";
       await integrations.postSlackEvent(teamId, {
@@ -4244,131 +4145,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
     expect(run2.result?.agentSessionId).toBe(session1);
   });
 
-  it("pins agent choices to canonical Slack threads", async () => {
-    const actor = bdd.user();
-    runs.acceptStorageDownloads();
-    runs.acceptTelemetryIngest();
-    integrations.configureSlackAppMocks();
-    integrations.acceptSlackSessionHistoryDownloads();
-    const runnerGroup = runs.configureRunnerGroup();
-    await runs.grantProEntitlement(actor);
-    await integrations.configureSlackRunModelPolicies(actor);
-    const onboarding = await bdd.readOnboardingStatus(actor);
-    if (!onboarding.defaultAgentId) {
-      throw new Error("Expected onboarding to configure a default agent");
-    }
-    const agentB = await bdd.createAgent(actor, {
-      displayName: "BDD Slack Switch Agent",
-    });
-    const slackUserId = uniqueSlackUserId();
-    const { teamId } = await integrations.installSlackWorkspace(actor, {
-      installerSlackUserId: slackUserId,
-    });
-    integrations.clearSlackCallHistory();
-
-    const channelId = "C_BDD_AGENT_BINDING";
-    const threadTs = "3050.000100";
-    await integrations.postSlackEvent(teamId, {
-      type: "app_mention",
-      user: slackUserId,
-      text: "establish the original thread agent",
-      ts: threadTs,
-      channel: channelId,
-    });
-    const seedRunId = await pollSlackRun(runnerGroup);
-    const seedClaim = await runs.claimRunnerJob(seedRunId);
-    await completeSlackTriggeredRun({
-      runId: seedRunId,
-      sandboxToken: seedClaim.sandboxToken,
-      cliAgentType: seedClaim.cliAgentType,
-    });
-    const seedRun = await runs.readRun(actor, seedRunId);
-    const seedSessionId = seedRun.result?.agentSessionId;
-    if (!seedSessionId) {
-      throw new Error("Expected the original Slack run to expose its session");
-    }
-
-    const switched = await integrations.postSlackInteractive(
-      integrations.agentPickerSubmission({
-        workspaceId: teamId,
-        slackUserId,
-        selectedValue: agentB.agentId,
-        channelId,
-      }),
-    );
-    expect(switched).toBe("");
-    expect(context.mocks.slack.chat.postEphemeral).toHaveBeenCalledWith(
-      expect.objectContaining({
-        channel: channelId,
-        user: slackUserId,
-        text: "Switched to *BDD Slack Switch Agent* for new Slack threads.",
-      }),
-    );
-    context.mocks.slack.chat.postMessage.mockClear();
-    await integrations.postSlackEvent(teamId, {
-      type: "app_mention",
-      user: slackUserId,
-      text: "keep the existing thread agent",
-      ts: "3050.000200",
-      thread_ts: threadTs,
-      channel: channelId,
-    });
-    const continuationRunId = await pollSlackRun(runnerGroup);
-    const continuationClaim = await runs.claimRunnerJob(continuationRunId);
-    expect(continuationClaim.resumeSession?.sessionId).toBe(
-      `bdd-slack-cli-${seedRunId}`,
-    );
-    await completeSlackTriggeredRun({
-      runId: continuationRunId,
-      sandboxToken: continuationClaim.sandboxToken,
-      cliAgentType: continuationClaim.cliAgentType,
-    });
-    const continuationRun = await runs.readRun(actor, continuationRunId);
-    expect(continuationRun.result?.agentSessionId).toBe(seedSessionId);
-
-    const overrideThreadTs = "3051.000100";
-    await integrations.postSlackEvent(teamId, {
-      type: "app_mention",
-      user: slackUserId,
-      text: "use my override in a new thread",
-      ts: overrideThreadTs,
-      channel: channelId,
-    });
-    const overrideRunId = await pollSlackRun(runnerGroup);
-    const overrideClaim = await runs.claimRunnerJob(overrideRunId);
-    expect(overrideClaim.resumeSession).toBeNull();
-    const overrideState = await integrations.readSlackTestState(teamId);
-    const overrideChatThreadId = overrideState.chat_thread_routes.find(
-      (route) => {
-        return (
-          route.channelId === channelId && route.threadTs === overrideThreadTs
-        );
-      },
-    )?.chatThreadId;
-    if (!overrideChatThreadId) {
-      throw new Error("Expected the override to create a canonical thread");
-    }
-    const threadEvents = await chat.requestThreadEvents(actor, {}, [200]);
-    expect(threadEvents.status).toBe(200);
-    if (threadEvents.status !== 200) {
-      throw new Error("Expected canonical Slack thread events to load");
-    }
-    expect(threadEvents.body.events).toStrictEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          kind: "created",
-          chatThreadId: overrideChatThreadId,
-          agentId: agentB.agentId,
-        }),
-      ]),
-    );
-    await completeSlackTriggeredRun({
-      runId: overrideRunId,
-      sandboxToken: overrideClaim.sandboxToken,
-      cliAgentType: overrideClaim.cliAgentType,
-    });
-  });
-
   it("pins model choices to canonical Slack threads", async () => {
     const actor = bdd.user();
     runs.acceptStorageDownloads();
@@ -4384,14 +4160,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
     });
 
     const channelId = "C_BDD_MODEL_BINDING";
-    await integrations.postSlackInteractive(
-      integrations.agentPickerSubmission({
-        workspaceId: teamId,
-        slackUserId,
-        selectedValue: "__org_default__",
-        channelId,
-      }),
-    );
     await integrations.updateUserModelPreference(actor, "gpt-6-astra");
     const gptThreadTs = "3100.000100";
     await integrations.postSlackEvent(teamId, {
@@ -4446,7 +4214,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     expect(continuationRun.result?.agentSessionId).toBe(gptSessionId);
   });
 
-  it("resolves a NULL Slack thread from canonical defaults without replaying its first run", async () => {
+  it("captures the organization default for a NULL Slack thread without changing its pin", async () => {
     const actor = bdd.user();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
@@ -4514,21 +4282,21 @@ describe("INT-01: Slack app deep webhook flows", () => {
     });
     const resolvedRunId = await pollSlackRun(runnerGroup);
     const resolvedClaim = await runs.claimRunnerJob(resolvedRunId);
-    expect(resolvedClaim.cliAgentType).toBe("codex");
+    expect(resolvedClaim.cliAgentType).toBe("claude-code");
     expect(resolvedClaim.environment).toMatchObject({
-      OPENAI_API_KEY: expect.stringMatching(/.+/),
-      OPENAI_MODEL: "gpt-6-astra",
+      ANTHROPIC_API_KEY: expect.stringMatching(/.+/),
+      ANTHROPIC_MODEL: "claude-fable-5-1",
     });
-    expect(resolvedClaim.environment).not.toHaveProperty("ANTHROPIC_API_KEY");
+    expect(resolvedClaim.environment).not.toHaveProperty("OPENAI_API_KEY");
     expect(
       (await chat.readThreadMetadata(actor, chatThreadId)).selectedModel,
-    ).toBe("gpt-6-astra");
+    ).toBeNull();
 
     const threadEvents = await chat.requestThreadEvents(actor, {}, [200]);
     if (threadEvents.status !== 200) {
       throw new Error("Expected canonical Slack thread events to load");
     }
-    expect(threadEvents.body.events).toContainEqual(
+    expect(threadEvents.body.events).not.toContainEqual(
       expect.objectContaining({
         kind: "model_selection_updated",
         chatThreadId,
@@ -4690,9 +4458,8 @@ describe("INT-01: Slack app deep webhook flows", () => {
       );
     });
 
-    // Beyond the legacy baseline: a connected Slack user with zero visible
-    // agents gets the no-agents ephemeral from /okou switch, and the App
-    // Home switch action returns silently without opening a modal.
+    // `/okou switch` no longer opens an agent picker: Slack always uses the
+    // org default agent.
     const emptySwitch = await integrations.postSlackCommand({
       teamId: bareInstall.teamId,
       userId: bareSlackUserId,
@@ -4701,20 +4468,8 @@ describe("INT-01: Slack app deep webhook flows", () => {
       triggerId: "trigger-bdd-noagent-switch",
     });
     expect(JSON.stringify(emptySwitch)).toContain(
-      "No agents are available to your Slack account.",
+      "Slack always uses your org's default agent.",
     );
-    const silentHomeSwitch = await integrations.postSlackInteractive({
-      type: "block_actions",
-      user: {
-        id: bareSlackUserId,
-        username: "bdduser",
-        team_id: bareInstall.teamId,
-      },
-      team: { id: bareInstall.teamId, domain: "bdd" },
-      trigger_id: "trigger-bdd-noagent-home",
-      actions: [{ action_id: "home_switch_agent", block_id: "home" }],
-    });
-    expect(silentHomeSwitch).toBe("");
     expect(context.mocks.slack.views.open).not.toHaveBeenCalled();
 
     // A legacy deletion of the org default clears orgMetadata.defaultAgentId at the
@@ -4770,21 +4525,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
     if (!defaultAgentId) {
       throw new Error("Expected onboarding to configure a default agent");
     }
-    const agentB = await bdd.createAgent(actor, {
-      displayName: "BDD Slack Picker Agent",
-    });
-    const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
-    const ownPrivate = await bdd.createAgent(actor, {
-      displayName: "BDD Slack Own Private",
-      visibility: "private",
-    });
-    const memberPublic = await bdd.createAgent(member, {
-      displayName: "BDD Slack Member Public",
-    });
-    const memberPrivate = await bdd.createAgent(member, {
-      displayName: "BDD Slack Member Private",
-      visibility: "private",
-    });
     const slackUserId = uniqueSlackUserId();
     const { teamId, botUserId } = await integrations.installSlackWorkspace(
       actor,
@@ -4803,7 +4543,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       });
       const helpJson = JSON.stringify(help);
       expect(helpJson).toContain(`<@${botUserId}> Slack Bot Help`);
-      expect(helpJson).toContain("/okou switch");
+      expect(helpJson).not.toContain("/okou switch");
       expect(helpJson).toContain("/okou model");
       expect(helpJson).toContain(`<@${botUserId}>`);
     }
@@ -4816,6 +4556,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     });
     expect(JSON.stringify(alreadyConnected)).toContain("already connected");
 
+    context.mocks.slack.views.open.mockClear();
     const switchResponse = await integrations.postSlackCommand({
       teamId,
       userId: slackUserId,
@@ -4823,22 +4564,10 @@ describe("INT-01: Slack app deep webhook flows", () => {
       text: "switch",
       triggerId: "trigger-bdd-switch",
     });
-    expect(switchResponse).toBe("");
-    const switchModal = latestSlackModal();
-    expect(switchModal.triggerId).toBe("trigger-bdd-switch");
-    expect(switchModal.callbackId).toBe("switch_agent_modal");
-    expect(switchModal.privateMetadata).toBe(
-      JSON.stringify({ channelId: "C_BDD_CMD" }),
+    expect(JSON.stringify(switchResponse)).toContain(
+      "Slack always uses your org's default agent.",
     );
-    expect(switchModal.optionValues).toContain("__org_default__");
-    expect(switchModal.optionValues).toContain(agentB.agentId);
-    expect(switchModal.optionValues).toContain(ownPrivate.agentId);
-    expect(switchModal.optionValues).toContain(memberPublic.agentId);
-    expect(switchModal.optionValues).not.toContain(defaultAgentId);
-    expect(switchModal.optionValues).not.toContain(memberPrivate.agentId);
-    expect(switchModal.optionLabels).toContainEqual(
-      expect.stringContaining("Use org default"),
-    );
+    expect(context.mocks.slack.views.open).not.toHaveBeenCalled();
 
     await integrations.updateUserModelPreference(actor, "gpt-6-luna");
     const modelResponse = await integrations.postSlackCommand({
@@ -4952,144 +4681,20 @@ describe("INT-01: Slack app deep webhook flows", () => {
     expect(context.mocks.slack.views.open).not.toHaveBeenCalled();
   });
 
-  it("persists Slack agent and model picker selections through interactive submissions", async () => {
+  it("persists Slack model picker selections through interactive submissions", async () => {
     const actor = bdd.user();
     bdd.acceptAgentStorageWrites();
     integrations.configureSlackAppMocks();
-
-    const missingSelection = await integrations.postSlackInteractive(
-      integrations.agentPickerSubmission({
-        workspaceId: "T_BDD_NONE",
-        slackUserId: "U_BDD_NONE",
-        selectedValue: "",
-      }),
-    );
-    expect(missingSelection).toStrictEqual({
-      response_action: "errors",
-      errors: { agent_select_block: "Please choose an agent." },
-    });
 
     await bdd.bootstrapLimitedFreeOnboarding(actor, {
       displayName: "BDD Slack Picker Default",
     });
     await runs.grantProEntitlement(actor);
-    const status = await bdd.readOnboardingStatus(actor);
-    if (!status.defaultAgentId) {
-      throw new Error("Expected onboarding to configure a default agent");
-    }
-    const defaultAgent = await bdd.readAgent(actor, status.defaultAgentId);
-    if (!defaultAgent.displayName) {
-      throw new Error("Expected onboarding default agent display name");
-    }
-    const agentB = await bdd.createAgent(actor, {
-      displayName: "BDD Slack Picker Override",
-    });
-    const outsider = bdd.user();
-    const outsiderAgent = await bdd.createAgent(outsider, {
-      displayName: "BDD Slack Foreign Agent",
-    });
-    const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
-    const ownPrivate = await bdd.createAgent(actor, {
-      displayName: "BDD Slack Picker Own Private",
-      visibility: "private",
-    });
-    const memberPublic = await bdd.createAgent(member, {
-      displayName: "BDD Slack Picker Member Public",
-    });
-    const memberPrivate = await bdd.createAgent(member, {
-      displayName: "BDD Slack Picker Member Private",
-      visibility: "private",
-    });
     const slackUserId = uniqueSlackUserId();
     const { teamId } = await integrations.installSlackWorkspace(actor, {
       installerSlackUserId: slackUserId,
     });
     integrations.clearSlackCallHistory();
-
-    const selectB = await integrations.postSlackInteractive(
-      integrations.agentPickerSubmission({
-        workspaceId: teamId,
-        slackUserId,
-        selectedValue: agentB.agentId,
-        channelId: "C_BDD_PICK",
-      }),
-    );
-    expect(selectB).toBe("");
-    expect(context.mocks.slack.chat.postEphemeral).toHaveBeenCalledWith(
-      expect.objectContaining({
-        channel: "C_BDD_PICK",
-        user: slackUserId,
-        text: "Switched to *BDD Slack Picker Override* for new Slack threads.",
-      }),
-    );
-    await integrations.postSlackCommand({
-      teamId,
-      userId: slackUserId,
-      channelId: "C_BDD_PICK",
-      text: "switch",
-    });
-    expect(latestSlackModal().initialOptionValue).toBe(agentB.agentId);
-
-    const foreign = await integrations.postSlackInteractive(
-      integrations.agentPickerSubmission({
-        workspaceId: teamId,
-        slackUserId,
-        selectedValue: outsiderAgent.agentId,
-      }),
-    );
-    expect(foreign).toStrictEqual({
-      response_action: "errors",
-      errors: { agent_select_block: "You don't have access to that agent." },
-    });
-
-    const sameOrgPrivate = await integrations.postSlackInteractive(
-      integrations.agentPickerSubmission({
-        workspaceId: teamId,
-        slackUserId,
-        selectedValue: memberPrivate.agentId,
-      }),
-    );
-    expect(sameOrgPrivate).toStrictEqual({
-      response_action: "errors",
-      errors: { agent_select_block: "You don't have access to that agent." },
-    });
-
-    context.mocks.slack.chat.postEphemeral.mockRejectedValueOnce(
-      new Error("ephemeral delivery failed"),
-    );
-    const confirmFailure = await integrations.postSlackInteractive(
-      integrations.agentPickerSubmission({
-        workspaceId: teamId,
-        slackUserId,
-        selectedValue: agentB.agentId,
-        channelId: "C_BDD_PICK",
-      }),
-    );
-    expect(confirmFailure).toBe("");
-    await integrations.postSlackCommand({
-      teamId,
-      userId: slackUserId,
-      channelId: "C_BDD_PICK",
-      text: "switch",
-    });
-    expect(latestSlackModal().initialOptionValue).toBe(agentB.agentId);
-
-    const restoreDefault = await integrations.postSlackInteractive(
-      integrations.agentPickerSubmission({
-        workspaceId: teamId,
-        slackUserId,
-        selectedValue: "__org_default__",
-        channelId: "C_BDD_PICK",
-      }),
-    );
-    expect(restoreDefault).toBe("");
-    expect(context.mocks.slack.chat.postEphemeral).toHaveBeenCalledWith(
-      expect.objectContaining({
-        channel: "C_BDD_PICK",
-        user: slackUserId,
-        text: `Switched to *${defaultAgent.displayName}* for new Slack threads.`,
-      }),
-    );
 
     const selectModel = await integrations.postSlackInteractive(
       integrations.modelPickerSubmission({
@@ -5145,130 +4750,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
     ).resolves.toMatchObject({
       selectedModel: "gpt-6-luna",
     });
-
-    context.mocks.slack.views.open.mockClear();
-    const homeSwitch = await integrations.postSlackInteractive({
-      type: "block_actions",
-      user: { id: slackUserId, username: "bdduser", team_id: teamId },
-      team: { id: teamId, domain: "bdd" },
-      trigger_id: "trigger-bdd-home",
-      actions: [{ action_id: "home_switch_agent", block_id: "home" }],
-    });
-    expect(homeSwitch).toBe("");
-    const homeModal = latestSlackModal();
-    expect(homeModal.callbackId).toBe("switch_agent_modal");
-    expect(homeModal.privateMetadata).toBeNull();
-    expect(homeModal.optionValues).toContain("__org_default__");
-    expect(homeModal.optionValues).toContain(agentB.agentId);
-    expect(homeModal.optionValues).toContain(ownPrivate.agentId);
-    expect(homeModal.optionValues).toContain(memberPublic.agentId);
-    expect(homeModal.optionValues).not.toContain(status.defaultAgentId);
-    expect(homeModal.optionValues).not.toContain(memberPrivate.agentId);
-  });
-
-  it("hides an inaccessible private org default across pickers, App Home, and runs", async () => {
-    bdd.acceptAgentStorageWrites();
-    integrations.configureSlackAppMocks();
-    const actor = bdd.user();
-    const formerAdmin = bdd.user({ orgId: actor.orgId });
-    // Reproduce legacy data written before default-agent visibility was locked.
-    // The former admin is now a member; other members must not gain private access.
-    const hiddenDefaultId = await bdd.bootstrapLimitedFreeOnboarding(
-      formerAdmin,
-      {
-        displayName: "BDD Hidden Default",
-      },
-    );
-    const member = bdd.user({
-      userId: formerAdmin.userId,
-      orgId: actor.orgId,
-      orgRole: "org:member",
-    });
-    await seedLegacyPrivateDefaultAgentFixture(hiddenDefaultId);
-    const visiblePublic = await bdd.createAgent(member, {
-      displayName: "BDD Visible Public",
-    });
-    const slackUserId = uniqueSlackUserId();
-    const { teamId } = await integrations.installSlackWorkspace(actor, {
-      installerSlackUserId: slackUserId,
-    });
-    await flushWaitUntilForTest();
-    integrations.clearSlackCallHistory();
-
-    const switchResponse = await integrations.postSlackCommand({
-      teamId,
-      userId: slackUserId,
-      channelId: "C_BDD_HIDDEN",
-      text: "switch",
-      triggerId: "trigger-bdd-hidden-switch",
-    });
-    expect(switchResponse).toBe("");
-    const commandModal = latestSlackModal();
-    expect(commandModal.optionValues).not.toContain("__org_default__");
-    expect(commandModal.optionValues).toContain(visiblePublic.agentId);
-    expect(commandModal.optionValues).not.toContain(hiddenDefaultId);
-    expect(commandModal.optionLabels).not.toContainEqual(
-      expect.stringContaining("Use org default"),
-    );
-
-    const orgDefaultRejected = await integrations.postSlackInteractive(
-      integrations.agentPickerSubmission({
-        workspaceId: teamId,
-        slackUserId,
-        selectedValue: "__org_default__",
-      }),
-    );
-    expect(orgDefaultRejected).toStrictEqual({
-      response_action: "errors",
-      errors: { agent_select_block: "You don't have access to that agent." },
-    });
-
-    context.mocks.slack.views.open.mockClear();
-    const homeSwitch = await integrations.postSlackInteractive({
-      type: "block_actions",
-      user: { id: slackUserId, username: "bdduser", team_id: teamId },
-      team: { id: teamId, domain: "bdd" },
-      trigger_id: "trigger-bdd-hidden-home",
-      actions: [{ action_id: "home_switch_agent", block_id: "home" }],
-    });
-    expect(homeSwitch).toBe("");
-    const homeModal = latestSlackModal();
-    expect(homeModal.optionValues).not.toContain("__org_default__");
-    expect(homeModal.optionValues).toContain(visiblePublic.agentId);
-    expect(homeModal.optionValues).not.toContain(hiddenDefaultId);
-
-    await integrations.postSlackEvent(teamId, {
-      type: "message",
-      channel_type: "im",
-      user: slackUserId,
-      text: "hello in dm",
-      ts: "2200.000100",
-      channel: "D_BDD_HIDDEN",
-    });
-    await flushWaitUntilAndAssert(() => {
-      expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledWith(
-        expect.objectContaining({
-          channel: "D_BDD_HIDDEN",
-          text: expect.stringContaining("not available to your Slack account"),
-        }),
-      );
-    });
-    expect(
-      context.mocks.slack.assistant.threads.setStatus,
-    ).not.toHaveBeenCalled();
-
-    await integrations.postSlackEvent(teamId, {
-      type: "app_home_opened",
-      user: slackUserId,
-      tab: "home",
-      channel: "D_BDD_HIDDEN_HOME",
-    });
-    await flushWaitUntilForTest();
-    const homeViewJson = JSON.stringify(
-      context.mocks.slack.views.publish.mock.calls.at(-1),
-    );
-    expect(homeViewJson).toContain("home_switch_agent");
-    expect(homeViewJson).toContain("_No agent configured yet._");
   });
 
   it("refreshes Slack App Home, welcomes once, and cleans up lifecycle events", async () => {
@@ -5480,9 +4961,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
       status: "suspended",
       canBuyCredits: false,
     });
-    const agentB = await bdd.createAgent(actor, {
-      displayName: "BDD Slack Failing Override",
-    });
     const slackUserId = uniqueSlackUserId();
     const { teamId } = await integrations.installSlackWorkspace(actor, {
       installerSlackUserId: slackUserId,
@@ -5520,29 +4998,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
         context.mocks.slack.assistant.threads.setStatus,
       ).toHaveBeenCalledWith(
         expect.objectContaining({ channel_id: "D_BDD_FAIL", status: "" }),
-      );
-    });
-
-    await integrations.postSlackInteractive(
-      integrations.agentPickerSubmission({
-        workspaceId: teamId,
-        slackUserId,
-        selectedValue: agentB.agentId,
-        channelId: "D_BDD_FAIL",
-      }),
-    );
-    context.mocks.slack.chat.postMessage.mockClear();
-    await integrations.postSlackEvent(teamId, {
-      type: "message",
-      channel_type: "im",
-      user: slackUserId,
-      text: "run with my override",
-      ts: "5000.000200",
-      channel: "D_BDD_FAIL",
-    });
-    await flushWaitUntilAndAssert(() => {
-      expect(slackPostMessageCallsJson()).toContain(
-        "Sent via BDD Slack Failing Override",
       );
     });
   });
@@ -6185,470 +5640,6 @@ describe("INT-02: Telegram integration", () => {
       "Please choose an agent in Okou first.",
     );
   });
-
-  it("registers and manages a Telegram bot through API-visible state", async () => {
-    mockEnv("APP_URL", "https://app.okou.ai");
-    const telegramProviderBodies: unknown[] = [];
-    server.use(
-      telegramDomainProbe(),
-      telegramSendMessage((body) => {
-        telegramProviderBodies.push(body);
-      }),
-    );
-    bdd.acceptAgentStorageWrites();
-
-    const actor = integrations.user();
-    const member = integrations.user({
-      orgId: actor.orgId,
-      orgRole: "org:member",
-    });
-    const agent = await bdd.createAgent(actor, {
-      displayName: "BDD Telegram agent",
-    });
-    const botId = String(TELEGRAM_BOT_ID);
-
-    const unauthenticatedList =
-      await integrations.requestListTelegramIntegrations(null, [401]);
-    expect(unauthenticatedList.body).toStrictEqual({
-      error: { message: "Not authenticated", code: "UNAUTHORIZED" },
-    });
-
-    const initialList = await integrations.requestListTelegramIntegrations(
-      actor,
-      [200],
-    );
-    if (!("bots" in initialList.body)) {
-      throw new Error("Expected Telegram integration list response");
-    }
-    expect(initialList.body.bots).toContainEqual(
-      expect.objectContaining({
-        id: OFFICIAL_TELEGRAM_BOT_ID,
-        kind: "official",
-        isConnected: false,
-      }),
-    );
-
-    expect(initialList.body.bots).toContainEqual(
-      expect.objectContaining({
-        id: OFFICIAL_TELEGRAM_BOT_ID,
-        kind: "official",
-        tokenStatus: "unknown",
-        official: expect.objectContaining({ configured: false }),
-      }),
-    );
-
-    const officialUpdateWithoutAgent =
-      await integrations.requestUpdateTelegramBot(
-        actor,
-        OFFICIAL_TELEGRAM_BOT_ID,
-        {},
-        [400],
-      );
-    expect(officialUpdateWithoutAgent.body).toStrictEqual({
-      error: {
-        message: "selectedAgentId is required",
-        code: "BAD_REQUEST",
-      },
-    });
-
-    const officialDisconnect = await integrations.requestDisconnectTelegramBot(
-      actor,
-      OFFICIAL_TELEGRAM_BOT_ID,
-      [403],
-    );
-    expect(officialDisconnect.body).toStrictEqual({
-      error: {
-        message: "The official Telegram bot cannot be uninstalled",
-        code: "FORBIDDEN",
-      },
-    });
-
-    const officialLink = await integrations.requestLinkTelegram(
-      actor,
-      { telegramBotId: OFFICIAL_TELEGRAM_BOT_ID },
-      [404],
-    );
-    expect(officialLink.body).toMatchObject({
-      error: { code: "NOT_FOUND" },
-    });
-
-    const authCallback = await integrations.requestTelegramAuthCallback([200]);
-    expect(authCallback.body).toContain("telegram-auth");
-
-    context.mocks.telegram.getMe.mockRejectedValueOnce(new Error("invalid"));
-    const invalidSetup = await integrations.requestTelegramSetupStatus(
-      actor,
-      { botToken: "bad-token" },
-      [400],
-    );
-    expect(invalidSetup.body).toMatchObject({
-      error: { code: "BAD_REQUEST" },
-    });
-
-    context.mocks.telegram.getMe.mockResolvedValue({
-      id: TELEGRAM_BOT_ID,
-      username: "bdd_telegram_bot",
-      can_read_all_group_messages: true,
-    });
-    let registeredTelegramWebhookSecret: string | undefined;
-    context.mocks.telegram.setWebhook.mockImplementation(
-      (...args: readonly unknown[]) => {
-        const webhookSecret = args[2];
-        if (typeof webhookSecret === "string") {
-          registeredTelegramWebhookSecret = webhookSecret;
-        }
-        return Promise.resolve();
-      },
-    );
-
-    const unauthenticatedRegister =
-      await integrations.requestRegisterTelegramBot(
-        null,
-        {
-          botToken: TELEGRAM_BOT_TOKEN,
-          defaultAgentId: agent.agentId,
-        },
-        [401],
-      );
-    expect(unauthenticatedRegister.body).toMatchObject({
-      error: { code: "UNAUTHORIZED" },
-    });
-
-    const setup = await integrations.requestTelegramSetupStatus(
-      actor,
-      {
-        botToken: TELEGRAM_BOT_TOKEN,
-        origin: "https://app.example.test/setup",
-      },
-      [200],
-    );
-    expect(setup.body).toStrictEqual({
-      id: botId,
-      username: "bdd_telegram_bot",
-      domainConfigured: true,
-      privacyDisabled: true,
-    });
-
-    const registered = await integrations.requestRegisterTelegramBot(
-      actor,
-      {
-        botToken: TELEGRAM_BOT_TOKEN,
-        defaultAgentId: agent.agentId,
-      },
-      [201],
-    );
-    expect(registered.body).toMatchObject({
-      id: botId,
-      username: "bdd_telegram_bot",
-      isOwner: true,
-      isConnected: false,
-      tokenStatus: "valid",
-      domainConfigured: true,
-      agent: { id: agent.agentId },
-    });
-    if (!registeredTelegramWebhookSecret) {
-      throw new Error("Expected Telegram registration to configure webhook");
-    }
-
-    const customWebhookUnauthorized = await integrations.requestTelegramWebhook(
-      botId,
-      "{}",
-      { "x-telegram-bot-api-secret-token": "bad-custom-secret" },
-      [401],
-    );
-    expect(customWebhookUnauthorized.body).toBe("Unauthorized");
-
-    const customWebhookNoMessage = await integrations.requestTelegramWebhook(
-      botId,
-      JSON.stringify({ update_id: 2001 }),
-      {
-        "x-telegram-bot-api-secret-token": registeredTelegramWebhookSecret,
-      },
-      [200],
-    );
-    expect(customWebhookNoMessage.body).toBe("OK");
-
-    const customWebhookNoContentMessage =
-      await integrations.requestTelegramWebhook(
-        botId,
-        JSON.stringify({
-          update_id: 2002,
-          message: {
-            message_id: 77,
-            chat: { id: 12_345, type: "private" },
-            from: { id: 54_321, first_name: "BDD" },
-          },
-        }),
-        {
-          "x-telegram-bot-api-secret-token": registeredTelegramWebhookSecret,
-        },
-        [200],
-      );
-    expect(customWebhookNoContentMessage.body).toBe("OK");
-
-    const customConnectPrompt = await integrations.requestTelegramWebhook(
-      botId,
-      JSON.stringify({
-        update_id: 2003,
-        message: {
-          message_id: 78,
-          chat: { id: 12_345, type: "private" },
-          from: { id: 54_321, first_name: "BDD" },
-          text: "hello",
-        },
-      }),
-      {
-        "x-telegram-bot-api-secret-token": registeredTelegramWebhookSecret,
-      },
-      [200],
-    );
-    expect(customConnectPrompt.body).toBe("OK");
-    await flushWaitUntilForTest();
-    expect(JSON.stringify(telegramProviderBodies)).toContain(
-      "https://app.okou.ai/telegram/connect?",
-    );
-
-    const listed = await integrations.requestListTelegramIntegrations(
-      actor,
-      [200],
-    );
-    if (!("bots" in listed.body)) {
-      throw new Error("Expected Telegram integration list response");
-    }
-    expect(listed.body.bots).toContainEqual(
-      expect.objectContaining({
-        id: botId,
-        username: "bdd_telegram_bot",
-        isOwner: true,
-      }),
-    );
-
-    const okouTokenList = await integrations.requestListTelegramBots(
-      actor,
-      [200],
-    );
-    if (!("bots" in okouTokenList.body)) {
-      throw new Error("Expected Telegram bot list response");
-    }
-    expect(okouTokenList.body.bots).toContainEqual(
-      expect.objectContaining({
-        id: botId,
-        username: "bdd_telegram_bot",
-      }),
-    );
-
-    const customLinkStatus = await integrations.readTelegramLinkStatus(
-      actor,
-      botId,
-    );
-    expect(customLinkStatus).toMatchObject({
-      linked: false,
-      installation: {
-        id: botId,
-        botUsername: "bdd_telegram_bot",
-        loginBotId: botId,
-        domainConfigured: true,
-      },
-    });
-
-    const missingLinkAuth = await integrations.requestLinkTelegram(
-      actor,
-      { telegramBotId: botId },
-      [400],
-    );
-    expect(missingLinkAuth.body).toStrictEqual({
-      error: {
-        message: "Either telegramAuth or connectSignature is required",
-        code: "BAD_REQUEST",
-      },
-    });
-
-    const invalidConnectSignature = await integrations.requestLinkTelegram(
-      actor,
-      {
-        telegramBotId: botId,
-        connectSignature: {
-          telegramUserId: "12345",
-          telegramUsername: "bdd_telegram_user",
-          timestamp: Math.floor(now() / 1000),
-          signature: "bad-signature",
-        },
-      },
-      [400],
-    );
-    expect(invalidConnectSignature.body).toMatchObject({
-      error: { code: "BAD_REQUEST" },
-    });
-
-    const invalidTelegramAuth = await integrations.requestLinkTelegram(
-      actor,
-      {
-        telegramBotId: botId,
-        telegramAuth: {
-          id: 12_345,
-          first_name: "BDD",
-          username: "bdd_telegram_user",
-          auth_date: Math.floor(now() / 1000),
-          hash: "bad-hash",
-        },
-      },
-      [400],
-    );
-    expect(invalidTelegramAuth.body).toMatchObject({
-      error: { code: "BAD_REQUEST" },
-    });
-
-    const missingUnlink = await integrations.requestUnlinkTelegram(
-      actor,
-      botId,
-      [404],
-    );
-    expect(missingUnlink.body).toMatchObject({
-      error: { code: "NOT_FOUND" },
-    });
-
-    const missingDefaultAgent = await integrations.requestUpdateTelegramBot(
-      actor,
-      botId,
-      {},
-      [400],
-    );
-    expect(missingDefaultAgent.body).toStrictEqual({
-      error: {
-        message: "defaultAgentId is required",
-        code: "BAD_REQUEST",
-      },
-    });
-
-    const memberUpdate = await integrations.requestUpdateTelegramBot(
-      member,
-      botId,
-      { defaultAgentId: agent.agentId },
-      [403],
-    );
-    expect(memberUpdate.body).toStrictEqual({
-      error: {
-        message:
-          "Only the bot owner or an org admin can change the default agent",
-        code: "FORBIDDEN",
-      },
-    });
-
-    const updated = await integrations.requestUpdateTelegramBot(
-      actor,
-      botId,
-      { defaultAgentId: agent.agentId },
-      [200],
-    );
-    expect(updated.body).toMatchObject({
-      id: botId,
-      agent: { id: agent.agentId },
-    });
-
-    const uploadInit = await integrations.requestTelegramUploadInit(
-      actor,
-      {
-        filename: "telegram-note.txt",
-        contentType: "text/plain",
-        length: 12,
-      },
-      [200],
-    );
-    expect(uploadInit.body).toMatchObject({
-      filename: "telegram-note.txt",
-      contentType: "text/plain",
-      size: 12,
-    });
-    if (!("uploadUrl" in uploadInit.body)) {
-      throw new Error("Expected Telegram upload init response");
-    }
-    expect(uploadInit.body.uploadUrl).toMatch(/^https?:\/\//);
-
-    const sentMessage = await integrations.requestSendTelegramMessage(
-      actor,
-      {
-        botId,
-        chatId: "12345",
-        text: "BDD Telegram message",
-        replyToMessageId: 7,
-        messageThreadId: 9,
-      },
-      [200],
-    );
-    expect(sentMessage.body).toStrictEqual({
-      ok: true,
-      messageId: 321,
-      chatId: "12345",
-    });
-
-    if (!("avatarUrl" in registered.body)) {
-      throw new Error("Expected Telegram register response");
-    }
-    const avatarUrl = registered.body.avatarUrl ?? "";
-    expect(avatarUrl).not.toBe("");
-    const parsedAvatarUrl = new URL(avatarUrl, "http://api.test");
-    context.mocks.telegram.getUserProfilePhotos.mockResolvedValue([]);
-    const avatar = await integrations.requestTelegramAvatar(
-      null,
-      botId,
-      {
-        exp: parsedAvatarUrl.searchParams.get("exp") ?? undefined,
-        sig: parsedAvatarUrl.searchParams.get("sig") ?? undefined,
-      },
-      [200],
-    );
-    expect(avatar.headers.get("content-type")).toContain("image/svg+xml");
-
-    const unauthenticatedAvatar = await integrations.requestTelegramAvatar(
-      null,
-      botId,
-      {},
-      [401],
-    );
-    expect(unauthenticatedAvatar.body).toStrictEqual({
-      error: { message: "Not authenticated", code: "UNAUTHORIZED" },
-    });
-
-    const missingAvatar = await integrations.requestTelegramAvatar(
-      actor,
-      "555555555",
-      {},
-      [404],
-    );
-    expect(missingAvatar.body).toMatchObject({
-      error: { code: "NOT_FOUND" },
-    });
-
-    const memberDisconnect = await integrations.requestDisconnectTelegramBot(
-      member,
-      botId,
-      [403],
-    );
-    expect(memberDisconnect.body).toStrictEqual({
-      error: {
-        message: "Only the bot owner or an org admin can uninstall this bot",
-        code: "FORBIDDEN",
-      },
-    });
-
-    const disconnected = await integrations.requestDisconnectTelegramBot(
-      actor,
-      botId,
-      [204],
-    );
-    expect(disconnected.status).toBe(204);
-
-    const afterDisconnect = await integrations.requestListTelegramIntegrations(
-      actor,
-      [200],
-    );
-    expect(afterDisconnect.body).toMatchObject({
-      bots: expect.not.arrayContaining([
-        expect.objectContaining({ id: botId }),
-      ]),
-    });
-  });
-
   it("keeps Telegram Fast footers bound to the originating run", async () => {
     mockEnv("APP_URL", "https://app.okou.ai");
     bdd.acceptAgentStorageWrites();
@@ -6658,16 +5649,19 @@ describe("INT-02: Telegram integration", () => {
     const actor = integrations.user();
     await integrations.enableOkouDebug(actor);
     await configureFastCodexPreference(actor);
-    const agent = await bdd.createAgent(actor, {
-      displayName: "BDD Telegram Fast agent",
-    });
 
     const telegramBotId = randomInt(1_000_000_000, 9_999_999_999);
     const telegramBotToken = `${telegramBotId}:bdd-fast-token`;
-    const botId = String(telegramBotId);
+    const botId = OFFICIAL_TELEGRAM_BOT_ID;
+    mockEnv("TELEGRAM_OFFICIAL_BOT_TOKEN", telegramBotToken);
+    mockEnv("TELEGRAM_OFFICIAL_BOT_USERNAME", "bdd_official_fast_bot");
+    mockEnv(
+      "TELEGRAM_OFFICIAL_WEBHOOK_SECRET",
+      TELEGRAM_OFFICIAL_WEBHOOK_SECRET,
+    );
+    const webhookSecret = TELEGRAM_OFFICIAL_WEBHOOK_SECRET;
     const sentMessages: Record<string, unknown>[] = [];
     server.use(
-      telegramDomainProbe(),
       http.post(
         `https://api.telegram.org/bot${telegramBotToken}/sendChatAction`,
         () => {
@@ -6685,32 +5679,6 @@ describe("INT-02: Telegram integration", () => {
         },
       ),
     );
-    context.mocks.telegram.getMe.mockResolvedValue({
-      id: telegramBotId,
-      username: "bdd_fast_bot",
-      can_read_all_group_messages: true,
-    });
-    let webhookSecret: string | undefined;
-    context.mocks.telegram.setWebhook.mockImplementation(
-      (...args: readonly unknown[]) => {
-        const secret = args[2];
-        if (typeof secret === "string") {
-          webhookSecret = secret;
-        }
-        return Promise.resolve();
-      },
-    );
-    await integrations.requestRegisterTelegramBot(
-      actor,
-      { botToken: telegramBotToken, defaultAgentId: agent.agentId },
-      [201],
-    );
-    if (!webhookSecret) {
-      throw new Error(
-        "Expected Telegram registration to configure a webhook secret",
-      );
-    }
-
     const telegramUserId = randomInt(100_000_000, 999_999_999);
     await integrations.requestLinkTelegram(
       actor,
@@ -6795,19 +5763,23 @@ describe("INT-02: Telegram integration", () => {
     const actor = integrations.user();
     await runs.grantProEntitlement(actor);
     await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
-    const agent = await bdd.createAgent(actor, {
-      displayName: "BDD Telegram typing agent",
-    });
 
     const typingBotId = randomInt(1_000_000_000, 9_999_999_999);
     const typingBotToken = `${typingBotId}:bdd-typing-token`;
-    const botId = String(typingBotId);
+    const botId = OFFICIAL_TELEGRAM_BOT_ID;
+    mockEnv("TELEGRAM_OFFICIAL_BOT_TOKEN", typingBotToken);
+    mockEnv("TELEGRAM_OFFICIAL_BOT_USERNAME", "bdd_official_typing_bot");
+    mockEnv(
+      "TELEGRAM_OFFICIAL_WEBHOOK_SECRET",
+      TELEGRAM_OFFICIAL_WEBHOOK_SECRET,
+    );
+    const webhookSecret = TELEGRAM_OFFICIAL_WEBHOOK_SECRET;
+    await bdd.readOnboardingStatus(actor);
     const chatActions: {
       readonly chat_id: string;
       readonly action: string;
     }[] = [];
     server.use(
-      telegramDomainProbe(),
       http.post(
         `https://api.telegram.org/bot${typingBotToken}/sendChatAction`,
         async ({ request }) => {
@@ -6827,34 +5799,6 @@ describe("INT-02: Telegram integration", () => {
         },
       ),
     );
-    context.mocks.telegram.getMe.mockResolvedValue({
-      id: typingBotId,
-      username: "bdd_typing_bot",
-      can_read_all_group_messages: true,
-    });
-    let webhookSecret: string | undefined;
-    context.mocks.telegram.setWebhook.mockImplementation(
-      (...args: readonly unknown[]) => {
-        const secret = args[2];
-        if (typeof secret === "string") {
-          webhookSecret = secret;
-        }
-        return Promise.resolve();
-      },
-    );
-    await integrations.requestRegisterTelegramBot(
-      actor,
-      { botToken: typingBotToken, defaultAgentId: agent.agentId },
-      [201],
-    );
-    if (!webhookSecret) {
-      throw new Error(
-        "Expected Telegram registration to configure a webhook secret",
-      );
-    }
-
-    // Link the actor with a valid Telegram login hash — the test knows the
-    // bot token because it registered the bot through the API.
     const telegramUserId = randomInt(100_000_000, 999_999_999);
     await integrations.requestLinkTelegram(
       actor,

@@ -28,10 +28,8 @@ import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { userCache } from "@okouai/db/schema/user-cache";
 import { and, asc, count, desc, eq, gte, inArray, lte } from "drizzle-orm";
 
-import { nowDate } from "../../lib/time";
 import { readPiLangfuseServerConfig } from "../../lib/pi-langfuse-debug";
 import { db$, type Db } from "../external/db";
-import { sandboxCapacityPredicate } from "./pi-inference-lifecycle.service";
 import {
   activePaidConcurrencySlots,
   cappedBaseConcurrencyLimit,
@@ -40,7 +38,6 @@ import {
 import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import { personalSubscriptionAccountIdentity } from "./personal-subscription-recovery.service";
 
-const PENDING_RUN_TTL_MS = 15 * 60 * 1000;
 type ReadDb = Pick<Db, "select">;
 type RunningTaskItem = QueueResponse["runningTasks"][number];
 type RunSourceRow = Pick<
@@ -79,54 +76,51 @@ function effectiveConcurrencyLimit(
   });
 }
 
+/** One `active_agent_runs` row is one occupied slot; see the admission count. */
 async function concurrencyUsage(
   db: ReadDb,
   orgId: string,
 ): Promise<{
   readonly memberUsage: ConcurrencyMemberUsage[];
 }> {
-  const observedAt = nowDate();
-  const staleThreshold = new Date(observedAt.getTime() - PENDING_RUN_TTL_MS);
-  const active = count().as("active");
-  const activeMembers = db
-    .select({
-      userId: agentRuns.userId,
-      name: userCache.name,
-      email: userCache.email,
-      active,
-    })
-    .from(activeAgentRuns)
-    .innerJoin(agentRuns, eq(agentRuns.id, activeAgentRuns.runId))
-    .leftJoin(userCache, eq(activeAgentRuns.userId, userCache.userId))
-    .where(
-      and(
-        eq(activeAgentRuns.orgId, orgId),
-        sandboxCapacityPredicate(staleThreshold),
-      ),
-    )
-    .groupBy(agentRuns.userId, userCache.name, userCache.email)
-    .as("active_member_usage");
+  const active = count();
   const rows = await db
-    .select({
-      userId: activeMembers.userId,
-      name: activeMembers.name,
-      email: activeMembers.email,
-      active: activeMembers.active,
-    })
-    .from(activeMembers)
-    .orderBy(desc(activeMembers.active), asc(activeMembers.userId));
+    .select({ userId: activeAgentRuns.userId, active })
+    .from(activeAgentRuns)
+    .where(eq(activeAgentRuns.orgId, orgId))
+    .groupBy(activeAgentRuns.userId)
+    .orderBy(desc(active), asc(activeAgentRuns.userId));
+  const users =
+    rows.length > 0
+      ? await db
+          .select({
+            userId: userCache.userId,
+            name: userCache.name,
+            email: userCache.email,
+          })
+          .from(userCache)
+          .where(
+            inArray(
+              userCache.userId,
+              rows.map((row) => {
+                return row.userId;
+              }),
+            ),
+          )
+      : [];
+  const displayNames = new Map(
+    users.map((user) => {
+      return [user.userId, user.name?.trim() || user.email] as const;
+    }),
+  );
 
   return {
-    memberUsage: rows.flatMap((row) => {
-      return row.userId === null
-        ? []
-        : [
-            {
-              userId: row.userId,
-              displayName: row.name?.trim() || row.email || "unknown",
-              active: Number(row.active),
-            },
-          ];
+    memberUsage: rows.map((row) => {
+      return {
+        userId: row.userId,
+        displayName: displayNames.get(row.userId) || "unknown",
+        active: row.active,
+      };
     }),
   };
 }

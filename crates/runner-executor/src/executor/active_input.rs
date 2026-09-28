@@ -1,12 +1,14 @@
 //! Active-input forwarding from a Runner source to Guest control.
 //!
-//! The API source reads the next steerable input prompt of the run. The Guest
-//! declares an accepted input steered; the Runner only forwards it once.
+//! The API source reads the next prompt or time-budget warning targeted at the
+//! run. Both use the same event identity and materialized text. The Guest declares
+//! an accepted input steered; the Runner only forwards it once.
 //!
 //! An API source reads when the run starts and after each wakeup (an
 //! `active-input` push for the run, or an Ably reconnect). A failed read or a
 //! forward the Guest did not accept is not retried; the next wakeup reads
-//! again, and an input no run steers is picked as the thread's next run.
+//! again. An unsteered prompt stays queued for the next run; a budget warning
+//! expires with its target run.
 
 use std::time::Duration;
 

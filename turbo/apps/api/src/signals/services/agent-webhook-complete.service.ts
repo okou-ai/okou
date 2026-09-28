@@ -29,10 +29,7 @@ import {
   dispatchRunCallbacks$,
   undeliveredChatCallbackIdForRun,
 } from "./agent-run-callback.service";
-import {
-  consumeCompletedActiveInputDeliveries,
-  expireRunTimeBudgetInput,
-} from "./active-input-delivery.service";
+import { expireRunTimeBudgetInput } from "./active-input-delivery.service";
 import { projectLegacyCheckpointStorage } from "./storage-legacy-projection.service";
 import { maybeEmitRunUsageEvent$ } from "./chat-usage-event.service";
 import { processOrgUsageEvents$ } from "./credit-usage.service";
@@ -43,7 +40,7 @@ import {
   persistAgentCheckpointInTransaction,
   prepareAgentCheckpointPersistence$,
 } from "./agent-webhook-checkpoints.service";
-import { lockPiMemoryCandidateStorage } from "./pi-memory-stage1-candidate.service";
+import { lockPiMemoryPhase2CompletionStorage } from "./pi-memory-phase2-maintenance.service";
 import {
   releaseRunSlots,
   transitionAgentRunsToTerminal,
@@ -96,13 +93,10 @@ export interface DeliveryFinalizationSideEffectsInput {
   readonly chatEventsAppended: boolean;
 }
 
-export type CompleteSideEffectsInput = (
+export type CompleteSideEffectsInput =
   | TerminalSideEffectsInput
   | CancellationRecoverySideEffectsInput
-  | DeliveryFinalizationSideEffectsInput
-) & {
-  readonly cleanupPiSandboxHandoff?: true;
-};
+  | DeliveryFinalizationSideEffectsInput;
 
 export type DispatchCompleteSideEffectsInput = CompleteSideEffectsInput & {
   readonly skipChatCallback?: true;
@@ -125,6 +119,7 @@ type CompletionResponse =
   | AgentCheckpointErrorResponse;
 
 interface RunRecord extends AgentRunFailureLogSnapshot {
+  readonly id: string;
   readonly apiStartedAt: Date | null;
   readonly cancellationRecoveryCompleted: boolean | null;
   readonly error: string | null;
@@ -264,6 +259,7 @@ async function loadCompletionRun(
 ): Promise<RunRecord | null> {
   const [run] = await db
     .select({
+      id: agentRuns.id,
       apiStartedAt: agentRuns.apiStartedAt,
       error: agentRuns.error,
       orgId: agentRuns.orgId,
@@ -343,6 +339,7 @@ async function lockCompletionRun(
 ): Promise<RunRecord | null> {
   const [run] = await tx
     .select({
+      id: agentRuns.id,
       apiStartedAt: agentRuns.apiStartedAt,
       error: agentRuns.error,
       orgId: agentRuns.orgId,
@@ -474,7 +471,6 @@ interface CompletionTransitionContext {
   readonly checkpointInput: AgentCheckpointInput | null;
   readonly checkpointPreparation: PreparedAgentCheckpoint | null;
   readonly expectedChatThreadId: string | null;
-  readonly finalization: ActiveInputFinalization;
 }
 
 async function completeActiveAgentRunTransition(
@@ -482,7 +478,6 @@ async function completeActiveAgentRunTransition(
   input: CompleteAgentRunInput,
   run: RunRecord,
   prepared: PreparedCompletion,
-  finalization: ActiveInputFinalization,
 ): Promise<CompletionTransactionResult> {
   const completedAt = nowDate();
   await applyTerminalCompletion(tx, input, run, prepared, completedAt);
@@ -495,7 +490,7 @@ async function completeActiveAgentRunTransition(
       transitionError: prepared.error,
       transitionFailureKind: prepared.failureKind,
       transitionFailureReason: prepared.failureReason,
-      finalization,
+      finalization: noActiveInputFinalization(),
     },
   };
 }
@@ -504,8 +499,8 @@ async function lockCompletionPiMemoryStorage(
   tx: Tx,
   run: RunRecord,
 ): Promise<void> {
-  if (run.launchSnapshot?.framework === "pi") {
-    await lockPiMemoryCandidateStorage(tx, run);
+  if (run.chatThreadId === null && run.launchSnapshot?.framework === "pi") {
+    await lockPiMemoryPhase2CompletionStorage(tx, run);
   }
 }
 
@@ -526,12 +521,8 @@ async function completeAgentRunTransition(
   context: CompletionTransitionContext,
   signal: AbortSignal,
 ): Promise<CompletionTransactionResult> {
-  const {
-    checkpointInput,
-    checkpointPreparation,
-    expectedChatThreadId,
-    finalization,
-  } = context;
+  const { checkpointInput, checkpointPreparation, expectedChatThreadId } =
+    context;
   // Thread admission is the active run row, which the terminal transition
   // releases; the run row lock serializes completion against other writers.
   const run = await lockCompletionRun(tx, input);
@@ -586,13 +577,7 @@ async function completeAgentRunTransition(
     if (!prepared) {
       throw new Error("Active agent run completion was not prepared");
     }
-    return completeActiveAgentRunTransition(
-      tx,
-      input,
-      run,
-      prepared,
-      finalization,
-    );
+    return completeActiveAgentRunTransition(tx, input, run, prepared);
   }
   if (run.status === "cancelled") {
     await applyCancelledCompletionMetadata(tx, input, run);
@@ -604,7 +589,7 @@ async function completeAgentRunTransition(
       transitioned: false,
       responseStatus: run.status === "completed" ? "completed" : "failed",
       ...persistedTerminalError(run),
-      finalization,
+      finalization: noActiveInputFinalization(),
     },
   };
 }
@@ -615,10 +600,6 @@ function completionResponse(
   redriveTerminalChatCallback: boolean,
 ): CompletionResponse {
   let sideEffects: CompleteSideEffectsInput | undefined;
-  const piCleanup =
-    commit.run.launchSnapshot?.framework === "pi"
-      ? ({ cleanupPiSandboxHandoff: true } as const)
-      : {};
   if (commit.transitioned || redriveTerminalChatCallback) {
     sideEffects = {
       kind: "terminal",
@@ -637,7 +618,6 @@ function completionResponse(
             },
           }
         : {}),
-      ...piCleanup,
     };
   } else if (
     commit.run.status === "cancelled" &&
@@ -651,7 +631,6 @@ function completionResponse(
       userId: commit.run.userId,
       chatThreadId: commit.run.chatThreadId,
       chatEventsAppended: commit.finalization.chatEventsAppended,
-      ...piCleanup,
     };
   } else if (
     commit.finalization.finalized &&
@@ -664,7 +643,6 @@ function completionResponse(
       userId: commit.run.userId,
       chatThreadId: commit.run.chatThreadId,
       chatEventsAppended: commit.finalization.chatEventsAppended,
-      ...piCleanup,
     };
   }
   return {
@@ -938,25 +916,6 @@ export const completeAgentRun$ = command(
       }
       checkpointPreparation = preparation.prepared;
     }
-    // Consume the steered sources before the terminal transition releases the
-    // slot, so the pick that release triggers cannot launch them again.
-    const deliveryIds = input.body.activeInputDeliveryIds ?? [];
-    const activeInputAppended =
-      initialRun.chatThreadId !== null && deliveryIds.length > 0
-        ? await consumeCompletedActiveInputDeliveries(
-            db,
-            {
-              runId: input.body.runId,
-              chatThreadId: initialRun.chatThreadId,
-              deliveryIds,
-            },
-            signal,
-          )
-        : false;
-    const finalization: ActiveInputFinalization = {
-      finalized: activeInputAppended,
-      chatEventsAppended: activeInputAppended,
-    };
     let expectedChatThreadId = initialRun.chatThreadId;
     let commit: ReleasedCompletionCommit;
     while (true) {
@@ -968,7 +927,6 @@ export const completeAgentRun$ = command(
             checkpointInput,
             checkpointPreparation,
             expectedChatThreadId,
-            finalization,
           },
           signal,
         );

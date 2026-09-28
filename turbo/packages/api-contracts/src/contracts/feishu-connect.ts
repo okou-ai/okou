@@ -103,7 +103,7 @@ const feishuInstallationStatusSchema = z.object({
   messageReceived: z.boolean(),
   tenantKey: z.string().nullable(),
   tenantName: z.string().nullable(),
-  defaultAgentId: z.string().uuid(),
+  defaultAgentId: z.string().uuid().nullable(),
   defaultAgentName: z.string().nullable(),
 });
 
@@ -166,7 +166,6 @@ export const feishuConnectContract = c.router({
       appSecret: z.string().trim().min(1),
       verificationToken: z.string().trim().min(1),
       encryptKey: z.string().trim().optional().default(""),
-      defaultAgentId: z.string().uuid(),
       installationId: z.string().uuid().optional(),
       createNew: z.boolean().optional(),
     }),
@@ -185,7 +184,6 @@ export const feishuConnectContract = c.router({
     headers: authHeadersSchema,
     pathParams: z.object({ installationId: z.string().uuid() }),
     body: z.object({
-      defaultAgentId: z.string().uuid(),
       setupCompleted: z.boolean().optional(),
     }),
     responses: {

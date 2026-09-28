@@ -20,7 +20,6 @@ async fn pi_initial_prompt_stdin_failure_reap_escalates_to_sigkill()
         r#"#!/bin/sh
 set -eu
 trap '' TERM
-printf '%s\n' '{"type":"vm0_pi_api_first_turn_boundary","schemaVersion":2,"sandboxEventSequenceStart":1,"ownershipTransferMode":"sandbox-first"}'
 IFS= read -r state_command
 case "$state_command" in
   *'"type":"get_state"'*) ;;

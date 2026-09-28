@@ -5,7 +5,6 @@ import {
   createAgentSessionRuntime,
   runRpcMode,
   SessionManager,
-  type AgentSession,
   type CreateAgentSessionRuntimeFactory,
 } from "@earendil-works/pi-coding-agent";
 
@@ -23,11 +22,6 @@ import type {
 import type { PiPreparationObserver } from "./preparation-timing";
 import type { PiAgentModelConfig } from "./types";
 
-export type PiSandboxOwnershipTransferMode =
-  | "sandbox-first"
-  | "pending-tool-continuation"
-  | "settled-session-continuation";
-
 export interface PiLangfuseRuntimeConfig {
   readonly relay: { readonly endpoint: string; readonly token: string };
   readonly userId?: string;
@@ -39,7 +33,6 @@ const LANGFUSE_RUNTIME_ENVIRONMENT = {
   spanId: "LANGFUSE_PI_PARENT_SPAN_ID",
   sessionId: "LANGFUSE_PI_PARENT_SESSION_ID",
   depth: "LANGFUSE_PI_PARENT_DEPTH",
-  continuation: "PI_LANGFUSE_CONTINUATION",
   sandboxWaitStartedAt: "OKOU_PI_LANGFUSE_SANDBOX_WAIT_STARTED_AT",
 } as const;
 
@@ -55,7 +48,6 @@ const LANGFUSE_CONFIG_ENVIRONMENT = {
 
 export function installLangfuseRuntimeEnvironment(
   parent: PiLangfuseParent | undefined,
-  ownershipTransferMode: PiSandboxOwnershipTransferMode,
   config?: PiLangfuseRuntimeConfig,
 ): () => void {
   const enabled = process.env.OKOU_PI_LANGFUSE_DEBUG_ENABLED === "true";
@@ -90,9 +82,6 @@ export function installLangfuseRuntimeEnvironment(
     process.env[LANGFUSE_RUNTIME_ENVIRONMENT.sandboxWaitStartedAt] = String(
       parent.sandboxWaitStartedAt,
     );
-  }
-  if (enabled && ownershipTransferMode === "pending-tool-continuation") {
-    process.env[LANGFUSE_RUNTIME_ENVIRONMENT.continuation] = "true";
   }
 
   return () => {
@@ -165,37 +154,6 @@ function createRuntimeFactory(args: {
   };
 }
 
-export async function resumePiApiFirstTurn(
-  session: AgentSession,
-  options?: Parameters<AgentSession["continuePendingTools"]>[0],
-): Promise<void> {
-  await session.continuePendingTools(options);
-}
-
-function installOwnershipTransferStartup(
-  session: AgentSession,
-  mode: PiSandboxOwnershipTransferMode,
-): void {
-  if (mode === "sandbox-first") {
-    return;
-  }
-  const originalPrompt = session.prompt.bind(session);
-  session.prompt = async (_text, options) => {
-    if (mode === "pending-tool-continuation") {
-      await resumePiApiFirstTurn(session, {
-        preflightResult(success) {
-          // Both native owners are established before ordinary input or RPC ack.
-          session.prompt = originalPrompt;
-          options?.preflightResult?.(success);
-        },
-      });
-    } else {
-      session.prompt = originalPrompt;
-      options?.preflightResult?.(true);
-    }
-  };
-}
-
 /** Run Pi's official AgentSession RPC host until stdin closes. */
 export async function runPiOfficialRpcMode(args: {
   readonly sessionId: string;
@@ -208,11 +166,10 @@ export async function runPiOfficialRpcMode(args: {
   readonly resourceSnapshot?: PiPreheatedResourceSnapshot;
   readonly onMemoryRecallOutcome?: (outcome: PiMemoryRecallOutcome) => void;
   readonly onMemoryToolSourceUse?: (sourceUse: PiMemoryToolSourceUse) => void;
-  /** Sandbox-side session preparation phases; the API path has its own observer. */
+  /** Sandbox-side session preparation phases. */
   readonly onPreparationTiming?: PiPreparationObserver;
   readonly onFirstTool?: () => void;
   readonly sessionFile: string;
-  readonly ownershipTransferMode: PiSandboxOwnershipTransferMode;
   readonly langfuseParent?: PiLangfuseParent;
   readonly langfuseConfig?: PiLangfuseRuntimeConfig;
 }): Promise<never> {
@@ -221,7 +178,6 @@ export async function runPiOfficialRpcMode(args: {
     args.langfuseConfig !== undefined;
   const restoreLangfuseEnvironment = installLangfuseRuntimeEnvironment(
     args.langfuseParent,
-    args.ownershipTransferMode,
     args.langfuseConfig,
   );
   try {
@@ -235,10 +191,6 @@ export async function runPiOfficialRpcMode(args: {
       agentDir: args.agentDir,
       sessionManager,
     });
-    installOwnershipTransferStartup(
-      runtime.session,
-      args.ownershipTransferMode,
-    );
     let firstTool = true;
     const unsubscribe = runtime.session.subscribe((event) => {
       if (firstTool && event.type === "tool_execution_start") {

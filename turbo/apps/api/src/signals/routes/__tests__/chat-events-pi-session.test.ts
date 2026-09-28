@@ -1,7 +1,6 @@
-import { piApiFirstTurnManifestSchema } from "@okouai/api-contracts/contracts/runners";
+import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
-import { env } from "../../../lib/env";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { chatEventDisplayText } from "./helpers/chat-event";
 import {
@@ -32,8 +31,8 @@ const {
   cancelChatRun,
   mockPiCheckpointObjectStore,
   mockPiResourceArchiveDownloads,
-  expectPiSandboxHandoff,
   completeSandboxFirstPiRun,
+  piSandboxBaseSession,
 } = createChatEventsFixture(context);
 
 describe("CHAT-02: model-first provider policies", () => {
@@ -72,12 +71,8 @@ describe("CHAT-02: model-first provider policies", () => {
       const claim = await claimChatRun(runnerGroup, run.runId);
       expect(claim.claim.piModelConfig).toMatchObject({ model });
       if (index === 0) {
-        expect(
-          expectPiSandboxHandoff(run.runId, checkpointObjects).manifest,
-        ).toMatchObject({
-          schemaVersion: 3,
-          baseSession: { sessionId: run.threadId, sha256: null },
-        });
+        expect(claim.claim.resumeSession).toBeNull();
+        expect(claim.claim.piSessionId).toBe(run.threadId);
         expect(claim.claim.piModelConfig).toMatchObject({
           thinkingLevel: "max",
         });
@@ -216,9 +211,6 @@ describe("CHAT-02: model-first provider policies", () => {
     );
     // A new Pi generation starts from a fresh Sandbox session; prior visible
     // turns travel only through the run context instructions.
-    expect(
-      expectPiSandboxHandoff(returnedPi.runId, checkpointObjects).manifest,
-    ).toMatchObject({ schemaVersion: 3, baseSession: { sha256: null } });
     await flushWaitUntilForTest();
     const returnedPiClaim = await claimChatRun(runnerGroup, returnedPi.runId);
     expect(returnedPiClaim.claim.resumeSession).toBeNull();
@@ -281,12 +273,7 @@ describe("CHAT-02: model-first provider policies", () => {
       prompt: piFollowUpPrompt,
       model: piModel,
     });
-    const piFollowUpManifestKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${piFollowUp.runId}/manifest.json`;
-    await expect
-      .poll(() => {
-        return checkpointObjects.has(piFollowUpManifestKey);
-      })
-      .toBe(true);
+    await flushWaitUntilForTest();
     const piFollowUpRun = await api.readRun(actor, piFollowUp.runId);
     const piFollowUpAppend = piFollowUpRun.appendSystemPrompt ?? "";
     expect(piFollowUpAppend).not.toContain("# Web Chat Run Context");
@@ -313,27 +300,15 @@ describe("CHAT-02: model-first provider policies", () => {
     });
     expect(piFollowUpClaim.claim.piSessionId).toBe(firstPi.threadId);
     expect(piFollowUpClaim.claim.piLaunchConfig).toMatchObject({
-      apiFirstTurn: {
-        baseSession: {
-          sessionId: firstPi.threadId,
-          sha256: resumedPiSession.historyRef.hash,
-        },
-      },
+      schemaVersion: 2,
     });
-    const piFollowUpManifest = piApiFirstTurnManifestSchema.parse(
-      JSON.parse(
-        checkpointObjects.get(piFollowUpManifestKey)?.toString("utf8") ?? "{}",
-      ),
-    );
-    expect(piFollowUpManifest).toMatchObject({
-      schemaVersion: 4,
-      mode: "sandbox-first",
-      baseSession: {
-        sessionId: firstPi.threadId,
-        sha256: resumedPiSession.historyRef.hash,
-      },
-      session: { sha256: resumedPiSession.historyRef.hash },
-    });
+    expect(
+      MemoryPiSession.fromJsonl(
+        piSandboxBaseSession(piFollowUpClaim.claim, checkpointObjects).toString(
+          "utf8",
+        ),
+      ).getSessionId(),
+    ).toBe(firstPi.threadId);
     await cancelChatRun(
       actor,
       piFollowUp.runId,

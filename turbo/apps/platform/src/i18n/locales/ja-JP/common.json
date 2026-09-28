@@ -3515,21 +3515,12 @@
         "alreadyDescriptionNamed": "すでに {{bot}} に接続されています。 Telegram でメッセージを送信してチャットを開始してください。",
         "alreadyTitle": "すでに Telegram に接続されています",
         "back": "Telegram 設定に戻る",
-        "botFallback": "このボット",
-        "botFatherHandle": "@BotFather",
         "checkingConnectionDescription": "Telegram 接続を確認するまでお待ちください。",
         "checkingConnectionTitle": "接続を確認しています...",
-        "checkingDomain": "ドメインのステータスを確認しています...",
         "checkingSession": "{{brandName}} セッションを確認するまでお待ちください。",
         "connectDescription": "アカウントをこの Telegram ボットにリンクすると、Telegram からエージェントと直接対話できるようになります。",
         "connectTitle": "Telegram に接続します",
         "continue": "Telegram に進みます",
-        "domainDescription": "Telegram Web ログインは {{bot}} に対して有効になっていません。",
-        "domainIn": "で ",
-        "domainInstructionsAfter": "、ボットを選択し、ドメインを次のように設定します。",
-        "domainKeepOpen": "ドメインを保存した後、このページを開いたままにしてください。 /connect を使用して Telegram から接続することもできます。",
-        "domainSend": "、送信します ",
-        "domainTitle": "Telegram ログイン ドメインを設定する",
         "errorFallback": "Telegram に接続できませんでした。 Telegram から再試行してください。",
         "invalidSignature": "このリンクの署名は無効です。",
         "invalidTimestamp": "このリンクのタイムスタンプは無効です。",
@@ -3539,9 +3530,7 @@
         "linkIncomplete": "Telegram から新しい /connect リンクを開いて、再試行してください。",
         "linkIncompleteTitle": "接続リンクが不完全です",
         "open": "Telegram を開く",
-        "openBotFather": "BotFatherを開く",
         "refresh": "このページを更新して、もう一度お試しください。",
-        "setDomainCommand": "/setdomain",
         "signInButton": "{{brandName}} にサインインします",
         "signInCheckFailed": "サインインを確認できませんでした",
         "signInDescription": "この Telegram ユーザーに接続する前に、{{brandName}} アカウントを使用してください。",
@@ -3638,9 +3627,7 @@
         }
       },
       "errors": {
-        "githubAuthorizationWindow": "認証ウィンドウを開けませんでした",
-        "telegramDomain": "ドメインはまだ Telegram に表示されていません。 BotFather を確認して再試行してください。",
-        "telegramPrivacy": "プライバシーモードはまだオンになっているようです。 BotFather でこれをオフにして、もう一度試してください。"
+        "githubAuthorizationWindow": "認証ウィンドウを開けませんでした"
       },
       "feishu": {
         "addBot": "ボットの追加",
@@ -3908,79 +3895,17 @@
         "uninstallTitle": "Lark ボットをアンインストールしますか?"
       },
       "telegram": {
-        "addBot": "ボットの追加",
-        "addDescription": "BotFather の各手順を完了してから、ワークスペース ボットを作成します。",
-        "adding": "追加中...",
-        "addTitle": "Telegram ボットを追加",
-        "agentAria": "{{bot}} のデフォルト エージェント",
         "backToIntegrations": "統合に戻る",
         "botFallback": "Telegram ボット",
-        "bots": "Telegram ボット",
-        "botToken": "ボットトークン",
-        "botTokenPlaceholder": "123456:ABC-DEF",
-        "checking": "確認中...",
-        "copied": "コピーしました！",
-        "copyAria": "{{value}} をコピーします",
-        "copyTitle": "クリックしてコピー",
-        "create": {
-          "description": "{{brandName}} は、このボットを登録し、その Webhook を構成します。セットアップ後、グループ内でボットにメンションするか、DM を送信して、選択したエージェントと会話します。",
-          "descriptionNamed": "{{brandName}} は {{bot}} を登録し、その Webhook を構成します。セットアップ後、グループ内でボットにメンションするか、DM を送信して、選択したエージェントと会話します。",
-          "title": "統合を作成する準備ができました"
-        },
-        "defaultAgent": "デフォルトエージェント",
         "disconnectAria": "{{bot}} を切断します",
         "documentTitle": "Telegram",
-        "domain": {
-          "detected": "ドメインが検出されました",
-          "instructionAfter": "、このボットを選択し、ドメインを次のように設定します。 ",
-          "instructionEnd": "。 Telegram は、このドメインを使用して、このボットの接続フローを許可します。",
-          "instructionStart": "{{botFather}} で、送信します ",
-          "title": "Telegram ログイン ドメインを設定する"
-        },
-        "emptyDescription": "ボット トークンを追加して、Telegram メッセージのエージェントへのルーティングを開始します。",
-        "emptyTitle": "Telegram ボットはまだありません",
-        "invalidTokenDescription": "BotFather からの新しいトークンを使用してボットを再インストールします。",
         "loadError": "Telegram 設定を読み込めませんでした。",
         "moreOptions": "{{bot}} のその他のオプション",
-        "newBotToken": "新しいボットトークン",
         "notConnected": "接続されていません",
         "officialBot": "Telegram 公式ボット",
         "officialDescription": "{{brandName}} が提供する公式 bot。",
         "officialMissing": "公式ボット設定がありません。",
-        "pageDescription": "このワークスペースのボット ルーティングを管理する",
-        "privacy": {
-          "instructionAfter": "、このボットを選択し、プライバシー モードを無効にします。これにより、エージェントはメンションや返信に関するグループのコンテキストを読み取ることができます。",
-          "instructionStart": "{{botFather}} で、送信します ",
-          "off": "プライバシーモードがオフになっています",
-          "title": "オプション: プライバシー モードをオフにする"
-        },
-        "registerAria": "Telegram ボットを登録する",
-        "reinstall": "再インストール",
-        "reinstallDescription": "{{bot}} の新しい BotFather トークンを貼り付けます。トークンはこの同じボットに属している必要があります。",
-        "reinstalling": "再インストール中...",
-        "reinstallTargetFallback": "このボット",
-        "reinstallTitle": "Telegram ボットを再インストールします",
-        "selectAgent": "エージェントの選択",
-        "steps": {
-          "back": "戻る",
-          "create": "作成",
-          "domain": "ドメイン",
-          "next": "次へ",
-          "privacy": "プライバシー",
-          "token": "トークン"
-        },
-        "token": {
-          "instructionAfter": "、名前とユーザー名を選択し、以下のトークンを貼り付けます。",
-          "open": "開く ",
-          "send": "、送信します ",
-          "title": "BotFather でボット トークンを作成する",
-          "verified": "トークンが検証されました"
-        },
-        "tokenInvalid": "トークンが無効です",
-        "uninstallAria": "{{bot}} をアンインストールします",
-        "uninstallDescription": "これにより、ワークスペースから {{bot}} が削除され、それを使用するユーザーの Telegram アクセスが切断されます。この操作は元に戻すことができません。",
-        "uninstallTargetFallback": "このボット",
-        "uninstallTitle": "Telegram ボットをアンインストールしますか?"
+        "pageDescription": "このワークスペースのボット ルーティングを管理する"
       },
       "toasts": {
         "agentphoneConnected": "電話番号が接続されました",
@@ -3996,12 +3921,7 @@
         "teamsInstalled": "Microsoft Teams は正常にインストールされました",
         "teamsUninstalled": "Microsoft Teams 統合がアンインストールされました",
         "teamsUpdated": "Microsoft Teams が更新されました",
-        "telegramAgentUpdated": "デフォルトエージェントが更新されました",
-        "telegramBotAdded": "Telegram ボットが追加されました",
-        "telegramBotReinstalled": "Telegram ボットが再インストールされました",
-        "telegramBotUninstalled": "Telegram ボットがアンインストールされました",
-        "telegramDisconnected": "Telegram アカウントが切断されました",
-        "telegramUpdatingAgent": "デフォルトのエージェントを更新しています..."
+        "telegramDisconnected": "Telegram アカウントが切断されました"
       },
       "works": {
         "connected": "接続済み",

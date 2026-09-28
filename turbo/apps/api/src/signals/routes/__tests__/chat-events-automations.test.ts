@@ -496,7 +496,7 @@ describe("CHAT effort: automation launches", () => {
     };
   }
 
-  it("uses the latest thread effort for a queued automation", async () => {
+  it("captures automation effort at enqueue and applies edits to later triggers", async () => {
     const { actor, runnerGroup, threadId, runId, claimed, automationId } =
       await startAutomation();
     await chat.updateThreadModelSelection(actor, threadId, "claude-fable-5-1", {
@@ -520,13 +520,27 @@ describe("CHAT effort: automation launches", () => {
     const nextRunId = await lastThreadPiAutomationRun(actor, threadId);
     expect(nextRunId).not.toBe(runId);
     const next = await claimChatRun(runnerGroup, nextRunId);
-    expect(next.claim.platformEnvironment.OKOU_REASONING_EFFORT).toBe("high");
+    expect(next.claim.platformEnvironment.OKOU_REASONING_EFFORT).toBe("extra");
     await expect(
       chat.readThreadMetadata(actor, threadId),
     ).resolves.toMatchObject({
       modelSettings: { "claude-fable-5-1": { effort: "high" } },
     });
     await cancelChatRun(actor, nextRunId, next.sandboxHeaders);
+
+    // The edit applies to a newly enqueued trigger, not the prior queued input.
+    await accept(
+      threadPiAutomationsClient().run({
+        headers: sessionHeaders(actor),
+        params: { id: automationId },
+      }),
+      [201],
+    );
+    const latestRunId = await lastThreadPiAutomationRun(actor, threadId);
+    expect(latestRunId).not.toBe(nextRunId);
+    const latest = await claimChatRun(runnerGroup, latestRunId);
+    expect(latest.claim.platformEnvironment.OKOU_REASONING_EFFORT).toBe("high");
+    await cancelChatRun(actor, latestRunId, latest.sandboxHeaders);
   }, 90_000);
 
   it("uses route defaults for unsupported effort at automation launch", async () => {

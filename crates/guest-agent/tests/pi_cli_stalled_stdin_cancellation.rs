@@ -31,7 +31,6 @@ async fn pi_cancellation_reaps_child_with_stalled_steer_write()
         r#"#!/bin/sh
 set -eu
 printf '%s\n' "$$" > "$PI_CHILD_PID_PATH"
-printf '%s\n' '{"type":"vm0_pi_api_first_turn_boundary","schemaVersion":2,"sandboxEventSequenceStart":1,"ownershipTransferMode":"sandbox-first"}'
 IFS= read -r state_command
 case "$state_command" in
   *'"type":"get_state"'*) ;;

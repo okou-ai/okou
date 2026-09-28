@@ -16,8 +16,6 @@ interface AppHomeViewOptions {
   readonly userId?: string;
   readonly userEmail?: string;
   readonly agentName?: string;
-  readonly isOverrideActive?: boolean;
-  readonly canSwitch?: boolean;
   readonly loginUrl?: string;
   readonly botUserId: string;
 }
@@ -87,9 +85,7 @@ function connectedStatusBlock(options: AppHomeViewOptions): SlackKnownBlock {
 }
 
 function appHomeAgentBlocks(options: AppHomeViewOptions): SlackAnyBlock[] {
-  const agentHeading = options.isOverrideActive
-    ? ":robot_face: *Your Agent*"
-    : ":robot_face: *Workspace Agent*";
+  const agentHeading = ":robot_face: *Workspace Agent*";
   const blocks: SlackAnyBlock[] = [
     {
       type: "section",
@@ -125,23 +121,9 @@ function appHomeAgentBlocks(options: AppHomeViewOptions): SlackAnyBlock[] {
       type: "mrkdwn",
       text: `AgentName: *${options.agentName}*`,
     },
-    ...(options.canSwitch ? {} : { accessory: settingsButton }),
+    accessory: settingsButton,
   };
   blocks.push(agentBlock);
-  if (options.canSwitch) {
-    blocks.push({
-      type: "actions",
-      elements: [
-        {
-          type: "button",
-          text: { type: "plain_text", text: "Switch" },
-          action_id: "home_switch_agent",
-          style: "primary",
-        },
-        settingsButton,
-      ],
-    });
-  }
   return blocks;
 }
 

@@ -105,6 +105,7 @@ import { customConnectorsUpdateRoutes } from "../custom-connectors-update";
 import { customConnectorsValuesSetRoutes } from "../custom-connectors-values-set";
 import { feishuConnectRoutes } from "../feishu-connect";
 import { logsRoutes } from "../logs";
+import { setOrgDefaultAgentFixture } from "../../../test-fixtures/org-metadata";
 
 const customConnectorByIdTestRoutes = Object.freeze([
   ...customConnectorsDeleteRoutes,
@@ -998,7 +999,6 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
 
   async function configureTestInstallation(args: {
     readonly appId: string;
-    readonly defaultAgentId: string;
   }): Promise<
     Pick<FeishuInstallationFixture, "callbackUrl" | "installationId">
   > {
@@ -1014,7 +1014,6 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
           appSecret: APP_SECRET,
           verificationToken: VERIFICATION_TOKEN,
           encryptKey: ENCRYPT_KEY,
-          defaultAgentId: args.defaultAgentId,
         },
       }),
       [200],
@@ -1032,7 +1031,6 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
         headers: { authorization: "Bearer clerk-session" },
         params: { installationId },
         body: {
-          defaultAgentId: args.defaultAgentId,
           setupCompleted: true,
         },
       }),
@@ -1073,10 +1071,7 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
     );
     await runsApi.grantProEntitlement(actor);
     mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
-    const configured = await configureTestInstallation({
-      appId,
-      defaultAgentId: defaultAgent.agentId,
-    });
+    const configured = await configureTestInstallation({ appId });
     return {
       actor,
       appId,
@@ -1133,10 +1128,19 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
       : alternateAgent;
     await runsApi.grantProEntitlement(actor);
     await runsApi.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    if (options.useAlternateInstallationDefault) {
+      const orgId = actor.orgId;
+      if (!orgId) {
+        throw new Error("Expected the Feishu actor to belong to an org");
+      }
+      await setOrgDefaultAgentFixture({
+        orgId,
+        agentId: installationDefaultAgent.agentId,
+      });
+    }
     mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
     const { callbackUrl, installationId } = await configureTestInstallation({
       appId,
-      defaultAgentId: installationDefaultAgent.agentId,
     });
     return {
       actor,
@@ -1642,7 +1646,7 @@ export function registerFeishuIntegrationTests(
         });
         authOrgApi.acceptAgentStorageWrites();
         await enableFeishuIntegration(platform, actor);
-        const agent = await authOrgApi.createAgent(actor, {
+        await authOrgApi.createAgent(actor, {
           displayName: "Feishu plaintext callback agent",
           visibility: "public",
         });
@@ -1657,7 +1661,6 @@ export function registerFeishuIntegrationTests(
               appId,
               appSecret: APP_SECRET,
               verificationToken: VERIFICATION_TOKEN,
-              defaultAgentId: agent.agentId,
             },
           }),
           [200],
@@ -1706,7 +1709,7 @@ export function registerFeishuIntegrationTests(
         });
         authOrgApi.acceptAgentStorageWrites();
         await enableFeishuIntegration(platform, actor);
-        const agent = await authOrgApi.createAgent(actor, {
+        await authOrgApi.createAgent(actor, {
           displayName: "Feishu single-bot agent",
           visibility: "public",
         });
@@ -1722,7 +1725,6 @@ export function registerFeishuIntegrationTests(
               appId: firstAppId,
               appSecret: APP_SECRET,
               verificationToken: VERIFICATION_TOKEN,
-              defaultAgentId: agent.agentId,
               createNew: true,
             },
           }),
@@ -1735,7 +1737,6 @@ export function registerFeishuIntegrationTests(
               appId: firstAppId,
               appSecret: APP_SECRET,
               verificationToken: VERIFICATION_TOKEN,
-              defaultAgentId: agent.agentId,
             },
           }),
           [200],
@@ -1747,7 +1748,6 @@ export function registerFeishuIntegrationTests(
               appId: secondAppId,
               appSecret: APP_SECRET,
               verificationToken: VERIFICATION_TOKEN,
-              defaultAgentId: agent.agentId,
               createNew: true,
             },
           }),
@@ -1807,7 +1807,7 @@ export function registerFeishuIntegrationTests(
         });
         authOrgApi.acceptAgentStorageWrites();
         await enableFeishuIntegration(platform, actor);
-        const agent = await authOrgApi.createAgent(actor, {
+        await authOrgApi.createAgent(actor, {
           displayName: "Feishu concurrent setup agent",
           visibility: "public",
         });
@@ -1823,7 +1823,6 @@ export function registerFeishuIntegrationTests(
                 appId,
                 appSecret: APP_SECRET,
                 verificationToken: VERIFICATION_TOKEN,
-                defaultAgentId: agent.agentId,
                 createNew: true,
               },
             });
@@ -1874,7 +1873,7 @@ export function registerFeishuIntegrationTests(
         });
         authOrgApi.acceptAgentStorageWrites();
         await enableFeishuIntegration(platform, actor);
-        const agent = await authOrgApi.createAgent(actor, {
+        await authOrgApi.createAgent(actor, {
           displayName: "Feishu replay setup agent",
           visibility: "public",
         });
@@ -1885,7 +1884,6 @@ export function registerFeishuIntegrationTests(
           appId: `cli_${randomUUID()}`,
           appSecret: APP_SECRET,
           verificationToken: VERIFICATION_TOKEN,
-          defaultAgentId: agent.agentId,
         };
         const responses = await Promise.all([
           accept(client.setup({ headers, body }), [200]),
@@ -1923,7 +1921,6 @@ export function registerFeishuIntegrationTests(
         authOrgApi.acceptAgentStorageWrites();
         const owners: {
           readonly actor: ApiTestUser;
-          readonly agent: { readonly agentId: string };
         }[] = [];
         for (let index = 0; index < 2; index += 1) {
           const actor = authOrgApi.user({
@@ -1932,11 +1929,11 @@ export function registerFeishuIntegrationTests(
             orgRole: "org:admin",
           });
           await enableFeishuIntegration(platform, actor);
-          const agent = await authOrgApi.createAgent(actor, {
+          await authOrgApi.createAgent(actor, {
             displayName: "Feishu competing setup agent",
             visibility: "public",
           });
-          owners.push({ actor, agent });
+          owners.push({ actor });
         }
         context.mocks.clerk.authenticateRequest.mockImplementation(
           (request) => {
@@ -1987,7 +1984,7 @@ export function registerFeishuIntegrationTests(
         const client = feishuConnectClient(platform);
         const appId = `cli_${randomUUID()}`;
         const outcomes = await Promise.all(
-          owners.map(async ({ actor, agent }) => {
+          owners.map(async ({ actor }) => {
             const headers = { authorization: `Bearer ${actor.userId}` };
             const response = await accept(
               client.setup({
@@ -1996,7 +1993,6 @@ export function registerFeishuIntegrationTests(
                   appId,
                   appSecret: APP_SECRET,
                   verificationToken: VERIFICATION_TOKEN,
-                  defaultAgentId: agent.agentId,
                   createNew: true,
                 },
               }),
@@ -2059,7 +2055,7 @@ export function registerFeishuIntegrationTests(
         });
         authOrgApi.acceptAgentStorageWrites();
         await enableFeishuIntegration(platform, actor);
-        const agent = await authOrgApi.createAgent(actor, {
+        await authOrgApi.createAgent(actor, {
           displayName: "Feishu connector retry agent",
           visibility: "public",
         });
@@ -2078,7 +2074,6 @@ export function registerFeishuIntegrationTests(
             appId: `cli_${randomUUID()}`,
             appSecret: APP_SECRET,
             verificationToken: VERIFICATION_TOKEN,
-            defaultAgentId: agent.agentId,
             createNew: true,
           },
         });
@@ -2132,12 +2127,12 @@ export function registerFeishuIntegrationTests(
           client.updateInstallation({
             headers: { authorization: "Bearer clerk-session" },
             params: { installationId: installation.id },
-            body: { defaultAgentId: agent.agentId, setupCompleted: true },
+            body: { setupCompleted: true },
           }),
           client.updateInstallation({
             headers: { authorization: "Bearer clerk-session" },
             params: { installationId: installation.id },
-            body: { defaultAgentId: agent.agentId, setupCompleted: true },
+            body: { setupCompleted: true },
           }),
         ]);
         await bothSkillUploadsStarted.promise;
@@ -2185,7 +2180,7 @@ export function registerFeishuIntegrationTests(
         });
         authOrgApi.acceptAgentStorageWrites();
         await enableFeishuIntegration(platform, actor);
-        const agent = await authOrgApi.createAgent(actor, {
+        await authOrgApi.createAgent(actor, {
           displayName: "Feishu unlinked removal agent",
           visibility: "public",
         });
@@ -2200,7 +2195,6 @@ export function registerFeishuIntegrationTests(
               appId: `cli_${randomUUID()}`,
               appSecret: APP_SECRET,
               verificationToken: VERIFICATION_TOKEN,
-              defaultAgentId: agent.agentId,
               createNew: true,
             },
           }),
@@ -2261,7 +2255,7 @@ export function registerFeishuIntegrationTests(
         });
         authOrgApi.acceptAgentStorageWrites();
         await enableFeishuIntegration(platform, actor);
-        const agent = await authOrgApi.createAgent(actor, {
+        await authOrgApi.createAgent(actor, {
           displayName: "Feishu connector repair agent",
           visibility: "public",
         });
@@ -2276,7 +2270,6 @@ export function registerFeishuIntegrationTests(
               appId: `cli_${randomUUID()}`,
               appSecret: APP_SECRET,
               verificationToken: VERIFICATION_TOKEN,
-              defaultAgentId: agent.agentId,
               createNew: true,
             },
           }),
@@ -2317,7 +2310,7 @@ export function registerFeishuIntegrationTests(
             ":installationId",
             installationId,
           ),
-          body: { defaultAgentId: agent.agentId, setupCompleted: true },
+          body: { setupCompleted: true },
         });
 
         expect(failedRepair.status).toBe(500);
@@ -2359,7 +2352,7 @@ export function registerFeishuIntegrationTests(
         });
         authOrgApi.acceptAgentStorageWrites();
         await enableFeishuIntegration(platform, actor);
-        const agent = await authOrgApi.createAgent(actor, {
+        await authOrgApi.createAgent(actor, {
           displayName: "Feishu managed bot agent",
           visibility: "public",
         });
@@ -2375,7 +2368,6 @@ export function registerFeishuIntegrationTests(
               appId: `cli_${randomUUID()}`,
               appSecret: APP_SECRET,
               verificationToken: VERIFICATION_TOKEN,
-              defaultAgentId: agent.agentId,
               createNew: true,
             },
           }),
@@ -2408,7 +2400,6 @@ export function registerFeishuIntegrationTests(
               appId: `cli_${randomUUID()}`,
               appSecret: APP_SECRET,
               verificationToken: VERIFICATION_TOKEN,
-              defaultAgentId: agent.agentId,
               createNew: true,
             },
           }),
@@ -2418,7 +2409,7 @@ export function registerFeishuIntegrationTests(
           client.updateInstallation({
             headers: { authorization: "Bearer clerk-session" },
             params: { installationId },
-            body: { defaultAgentId: agent.agentId, setupCompleted: true },
+            body: { setupCompleted: true },
           }),
           [403],
         );
@@ -2436,7 +2427,6 @@ export function registerFeishuIntegrationTests(
             headers: { authorization: "Bearer clerk-session" },
             params: { installationId },
             body: {
-              defaultAgentId: agent.agentId,
               setupCompleted: true,
             },
           }),
@@ -2474,8 +2464,13 @@ export function registerFeishuIntegrationTests(
         authOrgApi.acceptAgentStorageWrites();
         await enableFeishuIntegration(platform, admin);
         await enableFeishuIntegration(platform, member);
-        const agent = await authOrgApi.createAgent(admin, {
-          displayName: "Feishu OAuth agent",
+        const bootstrap = await authOrgApi.bootstrapLimitedFreeOnboarding(
+          admin,
+          {
+            displayName: "Feishu OAuth agent",
+          },
+        );
+        await authOrgApi.updateAgentMetadata(admin, bootstrap.body.agentId, {
           visibility: "public",
         });
         mockAuthoritativeOrganizationMembers([admin, member]);
@@ -2491,7 +2486,6 @@ export function registerFeishuIntegrationTests(
               appId,
               appSecret: APP_SECRET,
               verificationToken: VERIFICATION_TOKEN,
-              defaultAgentId: agent.agentId,
               createNew: true,
             },
           }),
@@ -2508,7 +2502,6 @@ export function registerFeishuIntegrationTests(
             headers: { authorization: "Bearer clerk-session" },
             params: { installationId },
             body: {
-              defaultAgentId: agent.agentId,
               setupCompleted: true,
             },
           }),
@@ -3209,7 +3202,7 @@ export function registerFeishuIntegrationTests(
         });
         authOrgApi.acceptAgentStorageWrites();
         await enableFeishuIntegration(platform, actor);
-        const agent = await authOrgApi.createAgent(actor, {
+        await authOrgApi.createAgent(actor, {
           displayName: "Feishu callback agent",
           visibility: "public",
         });
@@ -3225,7 +3218,6 @@ export function registerFeishuIntegrationTests(
               appSecret: APP_SECRET,
               verificationToken: VERIFICATION_TOKEN,
               encryptKey: ENCRYPT_KEY,
-              defaultAgentId: agent.agentId,
             },
           }),
           [200],
@@ -3294,8 +3286,13 @@ export function registerFeishuIntegrationTests(
         });
         authOrgApi.acceptAgentStorageWrites();
         await enableFeishuIntegration(platform, actor);
-        const agent = await authOrgApi.createAgent(actor, {
-          displayName: "Feishu compatibility agent",
+        const bootstrap = await authOrgApi.bootstrapLimitedFreeOnboarding(
+          actor,
+          {
+            displayName: "Feishu compatibility agent",
+          },
+        );
+        await authOrgApi.updateAgentMetadata(actor, bootstrap.body.agentId, {
           visibility: "public",
         });
         mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
@@ -3310,7 +3307,6 @@ export function registerFeishuIntegrationTests(
               appSecret: APP_SECRET,
               verificationToken: VERIFICATION_TOKEN,
               encryptKey: ENCRYPT_KEY,
-              defaultAgentId: agent.agentId,
             },
           }),
           [200],
@@ -3604,7 +3600,6 @@ export function registerFeishuIntegrationTests(
                 appSecret: APP_SECRET,
                 verificationToken: rotatedVerificationToken,
                 encryptKey: ENCRYPT_KEY,
-                defaultAgentId: fixture.defaultAgentId,
               },
             }),
             [200],
@@ -3697,7 +3692,6 @@ export function registerFeishuIntegrationTests(
                 appSecret: "replacement-app-secret",
                 verificationToken: "replacement-verification-token",
                 encryptKey: "replacement-encrypt-key",
-                defaultAgentId: fixture.alternateAgentId,
               },
             }),
             [409],
@@ -3784,7 +3778,6 @@ export function registerFeishuIntegrationTests(
             headers: { authorization: "Bearer clerk-session" },
             params: { installationId: fixture.installationId },
             body: {
-              defaultAgentId: fixture.defaultAgentId,
               setupCompleted: true,
             },
           }),
@@ -4164,13 +4157,7 @@ export function registerFeishuIntegrationTests(
         const client = setupApp({ context, routes: feishuConnectRoutes })(
           connectContract,
         );
-        for (const command of [
-          "/help",
-          "/connect",
-          "/switch",
-          "/model",
-          "/unknown",
-        ]) {
+        for (const command of ["/help", "/connect", "/model", "/unknown"]) {
           await postEvent(callbackUrl, directMessage(appId, command), {
             encrypted: true,
           });
@@ -4196,11 +4183,6 @@ export function registerFeishuIntegrationTests(
         expect(
           commandReplies.some((content) => {
             return content.includes("Already connected");
-          }),
-        ).toBeTruthy();
-        expect(
-          commandReplies.some((content) => {
-            return content.includes("Choose an agent");
           }),
         ).toBeTruthy();
         expect(
@@ -4433,11 +4415,11 @@ export function registerFeishuIntegrationTests(
             expect.objectContaining({ fileId }),
             expect.objectContaining({ fileId }),
           ]);
-          const delivery = await runsApi.reserveRunnerActiveInputs(
+          const { input: delivery } = await runsApi.nextSteerableInput(
             claim.sandboxToken,
             run.id,
           );
-          if (delivery.outcome !== "reserved") {
+          if (!delivery) {
             throw new Error("Expected the next Feishu file message");
           }
           const retryable = status === 429 || status >= 500;
@@ -5507,15 +5489,9 @@ export function registerFeishuIntegrationTests(
         const fixture = await setupFeishuRunFixture({
           useAlternateInstallationDefault: true,
         });
-        const { actor, runnerGroup, appId, callbackUrl, alternateAgentId } =
+        const { actor, runnerGroup, appId, callbackUrl, defaultAgentId } =
           fixture;
         await connectFixtureUser(fixture);
-        await postEvent(
-          callbackUrl,
-          directMessage(appId, `/switch ${alternateAgentId}`),
-          { encrypted: true },
-        );
-        await flushWaitUntilForTest();
         fixtureState.outboundMessages = [];
         context.mocks.ably.publish.mockClear();
         const historyFileKey = `file_v2_${"b".repeat(200)}`;
@@ -5605,9 +5581,7 @@ export function registerFeishuIntegrationTests(
         );
         const chatThreadCreated = requireValue(
           threadEvents.body.events.find((event) => {
-            return (
-              event.kind === "created" && event.agentId === alternateAgentId
-            );
+            return event.kind === "created" && event.agentId === defaultAgentId;
           }),
           "Expected the canonical Feishu chat thread",
         );
@@ -5634,7 +5608,7 @@ export function registerFeishuIntegrationTests(
         await runsApi.heartbeatRunner(runnerGroup);
         const claim = await runsApi.claimRunnerJob(run.id);
         expect(claim.prompt).toBe("do the Feishu task");
-        expect(claim.platformEnvironment.OKOU_AGENT_ID).toBe(alternateAgentId);
+        expect(claim.platformEnvironment.OKOU_AGENT_ID).toBe(defaultAgentId);
         expect(claim.platformEnvironment.OKOU_CURRENT_INTEGRATION).toBe(
           platform,
         );
@@ -5770,12 +5744,18 @@ export function registerFeishuIntegrationTests(
         expect(completedReply?.msgType).toBe("interactive");
         expect(completedReply?.target).toBe(firstMessageId);
         expect(completedReply?.replyInThread).toBeTruthy();
-        const completedReplyContent = completedReply
-          ? messageContent(completedReply)
-          : "";
-        expect(completedReplyContent).toContain("Okou");
-        expect(completedReplyContent).toContain("Claude Fable");
-        expect(completedReplyContent).toContain("Responded by Okou");
+        expect(completedReply?.content).toMatchObject({
+          header: { title: { content: "Okou" } },
+          body: {
+            elements: expect.arrayContaining([
+              {
+                tag: "markdown",
+                content: "*Claude Fable 5.1*",
+                text_size: "notation",
+              },
+            ]),
+          },
+        });
         expect(fixtureState.removedReactions).toHaveLength(1);
 
         const client = setupApp({ context, routes: feishuConnectRoutes })(
@@ -6548,51 +6528,6 @@ export function registerSharedFeishuConversationTests(): void {
       );
     });
 
-    it("resets Feishu DM sessions when switching agents", async () => {
-      const fixture = await setupFeishuRunFixture();
-      const { actor, runnerGroup, appId, callbackUrl, alternateAgentId } =
-        fixture;
-      await startFeishuDmSession(fixture);
-
-      await postEvent(
-        callbackUrl,
-        directMessage(appId, `/switch ${alternateAgentId}`),
-        { encrypted: true },
-      );
-      await flushWaitUntilForTest();
-      await postEvent(
-        callbackUrl,
-        directMessage(appId, "use the switched Feishu agent"),
-        { encrypted: true },
-      );
-      await flushWaitUntilForTest();
-      const switchedAgentRun = await findRun(
-        actor,
-        "use the switched Feishu agent",
-      );
-      await runsApi.heartbeatRunner(runnerGroup);
-      const switchedAgentClaim = await runsApi.claimRunnerJob(
-        switchedAgentRun.id,
-      );
-      expect(switchedAgentClaim.platformEnvironment.OKOU_AGENT_ID).toBe(
-        alternateAgentId,
-      );
-      expect(switchedAgentClaim.resumeSession).toBeNull();
-      await runsApi.requestCancelRun(actor, switchedAgentRun.id, [200]);
-      await flushWaitUntilForTest();
-
-      const client = setupApp({ context, routes: feishuConnectRoutes })(
-        connectContract,
-      );
-      await accept(
-        client.removeInstallation({
-          headers: { authorization: "Bearer clerk-session" },
-          params: { installationId: fixture.installationId },
-        }),
-        [200],
-      );
-    });
-
     describe("with a connected integration actor", () => {
       async function prepareScenario() {
         const fixture = await setupFeishuRunFixture();
@@ -6786,7 +6721,7 @@ export function registerSharedFeishuConversationTests(): void {
       );
     });
 
-    it("tells the sender when Feishu reaches the concurrency limit", async () => {
+    it("starts a queued Feishu message when a run slot is released", async () => {
       // The active runs below fill the plan, independent of its own limit.
       mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
       const fixture = await setupFeishuRunFixture();
@@ -6797,19 +6732,15 @@ export function registerSharedFeishuConversationTests(): void {
         "second concurrent Feishu task",
         "queued Feishu task",
       ] as const;
-      const queuedMessageId = `om_${randomUUID()}`;
-      for (const [index, prompt] of prompts.entries()) {
+      // A connection has one main DM thread; independent reply threads are
+      // needed here to exercise organization capacity instead of thread FIFO.
+      for (const prompt of prompts) {
         await postEvent(
           callbackUrl,
           directMessage(appId, prompt, "ou_feishu_user", {
-            chatId: `oc_feishu_concurrent_${index}`,
-            ...(index === 2
-              ? {
-                  messageId: queuedMessageId,
-                  rootId: `om_${randomUUID()}`,
-                  threadId: `omt_${randomUUID()}`,
-                }
-              : {}),
+            chatId: "oc_feishu_concurrent",
+            rootId: `om_${randomUUID()}`,
+            threadId: `omt_${randomUUID()}`,
           }),
           {
             encrypted: true,
@@ -6817,21 +6748,6 @@ export function registerSharedFeishuConversationTests(): void {
         );
         await flushWaitUntilForTest();
       }
-
-      const queueNotice = fixtureState.outboundMessages.find((message) => {
-        return messageContent(message).includes("Waiting for a run slot");
-      });
-      expect(queueNotice).toMatchObject({
-        kind: "reply",
-        target: queuedMessageId,
-        replyInThread: true,
-      });
-      expect(queueNotice?.msgType).toBe("interactive");
-      const queueNoticeContent = queueNotice ? messageContent(queueNotice) : "";
-      expect(queueNoticeContent).toContain(
-        "The workspace has reached its concurrent run limit; this will start automatically when a slot frees up.",
-      );
-      expect(queueNoticeContent).not.toContain("View queue");
 
       const [firstRun, secondRun] = await Promise.all(
         prompts.slice(0, 2).map(async (prompt) => {

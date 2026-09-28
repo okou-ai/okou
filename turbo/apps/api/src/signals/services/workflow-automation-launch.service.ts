@@ -297,6 +297,7 @@ async function resolveModelContext(
     readonly orgId: string;
     readonly userId: string;
     readonly chatThreadId: string;
+    readonly eventId: string;
   },
   signal: AbortSignal,
 ): Promise<ModelContext> {
@@ -305,6 +306,7 @@ async function resolveModelContext(
     orgId: args.orgId,
     userId: args.userId,
     threadId: args.chatThreadId,
+    eventId: args.eventId,
   });
   signal.throwIfAborted();
   if ("status" in threadModelContext) {
@@ -489,6 +491,7 @@ async function resolveTimedWorkflowModelContext(
     readonly db: Db;
     readonly automation: AutomationRow;
     readonly chatThreadId: string;
+    readonly eventId: string;
     readonly timing: ApiDispatchTimingCollector;
   },
   signal: AbortSignal,
@@ -504,6 +507,7 @@ async function resolveTimedWorkflowModelContext(
           orgId: args.automation.orgId,
           userId: args.automation.ownerUserId,
           chatThreadId: args.chatThreadId,
+          eventId: args.eventId,
         },
         signal,
       );
@@ -712,6 +716,7 @@ export async function assembleWorkflowAutomationRun(
   const modelContext = await resolveTimedWorkflowModelContext(
     {
       db,
+      eventId: args.queueEventId,
       automation,
       chatThreadId,
       timing,

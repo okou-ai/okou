@@ -1,4 +1,8 @@
 import { sql, type SQL, type SQLWrapper } from "drizzle-orm";
+import type {
+  ChatEventPayload,
+  ChatInputModelSelection,
+} from "@okouai/db/jsonb-contracts/chat-event";
 import type { ChatEventType } from "@okouai/api-contracts/contracts/chat-events";
 import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import {
@@ -14,7 +18,6 @@ import {
   jsonb,
 } from "drizzle-orm/pg-core";
 import { chatThreads } from "./chat-thread";
-import type { ChatEventPayload } from "@okouai/db/jsonb-contracts/chat-event";
 export type {
   ChatEventAttachFileMetadata,
   ChatEventAttachFileMetadataList,
@@ -86,6 +89,8 @@ export const chatEvents = pgTable(
     revokesEventId: uuid("revokes_event_id"),
     eventType: text("event_type").$type<ChatEventType>().notNull(),
     payload: jsonb("payload").$type<ChatEventPayload>(),
+    // Server-private enqueue decision; kept outside the strict public payload.
+    modelSelection: jsonb("model_selection").$type<ChatInputModelSelection>(),
     failureReason: text("failure_reason").$type<RunFailureReasonToken>(),
     /**
      * Server-owned authority for an Official Workflow prompt awaiting a Run.

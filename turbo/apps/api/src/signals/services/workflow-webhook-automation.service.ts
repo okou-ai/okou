@@ -1,5 +1,5 @@
 import { Buffer } from "node:buffer";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { command } from "ccstate";
 import { and, eq, gte } from "drizzle-orm";
 import type { WebhookReceivedEventConfig } from "@okouai/api-contracts/contracts/workflows";
@@ -11,7 +11,8 @@ import {
   workflows,
 } from "@okouai/db/schema/workflow";
 import { verifyCallbackRequest } from "../../lib/event-consumer/verify-signature";
-import { resolveImmutableDedupeInsert } from "../../lib/immutable-dedupe-insert";
+import type { Tx } from "../../lib/db-types";
+import { isUniqueViolation } from "../../lib/pg-errors";
 import { webUrl } from "../../lib/web-url";
 import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { nowDate } from "../../lib/time";
@@ -195,7 +196,7 @@ interface WorkflowWebhookAutomationDispatchRow {
   readonly chatThreadId: string;
 }
 
-interface AcceptedWebhookDelivery {
+interface PreparedWebhookDelivery {
   readonly id: string;
   readonly deliveryKey: string;
   readonly bodySha256: string;
@@ -449,47 +450,25 @@ type PreparedWorkflowWebhookDispatch =
   | { readonly kind: "unauthorized" }
   | { readonly kind: "rate_limited" };
 
-async function insertWebhookDelivery(
-  db: Db,
+async function persistWebhookDelivery(
+  tx: Tx,
   args: {
-    readonly automationId: string;
-    readonly deliveryKey: string;
-    readonly bodySha256: string;
-    readonly currentTime: Date;
-  },
-): Promise<{ readonly id: string } | null> {
-  return resolveImmutableDedupeInsert(
-    await settle(
-      db
-        .insert(workflowWebhookDeliveries)
-        .values({
-          automationId: args.automationId,
-          deliveryKey: args.deliveryKey,
-          bodySha256: args.bodySha256,
-          status: "accepted",
-          receivedAt: args.currentTime,
-          createdAt: args.currentTime,
-        })
-        .returning({ id: workflowWebhookDeliveries.id }),
-    ),
-  );
-}
-
-async function recordWebhookDeliveryDispatched(
-  db: Db,
-  args: {
-    readonly deliveryId: string;
+    readonly delivery: PreparedWebhookDelivery;
     readonly automationId: string;
     readonly currentTime: Date;
   },
 ): Promise<void> {
-  // The event is enqueued; its run id is not known until the pick launches it.
-  await db
-    .update(workflowWebhookDeliveries)
-    .set({ status: "dispatched", runId: null })
-    .where(eq(workflowWebhookDeliveries.id, args.deliveryId));
-
-  await db
+  // The receipt and source timestamp commit with the queue event. A duplicate
+  // delivery's unique violation rolls back its context, input and queue writes.
+  await tx.insert(workflowWebhookDeliveries).values({
+    ...args.delivery,
+    automationId: args.automationId,
+    status: "dispatched",
+    runId: null,
+    receivedAt: args.currentTime,
+    createdAt: args.currentTime,
+  });
+  await tx
     .update(workflowWebhookAutomations)
     .set({ lastReceivedAt: args.currentTime, updatedAt: args.currentTime })
     .where(eq(workflowWebhookAutomations.automationId, args.automationId));
@@ -588,7 +567,7 @@ async function prepareWorkflowWebhookDispatch(
   };
 }
 
-async function acceptWebhookDelivery(
+async function prepareWebhookDelivery(
   db: Db,
   args: {
     readonly automationId: string;
@@ -596,21 +575,24 @@ async function acceptWebhookDelivery(
     readonly signature: string;
     readonly timestamp: string;
     readonly headers: Readonly<Record<string, string>>;
-    readonly currentTime: Date;
   },
-): Promise<AcceptedWebhookDelivery | null> {
+): Promise<PreparedWebhookDelivery | null> {
   const deliveryKey = deliveryKeyForRequest(args);
-  const bodySha256 = sha256Hex(args.rawBody);
-  const delivery = await insertWebhookDelivery(db, {
-    automationId: args.automationId,
-    deliveryKey,
-    bodySha256,
-    currentTime: args.currentTime,
-  });
-  if (!delivery) {
-    return null;
-  }
-  return { id: delivery.id, deliveryKey, bodySha256 };
+  const [existing] = await db
+    .select({ id: workflowWebhookDeliveries.id })
+    .from(workflowWebhookDeliveries)
+    .where(
+      and(
+        eq(workflowWebhookDeliveries.automationId, args.automationId),
+        eq(workflowWebhookDeliveries.deliveryKey, deliveryKey),
+      ),
+    )
+    .limit(1);
+  // Completed admissions remain duplicates even if their model is unavailable
+  // now. The unique index still arbitrates concurrent first deliveries.
+  return existing
+    ? null
+    : { id: randomUUID(), deliveryKey, bodySha256: sha256Hex(args.rawBody) };
 }
 
 const startWorkflowWebhookRun$ = command(
@@ -618,7 +600,7 @@ const startWorkflowWebhookRun$ = command(
     { set },
     args: {
       readonly row: WorkflowWebhookAutomationDispatchRow;
-      readonly delivery: AcceptedWebhookDelivery;
+      readonly delivery: PreparedWebhookDelivery;
       readonly rawBody: string;
       readonly headers: Readonly<Record<string, string>>;
       readonly currentTime: Date;
@@ -656,6 +638,18 @@ const startWorkflowWebhookRun$ = command(
         apiStartTime: args.apiStartTime,
         triggerSource: "automation-event",
         timing: args.timing.collectorForRunStart(),
+        persistSourceTransition: async (tx) => {
+          await args.timing.measure(
+            "api_dispatch_pre_create_agent_automation_event_record_processed_event",
+            async () => {
+              await persistWebhookDelivery(tx, {
+                delivery: args.delivery,
+                automationId: args.row.automation.id,
+                currentTime: args.currentTime,
+              });
+            },
+          );
+        },
       },
       signal,
     );
@@ -709,15 +703,14 @@ export const dispatchWorkflowWebhook$ = command(
 
     const runTiming = sourceTiming.createRunTiming();
     const delivery = await runTiming.measure(
-      "api_dispatch_pre_create_agent_automation_event_record_processed_event",
+      "api_dispatch_pre_create_agent_automation_event_load_source_state",
       async () => {
-        return await acceptWebhookDelivery(db, {
+        return await prepareWebhookDelivery(db, {
           automationId: prepared.row.automation.id,
           rawBody: args.rawBody,
           signature: prepared.signature,
           timestamp: prepared.timestamp,
           headers: args.headers,
-          currentTime: prepared.currentTime,
         });
       },
     );
@@ -726,27 +719,33 @@ export const dispatchWorkflowWebhook$ = command(
       return { kind: "ok", duplicate: true };
     }
 
-    await set(
-      startWorkflowWebhookRun$,
-      {
-        row: prepared.row,
-        delivery,
-        rawBody: args.rawBody,
-        headers: args.headers,
-        currentTime: prepared.currentTime,
-        apiStartTime: args.apiStartTime,
-        timing: runTiming,
-      },
-      signal,
+    const admitted = await settle(
+      set(
+        startWorkflowWebhookRun$,
+        {
+          row: prepared.row,
+          delivery,
+          rawBody: args.rawBody,
+          headers: args.headers,
+          currentTime: prepared.currentTime,
+          apiStartTime: args.apiStartTime,
+          timing: runTiming,
+        },
+        signal,
+      ),
     );
     signal.throwIfAborted();
-
-    await recordWebhookDeliveryDispatched(db, {
-      deliveryId: delivery.id,
-      automationId: prepared.row.automation.id,
-      currentTime: prepared.currentTime,
-    });
-    signal.throwIfAborted();
+    if (!admitted.ok) {
+      if (
+        isUniqueViolation(
+          admitted.error,
+          "idx_workflow_webhook_deliveries_automation_key",
+        )
+      ) {
+        return { kind: "ok", duplicate: true };
+      }
+      throw admitted.error;
+    }
 
     return { kind: "ok", duplicate: false, runId: null };
   },

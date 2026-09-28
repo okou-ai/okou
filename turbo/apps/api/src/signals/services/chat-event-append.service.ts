@@ -66,7 +66,7 @@ export async function appendCanonicalChatEvents(
     WITH input AS MATERIALIZED (
       SELECT * FROM jsonb_to_recordset(${input}::jsonb) AS event(
         id uuid, "chatThreadId" uuid, "runId" uuid, "revokesEventId" uuid,
-        "eventType" text, payload jsonb, "failureReason" text,
+        "eventType" text, payload jsonb, "modelSelection" jsonb, "failureReason" text,
         "requiredOfficialWorkflowIds" uuid[], "contextType" text, "contextId" uuid,
         "runEventSequenceNumber" integer, "runEventId" text,
         "createdAt" timestamp, ordinal integer
@@ -84,12 +84,12 @@ export async function appendCanonicalChatEvents(
       RETURNING chat_thread_id, last_seq_id
     ), inserted AS (
       INSERT INTO chat_events (
-        id, chat_thread_id, run_id, revokes_event_id, event_type, payload,
+        id, chat_thread_id, run_id, revokes_event_id, event_type, payload, model_selection,
         failure_reason, required_official_workflow_ids, context_type, context_id,
         run_event_sequence_number, run_event_id, seq_id, created_at
       )
       SELECT input.id, input."chatThreadId", input."runId", input."revokesEventId",
-        input."eventType", input.payload, input."failureReason",
+        input."eventType", input.payload, input."modelSelection", input."failureReason",
         input."requiredOfficialWorkflowIds", input."contextType", input."contextId",
         input."runEventSequenceNumber", input."runEventId",
         reserved.last_seq_id - counts.event_count + row_number() OVER (

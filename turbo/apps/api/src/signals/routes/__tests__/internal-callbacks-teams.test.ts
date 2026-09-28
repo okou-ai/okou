@@ -532,39 +532,6 @@ async function dispatchTeamsPersonalRun(args: {
   return await runIdForPrompt(actor, args.text);
 }
 
-async function switchTeamsAgent(args: {
-  readonly fixture: TeamsConnectFixture;
-  readonly activityId: string;
-  readonly agentId: string;
-}): Promise<void> {
-  const response = await postTeamsActivityForTest({
-    signal: context.signal,
-    activity: teamsMessageActivityForTest(args.fixture, {
-      id: args.activityId,
-      conversation: {
-        id: `a:personal-${args.fixture.teamsUserId}`,
-        conversationType: "personal",
-      },
-      channelData: {
-        tenant: {
-          id: args.fixture.teamsTenantId,
-          name: args.fixture.teamsTenantName,
-        },
-        teamsAppId: args.fixture.teamsAppId,
-      },
-      text: "",
-      entities: [],
-      value: {
-        okouTeamsAction: "switch_agent",
-        selectedAgentId: args.agentId,
-      },
-    }),
-  });
-  expect(response.status).toBe(200);
-  await response.json();
-  await flushWaitUntilForTest();
-}
-
 async function claimTeamsRun(args: {
   readonly runnerGroup: string;
   readonly runId: string;
@@ -719,7 +686,7 @@ describe("Teams chat callbacks", () => {
           teamsMessageFiles: [],
           teamsTenantName: teams.fixture.teamsTenantName,
           teamsTeamName: null,
-          teamsThreadId: `direct-message:${teams.defaultAgentId}:claude-fable-5-1`,
+          teamsThreadId: "direct-message:main",
           teamsServiceUrl: teams.fixture.serviceUrl,
           teamsAppId: teams.fixture.teamsAppId,
           teamsSenderUserId: teams.fixture.teamsUserId,
@@ -893,87 +860,6 @@ describe("Teams chat callbacks", () => {
     );
     expect(queuedClaim.appendSystemPrompt).toContain("Bot name: Nova");
     await runsApi.requestCancelRun(teams.actor, queuedRunId, [200]);
-  });
-
-  it("keeps personal message sessions scoped to the selected agent", async () => {
-    const teams = await setupConnectedTeamsActor();
-    const teamsApi = teamsApiMocks({ fixture: teams.fixture });
-    const defaultRunId = await dispatchTeamsPersonalRun({
-      fixture: teams.fixture,
-      activityId: teamsFixtureExternalId(
-        teams.fixture,
-        "activity-personal-default-agent",
-      ),
-      text: "remember this DM context",
-    });
-    const defaultClaim = await claimTeamsRun({
-      runnerGroup: teams.runnerGroup,
-      runId: defaultRunId,
-    });
-    expect(defaultClaim.resumeSession).toBeNull();
-    clearTeamsApiCalls(teamsApi);
-    const [defaultSessionId, alternateAgent] = await Promise.all([
-      completeSandboxRun({
-        runId: defaultRunId,
-        sandboxToken: defaultClaim.sandboxToken,
-        exitCode: 0,
-      }),
-      authOrgApi.createAgent(teams.actor, {
-        displayName: "Alternate Teams DM agent",
-        visibility: "public",
-      }),
-    ]);
-    await switchTeamsAgent({
-      fixture: teams.fixture,
-      activityId: teamsFixtureExternalId(
-        teams.fixture,
-        "activity-personal-switch-alternate",
-      ),
-      agentId: alternateAgent.agentId,
-    });
-    const alternateRunId = await dispatchTeamsPersonalRun({
-      fixture: teams.fixture,
-      activityId: teamsFixtureExternalId(
-        teams.fixture,
-        "activity-personal-alternate-agent",
-      ),
-      text: "use an alternate Teams DM agent",
-    });
-    const alternateClaim = await claimTeamsRun({
-      runnerGroup: teams.runnerGroup,
-      runId: alternateRunId,
-    });
-    expect(alternateClaim.resumeSession).toBeNull();
-    clearTeamsApiCalls(teamsApi);
-    await completeSandboxRun({
-      runId: alternateRunId,
-      sandboxToken: alternateClaim.sandboxToken,
-      exitCode: 0,
-    });
-    await switchTeamsAgent({
-      fixture: teams.fixture,
-      activityId: teamsFixtureExternalId(
-        teams.fixture,
-        "activity-personal-switch-default",
-      ),
-      agentId: teams.defaultAgentId,
-    });
-
-    const returnToDefaultRunId = await dispatchTeamsPersonalRun({
-      fixture: teams.fixture,
-      activityId: teamsFixtureExternalId(
-        teams.fixture,
-        "activity-personal-default-agent-return",
-      ),
-      text: "return to the default Teams DM agent",
-    });
-    const returnToDefaultClaim = await claimTeamsRun({
-      runnerGroup: teams.runnerGroup,
-      runId: returnToDefaultRunId,
-    });
-    expect(returnToDefaultClaim.resumeSession?.sessionId).toBe(
-      defaultSessionId,
-    );
   });
 
   it.each(["forked thread", "main session"] as const)(

@@ -1,6 +1,7 @@
+import { resolveRequiredDefaultChatThreadModelPin } from "./chat-thread-model.service";
+import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
-import { agents } from "@okouai/db/schema/agent";
 import { teamsChatThreadRoutes } from "@okouai/db/schema/teams-chat-thread-route";
 import { and, eq } from "drizzle-orm";
 
@@ -26,26 +27,23 @@ interface TeamsChatThreadRouteBinding extends TeamsChatThreadRouteKey {
   readonly chatThreadId: string;
 }
 
-interface LoadedTeamsChatThreadRoute extends TeamsChatThreadRouteBinding {
-  readonly agentId: string;
-  readonly selectedModel: string | null;
-  readonly codexServiceTier: "fast" | null;
-  readonly computerUseHostId: string | null;
-}
+type LoadedTeamsChatThreadRoute = TeamsChatThreadRouteBinding;
 
 type TeamsChatThreadTransaction = Tx;
 
 function routeWhere(key: TeamsChatThreadRouteKey) {
   return and(
     eq(teamsChatThreadRoutes.connectionId, key.connectionId),
-    eq(teamsChatThreadRoutes.conversationId, key.conversationId),
+    key.threadId === INTEGRATION_DM_SESSION_KEY
+      ? undefined
+      : eq(teamsChatThreadRoutes.conversationId, key.conversationId),
     eq(teamsChatThreadRoutes.threadId, key.threadId),
     eq(teamsChatThreadRoutes.userId, key.userId),
   );
 }
 
 async function loadRoute(
-  db: Pick<Db, "select">,
+  db: Pick<Db, "select" | "update">,
   key: TeamsChatThreadRouteKey,
 ): Promise<LoadedTeamsChatThreadRoute | undefined> {
   const [route] = await db
@@ -56,24 +54,36 @@ async function loadRoute(
       threadId: teamsChatThreadRoutes.threadId,
       userId: teamsChatThreadRoutes.userId,
       chatThreadId: teamsChatThreadRoutes.chatThreadId,
-      agentId: agents.id,
-      selectedModel: chatThreads.selectedModel,
-      codexServiceTier: chatThreads.codexServiceTier,
-      computerUseHostId: chatThreads.computerUseHostId,
     })
     .from(teamsChatThreadRoutes)
     .innerJoin(
       chatThreads,
       eq(chatThreads.id, teamsChatThreadRoutes.chatThreadId),
     )
-    .innerJoin(agents, eq(agents.id, chatThreads.agentId))
     .where(routeWhere(key))
     .limit(1)
     .for("update");
+  if (
+    route &&
+    key.threadId === INTEGRATION_DM_SESSION_KEY &&
+    route.conversationId !== key.conversationId
+  ) {
+    const [updated] = await db
+      .update(teamsChatThreadRoutes)
+      .set({ conversationId: key.conversationId })
+      .where(and(eq(teamsChatThreadRoutes.id, route.id), routeWhere(key)))
+      .returning({ conversationId: teamsChatThreadRoutes.conversationId });
+    if (!updated) {
+      throw new Error("Failed to update Teams DM route destination");
+    }
+    return { ...route, ...updated };
+  }
   return route;
 }
 
 interface CreatedTeamsChatThread {
+  readonly selectedModel: string | null;
+  readonly serviceTier: ChatThreadServiceTier | null;
   readonly id: string;
   readonly createdAt: Date;
   readonly mediaModels: NewChatThreadMediaModels;
@@ -85,12 +95,10 @@ async function createCanonicalTeamsChatThread(
   args: TeamsChatThreadRouteKey & {
     readonly orgId: string;
     readonly agentId: string;
-    readonly selectedModel: string | null;
-    readonly serviceTier: ChatThreadServiceTier | null;
     readonly currentTime: Date;
   },
-  computerUseHostId: string | null = null,
 ): Promise<CreatedTeamsChatThread> {
+  const initialModel = await resolveRequiredDefaultChatThreadModelPin(tx, args);
   const mediaModels = await loadNewChatThreadMediaModels(tx, {
     orgId: args.orgId,
     userId: args.userId,
@@ -104,11 +112,11 @@ async function createCanonicalTeamsChatThread(
     .values({
       userId: args.userId,
       agentId: args.agentId,
-      computerUseHostId,
+      computerUseHostId: null,
       cloudBrowserEnabled: false,
-      selectedModel: args.selectedModel,
+      selectedModel: initialModel.selectedModel,
       modelSettings,
-      codexServiceTier: args.serviceTier === "priority" ? "fast" : null,
+      codexServiceTier: initialModel.serviceTier === "priority" ? "fast" : null,
       title: null,
       lastReadAt: args.currentTime,
       lastMessageAt: args.currentTime,
@@ -120,7 +128,13 @@ async function createCanonicalTeamsChatThread(
   if (!thread) {
     throw new Error("Failed to create canonical Teams chat thread");
   }
-  return { ...thread, mediaModels, modelSettings };
+  return {
+    ...thread,
+    mediaModels,
+    modelSettings,
+    selectedModel: initialModel.selectedModel,
+    serviceTier: initialModel.serviceTier,
+  };
 }
 
 async function appendCanonicalTeamsChatThreadCreatedEvent(
@@ -128,11 +142,8 @@ async function appendCanonicalTeamsChatThreadCreatedEvent(
   args: TeamsChatThreadRouteKey & {
     readonly orgId: string;
     readonly agentId: string;
-    readonly selectedModel: string | null;
-    readonly serviceTier: ChatThreadServiceTier | null;
   },
   thread: CreatedTeamsChatThread,
-  computerUseHostId: string | null | undefined,
 ): Promise<void> {
   await appendChatThreadEvent(tx, {
     kind: "created",
@@ -141,127 +152,27 @@ async function appendCanonicalTeamsChatThreadCreatedEvent(
     chatThreadId: thread.id,
     agentId: args.agentId,
     title: null,
-    selectedModel: args.selectedModel,
+    selectedModel: thread.selectedModel,
     modelSettings: thread.modelSettings,
-    serviceTier: args.serviceTier,
-    computerUseHostId,
+    serviceTier: thread.serviceTier,
+    computerUseHostId: null,
     ...thread.mediaModels,
     createdAt: thread.createdAt,
   });
 }
 
-async function reconcileExistingRoute(
-  tx: TeamsChatThreadTransaction,
-  args: TeamsChatThreadRouteKey & {
-    readonly orgId: string;
-    readonly agentId: string;
-    readonly selectedModel: string | null;
-    readonly serviceTier: ChatThreadServiceTier | null;
-    readonly currentTime: Date;
-  },
-  existing: LoadedTeamsChatThreadRoute,
-): Promise<TeamsChatThreadRouteBinding> {
-  if (existing.agentId !== args.agentId) {
-    const thread = await createCanonicalTeamsChatThread(
-      tx,
-      args,
-      existing.computerUseHostId,
-    );
-    const [route] = await tx
-      .update(teamsChatThreadRoutes)
-      .set({ chatThreadId: thread.id })
-      .where(
-        and(
-          eq(teamsChatThreadRoutes.id, existing.id),
-          eq(teamsChatThreadRoutes.chatThreadId, existing.chatThreadId),
-        ),
-      )
-      .returning({
-        id: teamsChatThreadRoutes.id,
-        connectionId: teamsChatThreadRoutes.connectionId,
-        conversationId: teamsChatThreadRoutes.conversationId,
-        threadId: teamsChatThreadRoutes.threadId,
-        userId: teamsChatThreadRoutes.userId,
-        chatThreadId: teamsChatThreadRoutes.chatThreadId,
-      });
-    if (!route) {
-      throw new Error("Failed to rebind Teams chat thread route");
-    }
-    await appendCanonicalTeamsChatThreadCreatedEvent(
-      tx,
-      args,
-      thread,
-      existing.computerUseHostId,
-    );
-    return route;
-  }
-
-  const selectedModelChanged = existing.selectedModel !== args.selectedModel;
-  const codexServiceTier = args.serviceTier === "priority" ? "fast" : null;
-  const serviceTierChanged = existing.codexServiceTier !== codexServiceTier;
-  if (selectedModelChanged || serviceTierChanged) {
-    const [thread] = await tx
-      .update(chatThreads)
-      .set({
-        ...(selectedModelChanged
-          ? {
-              modelProviderId: null,
-              modelProviderType: null,
-              modelProviderCredentialScope: null,
-              selectedModel: args.selectedModel,
-            }
-          : {}),
-        codexServiceTier,
-        updatedAt: args.currentTime,
-      })
-      .where(eq(chatThreads.id, existing.chatThreadId))
-      .returning({ id: chatThreads.id });
-    if (!thread) {
-      throw new Error("Failed to update canonical Teams chat thread model");
-    }
-    if (selectedModelChanged) {
-      await appendChatThreadEvent(tx, {
-        kind: "model_selection_updated",
-        userId: args.userId,
-        orgId: args.orgId,
-        chatThreadId: existing.chatThreadId,
-        agentId: existing.agentId,
-        selectedModel: args.selectedModel,
-        createdAt: args.currentTime,
-      });
-    }
-    if (serviceTierChanged) {
-      await appendChatThreadEvent(tx, {
-        kind: "service_tier_updated",
-        userId: args.userId,
-        orgId: args.orgId,
-        chatThreadId: existing.chatThreadId,
-        agentId: existing.agentId,
-        serviceTier: args.serviceTier,
-        createdAt: args.currentTime,
-      });
-    }
-  }
-  return existing;
-}
-
 export async function ensureTeamsChatThreadRoute(
   db: Db,
   args: TeamsChatThreadRouteKey & {
-    readonly isDirectMessage: boolean;
     readonly orgId: string;
     readonly agentId: string;
-    readonly selectedModel: string | null;
-    readonly serviceTier: ChatThreadServiceTier | null;
     readonly currentTime: Date;
   },
 ): Promise<TeamsChatThreadRouteBinding> {
   return await db.transaction(async (tx) => {
     const existing = await loadRoute(tx, args);
     if (existing) {
-      return args.isDirectMessage
-        ? existing
-        : await reconcileExistingRoute(tx, args, existing);
+      return existing;
     }
 
     const thread = await createCanonicalTeamsChatThread(tx, args);
@@ -301,12 +212,10 @@ export async function ensureTeamsChatThreadRoute(
           "Failed to resolve Teams chat thread route after conflict",
         );
       }
-      return args.isDirectMessage
-        ? conflicted
-        : await reconcileExistingRoute(tx, args, conflicted);
+      return conflicted;
     }
 
-    await appendCanonicalTeamsChatThreadCreatedEvent(tx, args, thread, null);
+    await appendCanonicalTeamsChatThreadCreatedEvent(tx, args, thread);
     return route;
   });
 }

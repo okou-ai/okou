@@ -44,6 +44,7 @@ import { validatePermanentDiscordFoundation } from "./test-discord-foundation-pe
 import { validatePermanentDiscordChat } from "./test-discord-chat-permanent";
 import { validatePermanentOrgPlanEntitlementState } from "./test-org-plan-entitlement-permanent";
 import { validateGpt55Retirement } from "./test-gpt-55-retirement";
+import { validateIntegrationDmSingleThread } from "./test-integration-dm-single-thread";
 import { validateSonnet46Opus48DeepSeekV4ProRetirement } from "./test-sonnet-46-opus-48-deepseek-v4-pro-retirement";
 import { validateXResourceUsageSchema } from "./test-x-resource-usage";
 
@@ -3233,6 +3234,7 @@ async function main(): Promise<void> {
     await validatePermanentDiscordChat(dbUrl1);
     await validatePermanentOrgPlanEntitlementState(dbUrl1);
     await validateGpt55Retirement(dbUrl1);
+    await validateIntegrationDmSingleThread(dbUrl1);
     await validateSonnet46Opus48DeepSeekV4ProRetirement(dbUrl1);
     await validateXResourceUsageSchema(dbUrl1);
     await validateAgentRunLaunchSnapshotSchema(dbUrl1);

@@ -48,7 +48,7 @@ describe("okou telegram download-file command", () => {
       http.get(DOWNLOAD_URL, ({ request }) => {
         const url = new URL(request.url);
         expect(url.searchParams.get("file_id")).toBe("TGFILE123");
-        expect(url.searchParams.get("bot_id")).toBe("123456789");
+        expect(url.searchParams.get("bot_id")).toBe("official");
         expect(request.headers.get("authorization")).toBe("Bearer test-token");
         return new HttpResponse(payload, {
           status: 200,
@@ -65,8 +65,6 @@ describe("okou telegram download-file command", () => {
       "node",
       "cli",
       "TGFILE123",
-      "--bot-id",
-      "123456789",
       "-o",
       outPath,
     ]);
@@ -89,7 +87,7 @@ describe("okou telegram download-file command", () => {
     server.use(
       http.get(DOWNLOAD_URL, ({ request }) => {
         const url = new URL(request.url);
-        expect(url.searchParams.get("bot_id")).toBe("987654321");
+        expect(url.searchParams.get("bot_id")).toBe("official");
         return new HttpResponse(payload, {
           status: 200,
           headers: {
@@ -101,13 +99,7 @@ describe("okou telegram download-file command", () => {
       }),
     );
 
-    await downloadFileCommand.parseAsync([
-      "node",
-      "cli",
-      "TG-DEFAULT",
-      "--bot-id",
-      "987654321",
-    ]);
+    await downloadFileCommand.parseAsync(["node", "cli", "TG-DEFAULT"]);
 
     const stdout = mockConsoleLog.mock.calls.flat().join("\n");
     const parsed = JSON.parse(stdout) as Record<string, unknown>;
@@ -136,8 +128,6 @@ describe("okou telegram download-file command", () => {
         "node",
         "cli",
         "TG-MISSING",
-        "--bot-id",
-        "123456789",
         "-o",
         join(tmpDir, "missing.bin"),
       ]);

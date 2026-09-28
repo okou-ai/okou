@@ -210,6 +210,7 @@ export async function resolveDefaultModelFirstPin(
   db: Db,
   orgId: string,
   userId: string,
+  defaultSource: "member" | "workspace" = "member",
 ): Promise<DefaultModelFirstPin> {
   const facts = await prepareModelRoutingFacts({
     db,
@@ -218,7 +219,7 @@ export async function resolveDefaultModelFirstPin(
     selectedModel: null,
   });
   const capabilities = modelRouteCapabilities(facts.orgPlanCapabilities);
-  if (userId !== "__no_preference__") {
+  if (defaultSource === "member" && userId !== "__no_preference__") {
     const [preference] = await db
       .select({
         selectedModel: orgMembersMetadata.selectedModel,

@@ -12,6 +12,8 @@ import { alias } from "drizzle-orm/pg-core";
 
 import {
   pgBooleanDecoder,
+  nullableDriverValueDecoder,
+  pgTextDecoder,
   pgNullDecoder,
 } from "../../lib/db-structured-result";
 import type { Tx } from "../../lib/db-types";
@@ -24,6 +26,7 @@ import {
 } from "./autonomy-budget.service";
 import {
   canonicalChatEventUserMessage,
+  canonicalChatInputModelSelection,
   parseCanonicalChatEventRequiredOfficialWorkflowIds,
 } from "./canonical-chat-event-read.service";
 import { chatThreadAdmissionBlockerCondition } from "./chat-active-run.service";
@@ -340,7 +343,10 @@ export async function loadNextUnclaimedQueuedUserMessage(
       modelProviderId: sql`NULL`.mapWith(pgNullDecoder),
       modelProviderType: sql`NULL`.mapWith(pgNullDecoder),
       modelProviderCredentialScope: sql`NULL`.mapWith(pgNullDecoder),
-      selectedModel: chatThreads.selectedModel,
+      selectedModel:
+        sql`${chatEvents.modelSelection}->>'selectedModel'`.mapWith(
+          nullableDriverValueDecoder(pgTextDecoder),
+        ),
       contextType: chatEvents.contextType,
       contextId: chatEvents.contextId,
       sourceAutonomyBudget: agentRuns.autonomyBudget,
@@ -390,6 +396,7 @@ function replacementTargetFromQueueHead(
     eventType: head.eventType,
     contextType: head.contextType,
     contextId: head.contextId,
+    modelSelection: head.modelSelection,
   };
 }
 
@@ -398,6 +405,7 @@ function queueFirstClaimHeadBase(db: DbTransaction) {
     .select({
       ...queueFirstReplacementTargetFields,
       userMessage: canonicalChatEventUserMessage().as("user_message"),
+      modelSelection: canonicalChatInputModelSelection().as("model_selection"),
     })
     .from(chatEvents);
 }
@@ -446,6 +454,9 @@ function queueFirstClaimSnapshotFromHead(
     replacement: {
       chatThreadId: args.threadId,
       eventType: "input.prompt",
+      ...(head.modelSelection === null
+        ? {}
+        : { modelSelection: head.modelSelection }),
       userMessage:
         args.selectedModel === null
           ? head.userMessage

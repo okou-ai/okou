@@ -3,10 +3,8 @@ import { getProviderRuntimeModel } from "@okouai/api-contracts/contracts/model-p
 import { gzipSync, zstdCompressSync } from "node:zlib";
 import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
 import {
-  PI_API_FIRST_TURN_SESSION_MAX_BYTES,
   PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
   RESUME_SESSION_HISTORY_MAX_BYTES,
-  piApiFirstTurnManifestSchema,
 } from "@okouai/api-contracts/contracts/runners";
 import {
   PI_AGENT_RUNTIME_VERSION,
@@ -54,22 +52,16 @@ const {
   failChatRun,
   cancelChatRun,
   mockPiCheckpointObjectStore,
-  mockPiResourceArchiveDownloads,
-  expectPiSandboxHandoff,
+  piSandboxBaseSession,
   publishPendingPiInstructions,
   completeSandboxFirstPiRun,
   queueCapabilityProvenPiRun,
 } = createChatEventsFixture(context);
 
 describe("CHAT-02: model-first provider policies", () => {
-  it.each([
-    { encoding: "identity", large: false },
-    { encoding: "identity", large: true },
-    { encoding: "gzip", large: true },
-    { encoding: "zstd", large: true },
-  ] as const)(
-    "references Pi $encoding history (large: $large) without API history or resource IO",
-    async ({ encoding, large }) => {
+  it.each(["identity", "gzip", "zstd"] as const)(
+    "references Pi %s resume history without API history or resource IO",
+    async (encoding) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       await publishPendingPiInstructions(actor, agentId);
       const checkpointObjects = mockPiCheckpointObjectStore();
@@ -106,7 +98,7 @@ describe("CHAT-02: model-first provider policies", () => {
         content: [
           {
             type: "text",
-            text: "x".repeat(large ? PI_API_FIRST_TURN_SESSION_MAX_BYTES : 64),
+            text: "x".repeat(64),
           },
         ],
         api: "openai-responses",
@@ -131,11 +123,6 @@ describe("CHAT-02: model-first provider policies", () => {
             ? zstdCompressSync(raw)
             : raw;
       const hash = createHash("sha256").update(raw).digest("hex");
-      if (large) {
-        expect(raw.length).toBeGreaterThan(PI_API_FIRST_TURN_SESSION_MAX_BYTES);
-      } else {
-        expect(raw.length).toBeLessThan(PI_API_FIRST_TURN_SESSION_MAX_BYTES);
-      }
       const invalidHash = createHash("sha256")
         .update(randomUUID())
         .digest("hex");
@@ -237,34 +224,25 @@ describe("CHAT-02: model-first provider policies", () => {
         queued.usagePricingResolution,
       );
       await flushWaitUntilForTest();
-      const { manifest } = expectPiSandboxHandoff(
-        resumed.runId,
-        checkpointObjects,
-      );
-      expect(manifest).toMatchObject({
-        schemaVersion: 4,
-        mode: "sandbox-first",
-        outcome: "ownership-transfer",
-        baseSession: { sessionId: run.threadId, sha256: hash },
-        session: { sessionId: run.threadId, sha256: hash, rawSize: raw.length },
-        history: {
+      const resumedClaim = await claimChatRun(runnerGroup, resumed.runId);
+      const resumeSession = resumedClaim.claim.resumeSession;
+      expect(resumeSession).toMatchObject({
+        sessionId: run.threadId,
+        historyRef: {
+          kind: "blob",
+          hash,
           encoding,
+          rawSize: raw.length,
           encodedSize: encoded.length,
           url: expect.any(String),
         },
-        sandboxEventSequenceStart: 1,
-        apiUsage: {
-          schemaVersion: 1,
-          state: "no-inference",
-          sampledAt: expect.any(Number),
-        },
       });
-      if (manifest.schemaVersion !== 4) {
-        throw new Error("Expected a referenced sandbox checkpoint");
+      if (!resumeSession || !("historyRef" in resumeSession)) {
+        throw new Error("Expected a referenced resume history");
       }
-      expect(new URL(manifest.history.url).searchParams.get("object")).toBe(
-        blobKey,
-      );
+      expect(
+        new URL(resumeSession.historyRef.url).searchParams.get("object"),
+      ).toBe(blobKey);
       expect(resourceDownloads).toBe(0);
       expect(
         context.mocks.s3.send.mock.calls
@@ -277,16 +255,6 @@ describe("CHAT-02: model-first provider policies", () => {
             );
           }),
       ).toBeFalsy();
-      expect(
-        checkpointObjects.has(
-          `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${resumed.runId}/session.jsonl`,
-        ),
-      ).toBeFalsy();
-      const resumedClaim = await claimChatRun(runnerGroup, resumed.runId);
-      expect(resumedClaim.claim.resumeSession).toMatchObject({
-        sessionId: run.threadId,
-        historyRef: { hash, encoding, rawSize: raw.length },
-      });
       await webhooks.requestAgentCheckpointPrepareHistory(
         {
           runId: resumed.runId,
@@ -309,7 +277,7 @@ describe("CHAT-02: model-first provider policies", () => {
     "/unknown-command first  argument\nsecond line",
     "/home/user/workspace/report.txt first  argument\nsecond line",
   ] as const)(
-    "hands native input %j to Sandbox with exact fresh and resumed H0",
+    "claims native input %j with exact fresh and resumed Sandbox H0",
     async (prompt) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       await publishPendingPiInstructions(actor, agentId);
@@ -348,90 +316,9 @@ describe("CHAT-02: model-first provider policies", () => {
           );
         }
         await flushWaitUntilForTest();
-        const manifestKey = `${bucket}/pi-api-first-turn/${run.runId}/manifest.json`;
-        const sessionKey = `${bucket}/pi-api-first-turn/${run.runId}/session.jsonl`;
-        const manifestBytes = checkpointObjects.get(manifestKey);
-        if (!manifestBytes) {
-          throw new Error("Expected native-input Sandbox manifest");
-        }
-        const manifest = piApiFirstTurnManifestSchema.parse(
-          JSON.parse(manifestBytes.toString("utf8")),
-        );
-        let h0: Buffer;
-        if (turn === 1) {
-          const published = checkpointObjects.get(sessionKey);
-          if (!published) {
-            throw new Error("Expected fresh sandbox-first session object");
-          }
-          h0 = published;
-          expect(manifest).toMatchObject({
-            schemaVersion: 3,
-            outcome: "ownership-transfer",
-            mode: "sandbox-first",
-            baseSession: { sessionId: run.threadId, sha256: null },
-            session: {
-              sessionId: run.threadId,
-              sha256: createHash("sha256").update(h0).digest("hex"),
-              rawSize: h0.length,
-            },
-            sandboxEventSequenceStart: 1,
-          });
-        } else {
-          if (!expectedH0) {
-            throw new Error("Expected settled first-turn checkpoint");
-          }
-          const hash = createHash("sha256").update(expectedH0).digest("hex");
-          const blobKey = `${bucket}/blobs/${hash}.blob`;
-          expect(manifest).toMatchObject({
-            schemaVersion: 4,
-            outcome: "ownership-transfer",
-            mode: "sandbox-first",
-            baseSession: { sessionId: run.threadId, sha256: hash },
-            session: {
-              sessionId: run.threadId,
-              sha256: hash,
-              rawSize: expectedH0.length,
-            },
-            history: {
-              encoding: "identity",
-              encodedSize: expectedH0.length,
-              url: expect.any(String),
-            },
-            sandboxEventSequenceStart: 1,
-          });
-          if (manifest.schemaVersion !== 4) {
-            throw new Error("Expected referenced resume history");
-          }
-          expect(new URL(manifest.history.url).searchParams.get("object")).toBe(
-            blobKey,
-          );
-          expect(checkpointObjects.has(sessionKey)).toBeFalsy();
-          const referenced = checkpointObjects.get(blobKey);
-          if (!referenced) {
-            throw new Error("Expected referenced Sandbox checkpoint bytes");
-          }
-          h0 = referenced;
-          expect(h0).toStrictEqual(expectedH0);
-        }
-        const session = MemoryPiSession.fromJsonl(h0.toString("utf8"));
-        expect(session.getSessionId()).toBe(run.threadId);
-        expect(session.buildSessionContext().messages).toHaveLength(
-          (turn - 1) * 2,
-        );
-        const writes = context.mocks.s3.send.mock.calls.flatMap(([command]) => {
-          const candidate = command as PiCheckpointS3Command;
-          const key = piS3ObjectKey(candidate);
-          return candidate.constructor?.name === "PutObjectCommand" &&
-            (key === sessionKey || key === manifestKey)
-            ? [key]
-            : [];
-        });
-        expect(writes).toStrictEqual(
-          turn === 1 ? [sessionKey, manifestKey] : [manifestKey],
-        );
         expect(resourceDownloads).toBe(0);
         // Public usage summaries omit pending usage, so inspect this run's
-        // uniquely owned ledger to prove the handoff itself bills nothing.
+        // uniquely owned ledger to prove launching the turn bills nothing.
         await expect(
           readRunUsageEventsFixture(run.runId),
         ).resolves.toStrictEqual([]);
@@ -440,21 +327,48 @@ describe("CHAT-02: model-first provider policies", () => {
           cliAgentType: "pi",
           piSessionId: run.threadId,
           prompt: originalPrompt,
-          piLaunchConfig: {
-            apiFirstTurn: {
-              sandboxEventSequenceStart: 1,
-              requiredPiAgentRuntimeVersion: PI_AGENT_RUNTIME_VERSION,
-              minCliVersion: PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
-              requiredPiSessionConstructionDigest:
-                PI_SESSION_CONSTRUCTION_DIGEST,
-            },
-          },
           piInstalledCliRequirement: {
             requiredPiAgentRuntimeVersion: PI_AGENT_RUNTIME_VERSION,
             minCliVersion: PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
             requiredPiSessionConstructionDigest: PI_SESSION_CONSTRUCTION_DIGEST,
           },
         });
+        expect(claim.claim.piLaunchConfig).toMatchObject({ schemaVersion: 2 });
+        if (turn === 1) {
+          expect(claim.claim.resumeSession).toBeNull();
+        } else {
+          if (!expectedH0) {
+            throw new Error("Expected settled first-turn checkpoint");
+          }
+          const hash = createHash("sha256").update(expectedH0).digest("hex");
+          const resumeSession = claim.claim.resumeSession;
+          expect(resumeSession).toMatchObject({
+            sessionId: run.threadId,
+            historyRef: {
+              kind: "blob",
+              hash,
+              encoding: "identity",
+              rawSize: expectedH0.length,
+              encodedSize: expectedH0.length,
+              url: expect.any(String),
+            },
+          });
+          if (!resumeSession || !("historyRef" in resumeSession)) {
+            throw new Error("Expected referenced resume history");
+          }
+          expect(
+            new URL(resumeSession.historyRef.url).searchParams.get("object"),
+          ).toBe(`${bucket}/blobs/${hash}.blob`);
+        }
+        const h0 = piSandboxBaseSession(claim.claim, checkpointObjects);
+        if (turn === 2) {
+          expect(h0).toStrictEqual(expectedH0);
+        }
+        const session = MemoryPiSession.fromJsonl(h0.toString("utf8"));
+        expect(session.getSessionId()).toBe(run.threadId);
+        expect(session.buildSessionContext().messages).toHaveLength(
+          (turn - 1) * 2,
+        );
 
         const sandboxUsage = {
           idempotencyKey: randomUUID(),
@@ -536,7 +450,7 @@ describe("CHAT-02: model-first provider policies", () => {
     90_000,
   );
 
-  it("preserves inline OpenRouter resume bytes in a v3 sandbox handoff", async () => {
+  it("claims inline OpenRouter resume bytes unchanged for the Sandbox", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     if (!actor.orgId) {
       throw new Error("Expected entitled chat actor to have an org");
@@ -635,9 +549,7 @@ describe("CHAT-02: model-first provider policies", () => {
     if (!persistedBlob) {
       throw new Error("Expected the first Pi run to persist native H1");
     }
-    const [h0ObjectKey, firstSessionBytes] = persistedBlob;
-    const h0Hash = h0ObjectKey.slice(blobPrefix.length, -".blob".length);
-    const resumedH0 = firstSessionBytes.toString("utf8");
+    const resumedH0 = persistedBlob[1].toString("utf8");
     // Current checkpoint APIs persist blobs only; this test-owned historical
     // inline snapshot cannot be constructed through a production endpoint.
     await replacePiSessionHistoryInlineFixture({
@@ -669,31 +581,6 @@ describe("CHAT-02: model-first provider policies", () => {
     });
     const second = await waitingSecond.launchedRun();
 
-    const manifestKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${second.runId}/manifest.json`;
-    const manifestBytes = checkpointObjects.get(manifestKey);
-    if (!manifestBytes) {
-      throw new Error("Expected resume ownership-transfer manifest");
-    }
-    const manifest = piApiFirstTurnManifestSchema.parse(
-      JSON.parse(manifestBytes.toString("utf8")),
-    );
-    expect(manifest).toMatchObject({
-      schemaVersion: 3,
-      outcome: "ownership-transfer",
-      mode: "sandbox-first",
-      baseSession: { sessionId: first.threadId, sha256: h0Hash },
-      session: {
-        sessionId: first.threadId,
-        sha256: h0Hash,
-        rawSize: Buffer.byteLength(resumedH0),
-      },
-      sandboxEventSequenceStart: 1,
-    });
-    const publishedH0 = checkpointObjects.get(
-      `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${second.runId}/session.jsonl`,
-    );
-    expect(publishedH0).toStrictEqual(firstSessionBytes);
-    expect(manifest.schemaVersion).toBe(3);
     const claim = await api.claimRunnerJob(second.runId, { runnerIdentity });
     const sandboxHeaders = {
       authorization: `Bearer ${claim.sandboxToken}`,
@@ -706,13 +593,14 @@ describe("CHAT-02: model-first provider policies", () => {
         provider: "openrouter",
         serviceTier: "priority",
       },
+      resumeSession: { sessionId: first.threadId, sessionHistory: resumedH0 },
     });
     expect(resumedH0).not.toContain("serviceTier");
     await cancelChatRun(actor, second.runId, sandboxHeaders);
   }, 90_000);
 
   it.each(["malformed", "mismatched", "cyclic"] as const)(
-    "transfers $damage stored Pi history by reference without API parsing",
+    "claims $damage stored Pi history by reference without API parsing",
     async (damage) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       if (!actor.orgId) {
@@ -773,29 +661,22 @@ describe("CHAT-02: model-first provider policies", () => {
         prompt: "continue in Sandbox",
       });
       await flushWaitUntilForTest();
-      const manifestKey = `${bucket}/pi-api-first-turn/${second.runId}/manifest.json`;
-      const manifest = piApiFirstTurnManifestSchema.parse(
-        JSON.parse(
-          checkpointObjects.get(manifestKey)?.toString("utf8") ?? "{}",
-        ),
-      );
-      expect(manifest).toMatchObject({
-        schemaVersion: 4,
-        mode: "sandbox-first",
-        baseSession: { sessionId: first.threadId, sha256: hash },
-        session: {
-          sessionId: first.threadId,
-          sha256: hash,
+      const claim = await claimChatRun(runnerGroup, second.runId);
+      const resumeSession = claim.claim.resumeSession;
+      expect(resumeSession).toMatchObject({
+        sessionId: first.threadId,
+        historyRef: {
+          kind: "blob",
+          hash,
           rawSize: Buffer.byteLength(damagedH0),
         },
       });
-      if (manifest.schemaVersion !== 4) {
-        throw new Error("Expected a referenced Sandbox checkpoint");
+      if (!resumeSession || !("historyRef" in resumeSession)) {
+        throw new Error("Expected a referenced resume history");
       }
-      expect(new URL(manifest.history.url).searchParams.get("object")).toBe(
-        blobKey,
-      );
-      const claim = await claimChatRun(runnerGroup, second.runId);
+      expect(
+        new URL(resumeSession.historyRef.url).searchParams.get("object"),
+      ).toBe(blobKey);
       await cancelChatRun(actor, second.runId, claim.sandboxHeaders);
     },
     90_000,
@@ -891,40 +772,4 @@ describe("CHAT-02: model-first provider policies", () => {
     },
     90_000,
   );
-
-  it("fails the run without a runner job when its launch handoff cannot be published", async () => {
-    const { actor, agentId } = await entitledChatActor();
-    await configureBuiltInPiModel(actor, "gpt-5.6-terra");
-    mockPiResourceArchiveDownloads();
-    const checkpointObjects = mockPiCheckpointObjectStore();
-    const store = context.mocks.s3.send.getMockImplementation();
-    context.mocks.s3.send.mockImplementation((command: unknown) => {
-      const candidate = command as PiCheckpointS3Command;
-      const objectKey = piS3ObjectKey(candidate) ?? "";
-      if (
-        candidate.constructor?.name === "PutObjectCommand" &&
-        objectKey.includes("/pi-api-first-turn/") &&
-        objectKey.endsWith("/session.jsonl")
-      ) {
-        return Promise.reject(new Error("object store unavailable"));
-      }
-      return store?.(command) ?? Promise.resolve({});
-    });
-
-    const run = await sendChatRun(actor, {
-      agentId,
-      prompt: "start a Pi thread whose handoff cannot be stored",
-      model: "gpt-5.6-terra",
-    });
-    await flushWaitUntilForTest();
-
-    await waitForRunStatus(actor, run.runId, "failed");
-    const claim = await api.requestClaimRunnerJob(true, run.runId, [404]);
-    expect(claim.status).toBe(404);
-    expect(
-      [...checkpointObjects.keys()].filter((key) => {
-        return key.includes(`/pi-api-first-turn/${run.runId}/`);
-      }),
-    ).toStrictEqual([]);
-  });
 });

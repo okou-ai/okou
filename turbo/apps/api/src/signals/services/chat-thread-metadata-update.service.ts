@@ -149,7 +149,6 @@ function patchFingerprint(patch: ChatThreadMetadataPatch): string {
 async function readMutation(
   tx: Tx,
   args: ChatThreadMetadataUpdateArgs,
-  agentId: string,
 ): Promise<ExistingMutation | null> {
   const mutationId = args.mutationId;
   if (mutationId === undefined) {
@@ -179,12 +178,13 @@ async function readMutation(
   if (!primary && !secondary) {
     return null;
   }
+  // Integration threads can move to a new organization default Agent after
+  // acceptance. Replay belongs to the original principal and thread identity.
   const matchesIdentity = (row: (typeof rows)[number]) => {
     return (
       row.userId === args.principal.userId &&
       row.orgId === args.principal.orgId &&
-      row.threadId === args.threadId &&
-      row.agentId === agentId
+      row.threadId === args.threadId
     );
   };
   if (!primary || !matchesIdentity(primary)) {
@@ -196,6 +196,7 @@ async function readMutation(
     if (secondary) {
       if (
         !matchesIdentity(secondary) ||
+        secondary.agentId !== primary.agentId ||
         secondary.kind !== "model_selection_updated" ||
         secondary.createdAt.getTime() !== primary.createdAt.getTime()
       ) {
@@ -450,7 +451,7 @@ async function writeMetadata(
   }
   const agentId = current.agentId;
 
-  const existing = await readMutation(tx, args, agentId);
+  const existing = await readMutation(tx, args);
   signal.throwIfAborted();
   if (existing) {
     return await replayMutation(tx, args, existing);

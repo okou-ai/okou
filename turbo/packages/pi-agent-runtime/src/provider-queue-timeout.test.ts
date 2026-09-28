@@ -15,7 +15,7 @@ import {
   it,
   onTestFinished,
 } from "vitest";
-import { projectPiApiAssistantMessage } from "./api-turn";
+import { piModelFailureReason } from "./model-request-diagnostics";
 import { piAgentStreamForConfig, resolvePiAgentModel } from "./model";
 import { createPiAgentSessionForRuntime } from "./session-runtime";
 
@@ -194,9 +194,7 @@ describe("provider-declared queue expiry", () => {
           },
         },
       ]);
-      expect(projectPiApiAssistantMessage(result).failureReason).toBe(
-        "provider_queue_timeout",
-      );
+      expect(piModelFailureReason(result)).toBe("provider_queue_timeout");
       expect(JSON.stringify(result.diagnostics)).not.toContain(queueTimeout);
     },
   );
@@ -403,7 +401,7 @@ describe("provider-declared queue expiry", () => {
     );
     const result = await stream().result();
     expect(result.stopReason).toBe("stop");
-    expect(projectPiApiAssistantMessage(result).failureReason).toBeUndefined();
+    expect(piModelFailureReason(result)).toBeUndefined();
     expect(result.diagnostics).toBeUndefined();
   });
 

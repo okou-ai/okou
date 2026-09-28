@@ -41,6 +41,7 @@ import {
   type AgentRunModelPin,
 } from "./agent-run-create.service";
 import { buildAgentExecutionConfig } from "./agent-execution-config";
+import { requestPiMemoryStage1DayForAdmittedRun } from "./pi-memory-stage1-schedule.service";
 import {
   resolveChatThreadSession,
   type ChatThreadSessionResolution,
@@ -190,6 +191,8 @@ interface CreateAgentRunCommandArgs {
   readonly chatThreadId?: string;
   readonly connectorSourceId?: string;
   readonly threadSessionRoute?: ChatThreadSessionRoute;
+  /** A producer may atomically move an integration thread to this run's agent. */
+  readonly expectedThreadAgentId?: string;
   readonly webChatSessionPromptContext?: WebChatSessionPromptContext;
   readonly computerUseHostId?: string;
   readonly modelProviderId?: string;
@@ -1094,7 +1097,13 @@ function buildCreateAgentRunArgs(
       reasoningEffort: command.reasoningEffort,
     },
     dispatchFailedCallbacks: command.dispatchFailedCallbacks,
-    persistProducerRunBinding: command.persistProducerRunBinding,
+    persistProducerRunBinding: async (tx, run) => {
+      await command.persistProducerRunBinding?.(tx, run);
+      // Pi memory Stage 1 is owned by chat-thread launches, not the run core.
+      if (run.status === "pending" && command.chatThreadId) {
+        await requestPiMemoryStage1DayForAdmittedRun(tx, run.runId);
+      }
+    },
     ...(command.agentRunModelPin
       ? { agentRunModelPin: command.agentRunModelPin }
       : {}),
@@ -1206,6 +1215,7 @@ async function resolveThreadSessionForAgentRun(
         userId: input.command.auth.userId,
         orgId: input.command.auth.orgId,
         agentId: input.agent.id,
+        expectedThreadAgentId: input.command.expectedThreadAgentId,
         route: threadSessionRoute,
       });
     },

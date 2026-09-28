@@ -19,6 +19,8 @@ import { holdSubscriptionKmsBatch } from "./helpers/subscription-kms-batch";
 import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { setupRawAppRequestWithRoutes } from "../../../__tests__/test-app";
+import { chatEventsRoutes } from "../chat-events";
 import { modelProviderGatewayRoutes } from "../model-provider-gateways";
 import {
   modelProviderConnectionsMainContract,
@@ -1290,12 +1292,21 @@ describe("personal priority connection boundaries", () => {
       });
       await runs.requestCancelRun(f.actor, runId, [200]);
       await support.deletePersonalModelProvider(f.actor, type, [204]);
-      const { rejected } = await sendRejectedAtPick(f.actor, {
-        agentId: f.agentId,
-        model: f.model,
-        prompt: "missing organization API",
+      const unavailable = await createChatFilesBddApi(context).requestSendEvent(
+        f.actor,
+        {
+          agentId: f.agentId,
+          model: f.model,
+          prompt: "missing organization API",
+        },
+        [400],
+      );
+      expect(unavailable.body).toMatchObject({
+        error: {
+          code: "BAD_REQUEST",
+          message: "No valid model route is configured for this workspace",
+        },
       });
-      expect(rejected).toMatchObject({ error: "bad_request" });
     },
   );
 });
@@ -1490,14 +1501,44 @@ describe("personal effective provider entitlement", () => {
         availability: "plan_restricted",
       });
       await deleteOrgPlanEntitlementFixture(f.actor.orgId);
-      // Missing canonical entitlement is an invariant error, not permission to
-      // run: the pick fails before consuming, so the input stays queued.
-      const missing = await sendRejectedAtPick(f.actor, {
-        agentId: f.agentId,
-        model: f.model,
-        prompt: "missing plan authority",
+      // Missing canonical entitlement fails model selection before a thread,
+      // input or run can be created. Use raw HTTP for the invariant 500 status.
+      const clientThreadId = randomUUID();
+      createRouteMocks(context).clerk.session(
+        f.actor.userId,
+        f.actor.orgId,
+        f.actor.orgRole,
+      );
+      const missing = await setupRawAppRequestWithRoutes({
+        context,
+        routes: chatEventsRoutes,
+      })("/api/chat/events", {
+        method: "POST",
+        headers: {
+          authorization: "Bearer clerk-session",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          agentId: f.agentId,
+          model: f.model,
+          clientThreadId,
+          prompt: "missing plan authority",
+          userMessage: {
+            version: 1,
+            parts: [{ type: "text", text: "missing plan authority" }],
+          },
+          hasTextContent: true,
+        }),
       });
-      expect(missing.rejected).toBeUndefined();
+      expect(missing).toStrictEqual({
+        status: 500,
+        body: { error: "Internal server error" },
+      });
+      await createChatFilesBddApi(context).requestReadThreadMetadata(
+        f.actor,
+        clientThreadId,
+        [404],
+      );
     },
   );
 });
@@ -1768,12 +1809,21 @@ describe("personal priority gateway and session boundaries", () => {
         `Bearer ${f.connected.token}`,
       );
       await support.deletePersonalModelProvider(f.actor, f.type, [204]);
-      const { rejected } = await sendRejectedAtPick(f.actor, {
-        agentId: f.agentId,
-        model: f.model,
-        prompt: "the selected organization route must be valid",
+      const unavailable = await createChatFilesBddApi(context).requestSendEvent(
+        f.actor,
+        {
+          agentId: f.agentId,
+          model: f.model,
+          prompt: "the selected organization route must be valid",
+        },
+        [400],
+      );
+      expect(unavailable.body).toMatchObject({
+        error: {
+          code: "BAD_REQUEST",
+          message: "No valid model route is configured for this workspace",
+        },
       });
-      expect(rejected).toMatchObject({ error: "bad_request" });
     },
   );
 

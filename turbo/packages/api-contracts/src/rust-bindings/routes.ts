@@ -2,7 +2,6 @@ import { runnerRealtimeTokenContract } from "../contracts/realtime";
 import { runnerSshContract } from "../contracts/runner-ssh";
 import { runnerVncContract } from "../contracts/runner-vnc";
 import {
-  runnersActiveInputsContract,
   runnersCancellationContract,
   runnersConnectorRuntimeSyncContract,
   runnersBuiltinFirewallsResolveContract,
@@ -73,30 +72,6 @@ export const rustRouteBindings = [
     route: runnersJobClaimContract.claim,
     rustModulePath: ["runners", "jobs", "by_id", "claim"],
     rustConstName: "CLAIM",
-  },
-  {
-    route: runnersActiveInputsContract.reserve,
-    rustModulePath: [
-      "runners",
-      "runs",
-      "by_run_id",
-      "active_inputs",
-      "reserve",
-    ],
-    rustConstName: "RESERVE",
-  },
-  {
-    route: runnersActiveInputsContract.receipt,
-    rustModulePath: [
-      "runners",
-      "runs",
-      "by_run_id",
-      "active_inputs",
-      "deliveries",
-      "by_delivery_id",
-      "receipt",
-    ],
-    rustConstName: "RECEIPT",
   },
   {
     route: runnersSteerContract.next,

@@ -1,3 +1,4 @@
+import { resolveEnqueuedChatInputModel } from "./chat-input-model.service";
 import { randomUUID } from "node:crypto";
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
 import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context";
@@ -134,6 +135,11 @@ export async function workflowAutomationQueueEventWriter(
       id: args.queueEventId ?? randomUUID(),
       chatThreadId: args.chatThreadId,
       eventType: "input.automation" as const,
+      modelSelection: await resolveEnqueuedChatInputModel(tx, {
+        threadId: args.chatThreadId,
+        orgId: automation.orgId,
+        userId: automation.ownerUserId,
+      }),
       content: null,
       userMessage,
       runId: null,

@@ -1,16 +1,13 @@
 import { command } from "ccstate";
 
-import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { waitUntil } from "../context/wait-until";
-import { deleteS3Objects } from "../external/s3";
 import { tapError } from "../utils";
 import {
   dispatchCompleteSideEffectsCore$,
   type DispatchCompleteSideEffectsInput,
 } from "./agent-webhook-complete.service";
 import { pickOrgQueuedChatThreads$ } from "./chat-thread-queue-drain.service";
-import { piSandboxHandoffObjectKey } from "./pi-sandbox-handoff.service";
 import type { ReleasedRunSlot } from "./agent-run-terminal-transition.service";
 
 const L = logger("RunLifecycle");
@@ -45,31 +42,14 @@ export const scheduleReleasedSlotPicks$ = command(
   },
 );
 
-/** Dispatch terminal effects and clean staging data. */
+/** Dispatch terminal effects. */
 export const dispatchCompleteSideEffects$ = command(
   async (
-    { get, set },
+    { set },
     input: DispatchCompleteSideEffectsInput,
     signal: AbortSignal,
   ): Promise<void> => {
     await set(dispatchCompleteSideEffectsCore$, input, signal);
     signal.throwIfAborted();
-    if (input.cleanupPiSandboxHandoff) {
-      await tapError(
-        get(
-          deleteS3Objects(env("R2_USER_STORAGES_BUCKET_NAME"), [
-            piSandboxHandoffObjectKey(input.runId, "manifest"),
-            piSandboxHandoffObjectKey(input.runId, "session"),
-          ]),
-        ),
-        (error) => {
-          L.warn("Failed to release Pi sandbox handoff objects", {
-            runId: input.runId,
-            error,
-          });
-        },
-      );
-      signal.throwIfAborted();
-    }
   },
 );

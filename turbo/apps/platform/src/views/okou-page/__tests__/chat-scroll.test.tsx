@@ -222,13 +222,40 @@ function mockMutableConversation(
     chatEvents: [...initialEvents],
     activeRunIds: [...activeRunIds],
   });
-  context.mocks.api(chatThreadEventsContract.rows, ({ query, respond }) => {
-    const rows = mockChatEventRows(normalizeMockChatEvents(events, threadId))
+  const rowsSince = (sinceSeqId: number) => {
+    return mockChatEventRows(normalizeMockChatEvents(events, threadId))
       .filter((row) => {
-        return row.seqId > query.sinceSeqId;
+        return row.seqId > sinceSeqId;
       })
-      .slice(0, query.limit ?? 50);
-    return respond(200, chatEventRowsResponse(rows, query));
+      .map((row) => {
+        // The batched catch-up stores the last row ID as the next rows cursor.
+        // Use real UUID IDs in both paths so that cursor is valid on replay.
+        return {
+          ...row,
+          id: `00000000-0000-4000-8000-${row.seqId.toString(16).padStart(12, "0")}`,
+        };
+      });
+  };
+  context.mocks.api(chatThreadEventsContract.rows, ({ query, respond }) => {
+    return respond(
+      200,
+      chatEventRowsResponse(
+        rowsSince(query.sinceSeqId).slice(0, query.limit ?? 50),
+        query,
+      ),
+    );
+  });
+  // The Worker may warm its cache through the batched endpoint before the
+  // page fetches rows. Both endpoints must describe the same persisted events.
+  context.mocks.api(chatThreadEventsContract.catchUp, ({ body, respond }) => {
+    return respond(200, {
+      events: Object.fromEntries(
+        body.map(([id, sinceSeqId]) => {
+          return [id, id === threadId ? rowsSince(sinceSeqId) : []];
+        }),
+      ),
+      notFoundThreads: [],
+    });
   });
   return {
     publish: (nextEvents) => {

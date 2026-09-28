@@ -1,38 +1,24 @@
 import { computed, type Computed } from "ccstate";
-import { guaranteedConnectorProvidedBindingNames } from "@okouai/api-contracts/contracts/connector-schemas";
 import type {
   TelegramBot,
-  TelegramBotStatus,
   TelegramLinkStatusResponse,
 } from "@okouai/api-contracts/contracts/integrations-telegram";
-import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { telegramInstallations } from "@okouai/db/schema/telegram-installation";
 import { telegramOfficialUserLinks } from "@okouai/db/schema/telegram-official-user-link";
-import { telegramUserLinks } from "@okouai/db/schema/telegram-user-link";
-import { telegramUserAgentPreferences } from "@okouai/db/schema/telegram-user-agent-preference";
-import { and, desc, eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import { env } from "../../lib/env";
 import { db$ } from "../external/db";
 import { buildTelegramBotAvatarUrl } from "../external/telegram-avatar";
 import { checkTelegramDomain } from "../external/telegram-domain";
-import { getMe, isTelegramApiError } from "../external/telegram-client";
 import {
   getOfficialTelegramBotConfig,
-  isOfficialTelegramBotId,
   OFFICIAL_TELEGRAM_BOT_ID,
 } from "../external/telegram-official";
-import { safeUrlParse, settle } from "../utils";
-import { decryptPersistentSecretValue } from "./crypto.utils";
-import { userFeatureSwitchContext } from "./feature-switches.service";
-import { builtinConnectorList } from "./connector-data.service";
-import { userSecrets, userVariables } from "./user-data.service";
-import { userConfiguredAgentEnvironmentRequirements } from "./agent-execution-config";
+import { safeUrlParse } from "../utils";
 
 type TelegramBotListItem = TelegramBot;
-type TelegramInstallationRow = typeof telegramInstallations.$inferSelect;
 type TelegramConnectedUser = NonNullable<TelegramBot["connectedUser"]>;
 
 function officialUserLink(args: {
@@ -85,28 +71,6 @@ function getOrgAgent(args: {
   });
 }
 
-function userAgentPreference(args: {
-  readonly orgId: string;
-  readonly userId: string;
-}): Computed<Promise<string | null>> {
-  return computed(async (get) => {
-    const db = get(db$);
-    const [row] = await db
-      .select({
-        selectedAgentId: telegramUserAgentPreferences.selectedAgentId,
-      })
-      .from(telegramUserAgentPreferences)
-      .where(
-        and(
-          eq(telegramUserAgentPreferences.userId, args.userId),
-          eq(telegramUserAgentPreferences.orgId, args.orgId),
-        ),
-      )
-      .limit(1);
-    return row?.selectedAgentId ?? null;
-  });
-}
-
 function defaultAgentId(args: {
   readonly orgId: string;
 }): Computed<Promise<string | null>> {
@@ -131,15 +95,6 @@ function officialCompose(args: {
   }>
 > {
   return computed(async (get) => {
-    const selectedId = await get(userAgentPreference(args));
-    if (selectedId) {
-      const selected = await get(
-        getOrgAgent({ agentId: selectedId, orgId: args.orgId }),
-      );
-      if (selected) {
-        return { agent: selected, usesDefaultAgent: false };
-      }
-    }
     const defaultId = await get(defaultAgentId({ orgId: args.orgId }));
     if (!defaultId) {
       return { agent: null, usesDefaultAgent: true };
@@ -190,49 +145,7 @@ export function telegramBots(args: {
   readonly userId: string;
 }): Computed<Promise<readonly TelegramBotListItem[]>> {
   return computed(async (get): Promise<readonly TelegramBotListItem[]> => {
-    const db = get(db$);
-
-    const installations = await db
-      .select()
-      .from(telegramInstallations)
-      .where(eq(telegramInstallations.orgId, args.orgId))
-      .orderBy(
-        desc(telegramInstallations.createdAt),
-        desc(telegramInstallations.telegramBotId),
-      );
-
-    const customBots: TelegramBotListItem[] = await Promise.all(
-      installations.map((installation) => {
-        return get(customTelegramBot({ installation, userId: args.userId }));
-      }),
-    );
-
-    const official = await get(buildOfficialTelegramBot(args));
-    return [official, ...customBots];
-  });
-}
-
-function telegramUserLink(args: {
-  readonly botId: string;
-  readonly userId: string;
-}): Computed<Promise<TelegramConnectedUser | null>> {
-  return computed(async (get) => {
-    const db = get(db$);
-    const [row] = await db
-      .select({
-        telegramUserId: telegramUserLinks.telegramUserId,
-        telegramUsername: telegramUserLinks.telegramUsername,
-        telegramDisplayName: telegramUserLinks.telegramDisplayName,
-      })
-      .from(telegramUserLinks)
-      .where(
-        and(
-          eq(telegramUserLinks.installationId, args.botId),
-          eq(telegramUserLinks.userId, args.userId),
-        ),
-      )
-      .limit(1);
-    return row ?? null;
+    return [await get(buildOfficialTelegramBot(args))];
   });
 }
 
@@ -241,117 +154,20 @@ export const telegramAccountNotLinked = Object.freeze({
   body: Object.freeze({
     error: Object.freeze({
       message:
-        "No Telegram account linked to the current user for this bot. Link Telegram first.",
+        "No Telegram account linked to the current user. Link Telegram first.",
       code: "NOT_FOUND",
     }),
   }),
 });
 
-/**
- * Resolves `chatId: "me"` to the caller's private chat with a bot. A private
- * chat ID equals the Telegram user ID linked to the caller for that bot: the
- * official bot links per user/org, custom bots link per installation. Callers
- * must verify the bot belongs to the org before resolving.
- */
+/** Resolves `chatId: "me"` to the caller's private chat with the official bot. */
 export function currentUserTelegramChatId(args: {
   readonly orgId: string;
   readonly userId: string;
-  readonly botId: string;
 }): Computed<Promise<string | null>> {
   return computed(async (get) => {
-    const link = isOfficialTelegramBotId(args.botId)
-      ? await get(officialUserLink({ orgId: args.orgId, userId: args.userId }))
-      : await get(telegramUserLink({ botId: args.botId, userId: args.userId }));
+    const link = await get(officialUserLink(args));
     return link?.telegramUserId ?? null;
-  });
-}
-
-function telegramEnvironment(args: {
-  readonly agent: TelegramAgentRow | null;
-  readonly orgId: string;
-  readonly userId: string;
-}): Computed<Promise<TelegramBotStatus["environment"]>> {
-  return computed(async (get) => {
-    const { secrets: requiredSecrets, vars: requiredVars } = args.agent
-      ? userConfiguredAgentEnvironmentRequirements(args.agent.name)
-      : { secrets: [], vars: [] };
-
-    const [secretList, variableList, connectorState] = await Promise.all([
-      get(userSecrets({ orgId: args.orgId, userId: args.userId })),
-      get(userVariables({ orgId: args.orgId, userId: args.userId })),
-      get(builtinConnectorList({ orgId: args.orgId, userId: args.userId })),
-    ]);
-    const existingSecretNames = new Set([
-      ...secretList.secrets.map((secret) => {
-        return secret.name;
-      }),
-      ...guaranteedConnectorProvidedBindingNames({
-        bindings: connectorState.connectorProvidedBindings,
-        namespace: "secrets",
-      }),
-    ]);
-    const existingVarNames = new Set([
-      ...variableList.variables.map((variable) => {
-        return variable.name;
-      }),
-      ...guaranteedConnectorProvidedBindingNames({
-        bindings: connectorState.connectorProvidedBindings,
-        namespace: "vars",
-      }),
-    ]);
-
-    return {
-      requiredSecrets,
-      requiredVars,
-      missingSecrets: requiredSecrets.filter((name) => {
-        return !existingSecretNames.has(name);
-      }),
-      missingVars: requiredVars.filter((name) => {
-        return !existingVarNames.has(name);
-      }),
-    };
-  });
-}
-
-function customTelegramBot(args: {
-  readonly installation: TelegramInstallationRow;
-  readonly userId: string;
-}): Computed<Promise<TelegramBot>> {
-  return computed(async (get) => {
-    const [agent, userLink, tokenStatus] = await Promise.all([
-      get(
-        getOrgAgent({
-          agentId: args.installation.defaultAgentId,
-          orgId: args.installation.orgId,
-        }),
-      ),
-      get(
-        telegramUserLink({
-          botId: args.installation.telegramBotId,
-          userId: args.userId,
-        }),
-      ),
-      resolveIntegrationTokenStatus(
-        args.installation,
-        await get(
-          userFeatureSwitchContext(
-            args.installation.orgId,
-            args.installation.ownerUserId,
-          ),
-        ),
-      ),
-    ]);
-
-    return {
-      id: args.installation.telegramBotId,
-      username: args.installation.botUsername,
-      avatarUrl: buildTelegramBotAvatarUrl(args.installation.telegramBotId),
-      agent: agent ? { id: agent.id, name: agent.name } : null,
-      isOwner: args.installation.ownerUserId === args.userId,
-      isConnected: userLink !== null,
-      connectedUser: userLink,
-      tokenStatus,
-    };
   });
 }
 
@@ -359,107 +175,12 @@ function telegramLoginOrigin(): string {
   return new URL(env("APP_URL")).origin;
 }
 
-function customTelegramBotStatus(args: {
-  readonly installation: TelegramInstallationRow;
-  readonly userId: string;
-}): Computed<Promise<TelegramBotStatus>> {
-  return computed(async (get) => {
-    const agent = await get(
-      getOrgAgent({
-        agentId: args.installation.defaultAgentId,
-        orgId: args.installation.orgId,
-      }),
-    );
-    const [bot, environment, domainConfigured] = await Promise.all([
-      get(customTelegramBot(args)),
-      get(
-        telegramEnvironment({
-          agent,
-          orgId: args.installation.orgId,
-          userId: args.userId,
-        }),
-      ),
-      checkTelegramDomain(
-        args.installation.telegramBotId,
-        telegramLoginOrigin(),
-      ),
-    ]);
-
-    return { ...bot, domainConfigured, environment };
-  });
-}
-
-function officialTelegramBotStatus(args: {
-  readonly orgId: string;
-  readonly userId: string;
-}): Computed<Promise<TelegramBotStatus>> {
-  return computed(async (get) => {
-    const config = getOfficialTelegramBotConfig();
-    const official = await get(officialCompose(args));
-    const [bot, environment, domainConfigured] = await Promise.all([
-      get(buildOfficialTelegramBot(args)),
-      get(telegramEnvironment({ agent: official.agent, ...args })),
-      config.botId
-        ? checkTelegramDomain(config.botId, telegramLoginOrigin())
-        : Promise.resolve(false),
-    ]);
-
-    return { ...bot, domainConfigured, environment };
-  });
-}
-
 export function telegramIntegrationBots(args: {
   readonly orgId: string;
   readonly userId: string;
 }): Computed<Promise<readonly TelegramBot[]>> {
   return computed(async (get): Promise<readonly TelegramBot[]> => {
-    const db = get(db$);
-    const installations = await db
-      .select()
-      .from(telegramInstallations)
-      .where(eq(telegramInstallations.orgId, args.orgId))
-      .orderBy(
-        desc(telegramInstallations.createdAt),
-        desc(telegramInstallations.telegramBotId),
-      );
-
-    const customBots = await Promise.all(
-      installations.map((installation) => {
-        return get(customTelegramBot({ installation, userId: args.userId }));
-      }),
-    );
-    const official = await get(buildOfficialTelegramBot(args));
-    return [official, ...customBots];
-  });
-}
-
-export function telegramIntegrationBotStatus(args: {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly botId: string;
-}): Computed<Promise<TelegramBotStatus | null>> {
-  return computed(async (get) => {
-    if (args.botId === OFFICIAL_TELEGRAM_BOT_ID) {
-      return await get(officialTelegramBotStatus(args));
-    }
-
-    const db = get(db$);
-    const [installation] = await db
-      .select()
-      .from(telegramInstallations)
-      .where(eq(telegramInstallations.telegramBotId, args.botId))
-      .limit(1);
-
-    if (!installation || installation.orgId !== args.orgId) {
-      return null;
-    }
-
-    return await get(
-      customTelegramBotStatus({
-        installation,
-        userId: args.userId,
-      }),
-    );
+    return [await get(buildOfficialTelegramBot(args))];
   });
 }
 
@@ -490,19 +211,6 @@ function resolveTelegramLoginOrigin(originParam: string | undefined): string {
   return brandedOrigin;
 }
 
-function orgMismatchResult(): TelegramLinkStatusResult {
-  return {
-    status: 403,
-    body: {
-      error: {
-        message:
-          "This Telegram bot belongs to a different organization. Switch to the bot's organization to connect.",
-        code: "FORBIDDEN",
-      },
-    },
-  };
-}
-
 export function telegramIntegrationLinkStatus(args: {
   readonly orgId: string;
   readonly userId: string;
@@ -510,7 +218,6 @@ export function telegramIntegrationLinkStatus(args: {
   readonly origin?: string;
 }): Computed<Promise<TelegramLinkStatusResult>> {
   return computed(async (get): Promise<TelegramLinkStatusResult> => {
-    const db = get(db$);
     const telegramLoginOrigin = resolveTelegramLoginOrigin(args.origin);
 
     if (args.botId === OFFICIAL_TELEGRAM_BOT_ID) {
@@ -548,196 +255,6 @@ export function telegramIntegrationLinkStatus(args: {
       };
     }
 
-    const [userLink] = await db
-      .select({
-        telegramUserId: telegramUserLinks.telegramUserId,
-        botUsername: telegramInstallations.botUsername,
-      })
-      .from(telegramUserLinks)
-      .innerJoin(
-        telegramInstallations,
-        eq(
-          telegramUserLinks.installationId,
-          telegramInstallations.telegramBotId,
-        ),
-      )
-      .where(
-        and(
-          eq(telegramUserLinks.userId, args.userId),
-          eq(telegramInstallations.orgId, args.orgId),
-          args.botId
-            ? eq(telegramUserLinks.installationId, args.botId)
-            : undefined,
-        ),
-      )
-      .orderBy(desc(telegramUserLinks.createdAt))
-      .limit(1);
-
-    if (userLink) {
-      return {
-        status: 200,
-        body: {
-          linked: true,
-          telegramUserId: userLink.telegramUserId,
-          botUsername: userLink.botUsername ?? undefined,
-        },
-      };
-    }
-
-    if (args.botId) {
-      const [installation] = await db
-        .select({
-          telegramBotId: telegramInstallations.telegramBotId,
-          botUsername: telegramInstallations.botUsername,
-          orgId: telegramInstallations.orgId,
-        })
-        .from(telegramInstallations)
-        .where(eq(telegramInstallations.telegramBotId, args.botId))
-        .limit(1);
-
-      if (installation) {
-        if (installation.orgId !== args.orgId) {
-          return orgMismatchResult();
-        }
-        if (!installation.botUsername) {
-          return { status: 200, body: { linked: false } };
-        }
-
-        const domainConfigured = await checkTelegramDomain(
-          installation.telegramBotId,
-          telegramLoginOrigin,
-        );
-        return {
-          status: 200,
-          body: {
-            linked: false,
-            installation: {
-              id: installation.telegramBotId,
-              botUsername: installation.botUsername,
-              loginBotId: installation.telegramBotId,
-              domainConfigured,
-            },
-          },
-        };
-      }
-    }
-
     return { status: 200, body: { linked: false } };
   });
-}
-
-export function telegramInstallation(args: {
-  readonly orgId: string;
-  readonly botId: string;
-}): Computed<
-  Promise<{
-    readonly botToken: string;
-    readonly botUsername: string | null;
-  } | null>
-> {
-  return computed(async (get) => {
-    const db = get(db$);
-
-    const [row] = await db
-      .select({
-        encryptedBotToken: telegramInstallations.encryptedBotToken,
-        botUsername: telegramInstallations.botUsername,
-        ownerUserId: telegramInstallations.ownerUserId,
-      })
-      .from(telegramInstallations)
-      .where(
-        and(
-          eq(telegramInstallations.telegramBotId, args.botId),
-          eq(telegramInstallations.orgId, args.orgId),
-        ),
-      )
-      .limit(1);
-
-    if (!row) {
-      return null;
-    }
-
-    return {
-      botToken: await decryptPersistentSecretValue(
-        row.encryptedBotToken,
-        await get(userFeatureSwitchContext(args.orgId, row.ownerUserId)),
-      ),
-      botUsername: row.botUsername ?? null,
-    };
-  });
-}
-
-export function telegramBotToken(args: {
-  readonly botId: string;
-  readonly orgId?: string;
-}): Computed<
-  Promise<{
-    readonly botToken: string;
-    readonly botUsername: string | null;
-  } | null>
-> {
-  return computed(async (get) => {
-    const db = get(db$);
-    const [row] = await db
-      .select({
-        encryptedBotToken: telegramInstallations.encryptedBotToken,
-        botUsername: telegramInstallations.botUsername,
-        ownerUserId: telegramInstallations.ownerUserId,
-        orgId: telegramInstallations.orgId,
-      })
-      .from(telegramInstallations)
-      .where(
-        and(
-          eq(telegramInstallations.telegramBotId, args.botId),
-          args.orgId ? eq(telegramInstallations.orgId, args.orgId) : undefined,
-        ),
-      )
-      .limit(1);
-
-    if (!row) {
-      return null;
-    }
-
-    return {
-      botToken: await decryptPersistentSecretValue(
-        row.encryptedBotToken,
-        await get(userFeatureSwitchContext(row.orgId, row.ownerUserId)),
-      ),
-      botUsername: row.botUsername ?? null,
-    };
-  });
-}
-
-function isInvalidTelegramTokenError(error: unknown): boolean {
-  if (!isTelegramApiError(error)) {
-    return false;
-  }
-
-  return (
-    error.status === 401 ||
-    /unauthorized|not found/i.test(error.description ?? "")
-  );
-}
-
-async function resolveIntegrationTokenStatus(
-  installation: TelegramInstallationRow,
-  featureSwitchContext: FeatureSwitchContext,
-): Promise<TelegramBot["tokenStatus"]> {
-  const token = await decryptPersistentSecretValue(
-    installation.encryptedBotToken,
-    featureSwitchContext,
-  );
-  const result = await settle(getMe(token));
-
-  if (!result.ok) {
-    if (isInvalidTelegramTokenError(result.error)) {
-      return "invalid";
-    }
-    return "unknown";
-  }
-
-  if (String(result.value.id) !== installation.telegramBotId) {
-    return "invalid";
-  }
-  return "valid";
 }

@@ -1,7 +1,6 @@
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
-import { telegramInstallations } from "@okouai/db/schema/telegram-installation";
 
 import { eventConsumerPayload$ } from "../../lib/event-consumer/route";
 import { logger } from "../../lib/log";
@@ -12,8 +11,6 @@ import {
   getOfficialTelegramBotConfig,
   isOfficialTelegramBotId,
 } from "../external/telegram-official";
-import { decryptPersistentSecretValue } from "../services/crypto.utils";
-import { loadUserFeatureSwitchContext } from "../services/feature-switches.service";
 import { internalRunCallbackKindForRecord } from "../services/internal-run-callback";
 import { tapError } from "../utils";
 
@@ -89,39 +86,15 @@ const refreshTelegramTypingForRun$ = command(
       }
     }
 
+    const config = getOfficialTelegramBotConfig();
+    if (!config.botToken) {
+      return;
+    }
     for (const target of targets.values()) {
-      if (isOfficialTelegramBotId(target.installationId)) {
-        const config = getOfficialTelegramBotConfig();
-        if (!config.botToken) {
-          continue;
-        }
-        await sendChatAction(config.botToken, target.chatId, "typing");
+      if (!isOfficialTelegramBotId(target.installationId)) {
         continue;
       }
-
-      const [installation] = await db
-        .select({
-          encryptedBotToken: telegramInstallations.encryptedBotToken,
-          orgId: telegramInstallations.orgId,
-          ownerUserId: telegramInstallations.ownerUserId,
-        })
-        .from(telegramInstallations)
-        .where(eq(telegramInstallations.telegramBotId, target.installationId))
-        .limit(1);
-
-      if (!installation) {
-        continue;
-      }
-
-      const botToken = await decryptPersistentSecretValue(
-        installation.encryptedBotToken,
-        await loadUserFeatureSwitchContext(
-          db,
-          installation.orgId,
-          installation.ownerUserId,
-        ),
-      );
-      await sendChatAction(botToken, target.chatId, "typing");
+      await sendChatAction(config.botToken, target.chatId, "typing");
     }
   },
 );

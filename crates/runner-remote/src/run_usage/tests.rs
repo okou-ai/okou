@@ -80,7 +80,7 @@ fn unsafe_proxy_quantities_emit_no_totals() {
 }
 
 #[test]
-fn result_has_no_api_first_turn_source() {
+fn result_serializes_only_the_sandbox_proxy_source() {
     let sandbox_proxy = proxy(true, totals(1, 2, 3, 4));
     let result = ResultDto {
         schema_version: 1,

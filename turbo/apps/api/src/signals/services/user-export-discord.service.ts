@@ -3,7 +3,6 @@ import { discordChatIngress } from "@okouai/db/schema/discord-chat-ingress";
 import { discordChatThreadRoutes } from "@okouai/db/schema/discord-chat-thread-route";
 import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
 import { discordOrgInstallations } from "@okouai/db/schema/discord-org-installation";
-import { discordUserAgentPreferences } from "@okouai/db/schema/discord-user-agent-preference";
 import { discordUserDmPreferences } from "@okouai/db/schema/discord-user-dm-preference";
 import { and, asc, eq, getTableColumns, gt, inArray, lte } from "drizzle-orm";
 import { z } from "zod";
@@ -13,7 +12,6 @@ import type { Db } from "../external/db";
 export const discordExportKindSchema = z.enum([
   "installations",
   "connections",
-  "agent-preferences",
   "dm-preferences",
   "routes",
   "ingress",
@@ -51,25 +49,6 @@ async function readDiscordInstallationsPage(args: DiscordExportArgs) {
     .limit(PAGE_SIZE);
 }
 
-async function readDiscordAgentPreferencesPage(args: DiscordExportArgs) {
-  const { db, userId, cursor, startedAt } = args;
-  return await db
-    .select({
-      key: discordUserAgentPreferences.orgId,
-      row: getTableColumns(discordUserAgentPreferences),
-    })
-    .from(discordUserAgentPreferences)
-    .where(
-      and(
-        eq(discordUserAgentPreferences.userId, userId),
-        lte(discordUserAgentPreferences.createdAt, startedAt),
-        cursor ? gt(discordUserAgentPreferences.orgId, cursor) : undefined,
-      ),
-    )
-    .orderBy(asc(discordUserAgentPreferences.orgId))
-    .limit(PAGE_SIZE);
-}
-
 /** Each page is account-scoped, including ingress accepted before a route exists. */
 export async function readDiscordUserExportPage(args: DiscordExportArgs) {
   const { db, userId, cursor, startedAt } = args;
@@ -98,9 +77,6 @@ export async function readDiscordUserExportPage(args: DiscordExportArgs) {
         )
         .orderBy(asc(discordOrgConnections.id))
         .limit(PAGE_SIZE);
-    }
-    case "agent-preferences": {
-      return await readDiscordAgentPreferencesPage(args);
     }
     case "dm-preferences": {
       return await db

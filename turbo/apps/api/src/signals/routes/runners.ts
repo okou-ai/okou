@@ -3,7 +3,6 @@ import {
   CONNECTOR_RUNTIME_SYNC_RUN_TERMINAL_ERROR_CODE,
   elapsedSinceApiStartMs,
   RESUME_SESSION_HISTORY_MAX_BYTES,
-  runnersActiveInputsContract,
   runnersConnectorRuntimeSyncContract,
   runnersBuiltinFirewallsResolveContract,
   runnersHeartbeatContract,
@@ -40,7 +39,6 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { agents } from "@okouai/db/schema/agent";
 import { blobs } from "@okouai/db/schema/blob";
-import { piMemoryPhase2Jobs } from "@okouai/db/schema/pi-memory-phase2-job";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import {
   runnerState,
@@ -53,6 +51,8 @@ import {
   eq,
   gt,
   inArray,
+  isNotNull,
+  isNull,
   lt,
   lte,
   notInArray,
@@ -111,8 +111,6 @@ import { reportBuiltInModelProviderFailure } from "../services/built-in-model-pr
 import {
   declareSteeredInput,
   loadNextSteerableInput,
-  recordActiveInputDeliveryReceipt,
-  reserveActiveInputDelivery,
 } from "../services/active-input-delivery.service";
 import { notifyRunningChatRunOfPendingInput } from "../services/chat-thread-queue-drain.service";
 import { loadConnectorRuntimeSnapshot } from "../services/connector-catalog-runtime.service";
@@ -969,18 +967,23 @@ async function getClaimableJob(
         appendSystemPrompt: agentRuns.appendSystemPrompt,
         vars: agentRuns.vars,
       },
-      maintenanceRunId: piMemoryPhase2Jobs.maintenanceRunId,
     })
     .from(runnerJobQueue)
     .innerJoin(agentRuns, eq(runnerJobQueue.runId, agentRuns.id))
-    .innerJoin(agentSessions, eq(agentSessions.id, agentRuns.sessionId))
-    .leftJoin(
-      piMemoryPhase2Jobs,
+    .innerJoin(
+      agentSessions,
       and(
-        eq(piMemoryPhase2Jobs.maintenanceRunId, agentRuns.id),
-        eq(piMemoryPhase2Jobs.orgId, agentRuns.orgId),
-        eq(piMemoryPhase2Jobs.userId, agentRuns.userId),
-        eq(piMemoryPhase2Jobs.status, "leased"),
+        eq(agentSessions.id, agentRuns.sessionId),
+        or(
+          isNotNull(agentSessions.agentId),
+          // An unbound session belongs directly to the run's owner. Its
+          // producer owns admission and lifecycle fencing, not runner claim.
+          and(
+            eq(agentSessions.orgId, agentRuns.orgId),
+            eq(agentSessions.userId, agentRuns.userId),
+            isNull(agentRuns.chatThreadId),
+          ),
+        ),
       ),
     )
     .where(
@@ -992,10 +995,7 @@ async function getClaimableJob(
     .limit(1);
   signal.throwIfAborted();
 
-  if (
-    jobWithRun &&
-    (jobWithRun.run.agentId !== null || jobWithRun.maintenanceRunId === runId)
-  ) {
+  if (jobWithRun) {
     return {
       job: jobWithRun.job,
       run: jobWithRun.run,
@@ -1582,7 +1582,7 @@ function assertClaimConnectorIdentity(
     storedContext.connectorRuntimeTargets.length > 0
   ) {
     throw new Error(
-      "Private Pi memory maintenance run cannot use connector runtime targets",
+      "Runs without an agent cannot use connector runtime targets",
     );
   }
 }
@@ -2971,97 +2971,6 @@ const builtinFirewallsResolveInner$ = command(
   },
 );
 
-const activeInputReserveBody$ = bodyResultOf(
-  runnersActiveInputsContract.reserve,
-);
-const activeInputReceiptBody$ = bodyResultOf(
-  runnersActiveInputsContract.receipt,
-);
-
-const reserveActiveInputsInner$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    const auth = get(authContext$);
-    const { runId } = get(pathParamsOf(runnersActiveInputsContract.reserve));
-    if (auth.tokenType !== "sandbox" || auth.runId !== runId) {
-      return forbidden("Active input delivery is not available");
-    }
-    const body = await get(activeInputReserveBody$);
-    signal.throwIfAborted();
-    if (!body.ok) {
-      return body.response;
-    }
-    const result = await reserveActiveInputDelivery(
-      set(writeDb$),
-      {
-        runId,
-        userId: auth.userId,
-        orgId: auth.orgId,
-      },
-      signal,
-    );
-    if (result.outcome === "forbidden") {
-      return forbidden("Active input delivery is not available");
-    }
-    if (result.outcome === "reserved") {
-      // The delivery ID is the source chat event ID.
-      return {
-        status: 200 as const,
-        body: {
-          outcome: result.outcome,
-          deliveryId: result.deliveryId,
-          eventIds: [result.deliveryId],
-          prompt: result.prompt,
-        },
-      };
-    }
-    return { status: 200 as const, body: result };
-  },
-);
-
-const recordActiveInputDeliveryReceiptInner$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    const auth = get(authContext$);
-    const { runId, deliveryId } = get(
-      pathParamsOf(runnersActiveInputsContract.receipt),
-    );
-    if (auth.tokenType !== "sandbox" || auth.runId !== runId) {
-      return forbidden("Active input delivery is not available");
-    }
-    const body = await get(activeInputReceiptBody$);
-    signal.throwIfAborted();
-    if (!body.ok) {
-      return body.response;
-    }
-    const result = await recordActiveInputDeliveryReceipt(
-      set(writeDb$),
-      {
-        runId,
-        deliveryId,
-        userId: auth.userId,
-        orgId: auth.orgId,
-      },
-      signal,
-    );
-    if (result.outcome === "forbidden") {
-      return forbidden("Active input delivery is not available");
-    }
-    if (result.replacementsAppended) {
-      await publishChatThreadMessageCreatedSafely({
-        userId: auth.userId,
-        orgId: auth.orgId,
-        threadId: result.chatThreadId,
-      });
-      signal.throwIfAborted();
-      await notifyRunningChatRunOfPendingInput(
-        set(writeDb$),
-        result.chatThreadId,
-      );
-      signal.throwIfAborted();
-    }
-    return { status: 200 as const, body: { outcome: result.outcome } };
-  },
-);
-
 const steeredInputBody$ = bodyResultOf(runnersSteerContract.steered);
 
 const nextSteerableInputInner$ = command(
@@ -3177,20 +3086,6 @@ export const runnersRoutes: readonly RouteEntry[] = [
   {
     route: runnersModelProviderFailuresContract.report,
     handler: modelProviderFailureInner$,
-  },
-  {
-    route: runnersActiveInputsContract.reserve,
-    handler: authRoute(
-      { accept: ["sandbox"], acceptAnySandboxCapability: true },
-      reserveActiveInputsInner$,
-    ),
-  },
-  {
-    route: runnersActiveInputsContract.receipt,
-    handler: authRoute(
-      { accept: ["sandbox"], acceptAnySandboxCapability: true },
-      recordActiveInputDeliveryReceiptInner$,
-    ),
   },
   {
     route: runnersSteerContract.next,

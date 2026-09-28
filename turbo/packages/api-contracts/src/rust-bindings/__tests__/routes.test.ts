@@ -47,32 +47,6 @@ const expectedBindings = [
     rustConstName: "CLAIM",
   },
   {
-    method: "POST",
-    path: "/api/runners/runs/:runId/active-inputs/reserve",
-    rustModulePath: [
-      "runners",
-      "runs",
-      "by_run_id",
-      "active_inputs",
-      "reserve",
-    ],
-    rustConstName: "RESERVE",
-  },
-  {
-    method: "POST",
-    path: "/api/runners/runs/:runId/active-inputs/deliveries/:deliveryId/receipt",
-    rustModulePath: [
-      "runners",
-      "runs",
-      "by_run_id",
-      "active_inputs",
-      "deliveries",
-      "by_delivery_id",
-      "receipt",
-    ],
-    rustConstName: "RECEIPT",
-  },
-  {
     method: "GET",
     path: "/api/runners/runs/:runId/steerable-inputs/next",
     rustModulePath: [
@@ -327,13 +301,13 @@ describe("Rust route bindings", () => {
     expect(rendered).toContain("encode_path_segment(params.item_id)");
   });
 
-  it("renders both active-input receipt path parameters", () => {
+  it("renders both steered-input path parameters", () => {
     const rendered = renderRustRoutes(rustRouteBindings);
 
     expect(rendered).toContain("pub run_id: &'a str,");
-    expect(rendered).toContain("pub delivery_id: &'a str,");
+    expect(rendered).toContain("pub event_id: &'a str,");
     expect(rendered).toContain(
-      "crate::route::encode_path_segment(params.delivery_id)",
+      "crate::route::encode_path_segment(params.event_id)",
     );
   });
 

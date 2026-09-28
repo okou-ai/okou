@@ -1,7 +1,8 @@
+import { resolveRequiredDefaultChatThreadModelPin } from "./chat-thread-model.service";
+import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
 import { createHash } from "node:crypto";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { discordGatewayReceipts } from "@okouai/db/schema/discord-gateway-receipt";
-import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   discordChatIngress,
   type DiscordChatIngressStatus,
@@ -31,14 +32,48 @@ export interface DiscordChatThreadRouteBinding extends DiscordChatThreadRouteKey
 function discordChatThreadRouteWhere(key: DiscordChatThreadRouteKey) {
   return and(
     eq(discordChatThreadRoutes.connectionId, key.connectionId),
-    eq(discordChatThreadRoutes.channelId, key.channelId),
+    key.sessionKey === INTEGRATION_DM_SESSION_KEY
+      ? undefined
+      : eq(discordChatThreadRoutes.channelId, key.channelId),
     eq(discordChatThreadRoutes.sessionKey, key.sessionKey),
     eq(discordChatThreadRoutes.userId, key.userId),
   );
 }
 
+export async function refreshDiscordDirectMessageRouteDestination(
+  db: Pick<Db, "update">,
+  route: DiscordChatThreadRouteBinding,
+  channelId: string,
+): Promise<DiscordChatThreadRouteBinding> {
+  if (
+    route.sessionKey !== INTEGRATION_DM_SESSION_KEY ||
+    (route.channelId === channelId &&
+      (route.destinationChannelId === null ||
+        route.destinationChannelId === channelId))
+  ) {
+    return route;
+  }
+  const [updated] = await db
+    .update(discordChatThreadRoutes)
+    .set({ channelId, destinationChannelId: channelId })
+    .where(
+      and(
+        eq(discordChatThreadRoutes.id, route.id),
+        discordChatThreadRouteWhere(route),
+      ),
+    )
+    .returning({
+      channelId: discordChatThreadRoutes.channelId,
+      destinationChannelId: discordChatThreadRoutes.destinationChannelId,
+    });
+  if (!updated) {
+    throw new Error("Failed to update Discord DM route destination");
+  }
+  return { ...route, ...updated };
+}
+
 async function loadDiscordChatThreadRoute(
-  db: Pick<Db, "select">,
+  db: Pick<Db, "select" | "update">,
   key: DiscordChatThreadRouteKey,
 ): Promise<DiscordChatThreadRouteBinding | undefined> {
   const [route] = await db
@@ -54,7 +89,13 @@ async function loadDiscordChatThreadRoute(
     .from(discordChatThreadRoutes)
     .where(discordChatThreadRouteWhere(key))
     .limit(1);
-  return route;
+  return route
+    ? await refreshDiscordDirectMessageRouteDestination(
+        db,
+        route,
+        key.channelId,
+      )
+    : undefined;
 }
 
 export async function findDiscordChatThreadRoute(
@@ -65,7 +106,7 @@ export async function findDiscordChatThreadRoute(
 }
 
 async function requireDiscordChatThreadRoute(
-  db: Pick<Db, "select">,
+  db: Pick<Db, "select" | "update">,
   key: DiscordChatThreadRouteKey,
 ): Promise<DiscordChatThreadRouteBinding> {
   const route = await loadDiscordChatThreadRoute(db, key);
@@ -77,17 +118,44 @@ async function requireDiscordChatThreadRoute(
   return route;
 }
 
+interface CanonicalDiscordChatThreadRouteArgs extends DiscordChatThreadRouteKey {
+  readonly orgId: string;
+  readonly agentId: string;
+  readonly currentTime: Date;
+  readonly ingressId: string;
+  readonly claimToken: string;
+}
+
+/** Read the route already owned by an ingress claim and refresh its destination. */
+async function requireAssignedDiscordChatThreadRoute(
+  db: Pick<Db, "select" | "update">,
+  key: DiscordChatThreadRouteKey,
+  routeId: string,
+): Promise<DiscordChatThreadRouteBinding> {
+  const [assigned] = await db
+    .select()
+    .from(discordChatThreadRoutes)
+    .where(
+      and(
+        eq(discordChatThreadRoutes.id, routeId),
+        eq(discordChatThreadRoutes.connectionId, key.connectionId),
+        eq(discordChatThreadRoutes.userId, key.userId),
+      ),
+    )
+    .limit(1);
+  if (!assigned) {
+    throw new Error("Discord ingress has no assigned route");
+  }
+  return await refreshDiscordDirectMessageRouteDestination(
+    db,
+    assigned,
+    key.channelId,
+  );
+}
+
 export async function ensureCanonicalDiscordChatThreadRoute(
   db: Db,
-  args: DiscordChatThreadRouteKey & {
-    readonly orgId: string;
-    readonly agentId: string;
-    readonly selectedModel: string | null;
-    readonly serviceTier: ChatThreadServiceTier | null;
-    readonly currentTime: Date;
-    readonly ingressId: string;
-    readonly claimToken: string;
-  },
+  args: CanonicalDiscordChatThreadRouteArgs,
 ): Promise<DiscordChatThreadRouteBinding | undefined> {
   return await db.transaction(async (tx) => {
     const [claim] = await tx
@@ -107,15 +175,11 @@ export async function ensureCanonicalDiscordChatThreadRoute(
       return undefined;
     }
     if (claim.routeId) {
-      const [assigned] = await tx
-        .select()
-        .from(discordChatThreadRoutes)
-        .where(eq(discordChatThreadRoutes.id, claim.routeId))
-        .limit(1);
-      if (!assigned) {
-        throw new Error("Discord ingress has no assigned route");
-      }
-      return assigned;
+      return await requireAssignedDiscordChatThreadRoute(
+        tx,
+        args,
+        claim.routeId,
+      );
     }
     const existing = await loadDiscordChatThreadRoute(tx, args);
     if (existing) {
@@ -123,6 +187,10 @@ export async function ensureCanonicalDiscordChatThreadRoute(
       return existing;
     }
 
+    const initialModel = await resolveRequiredDefaultChatThreadModelPin(
+      tx,
+      args,
+    );
     const mediaModels = await loadNewChatThreadMediaModels(tx, {
       orgId: args.orgId,
       userId: args.userId,
@@ -136,9 +204,10 @@ export async function ensureCanonicalDiscordChatThreadRoute(
       .values({
         userId: args.userId,
         agentId: args.agentId,
-        selectedModel: args.selectedModel,
+        selectedModel: initialModel.selectedModel,
         modelSettings,
-        codexServiceTier: args.serviceTier === "priority" ? "fast" : null,
+        codexServiceTier:
+          initialModel.serviceTier === "priority" ? "fast" : null,
         title: null,
         lastReadAt: args.currentTime,
         lastMessageAt: args.currentTime,
@@ -193,9 +262,9 @@ export async function ensureCanonicalDiscordChatThreadRoute(
       chatThreadId: thread.id,
       agentId: args.agentId,
       title: null,
-      selectedModel: args.selectedModel,
+      selectedModel: initialModel.selectedModel,
       modelSettings,
-      serviceTier: args.serviceTier,
+      serviceTier: initialModel.serviceTier,
       ...mediaModels,
       createdAt: thread.createdAt,
     });

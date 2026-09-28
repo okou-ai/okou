@@ -1,12 +1,9 @@
+import { resolveEnqueuedChatInputModel } from "./chat-input-model.service";
 import { touchNativeChatThread } from "./native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
-import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import { command, computed } from "ccstate";
-import {
-  DEFAULT_AGENT_DISPLAY_NAME,
-  BRAND_PRESENTATION,
-  agentDisplayName,
-} from "@okouai/core/brand-presentation";
+import { createHmac, timingSafeEqual } from "node:crypto";
+import { command } from "ccstate";
+import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { v5 as uuidv5 } from "uuid";
 import {
   getCanonicalModelDisplayName,
@@ -27,54 +24,36 @@ import {
   type TelegramMessageEntity,
 } from "@okouai/db/schema/telegram-message";
 import { telegramChatThreadRoutes } from "@okouai/db/schema/telegram-chat-thread-route";
-import { telegramInstallations } from "@okouai/db/schema/telegram-installation";
 import { telegramOfficialUserLinks } from "@okouai/db/schema/telegram-official-user-link";
-import { telegramUserAgentPreferences } from "@okouai/db/schema/telegram-user-agent-preference";
-import { telegramUserLinks } from "@okouai/db/schema/telegram-user-link";
 import { and, desc, eq, like, or } from "drizzle-orm";
 import {
   INTEGRATION_DM_SESSION_PREFIX,
-  integrationDmSessionKey,
+  INTEGRATION_DM_SESSION_KEY,
 } from "../../lib/integration-dm-session";
 import { escapeHtml } from "../../lib/telegram-format";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
-import { webUrl } from "../../lib/web-url";
-import { bodyResultOf, pathParamsOf } from "../context/request";
+import { pathParamsOf } from "../context/request";
 import { request$ } from "../context/hono";
 import { waitUntil } from "../context/wait-until";
 import { writeDb$, type Db } from "../external/db";
 import {
   publishChatThreadMessageCreatedSafely,
-  publishOrgSignal,
   publishThreadListChangedSafely,
 } from "../external/realtime";
-import { checkTelegramDomain } from "../external/telegram-domain";
 import {
   buildFileDownloadUrl,
   getFile,
-  getMe,
-  isTelegramApiError,
   sendChatAction,
   sendMessage,
-  setMyCommands,
-  setWebhook,
   type TelegramReplyMarkup,
 } from "../external/telegram-client";
 import {
   getOfficialTelegramBotConfig,
   isOfficialTelegramBotId,
 } from "../external/telegram-official";
-import { now, nowDate } from "../../lib/time";
-import { safeJsonParse, safeUrlParse, tapError } from "../utils";
-import {
-  decryptPersistentSecretValue,
-  encryptPersistentSecretValue,
-} from "./crypto.utils";
-import {
-  resolveIntegrationModelRouteForUser$,
-  type IntegrationModelRoutePin,
-} from "./integration-model-route.service";
+import { now } from "../../lib/time";
+import { safeJsonParse, tapError } from "../utils";
 import { listOrgModelPolicies$ } from "./model-policy.service";
 import {
   enqueueChatInput,
@@ -101,37 +80,21 @@ import {
   readyIntegrationInputAsset,
   type IntegrationInputFile,
 } from "./integration-input-assets.service";
-import { telegramIntegrationBotStatus } from "./telegram-data.service";
 import {
   formatTelegramUserDisplayName,
   linkOfficialTelegramUser$,
-  linkTelegramUser$,
 } from "./telegram-link.service";
 import {
   updateUserModelPreference$,
   userModelPreference,
 } from "./user-data.service";
-import { userFeatureSwitchContext } from "./feature-switches.service";
-import type { ApiOrgRole, AuthTokenType } from "../../types/auth";
 
 const log = logger("api:telegram:post");
 const MAX_CONTEXT_MESSAGES = 10;
 const MAX_TELEGRAM_DOWNLOAD_BYTES = 20 * 1024 * 1024;
-const PENDING_TELEGRAM_USER_ID = "pending";
 const TELEGRAM_CHAT_MESSAGE_ID_NAMESPACE =
   "f2233eb8-9b2f-41b2-9240-b34983f595af";
 
-interface OrganizationAuth {
-  readonly tokenType: AuthTokenType;
-  readonly userId: string;
-  readonly orgId: string;
-  readonly orgRole?: ApiOrgRole;
-}
-type TelegramInstallation = typeof telegramInstallations.$inferSelect;
-type CanonicalTelegramInstallation = TelegramInstallation & {
-  readonly defaultAgentId: string;
-};
-type TelegramUserLink = typeof telegramUserLinks.$inferSelect;
 type OfficialTelegramUserLink = typeof telegramOfficialUserLinks.$inferSelect;
 
 interface TelegramPhotoSize {
@@ -230,13 +193,11 @@ interface TelegramWebhookUpdate {
   readonly message?: TelegramMessage;
 }
 
-type TelegramMessageScope =
-  | { readonly kind: "custom"; readonly installationId: string }
-  | {
-      readonly kind: "official";
-      readonly orgId: string;
-      readonly userLinkId: string | null;
-    };
+interface TelegramMessageScope {
+  readonly kind: "official";
+  readonly orgId: string;
+  readonly userLinkId: string | null;
+}
 
 interface TelegramFileContext {
   readonly file_id: string;
@@ -268,54 +229,11 @@ interface WorkspaceAgent {
   readonly displayName: string | null;
 }
 
-type ModelRoutePin = IntegrationModelRoutePin;
-
 interface TelegramUserInfoExtras {
   readonly telegramDisplayName?: string;
   readonly telegramUsername?: string;
   readonly telegramUserId?: string;
   readonly telegramLanguage?: string;
-}
-
-function apiError<Status extends 400 | 403 | 404 | 409 | 500 | 502>(
-  status: Status,
-  message: string,
-  code:
-    | "BAD_REQUEST"
-    | "FORBIDDEN"
-    | "NOT_FOUND"
-    | "CONFLICT"
-    | "INTERNAL"
-    | "BAD_GATEWAY",
-) {
-  return {
-    status,
-    body: { error: { message, code } },
-  };
-}
-
-function badRequest(message: string) {
-  return apiError(400, message, "BAD_REQUEST");
-}
-
-function forbidden(message: string) {
-  return apiError(403, message, "FORBIDDEN");
-}
-
-function notFound(message: string) {
-  return apiError(404, message, "NOT_FOUND");
-}
-
-function conflict(message: string) {
-  return apiError(409, message, "CONFLICT");
-}
-
-function internalError(message: string) {
-  return apiError(500, message, "INTERNAL");
-}
-
-function badGateway(message: string) {
-  return apiError(502, message, "BAD_GATEWAY");
 }
 
 function textResponse(body: string, status: number): Response {
@@ -327,14 +245,6 @@ function textResponse(body: string, status: number): Response {
 
 function okText(): Response {
   return textResponse("OK", 200);
-}
-
-function generateCallbackSecret(): string {
-  return randomBytes(32).toString("hex");
-}
-
-function buildTelegramWebhookUrl(telegramBotId: string): string {
-  return `${webUrl()}/api/telegram/webhook/${telegramBotId}`;
 }
 
 function normalizeTelegramUsername(
@@ -349,15 +259,6 @@ function normalizeTelegramDisplayName(
 ): string | null {
   const value = telegramDisplayName?.trim().replace(/\s+/g, " ");
   return value ? value.slice(0, 255) : null;
-}
-
-function displayLabel(row: {
-  readonly displayName: string | null;
-  readonly name: string | null;
-}): string {
-  return (
-    row.displayName?.trim() || row.name?.trim() || DEFAULT_AGENT_DISPLAY_NAME
-  );
 }
 
 async function getWorkspaceAgent(
@@ -385,501 +286,6 @@ async function getWorkspaceAgent(
     displayName: row.displayName,
   };
 }
-
-async function getWorkspaceAgentDisplayLabel(
-  db: Db,
-  composeId: string,
-): Promise<string> {
-  const agent = await getWorkspaceAgent(db, composeId);
-  return agent ? displayLabel(agent) : DEFAULT_AGENT_DISPLAY_NAME;
-}
-
-async function getTelegramCommandAgentName(args: {
-  readonly db: Db;
-  readonly agentId: string;
-  readonly orgId: string;
-}): Promise<string> {
-  const displayName = await getWorkspaceAgentDisplayLabel(
-    args.db,
-    args.agentId,
-  );
-  const [metadata] = await args.db
-    .select({ defaultAgentId: orgMetadata.defaultAgentId })
-    .from(orgMetadata)
-    .where(eq(orgMetadata.orgId, args.orgId))
-    .limit(1);
-  return (
-    agentDisplayName({
-      agentId: args.agentId,
-      defaultAgentId: metadata?.defaultAgentId ?? null,
-      displayName,
-    }) ?? displayName
-  );
-}
-
-async function resolveDefaultAgentId(args: {
-  readonly db: Db;
-  readonly requestedAgentId: string | undefined;
-  readonly fallbackAgentId: string | null | undefined;
-  readonly orgId: string;
-}): Promise<
-  | { readonly ok: true; readonly agentId: string }
-  | ReturnType<typeof badRequest>
-  | ReturnType<typeof forbidden>
-  | ReturnType<typeof notFound>
-> {
-  let defaultAgentId = args.requestedAgentId ?? args.fallbackAgentId;
-  if (!defaultAgentId) {
-    const [metadata] = await args.db
-      .select({ defaultAgentId: orgMetadata.defaultAgentId })
-      .from(orgMetadata)
-      .where(eq(orgMetadata.orgId, args.orgId))
-      .limit(1);
-    defaultAgentId = metadata?.defaultAgentId ?? undefined;
-  }
-
-  if (!defaultAgentId) {
-    return badRequest(
-      "No default agent specified. Provide defaultAgentId or configure a default agent for the active organization.",
-    );
-  }
-
-  const [agent] = await args.db
-    .select({ id: agents.id, orgId: agents.orgId })
-    .from(agents)
-    .where(eq(agents.id, defaultAgentId))
-    .limit(1);
-
-  if (!agent) {
-    return notFound("Agent not found");
-  }
-  if (agent.orgId !== args.orgId) {
-    return forbidden(
-      "Telegram bots can only be connected to agents in the active organization.",
-    );
-  }
-
-  return { ok: true, agentId: agent.id };
-}
-
-async function configureTelegramBot(
-  args: {
-    readonly db: Db;
-    readonly botToken: string;
-    readonly telegramBotId: string;
-    readonly webhookSecret: string;
-    readonly agentId: string;
-    readonly orgId: string;
-  },
-  signal: AbortSignal,
-): Promise<ReturnType<typeof badGateway> | undefined> {
-  const agentName = await getTelegramCommandAgentName({
-    db: args.db,
-    agentId: args.agentId,
-    orgId: args.orgId,
-  });
-  signal.throwIfAborted();
-  const webhookConfigured = await tapError(
-    (async () => {
-      await setWebhook(
-        args.botToken,
-        buildTelegramWebhookUrl(args.telegramBotId),
-        args.webhookSecret,
-      );
-      return true;
-    })(),
-    (error) => {
-      log.error("Failed to set Telegram webhook", { error });
-    },
-  );
-  if (!webhookConfigured) {
-    return badGateway("Failed to register webhook with Telegram");
-  }
-
-  await tapError(
-    setMyCommands(args.botToken, [
-      { command: "new_session", description: "Start a new conversation" },
-      { command: "connect", description: `Connect to ${agentName}` },
-      { command: "model", description: "Choose your model" },
-      {
-        command: "disconnect",
-        description: `Disconnect from ${agentName}`,
-      },
-      { command: "help", description: "Show available commands" },
-    ]),
-    (error) => {
-      log.warn("Failed to register Telegram bot commands", { error });
-    },
-  );
-
-  return undefined;
-}
-
-async function publishTelegramOrgChanged(orgId: string): Promise<void> {
-  await tapError(publishOrgSignal(orgId, "telegram:changed"), (error) => {
-    log.warn("Failed to publish Telegram org change", { error });
-  });
-}
-
-function buildStatusResponse(args: {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly botId: string;
-}) {
-  return computed(async (get) => {
-    const status = await get(
-      telegramIntegrationBotStatus({
-        orgId: args.orgId,
-        userId: args.userId,
-        botId: args.botId,
-      }),
-    );
-    return status
-      ? { status: 200 as const, body: status }
-      : notFound("Telegram bot not found");
-  });
-}
-
-const handleExistingInstallation$ = command(
-  async (
-    { get },
-    args: {
-      readonly db: Db;
-      readonly existing: TelegramInstallation;
-      readonly body: {
-        readonly botToken: string;
-        readonly defaultAgentId?: string;
-        readonly reinstallBotId?: string;
-      };
-      readonly botInfo: { readonly username: string };
-      readonly auth: OrganizationAuth;
-    },
-    signal: AbortSignal,
-  ) => {
-    if (!args.body.reinstallBotId) {
-      return conflict(
-        `This bot is already installed. Use /connect in Telegram (@${
-          args.existing.botUsername ?? args.existing.telegramBotId
-        }) to link your account.`,
-      );
-    }
-
-    if (args.existing.orgId !== args.auth.orgId) {
-      return conflict(
-        "This Telegram bot is already installed in another workspace.",
-      );
-    }
-
-    if (
-      args.existing.ownerUserId !== args.auth.userId &&
-      args.auth.orgRole !== "admin"
-    ) {
-      return forbidden(
-        "Only the bot owner or an org admin can reinstall this bot",
-      );
-    }
-
-    const resolvedAgent = await resolveDefaultAgentId({
-      db: args.db,
-      requestedAgentId: args.body.defaultAgentId,
-      fallbackAgentId: args.existing.defaultAgentId,
-      orgId: args.auth.orgId,
-    });
-    signal.throwIfAborted();
-    if (!("ok" in resolvedAgent)) {
-      return resolvedAgent;
-    }
-
-    const webhookSecret = generateCallbackSecret();
-    const configureError = await configureTelegramBot(
-      {
-        db: args.db,
-        botToken: args.body.botToken,
-        telegramBotId: args.existing.telegramBotId,
-        webhookSecret,
-        agentId: resolvedAgent.agentId,
-        orgId: args.auth.orgId,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    if (configureError) {
-      return configureError;
-    }
-    const featureSwitchContext = await get(
-      userFeatureSwitchContext(args.auth.orgId, args.auth.userId),
-    );
-    signal.throwIfAborted();
-
-    const [updated] = await args.db
-      .update(telegramInstallations)
-      .set({
-        botUsername: args.botInfo.username,
-        encryptedBotToken: await encryptPersistentSecretValue(
-          args.body.botToken,
-          featureSwitchContext,
-        ),
-        webhookSecret,
-        defaultAgentId: resolvedAgent.agentId,
-        updatedAt: nowDate(),
-      })
-      .where(
-        eq(telegramInstallations.telegramBotId, args.existing.telegramBotId),
-      )
-      .returning();
-    signal.throwIfAborted();
-
-    await publishTelegramOrgChanged(args.auth.orgId);
-    signal.throwIfAborted();
-
-    return get(
-      buildStatusResponse({
-        orgId: args.auth.orgId,
-        userId: args.auth.userId,
-        botId: updated?.telegramBotId ?? args.existing.telegramBotId,
-      }),
-    );
-  },
-);
-
-function registerBodyError(message: string): ReturnType<typeof badRequest> {
-  return badRequest(
-    message.includes("defaultAgentId")
-      ? "defaultAgentId must be non-empty"
-      : "botToken is required",
-  );
-}
-
-export const registerTelegramBot$ = command(
-  async (
-    { get, set },
-    args: {
-      readonly auth: OrganizationAuth;
-    },
-    signal: AbortSignal,
-  ) => {
-    const { auth } = args;
-    const bodyResult = await get(
-      bodyResultOf(integrationsTelegramContract.register),
-    );
-    signal.throwIfAborted();
-    if (!bodyResult.ok) {
-      return registerBodyError(bodyResult.response.body.error.message);
-    }
-
-    const botInfo = await tapError(getMe(bodyResult.data.botToken));
-    signal.throwIfAborted();
-    if (!botInfo) {
-      return badRequest(
-        "Invalid bot token. Please verify your token with @BotFather.",
-      );
-    }
-
-    const db = set(writeDb$);
-    const telegramBotId = String(botInfo.id);
-    if (
-      bodyResult.data.reinstallBotId &&
-      bodyResult.data.reinstallBotId !== telegramBotId
-    ) {
-      return badRequest(
-        "This token belongs to a different Telegram bot. Paste the token for the selected bot.",
-      );
-    }
-
-    const [existing] = await db
-      .select()
-      .from(telegramInstallations)
-      .where(eq(telegramInstallations.telegramBotId, telegramBotId))
-      .limit(1);
-    signal.throwIfAborted();
-
-    if (existing) {
-      return set(
-        handleExistingInstallation$,
-        {
-          db,
-          existing,
-          body: bodyResult.data,
-          botInfo,
-          auth,
-        },
-        signal,
-      );
-    }
-
-    if (bodyResult.data.reinstallBotId) {
-      return notFound("Telegram bot not found");
-    }
-
-    const resolvedAgent = await resolveDefaultAgentId({
-      db,
-      requestedAgentId: bodyResult.data.defaultAgentId,
-      fallbackAgentId: undefined,
-      orgId: auth.orgId,
-    });
-    signal.throwIfAborted();
-    if (!("ok" in resolvedAgent)) {
-      return resolvedAgent;
-    }
-
-    const webhookSecret = generateCallbackSecret();
-    const featureSwitchContext = await get(
-      userFeatureSwitchContext(auth.orgId, auth.userId),
-    );
-    signal.throwIfAborted();
-    const [installation] = await db
-      .insert(telegramInstallations)
-      .values({
-        telegramBotId,
-        botUsername: botInfo.username,
-        encryptedBotToken: await encryptPersistentSecretValue(
-          bodyResult.data.botToken,
-          featureSwitchContext,
-        ),
-        webhookSecret,
-        defaultAgentId: resolvedAgent.agentId,
-        ownerUserId: auth.userId,
-        orgId: auth.orgId,
-      })
-      .returning();
-    signal.throwIfAborted();
-    if (!installation) {
-      return internalError("Failed to create installation");
-    }
-
-    const configureError = await configureTelegramBot(
-      {
-        db,
-        botToken: bodyResult.data.botToken,
-        telegramBotId: installation.telegramBotId,
-        webhookSecret,
-        agentId: resolvedAgent.agentId,
-        orgId: auth.orgId,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    if (configureError) {
-      await db
-        .delete(telegramInstallations)
-        .where(
-          eq(telegramInstallations.telegramBotId, installation.telegramBotId),
-        );
-      signal.throwIfAborted();
-      return configureError;
-    }
-
-    await publishTelegramOrgChanged(auth.orgId);
-    signal.throwIfAborted();
-
-    const status = await get(
-      telegramIntegrationBotStatus({
-        orgId: auth.orgId,
-        userId: auth.userId,
-        botId: installation.telegramBotId,
-      }),
-    );
-    signal.throwIfAborted();
-
-    return status
-      ? { status: 201 as const, body: status }
-      : internalError("Failed to create installation");
-  },
-);
-
-function resolveProbeOrigin(origin: string | undefined): string {
-  const brandedOrigin = new URL(env("APP_URL")).origin;
-  if (!origin) {
-    return brandedOrigin;
-  }
-
-  const parsed = safeUrlParse(origin);
-  if (
-    parsed &&
-    (parsed.protocol === "http:" || parsed.protocol === "https:") &&
-    parsed.origin === brandedOrigin
-  ) {
-    return parsed.origin;
-  }
-
-  return brandedOrigin;
-}
-
-function isInvalidTelegramTokenError(error: unknown): boolean {
-  return (
-    isTelegramApiError(error) &&
-    (error.status === 401 ||
-      /unauthorized|not found/i.test(error.description ?? ""))
-  );
-}
-
-export const setupTelegramStatus$ = command(
-  async (
-    { get, set },
-    args: {
-      readonly auth: OrganizationAuth;
-    },
-    signal: AbortSignal,
-  ) => {
-    const bodyResult = await get(
-      bodyResultOf(integrationsTelegramContract.setupStatus),
-    );
-    signal.throwIfAborted();
-    if (!bodyResult.ok) {
-      return badRequest("botToken is required");
-    }
-
-    const botInfo = await tapError(getMe(bodyResult.data.botToken), (error) => {
-      if (!isInvalidTelegramTokenError(error)) {
-        log.warn("Unable to verify Telegram setup status", { error });
-      }
-    });
-    signal.throwIfAborted();
-    if (!botInfo) {
-      return badRequest(
-        "Invalid bot token. Please verify your token with @BotFather.",
-      );
-    }
-
-    const botId = String(botInfo.id);
-    const db = set(writeDb$);
-    const [existing] = await db
-      .select({
-        orgId: telegramInstallations.orgId,
-        botUsername: telegramInstallations.botUsername,
-      })
-      .from(telegramInstallations)
-      .where(eq(telegramInstallations.telegramBotId, botId))
-      .limit(1);
-    signal.throwIfAborted();
-
-    if (existing) {
-      return conflict(
-        existing.orgId === args.auth.orgId
-          ? `This bot is already installed. Use /connect in Telegram (@${
-              existing.botUsername ?? botId
-            }) to link your account.`
-          : "This Telegram bot is already installed in another workspace.",
-      );
-    }
-
-    const domainConfigured = await checkTelegramDomain(
-      botId,
-      resolveProbeOrigin(bodyResult.data.origin),
-    );
-    signal.throwIfAborted();
-
-    return {
-      status: 200 as const,
-      body: {
-        id: botId,
-        username: botInfo.username ?? null,
-        domainConfigured,
-        privacyDisabled: botInfo.can_read_all_group_messages === true,
-      },
-    };
-  },
-);
 
 function verifyTelegramWebhook(
   request: Request,
@@ -1065,11 +471,9 @@ async function storeTelegramMessage(args: {
   await args.db
     .insert(telegramMessages)
     .values({
-      installationId:
-        args.scope.kind === "custom" ? args.scope.installationId : null,
-      officialOrgId: args.scope.kind === "official" ? args.scope.orgId : null,
-      officialUserLinkId:
-        args.scope.kind === "official" ? args.scope.userLinkId : null,
+      installationId: null,
+      officialOrgId: args.scope.orgId,
+      officialUserLinkId: args.scope.userLinkId,
       chatId: args.chatId,
       messageId: String(args.message.message_id),
       fromUserId: String(args.message.from?.id ?? 0),
@@ -1365,77 +769,6 @@ async function sendTypingActionSafely(
   });
 }
 
-const resolveUserLink$ = command(
-  async (
-    { set },
-    args: {
-      readonly db: Db;
-      readonly installationId: string;
-      readonly telegramUserId: string;
-      readonly telegramUsername?: string | null;
-      readonly telegramDisplayName?: string | null;
-    },
-    signal: AbortSignal,
-  ): Promise<TelegramUserLink | null> => {
-    const [direct] = await args.db
-      .select()
-      .from(telegramUserLinks)
-      .where(
-        and(
-          eq(telegramUserLinks.telegramUserId, args.telegramUserId),
-          eq(telegramUserLinks.installationId, args.installationId),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-
-    if (direct) {
-      const linked = await set(
-        linkTelegramUser$,
-        {
-          installationId: args.installationId,
-          telegramUserId: args.telegramUserId,
-          telegramUsername: args.telegramUsername,
-          telegramDisplayName: args.telegramDisplayName,
-          userId: direct.userId,
-        },
-        signal,
-      );
-      signal.throwIfAborted();
-      return linked.ok ? linked.userLink : direct;
-    }
-
-    const [pending] = await args.db
-      .select()
-      .from(telegramUserLinks)
-      .where(
-        and(
-          eq(telegramUserLinks.installationId, args.installationId),
-          eq(telegramUserLinks.telegramUserId, PENDING_TELEGRAM_USER_ID),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    if (!pending) {
-      return null;
-    }
-
-    const completed = await set(
-      linkTelegramUser$,
-      {
-        installationId: args.installationId,
-        telegramUserId: args.telegramUserId,
-        telegramUsername: args.telegramUsername,
-        telegramDisplayName: args.telegramDisplayName,
-        userId: pending.userId,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    return completed.ok ? completed.userLink : null;
-  },
-);
-
 const resolveOfficialUserLink$ = command(
   async (
     { set },
@@ -1619,9 +952,7 @@ async function fetchTelegramContext(args: {
     .from(telegramMessages)
     .where(
       and(
-        args.scope.kind === "custom"
-          ? eq(telegramMessages.installationId, args.scope.installationId)
-          : eq(telegramMessages.officialOrgId, args.scope.orgId),
+        eq(telegramMessages.officialOrgId, args.scope.orgId),
         eq(telegramMessages.chatId, args.chatId),
       ),
     )
@@ -1656,35 +987,27 @@ async function fetchTelegramContext(args: {
 }
 
 function agentMessageScope(args: {
-  readonly userLinkKind: "custom" | "official";
+  readonly userLinkKind: "official";
   readonly botId: string;
   readonly orgId: string;
   readonly userLinkId: string;
 }): TelegramMessageScope {
-  return args.userLinkKind === "custom"
-    ? { kind: "custom", installationId: args.botId }
-    : {
-        kind: "official",
-        orgId: args.orgId,
-        userLinkId: args.userLinkId,
-      };
+  return {
+    kind: "official",
+    orgId: args.orgId,
+    userLinkId: args.userLinkId,
+  };
 }
 
 function rootMessageIdForAgentMessage(args: {
   readonly isDM: boolean;
   readonly message: TelegramMessage;
   readonly botId: string;
-  readonly agentId: string;
-  readonly modelRoute: ModelRoutePin | undefined;
 }): string | undefined {
   if (args.isDM) {
     return args.message.reply_to_message
       ? String(args.message.reply_to_message.message_id)
-      : integrationDmSessionKey({
-          agentId: args.agentId,
-          selectedModel: args.modelRoute?.selectedModel ?? null,
-          serviceTier: args.modelRoute?.serviceTier ?? null,
-        });
+      : INTEGRATION_DM_SESSION_KEY;
   }
   return isTelegramReplyToBotId(args.message, args.botId)
     ? String(args.message.reply_to_message?.message_id)
@@ -1723,8 +1046,8 @@ interface TelegramAgentMessageArgs {
   readonly botId: string;
   readonly botUsername: string | null;
   readonly orgId: string;
-  readonly userLink: TelegramUserLink | OfficialTelegramUserLink;
-  readonly userLinkKind: "custom" | "official";
+  readonly userLink: OfficialTelegramUserLink;
+  readonly userLinkKind: "official";
   readonly composeId: string;
   readonly message: TelegramMessage;
   readonly isDM: boolean;
@@ -1746,12 +1069,7 @@ async function resetTelegramDmConversation(
     .delete(telegramChatThreadRoutes)
     .where(
       and(
-        ownerLink.kind === "custom"
-          ? eq(telegramChatThreadRoutes.telegramUserLinkId, ownerLink.id)
-          : eq(
-              telegramChatThreadRoutes.telegramOfficialUserLinkId,
-              ownerLink.id,
-            ),
+        eq(telegramChatThreadRoutes.telegramOfficialUserLinkId, ownerLink.id),
         eq(telegramChatThreadRoutes.chatId, chatId),
         or(
           eq(telegramChatThreadRoutes.rootMessageId, "dm"),
@@ -1858,7 +1176,6 @@ async function resolveTelegramChatMessageThread(
     readonly source: TelegramAgentMessageArgs;
     readonly chatId: string;
     readonly rootMessageId: string | undefined;
-    readonly modelRoute: ModelRoutePin | undefined;
   },
   currentTime: Date,
 ) {
@@ -1866,15 +1183,12 @@ async function resolveTelegramChatMessageThread(
     userId: args.source.userLink.userId,
     orgId: args.source.orgId,
     agentId: args.source.composeId,
-    selectedModel: args.modelRoute?.selectedModel ?? null,
-    serviceTier: args.modelRoute?.serviceTier ?? null,
     currentTime,
   };
   return args.rootMessageId === undefined
     ? await createTelegramChatThread(args.source.db, threadArgs)
     : await ensureTelegramChatThreadRoute(args.source.db, {
         ...threadArgs,
-        preserveThreadSettings: args.source.isDM,
         ownerLink: telegramOwnerLink(args.source),
         chatId: args.chatId,
         rootMessageId: args.rootMessageId,
@@ -1899,7 +1213,6 @@ const persistTelegramChatMessage$ = command(
       readonly context: string;
       readonly prompt: string;
       readonly userInfoExtras: TelegramUserInfoExtras;
-      readonly modelRoute: ModelRoutePin | undefined;
     },
     signal: AbortSignal,
   ): Promise<PersistedTelegramChatMessage> => {
@@ -1949,6 +1262,11 @@ const persistTelegramChatMessage$ = command(
       id: chatEventId,
       chatThreadId: binding.chatThreadId,
       eventType: "input.prompt",
+      modelSelection: await resolveEnqueuedChatInputModel(args.source.db, {
+        threadId: binding.chatThreadId,
+        orgId: args.source.orgId,
+        userId: args.source.userLink.userId,
+      }),
       content: null,
       userMessage: createUserMessageDocument({
         text: canonicalAsset ? runPrompt.text : args.prompt,
@@ -1968,12 +1286,11 @@ const persistTelegramChatMessage$ = command(
       }),
       createdAt: currentTime,
     } as const;
-    await insertChatEventContext(args.source.db, values);
-    signal.throwIfAborted();
     const eventId = await enqueueChatInput(args.source.db, {
       chatThreadId: binding.chatThreadId,
       orgId: args.source.orgId,
       appendInput: async (tx) => {
+        await insertChatEventContext(tx, values);
         return (await insertChatEvent(tx, values, "id"))?.id ?? null;
       },
     });
@@ -2001,7 +1318,6 @@ const runAgentForTelegram$ = command(
       readonly context: string;
       readonly prompt: string;
       readonly userInfoExtras: TelegramUserInfoExtras;
-      readonly modelRoute: ModelRoutePin | undefined;
     },
     signal: AbortSignal,
   ): Promise<void> => {
@@ -2059,10 +1375,7 @@ const handleTelegramAgentMessage$ = command(
       await postTelegramMessage({
         botToken: args.botToken,
         chatId,
-        text:
-          args.userLinkKind === "official"
-            ? `The workspace default agent is not configured. Please choose an agent in ${BRAND_PRESENTATION.brandName} first.`
-            : "The agent is not available. Please contact the admin.",
+        text: `The workspace default agent is not configured. Please choose an agent in ${BRAND_PRESENTATION.brandName} first.`,
         replyToMessageId: args.message.message_id,
       });
       signal.throwIfAborted();
@@ -2085,20 +1398,7 @@ const handleTelegramAgentMessage$ = command(
     });
     signal.throwIfAborted();
 
-    const modelRoute = await set(
-      resolveIntegrationModelRouteForUser$,
-      {
-        orgId: args.orgId,
-        userId: args.userLink.userId,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    const rootMessageId = rootMessageIdForAgentMessage({
-      ...args,
-      agentId: args.composeId,
-      modelRoute,
-    });
+    const rootMessageId = rootMessageIdForAgentMessage(args);
     const context = await loadOptionalChatEnrichment(
       "telegram",
       () => {
@@ -2127,7 +1427,6 @@ const handleTelegramAgentMessage$ = command(
         context,
         prompt: runPrompt.prompt,
         userInfoExtras: runPrompt.userInfoExtras,
-        modelRoute,
       },
       signal,
     );
@@ -2328,172 +1627,10 @@ function formatTelegramModelOptionsMessage(
   ].join("\n");
 }
 
-interface CustomCommandArgs {
-  readonly db: Db;
-  readonly installation: CanonicalTelegramInstallation;
-  readonly botToken: string;
-  readonly command: string;
-  readonly message: TelegramMessage;
-}
-
-const handleCustomCommand$ = command(
-  async (
-    { set },
-    args: CustomCommandArgs,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    const chatId = String(args.message.chat.id);
-    const fromUserId = String(args.message.from?.id ?? 0);
-    const displayName = formatTelegramUserDisplayName(args.message.from ?? {});
-    const replyToMessageId =
-      args.message.chat.type === "private"
-        ? undefined
-        : args.message.message_id;
-    const userLink = await set(
-      resolveUserLink$,
-      {
-        db: args.db,
-        installationId: args.installation.telegramBotId,
-        telegramUserId: fromUserId,
-        telegramUsername: args.message.from?.username ?? null,
-        telegramDisplayName: displayName,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    const agentName = await getWorkspaceAgentDisplayLabel(
-      args.db,
-      args.installation.defaultAgentId,
-    );
-    signal.throwIfAborted();
-    const reply = async (text: string, sig: AbortSignal): Promise<void> => {
-      await postTelegramMessage({
-        botToken: args.botToken,
-        chatId,
-        text,
-        replyToMessageId,
-      });
-      sig.throwIfAborted();
-    };
-    const connectPrompt = (sig: AbortSignal): Promise<void> => {
-      sig.throwIfAborted();
-      return sendCustomConnectPrompt({
-        db: args.db,
-        botToken: args.botToken,
-        installation: args.installation,
-        message: args.message,
-        chatId,
-        displayName,
-        fromUserId,
-        agentName,
-        replyToMessageId,
-      });
-    };
-
-    if (args.command === "help") {
-      await reply(
-        formatTelegramHelpMessage(args.installation.botUsername, agentName),
-        signal,
-      );
-      return;
-    }
-
-    if (args.command === "connect" || args.command === "start") {
-      if (userLink) {
-        await reply(
-          formatTelegramCommandSuccess(
-            formatTelegramAlreadyConnectedMessage(
-              args.installation.botUsername,
-              agentName,
-            ),
-          ),
-          signal,
-        );
-        return;
-      }
-      await connectPrompt(signal);
-      return;
-    }
-
-    if (!userLink) {
-      await connectPrompt(signal);
-      return;
-    }
-
-    if (args.command === "disconnect") {
-      await args.db
-        .delete(telegramUserLinks)
-        .where(eq(telegramUserLinks.id, userLink.id));
-      signal.throwIfAborted();
-      await reply(
-        formatTelegramCommandSuccess(
-          `You have been disconnected and your access to ${agentName} has been revoked.`,
-        ),
-        signal,
-      );
-      return;
-    }
-
-    if (args.command === "new_session") {
-      if (args.message.chat.type !== "private") {
-        return;
-      }
-      await resetTelegramDmConversation(
-        args.db,
-        { kind: "custom", id: userLink.id },
-        chatId,
-      );
-      signal.throwIfAborted();
-      await reply(formatTelegramCommandSuccess("New session started."), signal);
-      return;
-    }
-
-    if (args.command === "model") {
-      await set(
-        handleModelCommand$,
-        {
-          botToken: args.botToken,
-          message: args.message,
-          orgId: args.installation.orgId,
-          userId: userLink.userId,
-        },
-        signal,
-      );
-    }
-  },
-);
-
 async function resolveOfficialComposeId(
   db: Db,
   userLink: OfficialTelegramUserLink,
 ): Promise<string | null> {
-  const [preference] = await db
-    .select({
-      selectedAgentId: telegramUserAgentPreferences.selectedAgentId,
-    })
-    .from(telegramUserAgentPreferences)
-    .where(
-      and(
-        eq(telegramUserAgentPreferences.userId, userLink.userId),
-        eq(telegramUserAgentPreferences.orgId, userLink.orgId),
-      ),
-    )
-    .limit(1);
-  if (preference?.selectedAgentId) {
-    const [agent] = await db
-      .select({ id: agents.id })
-      .from(agents)
-      .where(
-        and(
-          eq(agents.id, preference.selectedAgentId),
-          eq(agents.orgId, userLink.orgId),
-        ),
-      )
-      .limit(1);
-    if (agent) {
-      return agent.id;
-    }
-  }
   const [metadata] = await db
     .select({ defaultAgentId: orgMetadata.defaultAgentId })
     .from(orgMetadata)
@@ -2629,282 +1766,6 @@ const handleOfficialCommand$ = command(
         signal,
       );
     }
-  },
-);
-
-interface CustomWebhookContext {
-  readonly db: Db;
-  readonly installation: CanonicalTelegramInstallation;
-  readonly botToken: string;
-  readonly message: TelegramMessage;
-  readonly apiStartTime: number;
-}
-
-const resolveCustomMessageUserLink$ = command(
-  async (
-    { set },
-    args: {
-      readonly db: Db;
-      readonly installationId: string;
-      readonly message: TelegramMessage;
-    },
-    signal: AbortSignal,
-  ): Promise<{
-    readonly userLink: TelegramUserLink | null;
-    readonly displayName: string | null;
-    readonly fromUserId: string;
-  }> => {
-    const displayName = formatTelegramUserDisplayName(args.message.from ?? {});
-    const fromUserId = String(args.message.from?.id ?? 0);
-    const userLink = await set(
-      resolveUserLink$,
-      {
-        db: args.db,
-        installationId: args.installationId,
-        telegramUserId: fromUserId,
-        telegramUsername: args.message.from?.username ?? null,
-        telegramDisplayName: displayName,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    return { userLink, displayName, fromUserId };
-  },
-);
-
-async function sendCustomConnectPrompt(args: {
-  readonly db: Db;
-  readonly botToken: string;
-  readonly installation: CanonicalTelegramInstallation;
-  readonly message: TelegramMessage;
-  readonly chatId: string;
-  readonly displayName: string | null;
-  readonly fromUserId: string;
-  readonly agentName?: string;
-  readonly replyToMessageId?: number;
-}): Promise<void> {
-  const agentName =
-    args.agentName ??
-    (await getWorkspaceAgentDisplayLabel(
-      args.db,
-      args.installation.defaultAgentId,
-    ));
-  await sendConnectPrompt({
-    botToken: args.botToken,
-    botId: args.installation.telegramBotId,
-    botUsername: args.installation.botUsername,
-    chatId: args.chatId,
-    chatType: args.message.chat.type,
-    fromUserId: args.fromUserId,
-    telegramUsername: args.message.from?.username ?? null,
-    telegramDisplayName: args.displayName,
-    agentName,
-    replyToMessageId: args.replyToMessageId,
-  });
-}
-
-const handleCustomPrivateWebhookMessage$ = command(
-  async (
-    { set },
-    args: CustomWebhookContext,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    const chatId = String(args.message.chat.id);
-    const resolved = await set(
-      resolveCustomMessageUserLink$,
-      {
-        db: args.db,
-        installationId: args.installation.telegramBotId,
-        message: args.message,
-      },
-      signal,
-    );
-    if (!resolved.userLink) {
-      await sendCustomConnectPrompt({ ...args, chatId, ...resolved });
-      signal.throwIfAborted();
-      return;
-    }
-    await set(
-      handleTelegramAgentMessage$,
-      {
-        db: args.db,
-        botToken: args.botToken,
-        botId: args.installation.telegramBotId,
-        botUsername: args.installation.botUsername,
-        orgId: args.installation.orgId,
-        userLink: resolved.userLink,
-        userLinkKind: "custom",
-        composeId: args.installation.defaultAgentId,
-        message: args.message,
-        isDM: true,
-        apiStartTime: args.apiStartTime,
-      },
-      signal,
-    );
-  },
-);
-
-function isCustomGroupAddressed(
-  message: TelegramMessage,
-  botId: string,
-  botUsername: string | null,
-): boolean {
-  return (
-    hasBotMention(message, botUsername) ||
-    isTelegramReplyToBotId(message, botId)
-  );
-}
-
-const handleCustomAddressedGroupWebhookMessage$ = command(
-  async (
-    { set },
-    args: CustomWebhookContext,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    const chatId = String(args.message.chat.id);
-    const resolved = await set(
-      resolveCustomMessageUserLink$,
-      {
-        db: args.db,
-        installationId: args.installation.telegramBotId,
-        message: args.message,
-      },
-      signal,
-    );
-    if (!resolved.userLink) {
-      await sendCustomConnectPrompt({
-        ...args,
-        chatId,
-        ...resolved,
-        replyToMessageId: args.message.message_id,
-      });
-      signal.throwIfAborted();
-      return;
-    }
-    await set(
-      handleTelegramAgentMessage$,
-      {
-        db: args.db,
-        botToken: args.botToken,
-        botId: args.installation.telegramBotId,
-        botUsername: args.installation.botUsername,
-        orgId: args.installation.orgId,
-        userLink: resolved.userLink,
-        userLinkKind: "custom",
-        composeId: args.installation.defaultAgentId,
-        message: args.message,
-        isDM: false,
-        apiStartTime: args.apiStartTime,
-      },
-      signal,
-    );
-  },
-);
-
-const processCustomWebhookMessage$ = command(
-  async (
-    { get, set },
-    args: {
-      readonly telegramBotId: string;
-      readonly message: TelegramMessage;
-      readonly apiStartTime: number;
-    },
-    signal: AbortSignal,
-  ): Promise<void> => {
-    const db = set(writeDb$);
-    const [row] = await db
-      .select({
-        installation: telegramInstallations,
-        defaultAgentId: agents.id,
-      })
-      .from(telegramInstallations)
-      .innerJoin(
-        agents,
-        and(
-          eq(agents.id, telegramInstallations.defaultAgentId),
-          eq(agents.orgId, telegramInstallations.orgId),
-        ),
-      )
-      .where(eq(telegramInstallations.telegramBotId, args.telegramBotId))
-      .limit(1);
-    signal.throwIfAborted();
-    if (!row) {
-      return;
-    }
-    const installation: CanonicalTelegramInstallation = {
-      ...row.installation,
-      defaultAgentId: row.defaultAgentId,
-    };
-
-    const botToken = await decryptPersistentSecretValue(
-      installation.encryptedBotToken,
-      await get(
-        userFeatureSwitchContext(installation.orgId, installation.ownerUserId),
-      ),
-    );
-    signal.throwIfAborted();
-    const commandName = parseBotCommand(
-      args.message.text ?? args.message.caption,
-      installation.botUsername,
-    );
-    if (commandName) {
-      await set(
-        handleCustomCommand$,
-        {
-          db,
-          installation,
-          botToken,
-          command: commandName,
-          message: args.message,
-        },
-        signal,
-      );
-      return;
-    }
-
-    const chatId = String(args.message.chat.id);
-    if (args.message.chat.type === "private") {
-      await set(
-        handleCustomPrivateWebhookMessage$,
-        {
-          db,
-          installation,
-          botToken,
-          message: args.message,
-          apiStartTime: args.apiStartTime,
-        },
-        signal,
-      );
-      return;
-    }
-
-    if (
-      isCustomGroupAddressed(
-        args.message,
-        installation.telegramBotId,
-        installation.botUsername,
-      )
-    ) {
-      await set(
-        handleCustomAddressedGroupWebhookMessage$,
-        {
-          db,
-          installation,
-          botToken,
-          message: args.message,
-          apiStartTime: args.apiStartTime,
-        },
-        signal,
-      );
-      return;
-    }
-
-    await storeTelegramMessage({
-      db,
-      scope: { kind: "custom", installationId: installation.telegramBotId },
-      chatId,
-      message: args.message,
-    });
   },
 );
 
@@ -3108,49 +1969,6 @@ export const telegramWebhook$ = command(
       return okText();
     }
 
-    const db = set(writeDb$);
-    const [installation] = await db
-      .select({
-        telegramBotId: telegramInstallations.telegramBotId,
-        webhookSecret: telegramInstallations.webhookSecret,
-      })
-      .from(telegramInstallations)
-      .where(eq(telegramInstallations.telegramBotId, telegramBotId))
-      .limit(1);
-    signal.throwIfAborted();
-    if (!installation) {
-      return textResponse("Not Found", 404);
-    }
-    if (!verifyTelegramWebhook(request, installation.webhookSecret)) {
-      return textResponse("Unauthorized", 401);
-    }
-
-    const parsed = safeJsonParse(await request.text());
-    signal.throwIfAborted();
-    if (!isTelegramUpdate(parsed)) {
-      return textResponse("Bad Request", 400);
-    }
-
-    const message = parsed.message;
-    if (!message || !hasTelegramMessageContextContent(message)) {
-      return okText();
-    }
-
-    waitUntil(
-      tapError(
-        set(
-          processCustomWebhookMessage$,
-          { telegramBotId, message, apiStartTime },
-          signal,
-        ),
-        (error) => {
-          log.error("Error handling Telegram webhook", {
-            error,
-            telegramBotId,
-          });
-        },
-      ),
-    );
-    return okText();
+    return textResponse("Not Found", 404);
   },
 );

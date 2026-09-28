@@ -7,7 +7,7 @@ import {
 import { HTTPException } from "hono/http-exception";
 import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
-import { env, mockEnv } from "../../../lib/env";
+import { mockEnv } from "../../../lib/env";
 import { holdPiContextPreparationStagesFixture } from "../../../test-fixtures/pi-context-preparation";
 import { withStableAgentPromptBuildCountFixture } from "../../../test-fixtures/pi-stable-context";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -28,7 +28,6 @@ const {
   claimChatRun,
   cancelChatRun,
   mockPiCheckpointObjectStore,
-  expectPiSandboxHandoff,
 } = createChatEventsFixture(context);
 
 function jsonHttpException(status: 409 | 422, message: string) {
@@ -180,7 +179,7 @@ describe("CHAT-02: model-first provider policies", () => {
     ).toStrictEqual([]);
   });
 
-  it("defers the Pi launch handoff of an at-capacity send until a slot frees", async () => {
+  it("launches an at-capacity Pi send on a fresh session once a slot frees", async () => {
     const { actor, agentId, runnerGroup, providerId } =
       await entitledChatActor();
     await api.heartbeatRunner(runnerGroup);
@@ -202,33 +201,22 @@ describe("CHAT-02: model-first provider policies", () => {
     await configureBuiltInPiModel(actor, "gpt-5.6-terra");
 
     const usagePricingResolution = await createGptUsagePricingResolution();
-    const objects = mockPiCheckpointObjectStore();
-    const handoffPrefix = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/`;
+    mockPiCheckpointObjectStore();
     const prompt = "keep the complete admission independent";
-    // At capacity the input waits in its thread without a run, so nothing
-    // publishes a Pi launch handoff before the pick launches it.
     const waiting = await sendWaitingChatInput(
       actor,
       { agentId, prompt, model: "gpt-5.6-terra" },
       usagePricingResolution,
     );
-    await flushWaitUntilForTest();
-    expect(
-      [...objects.keys()].filter((key) => {
-        return key.startsWith(handoffPrefix);
-      }),
-    ).toStrictEqual([]);
 
     await cancelChatRun(actor, anchor.runId);
     const run = await waiting.launchedRun();
-    const { manifest } = expectPiSandboxHandoff(run.runId, objects);
-    expect(manifest).toMatchObject({
-      schemaVersion: 3,
-      baseSession: { sessionId: run.threadId, sha256: null },
-    });
     const claimed = await claimChatRun(runnerGroup, run.runId);
     expect(claimed.claim.prompt).toBe(prompt);
-    expect(claimed.claim.piLaunchConfig?.apiFirstTurn).toMatchObject({
+    expect(claimed.claim.resumeSession).toBeNull();
+    expect(claimed.claim.piSessionId).toBe(run.threadId);
+    expect(claimed.claim.piLaunchConfig).toMatchObject({ schemaVersion: 2 });
+    expect(claimed.claim.piInstalledCliRequirement).toStrictEqual({
       requiredPiAgentRuntimeVersion: PI_AGENT_RUNTIME_VERSION,
       minCliVersion: PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
       requiredPiSessionConstructionDigest: PI_SESSION_CONSTRUCTION_DIGEST,

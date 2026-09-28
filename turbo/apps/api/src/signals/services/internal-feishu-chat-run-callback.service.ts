@@ -5,7 +5,8 @@ import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { feishuChatThreadRoutes } from "@okouai/db/schema/feishu-chat-thread-route";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
-import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
+import { feishuOrgInstallations } from "@okouai/db/runtime/feishu-org-installation";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { and, countDistinct, eq, inArray, isNotNull } from "drizzle-orm";
 import { buildFeishuAgentResponseMessage } from "../../lib/feishu-message-card";
 import { logger } from "../../lib/log";
@@ -145,7 +146,7 @@ async function loadFeishuChatDeliveryContext(
   const [binding] = await args.db
     .select({
       feishuOpenId: feishuOrgConnections.feishuOpenId,
-      defaultAgentId: feishuOrgInstallations.defaultAgentId,
+      defaultAgentId: orgMetadata.defaultAgentId,
     })
     .from(feishuChatThreadRoutes)
     .innerJoin(
@@ -156,6 +157,7 @@ async function loadFeishuChatDeliveryContext(
       feishuOrgInstallations,
       eq(feishuOrgInstallations.id, feishuOrgConnections.installationId),
     )
+    .leftJoin(orgMetadata, eq(orgMetadata.orgId, feishuOrgInstallations.orgId))
     .where(
       and(
         eq(feishuChatThreadRoutes.chatThreadId, run.chatThreadId),

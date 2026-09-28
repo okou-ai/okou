@@ -6,7 +6,7 @@ export const telegramDeliveryTargetSchema = z.object({
   messageId: z.string().min(1),
   rootMessageId: z.string().nullable(),
   userLinkId: z.string().uuid(),
-  userLinkKind: z.enum(["custom", "official"]),
+  userLinkKind: z.literal("official"),
   agentId: z.string().min(1),
   isDM: z.boolean(),
   messageThreadId: z.number().int().optional(),

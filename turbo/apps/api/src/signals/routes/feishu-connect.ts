@@ -8,7 +8,7 @@ import {
 } from "@okouai/api-contracts/contracts/feishu-connect";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
-import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
+import { feishuOrgInstallations } from "@okouai/db/runtime/feishu-org-installation";
 
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
 import { organizationAuthContext$ } from "../auth/auth-context";
@@ -146,9 +146,6 @@ const setup$ = command(async ({ get, set }, signal: AbortSignal) => {
     throw configured.error;
   }
   const result: ConfigureFeishuResult = configured.value;
-  if (result.kind === "agent_not_found") {
-    return badRequestMessage("Select an agent from this organization");
-  }
   if (result.kind === "installation_not_found") {
     return notFound(`${get(feishuPlatformName$)} integration not found`);
   }
@@ -237,14 +234,10 @@ const updateInstallation$ = command(
         platform: get(feishuPlatform$),
         userId: auth.userId,
         installationId: params.installationId,
-        defaultAgentId: bodyResult.data.defaultAgentId,
         setupCompleted: bodyResult.data.setupCompleted,
       },
       signal,
     );
-    if (updated.kind === "agent_not_found") {
-      return badRequestMessage("Select an agent from this organization");
-    }
     if (updated.kind === "installation_not_found") {
       return notFound(`${get(feishuPlatformName$)} integration not found`);
     }

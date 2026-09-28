@@ -37,47 +37,6 @@ pub mod runners {
             pub model_catalog: Option<serde_json::Value>,
         }
 
-        /// Pi session checkpoint used as the first-turn base.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        pub struct PiLaunchConfigApiFirstTurnBaseSession {
-            /// Pi session identifier.
-            pub session_id: String,
-            /// Nullable lowercase SHA-256 of the base session JSONL.
-            pub sha256: Option<String>,
-        }
-
-        /// API-mediated first-turn configuration for Pi.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        pub struct PiLaunchConfigApiFirstTurn {
-            /// Pi API first-turn contract version.
-            pub schema_version: i64,
-            /// Digest identifying the runtime resource snapshot.
-            pub resource_snapshot_digest: String,
-            /// URL of the first-turn resource manifest.
-            pub manifest_url: String,
-            /// URL of the first-turn session JSONL.
-            pub session_url: String,
-            /// Unix timestamp in milliseconds for first-turn expiry.
-            pub deadline_at: i64,
-            /// Checkpoint used as the base Pi session.
-            pub base_session: PiLaunchConfigApiFirstTurnBaseSession,
-            /// First sandbox event sequence number for the resumed session.
-            pub sandbox_event_sequence_start: u64,
-            /// Exact pi-agent-runtime release the API prepared this turn with;
-            /// the guest execs the rootfs-installed CLI only on an exact match.
-            #[serde(default, skip_serializing_if = "Option::is_none")]
-            pub required_pi_agent_runtime_version: Option<String>,
-            /// Lowest installed Okou CLI release allowed to run this launch payload.
-            #[serde(default, skip_serializing_if = "Option::is_none")]
-            pub min_cli_version: Option<String>,
-            /// Digest of the session construction the API prepared this turn with;
-            /// when present it replaces the runtime version as the parity key.
-            #[serde(default, skip_serializing_if = "Option::is_none")]
-            pub required_pi_session_construction_digest: Option<String>,
-        }
-
         /// Frozen exact-version Pi memory recall selection.
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         #[serde(tag = "status", rename_all_fields = "camelCase")]
@@ -154,8 +113,6 @@ pub mod runners {
         pub struct PiLaunchConfig {
             /// Pi launch contract version.
             pub schema_version: i64,
-            /// Configuration for the API-mediated first turn.
-            pub api_first_turn: PiLaunchConfigApiFirstTurn,
             /// Optional frozen memory-summary selection for API and Sandbox parity.
             #[serde(default, skip_serializing_if = "Option::is_none")]
             pub memory_recall: Option<PiLaunchConfigMemoryRecall>,
@@ -1044,78 +1001,6 @@ pub mod runners {
             },
         }
 
-        /// DTOs for durable active-input delivery.
-        pub mod active_inputs {
-            /// DTOs for recording active-input acceptance receipts.
-            pub mod receipt {
-                /// API outcome after recording active-input acceptance.
-                #[derive(
-                    Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize,
-                )]
-                #[serde(tag = "outcome")]
-                pub enum Response {
-                    /// The delivery receipt was accepted idempotently.
-                    #[serde(rename = "delivered")]
-                    Delivered,
-                    /// The delivery can no longer be accepted.
-                    #[serde(rename = "rejected")]
-                    Rejected,
-                }
-            }
-
-            /// DTOs for reserving or retrieving active-input delivery.
-            pub mod reserve {
-                /// Reason an active-input reservation was rejected.
-                #[derive(
-                    Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize,
-                )]
-                pub enum ResponseRejectedReason {
-                    /// The delivery-aware control payload exceeds the frame limit.
-                    #[serde(rename = "payload_too_large")]
-                    PayloadTooLarge,
-                    /// The target run is no longer running.
-                    #[serde(rename = "run_not_running")]
-                    RunNotRunning,
-                }
-
-                /// API outcome when reserving or retrieving active input.
-                #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-                #[serde(tag = "outcome", rename_all_fields = "camelCase")]
-                pub enum Response {
-                    /// A stable delivery batch is ready for Guest delivery.
-                    #[serde(rename = "reserved")]
-                    Reserved {
-                        /// Stable identity for the reserved delivery batch.
-                        delivery_id: String,
-                        /// Ordered source chat-event identities in the batch.
-                        event_ids: Vec<String>,
-                        /// Materialized prompt sent to the active Guest.
-                        prompt: String,
-                    },
-                    /// No pending active input is available.
-                    #[serde(rename = "empty")]
-                    Empty,
-                    /// The run is terminal and has no open delivery.
-                    #[serde(rename = "terminal")]
-                    Terminal,
-                    /// An open delivery remains held for a non-running run.
-                    #[serde(rename = "held")]
-                    Held {
-                        /// Stable identity for the reserved delivery batch.
-                        delivery_id: String,
-                        /// Ordered source chat-event identities in the batch.
-                        event_ids: Vec<String>,
-                    },
-                    /// Pending input cannot currently be reserved.
-                    #[serde(rename = "rejected")]
-                    Rejected {
-                        /// Reason the pending input could not be reserved.
-                        reason: ResponseRejectedReason,
-                    },
-                }
-            }
-        }
-
         /// Authenticated Run cancellation reconciliation DTOs.
         pub mod cancellation {
             /// Effective mode persisted by the API's canonical stop decision.
@@ -1226,11 +1111,11 @@ pub mod runners {
             }
         }
 
-        /// DTOs for steering input prompts into a running run.
+        /// DTOs for steering prompts and run-targeted budgets into a running run.
         pub mod steerable_inputs {
-            /// DTOs for reading the next steerable input prompt.
+            /// DTOs for reading the next steerable prompt or run-targeted budget.
             pub mod next {
-                /// Input prompt the run may steer.
+                /// Prompt or run-targeted budget the run may steer.
                 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
                 #[serde(rename_all = "camelCase")]
                 pub struct ResponseInput {
@@ -1240,7 +1125,7 @@ pub mod runners {
                     pub prompt: String,
                 }
 
-                /// Next input prompt a running run may steer.
+                /// Next prompt or run-targeted budget a running run may steer.
                 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
                 #[serde(rename_all = "camelCase")]
                 pub struct Response {
@@ -1249,9 +1134,9 @@ pub mod runners {
                 }
             }
 
-            /// DTOs for declaring an input prompt steered.
+            /// DTOs for declaring a prompt or run-targeted budget steered.
             pub mod steered {
-                /// API outcome after declaring an input prompt steered.
+                /// API outcome after declaring a prompt or run-targeted budget steered.
                 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
                 #[serde(rename_all = "camelCase")]
                 pub struct Response {
@@ -3144,9 +3029,6 @@ pub mod webhooks {
                 /// Optional outcome of the workspace reuse decision.
                 #[serde(default, skip_serializing_if = "Option::is_none")]
                 pub workspace_reuse_result: Option<RequestWorkspaceReuseResult>,
-                /// Optional active-input delivery receipts recovered during completion.
-                #[serde(default, skip_serializing_if = "Option::is_none")]
-                pub active_input_delivery_ids: Option<Vec<String>>,
                 /// Optional final checkpoint persisted atomically with completion.
                 #[serde(default, skip_serializing_if = "Option::is_none")]
                 pub checkpoint: Option<RequestCheckpoint>,

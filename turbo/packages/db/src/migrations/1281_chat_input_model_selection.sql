@@ -1,0 +1,1 @@
+ALTER TABLE "chat_events" ADD COLUMN "model_selection" jsonb;

@@ -1,5 +1,6 @@
+import { resolveRequiredDefaultChatThreadModelPin } from "./chat-thread-model.service";
+import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   feishuChatIngress,
   type FeishuChatIngressStatus,
@@ -28,14 +29,16 @@ interface FeishuChatThreadRouteBinding extends FeishuChatThreadRouteKey {
 function routeWhere(key: FeishuChatThreadRouteKey) {
   return and(
     eq(feishuChatThreadRoutes.connectionId, key.connectionId),
-    eq(feishuChatThreadRoutes.chatId, key.chatId),
+    key.threadId === INTEGRATION_DM_SESSION_KEY
+      ? undefined
+      : eq(feishuChatThreadRoutes.chatId, key.chatId),
     eq(feishuChatThreadRoutes.threadId, key.threadId),
     eq(feishuChatThreadRoutes.userId, key.userId),
   );
 }
 
 async function loadRoute(
-  db: Pick<Db, "select">,
+  db: Pick<Db, "select" | "update">,
   key: FeishuChatThreadRouteKey,
 ): Promise<FeishuChatThreadRouteBinding | undefined> {
   const [route] = await db
@@ -50,6 +53,21 @@ async function loadRoute(
     .from(feishuChatThreadRoutes)
     .where(routeWhere(key))
     .limit(1);
+  if (
+    route &&
+    key.threadId === INTEGRATION_DM_SESSION_KEY &&
+    route.chatId !== key.chatId
+  ) {
+    const [updated] = await db
+      .update(feishuChatThreadRoutes)
+      .set({ chatId: key.chatId })
+      .where(and(eq(feishuChatThreadRoutes.id, route.id), routeWhere(key)))
+      .returning({ chatId: feishuChatThreadRoutes.chatId });
+    if (!updated) {
+      throw new Error("Failed to update Feishu DM route destination");
+    }
+    return { ...route, ...updated };
+  }
   return route;
 }
 
@@ -58,8 +76,6 @@ export async function ensureFeishuChatThreadRoute(
   args: FeishuChatThreadRouteKey & {
     readonly orgId: string;
     readonly agentId: string;
-    readonly selectedModel: string | null;
-    readonly serviceTier: ChatThreadServiceTier | null;
     readonly currentTime: Date;
   },
 ): Promise<FeishuChatThreadRouteBinding> {
@@ -69,6 +85,10 @@ export async function ensureFeishuChatThreadRoute(
       return existing;
     }
 
+    const initialModel = await resolveRequiredDefaultChatThreadModelPin(
+      tx,
+      args,
+    );
     const mediaModels = await loadNewChatThreadMediaModels(tx, {
       orgId: args.orgId,
       userId: args.userId,
@@ -82,9 +102,10 @@ export async function ensureFeishuChatThreadRoute(
       .values({
         userId: args.userId,
         agentId: args.agentId,
-        selectedModel: args.selectedModel,
+        selectedModel: initialModel.selectedModel,
         modelSettings,
-        codexServiceTier: args.serviceTier === "priority" ? "fast" : null,
+        codexServiceTier:
+          initialModel.serviceTier === "priority" ? "fast" : null,
         title: null,
         lastReadAt: args.currentTime,
         lastMessageAt: args.currentTime,
@@ -142,9 +163,9 @@ export async function ensureFeishuChatThreadRoute(
       chatThreadId: thread.id,
       agentId: args.agentId,
       title: null,
-      selectedModel: args.selectedModel,
+      selectedModel: initialModel.selectedModel,
       modelSettings,
-      serviceTier: args.serviceTier,
+      serviceTier: initialModel.serviceTier,
       ...mediaModels,
       createdAt: thread.createdAt,
     });

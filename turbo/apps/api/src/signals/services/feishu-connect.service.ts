@@ -1,13 +1,14 @@
 import type { FeishuPlatform } from "@okouai/core/feishu-platform";
 import { command, computed } from "ccstate";
-import { and, asc, eq, inArray, or } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import {
   FEISHU_OAUTH_SCOPES,
   type FeishuConnectStatus,
   type FeishuInstallationStatus,
 } from "@okouai/api-contracts/contracts/feishu-connect";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
-import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
+import { feishuOrgInstallations } from "@okouai/db/runtime/feishu-org-installation";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { agents } from "@okouai/db/schema/agent";
 
 import { logger } from "../../lib/log";
@@ -63,7 +64,8 @@ async function loadFeishuInstallations(
       defaultAgentDisplayName: agents.displayName,
     })
     .from(feishuOrgInstallations)
-    .innerJoin(agents, eq(agents.id, feishuOrgInstallations.defaultAgentId))
+    .leftJoin(orgMetadata, eq(orgMetadata.orgId, feishuOrgInstallations.orgId))
+    .leftJoin(agents, eq(agents.id, orgMetadata.defaultAgentId))
     .where(
       and(
         eq(feishuOrgInstallations.orgId, orgId),
@@ -265,7 +267,6 @@ interface ConfigureFeishuArgs {
   readonly appSecret: string;
   readonly verificationToken: string;
   readonly encryptKey: string;
-  readonly defaultAgentId: string;
   readonly installationId?: string;
   readonly createNew?: boolean;
 }
@@ -276,7 +277,6 @@ export type ConfigureFeishuResult =
       readonly installationId: string;
       readonly connectorConfigurationChanged: boolean;
     }
-  | { readonly kind: "agent_not_found" }
   | { readonly kind: "installation_not_found" }
   | { readonly kind: "app_identity_mismatch" }
   | { readonly kind: "app_in_use" }
@@ -372,14 +372,12 @@ async function persistFeishuInstallation(
     const [updated] = await args.db
       .update(feishuOrgInstallations)
       .set({
-        defaultAgentId: args.input.defaultAgentId,
         ...(args.prepared.kind === "changed"
           ? {
               encryptedAppSecret: args.prepared.encryptedAppSecret,
               encryptedVerificationToken:
                 args.prepared.encryptedVerificationToken,
               encryptedEncryptKey: args.prepared.encryptedEncryptKey,
-              defaultAgentId: args.input.defaultAgentId,
               encryptedTenantAccessToken:
                 args.prepared.encryptedTenantAccessToken,
               tenantAccessTokenExpiresAt: args.prepared.tokenExpiresAt,
@@ -425,7 +423,6 @@ async function persistFeishuInstallation(
         encryptedAppSecret: args.prepared.encryptedAppSecret,
         encryptedVerificationToken: args.prepared.encryptedVerificationToken,
         encryptedEncryptKey: args.prepared.encryptedEncryptKey,
-        defaultAgentId: args.input.defaultAgentId,
         encryptedTenantAccessToken: args.prepared.encryptedTenantAccessToken,
         tenantAccessTokenExpiresAt: args.prepared.tokenExpiresAt,
       })
@@ -559,21 +556,6 @@ export const configureFeishuInstallation$ = command(
     signal: AbortSignal,
   ): Promise<ConfigureFeishuResult> => {
     const db = set(writeDb$);
-    const [agent] = await db
-      .select({ id: agents.id })
-      .from(agents)
-      .where(
-        and(
-          eq(agents.id, args.defaultAgentId),
-          eq(agents.orgId, args.orgId),
-          or(eq(agents.visibility, "public"), eq(agents.owner, args.userId)),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    if (!agent) {
-      return { kind: "agent_not_found" };
-    }
     const preflight = await resolveFeishuInstallationTarget(db, args, signal);
     if (preflight.kind !== "target") {
       return preflight;
@@ -714,7 +696,6 @@ export const disconnectFeishuConnection$ = command(
 
 type UpdateFeishuInstallationResult =
   | { readonly kind: "ok" }
-  | { readonly kind: "agent_not_found" }
   | { readonly kind: "installation_not_found" }
   | { readonly kind: "bot_identity_mismatch" };
 
@@ -726,27 +707,11 @@ export const updateFeishuInstallationAgent$ = command(
       readonly userId: string;
       readonly installationId: string;
       readonly platform?: FeishuPlatform;
-      readonly defaultAgentId: string;
       readonly setupCompleted?: boolean;
     },
     signal: AbortSignal,
   ): Promise<UpdateFeishuInstallationResult> => {
     const db = set(writeDb$);
-    const [agent] = await db
-      .select({ id: agents.id })
-      .from(agents)
-      .where(
-        and(
-          eq(agents.id, args.defaultAgentId),
-          eq(agents.orgId, args.orgId),
-          or(eq(agents.visibility, "public"), eq(agents.owner, args.userId)),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    if (!agent) {
-      return { kind: "agent_not_found" };
-    }
     const [installation] = await db
       .select({
         botOpenId: feishuOrgInstallations.botOpenId,
@@ -801,7 +766,6 @@ export const updateFeishuInstallationAgent$ = command(
     const rows = await db
       .update(feishuOrgInstallations)
       .set({
-        defaultAgentId: args.defaultAgentId,
         ...(args.setupCompleted
           ? {
               ...(botInfo

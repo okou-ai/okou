@@ -40,10 +40,6 @@ function tokenLines(
   ];
 }
 
-function nullableToken(value: number | null): string {
-  return value === null ? "unknown" : String(value);
-}
-
 function printUsage(result: RunUsageResult): void {
   console.log(`Run: ${result.runId}`);
   if (result.combined.state === "observed") {
@@ -66,24 +62,7 @@ function printUsage(result: RunUsageResult): void {
     );
   } else {
     console.log(
-      "Observed token usage: unavailable; neither source established a numeric observation.",
-    );
-  }
-
-  // Only Runners before the API-first retirement report this source.
-  const api = result.sources.apiFirstTurn;
-  if (api?.state === "unavailable") {
-    console.log(`API first turn: unavailable (${api.reason}).`);
-  } else if (api?.state === "no-inference") {
-    console.log(
-      `API first turn: no inference before ownership transfer; sampled at ${sampleTime(api.sampledAt)}.`,
-    );
-  } else if (api) {
-    console.log(
-      `API first turn: observed ${api.coverage}; sampled at ${sampleTime(api.sampledAt)}; handoff-time only.`,
-    );
-    console.log(
-      `  Input: ${nullableToken(api.tokens.input)}; cache read: ${nullableToken(api.tokens.cacheRead)}; cache creation: ${nullableToken(api.tokens.cacheCreation)}; output: ${nullableToken(api.tokens.output)}; total: ${nullableToken(api.tokens.total)}`,
+      "Observed token usage: unavailable; the sandbox proxy established no numeric observation.",
     );
   }
 

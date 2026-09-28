@@ -63,16 +63,16 @@ export const createCommand = new Command()
   )
   .option(
     "--model <id>",
-    "Model for the thread (defaults to the current run's model)",
+    "Model for the thread (defaults to your model preference, then the workspace default)",
   )
   .option("--effort <level>", "Set reasoning effort for the selected model")
   .option(
     "--priority",
-    "Enable priority for the thread (defaults to the current chat thread)",
+    "Enable priority for the thread (defaults to your initial model preference)",
   )
   .option(
     "--no-priority",
-    "Use standard priority instead of inheriting the current chat thread",
+    "Use standard priority instead of your initial model preference",
   )
   .option("--json", "Print machine-readable JSON")
   .addHelpText(
@@ -90,13 +90,13 @@ Examples:
 Notes:
   - Creates an empty thread and does not start a run; send its first self-contained message with okou chat send
   - Defaults --agent to the agent of OKOU_CHAT_THREAD_ID
-  - Defaults --model to the model of the run that owns OKOU_TOKEN
+  - Defaults --model to your model preference, then the workspace default
   - Effort levels depend on the model; Claude uses extra where Codex uses xhigh
   - GPT 6 Sol: low, medium, high, xhigh, max, ultra
   - Claude Opus 5.5: low, medium, high, extra, max, ultracode
   - See okou chat model --help for the effort levels supported by each model
-  - Pass --model when the calling run's model is unknown or unavailable
-  - Defaults priority to the priority of the current chat thread
+  - Pass --model to choose a different model for the new thread
+  - Defaults priority to your initial model preference
   - The new thread never inherits this chat's history, so the first message must be self-contained
   - Authenticates via OKOU_TOKEN (requires chat-thread:write, and chat-thread:read to default --agent or show effective effort)`,
   )

@@ -1038,7 +1038,6 @@ export async function tryLinkGithubFromRemoteInstallations(
       targetId: String(ghInstall.account.id),
       targetName: ghInstall.account.login,
       adminGithubUserId,
-      defaultAgentId: args.composeId,
     })
     .returning({ id: githubInstallations.id });
   signal.throwIfAborted();
@@ -1146,7 +1145,6 @@ export async function createOrActivateGithubInstallation(
       targetId: args.installInfo.targetId,
       targetName: args.installInfo.targetName,
       adminGithubUserId: args.adminGithubUserId,
-      defaultAgentId: args.composeId,
     })
     .returning({ id: githubInstallations.id });
   signal.throwIfAborted();

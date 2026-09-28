@@ -39,6 +39,7 @@ import { feishuConnectRoutes } from "../feishu-connect";
 import { feishuOauthRoutes } from "../feishu-oauth";
 import { integrationsFeishuFileRoutes } from "../integrations-feishu-files";
 import { integrationsFeishuMessageRoutes } from "../integrations-feishu-message";
+import { setOrgDefaultAgentFixture } from "../../../test-fixtures/org-metadata";
 
 const TEST_APP_ROUTES = Object.freeze([
   ...feishuConnectRoutes,
@@ -126,9 +127,14 @@ async function setupFeishuInstallation(
     [FEISHU_PLATFORMS[platform].featureSwitch]: true,
   });
   authOrgApi.acceptAgentStorageWrites();
+  await runsApi.grantProEntitlement(actor);
   const agent = await authOrgApi.createAgent(actor, {
     displayName: "Feishu CLI agent",
     visibility: "public",
+  });
+  await setOrgDefaultAgentFixture({
+    orgId: actor.orgId,
+    agentId: agent.agentId,
   });
   mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
   const client = setupApp({ context, routes: feishuConnectRoutes })(
@@ -141,7 +147,6 @@ async function setupFeishuInstallation(
         appId: `cli_${randomUUID()}`,
         appSecret: "feishu-cli-secret",
         verificationToken: `verification_${randomUUID()}`,
-        defaultAgentId: agent.agentId,
         createNew: true,
       },
     }),
@@ -156,7 +161,6 @@ async function setupFeishuInstallation(
       headers: { authorization: "Bearer clerk-session" },
       params: { installationId },
       body: {
-        defaultAgentId: agent.agentId,
         setupCompleted: true,
       },
     }),

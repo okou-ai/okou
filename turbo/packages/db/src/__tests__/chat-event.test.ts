@@ -73,6 +73,7 @@ describe("chatEvents schema", () => {
       "revokes_event_id",
       "event_type",
       "payload",
+      "model_selection",
       "failure_reason",
       "required_official_workflow_ids",
       "context_type",

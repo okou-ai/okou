@@ -3,68 +3,37 @@
 //! ## Ownership and data flow
 //!
 //! The sandbox TypeScript host opens the run's Pi session (the Runner-restored
-//! history, or a fresh session), writes one private startup record to stdout,
-//! and then enters Pi's official `runRpcMode`. The guest owns the
-//! other side of that boundary. Its stdout loop in `cli/mod.rs` admits the
-//! boundary before any official RPC record, starts the shared event pipeline
-//! from the installed sequence, and then applies this module's projection.
+//! history, or a fresh session) and enters Pi's official `runRpcMode`. The
+//! guest owns the other side of that boundary. Its stdout loop in `cli/mod.rs`
+//! starts the shared event pipeline on the first official RPC record and then
+//! applies this module's projection.
 //!
 //! There are two coupled JSONL paths after startup:
 //!
 //! - The guest writer owns child stdin. It sends `get_state`, waits until the
-//!   private startup record is installed, sends the initial `prompt`, and then
-//!   delivers accepted active-input frames. The stdout loop routes `response`
-//!   records into the writer's bounded response channel without waiting for
-//!   capacity.
+//!   stdout loop has started the event pipeline, sends the initial `prompt`,
+//!   and then delivers accepted active-input frames. The stdout loop routes
+//!   `response` records into the writer's bounded response channel without
+//!   waiting for capacity.
 //! - The stdout loop owns child stdout. It retains each ordinary raw record in
 //!   the best-effort local agent transcript, projects supported records into
 //!   the existing public event shape, and passes projected events through
 //!   normalization, secret masking, sequencing, bounded FIFO delivery, and the
-//!   HTTP event worker. The startup control is the exception: it is consumed
-//!   before the transcript and public pipeline and is never delivered.
+//!   HTTP event worker.
 //!
-//! The public event pipeline is deliberately created only after boundary
-//! installation. `CliEventIngestor` and `EventDeliveryRuntime` receive the same
-//! installed first sequence, so the first public event and the delivery
-//! acknowledgement watermark cannot start from different boundaries.
+//! The public event pipeline is deliberately created only at startup.
+//! `CliEventIngestor` and `EventDeliveryRuntime` receive the same first
+//! sequence, so the first public event and the delivery acknowledgement
+//! watermark cannot start from different boundaries.
 //!
 //! ## Startup boundary
 //!
-//! CLI releases up to the API-first retirement write this private control
-//! before official RPC output. The Guest accepts it and also starts without it,
-//! so a later CLI can stop writing it:
-//!
-//! ```json
-//! {
-//!   "type": "vm0_pi_api_first_turn_boundary",
-//!   "schemaVersion": 2,
-//!   "sandboxEventSequenceStart": 1,
-//!   "ownershipTransferMode": "sandbox-first"
-//! }
-//! ```
-//!
-//! The sandbox owns the whole turn, so `sandbox-first` is the only accepted
-//! `ownershipTransferMode`. Rust accepts a control only when its type and
-//! schema version are exact, all fields are known, the mode is
-//! `sandbox-first`, and the sequence is in `1..=i32::MAX`
-//! (`1..=2,147,483,647`).
-//!
-//! `PiRpcStartupBoundary` installs the startup exactly once:
-//!
-//! - A valid control installs its sequence. Without one, the first official
-//!   JSON record installs sequence 1 and is then projected normally.
-//! - A malformed control, invalid schema, zero, overflowing, or otherwise
-//!   invalid sequence fails with `PI_HANDOFF_BOUNDARY_INVALID`. A second
-//!   control before an official record is a duplicate; a different value is a
-//!   conflict; and a control after an official record is late. Each is
-//!   terminal and rejects the stream.
-//! - After a rejection, `discard_remaining` makes all later records
-//!   non-projecting. Invalid non-JSON input is also fatal before startup, or
-//!   when the raw line resembles the control type. Stdout closing before
-//!   startup fails with `PI_HANDOFF_BOUNDARY_MISSING`.
-//! - `cli/mod.rs` consumes an installed control before projection. It is not
-//!   written to the agent transcript, assigned a public sequence, sent to the
-//!   webhook, or rendered as an agent/Chat event.
+//! `PiRpcStartupBoundary` starts the run exactly once: the first official JSON
+//! record starts the event pipeline at sequence 1 and is then projected
+//! normally. Before that record, non-JSON stdout fails with
+//! `PI_HANDOFF_BOUNDARY_INVALID`, and stdout closing fails with
+//! `PI_HANDOFF_BOUNDARY_MISSING`. After a startup failure,
+//! `discard_remaining` makes all later records non-projecting.
 //!
 //! No official RPC record may reach projection, masking, sequencing, or
 //! delivery until the startup has installed the first event sequence.
@@ -78,8 +47,8 @@
 //! `system/init` after validating the configured session ID, returned
 //! `data.sessionId`, and required `data.sessionFile`.
 //!
-//! After `get_state`, the writer waits for the stdout loop to install the
-//! startup boundary. It then sends the original initial `prompt` with ID
+//! After `get_state`, the writer waits for the stdout loop to start the event
+//! pipeline. It then sends the original initial `prompt` with ID
 //! `<run-id>:pi:initial-prompt`, which the host executes normally.
 //!
 //! Once the initial acknowledgement arrives, each accepted active input is sent
@@ -115,7 +84,7 @@
 //!
 //! ## Record admission and projection
 //!
-//! `PiRpcProjection::project` receives only official records admitted after the
+//! `PiRpcProjection::project` receives only official records admitted by the
 //! startup boundary. The common loop records the raw JSONL line locally even
 //! when the record has no public projection. The routing contract is:
 //!
@@ -254,9 +223,6 @@ const PI_RPC_ABORT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs
 const PI_RPC_RESPONSE_QUEUE_CAPACITY: usize = 2;
 const PI_RPC_RESPONSE_MAX_RETAINED_BYTES: usize =
     guest_contracts::stdout_framing::ORDINARY_CLI_STDOUT_MAX_LINE_BYTES;
-/// Wire type of the private startup control, kept for every CLI release.
-const PI_STARTUP_BOUNDARY_CONTROL_TYPE: &str = "vm0_pi_api_first_turn_boundary";
-const MAX_EVENT_SEQUENCE_NUMBER: u32 = i32::MAX as u32;
 const MAX_STREAM_CONTENT_INDEX: usize = 1024;
 
 pub(super) struct PiRpcResponse {
@@ -303,104 +269,38 @@ impl PiRpcResponseSender {
     }
 }
 
-/// The only ownership mode the sandbox host reports: it owns the whole turn.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
-#[serde(rename_all = "kebab-case")]
-enum PiRpcOwnershipTransferMode {
-    SandboxFirst,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct PiStartupBoundaryControlV2 {
-    #[serde(rename = "type")]
-    record_type: String,
-    schema_version: u32,
-    sandbox_event_sequence_start: u64,
-    #[serde(rename = "ownershipTransferMode")]
-    _ownership_transfer_mode: PiRpcOwnershipTransferMode,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) struct PiRpcStartup {
-    pub(super) sandbox_event_sequence_start: u32,
-}
-
 #[derive(Debug)]
 pub(super) enum PiRpcRecordAdmission {
-    /// Install the startup boundary; `project` also admits the record itself
-    /// when it is the first official record of a CLI that wrote no control.
-    InstallBoundary {
-        startup: PiRpcStartup,
-        project: bool,
-    },
+    /// First official record: start the public event pipeline at
+    /// [`PI_RPC_FIRST_EVENT_SEQUENCE`], then project the record itself.
+    Start,
     Project,
     Discard,
 }
 
-/// Startup installed when the CLI writes no private control record: the
-/// sandbox owns the whole turn and its public events start at sequence 1.
-const DEFAULT_PI_RPC_STARTUP: PiRpcStartup = PiRpcStartup {
-    sandbox_event_sequence_start: 1,
-};
+/// The sandbox owns the whole turn, so its public events start at sequence 1.
+pub(super) const PI_RPC_FIRST_EVENT_SEQUENCE: u32 = 1;
 
 #[derive(Default)]
 pub(super) struct PiRpcStartupBoundary {
-    installed: Option<PiRpcStartup>,
-    official_record_seen: bool,
+    started: bool,
     terminal_error: bool,
 }
 
 impl PiRpcStartupBoundary {
-    pub(super) fn admit(&mut self, record: &Value) -> Result<PiRpcRecordAdmission, AgentError> {
+    pub(super) fn admit(&mut self) -> PiRpcRecordAdmission {
         if self.terminal_error {
-            return Ok(PiRpcRecordAdmission::Discard);
+            return PiRpcRecordAdmission::Discard;
         }
-        let is_control =
-            record.get("type").and_then(Value::as_str) == Some(PI_STARTUP_BOUNDARY_CONTROL_TYPE);
-        if !is_control {
-            self.official_record_seen = true;
-            if self.installed.is_none() {
-                self.installed = Some(DEFAULT_PI_RPC_STARTUP);
-                return Ok(PiRpcRecordAdmission::InstallBoundary {
-                    startup: DEFAULT_PI_RPC_STARTUP,
-                    project: true,
-                });
-            }
-            return Ok(PiRpcRecordAdmission::Project);
+        if !self.started {
+            self.started = true;
+            return PiRpcRecordAdmission::Start;
         }
-
-        let candidate = match parse_boundary_control(record) {
-            Ok(candidate) => candidate,
-            Err(error) => return self.reject(error),
-        };
-        let Some(installed) = self.installed else {
-            self.installed = Some(candidate);
-            return Ok(PiRpcRecordAdmission::InstallBoundary {
-                startup: candidate,
-                project: false,
-            });
-        };
-        if self.official_record_seen {
-            return self.reject(boundary_error(
-                "PI_HANDOFF_BOUNDARY_LATE",
-                "Pi startup boundary arrived after RPC startup",
-            ));
-        }
-        if candidate != installed {
-            return self.reject(boundary_error(
-                "PI_HANDOFF_BOUNDARY_CONFLICT",
-                "Pi startup boundary conflicts with the installed boundary",
-            ));
-        }
-        self.reject(boundary_error(
-            "PI_HANDOFF_BOUNDARY_INVALID",
-            "Pi startup boundary was duplicated",
-        ))
+        PiRpcRecordAdmission::Project
     }
 
     pub(super) fn requires_boundary(&self) -> bool {
-        self.installed.is_none() && !self.terminal_error
+        !self.started && !self.terminal_error
     }
 
     pub(super) fn missing_error() -> AgentError {
@@ -413,50 +313,12 @@ impl PiRpcStartupBoundary {
     pub(super) fn malformed_record_error() -> AgentError {
         boundary_error(
             "PI_HANDOFF_BOUNDARY_INVALID",
-            "Pi startup boundary is malformed",
+            "Pi RPC stdout was not JSON before RPC startup",
         )
-    }
-
-    pub(super) fn looks_like_control(raw: &str) -> bool {
-        raw.contains(PI_STARTUP_BOUNDARY_CONTROL_TYPE)
     }
 
     pub(super) fn discard_remaining(&mut self) {
         self.terminal_error = true;
-    }
-
-    fn reject(&mut self, error: AgentError) -> Result<PiRpcRecordAdmission, AgentError> {
-        self.terminal_error = true;
-        Err(error)
-    }
-}
-
-fn validated_boundary_sequence(sequence: u64) -> Result<u32, AgentError> {
-    let sequence =
-        u32::try_from(sequence).map_err(|_| PiRpcStartupBoundary::malformed_record_error())?;
-    if sequence == 0 || sequence > MAX_EVENT_SEQUENCE_NUMBER {
-        return Err(PiRpcStartupBoundary::malformed_record_error());
-    }
-    Ok(sequence)
-}
-
-fn parse_boundary_control(record: &Value) -> Result<PiRpcStartup, AgentError> {
-    match record.get("schemaVersion").and_then(Value::as_u64) {
-        Some(2) => {
-            let control: PiStartupBoundaryControlV2 = serde_json::from_value(record.clone())
-                .map_err(|_| PiRpcStartupBoundary::malformed_record_error())?;
-            if control.record_type != PI_STARTUP_BOUNDARY_CONTROL_TYPE
-                || control.schema_version != 2
-            {
-                return Err(PiRpcStartupBoundary::malformed_record_error());
-            }
-            Ok(PiRpcStartup {
-                sandbox_event_sequence_start: validated_boundary_sequence(
-                    control.sandbox_event_sequence_start,
-                )?,
-            })
-        }
-        _ => Err(PiRpcStartupBoundary::malformed_record_error()),
     }
 }
 
@@ -1695,8 +1557,7 @@ mod tests {
                 .collect();
             let messages: Vec<&Value> = events.iter().map(|event| &event["message"]).collect();
             assert_eq!(json!(messages), case["expectedMessages"], "{name}");
-            // Guest sequencing belongs to the installed startup boundary and
-            // ingestor. Projection does not invent the API's zero-based index.
+            // Guest sequencing belongs to the startup boundary and ingestor. Projection does not invent the API's zero-based index.
             for event in events {
                 assert_eq!(event["type"], "assistant", "{name}");
                 assert!(event.get("sequenceNumber").is_none(), "{name}");
@@ -2037,136 +1898,16 @@ mod tests {
     }
 
     #[test]
-    fn boundary_v1_is_rejected() {
-        let error = parse_boundary_control(&json!({
-            "type": PI_STARTUP_BOUNDARY_CONTROL_TYPE,
-            "schemaVersion": 1,
-            "sandboxEventSequenceStart": 4,
-        }))
-        .expect_err("legacy boundary should fail closed");
-
-        assert!(error.to_string().contains("PI_HANDOFF_BOUNDARY_INVALID"));
-    }
-
-    #[test]
-    fn first_official_record_installs_the_default_startup_without_a_control() {
+    fn first_official_record_starts_the_run_and_is_projected() {
         let mut boundary = PiRpcStartupBoundary::default();
+        assert!(boundary.requires_boundary());
 
-        let admission = boundary
-            .admit(&json!({ "type": "response", "command": "get_state" }))
-            .expect("an official record should start the run without a control");
+        assert!(matches!(boundary.admit(), PiRpcRecordAdmission::Start));
+        assert!(!boundary.requires_boundary());
+        assert!(matches!(boundary.admit(), PiRpcRecordAdmission::Project));
 
-        assert!(matches!(
-            admission,
-            PiRpcRecordAdmission::InstallBoundary {
-                startup: PiRpcStartup {
-                    sandbox_event_sequence_start: 1
-                },
-                project: true,
-            }
-        ));
-        assert!(matches!(
-            boundary.admit(&json!({ "type": "agent_settled" })),
-            Ok(PiRpcRecordAdmission::Project)
-        ));
-        let late = boundary
-            .admit(&json!({
-                "type": PI_STARTUP_BOUNDARY_CONTROL_TYPE,
-                "schemaVersion": 2,
-                "sandboxEventSequenceStart": 1,
-                "ownershipTransferMode": "sandbox-first",
-            }))
-            .expect_err("a control after startup is late");
-        assert!(late.to_string().contains("PI_HANDOFF_BOUNDARY_LATE"));
-    }
-
-    #[test]
-    fn written_control_installs_its_startup_without_projection() {
-        let mut boundary = PiRpcStartupBoundary::default();
-
-        let admission = boundary
-            .admit(&json!({
-                "type": PI_STARTUP_BOUNDARY_CONTROL_TYPE,
-                "schemaVersion": 2,
-                "sandboxEventSequenceStart": 1,
-                "ownershipTransferMode": "sandbox-first",
-            }))
-            .expect("a valid control should install");
-
-        assert!(matches!(
-            admission,
-            PiRpcRecordAdmission::InstallBoundary {
-                startup: PiRpcStartup {
-                    sandbox_event_sequence_start: 1
-                },
-                project: false,
-            }
-        ));
-        assert!(matches!(
-            boundary.admit(&json!({ "type": "response" })),
-            Ok(PiRpcRecordAdmission::Project)
-        ));
-    }
-
-    #[test]
-    fn boundary_v2_accepts_sandbox_first() {
-        let startup = parse_boundary_control(&json!({
-            "type": PI_STARTUP_BOUNDARY_CONTROL_TYPE,
-            "schemaVersion": 2,
-            "sandboxEventSequenceStart": 7,
-            "ownershipTransferMode": "sandbox-first",
-        }))
-        .expect("V2 sandbox-first boundary should be readable");
-
-        assert_eq!(startup.sandbox_event_sequence_start, 7);
-    }
-
-    #[test]
-    fn boundary_modes_fail_closed_across_schema_versions() {
-        for record in [
-            json!({
-                "type": PI_STARTUP_BOUNDARY_CONTROL_TYPE,
-                "schemaVersion": 1,
-                "sandboxEventSequenceStart": 4,
-                "ownershipTransferMode": "sandbox-first",
-            }),
-            json!({
-                "type": PI_STARTUP_BOUNDARY_CONTROL_TYPE,
-                "schemaVersion": 2,
-                "sandboxEventSequenceStart": 4,
-            }),
-            json!({
-                "type": PI_STARTUP_BOUNDARY_CONTROL_TYPE,
-                "schemaVersion": 2,
-                "sandboxEventSequenceStart": 4,
-                "ownershipTransferMode": "future-mode",
-            }),
-            json!({
-                "type": PI_STARTUP_BOUNDARY_CONTROL_TYPE,
-                "schemaVersion": 2,
-                "sandboxEventSequenceStart": 4,
-                "ownershipTransferMode": "pending-tool-continuation",
-            }),
-            json!({
-                "type": PI_STARTUP_BOUNDARY_CONTROL_TYPE,
-                "schemaVersion": 2,
-                "sandboxEventSequenceStart": 4,
-                "ownershipTransferMode": "settled-session-continuation",
-            }),
-            json!({
-                "type": PI_STARTUP_BOUNDARY_CONTROL_TYPE,
-                "schemaVersion": 3,
-                "sandboxEventSequenceStart": 4,
-                "ownershipTransferMode": "pending-tool-continuation",
-            }),
-        ] {
-            assert!(
-                parse_boundary_control(&record)
-                    .expect_err("unsupported boundary should fail closed")
-                    .to_string()
-                    .contains("PI_HANDOFF_BOUNDARY_INVALID")
-            );
-        }
+        boundary.discard_remaining();
+        assert!(matches!(boundary.admit(), PiRpcRecordAdmission::Discard));
     }
 
     #[test]

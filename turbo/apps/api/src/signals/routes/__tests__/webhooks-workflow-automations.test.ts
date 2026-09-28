@@ -239,22 +239,44 @@ describe("POST /api/webhooks/workflow-automations/:token", () => {
       ]),
     );
     expect(concurrent).toHaveLength(2);
+    const events = await wf.readThreadEvents(webhook.threadId);
+    expect(
+      events.filter((event) => {
+        return (
+          event.eventType === "input.automation" &&
+          !events.some((replacement) => {
+            return replacement.revokesEventId === event.id;
+          })
+        );
+      }),
+    ).toHaveLength(1);
   });
 
   it("accepts a delivery whose launch is rejected and de-duplicates its retry", async () => {
-    const { fixture, workflowId } = await setupFixture();
+    const { fixture, actor, workflowId } = await setupFixture();
+    const runsApi = createRunsApi(context);
+    const runnerGroup = runsApi.configureRunnerGroup();
     const webhook = await createWebhookAutomation(workflowId);
-    const rawBody = JSON.stringify({ event: "launch-rejected" });
     const timestamp = Math.floor(now() / 1000);
-
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
-    await accept(
-      modelProvidersByTypeClient().delete({
-        headers: authHeaders(),
-        params: { type: "anthropic-api-key" },
+    await expect(
+      postWorkflowWebhook({
+        token: webhook.token,
+        rawBody: JSON.stringify({ event: "occupy-thread" }),
+        secret: webhook.secret,
+        timestamp,
       }),
-      [204],
-    );
+    ).resolves.toStrictEqual({
+      status: 200,
+      body: { success: true, duplicate: false },
+    });
+    await runsApi.heartbeatRunner(runnerGroup);
+    const job = (await runsApi.pollRunner(runnerGroup)).body.job;
+    if (!job) {
+      throw new Error("Expected the first delivery to occupy its thread");
+    }
+
+    // Capture the model while it is available; the occupied thread delays pick.
+    const rawBody = JSON.stringify({ event: "launch-rejected" });
     const accepted = await postWorkflowWebhook({
       token: webhook.token,
       rawBody,
@@ -265,9 +287,36 @@ describe("POST /api/webhooks/workflow-automations/:token", () => {
       status: 200,
       body: { success: true, duplicate: false },
     });
-    // The launch rejection appears in the automation's thread instead.
-    await expect(wf.readThreadEvents(webhook.threadId)).resolves.toContainEqual(
-      expect.objectContaining({ eventType: "input.rejected" }),
+    const queuedEvents = await wf.readThreadEvents(webhook.threadId);
+    const queued = queuedEvents.find((event) => {
+      return (
+        event.eventType === "input.automation" &&
+        !queuedEvents.some((replacement) => {
+          return replacement.revokesEventId === event.id;
+        })
+      );
+    });
+    if (!queued) {
+      throw new Error("Expected the second delivery to remain queued");
+    }
+
+    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
+    await accept(
+      modelProvidersByTypeClient().delete({
+        headers: authHeaders(),
+        params: { type: "anthropic-api-key" },
+      }),
+      [204],
+    );
+    await runsApi.requestCancelRun(actor, job.runId, [200]);
+    await flushWaitUntilForTest();
+    // The pick rejects the recorded model after it becomes unavailable.
+    const rejectedEvents = await wf.readThreadEvents(webhook.threadId);
+    expect(rejectedEvents).toContainEqual(
+      expect.objectContaining({
+        eventType: "input.rejected",
+        revokesEventId: queued.id,
+      }),
     );
 
     const duplicate = await postWorkflowWebhook({
@@ -280,6 +329,64 @@ describe("POST /api/webhooks/workflow-automations/:token", () => {
       status: 200,
       body: { success: true, duplicate: true },
     });
+    await expect(wf.readThreadEvents(webhook.threadId)).resolves.toStrictEqual(
+      rejectedEvents,
+    );
+  });
+
+  it("does not consume a delivery key when enqueue model selection fails", async () => {
+    const { fixture, actor, workflowId } = await setupFixture();
+    const runsApi = createRunsApi(context);
+    runsApi.configureRunnerGroup();
+    const webhook = await createWebhookAutomation(workflowId);
+    const rawBody = JSON.stringify({ event: "restore-model-route" });
+    const timestamp = Math.floor(now() / 1000);
+    const delivery = {
+      token: webhook.token,
+      rawBody,
+      secret: webhook.secret,
+      timestamp,
+    };
+    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
+    await accept(
+      modelProvidersByTypeClient().delete({
+        headers: authHeaders(),
+        params: { type: "anthropic-api-key" },
+      }),
+      [204],
+    );
+    await expect(postWorkflowWebhook(delivery)).resolves.toStrictEqual({
+      status: 500,
+      body: { error: "Internal server error" },
+    });
+    await expect(wf.readThreadEvents(webhook.threadId)).resolves.toStrictEqual(
+      [],
+    );
+    await expect(wf.readAutomation(webhook.id)).resolves.toMatchObject({
+      lastReceivedAt: null,
+    });
+
+    await runsApi.ensureOrgModelProvider(actor, {
+      model: "claude-fable-5-1",
+    });
+    await expect(postWorkflowWebhook(delivery)).resolves.toStrictEqual({
+      status: 200,
+      body: { success: true, duplicate: false },
+    });
+    const acceptedEvents = await wf.readThreadEvents(webhook.threadId);
+    expect(acceptedEvents).toContainEqual(
+      expect.objectContaining({
+        eventType: "input.prompt",
+        runId: expect.any(String),
+      }),
+    );
+    await expect(postWorkflowWebhook(delivery)).resolves.toStrictEqual({
+      status: 200,
+      body: { success: true, duplicate: true },
+    });
+    await expect(wf.readThreadEvents(webhook.threadId)).resolves.toStrictEqual(
+      acceptedEvents,
+    );
   });
 
   it("auto-disables only enabled webhooks after an effective Stripe downgrade", async () => {

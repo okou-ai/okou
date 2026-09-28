@@ -1,17 +1,13 @@
 import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
 import { revokedChatEventIds } from "@okouai/api-contracts/contracts/chat-events";
-import { integrationsDiscordContract } from "@okouai/api-contracts/contracts/integrations-discord";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
-import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
+import { testContext } from "../../../__tests__/test-context";
 import { mockNow, now } from "../../../lib/time";
 import { mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { integrationsDiscordRoutes } from "../integrations-discord";
-import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
@@ -25,13 +21,12 @@ import {
   setupConnectedDiscordActor,
   type ConnectedDiscordActor,
 } from "./helpers/discord-fixture";
-import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
+import { createFixtureTracker } from "./helpers/route-test";
 
 const context = testContext();
 const runs = createRunsApi(context);
 const misc = createMiscRoutesApi(context);
 const webhooks = createWebhookCallbackApi(context);
-const authOrg = createAuthOrgAgentsBddApi(context);
 const trackDiscordFixture = createFixtureTracker(
   async (fixture: { actor: ConnectedDiscordActor; deleted: boolean }) => {
     if (!fixture.deleted) {
@@ -161,26 +156,6 @@ async function completeRun(args: {
   await flushWaitUntilForTest();
 }
 
-async function selectSupportAgent(actor: ConnectedDiscordActor) {
-  const agent = await authOrg.createAgent(actor.actor, {
-    displayName: "Discord support agent",
-  });
-  createRouteMocks(context).clerk.session(
-    actor.userId,
-    actor.orgId,
-    "org:admin",
-  );
-  await accept(
-    setupApp({ context, routes: integrationsDiscordRoutes })(
-      integrationsDiscordContract,
-    ).setAgentPreference({
-      headers: { authorization: "Bearer clerk-session" },
-      body: { agentId: agent.agentId },
-    }),
-    [200],
-  );
-}
-
 function sentContents(started: Awaited<ReturnType<typeof startDiscordRun>>) {
   return started.provider.sentMessages.map((message) => {
     return message.content;
@@ -275,19 +250,10 @@ describe("canonical Discord terminal replies", () => {
     );
   });
 
-  it.each([
-    { agent: "the org default agent", footer: "" },
-    {
-      agent: "a selected agent",
-      footer: "\n\n_Sent via Discord support agent_",
-    },
-  ])(
+  it.each([{ agent: "the org default agent", footer: "" }])(
     "delivers a queued admission failure once for $agent without launching another run",
-    async ({ agent, footer }) => {
-      const started = await startDiscordRun({
-        beforeMessage:
-          agent === "a selected agent" ? selectSupportAgent : undefined,
-      });
+    async ({ footer }) => {
+      const started = await startDiscordRun({});
       const claim = await claimRun(started.actor, started.runId);
       const followup = discordMessageForTest(started.actor, {
         channelId: started.channelId,
@@ -472,8 +438,8 @@ describe("canonical Discord terminal replies", () => {
     expect(launchedRunIds[1]).not.toBe(started.runId);
   });
 
-  it.each(["pending", "reserved"] as const)(
-    "rejects a revoked %s active input without retrying or delivering it",
+  it.each(["pending", "read"] as const)(
+    "keeps a revoked %s active input queued until the next pick rejects it",
     async (phase) => {
       const started = await startDiscordRun();
       const claim = await claimRun(started.actor, started.runId);
@@ -484,26 +450,37 @@ describe("canonical Discord terminal replies", () => {
       started.provider.messages.set(followup.id, followup);
       await postDiscordMessage(context, followup);
       await flushWaitUntilForTest();
-      if (phase === "reserved") {
-        const reserved = await runs.reserveRunnerActiveInputs(
+      if (phase === "read") {
+        const read = await runs.nextSteerableInput(
           claim.sandboxToken,
           started.runId,
         );
-        expect(reserved).toMatchObject({
-          outcome: "reserved",
-          prompt: expect.stringContaining(
-            "Use the confidential follow-up details.",
-          ),
-        });
+        expect(read.input?.prompt).toContain(
+          "Use the confidential follow-up details.",
+        );
       }
       await deleteDiscordFixture(context, started.actor.fixture);
       started.fixture.deleted = true;
       await expect(
-        runs.reserveRunnerActiveInputs(claim.sandboxToken, started.runId),
-      ).resolves.toStrictEqual({ outcome: "empty" });
+        runs.nextSteerableInput(claim.sandboxToken, started.runId),
+      ).resolves.toStrictEqual({ input: null });
       await expect(
-        runs.reserveRunnerActiveInputs(claim.sandboxToken, started.runId),
-      ).resolves.toStrictEqual({ outcome: "empty" });
+        runs.nextSteerableInput(claim.sandboxToken, started.runId),
+      ).resolves.toStrictEqual({ input: null });
+      const whileRunning = await readProjectedChatEvents(context, {
+        threadId: started.threadId,
+        headers: { authorization: "Bearer clerk-session" },
+      });
+      expect(
+        whileRunning.filter((event) => {
+          return event.eventType === "input.rejected";
+        }),
+      ).toHaveLength(0);
+      await completeRun({
+        runId: started.runId,
+        sandboxToken: claim.sandboxToken,
+        text: "The original task is complete.",
+      });
       const events = await readProjectedChatEvents(context, {
         threadId: started.threadId,
         headers: { authorization: "Bearer clerk-session" },
@@ -515,15 +492,24 @@ describe("canonical Discord terminal replies", () => {
       ).toHaveLength(1);
       expect(events).toContainEqual(
         expect.objectContaining({
-          eventType: "output.error",
-          content: "This Discord conversation is no longer available.",
+          eventType: "input.rejected",
+          error: "discord_access_revoked",
         }),
       );
-      await completeRun({
-        runId: started.runId,
-        sandboxToken: claim.sandboxToken,
-        text: "The original task is complete.",
-      });
+      expect(
+        events.filter((event) => {
+          return (
+            event.eventType === "input.prompt" && event.runId !== undefined
+          );
+        }),
+      ).toHaveLength(1);
+      expect(events).toContainEqual(
+        expect.objectContaining({
+          eventType: "output.error",
+          error: "discord_access_revoked",
+          content: "Oops, something went wrong. Please try again later.",
+        }),
+      );
       expect(started.provider.sentMessages).toHaveLength(0);
     },
   );
@@ -545,36 +531,30 @@ describe("canonical Discord terminal replies", () => {
     started.provider.messages.set(followup.id, followup);
     await postDiscordMessage(context, followup);
     await flushWaitUntilForTest();
-    const initial = await runs.reserveRunnerActiveInputs(
+    const initial = await runs.nextSteerableInput(
       claim.sandboxToken,
       started.runId,
     );
-    expect(initial).toMatchObject({
-      outcome: "reserved",
-      prompt: expect.stringContaining(history.content),
-    });
+    expect(initial.input?.prompt).toContain(history.content);
     started.provider.state.everyonePermissions = (
       (1n << 10n) |
       (1n << 11n) |
       (1n << 38n)
     ).toString();
-    const narrowed = await runs.reserveRunnerActiveInputs(
+    const { input: narrowed } = await runs.nextSteerableInput(
       claim.sandboxToken,
       started.runId,
     );
-    expect(narrowed).toMatchObject({
-      outcome: "reserved",
-      prompt: expect.stringContaining("Continue with the current message."),
-    });
-    if (narrowed.outcome !== "reserved") {
-      throw new Error("Current Discord input should remain deliverable");
+    if (!narrowed) {
+      throw new Error("Current Discord input should remain steerable");
     }
+    expect(narrowed.prompt).toContain("Continue with the current message.");
     expect(narrowed.prompt).not.toContain(history.content);
     expect(narrowed.prompt).toContain("current Discord permissions");
-    await runs.recordRunnerActiveInputDelivery(
+    await runs.declareSteeredInput(
       claim.sandboxToken,
       started.runId,
-      narrowed.deliveryId,
+      narrowed.eventId,
     );
     await completeRun({
       runId: started.runId,

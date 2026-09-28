@@ -1,7 +1,7 @@
 # DeepSeek V4.1 Flash Pi catalog
 
 `model.ts:sourceModel` supplies the exact V4.1 identities missing from pi-ai
-0.85.1. API-first and the commit-addressed CLI register this same metadata in
+0.85.1. The commit-addressed CLI registers this same metadata in
 the real SDK ModelRuntime. This is a model definition, not a substitute V4
 request or a second admission policy.
 

@@ -156,7 +156,6 @@ test("exports every owned Discord record, including pre-route ingress and delive
     [
       "installations",
       "connections",
-      "agent-preferences",
       "dm-preferences",
       "routes",
       "ingress",
@@ -173,7 +172,6 @@ test("exports every owned Discord record, including pre-route ingress and delive
   expect(counts).toStrictEqual({
     installations: 1,
     connections: 1,
-    "agent-preferences": 1,
     "dm-preferences": 1,
     routes: 1,
     ingress: 2,

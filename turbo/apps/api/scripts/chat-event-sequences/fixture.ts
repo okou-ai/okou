@@ -34,7 +34,7 @@ export async function createSequenceFixture() {
       run_id uuid,
       revokes_event_id uuid UNIQUE,
       event_type text NOT NULL CHECK(event_type IN ('output.message', 'run.completed', 'run.failed', 'run.cancelled', 'control.revoke')),
-      payload jsonb, failure_reason text, required_official_workflow_ids uuid[],
+      payload jsonb, model_selection jsonb, failure_reason text, required_official_workflow_ids uuid[],
       context_type text, context_id uuid, run_event_sequence_number integer,
       run_event_id text, seq_id bigint NOT NULL, created_at timestamp NOT NULL,
       UNIQUE(chat_thread_id, seq_id), UNIQUE(run_id, run_event_sequence_number)

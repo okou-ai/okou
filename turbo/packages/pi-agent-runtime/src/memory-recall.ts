@@ -272,7 +272,7 @@ interface RenderedPiMemoryRecall {
   readonly injectedTokenCount: number;
 }
 
-/** Pure renderer shared by API-first and sandbox runtime startup. */
+/** Pure renderer shared by frozen resources and sandbox runtime startup. */
 export function renderPiMemoryRecall(
   content: string,
 ): RenderedPiMemoryRecall | null {

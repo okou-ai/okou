@@ -31,6 +31,7 @@ import { createStore } from "ccstate";
 import { createDeferredPromise } from "../../utils";
 import { and, eq, inArray } from "drizzle-orm";
 import { describe, expect, it, onTestFinished } from "vitest";
+import { apiTestS3PresignedUrl } from "../../../__tests__/mocks";
 import { testContext } from "../../../__tests__/test-context";
 import { db } from "../../../lib/db";
 import { withMockNowForTest, now, nowDate } from "../../../lib/time";
@@ -982,6 +983,25 @@ async function expectNoDispatch(
   }
 }
 
+// Runs `fault` when run preparation presigns the non-empty memory base archive.
+// Storage materialization happens after credential resolution and before the
+// final admission transaction; other presigns keep the default behavior.
+function onMemoryArchivePresign(
+  job: Awaited<ReturnType<typeof createPhase2WorkerFixture>>,
+  fault: () => Promise<void> | void,
+) {
+  const archiveKey = `${job.scope.baseVersion.s3Key}/archive.tar.gz`;
+  testContext().mocks.s3.getSignedUrl.mockImplementation(
+    async (_client: unknown, command: unknown) => {
+      const url = apiTestS3PresignedUrl(command);
+      if (new URL(url).searchParams.get("object")?.endsWith(`/${archiveKey}`)) {
+        await fault();
+      }
+      return url;
+    },
+  );
+}
+
 describe("Phase 2 current credential admission", () => {
   it.each([true, false])(
     "defers empty-selection cleanup/repair for emptyBase=%s with three hourly attempts",
@@ -1197,7 +1217,7 @@ describe("Phase 2 current credential admission", () => {
   it.each(["storage-head", "switch", "rotation", "replacement", "surface"])(
     "fences %s changes during asynchronous preparation",
     async (fault) => {
-      const job = await createPhase2WorkerFixture(`race-${fault}`);
+      const job = await createPhase2WorkerFixture(`race-${fault}`, false);
       const provider = await createPhase2Provider(
         testContext(),
         job.scope,
@@ -1216,7 +1236,7 @@ describe("Phase 2 current credential admission", () => {
       );
       let changed = false;
       let expectedHead = job.scope.baseVersion.versionId;
-      testContext().mocks.s3.getSignedUrl.mockImplementation(async () => {
+      onMemoryArchivePresign(job, async () => {
         if (!changed) {
           changed = true;
           if (fault === "storage-head") {
@@ -1253,7 +1273,6 @@ describe("Phase 2 current credential admission", () => {
             );
           }
         }
-        return "https://objects.example.test/prepared";
       });
       await expectNoDispatch(
         job,
@@ -1298,7 +1317,10 @@ describe("Phase 2 current credential admission", () => {
 });
 
 test("does not admit a subscription disconnected during preparation", async () => {
-  const job = await createPhase2WorkerFixture("disconnect-before-admission");
+  const job = await createPhase2WorkerFixture(
+    "disconnect-before-admission",
+    false,
+  );
   const provider = await createPhase2Provider(
     testContext(),
     job.scope,
@@ -1311,7 +1333,7 @@ test("does not admit a subscription disconnected during preparation", async () =
     provider.binding,
   );
   let disconnected = false;
-  testContext().mocks.s3.getSignedUrl.mockImplementation(async () => {
+  onMemoryArchivePresign(job, async () => {
     if (!disconnected) {
       disconnected = true;
       await disconnectPhase2Codex(
@@ -1320,7 +1342,6 @@ test("does not admit a subscription disconnected during preparation", async () =
         provider.binding.modelProviderId,
       );
     }
-    return "https://objects.example.test/prepared";
   });
   // Final admission rejects disconnected accounts after all source-row locks.
   await expectNoDispatch(job, "credential_unavailable");
@@ -1328,7 +1349,7 @@ test("does not admit a subscription disconnected during preparation", async () =
 });
 
 test("does not persist or dispatch when preparation is cancelled", async () => {
-  const job = await createPhase2WorkerFixture("cancel-before-admission");
+  const job = await createPhase2WorkerFixture("cancel-before-admission", false);
   const provider = await createPhase2Provider(
     testContext(),
     job.scope,
@@ -1341,9 +1362,8 @@ test("does not persist or dispatch when preparation is cancelled", async () => {
   );
   const controller = new AbortController();
   const signal = AbortSignal.any([controller.signal, testContext().signal]);
-  testContext().mocks.s3.getSignedUrl.mockImplementation(() => {
+  onMemoryArchivePresign(job, () => {
     controller.abort(new Error("Cancelled preparation"));
-    return Promise.resolve("https://objects.example.test/cancelled");
   });
   await expect(job.work(undefined, signal)).rejects.toThrow(
     "Cancelled preparation",

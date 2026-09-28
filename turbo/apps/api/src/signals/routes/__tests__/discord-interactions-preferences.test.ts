@@ -29,7 +29,8 @@ import {
   now,
 } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { createDeferredPromise } from "../../utils";
+import { flushWaitUntilForTest } from "../../context/wait-until";
+import { createRunsApi } from "./helpers/api-bdd-runs";
 import { discordInteractionsRoutes } from "../discord-interactions";
 import { integrationsDiscordRoutes } from "../integrations-discord";
 import { modelPoliciesRoutes } from "../model-policies";
@@ -150,21 +151,6 @@ function guildSender(scope: Fixture): DiscordSender {
   };
 }
 
-async function createAgent(
-  owner: Actor,
-  displayName: string | undefined,
-  visibility: "public" | "private" = "private",
-) {
-  const agent = await accountApi.createAgent(owner, {
-    ...(displayName !== undefined ? { displayName } : {}),
-    visibility,
-  });
-  onTestFinished(async () => {
-    await accountApi.deleteAgent(owner, agent.agentId);
-  });
-  return agent;
-}
-
 function commandPayload(
   sender: DiscordSender,
   name: DiscordCommandInteraction["data"]["options"][0]["name"],
@@ -197,20 +183,9 @@ function selectPayload(
   value: string,
 ): DiscordComponentInteraction {
   return {
-    ...commandPayload(sender, "switch"),
+    ...commandPayload(sender, "model"),
     type: 3,
     data: { component_type: 3, custom_id: customId, values: [value] },
-  };
-}
-
-function buttonPayload(
-  sender: DiscordSender,
-  customId: string,
-): DiscordComponentInteraction {
-  return {
-    ...commandPayload(sender, "switch"),
-    type: 3,
-    data: { component_type: 2, custom_id: customId },
   };
 }
 
@@ -240,20 +215,6 @@ function preselected(message: PrivateMessage): string[] {
     });
 }
 
-function pageButton(message: PrivateMessage, label: string) {
-  const component = message.components
-    .flatMap((row) => {
-      return row.components;
-    })
-    .find((entry) => {
-      return entry.type === 2 && entry.label === label;
-    });
-  if (!component || component.type !== 2) {
-    throw new Error(`Expected a Discord ${label} button`);
-  }
-  return component;
-}
-
 function discordHttp(fixtures: readonly Fixture[], dm?: DiscordSender) {
   const byGuild = new Map(
     fixtures.map((scope) => {
@@ -265,13 +226,8 @@ function discordHttp(fixtures: readonly Fixture[], dm?: DiscordSender) {
       return [scope.channelId, scope] as const;
     }),
   );
-  const pending = new Map<
-    string,
-    {
-      readonly channelId: string;
-      readonly resolve: (message: PrivateMessage) => void;
-    }
-  >();
+  const messages = new Map<string, PrivateMessage>();
+  const channels = new Map<string, string>();
   const callbacks = new Map<string, unknown>();
   const guildOwnerId = uniqueDiscordSnowflake();
   server.use(
@@ -375,18 +331,11 @@ function discordHttp(fixtures: readonly Fixture[], dm?: DiscordSender) {
     http.patch(
       "https://discord.com/api/v10/webhooks/:applicationId/:token/messages/@original",
       async ({ request, params }) => {
-        const awaited = pending.get(String(params.token));
-        if (!awaited) {
-          throw new Error(
-            "Received an interaction edit without an awaiting caller",
-          );
-        }
         const message = privateMessageSchema.parse(await request.json());
-        pending.delete(String(params.token));
-        awaited.resolve(message);
+        messages.set(String(params.token), message);
         return HttpResponse.json({
           id: uniqueDiscordSnowflake(),
-          channel_id: awaited.channelId,
+          channel_id: channels.get(String(params.token)),
           author: { id: applicationId, username: "okou", bot: true },
           content: message.content,
           timestamp: new Date(now()).toISOString(),
@@ -399,11 +348,7 @@ function discordHttp(fixtures: readonly Fixture[], dm?: DiscordSender) {
     async send(
       payload: DiscordCommandInteraction | DiscordComponentInteraction,
     ): Promise<PrivateMessage> {
-      const delivered = createDeferredPromise<PrivateMessage>(context.signal);
-      pending.set(payload.token, {
-        channelId: payload.channel_id,
-        resolve: delivered.resolve,
-      });
+      channels.set(payload.token, payload.channel_id);
       const body = JSON.stringify(payload);
       const timestamp = String(Math.floor(now() / 1000));
       const signature = sign(
@@ -424,7 +369,13 @@ function discordHttp(fixtures: readonly Fixture[], dm?: DiscordSender) {
         }),
         [202],
       );
-      const message = await delivered.promise;
+      await flushWaitUntilForTest();
+      const message = messages.get(payload.token);
+      if (!message) {
+        throw new Error(
+          "Expected Discord to edit the acknowledged interaction",
+        );
+      }
       expect(message.allowed_mentions.parse).toStrictEqual([]);
       // Discord shows a private loading reply for a command, while a
       // component update later edits the message holding that component.
@@ -460,6 +411,7 @@ async function disconnect(owner: Actor): Promise<void> {
 }
 
 async function configureModelPreferences(scope: Fixture) {
+  await createRunsApi(context).grantProEntitlement(scope.owner);
   const headers = accountApi.authenticate(scope.owner);
   const providers = setupApp({ context, routes: modelProvidersRoutes })(
     modelProvidersMainContract,
@@ -486,7 +438,7 @@ async function configureModelPreferences(scope: Fixture) {
   );
   const initial = await accept(policies.list({ headers }), [200]);
   const defaultPolicy = {
-    model: "claude-sonnet-5" as const,
+    model: "claude-fable-5-1" as const,
     isDefault: true,
     defaultProviderType: "anthropic-api-key" as const,
     credentialScope: "org" as const,
@@ -500,7 +452,7 @@ async function configureModelPreferences(scope: Fixture) {
         policies: [
           defaultPolicy,
           {
-            model: "gpt-5.6-sol",
+            model: "gpt-6-astra",
             isDefault: false,
             defaultProviderType: "openai-api-key",
             credentialScope: "org",
@@ -541,110 +493,6 @@ describe("Discord account preferences through private controls", () => {
     expect((await readStatus(scope.owner)).isConnected).toBeTruthy();
   });
 
-  it("rejects a previously issued picker after its binding is revoked", async () => {
-    const scope = await fixture();
-    const agent = await createAgent(scope.owner, "Revoked binding agent");
-    const discord = discordHttp([scope]);
-    const sender = guildSender(scope);
-    const menu = selectMenu(
-      await discord.send(commandPayload(sender, "switch")),
-    );
-    expect(menu.options).toContainEqual({
-      label: "Revoked binding agent",
-      value: agent.agentId,
-    });
-
-    await disconnect(scope.owner);
-    const rejected = await discord.send(
-      selectPayload(sender, menu.custom_id, agent.agentId),
-    );
-
-    expect(rejected.content).toContain("onboarding is not available yet");
-    expect(rejected.components).toStrictEqual([]);
-    expect((await readStatus(scope.owner)).isConnected).toBeFalsy();
-  });
-
-  it("rechecks private-agent access and rejects a forged selection from a real picker", async () => {
-    const scope = await fixture();
-    const otherOwner = actor(scope.owner.orgId);
-    mockDiscordMemberships(context, [scope.owner, otherOwner]);
-    const baseline = await createAgent(scope.owner, "Kept preference");
-    const shared = await createAgent(
-      otherOwner,
-      "Formerly shared agent",
-      "public",
-    );
-    const hidden = await createAgent(otherOwner, "Never shared agent");
-    const discord = discordHttp([scope]);
-    const sender = guildSender(scope);
-    const menu = selectMenu(
-      await discord.send(commandPayload(sender, "switch")),
-    );
-    expect(
-      menu.options.map((option) => {
-        return option.value;
-      }),
-    ).toContain(shared.agentId);
-    expect(
-      menu.options.map((option) => {
-        return option.value;
-      }),
-    ).not.toContain(hidden.agentId);
-    await discord.send(selectPayload(sender, menu.custom_id, baseline.agentId));
-
-    await accountApi.updateAgentMetadata(otherOwner, shared.agentId, {
-      visibility: "private",
-    });
-    const revoked = await discord.send(
-      selectPayload(sender, menu.custom_id, shared.agentId),
-    );
-    const forged = await discord.send(
-      selectPayload(sender, menu.custom_id, hidden.agentId),
-    );
-
-    expect(revoked.content).toContain("no longer have access to that agent");
-    expect(forged.content).toContain("no longer have access to that agent");
-    const connected = await discord.send(commandPayload(sender, "connect"));
-    expect(connected.content).toContain("Current agent: Kept preference.");
-  });
-
-  it.each(["sender", "channel", "expired"] as const)(
-    "rejects a signed control with changed %s context",
-    async (changed) => {
-      const scope = await fixture();
-      const original = await createAgent(scope.owner, "Original agent");
-      const attempted = await createAgent(scope.owner, "Attempted agent");
-      const discord = discordHttp([scope]);
-      const sender = guildSender(scope);
-      const menu = selectMenu(
-        await discord.send(commandPayload(sender, "switch")),
-      );
-      await discord.send(
-        selectPayload(sender, menu.custom_id, original.agentId),
-      );
-      const moved = {
-        ...sender,
-        ...(changed === "sender"
-          ? { discordUserId: uniqueDiscordSnowflake() }
-          : {}),
-        ...(changed === "channel"
-          ? { channelId: uniqueDiscordSnowflake() }
-          : {}),
-      };
-      if (changed === "expired") {
-        mockNow(now() + 15 * 60 * 1000);
-      }
-
-      const rejected = await discord.send(
-        selectPayload(moved, menu.custom_id, attempted.agentId),
-      );
-
-      expect(rejected.content).toContain("expired or your access has changed");
-      const connected = await discord.send(commandPayload(sender, "connect"));
-      expect(connected.content).toContain("Current agent: Original agent.");
-    },
-  );
-
   it("disconnects only the invoked workspace and exposes that change through status", async () => {
     const first = await fixture();
     const second = await fixture(
@@ -670,18 +518,13 @@ describe("Discord account preferences through private controls", () => {
       first.binding.discordUserId,
     );
     mockDiscordMemberships(context, [first.owner, second.owner]);
-    const firstAgent = await createAgent(first.owner, "First workspace agent");
-    const secondAgent = await createAgent(
-      second.owner,
-      "Second workspace agent",
-    );
     const sender = {
       discordUserId: first.binding.discordUserId,
       channelId: uniqueDiscordSnowflake(),
     };
     const discord = discordHttp([first, second], sender);
 
-    const undecided = await discord.send(commandPayload(sender, "switch"));
+    const undecided = await discord.send(commandPayload(sender, "org"));
     const choice = selectMenu(undecided);
     expect(undecided.content).toContain("Choose your workspace for bot DMs");
     expect(
@@ -703,174 +546,9 @@ describe("Discord account preferences through private controls", () => {
     expect((await readStatus(second.owner)).dmSelectionConnectionId).toBe(
       second.binding.connectionId,
     );
-    const agents = selectMenu(
-      await discord.send(commandPayload(sender, "switch")),
-    );
-    const values = agents.options.map((option) => {
-      return option.value;
-    });
-    expect(values).toContain(secondAgent.agentId);
-    expect(values).not.toContain(firstAgent.agentId);
-  });
-
-  it.each([
-    { kind: "unset", displayName: undefined },
-    { kind: "empty", displayName: "" },
-    { kind: "long Unicode", displayName: "🚀".repeat(100) },
-  ])(
-    "renders $kind agent names within Discord limits",
-    async ({ displayName }) => {
-      const scope = await fixture();
-      const agent = await createAgent(scope.owner, displayName);
-      const discord = discordHttp([scope]);
-      const sender = guildSender(scope);
-      const menu = selectMenu(
-        await discord.send(commandPayload(sender, "switch")),
-      );
-      const option = menu.options.find((entry) => {
-        return entry.value === agent.agentId;
-      });
-      if (!option) {
-        throw new Error("Expected the agent to remain selectable");
-      }
-      expect(option.label.length).toBeGreaterThan(0);
-      expect(option.label.length).toBeLessThanOrEqual(100);
-      expect(Buffer.from(option.label).toString("utf8")).toBe(option.label);
-      const selected = await discord.send(
-        selectPayload(sender, menu.custom_id, option.value),
-      );
-      expect(selected.content).toContain(
-        "Agent selected for new Discord conversations",
-      );
-      expect(selected.content.length).toBeLessThanOrEqual(2000);
-      const connected = await discord.send(commandPayload(sender, "connect"));
-      expect(connected.content).toContain("Current agent:");
-      expect(connected.content.length).toBeLessThanOrEqual(2000);
-    },
-  );
-
-  it("paginates more than 25 agents and saves a selection from the later page", async () => {
-    const scope = await fixture();
-    const agents = [];
-    for (let index = 0; index < 26; index++) {
-      agents.push(await createAgent(scope.owner, `Agent ${index + 1}`));
-    }
-    const discord = discordHttp([scope]);
-    const sender = guildSender(scope);
-
-    const firstPage = await discord.send(commandPayload(sender, "switch"));
-    const firstMenu = selectMenu(firstPage);
-    expect(firstMenu.options).toHaveLength(25);
-    const next = pageButton(firstPage, "Next");
-    const secondPage = await discord.send(
-      buttonPayload(sender, next.custom_id),
-    );
-    const secondMenu = selectMenu(secondPage);
-    expect(secondPage.content).toContain("Page 2 of 2");
     expect(
-      pageButton(secondPage, "Previous").custom_id.length,
-    ).toBeLessThanOrEqual(100);
-    const allValues = [...firstMenu.options, ...secondMenu.options]
-      .map((option) => {
-        return option.value;
-      })
-      .filter((value) => {
-        return value !== "default";
-      });
-    expect(new Set(allValues)).toStrictEqual(
-      new Set(
-        agents.map((agent) => {
-          return agent.agentId;
-        }),
-      ),
-    );
-    const option = secondMenu.options.find((entry) => {
-      return entry.value !== "default";
-    });
-    if (!option) {
-      throw new Error("Expected a selectable agent on the second page");
-    }
-
-    const selected = await discord.send(
-      selectPayload(sender, secondMenu.custom_id, option.value),
-    );
-
-    expect(selected.content).toContain(
-      `Agent selected for new Discord conversations: ${option.label}.`,
-    );
-    const connected = await discord.send(commandPayload(sender, "connect"));
-    expect(connected.content).toContain(`Current agent: ${option.label}.`);
-    const reopened = await discord.send(commandPayload(sender, "switch"));
-    expect(reopened.content).toContain("Page 2 of 2");
-    expect(preselected(reopened)).toStrictEqual([option.value]);
-  });
-
-  it("updates the picker in place and preselects the saved agent", async () => {
-    const scope = await fixture();
-    const chosen = await createAgent(scope.owner, "Chosen agent");
-    await createAgent(scope.owner, "Other agent");
-    const discord = discordHttp([scope]);
-    const sender = guildSender(scope);
-    const picker = await discord.send(commandPayload(sender, "switch"));
-    expect(preselected(picker)).not.toContain(chosen.agentId);
-
-    const selected = await discord.send(
-      selectPayload(sender, selectMenu(picker).custom_id, chosen.agentId),
-    );
-
-    expect(selected.content).toContain("Agent selected");
-    expect(selected.components).toStrictEqual([]);
-    const reopened = await discord.send(commandPayload(sender, "switch"));
-    expect(preselected(reopened)).toStrictEqual([chosen.agentId]);
-  });
-
-  it("preselects the workspace default agent before an agent is chosen", async () => {
-    const scope = await fixture();
-    const onboarding = await accountApi.readOnboardingStatus(scope.owner);
-    expect(onboarding.defaultAgentId).toBeTruthy();
-    await createAgent(scope.owner, "Unchosen agent");
-    const discord = discordHttp([scope]);
-
-    const picker = await discord.send(
-      commandPayload(guildSender(scope), "switch"),
-    );
-
-    expect(preselected(picker)).toStrictEqual(["default"]);
-  });
-
-  it("applies no selection when Discord's acknowledgement is uncertain", async () => {
-    const scope = await fixture();
-    const kept = await createAgent(scope.owner, "Kept agent");
-    const attempted = await createAgent(scope.owner, "Attempted agent");
-    const discord = discordHttp([scope]);
-    const sender = guildSender(scope);
-    const menu = selectMenu(
-      await discord.send(commandPayload(sender, "switch")),
-    );
-    await discord.send(selectPayload(sender, menu.custom_id, kept.agentId));
-    mockMonotonicNow(0);
-    onTestFinished(clearMockMonotonicNow);
-    server.use(
-      http.post(
-        "https://discord.com/api/v10/interactions/:id/:token/callback",
-        async ({ request, params }) => {
-          discord.callbacks.set(String(params.token), await request.json());
-          // Discord's 3-second response window closes before the edit.
-          mockMonotonicNow(10_000);
-          return HttpResponse.json({ message: "Unavailable" }, { status: 503 });
-        },
-        { once: true },
-      ),
-    );
-
-    const notice = await discord.send(
-      selectPayload(sender, menu.custom_id, attempted.agentId),
-    );
-
-    expect(notice.content).toContain("no changes were made");
-    expect(notice.components).toStrictEqual([]);
-    const reopened = await discord.send(commandPayload(sender, "switch"));
-    expect(preselected(reopened)).toStrictEqual([kept.agentId]);
+      preselected(await discord.send(commandPayload(sender, "org"))),
+    ).toStrictEqual([second.binding.connectionId]);
   });
 
   it("preselects the effective model and the selected DM workspace", async () => {
@@ -900,13 +578,13 @@ describe("Discord account preferences through private controls", () => {
     ).toStrictEqual([first.binding.connectionId]);
 
     const models = await discord.send(commandPayload(sender, "model"));
-    expect(preselected(models)).toStrictEqual(["claude-sonnet-5"]);
+    expect(preselected(models)).toStrictEqual(["claude-fable-5-1"]);
     await discord.send(
-      selectPayload(sender, selectMenu(models).custom_id, "gpt-5.6-sol"),
+      selectPayload(sender, selectMenu(models).custom_id, "gpt-6-astra"),
     );
     expect(
       preselected(await discord.send(commandPayload(sender, "model"))),
-    ).toStrictEqual(["gpt-5.6-sol"]);
+    ).toStrictEqual(["gpt-6-astra"]);
   });
 
   it("rechecks model policy after a picker is issued and preserves the current allowed preference", async () => {
@@ -922,13 +600,13 @@ describe("Discord account preferences through private controls", () => {
       menu.options.map((option) => {
         return option.value;
       }),
-    ).toContain("gpt-5.6-sol");
+    ).toContain("gpt-6-astra");
     const selected = await discord.send(
-      selectPayload(sender, menu.custom_id, "gpt-5.6-sol"),
+      selectPayload(sender, menu.custom_id, "gpt-6-astra"),
     );
     expect(selected.content).toContain("Model selected for new conversations");
     const before = await accept(preference.get({ headers }), [200]);
-    expect(before.body.selectedModel).toBe("gpt-5.6-sol");
+    expect(before.body.selectedModel).toBe("gpt-6-astra");
     const current = await accept(policies.list({ headers }), [200]);
     await accept(
       policies.update({
@@ -939,13 +617,85 @@ describe("Discord account preferences through private controls", () => {
     );
 
     const rejected = await discord.send(
-      selectPayload(sender, menu.custom_id, "gpt-5.6-sol"),
+      selectPayload(sender, menu.custom_id, "gpt-6-astra"),
     );
 
     expect(rejected.content).toContain("no longer have access to that model");
     const after = await accept(preference.get({ headers }), [200]);
-    expect(after.body.selectedModel).toBe("claude-sonnet-5");
+    expect(after.body.selectedModel).toBe("claude-fable-5-1");
   });
+  it.each(["sender", "channel", "expired"] as const)(
+    "rejects a signed control with changed %s context",
+    async (changed) => {
+      const scope = await fixture();
+      const { headers, preference } = await configureModelPreferences(scope);
+      const discord = discordHttp([scope]);
+      const sender = guildSender(scope);
+      const menu = selectMenu(
+        await discord.send(commandPayload(sender, "model")),
+      );
+      await discord.send(
+        selectPayload(sender, menu.custom_id, "claude-fable-5-1"),
+      );
+      const moved = {
+        ...sender,
+        ...(changed === "sender"
+          ? { discordUserId: uniqueDiscordSnowflake() }
+          : {}),
+        ...(changed === "channel"
+          ? { channelId: uniqueDiscordSnowflake() }
+          : {}),
+      };
+      if (changed === "expired") {
+        mockNow(now() + 15 * 60 * 1000);
+      }
+
+      const rejected = await discord.send(
+        selectPayload(moved, menu.custom_id, "gpt-6-astra"),
+      );
+
+      expect(rejected.content).toContain("expired or your access has changed");
+      const after = await accept(preference.get({ headers }), [200]);
+      expect(after.body.selectedModel).toBe("claude-fable-5-1");
+    },
+  );
+
+  it("applies no selection when Discord's acknowledgement is uncertain", async () => {
+    const scope = await fixture();
+    await configureModelPreferences(scope);
+    const discord = discordHttp([scope]);
+    const sender = guildSender(scope);
+    const menu = selectMenu(
+      await discord.send(commandPayload(sender, "model")),
+    );
+    await discord.send(
+      selectPayload(sender, menu.custom_id, "claude-fable-5-1"),
+    );
+    mockMonotonicNow(0);
+    onTestFinished(clearMockMonotonicNow);
+    server.use(
+      http.post(
+        "https://discord.com/api/v10/interactions/:id/:token/callback",
+        async ({ request, params }) => {
+          discord.callbacks.set(String(params.token), await request.json());
+          // Discord's 3-second response window closes before the edit.
+          mockMonotonicNow(10_000);
+          return HttpResponse.json({ message: "Unavailable" }, { status: 503 });
+        },
+        { once: true },
+      ),
+    );
+
+    const notice = await discord.send(
+      selectPayload(sender, menu.custom_id, "gpt-6-astra"),
+    );
+
+    expect(notice.content).toContain("no changes were made");
+    expect(notice.components).toStrictEqual([]);
+    const reopened = await discord.send(commandPayload(sender, "model"));
+    expect(preselected(reopened)).toStrictEqual(["claude-fable-5-1"]);
+  });
+
   it.each([
     "disconnect",
     "feature",
@@ -963,12 +713,34 @@ describe("Discord account preferences through private controls", () => {
         await discord.send(commandPayload(sender, "model")),
       );
       await discord.send(
-        selectPayload(sender, menu.custom_id, "claude-sonnet-5"),
+        selectPayload(sender, menu.custom_id, "claude-fable-5-1"),
       );
-      const reached = createDeferredPromise<void>(context.signal);
-      const release = createDeferredPromise<void>(context.signal);
       let channelChecks = 0;
-      let holdMembership = false;
+      let revokeAtMembership = false;
+      let revoked = false;
+      async function revokeAccess() {
+        revoked = true;
+        if (
+          revocation === "disconnect" ||
+          revocation === "disconnect after binding read"
+        ) {
+          await disconnect(scope.owner);
+        } else if (revocation === "feature") {
+          await enableDiscord(scope.owner, false);
+        } else {
+          const current = await accept(policies.list({ headers }), [200]);
+          await accept(
+            policies.update({
+              headers,
+              body: {
+                revision: current.body.revision,
+                policies: [defaultPolicy],
+              },
+            }),
+            [200],
+          );
+        }
+      }
       const membership =
         context.mocks.clerk.organizations.getOrganizationMembershipList;
       const membershipResponse = membership.getMockImplementation();
@@ -977,10 +749,9 @@ describe("Discord account preferences through private controls", () => {
       }
       membership.mockImplementation(async (...args) => {
         const response = await membershipResponse(...args);
-        if (holdMembership) {
-          holdMembership = false;
-          reached.resolve();
-          await release.promise;
+        if (revokeAtMembership) {
+          revokeAtMembership = false;
+          await revokeAccess();
         }
         return response;
       });
@@ -991,10 +762,9 @@ describe("Discord account preferences through private controls", () => {
             channelChecks++;
             if (channelChecks === 2) {
               if (revocation === "disconnect after binding read") {
-                holdMembership = true;
+                revokeAtMembership = true;
               } else {
-                reached.resolve();
-                await release.promise;
+                await revokeAccess();
               }
             }
             return HttpResponse.json({
@@ -1006,38 +776,16 @@ describe("Discord account preferences through private controls", () => {
           },
         ),
       );
-      const pending = discord.send(
-        selectPayload(sender, menu.custom_id, "gpt-5.6-sol"),
+      const rejected = await discord.send(
+        selectPayload(sender, menu.custom_id, "gpt-6-astra"),
       );
-      await reached.promise;
-      if (
-        revocation === "disconnect" ||
-        revocation === "disconnect after binding read"
-      ) {
-        await disconnect(scope.owner);
-      } else if (revocation === "feature") {
-        await enableDiscord(scope.owner, false);
-      } else {
-        const current = await accept(policies.list({ headers }), [200]);
-        await accept(
-          policies.update({
-            headers,
-            body: {
-              revision: current.body.revision,
-              policies: [defaultPolicy],
-            },
-          }),
-          [200],
-        );
-      }
-      release.resolve();
-      const rejected = await pending;
+      expect(revoked).toBeTruthy();
       expect(rejected.content).not.toContain(
         "Model selected for new conversations",
       );
       expect(rejected.components).toStrictEqual([]);
       const after = await accept(preference.get({ headers }), [200]);
-      expect(after.body.selectedModel).toBe("claude-sonnet-5");
+      expect(after.body.selectedModel).toBe("claude-fable-5-1");
     },
   );
 });

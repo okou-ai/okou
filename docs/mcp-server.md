@@ -132,11 +132,9 @@ All selection fields remain optional:
 In either mode, optional `agentId`, `title`, and `model` select explicit values.
 An omitted Agent resolves to the currently visible organization default and is
 stored concretely on the thread. An omitted title stays null until the first
-text run triggers automatic title generation. An omitted model leaves the
-thread without a stored selection until first run admission. That admission
-resolves the current member default, then the organization default, and persists
-the resolved model as the thread pin. Later default changes do not affect the
-thread. The response exposes the selected/effective model and `source`. `message`
+text run triggers automatic title generation. An omitted model resolves the
+current member default, then the organization default, and stores that choice
+when the thread is created. Later default changes do not affect the thread. The response exposes the selected/effective model and `source`. `message`
 uses the same nonblank, 32,000 UTF-16-unit limit as `send_chat_message` and
 preserves its exact accepted text.
 
@@ -150,7 +148,8 @@ and then `get_chat_messages` to observe output.
 Both modes return `threadId` (the normalized `requestId`), the concrete Agent,
 current title, selected/effective model, service tier, creation time in `createdAt`,
 authenticated App URL, `replayed`, and `retryUntil`. Existing media/reasoning
-defaults apply and service tier starts unset. Credentials, quota, and execution
+defaults apply; a new thread captures the member model and service tier, or the
+organization default when the member preference is unavailable. Credentials, quota, and execution
 policy are checked when the initial or later input is dispatched, as indicated
 by `admission: "checked_on_send"`.
 
@@ -160,9 +159,9 @@ the same derived input reference. Concurrent identical requests converge on one
 thread and, when present, one input. Switching between empty and combined modes,
 changing a message, or changing omitted-versus-explicit Agent/title/model intent
 is a conflict. Replay returns current stored thread settings without undoing
-later edits. An originally omitted model follows current defaults only while the
-thread remains unpinned before first run admission; after admission persists the
-resolved model, replay reports that thread pin. Deleted conversations, expired
+later edits. An originally omitted model is resolved and stored when the thread is created.
+Each input captures the thread model at enqueue, using the organization default
+if the thread model is unavailable. Later settings changes do not reroute queued inputs. Deleted conversations, expired
 retries, or missing canonical evidence return an error while either half of the
 retained identity remains. Thread events become eligible for snapshot-backed
 pruning after seven days. If the thread remains after its creation event is
@@ -197,9 +196,8 @@ patch:
 ```
 
 The patch must contain `title` and/or `model`. Omitted fields remain unchanged;
-`model: null` clears the thread model pin until the next admitted run resolves
-the current member or organization default and persists it as the new pin. Later
-default changes do not affect the thread. A title is nonblank and at most 200
+`model: null` clears the thread model pin. Each subsequent input captures the
+organization default at enqueue without rewriting the thread selection. A title is nonblank and at most 200
 UTF-16 units. The patch never implicitly changes service tier, per-model
 reasoning settings, image/video models, computer-use or browser settings. A
 preserved setting that is incompatible with the requested model makes the whole
@@ -260,10 +258,10 @@ Model metadata is a read-only view of current policy. A null `effectiveModel`
 means no usable policy route was resolved; it does not invent a default or
 repair stored settings. `admission: "checked_on_send"` means credentials, quota,
 policy and other execution checks still apply when a future message is sent.
-When the stored selection is null, `source` may temporarily report
-`member_default` or `org_default`; the next run admission persists the resolved
-model, and later reads report `source: "thread"`. The selected thread model does
-not change an already-running execution.
+When the stored selection is null, `source` reports `org_default` if a usable
+organization default exists. Enqueue captures that model for the input without
+rewriting the thread selection. A model selected after enqueue does not change
+that input or an already-running execution.
 
 Pagination orders by last-message time descending, then thread ID descending.
 The opaque cursor preserves database timestamp precision, expires after 24

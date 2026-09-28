@@ -7,30 +7,8 @@ import type {
   PiPreparationObservation,
   PiPreparationObserver,
 } from "./preparation-timing";
-import {
-  classifyPiApiProviderFailure,
-  PiApiModelRequestError,
-  type PiApiModelFailureDiagnostic,
-} from "./api-failure";
-import {
-  runPiApiFirstTurn as runPiApiFirstTurnImpl,
-  preparePiApiTurn as preparePiApiTurnImpl,
-  executePreparedPiApiTurn as executePreparedPiApiTurnImpl,
-} from "./api-turn";
 import { MemoryPiSession } from "./session-memory";
 import type {
-  PiApiAssistantContent,
-  PiApiAssistantMessage,
-  PiApiAssistantStopReason,
-  PiApiAssistantTextContent,
-  PiApiAssistantToolCallContent,
-  PiApiTurnPreparationArgs,
-  PiApiTurnExecutionArgs,
-  PreparedPiApiTurn,
-  PiApiFirstTurnArgs,
-  PiApiFirstTurnResult,
-  PiApiUsageObservation,
-  PiObservedServiceTier,
   PiMemoryRecallOutcome,
   PiMemoryRecallOutcomeStatus,
   PiMemoryRecallParity,
@@ -39,24 +17,14 @@ import type {
   PiPreheatedResourceSnapshot,
   PiPreheatedSkill,
   PiSessionInspection,
-  RunPiApiFirstTurn,
 } from "./api-types";
-import {
-  PiApiFirstTurnCompactionRequiredError,
-  UnsupportedPiResourceSnapshotError,
-  UnsupportedPiSessionVersionError,
-} from "./errors";
+import { UnsupportedPiSessionVersionError } from "./errors";
 import {
   PI_MEMORY_STAGE1_BUILT_IN_MODEL,
   PI_MEMORY_STAGE1_BYOK_MODEL,
 } from "./memory-background-config";
 import type { PiMemoryStage1Model } from "./memory-background-config";
 import { piMemoryPhase2SelectionDigest } from "./phase2-memory-selection";
-import { createPiApiFirstTurnOwnership } from "./provider-ownership";
-import type {
-  PiApiFirstTurnOwnership,
-  PiApiFirstTurnOwnershipStage,
-} from "./provider-ownership";
 import {
   PI_MEMORY_STAGE1_RESPONSE_SCHEMA,
   PiMemoryStage1ProviderError,
@@ -74,8 +42,6 @@ import {
 import { redactPiMemoryStage1Secrets } from "./stage1-secrets";
 export {
   piMemoryPhase2SelectionDigest,
-  classifyPiApiProviderFailure,
-  PiApiModelRequestError,
   PI_MEMORY_STAGE1_BUILT_IN_MODEL,
   PI_MEMORY_STAGE1_BYOK_MODEL,
   PI_MEMORY_STAGE1_RESPONSE_SCHEMA,
@@ -84,11 +50,8 @@ export {
   projectPiMemoryStage1Evidence,
   redactPiMemoryStage1Secrets,
   runPiMemoryStage1Extraction,
-  PiApiFirstTurnCompactionRequiredError,
-  UnsupportedPiResourceSnapshotError,
   UnsupportedPiSessionVersionError,
 };
-export { createPiApiFirstTurnOwnership };
 export {
   measurePiPreparation,
   measurePiPreparationSync,
@@ -96,19 +59,6 @@ export {
 };
 export type { PiPreparationObservation, PiPreparationObserver };
 export type {
-  PiApiModelFailureDiagnostic,
-  PiApiAssistantContent,
-  PiApiAssistantMessage,
-  PiApiAssistantStopReason,
-  PiApiAssistantTextContent,
-  PiApiAssistantToolCallContent,
-  PiApiTurnPreparationArgs,
-  PiApiTurnExecutionArgs,
-  PreparedPiApiTurn,
-  PiApiFirstTurnArgs,
-  PiApiFirstTurnResult,
-  PiApiUsageObservation,
-  PiObservedServiceTier,
   PiMemoryRecallOutcome,
   PiMemoryRecallOutcomeStatus,
   PiMemoryRecallParity,
@@ -117,28 +67,13 @@ export type {
   PiPreheatedResourceSnapshot,
   PiPreheatedSkill,
   PiSessionInspection,
-  PiApiFirstTurnOwnership,
-  PiApiFirstTurnOwnershipStage,
   PiMemoryStage1Model,
   PiMemoryStage1ProviderResult,
   PiMemoryStage1Evidence,
   PiMemoryStage1ProviderUsage,
 };
 
-export const preparePiApiTurn: (
-  args: PiApiTurnPreparationArgs,
-  signal?: AbortSignal,
-) => Promise<PreparedPiApiTurn> = preparePiApiTurnImpl;
-export const executePreparedPiApiTurn: (
-  prepared: PreparedPiApiTurn,
-  args: PiApiTurnExecutionArgs,
-  signal?: AbortSignal,
-) => Promise<PiApiFirstTurnResult> = executePreparedPiApiTurnImpl;
-
-/** Run one provider turn without exposing Pi's native declaration surface. */
-export const runPiApiFirstTurn: RunPiApiFirstTurn = runPiApiFirstTurnImpl;
-
-/** Create the canonical empty native Pi history for a new API-first launch. */
+/** Create the canonical empty native Pi history for a new sandbox launch. */
 export function createPiSessionJsonl(args: {
   readonly cwd: string;
   readonly sessionId: string;

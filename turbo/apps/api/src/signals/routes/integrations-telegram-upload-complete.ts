@@ -1,4 +1,4 @@
-import { command, computed, type Computed } from "ccstate";
+import { command } from "ccstate";
 import {
   integrationsTelegramUploadCompleteContract,
   type TelegramUploadCompleteBody,
@@ -23,7 +23,6 @@ import { recordTelegramUploadedFile$ } from "../services/run-uploaded-files.serv
 import {
   currentUserTelegramChatId,
   telegramAccountNotLinked,
-  telegramInstallation,
 } from "../services/telegram-data.service";
 import type { RouteEntry } from "../route-entry";
 
@@ -82,19 +81,6 @@ function buildMetadata(args: {
   };
 }
 
-function resolveBotToken(args: {
-  readonly orgId: string;
-  readonly botId: string;
-}): Computed<Promise<string | undefined>> {
-  return computed(async (get): Promise<string | undefined> => {
-    if (isOfficialTelegramBotId(args.botId)) {
-      return getOfficialTelegramBotConfig().botToken ?? undefined;
-    }
-    const installation = await get(telegramInstallation(args));
-    return installation?.botToken;
-  });
-}
-
 function telegramErrorResponse(
   result: Extract<SendTelegramDocumentResult, { kind: "telegram-error" }>,
 ) {
@@ -127,17 +113,16 @@ const completeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   const body = bodyResult.data;
 
-  const botToken = await get(resolveBotToken({ orgId, botId: body.botId }));
-  signal.throwIfAborted();
+  const botToken = isOfficialTelegramBotId(body.botId)
+    ? getOfficialTelegramBotConfig().botToken
+    : null;
   if (!botToken) {
     return botNotFound;
   }
 
   let chatId = body.chatId;
   if (chatId === "me") {
-    const resolved = await get(
-      currentUserTelegramChatId({ orgId, userId, botId: body.botId }),
-    );
+    const resolved = await get(currentUserTelegramChatId({ orgId, userId }));
     signal.throwIfAborted();
     if (!resolved) {
       return telegramAccountNotLinked;

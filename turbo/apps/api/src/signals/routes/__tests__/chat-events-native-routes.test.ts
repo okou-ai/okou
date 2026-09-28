@@ -64,12 +64,13 @@ const {
   mockPiCheckpointObjectStore,
   mockPiResourceArchiveDownloads,
   completeSandboxFirstPiRun,
-  expectPiSandboxHandoff,
+  piSandboxBaseSession,
 } = createChatEventsFixture(context);
 
-async function completeNativeToolHandoff({
+async function completeNativeToolRun({
   actor,
   agentId,
+  runnerGroup,
   run,
   claim,
   objects,
@@ -78,6 +79,7 @@ async function completeNativeToolHandoff({
 }: {
   actor: ApiTestUser;
   agentId: string;
+  runnerGroup: string;
   run: Awaited<ReturnType<typeof sendChatRun>>;
   claim: Awaited<ReturnType<typeof api.claimRunnerJob>>;
   objects: Map<string, Buffer>;
@@ -97,27 +99,15 @@ async function completeNativeToolHandoff({
     },
     [201],
   );
-  const reserved = await api.reserveRunnerActiveInputs(
-    claim.sandboxToken,
-    run.runId,
-  );
-  if (reserved.outcome !== "reserved") {
-    throw new Error("Expected native active input ownership");
-  }
   await expect(
-    api.reserveRunnerActiveInputs(claim.sandboxToken, run.runId),
-  ).resolves.toStrictEqual(reserved);
+    api.nextSteerableInput(claim.sandboxToken, run.runId),
+  ).resolves.toStrictEqual({
+    input: { eventId: activeInputEventId, prompt: activeInput },
+  });
   await expect(
-    api.recordRunnerActiveInputDelivery(
-      claim.sandboxToken,
-      run.runId,
-      reserved.deliveryId,
-    ),
-  ).resolves.toStrictEqual({ outcome: "delivered" });
-  const { manifest, session: h0 } = expectPiSandboxHandoff(run.runId, objects);
-  if (!h0) {
-    throw new Error("Expected native sandbox-first history");
-  }
+    api.declareSteeredInput(claim.sandboxToken, run.runId, activeInputEventId),
+  ).resolves.toStrictEqual({ outcome: "steered" });
+  const h0 = piSandboxBaseSession(claim, objects);
   // The sandbox runs the whole native turn: a tool call with an image result,
   // the delivered active input, and the final answer.
   const history = MemoryPiSession.fromJsonl(h0.toString("utf8"));
@@ -193,21 +183,20 @@ async function completeNativeToolHandoff({
     `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${hash}.blob`,
     Buffer.from(h2),
   );
-  const sequence = manifest.sandboxEventSequenceStart;
   await webhooks.requestAgentEvents(
     {
       runId: run.runId,
       events: [
         {
           type: "assistant",
-          sequenceNumber: sequence,
+          sequenceNumber: 1,
           message: {
             content: [{ type: "text", text: "Native sandbox completion" }],
           },
         },
         {
           type: "result",
-          sequenceNumber: sequence + 1,
+          sequenceNumber: 2,
           result: "Native sandbox completion",
         },
       ],
@@ -219,7 +208,7 @@ async function completeNativeToolHandoff({
     {
       runId: run.runId,
       exitCode: 0,
-      lastEventSequence: sequence + 1,
+      lastEventSequence: 2,
       checkpoint: {
         cliAgentType: "pi",
         cliAgentSessionId: run.threadId,
@@ -253,21 +242,22 @@ async function completeNativeToolHandoff({
     prompt: "continue with the native tool image and accepted input",
   });
   await flushWaitUntilForTest();
-  const { manifest: resumedManifest } = expectPiSandboxHandoff(
-    resumed.runId,
-    objects,
-  );
-  expect(resumedManifest).toMatchObject({
-    schemaVersion: 4,
-    baseSession: { sessionId: run.threadId, sha256: hash },
+  const resumedClaim = await claimChatRun(runnerGroup, resumed.runId);
+  const resumeSession = resumedClaim.claim.resumeSession;
+  expect(resumeSession).toMatchObject({
+    sessionId: run.threadId,
+    historyRef: { kind: "blob", hash },
   });
-  if (resumedManifest.schemaVersion !== 4) {
+  if (!resumeSession || !("historyRef" in resumeSession)) {
     throw new Error("Expected referenced native tool history");
   }
-  expect(new URL(resumedManifest.history.url).searchParams.get("object")).toBe(
+  expect(new URL(resumeSession.historyRef.url).searchParams.get("object")).toBe(
     `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${hash}.blob`,
   );
-  await cancelChatRun(actor, resumed.runId);
+  expect(
+    piSandboxBaseSession(resumedClaim.claim, objects).toString("utf8"),
+  ).toBe(h2);
+  await cancelChatRun(actor, resumed.runId, resumedClaim.sandboxHeaders);
 }
 
 describe("shared native Pi route activation", () => {
@@ -304,12 +294,11 @@ describe("shared native Pi route activation", () => {
         model,
         prompt: "remember the selected DeepSeek route",
       });
-      // The first turn is a no-inference sandbox-first handoff.
-      expect(expectPiSandboxHandoff(first.runId, objects).session).toBeTruthy();
       await flushWaitUntilForTest();
       const firstClaim = await claimChatRun(runnerGroup, first.runId);
       expect(firstClaim.claim).toMatchObject({
         piSessionId: first.threadId,
+        resumeSession: null,
         piModelConfig: { model: getProviderRuntimeModel(type, model) },
       });
       await completeSandboxFirstPiRun({
@@ -330,15 +319,6 @@ describe("shared native Pi route activation", () => {
         threadId: first.threadId,
         prompt: "continue with the same history",
       });
-      expect(
-        expectPiSandboxHandoff(second.runId, objects).manifest,
-      ).toMatchObject({
-        schemaVersion: 4,
-        baseSession: {
-          sessionId: first.threadId,
-          sha256: expect.any(String),
-        },
-      });
       await expectNoBuiltInModelUsage(first.runId);
       await expectNoBuiltInModelUsage(second.runId);
       await flushWaitUntilForTest();
@@ -346,6 +326,10 @@ describe("shared native Pi route activation", () => {
       expect(secondClaim.claim).toMatchObject({
         piSessionId: first.threadId,
         piModelConfig: { model: getProviderRuntimeModel(type, model) },
+        resumeSession: {
+          sessionId: first.threadId,
+          historyRef: { kind: "blob", hash: expect.any(String) },
+        },
       });
       await cancelChatRun(actor, second.runId, secondClaim.sandboxHeaders);
     },
@@ -636,9 +620,10 @@ describe("shared native Pi route activation", () => {
       await expectNoBuiltInModelUsage(run.runId);
       const sandboxHeaders = { authorization: `Bearer ${claim.sandboxToken}` };
       if (type === "custom-anthropic-messages") {
-        await completeNativeToolHandoff({
+        await completeNativeToolRun({
           actor,
           agentId,
+          runnerGroup,
           run,
           claim,
           objects,

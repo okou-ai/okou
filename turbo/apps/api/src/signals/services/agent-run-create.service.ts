@@ -14,7 +14,6 @@ import {
   type StorageManifestSource,
   resolveCapturedAgentRunStorage,
 } from "./agent-run-storage.service";
-import { requestPiMemoryStage1Day } from "./pi-memory-stage1-schedule.service";
 import { personalSubscriptionAccountIdentity } from "./personal-subscription-recovery.service";
 import { observePreparedLaunchPersistenceForTest } from "./prepared-launch-persistence-observer.service";
 import {
@@ -42,7 +41,7 @@ import {
   OPENROUTER_US_ORIGIN,
 } from "@okouai/api-contracts/contracts/openrouter-routing";
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { command, computed, type Computed } from "ccstate";
 import {
   PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
@@ -53,9 +52,7 @@ import {
   DEFAULT_PROFILE,
   agentRunConnectorDiagnosticRegistrationPayloadSchema,
   type PiMemoryRecallSelection,
-  type PiMemoryPhase2Maintenance,
   type PiLaunchConfig,
-  type PiApiFirstTurnConfig,
   type PiInstalledCliRequirement,
   type PiModelConfig,
   type PiModelConfigLegacy,
@@ -238,7 +235,6 @@ import {
   type SystemSkillStorageResolution,
 } from "../context/system-skill-storage-resolution";
 import { writeDb$, type Db } from "../external/db";
-import { generatePresignedGetUrl } from "../external/s3";
 import { getDatasetName, ingestToAxiom } from "../external/axiom";
 import { now, nowDate } from "../../lib/time";
 import { piModelConfigObservation } from "../../lib/pi-model-config-observation";
@@ -249,7 +245,6 @@ import {
 } from "../../lib/pi-langfuse-debug";
 import { generateOkouToken } from "../auth/tokens";
 import {
-  joinAll,
   onRejection,
   safeSync,
   settle,
@@ -307,16 +302,7 @@ import { historyGenerationRunIdForStoredExecutionContext } from "./history-gener
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { resolvePiSandboxModelConfig } from "./pi-sandbox-config";
 import { PiNativeConfigurationError } from "./pi-native-model-config";
-import {
-  piResourceDiscoveryMounts,
-  piResourceSnapshotDigest,
-} from "./pi-resource-snapshot.service";
 import { readMemorySummaryProjection } from "./memory-summary-projection.service";
-import {
-  PI_SANDBOX_HANDOFF_DEADLINE_MS,
-  piSandboxHandoffObjectKey,
-  publishPiSandboxHandoff$,
-} from "./pi-sandbox-handoff.service";
 import {
   activePersonalModelProviderAccount,
   readPersonalSubscriptionAccount,
@@ -369,7 +355,6 @@ import {
   type QueueFirstRunSessionSnapshotState,
 } from "./chat-queued-event.service";
 import { recordFirstAssistantEventEligibility } from "./chat-first-assistant-event-metric.service";
-import { bindPiMemoryPhase2MaintenanceRun } from "./pi-memory-phase2-maintenance.service";
 import { isWebChatTriggerSource } from "./chat-trigger-source.service";
 import { resolveMediaModelsForRun } from "./run-media-model.service";
 import {
@@ -419,7 +404,6 @@ import {
   type SessionExecutionIdentity,
 } from "./session-compatibility";
 
-const PENDING_RUN_TTL_MS = 15 * 60 * 1000;
 const AUTO_MEMORY_ARTIFACT_NAME = MEMORY_ARTIFACT_NAME;
 type ArtifactMissingRootPolicy = NonNullable<
   StorageMountEntry["missingRootPolicy"]
@@ -659,19 +643,17 @@ interface ResolvedAgentExecution {
   readonly resumeSessionIdentity?: SessionExecutionIdentity;
 }
 
-interface ResolvedPrivateMaintenanceExecution extends Omit<
+interface ResolvedUnboundExecution extends Omit<
   ResolvedAgentExecution,
   "agentId"
 > {
   readonly agentId: null;
 }
 
-type ResolvedRunExecution =
-  | ResolvedAgentExecution
-  | ResolvedPrivateMaintenanceExecution;
+type ResolvedRunExecution = ResolvedAgentExecution | ResolvedUnboundExecution;
 
 interface ProductAgentExecutionPlan {
-  readonly identity: "agent" | "pi-memory-phase2-maintenance";
+  readonly identity: "agent" | "no-agent";
   readonly content: AgentExecutionConfig;
 }
 
@@ -1045,9 +1027,11 @@ type CreateRunRouteResult =
   | ApiErrorResponse<400, "BAD_REQUEST">
   | ApiErrorResponse<403, "FORBIDDEN">
   | ApiErrorResponse<404, "NOT_FOUND">
-  | ApiErrorResponse<409, "CONFLICT">
+  | (ApiErrorResponse<409, "CONFLICT"> & {
+      /** Producer-facing classification; the HTTP response body is unchanged. */
+      readonly admissionFailure?: "subscription_account_disconnected";
+    })
   | ApiErrorResponse<402, "INSUFFICIENT_CREDITS">
-  | ApiErrorResponse<429, "PI_INFERENCE_BUSY">
   | ApiErrorResponse<503, "PROVIDER_UNAVAILABLE">;
 
 type CreateRunErrorResult = Exclude<
@@ -1071,7 +1055,7 @@ export type DispatchFailedRunCallbacks = (
  */
 export type PersistProducerRunBinding = (
   tx: Tx,
-  run: { readonly runId: string },
+  run: { readonly runId: string; readonly status: "pending" | "failed" },
 ) => Promise<void>;
 
 interface PiStableContextCacheIdentity {
@@ -1148,10 +1132,13 @@ export interface CreateAgentRunArgs {
   readonly agentRunModelPin?: AgentRunModelPin;
   /** Immutable Pi eligibility captured by the caller's admission snapshot. */
   readonly piExecution: boolean;
-  /** Private non-interactive Pi memory maintenance input and claim fence. */
-  readonly piMemoryPhase2Maintenance?: PiMemoryPhase2Maintenance;
-  /** In-memory private admission fence; never serialized into run metadata. */
-  readonly validatePiMemoryPhase2Admission?: (tx: Tx) => Promise<void>;
+  /** Producer-supplied runtime options, independent of the thread context. */
+  readonly piLaunchConfig?: Omit<
+    PiLaunchConfig,
+    "schemaVersion" | "memoryRecall"
+  >;
+  /** Override the missing-root policy for this producer's artifact mounts. */
+  readonly artifactMissingRootPolicy?: ArtifactMissingRootPolicy;
   readonly timing?: ApiDispatchTimingCollector;
   readonly timingDimensions?: ApiDispatchTimingDimensions;
 }
@@ -5886,11 +5873,9 @@ export async function orgHasRunCapacity(
   db: Pick<Db, "select">,
   orgId: string,
 ): Promise<boolean> {
-  const at = nowDate();
   const state = await loadOrgConcurrencyAdmissionState(db, {
     orgId,
-    at,
-    activePendingAfter: new Date(at.getTime() - PENDING_RUN_TTL_MS),
+    at: nowDate(),
   });
   const limit = getEffectiveConcurrencyLimit(
     state.baseConcurrencyLimit,
@@ -6253,9 +6238,7 @@ function resolveAgentExecution(
           "Product Agent execution plan is required for canonical resolution",
         );
       }
-      if (
-        productAgentExecutionPlan.identity === "pi-memory-phase2-maintenance"
-      ) {
+      if (productAgentExecutionPlan.identity === "no-agent") {
         return {
           agentId: null,
           ownerUserId: userId,
@@ -6818,7 +6801,6 @@ async function buildStoredExecutionContextDraft(args: {
   readonly userTimezone: string | undefined;
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly includeOkouTokenSecret: boolean | undefined;
-  readonly piMemoryPhase2Maintenance: PiMemoryPhase2Maintenance | undefined;
 }): Promise<BuiltStoredExecutionContextDraft> {
   const permissions = args.permissionManifest;
   const langfuseEnvironment = piLangfuseExecutionEnvironment(args);
@@ -6896,10 +6878,7 @@ async function buildStoredExecutionContextDraft(args: {
       vars: args.connectorContext.vars ?? null,
       resumeSession: args.resolved.resumeSession ?? null,
       encryptedSecrets: await encryptPersistentSecretsMap(
-        executionSecrets.secrets ??
-          // Private BYOK maintenance has dynamic references but no Okou token.
-          // Firewall auth still needs an encrypted runtime namespace.
-          (args.piMemoryPhase2Maintenance ? {} : null),
+        executionSecrets.secrets ?? null,
         args.featureSwitchContext,
       ),
       secretConnectorMap: executionSecrets.secretConnectorMap,
@@ -7111,7 +7090,10 @@ function buildStoredExecutionSecrets(args: {
   // this map under env binding aliases; raw DB storage names stay behind the
   // access metadata used during refresh/lookup.
   return {
-    secrets: secrets ?? (secretConnectorMap ? {} : undefined),
+    // An explicitly empty namespace still supports dynamic firewall secrets.
+    secrets:
+      secrets ??
+      (args.bodySecrets !== undefined || secretConnectorMap ? {} : undefined),
     secretConnectorMap,
     secretConnectorMetadataMap,
   };
@@ -7283,7 +7265,8 @@ interface BuildRunnerJobPayloadInput {
   readonly userTimezone: string | undefined;
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly timing: ApiDispatchTimingCollector;
-  readonly piMemoryPhase2Maintenance: PiMemoryPhase2Maintenance | undefined;
+  readonly piLaunchConfig: CreateAgentRunArgs["piLaunchConfig"];
+  readonly artifactMissingRootPolicy: ArtifactMissingRootPolicy | undefined;
 }
 
 interface PreparedPiLaunchResources {
@@ -7453,34 +7436,9 @@ function withPiMemoryRecallEpoch(
   });
 }
 
-function piBaseSession(
-  resumeSession: StoredExecutionContext["resumeSession"] | undefined,
-  sessionId: string,
-): PiApiFirstTurnConfig["baseSession"] {
-  if (!resumeSession) {
-    return { sessionId, sha256: null };
-  }
-  if (resumeSession.sessionId !== sessionId) {
-    throw new Error("Pi resume session id does not match the launch session");
-  }
-  return {
-    sessionId,
-    sha256:
-      "historyRef" in resumeSession
-        ? resumeSession.historyRef.hash
-        : createHash("sha256")
-            .update(resumeSession.sessionHistory, "utf8")
-            .digest("hex"),
-  };
-}
-
 /**
  * The installed CLI must have this session construction and meet the CLI
- * floor; otherwise the guest uses the commit-addressed package. Written to the
- * execution context and, until release 7, to the launch config's
- * `apiFirstTurn` slot that pre-release-6 guests read. The queued launch config
- * is decoded by a strict API reader, so the production rollback floor
- * includes the digest reader in 322efb6d.
+ * floor; otherwise the guest uses the commit-addressed package.
  */
 const PI_INSTALLED_CLI_REQUIREMENT = {
   requiredPiAgentRuntimeVersion: PI_AGENT_RUNTIME_VERSION,
@@ -7509,37 +7467,18 @@ function storedExecutionContextWithPiResources(
 
 function assemblePiLaunchResources(args: {
   readonly modelConfig: PiModelConfig;
-  readonly storageMounts: readonly StorageMountMetadata[];
-  readonly apiStartTime: number;
-  readonly maintenance: PiMemoryPhase2Maintenance | undefined;
+  readonly piLaunchConfig: CreateAgentRunArgs["piLaunchConfig"];
   readonly memoryRecall: PiMemoryRecallSelection | undefined;
   readonly resumeSession: PreparedPiLaunchResources["resumeSession"];
   readonly sessionId: string;
-  readonly manifestUrl: string;
-  readonly sessionUrl: string;
 }): PreparedPiLaunchResources {
   const { memoryRecall, resumeSession, sessionId } = args;
   return {
     modelConfig: args.modelConfig,
     launchConfig: {
       schemaVersion: 2,
-      apiFirstTurn: {
-        schemaVersion: 1,
-        resourceSnapshotDigest: piResourceSnapshotDigest(
-          piResourceDiscoveryMounts(args.storageMounts),
-          memoryRecall,
-        ),
-        manifestUrl: args.manifestUrl,
-        sessionUrl: args.sessionUrl,
-        deadlineAt: args.apiStartTime + PI_SANDBOX_HANDOFF_DEADLINE_MS,
-        baseSession: piBaseSession(resumeSession, sessionId),
-        sandboxEventSequenceStart: 1,
-        ...PI_INSTALLED_CLI_REQUIREMENT,
-      },
       ...(memoryRecall === undefined ? {} : { memoryRecall }),
-      ...(args.maintenance === undefined
-        ? {}
-        : { maintenance: args.maintenance }),
+      ...args.piLaunchConfig,
     },
     ...(memoryRecall === undefined ? {} : { memoryRecall }),
     resumeSession,
@@ -7554,7 +7493,6 @@ interface PreparePiLaunchResourcesArgs {
   readonly piMemoryEnabled: boolean;
   readonly runId: string;
   readonly agentSessionId: string;
-  readonly apiStartTime: number;
   readonly storagePlan: Promise<ResolvedAgentRunStorage>;
   readonly previousRunStorageMounts:
     | readonly PersistedStorageMount[]
@@ -7562,63 +7500,19 @@ interface PreparePiLaunchResourcesArgs {
   readonly piSandbox: PiModelConfig | undefined;
   readonly chatThreadId: string | undefined;
   readonly timing: ApiDispatchTimingCollector;
-  readonly maintenance: PiMemoryPhase2Maintenance | undefined;
-}
-
-function signPiLaunchObjectUrls(
-  runId: string,
-  observe: ReturnType<typeof piPreparationObserver>,
-  signal: AbortSignal,
-): Computed<Promise<[string, string]>> {
-  return computed(async (get) => {
-    const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
-    return await joinAll([
-      measurePiPreparation(
-        observe,
-        "launch_manifest_sign",
-        () => {
-          return get(
-            generatePresignedGetUrl(
-              bucket,
-              piSandboxHandoffObjectKey(runId, "manifest"),
-              undefined,
-              true,
-            ),
-          );
-        },
-        signal,
-      ),
-      measurePiPreparation(
-        observe,
-        "launch_session_sign",
-        () => {
-          return get(
-            generatePresignedGetUrl(
-              bucket,
-              piSandboxHandoffObjectKey(runId, "session"),
-              undefined,
-              true,
-            ),
-          );
-        },
-        signal,
-      ),
-    ]);
-  });
+  readonly piLaunchConfig: CreateAgentRunArgs["piLaunchConfig"];
 }
 
 function preparePiLaunchResources(
   args: PreparePiLaunchResourcesArgs,
   signal: AbortSignal,
 ): Computed<Promise<PreparedPiLaunchResources | undefined>> {
-  return computed(async (get) => {
+  return computed(async () => {
     if (args.piSandbox === undefined) {
       return undefined;
     }
-    if (args.chatThreadId === undefined && args.maintenance === undefined) {
-      throw new Error("Pi sandbox execution requires a chat thread");
-    }
     const piSandbox = args.piSandbox;
+    const threadless = args.chatThreadId === undefined;
     const sessionId = args.chatThreadId ?? args.runId;
     const observe = piPreparationObserver(args.runId);
     const finish = startPiPreparationObservation(observe, "launch", signal);
@@ -7628,7 +7522,7 @@ function preparePiLaunchResources(
         "api_dispatch_prepare_pi_launch_resources",
         "nested",
         async () => {
-          const resumeSessionPromise = args.maintenance
+          const resumeSessionPromise = threadless
             ? Promise.resolve(undefined)
             : measureApiDispatchTiming(
                 args.timing,
@@ -7654,7 +7548,7 @@ function preparePiLaunchResources(
             // overlay order are final before recall can observe this attempt.
             const { metadata } = await args.storagePlan;
             signal.throwIfAborted();
-            const memoryRecall = args.maintenance
+            const memoryRecall = threadless
               ? undefined
               : await measurePiPreparation(
                   observe,
@@ -7675,44 +7569,31 @@ function preparePiLaunchResources(
                   },
                   signal,
                 );
-            return { metadata, memoryRecall };
+            return { memoryRecall };
           })();
-          const urlsPromise = get(
-            signPiLaunchObjectUrls(args.runId, observe, signal),
-          );
-          const [resumeResult, memoryResult, urlsResult] =
-            await Promise.allSettled([
-              resumeSessionPromise,
-              memoryPromise,
-              urlsPromise,
-            ]);
+          const [resumeResult, memoryResult] = await Promise.allSettled([
+            resumeSessionPromise,
+            memoryPromise,
+          ]);
           if (resumeResult.status === "rejected") {
             throw resumeResult.reason;
           }
           if (memoryResult.status === "rejected") {
             throw memoryResult.reason;
           }
-          if (urlsResult.status === "rejected") {
-            throw urlsResult.reason;
-          }
           signal.throwIfAborted();
           const resumeSession = resumeResult.value;
-          const { metadata, memoryRecall } = memoryResult.value;
-          const [manifestUrl, sessionUrl] = urlsResult.value;
+          const { memoryRecall } = memoryResult.value;
           return measurePiPreparationSync(
             observe,
             "launch_identity",
             () => {
               return assemblePiLaunchResources({
                 modelConfig: piSandbox,
-                storageMounts: metadata.storageMounts,
-                apiStartTime: args.apiStartTime,
-                maintenance: args.maintenance,
+                piLaunchConfig: args.piLaunchConfig,
                 memoryRecall,
                 resumeSession,
                 sessionId,
-                manifestUrl,
-                sessionUrl,
               });
             },
             signal,
@@ -7909,14 +7790,15 @@ function buildRunnerJobPayload(
   signal: AbortSignal,
 ): Computed<Promise<PreparedRunnerLaunch>> {
   return computed(async (get): Promise<PreparedRunnerLaunch> => {
-    const checkpointArtifacts = args.piMemoryPhase2Maintenance
-      ? args.artifacts.map((artifact) => {
-          return artifact.name === AUTO_MEMORY_ARTIFACT_NAME &&
-            artifact.mountPath === PI_MEMORY_ROOT
-            ? { ...artifact, missingRootPolicy: "fail" as const }
-            : artifact;
-        })
-      : args.artifacts;
+    const checkpointArtifacts =
+      args.artifactMissingRootPolicy === undefined
+        ? args.artifacts
+        : args.artifacts.map((artifact) => {
+            return {
+              ...artifact,
+              missingRootPolicy: args.artifactMissingRootPolicy,
+            };
+          });
     const group = preparedRunnerGroup(args.resolved.content);
     const body = preparedRunnerJobBody(args);
     const platformEnvironment = args.includeOkouTokenSecret
@@ -7979,12 +7861,11 @@ function buildRunnerJobPayload(
               ),
               runId: args.run.id,
               agentSessionId: args.run.sessionId,
-              apiStartTime: args.apiStartTime,
               storagePlan: get(storagePlan$),
               previousRunStorageMounts: args.resolved.previousRunStorageMounts,
               piSandbox: args.piSandbox,
               chatThreadId: args.chatThreadId,
-              maintenance: args.piMemoryPhase2Maintenance,
+              piLaunchConfig: args.piLaunchConfig,
               timing: args.timing,
             },
             signal,
@@ -8360,6 +8241,7 @@ async function persistAtomicLaunchRows(
   );
   await args.commit.createArgs.persistProducerRunBinding?.(args.tx, {
     runId: persisted.run.id,
+    status: "pending",
   });
 
   observePreparedLaunchPersistenceForTest(
@@ -8444,13 +8326,6 @@ async function persistFailedLaunch(
   args: CommitFailedLaunchArgs,
   message: string,
 ): Promise<FailedLaunchCommitResult> {
-  if (args.createArgs.piMemoryPhase2Maintenance) {
-    const validate = args.createArgs.validatePiMemoryPhase2Admission;
-    if (!validate) {
-      throw new Error("Private maintenance requires source admission");
-    }
-    await validate(tx);
-  }
   await acquireOfficialWorkflowRunCatalogAdmissionLock(
     tx,
     args.context.officialWorkflowRun,
@@ -8511,6 +8386,7 @@ async function persistFailedLaunch(
   });
   await args.createArgs.persistProducerRunBinding?.(tx, {
     runId: args.identity.runId,
+    status: "failed",
   });
   return {
     kind: "failed",
@@ -8797,7 +8673,6 @@ async function commitPendingPreparedLaunch(
       });
     },
   );
-  await bindPreparedPiMemoryPhase2MaintenanceRun(tx, args, persisted.run.id);
   await activatePreparedLaunchUsageAllowance({
     tx,
     commit: args,
@@ -8811,35 +8686,12 @@ async function commitPendingPreparedLaunch(
   };
 }
 
-async function bindPreparedPiMemoryPhase2MaintenanceRun(
-  tx: DbTransaction,
-  args: PreparedCommitPreparedLaunchArgs,
-  runId: string,
-): Promise<void> {
-  const maintenance = args.createArgs.piMemoryPhase2Maintenance;
-  if (!maintenance) {
-    return;
-  }
-  await args.admissionTiming.measureLeaf("maintenance_binding", () => {
-    return bindPiMemoryPhase2MaintenanceRun(tx, {
-      runId,
-      binding: {
-        memoryStorageId: maintenance.memoryStorageId,
-        orgId: args.createArgs.orgId,
-        userId: args.createArgs.userId,
-        leaseToken: maintenance.leaseToken,
-        claimedRevision: maintenance.claimedRevision,
-        claimedBaseVersionId: maintenance.claimedBaseVersionId,
-        selectionDigest: maintenance.selectionDigest,
-      },
-    });
-  });
-}
-
 async function validateCapturedSubscriptionAccount(
   tx: Tx,
   args: PreparedCommitPreparedLaunchArgs,
-) {
+): Promise<
+  CreateRunErrorResult | { readonly identity: string | null } | undefined
+> {
   const provider = args.context.modelProvider;
   if (
     provider &&
@@ -8863,9 +8715,12 @@ async function validateCapturedSubscriptionAccount(
         { subscription_provider_type: type },
       );
       if (!account) {
-        return conflict(
-          "The selected subscription account was disconnected. Reconnect it before starting another run.",
-        );
+        return {
+          ...conflict(
+            "The selected subscription account was disconnected. Reconnect it before starting another run.",
+          ),
+          admissionFailure: "subscription_account_disconnected" as const,
+        };
       }
       return { identity: personalSubscriptionAccountIdentity(account) };
     });
@@ -8919,15 +8774,6 @@ async function commitPreparedLaunchAdmission(
     : await validateThreadSession();
   let capturedIdentity: string | null = null;
   if (threadSessionValidation?.kind !== "thread-session-snapshot-stale") {
-    if (args.createArgs.piMemoryPhase2Maintenance) {
-      const validate = args.createArgs.validatePiMemoryPhase2Admission;
-      if (!validate) {
-        throw new Error("Private maintenance requires source admission");
-      }
-      await args.admissionTiming.measureLeaf("maintenance", () => {
-        return validate(tx);
-      });
-    }
     const failure = await validateCapturedSubscriptionAccount(tx, args);
     if (failure && "identity" in failure) {
       capturedIdentity = failure.identity;
@@ -9052,17 +8898,6 @@ async function finishAdmittedLaunch(
   args: PreparedCommitPreparedLaunchArgs,
   run: RunRecord,
 ): Promise<void> {
-  await args.admissionTiming.measureLeaf("pi_memory_schedule", () => {
-    return requestPiMemoryStage1Day(tx, {
-      ...run,
-      userId: args.createArgs.userId,
-      orgId: args.createArgs.orgId,
-      chatThreadId: args.createArgs.chatThreadId ?? null,
-      triggerSource: args.context.body.triggerSource,
-      launchSnapshot: args.context.launchSnapshot,
-      completedAt: null,
-    });
-  });
   // The unique chat_thread_id row is the thread's active-run lock. A conflict
   // means another run owns the thread, so this launch loses its queue claim.
   const inserted = await tx
@@ -9236,7 +9071,8 @@ function buildAtomicLaunchPayload(
       userTimezone: args.context.userTimezone,
       featureSwitchContext: args.context.featureSwitchContext,
       timing: args.timing,
-      piMemoryPhase2Maintenance: args.createArgs.piMemoryPhase2Maintenance,
+      piLaunchConfig: args.createArgs.piLaunchConfig,
+      artifactMissingRootPolicy: args.createArgs.artifactMissingRootPolicy,
     },
     signal,
   );
@@ -9898,28 +9734,14 @@ function agentRunResolutionOptions(
       "Agent run preparation cannot mix product and direct-run resolution",
     );
   }
-  const privateMaintenanceIdentity =
-    productAgentExecutionPlan?.identity === "pi-memory-phase2-maintenance";
   if (
-    privateMaintenanceIdentity !==
-    (args.piMemoryPhase2Maintenance !== undefined)
-  ) {
-    throw new Error(
-      "Pi memory maintenance payload and execution identity must match",
-    );
-  }
-  if (args.validatePiMemoryPhase2Admission && !privateMaintenanceIdentity) {
-    throw new Error("Phase 2 admission belongs only to private maintenance");
-  }
-  if (
-    privateMaintenanceIdentity &&
+    productAgentExecutionPlan?.identity === "no-agent" &&
     (args.body.agentId !== undefined ||
       args.body.sessionId !== undefined ||
-      args.chatThreadId !== undefined ||
-      args.piExecution !== true)
+      args.chatThreadId !== undefined)
   ) {
     throw new Error(
-      "Pi memory maintenance runs must use a private threadless identity",
+      "Runs without an agent must start a new threadless session",
     );
   }
   return {
@@ -11263,32 +11085,6 @@ const createAtomicLaunchRun$ = command(
     }
 
     const launch = launchResult.value;
-    // The Pi CLI polls this handoff as soon as a runner claims the job, so it
-    // is published before the run and its job become claimable.
-    const handoff = await settle(
-      set(
-        publishPiSandboxHandoff$,
-        {
-          db: input.db,
-          runId: identity.runId,
-          apiStartTime: input.args.apiStartTime,
-          executionContext: launch.runnerJobPayload.executionContext,
-        },
-        signal,
-      ),
-    );
-    signal.throwIfAborted();
-    if (!handoff.ok) {
-      return await commitFailedLaunch({
-        db: input.db,
-        createArgs: input.args,
-        context: input.context,
-        identity,
-        callbackRows,
-        error: handoff.error,
-        timing: input.timing,
-      });
-    }
     input.phaseTiming.checkpoint("api_dispatch_phase_prepare_launch", now());
 
     return await set(

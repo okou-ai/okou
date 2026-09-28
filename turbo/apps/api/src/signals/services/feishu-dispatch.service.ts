@@ -3,7 +3,7 @@ import {
   type FeishuPlatform,
 } from "@okouai/core/feishu-platform";
 import { command } from "ccstate";
-import { and, desc, eq, isNull, or } from "drizzle-orm";
+import { and, eq, isNull, or } from "drizzle-orm";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import {
   getBuiltInVisibleModels,
@@ -11,8 +11,7 @@ import {
   type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
-import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
-import { feishuPlatformUserAgentPreferences } from "@okouai/db/schema/feishu-user-agent-preference";
+import { feishuOrgInstallations } from "@okouai/db/runtime/feishu-org-installation";
 import { agents } from "@okouai/db/schema/agent";
 import {
   buildFeishuHelpMessage,
@@ -48,7 +47,6 @@ import {
 
 const L = logger("FeishuDispatch");
 const FEISHU_THINKING_EMOJI = "Typing";
-const FEISHU_AGENT_PICKER_MAX_OPTIONS = 100;
 const FEISHU_MODEL_PICKER_MAX_OPTIONS = 100;
 interface FeishuPromptContext {
   readonly text: string;
@@ -121,10 +119,6 @@ type EffectiveAgentResolution =
   | {
       readonly status: "not_accessible" | "not_found";
     };
-
-function agentLabel(agent: FeishuAgent): string {
-  return agent.displayName ?? agent.name;
-}
 
 function parseFeishuCommand(text: string): FeishuCommand | null {
   const match = /^\/(\S+)(?:\s+(.+))?$/u.exec(text.trim());
@@ -262,100 +256,11 @@ async function getVisibleAgent(args: {
   return agent;
 }
 
-async function getVisibleAgents(args: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly userId: string;
-}): Promise<readonly FeishuAgent[]> {
-  return await args.db
-    .select({
-      id: agents.id,
-      name: agents.name,
-      displayName: agents.displayName,
-    })
-    .from(agents)
-    .where(
-      and(
-        eq(agents.orgId, args.orgId),
-        or(eq(agents.visibility, "public"), eq(agents.owner, args.userId)),
-      ),
-    )
-    .orderBy(desc(agents.updatedAt))
-    .limit(FEISHU_AGENT_PICKER_MAX_OPTIONS);
-}
-
-async function getUserAgentPreference(args: {
-  readonly platform: FeishuPlatform;
-  readonly db: Db;
-  readonly orgId: string;
-  readonly userId: string;
-}): Promise<string | null> {
-  const [preference] = await args.db
-    .select({
-      selectedAgentId: feishuPlatformUserAgentPreferences.selectedAgentId,
-    })
-    .from(feishuPlatformUserAgentPreferences)
-    .where(
-      and(
-        eq(feishuPlatformUserAgentPreferences.userId, args.userId),
-        eq(feishuPlatformUserAgentPreferences.orgId, args.orgId),
-        eq(feishuPlatformUserAgentPreferences.platform, args.platform),
-      ),
-    )
-    .limit(1);
-  return preference?.selectedAgentId ?? null;
-}
-
-async function setUserAgentPreference(args: {
-  readonly platform: FeishuPlatform;
-  readonly db: Db;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly composeId: string | null;
-}): Promise<void> {
-  await args.db
-    .insert(feishuPlatformUserAgentPreferences)
-    .values({
-      platform: args.platform,
-      userId: args.userId,
-      orgId: args.orgId,
-      selectedAgentId: args.composeId,
-    })
-    .onConflictDoUpdate({
-      target: [
-        feishuPlatformUserAgentPreferences.userId,
-        feishuPlatformUserAgentPreferences.orgId,
-        feishuPlatformUserAgentPreferences.platform,
-      ],
-      set: {
-        selectedAgentId: args.composeId,
-        updatedAt: nowDate(),
-      },
-    });
-}
-
 export async function resolveEffectiveFeishuAgent(args: {
   readonly db: Db;
   readonly installation: FeishuDispatchInstallation;
   readonly connection: FeishuDispatchConnection;
 }): Promise<EffectiveAgentResolution> {
-  const preference = await getUserAgentPreference({
-    platform: args.installation.platform,
-    db: args.db,
-    orgId: args.installation.orgId,
-    userId: args.connection.userId,
-  });
-  if (preference) {
-    const preferredAgent = await getVisibleAgent({
-      db: args.db,
-      composeId: preference,
-      orgId: args.installation.orgId,
-      userId: args.connection.userId,
-    });
-    if (preferredAgent) {
-      return { status: "resolved", agent: preferredAgent };
-    }
-  }
   const composeId = args.installation.defaultAgentId;
   const agent = await getVisibleAgent({
     db: args.db,
@@ -387,7 +292,7 @@ export async function replyFeishuAgentUnavailable(
   const providerName = FEISHU_PLATFORMS[args.message.platform ?? "feishu"].name;
   const text =
     args.status === "not_accessible"
-      ? `The configured agent is not available to your ${providerName} account. Use \`/switch\` to choose an accessible agent.`
+      ? `The configured agent is not available to your ${providerName} account. Ask an admin to update the organization default agent.`
       : `The configured ${providerName} agent could not be found. Ask an admin to select another agent.`;
   await replyNotice(
     {
@@ -751,7 +656,7 @@ function commandOptionsText(args: {
     readonly label: string;
     readonly current: boolean;
   }[];
-  readonly command: "model" | "switch";
+  readonly command: "model";
 }): string {
   return [
     args.intro,
@@ -799,163 +704,6 @@ async function handleDisconnectCommand(
       message: args.message,
       title: "Disconnected",
       text: `Your ${FEISHU_PLATFORMS[args.message.platform ?? "feishu"].name} account has been disconnected and its agent access has been revoked.`,
-      kind: "success",
-    },
-    signal,
-  );
-}
-
-async function replyAgentPicker(
-  args: {
-    readonly commandArgs: ConnectedCommandArgs;
-    readonly agents: readonly FeishuAgent[];
-    readonly defaultAgent: FeishuAgent | undefined;
-    readonly currentPreference: string | null;
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  await replyNotice(
-    {
-      db: args.commandArgs.db,
-      message: args.commandArgs.message,
-      title: "Choose an agent",
-      text: commandOptionsText({
-        intro: `Send one of these commands to choose which agent responds to your ${FEISHU_PLATFORMS[args.commandArgs.message.platform ?? "feishu"].name} messages.`,
-        command: "switch",
-        options: [
-          ...(args.defaultAgent
-            ? [
-                {
-                  commandValue: "default",
-                  label: `${agentLabel(args.defaultAgent)} (installation default)`,
-                  current: args.currentPreference === null,
-                },
-              ]
-            : []),
-          ...args.agents
-            .filter((agent) => {
-              return agent.id !== args.commandArgs.installation.defaultAgentId;
-            })
-            .map((agent) => {
-              return {
-                commandValue: agent.id,
-                label: agentLabel(agent),
-                current: args.currentPreference === agent.id,
-              };
-            }),
-        ],
-      }),
-    },
-    signal,
-  );
-}
-
-async function handleSwitchCommand(
-  args: ConnectedCommandArgs,
-  signal: AbortSignal,
-): Promise<void> {
-  const [agents, defaultAgent, currentPreference] = await Promise.all([
-    getVisibleAgents({
-      db: args.db,
-      orgId: args.installation.orgId,
-      userId: args.connection.userId,
-    }),
-    getVisibleAgent({
-      db: args.db,
-      composeId: args.installation.defaultAgentId,
-      orgId: args.installation.orgId,
-      userId: args.connection.userId,
-    }),
-    getUserAgentPreference({
-      platform: args.installation.platform,
-      db: args.db,
-      orgId: args.installation.orgId,
-      userId: args.connection.userId,
-    }),
-  ]);
-  signal.throwIfAborted();
-  if (!args.command.argument) {
-    await replyAgentPicker(
-      {
-        commandArgs: args,
-        agents,
-        defaultAgent,
-        currentPreference,
-      },
-      signal,
-    );
-    return;
-  }
-  if (args.command.argument.toLowerCase() === "default") {
-    if (!defaultAgent) {
-      await replyNotice(
-        {
-          db: args.db,
-          message: args.message,
-          title: "Agent unavailable",
-          text: "You don't have access to the installation default agent.",
-          kind: "error",
-        },
-        signal,
-      );
-      return;
-    }
-    await setUserAgentPreference({
-      platform: args.installation.platform,
-      db: args.db,
-      orgId: args.installation.orgId,
-      userId: args.connection.userId,
-      composeId: null,
-    });
-    signal.throwIfAborted();
-    await replyNotice(
-      {
-        db: args.db,
-        message: args.message,
-        title: "Agent switched",
-        text: `Switched to **${agentLabel(defaultAgent)}**.`,
-        kind: "success",
-      },
-      signal,
-    );
-    return;
-  }
-  const normalized = args.command.argument.toLowerCase();
-  const selected = agents.find((agent) => {
-    return (
-      agent.id === args.command.argument ||
-      agent.name.toLowerCase() === normalized ||
-      agent.displayName?.toLowerCase() === normalized
-    );
-  });
-  if (!selected) {
-    await replyNotice(
-      {
-        db: args.db,
-        message: args.message,
-        title: "Agent unavailable",
-        text: "You don't have access to that agent. Use `/switch` to list available agents.",
-        kind: "error",
-      },
-      signal,
-    );
-    return;
-  }
-  await setUserAgentPreference({
-    platform: args.installation.platform,
-    db: args.db,
-    orgId: args.installation.orgId,
-    userId: args.connection.userId,
-    composeId:
-      selected.id === args.installation.defaultAgentId ? null : selected.id,
-  });
-  signal.throwIfAborted();
-  await replyNotice(
-    {
-      db: args.db,
-      message: args.message,
-      title: "Agent switched",
-      text: `Switched to **${agentLabel(selected)}**.`,
       kind: "success",
     },
     signal,
@@ -1091,10 +839,6 @@ const handleConnectedCommand$ = command(
       }
       case "disconnect": {
         await handleDisconnectCommand(args, signal);
-        return;
-      }
-      case "switch": {
-        await handleSwitchCommand(args, signal);
         return;
       }
       case "model": {

@@ -317,9 +317,9 @@ export const integrationsFeishuUploadCompleteContract = c.router({
  * Integration Telegram message contract
  * POST /api/integrations/telegram/message
  *
- * Sends a Telegram message via an org-owned bot token.
+ * Sends a Telegram message through the official shared Okou bot.
  * `chatId` may be `"me"` to target the caller's private chat with the bot
- * (resolved from the caller's Telegram link for that bot); the response
+ * (resolved from the caller's official Telegram link in the current org); the response
  * `chatId` is the resolved chat.
  * Requires `telegram:write` capability (via OKOU_TOKEN).
  */
@@ -360,7 +360,7 @@ export const integrationsTelegramMessageContract = c.router({
       404: apiErrorSchema,
       502: apiErrorSchema,
     },
-    summary: "Send a Telegram message via org bot token",
+    summary: "Send a Telegram message through the official Okou bot",
   },
 });
 
@@ -528,7 +528,7 @@ export type IntegrationsPhoneDownloadFileContract =
  * Integration Telegram bot list contract
  * GET /api/integrations/telegram/bots
  *
- * Lists Telegram bots available in the authenticated user's org.
+ * Reports the official Telegram bot for older CLI clients.
  * Requires `telegram:read` capability (via OKOU_TOKEN).
  */
 const telegramBotTokenStatusSchema = z.enum(["valid", "invalid", "unknown"]);
@@ -541,7 +541,7 @@ const telegramConnectedUserSchema = z.object({
 
 const telegramBotListItemSchema = z.object({
   id: z.string(),
-  kind: z.enum(["custom", "official"]).optional(),
+  kind: z.literal("official").optional(),
   username: z.string().nullable(),
   agent: z.object({ id: z.string(), name: z.string() }).nullable(),
   isOwner: z.boolean(),
@@ -576,7 +576,7 @@ export const integrationsTelegramBotListContract = c.router({
       401: apiErrorSchema,
       403: apiErrorSchema,
     },
-    summary: "List Telegram bots available in the authenticated user's org",
+    summary: "Get the official Telegram bot status",
   },
 });
 
@@ -909,7 +909,7 @@ export const integrationsTeamsUploadInitContract = c.router({
  * POST /api/integrations/telegram/upload-file/complete
  *
  * Sends an uploaded file URL to a Telegram chat via sendDocument using the
- * requested org-owned bot token. `chatId` may be `"me"` to target the
+ * official shared Okou bot token. `chatId` may be `"me"` to target the
  * caller's private chat with the bot; the response `chatId` is the resolved
  * chat.
  * Requires `telegram:write` capability (via OKOU_TOKEN).

@@ -3,7 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 
 import type { PiPreheatedResourceSnapshot } from "./api-types";
-import { createPiApiFirstAgentSessionForRuntime } from "./session-runtime";
+import { createPiAgentSessionForRuntime } from "./session-runtime";
 import type { PiAgentModelConfig } from "./types";
 
 /** Fixed inputs: only the code that turns them into a session may vary. */
@@ -61,14 +61,14 @@ export interface PiSessionConstructionDocument {
 }
 
 /**
- * Construct every profile through the real API-first entry and capture the
+ * Construct every profile through the shared session entry and capture the
  * bytes the parity contract is about: the system prompt and the ordered tool
  * schemas as the model receives them.
  */
 export async function computePiSessionConstructionDocument(): Promise<PiSessionConstructionDocument> {
   const profiles: PiSessionConstructionProfileDocument[] = [];
   for (const profile of PI_SESSION_CONSTRUCTION_PROFILES) {
-    const created = await createPiApiFirstAgentSessionForRuntime({
+    const created = await createPiAgentSessionForRuntime({
       cwd: PI_SESSION_CONSTRUCTION_CWD,
       agentDir: PI_SESSION_CONSTRUCTION_AGENT_DIR,
       sessionManager: SessionManager.inMemory(PI_SESSION_CONSTRUCTION_CWD, {

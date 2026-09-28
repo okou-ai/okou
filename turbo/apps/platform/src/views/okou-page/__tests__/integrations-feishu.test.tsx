@@ -143,7 +143,6 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
         isConnected: false,
         setupCompleted: false,
         appId: body.appId,
-        defaultAgentId: body.defaultAgentId,
         callbackVerified: false,
         messageReceived: false,
         oauthRedirectUrl: `https://app.okou.test${provider.callbackPath}`,
@@ -167,7 +166,6 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
           200,
           completedInstallation({
             isConnected: false,
-            defaultAgentId: body.defaultAgentId,
             connectUrl,
           }),
         );
@@ -193,7 +191,6 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
       appSecret: "app-secret",
       verificationToken: "verification-token",
       encryptKey: "encrypt-key",
-      defaultAgentId: HOME_AGENT_ID,
       createNew: true,
     });
     expect(
@@ -233,7 +230,7 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
     expect(window.location.href).toBe(`${connectUrl}&callbackTarget=app`);
     expect(completed).toStrictEqual({
       installationId: INSTALLATION_ID,
-      body: { defaultAgentId: HOME_AGENT_ID, setupCompleted: true },
+      body: { setupCompleted: true },
     });
   });
 
@@ -368,7 +365,7 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
     expect(screen.getByText("Configure event delivery")).toBeInTheDocument();
     click(getAction("button", "Next"));
     expect(screen.getByText("Publish the app")).toBeInTheDocument();
-    expect(screen.getByLabelText("Default agent")).toBeDisabled();
+    expect(screen.queryByLabelText("Default agent")).not.toBeInTheDocument();
 
     click(getAction("button", "Done"));
 

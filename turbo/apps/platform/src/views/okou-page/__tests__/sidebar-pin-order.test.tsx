@@ -166,6 +166,49 @@ test("moving a pin between equal ranks preserves the requested order", async () 
   });
 });
 
+test("an unconfirmed optimistic pin move cannot undo an agent reassignment", async () => {
+  context.mocks.api(chatThreadPinOrderContract.reorder, ({ respond }) => {
+    return respond(204);
+  });
+  const caseId = 65;
+  const { stream, snapshot } = await prepare(caseId);
+  click(menuButton("Last pin"));
+  await screen.findByRole("menu");
+  click(menuItem("Move up"));
+  await waitFor(() => {
+    expect(sidebarThreadTitles()).toStrictEqual([
+      "First pin",
+      "Last pin",
+      "Second pin",
+      "Regular thread",
+    ]);
+  });
+
+  const movedThread = snapshot.find((thread) => {
+    return thread.title === "Last pin";
+  });
+  if (!movedThread) {
+    throw new Error("Expected the moved thread");
+  }
+  const newAgentId = "c7000000-0000-4000-a000-000000000002";
+  // The canonical stream has not echoed the optimistic move's event ID.
+  // Its old agent must not put this thread back in the old agent's sidebar.
+  stream.setEvents([
+    chatListEvent(caseId, 2, "sort_touched", movedThread.id, {
+      agentId: newAgentId,
+      reassignedAgentId: newAgentId,
+    }),
+  ]);
+  changeChatThreadList();
+  await waitFor(() => {
+    expect(sidebarThreadTitles()).toStrictEqual([
+      "First pin",
+      "Second pin",
+      "Regular thread",
+    ]);
+  });
+});
+
 test("new pins receive a rank ahead of all existing pins", async () => {
   const pending = context.mocks.deferred<void>();
   const requested = context.mocks.deferred<string | undefined>();

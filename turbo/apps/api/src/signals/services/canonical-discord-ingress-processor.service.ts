@@ -1,3 +1,4 @@
+import { resolveEnqueuedChatInputModel } from "./chat-input-model.service";
 import { randomUUID } from "node:crypto";
 import { command, createStore } from "ccstate";
 import { discordGatewayEnvelopeSchema } from "@okouai/api-contracts/contracts/discord-gateway";
@@ -374,6 +375,11 @@ async function enqueueMessage(
     id: args.ingress.id,
     chatThreadId: args.ingress.chatThreadId,
     eventType: "input.prompt",
+    modelSelection: await resolveEnqueuedChatInputModel(db, {
+      threadId: args.ingress.chatThreadId,
+      orgId: args.orgId,
+      userId: args.ingress.userId,
+    }),
     runId: null,
     userMessage: createUserMessageDocument({
       text: args.context.messageText,

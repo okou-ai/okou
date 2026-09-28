@@ -23,10 +23,7 @@ describe("formatRunErrorForExternalSurface", () => {
   ] as const)(
     "renders actionable %s copy without exposing provider diagnostics",
     (failureReason, expected) => {
-      for (const message of [
-        "[PI_API_MODEL_FAILED] Pi API first-turn model request failed",
-        "private upstream diagnostic",
-      ]) {
+      for (const message of ["private upstream diagnostic"]) {
         expect(
           formatRunErrorForExternalSurface({
             code: "UNKNOWN",

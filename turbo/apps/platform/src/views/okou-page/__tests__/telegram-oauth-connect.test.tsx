@@ -1,6 +1,6 @@
 import {
   integrationsTelegramContract,
-  type TelegramBotStatus,
+  OFFICIAL_TELEGRAM_BOT_ID,
   type TelegramLinkStatusResponse,
 } from "@okouai/api-contracts/contracts/integrations-telegram";
 import { act, screen, waitFor } from "@testing-library/react";
@@ -9,13 +9,14 @@ import { expect, test } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { pathname } from "../../../signals/location.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import type { MockTelegramBotStatus } from "../../../mocks/handlers/api-integrations-telegram.ts";
 import {
   getAction,
   queryAction,
 } from "./connector-integrations-test-helpers.ts";
 
 const context = testContext();
-const BOT_ID = "8123456789";
+const BOT_ID = OFFICIAL_TELEGRAM_BOT_ID;
 const AUTH = Object.freeze({
   id: 99_003,
   first_name: "Ada",
@@ -25,14 +26,14 @@ const AUTH = Object.freeze({
 });
 const OAUTH_ORIGIN = "https://oauth.telegram.org";
 
-function botStatus(connected = false): TelegramBotStatus {
+function botStatus(connected = false): MockTelegramBotStatus {
   return {
     id: BOT_ID,
-    kind: "custom",
+    kind: "official",
     username: "support_bot",
     avatarUrl: null,
     agent: { id: "compose_1", name: "Support" },
-    isOwner: true,
+    isOwner: false,
     isConnected: connected,
     connectedUser: connected
       ? {
@@ -42,6 +43,11 @@ function botStatus(connected = false): TelegramBotStatus {
         }
       : null,
     tokenStatus: "valid",
+    official: {
+      configured: true,
+      usesDefaultAgent: true,
+      linkedTelegramUserId: connected ? String(AUTH.id) : null,
+    },
     domainConfigured: true,
     environment: {
       requiredSecrets: [],
@@ -115,7 +121,7 @@ function authorize(popup: Window): void {
   });
 }
 
-test("A custom bot connects from its new OAuth tab and ignores other windows and origins", async () => {
+test("The official bot connects from its new OAuth tab and ignores other windows and origins", async () => {
   mockBot();
   context.mocks.api(integrationsTelegramContract.link, ({ body, respond }) => {
     expect(body).toStrictEqual({ telegramBotId: BOT_ID, telegramAuth: AUTH });
@@ -195,8 +201,7 @@ test.each([
         domainConfigured: false,
       },
     },
-    message:
-      "Domain is not visible to Telegram yet. Check BotFather and try again.",
+    message: "We couldn't connect Telegram. Try again from Telegram.",
   },
   {
     name: "a bot whose installation is no longer available",
@@ -220,6 +225,33 @@ test.each([
     expect(getAction("button", "Connect")).toBeEnabled();
   });
   expect(pathname()).toBe("/settings/telegram");
+});
+
+test("The official connect page reports unavailable login configuration", async () => {
+  mockBot({
+    linked: false,
+    installation: {
+      id: BOT_ID,
+      botUsername: "support_bot",
+      loginBotId: BOT_ID,
+      domainConfigured: false,
+    },
+  });
+
+  await setupPage({
+    context,
+    locale: "en-US",
+    path: `/telegram/connect?bot=${BOT_ID}`,
+  });
+
+  await expect(
+    screen.findByRole("heading", { name: "Connection failed" }),
+  ).resolves.toBeInTheDocument();
+  expect(
+    screen.getByText("We couldn't connect Telegram. Try again from Telegram."),
+  ).toBeInTheDocument();
+  expect(getAction("link", "Back to Telegram settings")).toBeInTheDocument();
+  expect(queryAction("button", "Continue with Telegram")).toBeNull();
 });
 
 test("Closing the OAuth tab cancels the attempt and restores Connect", async () => {

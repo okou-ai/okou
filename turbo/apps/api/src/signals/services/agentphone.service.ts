@@ -1,3 +1,4 @@
+import { resolveEnqueuedChatInputModel } from "./chat-input-model.service";
 import type { Tx } from "../../lib/db-types";
 import { touchNativeChatThread } from "./native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
@@ -15,7 +16,6 @@ import {
 import { agents } from "@okouai/db/schema/agent";
 import { agentphoneChatThreadRoutes } from "@okouai/db/schema/agentphone-chat-thread-route";
 import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
-import { agentphoneUserAgentPreferences } from "@okouai/db/schema/agentphone-user-agent-preference";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
 import { GET_STARTED_REWARDS_CHANGED_EVENT } from "@okouai/api-contracts/contracts/get-started";
 import { and, desc, eq, like, or } from "drizzle-orm";
@@ -23,7 +23,7 @@ import { env } from "../../lib/env";
 import { inferMimetype } from "../../lib/mimetype";
 import {
   INTEGRATION_DM_SESSION_PREFIX,
-  integrationDmSessionKey,
+  INTEGRATION_DM_SESSION_KEY,
 } from "../../lib/integration-dm-session";
 import { now } from "../../lib/time";
 import {
@@ -54,10 +54,6 @@ import {
 import { awardCompletedGetStartedQuest } from "./get-started-rewards.service";
 import { ensureAgentPhoneChatThreadRoute } from "./agentphone-chat-ingress.service";
 import { createChatEventSourcePart } from "./chat-event-annotation.service";
-import {
-  resolveIntegrationModelRouteForUser$,
-  type IntegrationModelRoutePin,
-} from "./integration-model-route.service";
 import {
   enqueueChatInput,
   scheduleEnqueuedChatThreadPick$,
@@ -145,8 +141,6 @@ interface WorkspaceAgent {
   readonly name: string;
   readonly displayName: string | null;
 }
-
-type ModelRoutePin = IntegrationModelRoutePin;
 
 function isAgentPhoneGroupEvent(event: AgentPhoneMessageEvent): boolean {
   return event.channel === "imessage" && event.isGroup;
@@ -515,48 +509,6 @@ export async function storeInboundAgentPhoneMessage(
   return { inserted: inserted.length > 0 };
 }
 
-async function getAgentPhoneUserAgentPreference(
-  db: ReadonlyDb,
-  userId: string,
-  orgId: string,
-): Promise<string | null> {
-  const [row] = await db
-    .select({
-      selectedAgentId: agentphoneUserAgentPreferences.selectedAgentId,
-    })
-    .from(agentphoneUserAgentPreferences)
-    .where(
-      and(
-        eq(agentphoneUserAgentPreferences.userId, userId),
-        eq(agentphoneUserAgentPreferences.orgId, orgId),
-      ),
-    )
-    .limit(1);
-
-  return row?.selectedAgentId ?? null;
-}
-
-async function resolveEffectiveAgentPhoneComposeId(
-  db: ReadonlyDb,
-  userId: string,
-  orgId: string,
-): Promise<string | null> {
-  const preference = await getAgentPhoneUserAgentPreference(db, userId, orgId);
-  if (preference) {
-    const [agent] = await db
-      .select({ id: agents.id })
-      .from(agents)
-      .where(and(eq(agents.id, preference), eq(agents.orgId, orgId)))
-      .limit(1);
-
-    if (agent?.id) {
-      return preference;
-    }
-  }
-
-  return resolveOrgDefaultComposeId(db, orgId);
-}
-
 async function getWorkspaceAgent(
   db: ReadonlyDb,
   composeId: string,
@@ -587,11 +539,7 @@ async function resolveAgentPhoneAgent(
   db: ReadonlyDb,
   userLink: AgentPhoneUserLink,
 ): Promise<WorkspaceAgent | undefined> {
-  const composeId = await resolveEffectiveAgentPhoneComposeId(
-    db,
-    userLink.userId,
-    userLink.orgId,
-  );
+  const composeId = await resolveOrgDefaultComposeId(db, userLink.orgId);
   if (!composeId) {
     return undefined;
   }
@@ -1487,7 +1435,6 @@ const persistAgentPhoneChatMessage$ = command(
       readonly prompt: string;
       readonly threadContext: string;
       readonly apiStartTime: number;
-      readonly modelRoute: ModelRoutePin | undefined;
     },
     signal: AbortSignal,
   ): Promise<PersistedAgentPhoneChatMessage> => {
@@ -1499,8 +1446,6 @@ const persistAgentPhoneChatMessage$ = command(
       userId: args.userLink.userId,
       orgId: args.userLink.orgId,
       agentId: args.agent.composeId,
-      selectedModel: args.modelRoute?.selectedModel ?? null,
-      serviceTier: args.modelRoute?.serviceTier ?? null,
       currentTime,
     });
     signal.throwIfAborted();
@@ -1533,6 +1478,11 @@ const persistAgentPhoneChatMessage$ = command(
       id: chatEventId,
       chatThreadId: route.chatThreadId,
       eventType: "input.prompt",
+      modelSelection: await resolveEnqueuedChatInputModel(args.db, {
+        threadId: route.chatThreadId,
+        orgId: args.userLink.orgId,
+        userId: args.userLink.userId,
+      }),
       userMessage: createUserMessageDocument({
         text: canonicalAsset ? args.event.body.trim() : args.prompt,
         files: integrationInputMessageFiles(assets),
@@ -1560,12 +1510,12 @@ const persistAgentPhoneChatMessage$ = command(
       },
       createdAt: currentTime,
     } as const;
-    await insertChatEventContext(args.db, values);
-    signal.throwIfAborted();
     const eventId = await enqueueChatInput(args.db, {
       chatThreadId: route.chatThreadId,
       orgId: args.userLink.orgId,
       appendInput: async (tx) => {
+        // The entry's context row commits with the input it describes.
+        await insertChatEventContext(tx, values);
         return (await insertChatEvent(tx, values, "id"))?.id ?? null;
       },
     });
@@ -1595,7 +1545,6 @@ const runAgentForAgentPhone$ = command(
       readonly prompt: string;
       readonly threadContext: string;
       readonly apiStartTime: number;
-      readonly modelRoute: ModelRoutePin | undefined;
     },
     signal: AbortSignal,
   ): Promise<void> => {
@@ -1688,24 +1637,10 @@ export const handleAgentPhoneMessage$ = command(
     await refreshTypingIfSupported(params.event, signal);
     signal.throwIfAborted();
 
-    const modelRoute = await set(
-      resolveIntegrationModelRouteForUser$,
-      {
-        orgId: params.userLink.orgId,
-        userId: params.userLink.userId,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-
     const isGroup = isAgentPhoneGroupEvent(params.event);
     const rootMessageId = isGroup
       ? agentPhoneThreadRootMessageId(params.event)
-      : integrationDmSessionKey({
-          agentId: agent.composeId,
-          selectedModel: modelRoute?.selectedModel ?? null,
-          serviceTier: modelRoute?.serviceTier ?? null,
-        });
+      : INTEGRATION_DM_SESSION_KEY;
     const userLinkId = params.userLink.id;
     const { executionContext } = await loadOptionalChatEnrichment(
       "agentphone",
@@ -1744,7 +1679,6 @@ export const handleAgentPhoneMessage$ = command(
         threadContext: executionContext,
         event: params.event,
         apiStartTime: params.apiStartTime,
-        modelRoute,
       },
       signal,
     );

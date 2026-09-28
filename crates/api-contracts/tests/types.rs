@@ -3,8 +3,7 @@ use std::collections::BTreeMap;
 use api_contracts::generated::types::{
     runners::{
         runs::{
-            CodexRuntimeConfig, PiLaunchConfig, PiLaunchConfigApiFirstTurn,
-            PiLaunchConfigApiFirstTurnBaseSession, PiLaunchConfigMemoryRecall, PiModelConfig,
+            CodexRuntimeConfig, PiLaunchConfig, PiLaunchConfigMemoryRecall, PiModelConfig,
             PiModelConfigApiKeyEnv, PiModelConfigProvider, PiModelConfigServiceTier,
             PiModelConfigV2, PiModelConfigV3, cancellation, model_provider_failures,
         },
@@ -215,24 +214,8 @@ fn generated_codex_runtime_config_omits_absent_options_and_accepts_legacy_null()
 
 #[test]
 fn generated_pi_runtime_configs_round_trip_full_wire_shapes() {
-    let session_id = "22222222-2222-4222-8222-222222222222";
     let launch = PiLaunchConfig {
         schema_version: 2,
-        api_first_turn: PiLaunchConfigApiFirstTurn {
-            schema_version: 1,
-            resource_snapshot_digest: "a".repeat(64),
-            manifest_url: "https://storage.example/manifest.json".to_string(),
-            session_url: "https://storage.example/session.jsonl".to_string(),
-            deadline_at: 2_000_000_000_000,
-            base_session: PiLaunchConfigApiFirstTurnBaseSession {
-                session_id: session_id.to_string(),
-                sha256: Some("b".repeat(64)),
-            },
-            sandbox_event_sequence_start: 1,
-            required_pi_agent_runtime_version: Some("1.36.0".to_string()),
-            min_cli_version: Some("9.352.7".to_string()),
-            required_pi_session_construction_digest: Some("c".repeat(64)),
-        },
         memory_recall: None,
         maintenance: None,
     };
@@ -249,27 +232,7 @@ fn generated_pi_runtime_configs_round_trip_full_wire_shapes() {
     };
 
     let launch_value = serde_json::to_value(&launch).unwrap();
-    assert_eq!(
-        launch_value,
-        json!({
-            "schemaVersion": 2,
-            "apiFirstTurn": {
-                "schemaVersion": 1,
-                "resourceSnapshotDigest": "a".repeat(64),
-                "manifestUrl": "https://storage.example/manifest.json",
-                "sessionUrl": "https://storage.example/session.jsonl",
-                "deadlineAt": 2_000_000_000_000_i64,
-                "baseSession": {
-                    "sessionId": session_id,
-                    "sha256": "b".repeat(64),
-                },
-                "sandboxEventSequenceStart": 1,
-                "requiredPiAgentRuntimeVersion": "1.36.0",
-                "minCliVersion": "9.352.7",
-                "requiredPiSessionConstructionDigest": "c".repeat(64),
-            },
-        })
-    );
+    assert_eq!(launch_value, json!({ "schemaVersion": 2 }));
     assert_eq!(
         serde_json::from_value::<PiLaunchConfig>(launch_value).unwrap(),
         launch
@@ -329,45 +292,9 @@ fn generated_pi_runtime_configs_round_trip_full_wire_shapes() {
 }
 
 #[test]
-fn generated_pi_launch_config_round_trips_null_base_hash() {
-    let value = json!({
-        "schemaVersion": 2,
-        "apiFirstTurn": {
-            "schemaVersion": 1,
-            "resourceSnapshotDigest": "a".repeat(64),
-            "manifestUrl": "https://storage.example/manifest.json",
-            "sessionUrl": "https://storage.example/session.jsonl",
-            "deadlineAt": 2_000_000_000_000_i64,
-            "baseSession": {
-                "sessionId": "22222222-2222-4222-8222-222222222222",
-                "sha256": null,
-            },
-            "sandboxEventSequenceStart": 1,
-        },
-    });
-
-    let launch: PiLaunchConfig = serde_json::from_value(value.clone()).unwrap();
-
-    assert_eq!(launch.api_first_turn.base_session.sha256, None);
-    assert_eq!(serde_json::to_value(launch).unwrap(), value);
-}
-
-#[test]
 fn generated_pi_launch_config_round_trips_frozen_memory() {
     let value = json!({
         "schemaVersion": 2,
-        "apiFirstTurn": {
-            "schemaVersion": 1,
-            "resourceSnapshotDigest": "a".repeat(64),
-            "manifestUrl": "https://storage.example/manifest.json",
-            "sessionUrl": "https://storage.example/session.jsonl",
-            "deadlineAt": 2_000_000_000_000_i64,
-            "baseSession": {
-                "sessionId": "22222222-2222-4222-8222-222222222222",
-                "sha256": null,
-            },
-            "sandboxEventSequenceStart": 1,
-        },
         "memoryRecall": {
             "status": "ready",
             "memoryStorageId": "memory-storage",

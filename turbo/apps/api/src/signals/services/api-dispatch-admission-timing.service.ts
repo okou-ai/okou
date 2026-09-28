@@ -17,8 +17,7 @@ export type AdmissionLockLeaf =
   | "queue_first"
   | "persistence"
   | "maintenance_binding"
-  | "usage_allowance"
-  | "pi_memory_schedule";
+  | "usage_allowance";
 
 export type AdmissionAttemptOutcome =
   | "pending"

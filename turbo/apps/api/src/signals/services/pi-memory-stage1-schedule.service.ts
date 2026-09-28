@@ -81,7 +81,27 @@ function sourceArgs(run: Run) {
   };
 }
 
-// Called only inside the common successful pending admission transaction.
+/**
+ * Same-transaction producer hook for a newly admitted chat-thread run. The run
+ * row was inserted earlier in `tx`, so its persisted launch fields are the
+ * Stage 1 source.
+ */
+export async function requestPiMemoryStage1DayForAdmittedRun(
+  tx: Tx,
+  runId: string,
+): Promise<void> {
+  const [run] = await tx
+    .select(sourceRunColumns)
+    .from(agentRuns)
+    .where(eq(agentRuns.id, runId))
+    .limit(1);
+  if (!run) {
+    throw new Error(`Admitted run ${runId} is missing from its transaction`);
+  }
+  await requestPiMemoryStage1Day(tx, run);
+}
+
+// Called only inside the successful pending admission transaction.
 // No history scan, Storage creation, blob read, or external call under its locks.
 export async function requestPiMemoryStage1Day(
   tx: Tx,

@@ -29,7 +29,10 @@ import { settle } from "../utils";
 import { visibleJoinedAgentCondition } from "./agent-data.service";
 import { createChatThreadInTransaction } from "./chat-thread.service";
 import { chatThreadServiceTierFromCodex } from "./chat-thread-event.service";
-import { chatThreadModelPinColumns } from "./chat-thread-model.service";
+import {
+  chatThreadModelPinColumns,
+  resolveRequiredDefaultChatThreadModelPin,
+} from "./chat-thread-model.service";
 import { loadNewChatThreadMediaModels } from "./chat-thread-media-model.service";
 import { loadNewChatThreadModelSettings } from "./chat-thread-model-settings.service";
 import { resolveChatReasoningEffort } from "./chat-reasoning-effort.service";
@@ -192,7 +195,6 @@ function creationMetadataMatches(args: {
     readonly createdAt: Date;
   };
 }): boolean {
-  const expectedModel = args.input.model ?? null;
   return [
     args.thread.userId === args.principal.userId,
     args.thread.agentId !== null,
@@ -204,7 +206,7 @@ function creationMetadataMatches(args: {
     optionalSelectionMatches(args.input.agentId, args.event.agentId),
     args.event.kind === "created",
     args.event.titleMatches === true,
-    args.event.model === expectedModel,
+    optionalSelectionMatches(args.input.model, args.event.model),
     args.event.createdAt.getTime() === args.thread.createdAt.getTime(),
   ].every(Boolean);
 }
@@ -280,13 +282,14 @@ async function initializeThread(
   // Policy seeding/repair is a write. Resolve it on this transaction so the
   // resolver's nested transaction is a savepoint.
   let pin: ModelFirstPin;
+  let codexServiceTier: "fast" | null = null;
   if (input.model === undefined) {
-    pin = {
-      modelProviderId: null,
-      modelProviderType: null,
-      modelProviderCredentialScope: null,
-      selectedModel: null,
-    };
+    const initialModel = await resolveRequiredDefaultChatThreadModelPin(
+      tx,
+      principal,
+    );
+    pin = initialModel;
+    codexServiceTier = initialModel.serviceTier === "priority" ? "fast" : null;
   } else {
     const resolved = await resolveModelSelectionPin({
       db: tx,
@@ -334,7 +337,7 @@ async function initializeThread(
     eventId: creationEventId(input),
     ...chatThreadModelPinColumns(pin),
     modelSettings,
-    codexServiceTier: null,
+    codexServiceTier,
     ...media,
     connectorSelections: [],
   });

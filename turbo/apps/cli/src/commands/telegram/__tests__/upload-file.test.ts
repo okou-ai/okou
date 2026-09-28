@@ -121,8 +121,6 @@ describe("okou telegram upload-file command", () => {
       "cli",
       "--file",
       testFilePath,
-      "--as",
-      "123456789",
       "--to",
       "-1001234567890",
       "--text",
@@ -135,7 +133,7 @@ describe("okou telegram upload-file command", () => {
     expect(putReceivedContentType).toBe("application/pdf");
     expect(completeBody).toMatchObject({
       uploadId: "00000000-0000-4000-8000-000000000001",
-      botId: "123456789",
+      botId: "official",
       chatId: "-1001234567890",
       contentType: "application/pdf",
       caption: "Daily report",
@@ -196,8 +194,6 @@ describe("okou telegram upload-file command", () => {
       "cli",
       "-f",
       dataPath,
-      "--as",
-      "123456789",
       "--to",
       "@channel",
       "--content-type",
@@ -220,8 +216,6 @@ describe("okou telegram upload-file command", () => {
         "cli",
         "-f",
         join(tmpDir, "missing.pdf"),
-        "--as",
-        "123456789",
         "--to",
         "-1001234567890",
       ]);
@@ -239,8 +233,6 @@ describe("okou telegram upload-file command", () => {
         "cli",
         "-f",
         testFilePath,
-        "--as",
-        "123456789",
         "--to",
         "-1001234567890",
         "--topic",
@@ -288,8 +280,6 @@ describe("okou telegram upload-file command", () => {
         "cli",
         "-f",
         testFilePath,
-        "--as",
-        "123456789",
         "--to",
         "-1001234567890",
       ]);

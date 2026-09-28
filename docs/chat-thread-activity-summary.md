@@ -46,7 +46,7 @@ when it turns terminal; a started run, including one cancelled while running,
 keeps it until the runner reports completion or cleanup declares the runner
 gone; deleting the run cascades to it. A run created by an
 older API during the rollout has no row and therefore no activity. The
-accepted-event consumer is shared by guest webhooks and Pi API-first delivery.
+accepted-event consumer receives the events published by guest webhooks.
 It selects public message/tool/result fields; private reasoning, images,
 heartbeats, usage-only records, and unsupported variants are ignored. Existing
 runtime masking remains intact; structured credential-shaped argument keys are

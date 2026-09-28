@@ -1111,13 +1111,6 @@ fn non_pi_execution_contexts_do_not_require_pi_resources() {
 fn pi_execution_context_preserves_additive_fields_in_run_payload() {
     let mut ctx = pi_context_for_test();
     ctx.pi_launch_config.as_mut().unwrap()["futureLaunchField"] = json!("launch-root");
-    // The API keeps writing the retired handoff slot until the launch contract
-    // drops it; the runner forwards it untouched without reading it.
-    ctx.pi_launch_config.as_mut().unwrap()["apiFirstTurn"] = json!({
-        "schemaVersion": 1,
-        "manifestUrl": "https://storage.example/manifest.json",
-        "deadlineAt": 1
-    });
     ctx.pi_installed_cli_requirement = Some(json!({ "minCliVersion": "9.352.7" }));
     ctx.pi_model_config.as_mut().unwrap()["catalogModel"] = json!("deepseek-v4-flash");
     ctx.pi_model_config.as_mut().unwrap()["credentialHeader"] = json!({
@@ -1143,7 +1136,6 @@ fn pi_execution_context_preserves_additive_fields_in_run_payload() {
     let launch: serde_json::Value = serde_json::from_str(&payload.pi_launch_config).unwrap();
     assert_eq!(launch["schemaVersion"], 2);
     assert_eq!(launch["futureLaunchField"], "launch-root");
-    assert_eq!(launch["apiFirstTurn"]["deadlineAt"], 1);
     let requirement: serde_json::Value =
         serde_json::from_str(&payload.pi_installed_cli_requirement).unwrap();
     assert_eq!(requirement["minCliVersion"], "9.352.7");

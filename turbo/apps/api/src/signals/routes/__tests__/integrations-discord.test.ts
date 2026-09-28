@@ -163,10 +163,6 @@ describe("verified Discord integration settings", () => {
       }),
       [401],
     );
-    await accept(
-      client().setAgentPreference({ headers: {}, body: { agentId: null } }),
-      [401],
-    );
 
     createRouteMocks(context).clerk.session(`user_${randomUUID()}`, null);
     const withoutOrganization = await accept(
@@ -194,13 +190,6 @@ describe("verified Discord integration settings", () => {
       onboarding: "oauth_deferred",
       dmBindings: [],
     });
-    await accept(
-      client().setAgentPreference({
-        headers: authenticate(owner),
-        body: { agentId: null },
-      }),
-      [404],
-    );
     await expectDiscordChanges([]);
   });
 
@@ -624,74 +613,30 @@ describe("verified Discord integration settings", () => {
     await expectDiscordChanges([]);
   });
 
-  it("selects only accessible agents and restores the organization default on reset", async () => {
+  it("always reports the organization default agent", async () => {
     const { actor } = createActors();
     const owner = actor();
-    await fixture(owner);
     const api = createBddApi(context);
     api.acceptAgentStorageWrites();
     const ownerProfile = api.user(owner);
     const defaultAgentId = await api.bootstrapLimitedFreeOnboarding(
       ownerProfile,
-      { displayName: "Workspace default" },
+      {
+        displayName: "Okou",
+      },
     );
+    await fixture(owner);
     const ownAgent = await api.createAgent(ownerProfile, {
       visibility: "private",
       displayName: "Personal Discord agent",
     });
-    const peer = actor({ orgId: owner.orgId });
-    const peerProfile = api.user(peer);
-    const privateAgent = await api.createAgent(peerProfile, {
-      visibility: "private",
-      displayName: "Peer private agent",
-    });
-    const outsider = actor();
-    const outsideProfile = api.user(outsider);
-    const outsideAgent = await api.createAgent(outsideProfile, {
-      visibility: "public",
-      displayName: "Different workspace agent",
-    });
 
-    for (const agentId of [
-      privateAgent.agentId,
-      outsideAgent.agentId,
-      randomUUID(),
-    ]) {
-      await accept(
-        client().setAgentPreference({
-          headers: authenticate(owner),
-          body: { agentId },
-        }),
-        [404],
-      );
-    }
-    await expectDiscordChanges([]);
-    await accept(
-      client().setAgentPreference({
-        headers: authenticate(owner),
-        body: { agentId: ownAgent.agentId },
-      }),
-      [200],
-    );
-    await expectDiscordChanges([owner.userId]);
     await expect(status(owner)).resolves.toMatchObject({
-      defaultAgentId: ownAgent.agentId,
-      defaultAgentName: "Personal Discord agent",
+      defaultAgentId,
+      defaultAgentName: "Okou",
     });
-
-    await accept(
-      client().setAgentPreference({
-        headers: authenticate(owner),
-        body: { agentId: null },
-      }),
-      [200],
-    );
-    await expectDiscordChanges([owner.userId, owner.userId]);
-    await expect(status(owner)).resolves.toMatchObject({ defaultAgentId });
 
     await api.deleteAgent(ownerProfile, ownAgent.agentId);
-    await api.deleteAgent(peerProfile, privateAgent.agentId);
-    await api.deleteAgent(outsideProfile, outsideAgent.agentId);
   });
 });
 

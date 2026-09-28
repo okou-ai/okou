@@ -16,13 +16,17 @@ import { logger } from "../../lib/log";
 import { now, nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import { settle } from "../utils";
-import { createAgentRun$ } from "./agent-run-create.service";
+import {
+  createAgentRun$,
+  type PersistProducerRunBinding,
+} from "./agent-run-create.service";
 import { dispatchRunCallbacks } from "./agent-run-callback.service";
 import {
   PiMemoryPhase2CredentialError,
   resolvePiMemoryPhase2Credential,
 } from "./pi-memory-phase2-credential.service";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
+import { bindPiMemoryPhase2MaintenanceRun } from "./pi-memory-phase2-maintenance.service";
 import {
   claimPiMemoryPhase2Job,
   failPiMemoryPhase2Job,
@@ -205,6 +209,32 @@ async function checkNewAttemptQuotaAdmission(
   return true;
 }
 
+function createPiMemoryProducerRunBinding(
+  claim: ClaimedPiMemoryPhase2Job,
+  credential: Awaited<ReturnType<typeof resolvePiMemoryPhase2Credential>>,
+  selectionDigest: string,
+): PersistProducerRunBinding {
+  // Pi memory's own same-transaction admission fence and claim binding.
+  // A failed launch only re-validates; binding it would strand the job.
+  return async (tx, run) => {
+    await credential.validate(tx);
+    if (run.status === "pending") {
+      await bindPiMemoryPhase2MaintenanceRun(tx, {
+        runId: run.runId,
+        binding: {
+          memoryStorageId: claim.memoryStorageId,
+          orgId: claim.orgId,
+          userId: claim.userId,
+          leaseToken: claim.leaseToken,
+          claimedRevision: claim.claimedRevision,
+          claimedBaseVersionId: claim.baseVersion.versionId,
+          selectionDigest,
+        },
+      });
+    }
+  };
+}
+
 const dispatchClaim$ = command(
   async (
     { set },
@@ -253,6 +283,8 @@ const dispatchClaim$ = command(
         body: {
           prompt: "Run first-party Pi memory maintenance.",
           triggerSource: "agent",
+          // Private BYOK runs need an encrypted namespace for dynamic secrets.
+          secrets: {},
           artifacts: [
             {
               name: "memory",
@@ -267,7 +299,11 @@ const dispatchClaim$ = command(
         modelProviderCredentialScope:
           credential.pin.modelProviderCredentialScope,
         agentRunModelPin: credential.pin,
-        validatePiMemoryPhase2Admission: credential.validate,
+        persistProducerRunBinding: createPiMemoryProducerRunBinding(
+          claim,
+          credential,
+          selectionDigest,
+        ),
         selectedModelOverride: credential.pin.selectedModel,
         builtInModelRuntimeRoute: credential.route,
         callbacks: [
@@ -293,7 +329,7 @@ const dispatchClaim$ = command(
         ],
         includeOkouTokenSecret: false,
         productAgentExecutionPlan: {
-          identity: "pi-memory-phase2-maintenance",
+          identity: "no-agent",
           content: {
             version: "1",
             // Pi is the sandbox execution overlay; run preparation still
@@ -308,7 +344,8 @@ const dispatchClaim$ = command(
         validateEnvironmentReferences: false,
         enforceBuiltInCredits: credential.pin.modelProvider === "built-in",
         piExecution: true,
-        piMemoryPhase2Maintenance: maintenance,
+        piLaunchConfig: { maintenance },
+        artifactMissingRootPolicy: "fail",
       },
       signal,
     );
@@ -322,7 +359,10 @@ const dispatchClaim$ = command(
         db,
         claim,
         nowDate(),
-        "maintenance_dispatch_failed",
+        result.status === 409 &&
+          result.admissionFailure === "subscription_account_disconnected"
+          ? "credential_unavailable"
+          : "maintenance_dispatch_failed",
       );
     }
     return { outcome: "dispatched", runId: result.body.runId };

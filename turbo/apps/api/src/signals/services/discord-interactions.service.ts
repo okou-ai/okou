@@ -41,7 +41,6 @@ import {
   discordSenderBindings,
   disconnectDiscordBinding$,
   selectDiscordDmBinding$,
-  setDiscordAgentPreference$,
   type DiscordVerifiedBinding,
 } from "./discord-data.service";
 import {
@@ -50,8 +49,7 @@ import {
 } from "./discord-config";
 import type { DiscordCommandName } from "../../lib/discord-command-definition";
 import { requireDiscordConversationAccess$ } from "./discord-access.service";
-import { agentList } from "./agent-data.service";
-import { resolveIntegrationModelRouteForUser$ } from "./integration-model-route.service";
+import { resolveDefaultModelFirstPin } from "./model-selection.service";
 import { listOrgModelPolicies$ } from "./model-policy.service";
 import { updateUserModelPreferenceInDb } from "./user-data.service";
 import { writeDb$ } from "../external/db";
@@ -75,7 +73,7 @@ const HELP = [
   "Mention Okou in a server channel to start a conversation, or message the bot directly.",
   "`/okou connect` — connection status and setup guidance",
   "`/okou disconnect` — disconnect your account from this workspace",
-  "`/okou switch` — choose your agent for new conversations",
+  "`/okou switch` — show the workspace default agent used in Discord",
   "`/okou model` — choose an allowed model for new conversations",
   "`/okou org` — choose the workspace for bot DMs",
   "Existing server threads keep their agent and model. Long task replies arrive from the bot.",
@@ -179,7 +177,7 @@ const discordOrgPicker$ = command(
       );
       return discordAccountMessage(
         saved
-          ? "Workspace selected for bot DMs. Use `/okou switch` or `/okou model` to change your preferences."
+          ? "Workspace selected for bot DMs. Use `/okou model` to change your model preference."
           : STALE_CONTROL,
       );
     }
@@ -210,90 +208,19 @@ const discordOrgPicker$ = command(
   },
 );
 
-const discordAgentPicker$ = command(
+const discordAgentStatus$ = command(
   async (
-    { get, set },
-    args: {
-      readonly actor: DiscordInteractionActor;
-      readonly botToken: string;
-      readonly binding: DiscordVerifiedBinding;
-      readonly page?: number;
-      readonly selection?: string;
-    },
+    { get },
+    binding: DiscordVerifiedBinding,
     signal: AbortSignal,
   ): Promise<DiscordAccountMessage> => {
-    const available = await get(
-      agentList(args.binding.orgId, args.binding.userId),
+    const effective = await get(discordEffectiveAgent(binding));
+    signal.throwIfAborted();
+    return discordAccountMessage(
+      effective
+        ? `Discord always uses your workspace default agent: ${discordAccountLabel(effective.displayName || effective.name)}. Change the workspace default agent in Okou.`
+        : "Discord always uses your workspace default agent, but none is accessible. Ask a workspace admin to set a default agent in Okou.",
     );
-    signal.throwIfAborted();
-    const defaultAgent = available.find((agent) => {
-      return agent.isDefaultAgent;
-    });
-    const options = [
-      ...(defaultAgent
-        ? [
-            {
-              label: "Workspace default",
-              value: "default",
-            },
-          ]
-        : []),
-      ...available
-        .filter((agent) => {
-          return !agent.isDefaultAgent;
-        })
-        .sort((left, right) => {
-          return left.agentId.localeCompare(right.agentId);
-        })
-        .map((agent) => {
-          return {
-            label: discordAccountLabel(
-              agent.displayName || `Agent ${agent.agentId}`,
-            ),
-            value: agent.agentId,
-          };
-        }),
-    ];
-    if (args.selection !== undefined) {
-      const option = options.find((candidate) => {
-        return candidate.value === args.selection;
-      });
-      if (!option) {
-        return discordAccountMessage(
-          "You no longer have access to that agent. Run `/okou switch` again.",
-        );
-      }
-      const saved = await set(
-        setDiscordAgentPreference$,
-        {
-          connectionId: args.binding.connectionId,
-          discordUserId: args.actor.discordUserId,
-          agentId: option.value === "default" ? null : option.value,
-        },
-        signal,
-      );
-      return discordAccountMessage(
-        saved
-          ? `Agent selected for new Discord conversations: ${option.label}. Existing server threads keep their agent.`
-          : STALE_CONTROL,
-      );
-    }
-    const effective = await get(discordEffectiveAgent(args.binding));
-    signal.throwIfAborted();
-    return discordAccountPicker({
-      ...args,
-      connectionId: args.binding.connectionId,
-      action: "agent",
-      options,
-      ...(effective
-        ? {
-            selected:
-              effective.id === defaultAgent?.agentId ? "default" : effective.id,
-          }
-        : {}),
-      content:
-        "Choose an agent for new Discord conversations. Existing server threads keep their agent.",
-    });
   },
 );
 
@@ -410,17 +337,18 @@ const discordModelPicker$ = command(
       );
     }
     // Preselect the model a new Discord conversation would actually run.
-    const route = await set(
-      resolveIntegrationModelRouteForUser$,
-      args.binding,
-      signal,
+    const route = await resolveDefaultModelFirstPin(
+      set(writeDb$),
+      args.binding.orgId,
+      args.binding.userId,
     );
+    signal.throwIfAborted();
     return discordAccountPicker({
       ...args,
       connectionId: args.binding.connectionId,
       action: "model",
       options,
-      ...(route ? { selected: route.selectedModel } : {}),
+      ...(route.selectedModel ? { selected: route.selectedModel } : {}),
       content:
         "Choose an allowed model for new conversations. This is your shared workspace model preference.",
     });
@@ -448,7 +376,7 @@ const discordBoundAccountAction$ = command(
       signal.throwIfAborted();
       const agentStatus = agent
         ? `Current agent: ${discordAccountLabel(agent.displayName || agent.name)}.`
-        : "No accessible agent is configured. Use `/okou switch` to choose one.";
+        : "No accessible workspace default agent is configured. Ask a workspace admin to set one in Okou.";
       return discordAccountMessage(
         `Your account already has a verified connection to this workspace. ${agentStatus} Mention Okou in a server channel or message the bot to start chatting.`,
       );
@@ -476,7 +404,7 @@ const discordBoundAccountAction$ = command(
       selection: args.selection,
     };
     if (args.action === "switch" || args.action === "agent") {
-      return set(discordAgentPicker$, pickerArgs, signal);
+      return set(discordAgentStatus$, args.binding, signal);
     }
     if (args.action === "model") {
       return set(discordModelPicker$, pickerArgs, signal);

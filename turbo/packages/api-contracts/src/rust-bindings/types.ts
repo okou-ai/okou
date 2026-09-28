@@ -1,8 +1,5 @@
 import { z } from "zod";
 import {
-  piApiFirstTurnConfigSchema,
-  activeInputDeliveryReserveResponseSchema,
-  activeInputDeliveryReceiptResponseSchema,
   artifactMissingRootPolicySchema,
   builtInModelProviderConnectionSourceSchema,
   piLaunchConfigSchema,
@@ -89,28 +86,20 @@ export const rustTypeModuleDocs = [
     ],
   },
   {
-    rustModulePath: ["runners", "runs", "active_inputs"],
-    rustDoc: ["DTOs for durable active-input delivery."],
-  },
-  {
-    rustModulePath: ["runners", "runs", "active_inputs", "reserve"],
-    rustDoc: ["DTOs for reserving or retrieving active-input delivery."],
-  },
-  {
-    rustModulePath: ["runners", "runs", "active_inputs", "receipt"],
-    rustDoc: ["DTOs for recording active-input acceptance receipts."],
-  },
-  {
     rustModulePath: ["runners", "runs", "steerable_inputs"],
-    rustDoc: ["DTOs for steering input prompts into a running run."],
+    rustDoc: [
+      "DTOs for steering prompts and run-targeted budgets into a running run.",
+    ],
   },
   {
     rustModulePath: ["runners", "runs", "steerable_inputs", "next"],
-    rustDoc: ["DTOs for reading the next steerable input prompt."],
+    rustDoc: [
+      "DTOs for reading the next steerable prompt or run-targeted budget.",
+    ],
   },
   {
     rustModulePath: ["runners", "runs", "steerable_inputs", "steered"],
-    rustDoc: ["DTOs for declaring an input prompt steered."],
+    rustDoc: ["DTOs for declaring a prompt or run-targeted budget steered."],
   },
   {
     rustModulePath: ["runners", "runs", "model_provider_failures"],
@@ -235,9 +224,7 @@ export const rustTypeBindings = [
     ],
   },
   {
-    schema: piLaunchConfigSchema
-      .unwrap()
-      .safeExtend({ apiFirstTurn: piApiFirstTurnConfigSchema }),
+    schema: piLaunchConfigSchema.unwrap(),
     rustModulePath: ["runners", "runs"],
     rustTypeName: "PiLaunchConfig",
     direction: "response",
@@ -249,7 +236,6 @@ export const rustTypeBindings = [
         ],
         fields: {
           schemaVersion: ["Pi launch contract version."],
-          apiFirstTurn: ["Configuration for the API-mediated first turn."],
           memoryRecall: [
             "Optional frozen memory-summary selection for API and Sandbox parity.",
           ],
@@ -300,42 +286,6 @@ export const rustTypeBindings = [
         variants: {
           "no-content": ["The launch epoch intentionally contains no memory."],
           ready: ["The launch epoch contains an authenticated summary."],
-        },
-      },
-      {
-        rustTypeName: "PiLaunchConfigApiFirstTurn",
-        rustDoc: ["API-mediated first-turn configuration for Pi."],
-        fields: {
-          schemaVersion: ["Pi API first-turn contract version."],
-          resourceSnapshotDigest: [
-            "Digest identifying the runtime resource snapshot.",
-          ],
-          manifestUrl: ["URL of the first-turn resource manifest."],
-          sessionUrl: ["URL of the first-turn session JSONL."],
-          deadlineAt: ["Unix timestamp in milliseconds for first-turn expiry."],
-          baseSession: ["Checkpoint used as the base Pi session."],
-          sandboxEventSequenceStart: [
-            "First sandbox event sequence number for the resumed session.",
-          ],
-          requiredPiAgentRuntimeVersion: [
-            "Exact pi-agent-runtime release the API prepared this turn with;",
-            "the guest execs the rootfs-installed CLI only on an exact match.",
-          ],
-          minCliVersion: [
-            "Lowest installed Okou CLI release allowed to run this launch payload.",
-          ],
-          requiredPiSessionConstructionDigest: [
-            "Digest of the session construction the API prepared this turn with;",
-            "when present it replaces the runtime version as the parity key.",
-          ],
-        },
-      },
-      {
-        rustTypeName: "PiLaunchConfigApiFirstTurnBaseSession",
-        rustDoc: ["Pi session checkpoint used as the first-turn base."],
-        fields: {
-          sessionId: ["Pi session identifier."],
-          sha256: ["Nullable lowercase SHA-256 of the base session JSONL."],
         },
       },
     ],
@@ -638,57 +588,6 @@ export const rustTypeBindings = [
     ],
   },
   {
-    schema: activeInputDeliveryReserveResponseSchema,
-    rustModulePath: ["runners", "runs", "active_inputs", "reserve"],
-    rustTypeName: "Response",
-    direction: "response",
-    declarations: [
-      {
-        rustTypeName: "Response",
-        rustDoc: ["API outcome when reserving or retrieving active input."],
-        fields: {
-          deliveryId: ["Stable identity for the reserved delivery batch."],
-          eventIds: ["Ordered source chat-event identities in the batch."],
-          prompt: ["Materialized prompt sent to the active Guest."],
-          reason: ["Reason the pending input could not be reserved."],
-        },
-        variants: {
-          reserved: ["A stable delivery batch is ready for Guest delivery."],
-          empty: ["No pending active input is available."],
-          terminal: ["The run is terminal and has no open delivery."],
-          held: ["An open delivery remains held for a non-running run."],
-          rejected: ["Pending input cannot currently be reserved."],
-        },
-      },
-      {
-        rustTypeName: "ResponseRejectedReason",
-        rustDoc: ["Reason an active-input reservation was rejected."],
-        variants: {
-          payload_too_large: [
-            "The delivery-aware control payload exceeds the frame limit.",
-          ],
-          run_not_running: ["The target run is no longer running."],
-        },
-      },
-    ],
-  },
-  {
-    schema: activeInputDeliveryReceiptResponseSchema,
-    rustModulePath: ["runners", "runs", "active_inputs", "receipt"],
-    rustTypeName: "Response",
-    direction: "response",
-    declarations: [
-      {
-        rustTypeName: "Response",
-        rustDoc: ["API outcome after recording active-input acceptance."],
-        variants: {
-          delivered: ["The delivery receipt was accepted idempotently."],
-          rejected: ["The delivery can no longer be accepted."],
-        },
-      },
-    ],
-  },
-  {
     schema: runnerNextSteerableInputResponseSchema,
     rustModulePath: ["runners", "runs", "steerable_inputs", "next"],
     rustTypeName: "Response",
@@ -696,14 +595,16 @@ export const rustTypeBindings = [
     declarations: [
       {
         rustTypeName: "Response",
-        rustDoc: ["Next input prompt a running run may steer."],
+        rustDoc: [
+          "Next prompt or run-targeted budget a running run may steer.",
+        ],
         fields: {
           input: ["Steerable input, or absent when nothing can be steered."],
         },
       },
       {
         rustTypeName: "ResponseInput",
-        rustDoc: ["Input prompt the run may steer."],
+        rustDoc: ["Prompt or run-targeted budget the run may steer."],
         fields: {
           eventId: ["Source chat-event identity to declare steered."],
           prompt: ["Materialized prompt sent to the active Guest."],
@@ -719,7 +620,9 @@ export const rustTypeBindings = [
     declarations: [
       {
         rustTypeName: "Response",
-        rustDoc: ["API outcome after declaring an input prompt steered."],
+        rustDoc: [
+          "API outcome after declaring a prompt or run-targeted budget steered.",
+        ],
         fields: {
           outcome: ["The input is consumed by this run, idempotently."],
         },
@@ -1113,9 +1016,6 @@ export const rustTypeBindings = [
           ],
           workspaceReuseResult: [
             "Optional outcome of the workspace reuse decision.",
-          ],
-          activeInputDeliveryIds: [
-            "Optional active-input delivery receipts recovered during completion.",
           ],
           checkpoint: [
             "Optional final checkpoint persisted atomically with completion.",

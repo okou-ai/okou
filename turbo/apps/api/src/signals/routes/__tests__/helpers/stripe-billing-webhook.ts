@@ -7,6 +7,7 @@ import { now } from "../../../../lib/time";
 import { getApiTestMocks } from "../../../../__tests__/mocks";
 import { createAppWithRoutes } from "../../../../app-factory-core";
 import { mockStripeClient } from "../../../external/stripe-client";
+import { flushWaitUntilForTest } from "../../../context/wait-until";
 import { webhooksStripeRoutes } from "../../webhooks-stripe";
 
 const TEST_PRICE_PRO = "price_test_pro";
@@ -356,6 +357,31 @@ export async function postOneTimePurchaseCompleted(
     },
   });
   return true;
+}
+
+/** Reevaluate queued inputs through the production entitlement-change entry. */
+export async function refreshConcurrencyEntitlement(
+  actor: { readonly orgId: string | null; readonly userId: string },
+  customerId: string,
+  signal: AbortSignal,
+): Promise<void> {
+  if (!actor.orgId) {
+    throw new Error("Expected an organization-scoped actor");
+  }
+  await postConcurrencyEntitlementsInvoicePaid(signal, {
+    orgId: actor.orgId,
+    userId: actor.userId,
+    customerId,
+    subscriptionId: `sub_${randomUUID()}`,
+    lines: [
+      {
+        slots: 1,
+        startsAt: new Date(now()),
+        expiresAt: new Date(now() + 86_400_000),
+      },
+    ],
+  });
+  await flushWaitUntilForTest();
 }
 
 export async function postConcurrencyEntitlementsInvoicePaid(

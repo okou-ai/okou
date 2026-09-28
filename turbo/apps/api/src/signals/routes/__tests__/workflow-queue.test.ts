@@ -43,6 +43,7 @@ import {
 import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
 import { createRouteMocks } from "./helpers/route-test";
 import { readThreadSessionBinding } from "./helpers/runtime-state";
+import { refreshConcurrencyEntitlement } from "./helpers/stripe-billing-webhook";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 
 const TEST_APP_ROUTES = Object.freeze([
@@ -103,6 +104,7 @@ function modelProvidersByTypeClient() {
 
 interface Scenario {
   readonly actor: ApiTestUser;
+  readonly customerId: string;
   readonly orgId: string;
   readonly userId: string;
   readonly agentId: string;
@@ -113,7 +115,7 @@ interface Scenario {
 async function setup(): Promise<Scenario> {
   const runnerGroup = runsApi.configureRunnerGroup();
   mockOptionalEnv("RUNNER_DEFAULT_GROUP", "vm0/test");
-  const { actor } = await wf.setupWorkflowOrg({ tier: "team" });
+  const { actor, customerId } = await wf.setupWorkflowOrg({ tier: "team" });
   if (!actor.orgId) {
     throw new Error("Expected an org-scoped workflow actor");
   }
@@ -141,6 +143,7 @@ async function setup(): Promise<Scenario> {
   chatCallbacks.mockChatOutputEvents([]);
   return {
     actor,
+    customerId,
     orgId: actor.orgId,
     userId: actor.userId,
     agentId: agent.agentId,
@@ -456,10 +459,14 @@ async function executeDueWorkflowAutomations(
   await flushWaitUntilForTest();
 }
 
-async function cleanupWorkflowQueueFixtures(args: {
+async function releaseStaleRunAndPickWorkflowQueue(args: {
+  readonly actor: ApiTestUser;
+  readonly customerId: string;
   readonly threadId: string;
   readonly runIds: readonly string[];
 }): Promise<void> {
+  // The scoped fixture releases only this test's terminal slot. The Stripe
+  // webhook then exercises the production organization pick used by cron.
   await accept(
     cleanupSandboxesClient().cleanup({
       body: {
@@ -469,6 +476,11 @@ async function cleanupWorkflowQueueFixtures(args: {
       },
     }),
     [200],
+  );
+  await refreshConcurrencyEntitlement(
+    args.actor,
+    args.customerId,
+    context.signal,
   );
 }
 
@@ -553,10 +565,12 @@ describe("workflow queue", () => {
       prepared = await prepareStaleEvent();
     });
 
-    it("recovers a stale automation event after its terminal callback is missed", async () => {
-      const { automation, firstRunId } = prepared;
+    it("picks a stale automation event after releasing its missed terminal slot", async () => {
+      const { scenario, automation, firstRunId } = prepared;
 
-      await cleanupWorkflowQueueFixtures({
+      await releaseStaleRunAndPickWorkflowQueue({
+        actor: scenario.actor,
+        customerId: scenario.customerId,
         threadId: automation.threadId,
         runIds: [firstRunId],
       });
@@ -570,7 +584,7 @@ describe("workflow queue", () => {
     });
   });
 
-  it("recovers a stale user message after its terminal callback is missed", async () => {
+  it("picks a stale user message after releasing its missed terminal slot", async () => {
     mockNow(Date.UTC(2020, 0, 1));
     const scenario = await setup();
     const automation = await createWebhookAutomation(scenario);
@@ -607,7 +621,9 @@ describe("workflow queue", () => {
     await runsApi.claimRunnerJob(firstRunId);
     await completeRunWithoutCallbacksFixture({ runId: firstRunId });
 
-    await cleanupWorkflowQueueFixtures({
+    await releaseStaleRunAndPickWorkflowQueue({
+      actor: scenario.actor,
+      customerId: scenario.customerId,
       threadId: automation.threadId,
       runIds: [firstRunId],
     });
@@ -1265,7 +1281,16 @@ describe("workflow queue", () => {
   it("rejects only the failed webhook trigger and accepts the next event", async () => {
     const scenario = await setup();
     const automation = await createWebhookAutomation(scenario);
+    const busyRunId = await expectAcceptedRunId(
+      await postWorkflowWebhook(automation, "busy"),
+      automation.threadId,
+    );
     mockNow(Date.UTC(2026, 6, 25, 12));
+    // Record the model while it is available; the occupied thread delays pick.
+    expectAccepted(await postWorkflowWebhook(automation, "failed launch"));
+    await expect(
+      pendingAutomationEvents(automation.threadId),
+    ).resolves.toHaveLength(1);
     await accept(
       modelProvidersByTypeClient().delete({
         headers: authHeaders(),
@@ -1274,8 +1299,9 @@ describe("workflow queue", () => {
       [204],
     );
 
-    // The trigger is accepted; the launch rejection appears in the thread.
-    expectAccepted(await postWorkflowWebhook(automation, "fast-failed launch"));
+    // Releasing the thread rejects the queued event's now-unavailable model.
+    await runsApi.requestCancelRun(scenario.actor, busyRunId, [200]);
+    await flushWaitUntilForTest();
 
     await expect(
       pendingAutomationEvents(automation.threadId),
@@ -1334,6 +1360,7 @@ describe("workflow queue", () => {
       automation.threadId,
     );
     await expect(workflowRunIds(automation.threadId)).resolves.toStrictEqual([
+      busyRunId,
       runId,
     ]);
   });
@@ -1389,6 +1416,10 @@ describe("workflow queue", () => {
     mockNow(Date.UTC(2020, 0, 1));
     const scenario = await setup();
     const webhookAutomation = await createWebhookAutomation(scenario);
+    const busyRunId = await expectAcceptedRunId(
+      await postWorkflowWebhook(webhookAutomation, "busy"),
+      webhookAutomation.threadId,
+    );
     const created = await accept(
       automationsClient().create({
         headers: authHeaders(),
@@ -1401,6 +1432,13 @@ describe("workflow queue", () => {
     if (!created.body.nextRunAt) {
       throw new Error("Expected a loop automation with a next run");
     }
+    const firedAt = Date.parse(created.body.nextRunAt) + 60_000;
+    mockNow(firedAt);
+    await executeDueWorkflowAutomations(created.body.id);
+    await expect(
+      pendingAutomationEvents(webhookAutomation.threadId),
+    ).resolves.toHaveLength(1);
+
     await accept(
       modelProvidersByTypeClient().delete({
         headers: authHeaders(),
@@ -1408,10 +1446,8 @@ describe("workflow queue", () => {
       }),
       [204],
     );
-
-    const firedAt = Date.parse(created.body.nextRunAt) + 60_000;
-    mockNow(firedAt);
-    await executeDueWorkflowAutomations(created.body.id);
+    await runsApi.requestCancelRun(scenario.actor, busyRunId, [200]);
+    await flushWaitUntilForTest();
 
     // The tick was enqueued, then rejected by the pick: it shows in the
     // thread and the schedule moves on to its next occurrence.

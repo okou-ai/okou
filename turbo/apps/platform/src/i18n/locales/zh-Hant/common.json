@@ -3515,21 +3515,12 @@
         "alreadyDescriptionNamed": "你已連線到{{bot}}。在Telegram中傳送訊息，即可開始對話。",
         "alreadyTitle": "已連線到Telegram",
         "back": "返回Telegram設定",
-        "botFallback": "此機器人",
-        "botFatherHandle": "@BotFather",
         "checkingConnectionDescription": "我們正在檢查你的Telegram連線，請稍候。",
         "checkingConnectionTitle": "正在檢查連線…",
-        "checkingDomain": "正在檢查域名狀態…",
         "checkingSession": "我們正在驗證你的{{brandName}}登入狀態，請稍候。",
         "connectDescription": "把你的帳號關聯到這個Telegram機器人，就可以直接在Telegram裡與你的智能體交流。",
         "connectTitle": "連線到Telegram",
         "continue": "使用Telegram繼續",
-        "domainDescription": "{{bot}}尚未啟用Telegram網頁登入。",
-        "domainIn": "在 ",
-        "domainInstructionsAfter": "，選擇機器人，然後把域名設定為：",
-        "domainKeepOpen": "儲存域名後請保持此頁面開啟。你也可以在Telegram裡傳送/connect來連線。",
-        "domainSend": "中傳送 ",
-        "domainTitle": "設定Telegram登入域名",
         "errorFallback": "我們無法連線Telegram。請從Telegram重試。",
         "invalidSignature": "此連結的簽名無效。",
         "invalidTimestamp": "此連結的時間戳無效。",
@@ -3539,9 +3530,7 @@
         "linkIncomplete": "請從Telegram重新開啟一個/connect連結後再試。",
         "linkIncompleteTitle": "連線連結不完整",
         "open": "開啟Telegram",
-        "openBotFather": "開啟BotFather",
         "refresh": "請重新整理此頁面後重試。",
-        "setDomainCommand": "/setdomain",
         "signInButton": "登入{{brandName}}",
         "signInCheckFailed": "無法檢查登入狀態",
         "signInDescription": "連線此Telegram使用者前，請先登入你的{{brandName}}帳號。",
@@ -3638,9 +3627,7 @@
         }
       },
       "errors": {
-        "githubAuthorizationWindow": "無法開啟授權視窗",
-        "telegramDomain": "Telegram還看不到這個域名。請在BotFather中確認後重試。",
-        "telegramPrivacy": "隱私模式似乎仍處於開啟狀態。請在BotFather中關閉後重試。"
+        "githubAuthorizationWindow": "無法開啟授權視窗"
       },
       "feishu": {
         "addBot": "新增機器人",
@@ -3908,79 +3895,17 @@
         "uninstallTitle": "解除安裝Lark機器人？"
       },
       "telegram": {
-        "addBot": "新增機器人",
-        "addDescription": "完成BotFather中的每個步驟，然後建立工作區機器人。",
-        "adding": "新增中…",
-        "addTitle": "新增Telegram機器人",
-        "agentAria": "{{bot}}的預設智能體",
         "backToIntegrations": "返回整合",
         "botFallback": "Telegram機器人",
-        "bots": "Telegram機器人",
-        "botToken": "機器人令牌",
-        "botTokenPlaceholder": "123456:ABC-DEF",
-        "checking": "檢查中…",
-        "copied": "已複製！",
-        "copyAria": "複製{{value}}",
-        "copyTitle": "點選複製",
-        "create": {
-          "description": "{{brandName}}會註冊這個機器人並配置它的webhook。完成後，在群裡提及該機器人或給它發私信，就能與所選智能體對話。",
-          "descriptionNamed": "{{brandName}}會註冊{{bot}}並配置它的webhook。完成後，在群裡提及該機器人或給它發私信，就能與所選智能體對話。",
-          "title": "準備建立整合"
-        },
-        "defaultAgent": "預設智能體",
         "disconnectAria": "斷開{{bot}}的連線",
         "documentTitle": "Telegram",
-        "domain": {
-          "detected": "已檢測到域名",
-          "instructionAfter": "，選擇這個機器人，然後把域名設定為 ",
-          "instructionEnd": "。Telegram會用這個域名來允許此機器人的連線流程。",
-          "instructionStart": "在{{botFather}}中傳送 ",
-          "title": "設定Telegram登入域名"
-        },
-        "emptyDescription": "新增機器人令牌，開始把Telegram訊息路由給智能體。",
-        "emptyTitle": "還沒有Telegram機器人",
-        "invalidTokenDescription": "請用BotFather重新生成的令牌重新安裝機器人。",
         "loadError": "無法載入Telegram設定。",
         "moreOptions": "{{bot}}的更多選項",
-        "newBotToken": "新的機器人令牌",
         "notConnected": "未連線",
         "officialBot": "Telegram官方機器人",
         "officialDescription": "由{{brandName}}提供的官方機器人。",
         "officialMissing": "缺少官方機器人配置。",
-        "pageDescription": "管理此工作區的機器人路由",
-        "privacy": {
-          "instructionAfter": "，選擇這個機器人，然後關閉隱私模式。這樣智能體才能讀取提及和回覆附近的群聊上下文。",
-          "instructionStart": "在{{botFather}}中傳送 ",
-          "off": "隱私模式已關閉",
-          "title": "可選：關閉隱私模式"
-        },
-        "registerAria": "註冊Telegram機器人",
-        "reinstall": "重新安裝",
-        "reinstallDescription": "貼上{{bot}}在BotFather中新生成的令牌。該令牌必須屬於同一個機器人。",
-        "reinstalling": "重新安裝中…",
-        "reinstallTargetFallback": "此機器人",
-        "reinstallTitle": "重新安裝Telegram機器人",
-        "selectAgent": "選擇智能體",
-        "steps": {
-          "back": "上一步",
-          "create": "建立",
-          "domain": "域名",
-          "next": "下一步",
-          "privacy": "隱私",
-          "token": "令牌"
-        },
-        "token": {
-          "instructionAfter": "，設定名稱和使用者名稱，然後把令牌貼上到下方。",
-          "open": "開啟 ",
-          "send": "，傳送 ",
-          "title": "在BotFather中建立機器人令牌",
-          "verified": "令牌已驗證"
-        },
-        "tokenInvalid": "令牌無效",
-        "uninstallAria": "解除安裝{{bot}}",
-        "uninstallDescription": "此操作會從工作區移除{{bot}}，並斷開使用它的使用者的Telegram訪問權限。操作無法撤銷。",
-        "uninstallTargetFallback": "這個機器人",
-        "uninstallTitle": "解除安裝Telegram機器人？"
+        "pageDescription": "管理此工作區的機器人路由"
       },
       "toasts": {
         "agentphoneConnected": "電話號碼已連線",
@@ -3996,12 +3921,7 @@
         "teamsInstalled": "Microsoft Teams安裝成功",
         "teamsUninstalled": "Microsoft Teams整合已解除安裝",
         "teamsUpdated": "Microsoft Teams已更新",
-        "telegramAgentUpdated": "預設智能體已更新",
-        "telegramBotAdded": "已新增Telegram機器人",
-        "telegramBotReinstalled": "已重新安裝Telegram機器人",
-        "telegramBotUninstalled": "已解除安裝Telegram機器人",
-        "telegramDisconnected": "Telegram帳號已斷開連線",
-        "telegramUpdatingAgent": "正在更新預設智能體…"
+        "telegramDisconnected": "Telegram帳號已斷開連線"
       },
       "works": {
         "connected": "已連線",

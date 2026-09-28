@@ -7,7 +7,6 @@ import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
-import { slackUserAgentPreferences } from "@okouai/db/schema/slack-user-agent-preference";
 import { and, eq, inArray, isNull, ne } from "drizzle-orm";
 
 import {
@@ -183,43 +182,6 @@ async function resolveDefaultComposeId(
   return metadata?.defaultAgentId ?? null;
 }
 
-async function getUserAgentPreference(
-  db: Db,
-  userId: string,
-  orgId: string,
-): Promise<string | null> {
-  const [preference] = await db
-    .select({ selectedAgentId: slackUserAgentPreferences.selectedAgentId })
-    .from(slackUserAgentPreferences)
-    .where(
-      and(
-        eq(slackUserAgentPreferences.userId, userId),
-        eq(slackUserAgentPreferences.orgId, orgId),
-      ),
-    )
-    .limit(1);
-  return preference?.selectedAgentId ?? null;
-}
-
-async function resolveEffectiveComposeId(
-  db: Db,
-  userId: string,
-  orgId: string,
-): Promise<string | null> {
-  const override = await getUserAgentPreference(db, userId, orgId);
-  if (override) {
-    const [agent] = await db
-      .select({ id: agents.id })
-      .from(agents)
-      .where(and(eq(agents.id, override), eq(agents.orgId, orgId)))
-      .limit(1);
-    if (agent?.id) {
-      return override;
-    }
-  }
-  return resolveDefaultComposeId(db, orgId);
-}
-
 async function getWorkspaceAgentName(
   db: Db,
   composeId: string,
@@ -290,31 +252,14 @@ async function refreshSlackAppHome(args: {
   }
 
   let agentName: string | undefined;
-  let isOverrideActive = false;
-  let canSwitch = false;
   if (args.installation.orgId) {
-    const [effectiveComposeId, overrideComposeId, defaultAgentId] =
-      await Promise.all([
-        resolveEffectiveComposeId(
-          args.db,
-          connection.userId,
-          args.installation.orgId,
-        ),
-        getUserAgentPreference(
-          args.db,
-          connection.userId,
-          args.installation.orgId,
-        ),
-        resolveDefaultComposeId(args.db, args.installation.orgId),
-      ]);
-
-    if (effectiveComposeId) {
-      agentName = await getWorkspaceAgentName(args.db, effectiveComposeId);
-    }
-    isOverrideActive = Boolean(
-      overrideComposeId && overrideComposeId !== defaultAgentId,
+    const defaultAgentId = await resolveDefaultComposeId(
+      args.db,
+      args.installation.orgId,
     );
-    canSwitch = Boolean(defaultAgentId);
+    if (defaultAgentId) {
+      agentName = await getWorkspaceAgentName(args.db, defaultAgentId);
+    }
   }
 
   await args.client.publishAppHome(
@@ -326,8 +271,6 @@ async function refreshSlackAppHome(args: {
       userId: connection.userId,
       userEmail: await getPrimaryUserEmail(args.clerkClient, connection.userId),
       agentName,
-      isOverrideActive,
-      canSwitch,
     }),
   );
 }

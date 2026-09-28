@@ -26,7 +26,6 @@ import { clampThinkingLevel } from "@earendil-works/pi-ai";
 
 import type { PiAgentModelConfig, PiAgentStreamConfig } from "./types";
 import { streamWithModelRequestDiagnostics } from "./model-request-diagnostics";
-import { observePiUsageFetch } from "./usage-transport";
 import {
   observePiResponseStatus,
   type PiAgentStreamOptions,
@@ -249,126 +248,9 @@ function streamSimpleResponsesWithPolicy(
       : clampThinkingLevel(model, options.reasoning);
   return streamResponses(model, context, {
     ...base,
-    fetch:
-      options?.onObservedServiceTier === undefined
-        ? base.fetch
-        : observeResponsesServiceTier(
-            base.fetch ?? globalThis.fetch,
-            options.onObservedServiceTier,
-          ),
     reasoningEffort: clampedReasoning === "off" ? undefined : clampedReasoning,
     serviceTier,
   });
-}
-
-function eventData(frame: string): string | null {
-  const data = frame
-    .split(/\r?\n/u)
-    .filter((line) => {
-      return line === "data" || line.startsWith("data:");
-    })
-    .map((line) => {
-      return line.startsWith("data:") ? line.slice(5).replace(/^ /u, "") : "";
-    });
-  return data.length === 0 ? null : data.join("\n");
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function terminalResponsesServiceTier(frame: string): {
-  readonly terminal: boolean;
-  readonly serviceTier: string | null | undefined;
-} {
-  const data = eventData(frame);
-  if (data === null || data === "[DONE]") {
-    return { terminal: false, serviceTier: undefined };
-  }
-  try {
-    const event = JSON.parse(data) as unknown;
-    if (
-      !isRecord(event) ||
-      (event.type !== "response.completed" &&
-        event.type !== "response.incomplete")
-    ) {
-      return { terminal: false, serviceTier: undefined };
-    }
-    const response = event.response;
-    if (!isRecord(response)) {
-      return { terminal: true, serviceTier: undefined };
-    }
-    const serviceTier = response.service_tier;
-    return {
-      terminal: true,
-      serviceTier:
-        typeof serviceTier === "string" || serviceTier === null
-          ? serviceTier
-          : undefined,
-    };
-  } catch {
-    // Preserve malformed provider bytes for Pi's canonical stream parser. A
-    // missing observation remains standard at the billing boundary.
-    return { terminal: false, serviceTier: undefined };
-  }
-}
-
-function observeResponsesServiceTier(
-  providerFetch: typeof globalThis.fetch,
-  onObservedServiceTier: NonNullable<
-    PiAgentStreamOptions["onObservedServiceTier"]
-  >,
-): typeof globalThis.fetch {
-  return async (input, init) => {
-    const response = await providerFetch(input, init);
-    if (response.body === null) {
-      return response;
-    }
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let observed = false;
-    const inspectFrame = (frame: string): void => {
-      if (observed) {
-        return;
-      }
-      const terminal = terminalResponsesServiceTier(frame);
-      if (terminal.terminal) {
-        observed = true;
-        onObservedServiceTier(terminal.serviceTier);
-      }
-    };
-    const inspectCompleteFrames = (): void => {
-      while (true) {
-        const boundary = /\r?\n\r?\n/u.exec(buffer);
-        if (!boundary || boundary.index === undefined) {
-          return;
-        }
-        inspectFrame(buffer.slice(0, boundary.index));
-        buffer = buffer.slice(boundary.index + boundary[0].length);
-      }
-    };
-    const body = response.body.pipeThrough(
-      new TransformStream<Uint8Array, Uint8Array>({
-        transform(chunk, controller) {
-          buffer += decoder.decode(chunk, { stream: true });
-          inspectCompleteFrames();
-          controller.enqueue(chunk);
-        },
-        flush() {
-          buffer += decoder.decode();
-          inspectCompleteFrames();
-          if (buffer.length > 0) {
-            inspectFrame(buffer);
-          }
-        },
-      }),
-    );
-    return new Response(body, {
-      headers: response.headers,
-      status: response.status,
-      statusText: response.statusText,
-    });
-  };
 }
 
 const piAgentStream = (
@@ -376,10 +258,7 @@ const piAgentStream = (
   context: TranscriptContext,
   options?: PiAgentStreamOptions,
 ): AssistantMessageEventStream => {
-  if (
-    options?.serviceTier === undefined &&
-    options?.onObservedServiceTier === undefined
-  ) {
+  if (options?.serviceTier === undefined) {
     return streamSimpleResponses(model, context, options);
   }
   return streamSimpleResponsesWithPolicy(model, context, options);
@@ -402,13 +281,6 @@ function piAgentCodexStream(
       : clampThinkingLevel(model, options.reasoning);
   return streamCodexResponses(model, context, {
     ...base,
-    fetch:
-      options?.onObservedServiceTier === undefined
-        ? base.fetch
-        : observeResponsesServiceTier(
-            base.fetch ?? globalThis.fetch,
-            options.onObservedServiceTier,
-          ),
     reasoningEffort: clampedReasoning === "off" ? undefined : clampedReasoning,
     // Codex keeps fast in config but sends priority on Responses requests.
     serviceTier: serviceTier === "fast" ? "priority" : undefined,
@@ -434,7 +306,7 @@ export const piAgentRegisteredStream = (
   return piAgentStream(model, context, options);
 };
 
-/** Apply API-owned per-request policy to both API-first and Sandbox turns. */
+/** Apply API-owned per-request policy to Sandbox and maintenance turns. */
 export function piAgentStreamForConfig(
   config: PiAgentStreamConfig,
 ): typeof piAgentRegisteredStream {
@@ -497,13 +369,7 @@ export function piAgentStreamForConfig(
       );
     };
     const fetch = observePiResponseStatus(
-      observePiUsageFetch(
-        configuredOptions.fetch ?? globalThis.fetch,
-        config.dialect === "openai-codex-responses"
-          ? "codex-responses"
-          : "responses",
-        configuredOptions.usageObserver,
-      ),
+      configuredOptions.fetch ?? globalThis.fetch,
       configuredOptions.onObservedResponseStatus,
     );
     return streamWithModelRequestDiagnostics(

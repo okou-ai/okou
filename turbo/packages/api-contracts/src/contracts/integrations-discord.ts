@@ -62,20 +62,6 @@ export const integrationsDiscordContract = c.router({
     },
     summary: "Disconnect the current user or remove this guild as an admin",
   },
-  setAgentPreference: {
-    method: "PUT",
-    path: "/api/integrations/discord/agent-preference",
-    headers: authHeadersSchema,
-    body: z.strictObject({ agentId: z.uuid().nullable() }),
-    responses: {
-      200: z.object({ ok: z.literal(true) }),
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-      404: apiErrorSchema,
-    },
-    summary:
-      "Choose an accessible Discord agent or use the organization default",
-  },
   setDmSelection: {
     method: "PUT",
     path: "/api/integrations/discord/dm-selection",

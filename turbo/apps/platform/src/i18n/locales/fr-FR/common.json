@@ -3591,21 +3591,12 @@
         "alreadyDescriptionNamed": "Vous êtes déjà connecté à {{bot}}. Envoyez un message sur Telegram pour commencer à discuter.",
         "alreadyTitle": "Déjà connecté à Telegram",
         "back": "Retour aux paramètres Telegram",
-        "botFallback": "ce bot",
-        "botFatherHandle": "@BotFather",
         "checkingConnectionDescription": "Veuillez patienter pendant que nous vérifions votre connexion Telegram.",
         "checkingConnectionTitle": "Vérification de la connexion...",
-        "checkingDomain": "Vérification du statut du domaine...",
         "checkingSession": "Veuillez patienter pendant que nous vérifions votre session {{brandName}}.",
         "connectDescription": "Liez votre compte à ce bot Telegram afin de pouvoir interagir avec votre agent directement depuis Telegram.",
         "connectTitle": "Se connecter à Telegram",
         "continue": "Continuer avec Telegram",
-        "domainDescription": "La connexion web Telegram n'est pas activée pour {{bot}}.",
-        "domainIn": "Dans",
-        "domainInstructionsAfter": ", choisissez le bot, puis définissez le domaine sur:",
-        "domainKeepOpen": "Gardez cette page ouverte après avoir enregistré le domaine. Vous pouvez également vous connecter depuis Telegram avec /connect.",
-        "domainSend": ", envoyer",
-        "domainTitle": "Définir le domaine de connexion Telegram",
         "errorFallback": "Nous n'avons pas pu connecter Telegram. Réessayez depuis Telegram.",
         "invalidSignature": "La signature sur ce lien n'est pas valide.",
         "invalidTimestamp": "L'horodatage sur ce lien n'est pas valide.",
@@ -3615,9 +3606,7 @@
         "linkIncomplete": "Ouvrez un nouveau lien /connect depuis Telegram et réessayez.",
         "linkIncompleteTitle": "Le lien de connexion est incomplet",
         "open": "Ouvrir Telegram",
-        "openBotFather": "Ouvrir BotFather",
         "refresh": "Actualisez cette page et réessayez.",
-        "setDomainCommand": "/setdomain",
         "signInButton": "Connectez-vous à {{brandName}}",
         "signInCheckFailed": "Impossible de vérifier la connexion",
         "signInDescription": "Utilisez votre compte {{brandName}} avant de connecter cet utilisateur Telegram.",
@@ -3714,9 +3703,7 @@
         }
       },
       "errors": {
-        "githubAuthorizationWindow": "Échec de l'ouverture de la fenêtre d'autorisation",
-        "telegramDomain": "Le domaine n'est pas encore visible pour Telegram. Vérifiez BotFather et essayez à nouveau.",
-        "telegramPrivacy": "Le mode de confidentialité semble toujours activé. Désactivez-le dans BotFather, puis réessayez."
+        "githubAuthorizationWindow": "Échec de l'ouverture de la fenêtre d'autorisation"
       },
       "feishu": {
         "addBot": "Ajouter un bot",
@@ -3984,79 +3971,17 @@
         "uninstallTitle": "Désinstaller le bot Lark ?"
       },
       "telegram": {
-        "addBot": "Ajouter un bot",
-        "addDescription": "Complétez chaque étape de BotFather, puis créez le bot de l'espace de travail.",
-        "adding": "Ajout en cours...",
-        "addTitle": "Ajouter un bot Telegram",
-        "agentAria": "Agent par défaut pour {{bot}}",
         "backToIntegrations": "Retour aux intégrations",
         "botFallback": "Bot Telegram",
-        "bots": "Bots Telegram",
-        "botToken": "Token du bot",
-        "botTokenPlaceholder": "123456:ABC-DEF",
-        "checking": "Vérification...",
-        "copied": "copié !",
-        "copyAria": "Copier {{value}}",
-        "copyTitle": "Cliquer pour copier",
-        "create": {
-          "description": "{{brandName}} enregistrera ce bot et configurera son webhook. Après la configuration, mentionnez le bot dans un groupe ou envoyez-lui un message direct pour parler avec l'agent sélectionné.",
-          "descriptionNamed": "{{brandName}} enregistrera {{bot}} et configurera son webhook. Après la configuration, mentionnez le bot dans un groupe ou envoyez-lui un message privé pour parler avec l'agent sélectionné.",
-          "title": "Prêt à créer l'intégration"
-        },
-        "defaultAgent": "Agent par défaut",
         "disconnectAria": "Déconnecter {{bot}}",
         "documentTitle": "Telegram",
-        "domain": {
-          "detected": "Domaine détecté",
-          "instructionAfter": ", choisissez ce bot, et définissez le domaine sur",
-          "instructionEnd": ". Telegram utilise ce domaine pour permettre le flux de connexion pour ce bot.",
-          "instructionStart": "Dans {{botFather}}, envoyez",
-          "title": "Définir le domaine de connexion Telegram"
-        },
-        "emptyDescription": "Ajoutez un token de bot pour commencer à acheminer les messages Telegram vers un agent.",
-        "emptyTitle": "Pas encore de bots Telegram",
-        "invalidTokenDescription": "Réinstallez le bot avec un nouveau token de BotFather.",
         "loadError": "Impossible de charger les paramètres Telegram.",
         "moreOptions": "Plus d'options pour {{bot}}",
-        "newBotToken": "Nouveau token de bot",
         "notConnected": "Non connecté",
         "officialBot": "Bot Telegram officiel",
         "officialDescription": "Bot officiel fourni par {{brandName}}.",
         "officialMissing": "La configuration du bot officiel est manquante.",
-        "pageDescription": "Gérer le routage du bot pour cet espace de travail",
-        "privacy": {
-          "instructionAfter": ", choisissez ce bot, puis désactivez le mode confidentialité. Cela permet à l'agent de lire le contexte du groupe autour des mentions et des réponses.",
-          "instructionStart": "Dans {{botFather}}, envoyez",
-          "off": "Le mode confidentialité est désactivé",
-          "title": "Optionnel : désactiver le mode confidentialité"
-        },
-        "registerAria": "Enregistrer le bot Telegram",
-        "reinstall": "Réinstaller",
-        "reinstallDescription": "Collez le nouveau token BotFather pour {{bot}}. Le token doit appartenir à ce même bot.",
-        "reinstalling": "Réinstallation...",
-        "reinstallTargetFallback": "cet bot",
-        "reinstallTitle": "Réinstaller le bot Telegram",
-        "selectAgent": "Sélectionner un agent",
-        "steps": {
-          "back": "Retour",
-          "create": "Créer",
-          "domain": "Domaine",
-          "next": "Suivant",
-          "privacy": "Confidentialité",
-          "token": "Token"
-        },
-        "token": {
-          "instructionAfter": ", choisissez un nom et un nom d'utilisateur, puis collez le jeton ci-dessous.",
-          "open": "Ouvrir",
-          "send": ", envoyer",
-          "title": "Créer un jeton de bot dans BotFather",
-          "verified": "Jeton vérifié"
-        },
-        "tokenInvalid": "Jeton invalide",
-        "uninstallAria": "Désinstaller {{bot}}",
-        "uninstallDescription": "Cela supprime {{bot}} de l'espace de travail et déconnecte l'accès Telegram pour les utilisateurs qui l'utilisent. Cette action est irréversible.",
-        "uninstallTargetFallback": "cet bot",
-        "uninstallTitle": "Désinstaller le bot Telegram ?"
+        "pageDescription": "Gérer le routage du bot pour cet espace de travail"
       },
       "toasts": {
         "agentphoneConnected": "Numéro de téléphone connecté",
@@ -4072,12 +3997,7 @@
         "teamsInstalled": "Microsoft Teams installé avec succès",
         "teamsUninstalled": "Intégration Microsoft Teams désinstallée",
         "teamsUpdated": "Microsoft Teams mis à jour",
-        "telegramAgentUpdated": "Agent par défaut mis à jour",
-        "telegramBotAdded": "Bot Telegram ajouté",
-        "telegramBotReinstalled": "Bot Telegram réinstallé",
-        "telegramBotUninstalled": "Bot Telegram désinstallé",
-        "telegramDisconnected": "Compte Telegram déconnecté",
-        "telegramUpdatingAgent": "Mise à jour de l'agent par défaut..."
+        "telegramDisconnected": "Compte Telegram déconnecté"
       },
       "works": {
         "connected": "Connecté",

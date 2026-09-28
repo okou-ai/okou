@@ -8,7 +8,6 @@ import { testContext } from "../../../__tests__/test-context";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { expectApiError } from "./helpers/api-bdd";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
-import { steerRunTimeBudgetFixture } from "./helpers/runtime-state";
 
 /**
  * Steering without delivery IDs: a running sandbox run reads the next
@@ -29,8 +28,6 @@ const {
   completeChatRunOk,
   cancelChatRun,
 } = createChatEventsFixture(context);
-
-const RUN_TIME_BUDGET_STEER_AT_MS = 115 * 60 * 1000;
 
 async function sendQueuedPrompt(
   actor: Parameters<typeof chat.requestSendEvent>[0],
@@ -171,7 +168,7 @@ describe("CHAT-02: steering input prompts into a running run", () => {
     await cancelChatRun(actor, active.runId);
   }, 90_000);
 
-  it("skips recalled prompts and budget input and rejects what it cannot steer", async () => {
+  it("skips recalled prompts and rejects unknown input", async () => {
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     const active = await sendChatRun(actor, {
@@ -181,31 +178,6 @@ describe("CHAT-02: steering input prompts into a running run", () => {
     const claimed = await claimChatRun(runnerGroup, active.runId);
     const token = claimed.claim.sandboxToken;
 
-    await expect(
-      steerRunTimeBudgetFixture(
-        context,
-        active.runId,
-        RUN_TIME_BUDGET_STEER_AT_MS,
-      ),
-    ).resolves.toStrictEqual({ scanned: 1, steered: 1 });
-    await expect(
-      api.nextSteerableInput(token, active.runId),
-    ).resolves.toStrictEqual({ input: null });
-    const budgetEvent = (
-      await chat.listThreadEvents(actor, active.threadId)
-    ).events.find((event) => {
-      return event.eventType === "input.budget";
-    });
-    if (!budgetEvent) {
-      throw new Error("Expected the run time budget input");
-    }
-    const budget = await api.requestDeclareSteeredInputAs(
-      `Bearer ${token}`,
-      active.runId,
-      budgetEvent.id,
-      [404],
-    );
-    expectApiError(budget.body);
     const unknown = await api.requestDeclareSteeredInputAs(
       `Bearer ${token}`,
       active.runId,

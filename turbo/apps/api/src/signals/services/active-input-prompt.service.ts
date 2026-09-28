@@ -22,7 +22,10 @@ import {
   projectUserMessage,
   requiredUserMessageForEvent,
 } from "./chat-user-message.service";
-import { canonicalChatEventUserMessage } from "./canonical-chat-event-read.service";
+import {
+  canonicalChatEventUserMessage,
+  canonicalChatInputModelSelection,
+} from "./canonical-chat-event-read.service";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 
 type ChatEventContextType = NonNullable<
@@ -94,6 +97,7 @@ export function activeInputRowsByIds(
       contextType: chatEvents.contextType,
       contextId: chatEvents.contextId,
       userMessage: canonicalChatEventUserMessage(),
+      modelSelection: canonicalChatInputModelSelection(),
     })
     .from(chatEvents)
     .where(
@@ -109,8 +113,8 @@ export type ActiveInputSourceRow = Awaited<
 >[number];
 
 /**
- * Render one pending active input for delivery. Reserve is read-only and may
- * repeat for the same source, so template usage is reported at receipt time
+ * Render one pending active input for steering. Reads may repeat for the same
+ * source, so template usage is reported when it is declared steered
  * through `activeInputTemplateIdentities`, not here.
  */
 export async function materializeActiveInputSource(
@@ -170,7 +174,7 @@ function activeInputGenerationTemplates(userMessage: ChatEventUserMessage) {
   };
 }
 
-/** Template identities a steered prompt carried, reported once at receipt. */
+/** Template identities a prompt carried, reported once when declared steered. */
 export function activeInputTemplateIdentities(
   userMessage: ChatEventUserMessage,
 ): readonly GenerationTemplateIdentity[] {

@@ -1,3 +1,4 @@
+import { resolveEnqueuedChatInputModel } from "./chat-input-model.service";
 import { touchNativeChatThread } from "./native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 import { command } from "ccstate";
@@ -564,6 +565,11 @@ async function enqueueCanonicalSlackMessage(
     id: args.ingress.ingressId,
     chatThreadId: args.chatThreadId,
     eventType: "input.prompt",
+    modelSelection: await resolveEnqueuedChatInputModel(db, {
+      threadId: args.chatThreadId,
+      orgId: args.orgId,
+      userId: args.ingress.userId,
+    }),
     userMessage: createUserMessageDocument({
       text: args.displayContent,
       files: canonicalInputMessageFiles(args.canonicalAssets),
@@ -576,12 +582,12 @@ async function enqueueCanonicalSlackMessage(
     slackContext: args.slackContext,
     createdAt: args.ingress.createdAt,
   } as const;
-  await insertChatEventContext(db, values);
-  signal.throwIfAborted();
   await enqueueChatInput(db, {
     chatThreadId: args.chatThreadId,
     orgId: args.orgId,
     appendInput: async (tx) => {
+      // The entry's context row commits with the input it describes.
+      await insertChatEventContext(tx, values);
       const inserted = await insertChatEvent(tx, values, "id");
       await tx
         .update(slackChatIngress)
@@ -829,11 +835,7 @@ export const processCanonicalSlackIngress$ = command(
           signal,
         );
         signal.throwIfAborted();
-        await publishThreadListChangedSafely({
-          userId: ingress.userId,
-          orgId: ingress.orgId,
-        });
-        signal.throwIfAborted();
+        // Enqueue, then the background pick, then the UI realtime events.
         set(scheduleEnqueuedChatThreadPick$, {
           chatThreadId: ingress.chatThreadId,
           afterPick: async (pick, pickSignal) => {
@@ -848,6 +850,10 @@ export const processCanonicalSlackIngress$ = command(
               userId: ingress.userId,
               orgId: ingress.orgId,
               threadId: ingress.chatThreadId,
+            });
+            await publishThreadListChangedSafely({
+              userId: ingress.userId,
+              orgId: ingress.orgId,
             });
           },
         });

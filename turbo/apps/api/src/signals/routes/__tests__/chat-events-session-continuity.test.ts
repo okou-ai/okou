@@ -20,7 +20,6 @@ import {
   assistantEvent,
   modelProviderSecretPlaceholder,
   userMessages,
-  assistantMessages,
 } from "./helpers/chat-events-fixture";
 
 const context = testContext({ connectorCatalog: true });
@@ -1056,68 +1055,28 @@ describe("CHAT-02: run-level model overrides", () => {
     expect(events.body.events).toStrictEqual([]);
   }, 60_000);
 
-  it("rejects a model outside workspace policy when the input is picked", async () => {
-    // An entitled workspace, so the pick reaches the model policy check
-    // rather than stopping at credit admission. Its policy admits only
-    // Sonnet.
-    const { actor, agentId, providerId } = await entitledChatActor();
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: "claude-sonnet-5",
-        isDefault: true,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-    ]);
-
-    // The send stores the selection as sent; the pick resolves its route.
-    const threadId = randomUUID();
-    const clientEventId = randomUUID();
-    const sent = await chat.requestSendEvent(
+  it("captures the organization default when an explicit model is outside workspace policy", async () => {
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    chatCallbacks.failIfChatCallbackRouteIsFetched();
+    const fallback = await sendChatRun(actor, {
+      agentId,
+      prompt: "use a supported model outside workspace policy",
+      model: "gpt-5.6-terra",
+    });
+    await expectThreadCreatedModelEvent(
       actor,
-      {
-        agentId,
-        prompt: "use a supported model outside workspace policy",
-        clientThreadId: threadId,
-        clientEventId,
-        model: "gpt-5.6-terra",
-      },
-      [201],
+      fallback.threadId,
+      "gpt-5.6-terra",
     );
-    if (sent.status !== 201) {
-      throw new Error("Expected the unavailable model send to be accepted");
-    }
-    expect(sent.body).toStrictEqual({
-      runId: null,
-      threadId,
-      createdAt: expect.any(String),
+    await expect(
+      chat.readThreadMetadata(actor, fallback.threadId),
+    ).resolves.toMatchObject({
+      selectedModel: "gpt-5.6-terra",
     });
-    await expectThreadCreatedModelEvent(actor, threadId, "gpt-5.6-terra");
-    await flushWaitUntilForTest();
-
-    const messages = await waitForThreadMessages(actor, threadId, (items) => {
-      return assistantMessages(items).some((message) => {
-        return message.eventType === "output.error";
-      });
-    });
-    expect(
-      userMessages(messages.events).find((message) => {
-        return message.revokesEventId === clientEventId;
-      }),
-    ).toMatchObject({
-      eventType: "input.rejected",
-      error: "bad_request",
-    });
-    expect(
-      userMessages(messages.events).some((message) => {
-        return message.runId !== undefined;
-      }),
-    ).toBeFalsy();
-    expect(
-      assistantMessages(messages.events).find((message) => {
-        return message.eventType === "output.error";
-      }),
-    ).toMatchObject({ error: "bad_request" });
+    const claimed = await claimChatRun(runnerGroup, fallback.runId);
+    expect(claimEnvironment(claimed.claim).ANTHROPIC_MODEL).toBe(
+      "claude-fable-5-1",
+    );
+    await cancelChatRun(actor, fallback.runId, claimed.sandboxHeaders);
   }, 60_000);
 });
