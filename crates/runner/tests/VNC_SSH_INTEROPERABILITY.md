@@ -52,24 +52,52 @@ use an isolated environment or stop rather than changing the host.
 Build the current exact-head Runner test before changing host state:
 
 ```sh
+git rev-parse HEAD
 cargo test --manifest-path crates/Cargo.toml --profile local -p runner-remote --lib \
   ssh::tests::vnc_interoperability::installed_openssh_tigervnc_vnc_transport_acceptance \
   --no-run
 ```
 
-Locate the `runner_remote-*` lib-test executable produced by that command,
-confirm the filtered test appears in its `--list --ignored` output, and record
-its SHA-256 and the current commit. Do not reuse a binary built from another
-head or use the `runner` package's different test executable.
+Copy the exact `runner_remote-*` executable path printed by this Cargo invocation
+(`Executable unittests src/lib.rs (...)`) into `VNC_RUNNER_TEST_BINARY` and export
+it for the separate Bash script below. Do not select the newest file in a shared
+build directory: it may come from another head even if it lists the same test.
+Record the commit and binary SHA-256. Do not use the `runner` package's different
+test executable.
 
 ## Disposable setup and run
 
 The following reference procedure intentionally requires explicit local review.
 It generates the password without printing it, binds only loopback, permits only
-local TCP forwarding, and removes the account and all generated material on
-exit. Choose a unique account name; the procedure refuses an existing one.
+local TCP forwarding, and cleans up the owned account and generated material
+on exit. A failed cleanup exits nonzero and reports residual resources for
+manual inspection. Choose a unique account name; the procedure refuses an
+existing one.
+From the repository root, save the block as a Bash script and run it with the
+exact build-output path exported, for example
+`export VNC_RUNNER_TEST_BINARY=crates/target/local/deps/runner_remote-<hash>`.
+Do not paste the block into an existing interactive shell: its traps and
+fail-fast settings belong to the standalone script.
 
-```sh
+```bash
+#!/usr/bin/env bash
+set -Eeuo pipefail
+: "${VNC_RUNNER_TEST_BINARY:?set this to the exact executable path printed by Cargo}"
+case "$VNC_RUNNER_TEST_BINARY" in
+  */deps/runner_remote-*) ;;
+  *) echo "unexpected Runner test binary path" >&2; exit 1 ;;
+esac
+test -x "$VNC_RUNNER_TEST_BINARY"
+"$VNC_RUNNER_TEST_BINARY" --list --ignored | grep -F \
+  'ssh::tests::vnc_interoperability::installed_openssh_tigervnc_vnc_transport_acceptance' >/dev/null
+printf 'test_source_sha=%s\n' "$(git rev-parse HEAD)"
+sha256sum "$VNC_RUNNER_TEST_BINARY"
+VNC_OPENSSH_VERSION="$(dpkg-query -W -f='${Version}' openssh-server)"
+VNC_OPENSSH_CLIENT_VERSION="$(dpkg-query -W -f='${Version}' openssh-client)"
+VNC_TIGERVNC_VERSION="$(dpkg-query -W -f='${Version}' tigervnc-standalone-server)"
+test "$VNC_TIGERVNC_VERSION" = '1.13.1+dfsg-2build2'
+printf 'OpenSSH server=%s client=%s; TigerVNC=%s\n' \
+  "$VNC_OPENSSH_VERSION" "$VNC_OPENSSH_CLIENT_VERSION" "$VNC_TIGERVNC_VERSION"
 VNC_ACCEPT_USER="okou-vnc-accept-$$"
 if id "$VNC_ACCEPT_USER" >/dev/null 2>&1; then
   echo "refusing to reuse existing account: $VNC_ACCEPT_USER" >&2
@@ -80,34 +108,64 @@ case "$VNC_ACCEPT_DIR" in
   /tmp/okou-vnc-ssh-accept.*) ;;
   *) echo "unexpected acceptance directory" >&2; exit 1 ;;
 esac
-VNC_ACCEPT_PASSWORD="$(openssl rand -base64 24)"
+VNC_ACCEPT_PASSWORD=""
+VNC_ACCEPT_CREATED=0
 VNC_SSHD_PID=""
 
 cleanup_vnc_acceptance() {
+  local result=$? command_line="" preserve_scratch=0
+  trap - EXIT INT TERM
   if [ -z "$VNC_SSHD_PID" ] && [ -f "$VNC_ACCEPT_DIR/sshd.pid" ]; then
-    VNC_SSHD_PID="$(sudo cat "$VNC_ACCEPT_DIR/sshd.pid")"
+    VNC_SSHD_PID="$(sudo cat "$VNC_ACCEPT_DIR/sshd.pid" 2>/dev/null)" || {
+      echo "cannot read isolated sshd PID; retain scratch for inspection" >&2
+      preserve_scratch=1
+      result=1
+    }
   fi
-  if [ -n "$VNC_SSHD_PID" ]; then
-    sudo kill "$VNC_SSHD_PID" 2>/dev/null || true
-    for _ in $(seq 1 50); do
-      if ! sudo kill -0 "$VNC_SSHD_PID" 2>/dev/null; then
-        break
+  if [[ "$VNC_SSHD_PID" =~ ^[0-9]+$ ]]; then
+    command_line="$(sudo ps -p "$VNC_SSHD_PID" -o args= 2>/dev/null || true)"
+    if [[ "$command_line" == *"$VNC_ACCEPT_DIR/sshd_config"* ]]; then
+      sudo kill "$VNC_SSHD_PID" 2>/dev/null || result=1
+      for _ in $(seq 1 50); do
+        command_line="$(sudo ps -p "$VNC_SSHD_PID" -o args= 2>/dev/null || true)"
+        [[ "$command_line" == *"$VNC_ACCEPT_DIR/sshd_config"* ]] || break
+        sleep 0.1
+      done
+      command_line="$(sudo ps -p "$VNC_SSHD_PID" -o args= 2>/dev/null || true)"
+      if [[ "$command_line" == *"$VNC_ACCEPT_DIR/sshd_config"* ]]; then
+        sudo kill -KILL "$VNC_SSHD_PID" 2>/dev/null || result=1
       fi
-      sleep 0.1
-    done
-    if sudo kill -0 "$VNC_SSHD_PID" 2>/dev/null; then
-      sudo kill -KILL "$VNC_SSHD_PID" 2>/dev/null || true
+    elif [ -n "$command_line" ]; then
+      echo "refusing to kill an unrelated sshd PID" >&2
+      preserve_scratch=1
+      result=1
     fi
+  elif [ -n "$VNC_SSHD_PID" ]; then
+    echo "invalid isolated sshd PID; inspect before manual cleanup" >&2
+    preserve_scratch=1
+    result=1
   fi
-  sudo userdel --remove "$VNC_ACCEPT_USER" 2>/dev/null || true
-  case "$VNC_ACCEPT_DIR" in
-    /tmp/okou-vnc-ssh-accept.*) sudo rm -rf -- "$VNC_ACCEPT_DIR" ;;
-  esac
+  if (( VNC_ACCEPT_CREATED )); then
+    sudo userdel --remove "$VNC_ACCEPT_USER" 2>/dev/null || result=1
+  fi
+  if (( ! preserve_scratch )) && [[ "$VNC_ACCEPT_DIR" == /tmp/okou-vnc-ssh-accept.* &&
+        -d "$VNC_ACCEPT_DIR" && ! -L "$VNC_ACCEPT_DIR" ]]; then
+    sudo rm -rf -- "$VNC_ACCEPT_DIR" || result=1
+  fi
+  if [ -e "$VNC_ACCEPT_DIR" ] || { (( VNC_ACCEPT_CREATED )) && id "$VNC_ACCEPT_USER" >/dev/null 2>&1; }; then
+    echo "acceptance resources remain; inspect and clean them manually" >&2
+    result=1
+  fi
   unset VNC_ACCEPT_PASSWORD
+  exit "$result"
 }
-trap cleanup_vnc_acceptance EXIT INT TERM
+trap cleanup_vnc_acceptance EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
+VNC_ACCEPT_PASSWORD="$(openssl rand -base64 24)"
 sudo useradd --create-home --shell /bin/bash "$VNC_ACCEPT_USER"
+VNC_ACCEPT_CREATED=1
 printf '%s:%s\n' "$VNC_ACCEPT_USER" "$VNC_ACCEPT_PASSWORD" | sudo chpasswd
 ssh-keygen -q -t ed25519 -N '' -f "$VNC_ACCEPT_DIR/host_key"
 ssh-keygen -q -t ed25519 -N '' -f "$VNC_ACCEPT_DIR/client_key"
@@ -155,19 +213,8 @@ for _ in $(seq 1 20); do
 done
 test "$VNC_SSHD_READY" = 1
 
-VNC_OPENSSH_VERSION="$(dpkg-query -W -f='${Version}' openssh-server)"
-VNC_OPENSSH_CLIENT_VERSION="$(dpkg-query -W -f='${Version}' openssh-client)"
-# Preserve these observed versions in the evidence; do not silently assume a pin.
-printf 'OpenSSH server=%s client=%s\n' \
-  "$VNC_OPENSSH_VERSION" "$VNC_OPENSSH_CLIENT_VERSION"
 VNC_OPENSSH_HOST_KEY_ALGORITHM="$(awk '{print $1}' "$VNC_ACCEPT_DIR/host_key.pub")"
 VNC_OPENSSH_HOST_KEY_FINGERPRINT="$(ssh-keygen -lf "$VNC_ACCEPT_DIR/host_key.pub" -E sha256 | awk '{print $2}')"
-VNC_RUNNER_TEST_BINARY="$(find crates/target/local/deps -maxdepth 1 -type f \
-  -name 'runner_remote-*' -perm -111 -printf '%T@ %p\n' | sort -n | tail -1 | cut -d' ' -f2-)"
-test -n "$VNC_RUNNER_TEST_BINARY"
-"$VNC_RUNNER_TEST_BINARY" --list --ignored | grep -F \
-  'ssh::tests::vnc_interoperability::installed_openssh_tigervnc_vnc_transport_acceptance' >/dev/null
-sha256sum "$VNC_RUNNER_TEST_BINARY"
 sudo install -m 755 "$VNC_RUNNER_TEST_BINARY" "$VNC_ACCEPT_DIR/runner-tests"
 sudo install -m 644 crates/rfb-client/tests/fixtures/tigervnc.py \
   "$VNC_ACCEPT_DIR/tigervnc.py"
