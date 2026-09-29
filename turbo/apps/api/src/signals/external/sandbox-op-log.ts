@@ -3,9 +3,9 @@ import { Axiom } from "@axiomhq/js";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { singleton } from "../../lib/singleton";
-import { nowDate } from "../../lib/time";
+import { monotonicNow, nowDate } from "../../lib/time";
 import { waitUntil } from "../context/wait-until";
-import { safeSync, tapError } from "../utils";
+import { safeSync, settleIncludingAbort, tapError } from "../utils";
 
 interface AxiomIngestClient {
   readonly ingest: (
@@ -73,6 +73,40 @@ export function recordApiOperationTimings(
       return { ...attrs, operationDomain: "api" as const };
     }),
   );
+}
+
+export type McpClientNameLookupOutcome =
+  | "ineligible"
+  | "validated"
+  | "invalid_metadata"
+  | "http_unavailable"
+  | "unsafe_url"
+  | "lookup_failed"
+  | "timeout"
+  | "caller_cancelled";
+
+/** One content-free lookup observation; even abort-shaped sink errors are optional. */
+export async function recordMcpClientNameLookup(args: {
+  readonly outcome: McpClientNameLookupOutcome;
+  readonly fetchInvoked: boolean;
+  readonly startedAt: number;
+}): Promise<void> {
+  await settleIncludingAbort(() => {
+    const elapsed = monotonicNow() - args.startedAt;
+    recordApiOperationTimings([
+      {
+        actionType: "mcp_client_display_name_lookup",
+        durationMs: Number.isFinite(elapsed)
+          ? Math.min(Number.MAX_SAFE_INTEGER, Math.max(0, elapsed))
+          : 0,
+        success: args.outcome === "validated",
+        dimensions: {
+          lookup_outcome: args.outcome,
+          fetch_invoked: args.fetchInvoked,
+        },
+      },
+    ]);
+  });
 }
 
 function recordOperationTimings(

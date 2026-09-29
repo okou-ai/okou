@@ -474,6 +474,38 @@ that name, or a generic `MCP` label when no name is saved. Older messages are
 not relabeled. The optional first message of `create_chat_thread` uses the same
 source rule; an empty creation has no input to attribute.
 
+The optional display-name lookup emits one best-effort API operation-timing
+observation per invocation (including ineligible IDs and retries) through
+`recordApiOperationTimings` to `vm0-sandbox-op-log-<AXIOM_DATASET_SUFFIX>`.
+Filter `operation_domain = "api"` and
+`op_type = "mcp_client_display_name_lookup"` over an explicit UTC interval.
+Each row has a bounded numeric `duration_ms` for the lookup, `success` only
+when a validated name was returned, a finite `lookup_outcome` (`ineligible`,
+`validated`, `invalid_metadata`, `http_unavailable`, `unsafe_url`,
+`lookup_failed`, `timeout`, or `caller_cancelled`), and `fetch_invoked`.
+`fetch_invoked` counts calls to the safe metadata fetch, **not** physical
+network requests (URL/DNS checks may reject first and redirects may add
+requests). No raw client ID, metadata URL, name, message text, token, or error
+payload is recorded. Aggregate counts by outcome and percentiles of
+`duration_ms` for eligible outcomes; compare comparable UTC windows only after
+production build info confirms the writer and instrumentation are serving.
+For a production baseline, supply a fixed UTC `startTime`/`endTime` in the
+Axiom APL request envelope after the production build includes this writer:
+
+```kusto
+['vm0-sandbox-op-log-prod']
+| where operation_domain == 'api' and op_type == 'mcp_client_display_name_lookup'
+| summarize attempts = count(), p50 = percentile(duration_ms, 50),
+    p95 = percentile(duration_ms, 95) by lookup_outcome, fetch_invoked
+```
+
+Report the window, observation count, eligible versus ineligible outcomes,
+fetch invocations and latency tails alongside any known ingestion gaps.
+Missing/unconfigured ingestion means missing observations, not zero lookups.
+These timings do not measure the complete send path, and do not imply a cache
+hit rate or determine a cache TTL by themselves. Telemetry failures cannot
+change admission, the generic display fallback, or cancellation.
+
 The queue can leave the input queued or associate it with a run: a new run, or
 the active run that it is steered into. The response returns:
 
