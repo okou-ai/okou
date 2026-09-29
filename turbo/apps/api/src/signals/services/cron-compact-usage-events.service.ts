@@ -135,10 +135,10 @@ function physicalGrainOrder(alias: string): SQL {
   `;
 }
 
-// Acquire live Run FK parents before ledger rows. A busy deletion is skipped,
-// never waited on after retaining child rows. All compaction/deletion writers
-// must carry this order before the shared advisory barrier can be removed.
-function candidateCtes(args: {
+// Acquire live Run FK parents before canonical and ledger rows. A busy deletion
+// is skipped rather than waited on after retaining child rows. The candidate
+// identity is rechecked when the raw row is retained below.
+function retainedIdentityCtes(args: {
   readonly cutoff: string;
   readonly rawSeedLimit: number;
   readonly orgId: string | undefined;
@@ -152,25 +152,76 @@ function candidateCtes(args: {
       LIMIT ${args.rawSeedLimit}
     ),
     retained_runs AS MATERIALIZED (
-      SELECT ${agentRuns.id}
+      SELECT id, org_id, user_id, created_at, trigger_source, chat_thread_id
       FROM ${agentRuns}
-      WHERE ${agentRuns.id} IN (
-        SELECT run_id FROM raw_candidates WHERE run_id IS NOT NULL
+      WHERE id IN (
+        SELECT COALESCE(billing_run_id, run_id) FROM raw_candidates
       )
-      ORDER BY ${agentRuns.id}
+      ORDER BY id
       FOR KEY SHARE SKIP LOCKED
     ),
     retained_attributions AS MATERIALIZED (
       SELECT run_id, org_id, user_id, run_started_at
       FROM ${billingRunAttribution}
       WHERE run_id IN (
-        SELECT candidate.billing_run_id FROM raw_candidates candidate
-        WHERE candidate.billing_context = 'run'
-          AND (candidate.run_id IS NULL OR candidate.run_id IN (SELECT id FROM retained_runs))
+        SELECT COALESCE(candidate.billing_run_id, candidate.run_id)
+        FROM raw_candidates candidate
+        WHERE candidate.run_id IS NULL OR candidate.run_id IN (SELECT id FROM retained_runs)
       )
       ORDER BY run_id
       FOR UPDATE
+    )
+  `;
+}
+
+// Legacy raw facts may predate canonical capture. Populate only missing
+// identities from this batch's retained live Runs; an existing canonical row
+// remains authoritative even after content deletion. No timestamp round trip.
+function capturedIdentityCtes(): SQL {
+  return sql`
+    captured_attributions AS (
+      INSERT INTO ${billingRunAttribution} (
+        run_id, org_id, user_id, run_started_at, source, thread_id, thread_context
+      )
+      SELECT id, org_id, user_id, created_at,
+        CASE
+          WHEN trigger_source = 'web' THEN 'chat'
+          WHEN trigger_source IN ('automation-schedule', 'automation-event', 'goal') THEN 'automation'
+          WHEN trigger_source IN ('slack', 'discord', 'teams', 'telegram', 'email', 'agentphone', 'github', 'agent') THEN trigger_source
+          ELSE 'other'
+        END,
+        chat_thread_id,
+        CASE WHEN chat_thread_id IS NULL THEN 'threadless' ELSE 'thread' END
+      FROM retained_runs run
+      WHERE NOT EXISTS (SELECT 1 FROM retained_attributions attribution WHERE attribution.run_id = run.id)
+      ORDER BY id
+      ON CONFLICT (run_id) DO UPDATE SET
+        thread_id = CASE WHEN billing_run_attribution.thread_context = 'unknown'
+          THEN EXCLUDED.thread_id ELSE billing_run_attribution.thread_id END,
+        thread_context = CASE WHEN billing_run_attribution.thread_context = 'unknown'
+          THEN EXCLUDED.thread_context ELSE billing_run_attribution.thread_context END
+      WHERE billing_run_attribution.org_id = EXCLUDED.org_id
+        AND billing_run_attribution.user_id = EXCLUDED.user_id
+        AND billing_run_attribution.run_started_at = EXCLUDED.run_started_at
+        AND billing_run_attribution.source = EXCLUDED.source
+      RETURNING run_id, org_id, user_id, run_started_at
     ),
+    resolved_attributions AS MATERIALIZED (
+      SELECT * FROM retained_attributions
+      UNION ALL
+      SELECT * FROM captured_attributions
+    )
+  `;
+}
+
+function candidateCtes(args: {
+  readonly cutoff: string;
+  readonly rawSeedLimit: number;
+  readonly orgId: string | undefined;
+}): SQL {
+  return sql`
+    ${retainedIdentityCtes(args)},
+    ${capturedIdentityCtes()},
     raw_seed AS MATERIALIZED (
       SELECT
         event.id,
@@ -178,7 +229,19 @@ function candidateCtes(args: {
         event.org_id,
         event.user_id,
         event.run_id,
-        ${billingGrainColumns("event")},
+        COALESCE(event.billing_run_id, event.run_id) AS billing_run_id,
+        CASE
+          WHEN attribution.run_id IS NOT NULL THEN attribution.run_started_at
+          WHEN COALESCE(event.billing_run_id, event.run_id) IS NULL
+            AND event.billing_context IN ('runless', 'pi_memory_stage1') THEN event.billing_anchor_at
+          ELSE NULL
+        END AS billing_anchor_at,
+        CASE
+          WHEN attribution.run_id IS NOT NULL THEN 'run'
+          WHEN COALESCE(event.billing_run_id, event.run_id) IS NOT NULL THEN 'missing_run'
+          WHEN event.billing_context IN ('runless', 'pi_memory_stage1') THEN event.billing_context
+          ELSE 'legacy_unknown'
+        END AS billing_context,
         event.kind,
         event.provider,
         event.category,
@@ -186,19 +249,30 @@ function candidateCtes(args: {
         allocation.weekly_window_id,
         event.quantity,
         COALESCE(event.credits_charged, 0)::bigint AS credits_charged,
-        (event.billing_context <> 'run' OR (
-          attribution.run_id IS NOT NULL
-          AND attribution.org_id = event.org_id
-          AND attribution.user_id = event.user_id
-          AND attribution.run_started_at = event.billing_anchor_at
-        )) AS billing_identity_valid
+        (
+          (event.run_id IS NULL OR event.billing_run_id IS NULL OR event.run_id = event.billing_run_id)
+          AND CASE WHEN attribution.run_id IS NOT NULL THEN
+            attribution.org_id = event.org_id AND attribution.user_id = event.user_id
+            AND (event.billing_anchor_at IS NULL OR attribution.run_started_at = event.billing_anchor_at)
+          ELSE event.billing_context <> 'run'
+            AND NOT EXISTS (SELECT 1 FROM retained_runs run WHERE run.id = COALESCE(event.billing_run_id, event.run_id))
+          END
+        ) AS billing_identity_valid
       FROM ${usageEvent} ${event}
       INNER JOIN raw_candidates candidate ON candidate.id = event.id
-      LEFT JOIN retained_attributions attribution ON attribution.run_id = event.billing_run_id
+      LEFT JOIN resolved_attributions attribution ON attribution.run_id = COALESCE(event.billing_run_id, event.run_id)
       LEFT JOIN ${usageAllowanceAllocations} ${allocation}
         ON ${eq(allocation.usageEventId, event.id)}
       WHERE ${eligibleRawPredicate(args.cutoff, args.orgId)}
+        AND event.run_id IS NOT DISTINCT FROM candidate.run_id
+        AND event.billing_run_id IS NOT DISTINCT FROM candidate.billing_run_id
+        AND event.billing_context = candidate.billing_context
         AND (event.run_id IS NULL OR event.run_id IN (SELECT id FROM retained_runs))
+        AND NOT EXISTS (
+          SELECT 1 FROM ${agentRuns} live_run
+          WHERE live_run.id = COALESCE(event.billing_run_id, event.run_id)
+            AND live_run.id NOT IN (SELECT id FROM retained_runs)
+        )
       ORDER BY ${oldestProcessedEventOrder}
       FOR UPDATE OF event SKIP LOCKED
     ),

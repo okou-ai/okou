@@ -484,11 +484,10 @@ combined-head validation. The removed SSH/VNC waiter fixtures and Stripe test
 triggers are documented in the workflow queue inventory, with retained public
 revision, source-isolation and replay outcomes explicitly listed.
 
-A subsequent limited trigger-writer trace identified a concrete remaining R1
-case: compaction still copies non-`run` legacy billing grain while the hourly
-capture trigger may resolve it from a live Run or later attribution. Its bounded
-current-`run` path does not establish legacy independence. Explicit bounded
-resolution or a demonstrated exclusion invariant is required; no production
-convergence evidence was obtained. Three benchmark/dev Run INSERT sites also
-need an explicit fixture decision. See the trigger inventory for the exact
-conditional dependency and review limits.
+The subsequent compaction gap is now implemented explicitly within the existing
+500-row batch: all contexts resolve against retained canonical attribution or a
+matching live Run, preserving original precision and ownership. Unavailable
+sources remain unresolved; no production convergence is assumed. All three
+benchmark/dev Run INSERT sites now use a bounded owning command that captures
+their provisional billing identity explicitly. See the trigger inventory for
+remaining writer-audit, transaction-ownership and reader-convergence limits.

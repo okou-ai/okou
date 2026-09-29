@@ -80,23 +80,21 @@ The following producer changes are implemented:
   X ingestion helpers. X retention cleanup also owns its database and bounded
   deletion. Existing Runner usage and X API tests cover the business contract.
 
-- `compactUsageEventBatch$` retains at most 500 raw events and their canonical
-  attribution rows in a stable parent-first order. It validates organization,
-  user and original allowance anchor before committing each immutable hourly
-  fragment. The same command transaction explicitly marks only this batch's
-  Run identities observed; a failed identity or amount reconciliation rolls
-  back both insertion and deletion. This explicit path covers already resolved
-  `run` rows. It does not yet replace trigger-assisted legacy identity resolution:
-  `candidateCtes` retains and validates attribution only for `billing_context =
-'run'`, while `billingGrainColumns` and `mutationCtes` copy other contexts and
-  their anchors unchanged. The current hourly capture trigger can still resolve
-  `legacy_unknown` with a surviving Run or `missing_run` with later canonical
-  attribution. R1 must explicitly resolve those cases within the bounded batch,
-  or establish an exclusion invariant for eligible data and supported writers.
-  No such data/retention evidence has been obtained; outgoing API drain alone
-  is insufficient. This is a source-level conditional dependency, not a claim
-  that affected production rows were observed. Existing API coverage preserves
-  totals across compaction, late usage and a repeated compaction run.
+- `compactUsageEventBatch$` retains at most 500 raw events and their live Run and
+  canonical attribution parents in a stable order. Every context now participates
+  in explicit resolution: `legacy_unknown` with a surviving Run captures its
+  canonical identity; `missing_run` uses a later canonical attribution when one
+  exists. Capture preserves exact PostgreSQL timestamps, owner, source and known
+  thread grouping. Existing attribution remains authoritative. A missing live
+  and canonical source stays unresolved without inventing an allowance anchor.
+  A busy live parent is skipped, and the candidate identity is rechecked when
+  retaining each event. Conflicting owner/anchor or amount reconciliation rolls
+  back the complete batch. The same local transaction publishes only this batch's
+  observed Run identities. Hourly publication no longer needs its trigger to
+  repair a copied legacy identity. Existing API coverage preserves totals across
+  compaction, deleted Runs, late usage and repeated/concurrent compaction. The
+  historical legacy-row branch is justified by the shipped capture semantics;
+  no artificial database state or trigger test was added to manufacture it.
 - The retained `billing-attribution` operator now retains canonical attribution
   before its bounded source rows, sets the original allowance anchor explicitly,
   and marks matching raw/hourly identities observed in the same commit. Conflicting
@@ -126,21 +124,23 @@ explicitly maintain the guarantees, use serving, in-flight and rollback evidence
 to retire current trigger/function definitions in a new migration. A source
 scan or the age of the old migrations cannot establish that gate.
 
-## Remaining fixture and legacy-resolution evidence
+## Fixture writers and remaining audit evidence
 
-A limited writer trace at `903d90e` also identified direct Run INSERTs in
-`dev-bench-seed.ts:insertProfileRows` and both bulk Run insertion sites in
-`chat-threads.bench.ts`. Those benchmark/dev fixtures currently obtain canonical
-attribution from the Run INSERT trigger. Before retirement, make their intended
-billing state explicit or demonstrate that their datasets do not require that
-identity. They are not proof of a serving API compatibility requirement.
+The three direct Run INSERT sites in `dev-bench-seed.ts:insertProfileRows` and
+`chat-threads.bench.ts` now invoke `insertBenchmarkRunBatch$` with business rows.
+The command acquires `writeDb$` itself and inserts at most 500 Runs plus their
+explicit provisional canonical identities in one local transaction. Capture
+selects the stored timestamp directly, validates owner/start/source on conflict,
+and only fills unknown thread grouping. These benchmarks no longer need the
+Run INSERT trigger to establish billing identity. Other benchmark setup is not
+claimed to have completed the production transaction-ownership sweep.
 
-The traced production Run, generation, raw usage and operator writers supply
-identity and observation explicitly; their remaining command-ownership chains
-are separate obligations. This review did not certify every fixture alias,
-producer adapter, retention/deletion transition or production-data convergence.
-The compaction legacy-resolution case above remains specific R1 implementation
-work; the broad trigger audit is not declared complete.
+Production Run, generation, raw usage, compaction and operator writers supply
+identity and observation explicitly in the traced paths. Their remaining
+command-ownership chains are separate obligations. This review has not certified
+every fixture alias, producer adapter, retention/deletion transition or
+production-data convergence. The broad trigger audit is not declared complete,
+and reader fallback removal still needs its own data evidence.
 
 ## Canonical mutation guard: independent retirement evidence
 
