@@ -454,7 +454,59 @@ describe("Google Forms Pub/Sub webhook", () => {
     });
   });
 
-  it("does not replay disabled-period responses when a detached cursor is explicitly re-enabled", async () => {
+  it("keeps pending responses when an already enabled automation refreshes its watch binding", async () => {
+    const { automationId, chatThreadId, formsApi } =
+      await setupGoogleFormsAutomation();
+    const watchId = formsApi.watchIds[0];
+    if (!watchId) {
+      throw new Error("Expected a Google Forms watch");
+    }
+    server.use(
+      http.get(
+        "https://forms.googleapis.com/v1/forms/:formId/responses",
+        ({ request }) => {
+          const filter = new URL(request.url).searchParams.get("filter");
+          if (filter !== null) {
+            expect(filter).toBe(`timestamp > ${SEED_CURSOR}`);
+          }
+          return HttpResponse.json({
+            responses: [
+              {
+                responseId: "response-pending-during-rebind",
+                createTime: RESPONSE_CREATE_TIME,
+                lastSubmittedTime: RESPONSE_SUBMITTED_TIME,
+                respondentEmail: "pending@example.test",
+              },
+            ],
+          });
+        },
+      ),
+    );
+    await accept(
+      automationsClient().enable({
+        headers: authHeaders(),
+        params: { id: automationId },
+      }),
+      [200],
+    );
+    const pushed = await postWebhook(
+      formsPushBody("response-pending-during-rebind", watchId),
+    );
+    expect(pushed).toMatchObject({
+      status: 200,
+      body: { watchStates: 1, dispatched: 1 },
+    });
+    await flushWaitUntilForTest();
+    const events = await workflows.readThreadEvents(chatThreadId);
+    const delivered = events.filter((event) => {
+      return event.eventType === "input.automation";
+    });
+    expect(delivered.map(chatEventDisplayText)).toStrictEqual([
+      `A new response from pending@example.test was submitted to Google Form "${FORM_TITLE}".`,
+    ]);
+  });
+
+  it("does not replay disabled-period responses after explicit re-enable", async () => {
     const { automationId, chatThreadId, formsApi } =
       await setupGoogleFormsAutomation();
     const originalWatchId = formsApi.watchIds[0];
