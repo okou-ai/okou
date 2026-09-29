@@ -2,6 +2,7 @@ import { createStore } from "ccstate";
 import { modelProviders } from "@okouai/db/schema/model-provider";
 import { modelProviderAccounts } from "@okouai/db/schema/model-provider-account";
 import { writeDb$ } from "../signals/external/db";
+import { nowDate } from "../lib/time";
 
 /** Metadata-only fixture; runtime capture still requires real account secrets. */
 export async function seedConnectedPersonalSubscriptionFixture(args: {
@@ -23,7 +24,7 @@ export async function seedConnectedPersonalSubscriptionFixture(args: {
         modelProviders.userId,
         modelProviders.type,
       ],
-      set: { updatedAt: new Date() },
+      set: { updatedAt: nowDate() },
     })
     .returning({ id: modelProviders.id });
   if (!provider) {

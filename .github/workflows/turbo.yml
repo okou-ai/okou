@@ -2683,6 +2683,8 @@ jobs:
       - name: Keep runner E2E fixture organizations in Custom mode
         shell: bash
         env:
+          # libpq needs an explicit trust bundle for sslmode=verify-full.
+          PGSSLROOTCERT: /etc/ssl/certs/ca-certificates.crt
           NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
           NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
           NEON_BRANCH_NAME: preview/${{ needs.prepare.outputs.job-ref }}
