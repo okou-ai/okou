@@ -22,7 +22,6 @@ import { pgTextDecoder } from "../../lib/db-structured-result";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
-import { clerk$ } from "../external/clerk";
 import {
   getStripeClient,
   isStripeResourceMissingError,
@@ -53,7 +52,7 @@ import {
   stripeSubscriptionUsesMemberUsagePacks,
 } from "./usage-pack-subscription.service";
 import { reconcileUsagePackCreditRefunds } from "./usage-pack-credit-refund.service";
-import { reconcileUsagePackInvitationPurchases } from "./usage-pack-invitation-purchase.service";
+import { reconcileUsagePackInvitationPurchases$ } from "./usage-pack-invitation-purchase.service";
 import { reconcileUsagePackSubscriptionMigrations$ } from "./usage-pack-subscription-migration.service";
 import { disableIneligibleWorkflowWebhookAutomationsForOrg } from "./workflow-webhook-automation-entitlement.service";
 import { isCurrentStripePreviewMetadata } from "./stripe-preview-metadata.service";
@@ -1665,7 +1664,7 @@ async function reconcileCandidateRows(
 
 const reconcileBillingEntitlementsForScope$ = command(
   async (
-    { get, set },
+    { set },
     scope: BillingReconciliationScope | undefined,
     signal: AbortSignal,
   ): Promise<{ readonly downgraded: number }> => {
@@ -1727,10 +1726,12 @@ const reconcileBillingEntitlementsForScope$ = command(
     }
     await reconcileUsagePackCreditRefunds(db, scope, signal);
     signal.throwIfAborted();
-    const clerk = get(clerk$);
-    const invitationPurchasesReconciled =
-      await reconcileUsagePackInvitationPurchases(db, clerk, scope, signal);
-    signal.throwIfAborted();
+
+    const invitationPurchasesReconciled = await set(
+      reconcileUsagePackInvitationPurchases$,
+      scope,
+      signal,
+    );
     const stripeSubscriptionSweep = await set(
       reconcileStripeSubscriptionSnapshots$,
       scope,

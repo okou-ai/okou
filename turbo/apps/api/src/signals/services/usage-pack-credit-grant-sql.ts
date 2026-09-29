@@ -9,11 +9,16 @@ export interface InvoiceUsagePackCreditGrant {
   readonly idempotencyKey: string;
   readonly amount: number;
   readonly expiresAt: Date;
-  readonly refund?: {
-    readonly invoiceId: string;
-    readonly invoiceLineId: string | null;
-    readonly amountCents: number;
-  };
+  readonly refund?:
+    | {
+        readonly invoiceId: string;
+        readonly invoiceLineId: string | null;
+        readonly amountCents: number;
+      }
+    | {
+        readonly paymentIntentId: string;
+        readonly amountCents: number;
+      };
 }
 
 /**
@@ -46,17 +51,22 @@ export function invoiceUsagePackCreditGrantSql(
   if (!refund) {
     return credit;
   }
+  const paymentIntent = "paymentIntentId" in refund;
+  const sourceType = paymentIntent ? "payment_intent" : "invoice";
+  const invoiceId = paymentIntent ? null : refund.invoiceId;
+  const invoiceLineId = paymentIntent ? null : refund.invoiceLineId;
+  const paymentIntentId = paymentIntent ? refund.paymentIntentId : null;
   return sql`WITH grant_row AS (${credit})
     INSERT INTO ${usagePackCreditRefunds}
-      (credit_grant_id, org_id, user_id, source_type, stripe_invoice_id, stripe_invoice_line_id, source_amount_cents)
-    SELECT id, ${grant.orgId}, ${grant.userId}, 'invoice', ${refund.invoiceId}, ${refund.invoiceLineId}, ${refund.amountCents} FROM grant_row
+      (credit_grant_id, org_id, user_id, source_type, stripe_invoice_id, stripe_invoice_line_id, stripe_payment_intent_id, source_amount_cents)
+    SELECT id, ${grant.orgId}, ${grant.userId}, ${sourceType}, ${invoiceId}, ${invoiceLineId}, ${paymentIntentId}, ${refund.amountCents} FROM grant_row
     ON CONFLICT (credit_grant_id) DO UPDATE SET credit_grant_id = EXCLUDED.credit_grant_id
     WHERE ${usagePackCreditRefunds.orgId} = EXCLUDED.org_id
       AND ${usagePackCreditRefunds.userId} = EXCLUDED.user_id
       AND ${usagePackCreditRefunds.sourceType} = EXCLUDED.source_type
-      AND ${usagePackCreditRefunds.stripeInvoiceId} = EXCLUDED.stripe_invoice_id
+      AND ${usagePackCreditRefunds.stripeInvoiceId} IS NOT DISTINCT FROM EXCLUDED.stripe_invoice_id
       AND ${usagePackCreditRefunds.stripeInvoiceLineId} IS NOT DISTINCT FROM EXCLUDED.stripe_invoice_line_id
-      AND ${usagePackCreditRefunds.stripePaymentIntentId} IS NULL
+      AND ${usagePackCreditRefunds.stripePaymentIntentId} IS NOT DISTINCT FROM EXCLUDED.stripe_payment_intent_id
       AND ${usagePackCreditRefunds.sourceAmountCents} = EXCLUDED.source_amount_cents
     RETURNING credit_grant_id`;
 }

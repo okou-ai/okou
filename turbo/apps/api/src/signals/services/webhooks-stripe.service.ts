@@ -104,10 +104,10 @@ import {
 } from "./usage-pack-subscription.service";
 import { failScheduledUsagePackAllocationChangesForSchedule } from "./usage-pack-allocation-change.service";
 import {
-  handleUsagePackInvitationCheckoutFailed,
-  handleUsagePackInvitationCheckoutPaid,
-  handleUsagePackInvitationInvoicePaid,
-  handleUsagePackInvitationPaymentIntentSucceeded,
+  handleUsagePackInvitationCheckoutFailed$,
+  handleUsagePackInvitationCheckoutPaid$,
+  handleUsagePackInvitationInvoicePaid$,
+  handleUsagePackInvitationPaymentIntentSucceeded$,
 } from "./usage-pack-invitation-purchase.service";
 import {
   handleUsagePackMigrationInvoicePaid$,
@@ -3475,18 +3475,15 @@ async function subscriptionInvoiceDetails(
 
 const handleCheckoutCompleted$ = command(
   async (
-    { get, set },
+    { set },
     session: CheckoutSessionInput,
     paidAt: Date,
     signal: AbortSignal,
   ): Promise<CheckoutCompletedOutcome> => {
     const db = set(writeDb$);
-    const getClerk = (): ClerkClient => {
-      return get(clerk$);
-    };
-    const usagePackInvitation = await handleUsagePackInvitationCheckoutPaid(
-      db,
-      getClerk(),
+
+    const usagePackInvitation = await set(
+      handleUsagePackInvitationCheckoutPaid$,
       session,
       paidAt,
       signal,
@@ -3734,9 +3731,8 @@ const handleInvoicePaid$ = command(
       return migrationResult.orgId;
     }
 
-    const invitationResult = await handleUsagePackInvitationInvoicePaid(
-      db,
-      getClerk(),
+    const invitationResult = await set(
+      handleUsagePackInvitationInvoicePaid$,
       invoice,
       signal,
     );
@@ -5031,14 +5027,12 @@ export const handleStripeWebhookEvent$ = command(
 
     switch (event.kind) {
       case "payment_intent.succeeded": {
-        const usagePackInvitation =
-          await handleUsagePackInvitationPaymentIntentSucceeded(
-            db,
-            getClerk(),
-            event.object,
-            new Date(event.created * 1000),
-            signal,
-          );
+        const usagePackInvitation = await set(
+          handleUsagePackInvitationPaymentIntentSucceeded$,
+          event.object,
+          new Date(event.created * 1000),
+          signal,
+        );
         signal.throwIfAborted();
         if (usagePackInvitation.handled) {
           if (usagePackInvitation.orgId) {
@@ -5070,13 +5064,15 @@ export const handleStripeWebhookEvent$ = command(
         break;
       }
       case "checkout.session.failed": {
-        await handleUsagePackInvitationCheckoutFailed(db, event.object);
-        signal.throwIfAborted();
+        await set(
+          handleUsagePackInvitationCheckoutFailed$,
+          event.object,
+          signal,
+        );
         break;
       }
       case "invoice.paid": {
         drainOrgId = await set(handleInvoicePaid$, event.object, signal);
-        signal.throwIfAborted();
         if (drainOrgId) {
           billingChangedOrgIds.add(drainOrgId);
         }

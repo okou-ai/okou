@@ -58,6 +58,7 @@ import {
 } from "../services/billing-payment-method.service";
 import {
   confirmUsagePackAllocationChange,
+  prepareUsagePackChangeConfirmation$,
   getUsagePackManagement,
   previewUsagePackAllocationChange$,
 } from "../services/usage-pack-allocation-change.service";
@@ -969,12 +970,18 @@ const usagePackChangeConfirmAuthed$ = command(
         paymentMethod = revalidated;
       }
     }
+    const prepared = await set(
+      prepareUsagePackChangeConfirmation$,
+      { orgId: access.auth.orgId, changeId },
+      signal,
+    );
     const result = await confirmUsagePackAllocationChange(
       db,
       {
         orgId: access.auth.orgId,
         changeId,
         paymentMethod,
+        prepared,
       },
       signal,
     );

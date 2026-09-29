@@ -64,8 +64,9 @@ No transaction or database handle reaches a helper, and no Stripe call occurs
 inside this commit. Customer and Session mismatches reject before local writes.
 
 The webhook Checkout dispatcher is now a command so it can dispatch this owned
-commit directly. Its other invitation, one-time-credit and canonical Plan-binding
-branches still invoke legacy database-aware services; converting the dispatcher
+commit directly. Its invitation branch now dispatches the business-input
+invitation commands described below. One-time-credit and canonical Plan-binding
+branches still have legacy database-aware services; converting the dispatcher
 to a command does **not** finish those chains. Ordinary subscription lifecycle
 synchronization and the purchase creation/confirmation graphs also remain
 unfinished. This change does not establish remote quantity ordering or retire
@@ -199,10 +200,10 @@ unbound unpaid preview and inserts the new purchase under the existing normalize
 email unique index. The command obtains its own database and passes neither the
 database nor transaction to a helper. The existing API coverage for concurrent
 previews, preview replacement, payment amount/tax and unpaid billing behavior is
-retained. This completes the preview entrance; confirmation, payment activation,
-refund and the shared remote projection protocol below remain separate unfinished
-work. In particular, the old database-aware allocation-preview wrapper remains
-for confirmation and is not counted as terminal command ownership.
+retained. Invitation confirmation now uses the same owned allocation-preview
+command, so its former database-aware preview call is removed. Payment activation,
+refund projection and the shared remote protocol below remain separate unfinished
+work.
 
 ### Invitation purchase transitions
 
@@ -220,6 +221,62 @@ published into another claim.
 Multi-row purchase transitions read their owned row within their local
 transaction and guard the final state update. The existing credit grant
 identities and atomic grant/allocation writes remain intact.
+
+### Invitation command ownership and operation admission
+
+Invitation preview, confirmation, payment receipt, invitation creation,
+acceptance recording, refund receipt, revoke and reconciliation now dispatch
+business-input commands. Each SQL owner obtains its own `writeDb$`; the Clerk
+webhook dispatcher, invitation route, Stripe dispatcher and reconciliation
+caller no longer forward a database into this graph. The duplicated get-started
+acceptance helper is removed in favor of the existing owned acceptance command.
+The remaining invitation-creation/reward-link writes are owned commands too.
+
+Activation directly executes at most two ordinary-value grant SQL statements
+under the wallet owner. Each statement checks immutable grant/payment identity
+and preserves the original remaining amount on replay. Purchased grants and
+their real PaymentIntent refund sources commit with allocation and purchase
+activation; bonus grants keep their existing independent key. No grant/refund
+helper receives the transaction. Refund completion keeps its attempt predicate.
+
+Reconciliation pages candidate IDs in batches of 100, with provider work between
+queries and outside every pagination transaction. Expired unpaid purchases are
+also retired in batches of 100. Their final update still requires the pending
+state and expiry, so a concurrently committed payment cannot be overwritten by
+an earlier expiry read.
+
+A common finite admission check now covers the existing Plan-change,
+standalone allocation-change and invitation activation/refund business rows.
+After owning the real subscription parent, confirmation excludes another
+`applying`/`pending_payment` Plan or allocation change, or
+`activating`/`refunding` invitation. Invitation activation/refund uses the same
+check before committing its existing active state. An operation excludes only
+its own row; a stored completed response remains readable while another change
+is active. A preview is not a general lock, and no synthetic operation record,
+new state field or lease is introduced. Existing advisory acquisitions remain
+for incompatible writers and the unfinished remote projection graph.
+
+The API regressions construct a paid subscription and invitation through
+Checkout, purchase and webhook routes. Both standalone and grouped Plan/package
+confirmation keep an unfinished payment authoritative while an invitation is
+accepted. The invitation remains unactivated until the original invoice-paid
+webhook completes the change; ordinary Clerk redelivery can then finish it.
+Member credit and management APIs verify the exact paid amounts, no early or
+duplicate grant, both resulting allocations, and the inviter's existing
+100-credit reward. The tests use no internal state or reconciliation route,
+database gate, waiter, trigger or provider-call-count assertion; execution
+remains a PR pipeline check.
+
+This is **partial shared-protocol preparation**, not completion of Release 1.
+`activateAcceptedPurchase$` still passes its transaction to
+`syncUsagePackAllocationProjection`, and
+`removeRefundedInvitationProjection$` still passes one to
+`syncUsagePackAllocationProjectionAfterInvitationRemoval`; both transactions
+still span Stripe. The allocation confirmation's newly owned admission commit
+does not convert its later legacy provider/application helpers. Migration,
+concurrency mutations, ordinary Plan purchase and other shared subscription
+writers do not yet all use this admission/recovery rule. These are unfinished
+implementation, not conditions that outgoing-writer drain alone resolves.
 
 ### Invitation email arbitration
 
@@ -302,15 +359,14 @@ This is a call-chain inventory, not a count of matching type signatures:
   finalization, migration, pending-snapshot, credit-grant and schedule helpers
   still pass databases or transactions. Their remaining Stripe calls, pagination
   and callback ownership must be separated from bounded SQL commits.
-- **Invitation:** transaction propagation to `loadPurchase` and
-  `supersedeCompetingPendingCheckout` is removed from the changed transitions.
-  The latter helper is retired and its conditional arbitration SQL is local.
-  `ensureAcceptedInvitationSnapshot(tx, ...)` is also removed; its recovery
-  insert is local to acceptance. Allocation assignment and activation reject
-  retired or reassigned rows. Remaining propagation includes `lockPurchase`,
-  `lockUsagePackBillingOrg`, projection helpers and
-  `createUsagePackCreditGrant`. Activation and refund projection still hold an
-  outer transaction across Stripe. This is not terminal transaction ownership.
+- **Invitation:** the route/webhook/cron graph now dispatches owned commands.
+  Recovery inserts, purchase/receipt transitions, reward links and grant/refund
+  source SQL execute directly in the command that owns them. `lockPurchase` is
+  replaced by a pure SQL builder, and no grant or get-started helper receives
+  a database. Allocation assignment and activation still reject retired or
+  reassigned rows. Exactly two projection calls in this invitation graph retain
+  transaction propagation and Stripe I/O: activation and refund removal, named
+  above. Those are unfinished ownership and common-protocol implementation.
 
 ## Allocation and Plan preview admission
 

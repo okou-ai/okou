@@ -1,8 +1,8 @@
 import {
-  invalidateGetStartedInvitationClaim,
-  linkGetStartedInvitation,
-  prepareGetStartedInvitation,
-  revokeGetStartedInvitation,
+  invalidateGetStartedInvitationClaim$,
+  linkGetStartedInvitation$,
+  prepareGetStartedInvitation$,
+  revokeGetStartedInvitation$,
 } from "../services/get-started-invitation.service";
 import { command } from "ccstate";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
@@ -35,9 +35,9 @@ import {
   runtimeStatusForEntitlement,
 } from "../services/org-plan-entitlement-read.service";
 import {
-  confirmUsagePackInvitationPurchase,
+  confirmUsagePackInvitationPurchase$,
   createUsagePackInvitationPreview$,
-  revokeUsagePackInvitationPurchase,
+  revokeUsagePackInvitationPurchase$,
   type UsagePackInvitationPurchaseConflictReason,
 } from "../services/usage-pack-invitation-purchase.service";
 import { activeUsagePackBillingContext } from "../services/usage-pack-subscription.service";
@@ -248,10 +248,14 @@ const inviteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 
   // Clerk side effect: sends the invitation email server-side.
   const client = get(clerk$);
-  const rewardClaim = await prepareGetStartedInvitation(set(writeDb$), {
-    orgId: auth.orgId,
-    userId: auth.userId,
-  });
+  const rewardClaim = await set(
+    prepareGetStartedInvitation$,
+    {
+      orgId: auth.orgId,
+      userId: auth.userId,
+    },
+    signal,
+  );
   signal.throwIfAborted();
   const invitationResult = await settle(
     client.organizations.createOrganizationInvitation({
@@ -268,12 +272,16 @@ const inviteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     const conflictReason = clerkOrganizationInvitationConflict(
       invitationResult.error,
     );
-    await invalidateGetStartedInvitationClaim(set(writeDb$), {
-      claimId: rewardClaim.id,
-      reason: conflictReason
-        ? "invitee_unavailable"
-        : "invitation_create_failed",
-    });
+    await set(
+      invalidateGetStartedInvitationClaim$,
+      {
+        claimId: rewardClaim.id,
+        reason: conflictReason
+          ? "invitee_unavailable"
+          : "invitation_create_failed",
+      },
+      signal,
+    );
     signal.throwIfAborted();
     if (conflictReason) {
       return invitationConflictError(conflictReason);
@@ -281,7 +289,7 @@ const inviteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     throw invitationResult.error;
   }
   const invitation = invitationResult.value;
-  await linkGetStartedInvitation(set(writeDb$), rewardClaim.id, invitation.id);
+  await set(linkGetStartedInvitation$, rewardClaim.id, invitation.id, signal);
   signal.throwIfAborted();
 
   return {
@@ -305,9 +313,8 @@ const revokeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
 
   const client = get(clerk$);
-  const result = await revokeUsagePackInvitationPurchase(
-    set(writeDb$),
-    client,
+  const result = await set(
+    revokeUsagePackInvitationPurchase$,
     {
       orgId: auth.orgId,
       invitationId: body.data.invitationId,
@@ -319,10 +326,14 @@ const revokeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return conflict("The invitation has already been accepted");
   }
   if (result.status === "revoked") {
-    await revokeGetStartedInvitation(set(writeDb$), {
-      orgId: auth.orgId,
-      invitationId: body.data.invitationId,
-    });
+    await set(
+      revokeGetStartedInvitation$,
+      {
+        orgId: auth.orgId,
+        invitationId: body.data.invitationId,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     return {
       status: 200 as const,
@@ -336,10 +347,14 @@ const revokeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     invitationId: body.data.invitationId,
   });
   signal.throwIfAborted();
-  await revokeGetStartedInvitation(set(writeDb$), {
-    orgId: auth.orgId,
-    invitationId: body.data.invitationId,
-  });
+  await set(
+    revokeGetStartedInvitation$,
+    {
+      orgId: auth.orgId,
+      invitationId: body.data.invitationId,
+    },
+    signal,
+  );
   signal.throwIfAborted();
 
   return {
@@ -612,9 +627,8 @@ const purchaseConfirmInner$ = command(
       paymentMethod = revalidated.paymentMethod;
     }
     const readSignal = AbortSignal.any([signal, get(requestSignal$)]);
-    const result = await confirmUsagePackInvitationPurchase(
-      set(writeDb$),
-      get(clerk$),
+    const result = await set(
+      confirmUsagePackInvitationPurchase$,
       { orgId: auth.orgId, purchaseId, paymentMethod },
       readSignal,
     );

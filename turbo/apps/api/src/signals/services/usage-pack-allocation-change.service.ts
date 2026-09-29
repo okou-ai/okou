@@ -1,3 +1,4 @@
+import { conflictingUsagePackMutationSql } from "./usage-pack-mutation-admission";
 import {
   grantSubscriptionOwnershipQuery,
   grantWalletOwnershipQuery,
@@ -1655,22 +1656,6 @@ async function previewUsagePackAllocationAdditionForContext(
     currentPeriodEnd: new Date(period.end * 1000),
     prorationTimestamp,
   };
-}
-
-export async function previewUsagePackAllocationAddition(
-  db: Pick<Db, "select">,
-  args: UsagePackAllocationAdditionArgs,
-  signal: AbortSignal,
-): Promise<UsagePackAllocationAdditionChargePreview> {
-  const context = await loadUsagePackChangeContextBySubscriptionId(
-    db,
-    args.usagePackSubscriptionId,
-  );
-  return await previewUsagePackAllocationAdditionForContext(
-    context,
-    args,
-    signal,
-  );
 }
 
 export const previewUsagePackAllocationAddition$ = command(
@@ -4142,10 +4127,7 @@ function existingConfirmationResponse(
   }
 }
 
-async function prepareUsagePackChangeConfirmation(
-  db: Db,
-  args: { readonly orgId: string; readonly changeId: string },
-): Promise<
+type PreparedUsagePackChangeConfirmation =
   | { readonly status: "ready"; readonly change: UsagePackAllocationChangeRow }
   | {
       readonly status: "resuming";
@@ -4157,89 +4139,118 @@ async function prepareUsagePackChangeConfirmation(
     }
   | { readonly status: "not_found" }
   | { readonly status: "expired" }
-  | { readonly status: "conflict" }
-> {
-  const at = nowDate();
-  return await db.transaction(async (tx) => {
-    await lockUsagePackBillingOrg(tx, args.orgId);
-    const [change] = await tx
-      .select()
-      .from(usagePackAllocationChanges)
-      .where(
-        and(
-          eq(usagePackAllocationChanges.id, args.changeId),
-          eq(usagePackAllocationChanges.orgId, args.orgId),
-        ),
-      )
-      .for("update")
-      .limit(1);
-    if (!change) {
-      return { status: "not_found" as const };
-    }
-    if (change.status === "applying") {
-      return { status: "resuming" as const, change };
-    }
-    const existing = existingConfirmationResponse(change);
-    if (existing) {
-      return { status: "existing" as const, response: existing };
-    }
-    if (change.status === "failed") {
-      return { status: "conflict" as const };
-    }
-    if (!change.previewExpiresAt || change.previewExpiresAt <= at) {
-      await tx
+  | { readonly status: "conflict" };
+
+export const prepareUsagePackChangeConfirmation$ = command(
+  async (
+    { set },
+    args: { readonly orgId: string; readonly changeId: string },
+    signal: AbortSignal,
+  ): Promise<PreparedUsagePackChangeConfirmation> => {
+    const db = set(writeDb$);
+    const at = nowDate();
+    const result = await db.transaction(async (tx) => {
+      await tx.execute(usagePackBillingCompatibilityLockSql(args.orgId));
+      await tx.execute(sql`SELECT ${usagePackSubscriptions.id} FROM ${usagePackSubscriptions}
+      JOIN ${usagePackAllocationChanges}
+        ON ${usagePackAllocationChanges.usagePackSubscriptionId} = ${usagePackSubscriptions.id}
+        AND ${usagePackAllocationChanges.orgId} = ${usagePackSubscriptions.orgId}
+      WHERE ${usagePackAllocationChanges.id} = ${args.changeId}
+        AND ${usagePackSubscriptions.orgId} = ${args.orgId}
+      FOR UPDATE OF ${usagePackSubscriptions}`);
+      const [change] = await tx
+        .select()
+        .from(usagePackAllocationChanges)
+        .where(
+          and(
+            eq(usagePackAllocationChanges.id, args.changeId),
+            eq(usagePackAllocationChanges.orgId, args.orgId),
+          ),
+        )
+        .for("update")
+        .limit(1);
+      if (!change) {
+        return { status: "not_found" as const };
+      }
+      const existing = existingConfirmationResponse(change);
+      if (existing) {
+        return { status: "existing" as const, response: existing };
+      }
+      if (change.status === "failed") {
+        return { status: "conflict" as const };
+      }
+      if (
+        (
+          await tx.execute(
+            conflictingUsagePackMutationSql({
+              subscriptionId: change.usagePackSubscriptionId,
+              allocationChangeId: change.id,
+            }),
+          )
+        ).rowCount
+      ) {
+        return { status: "conflict" as const };
+      }
+      if (change.status === "applying") {
+        return { status: "resuming" as const, change };
+      }
+      if (!change.previewExpiresAt || change.previewExpiresAt <= at) {
+        await tx
+          .update(usagePackAllocationChanges)
+          .set({
+            status: "failed",
+            failureReason: "preview_expired",
+            completedAt: at,
+            updatedAt: at,
+          })
+          .where(eq(usagePackAllocationChanges.id, change.id));
+        return { status: "expired" as const };
+      }
+      if (!change.sourceAllocationId) {
+        throw new Error(`Usage pack change ${change.id} has no source`);
+      }
+      const [source] = await tx
+        .select()
+        .from(usagePackAllocations)
+        .where(eq(usagePackAllocations.id, change.sourceAllocationId))
+        .for("update")
+        .limit(1);
+      if (
+        !source ||
+        source.status !== "active" ||
+        source.userId !== change.userId ||
+        source.usagePackUsd !== change.sourceUsagePackUsd ||
+        source.stripePriceId !== change.sourceStripePriceId
+      ) {
+        await tx
+          .update(usagePackAllocationChanges)
+          .set({
+            status: "failed",
+            failureReason: "allocation_changed",
+            completedAt: at,
+            updatedAt: at,
+          })
+          .where(eq(usagePackAllocationChanges.id, change.id));
+        return { status: "conflict" as const };
+      }
+      const [prepared] = await tx
         .update(usagePackAllocationChanges)
-        .set({
-          status: "failed",
-          failureReason: "preview_expired",
-          completedAt: at,
-          updatedAt: at,
-        })
-        .where(eq(usagePackAllocationChanges.id, change.id));
-      return { status: "expired" as const };
-    }
-    if (!change.sourceAllocationId) {
-      throw new Error(`Usage pack change ${change.id} has no source`);
-    }
-    const [source] = await tx
-      .select()
-      .from(usagePackAllocations)
-      .where(eq(usagePackAllocations.id, change.sourceAllocationId))
-      .for("update")
-      .limit(1);
-    if (
-      !source ||
-      source.status !== "active" ||
-      source.userId !== change.userId ||
-      source.usagePackUsd !== change.sourceUsagePackUsd ||
-      source.stripePriceId !== change.sourceStripePriceId
-    ) {
-      await tx
-        .update(usagePackAllocationChanges)
-        .set({
-          status: "failed",
-          failureReason: "allocation_changed",
-          completedAt: at,
-          updatedAt: at,
-        })
-        .where(eq(usagePackAllocationChanges.id, change.id));
-      return { status: "conflict" as const };
-    }
-    const [prepared] = await tx
-      .update(usagePackAllocationChanges)
-      .set({ status: "applying", updatedAt: at })
-      .where(
-        and(
-          eq(usagePackAllocationChanges.id, change.id),
-          eq(usagePackAllocationChanges.status, "previewed"),
-        ),
-      )
-      .returning();
-    return prepared
-      ? { status: "ready" as const, change: prepared }
-      : { status: "conflict" as const };
-  });
-}
+        .set({ status: "applying", updatedAt: at })
+        .where(
+          and(
+            eq(usagePackAllocationChanges.id, change.id),
+            eq(usagePackAllocationChanges.status, "previewed"),
+          ),
+        )
+        .returning();
+      return prepared
+        ? { status: "ready" as const, change: prepared }
+        : { status: "conflict" as const };
+    });
+    signal.throwIfAborted();
+    return result;
+  },
+);
 
 async function confirmUsagePackDowngrade(
   db: Db,
@@ -4490,10 +4501,11 @@ export async function confirmUsagePackAllocationChange(
     readonly orgId: string;
     readonly changeId: string;
     readonly paymentMethod?: BillingPurchasePaymentMethod;
+    readonly prepared: PreparedUsagePackChangeConfirmation;
   },
   signal: AbortSignal,
 ): Promise<UsagePackChangeConfirmResult> {
-  const prepared = await prepareUsagePackChangeConfirmation(db, args);
+  const prepared = args.prepared;
   if (prepared.status === "existing") {
     return { status: "confirmed", response: prepared.response };
   }

@@ -1,4 +1,5 @@
 import { command } from "ccstate";
+import { conflictingUsagePackMutationSql } from "./usage-pack-mutation-admission";
 import { retireMarketingMetadata } from "../../lib/marketing-metadata";
 import type { UsagePackDeferredSchedule } from "@okouai/db/jsonb-contracts/usage-pack-deferred-schedule";
 import type {
@@ -2302,6 +2303,18 @@ const markPreparedChangeApplying$ = command(
         return row.id === args.subscriptionId;
       });
       if (!subscription) {
+        return null;
+      }
+      if (
+        (
+          await tx.execute(
+            conflictingUsagePackMutationSql({
+              subscriptionId: subscription.id,
+              planChangeId: args.changeId,
+            }),
+          )
+        ).rowCount
+      ) {
         return null;
       }
       const [root] = await tx

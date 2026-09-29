@@ -10,7 +10,7 @@ import { nowDate } from "../../lib/time";
 import { request$ } from "../context/hono";
 import { type ClerkWebhookEvent, verifyClerkWebhook } from "../external/clerk";
 import { waitUntil } from "../context/wait-until";
-import { type Db, writeDb$ } from "../external/db";
+import { writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import { settle, tapError } from "../utils";
 import { ensureOrgLimitedFreeBootstrap$ } from "../services/org-limited-free-bootstrap.service";
@@ -25,7 +25,7 @@ import {
   enqueueClerkUserDeletion$,
   executeClerkUserDeletionWork$,
 } from "../services/clerk-user-deletion-job.service";
-import { handleUsagePackInvitationAccepted } from "../services/usage-pack-invitation-purchase.service";
+import { handleUsagePackInvitationAccepted$ } from "../services/usage-pack-invitation-purchase.service";
 import { recordMorningBriefMembership$ } from "../services/morning-brief-enrollment-data.service";
 import {
   ensureMorningBriefDefaultEnabled$,
@@ -291,136 +291,123 @@ interface UsagePackInvitationAcceptanceIdentity {
   readonly purchaseId?: string;
 }
 
-function enqueueUsagePackInvitationAcceptance(
-  eventType:
-    | "organizationInvitation.accepted"
-    | "organizationMembership.created",
-  identity: UsagePackInvitationAcceptanceIdentity,
-  db: Db,
-  signal: AbortSignal,
-): void {
-  waitUntil(
-    tapError(
-      handleUsagePackInvitationAccepted(db, identity, signal),
-      (error) => {
-        L.error(`${eventType} activation failed`, {
-          orgId: identity.orgId,
-          invitationId: identity.invitationId,
-          purchaseId: identity.purchaseId,
-          userId: identity.userId,
-          error,
-        });
-      },
-    ),
-  );
-}
-
-function enqueueUsagePackMembershipAcceptance(
-  identity: NonNullable<ReturnType<typeof organizationMembershipIdentity>>,
-  purchaseId: string,
-  db: Db,
-  signal: AbortSignal,
-): void {
-  if (!identity.createdAt) {
-    L.error(
-      "organizationMembership.created paid invitation missing creation time",
-      {
-        orgId: identity.orgId,
-        userId: identity.userId,
-        purchaseId,
-      },
+const enqueueUsagePackInvitationAcceptance$ = command(
+  (
+    { set },
+    eventType:
+      | "organizationInvitation.accepted"
+      | "organizationMembership.created",
+    identity: UsagePackInvitationAcceptanceIdentity,
+    signal: AbortSignal,
+  ): void => {
+    waitUntil(
+      tapError(
+        set(handleUsagePackInvitationAccepted$, identity, signal),
+        (error) => {
+          L.error(`${eventType} activation failed`, {
+            orgId: identity.orgId,
+            invitationId: identity.invitationId,
+            purchaseId: identity.purchaseId,
+            userId: identity.userId,
+            error,
+          });
+        },
+      ),
     );
-    return;
-  }
-  enqueueUsagePackInvitationAcceptance(
-    "organizationMembership.created",
-    {
-      orgId: identity.orgId,
-      userId: identity.userId,
-      acceptedAt: identity.createdAt,
-      purchaseId,
-    },
-    db,
-    signal,
-  );
-}
+  },
+);
 
-function handleOrganizationInvitationAcceptedWebhook(
-  data: unknown,
-  db: Db,
-  signal: AbortSignal,
-): Response {
-  const identity = organizationInvitationAcceptedIdentity(data);
-  if (!identity) {
-    L.error("organizationInvitation.accepted event missing identity", { data });
-    return new Response("OK", { status: 200 });
-  }
-  enqueueUsagePackInvitationAcceptance(
-    "organizationInvitation.accepted",
-    identity,
-    db,
-    signal,
-  );
-  return new Response("OK", { status: 200 });
-}
-
-interface OrganizationMembershipSideEffects {
-  readonly bootstrap: (
-    identity: NonNullable<ReturnType<typeof organizationMembershipIdentity>>,
-  ) => void;
-  readonly provisionMorningBrief: (
-    identity: NonNullable<ReturnType<typeof organizationMembershipIdentity>>,
-  ) => Promise<void>;
-  readonly deliverWelcomeThread: (
-    identity: NonNullable<ReturnType<typeof organizationMembershipIdentity>>,
-  ) => void;
-}
-
-async function handleOrganizationMembershipCreatedWebhook(
-  data: unknown,
-  db: Db,
-  signal: AbortSignal,
-  sideEffects: OrganizationMembershipSideEffects,
-): Promise<Response> {
-  const identity = organizationMembershipIdentity(data);
-  if (!identity) {
-    L.error("organizationMembership.created event missing org/user ID", {
-      data,
-    });
-    return new Response("OK", { status: 200 });
-  }
-
-  if (identity.purchaseId) {
-    enqueueUsagePackMembershipAcceptance(
+const handleOrganizationInvitationAcceptedWebhook$ = command(
+  ({ set }, data: unknown, signal: AbortSignal): Response => {
+    const identity = organizationInvitationAcceptedIdentity(data);
+    if (!identity) {
+      L.error("organizationInvitation.accepted event missing identity", {
+        data,
+      });
+      return new Response("OK", { status: 200 });
+    }
+    set(
+      enqueueUsagePackInvitationAcceptance$,
+      "organizationInvitation.accepted",
       identity,
-      identity.purchaseId,
-      db,
       signal,
     );
-  }
-
-  await sideEffects.provisionMorningBrief(identity);
-
-  // Every new member is owed a welcome, so this runs before the admin-only
-  // bootstrap below. An invited member joins a workspace whose default agent
-  // already exists; a creator's own membership usually arrives before that
-  // agent does, and bootstrap completion delivers theirs instead.
-  sideEffects.deliverWelcomeThread(identity);
-
-  if (!isAdminMembershipRole(identity.role)) {
-    if (!identity.purchaseId) {
-      L.debug("ignoring non-admin organizationMembership.created event", {
-        orgId: identity.orgId,
-        userId: identity.userId,
-        role: identity.role,
-      });
-    }
     return new Response("OK", { status: 200 });
-  }
+  },
+);
 
-  sideEffects.bootstrap(identity);
-  return new Response("OK", { status: 200 });
-}
+const handleOrganizationMembershipCreatedWebhook$ = command(
+  async ({ set }, data: unknown, signal: AbortSignal): Promise<Response> => {
+    const identity = organizationMembershipIdentity(data);
+    if (!identity) {
+      L.error("organizationMembership.created event missing org/user ID", {
+        data,
+      });
+      return new Response("OK", { status: 200 });
+    }
+    if (identity.purchaseId) {
+      if (identity.createdAt) {
+        set(
+          enqueueUsagePackInvitationAcceptance$,
+          "organizationMembership.created",
+          {
+            orgId: identity.orgId,
+            userId: identity.userId,
+            acceptedAt: identity.createdAt,
+            purchaseId: identity.purchaseId,
+          },
+          signal,
+        );
+      } else {
+        L.error(
+          "organizationMembership.created paid invitation missing creation time",
+          {
+            orgId: identity.orgId,
+            userId: identity.userId,
+            purchaseId: identity.purchaseId,
+          },
+        );
+      }
+    }
+    await set(enrollMorningBriefMembership$, identity, signal);
+    // Every new member is owed a welcome, including non-admin invited members.
+    enqueueWelcomeThreadDelivery({
+      trigger: "organizationMembership.created",
+      orgId: identity.orgId,
+      userId: identity.userId,
+      task: set(
+        deliverWelcomeChatThread$,
+        { orgId: identity.orgId, userId: identity.userId },
+        signal,
+      ),
+    });
+    if (!isAdminMembershipRole(identity.role)) {
+      if (!identity.purchaseId) {
+        L.debug("ignoring non-admin organizationMembership.created event", {
+          orgId: identity.orgId,
+          userId: identity.userId,
+          role: identity.role,
+        });
+      }
+      return new Response("OK", { status: 200 });
+    }
+    enqueueOrgBootstrap({
+      eventType: "organizationMembership.created",
+      orgId: identity.orgId,
+      userId: identity.userId,
+      task: set(
+        bootstrapOrgAndDeliverWelcome$,
+        {
+          eventType: "organizationMembership.created",
+          orgId: identity.orgId,
+          userId: identity.userId,
+        },
+        signal,
+      ),
+    });
+    return new Response("OK", { status: 200 });
+  },
+);
 
 async function verifiedClerkWebhook(
   request: Request,
@@ -659,9 +646,9 @@ const postClerkWebhook$ = command(
       if (identity) {
         await set(acceptGetStartedInvitation$, identity, signal);
       }
-      return handleOrganizationInvitationAcceptedWebhook(
+      return set(
+        handleOrganizationInvitationAcceptedWebhook$,
         event.data,
-        set(writeDb$),
         signal,
       );
     }
@@ -678,43 +665,10 @@ const postClerkWebhook$ = command(
           signal,
         );
       }
-      return handleOrganizationMembershipCreatedWebhook(
+      return await set(
+        handleOrganizationMembershipCreatedWebhook$,
         event.data,
-        set(writeDb$),
         signal,
-        {
-          bootstrap: (identity) => {
-            enqueueOrgBootstrap({
-              eventType: "organizationMembership.created",
-              orgId: identity.orgId,
-              userId: identity.userId,
-              task: set(
-                bootstrapOrgAndDeliverWelcome$,
-                {
-                  eventType: "organizationMembership.created",
-                  orgId: identity.orgId,
-                  userId: identity.userId,
-                },
-                signal,
-              ),
-            });
-          },
-          provisionMorningBrief: async (identity) => {
-            await set(enrollMorningBriefMembership$, identity, signal);
-          },
-          deliverWelcomeThread: (identity) => {
-            enqueueWelcomeThreadDelivery({
-              trigger: "organizationMembership.created",
-              orgId: identity.orgId,
-              userId: identity.userId,
-              task: set(
-                deliverWelcomeChatThread$,
-                { orgId: identity.orgId, userId: identity.userId },
-                signal,
-              ),
-            });
-          },
-        },
       );
     }
 
