@@ -1171,11 +1171,9 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     await waitForRunSessionId(actor, run2.runId, session1);
   });
 
-  it("ignores unrecognized slash commands instead of enqueuing them as prompts", async () => {
+  it("forwards unrecognized slash commands as agent prompts", async () => {
     const ap = createAgentPhoneBddApi(context);
-    const runs = createRunsApi(context);
-    const { phone, runnerGroup, sends } = await entitledLinkedActor();
-    const before = sends.messages.length;
+    const { phone, runnerGroup } = await entitledLinkedActor();
 
     await ap.postAgentPhoneInboundMessage({
       channel: "imessage",
@@ -1185,10 +1183,8 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       isGroup: false,
     });
 
-    expect(sends.messages).toHaveLength(before);
-    await runs.heartbeatRunner(runnerGroup);
-    const idle = await runs.pollRunner(runnerGroup);
-    expect(idle.body.job).toBeNull();
+    const run = await claimDispatchedRun(runnerGroup);
+    expect(run.prompt).toBe("/unrecognized_command");
   });
 
   it("replies to failed linked iMessage runs", async () => {

@@ -1310,8 +1310,7 @@ const dispatchAgentPhoneCommand$ = command(
         return true;
       }
       default: {
-        // Unknown slash commands are not agent prompts.
-        return true;
+        return false;
       }
     }
   },

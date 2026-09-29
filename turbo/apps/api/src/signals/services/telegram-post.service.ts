@@ -563,6 +563,18 @@ function isTelegramReplyToBotId(
   return replyFrom?.is_bot === true && String(replyFrom.id) === botId;
 }
 
+function isOfficialTelegramCommand(
+  commandName: string | undefined,
+): commandName is string {
+  return (
+    commandName === "help" ||
+    commandName === "connect" ||
+    commandName === "start" ||
+    commandName === "disconnect" ||
+    commandName === "model"
+  );
+}
+
 function parseBotCommand(
   text: string | undefined,
   botUsername: string | null,
@@ -1839,7 +1851,7 @@ const processOfficialWebhookMessage$ = command(
       args.message.text ?? args.message.caption,
       config.botUsername,
     );
-    if (commandName) {
+    if (isOfficialTelegramCommand(commandName)) {
       await set(
         handleOfficialCommand$,
         {

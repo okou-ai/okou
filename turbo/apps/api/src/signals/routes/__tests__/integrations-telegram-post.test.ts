@@ -1139,6 +1139,12 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     });
   });
 
+  it("forwards unrecognized Telegram DM slash inputs to the agent", async () => {
+    const dm = await prepareTelegramDm();
+    const forwarded = await dm.completeDm("/unrecognized_command", 3511);
+    expect(forwarded.chatThread.id).toBe(dm.main.chatThread.id);
+  });
+
   async function runCanonicalTelegramForumScenario(
     phase: "callback" | "reply-chain" | "fresh-chain",
   ) {
