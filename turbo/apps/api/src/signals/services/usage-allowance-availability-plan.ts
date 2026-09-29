@@ -29,9 +29,9 @@ interface AllowanceAvailabilityRow {
     readonly weeklyWindowUnits: number;
   };
   readonly window: {
-    readonly kind: string;
-    readonly unitLimit: number;
-    readonly consumedUnits: number;
+    readonly kind: string | null;
+    readonly unitLimit: number | null;
+    readonly consumedUnits: number | null;
   } | null;
 }
 export interface AllowanceAvailability {
@@ -39,11 +39,14 @@ export interface AllowanceAvailability {
   readonly shortRemainingUnits: number;
   readonly weeklyRemainingUnits: number;
 }
-function remainingUnits(window: {
-  readonly unitLimit: number;
-  readonly consumedUnits: number;
-}) {
-  return Math.max(0, window.unitLimit - window.consumedUnits);
+function remainingUnits(
+  window: AllowanceAvailabilityRow["window"] | undefined,
+) {
+  return window?.unitLimit === null ||
+    window?.unitLimit === undefined ||
+    window.consumedUnits === null
+    ? undefined
+    : Math.max(0, window.unitLimit - window.consumedUnits);
 }
 export function allowanceAvailabilityQuery(orgId: string, at: Date) {
   return new QueryBuilder()
@@ -119,12 +122,10 @@ export function allowanceAvailability(
   const weeklyWindow = rows.find((row) => {
     return row.window?.kind === "weekly";
   })?.window;
-  const shortRemainingUnits = shortWindow
-    ? remainingUnits(shortWindow)
-    : entitlement.shortWindowUnits;
-  const weeklyRemainingUnits = weeklyWindow
-    ? remainingUnits(weeklyWindow)
-    : entitlement.weeklyWindowUnits;
+  const shortRemainingUnits =
+    remainingUnits(shortWindow) ?? entitlement.shortWindowUnits;
+  const weeklyRemainingUnits =
+    remainingUnits(weeklyWindow) ?? entitlement.weeklyWindowUnits;
   return {
     shortRemainingUnits,
     weeklyRemainingUnits,

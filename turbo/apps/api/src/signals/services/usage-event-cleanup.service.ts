@@ -53,6 +53,8 @@ export const deleteUsageData$ = command(
     const db = set(writeDb$);
     await db.transaction(async (tx) => {
       await tx.execute(usageEventCompactionLockSql());
+      const [jobs, ...targets] = usageCleanupTargets(args);
+      await tx.delete(jobs.table).where(jobs.condition);
       // Entitlement ownership precedes ledger rows, matching settlement. A user
       // cleanup leaves the shared organization's entitlement intact.
       if (args.scope === "organization") {
