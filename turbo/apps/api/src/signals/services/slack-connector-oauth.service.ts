@@ -9,6 +9,7 @@ import {
   resolveConnectorAuthClient,
 } from "@okouai/connectors/connector-auth-method";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
+import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
 
 import { env, optionalEnv } from "../../lib/env";
 import { nowDate } from "../../lib/time";

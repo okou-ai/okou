@@ -31,10 +31,9 @@ export type SlackWorkspaceConnectionResult =
 export function slackWorkspaceAdmission(
   args: SlackWorkspaceConnection,
   installation: Installation | undefined,
-): Extract<
-  SlackWorkspaceConnectionResult,
-  { readonly message: string }
-> | null {
+):
+  | Extract<SlackWorkspaceConnectionResult, { readonly message: string }>
+  | { readonly kind: "allowed"; readonly installation: Installation } {
   if (!installation) {
     return {
       kind: "not_found",
