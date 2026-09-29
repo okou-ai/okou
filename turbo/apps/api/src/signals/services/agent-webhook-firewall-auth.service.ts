@@ -586,6 +586,7 @@ interface RefreshState {
   readonly reconnectReason: string | null;
   readonly lastRefreshErrorCode: string | null;
   readonly updatedAtMicros: bigint;
+  readonly rowVersion: string;
 }
 
 interface RefreshStateRow {
@@ -597,6 +598,7 @@ interface RefreshStateRow {
   readonly reconnectReason: string | null;
   readonly lastRefreshErrorCode: string | null;
   readonly updatedAtMicros: bigint;
+  readonly rowVersion: string;
 }
 
 interface ValidatedRefreshOutput {
@@ -2237,6 +2239,9 @@ async function loadModelProviderRefreshStateRow(
         connectorId: sql`NULL`.mapWith(pgNullDecoder),
         storageVersion: sql`NULL`.mapWith(pgNullDecoder),
         tokenExpiresAt: modelProviderAccounts.tokenExpiresAt,
+        rowVersion: sql`${modelProviderAccounts}.xmin::text`.mapWith(
+          pgTextDecoder,
+        ),
         needsReconnect: modelProviderAccounts.needsReconnect,
         lastRefreshErrorCode: modelProviderAccounts.lastRefreshErrorCode,
         reconnectReason: sql`NULL`.mapWith(pgNullDecoder),
@@ -2270,6 +2275,7 @@ async function loadModelProviderRefreshStateRow(
       connectorId: sql`NULL`.mapWith(pgNullDecoder),
       storageVersion: sql`NULL`.mapWith(pgNullDecoder),
       tokenExpiresAt: modelProviders.tokenExpiresAt,
+      rowVersion: sql`${modelProviders}.xmin::text`.mapWith(pgTextDecoder),
       needsReconnect: modelProviders.needsReconnect,
       lastRefreshErrorCode: modelProviders.lastRefreshErrorCode,
       reconnectReason: sql`NULL`.mapWith(pgNullDecoder),
@@ -2315,6 +2321,7 @@ async function loadConnectorRefreshStateRow(
       connectorId: connectors.id,
       storageVersion: connectors.storageVersion,
       tokenExpiresAt: connectors.tokenExpiresAt,
+      rowVersion: sql`${connectors}.xmin::text`.mapWith(pgTextDecoder),
       needsReconnect: connectors.needsReconnect,
       lastRefreshErrorCode: sql`NULL`.mapWith(pgNullDecoder),
       reconnectReason: connectors.reconnectReason,
@@ -2413,6 +2420,7 @@ async function loadRefreshState(
     lastRefreshErrorCode: row.lastRefreshErrorCode,
     reconnectReason: row.reconnectReason,
     updatedAtMicros: row.updatedAtMicros,
+    rowVersion: row.rowVersion,
   };
 }
 
@@ -2481,26 +2489,20 @@ async function markRefreshSuccess(
   args: RefreshAccessTokenArgs,
   prepared: PreparedRefreshTokenContext,
   context: RefreshTokenContext,
+  expected: RefreshState,
   outputs: readonly ValidatedRefreshOutput[],
   refresh: {
     readonly expiresIn?: number;
     readonly scopes?: readonly string[];
   },
-): Promise<Record<string, string>> {
-  const returnedSecretValues = await persistRefreshOutputValues(
-    args,
-    prepared,
-    context,
-    outputs,
-  );
-
+): Promise<Record<string, string> | null> {
   const expiresAt = new Date(
     nowDate().getTime() +
       (refresh.expiresIn ?? DEFAULT_ACCESS_TOKEN_EXPIRES_IN_SECS) * 1000,
   );
   if (prepared.sourceType === "model-provider") {
     if (args.sourceId) {
-      await args.db
+      const [claimed] = await args.db
         .update(modelProviderAccounts)
         .set({
           tokenExpiresAt: expiresAt,
@@ -2513,60 +2515,86 @@ async function markRefreshSuccess(
             eq(modelProviderAccounts.id, args.sourceId),
             eq(modelProviderAccounts.orgId, args.orgId),
             eq(modelProviderAccounts.userId, context.secretUserId),
+            sql`${modelProviderAccounts}.xmin::text = ${expected.rowVersion}`,
+            sql`(EXTRACT(EPOCH FROM ${modelProviderAccounts.updatedAt}) * 1000000)::bigint = ${expected.updatedAtMicros}`,
           ),
-        );
-      return Object.fromEntries(returnedSecretValues);
+        )
+        .returning({ id: modelProviderAccounts.id });
+      if (!claimed) {
+        return null;
+      }
+    } else {
+      const [claimed] = await args.db
+        .update(modelProviders)
+        .set({
+          tokenExpiresAt: expiresAt,
+          needsReconnect: false,
+          lastRefreshErrorCode: null,
+          updatedAt: sql`clock_timestamp()`,
+        })
+        .where(
+          and(
+            eq(modelProviders.orgId, args.orgId),
+            eq(modelProviders.userId, context.secretUserId),
+            eq(
+              modelProviders.type,
+              requiredModelProviderMetadataKey({
+                providerKey: args.accessSourceKey,
+                metadataKey: args.metadataKey,
+              }),
+            ),
+            sql`${modelProviders}.xmin::text = ${expected.rowVersion}`,
+            sql`(EXTRACT(EPOCH FROM ${modelProviders.updatedAt}) * 1000000)::bigint = ${expected.updatedAtMicros}`,
+          ),
+        )
+        .returning({ id: modelProviders.id });
+      if (!claimed) {
+        return null;
+      }
     }
-    await args.db
-      .update(modelProviders)
+  } else {
+    const [claimed] = await args.db
+      .update(connectors)
       .set({
+        ...(refresh.scopes === undefined
+          ? {}
+          : { oauthGrantedScopes: JSON.stringify(refresh.scopes) }),
         tokenExpiresAt: expiresAt,
+        storageVersion: prepared.runtimeMethod.method.storage.version,
         needsReconnect: false,
-        lastRefreshErrorCode: null,
+        reconnectReason: null,
         updatedAt: sql`clock_timestamp()`,
       })
       .where(
         and(
-          eq(modelProviders.orgId, args.orgId),
-          eq(modelProviders.userId, context.secretUserId),
-          eq(
-            modelProviders.type,
-            requiredModelProviderMetadataKey({
-              providerKey: args.accessSourceKey,
-              metadataKey: args.metadataKey,
-            }),
-          ),
+          eq(connectors.id, prepared.connectorId),
+          eq(connectors.orgId, args.orgId),
+          eq(connectors.userId, args.userId),
+          eq(connectors.connectorSlug, prepared.connectorSlug),
+          sql`${connectors}.xmin::text = ${expected.rowVersion}`,
+          sql`(EXTRACT(EPOCH FROM ${connectors.updatedAt}) * 1000000)::bigint = ${expected.updatedAtMicros}`,
         ),
-      );
-    return Object.fromEntries(returnedSecretValues);
+      )
+      .returning({ id: connectors.id });
+    if (!claimed) {
+      return null;
+    }
   }
-
-  await args.db
-    .update(connectors)
-    .set({
-      ...(refresh.scopes === undefined
-        ? {}
-        : { oauthGrantedScopes: JSON.stringify(refresh.scopes) }),
-      tokenExpiresAt: expiresAt,
-      storageVersion: prepared.runtimeMethod.method.storage.version,
-      needsReconnect: false,
-      reconnectReason: null,
-      updatedAt: sql`clock_timestamp()`,
-    })
-    .where(
-      and(
-        eq(connectors.id, prepared.connectorId),
-        eq(connectors.orgId, args.orgId),
-        eq(connectors.userId, args.userId),
-        eq(connectors.connectorSlug, prepared.connectorSlug),
-      ),
-    );
+  // The exact owner row is the publication decision. All credential outputs
+  // commit in this same transaction only after its prior state still matches.
+  const returnedSecretValues = await persistRefreshOutputValues(
+    args,
+    prepared,
+    context,
+    outputs,
+  );
   return Object.fromEntries(returnedSecretValues);
 }
 
 async function markRefreshFailure(
   args: RefreshAccessTokenArgs,
   context: RefreshTokenContext,
+  expected: RefreshState,
   errorCode: string | null,
   failureReason: FirewallAuthFailureReason | undefined,
   connectorReconnectReason: ConnectorReconnectReason | null,
@@ -2589,6 +2617,8 @@ async function markRefreshFailure(
             eq(modelProviderAccounts.id, args.sourceId),
             eq(modelProviderAccounts.orgId, args.orgId),
             eq(modelProviderAccounts.userId, context.secretUserId),
+            sql`${modelProviderAccounts}.xmin::text = ${expected.rowVersion}`,
+            sql`(EXTRACT(EPOCH FROM ${modelProviderAccounts.updatedAt}) * 1000000)::bigint = ${expected.updatedAtMicros}`,
           ),
         );
       return;
@@ -2600,6 +2630,8 @@ async function markRefreshFailure(
         and(
           eq(modelProviders.orgId, args.orgId),
           eq(modelProviders.userId, context.secretUserId),
+          sql`${modelProviders}.xmin::text = ${expected.rowVersion}`,
+          sql`(EXTRACT(EPOCH FROM ${modelProviders.updatedAt}) * 1000000)::bigint = ${expected.updatedAtMicros}`,
           eq(
             modelProviders.type,
             requiredModelProviderMetadataKey({
@@ -2635,6 +2667,8 @@ async function markRefreshFailure(
         eq(connectors.userId, args.userId),
         eq(connectors.id, connectorId),
         eq(connectors.connectorSlug, connectorSlug),
+        sql`${connectors}.xmin::text = ${expected.rowVersion}`,
+        sql`(EXTRACT(EPOCH FROM ${connectors.updatedAt}) * 1000000)::bigint = ${expected.updatedAtMicros}`,
       ),
     );
 }
@@ -2642,8 +2676,16 @@ async function markRefreshFailure(
 async function markRefreshTokenMissing(
   args: RefreshAccessTokenArgs,
   context: RefreshTokenContext,
+  expected: RefreshState,
 ): Promise<RefreshAccessTokenResult> {
-  await markRefreshFailure(args, context, null, "reconnect_required", null);
+  await markRefreshFailure(
+    args,
+    context,
+    expected,
+    null,
+    "reconnect_required",
+    null,
+  );
   return refreshTokenMissingResult();
 }
 
@@ -2653,6 +2695,7 @@ async function markRefreshTokenMissing(
 async function markAndReturnRefreshFailure(
   args: RefreshAccessTokenArgs,
   context: RefreshTokenContext,
+  expected: RefreshState,
   error: unknown,
   signal: AbortSignal,
   retry: {
@@ -2672,6 +2715,7 @@ async function markAndReturnRefreshFailure(
     await markRefreshFailure(
       args,
       context,
+      expected,
       "invalid_grant",
       "reconnect_required",
       "credential_expired",
@@ -2694,6 +2738,7 @@ async function markAndReturnRefreshFailure(
   await markRefreshFailure(
     args,
     context,
+    expected,
     errorCode,
     failureReason,
     connectorReconnectReasonFromRefreshFailure(error, failureReason),
@@ -2979,7 +3024,11 @@ async function refreshLockedAccessToken(args: {
   }
 
   if (missingRefreshInputNames(lockedState).length > 0) {
-    return markRefreshTokenMissing(args.refreshArgs, args.prepared.context);
+    return markRefreshTokenMissing(
+      args.refreshArgs,
+      args.prepared.context,
+      lockedState,
+    );
   }
 
   return refreshPreparedLockedAccessToken({
@@ -3032,6 +3081,7 @@ async function refreshPreparedLockedAccessToken(args: {
     return markAndReturnRefreshFailure(
       refreshArgs,
       prepared.context,
+      lockedState,
       refreshResult.error,
       refreshSignal,
       { attempted: retryAttempted, firstProviderStatus },
@@ -3057,6 +3107,7 @@ async function refreshPreparedLockedAccessToken(args: {
     await markRefreshFailure(
       refreshArgs,
       prepared.context,
+      lockedState,
       null,
       "upstream_provider",
       null,
@@ -3068,9 +3119,13 @@ async function refreshPreparedLockedAccessToken(args: {
     refreshArgs,
     prepared,
     prepared.context,
+    lockedState,
     outputValidation.outputs,
     refreshResult.value,
   );
+  if (returnedSecretValues === null) {
+    return sourceMissingResult();
+  }
   if (retryAttempted) {
     L.info("gmail token refresh recovered", {
       accessSourceKey: "gmail",
