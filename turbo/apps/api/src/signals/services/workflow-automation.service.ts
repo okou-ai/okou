@@ -115,11 +115,8 @@ import {
   ensureGoogleMeetTranscriptGeneratedSubscriptionForUser,
   hasEnabledGoogleMeetConsumer,
 } from "./google-meet-automation-event.service";
-import { recordMorningBriefChoice } from "./morning-brief-enrollment-data.service";
-import {
-  applyMorningBriefLogicalChoice,
-  lockMorningBriefNativeScheduleForWrite,
-} from "./morning-brief-native-schedule.service";
+import { persistMorningBriefAutomationToggle$ } from "./morning-brief-automation-toggle.service";
+import { officialAutomationLifecycleCondition } from "./workflow-automation-write-condition";
 import {
   invalidateNotionPendingEventsForAutomation,
   notionConfigWithConnectorId,
@@ -5370,23 +5367,6 @@ function officialAutomationReconfigurationFailure(
     : null;
 }
 
-function officialAutomationLifecycleCondition(automation: AutomationRow) {
-  if (automation.officialBlueprintKey === null) {
-    return eq(workflowAutomations.id, automation.id);
-  }
-  if (automation.officialReconciliationStatus === null) {
-    throw new Error("Official Workflow automation state is incomplete");
-  }
-  return and(
-    eq(workflowAutomations.id, automation.id),
-    eq(workflowAutomations.updatedAt, automation.updatedAt),
-    eq(
-      workflowAutomations.officialReconciliationStatus,
-      automation.officialReconciliationStatus,
-    ),
-  );
-}
-
 async function finalizeEnabledOfficialAutomation(
   db: Db,
   previousAutomation: AutomationRow,
@@ -6093,95 +6073,6 @@ const validateStripeFeature$ = command(
   },
 );
 
-/**
- * Commit a generic Morning Brief automation toggle and its durable logical
- * choice as one write.
- *
- * Every writer follows the same lock order: the caller's member-preference
- * advisory lock (when present), then the native schedule — the owner key while
- * no row exists yet — then the legacy automation, and finally any occurrence
- * read by the choice application. A native owner never receives a new legacy
- * `next_run_at`; rollback restores the future legacy obligation only after its
- * drain commits. Taking the owner key here is what stops a first materialization
- * from publishing the choice this toggle is replacing.
- */
-async function persistMorningBriefAutomationToggle(
-  db: Db,
-  args: {
-    readonly automation: AutomationRow;
-    readonly enabled: boolean;
-    readonly nextRunAt: Date | null;
-    readonly now: Date;
-    readonly inheritedAutonomyBudget?: number;
-    readonly useDurableChoice?: boolean;
-  },
-): Promise<AutomationRow | undefined> {
-  if (
-    args.automation.officialBlueprintKey !==
-      MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY ||
-    args.automation.ownerUserId === null ||
-    args.automation.kind !== "schedule"
-  ) {
-    return undefined;
-  }
-  const owner = {
-    orgId: args.automation.orgId,
-    userId: args.automation.ownerUserId,
-  };
-  return await db.transaction(async (tx) => {
-    const native = await lockMorningBriefNativeScheduleForWrite(tx, owner);
-    const selected =
-      native !== undefined &&
-      native.legacyAutomationId === args.automation.id &&
-      native.legacyWorkflowId === args.automation.workflowId;
-    // Reserved Official materialization is reconciliation, not a user toggle.
-    // It may restore only the durable choice it locks now; a retained identity
-    // captured before a Settings write cannot replay that older choice.
-    const reconciliationOwned = selected && args.useDurableChoice === true;
-    const enabled = reconciliationOwned
-      ? (native?.enabled ?? args.enabled)
-      : args.enabled;
-    if (!reconciliationOwned) {
-      await recordMorningBriefChoice(tx, owner, enabled);
-    }
-    const [row] = await tx
-      .update(workflowAutomations)
-      .set({
-        enabled,
-        nextRunAt:
-          enabled && native !== undefined && native.phase !== "legacy"
-            ? null
-            : enabled
-              ? args.nextRunAt
-              : null,
-        consecutiveFailures: enabled ? 0 : args.automation.consecutiveFailures,
-        updatedAt: args.now,
-        officialIntendedEnabled: enabled,
-        ...(args.inheritedAutonomyBudget === undefined
-          ? {}
-          : { autonomyBudget: args.inheritedAutonomyBudget }),
-      })
-      .where(officialAutomationLifecycleCondition(args.automation))
-      .returning(workflowAutomationColumns());
-    if (row === undefined) {
-      return undefined;
-    }
-    if (selected && native !== undefined) {
-      const applied = await applyMorningBriefLogicalChoice(
-        tx,
-        owner,
-        { enabled, expectedEpoch: native.ownerEpoch },
-        args.now,
-      );
-      if (applied.kind !== "applied") {
-        throw new Error(
-          "Morning Brief choice changed during automation toggle",
-        );
-      }
-    }
-    return row;
-  });
-}
 export const enableWorkflowAutomation$ = command(
   async (
     { set },
@@ -6264,14 +6155,18 @@ export const enableWorkflowAutomation$ = command(
         return failure;
       }
     }
-    const morningBriefRow = await persistMorningBriefAutomationToggle(writeDb, {
-      automation,
-      enabled: true,
-      nextRunAt,
-      now,
-      inheritedAutonomyBudget: args.inheritedAutonomyBudget,
-      useDurableChoice: args.allowReservedOfficialMaterialization === true,
-    });
+    const morningBriefRow = await set(
+      persistMorningBriefAutomationToggle$,
+      {
+        automation,
+        enabled: true,
+        nextRunAt,
+        now,
+        inheritedAutonomyBudget: args.inheritedAutonomyBudget,
+        useDurableChoice: args.allowReservedOfficialMaterialization === true,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     if (morningBriefRow !== undefined) {
       return await finalizeAndPublishEnabledWorkflowAutomation(
@@ -6319,12 +6214,16 @@ export const disableWorkflowAutomation$ = command(
     const now = nowDate();
     const nextRunAt =
       owned.automation.kind === "schedule" ? null : owned.automation.nextRunAt;
-    const morningBriefRow = await persistMorningBriefAutomationToggle(writeDb, {
-      automation: owned.automation,
-      enabled: false,
-      nextRunAt,
-      now,
-    });
+    const morningBriefRow = await set(
+      persistMorningBriefAutomationToggle$,
+      {
+        automation: owned.automation,
+        enabled: false,
+        nextRunAt,
+        now,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     const [ordinaryRow] =
       morningBriefRow === undefined

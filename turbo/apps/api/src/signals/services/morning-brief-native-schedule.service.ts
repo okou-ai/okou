@@ -75,7 +75,7 @@ type MorningBriefMaterializationResult =
       readonly reason: MorningBriefMaterializationRefusal;
     };
 
-function scheduleWhere(owner: MorningBriefMemberIdentity) {
+export function morningBriefScheduleWhere(owner: MorningBriefMemberIdentity) {
   return and(
     eq(morningBriefNativeSchedules.orgId, owner.orgId),
     eq(morningBriefNativeSchedules.userId, owner.userId),
@@ -95,7 +95,7 @@ export async function lockMorningBriefNativeSchedule(
   const [row] = await tx
     .select()
     .from(morningBriefNativeSchedules)
-    .where(scheduleWhere(owner))
+    .where(morningBriefScheduleWhere(owner))
     .limit(1)
     .for("update");
   return row;
@@ -116,14 +116,19 @@ export async function lockMorningBriefNativeSchedule(
  * row in the documented order, and is taken only while the row is absent, so a
  * materialized owner keeps its existing row-lock fence and pays nothing.
  */
+/** The outgoing absent-owner writer does not yet use a common row owner. */
+export function morningBriefNativeOwnerCompatibilitySql(
+  owner: MorningBriefMemberIdentity,
+) {
+  // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
+  return sql`SELECT pg_advisory_xact_lock(hashtextextended('morning-brief-native-owner:' || ${owner.orgId}::text || ':' || ${owner.userId}::text, 0))`;
+}
+
 async function lockAbsentMorningBriefOwnerKey(
   tx: Pick<Tx, "execute">,
   owner: MorningBriefMemberIdentity,
 ): Promise<void> {
-  await tx.execute(
-    // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-    sql`SELECT pg_advisory_xact_lock(hashtextextended('morning-brief-native-owner:' || ${owner.orgId}::text || ':' || ${owner.userId}::text, 0))`,
-  );
+  await tx.execute(morningBriefNativeOwnerCompatibilitySql(owner));
 }
 
 /**
@@ -388,7 +393,7 @@ async function replaceMorningBriefMembershipGeneration(
     })
     .where(
       and(
-        scheduleWhere(owner),
+        morningBriefScheduleWhere(owner),
         eq(morningBriefNativeSchedules.ownerEpoch, existing.ownerEpoch),
         eq(morningBriefNativeSchedules.membershipId, existing.membershipId),
       ),
@@ -634,7 +639,7 @@ export async function prepareMorningBriefLegacyReconciliationMutation(
     .set({ ...schedulePatch, updatedAt: args.at })
     .where(
       and(
-        scheduleWhere(lineage),
+        morningBriefScheduleWhere(lineage),
         eq(morningBriefNativeSchedules.ownerEpoch, schedule.ownerEpoch),
         eq(morningBriefNativeSchedules.phase, schedule.phase),
         eq(morningBriefNativeSchedules.legacyWorkflowId, lineage.workflowId),
@@ -684,7 +689,7 @@ export async function consumeSelectedLegacyMorningBriefObligation(
     })
     .where(
       and(
-        scheduleWhere(lineage),
+        morningBriefScheduleWhere(lineage),
         eq(morningBriefNativeSchedules.ownerEpoch, authority.row.ownerEpoch),
         eq(morningBriefNativeSchedules.phase, "legacy"),
         eq(morningBriefNativeSchedules.enabled, true),
@@ -747,7 +752,7 @@ export async function settleSelectedLegacyMorningBriefObligation(
     })
     .where(
       and(
-        scheduleWhere(lineage),
+        morningBriefScheduleWhere(lineage),
         eq(morningBriefNativeSchedules.ownerEpoch, applied.row.ownerEpoch),
         eq(morningBriefNativeSchedules.phase, "legacy"),
         eq(morningBriefNativeSchedules.legacyWorkflowId, lineage.workflowId),
@@ -781,6 +786,62 @@ export async function settleSelectedLegacyMorningBriefObligation(
  *   obligation or an admitted occurrence that owes its settlement. It is never
  *   left wedged at `next_run_at = NULL` with no owner.
  */
+/** Pure choice calculation shared by local transaction owners. */
+export function morningBriefLogicalChoicePlan(
+  current: MorningBriefNativeScheduleRow,
+  patch: MorningBriefLogicalChoicePatch,
+  inFlight: MorningBriefNativeOccurrenceRow | undefined,
+  legacyInFlight: boolean,
+  at: Date,
+) {
+  const enabled = patch.enabled ?? current.enabled;
+  const cronExpression =
+    patch.cronExpression === undefined
+      ? current.cronExpression
+      : patch.cronExpression;
+  const timezone = patch.timezone ?? current.timezone;
+  const enabledChanged = enabled !== current.enabled;
+  // Replacing the canonical Agent or destination thread replaces the execution
+  // owner's identity, so admitted work must not deliver into the old one.
+  const destinationReplaced =
+    (patch.agentId !== undefined && patch.agentId !== current.agentId) ||
+    (patch.chatThreadId !== undefined &&
+      patch.chatThreadId !== current.chatThreadId);
+  const revokes = enabledChanged || destinationReplaced;
+
+  // Only an enabled-choice change or a destination replacement revokes. A
+  // schedule or timezone edit is deliberately not a revocation.
+  const ownerEpoch = revokes ? current.ownerEpoch + 1 : current.ownerEpoch;
+
+  const { nextRunAt, scheduleOwner } = resolveObligationAfterChoice({
+    current,
+    enabled,
+    cronExpression,
+    timezone,
+    revokes,
+    inFlight,
+    legacyInFlight,
+    at,
+  });
+
+  return {
+    revokes,
+    values: {
+      enabled,
+      cronExpression,
+      timezone,
+      nextRunAt,
+      scheduleOwner,
+      ownerEpoch,
+      ...(patch.chatThreadId === undefined
+        ? {}
+        : { chatThreadId: patch.chatThreadId }),
+      ...(patch.agentId === undefined ? {} : { agentId: patch.agentId }),
+      updatedAt: at,
+    },
+  };
+}
+
 export async function applyMorningBriefLogicalChoice(
   tx: MorningBriefNativeWriter,
   owner: MorningBriefMemberIdentity,
@@ -798,67 +859,33 @@ export async function applyMorningBriefLogicalChoice(
     return { kind: "stale", row: current };
   }
 
-  const enabled = patch.enabled ?? current.enabled;
-  const cronExpression =
-    patch.cronExpression === undefined
-      ? current.cronExpression
-      : patch.cronExpression;
-  const timezone = patch.timezone ?? current.timezone;
-  const enabledChanged = enabled !== current.enabled;
-  // Replacing the canonical Agent or destination thread replaces the execution
-  // owner's identity, so admitted work must not deliver into the old one.
-  const destinationReplaced =
-    (patch.agentId !== undefined && patch.agentId !== current.agentId) ||
-    (patch.chatThreadId !== undefined &&
-      patch.chatThreadId !== current.chatThreadId);
-  const revokes = enabledChanged || destinationReplaced;
-
   const inFlight = await loadUnsettledOccurrence(tx, owner);
   const legacyInFlight =
     current.phase === "legacy" && current.legacyAutomationId !== null
       ? await hasCurrentUnsettledLegacyClaim(tx, current.legacyAutomationId)
       : false;
 
-  // Only an enabled-choice change or a destination replacement revokes. A
-  // schedule or timezone edit is deliberately not a revocation.
-  const ownerEpoch = revokes ? current.ownerEpoch + 1 : current.ownerEpoch;
-
-  const { nextRunAt, scheduleOwner } = resolveObligationAfterChoice({
+  const plan = morningBriefLogicalChoicePlan(
     current,
-    enabled,
-    cronExpression,
-    timezone,
-    revokes,
+    patch,
     inFlight,
     legacyInFlight,
     at,
-  });
+  );
 
   const [row] = await tx
     .update(morningBriefNativeSchedules)
-    .set({
-      enabled,
-      cronExpression,
-      timezone,
-      nextRunAt,
-      scheduleOwner,
-      ownerEpoch,
-      ...(patch.chatThreadId === undefined
-        ? {}
-        : { chatThreadId: patch.chatThreadId }),
-      ...(patch.agentId === undefined ? {} : { agentId: patch.agentId }),
-      updatedAt: at,
-    })
+    .set(plan.values)
     .where(
       and(
-        scheduleWhere(owner),
+        morningBriefScheduleWhere(owner),
         // The fresh predicate: a compensation that read an older epoch cannot
         // restore that epoch's state over a newer writer.
         eq(morningBriefNativeSchedules.ownerEpoch, current.ownerEpoch),
       ),
     )
     .returning();
-  if (row !== undefined && revokes) {
+  if (row !== undefined && plan.revokes) {
     // Disable/re-enable and destination replacement revoke the old occurrence
     // immediately. A provider call that already escaped may still finish, but
     // its pinned attempt remains only deduplication evidence: it cannot deliver,
@@ -1051,7 +1078,7 @@ export async function revokeMorningBriefNativeAuthority(
     })
     .where(
       and(
-        scheduleWhere(owner),
+        morningBriefScheduleWhere(owner),
         eq(morningBriefNativeSchedules.ownerEpoch, current.ownerEpoch),
       ),
     )
