@@ -4940,16 +4940,8 @@
         },
         "fast": "快速",
         "fastImpact": {
-          "apiCost": "{{multiplier}}×API token成本",
-          "apiSpeed": "模型速度最高{{multiplier}}×",
-          "chatGptUsage": "{{multiplier}}×ChatGPT用量",
-          "compactSummary": "回應更快 · {{multiplier}}× 積分",
-          "fasterResponses": "模型響應更快",
-          "modelSpeed": "{{multiplier}}×模型速度",
-          "okouCredits": "{{multiplier}}×Okou模型積分",
-          "providerSpeed": "速度取決於服務商",
-          "providerUsage": "用量取決於服務商",
-          "summary": "{{speed}} · {{usage}}"
+          "creditCost": "{{multiplier}}× 積分消耗",
+          "providerUsage": "用量取決於服務商"
         },
         "fastMode": "快速模式",
         "generationPriceTiers": {

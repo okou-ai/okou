@@ -5022,16 +5022,8 @@
         },
         "fast": "Rapide",
         "fastImpact": {
-          "apiCost": "{{multiplier}}× le coût des tokens API",
-          "apiSpeed": "Jusqu’à {{multiplier}}× la vitesse du modèle",
-          "chatGptUsage": "{{multiplier}}× la consommation ChatGPT",
-          "compactSummary": "Réponses plus rapides · {{multiplier}}× crédits",
-          "fasterResponses": "Réponses du modèle plus rapides",
-          "modelSpeed": "{{multiplier}}× la vitesse du modèle",
-          "okouCredits": "{{multiplier}}× les crédits de modèle Okou",
-          "providerSpeed": "La vitesse dépend du fournisseur",
-          "providerUsage": "La consommation dépend du fournisseur",
-          "summary": "{{speed}} · {{usage}}"
+          "creditCost": "{{multiplier}}× le coût en crédits",
+          "providerUsage": "La consommation dépend du fournisseur"
         },
         "fastMode": "Mode rapide",
         "generationPriceTiers": {

@@ -412,9 +412,7 @@ test("Switch chat models immediately and adjust Fast from settings", async () =>
     ).not.toBeInTheDocument();
   });
   const settings = await openEffortPanel();
-  expect(
-    within(settings).getByText("Faster responses · 2× credits"),
-  ).toBeVisible();
+  expect(within(settings).getByText("2× credit cost")).toBeInTheDocument();
   click(screen.getByRole("switch", { name: "Fast mode" }));
   await expect(findButton("GPT 5.6 Luna Fast")).resolves.toBeVisible();
   expect(screen.getByRole("switch", { name: "Fast mode" })).toBeChecked();
