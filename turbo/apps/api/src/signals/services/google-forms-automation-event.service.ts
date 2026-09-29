@@ -53,7 +53,8 @@ import {
   type AutomationEventRunTiming,
 } from "./automation-event-source-timing.service";
 import { workflowAutomationCanFire } from "./workflow-automation-access.service";
-import { reprojectGoogleFormsAutomationsForOwner } from "./google-forms-automation-account.service";
+import { connectors } from "@okouai/db/schema/connector";
+import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import type { AutomationRow } from "./workflow-automation-launch.service";
 import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
 import { ensureWorkflowUserAutomationThread } from "./workflow-user-automation-thread.service";
@@ -770,94 +771,159 @@ function watchExpireTime(watch: z.infer<typeof googleFormsWatchSchema>): Date {
   return value;
 }
 
-export async function ensureGoogleFormsWatchForUser(
-  args: {
-    readonly db: Db;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly formId: string;
-    readonly connectorId: string;
-    readonly resetAutomationId?: string;
-    readonly seedCursor?: string;
-    readonly allowStagedOfficialTarget?: boolean;
-  },
-  signal: AbortSignal,
-): Promise<EnsureGoogleFormsWatchResult> {
-  const topicName = optionalEnv("GOOGLE_FORMS_PUBSUB_TOPIC_NAME");
-  if (
-    !topicName ||
-    !optionalEnv("GOOGLE_FORMS_PUBSUB_PUSH_AUDIENCE") ||
-    !optionalEnv("GOOGLE_FORMS_PUBSUB_PUSH_SERVICE_ACCOUNT_EMAIL")
-  ) {
-    return { kind: "bad_request", message: PUBSUB_CONFIGURATION_ERROR };
-  }
-  const access = await resolveGoogleFormsAccess(args, signal);
-  signal.throwIfAborted();
-  if (access.kind !== "ok") {
-    return access;
-  }
-  const hasConsumer = await hasEnabledGoogleFormsConsumer(args, signal);
-  if (!hasConsumer && args.allowStagedOfficialTarget !== true) {
-    return { kind: "ok", watchStateId: null };
-  }
-  const [existing] = await args.db
-    .select()
-    .from(googleFormsWatchStates)
-    .where(
-      and(
-        eq(googleFormsWatchStates.formId, args.formId),
-        eq(googleFormsWatchStates.connectorId, args.connectorId),
-        eq(googleFormsWatchStates.orgId, args.orgId),
-        eq(googleFormsWatchStates.userId, args.userId),
-      ),
-    )
-    .limit(1);
-  const prepared = existing
-    ? null
-    : await createOrAdoptGoogleFormsWatch(
-        {
-          accessToken: access.access.accessToken,
-          formId: args.formId,
-          topicName,
-        },
-        signal,
-      );
-  signal.throwIfAborted();
-  if (prepared?.kind === "error") {
-    return {
-      kind: "bad_request",
-      message: prepared.message.includes("maximum 20")
-        ? prepared.message
-        : "Failed to register Google Forms watch for event automation setup",
-    };
-  }
-  // Cursor seeding can paginate remote responses. Finish it before publication.
-  const cursor =
-    args.resetAutomationId === undefined
+export const ensureGoogleFormsWatchForUser$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly formId: string;
+      readonly connectorId: string;
+      readonly resetAutomationId?: string;
+      readonly seedCursor?: string;
+      readonly allowStagedOfficialTarget?: boolean;
+    },
+    signal: AbortSignal,
+  ): Promise<EnsureGoogleFormsWatchResult> => {
+    const db = set(writeDb$);
+    const topicName = optionalEnv("GOOGLE_FORMS_PUBSUB_TOPIC_NAME");
+    if (
+      !topicName ||
+      !optionalEnv("GOOGLE_FORMS_PUBSUB_PUSH_AUDIENCE") ||
+      !optionalEnv("GOOGLE_FORMS_PUBSUB_PUSH_SERVICE_ACCOUNT_EMAIL")
+    ) {
+      return { kind: "bad_request", message: PUBSUB_CONFIGURATION_ERROR };
+    }
+    const access = await resolveGoogleFormsAccess({ ...args, db }, signal);
+    signal.throwIfAborted();
+    if (access.kind !== "ok") {
+      return access;
+    }
+    const hasConsumer = await hasEnabledGoogleFormsConsumer(
+      { ...args, db },
+      signal,
+    );
+    if (!hasConsumer && args.allowStagedOfficialTarget !== true) {
+      return { kind: "ok", watchStateId: null };
+    }
+    const [existing] = await db
+      .select()
+      .from(googleFormsWatchStates)
+      .where(
+        and(
+          eq(googleFormsWatchStates.formId, args.formId),
+          eq(googleFormsWatchStates.connectorId, args.connectorId),
+          eq(googleFormsWatchStates.orgId, args.orgId),
+          eq(googleFormsWatchStates.userId, args.userId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    const prepared = existing
       ? null
-      : args.seedCursor !== undefined
-        ? { kind: "ok" as const, value: args.seedCursor }
-        : await newestGoogleFormResponseTime(
-            { accessToken: access.access.accessToken, formId: args.formId },
-            signal,
-          );
-  signal.throwIfAborted();
-  if (cursor?.kind === "error") {
-    return {
-      kind: "bad_request",
-      message: "Unable to seed the Google Forms response cursor",
-    };
-  }
-  return await publishGoogleFormsWatch(
-    {
+      : await createOrAdoptGoogleFormsWatch(
+          {
+            accessToken: access.access.accessToken,
+            formId: args.formId,
+            topicName,
+          },
+          signal,
+        );
+    signal.throwIfAborted();
+    if (prepared?.kind === "error") {
+      return {
+        kind: "bad_request",
+        message: prepared.message.includes("maximum 20")
+          ? prepared.message
+          : "Failed to register Google Forms watch for event automation setup",
+      };
+    }
+    // Cursor seeding can paginate remote responses. Finish it before publication.
+    const cursor =
+      args.resetAutomationId === undefined
+        ? null
+        : args.seedCursor !== undefined
+          ? { kind: "ok" as const, value: args.seedCursor }
+          : await newestGoogleFormResponseTime(
+              { accessToken: access.access.accessToken, formId: args.formId },
+              signal,
+            );
+    signal.throwIfAborted();
+    if (cursor?.kind === "error") {
+      return {
+        kind: "bad_request",
+        message: "Unable to seed the Google Forms response cursor",
+      };
+    }
+    const publication = {
       ...args,
       topicName,
       watch: prepared?.kind === "ok" ? prepared.value : null,
       cursor: cursor?.kind === "ok" ? cursor.value : null,
-    },
-    signal,
-  );
+    };
+    const published = await set(publishGoogleFormsWatch$, publication, signal);
+    if (published.kind !== "watch_missing") {
+      return published;
+    }
+    return await set(
+      restoreGoogleFormsWatchForPublication$,
+      {
+        publication,
+        accessToken: access.access.accessToken,
+      },
+      signal,
+    );
+  },
+);
+
+interface GoogleFormsWatchPublication {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly connectorId: string;
+  readonly formId: string;
+  readonly topicName: string;
+  readonly watch: z.infer<typeof googleFormsWatchSchema> | null;
+  readonly cursor: string | null;
+  readonly resetAutomationId?: string;
+  readonly allowStagedOfficialTarget?: boolean;
 }
+
+const restoreGoogleFormsWatchForPublication$ = command(
+  async (
+    { set },
+    args: {
+      readonly publication: GoogleFormsWatchPublication;
+      readonly accessToken: string;
+    },
+    signal: AbortSignal,
+  ): Promise<EnsureGoogleFormsWatchResult> => {
+    // An outgoing stop may delete the state after the initial read. Retain the
+    // captured cursor across remote re-preparation; reading newest again loses data.
+    const replacement = await createOrAdoptGoogleFormsWatch(
+      {
+        accessToken: args.accessToken,
+        formId: args.publication.formId,
+        topicName: args.publication.topicName,
+      },
+      signal,
+    );
+    if (replacement.kind !== "ok") {
+      return {
+        kind: "bad_request",
+        message: "Failed to restore Google Forms watch during setup",
+      };
+    }
+    const restored = await set(
+      publishGoogleFormsWatch$,
+      { ...args.publication, watch: replacement.value },
+      signal,
+    );
+    if (restored.kind === "watch_missing") {
+      throw new Error("Prepared Google Forms watch was not published");
+    }
+    return restored;
+  },
+);
 
 function googleFormsCursorTargetCondition(args: {
   readonly automationId: string;
@@ -888,113 +954,113 @@ function googleFormsCursorTargetCondition(args: {
   );
 }
 
-async function publishGoogleFormsWatch(
-  args: {
-    readonly db: Db;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly connectorId: string;
-    readonly formId: string;
-    readonly topicName: string;
-    readonly watch: z.infer<typeof googleFormsWatchSchema> | null;
-    readonly cursor: string | null;
-    readonly resetAutomationId?: string;
-    readonly allowStagedOfficialTarget?: boolean;
-  },
-  signal: AbortSignal,
-): Promise<EnsureGoogleFormsWatchResult> {
-  return await args.db.transaction(async (tx) => {
-    await lockGoogleFormsLifecycle(tx, args.connectorId, args.formId);
-    signal.throwIfAborted();
-    const [current] = await tx
-      .select()
-      .from(googleFormsWatchStates)
-      .where(
-        and(
-          eq(googleFormsWatchStates.connectorId, args.connectorId),
-          eq(googleFormsWatchStates.formId, args.formId),
-          eq(googleFormsWatchStates.orgId, args.orgId),
-          eq(googleFormsWatchStates.userId, args.userId),
-        ),
-      )
-      .limit(1);
-    let state = current;
-    if (!state && args.watch !== null) {
-      const currentTime = nowDate();
-      const [inserted] = await tx
-        .insert(googleFormsWatchStates)
-        .values({
-          orgId: args.orgId,
-          userId: args.userId,
-          connectorId: args.connectorId,
-          formId: args.formId,
-          watchId: args.watch.id,
-          topicName: args.topicName,
-          expireTime: watchExpireTime(args.watch),
-          lastRenewedAt: currentTime,
-          needsRewatch: false,
-          createdAt: currentTime,
-          updatedAt: currentTime,
-        })
-        .onConflictDoNothing()
-        .returning();
-      // The existing identity is authoritative when another preparer won.
-      const [winner] = inserted
-        ? [inserted]
-        : await tx
-            .select()
-            .from(googleFormsWatchStates)
-            .where(
-              and(
-                eq(googleFormsWatchStates.connectorId, args.connectorId),
-                eq(googleFormsWatchStates.formId, args.formId),
-                eq(googleFormsWatchStates.orgId, args.orgId),
-                eq(googleFormsWatchStates.userId, args.userId),
-              ),
-            )
-            .limit(1);
-      state = winner;
-    }
-    if (!state) {
-      return { kind: "ok", watchStateId: null };
-    }
-    if (args.resetAutomationId !== undefined && args.cursor !== null) {
-      const [automation] = await tx
-        .select({ id: workflowAutomations.id })
-        .from(workflowAutomations)
+const publishGoogleFormsWatch$ = command(
+  async (
+    { set },
+    args: GoogleFormsWatchPublication,
+    signal: AbortSignal,
+  ): Promise<
+    EnsureGoogleFormsWatchResult | { readonly kind: "watch_missing" }
+  > => {
+    const db = set(writeDb$);
+    return await db.transaction(async (tx) => {
+      await lockGoogleFormsLifecycle(tx, args.connectorId, args.formId);
+      signal.throwIfAborted();
+      const [current] = await tx
+        .select()
+        .from(googleFormsWatchStates)
         .where(
-          googleFormsCursorTargetCondition({
-            ...args,
-            automationId: args.resetAutomationId,
-          }),
+          and(
+            eq(googleFormsWatchStates.connectorId, args.connectorId),
+            eq(googleFormsWatchStates.formId, args.formId),
+            eq(googleFormsWatchStates.orgId, args.orgId),
+            eq(googleFormsWatchStates.userId, args.userId),
+          ),
         )
-        .for("update")
+        .for("key share")
         .limit(1);
-      if (!automation) {
-        return { kind: "ok", watchStateId: null };
+      let state = current;
+      if (!state && args.watch !== null) {
+        const currentTime = nowDate();
+        const [inserted] = await tx
+          .insert(googleFormsWatchStates)
+          .values({
+            orgId: args.orgId,
+            userId: args.userId,
+            connectorId: args.connectorId,
+            formId: args.formId,
+            watchId: args.watch.id,
+            topicName: args.topicName,
+            expireTime: watchExpireTime(args.watch),
+            lastRenewedAt: currentTime,
+            needsRewatch: false,
+            createdAt: currentTime,
+            updatedAt: currentTime,
+          })
+          .onConflictDoNothing()
+          .returning();
+        // The existing identity is authoritative when another preparer won.
+        const [winner] = inserted
+          ? [inserted]
+          : await tx
+              .select()
+              .from(googleFormsWatchStates)
+              .where(
+                and(
+                  eq(googleFormsWatchStates.connectorId, args.connectorId),
+                  eq(googleFormsWatchStates.formId, args.formId),
+                  eq(googleFormsWatchStates.orgId, args.orgId),
+                  eq(googleFormsWatchStates.userId, args.userId),
+                ),
+              )
+              .for("key share")
+              .limit(1);
+        state = winner;
       }
-      const currentTime = nowDate();
-      await tx
-        .insert(googleFormsAutomationCursors)
-        .values({
-          automationId: args.resetAutomationId,
-          watchStateId: state.id,
-          lastSeenSubmittedTime: args.cursor,
-          createdAt: currentTime,
-          updatedAt: currentTime,
-        })
-        .onConflictDoUpdate({
-          target: googleFormsAutomationCursors.automationId,
-          set: {
+      if (!state) {
+        if (args.watch !== null) {
+          throw new Error("Prepared Google Forms watch was not published");
+        }
+        return { kind: "watch_missing" };
+      }
+      if (args.resetAutomationId !== undefined && args.cursor !== null) {
+        const [automation] = await tx
+          .select({ id: workflowAutomations.id })
+          .from(workflowAutomations)
+          .where(
+            googleFormsCursorTargetCondition({
+              ...args,
+              automationId: args.resetAutomationId,
+            }),
+          )
+          .for("update")
+          .limit(1);
+        if (!automation) {
+          return { kind: "ok", watchStateId: null };
+        }
+        const currentTime = nowDate();
+        await tx
+          .insert(googleFormsAutomationCursors)
+          .values({
+            automationId: args.resetAutomationId,
             watchStateId: state.id,
             lastSeenSubmittedTime: args.cursor,
+            createdAt: currentTime,
             updatedAt: currentTime,
-          },
-        });
-    }
-    return { kind: "ok", watchStateId: state.id };
-  });
-}
+          })
+          .onConflictDoUpdate({
+            target: googleFormsAutomationCursors.automationId,
+            set: {
+              watchStateId: state.id,
+              lastSeenSubmittedTime: args.cursor,
+              updatedAt: currentTime,
+            },
+          });
+      }
+      return { kind: "ok", watchStateId: state.id };
+    });
+  },
+);
 
 function googleFormsWatchSnapshotCondition(
   state: ObservedGoogleFormsWatchState,
@@ -1021,145 +1087,161 @@ async function markGoogleFormsWatchForRetry(
     .where(googleFormsWatchSnapshotCondition(state));
 }
 
-async function stopGoogleFormsWatchState(
-  args: {
-    readonly db: Db;
-    readonly state: ObservedGoogleFormsWatchState;
-    readonly accessToken: string;
-  },
-  signal: AbortSignal,
-): Promise<GoogleFormsWatchReconcileResult> {
-  const deleted = await deleteGoogleFormsWatch(
-    {
-      accessToken: args.accessToken,
-      formId: args.state.formId,
-      watchId: args.state.watchId,
+const stopGoogleFormsWatchState$ = command(
+  async (
+    { set },
+    args: {
+      readonly state: ObservedGoogleFormsWatchState;
+      readonly accessToken: string;
     },
-    signal,
-  );
-  signal.throwIfAborted();
-  if (deleted.kind !== "ok" && !missingGoogleFormsWatch(deleted)) {
-    await markGoogleFormsWatchForRetry(args.db, args.state);
-    return { kind: "failed" };
-  }
-  return await args.db.transaction(async (tx) => {
-    await lockGoogleFormsLifecycle(
-      tx,
-      args.state.connectorId,
-      args.state.formId,
-    );
-    // A newly enabled consumer keeps its cursor. Reconciliation repairs any
-    // remote gap caused by the completed stop request.
-    const [removed] = await tx
-      .delete(googleFormsWatchStates)
-      .where(
-        and(
-          googleFormsWatchSnapshotCondition(args.state),
-          notExists(
-            tx
-              .select({ id: workflowAutomations.id })
-              .from(workflowAutomations)
-              .where(
-                and(
-                  eq(workflowAutomations.ownerUserId, args.state.userId),
-                  eq(workflowAutomations.orgId, args.state.orgId),
-                  eq(workflowAutomations.enabled, true),
-                  eq(workflowAutomations.kind, "event"),
-                  eq(
-                    workflowAutomations.eventType,
-                    "google-forms-response-submitted",
-                  ),
-                  eq(
-                    workflowAutomations.eventConnectorId,
-                    args.state.connectorId,
-                  ),
-                  sql`${workflowAutomations.eventConfig} ->> 'connectorId' = ${args.state.connectorId}`,
-                  sql`${workflowAutomations.eventConfig} -> 'form' ->> 'id' = ${args.state.formId}`,
-                ),
-              ),
-          ),
-        ),
-      )
-      .returning({ id: googleFormsWatchStates.id });
-    return { kind: removed ? "stopped" : "unchanged" };
-  });
-}
-
-async function reconcileGoogleFormsWatchState(
-  args: {
-    readonly db: Db;
-    readonly state: GoogleFormsWatchStateRow;
-    readonly renewBefore?: Date;
-  },
-  signal: AbortSignal,
-): Promise<GoogleFormsWatchReconcileResult> {
-  const [state] = await args.db
-    .select({
-      ...getTableColumns(googleFormsWatchStates),
-      stateRevision: sql`${googleFormsWatchStates.updatedAt}::text`.mapWith(
-        pgTextDecoder,
-      ),
-    })
-    .from(googleFormsWatchStates)
-    .where(eq(googleFormsWatchStates.id, args.state.id))
-    .limit(1);
-  if (!state) {
-    return { kind: "unchanged" };
-  }
-  const hasConsumer = await hasEnabledGoogleFormsConsumer(
-    { db: args.db, ...state },
-    signal,
-  );
-  const access = await resolveGoogleFormsAccess(
-    { db: args.db, ...state },
-    signal,
-  );
-  signal.throwIfAborted();
-  if (access.kind !== "ok") {
-    await markGoogleFormsWatchForRetry(args.db, state);
-    return { kind: "failed" };
-  }
-  if (!hasConsumer) {
-    return await stopGoogleFormsWatchState(
-      { db: args.db, state, accessToken: access.access.accessToken },
+    signal: AbortSignal,
+  ): Promise<GoogleFormsWatchReconcileResult> => {
+    const db = set(writeDb$);
+    const deleted = await deleteGoogleFormsWatch(
+      {
+        accessToken: args.accessToken,
+        formId: args.state.formId,
+        watchId: args.state.watchId,
+      },
       signal,
     );
-  }
-  if (args.renewBefore === undefined) {
-    return { kind: "unchanged" };
-  }
-  // A successful remote stop followed by a failed/stale local write leaves a
-  // healthy-looking row. Inspect provider authority even before local expiry.
-  const listed = await listGoogleFormsWatches(
-    { accessToken: access.access.accessToken, formId: state.formId },
-    signal,
-  );
-  if (listed.kind !== "ok") {
-    await markGoogleFormsWatchForRetry(args.db, state);
-    return { kind: "failed" };
-  }
-  const remote = listed.value.watches?.find((watch) => {
-    return (
-      watch.id === state.watchId &&
-      watch.target?.topic.topicName === state.topicName
+    signal.throwIfAborted();
+    if (deleted.kind !== "ok" && !missingGoogleFormsWatch(deleted)) {
+      await markGoogleFormsWatchForRetry(db, args.state);
+      signal.throwIfAborted();
+      return { kind: "failed" };
+    }
+    return await db.transaction(async (tx) => {
+      await lockGoogleFormsLifecycle(
+        tx,
+        args.state.connectorId,
+        args.state.formId,
+      );
+      // A newly enabled consumer keeps its cursor. Reconciliation repairs any
+      // remote gap caused by the completed stop request.
+      const [removed] = await tx
+        .delete(googleFormsWatchStates)
+        .where(
+          and(
+            googleFormsWatchSnapshotCondition(args.state),
+            notExists(
+              tx
+                .select({ id: workflowAutomations.id })
+                .from(workflowAutomations)
+                .where(
+                  and(
+                    eq(workflowAutomations.ownerUserId, args.state.userId),
+                    eq(workflowAutomations.orgId, args.state.orgId),
+                    eq(workflowAutomations.enabled, true),
+                    eq(workflowAutomations.kind, "event"),
+                    eq(
+                      workflowAutomations.eventType,
+                      "google-forms-response-submitted",
+                    ),
+                    eq(
+                      workflowAutomations.eventConnectorId,
+                      args.state.connectorId,
+                    ),
+                    sql`${workflowAutomations.eventConfig} ->> 'connectorId' = ${args.state.connectorId}`,
+                    sql`${workflowAutomations.eventConfig} -> 'form' ->> 'id' = ${args.state.formId}`,
+                  ),
+                ),
+            ),
+          ),
+        )
+        .returning({ id: googleFormsWatchStates.id });
+      return { kind: removed ? "stopped" : "unchanged" };
+    });
+  },
+);
+
+const reconcileGoogleFormsWatchState$ = command(
+  async (
+    { set },
+    args: {
+      readonly state: GoogleFormsWatchStateRow;
+      readonly renewBefore?: Date;
+    },
+    signal: AbortSignal,
+  ): Promise<GoogleFormsWatchReconcileResult> => {
+    const db = set(writeDb$);
+    const [state] = await db
+      .select({
+        ...getTableColumns(googleFormsWatchStates),
+        stateRevision: sql`${googleFormsWatchStates.updatedAt}::text`.mapWith(
+          pgTextDecoder,
+        ),
+      })
+      .from(googleFormsWatchStates)
+      .where(eq(googleFormsWatchStates.id, args.state.id))
+      .limit(1);
+    signal.throwIfAborted();
+    if (!state) {
+      return { kind: "unchanged" };
+    }
+    const hasConsumer = await hasEnabledGoogleFormsConsumer(
+      { db, ...state },
+      signal,
     );
-  });
-  const renewalDue =
-    state.needsRewatch ||
-    state.expireTime.getTime() <= args.renewBefore.getTime();
-  if (remote && !renewalDue) {
-    return { kind: "unchanged" };
-  }
-  let renewed = remote
-    ? await renewGoogleFormsWatch(
-        {
-          accessToken: access.access.accessToken,
-          formId: state.formId,
-          watchId: state.watchId,
-        },
+    const access = await resolveGoogleFormsAccess({ db, ...state }, signal);
+    signal.throwIfAborted();
+    if (access.kind !== "ok") {
+      await markGoogleFormsWatchForRetry(db, state);
+      signal.throwIfAborted();
+      return { kind: "failed" };
+    }
+    if (!hasConsumer) {
+      return await set(
+        stopGoogleFormsWatchState$,
+        { state, accessToken: access.access.accessToken },
         signal,
-      )
-    : await createOrAdoptGoogleFormsWatch(
+      );
+    }
+    if (args.renewBefore === undefined) {
+      return { kind: "unchanged" };
+    }
+    // A successful remote stop followed by a failed/stale local write leaves a
+    // healthy-looking row. Inspect provider authority even before local expiry.
+    const listed = await listGoogleFormsWatches(
+      { accessToken: access.access.accessToken, formId: state.formId },
+      signal,
+    );
+    if (listed.kind !== "ok") {
+      await markGoogleFormsWatchForRetry(db, state);
+      signal.throwIfAborted();
+      return { kind: "failed" };
+    }
+    const remote = listed.value.watches?.find((watch) => {
+      return (
+        watch.id === state.watchId &&
+        watch.target?.topic.topicName === state.topicName
+      );
+    });
+    const renewalDue =
+      state.needsRewatch ||
+      state.expireTime.getTime() <= args.renewBefore.getTime();
+    if (remote && !renewalDue) {
+      return { kind: "unchanged" };
+    }
+    let renewed = remote
+      ? await renewGoogleFormsWatch(
+          {
+            accessToken: access.access.accessToken,
+            formId: state.formId,
+            watchId: state.watchId,
+          },
+          signal,
+        )
+      : await createOrAdoptGoogleFormsWatch(
+          {
+            accessToken: access.access.accessToken,
+            formId: state.formId,
+            topicName: state.topicName,
+          },
+          signal,
+        );
+    if (renewed.kind !== "ok" && missingGoogleFormsWatch(renewed)) {
+      renewed = await createOrAdoptGoogleFormsWatch(
         {
           accessToken: access.access.accessToken,
           formId: state.formId,
@@ -1167,174 +1249,297 @@ async function reconcileGoogleFormsWatchState(
         },
         signal,
       );
-  if (renewed.kind !== "ok" && missingGoogleFormsWatch(renewed)) {
-    renewed = await createOrAdoptGoogleFormsWatch(
-      {
-        accessToken: access.access.accessToken,
-        formId: state.formId,
-        topicName: state.topicName,
-      },
-      signal,
-    );
-  }
-  signal.throwIfAborted();
-  if (renewed.kind !== "ok") {
-    await markGoogleFormsWatchForRetry(args.db, state);
-    return { kind: "failed" };
-  }
-  const watch = renewed.value;
-  return await args.db.transaction(async (tx) => {
-    await lockGoogleFormsLifecycle(tx, state.connectorId, state.formId);
-    const currentTime = nowDate();
-    const [updated] = await tx
-      .update(googleFormsWatchStates)
-      .set({
-        watchId: watch.id,
-        expireTime: watchExpireTime(watch),
-        lastRenewedAt: currentTime,
-        needsRewatch: false,
-        updatedAt: sql`clock_timestamp()`,
-      })
-      .where(googleFormsWatchSnapshotCondition(state))
-      .returning({ id: googleFormsWatchStates.id });
-    if (!updated) {
-      return { kind: "unchanged" };
     }
-    return { kind: watch.id === state.watchId ? "renewed" : "created" };
-  });
-}
-
-async function prepareGoogleFormsWatchesForOwner(
-  args: {
-    readonly db: Db;
-    readonly orgId: string;
-    readonly userId: string;
-  },
-  signal: AbortSignal,
-): Promise<boolean> {
-  await args.db.transaction(async (tx) => {
-    await lockConnectorAccountTarget(tx, {
-      orgId: args.orgId,
-      userId: args.userId,
-      target: { kind: "builtin", connectorSlug: "google-forms" },
+    signal.throwIfAborted();
+    if (renewed.kind !== "ok") {
+      await markGoogleFormsWatchForRetry(db, state);
+      signal.throwIfAborted();
+      return { kind: "failed" };
+    }
+    const watch = renewed.value;
+    return await db.transaction(async (tx) => {
+      await lockGoogleFormsLifecycle(tx, state.connectorId, state.formId);
+      const currentTime = nowDate();
+      const [updated] = await tx
+        .update(googleFormsWatchStates)
+        .set({
+          watchId: watch.id,
+          expireTime: watchExpireTime(watch),
+          lastRenewedAt: currentTime,
+          needsRewatch: false,
+          updatedAt: sql`clock_timestamp()`,
+        })
+        .where(googleFormsWatchSnapshotCondition(state))
+        .returning({ id: googleFormsWatchStates.id });
+      if (!updated) {
+        return { kind: "unchanged" };
+      }
+      return { kind: watch.id === state.watchId ? "renewed" : "created" };
     });
-    await reprojectGoogleFormsAutomationsForOwner(tx, args);
-  });
-  signal.throwIfAborted();
-
-  const automations = await args.db
-    .select({
-      id: workflowAutomations.id,
-      eventConfig: workflowAutomations.eventConfig,
-      connectorId: workflowAutomations.eventConnectorId,
-      cursorWatchStateId: googleFormsAutomationCursors.watchStateId,
-      watchConnectorId: googleFormsWatchStates.connectorId,
-      watchFormId: googleFormsWatchStates.formId,
-      watchOrgId: googleFormsWatchStates.orgId,
-      watchUserId: googleFormsWatchStates.userId,
-    })
-    .from(workflowAutomations)
-    .leftJoin(
-      googleFormsAutomationCursors,
-      eq(googleFormsAutomationCursors.automationId, workflowAutomations.id),
-    )
-    .leftJoin(
-      googleFormsWatchStates,
-      eq(googleFormsWatchStates.id, googleFormsAutomationCursors.watchStateId),
-    )
-    .where(
-      and(
-        eq(workflowAutomations.orgId, args.orgId),
-        eq(workflowAutomations.ownerUserId, args.userId),
-        eq(workflowAutomations.enabled, true),
-        eq(workflowAutomations.kind, "event"),
-        eq(workflowAutomations.eventType, "google-forms-response-submitted"),
-      ),
-    );
-  signal.throwIfAborted();
-  let succeeded = true;
-  for (const automation of automations) {
-    const config = googleFormsResponseSubmittedEventConfigSchema.parse(
-      automation.eventConfig,
-    );
-    if (automation.connectorId === null) {
-      continue;
-    }
-    const cursorIsExact =
-      automation.cursorWatchStateId !== null &&
-      automation.watchConnectorId === automation.connectorId &&
-      automation.watchFormId === config.form.id &&
-      automation.watchOrgId === args.orgId &&
-      automation.watchUserId === args.userId &&
-      config.connectorId === automation.connectorId;
-    if (cursorIsExact) {
-      continue;
-    }
-    const ensured = await ensureGoogleFormsWatchForUser(
-      {
-        db: args.db,
-        orgId: args.orgId,
-        userId: args.userId,
-        connectorId: automation.connectorId,
-        formId: config.form.id,
-        resetAutomationId: automation.id,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    succeeded &&= ensured.kind === "ok";
-  }
-  return succeeded;
-}
-
-async function reconcileGoogleFormsWatchesForOwner(
-  args: {
-    readonly db: Db;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly renewBefore?: Date;
   },
-  signal: AbortSignal,
-): Promise<boolean> {
-  let succeeded = await prepareGoogleFormsWatchesForOwner(args, signal);
-  signal.throwIfAborted();
-  const states = await args.db
-    .select()
-    .from(googleFormsWatchStates)
-    .where(
-      and(
-        eq(googleFormsWatchStates.orgId, args.orgId),
-        eq(googleFormsWatchStates.userId, args.userId),
-      ),
-    );
-  signal.throwIfAborted();
-  for (const state of states) {
-    const result = await reconcileGoogleFormsWatchState(
-      {
-        db: args.db,
-        state,
-        ...(args.renewBefore === undefined
-          ? {}
-          : { renewBefore: args.renewBefore }),
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    succeeded &&= result.kind !== "failed";
-  }
-  return succeeded;
+);
+
+function googleFormsProjectionMutation(
+  automation: {
+    readonly eventConfig: unknown;
+    readonly eventConnectorId: string | null;
+  },
+  desiredConnectorId: string | null,
+) {
+  const config = googleFormsResponseSubmittedEventConfigSchema.parse(
+    automation.eventConfig,
+  );
+  const sourceChanged =
+    desiredConnectorId === null ||
+    config.connectorId !== desiredConnectorId ||
+    (automation.eventConnectorId !== null &&
+      automation.eventConnectorId !== desiredConnectorId);
+  const eventConfig =
+    desiredConnectorId === null || config.connectorId === desiredConnectorId
+      ? config
+      : { ...config, connectorId: desiredConnectorId };
+  const changed =
+    automation.eventConnectorId !== desiredConnectorId ||
+    eventConfig.connectorId !== config.connectorId;
+  return { sourceChanged, eventConfig, changed };
 }
 
-export async function reconcileGoogleFormsWatchesForUser(
-  args: {
-    readonly db: Db;
-    readonly orgId: string;
-    readonly userId: string;
+const reprojectGoogleFormsAutomationOwnership$ = command(
+  async (
+    { set },
+    args: { readonly orgId: string; readonly userId: string },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    await db.transaction(async (tx) => {
+      await lockConnectorAccountTarget(tx, {
+        ...args,
+        target: { kind: "builtin", connectorSlug: "google-forms" },
+      });
+      const automations = await tx
+        .select({
+          id: workflowAutomations.id,
+          workflowId: workflowAutomations.workflowId,
+          eventConfig: workflowAutomations.eventConfig,
+          eventConnectorId: workflowAutomations.eventConnectorId,
+        })
+        .from(workflowAutomations)
+        .where(
+          and(
+            eq(workflowAutomations.orgId, args.orgId),
+            eq(workflowAutomations.ownerUserId, args.userId),
+            eq(workflowAutomations.kind, "event"),
+            eq(
+              workflowAutomations.eventType,
+              "google-forms-response-submitted",
+            ),
+          ),
+        )
+        .for("update");
+      for (const automation of automations) {
+        const [selection] = await tx
+          .select({ connectorId: chatThreadConnectorSelections.connectorId })
+          .from(workflowUserAutomationThreads)
+          .innerJoin(
+            chatThreadConnectorSelections,
+            and(
+              eq(
+                chatThreadConnectorSelections.chatThreadId,
+                workflowUserAutomationThreads.chatThreadId,
+              ),
+              eq(chatThreadConnectorSelections.connectorSlug, "google-forms"),
+            ),
+          )
+          .where(
+            and(
+              eq(workflowUserAutomationThreads.orgId, args.orgId),
+              eq(workflowUserAutomationThreads.userId, args.userId),
+              eq(
+                workflowUserAutomationThreads.workflowId,
+                automation.workflowId,
+              ),
+            ),
+          )
+          .limit(1);
+        const [defaultAccount] = selection
+          ? []
+          : await tx
+              .select({ connectorId: connectors.id })
+              .from(connectors)
+              .where(
+                and(
+                  eq(connectors.orgId, args.orgId),
+                  eq(connectors.userId, args.userId),
+                  eq(connectors.connectorSlug, "google-forms"),
+                  eq(connectors.isDefault, true),
+                ),
+              )
+              .limit(1);
+        const desiredConnectorId = selection
+          ? selection.connectorId
+          : (defaultAccount?.connectorId ?? null);
+        const mutation = googleFormsProjectionMutation(
+          automation,
+          desiredConnectorId,
+        );
+        if (mutation.sourceChanged) {
+          await tx
+            .delete(googleFormsAutomationCursors)
+            .where(
+              eq(googleFormsAutomationCursors.automationId, automation.id),
+            );
+        }
+        if (mutation.changed) {
+          await tx
+            .update(workflowAutomations)
+            .set({
+              eventConnectorId: desiredConnectorId,
+              eventConfig: mutation.eventConfig,
+            })
+            .where(eq(workflowAutomations.id, automation.id));
+        }
+      }
+      signal.throwIfAborted();
+    });
+    signal.throwIfAborted();
   },
-  signal: AbortSignal,
-): Promise<boolean> {
-  return await reconcileGoogleFormsWatchesForOwner(args, signal);
-}
+);
+
+const prepareGoogleFormsWatchesForOwner$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const db = set(writeDb$);
+    await set(reprojectGoogleFormsAutomationOwnership$, args, signal);
+    signal.throwIfAborted();
+
+    const automations = await db
+      .select({
+        id: workflowAutomations.id,
+        eventConfig: workflowAutomations.eventConfig,
+        connectorId: workflowAutomations.eventConnectorId,
+        cursorWatchStateId: googleFormsAutomationCursors.watchStateId,
+        watchConnectorId: googleFormsWatchStates.connectorId,
+        watchFormId: googleFormsWatchStates.formId,
+        watchOrgId: googleFormsWatchStates.orgId,
+        watchUserId: googleFormsWatchStates.userId,
+      })
+      .from(workflowAutomations)
+      .leftJoin(
+        googleFormsAutomationCursors,
+        eq(googleFormsAutomationCursors.automationId, workflowAutomations.id),
+      )
+      .leftJoin(
+        googleFormsWatchStates,
+        eq(
+          googleFormsWatchStates.id,
+          googleFormsAutomationCursors.watchStateId,
+        ),
+      )
+      .where(
+        and(
+          eq(workflowAutomations.orgId, args.orgId),
+          eq(workflowAutomations.ownerUserId, args.userId),
+          eq(workflowAutomations.enabled, true),
+          eq(workflowAutomations.kind, "event"),
+          eq(workflowAutomations.eventType, "google-forms-response-submitted"),
+        ),
+      );
+    signal.throwIfAborted();
+    let succeeded = true;
+    for (const automation of automations) {
+      const config = googleFormsResponseSubmittedEventConfigSchema.parse(
+        automation.eventConfig,
+      );
+      if (automation.connectorId === null) {
+        continue;
+      }
+      const cursorIsExact =
+        automation.cursorWatchStateId !== null &&
+        automation.watchConnectorId === automation.connectorId &&
+        automation.watchFormId === config.form.id &&
+        automation.watchOrgId === args.orgId &&
+        automation.watchUserId === args.userId &&
+        config.connectorId === automation.connectorId;
+      if (cursorIsExact) {
+        continue;
+      }
+      const ensured = await set(
+        ensureGoogleFormsWatchForUser$,
+        {
+          orgId: args.orgId,
+          userId: args.userId,
+          connectorId: automation.connectorId,
+          formId: config.form.id,
+          resetAutomationId: automation.id,
+        },
+        signal,
+      );
+      signal.throwIfAborted();
+      succeeded &&= ensured.kind === "ok";
+    }
+    return succeeded;
+  },
+);
+
+const reconcileGoogleFormsWatchesForOwner$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly renewBefore?: Date;
+    },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const db = set(writeDb$);
+    let succeeded = await set(prepareGoogleFormsWatchesForOwner$, args, signal);
+    signal.throwIfAborted();
+    const states = await db
+      .select()
+      .from(googleFormsWatchStates)
+      .where(
+        and(
+          eq(googleFormsWatchStates.orgId, args.orgId),
+          eq(googleFormsWatchStates.userId, args.userId),
+        ),
+      );
+    signal.throwIfAborted();
+    for (const state of states) {
+      const result = await set(
+        reconcileGoogleFormsWatchState$,
+        {
+          state,
+          ...(args.renewBefore === undefined
+            ? {}
+            : { renewBefore: args.renewBefore }),
+        },
+        signal,
+      );
+      signal.throwIfAborted();
+      succeeded &&= result.kind !== "failed";
+    }
+    return succeeded;
+  },
+);
+
+export const reconcileGoogleFormsWatchesForUser$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    return await set(reconcileGoogleFormsWatchesForOwner$, args, signal);
+  },
+);
 
 export interface PendingGoogleFormsWatchStop {
   readonly accessToken: string;
@@ -2175,8 +2380,9 @@ const renewGoogleFormsWatchOwners$ = command(
     let renewed = 0;
     let failed = 0;
     for (const owner of args.owners) {
-      const prepared = await prepareGoogleFormsWatchesForOwner(
-        { db, ...owner },
+      const prepared = await set(
+        prepareGoogleFormsWatchesForOwner$,
+        { ...owner },
         signal,
       );
       signal.throwIfAborted();
@@ -2193,8 +2399,9 @@ const renewGoogleFormsWatchOwners$ = command(
         .orderBy(asc(googleFormsWatchStates.expireTime));
       signal.throwIfAborted();
       for (const state of states) {
-        const result = await reconcileGoogleFormsWatchState(
-          { db, state, renewBefore: args.renewBefore },
+        const result = await set(
+          reconcileGoogleFormsWatchState$,
+          { state, renewBefore: args.renewBefore },
           signal,
         );
         signal.throwIfAborted();
