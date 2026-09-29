@@ -436,6 +436,17 @@ API readers to understand the new discriminators before a type 33 row can be
 stored; a revision that cannot read these rows is not a safe rollback target
 once they exist. This migration does not activate `VncAccess`.
 
+The X509None profile migration `1289_thick_bruce_banner` follows the separate
+1288 grant-table contraction. It allows a null credential only for the exact
+`none` / `x509_none` pair; existing saved rows retain their meaning. Deploy the
+compatible API before the new Runner: an old strict API rejects the new
+Runner's advertised pairs even for legacy connections. Old Runners reject
+X509None rows before KMS. An old App cannot be relied upon to manage the new
+credentialless response, and the old API's credential inner join omits these
+rows. Once one exists, disabling the switch does not make an old API a safe
+rollback target. The exact old/new App, API and Runner matrix and the separate
+1288 deployment gate are in [deployment compatibility](deployment-compatibility.md#vnc-x509none-owner-selected-rollout-default-off).
+
 The configuration API remains unavailable until the feature is explicitly
 enabled; merging this change does not enable it, authorize an out-of-band
 migration, or activate UI or Runner support.
