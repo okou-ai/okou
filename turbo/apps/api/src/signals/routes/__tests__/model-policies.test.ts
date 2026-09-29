@@ -31,6 +31,7 @@ import {
   setOrgMemberRunModelOutsidePolicyFixture,
   setOrgModelPolicyProviderTypeFixture,
   stagePreAddabilityModelPolicyFixture,
+  stageSoleRetiredDefaultPolicyFixture,
 } from "../../../test-fixtures/org-model-policies";
 import {
   withBuiltInModelRuntimeRouteCandidateUnavailableForTest,
@@ -629,6 +630,8 @@ describe("GET/PUT /api/model-policies", () => {
     ["claude-sonnet-4-6", "claude-sonnet-5"],
     ["claude-opus-4-8", "claude-opus-5"],
     ["deepseek-v4-pro", "deepseek-v4.1-flash"],
+    ["okou-1.0-pro", "okou-1.0"],
+    ["okou-1.0-max", "okou-1.0"],
   ] as const)(
     "rejects retired %s policy and preference writes while keeping %s usable",
     async (retiredModel, activeModel) => {
@@ -697,6 +700,105 @@ describe("GET/PUT /api/model-policies", () => {
       expect(successor.body.selectedModel).toBe(activeModel);
     },
   );
+
+  it("omits retired Okou policies while keeping other policy edits usable", async () => {
+    const fixture = seedFixture();
+    useSession(fixture);
+    const client = apiClient();
+    const initial = await accept(
+      client.list({ headers: authHeaders() }),
+      [200],
+    );
+    await stagePreAddabilityModelPolicyFixture({
+      orgId: fixture.orgId,
+      userId: fixture.userId,
+      model: "okou-1.0-pro",
+    });
+    await stagePreAddabilityModelPolicyFixture({
+      orgId: fixture.orgId,
+      userId: fixture.userId,
+      model: "okou-1.0-max",
+    });
+
+    const listed = await accept(client.list({ headers: authHeaders() }), [200]);
+    expect(
+      listed.body.policies.map((policy) => {
+        return policy.model;
+      }),
+    ).toStrictEqual(
+      initial.body.policies.map((policy) => {
+        return policy.model;
+      }),
+    );
+    expect(listed.body.modelsAvailableToAdd).not.toContain("okou-1.0-pro");
+    expect(listed.body.modelsAvailableToAdd).not.toContain("okou-1.0-max");
+
+    const updated = await accept(
+      client.update({
+        headers: authHeaders(),
+        body: {
+          revision: listed.body.revision,
+          policies: toUpdate(listed.body),
+        },
+      }),
+      [200],
+    );
+    expect(
+      updated.body.policies.map((policy) => {
+        return policy.model;
+      }),
+    ).toStrictEqual(
+      listed.body.policies.map((policy) => {
+        return policy.model;
+      }),
+    );
+  });
+
+  it("seeds active policies when only a retired default is stored", async () => {
+    const fixture = seedFixture();
+    useSession(fixture);
+    const client = apiClient();
+    await accept(client.list({ headers: authHeaders() }), [200]);
+    // No current API can create this previously valid persisted state.
+    await stageSoleRetiredDefaultPolicyFixture({
+      orgId: fixture.orgId,
+      userId: fixture.userId,
+      model: "okou-1.0-pro",
+    });
+
+    const listed = await accept(client.list({ headers: authHeaders() }), [200]);
+    expect(listed.body.workspaceDefaultModel).toBe(
+      DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
+    );
+    expect(
+      listed.body.policies.map((policy) => {
+        return policy.model;
+      }),
+    ).toStrictEqual(DEFAULT_ORG_MODEL_POLICY_MODELS);
+    expect(
+      listed.body.policies.filter((policy) => {
+        return policy.isDefault;
+      }),
+    ).toStrictEqual([
+      expect.objectContaining({
+        model: DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
+      }),
+    ]);
+
+    const updated = await accept(
+      client.update({
+        headers: authHeaders(),
+        body: {
+          revision: listed.body.revision,
+          policies: toUpdate(listed.body),
+        },
+      }),
+      [200],
+    );
+    expect(updated.body.workspaceDefaultModel).toBe(
+      DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
+    );
+  });
 
   it("returns 401 for unauthenticated reads and writes", async () => {
     const client = apiClient();

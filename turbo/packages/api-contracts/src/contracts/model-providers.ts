@@ -193,7 +193,7 @@ export interface DefaultOrgModelPolicySeed {
 const SUPPORTED_RUN_MODEL_LABELS: Record<SupportedRunModel, string> = {
   "okou-1.0-max": "Okou 1.0 Max",
   "okou-1.0-pro": "Okou 1.0 Pro",
-  "okou-1.0": "Okou 1.0",
+  "okou-1.0": "Auto",
   "claude-fable-5-1": "Claude Fable 5.1",
   "claude-fable-5": "Claude Fable 5",
   "claude-opus-5-5": "Claude Opus 5.5",
@@ -231,6 +231,8 @@ export function isOkouRunModel(
 }
 
 const RETIRED_RUN_MODELS = [
+  "okou-1.0-max",
+  "okou-1.0-pro",
   "claude-fable-5",
   "claude-opus-4-8",
   "claude-sonnet-4-6",
@@ -413,22 +415,6 @@ export const BUILT_IN_MODEL_TO_PROVIDER = {
       {
         concreteType: "openrouter-api-key",
         apiModel: "anthropic/claude-sonnet-5",
-      },
-    ],
-  },
-  "okou-1.0-max": {
-    candidates: [
-      {
-        concreteType: "openrouter-codex",
-        apiModel: OKOU_MODEL_METADATA["okou-1.0-max"].presetModel,
-      },
-    ],
-  },
-  "okou-1.0-pro": {
-    candidates: [
-      {
-        concreteType: "openrouter-codex",
-        apiModel: OKOU_MODEL_METADATA["okou-1.0-pro"].presetModel,
       },
     ],
   },
@@ -1091,8 +1077,6 @@ export function getModelProviderPresentationLabel(
 }
 
 const MODEL_FIRST_PROVIDER_COMPATIBILITY = {
-  "okou-1.0-max": ["built-in"],
-  "okou-1.0-pro": ["built-in"],
   "okou-1.0": ["built-in"],
   "claude-fable-5-1": [
     "built-in",
@@ -1437,8 +1421,6 @@ const CODEX_MODEL_CATALOG_OVERRIDES: Readonly<
 > = {
   "deepseek-v4.1-flash": DEEPSEEK_V4_1_FLASH_MODEL_CATALOG,
   "okou-1.0": OKOU_MODEL_CODEX_CATALOG,
-  "okou-1.0-pro": OKOU_MODEL_CODEX_CATALOG,
-  "okou-1.0-max": OKOU_MODEL_CODEX_CATALOG,
 };
 
 /**

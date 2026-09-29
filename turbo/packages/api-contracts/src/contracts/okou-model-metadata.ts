@@ -102,7 +102,7 @@ function defineOkouModel(definition: OkouModelDefinition): OkouModelMetadata {
 /** Okou aliases and OpenRouter model facts shared by both runtime projections. */
 export const OKOU_MODEL_METADATA = {
   "okou-1.0": defineOkouModel({
-    displayName: "Okou 1.0",
+    displayName: "Auto",
     backingModel: "gpt-6-luna",
     presetModel: "@preset/okou-1-0",
     reasoningEffort: "max",

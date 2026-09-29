@@ -376,7 +376,7 @@ describe("Pi agent model adapter", () => {
   });
 
   it.each([
-    ["okou-1.0", "@preset/okou-1-0", "Okou 1.0", 0.2, 1.2],
+    ["okou-1.0", "@preset/okou-1-0", "Auto", 0.2, 1.2],
     ["okou-1.0-pro", "@preset/okou-1-0-pro", "Okou 1.0 Pro", 5, 30],
     ["okou-1.0-max", "@preset/okou-1-0-max", "Okou 1.0 Max", 5, 30],
   ] as const)(

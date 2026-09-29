@@ -57,8 +57,6 @@ export type PiModelPolicy =
  * reader vocabulary in `pi-native-models.ts` is separately versioned.
  */
 export const PI_MODEL_POLICY = {
-  "okou-1.0-max": { pi: true, route: "gpt-codex" },
-  "okou-1.0-pro": { pi: true, route: "gpt-codex" },
   "okou-1.0": { pi: true, route: "gpt-codex" },
   "claude-fable-5-1": {
     pi: false,

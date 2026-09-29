@@ -3508,6 +3508,43 @@ describe("MCP chat mutations", () => {
     }
   });
 
+  it("keeps the display fallback when the metadata lookup deadline expires", async () => {
+    const f = await messageFixture();
+    const thread = await f.chat.createThread(f.actor, {
+      agentId: f.agent.agentId,
+    });
+    const metadataUrl =
+      "https://deadline-client.example.test/oauth/client.json";
+    context.mocks.abortSignal.timeout.mockImplementation((milliseconds) => {
+      return milliseconds === 2500
+        ? AbortSignal.abort(new DOMException("Lookup deadline", "TimeoutError"))
+        : undefined;
+    });
+    const token = f.auth.token({
+      client_id: metadataUrl,
+      scope: defaultScopes,
+    });
+    const receipt = await sendMessage(token, {
+      threadId: thread.id,
+      requestId: randomUUID(),
+      text: "Deadline still accepts the input",
+    });
+    await waitForRejectedInput(token, receipt.inputRef);
+    const input = (
+      await f.chat.listThreadEvents(f.actor, thread.id)
+    ).events.find((event) => {
+      return event.id === receipt.inputRef.eventId;
+    });
+    if (input?.eventType !== "input.prompt") {
+      throw new Error("Expected the accepted MCP input");
+    }
+    expect(input.userMessage.parts[1]).toStrictEqual({
+      type: "source",
+      kind: "mcp",
+      clientId: metadataUrl,
+    });
+  });
+
   it("treats UUID letter case as the same submission identity", async () => {
     const f = await messageFixture();
     const thread = await f.chat.createThread(f.actor, {

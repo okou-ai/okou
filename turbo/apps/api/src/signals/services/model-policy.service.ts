@@ -443,11 +443,14 @@ export function shouldReplaceExistingDefaultForPlan(
     "restrictedBuiltInModels" | "supportByok"
   >,
 ): boolean {
-  if (capabilities.supportByok && !capabilities.restrictedBuiltInModels) {
-    return existingDefault === undefined;
-  }
-  if (existingDefault === undefined) {
+  if (
+    existingDefault === undefined ||
+    getRunModelAccess(existingDefault.model) === "retired"
+  ) {
     return true;
+  }
+  if (capabilities.supportByok && !capabilities.restrictedBuiltInModels) {
+    return false;
   }
   const shouldReplaceModel =
     capabilities.restrictedBuiltInModels &&
@@ -565,10 +568,13 @@ async function ensureOrgModelPoliciesLocked(
       };
     }
 
+    const activePolicies = existing.filter((policy) => {
+      return getRunModelAccess(policy.model) === "allowed";
+    });
     const fallbackDefault =
-      existing.find((policy) => {
+      activePolicies.find((policy) => {
         return policy.model === seedDefaultModel;
-      }) ?? sortRowsByCatalog(existing)[0];
+      }) ?? sortRowsByCatalog(activePolicies)[0];
     if (fallbackDefault) {
       await setDefaultModelPolicy(
         db,
@@ -1128,7 +1134,10 @@ async function listOrgModelPolicies(
   const persistedRows = await loadRows(db, orgId, true);
   const rows = sortRowsByCatalog(
     persistedRows.filter((row) => {
-      return parseSupportedModel(row.model);
+      return (
+        parseSupportedModel(row.model) &&
+        getRunModelAccess(row.model) === "allowed"
+      );
     }),
   );
   const modelsAllowedForNewPolicy = await loadModelsAllowedForNewOrgPolicy(db);

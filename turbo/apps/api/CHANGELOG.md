@@ -8,6 +8,45 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.698.0](https://github.com/okou-ai/okou/compare/api-v1.697.0...api-v1.698.0) (2026-09-29)
+
+
+### Features
+
+* retire okou 1.0 pro and max and label base auto ([#37363](https://github.com/okou-ai/okou/issues/37363)) ([bf7c3d6](https://github.com/okou-ai/okou/commit/bf7c3d6bd75218646f5c5b131a138558a26b21d7))
+
+
+### Performance Improvements
+
+* **api:** instrument mcp client display-name lookups ([#37352](https://github.com/okou-ai/okou/issues/37352)) ([3336acf](https://github.com/okou-ai/okou/commit/3336acf38729168ac271124ee5147d8765ad91d7))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.529.0
+    * @okouai/core bumped to 8.722.0
+    * @okouai/db bumped to 1.313.5
+    * @okouai/pi-agent-runtime bumped to 1.43.0
+
+## [1.697.0](https://github.com/okou-ai/okou/compare/api-v1.696.1...api-v1.697.0) (2026-09-29)
+
+
+### Features
+
+* add opt-in claude sonnet 5.5 support ([#37361](https://github.com/okou-ai/okou/issues/37361)) ([7d0ab10](https://github.com/okou-ai/okou/commit/7d0ab10383588e7706a5560a14c5b7af3dde712a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.528.0
+    * @okouai/core bumped to 8.721.0
+    * @okouai/db bumped to 1.313.4
+    * @okouai/pi-agent-runtime bumped to 1.42.0
+
 ## [1.696.1](https://github.com/okou-ai/okou/compare/api-v1.696.0...api-v1.696.1) (2026-09-29)
 
 
