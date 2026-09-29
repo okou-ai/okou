@@ -17,9 +17,10 @@ The initial implementation baseline was main
 `5b458cc9df60ce0c3ffc7e1783ec3d36be9634e1`: 28 production acquisition definitions,
 one catalog fixture acquisition, and one attribution operator acquisition.
 Historical migration SQL is counted separately. The integration branch also
-includes main `ed6b467`, preserving the browser preferences, thread-image
-schema contraction, retired VNC grant cleanup, current generation identity and
-the rule prohibiting new database triggers.
+includes main `bf7c3d6`, preserving browser preferences, thread-image schema
+contraction, retired Agent SSH/VNC grants, current generation identity, the
+Okou Pro/Max retirement and default-policy repair, and the rule prohibiting new
+database triggers.
 
 Browser and custom account preparation from #37097 was verified against live
 production aliases, public API build-info, the configured invocation bound, and
@@ -159,9 +160,11 @@ scope is intentional evidence, not a whole-package completion claim:
 - `ec10bad`: a losing credential refresh returns connection-changed. It cannot
   reuse a replacement authorization merely because the account/method/storage
   identity stayed the same; the existing API rejection assertion is preserved.
-- `7b2e6d3`: usage display writers acquire the existing Run parent before
-  validating hot/archive state, preventing a second initial append after the
-  first writer is archived. This is part of the R1/R2 common protocol.
+- `7b2e6d3` was superseded by the accepted display semantics and `140198c`.
+  Chat amounts now come from a bounded settled-ledger API. Usage events only
+  request refresh; the display advisory key, Run-parent ownership, archive
+  reconciliation, revoke events and deterministic hint IDs are removed.
+  Supported older Apps still receive the established hint payload.
 - `4cd0a46`: the new concurrent VNC rotation test uses valid eight-character
   protocol passwords. Its exact one-success/one-conflict and host-revision
   assertions are preserved.
@@ -271,9 +274,13 @@ the current debit's first-expiring prefix, prepared outside the transaction.
 entitlement evidence back through the same typed conflict. `9bd4453` explicitly
 captures and publishes Social billing attribution in the receipt's owning
 transaction, retaining the job, money and reservation atomicity. The required
-grant/lot prefix can still be large; expired-lot clamping remains one atomic
-operation and is an unfinished bound. Splitting that clamp changes results when
-a purchase interleaves. The event limit alone does not certify a short transaction.
+grant/lot debit prefix can still be large. Expiration now prepares at most 100
+lots outside each normal commit and rechecks the exact selected rows. A larger
+expired cohort retains the old atomic clamp only for the concrete outgoing
+credit-adder interleaving documented in the billing inventory; R1 monetary
+writers must finish or reject remaining expiration before adding credit.
+Legacy inline callers and trial-grant provenance still need implementation.
+The event limit alone does not certify a short transaction.
 
 Individual source branch checks are evidence for those revisions only. The
 combined head must pass its own relevant static checks, types, API tests and
@@ -400,3 +407,39 @@ selection, transfer-integrity and cleanup scenarios. There was no reported
 assertion or endpoint failure identifying a product defect in that case; it is
 not labeled a demonstrated flake. The following combined pipeline must verify
 its test-structure change and every later code change on the same head.
+
+## September 29 continuation status
+
+The two reported billing-checkout failures at `74a09e9` were fixed without
+weakening their API outcomes. Commit `5265d5a` compares the locally observed
+cancellation flag with the actual prepared Stripe state and supplies the
+current invoice-pricing fixture shape. The valid immediate upgrade still
+returns 200; changed quoted inputs still return 409 before mutation. The API
+also verifies unchanged amounts after conflict and a successful fresh quote.
+The complete pipeline at `5265d5a` passed, including all eight API shards, all
+Runner shards, browser smoke, types, lint, formatting and migrations.
+
+Subsequent command-owned slices include Drive and email credentials, multi-auth
+publication, atomic single-secret replacement, bounded personal account upsert,
+activation and exact/all-account disconnection, existing reward/wallet ordering,
+first-paid debt preparation, legacy Plan invoice publication and Morning Brief
+enrollment. Provider cancellation follows the committed legacy Plan receipt;
+redelivery retries cleanup without issuing another grant. These additions do
+not complete the surrounding provider, native schedule or financial graphs.
+
+Pipeline `36556269276` at `ac17a1a` passed all Runner E2E, browser smoke, lint,
+formatting, Knip and migration checks. Its API type failure (readonly expiration
+IDs supplied to Drizzle) is fixed by `7a63c8b`; its API shard 8 Calendar text
+matcher is corrected in `140198c` while preserving the original 400 response
+and source/permission assertions. Cancelled API shards are not passes. The
+combined continuation requires its own pipeline; earlier green revisions are
+not the result for subsequent code.
+
+The principal unfinished Release 1 requirements remain shared Stripe quantity/
+schedule publication and ordinary purchase admission, actual caller-specific
+credential rotation, monetary writer/finite trial provenance, Morning Brief
+latest-choice/native ownership, and the remaining database-handle graph.
+Airtable's verified token-family revocation behavior is a specific open
+implementation and product tradeoff, documented in the credential inventory.
+No field, coordination table, JSON claim, new trigger or third release is used
+to hide these gaps.

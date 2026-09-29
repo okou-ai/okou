@@ -251,9 +251,10 @@ The unshipped `1289_google_forms_cursor_detachment` and
 metadata and the two trigger/function inventory entries. The original non-null
 `ON DELETE CASCADE` cursor/watch relationship remains unchanged. Main `c26098d`
 and the observed production deployment tree `c501c3b7` exclude these PR-only
-migrations; #37313 is still open and unmerged. Existing migration history through
-1287 is untouched. Drizzle regenerates the remaining purge and Cloudflare custom
-migrations without a Forms schema change.
+migrations; #37313 is still open and unmerged. Existing published migration history, including main 1288, is untouched.
+Drizzle generated the remaining purge, Cloudflare scope-change and canonical
+attribution mutation-guard retirements as 1289, 1290 and 1291 respectively,
+without a Forms schema change or added table/column.
 
 Application SQL still checks active authority, selected source and normal
 uniqueness. Late provider preparation cannot revive a disabled or revoked
