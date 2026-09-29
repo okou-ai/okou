@@ -11,6 +11,13 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.984.6](https://github.com/okou-ai/okou/compare/app-v0.984.5...app-v0.984.6) (2026-09-29)
+
+
+### Bug Fixes
+
+* **app:** simplify fast mode credit cost copy ([#37358](https://github.com/okou-ai/okou/issues/37358)) ([ad2e048](https://github.com/okou-ai/okou/commit/ad2e0485102e674ff8fa6e9bed87bf5984c2863e))
+
 ## [0.984.5](https://github.com/okou-ai/okou/compare/app-v0.984.4...app-v0.984.5) (2026-09-29)
 
 

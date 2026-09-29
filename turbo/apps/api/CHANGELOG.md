@@ -8,6 +8,18 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.696.1](https://github.com/okou-ai/okou/compare/api-v1.696.0...api-v1.696.1) (2026-09-29)
+
+
+### Bug Fixes
+
+* **api:** clarify cloud browser and computer use guidance ([#37312](https://github.com/okou-ai/okou/issues/37312)) ([bc3028d](https://github.com/okou-ai/okou/commit/bc3028d1739f067810056f275268ad59eb7465d4))
+
+
+### Refactoring
+
+* **api:** remove legacy store creation ([#37356](https://github.com/okou-ai/okou/issues/37356)) ([ed6b467](https://github.com/okou-ai/okou/commit/ed6b4674ff49672943f1219566e20818c5dfea25))
+
 ## [1.696.0](https://github.com/okou-ai/okou/compare/api-v1.695.3...api-v1.696.0) (2026-09-29)
 
 
