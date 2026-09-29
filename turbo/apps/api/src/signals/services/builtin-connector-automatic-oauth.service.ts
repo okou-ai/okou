@@ -51,6 +51,7 @@ import {
 } from "./crypto.utils";
 import {
   builtinConnectorAutomaticDcrStore,
+  publishBuiltinDcrRegistration$,
   lockBuiltinConnectorAutomaticLifecycle,
   type BuiltinConnectorAutomaticContractOwner,
 } from "./builtin-connector-automatic-dcr.service";
@@ -236,9 +237,6 @@ function dcrStore(db: Db, orgId: string, contract: BuiltinAutomaticContract) {
   return builtinConnectorAutomaticDcrStore({
     db,
     owner: contractOwner(orgId, contract),
-    assertCurrentContract: async () => {
-      await assertCurrentContract(db, contract);
-    },
   });
 }
 
@@ -433,6 +431,49 @@ function builtinAutomaticWakeup(
   };
 }
 
+const prepareBuiltinAutomaticAuthorization$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly contract: BuiltinAutomaticContract;
+      readonly redirectUri: string;
+      readonly state: string;
+      readonly cimdClientId: string;
+      readonly dcrClientMetadata: OAuthClientMetadata;
+    },
+    signal: AbortSignal,
+  ) => {
+    const db = set(writeDb$);
+    const { contract } = args;
+    return await prepareMcpAutomaticOAuthAuthorization(
+      {
+        dcrStore: {
+          ...dcrStore(db, args.orgId, contract),
+          publish: async (value, expectedRegistrationId, publicationSignal) => {
+            await assertCurrentContract(db, contract);
+            return await set(
+              publishBuiltinDcrRegistration$,
+              {
+                owner: contractOwner(args.orgId, contract),
+                value,
+                expectedRegistrationId,
+              },
+              publicationSignal,
+            );
+          },
+        },
+        endpoint: contract.endpoint,
+        redirectUri: args.redirectUri,
+        state: args.state,
+        cimdClientId: args.cimdClientId,
+        dcrClientMetadata: args.dcrClientMetadata,
+      },
+      signal,
+    );
+  },
+);
+
 export const startBuiltinConnectorAutomatic$ = command(
   async (
     { set },
@@ -478,10 +519,11 @@ export const startBuiltinConnectorAutomatic$ = command(
           }
           const reconnectRevision = revision(preflight.mutation);
           const state = generateConnectorOAuthState();
-          const prepared = await prepareMcpAutomaticOAuthAuthorization(
+          const prepared = await set(
+            prepareBuiltinAutomaticAuthorization$,
             {
-              dcrStore: dcrStore(db, args.orgId, contract),
-              endpoint: contract.endpoint,
+              orgId: args.orgId,
+              contract,
               redirectUri: args.redirectUri,
               state,
               cimdClientId: args.cimdClientId,
