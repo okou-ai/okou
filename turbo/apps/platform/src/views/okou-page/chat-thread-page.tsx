@@ -7679,9 +7679,9 @@ function OptimisticSpinner({
   const optimisticEventIds = useGet(optimisticEventIds$, {
     equalityFn: equalSets,
   });
-  const delivery = useLastResolved(thread.deliveryIntents$)?.find(
-    (item) => {return item.clientEventId === eventId},
-  );
+  const delivery = useLastResolved(thread.deliveryIntents$)?.find((item) => {
+    return item.clientEventId === eventId;
+  });
   // The slot repeats the bubble's own padding and line metrics so the spinner
   // centers on the first line of text however many lines the message wraps to.
   // It stays reserved when the message is confirmed, so the bubble never
@@ -7713,7 +7713,9 @@ function MessageDeliveryStatus({
   thread: ChatPanelSignals;
 }) {
   const intents = useLastResolved(thread.deliveryIntents$);
-  const delivery = intents?.find((item) => {return item.clientEventId === eventId});
+  const delivery = intents?.find((item) => {
+    return item.clientEventId === eventId;
+  });
   const optimisticIds = useGet(optimisticEventIds$, { equalityFn: equalSets });
   const [retryState, retry] = useLoadableSet(thread.retryInputDelivery$);
   const signal = useGet(pageSignal$);

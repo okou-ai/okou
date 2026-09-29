@@ -191,6 +191,7 @@ import { createAssistantErrorRecoverySignals } from "./assistant-error-recovery.
 import {
   messageDocumentToPrompt,
   textToMessageDocument,
+  type EditorDocumentSnapshot,
 } from "../okou-page/user-message-document-codec.ts";
 import { locale$ } from "../locale.ts";
 import {
@@ -223,12 +224,15 @@ import {
 import type { ChatForwardContext } from "./chat-forward.ts";
 import {
   deliveryIntentsForThread,
+  markDeliveryIntentUncertain$,
   type ExistingThreadDeliveryIntent,
 } from "./chat-delivery-intents.ts";
 import {
   createComposerConnectorSignals,
   type ComposerConnectorSignals,
 } from "../okou-page/connectors.ts";
+
+import { toast } from "@okouai/ui/components/ui/sonner";
 
 const L = logger("ChatThread");
 
@@ -3111,6 +3115,17 @@ function sendInputForRequest(args: {
   };
 }
 
+function editorStillMatchesSubmission(
+  submitted: SendMessageOptions["editorDocument"],
+  current: EditorDocumentSnapshot | null,
+): boolean {
+  return (
+    submitted === undefined ||
+    JSON.stringify(submitted.toEditorDocument()) ===
+      JSON.stringify(current?.toEditorDocument())
+  );
+}
+
 function createPerformSendMessage(deps: SendMessageDeps) {
   const { threadId, draft, cancelDraftSync$, flushDraftClear$, sendEvent$ } =
     deps;
@@ -3120,9 +3135,11 @@ function createPerformSendMessage(deps: SendMessageDeps) {
       request: ValidatedSendMessageRequest,
       signal: AbortSignal,
     ): Promise<boolean> => {
+      const draftTemplateAtStart = get(draft.generationTemplate$);
+      const attachmentsAtStart = get(draft.attachments$);
       const generationTemplate = generationTemplateForSend(
         request,
-        get(draft.generationTemplate$),
+        draftTemplateAtStart,
       );
       const submissionPrompt = request.prompt;
       const result = await prepareSendMessageResult(
@@ -3165,17 +3182,45 @@ function createPerformSendMessage(deps: SendMessageDeps) {
         return false;
       }
       signal.throwIfAborted();
-      set(cancelDraftSync$);
-      set(draft.clear$);
+      const currentAttachments = get(draft.attachments$);
+      const clearSubmittedDraft =
+        editorStillMatchesSubmission(
+          request.options?.editorDocument,
+          set(draft.readEditorDocument$),
+        ) &&
+        get(draft.generationTemplate$) === draftTemplateAtStart &&
+        currentAttachments.length === attachmentsAtStart.length &&
+        currentAttachments.every((attachment, index) => {
+          return attachment === attachmentsAtStart[index];
+        });
+      if (clearSubmittedDraft) {
+        set(cancelDraftSync$);
+        set(draft.clear$);
+      }
       const [draftClear, send] = await Promise.allSettled([
-        flushDraftForSend(request.options?.forward, () => {
-          return set(flushDraftClear$, signal);
-        }),
-        set(sendEvent$, { ...input, preparedIntent: intent }, signal),
+        clearSubmittedDraft
+          ? flushDraftForSend(request.options?.forward, () => {
+              return set(flushDraftClear$, signal);
+            })
+          : Promise.resolve(),
+        set(
+          sendEvent$,
+          {
+            ...input,
+            preparedIntent: intent,
+            ...(!clearSubmittedDraft ? { onOptimisticSend: undefined } : {}),
+          },
+          signal,
+        ),
       ]);
       signal.throwIfAborted();
       if (send.status === "rejected") {
-        throw send.reason;
+        await set(markDeliveryIntentUncertain$, intent.clientEventId, signal);
+        signal.throwIfAborted();
+        toast.error(
+          "Message delivery could not be confirmed. Check the saved message before retrying.",
+        );
+        return false;
       }
       if (draftClear.status === "rejected" && !signal.aborted) {
         L.debug("sendMessage$ remote draft clear failed", { threadId });
@@ -3244,6 +3289,8 @@ function createQueueMessage(deps: SendMessageDeps) {
         });
         return false;
       }
+      const attachmentsAtStart = get(draft.attachments$);
+      const draftTemplateAtStart = get(draft.generationTemplate$);
       const modelSelection = await set(modelSelectionForSend$, signal);
       signal.throwIfAborted();
       const result = await set(
@@ -3289,15 +3336,43 @@ function createQueueMessage(deps: SendMessageDeps) {
         return false;
       }
       signal.throwIfAborted();
-      set(cancelDraftSync$);
-      set(draft.clear$);
+      const currentAttachments = get(draft.attachments$);
+      const clearSubmittedDraft =
+        editorStillMatchesSubmission(
+          options.editorDocument,
+          set(draft.readEditorDocument$),
+        ) &&
+        get(draft.generationTemplate$) === draftTemplateAtStart &&
+        currentAttachments.length === attachmentsAtStart.length &&
+        currentAttachments.every((attachment, index) => {
+          return attachment === attachmentsAtStart[index];
+        });
+      if (clearSubmittedDraft) {
+        set(cancelDraftSync$);
+        set(draft.clear$);
+      }
       const [draftClear, send] = await Promise.allSettled([
-        options.forward ? Promise.resolve() : set(flushDraftClear$, signal),
-        set(sendEvent$, { ...input, preparedIntent: intent }, signal),
+        clearSubmittedDraft && !options.forward
+          ? set(flushDraftClear$, signal)
+          : Promise.resolve(),
+        set(
+          sendEvent$,
+          {
+            ...input,
+            preparedIntent: intent,
+            ...(!clearSubmittedDraft ? { onOptimisticSend: undefined } : {}),
+          },
+          signal,
+        ),
       ]);
       signal.throwIfAborted();
       if (send.status === "rejected") {
-        throw send.reason;
+        await set(markDeliveryIntentUncertain$, intent.clientEventId, signal);
+        signal.throwIfAborted();
+        toast.error(
+          "Message delivery could not be confirmed. Check the saved message before retrying.",
+        );
+        return false;
       }
       if (draftClear.status === "rejected" && !signal.aborted) {
         L.debug("queueMessage$ remote draft clear failed", { threadId });

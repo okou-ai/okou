@@ -5,6 +5,7 @@ import {
   type ChatEventSendBody,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { authenticatedIdentity$ } from "../auth.ts";
+import { ApiError } from "../../lib/api-error.ts";
 import { now } from "../../lib/time.ts";
 import { jsonParseOr } from "../utils.ts";
 import {
@@ -24,6 +25,26 @@ export interface DeliveryIdentity {
 type PromptSendBody = Extract<ChatEventSendBody, { prompt: string }>;
 export type DeliveryStatus = "prepared" | "accepted" | "rejected" | "uncertain";
 export type DeliveryRejection = "authentication" | "rejected" | null;
+
+/** Only a definite client-side HTTP rejection is classified as not sent. */
+export function classifyDeliveryFailure(error: unknown): {
+  status: "rejected" | "uncertain";
+  rejection: DeliveryRejection;
+} {
+  const rejected =
+    error instanceof ApiError &&
+    error.status >= 400 &&
+    error.status < 500 &&
+    error.status !== 408;
+  return {
+    status: rejected ? "rejected" : "uncertain",
+    rejection: rejected
+      ? error.status === 401
+        ? "authentication"
+        : "rejected"
+      : null,
+  };
+}
 
 interface DeliveryIntentBase {
   readonly threadId: string;
@@ -240,6 +261,18 @@ export const deliveryIntentsChanged$ = command(({ set }) => {
 });
 
 /** Refresh after writes and across tabs without importing another account's data. */
+export const markDeliveryIntentUncertain$ = command(
+  async ({ get, set }, eventId: string, signal: AbortSignal) => {
+    const identity = await get(authenticatedIdentity$);
+    signal.throwIfAborted();
+    updateDeliveryIntent(identity, eventId, {
+      status: "uncertain",
+      rejection: null,
+    });
+    set(deliveryIntentsChanged$);
+  },
+);
+
 export const watchDeliveryIntents$ = command(({ set }, signal: AbortSignal) => {
   const onStorage = (event: StorageEvent) => {
     if (event.key?.startsWith(PREFIX)) {

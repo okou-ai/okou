@@ -1,9 +1,9 @@
 import { command, type Command, type Computed } from "ccstate";
 import { toast } from "@okouai/ui/components/ui/sonner";
-import { ApiError } from "../../lib/api-error.ts";
 import { authenticatedIdentity$ } from "../auth.ts";
 import { queryChatEventSharedDatabase$ } from "../shared-database.ts";
 import {
+  classifyDeliveryFailure,
   deliveryIntentsChanged$,
   listDeliveryIntents,
   removeDeliveryIntent,
@@ -174,25 +174,6 @@ function createPrepareInputChatEvent(threadId: string) {
   );
 }
 
-function deliveryFailure(error: unknown): {
-  status: "rejected" | "uncertain";
-  rejection: "authentication" | "rejected" | null;
-} {
-  const rejected =
-    error instanceof ApiError &&
-    error.status >= 400 &&
-    error.status < 500 &&
-    error.status !== 408;
-  return {
-    status: rejected ? "rejected" : "uncertain",
-    rejection: rejected
-      ? error.status === 401
-        ? "authentication"
-        : "rejected"
-      : null,
-  };
-}
-
 function createSendInputChatEvent({
   threadId,
   appendOptimisticEvent$,
@@ -276,7 +257,7 @@ function createSendInputChatEvent({
           clientEventId,
           outcome.ok
             ? { status: "uncertain", rejection: null }
-            : deliveryFailure(outcome.error),
+            : classifyDeliveryFailure(outcome.error),
         );
         set(deliveryIntentsChanged$);
         return false;
@@ -495,7 +476,7 @@ export const checkAndRetryPromptDelivery$ = command(
             eventId,
             sent.ok
               ? { status: "uncertain", rejection: null }
-              : deliveryFailure(sent.error),
+              : classifyDeliveryFailure(sent.error),
           );
           set(deliveryIntentsChanged$);
           return false;
