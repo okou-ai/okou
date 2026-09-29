@@ -2945,6 +2945,22 @@ class ConcurrencyProjectionChangedError extends Error {
   }
 }
 
+function retiredConcurrencyState(
+  known: { readonly stripePriceId: string; readonly slots: number } | undefined,
+): ConcurrencySubscriptionState | null {
+  if (!known) {
+    return null;
+  }
+  return {
+    stripePriceId: known.stripePriceId,
+    slots: known.slots,
+    subscriptionStatus: "canceled",
+    currentPeriodEnd: nowDate(),
+    cancelAtPeriodEnd: false,
+    hasSchedule: false,
+  };
+}
+
 const publishConcurrencyInvoice$ = command(
   async (
     { set },
@@ -2955,6 +2971,8 @@ const publishConcurrencyInvoice$ = command(
     const [existing] = await db
       .select({
         subscriptionId: orgConcurrencySubscriptions.stripeSubscriptionId,
+        stripePriceId: orgConcurrencySubscriptions.stripePriceId,
+        slots: orgConcurrencySubscriptions.slots,
         rowVersion: sql`${orgConcurrencySubscriptions}.xmin::text`.mapWith(
           pgTextDecoder,
         ),
@@ -2982,7 +3000,12 @@ const publishConcurrencyInvoice$ = command(
     );
     // Snapshot and Stripe I/O complete before entering the bounded SQL commit.
     const state = await retrieveConcurrencySubscriptionState(subscriptionId);
-    const persisted = await db.transaction(async (tx) => {
+    const projectionState =
+      state ?? retiredConcurrencyState(existing ?? values.at(-1));
+    if (!projectionState) {
+      return { handled: true, drainOrgId: orgId };
+    }
+    await db.transaction(async (tx) => {
       await tx.execute(
         concurrencySubscriptionCompatibilityLock(subscriptionId),
       );
@@ -2997,35 +3020,14 @@ const publishConcurrencyInvoice$ = command(
               .values([...values])
               .onConflictDoNothing()
               .returning({ id: orgConcurrencyEntitlements.id });
-      if (!state) {
-        if (existing) {
-          const [retired] = await tx
-            .update(orgConcurrencySubscriptions)
-            .set({
-              subscriptionStatus: "canceled",
-              cancelAtPeriodEnd: false,
-              scheduledSlots: null,
-              scheduledChangeAt: null,
-              currentPeriodEnd: nowDate(),
-              updatedAt: concurrencySubscriptionUpdatedAt(nowDate()),
-            })
-            .where(originalVersion)
-            .returning({
-              id: orgConcurrencySubscriptions.stripeSubscriptionId,
-            });
-          if (!retired) {
-            throw new ConcurrencyProjectionChangedError();
-          }
-        }
-        return null;
-      }
       const projection = {
         orgId: orgId,
-        stripePriceId: state.stripePriceId,
-        slots: state.slots,
-        subscriptionStatus: state.subscriptionStatus,
-        currentPeriodEnd: state.currentPeriodEnd,
-        cancelAtPeriodEnd: state.cancelAtPeriodEnd,
+        stripePriceId: projectionState.stripePriceId,
+        slots: projectionState.slots,
+        subscriptionStatus: projectionState.subscriptionStatus,
+        currentPeriodEnd: projectionState.currentPeriodEnd,
+        cancelAtPeriodEnd: projectionState.cancelAtPeriodEnd,
+        ...(!state ? { scheduledSlots: null, scheduledChangeAt: null } : {}),
       };
       const written = existing
         ? await tx
@@ -3054,17 +3056,8 @@ const publishConcurrencyInvoice$ = command(
         // delivery against current state. A stale result is never a success.
         throw new ConcurrencyProjectionChangedError();
       }
-      return { insertedLines: insertedRows.length, state };
+      return { insertedLines: insertedRows.length, state: projectionState };
     });
-
-    if (!persisted) {
-      L.warn("concurrency invoice.paid subscription has no concurrency item", {
-        invoiceId: prepared.invoiceId,
-        orgId: orgId,
-        subscriptionId,
-      });
-      return { handled: true, drainOrgId: orgId };
-    }
 
     return { handled: true, drainOrgId: orgId };
   },

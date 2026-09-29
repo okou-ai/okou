@@ -46,7 +46,12 @@ removed concurrency items retire an existing projection conditionally; they
 do not revive it from the old invoice/event. Immutable invoice-line grant
 identities remain unchanged, and a valid paid line is still recorded when the
 renewable subscription has since disappeared. Current subscription retirement
-does not erase historical payment evidence.
+does not erase historical payment evidence. A delayed first paid invoice whose
+subscription is already absent records a canceled projection using its real
+historical price and quantity. The existing primary key then also arbitrates
+competing first publication; an absent-row no-op could otherwise let an earlier
+provider response insert an active projection afterward. An invoice without any
+valid line and without an existing projection still creates no projection.
 
 ## Transaction ownership and rollout
 
