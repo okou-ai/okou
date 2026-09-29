@@ -9,7 +9,6 @@ import {
   upsertConnectorOwnedSecret,
   upsertConnectorOwnedVariable,
 } from "./connector-credential-storage-write.service";
-import { lockConnectorAccountTarget } from "./auth-state-lock.service";
 import { prepareConnectorAccountDeletionWithTargetLocked } from "./connector-account-lifecycle.service";
 
 export type PreparedCustomConnectorValue =
@@ -134,11 +133,6 @@ export async function deleteCustomConnectorMemberConnectionExact(
       readonly promotedDefaultConnectionId: string | null;
     }
 > {
-  await lockConnectorAccountTarget(db, {
-    orgId: args.orgId,
-    userId: args.userId,
-    target: { kind: "custom", customConnectorId: args.connectorId },
-  });
   const deletion = await prepareConnectorAccountDeletionWithTargetLocked(
     db,
     {
