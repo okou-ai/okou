@@ -10,9 +10,6 @@ export const testStripeAutomationEventFixtureActionSchema = z.enum([
   "expire-latest-retry-window",
   "make-latest-due",
   "clear-automation-account-projection",
-  "fail-next-ingress-for-automation",
-  "fail-next-queue-admission-for-automation",
-  "clear-forced-failures",
 ]);
 export type TestStripeAutomationEventFixtureAction = z.infer<
   typeof testStripeAutomationEventFixtureActionSchema
