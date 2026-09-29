@@ -61,8 +61,34 @@ targets use the prepared protocol.
 That compatibility requirement does **not** cover the remaining structural
 work. Lazy `ensureOrgModelPolicyFacts` still opens a helper-owned transaction
 and forwards handles. Read and response projection helpers also still receive
-database handles. These are
-implementation gaps, not changes that deployment or elapsed time completes.
+database handles. These are implementation gaps, not changes that deployment
+or elapsed time completes.
+
+The remaining caller graph was traced at `213f0fa`; it is not a signature count:
+
+- `model-selection.service.ts:prepareModelRoutingFacts` reaches lazy repair from
+  default and explicit model selection. It also stores the database under the
+  private `modelRoutingFactsSource` Symbol; `resolveValidPolicyRoute` retrieves
+  it for the effective-route helper. An immutable wrapper does not make that
+  handle an ordinary business result.
+- Default selection is called by chat-thread creation, chat-input resolution,
+  Discord interaction, welcome-thread creation and `chat-thread-model.service.ts`.
+  The latter is reused by the shared workflow/thread graph. Migrating only the
+  policy-list endpoint would leave these lazy writers behind.
+- `listOrgModelPolicies$` and replacement's response path still call the ordinary
+  `listOrgModelPolicies(db, ...)` helper, which invokes lazy initialization before
+  route/member/catalog reads. The replacement commit's direct SQL does not
+  complete the subsequent response graph.
+- Lazy repair itself must move the default-slot insertion, ordered parent/set
+  ownership, fresh entitlement read and default/seed writes into its command.
+  The current bounded ownership retry and main's retired-model/default repair
+  must survive that change. Read projection needs ordinary snapshots, including
+  the member account data currently loaded through a database-capturing adapter.
+
+These callers need coordinated conversion to business-input commands and plain
+snapshots. Replacing `Db` with a callback, renaming a helper, or introducing a
+second store would preserve the same violation. The retained advisory key does
+not authorize those interfaces.
 
 ## Verification
 

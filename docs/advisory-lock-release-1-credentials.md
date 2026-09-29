@@ -189,12 +189,14 @@ history. The prior `1289_google_forms_cursor_detachment` and
 `1290_google_forms_cursor_lifecycle` are removed, including both function/trigger
 inventory entries. The cursor schema is identical to main.
 
-Drizzle regenerates the two remaining custom migrations from the unchanged main
-journal: `1289_retire_provisional_billing_purge` and
-`1290_retire_cloudflare_scope_change_trigger`. Their SQL is unchanged; all
-historical files through 1287 remain byte-identical. The generated snapshots'
-structural schema matches main exactly. The final zero-trigger and no-new-field
-requirements remain in force, and Forms no longer introduces a trigger removal
+After integrating main `bf7c3d6`, published migration 1288 is also preserved.
+The three Drizzle-generated PR migrations are
+`1289_retire_provisional_billing_purge`,
+`1290_retire_cloudflare_scope_change_trigger`, and
+`1291_retire_billing_attribution_mutation_guard`. Historical migration files
+through 1288 remain unchanged. The generated snapshots' structural schema
+matches main exactly; only their generated identity chain differs. The final
+zero-trigger and no-new-field requirements remain in force, and Forms no longer introduces a trigger removal
 gate based on outgoing newest-response repair.
 
 The Forms service has no Db parameter interface. Remaining R1 implementation is
@@ -312,12 +314,16 @@ business inputs; ordinary configuration publication owns its short transaction
 and reads its summary after commit. The dispatcher no longer passes a database
 or a store-capturing start-run callback through event/history helpers.
 
+`enqueueGmailWorkflowInput$` now owns durable source admission and queue SQL;
+the transaction-aware `persistCurrentGmailAutomationSource` callback is removed.
+It verifies the current account, watch and enabled automation before committing
+the queued input. This is independent of the outgoing-stop compatibility gate.
+
 **Still unfinished:** the Gmail missing-thread branch calls
-`ensureWorkflowUserAutomationThread(tx, ...)`, and durable queue admission still
-passes a transaction to `persistCurrentGmailAutomationSource` through the common
-source callback. Shared credential rotation, generic account deletion and shared
-creation also retain their separate legacy graphs. Only these named remaining
-graphs are implementation work; they are not covered by the outgoing-stop gate.
+`ensureWorkflowUserAutomationThread(tx, ...)`. Shared credential rotation,
+generic account deletion and shared creation also retain their separate legacy
+graphs. These are implementation work; they are not covered by the outgoing-stop
+gate.
 The migrated watch/configuration/dispatch SQL is complete within its stated
 scope. API coverage retains shared-mailbox consumption, local disable and
 reenable, authorized sources, deduplication and watch-error compensation; old
