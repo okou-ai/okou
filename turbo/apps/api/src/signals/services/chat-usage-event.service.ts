@@ -295,6 +295,21 @@ const emitRunUsageEventAttempt$ = command(
       );
       signal.throwIfAborted();
 
+      // Initial identity and revoke uniqueness live only in the hot table.
+      // Serialize this run's writers before checking its archive pointer, so
+      // another writer cannot publish and be retained between that check and
+      // our append. NO KEY UPDATE remains compatible with compaction's parent
+      // KEY SHARE; run deletion must finish before this owner can proceed.
+      const [ownedRun] = await tx
+        .select({ id: agentRuns.id })
+        .from(agentRuns)
+        .where(eq(agentRuns.id, runId))
+        .for("no key update");
+      signal.throwIfAborted();
+      if (!ownedRun) {
+        return null;
+      }
+
       const [context] = await tx.select().from(usageEventContextQuery(runId));
       signal.throwIfAborted();
 
