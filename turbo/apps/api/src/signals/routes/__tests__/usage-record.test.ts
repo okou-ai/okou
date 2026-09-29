@@ -1,3 +1,5 @@
+import { testUsageStateContract } from "@okouai/api-contracts/contracts/test-usage-state";
+import { testUsageStateRoutes } from "../test-usage-state";
 import { randomUUID } from "node:crypto";
 
 import { createStore } from "ccstate";
@@ -31,8 +33,6 @@ import { createRouteMocks } from "./helpers/route-test";
 import {
   deleteBillingAttribution$,
   deleteRun$,
-  materializeHourlyUsage$,
-  readUsageStorageCounts$,
   seedRun$,
 } from "./helpers/usage-state";
 import { mapsRoutes } from "../maps";
@@ -716,7 +716,8 @@ describe("GET /api/usage/record", () => {
     ]);
   });
 
-  it("returns rows, totals, tokens, and breakdowns from hourly storage", async () => {
+  it("preserves usage records across repeated compaction and late same-hour usage", async () => {
+    mockNow(new Date(nowDate().getTime() - 5 * DAY_MS));
     const fixture = await entitledRecordActor();
     if (!fixture.actor.orgId) {
       throw new Error("Expected an org-scoped actor");
@@ -732,24 +733,13 @@ describe("GET /api/usage/record", () => {
     await recordModelUsage(fixture.actor, run.runId, model, { input: 50 });
     await recordConnectorUsage(fixture.actor, run.runId, connectorProvider, 2);
     await billing.processOrgUsageEvents(fixture.actor);
-    await expect(
-      store.set(
-        materializeHourlyUsage$,
-        {
-          orgId: fixture.actor.orgId,
-          userId: fixture.actor.userId,
-          runId: run.runId,
-        },
-        context.signal,
-      ),
-    ).resolves.toBe(2);
-    await expect(
-      store.set(
-        readUsageStorageCounts$,
-        { scope: "user", id: fixture.actor.userId },
-        context.signal,
-      ),
-    ).resolves.toStrictEqual({ raw: 0, hourly: 2 });
+    const compactor = setupApp({ context, routes: testUsageStateRoutes })(
+      testUsageStateContract,
+    );
+    await accept(
+      compactor.compact({ body: { orgId: fixture.actor.orgId } }),
+      [200],
+    );
 
     mocks.clerk.session(fixture.actor.userId, fixture.actor.orgId);
     const response = await accept(
@@ -794,6 +784,28 @@ describe("GET /api/usage/record", () => {
         ],
       }),
     ]);
+    // A later notification settles into the same hour, after the first batch
+    // already committed. Product reads must include both immutable fragments.
+    await recordConnectorUsage(fixture.actor, run.runId, connectorProvider, 1);
+    await billing.processOrgUsageEvents(fixture.actor);
+    await accept(
+      compactor.compact({ body: { orgId: fixture.actor.orgId } }),
+      [200],
+    );
+    await accept(
+      compactor.compact({ body: { orgId: fixture.actor.orgId } }),
+      [200],
+    );
+    const after = await accept(
+      apiClient().get({
+        query: { range: "today", tz: "UTC" },
+        headers: authHeaders(),
+      }),
+      [200],
+    );
+    expect(after.body.totalCredits).toBe(80);
+    expect(after.body.pagination.total).toBe(1);
+    expect(after.body.rows).toMatchObject([{ credits: 80, tokens: 50 }]);
   });
 
   it("combines historical threadless usage without changing credits", async () => {

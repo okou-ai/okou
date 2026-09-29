@@ -8,7 +8,6 @@ import {
   asc,
   count,
   eq,
-  gte,
   isNotNull,
   isNull,
   lt,
@@ -33,7 +32,6 @@ const L = logger("CronCompactUsageEvents");
 const USAGE_EVENT_COMPACTION_RAW_SEED_LIMIT = 500;
 const event = alias(usageEvent, "event");
 const allocation = alias(usageAllowanceAllocations, "allocation");
-const hourly = alias(usageEventHourlyRollup, "hourly");
 
 interface UsageEventCompactionStats {
   readonly cutoff: string;
@@ -98,14 +96,6 @@ function eligibleRawPredicate(cutoff: string, orgId?: string): SQL {
 function billingGrainColumns(alias: string): SQL {
   const source = sql.identifier(alias);
   return sql`${source}.billing_run_id, ${source}.billing_anchor_at, ${source}.billing_context`;
-}
-
-function billingGrainPredicate(source: typeof event | typeof hourly) {
-  return and(
-    sql`${source.billingRunId} IS NOT DISTINCT FROM grain.billing_run_id`,
-    sql`${source.billingAnchorAt} IS NOT DISTINCT FROM grain.billing_anchor_at`,
-    eq(source.billingContext, sql`grain.billing_context`),
-  );
 }
 
 function physicalGrainColumns(alias: string): SQL {
@@ -179,7 +169,9 @@ function candidateCtes(args: {
         event.provider,
         event.category,
         allocation.short_window_id,
-        allocation.weekly_window_id
+        allocation.weekly_window_id,
+        event.quantity,
+        COALESCE(event.credits_charged, 0)::bigint AS credits_charged
       FROM ${usageEvent} ${event}
       INNER JOIN raw_candidates candidate ON candidate.id = event.id
       LEFT JOIN ${usageAllowanceAllocations} ${allocation}
@@ -201,50 +193,16 @@ function candidateCtes(args: {
   `;
 }
 
-function lockedSourceCtes(cutoff: string): SQL {
+// Only this bounded raw seed is consumed. Existing hourly fragments are immutable
+// here; readers aggregate fragments by their business dimensions. Expanding a
+// seed to an entire hour made one busy grain an unbounded transaction.
+function lockedSourceCtes(): SQL {
   return sql`
-    locked_raw_events AS MATERIALIZED (
-      SELECT
-        event.id,
-        grain.processed_hour,
-        event.org_id,
-        event.user_id,
-        event.run_id,
-        ${billingGrainColumns("event")},
-        event.kind,
-        event.provider,
-        event.category,
-        grain.short_window_id,
-        grain.weekly_window_id,
-        event.quantity,
-        COALESCE(event.credits_charged, 0)::bigint AS credits_charged
-      FROM selected_grains grain
-      INNER JOIN ${usageEvent} ${event}
-        ON ${and(
-          gte(event.processedAt, sql`grain.processed_hour`),
-          lt(event.processedAt, sql`grain.processed_hour + interval '1 hour'`),
-          eq(event.orgId, sql`grain.org_id`),
-          eq(event.userId, sql`grain.user_id`),
-          sql`${event.runId} IS NOT DISTINCT FROM grain.run_id`,
-          billingGrainPredicate(event),
-          eq(event.kind, sql`grain.kind`),
-          eq(event.provider, sql`grain.provider`),
-          eq(event.category, sql`grain.category`),
-        )}
-      LEFT JOIN ${usageAllowanceAllocations} ${allocation}
-        ON ${eq(allocation.usageEventId, event.id)}
-      WHERE ${and(
-        eligibleRawPredicate(cutoff),
-        sql`${allocation.shortWindowId} IS NOT DISTINCT FROM grain.short_window_id`,
-        sql`${allocation.weeklyWindowId} IS NOT DISTINCT FROM grain.weekly_window_id`,
-      )}
-      FOR UPDATE OF event SKIP LOCKED
-    ),
     locked_raw_allocations AS MATERIALIZED (
       SELECT
         allocation.usage_event_id,
         allocation.units_applied
-      FROM locked_raw_events event
+      FROM raw_seed event
       INNER JOIN ${usageAllowanceAllocations} ${allocation}
         ON ${eq(allocation.usageEventId, sql`event.id`)}
       FOR UPDATE OF allocation
@@ -265,43 +223,9 @@ function lockedSourceCtes(cutoff: string): SQL {
         event.quantity,
         event.credits_charged,
         COALESCE(allocation.units_applied, 0)::bigint AS allowance_units
-      FROM locked_raw_events event
+      FROM raw_seed event
       LEFT JOIN locked_raw_allocations allocation
         ON allocation.usage_event_id = event.id
-    ),
-    locked_hourly AS MATERIALIZED (
-      SELECT
-        hourly.id,
-        hourly.processed_hour,
-        hourly.org_id,
-        hourly.user_id,
-        hourly.run_id,
-        ${billingGrainColumns("hourly")},
-        hourly.kind,
-        hourly.provider,
-        hourly.category,
-        hourly.short_window_id,
-        hourly.weekly_window_id,
-        hourly.quantity,
-        hourly.credits_charged,
-        hourly.allowance_units
-      FROM selected_grains grain
-      CROSS JOIN (SELECT ${count()} AS row_count FROM locked_raw) raw_owned
-      INNER JOIN ${usageEventHourlyRollup} ${hourly}
-        ON ${and(
-          eq(hourly.processedHour, sql`grain.processed_hour`),
-          eq(hourly.orgId, sql`grain.org_id`),
-          eq(hourly.userId, sql`grain.user_id`),
-          sql`${hourly.runId} IS NOT DISTINCT FROM grain.run_id`,
-          billingGrainPredicate(hourly),
-          eq(hourly.kind, sql`grain.kind`),
-          eq(hourly.provider, sql`grain.provider`),
-          eq(hourly.category, sql`grain.category`),
-          sql`${hourly.shortWindowId} IS NOT DISTINCT FROM grain.short_window_id`,
-          sql`${hourly.weeklyWindowId} IS NOT DISTINCT FROM grain.weekly_window_id`,
-        )}
-      WHERE raw_owned.row_count > 0
-      FOR UPDATE OF hourly SKIP LOCKED
     ),
     source_facts AS MATERIALIZED (
       SELECT
@@ -310,15 +234,6 @@ function lockedSourceCtes(cutoff: string): SQL {
         locked_raw.credits_charged::numeric AS credits_charged,
         locked_raw.allowance_units::numeric AS allowance_units
       FROM locked_raw
-
-      UNION ALL
-
-      SELECT
-        ${physicalGrainColumns("locked_hourly")},
-        locked_hourly.quantity::numeric AS quantity,
-        locked_hourly.credits_charged::numeric AS credits_charged,
-        locked_hourly.allowance_units::numeric AS allowance_units
-      FROM locked_hourly
     ),
     consolidated AS MATERIALIZED (
       SELECT
@@ -334,12 +249,6 @@ function lockedSourceCtes(cutoff: string): SQL {
 
 function mutationCtes(): SQL {
   return sql`
-    deleted_hourly AS (
-      DELETE FROM ${usageEventHourlyRollup} ${hourly}
-      USING locked_hourly
-      WHERE ${eq(hourly.id, sql`locked_hourly.id`)}
-      RETURNING hourly.id
-    ),
     inserted_hourly AS (
       INSERT INTO ${usageEventHourlyRollup} (
         processed_hour,
@@ -400,9 +309,8 @@ function rowCountCte(): SQL {
         (SELECT ${count()}::int FROM raw_seed) AS seeded_raw_rows,
         (SELECT ${count()}::int FROM selected_grains) AS selected_grains,
         (SELECT ${count()}::int FROM locked_raw) AS locked_raw_rows,
-        (SELECT ${count()}::int FROM locked_hourly) AS locked_hourly_rows,
         (SELECT ${count()}::int FROM deleted_raw) AS raw_rows_deleted,
-        (SELECT ${count()}::int FROM deleted_hourly) AS hourly_rows_deleted,
+        0::int AS hourly_rows_deleted,
         (SELECT ${count()}::int FROM inserted_hourly) AS hourly_rows_inserted
     )
   `;
@@ -505,10 +413,9 @@ function windowReconciliationCte(): SQL {
   `;
 }
 
-// Seeds are a discovery snapshot. Another compactor can consume a selected
-// grain before source ownership; reconcile only rows actually locked/deleted.
-// Concurrent batches may leave separate physical fragments, which canonical
-// product readers already regroup by their existing business dimensions.
+// Reconcile only the bounded rows actually retained and consumed. Each batch
+// appends independent fragments, which canonical product readers already
+// regroup by their existing business dimensions.
 function compactionSummarySelect(): SQL {
   return sql`
     SELECT
@@ -528,7 +435,6 @@ function compactionSummarySelect(): SQL {
         AND source_totals.allowance_units = inserted_totals.allowance_units
         AND window_reconciliation.reconciled
         AND row_counts.locked_raw_rows = row_counts.raw_rows_deleted
-        AND row_counts.locked_hourly_rows = row_counts.hourly_rows_deleted
         AND row_counts.selected_grains >= row_counts.hourly_rows_inserted
       ) AS "reconciled"
     FROM source_totals
@@ -546,7 +452,7 @@ function compactUsageEventsSql(args: {
   return sql`
     WITH
     ${candidateCtes(args)},
-    ${lockedSourceCtes(args.cutoff)},
+    ${lockedSourceCtes()},
     ${mutationCtes()},
     ${rowCountCte()},
     ${productTotalCtes()},

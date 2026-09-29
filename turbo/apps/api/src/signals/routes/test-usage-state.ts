@@ -133,7 +133,6 @@ type UsageStateEventWriteAction = UsageStateAction<
 type UsageStateEventMaterializationAction = UsageStateAction<
   | "delete-run"
   | "delete-billing-attribution"
-  | "seed-usage-overflow-grain"
   | "set-usage-event-created-at"
   | "materialize-hourly-usage"
   | "read-usage-storage-counts"
@@ -712,63 +711,6 @@ async function deleteBillingAttribution(
   signal.throwIfAborted();
 }
 
-async function seedUsageOverflowGrain(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly processedAt: Date;
-  },
-): Promise<void> {
-  const processedHour = new Date(args.processedAt);
-  processedHour.setUTCMinutes(0, 0, 0);
-  await db.transaction(async (tx) => {
-    await tx.execute(sql`
-      INSERT INTO ${usageEvent} (
-        run_id,
-        idempotency_key,
-        org_id,
-        user_id,
-        kind,
-        provider,
-        category,
-        quantity,
-        credits_charged,
-        status,
-        created_at,
-        processed_at
-      ) VALUES (
-        NULL,
-        ${randomUUID()},
-        ${args.orgId},
-        ${args.userId},
-        'connector',
-        'overflow-fixture',
-        'call',
-        9223372036854775807,
-        0,
-        'processed',
-        ${args.processedAt},
-        ${args.processedAt}
-      )
-    `);
-    await tx.insert(usageEventHourlyRollup).values({
-      processedHour,
-      orgId: args.orgId,
-      userId: args.userId,
-      runId: null,
-      kind: "connector",
-      provider: "overflow-fixture",
-      category: "call",
-      shortWindowId: null,
-      weeklyWindowId: null,
-      quantity: 1,
-      creditsCharged: 0,
-      allowanceUnits: 0,
-    });
-  });
-}
-
 async function setUsageEventCreatedAt(
   db: Db,
   args: { readonly id: string; readonly createdAt: Date },
@@ -1176,15 +1118,6 @@ async function mutateUsageStateEventMaterializationState(
       await deleteBillingAttribution(db, body.run_id, signal);
       return { status: 200 as const, body: { ok: true as const } };
     }
-    case "seed-usage-overflow-grain": {
-      await seedUsageOverflowGrain(db, {
-        orgId: body.org_id,
-        userId: body.user_id,
-        processedAt: new Date(body.processed_at),
-      });
-      signal.throwIfAborted();
-      return { status: 200 as const, body: { ok: true as const } };
-    }
     case "set-usage-event-created-at": {
       await setUsageEventCreatedAt(
         db,
@@ -1251,7 +1184,6 @@ async function mutateUsageState(
     }
     case "delete-run":
     case "delete-billing-attribution":
-    case "seed-usage-overflow-grain":
     case "set-usage-event-created-at":
     case "materialize-hourly-usage":
     case "read-usage-storage-counts": {
