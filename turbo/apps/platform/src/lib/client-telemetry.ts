@@ -1,10 +1,20 @@
 import { Axiom } from "@axiomhq/js";
+import {
+  CLIENT_REQUEST_ID_HEADER,
+  CLIENT_SESSION_ID_HEADER,
+  CLIENT_VERSION_HEADER,
+} from "@okouai/api-contracts/contracts/client-headers";
 import type { HttpMethod } from "@okouai/api-contracts/contracts/trpc-contract";
+import { recordTemporaryAuthFailure } from "@okouai/core/temporary-auth-diagnostics";
 
 import { logger } from "../signals/log.ts";
-import { onRejection } from "../signals/utils.ts";
+import {
+  isNonArrayRecord,
+  jsonParseOr,
+  onRejection,
+} from "../signals/utils.ts";
 import { resolvePlatformClientTelemetryConfig } from "./platform-host.ts";
-import { nowDate } from "./time.ts";
+import { now, nowDate } from "./time.ts";
 
 // The browser-visible token is a write-only credential whose dataset scope is
 // the security boundary for this direct-ingest client.
@@ -278,6 +288,91 @@ export function recordClientTelemetry(
         : { "status.code": resolvedStatusCode }),
     },
   ]);
+}
+
+// Temporary #36177 diagnostics. Decoded claims are unverified observations;
+// they never affect authentication and no claim values leave the client.
+function authTokenClaims(token: string | null): Record<string, unknown> | null {
+  const payload = token?.split(".")[1]?.replace(/=+$/u, "");
+  if (
+    !payload ||
+    payload.length > 16_384 ||
+    payload.length % 4 === 1 ||
+    !/^[A-Za-z0-9_-]+$/u.test(payload)
+  ) {
+    return null;
+  }
+  const claims = jsonParseOr<unknown>(
+    atob(payload.replaceAll("-", "+").replaceAll("_", "/")),
+    null,
+  );
+  return isNonArrayRecord(claims) ? claims : null;
+}
+
+export function recordClientAuthFailure(request: {
+  readonly headers: Headers;
+  readonly method: HttpMethod;
+  readonly route: string;
+  readonly startedAt: number;
+}): void {
+  const timestamp = now();
+
+  // Telemetry is best effort, including SDK construction/ingestion failures.
+  // Always let callers observe the original 401.
+  recordTemporaryAuthFailure(timestamp, () => {
+    const config = resolvePlatformClientTelemetryConfig();
+    if (!config.token) {
+      return;
+    }
+    const authorization = request.headers.get("Authorization");
+    const token = authorization?.match(/^Bearer\s+(\S+)$/i)?.[1] ?? null;
+    const claims = authTokenClaims(token);
+    const expiresAt =
+      typeof claims?.exp === "number" && Number.isFinite(claims.exp)
+        ? claims.exp
+        : null;
+    const org = claims?.o;
+    const hasOrg =
+      (typeof claims?.org_id === "string" && claims.org_id.length > 0) ||
+      (typeof org === "object" &&
+        org !== null &&
+        "id" in org &&
+        typeof org.id === "string" &&
+        org.id.length > 0);
+
+    telemetryClient(config.token).ingest(AXIOM_CLIENT_TELEMETRY_DATASET, [
+      {
+        _time: new Date(timestamp).toISOString(),
+        level: "info",
+        source: "client",
+        message: "App API authentication failed",
+        fields: {
+          type: "temporary_auth_failure",
+          runtime: runtimeName(),
+          requestId: request.headers.get(CLIENT_REQUEST_ID_HEADER),
+          clientSessionId: request.headers.get(CLIENT_SESSION_ID_HEADER),
+          clientVersion: request.headers.get(CLIENT_VERSION_HEADER),
+          method: request.method,
+          route: request.route,
+          status: 401,
+          has_bearer_token: token !== null,
+          jwt_decoded: claims !== null,
+          token_has_org: claims === null ? null : hasOrg,
+          token_ttl_at_request_seconds:
+            expiresAt === null
+              ? null
+              : Math.floor(expiresAt - request.startedAt / 1000),
+          token_ttl_at_response_seconds:
+            expiresAt === null
+              ? null
+              : Math.floor(expiresAt - timestamp / 1000),
+        },
+        "resource.deployment.environment.name": config.environment,
+        "service.name": CLIENT_TELEMETRY_SERVICE_NAME,
+        "service.version": __OKOU_APP_VERSION__,
+      },
+    ]);
+  });
 }
 
 export async function flushClientTelemetry(): Promise<void> {

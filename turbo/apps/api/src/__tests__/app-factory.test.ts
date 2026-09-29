@@ -1,12 +1,16 @@
 import { initContract } from "@okouai/api-contracts/contracts/trpc-contract";
+import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   CLIENT_FORCE_UPGRADE_STATUS,
+  CLIENT_REQUEST_ID_HEADER,
+  CLIENT_SESSION_ID_HEADER,
   CLIENT_TYPE_APP,
   CLIENT_TYPE_CLI,
   CLIENT_TYPE_DESKTOP,
   CLIENT_TYPE_HEADER,
   CLIENT_VERSION_HEADER,
 } from "@okouai/api-contracts/contracts/client-headers";
+import { AUTH_FAILURE_DIAGNOSTICS_EXPIRES_AT } from "@okouai/core/temporary-auth-diagnostics";
 import { EVENT } from "@axiomhq/logging";
 import { computed } from "ccstate";
 import { HTTPException } from "hono/http-exception";
@@ -15,11 +19,13 @@ import { vi } from "vitest";
 import { createApp } from "../app-factory";
 import { createAppWithRoutes } from "../app-factory-core";
 import { mockEnv } from "../lib/env";
+import { mockNow } from "../lib/time";
 import webClientCompatibility from "../lib/web-client-compatibility.json";
 import { flushWaitUntilForTest } from "../signals/context/wait-until";
 import { recordWebDownloadFailure$ } from "../signals/context/hono";
 import { downloadS3Buffer } from "../signals/external/s3";
 import { healthRoutes } from "../signals/routes/health";
+import { chatThreadRoutes } from "../signals/routes/chat-threads";
 import { mailRoutes } from "../signals/routes/mail";
 import { accept, testContext } from "./test-context";
 import { setupApp } from "./test-helpers";
@@ -1372,6 +1378,192 @@ describe("createApp", () => {
 
       expect(response.status).toBe(200);
     });
+  });
+
+  describe("temporary authentication log wiring", () => {
+    const requestId = "6c1d4566-fbe6-4cd4-8d54-b83febde3d66";
+    const clientSessionId = "ae6b1576-b9f7-4f15-8c3d-b167b3975e81";
+
+    function authClient() {
+      return setupApp({ context, routes: chatThreadRoutes })(
+        chatThreadsContract,
+      );
+    }
+
+    function appHeaders() {
+      return {
+        [CLIENT_TYPE_HEADER]: CLIENT_TYPE_APP,
+        [CLIENT_VERSION_HEADER]: NEWER_WEB_CLIENT_VERSION,
+        [CLIENT_REQUEST_ID_HEADER]: requestId,
+        [CLIENT_SESSION_ID_HEADER]: clientSessionId,
+      };
+    }
+
+    function diagnosticLogs() {
+      return context.mocks.axiomLogging.info.mock.calls.filter(([message]) => {
+        return message === "temporary auth failure";
+      });
+    }
+
+    beforeEach(() => {
+      mockNow(AUTH_FAILURE_DIAGNOSTICS_EXPIRES_AT - 1);
+    });
+
+    it.each([
+      {
+        reason: "missing_credentials",
+        hasBearerToken: false,
+        clerkReason: null,
+        clerkState: undefined,
+      },
+      {
+        reason: "clerk_rejected",
+        hasBearerToken: true,
+        clerkReason: "token-expired",
+        clerkState: { isAuthenticated: false, reason: "token-expired" },
+      },
+      {
+        reason: "missing_org",
+        hasBearerToken: true,
+        clerkReason: null,
+        clerkState: {
+          isAuthenticated: true,
+          toAuth: () => {
+            return { userId: "user_auth_diagnostics", orgId: null };
+          },
+        },
+      },
+    ])(
+      "keeps the 401 response and emits one separate $reason record",
+      async ({ reason, hasBearerToken, clerkReason, clerkState }) => {
+        context.mocks.clerk.authenticateRequest.mockResolvedValue(clerkState);
+        const response = await accept(
+          authClient().snapshot({
+            headers: {
+              ...appHeaders(),
+              ...(hasBearerToken
+                ? { authorization: "Bearer clerk-session" }
+                : {}),
+            },
+          }),
+          [401],
+        );
+        expect(response.body).toStrictEqual({
+          error: { message: "Not authenticated", code: "UNAUTHORIZED" },
+        });
+        expect(diagnosticLogs()).toStrictEqual([
+          [
+            "temporary auth failure",
+            expect.objectContaining({
+              [EVENT]: { source: "api" },
+              type: "temporary_auth_failure",
+              auth_failure_reason: reason,
+              clerk_reason: clerkReason,
+              has_bearer_token: hasBearerToken,
+              has_org: false,
+              method: "GET",
+              route: "/api/chat-threads/snapshot",
+              status: 401,
+              requestId,
+              clientSessionId,
+              clientVersion: NEWER_WEB_CLIENT_VERSION,
+            }),
+          ],
+        ]);
+        expect(context.mocks.clerk.authenticateRequest).toHaveBeenCalledTimes(
+          hasBearerToken ? 1 : 0,
+        );
+        await flushWaitUntilForTest();
+        for (const record of axiomRequestLogEvents(context)) {
+          expect(record).not.toHaveProperty("auth_failure_reason");
+          expect(record).not.toHaveProperty("clerk_reason");
+        }
+      },
+    );
+
+    it("excludes credentials, arbitrary SDK text and malformed correlation headers", async () => {
+      const secret = "private-auth-diagnostic-value";
+      context.mocks.clerk.authenticateRequest.mockResolvedValue({
+        isAuthenticated: false,
+        reason: secret,
+        message: secret,
+        token: secret,
+      });
+
+      await accept(
+        authClient().snapshot({
+          headers: {
+            ...appHeaders(),
+            authorization: `Bearer ${secret}`,
+            cookie: `__session=${secret}`,
+            [CLIENT_REQUEST_ID_HEADER]: secret,
+            [CLIENT_SESSION_ID_HEADER]: secret,
+            [CLIENT_VERSION_HEADER]: secret,
+          },
+        }),
+        [401],
+      );
+
+      expect(diagnosticLogs()).toHaveLength(1);
+      expect(diagnosticLogs()[0]?.[1]).toMatchObject({
+        auth_failure_reason: "clerk_rejected",
+        clerk_reason: "unknown",
+        has_bearer_token: true,
+        has_org: false,
+      });
+      expect(JSON.stringify(diagnosticLogs())).not.toContain(secret);
+    });
+
+    it("stops emitting at the deadline without changing authentication", async () => {
+      mockNow(AUTH_FAILURE_DIAGNOSTICS_EXPIRES_AT);
+      context.mocks.clerk.authenticateRequest.mockResolvedValue({
+        isAuthenticated: false,
+        reason: "token-expired",
+      });
+
+      await accept(
+        authClient().snapshot({
+          headers: {
+            ...appHeaders(),
+            authorization: "Bearer clerk-session",
+          },
+        }),
+        [401],
+      );
+
+      expect(diagnosticLogs()).toStrictEqual([]);
+      expect(context.mocks.clerk.authenticateRequest).toHaveBeenCalledOnce();
+    });
+
+    it("preserves the 401 if diagnostic delivery fails", async () => {
+      context.mocks.axiomLogging.info.mockImplementation((message) => {
+        if (message === "temporary auth failure") {
+          throw new Error("Diagnostic transport unavailable");
+        }
+      });
+
+      const response = await accept(
+        authClient().snapshot({ headers: appHeaders() }),
+        [401],
+      );
+      expect(response.body).toStrictEqual({
+        error: { message: "Not authenticated", code: "UNAUTHORIZED" },
+      });
+    });
+
+    it.each([CLIENT_TYPE_CLI, CLIENT_TYPE_DESKTOP])(
+      "does not emit App diagnostics for %s authentication failures",
+      async (clientType) => {
+        await accept(
+          authClient().snapshot({
+            headers: { ...appHeaders(), [CLIENT_TYPE_HEADER]: clientType },
+          }),
+          [401],
+        );
+
+        expect(diagnosticLogs()).toStrictEqual([]);
+      },
+    );
   });
 
   // This suite owns request-log wiring, so log fields are the tested contract.
