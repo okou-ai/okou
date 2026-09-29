@@ -454,6 +454,82 @@ describe("Google Forms Pub/Sub webhook", () => {
     });
   });
 
+  it("does not replay disabled-period responses when a detached cursor is explicitly re-enabled", async () => {
+    const { automationId, chatThreadId, formsApi } =
+      await setupGoogleFormsAutomation();
+    const originalWatchId = formsApi.watchIds[0];
+    await accept(
+      automationsClient().disable({
+        headers: authHeaders(),
+        params: { id: automationId },
+      }),
+      [200],
+    );
+    expect(formsApi.stoppedWatchIds).toContain(originalWatchId);
+    const resumedCursor = "2026-08-05T10:15:00.123456Z";
+    const resumedResponseTime = "2026-08-05T10:16:00.123456Z";
+    const filters: string[] = [];
+    server.use(
+      http.get(
+        "https://forms.googleapis.com/v1/forms/:formId/responses",
+        ({ request }) => {
+          const filter = new URL(request.url).searchParams.get("filter");
+          if (filter === null) {
+            return HttpResponse.json({
+              responses: [
+                {
+                  responseId: "response-while-disabled",
+                  createTime: resumedCursor,
+                  lastSubmittedTime: resumedCursor,
+                },
+              ],
+            });
+          }
+          filters.push(filter);
+          expect(filter).toBe(`timestamp > ${resumedCursor}`);
+          return HttpResponse.json({
+            responses: [
+              {
+                responseId: "response-after-resume",
+                createTime: resumedResponseTime,
+                lastSubmittedTime: resumedResponseTime,
+                respondentEmail: "after-resume@example.test",
+              },
+            ],
+          });
+        },
+      ),
+    );
+    await accept(
+      automationsClient().enable({
+        headers: authHeaders(),
+        params: { id: automationId },
+      }),
+      [200],
+    );
+    const resumedWatchId = formsApi.watchIds.at(-1);
+    if (!resumedWatchId || resumedWatchId === originalWatchId) {
+      throw new Error("Expected a new watch after explicit re-enable");
+    }
+    const pushed = await postWebhook(
+      formsPushBody("response-after-explicit-resume", resumedWatchId),
+    );
+    expect(pushed).toMatchObject({
+      status: 200,
+      body: { watchStates: 1, dispatched: 1 },
+    });
+    expect(filters).toStrictEqual([`timestamp > ${resumedCursor}`]);
+    await flushWaitUntilForTest();
+    const events = await workflows.readThreadEvents(chatThreadId);
+    const delivered = events.filter((event) => {
+      return event.eventType === "input.automation";
+    });
+    expect(delivered).toHaveLength(1);
+    expect(delivered.map(chatEventDisplayText)).toStrictEqual([
+      `A new response from after-resume@example.test was submitted to Google Form "${FORM_TITLE}".`,
+    ]);
+  });
+
   it("delivers metadata without response data", async () => {
     const { automationId, chatThreadId, formsApi } =
       await setupGoogleFormsAutomation();
