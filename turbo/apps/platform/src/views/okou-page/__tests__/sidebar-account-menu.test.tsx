@@ -659,7 +659,7 @@ test("Cap 5H availability at an exhausted week and use its reset when 5H is inva
     within(panel).getByRole("progressbar", { name: "Codex Week remaining" }),
   ).toHaveAttribute("aria-valuenow", "0");
   expect(within(panel).getAllByText("0%")).toHaveLength(2);
-  fireEvent.focus(fiveHour);
+  await userEvent.setup().hover(fiveHour);
   await waitFor(() => {
     expectVisibleText("Resets in 5d 23h");
     expectVisibleText(

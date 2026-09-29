@@ -6,7 +6,8 @@ import {
 } from "@okouai/api-contracts/contracts/billing";
 import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
 
 import {
@@ -362,7 +363,7 @@ test("Show no 5h availability when the weekly allowance is exhausted", async () 
   const [fiveHour, week] = within(row).getAllByRole("progressbar");
   expect(fiveHour).toHaveAttribute("aria-valuenow", "0");
   expect(week).toHaveAttribute("aria-valuenow", "0");
-  fireEvent.focus(fiveHour);
+  await userEvent.setup().hover(fiveHour);
   await waitFor(() => {
     expect(screen.getByText("0% left")).toBeVisible();
     expect(screen.getByText("Resets in 5d 23h")).toBeVisible();
