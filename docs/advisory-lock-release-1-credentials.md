@@ -8,7 +8,7 @@ The six advisory acquisition definitions remain. This work prepares selected wri
 - Forms publication handles an outgoing stop deleting a state after the initial read: it prepares a replacement and publishes the original in-memory seed cursor, rather than returning success without a watch or fetching a second newest-response seed.
 - Forms lifecycle/projection transactions execute their own SQL. New consumer reads and retry writes are commands with no database argument. Advisory statement builders accept only ordinary values.
 - Forms queue admission receives an ordinary source observation and prepared input. `enqueueGoogleFormsWorkflowInput$` owns the local transaction and directly inserts the context, appends through the canonical pure SQL builder, validates source identity, records deduplication, advances the cursor and marks the thread queued. It passes no database or transaction to a helper, callback or another command. Its append-before-source-lock order matches outgoing writers, and source rejection rolls back the entire input. Model selection and message preparation now occur before queue transactions.
-- The Forms cursor's existing watch_state_id becomes nullable with ON DELETE SET NULL. R1 repair reattaches detached cursor rows by automation ID and preserves their timestamp. Database cursor/source lifecycle constraints preserve progress across outgoing repair upserts as well. Explicit disable or source replacement invalidates the old cursor, allowing a subsequent enable to seed a new baseline. No persisted column or coordination table is added.
+- The Forms cursor's existing watch_state_id becomes nullable with ON DELETE SET NULL. R1 repair reattaches detached cursor rows by automation ID and preserves their timestamp. R1 repair publication updates only the watch binding on conflict and never overwrites the existing cursor. Temporary database cursor/source compatibility triggers additionally protect outgoing repair upserts; they are not the accepted terminal design. Explicit disable or source replacement invalidates the old cursor, allowing a subsequent enable to seed a new baseline. No persisted column or coordination table is added.
 - DCR registrations are prepared remotely and encrypted before publication. Custom and builtin publication commands own finite SQL, compare the observed registration and return a compatible current winner. New preparation reads own database access. Builtin publication also locks and checks the existing accepted catalog identity, so catalog changes during remote preparation reject stale publication.
 - Automatic OAuth callback reads its bound DCR client, decrypts it, exchanges the provider code and encrypts the resulting tokens before local publication. The publication command owns direct SQL, checks the accepted catalog identity and live registration, and atomically replaces the metadata, credentials and binding. Reconnect publication compares the exact account timestamp and `xmin` observed before the provider request; a replacement or deletion rejects stale output. Registration retirement has a separate direct-SQL command for callback failures. The callback entry point now uses command-owned state claim, accepted catalog reads and post-commit wakeup, with no database handle in those command arguments or closures. Catalog decoding receives ordinary payload values, and realtime publication receives ordinary selected rows after SQL has finished. Wakeup completes before the request observes cancellation after a committed publication. The legacy Automatic refresh store remains transaction-aware.
 - Automatic start uses a command-owned account snapshot before remote discovery/preparation and a final direct-SQL publication. Public no-auth connections replace metadata and clear credentials atomically; authorization state insertion validates the accepted catalog and unchanged reconnect account. Start no longer passes a transaction to account resolution, state insertion or credential replacement helpers.
@@ -33,25 +33,51 @@ At baseline 5b458cc9, prepareGoogleFormsWatchesForOwner treats a missing or deta
 
 The in-memory publication retry fixes the specific uninterrupted new-ensure / outgoing-stop overlap. Cursor detachment alone does not cover a lost request: a pre-R1 repair can still seed newest and overwrite the retained cursor. Checking only a NULL-to-non-NULL binding transition is also insufficient: an R1 repair can reattach the row before a previously started outgoing repair issues its unconditional upsert for the same watch.
 
-Two narrow database invariants close that gap together:
+Migration 1290 temporarily protects outgoing writers with two triggers:
 
 1. `google_forms_cursor_rebind_preserves_progress` runs before updates that write `watch_state_id`. It preserves the existing `last_seen_submitted_time`, including same-watch upserts. Outgoing and R1 repair can attach the cursor to a replacement resource but cannot advance undelivered progress. The normal response-admission SQL updates only `last_seen_submitted_time` and `updated_at`, so actual delivery can still advance it.
 2. `google_forms_cursor_source_lifecycle` invalidates the cursor when the automation's organization, owner, workflow, event kind/type, selected connector, configured connector or form changes. It also invalidates explicit disable: ordinary `enabled=false`, or official `official_intended_enabled=false`. An official temporary reconciliation pause keeps its cursor because its existing intended-enabled field remains true. Subsequent explicit enable creates a new cursor instead of rebinding the old one. Existing explicitly disabled cursors are cleaned during migration.
 
 The functions `preserve_google_forms_cursor_on_rebind` and `invalidate_google_forms_cursor_for_source_change` contain no advisory acquisition, external effect or new stored coordination state. Automation deletion still cascades; connector deletion invalidates the source through its existing SET NULL relationship. Cursor invalidation and response admission both lock the automation before its cursor, while cursor rebinding performs no additional reads.
 
-The updated terminal contract excludes application-defined database triggers.
-These two triggers describe the current implementation, not an accepted final
-design. Their immediate purpose is to constrain already deployed unconditional
-repair writers. Replace their business behavior with explicit command-owned SQL:
-repair/rebinding preserves existing progress, while an explicit disable or source
-change updates the automation and deletes its cursor in one local transaction.
-The supported writers must implement that distinction before the triggers can
-be absent safely. Rework the R1/R2 transition together with the existing FK and
-provider-I/O boundaries; simply deleting migration 1290 would reopen the mixed
-writer gap. Any temporary trigger must have a bounded removal gate and be gone
-at the terminal state. Merging R1 or waiting a fixed interval does not establish
-the relevant serving, in-flight and rollback gates.
+The terminal schema has no application-defined triggers. These two triggers
+must be retired by a follow-up DROP migration after the replacement protocol
+covers every supported writer. Their presence is not a permanent exception.
+
+R1 now expresses cursor lifetime in application SQL:
+
+- `publishGoogleFormsWatch$` inserts the prepared baseline only for a missing
+  cursor. Its conflict update changes `watch_state_id` and `updated_at` only;
+  repair cannot advance delivery progress even without the compatibility trigger.
+- `persistDisabledWorkflowAutomation$` is a business-only command. It obtains
+  `writeDb$`, updates explicit enabled/intended-enabled state and deletes the
+  Forms cursor in one local finite transaction. Reconciliation pause paths do
+  not call this command and preserve their cursor.
+- `reprojectGoogleFormsAutomationOwnership$` already updates account projection
+  and deletes a changed source's cursor inside its own local transaction.
+- `persistReconfigurationPatch`, `commitAutomationStructureTransition` and
+  `restoreFailedReconfiguration$` now explicitly compare the previous and
+  returned source and delete the cursor in the same transaction when the
+  connector/form, owner/workflow, event kind/type or intended-enabled state
+  changes. The shared predicate accepts ordinary values only. Compensation
+  keeps the saved prior cursor for its restored source; same-source official
+  pauses retain progress.
+- `projectGoogleFormsEnabledEventConfig` still deletes a changed account cursor
+  in the enable transaction. That path and the official reconciliation helpers
+  still propagate database/transaction handles. Their complete command
+  ownership is unfinished R1 work; adding explicit deletes does not complete it.
+
+The removal gate has two distinct parts. First, finish and verify the complete
+R1 cursor-writer inventory and the remaining command boundaries, including the
+late enable/disable/re-enable publication interleaving and compensation. This
+is implementation work, not a deployment wait. Second, incompatible pre-R1
+repair/source writers must no longer serve or remain in flight, and rollback
+targets must contain the new explicit protocol. In particular, the inspected
+outgoing repair performs an unconditional `last_seen_submitted_time` overwrite
+on conflict after fetching newest response time; deleting migration 1290 now
+would restore the previously identified response-loss window. Only after both
+parts hold may R2 drop these triggers/functions while R1 and R2 mix. No extra
+release wave is inferred from this remaining work.
 
 ### Validation
 

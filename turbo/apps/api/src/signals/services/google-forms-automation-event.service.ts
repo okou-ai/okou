@@ -783,7 +783,6 @@ export const ensureGoogleFormsWatchForUser$ = command(
       readonly connectorId: string;
       readonly resetAutomationId?: string;
       readonly seedCursor?: string;
-      readonly preserveCursor?: boolean;
       readonly allowStagedOfficialTarget?: boolean;
     },
     signal: AbortSignal,
@@ -885,7 +884,6 @@ interface GoogleFormsWatchPublication {
   readonly watch: z.infer<typeof googleFormsWatchSchema> | null;
   readonly cursor: string | null;
   readonly resetAutomationId?: string;
-  readonly preserveCursor?: boolean;
   readonly allowStagedOfficialTarget?: boolean;
 }
 
@@ -1051,13 +1049,13 @@ const publishGoogleFormsWatch$ = command(
             createdAt: currentTime,
             updatedAt: currentTime,
           })
+          // Existing progress belongs to delivered responses, not watch
+          // preparation. Repair only rebinds; explicit disable/source changes
+          // delete the old cursor before a new baseline may be inserted.
           .onConflictDoUpdate({
             target: googleFormsAutomationCursors.automationId,
             set: {
               watchStateId: state.id,
-              lastSeenSubmittedTime: args.preserveCursor
-                ? sql`CASE WHEN ${googleFormsAutomationCursors.lastSeenSubmittedTime}::timestamptz > ${args.cursor}::timestamptz THEN ${googleFormsAutomationCursors.lastSeenSubmittedTime} ELSE ${args.cursor} END`
-                : args.cursor,
               updatedAt: currentTime,
             },
           });
@@ -1498,7 +1496,7 @@ const prepareGoogleFormsWatchesForOwner$ = command(
           // Repair resumes from durable progress instead of skipping to newest.
           ...(automation.cursorWatchStateId === null &&
           automation.cursor !== null
-            ? { seedCursor: automation.cursor, preserveCursor: true }
+            ? { seedCursor: automation.cursor }
             : {}),
         },
         signal,

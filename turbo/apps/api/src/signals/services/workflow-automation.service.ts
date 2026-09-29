@@ -6192,6 +6192,43 @@ export const enableWorkflowAutomation$ = command(
     );
   },
 );
+const persistDisabledWorkflowAutomation$ = command(
+  async (
+    { set },
+    args: {
+      readonly automation: AutomationRow;
+      readonly nextRunAt: Date | null;
+      readonly now: Date;
+    },
+    signal: AbortSignal,
+  ): Promise<AutomationRow | undefined> => {
+    const db = set(writeDb$);
+    return await db.transaction(async (tx) => {
+      const [row] = await tx
+        .update(workflowAutomations)
+        .set({
+          enabled: false,
+          nextRunAt: args.nextRunAt,
+          updatedAt: args.now,
+          ...(args.automation.officialBlueprintKey === null
+            ? {}
+            : { officialIntendedEnabled: false }),
+        })
+        .where(officialAutomationLifecycleCondition(args.automation))
+        .returning(workflowAutomationColumns());
+      if (row?.eventType === "google-forms-response-submitted") {
+        // A user stop ends this delivery interval. Re-enable establishes a new
+        // baseline; a reconciliation pause never calls this command.
+        await tx
+          .delete(googleFormsAutomationCursors)
+          .where(eq(googleFormsAutomationCursors.automationId, row.id));
+      }
+      signal.throwIfAborted();
+      return row;
+    });
+  },
+);
+
 export const disableWorkflowAutomation$ = command(
   async (
     { set },
@@ -6224,21 +6261,14 @@ export const disableWorkflowAutomation$ = command(
       signal,
     );
     signal.throwIfAborted();
-    const [ordinaryRow] =
+    const ordinaryRow =
       morningBriefRow === undefined
-        ? await writeDb
-            .update(workflowAutomations)
-            .set({
-              enabled: false,
-              nextRunAt,
-              updatedAt: now,
-              ...(owned.automation.officialBlueprintKey === null
-                ? {}
-                : { officialIntendedEnabled: false }),
-            })
-            .where(officialAutomationLifecycleCondition(owned.automation))
-            .returning(workflowAutomationColumns())
-        : [];
+        ? await set(
+            persistDisabledWorkflowAutomation$,
+            { automation: owned.automation, nextRunAt, now },
+            signal,
+          )
+        : undefined;
     const row = morningBriefRow ?? ordinaryRow;
     signal.throwIfAborted();
     if (!row) {

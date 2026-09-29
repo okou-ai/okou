@@ -35,6 +35,7 @@ import {
   reconcileAutomationEventWatchReconfiguration$,
 } from "./automation-event-watch-lifecycle.service";
 import { lockConnectorAccountTarget } from "./auth-state-lock.service";
+import { googleFormsCursorMustReset } from "./google-forms-cursor-lifecycle";
 import { notionConfigWithConnectorId } from "./notion-automation-account.service";
 import {
   lockAcceptedOfficialWorkflowCatalog,
@@ -737,6 +738,11 @@ async function persistReconfigurationPatch(
     if (!updated) {
       throw new Error("Official Workflow automation disappeared");
     }
+    if (googleFormsCursorMustReset(current, updated)) {
+      await tx
+        .delete(googleFormsAutomationCursors)
+        .where(eq(googleFormsAutomationCursors.automationId, current.id));
+    }
     await upsertActiveIdentity(tx, updated, currentTime);
     return {
       previous: current,
@@ -794,6 +800,22 @@ const reconcileRestoredAutomationWatch$ = command(
     );
   },
 );
+function restoredStripeEventConfig(
+  projection: OfficialAutomationAccountProjection,
+  eventConfig: unknown,
+) {
+  const binding =
+    projection.kind === "locked" ? projection.stripeBinding : null;
+  return binding === null
+    ? {}
+    : {
+        eventConfig: {
+          ...stripeInvoicePaidEventConfigSchema.parse(eventConfig),
+          ...binding,
+        },
+      };
+}
+
 const restoreFailedReconfiguration$ = command(
   async (
     { set },
@@ -857,10 +879,6 @@ const restoreFailedReconfiguration$ = command(
         args.persisted.previous.nextRunAt,
         currentTime,
       );
-      const stripeBinding =
-        accountProjection.kind === "locked"
-          ? accountProjection.stripeBinding
-          : null;
       const morningBrief =
         await prepareMorningBriefLegacyReconciliationMutation(
           tx,
@@ -886,16 +904,10 @@ const restoreFailedReconfiguration$ = command(
                   : { eventConfig: restoredNotionConfig }),
               }
             : {}),
-          ...(stripeBinding
-            ? {
-                eventConfig: {
-                  ...stripeInvoicePaidEventConfigSchema.parse(
-                    restorePatch.eventConfig,
-                  ),
-                  ...stripeBinding,
-                },
-              }
-            : {}),
+          ...restoredStripeEventConfig(
+            accountProjection,
+            restorePatch.eventConfig,
+          ),
           enabled:
             morningBriefAuthority.kind === "selected"
               ? morningBrief.automation.enabled
@@ -910,6 +922,11 @@ const restoreFailedReconfiguration$ = command(
         .returning();
       if (!row) {
         return null;
+      }
+      if (googleFormsCursorMustReset(current, row)) {
+        await tx
+          .delete(googleFormsAutomationCursors)
+          .where(eq(googleFormsAutomationCursors.automationId, current.id));
       }
       await upsertActiveIdentity(tx, row, currentTime);
       return row;
@@ -1601,11 +1618,6 @@ async function commitAutomationStructureTransition(
   if (subtypeFailure) {
     return { kind: "failed", message: failureMessage(subtypeFailure) };
   }
-  if (desired.eventType !== "google-forms-response-submitted") {
-    await tx
-      .delete(googleFormsAutomationCursors)
-      .where(eq(googleFormsAutomationCursors.automationId, current.id));
-  }
   const [finalized] = await tx
     .update(workflowAutomations)
     .set({
@@ -1617,6 +1629,11 @@ async function commitAutomationStructureTransition(
     .returning();
   if (!finalized) {
     throw new Error("Official Workflow automation disappeared");
+  }
+  if (googleFormsCursorMustReset(current, finalized)) {
+    await tx
+      .delete(googleFormsAutomationCursors)
+      .where(eq(googleFormsAutomationCursors.automationId, current.id));
   }
   await upsertActiveIdentity(tx, finalized, currentTime);
   await tx
