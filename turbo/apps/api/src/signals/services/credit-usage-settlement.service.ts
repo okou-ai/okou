@@ -214,8 +214,7 @@ export const settleOrgUsage$ = command(
     const batch = await set(prepareUsageSettlementBatch$, args, signal);
     const { result, startedAt } = await set(
       commitUsageBatch$,
-      args,
-      batch,
+      { ...args, batch },
       signal,
     );
     if (result?.work.pendingEvents && !args.social) {
