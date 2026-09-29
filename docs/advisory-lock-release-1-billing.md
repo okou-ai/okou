@@ -71,6 +71,27 @@ synchronization and the purchase creation/confirmation graphs also remain
 unfinished. This change does not establish remote quantity ordering or retire
 the pending-count trigger while those writers remain.
 
+### Usage-pack in-app price preview
+
+The immediate and recurring Stripe invoice previews now run outside every SQL
+transaction. Owning commands read the preferred purchase snapshot and its
+allocations, prepare both provider prices, and publish only a timestamp refresh
+in a bounded command-owned commit. Publication rechecks the ordinary member or
+invitation selections and requires the same transient PostgreSQL `xmin`, pending
+status and empty provider bindings. A changed snapshot takes the existing
+prepare/retry route rather than returning a stale token. This commit does not
+change the pending state or count, so it does not use the transaction callback
+API for pending-snapshot mutations.
+
+The existing two-preview/one-subscription API case now delays the first provider
+preview response until a second user preview has completed. Both returned quotes
+retain the expected immediate/recurring amount and unpaid billing state, and both
+can be confirmed without creating a second subscription. There is no database
+gate or provider-call-count assertion for price previews. The initial snapshot
+preparation and actual Checkout/subscription creation/confirmation paths still
+have legacy transaction propagation and provider-I/O boundaries; this finite
+preview change does not claim those purchase-admission protocols are complete.
+
 ### Plan purchase admission predicates
 
 An active Stripe Plan that is not the preview's bound source is a competing

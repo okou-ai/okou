@@ -40,9 +40,11 @@ import {
   lte,
   notInArray,
   or,
+  sql,
 } from "drizzle-orm";
 
 import { logger } from "../../lib/log";
+import { pgTextDecoder } from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import {
@@ -1000,9 +1002,7 @@ function safeInvoiceAmount(invoice: StripeInvoice, label: string): number {
   return invoice.amount_due;
 }
 
-interface SerializedUsagePackPurchasePreviewInput {
-  readonly db: Db;
-  readonly stripe: StripeClient;
+interface UsagePackPurchasePreviewInput {
   readonly purchase: StartUsagePackPurchaseArgs;
   readonly customerId: string;
   readonly preferredSnapshotId: string;
@@ -1012,147 +1012,210 @@ interface SerializedUsagePackPurchasePreviewInput {
   };
 }
 
-type SerializedUsagePackPurchasePreviewAttempt =
+type UsagePackPurchasePreviewAttempt =
   | { readonly kind: "retry" }
   | {
       readonly kind: "complete";
       readonly result: StartUsagePackPurchaseResult;
     };
 
-async function createSerializedUsagePackPurchasePreviewAttempt(
-  input: SerializedUsagePackPurchasePreviewInput,
-  signal: AbortSignal,
-): Promise<SerializedUsagePackPurchasePreviewAttempt> {
-  const { purchase, route, stripe } = input;
-  return await writeUsagePackPendingSnapshots(
-    input.db,
-    [purchase.orgId],
-    async (lockTx) => {
-      signal.throwIfAborted();
-      const resolution = await resolvePendingUsagePackCheckout(
-        lockTx,
-        purchase,
-        input.customerId,
-        input.preferredSnapshotId,
-        signal,
+const usagePackPurchasePreviewSnapshot$ = command(
+  async (
+    { set },
+    input: UsagePackPurchasePreviewInput,
+    signal: AbortSignal,
+  ): Promise<{ readonly id: string; readonly rowVersion: string } | null> => {
+    const db = set(writeDb$);
+    const [snapshot] = await db
+      .select({
+        subscription: usagePackSubscriptions,
+        rowVersion: sql`${usagePackSubscriptions}.xmin::text`.mapWith(
+          pgTextDecoder,
+        ),
+      })
+      .from(usagePackSubscriptions)
+      .where(
+        and(
+          eq(usagePackSubscriptions.id, input.preferredSnapshotId),
+          eq(usagePackSubscriptions.orgId, input.purchase.orgId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (
+      !snapshot ||
+      snapshot.subscription.subscriptionStatus !== "purchase_pending" ||
+      snapshot.subscription.stripeCheckoutSessionId ||
+      snapshot.subscription.stripeSubscriptionId ||
+      snapshot.subscription.tier !== input.purchase.tier ||
+      snapshot.subscription.stripePlanPriceId !== input.purchase.planPriceId ||
+      snapshot.subscription.stripeCustomerId !== input.customerId
+    ) {
+      return null;
+    }
+    const allocations = await db
+      .select()
+      .from(usagePackAllocations)
+      .where(
+        eq(
+          usagePackAllocations.usagePackSubscriptionId,
+          snapshot.subscription.id,
+        ),
       );
-      if (resolution.kind === "redirect") {
-        return {
-          kind: "complete",
-          result: { status: "checkout", url: resolution.url },
-        };
-      }
-      if (resolution.kind !== "reuse") {
-        return { kind: "retry" };
-      }
-      const items = [
-        { price: purchase.planPriceId, quantity: 1 },
-        ...usagePackLineItems(purchase.allocations),
-      ];
-      const [immediateInvoice, recurringInvoice] = await Promise.all([
-        stripe.invoices.createPreview({
-          customer: route.customerId,
-          preview_mode: "next",
-          subscription_details: { items },
-        }),
-        stripe.invoices.createPreview({
-          customer: route.customerId,
-          preview_mode: "recurring",
-          subscription_details: { items },
-        }),
-      ]);
-      signal.throwIfAborted();
-      const immediateAmountCents = safeInvoiceAmount(
-        immediateInvoice,
-        "usage pack purchase immediate",
-      );
-      const nextRecurringAmountCents = safeInvoiceAmount(
-        recurringInvoice,
-        "usage pack purchase recurring",
-      );
-      if (immediateInvoice.currency !== recurringInvoice.currency) {
-        throw new Error(
-          "Stripe usage pack purchase previews disagree on currency",
+    signal.throwIfAborted();
+    return usagePackCheckoutAllocationsMatch(
+      allocations,
+      input.purchase.allocations,
+    )
+      ? { id: snapshot.subscription.id, rowVersion: snapshot.rowVersion }
+      : null;
+  },
+);
+
+const publishUsagePackPurchasePreview$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly usagePackSubscriptionId: string;
+      readonly rowVersion: string;
+      readonly allocations: readonly UsagePackCheckoutAllocation[];
+      readonly issuedAt: Date;
+    },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const db = set(writeDb$);
+    return await db.transaction(async (tx) => {
+      await tx.execute(billingPurchaseCompatibilityLockSql(args.orgId));
+      const allocations = await tx
+        .select()
+        .from(usagePackAllocations)
+        .where(
+          eq(
+            usagePackAllocations.usagePackSubscriptionId,
+            args.usagePackSubscriptionId,
+          ),
         );
+      signal.throwIfAborted();
+      if (!usagePackCheckoutAllocationsMatch(allocations, args.allocations)) {
+        return false;
       }
-      const issuedAt = nowDate();
-      const expiresAt = billingPreviewExpiresAt(issuedAt);
-      const refreshed = await lockTx
+      const [refreshed] = await tx
         .update(usagePackSubscriptions)
-        .set({ updatedAt: issuedAt })
+        .set({ updatedAt: args.issuedAt })
         .where(
           and(
-            eq(usagePackSubscriptions.id, resolution.usagePackSubscriptionId),
+            eq(usagePackSubscriptions.id, args.usagePackSubscriptionId),
+            eq(usagePackSubscriptions.orgId, args.orgId),
             eq(usagePackSubscriptions.subscriptionStatus, "purchase_pending"),
             isNull(usagePackSubscriptions.stripeCheckoutSessionId),
             isNull(usagePackSubscriptions.stripeSubscriptionId),
+            sql`${usagePackSubscriptions}.xmin::text = ${args.rowVersion}`,
           ),
         )
         .returning({ id: usagePackSubscriptions.id });
-      if (refreshed.length !== 1) {
-        return { kind: "retry" };
-      }
-      const payload: UsagePackPurchasePreviewToken = {
-        version: 1,
-        usagePackSubscriptionId: resolution.usagePackSubscriptionId,
-        orgId: purchase.orgId,
-        customerId: route.customerId,
-        sourceSubscriptionId: purchase.sourceSubscriptionId,
-        paymentMethodId: route.paymentMethodId,
-        tier: purchase.tier,
-        planPriceId: purchase.planPriceId,
-        immediateAmountCents,
-        nextRecurringAmountCents,
-        currency: immediateInvoice.currency,
-        successUrl: purchase.successUrl,
-        cancelUrl: purchase.cancelUrl,
-        expiresAt,
-      };
-      return {
-        kind: "complete",
-        result: {
-          status: "preview",
-          preview: {
-            status: "preview",
-            purchaseType: "usage_pack",
-            tier: purchase.tier,
-            immediateAmountCents,
-            nextRecurringAmountCents,
-            currency: immediateInvoice.currency,
-            expiresAt,
-            previewToken: createBillingPreviewToken(payload),
-          },
-        },
-      };
-    },
-  );
-}
+      return refreshed !== undefined;
+    });
+  },
+);
 
-async function createSerializedUsagePackPurchasePreview(
-  input: SerializedUsagePackPurchasePreviewInput,
-  signal: AbortSignal,
-): Promise<StartUsagePackPurchaseResult> {
-  let preferredSnapshotId = input.preferredSnapshotId;
-  while (true) {
-    const attempt = await createSerializedUsagePackPurchasePreviewAttempt(
-      { ...input, preferredSnapshotId },
+const createUsagePackPurchasePreviewAttempt$ = command(
+  async (
+    { set },
+    input: UsagePackPurchasePreviewInput,
+    signal: AbortSignal,
+  ): Promise<UsagePackPurchasePreviewAttempt> => {
+    const snapshot = await set(
+      usagePackPurchasePreviewSnapshot$,
+      input,
       signal,
     );
-    if (attempt.kind === "complete") {
-      return attempt.result;
+    if (!snapshot) {
+      return { kind: "retry" };
     }
-    const prepared = await prepareUsagePackPurchaseSnapshot(
-      input.db,
-      input.purchase,
-      input.customerId,
-      signal,
+    const { purchase, route } = input;
+    const stripe = getStripeClient();
+    const items = [
+      { price: purchase.planPriceId, quantity: 1 },
+      ...usagePackLineItems(purchase.allocations),
+    ];
+    const [immediateInvoice, recurringInvoice] = await Promise.all([
+      stripe.invoices.createPreview({
+        customer: route.customerId,
+        preview_mode: "next",
+        subscription_details: { items },
+      }),
+      stripe.invoices.createPreview({
+        customer: route.customerId,
+        preview_mode: "recurring",
+        subscription_details: { items },
+      }),
+    ]);
+    signal.throwIfAborted();
+    const immediateAmountCents = safeInvoiceAmount(
+      immediateInvoice,
+      "usage pack purchase immediate",
     );
-    if (prepared.kind === "redirect") {
-      return { status: "checkout", url: prepared.url };
+    const nextRecurringAmountCents = safeInvoiceAmount(
+      recurringInvoice,
+      "usage pack purchase recurring",
+    );
+    if (immediateInvoice.currency !== recurringInvoice.currency) {
+      throw new Error(
+        "Stripe usage pack purchase previews disagree on currency",
+      );
     }
-    preferredSnapshotId = prepared.usagePackSubscriptionId;
-  }
-}
+    const issuedAt = nowDate();
+    const expiresAt = billingPreviewExpiresAt(issuedAt);
+    if (
+      !(await set(
+        publishUsagePackPurchasePreview$,
+        {
+          orgId: purchase.orgId,
+          usagePackSubscriptionId: snapshot.id,
+          rowVersion: snapshot.rowVersion,
+          allocations: purchase.allocations,
+          issuedAt,
+        },
+        signal,
+      ))
+    ) {
+      return { kind: "retry" };
+    }
+    const payload: UsagePackPurchasePreviewToken = {
+      version: 1,
+      usagePackSubscriptionId: snapshot.id,
+      orgId: purchase.orgId,
+      customerId: route.customerId,
+      sourceSubscriptionId: purchase.sourceSubscriptionId,
+      paymentMethodId: route.paymentMethodId,
+      tier: purchase.tier,
+      planPriceId: purchase.planPriceId,
+      immediateAmountCents,
+      nextRecurringAmountCents,
+      currency: immediateInvoice.currency,
+      successUrl: purchase.successUrl,
+      cancelUrl: purchase.cancelUrl,
+      expiresAt,
+    };
+    return {
+      kind: "complete",
+      result: {
+        status: "preview",
+        preview: {
+          status: "preview",
+          purchaseType: "usage_pack",
+          tier: purchase.tier,
+          immediateAmountCents,
+          nextRecurringAmountCents,
+          currency: immediateInvoice.currency,
+          expiresAt,
+          previewToken: createBillingPreviewToken(payload),
+        },
+      },
+    };
+  },
+);
 
 export const startUsagePackPurchase$ = command(
   async (
@@ -1198,17 +1261,27 @@ export const startUsagePackPurchase$ = command(
         signal,
       );
     }
-    return await createSerializedUsagePackPurchasePreview(
-      {
+    let preferredSnapshotId = prepared.usagePackSubscriptionId;
+    while (true) {
+      const attempt = await set(
+        createUsagePackPurchasePreviewAttempt$,
+        { purchase: args, customerId, preferredSnapshotId, route },
+        signal,
+      );
+      if (attempt.kind === "complete") {
+        return attempt.result;
+      }
+      const refreshed = await prepareUsagePackPurchaseSnapshot(
         db,
-        stripe,
-        purchase: args,
+        args,
         customerId,
-        preferredSnapshotId: prepared.usagePackSubscriptionId,
-        route,
-      },
-      signal,
-    );
+        signal,
+      );
+      if (refreshed.kind === "redirect") {
+        return { status: "checkout", url: refreshed.url };
+      }
+      preferredSnapshotId = refreshed.usagePackSubscriptionId;
+    }
   },
 );
 

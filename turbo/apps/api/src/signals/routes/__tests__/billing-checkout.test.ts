@@ -4345,7 +4345,7 @@ describe("POST /api/billing/usage-pack-checkout", () => {
     );
   });
 
-  it("reuses a pending usage pack preview and creates one subscription", async () => {
+  it("reuses concurrent usage pack previews after a delayed provider response", async () => {
     const fixture = createOrgFixture();
     authenticateOrg(fixture);
     const customerId = `cus_${randomUUID()}`;
@@ -4369,7 +4369,7 @@ describe("POST /api/billing/usage-pack-checkout", () => {
       id: customerId,
       invoice_settings: { default_payment_method: paymentMethodId },
     });
-    context.mocks.stripe.invoices.createPreview.mockResolvedValue({
+    const invoicePreview = {
       id: `in_preview_${randomUUID()}`,
       customer: customerId,
       amount_due: 4000,
@@ -4379,7 +4379,17 @@ describe("POST /api/billing/usage-pack-checkout", () => {
       hosted_invoice_url: null,
       lines: { has_more: false, data: [] },
       parent: null,
-    });
+    };
+    const firstPreviewStarted = createDeferredPromise<void>(context.signal);
+    const firstPreviewResponse = createDeferredPromise<typeof invoicePreview>(
+      context.signal,
+    );
+    context.mocks.stripe.invoices.createPreview
+      .mockResolvedValue(invoicePreview)
+      .mockImplementationOnce(() => {
+        firstPreviewStarted.resolve();
+        return firstPreviewResponse.promise;
+      });
     let createdSubscription:
       | {
           readonly id: string;
@@ -4443,13 +4453,23 @@ describe("POST /api/billing/usage-pack-checkout", () => {
       successUrl: `${APP_ORIGIN}/billing?billing=success`,
       cancelUrl: `${APP_ORIGIN}/billing?billing=canceled`,
     };
-    const firstPreview = await accept(
+    const firstPreviewRequest = accept(
       client.create({
         body: purchaseBody,
         headers: { authorization: "Bearer clerk-session" },
       }),
       [200],
     );
+    onTestFinished(async () => {
+      if (!firstPreviewResponse.settled()) {
+        firstPreviewResponse.resolve(invoicePreview);
+      }
+      if (!firstPreviewStarted.settled()) {
+        firstPreviewStarted.resolve();
+      }
+      await Promise.allSettled([firstPreviewRequest]);
+    });
+    await firstPreviewStarted.promise;
     const secondPreview = await accept(
       client.create({
         body: purchaseBody,
@@ -4457,12 +4477,25 @@ describe("POST /api/billing/usage-pack-checkout", () => {
       }),
       [200],
     );
+    firstPreviewResponse.resolve(invoicePreview);
+    const firstPreview = await firstPreviewRequest;
     if (
       !("previewToken" in firstPreview.body) ||
       !("previewToken" in secondPreview.body)
     ) {
       throw new Error("Expected two usage pack purchase previews");
     }
+    for (const preview of [firstPreview.body, secondPreview.body]) {
+      expect(preview).toMatchObject({
+        immediateAmountCents: 4000,
+        nextRecurringAmountCents: 4000,
+        currency: "usd",
+      });
+    }
+    await expect(readBillingStatus(fixture)).resolves.toMatchObject({
+      tier: "limited-free-1",
+      hasSubscription: false,
+    });
 
     const confirmations = await Promise.all([
       client.confirm({
