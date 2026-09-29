@@ -1,3 +1,4 @@
+import type { StripeQueueSource } from "./workflow-stripe-queue.service";
 import type { NotionQueueSource } from "./workflow-notion-queue.service";
 import type { GoogleMeetQueueSource } from "./workflow-google-meet-queue.service";
 import { command } from "ccstate";
@@ -16,10 +17,7 @@ import { morningBriefScheduleClaims } from "@okouai/db/schema/morning-brief-sche
 import { writeDb$, type Db } from "../external/db";
 import { now, nowDate } from "../../lib/time";
 import type { DispatchFailedRunCallbacks } from "./agent-run-create.service";
-import type {
-  PersistWorkflowQueueSourceTransition,
-  WorkflowScheduleClaimPlan,
-} from "./workflow-chat-event-queue.service";
+import type { WorkflowScheduleClaimPlan } from "./workflow-chat-event-queue.service";
 import type { GoogleFormsQueueSource } from "./workflow-google-forms-queue.service";
 import type { InternalRunCallbackKind } from "./internal-run-callback";
 import {
@@ -122,11 +120,6 @@ export interface RunWorkflowAutomationNowArgs {
    * distinct queue item.
    */
   readonly replacePendingScheduleTick?: boolean;
-  /**
-   * Source transition committed in the same transaction as the queue event.
-   * This callback is never serialized into the durable queue payload.
-   */
-  readonly persistSourceTransition?: PersistWorkflowQueueSourceTransition;
   readonly queueReceipt?: WorkflowQueueReceipt;
   /** Forms input and cursor admission are owned by one finite SQL command. */
   readonly googleFormsSource?: GoogleFormsQueueSource;
@@ -134,6 +127,7 @@ export interface RunWorkflowAutomationNowArgs {
   readonly gmailSource?: GmailQueueSource;
   readonly googleMeetSource?: GoogleMeetQueueSource;
   readonly notionSource?: NotionQueueSource;
+  readonly stripeSource?: StripeQueueSource;
   /**
    * Consumes the due schedule occurrence in the same transaction as the queue
    * event. Only journaled legacy Morning Brief ticks pass one.

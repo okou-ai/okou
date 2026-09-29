@@ -1,4 +1,8 @@
 import {
+  StripeDeliveryClaimChangedError,
+  StripeDeliveryTargetChangedError,
+} from "./workflow-stripe-queue.service";
+import {
   stripeInvoicePaidEventConfigSchema,
   stripeInvoiceBillingReasonSchema,
   type StripeInvoiceBillingReason,
@@ -18,7 +22,6 @@ import {
   workflowAutomations,
   workflows,
 } from "@okouai/db/schema/workflow";
-import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { command } from "ccstate";
 import { and, asc, eq, inArray, isNull, lte, or } from "drizzle-orm";
 import { z } from "zod";
@@ -30,7 +33,6 @@ import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { settle } from "../utils";
 import { lockConnectorAccountTarget } from "./auth-state-lock.service";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
-import { ORG_SENTINEL_USER_ID } from "./feature-switch-scope";
 import { stripeInvoicePaidWorkflowAutomationEnabledForOwnerInDb } from "./stripe-invoice-paid-workflow-automation-feature-switch.service";
 import {
   repairMissingStripeInvoicePaidAutomationProjection,
@@ -38,7 +40,6 @@ import {
 } from "./stripe-invoice-paid-workflow-automation.service";
 import { workflowAutomationCanFire } from "./workflow-automation-access.service";
 import { storedWorkflowAutomationContext } from "./workflow-automation-context.service";
-import type { WorkflowQueueAdmissionTransaction } from "./workflow-chat-event-queue.service";
 import type {
   AutomationRow,
   RunWorkflowAutomationNowArgs,
@@ -1201,100 +1202,6 @@ async function updateLatestHealth(args: {
     );
 }
 
-class StripeDeliveryClaimChangedError extends Error {
-  constructor() {
-    super("Stripe workflow delivery claim changed");
-    this.name = "StripeDeliveryClaimChangedError";
-  }
-}
-
-class StripeDeliveryTargetChangedError extends Error {
-  constructor(readonly reason: string) {
-    super("Stripe workflow delivery target changed");
-    this.name = "StripeDeliveryTargetChangedError";
-  }
-}
-
-async function lockDeliveryTargetState(
-  args: {
-    readonly tx: WorkflowQueueAdmissionTransaction;
-    readonly delivery: StripeWorkflowDeliveryRow;
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  await args.tx
-    .select({ id: connectors.id })
-    .from(connectors)
-    .where(eq(connectors.id, args.delivery.connectorId))
-    .limit(1)
-    .for("update");
-  signal.throwIfAborted();
-  const [automation] = await args.tx
-    .select({
-      orgId: workflowAutomations.orgId,
-      ownerUserId: workflowAutomations.ownerUserId,
-    })
-    .from(workflowAutomations)
-    .where(eq(workflowAutomations.id, args.delivery.automationId))
-    .limit(1)
-    .for("update");
-  signal.throwIfAborted();
-  if (!automation) {
-    return;
-  }
-  await args.tx
-    .select({ userId: userFeatureSwitches.userId })
-    .from(userFeatureSwitches)
-    .where(
-      and(
-        eq(userFeatureSwitches.orgId, automation.orgId),
-        inArray(userFeatureSwitches.userId, [
-          automation.ownerUserId,
-          ORG_SENTINEL_USER_ID,
-        ]),
-      ),
-    )
-    .for("update");
-  signal.throwIfAborted();
-}
-
-async function persistDeliveryAdmission(
-  args: {
-    readonly tx: WorkflowQueueAdmissionTransaction;
-    readonly delivery: StripeWorkflowDeliveryRow;
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  await lockDeliveryTargetState(args, signal);
-  const validation = await loadDeliveryTarget(args.tx, args.delivery, signal);
-  if (validation.kind === "skip") {
-    throw new StripeDeliveryTargetChangedError(validation.reason);
-  }
-  const currentTime = nowDate();
-  const [delivered] = await args.tx
-    .update(stripeWorkflowDeliveries)
-    .set({
-      status: "delivered",
-      claimExpiresAt: null,
-      deliveredAt: currentTime,
-      lastError: null,
-      updatedAt: currentTime,
-    })
-    .where(deliveryClaimCondition(args.delivery))
-    .returning({ id: stripeWorkflowDeliveries.id });
-  signal.throwIfAborted();
-  if (!delivered) {
-    throw new StripeDeliveryClaimChangedError();
-  }
-  await updateLatestHealth({
-    tx: args.tx,
-    delivery: args.delivery,
-    status: "delivered",
-    statusAt: currentTime,
-  });
-  signal.throwIfAborted();
-}
-
 async function finishDelivery(
   args: {
     readonly db: Db;
@@ -1479,14 +1386,16 @@ async function processClaimedDelivery(
         triggerSource: "automation-event",
         triggerBrief: `Stripe invoice paid: ${args.delivery.snapshot.invoice.id}`,
         replacePendingScheduleTick: false,
-        persistSourceTransition: async (tx) => {
-          await persistDeliveryAdmission(
-            {
-              tx,
-              delivery: args.delivery,
-            },
-            signal,
-          );
+        stripeSource: {
+          id: args.delivery.id,
+          revision: args.delivery.revision,
+          automationId: args.delivery.automationId,
+          connectorId: args.delivery.connectorId,
+          stripeAccountId: args.delivery.stripeAccountId,
+          livemode: args.delivery.livemode,
+          billingReason: args.delivery.billingReason,
+          orgId: target.automation.orgId,
+          userId: target.automation.ownerUserId,
         },
       },
       signal,
@@ -1495,7 +1404,7 @@ async function processClaimedDelivery(
   );
   if (started.ok) {
     // A conflict or immediate run error is observed only after durable queue
-    // admission, where persistDeliveryAdmission already marked this delivery.
+    // admission, where the queue command already marked this delivery.
     logDeliveryOutcome({
       delivery: args.delivery,
       status: "delivered",

@@ -1,3 +1,4 @@
+import { enqueueStripeWorkflowInput$ } from "./workflow-stripe-queue.service";
 import { enqueueNotionWorkflowInput$ } from "./workflow-notion-queue.service";
 import { enqueueGoogleMeetWorkflowInput$ } from "./workflow-google-meet-queue.service";
 import { enqueueWorkflowInput$ } from "./workflow-input-queue.service";
@@ -14,7 +15,6 @@ import {
   prepareWorkflowAutomationQueueInput$,
   ScheduleOccurrenceUnavailableError,
   workflowAutomationQueueEventWriter,
-  type PersistWorkflowQueueSourceTransition,
   type WorkflowScheduleClaimPlan,
 } from "./workflow-chat-event-queue.service";
 import {
@@ -63,9 +63,6 @@ async function flushWorkflowAdmission<T>(
 
 function queueAdmissionSourceTransition(args: {
   readonly scheduleClaim: WorkflowScheduleClaimPlan | undefined;
-  readonly persistSourceTransition:
-    | PersistWorkflowQueueSourceTransition
-    | undefined;
   readonly replacePendingTicks:
     | { readonly chatThreadId: string; readonly automationId: string }
     | undefined;
@@ -73,8 +70,8 @@ function queueAdmissionSourceTransition(args: {
 }): {
   readonly persistSourceTransition?: (tx: Tx, eventId: string) => Promise<void>;
 } {
-  const { scheduleClaim, persistSourceTransition, replacePendingTicks } = args;
-  if (!scheduleClaim && !persistSourceTransition && !replacePendingTicks) {
+  const { scheduleClaim, replacePendingTicks } = args;
+  if (!scheduleClaim && !replacePendingTicks) {
     return {};
   }
   return {
@@ -113,15 +110,6 @@ function queueAdmissionSourceTransition(args: {
           },
         );
       }
-      if (persistSourceTransition) {
-        await measureWorkflowAdmissionStep(
-          args.timing,
-          "api_dispatch_workflow_enqueue_source_transition",
-          async () => {
-            await persistSourceTransition(tx);
-          },
-        );
-      }
     },
   };
 }
@@ -146,10 +134,9 @@ function workflowQueueInputPreparation(
       args.gmailSource ||
       args.googleMeetSource ||
       args.notionSource ||
+      args.stripeSource ||
       args.queueReceipt) &&
-    (args.scheduleClaim ||
-      args.persistSourceTransition ||
-      args.due.automation.kind === "schedule")
+    (args.scheduleClaim || args.due.automation.kind === "schedule")
   ) {
     throw new Error(
       "Provider watch admission cannot carry another source transition",
@@ -217,7 +204,7 @@ export const runWorkflowAutomationNow$ = command(
     const { automation, chatThreadId } = args.due;
     const timing = workflowQueueEntryTiming(args.timing, args.apiStartTime);
 
-    const { scheduleClaim, persistSourceTransition } = args;
+    const { scheduleClaim } = args;
     const replacePendingTicks =
       automation.kind === "schedule" &&
       args.replacePendingScheduleTick !== false
@@ -284,36 +271,42 @@ export const runWorkflowAutomationNow$ = command(
                             { input: preparedInput, source: args.notionSource },
                             signal,
                           )
-                        : !scheduleClaim &&
-                            !persistSourceTransition &&
-                            !replacePendingTicks
+                        : args.stripeSource
                           ? set(
-                              enqueueWorkflowInput$,
+                              enqueueStripeWorkflowInput$,
                               {
                                 input: preparedInput,
-                                orgId: automation.orgId,
-                                receipt: args.queueReceipt,
+                                source: args.stripeSource,
                               },
                               signal,
                             )
-                          : enqueueChatInput(db, {
-                              chatThreadId,
-                              orgId: automation.orgId,
-                              appendInput,
-                              measureStep: (step, operation) => {
-                                return measureWorkflowAdmissionStep(
+                          : !scheduleClaim && !replacePendingTicks
+                            ? set(
+                                enqueueWorkflowInput$,
+                                {
+                                  input: preparedInput,
+                                  orgId: automation.orgId,
+                                  receipt: args.queueReceipt,
+                                },
+                                signal,
+                              )
+                            : enqueueChatInput(db, {
+                                chatThreadId,
+                                orgId: automation.orgId,
+                                appendInput,
+                                measureStep: (step, operation) => {
+                                  return measureWorkflowAdmissionStep(
+                                    timing,
+                                    workflowQueueAdmissionStepAction(step),
+                                    operation,
+                                  );
+                                },
+                                ...queueAdmissionSourceTransition({
+                                  scheduleClaim,
+                                  replacePendingTicks,
                                   timing,
-                                  workflowQueueAdmissionStepAction(step),
-                                  operation,
-                                );
-                              },
-                              ...queueAdmissionSourceTransition({
-                                scheduleClaim,
-                                persistSourceTransition,
-                                replacePendingTicks,
-                                timing,
+                                }),
                               }),
-                            }),
             );
             if (!attempt.ok) {
               if (attempt.error instanceof ScheduleOccurrenceUnavailableError) {

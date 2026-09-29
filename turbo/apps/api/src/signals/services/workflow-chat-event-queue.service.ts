@@ -58,10 +58,6 @@ import {
 
 export type WorkflowQueueAdmissionTransaction = Tx;
 
-export type PersistWorkflowQueueSourceTransition = (
-  tx: WorkflowQueueAdmissionTransaction,
-) => Promise<void>;
-
 export type ScheduleUnclaimed = "superseded";
 
 export type WorkflowScheduleClaimAttempt =
