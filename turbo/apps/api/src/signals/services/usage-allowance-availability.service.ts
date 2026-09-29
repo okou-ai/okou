@@ -24,27 +24,30 @@ export const resolveUsageAllowanceAvailability$ = command(
   async (
     { set },
     orgId: string,
-    signal: AbortSignal,
+    signal?: AbortSignal,
   ): Promise<AllowanceAvailability | null> => {
     const db = set(writeDb$);
     const startedAt = performance.now();
     let lockWaitMs = 0;
+    const observedAt = nowDate();
     let availability = allowanceAvailability(
-      await db.select().from(allowanceAvailabilityQuery(orgId, nowDate())),
-      nowDate(),
+      await db.select().from(allowanceAvailabilityQuery(orgId, observedAt)),
+      observedAt,
     );
-    signal.throwIfAborted();
+    signal?.throwIfAborted();
     if (availability === "allowance_refresh_required") {
       const refresh = await set(
         prepareUsageAllowanceRefresh$,
         { orgId },
         signal,
       );
-      signal.throwIfAborted();
+      signal?.throwIfAborted();
       availability = await db.transaction(async (tx) => {
         const lockStartedAt = performance.now();
         await tx.execute(orgCreditCompatibilityLockSql(orgId));
+        signal?.throwIfAborted();
         const [owned] = await tx.select().from(entitlementQuery(orgId));
+        signal?.throwIfAborted();
         lockWaitMs = Math.round(performance.now() - lockStartedAt);
         const at = nowDate();
         const prepared = planPreparedAllowanceEntitlement(
@@ -57,6 +60,7 @@ export const resolveUsageAllowanceAvailability$ = command(
             .update(orgUsageAllowanceEntitlements)
             .set(prepared.update)
             .where(eq(orgUsageAllowanceEntitlements.id, owned.id));
+          signal?.throwIfAborted();
         }
         if (!prepared.entitlement) {
           return null;
@@ -68,10 +72,10 @@ export const resolveUsageAllowanceAvailability$ = command(
         if (current === "allowance_refresh_required") {
           throw new Error("Prepared usage allowance is still expired");
         }
-        signal.throwIfAborted();
+        signal?.throwIfAborted();
         return current;
       });
-      signal.throwIfAborted();
+      signal?.throwIfAborted();
     }
     safeSync(() => {
       recordBillingOperationTimings([

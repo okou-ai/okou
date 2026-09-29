@@ -302,22 +302,22 @@ export const prepareUsageAllowanceRefresh$ = command(
       readonly requirePendingUsage?: boolean;
       readonly idempotencyKeys?: readonly string[];
     },
-    signal: AbortSignal,
+    signal?: AbortSignal,
   ) => {
     const db = set(writeDb$);
     if (args.requirePendingUsage) {
       const [pending] = await db
         .select()
         .from(pendingAllowanceRefreshQuery(args.orgId, args.idempotencyKeys));
-      signal.throwIfAborted();
+      signal?.throwIfAborted();
       if (!pending) {
         return undefined;
       }
     }
     const [row] = await db.select().from(allowanceRefreshQuery(args.orgId));
-    signal.throwIfAborted();
+    signal?.throwIfAborted();
     const prepared = await prepareAllowanceRefresh(row);
-    signal.throwIfAborted();
+    signal?.throwIfAborted();
     return prepared;
   },
 );

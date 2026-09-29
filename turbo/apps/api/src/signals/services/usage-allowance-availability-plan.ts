@@ -4,7 +4,6 @@ import {
 } from "@okouai/db/schema/org-usage-allowance";
 import {
   and,
-  desc,
   eq,
   gt,
   gte,
@@ -13,6 +12,7 @@ import {
   isNull,
   lte,
   or,
+  sql,
 } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import {
@@ -49,6 +49,34 @@ function remainingUnits(
     : Math.max(0, window.unitLimit - window.consumedUnits);
 }
 export function allowanceAvailabilityQuery(orgId: string, at: Date) {
+  // Admission needs at most one covering window of each kind. Use the same
+  // start-time/UUID order as settlement, including overlapping legacy windows.
+  const selected = sql`SELECT chosen.id
+    FROM (VALUES ('short'), ('weekly')) AS kinds(kind)
+    CROSS JOIN LATERAL (
+      SELECT ${orgUsageAllowanceWindows.id} AS id
+      FROM ${orgUsageAllowanceWindows}
+      WHERE ${and(
+        eq(
+          orgUsageAllowanceWindows.entitlementId,
+          orgUsageAllowanceEntitlements.id,
+        ),
+        eq(orgUsageAllowanceWindows.orgId, orgId),
+        eq(orgUsageAllowanceWindows.kind, sql`kinds.kind`),
+        gte(
+          orgUsageAllowanceWindows.startsAt,
+          orgUsageAllowanceEntitlements.effectiveAt,
+        ),
+        lte(orgUsageAllowanceWindows.startsAt, at),
+        gt(orgUsageAllowanceWindows.expiresAt, at),
+        or(
+          isNull(orgUsageAllowanceEntitlements.expiresAt),
+          gt(orgUsageAllowanceEntitlements.expiresAt, at),
+        ),
+      )}
+      ORDER BY ${orgUsageAllowanceWindows.startsAt} DESC, ${orgUsageAllowanceWindows.id} ASC
+      LIMIT 1
+    ) AS chosen`;
   return new QueryBuilder()
     .select({
       entitlement: {
@@ -66,24 +94,7 @@ export function allowanceAvailabilityQuery(orgId: string, at: Date) {
     .from(orgUsageAllowanceEntitlements)
     .leftJoin(
       orgUsageAllowanceWindows,
-      and(
-        eq(
-          orgUsageAllowanceWindows.entitlementId,
-          orgUsageAllowanceEntitlements.id,
-        ),
-        eq(orgUsageAllowanceWindows.orgId, orgId),
-        inArray(orgUsageAllowanceWindows.kind, ["short", "weekly"]),
-        gte(
-          orgUsageAllowanceWindows.startsAt,
-          orgUsageAllowanceEntitlements.effectiveAt,
-        ),
-        lte(orgUsageAllowanceWindows.startsAt, at),
-        gt(orgUsageAllowanceWindows.expiresAt, at),
-        or(
-          isNull(orgUsageAllowanceEntitlements.expiresAt),
-          gt(orgUsageAllowanceEntitlements.expiresAt, at),
-        ),
-      ),
+      sql`${orgUsageAllowanceWindows.id} IN (${selected})`,
     )
     .where(
       and(
@@ -99,7 +110,6 @@ export function allowanceAvailabilityQuery(orgId: string, at: Date) {
         ),
       ),
     )
-    .orderBy(desc(orgUsageAllowanceWindows.startsAt))
     .as("allowance_availability");
 }
 export function allowanceAvailability(
