@@ -28,6 +28,7 @@ import {
   gt,
   inArray,
   isNull,
+  lt,
   lte,
   notInArray,
   or,
@@ -1216,136 +1217,156 @@ async function usageAllowanceInvoiceDetails(
   };
 }
 
-async function handleUsageAllowanceInvoicePaid(
-  db: Db,
-  invoice: InvoiceInput,
-): Promise<PaidWebhookOutcome> {
-  const details = await usageAllowanceInvoiceDetails(invoice);
-  if (!details) {
-    return { handled: false, drainOrgId: null };
-  }
-  const existingRows = await db
-    .select({
-      effectiveAt: orgUsageAllowanceEntitlements.effectiveAt,
-      stripeSubscriptionId: orgUsageAllowanceEntitlements.stripeSubscriptionId,
-    })
-    .from(orgUsageAllowanceEntitlements)
-    .where(eq(orgUsageAllowanceEntitlements.orgId, details.orgId))
-    .limit(1);
-  const existing = existingRows[0];
-  if (!details.active) {
-    if (
-      existing?.stripeSubscriptionId &&
-      existing.stripeSubscriptionId !== details.subscriptionId
-    ) {
-      L.warn("stale canceled usage allowance invoice ignored", {
-        invoiceId: invoice.id,
-        orgId: details.orgId,
-        currentSubscriptionId: existing.stripeSubscriptionId,
-        invoiceSubscriptionId: details.subscriptionId,
-      });
-      return { handled: true, drainOrgId: null };
-    }
-    const canceledAt = nowDate();
-    await db.transaction(async (tx) => {
-      const rows = await tx
+function usageAllowanceInvoiceValues(
+  invoiceId: string,
+  details: UsageAllowanceInvoiceDetails,
+  at: Date,
+) {
+  return {
+    orgId: details.orgId,
+    source: "atom_usage_allowance",
+    status: "active",
+    shortWindowSeconds: details.shortWindowSeconds,
+    shortWindowUnits: details.shortWindowUnits,
+    weeklyWindowSeconds: details.weeklyWindowSeconds,
+    weeklyWindowUnits: details.weeklyWindowUnits,
+    effectiveAt: details.effectiveAt,
+    expiresAt: details.expiresAt,
+    stripeCustomerId: details.customerId,
+    stripeSubscriptionId: details.subscriptionId,
+    stripeInvoiceId: invoiceId,
+    updatedAt: at,
+  };
+}
+
+function allowanceInvoiceBindingWhere(details: UsageAllowanceInvoiceDetails) {
+  return or(
+    isNull(orgUsageAllowanceEntitlements.stripeSubscriptionId),
+    eq(
+      orgUsageAllowanceEntitlements.stripeSubscriptionId,
+      details.subscriptionId,
+    ),
+    details.active
+      ? lt(orgUsageAllowanceEntitlements.effectiveAt, details.effectiveAt)
+      : undefined,
+  );
+}
+
+const publishUsageAllowanceInvoice$ = command(
+  async (
+    { set },
+    args: {
+      readonly invoiceId: string;
+      readonly details: UsageAllowanceInvoiceDetails;
+    },
+    signal: AbortSignal,
+  ): Promise<string | null> => {
+    const db = set(writeDb$);
+    const { details } = args;
+    const windows = details.active
+      ? []
+      : await db
+          .select({ id: orgUsageAllowanceWindows.id })
+          .from(orgUsageAllowanceWindows)
+          .where(currentAllowanceWindowsWhere(details.orgId, nowDate()));
+    signal.throwIfAborted();
+    const windowIds = windows.map((row) => {
+      return row.id;
+    });
+    const orgId = await db.transaction(async (tx) => {
+      await tx
+        .select({ orgId: orgMetadata.orgId })
+        .from(orgMetadata)
+        .where(eq(orgMetadata.orgId, details.orgId))
+        .for("update");
+      const [existing] = await tx
+        .select({ orgId: orgUsageAllowanceEntitlements.orgId })
+        .from(orgUsageAllowanceEntitlements)
+        .where(eq(orgUsageAllowanceEntitlements.orgId, details.orgId))
+        .for("update");
+      const at = nowDate();
+      if (details.active) {
+        const values = usageAllowanceInvoiceValues(args.invoiceId, details, at);
+        const [published] = await tx
+          .insert(orgUsageAllowanceEntitlements)
+          .values(values)
+          .onConflictDoUpdate({
+            target: orgUsageAllowanceEntitlements.orgId,
+            set: values,
+            setWhere: allowanceInvoiceBindingWhere(details),
+          })
+          .returning({ orgId: orgUsageAllowanceEntitlements.orgId });
+        return published?.orgId ?? null;
+      }
+      if (!existing) {
+        return details.orgId;
+      }
+      const [published] = await tx
         .update(orgUsageAllowanceEntitlements)
-        .set({
-          status: "canceled",
-          expiresAt: canceledAt,
-          updatedAt: canceledAt,
-        })
+        .set({ status: "canceled", expiresAt: at, updatedAt: at })
         .where(
           and(
             eq(orgUsageAllowanceEntitlements.orgId, details.orgId),
-            or(
-              isNull(orgUsageAllowanceEntitlements.stripeSubscriptionId),
-              eq(
-                orgUsageAllowanceEntitlements.stripeSubscriptionId,
-                details.subscriptionId,
-              ),
-            ),
+            allowanceInvoiceBindingWhere(details),
           ),
         )
         .returning({ orgId: orgUsageAllowanceEntitlements.orgId });
+      if (!published) {
+        return null;
+      }
+      const windowScope = currentAllowanceWindowsWhere(details.orgId, at);
+      const [unprepared] = await tx
+        .select({ id: orgUsageAllowanceWindows.id })
+        .from(orgUsageAllowanceWindows)
+        .where(
+          and(windowScope, notInArray(orgUsageAllowanceWindows.id, windowIds)),
+        )
+        .limit(1);
+      if (unprepared) {
+        throw new Error(
+          "Usage allowance windows changed during invoice cancellation",
+        );
+      }
       await tx
         .update(orgUsageAllowanceWindows)
-        .set(expiredAllowanceWindowValues(canceledAt))
+        .set(expiredAllowanceWindowValues(at))
         .where(
-          and(
-            inArray(
-              orgUsageAllowanceWindows.orgId,
-              rows.map((row) => {
-                return row.orgId;
-              }),
-            ),
-            lte(orgUsageAllowanceWindows.startsAt, canceledAt),
-            gt(orgUsageAllowanceWindows.expiresAt, canceledAt),
-          ),
+          and(windowScope, inArray(orgUsageAllowanceWindows.id, windowIds)),
         );
+      signal.throwIfAborted();
+      return details.orgId;
     });
-    return { handled: true, drainOrgId: details.orgId };
-  }
-  if (
-    existing?.stripeSubscriptionId &&
-    existing.stripeSubscriptionId !== details.subscriptionId &&
-    existing.effectiveAt.getTime() >= details.effectiveAt.getTime()
-  ) {
-    L.warn("stale usage allowance invoice ignored", {
+    signal.throwIfAborted();
+    return orgId;
+  },
+);
+
+const handleUsageAllowanceInvoicePaid$ = command(
+  async (
+    { set },
+    invoice: InvoiceInput,
+    signal: AbortSignal,
+  ): Promise<PaidWebhookOutcome> => {
+    const details = await usageAllowanceInvoiceDetails(invoice);
+    signal.throwIfAborted();
+    if (!details) {
+      return { handled: false, drainOrgId: null };
+    }
+    const drainOrgId = await set(
+      publishUsageAllowanceInvoice$,
+      { invoiceId: invoice.id, details },
+      signal,
+    );
+    signal.throwIfAborted();
+    L.debug("usage allowance invoice processed", {
       invoiceId: invoice.id,
       orgId: details.orgId,
-      currentSubscriptionId: existing.stripeSubscriptionId,
-      invoiceSubscriptionId: details.subscriptionId,
-      currentEffectiveAt: existing.effectiveAt.toISOString(),
-      invoiceEffectiveAt: details.effectiveAt.toISOString(),
+      subscriptionId: details.subscriptionId,
+      expiresAt: details.expiresAt?.toISOString() ?? null,
     });
-    return { handled: true, drainOrgId: null };
-  }
-
-  const updatedAt = nowDate();
-  await db
-    .insert(orgUsageAllowanceEntitlements)
-    .values({
-      orgId: details.orgId,
-      source: "atom_usage_allowance",
-      status: "active",
-      shortWindowSeconds: details.shortWindowSeconds,
-      shortWindowUnits: details.shortWindowUnits,
-      weeklyWindowSeconds: details.weeklyWindowSeconds,
-      weeklyWindowUnits: details.weeklyWindowUnits,
-      effectiveAt: details.effectiveAt,
-      expiresAt: details.expiresAt,
-      stripeCustomerId: details.customerId,
-      stripeSubscriptionId: details.subscriptionId,
-      stripeInvoiceId: invoice.id,
-      updatedAt,
-    })
-    .onConflictDoUpdate({
-      target: orgUsageAllowanceEntitlements.orgId,
-      set: {
-        source: "atom_usage_allowance",
-        status: "active",
-        shortWindowSeconds: details.shortWindowSeconds,
-        shortWindowUnits: details.shortWindowUnits,
-        weeklyWindowSeconds: details.weeklyWindowSeconds,
-        weeklyWindowUnits: details.weeklyWindowUnits,
-        effectiveAt: details.effectiveAt,
-        expiresAt: details.expiresAt,
-        stripeCustomerId: details.customerId,
-        stripeSubscriptionId: details.subscriptionId,
-        stripeInvoiceId: invoice.id,
-        updatedAt,
-      },
-    });
-
-  L.debug("usage allowance invoice processed", {
-    invoiceId: invoice.id,
-    orgId: details.orgId,
-    subscriptionId: details.subscriptionId,
-    expiresAt: details.expiresAt?.toISOString() ?? null,
-  });
-  return { handled: true, drainOrgId: details.orgId };
-}
+    return { handled: true, drainOrgId };
+  },
+);
 
 function stripePreviewMetadataForEvent(
   event: StripeWebhookEvent,
@@ -4013,9 +4034,10 @@ const handleInvoicePaid$ = command(
       }
     }
 
-    const usageAllowanceResult = await handleUsageAllowanceInvoicePaid(
-      db,
+    const usageAllowanceResult = await set(
+      handleUsageAllowanceInvoicePaid$,
       invoice,
+      signal,
     );
     signal.throwIfAborted();
 
