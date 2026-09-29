@@ -1,4 +1,4 @@
-import { resolveRequiredDefaultChatThreadModelPin } from "./chat-thread-model.service";
+import type { DefaultModelFirstPin } from "./model-selection.service";
 import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { teamsChatThreadRoutes } from "@okouai/db/schema/teams-chat-thread-route";
@@ -96,9 +96,13 @@ async function createCanonicalTeamsChatThread(
     readonly orgId: string;
     readonly agentId: string;
     readonly currentTime: Date;
+    readonly initialModel: DefaultModelFirstPin;
   },
 ): Promise<NonNullable<Awaited<ReturnType<typeof insertChatThread>>>> {
-  const initialModel = await resolveRequiredDefaultChatThreadModelPin(tx, args);
+  const { initialModel } = args;
+  if (!initialModel.selectedModel) {
+    throw new Error("A model selection is required");
+  }
   const thread = await insertChatThread(tx, {
     orgId: args.orgId,
     userId: args.userId,
@@ -123,6 +127,7 @@ export async function ensureTeamsChatThreadRoute(
     readonly orgId: string;
     readonly agentId: string;
     readonly currentTime: Date;
+    readonly initialModel: DefaultModelFirstPin;
   },
 ): Promise<TeamsChatThreadRouteBinding> {
   return await db.transaction(async (tx) => {

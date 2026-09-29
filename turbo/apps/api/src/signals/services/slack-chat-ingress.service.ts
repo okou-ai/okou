@@ -1,4 +1,4 @@
-import { resolveRequiredDefaultChatThreadModelPin } from "./chat-thread-model.service";
+import type { DefaultModelFirstPin } from "./model-selection.service";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
   slackChatIngress,
@@ -143,6 +143,7 @@ export async function ensureCanonicalSlackChatThreadRoute(
     readonly orgId: string;
     readonly agentId: string;
     readonly currentTime: Date;
+    readonly initialModel: DefaultModelFirstPin;
   },
 ): Promise<SlackChatThreadRouteBinding> {
   return await db.transaction(async (tx) => {
@@ -151,10 +152,10 @@ export async function ensureCanonicalSlackChatThreadRoute(
       return existing;
     }
 
-    const initialModel = await resolveRequiredDefaultChatThreadModelPin(
-      tx,
-      args,
-    );
+    const { initialModel } = args;
+    if (!initialModel.selectedModel) {
+      throw new Error("A model selection is required");
+    }
     const thread = await insertChatThread(tx, {
       orgId: args.orgId,
       userId: args.userId,

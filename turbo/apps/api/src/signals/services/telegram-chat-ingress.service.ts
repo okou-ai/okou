@@ -1,4 +1,4 @@
-import { resolveRequiredDefaultChatThreadModelPin } from "./chat-thread-model.service";
+import type { DefaultModelFirstPin } from "./model-selection.service";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { telegramChatThreadRoutes } from "@okouai/db/schema/telegram-chat-thread-route";
 import { and, eq } from "drizzle-orm";
@@ -39,6 +39,7 @@ interface TelegramChatThreadCreateArgs {
   readonly orgId: string;
   readonly agentId: string;
   readonly currentTime: Date;
+  readonly initialModel: DefaultModelFirstPin;
 }
 
 type TelegramChatThreadTransaction = Tx;
@@ -110,7 +111,10 @@ async function createCanonicalTelegramChatThread(
   tx: TelegramChatThreadTransaction,
   args: TelegramChatThreadCreateArgs,
 ): Promise<NonNullable<Awaited<ReturnType<typeof insertChatThread>>>> {
-  const initialModel = await resolveRequiredDefaultChatThreadModelPin(tx, args);
+  const { initialModel } = args;
+  if (!initialModel.selectedModel) {
+    throw new Error("A model selection is required");
+  }
   const thread = await insertChatThread(tx, {
     orgId: args.orgId,
     userId: args.userId,

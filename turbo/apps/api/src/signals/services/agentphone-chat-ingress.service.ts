@@ -1,4 +1,4 @@
-import { resolveRequiredDefaultChatThreadModelPin } from "./chat-thread-model.service";
+import type { DefaultModelFirstPin } from "./model-selection.service";
 import { agentphoneChatThreadRoutes } from "@okouai/db/schema/agentphone-chat-thread-route";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { and, eq } from "drizzle-orm";
@@ -30,6 +30,7 @@ interface AgentPhoneChatThreadCreateArgs {
   readonly agentId: string;
   readonly conversationId: string | null;
   readonly currentTime: Date;
+  readonly initialModel: DefaultModelFirstPin;
 }
 
 type AgentPhoneChatThreadTransaction = Tx;
@@ -82,7 +83,10 @@ async function createCanonicalAgentPhoneChatThread(
   tx: AgentPhoneChatThreadTransaction,
   args: AgentPhoneChatThreadCreateArgs,
 ): Promise<NonNullable<Awaited<ReturnType<typeof insertChatThread>>>> {
-  const initialModel = await resolveRequiredDefaultChatThreadModelPin(tx, args);
+  const { initialModel } = args;
+  if (!initialModel.selectedModel) {
+    throw new Error("A model selection is required");
+  }
   const thread = await insertChatThread(tx, {
     orgId: args.orgId,
     userId: args.userId,

@@ -1,4 +1,4 @@
-import { resolveRequiredDefaultChatThreadModelPin } from "./chat-thread-model.service";
+import type { DefaultModelFirstPin } from "./model-selection.service";
 import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
 import { createHash } from "node:crypto";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
@@ -157,6 +157,7 @@ interface CanonicalDiscordChatThreadRouteArgs extends DiscordChatThreadRouteKey 
   readonly currentTime: Date;
   readonly ingressId: string;
   readonly claimToken: string;
+  readonly initialModel: DefaultModelFirstPin;
 }
 
 /** Read the route already owned by an ingress claim and refresh its destination. */
@@ -220,10 +221,10 @@ export async function ensureCanonicalDiscordChatThreadRoute(
       return existing;
     }
 
-    const initialModel = await resolveRequiredDefaultChatThreadModelPin(
-      tx,
-      args,
-    );
+    const { initialModel } = args;
+    if (!initialModel.selectedModel) {
+      throw new Error("A model selection is required");
+    }
     const thread = await insertChatThread(tx, {
       orgId: args.orgId,
       userId: args.userId,
