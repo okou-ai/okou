@@ -1464,6 +1464,13 @@
       "when": 1790637409904,
       "tag": "1286_chat_event_v8",
       "breakpoints": true
+    },
+    {
+      "idx": 1287,
+      "version": "7",
+      "when": 1790650838487,
+      "tag": "1287_retire_provisional_billing_purge",
+      "breakpoints": true
     }
   ]
 }

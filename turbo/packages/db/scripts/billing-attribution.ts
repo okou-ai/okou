@@ -245,6 +245,9 @@ try {
       await client.query("BEGIN");
       try {
         await timeout();
+        // Release 1: outgoing compactors and cleanup writers still rely on
+        // this barrier. Release 2 removes it after API/worker drain, compatible
+        // rollback artifacts and operators using the row protocol below.
         await client.query(
           // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
           "SELECT pg_advisory_xact_lock(hashtext('vm0'), hashtext('usage_event_compaction'))",
@@ -279,10 +282,9 @@ try {
         await timeout();
         // FK checks by concurrent usage writers take KEY SHARE on the run.
         // NO KEY UPDATE protects its source fields without blocking that check.
-        const sourceLock = current === "runs" ? "NO KEY UPDATE" : "UPDATE";
         const idsResult = await client.query(
           `SELECT t.id FROM ${tables[current]} t WHERE ${predicate(current)}
-          AND ($5::uuid IS NULL OR t.id > $5::uuid) ORDER BY t.id LIMIT $6 FOR ${sourceLock} OF t`,
+          AND ($5::uuid IS NULL OR t.id > $5::uuid) ORDER BY t.id LIMIT $6${current === "runs" ? " FOR NO KEY UPDATE OF t" : ""}`,
           [...scope, nullableText(checkpoint.cursor), limit],
         );
         const ids = idsResult.rows.map((value: unknown) => {
@@ -293,6 +295,23 @@ try {
         });
         let populated = 0;
         if (ids.length > 0) {
+          if (current !== "runs") {
+            // Preserve FK parents before source rows, matching compaction. A
+            // deletion may already own a child before it reaches the parent;
+            // NOWAIT rolls this batch back instead of making that cycle wait.
+            // The checkpoint advances only with a committed complete batch.
+            await client.query(
+              `SELECT id FROM agent_runs WHERE id IN (
+                SELECT run_id FROM ${tables[current]} WHERE id = ANY($1::uuid[])
+              ) ORDER BY id FOR KEY SHARE NOWAIT`,
+              [ids],
+            );
+            await client.query(
+              `SELECT id FROM ${tables[current]} WHERE id = ANY($1::uuid[])
+                ORDER BY id FOR UPDATE NOWAIT`,
+              [ids],
+            );
+          }
           await timeout();
           const result =
             current === "runs"

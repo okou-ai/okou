@@ -1,3 +1,4 @@
+import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { usageAllowanceAllocations } from "@okouai/db/schema/org-usage-allowance";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { usageEventHourlyRollup } from "@okouai/db/schema/usage-event-hourly-rollup";
@@ -18,23 +19,21 @@ import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod";
 
 import {
-  executeRawRows,
+  parseRawRows,
   pgTimestampWithoutTimezoneToDateSchema,
 } from "../../lib/db-raw-rows";
 import { logger } from "../../lib/log";
-import { writeDb$, type Db } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { recordBillingOperationTimings } from "../external/sandbox-op-log";
 import { safeSync } from "../utils";
 import { timestampWithoutTimeZone } from "../../lib/time";
-import { lockUsageEventCompaction } from "./usage-event-compaction-lock.service";
+import { usageEventCompactionLockSql } from "./usage-event-compaction-lock.service";
 
 const L = logger("CronCompactUsageEvents");
 const USAGE_EVENT_COMPACTION_RAW_SEED_LIMIT = 500;
 const event = alias(usageEvent, "event");
 const allocation = alias(usageAllowanceAllocations, "allocation");
 const hourly = alias(usageEventHourlyRollup, "hourly");
-
-type UsageEventCompactionDb = Pick<Db, "execute" | "transaction">;
 
 interface UsageEventCompactionStats {
   readonly cutoff: string;
@@ -143,12 +142,31 @@ function physicalGrainOrder(alias: string): SQL {
   `;
 }
 
+// Acquire live Run FK parents before ledger rows. A busy deletion is skipped,
+// never waited on after retaining child rows. All compaction/deletion writers
+// must carry this order before the shared advisory barrier can be removed.
 function candidateCtes(args: {
   readonly cutoff: string;
   readonly rawSeedLimit: number;
   readonly orgId: string | undefined;
 }): SQL {
   return sql`
+    raw_candidates AS MATERIALIZED (
+      SELECT event.id, event.run_id
+      FROM ${usageEvent} ${event}
+      WHERE ${eligibleRawPredicate(args.cutoff, args.orgId)}
+      ORDER BY ${oldestProcessedEventOrder}
+      LIMIT ${args.rawSeedLimit}
+    ),
+    retained_runs AS MATERIALIZED (
+      SELECT ${agentRuns.id}
+      FROM ${agentRuns}
+      WHERE ${agentRuns.id} IN (
+        SELECT run_id FROM raw_candidates WHERE run_id IS NOT NULL
+      )
+      ORDER BY ${agentRuns.id}
+      FOR KEY SHARE SKIP LOCKED
+    ),
     raw_seed AS MATERIALIZED (
       SELECT
         event.id,
@@ -163,12 +181,13 @@ function candidateCtes(args: {
         allocation.short_window_id,
         allocation.weekly_window_id
       FROM ${usageEvent} ${event}
+      INNER JOIN raw_candidates candidate ON candidate.id = event.id
       LEFT JOIN ${usageAllowanceAllocations} ${allocation}
         ON ${eq(allocation.usageEventId, event.id)}
       WHERE ${eligibleRawPredicate(args.cutoff, args.orgId)}
+        AND (event.run_id IS NULL OR event.run_id IN (SELECT id FROM retained_runs))
       ORDER BY ${oldestProcessedEventOrder}
-      LIMIT ${args.rawSeedLimit}
-      FOR UPDATE OF event
+      FOR UPDATE OF event SKIP LOCKED
     ),
     raw_seed_grains AS MATERIALIZED (
       SELECT DISTINCT ${physicalGrainColumns("raw_seed")}
@@ -219,7 +238,7 @@ function lockedSourceCtes(cutoff: string): SQL {
         sql`${allocation.shortWindowId} IS NOT DISTINCT FROM grain.short_window_id`,
         sql`${allocation.weeklyWindowId} IS NOT DISTINCT FROM grain.weekly_window_id`,
       )}
-      FOR UPDATE OF event
+      FOR UPDATE OF event SKIP LOCKED
     ),
     locked_raw_allocations AS MATERIALIZED (
       SELECT
@@ -267,6 +286,7 @@ function lockedSourceCtes(cutoff: string): SQL {
         hourly.credits_charged,
         hourly.allowance_units
       FROM selected_grains grain
+      CROSS JOIN (SELECT ${count()} AS row_count FROM locked_raw) raw_owned
       INNER JOIN ${usageEventHourlyRollup} ${hourly}
         ON ${and(
           eq(hourly.processedHour, sql`grain.processed_hour`),
@@ -280,7 +300,8 @@ function lockedSourceCtes(cutoff: string): SQL {
           sql`${hourly.shortWindowId} IS NOT DISTINCT FROM grain.short_window_id`,
           sql`${hourly.weeklyWindowId} IS NOT DISTINCT FROM grain.weekly_window_id`,
         )}
-      FOR UPDATE OF hourly
+      WHERE raw_owned.row_count > 0
+      FOR UPDATE OF hourly SKIP LOCKED
     ),
     source_facts AS MATERIALIZED (
       SELECT
@@ -484,6 +505,10 @@ function windowReconciliationCte(): SQL {
   `;
 }
 
+// Seeds are a discovery snapshot. Another compactor can consume a selected
+// grain before source ownership; reconcile only rows actually locked/deleted.
+// Concurrent batches may leave separate physical fragments, which canonical
+// product readers already regroup by their existing business dimensions.
 function compactionSummarySelect(): SQL {
   return sql`
     SELECT
@@ -504,7 +529,7 @@ function compactionSummarySelect(): SQL {
         AND window_reconciliation.reconciled
         AND row_counts.locked_raw_rows = row_counts.raw_rows_deleted
         AND row_counts.locked_hourly_rows = row_counts.hourly_rows_deleted
-        AND row_counts.selected_grains = row_counts.hourly_rows_inserted
+        AND row_counts.selected_grains >= row_counts.hourly_rows_inserted
       ) AS "reconciled"
     FROM source_totals
     CROSS JOIN inserted_totals
@@ -531,136 +556,119 @@ function compactUsageEventsSql(args: {
   `;
 }
 
-async function loadCompactionCutoff(db: Pick<Db, "execute">): Promise<Date> {
-  const rows = await executeRawRows(
-    db,
-    sql`
-      SELECT (
-        date_trunc('hour', timezone('UTC', statement_timestamp()))
-        - interval '4 days'
-      )::timestamp AS cutoff
-    `,
-    cutoffRowSchema,
-  );
-  const cutoff = rows[0]?.cutoff;
-  if (!cutoff) {
-    throw new Error("Usage event compaction cutoff query returned no row");
-  }
-  return cutoff;
-}
-
-async function loadHoldProbe(
-  db: Pick<Db, "execute">,
+function compactionHoldProbeSql(
   cutoff: string,
   rawSeedLimit: number,
   orgId: string | undefined,
-): Promise<z.output<typeof holdProbeRowSchema>> {
-  const rows = await executeRawRows(
-    db,
-    sql`
-      WITH probed AS MATERIALIZED (
-        SELECT event.billing_error
-        FROM ${usageEvent} ${event}
-        WHERE ${and(
-          eq(event.status, sql`'processed'`),
-          orgId === undefined ? undefined : eq(event.orgId, orgId),
-          isNotNull(event.processedAt),
-          lt(event.processedAt, sql`${cutoff}::timestamp`),
-        )}
-        ORDER BY ${oldestProcessedEventOrder}
-        LIMIT ${rawSeedLimit}
-      )
-      SELECT
-        ${count()}::int AS "probedRawRows",
-        ${count()} FILTER (WHERE billing_error IS NOT NULL)::int
-          AS "billingErrorHeldRows"
-      FROM probed
-    `,
-    holdProbeRowSchema,
-  );
-  const probe = rows[0];
-  if (!probe) {
-    throw new Error(
-      "Usage event compaction hold probe returned no summary row",
-    );
-  }
-  return probe;
+): SQL {
+  return sql`
+    WITH probed AS MATERIALIZED (
+      SELECT event.billing_error
+      FROM ${usageEvent} ${event}
+      WHERE ${and(
+        eq(event.status, sql`'processed'`),
+        orgId === undefined ? undefined : eq(event.orgId, orgId),
+        isNotNull(event.processedAt),
+        lt(event.processedAt, sql`${cutoff}::timestamp`),
+      )}
+      ORDER BY ${oldestProcessedEventOrder}
+      LIMIT ${rawSeedLimit}
+    )
+    SELECT
+      ${count()}::int AS "probedRawRows",
+      ${count()} FILTER (WHERE billing_error IS NOT NULL)::int AS "billingErrorHeldRows"
+    FROM probed
+  `;
 }
 
-async function hasRemainingRawUsage(
-  db: Pick<Db, "select">,
-  cutoff: string,
-  orgId: string | undefined,
-): Promise<boolean> {
-  const [remaining] = await db
-    .select({ id: event.id })
-    .from(event)
-    .where(eligibleRawPredicate(cutoff, orgId))
-    .limit(1);
-  return remaining !== undefined;
-}
+const compactUsageEventBatch$ = command(
+  async (
+    { set },
+    orgId: string | undefined,
+    signal: AbortSignal,
+  ): Promise<Omit<UsageEventCompactionStats, "durationMs">> => {
+    const db = set(writeDb$);
+    const rawSeedLimit = USAGE_EVENT_COMPACTION_RAW_SEED_LIMIT;
+    return await db.transaction(async (tx) => {
+      const lockStartedAt = performance.now();
+      await tx.execute(usageEventCompactionLockSql());
+      const lockWaitMs = Math.round(performance.now() - lockStartedAt);
+      signal.throwIfAborted();
 
-async function compactUsageEventBatch(
-  db: UsageEventCompactionDb,
-  orgId: string | undefined,
-  signal: AbortSignal,
-): Promise<Omit<UsageEventCompactionStats, "durationMs">> {
-  const rawSeedLimit = USAGE_EVENT_COMPACTION_RAW_SEED_LIMIT;
-  return await db.transaction(async (tx) => {
-    const lockStartedAt = performance.now();
-    await lockUsageEventCompaction(tx);
-    const lockWaitMs = Math.round(performance.now() - lockStartedAt);
-    signal.throwIfAborted();
+      const cutoffRows = parseRawRows(
+        cutoffRowSchema,
+        await tx.execute(sql`
+      SELECT (date_trunc('hour', timezone('UTC', statement_timestamp()))
+        - interval '4 days')::timestamp AS cutoff
+    `),
+      );
+      const cutoffDate = cutoffRows[0]?.cutoff;
+      if (!cutoffDate) {
+        throw new Error("Usage event compaction cutoff query returned no row");
+      }
+      const cutoff = timestampWithoutTimeZone(cutoffDate);
+      const [holdProbe] = parseRawRows(
+        holdProbeRowSchema,
+        await tx.execute(compactionHoldProbeSql(cutoff, rawSeedLimit, orgId)),
+      );
+      if (!holdProbe) {
+        throw new Error(
+          "Usage event compaction hold probe returned no summary row",
+        );
+      }
+      const rows = parseRawRows(
+        compactionRowSchema,
+        await tx.execute(
+          compactUsageEventsSql({ cutoff, rawSeedLimit, orgId }),
+        ),
+      );
+      const compaction = rows[0];
+      if (!compaction) {
+        throw new Error("Usage event compaction returned no summary row");
+      }
+      if (!compaction.reconciled) {
+        L.error("usage event compaction reconciliation failed", {
+          cutoff: cutoffDate.toISOString(),
+          rawSeedLimit,
+          seededRawRows: compaction.seededRawRows,
+          selectedGrains: compaction.selectedGrains,
+          rawRowsDeleted: compaction.rawRowsDeleted,
+          hourlyRowsDeleted: compaction.hourlyRowsDeleted,
+          hourlyRowsInserted: compaction.hourlyRowsInserted,
+        });
+        throw new Error("Usage event compaction reconciliation failed");
+      }
+      signal.throwIfAborted();
+      const [remaining] = await tx
+        .select({ id: event.id })
+        .from(event)
+        .where(eligibleRawPredicate(cutoff, orgId))
+        .limit(1);
+      const hasMoreRaw = remaining !== undefined;
+      signal.throwIfAborted();
 
-    const cutoffDate = await loadCompactionCutoff(tx);
-    const cutoff = timestampWithoutTimeZone(cutoffDate);
-    const holdProbe = await loadHoldProbe(tx, cutoff, rawSeedLimit, orgId);
-    const rows = await executeRawRows(
-      tx,
-      compactUsageEventsSql({ cutoff, rawSeedLimit, orgId }),
-      compactionRowSchema,
-    );
-    const compaction = rows[0];
-    if (!compaction) {
-      throw new Error("Usage event compaction returned no summary row");
-    }
-    if (!compaction.reconciled) {
-      L.error("usage event compaction reconciliation failed", {
+      return {
         cutoff: cutoffDate.toISOString(),
         rawSeedLimit,
         seededRawRows: compaction.seededRawRows,
         selectedGrains: compaction.selectedGrains,
+        probedRawRows: holdProbe.probedRawRows,
+        billingErrorHeldRows: holdProbe.billingErrorHeldRows,
         rawRowsDeleted: compaction.rawRowsDeleted,
         hourlyRowsDeleted: compaction.hourlyRowsDeleted,
         hourlyRowsInserted: compaction.hourlyRowsInserted,
-      });
-      throw new Error("Usage event compaction reconciliation failed");
-    }
-    signal.throwIfAborted();
-    const hasMoreRaw = await hasRemainingRawUsage(tx, cutoff, orgId);
-    signal.throwIfAborted();
-
-    return {
-      cutoff: cutoffDate.toISOString(),
-      rawSeedLimit,
-      seededRawRows: compaction.seededRawRows,
-      selectedGrains: compaction.selectedGrains,
-      probedRawRows: holdProbe.probedRawRows,
-      billingErrorHeldRows: holdProbe.billingErrorHeldRows,
-      rawRowsDeleted: compaction.rawRowsDeleted,
-      hourlyRowsDeleted: compaction.hourlyRowsDeleted,
-      hourlyRowsInserted: compaction.hourlyRowsInserted,
-      quantity: compaction.quantity,
-      creditsCharged: compaction.creditsCharged,
-      allowanceUnits: compaction.allowanceUnits,
-      affectedShortWindows: compaction.affectedShortWindows,
-      affectedWeeklyWindows: compaction.affectedWeeklyWindows,
-      reconciled: compaction.reconciled,
-      hasMore: hasMoreRaw,
-      lockWaitMs,
-    };
-  });
-}
+        quantity: compaction.quantity,
+        creditsCharged: compaction.creditsCharged,
+        allowanceUnits: compaction.allowanceUnits,
+        affectedShortWindows: compaction.affectedShortWindows,
+        affectedWeeklyWindows: compaction.affectedWeeklyWindows,
+        reconciled: compaction.reconciled,
+        hasMore: hasMoreRaw,
+        lockWaitMs,
+      };
+    });
+  },
+);
 
 export const compactUsageEvents$ = command(
   async (
@@ -669,7 +677,7 @@ export const compactUsageEvents$ = command(
     signal: AbortSignal,
   ): Promise<UsageEventCompactionStats> => {
     const startedAt = performance.now();
-    const result = await compactUsageEventBatch(set(writeDb$), orgId, signal);
+    const result = await set(compactUsageEventBatch$, orgId, signal);
     const stats = {
       ...result,
       durationMs: Math.round(performance.now() - startedAt),

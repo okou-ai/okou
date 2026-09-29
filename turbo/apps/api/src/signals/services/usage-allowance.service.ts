@@ -3,6 +3,7 @@ import {
   orgUsageAllowanceWindows,
   usageAllowanceAllocations,
 } from "@okouai/db/schema/org-usage-allowance";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import {
   and,
@@ -18,6 +19,7 @@ import {
   or,
   sql,
 } from "drizzle-orm";
+import { pgTextDecoder } from "../../lib/db-structured-result";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
@@ -63,6 +65,7 @@ interface UsageAllowanceEntitlement {
   readonly effectiveAt: Date;
   readonly expiresAt: Date | null;
   readonly stripeSubscriptionId: string | null;
+  readonly snapshot: string;
 }
 
 interface UsageAllowanceWindow {
@@ -251,20 +254,33 @@ async function refreshUsageAllowanceEntitlementFromStripe(
     },
   );
 
+  // Compare the actual entitlement snapshot when publishing remote work.
+  // Release 2 can move retrieval outside the local write transaction without
+  // reviving an entitlement changed or revoked while Stripe was in flight.
+  const unchanged = and(
+    eq(orgUsageAllowanceEntitlements.id, entitlement.id),
+    eq(sql`${orgUsageAllowanceEntitlements}::text`, entitlement.snapshot),
+  );
   const subscription = (await getStripeClient().subscriptions.retrieve(
     entitlement.stripeSubscriptionId,
   )) as UsageAllowanceSubscriptionInput;
   const periodEnd = subscriptionScheduledEnd(subscription);
 
   if (subscriptionIsTerminalAllowance(subscription)) {
-    await tx
+    const [canceled] = await tx
       .update(orgUsageAllowanceEntitlements)
       .set({
         status: "canceled",
         expiresAt: now,
         updatedAt: now,
       })
-      .where(eq(orgUsageAllowanceEntitlements.id, entitlement.id));
+      .where(unchanged)
+      .returning({ id: orgUsageAllowanceEntitlements.id });
+    if (!canceled) {
+      throw new Error(
+        "Usage allowance entitlement changed during Stripe refresh",
+      );
+    }
     return null;
   }
 
@@ -290,30 +306,63 @@ async function refreshUsageAllowanceEntitlementFromStripe(
     return null;
   }
 
-  await tx
+  const [refreshed] = await tx
     .update(orgUsageAllowanceEntitlements)
     .set({
       status: subscription.status,
       expiresAt: periodEnd,
       updatedAt: now,
     })
-    .where(eq(orgUsageAllowanceEntitlements.id, entitlement.id));
-
+    .where(unchanged)
+    .returning({
+      snapshot: sql`${orgUsageAllowanceEntitlements}::text`.mapWith(
+        pgTextDecoder,
+      ),
+    });
+  if (!refreshed) {
+    // No charge or window allocation may use a stale Stripe result.
+    throw new Error(
+      "Usage allowance entitlement changed during Stripe refresh",
+    );
+  }
   return {
     ...entitlement,
     status: subscription.status,
     expiresAt: periodEnd,
+    snapshot: refreshed.snapshot,
   };
 }
 
 export async function lockOrgCredits(
-  tx: Pick<Db, "execute">,
+  tx: UsageAllowanceStore,
   orgId: string,
+  scope: "settlement" | "allowance" = "allowance",
 ): Promise<void> {
+  // DB/API rollout: outgoing settlement reads pending events before an
+  // unconditional processed write and issues windows without row ownership.
+  // Remove the advisory call only after pre-Release-1 serving/in-flight and
+  // rollback writers are gone. Release 1/2 share the rows below and event CAS.
   await tx.execute(
     // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
     sql`SELECT pg_advisory_xact_lock(hashtext('credit_' || ${orgId}))`,
   );
+  if (scope === "settlement") {
+    // Settlement owns the balance before grant/expiry rows. Admission only
+    // owns allowance; it can already hold a plan row and must not reverse the
+    // billing metadata-before-plan order merely to inspect a window.
+    await tx
+      .select({ orgId: orgMetadata.orgId })
+      .from(orgMetadata)
+      .where(eq(orgMetadata.orgId, orgId))
+      .for("update");
+  }
+  // The entitlement's existing unique organization identity owns creation of
+  // its short/weekly windows, including the absence of a window for a run.
+  await tx
+    .select({ id: orgUsageAllowanceEntitlements.id })
+    .from(orgUsageAllowanceEntitlements)
+    .where(eq(orgUsageAllowanceEntitlements.orgId, orgId))
+    .for("update");
 }
 
 async function loadActiveUsageAllowanceEntitlement(
@@ -333,6 +382,9 @@ async function loadActiveUsageAllowanceEntitlement(
       effectiveAt: orgUsageAllowanceEntitlements.effectiveAt,
       expiresAt: orgUsageAllowanceEntitlements.expiresAt,
       stripeSubscriptionId: orgUsageAllowanceEntitlements.stripeSubscriptionId,
+      snapshot: sql`${orgUsageAllowanceEntitlements}::text`.mapWith(
+        pgTextDecoder,
+      ),
     })
     .from(orgUsageAllowanceEntitlements)
     .where(

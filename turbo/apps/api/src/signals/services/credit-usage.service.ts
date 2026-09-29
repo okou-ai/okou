@@ -489,7 +489,7 @@ async function acquireSettlementLocksWithObservation(
   const startedAt = performance.now();
   await lockUsageEventCompaction(tx, "shared");
   const compactionLockAcquiredAt = performance.now();
-  await lockOrgCredits(tx, orgId);
+  await lockOrgCredits(tx, orgId, "settlement");
   const orgLockAcquiredAt = performance.now();
   return {
     startedAt,
@@ -498,10 +498,16 @@ async function acquireSettlementLocksWithObservation(
   };
 }
 
-async function readPendingUsageEventsWithTiming(tx: WriteTx, orgId: string) {
+async function claimPendingUsageEventsWithTiming(tx: WriteTx, orgId: string) {
   const startedAt = performance.now();
+  // Claim before deriving allowance or debits. A concurrent Release 1/2
+  // writer can charge only rows returned by its own pending-state transition;
+  // every mutation below commits or rolls back with this transition.
   const pendingRecords = await tx
-    .select({
+    .update(usageEvent)
+    .set({ status: "processed", creditsCharged: 0, processedAt: nowDate() })
+    .where(and(eq(usageEvent.orgId, orgId), eq(usageEvent.status, "pending")))
+    .returning({
       id: usageEvent.id,
       runId: usageEvent.runId,
       billingAnchorAt: usageEvent.billingAnchorAt,
@@ -515,9 +521,7 @@ async function readPendingUsageEventsWithTiming(tx: WriteTx, orgId: string) {
       pricingUnitSize: usageEvent.pricingUnitSize,
       pricingCreditsLimit: usageEvent.pricingCreditsLimit,
       createdAt: usageEvent.createdAt,
-    })
-    .from(usageEvent)
-    .where(and(eq(usageEvent.orgId, orgId), eq(usageEvent.status, "pending")));
+    });
   return { pendingRecords, pendingReadMs: elapsedSettlementPhaseMs(startedAt) };
 }
 
@@ -627,7 +631,7 @@ export async function processOrgUsageEventsInLockedTransaction(
   const work = initialSettlementWork(observation);
 
   const { pendingRecords, pendingReadMs } =
-    await readPendingUsageEventsWithTiming(tx, orgId);
+    await claimPendingUsageEventsWithTiming(tx, orgId);
   work.pendingReadMs = pendingReadMs;
 
   work.pendingEvents = pendingRecords.length;
