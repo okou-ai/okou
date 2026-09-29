@@ -26,7 +26,7 @@ export function socialJobQuery(orgId: string, claim: SocialSettlementClaim) {
     .for("update")
     .as("settlement_social_job");
 }
-export function socialUsageArgs(
+function socialUsageArgs(
   job: Job | undefined,
 ): ManagedUsageRecordArgs | undefined {
   if (!job) {
@@ -77,4 +77,9 @@ export function socialClaimUnavailable(
   job: Job | undefined,
 ) {
   return claim !== undefined && (!job || job.creditsCharged !== null);
+}
+
+export function socialSettlementPlan(job: Job | undefined) {
+  const usage = socialUsageArgs(job);
+  return { usage, processPending: job === undefined || usage !== undefined };
 }

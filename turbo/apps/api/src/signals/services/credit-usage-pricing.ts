@@ -13,25 +13,6 @@ export interface SettlementWorkObservation {
   readonly lockWaitMs: number;
   readonly orgLockWaitMs: number;
   readonly settlementWorkMs: number;
-  readonly pendingReadMs: number;
-  readonly pricingReadMs: number;
-  readonly pricingCalculationMs: number;
-  readonly allowanceMs: number;
-  readonly allowanceAllocationReadMs: number;
-  readonly allowanceAnchorMs: number;
-  readonly allowanceWindowLockMs: number;
-  readonly allowanceWindowIssueMs: number;
-  readonly allowanceAllocateMs: number;
-  readonly allowanceWindowWriteMs: number;
-  readonly allowanceAllocationWriteMs: number;
-  readonly eventWriteMs: number;
-  readonly grantDeductionMs: number;
-  readonly orgCreditMs: number;
-  readonly orgBalanceReadMs: number;
-  readonly orgExpireCreditsMs: number;
-  readonly orgDebitMs: number;
-  readonly orgExpiryLotDeductionMs: number;
-  // Standalone settlement only; inline managed callers own a larger transaction.
   readonly transactionDurationMs?: number;
   readonly pendingEvents: number;
   readonly pricingRows: number;
@@ -161,10 +142,4 @@ export function priceUsageEvents(
     });
   }
   return pricedEvents;
-}
-
-export interface UsageEventSettlementOutcome {
-  readonly usageEventId: string;
-  readonly creditsCharged: number;
-  readonly billingError: UsageEventBillingError;
 }

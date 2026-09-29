@@ -1,3 +1,4 @@
+import type { SocialSettlementClaim } from "./social-data-settlement-plan";
 import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
@@ -30,24 +31,6 @@ export function initialSettlementObservation(): SettlementWorkObservation {
     lockWaitMs: 0,
     orgLockWaitMs: 0,
     settlementWorkMs: 0,
-    pendingReadMs: 0,
-    pricingReadMs: 0,
-    pricingCalculationMs: 0,
-    allowanceMs: 0,
-    allowanceAllocationReadMs: 0,
-    allowanceAnchorMs: 0,
-    allowanceWindowLockMs: 0,
-    allowanceWindowIssueMs: 0,
-    allowanceAllocateMs: 0,
-    allowanceWindowWriteMs: 0,
-    allowanceAllocationWriteMs: 0,
-    eventWriteMs: 0,
-    grantDeductionMs: 0,
-    orgCreditMs: 0,
-    orgBalanceReadMs: 0,
-    orgExpireCreditsMs: 0,
-    orgDebitMs: 0,
-    orgExpiryLotDeductionMs: 0,
     pendingEvents: 0,
     pricingRows: 0,
     affectedUsers: 0,
@@ -403,4 +386,17 @@ export function orgDebitPlan(
       set: settlementDebitValues(amount, expired, at),
     },
   };
+}
+
+export function emptySettlementReceipt(
+  work: SettlementWorkObservation,
+): ProcessOrgUsageEventsResult {
+  return { sharedCreditsCharged: 0, runIds: [], lowBalanceAlert: null, work };
+}
+
+export function hasNoStandaloneUsage(
+  events: readonly { readonly id: string }[],
+  social: SocialSettlementClaim | undefined,
+): boolean {
+  return events.length === 0 && social === undefined;
 }

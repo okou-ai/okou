@@ -180,7 +180,7 @@ describe("shared SDK ingestion", () => {
     );
   });
 
-  it("emits settlement phases only for committed nonempty work", async () => {
+  it("emits settlement timing only for committed nonempty work", async () => {
     // Telemetry-client suite exception: observe the committed route and SDK
     // boundary together; do not inspect financial tables or service internals.
     mockEnv("ENV", "development");
@@ -231,6 +231,7 @@ describe("shared SDK ingestion", () => {
         categories: ["tokens.input"],
       });
     });
+    await accept(api.process({ body: { org_id: fixture.orgId } }), [200]);
     await store.set(
       insertUsageEvent$,
       {
@@ -261,7 +262,6 @@ describe("shared SDK ingestion", () => {
         });
       });
     };
-    await accept(api.rollback({ body: { org_id: fixture.orgId } }), [200]);
     expect(settlementTimings()).toStrictEqual([]);
 
     await accept(api.process({ body: { org_id: fixture.orgId } }), [200]);
@@ -271,24 +271,10 @@ describe("shared SDK ingestion", () => {
         pending_events: 1,
         compaction_lock_wait_ms: expect.any(Number),
         org_lock_wait_ms: expect.any(Number),
-        pending_read_ms: expect.any(Number),
-        pricing_read_ms: expect.any(Number),
-        pricing_calculation_ms: expect.any(Number),
-        allowance_ms: expect.any(Number),
-        allowance_allocation_read_ms: expect.any(Number),
-        allowance_anchor_ms: expect.any(Number),
-        allowance_window_lock_ms: expect.any(Number),
-        allowance_window_issue_ms: expect.any(Number),
-        allowance_allocate_ms: expect.any(Number),
-        allowance_window_write_ms: expect.any(Number),
-        allowance_allocation_write_ms: expect.any(Number),
-        event_write_ms: expect.any(Number),
-        grant_deduction_ms: expect.any(Number),
-        org_credit_ms: expect.any(Number),
-        org_balance_read_ms: expect.any(Number),
-        org_expire_credits_ms: expect.any(Number),
-        org_debit_ms: expect.any(Number),
-        org_expiry_lot_deduction_ms: expect.any(Number),
+        statement_grouping: "command_local_batch",
+        grant_rows: 0,
+        expired_rows: 0,
+        expiry_rows: 0,
       }),
     ]);
     expect(settlementTimings()[0]).not.toHaveProperty("org_id");
@@ -374,11 +360,9 @@ describe("shared SDK ingestion", () => {
     expect(settlementTimings()).toHaveLength(2);
     expect(settlementTimings()[1]).toStrictEqual(
       expect.objectContaining({
-        org_credit_ms: 0,
-        org_balance_read_ms: 0,
-        org_expire_credits_ms: 0,
-        org_debit_ms: 0,
-        org_expiry_lot_deduction_ms: 0,
+        statement_grouping: "command_local_batch",
+        expired_rows: 0,
+        expiry_rows: 0,
         grant_rows: 1,
       }),
     );

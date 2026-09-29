@@ -7,7 +7,7 @@ import {
 import {
   socialJobQuery,
   socialClaimUnavailable,
-  socialUsageArgs,
+  socialSettlementPlan,
   socialWhere,
   socialValues,
   type SocialSettlementClaim,
@@ -24,6 +24,8 @@ import { priceUsageEvents } from "./credit-usage-pricing";
 import {
   pendingUsageClaimCondition,
   initialSettlementObservation,
+  emptySettlementReceipt,
+  hasNoStandaloneUsage,
   planUsageCharges,
   settledEventValues,
   memberGrantsQuery,
@@ -77,7 +79,7 @@ export const settleOrgUsage$ = command(
       if (socialClaimUnavailable(args.social, job)) {
         return null;
       }
-      const managed = socialUsageArgs(job);
+      const { usage: managed, processPending } = socialSettlementPlan(job);
       await tx.execute(orgCreditCompatibilityLockSql(orgId));
       const [run] = managed
         ? await tx.select().from(managedRunQuery(managed))
@@ -95,15 +97,17 @@ export const settleOrgUsage$ = command(
       // Parent ownership precedes usage and its allocation FK rows, matching
       // deletion and compaction. It is compatible with Run status updates.
       const parents = await tx.select().from(pendingParentsQuery(orgId));
-      const events =
-        !job || managed
-          ? await tx
-              .update(usageEvent)
-              .set({ status: "processed", creditsCharged: 0, processedAt: at })
-              .where(pendingUsageClaimCondition(orgId, parents))
-              .returning()
-          : [];
+      const events = processPending
+        ? await tx
+            .update(usageEvent)
+            .set({ status: "processed", creditsCharged: 0, processedAt: at })
+            .where(pendingUsageClaimCondition(orgId, parents))
+            .returning()
+        : [];
       work.pendingEvents = events.length;
+      if (hasNoStandaloneUsage(events, args.social)) {
+        return emptySettlementReceipt(work);
+      }
       const pricing = events.length ? await tx.select().from(usagePricing) : [];
       work.pricingRows = pricing.length;
       const priced = priceUsageEvents(events, pricing, orgId, resolution);
