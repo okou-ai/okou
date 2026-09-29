@@ -10,6 +10,19 @@ Archive downloads finish before this transaction starts. The transaction checks 
 
 The retained `chat_usage_message` key still coordinates outgoing random-ID/no-retry writers. Remove it only when pre-Release-1 APIs are no longer serving, their in-flight requests have drained, and the rollback target has the deterministic append protocol. Usage archive preparation now owns its database queries through business-input commands. The immutable R2 reader receives only the published object metadata and bucket; no database is forwarded. The command validates the pointer across the object read and bounded latest-usage lookup. Other shared-thread/history read adapters still forward database capabilities and remain part of the wider interface cleanup.
 
+## Financial reporting ownership
+
+`usageRecord$` executes its paginated ledger rows, breakdown and totals directly;
+its reusable relations are pure SQL builders with business inputs. The team
+member report owns both aggregate reads in its local read-only snapshot, without
+passing a transaction to a query helper. Explicit result ordering, exact integer
+decoding, raw/hourly summation and retained attribution fallbacks are unchanged.
+Clerk email resolution and cache updates use an independent business-input
+command outside the reporting transaction. This closes these reporting reader
+boundaries; it does not yet replace the chat's persisted usage-display protocol.
+Existing user API totals, pagination, member isolation, late usage and compaction
+cases remain the behavioral verification for the integrated PR pipeline.
+
 ## Financial settlement
 
 `settleOrgUsage$` receives an organization identifier and operation identities or Social claim values. It prepares ordinary snapshots and dispatches `commitUsageBatch$`, whose business-only arguments contain those snapshots. The commit command obtains `writeDb$` itself and executes the complete financial write in one local transaction: pending-event claim, pricing-snapshot validation, allowance allocation, member grants, expiring credit lots, shared balance arithmetic, default entitlement repair, and an optional Social receipt. Every statement is executed directly by the transaction owner; the pricing and SQL planners receive only ordinary values. No database or transaction handle is forwarded.

@@ -4,7 +4,7 @@ import {
   pgInt8ToSafeIntegerDecoder,
   pgTextDecoder,
 } from "../../lib/db-structured-result";
-import type { Db } from "../external/db";
+import { QueryBuilder } from "drizzle-orm/pg-core";
 import {
   buildFinalizedUsageRelation,
   type FinalizedUsageRelation,
@@ -18,10 +18,8 @@ import {
   MODEL_TOKEN_USAGE_KINDS,
 } from "./model-token-categories";
 import {
-  buildUsageBreakdowns,
   usageBreakdownKindExpr,
   usageCreditsExpr,
-  type UsageBreakdownSqlRow,
 } from "./usage-reporting-breakdown";
 
 interface BillingWindow {
@@ -38,13 +36,10 @@ interface UsageMemberTotalsRow {
   readonly creditsCharged: number;
 }
 
-type UsageReportingDb = Pick<Db, "select">;
-
-export async function getMemberUsageTotals(
-  db: UsageReportingDb,
+export function memberUsageTotalsQuery(
   orgId: string,
   billingWindow: BillingWindow,
-): Promise<UsageMemberTotalsRow[]> {
+) {
   const usage = buildFinalizedUsageRelation(
     normalizeFinalizedUsagePeriod(billingWindow),
   );
@@ -73,15 +68,15 @@ export async function getMemberUsageTotals(
     creditsCharged: usageCreditsSum(usage, "credits_charged"),
   } satisfies Record<keyof UsageMemberTotalsRow, unknown>;
 
-  return await db
+  return new QueryBuilder()
     .select(totalsSelect)
     .from(usage)
     .where(eq(usage.orgId, orgId))
-    .groupBy(usage.userId);
+    .groupBy(usage.userId)
+    .as("member_usage_totals");
 }
 
-export async function getMemberUsageBreakdowns(
-  db: UsageReportingDb,
+export function memberUsageBreakdownQuery(
   orgId: string,
   billingWindow: BillingWindow,
 ) {
@@ -90,7 +85,7 @@ export async function getMemberUsageBreakdowns(
   );
   const kind = usageBreakdownKindExpr(usage);
   const credits = usageCreditsExpr(usage);
-  const rows: UsageBreakdownSqlRow[] = await db
+  return new QueryBuilder()
     .select({
       key: sql`${usage.userId}`.mapWith(pgTextDecoder).as("key"),
       kind: kind.as("kind"),
@@ -106,14 +101,8 @@ export async function getMemberUsageBreakdowns(
     .where(eq(usage.orgId, orgId))
     .groupBy(usage.userId, kind, usage.kind, usage.provider)
     .having(gt(sum(credits), sql`0`))
-    .orderBy(
-      asc(usage.userId),
-      asc(kind),
-      asc(usage.provider),
-      asc(usage.kind),
-    );
-
-  return buildUsageBreakdowns(rows);
+    .orderBy(asc(usage.userId), asc(kind), asc(usage.provider), asc(usage.kind))
+    .as("member_usage_breakdown");
 }
 
 function finalizedUsageTokenSum(
