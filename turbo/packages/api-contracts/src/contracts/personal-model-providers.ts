@@ -86,6 +86,7 @@ export const personalModelProvidersByTypeContract = c.router({
       204: c.noBody(),
       401: apiErrorSchema,
       404: apiErrorSchema,
+      409: apiErrorSchema,
       500: apiErrorSchema,
     },
     summary: "Delete a personal model provider for the requesting user",

@@ -935,10 +935,34 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
       isActive: true,
     });
 
+    await connectPersonalCodexTestAccount(member, {
+      accountId: "codex-account-d",
+      workspaceName: "Account D",
+      accessTokenExpiresAt: Math.floor(now() / 1000) + 3600,
+      refreshToken: "codex-account-d-refresh",
+    });
+    const beforeDeleteAll = await support.listPersonalModelProviders(
+      member,
+      [200],
+    );
+    if (!("modelProviders" in beforeDeleteAll.body)) {
+      throw new Error("Expected personal model provider list response");
+    }
+    expect(beforeDeleteAll.body.modelProviders).toHaveLength(2);
     await support.deletePersonalModelProvider(
       member,
       "codex-oauth-token",
       [204],
+    );
+    const afterDeleteAll = await support.listPersonalModelProviders(
+      member,
+      [200],
+    );
+    expect(afterDeleteAll.body).toMatchObject({ modelProviders: [] });
+    await support.deletePersonalModelProvider(
+      member,
+      "codex-oauth-token",
+      [404],
     );
   });
 

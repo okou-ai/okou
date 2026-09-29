@@ -18,7 +18,7 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import { db$, writeDb$ } from "../external/db";
-import { badRequestMessage, isNotFoundResponse } from "../../lib/error";
+import { badRequestMessage } from "../../lib/error";
 import { nowDate } from "../../lib/time";
 import { handleCodexAuthJsonPaste } from "../services/codex-auth-json-paste-handler";
 import {
@@ -314,7 +314,7 @@ const deleteModelProviderInner$ = command(
     );
     signal.throwIfAborted();
 
-    if (isNotFoundResponse(result)) {
+    if (result) {
       return result;
     }
     return { status: 204 as const, body: undefined };

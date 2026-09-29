@@ -19,7 +19,6 @@ import {
   asc,
   desc,
   eq,
-  exists,
   inArray,
   isNotNull,
   isNull,
@@ -101,22 +100,6 @@ export type PersonalProviderAccountErrorResponse =
 
 function isAccountMutationConflict(error: unknown): boolean {
   return isUniqueViolation(error) || safeSqlStateCode(error) === "40P01";
-}
-
-/** Account writers rely on constraints instead of locks: one active account per
- * provider, one row per upstream identity and one secret per name. A losing
- * concurrent writer surfaces as an explicit conflict. */
-async function withAccountConflict<T>(
-  write: () => Promise<T>,
-): Promise<T | ReturnType<typeof conflict>> {
-  const result = await settle(write());
-  if (result.ok) {
-    return result.value;
-  }
-  if (isAccountMutationConflict(result.error)) {
-    return conflict(ACCOUNT_CONFLICT_MESSAGE);
-  }
-  throw result.error;
 }
 
 function normalizedText(value: string | null | undefined): string | null {
@@ -823,47 +806,6 @@ function claudeIdentityValues(metadata: PersonalProviderAccountMetadata) {
   };
 }
 
-async function prepareClaudeAccountIdentities(
-  args: {
-    readonly db: Db;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly featureSwitchContext: FeatureSwitchContext;
-  },
-  signal: AbortSignal,
-): Promise<ReadonlyMap<string, ClaudeAccountIdentityProof> | null> {
-  const rows = await args.db
-    .select({
-      account: modelProviderAccounts,
-      encryptedValue: modelProviderAccountSecrets.encryptedValue,
-      stateRevision: sql`${modelProviderAccounts.updatedAt}::text`.mapWith(
-        pgTextDecoder,
-      ),
-    })
-    .from(modelProviderAccounts)
-    .innerJoin(
-      modelProviderAccountSecrets,
-      eq(
-        modelProviderAccountSecrets.modelProviderAccountId,
-        modelProviderAccounts.id,
-      ),
-    )
-    .where(
-      and(
-        eq(modelProviderAccounts.orgId, args.orgId),
-        eq(modelProviderAccounts.userId, args.userId),
-        eq(modelProviderAccounts.type, CLAUDE_CODE_TYPE),
-        isNull(modelProviderAccounts.disconnectedAt),
-        eq(modelProviderAccountSecrets.name, "CLAUDE_CODE_OAUTH_TOKEN"),
-      ),
-    );
-  return await fetchClaudeAccountIdentityProofs(
-    rows,
-    args.featureSwitchContext,
-    signal,
-  );
-}
-
 const prepareClaudeAccountIdentities$ = command(
   async (
     { set },
@@ -942,57 +884,6 @@ async function fetchClaudeAccountIdentityProofs(
     }
   }
   return identities.size === 0 ? null : identities;
-}
-
-/** Identify legacy Claude accounts before the all-account disconnect so a
- * retained row can still be matched by a later reconnect. */
-export async function identifyPersonalSubscriptionAccountsBeforeDisconnect(
-  args: {
-    readonly db: Db;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly type: PersonalSubscriptionProviderType;
-    readonly featureSwitchContext: FeatureSwitchContext;
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  if (args.type !== CLAUDE_CODE_TYPE) {
-    return;
-  }
-  const proof = await prepareClaudeAccountIdentities(args, signal);
-  signal.throwIfAborted();
-  if (!proof) {
-    return;
-  }
-  const accounts = await args.db
-    .select()
-    .from(modelProviderAccounts)
-    .where(inArray(modelProviderAccounts.id, [...proof.keys()]));
-  await withAccountConflict(() => {
-    return applyClaudeIdentityProof(args.db, accounts, proof);
-  });
-}
-
-async function applyClaudeIdentityProof(
-  db: Db,
-  accounts: readonly AccountRow[],
-  proof: ReadonlyMap<string, ClaudeAccountIdentityProof> | null,
-): Promise<readonly AccountRow[]> {
-  const hydrated: AccountRow[] = [];
-  for (const account of accounts) {
-    const identity = proof?.get(account.id);
-    if (!identity || hasClaudeIdentity(account)) {
-      hydrated.push(account);
-      continue;
-    }
-    const [updated] = await db
-      .update(modelProviderAccounts)
-      .set(claudeIdentityValues(identity.metadata))
-      .where(claudeIdentityProofCondition(account.id, identity))
-      .returning();
-    hydrated.push(updated ?? account);
-  }
-  return hydrated;
 }
 
 async function accountWithProvider(
@@ -1107,105 +998,213 @@ export const activatePersonalModelProviderAccount$ = command(
   },
 );
 
-/** Remove the logical provider once no account row, including a retained one,
- * still references it. */
+function unreferencedProviderCondition(providerId: string) {
+  return and(
+    eq(modelProviders.id, providerId),
+    sql`NOT EXISTS (
+    SELECT 1 FROM ${modelProviderAccounts}
+    WHERE ${modelProviderAccounts.modelProviderId} = ${providerId}
+  )`,
+  );
+}
+
+/** Legacy run-terminal cleanup still owns this caller's transaction. */
 async function deleteProviderWithoutAccounts(
   db: Db,
   providerId: string,
 ): Promise<void> {
   await db
     .delete(modelProviders)
-    .where(
-      and(
-        eq(modelProviders.id, providerId),
-        notExists(
-          db
-            .select({ id: modelProviderAccounts.id })
-            .from(modelProviderAccounts)
-            .where(eq(modelProviderAccounts.modelProviderId, providerId)),
-        ),
-      ),
-    );
+    .where(unreferencedProviderCondition(providerId));
 }
 
-export async function deletePersonalModelProviderAccount(
-  args: {
-    readonly db: Db;
-    readonly featureSwitchContext: FeatureSwitchContext;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly id: string;
-    readonly disconnectAll?: boolean;
-  },
-  signal: AbortSignal,
-): Promise<
-  ReturnType<typeof notFound> | ReturnType<typeof conflict> | undefined
-> {
-  const initial = await accountWithProvider(args.db, args);
-  if (!initial || !isPersonalSubscriptionProviderType(initial.account.type)) {
-    return notFound("Resource not found");
-  }
-  const identityProof =
-    !args.disconnectAll && initial.account.type === CLAUDE_CODE_TYPE
-      ? await prepareClaudeAccountIdentities(args, signal)
-      : null;
-  signal.throwIfAborted();
-  const result = await withAccountConflict(() => {
-    return args.db.transaction(async (tx) => {
-      const current = await accountWithProvider(tx, args);
-      if (!current) {
-        return notFound("Resource not found");
-      }
-      const [account] = await applyClaudeIdentityProof(
-        tx,
-        [current.account],
-        identityProof,
-      );
-      if (
-        !account ||
-        !(await retirePersonalModelProviderAccount(tx, account))
-      ) {
-        return notFound("Resource not found");
-      }
-      const [replacement] = await tx
-        .select()
-        .from(modelProviderAccounts)
-        .where(
-          and(
-            eq(modelProviderAccounts.modelProviderId, current.provider.id),
-            isNull(modelProviderAccounts.disconnectedAt),
-          ),
-        )
-        .orderBy(
-          asc(modelProviderAccounts.needsReconnect),
-          asc(modelProviderAccounts.createdAt),
-          asc(modelProviderAccounts.id),
-        )
-        .limit(1);
-      if (!replacement) {
-        await deleteProviderWithoutAccounts(tx, current.provider.id);
-        return undefined;
-      }
-      if (current.account.isActive) {
-        await tx
-          .update(modelProviderAccounts)
-          .set({ isActive: true, updatedAt: nowDate() })
+type PersonalAccountDisconnectSelection =
+  | { readonly kind: "account"; readonly id: string }
+  | {
+      readonly kind: "provider";
+      readonly type: PersonalSubscriptionProviderType;
+    };
+
+interface PersonalAccountDisconnection {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly selection: PersonalAccountDisconnectSelection;
+  readonly featureSwitchContext: FeatureSwitchContext;
+}
+
+function selectedAccountDisconnectCondition(
+  selection: PersonalAccountDisconnectSelection,
+) {
+  return selection.kind === "account"
+    ? eq(modelProviderAccounts.id, selection.id)
+    : eq(modelProviderAccounts.type, selection.type);
+}
+
+const publishPersonalAccountDisconnection$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly providerId: string;
+      readonly selection: PersonalAccountDisconnectSelection;
+      readonly identityProof: ReadonlyMap<
+        string,
+        ClaudeAccountIdentityProof
+      > | null;
+    },
+    signal: AbortSignal,
+  ): Promise<
+    ReturnType<typeof notFound> | ReturnType<typeof conflict> | undefined
+  > => {
+    const db = set(writeDb$);
+    const mutation = await settle(
+      db.transaction(async (tx) => {
+        // Account publication takes the same existing parent row first. This
+        // bounds all-account deletion without racing a new connected sibling.
+        const [provider] = await tx
+          .select({ id: modelProviders.id })
+          .from(modelProviders)
           .where(
             and(
-              eq(modelProviderAccounts.id, replacement.id),
-              isNull(modelProviderAccounts.disconnectedAt),
+              eq(modelProviders.id, args.providerId),
+              eq(modelProviders.orgId, args.orgId),
+              eq(modelProviders.userId, args.userId),
             ),
-          );
+          )
+          .for("update")
+          .limit(1);
+        if (!provider) {
+          return notFound("Resource not found");
+        }
+        const accounts = await tx
+          .select()
+          .from(modelProviderAccounts)
+          .where(
+            and(
+              connectedAccountCondition(provider.id),
+              selectedAccountDisconnectCondition(args.selection),
+            ),
+          )
+          .orderBy(asc(modelProviderAccounts.id))
+          .for("update")
+          .limit(MAX_PERSONAL_PROVIDER_ACCOUNTS + 1);
+        if (accounts.length === 0) {
+          return notFound("Resource not found");
+        }
+        if (accounts.length > MAX_PERSONAL_PROVIDER_ACCOUNTS) {
+          return conflict(ACCOUNT_CONFLICT_MESSAGE);
+        }
+        for (const account of accounts) {
+          const identity = args.identityProof?.get(account.id);
+          if (identity && !hasClaudeIdentity(account)) {
+            await tx
+              .update(modelProviderAccounts)
+              .set(claudeIdentityValues(identity.metadata))
+              .where(claudeIdentityProofCondition(account.id, identity));
+          }
+          await tx.execute(retiringAccountStatement(account));
+        }
+        if (args.selection.kind === "account" && accounts[0]?.isActive) {
+          const [replacement] = await tx
+            .select({ id: modelProviderAccounts.id })
+            .from(modelProviderAccounts)
+            .where(connectedAccountCondition(provider.id))
+            .orderBy(
+              asc(modelProviderAccounts.needsReconnect),
+              asc(modelProviderAccounts.createdAt),
+              asc(modelProviderAccounts.id),
+            )
+            .limit(1);
+          if (replacement) {
+            await tx
+              .update(modelProviderAccounts)
+              .set({ isActive: true, updatedAt: nowDate() })
+              .where(
+                and(
+                  eq(modelProviderAccounts.id, replacement.id),
+                  isNull(modelProviderAccounts.disconnectedAt),
+                ),
+              );
+          }
+        }
+        await tx
+          .delete(modelProviders)
+          .where(unreferencedProviderCondition(provider.id));
+        signal.throwIfAborted();
+        return undefined;
+      }),
+    );
+    signal.throwIfAborted();
+    if (!mutation.ok) {
+      if (isAccountMutationConflict(mutation.error)) {
+        return conflict(ACCOUNT_CONFLICT_MESSAGE);
       }
-      return undefined;
-    });
-  });
-  // Disconnect-all is nested in the provider transaction; its owner publishes.
-  if (result === undefined && !args.disconnectAll) {
-    await publishPersonalModelProvidersChangedSafely(args.userId);
-  }
-  return result;
-}
+      throw mutation.error;
+    }
+    if (mutation.value === undefined) {
+      await publishPersonalModelProvidersChangedSafely(args.userId);
+      signal.throwIfAborted();
+    }
+    return mutation.value;
+  },
+);
+
+/** Profile/KMS preparation precedes the finite local disconnection transaction. */
+export const disconnectPersonalModelProviderAccounts$ = command(
+  async (
+    { set },
+    args: PersonalAccountDisconnection,
+    signal: AbortSignal,
+  ): Promise<
+    ReturnType<typeof notFound> | ReturnType<typeof conflict> | undefined
+  > => {
+    const db = set(writeDb$);
+    const [initial] = await db
+      .select({
+        providerId: modelProviderAccounts.modelProviderId,
+        type: modelProviderAccounts.type,
+      })
+      .from(modelProviderAccounts)
+      .where(
+        and(
+          eq(modelProviderAccounts.orgId, args.orgId),
+          eq(modelProviderAccounts.userId, args.userId),
+          isNull(modelProviderAccounts.disconnectedAt),
+          selectedAccountDisconnectCondition(args.selection),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!initial || !isPersonalSubscriptionProviderType(initial.type)) {
+      return notFound("Resource not found");
+    }
+    const identityProof =
+      initial.type === CLAUDE_CODE_TYPE
+        ? await set(
+            prepareClaudeAccountIdentities$,
+            {
+              orgId: args.orgId,
+              userId: args.userId,
+              featureSwitchContext: args.featureSwitchContext,
+            },
+            signal,
+          )
+        : null;
+    signal.throwIfAborted();
+    return await set(
+      publishPersonalAccountDisconnection$,
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+        providerId: initial.providerId,
+        selection: args.selection,
+        identityProof,
+      },
+      signal,
+    );
+  },
+);
 
 export async function activePersonalModelProviderAccount(args: {
   readonly db: Db;
@@ -1338,52 +1337,6 @@ export function visiblePersonalModelProviderCondition() {
         AND ${modelProviderAccounts.disconnectedAt} IS NULL
     )
   )`;
-}
-
-/** Retain a disconnected account while a live run still references it;
- * otherwise delete it. Returns false when a concurrent writer already
- * disconnected or removed the account. */
-async function retirePersonalModelProviderAccount(
-  db: Db,
-  account: AccountRow,
-): Promise<boolean> {
-  const liveReference = exists(
-    db
-      .select({ id: agentRuns.id })
-      .from(agentRuns)
-      .where(
-        and(
-          eq(agentRuns.modelProviderId, account.id),
-          eq(agentRuns.orgId, account.orgId),
-          eq(agentRuns.userId, account.userId),
-          inArray(agentRuns.status, ["pending", "running"]),
-        ),
-      ),
-  );
-  const [retained] = await db
-    .update(modelProviderAccounts)
-    .set({ isActive: false, disconnectedAt: nowDate(), updatedAt: nowDate() })
-    .where(
-      and(
-        eq(modelProviderAccounts.id, account.id),
-        isNull(modelProviderAccounts.disconnectedAt),
-        liveReference,
-      ),
-    )
-    .returning({ id: modelProviderAccounts.id });
-  if (retained) {
-    return true;
-  }
-  const [deleted] = await db
-    .delete(modelProviderAccounts)
-    .where(
-      and(
-        eq(modelProviderAccounts.id, account.id),
-        isNull(modelProviderAccounts.disconnectedAt),
-      ),
-    )
-    .returning({ id: modelProviderAccounts.id });
-  return deleted !== undefined;
 }
 
 /** Called inside the terminal transaction after the run update. A retained

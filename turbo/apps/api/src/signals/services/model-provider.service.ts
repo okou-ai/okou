@@ -22,12 +22,12 @@ import { modelProviderConnections } from "@okouai/db/schema/model-provider-gatew
 import { modelProviderAccounts } from "@okouai/db/schema/model-provider-account";
 import { secrets } from "@okouai/db/schema/secret";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import {
   publishModelPoliciesChangedForOrgSafely,
   publishPersonalModelProvidersChangedSafely,
 } from "../external/realtime";
-import { badRequestMessage, notFound } from "../../lib/error";
+import { badRequestMessage, conflict, notFound } from "../../lib/error";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { encryptStoredSecretValue } from "./crypto.utils";
@@ -35,9 +35,8 @@ import { modelProviderStateLockStatement } from "./auth-state-lock.service";
 import { userFeatureSwitchContext } from "./feature-switches.service";
 
 import {
-  deletePersonalModelProviderAccount,
+  disconnectPersonalModelProviderAccounts$,
   isPersonalSubscriptionProviderType,
-  identifyPersonalSubscriptionAccountsBeforeDisconnect,
   upsertPersonalModelProviderAccount$,
   type UpsertPersonalAccountArgs,
   visiblePersonalModelProviderCondition,
@@ -155,57 +154,6 @@ export function modelProviders(
 
 type NotFoundResponse = ReturnType<typeof notFound>;
 
-async function disconnectPersonalSubscriptionProvider(
-  args: {
-    readonly db: Db;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly type: "claude-code-oauth-token" | "codex-oauth-token";
-    readonly featureSwitchContext: FeatureSwitchContext;
-  },
-  signal: AbortSignal,
-): Promise<NotFoundResponse | undefined> {
-  const subscriptionType = args.type;
-  // Identity requests run before the transaction, never inside it.
-  await identifyPersonalSubscriptionAccountsBeforeDisconnect(args, signal);
-  signal.throwIfAborted();
-  const result = await args.db.transaction(async (tx) => {
-    const accounts = await tx
-      .select({ id: modelProviderAccounts.id })
-      .from(modelProviderAccounts)
-      .where(
-        and(
-          eq(modelProviderAccounts.orgId, args.orgId),
-          eq(modelProviderAccounts.userId, args.userId),
-          eq(modelProviderAccounts.type, subscriptionType),
-          isNull(modelProviderAccounts.disconnectedAt),
-        ),
-      );
-    if (accounts.length === 0) {
-      return notFound("Resource not found");
-    }
-    for (const account of accounts) {
-      await deletePersonalModelProviderAccount(
-        {
-          ...args,
-          db: tx,
-          disconnectAll: true,
-          id: account.id,
-          featureSwitchContext: args.featureSwitchContext,
-        },
-        signal,
-      );
-    }
-    return undefined;
-  });
-  signal.throwIfAborted();
-  if (result === undefined) {
-    await publishProviderChanged(args);
-    signal.throwIfAborted();
-  }
-  return result;
-}
-
 /**
  * Delete a user-level model provider and cascade-delete its secrets.
  *
@@ -229,7 +177,7 @@ export const deleteUserModelProvider$ = command(
       readonly type: ModelProviderType;
     },
     signal: AbortSignal,
-  ): Promise<NotFoundResponse | undefined> => {
+  ): Promise<NotFoundResponse | ReturnType<typeof conflict> | undefined> => {
     const writeDb = set(writeDb$);
     const featureSwitchContext = await get(
       userFeatureSwitchContext(args.orgId, args.userId),
@@ -239,8 +187,14 @@ export const deleteUserModelProvider$ = command(
       args.userId !== ORG_SENTINEL_USER_ID &&
       isPersonalSubscriptionProviderType(args.type)
     ) {
-      return await disconnectPersonalSubscriptionProvider(
-        { db: writeDb, ...args, type: args.type, featureSwitchContext },
+      return await set(
+        disconnectPersonalModelProviderAccounts$,
+        {
+          orgId: args.orgId,
+          userId: args.userId,
+          selection: { kind: "provider", type: args.type },
+          featureSwitchContext,
+        },
         signal,
       );
     }
@@ -329,7 +283,7 @@ export const deleteOrgModelProvider$ = command(
       readonly type: ModelProviderType;
     },
     signal: AbortSignal,
-  ): Promise<NotFoundResponse | undefined> => {
+  ): Promise<NotFoundResponse | ReturnType<typeof conflict> | undefined> => {
     return await set(
       deleteUserModelProvider$,
       {

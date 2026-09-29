@@ -4,7 +4,6 @@ import { personalModelProvidersByTypeContract } from "@okouai/api-contracts/cont
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { pathParamsOf } from "../context/request";
-import { isNotFoundResponse } from "../../lib/error";
 import { deleteUserModelProvider$ } from "../services/model-provider.service";
 import type { RouteEntry } from "../route-entry";
 
@@ -21,7 +20,7 @@ const deleteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   );
   signal.throwIfAborted();
 
-  if (isNotFoundResponse(result)) {
+  if (result) {
     return result;
   }
   return { status: 204 as const, body: undefined };

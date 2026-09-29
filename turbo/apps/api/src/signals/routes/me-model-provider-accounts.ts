@@ -11,7 +11,7 @@ import { writeDb$ } from "../external/db";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import {
   activatePersonalModelProviderAccount$,
-  deletePersonalModelProviderAccount,
+  disconnectPersonalModelProviderAccounts$,
   personalModelProviderAccountById,
   personalModelProviderAccountResponseById,
 } from "../services/model-provider-account.service";
@@ -134,13 +134,13 @@ const deleteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const params = get(
     pathParamsOf(personalModelProviderAccountsByIdContract.delete),
   );
-  const result = await deletePersonalModelProviderAccount(
+  const result = await set(
+    disconnectPersonalModelProviderAccounts$,
     {
       featureSwitchContext,
-      db: set(writeDb$),
       orgId: auth.orgId,
       userId: auth.userId,
-      id: params.id,
+      selection: { kind: "account", id: params.id },
     },
     signal,
   );
