@@ -5,11 +5,17 @@ import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
 import {
   chatThreadConnectorSelectionContract,
   chatThreadsContract,
+  chatThreadUsageContract,
+  type ChatEventUsagePayload,
   type ChatEvent,
   type ChatThreadArtifactGoogleDriveSync,
   type UserMessageInputDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { cronProjectChatEventSearchContract } from "@okouai/api-contracts/contracts/cron";
+import { cronCompactUsageEventsRoutes } from "../cron-compact-usage-events";
+import {
+  cronCompactUsageEventsContract,
+  cronProjectChatEventSearchContract,
+} from "@okouai/api-contracts/contracts/cron";
 import {
   DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
   type SupportedRunModel,
@@ -17,7 +23,6 @@ import {
 import { CANCELLATION_RECOVERY_STALE_AFTER_MS } from "@okouai/api-contracts/contracts/runners";
 import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
 import { testChatThreadSnapshotCompactionContract } from "@okouai/api-contracts/contracts/test-chat-thread-snapshot-compaction";
-import { createStore } from "ccstate";
 import { HttpResponse, http } from "msw";
 import { createHash, randomUUID } from "node:crypto";
 import { gunzipSync } from "node:zlib";
@@ -51,7 +56,6 @@ import {
 } from "../../../test-fixtures/chat-thread-events";
 
 import { setAgentRunCreatedAtFixture } from "../../../test-fixtures/run-deletion";
-import { seedV7ChatEventSnapshot$ } from "../../../test-fixtures/chat-event-snapshot-v7";
 import {
   seedOrgMetadata,
   seedUsagePricingRows,
@@ -85,11 +89,6 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { chatEventDisplayText } from "./helpers/chat-event";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import {
-  deleteFakeChatEventObject,
-  installFakeChatEventR2,
-  writeFakeChatEventObject,
-} from "./helpers/fake-chat-event-r2";
 import { createRouteMocks } from "./helpers/route-test";
 import { seedBuiltInDefaultModelKey } from "./helpers/runtime-state";
 import {
@@ -97,10 +96,6 @@ import {
   generatedStripeSubscriptionId,
   postUsageAllowanceInvoicePaid,
 } from "./helpers/stripe-billing-webhook";
-import {
-  insertUsageEvent$,
-  materializeHourlyUsage$,
-} from "./helpers/usage-state";
 
 const TEST_APP_ROUTES = Object.freeze([
   ...cronProjectChatEventSearchRoutes,
@@ -130,7 +125,6 @@ const cu = createComputerUseBddApi(context);
 const connectorsApi = createConnectorBddApi(context);
 const authOrg = createAuthOrgAgentsBddApi(context);
 const routeMocks = createRouteMocks(context);
-const store = createStore();
 const DAY_MS = 24 * 60 * 60 * 1000;
 const FORWARD_CLEANUP_CUTOFF_MS = Date.parse("2026-08-03T05:40:26.000Z");
 const FORWARD_CLEANUP_TEST_CREATED_AT = "2026-08-03T05:40:26.001Z";
@@ -385,6 +379,26 @@ async function usageEventsForRun(
   return page.events.filter((event): event is UsageRecordedEvent => {
     return event.eventType === "usage.recorded" && event.runId === runId;
   });
+}
+
+async function settledUsageForRun(
+  actor: ApiTestUser,
+  threadId: string,
+  runId: string,
+): Promise<ChatEventUsagePayload | undefined> {
+  const response = await accept(
+    setupApp({ context, routes: chatThreadRoutes })(
+      chatThreadUsageContract,
+    ).read({
+      headers: authHeaders(actor),
+      params: { id: threadId },
+      body: { runIds: [runId] },
+    }),
+    [200],
+  );
+  return response.body.runs.find((run) => {
+    return run.runId === runId;
+  })?.usage;
 }
 
 function stateFromAuthorizationUrl(authorizationUrl: string): string {
@@ -3320,76 +3334,91 @@ describe("CHAT-01 chat thread read state", () => {
 });
 
 describe("CHAT-03 run usage events", () => {
-  it("emits aggregate-only usage with the run completion timestamp", async () => {
+  it("reads the settled ledger after compaction and checks current thread ownership", async () => {
+    mockNow(now() - 7 * DAY_MS);
+    onTestFinished(() => {
+      clearMockNow();
+    });
     const { actor, agentId, runnerGroup } = await entitledChatActor(
-      "Hourly usage event agent",
+      "Compacted usage display agent",
     );
-    if (!actor.orgId) {
-      throw new Error("Expected an org-scoped actor");
-    }
+    const provider = `hourly-chat-${randomUUID().slice(0, 8)}`;
+    await seedUsagePricingRows([
+      {
+        kind: "connector",
+        provider,
+        category: "api_request",
+        unitPrice: 7,
+        unitSize: 3,
+      },
+    ]);
     const run = await sendChatRun(actor, {
       agentId,
       prompt: "record compacted usage",
     });
     const { sandboxHeaders } = await claimChatRun(runnerGroup, run.runId);
-    const provider = `hourly-chat-${randomUUID().slice(0, 8)}`;
-    await store.set(
-      insertUsageEvent$,
+    await webhooks.requestAgentUsageEvent(
       {
-        orgId: actor.orgId,
-        userId: actor.userId,
         runId: run.runId,
-        kind: "connector",
-        provider,
-        category: "api_request",
-        quantity: 3,
-        status: "processed",
-        creditsCharged: 7,
-        processedAt: new Date("2020-01-01T12:25:00.000Z"),
+        events: [
+          {
+            idempotencyKey: randomUUID(),
+            kind: "connector",
+            provider,
+            category: "api_request",
+            quantity: 3,
+          },
+        ],
       },
-      context.signal,
+      sandboxHeaders,
+      [200],
     );
-    await expect(
-      store.set(
-        materializeHourlyUsage$,
-        {
-          orgId: actor.orgId,
-          userId: actor.userId,
-          runId: run.runId,
-        },
-        context.signal,
-      ),
-    ).resolves.toBe(1);
-
     const completedAt = new Date(now() + 1000);
     mockNow(completedAt);
-    onTestFinished(() => {
-      clearMockNow();
-    });
     await completeChatRunOk(run.runId, sandboxHeaders);
     await flushWaitUntilForTest();
-
-    const usageEvents = await usageEventsForRun(actor, run.threadId, run.runId);
-    expect(usageEvents).toStrictEqual([
-      expect.objectContaining({
-        createdAt: completedAt.toISOString(),
-        usage: {
-          version: 1,
-          totalCredits: 7,
-          settledAt: completedAt.toISOString(),
-          breakdown: [
-            {
-              kind: "connector",
-              credits: 7,
-              providers: [{ provider, credits: 7 }],
-            },
-          ],
+    const expected = {
+      version: 1,
+      totalCredits: 7,
+      settledAt: completedAt.toISOString(),
+      breakdown: [
+        {
+          kind: "connector",
+          credits: 7,
+          providers: [{ provider, credits: 7 }],
         },
+      ],
+    };
+    await expect(
+      settledUsageForRun(actor, run.threadId, run.runId),
+    ).resolves.toStrictEqual(expected);
+    clearMockNow();
+    mockEnv("CRON_SECRET", "chat-ledger-compaction-secret");
+    await accept(
+      setupApp({ context, routes: cronCompactUsageEventsRoutes })(
+        cronCompactUsageEventsContract,
+      ).compact({
+        headers: { authorization: "Bearer chat-ledger-compaction-secret" },
       }),
-    ]);
+      [200],
+    );
+    await expect(
+      settledUsageForRun(actor, run.threadId, run.runId),
+    ).resolves.toStrictEqual(expected);
+    const other = bdd.user();
+    await accept(
+      setupApp({ context, routes: chatThreadRoutes })(
+        chatThreadUsageContract,
+      ).read({
+        headers: authHeaders(other),
+        params: { id: run.threadId },
+        body: { runIds: [run.runId] },
+      }),
+      [404],
+    );
   }, 60_000);
 
-  it("converges on one usage revision when concurrent settlement requests repeat", async () => {
+  it("keeps ledger totals stable when concurrent settlement requests repeat", async () => {
     const { actor, agentId } = await entitledChatActorWithoutRunner(
       "Usage message agent",
     );
@@ -3430,21 +3459,6 @@ describe("CHAT-03 run usage events", () => {
       sandboxHeaders,
       [200],
     );
-    const conflicting =
-      await insertOutputEventWithConflictingLegacyPayloadFixture({
-        threadId,
-        runId,
-        content: "explicit output event with stale usage payload",
-        legacyPayload: "usage.recorded",
-      });
-    const page = await chat.listThreadEvents(actor, threadId);
-    expect(page.events).toContainEqual(
-      expect.objectContaining({
-        id: conflicting.id,
-        eventType: "output.message",
-      }),
-    );
-
     const billing = createBillingMediaApi(context);
     await Promise.all([
       billing.processOrgUsageEvents(actor),
@@ -3452,31 +3466,27 @@ describe("CHAT-03 run usage events", () => {
       billing.processOrgUsageEvents(actor),
     ]);
 
-    let usageEvents = await usageEventsForRun(actor, threadId, runId);
-    expect(usageEvents).toHaveLength(1);
-    const initialUsageEvent = usageEvents[0];
-    if (!initialUsageEvent) {
-      throw new Error("Expected one usage event");
-    }
-    expect(initialUsageEvent).toMatchObject({
-      eventType: "usage.recorded",
-      content: null,
-      usage: {
-        version: 1,
-        totalCredits: 18,
-        settledAt: expect.any(String),
-        breakdown: [
-          {
-            kind: "connector",
-            credits: 18,
-            providers: expect.arrayContaining([
-              { provider, credits: 18 },
-              { provider: missingProvider, credits: 0 },
-            ]),
-          },
-        ],
-      },
+    const initialUsage = await settledUsageForRun(actor, threadId, runId);
+    expect(initialUsage).toMatchObject({
+      version: 1,
+      totalCredits: 18,
+      settledAt: expect.any(String),
+      breakdown: [
+        {
+          kind: "connector",
+          credits: 18,
+          providers: expect.arrayContaining([
+            { provider, credits: 18 },
+            { provider: missingProvider, credits: 0 },
+          ]),
+        },
+      ],
     });
+    // Existing Apps still receive compatible hints, but their count is not a
+    // settlement or monetary correctness contract.
+    await expect(
+      usageEventsForRun(actor, threadId, runId),
+    ).resolves.toContainEqual(expect.objectContaining({ usage: initialUsage }));
 
     onTestFinished(() => {
       clearMockNow();
@@ -3505,8 +3515,9 @@ describe("CHAT-03 run usage events", () => {
       billing.processOrgUsageEvents(actor),
       billing.processOrgUsageEvents(actor),
     ]);
-    usageEvents = await usageEventsForRun(actor, threadId, runId);
-    expect(usageEvents).toStrictEqual([initialUsageEvent]);
+    await expect(
+      settledUsageForRun(actor, threadId, runId),
+    ).resolves.toStrictEqual(initialUsage);
 
     clearMockNow();
     await webhooks.requestAgentUsageEvent(
@@ -3531,31 +3542,22 @@ describe("CHAT-03 run usage events", () => {
       billing.processOrgUsageEvents(actor),
       billing.processOrgUsageEvents(actor),
     ]);
-    usageEvents = await usageEventsForRun(actor, threadId, runId);
-    expect(usageEvents).toHaveLength(2);
-    const firstRevision = usageEvents[1];
-    if (!firstRevision) {
-      throw new Error("Expected the first usage revision");
-    }
-    expect(firstRevision).toMatchObject({
-      eventType: "usage.recorded",
-      content: null,
-      revokesEventId: initialUsageEvent.id,
-      usage: {
-        version: 1,
-        totalCredits: 29,
-        settledAt: initialUsageEvent.usage.settledAt,
-        breakdown: [
-          {
-            kind: "connector",
-            credits: 29,
-            providers: expect.arrayContaining([
-              { provider, credits: 29 },
-              { provider: missingProvider, credits: 0 },
-            ]),
-          },
-        ],
-      },
+    await expect(
+      settledUsageForRun(actor, threadId, runId),
+    ).resolves.toMatchObject({
+      version: 1,
+      totalCredits: 29,
+      settledAt: initialUsage?.settledAt,
+      breakdown: [
+        {
+          kind: "connector",
+          credits: 29,
+          providers: expect.arrayContaining([
+            { provider, credits: 29 },
+            { provider: missingProvider, credits: 0 },
+          ]),
+        },
+      ],
     });
 
     clearMockNow();
@@ -3581,137 +3583,26 @@ describe("CHAT-03 run usage events", () => {
       billing.processOrgUsageEvents(actor),
       billing.processOrgUsageEvents(actor),
     ]);
-    usageEvents = await usageEventsForRun(actor, threadId, runId);
-    expect(usageEvents).toHaveLength(3);
-    expect(usageEvents[2]).toMatchObject({
-      eventType: "usage.recorded",
-      content: null,
-      revokesEventId: firstRevision.id,
-      usage: {
-        version: 1,
-        totalCredits: 36,
-        settledAt: initialUsageEvent.usage.settledAt,
-        breakdown: [
-          {
-            kind: "connector",
-            credits: 36,
-            providers: expect.arrayContaining([
-              { provider, credits: 36 },
-              { provider: missingProvider, credits: 0 },
-            ]),
-          },
-        ],
-      },
+    await expect(
+      settledUsageForRun(actor, threadId, runId),
+    ).resolves.toMatchObject({
+      version: 1,
+      totalCredits: 36,
+      settledAt: initialUsage?.settledAt,
+      breakdown: [
+        {
+          kind: "connector",
+          credits: 36,
+          providers: expect.arrayContaining([
+            { provider, credits: 36 },
+            { provider: missingProvider, credits: 0 },
+          ]),
+        },
+      ],
     });
   }, 60_000);
 
-  // Chat Event V8 transition: removed in PR-3 with the V7 Snapshot upgrade.
-  it("revises run usage archived only in a V7 Snapshot", async () => {
-    const { actor, agentId } = await entitledChatActorWithoutRunner(
-      "V7 archived usage agent",
-    );
-    installFakeChatEventR2(context);
-    const provider = `v7-usage-${randomUUID().slice(0, 8)}`;
-    const category = "api_request";
-    await seedUsagePricingRows([
-      { kind: "connector", provider, category, unitPrice: 7, unitSize: 2 },
-    ]);
-    const { runId, threadId } = await sendChatRun(actor, {
-      agentId,
-      prompt: "record usage archived by a V7 Snapshot",
-    });
-    const launched = (await chat.listThreadEvents(actor, threadId)).events.at(
-      -1,
-    );
-    if (!launched) {
-      throw new Error("Expected launched chat events");
-    }
-
-    // Infrastructure exception: only a pre-V8 API wrote V7 Snapshot pointers,
-    // and its usage row exists only in that archive. The shared V7 fixture
-    // seeds that state; usage settlement and chat reads stay real.
-    const v7 = await store.set(
-      seedV7ChatEventSnapshot$,
-      {
-        chatThreadId: threadId,
-        rows: [
-          {
-            eventType: "usage.recorded",
-            runId,
-            payload: {
-              usage: {
-                version: 1,
-                totalCredits: 1,
-                settledAt: new Date(now() - 60_000).toISOString(),
-                breakdown: [],
-              },
-            },
-          },
-          // A retired V7 type: the archive only decodes once upgraded to V8.
-          { eventType: "output.thinking", payload: { content: "reasoning" } },
-        ],
-      },
-      context.signal,
-    );
-    writeFakeChatEventObject(v7.objectKey, v7.body);
-    onTestFinished(async () => {
-      await deleteFakeChatEventObject(v7.objectKey);
-    });
-    const archivedUsage = v7.rows[0];
-    if (!archivedUsage) {
-      throw new Error("Expected the archived V7 usage row");
-    }
-
-    await webhooks.requestAgentUsageEvent(
-      {
-        runId,
-        events: [
-          {
-            idempotencyKey: randomUUID(),
-            kind: "connector",
-            provider,
-            category,
-            quantity: 5,
-          },
-        ],
-      },
-      { authorization: `Bearer ${api.sandboxTokenForRun(actor, runId)}` },
-      [200],
-    );
-    await createBillingMediaApi(context).processOrgUsageEvents(actor);
-
-    // Read from a physical cursor: Raw Events below the V7 coverage may
-    // already be reclaimed, and the archived rows are served by the Snapshot.
-    const tail = await chat.listThreadEvents(actor, threadId, {
-      sinceSeqId: launched.seqId,
-      sinceEventId: launched.id,
-    });
-    const usageEvents = tail.events.filter((event) => {
-      return event.eventType === "usage.recorded" && event.runId === runId;
-    });
-    // Settlement finds the usage row in the upgraded V7 archive and revises
-    // it instead of emitting a second, unrelated usage event.
-    expect(usageEvents).toStrictEqual([
-      expect.objectContaining({
-        eventType: "usage.recorded",
-        revokesEventId: archivedUsage.id,
-        usage: expect.objectContaining({
-          version: 1,
-          totalCredits: 18,
-          breakdown: [
-            {
-              kind: "connector",
-              credits: 18,
-              providers: [{ provider, credits: 18 }],
-            },
-          ],
-        }),
-      }),
-    ]);
-    expect(usageEvents[0]?.seqId).toBeGreaterThan(v7.lastSeqId);
-  }, 60_000);
-
-  it("emits complete allowance-covered usage in one event", async () => {
+  it("reads complete allowance-covered usage from the settled ledger", async () => {
     const fixture = await seedBuiltInDefaultModelKey(context);
     const selectedModel = DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL;
     expect(fixture.selectedModel).toBe(selectedModel);
@@ -3723,7 +3614,6 @@ describe("CHAT-03 run usage events", () => {
     if (!orgId) {
       throw new Error("Expected allowance chat actor to have an org");
     }
-    await seedOrgMetadata({ orgId, tier: "pro", credits: 10 });
     await postUsageAllowanceInvoicePaid(context.signal, {
       orgId,
       userId: actor.userId,
@@ -3777,23 +3667,19 @@ describe("CHAT-03 run usage events", () => {
     );
     await createBillingMediaApi(context).processOrgUsageEvents(actor);
 
-    const usageEvents = await usageEventsForRun(actor, threadId, runId);
-    expect(usageEvents).toHaveLength(1);
-    expect(usageEvents[0]).toMatchObject({
-      eventType: "usage.recorded",
-      content: null,
-      usage: {
-        version: 1,
-        breakdown: [
-          {
-            kind: "connector",
-            credits: 70,
-            providers: [{ provider, credits: 70 }],
-          },
-        ],
-        totalCredits: 70,
-        settledAt: expect.any(String),
-      },
+    await expect(
+      settledUsageForRun(actor, threadId, runId),
+    ).resolves.toMatchObject({
+      version: 1,
+      breakdown: [
+        {
+          kind: "connector",
+          credits: 70,
+          providers: [{ provider, credits: 70 }],
+        },
+      ],
+      totalCredits: 70,
+      settledAt: expect.any(String),
     });
     const billingStatus = await api.readBillingStatus(actor);
     if (!billingStatus.usageAllowance) {
@@ -3808,7 +3694,7 @@ describe("CHAT-03 run usage events", () => {
     ).toStrictEqual({ short: 70, weekly: 70 });
   }, 60_000);
 
-  it("emits zero-credit usage events and skips runs without usage", async () => {
+  it("reads zero-credit usage and omits runs without settled usage", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor(
       "Zero-credit usage message agent",
     );
@@ -3840,12 +3726,9 @@ describe("CHAT-03 run usage events", () => {
     await completeChatRunOk(agentRun.runId, okouSandboxHeaders);
     await flushWaitUntilForTest();
 
-    const [zeroUsageEvent] = await usageEventsForRun(
-      actor,
-      agentRun.threadId,
-      agentRun.runId,
-    );
-    expect(zeroUsageEvent?.usage).toMatchObject({
+    await expect(
+      settledUsageForRun(actor, agentRun.threadId, agentRun.runId),
+    ).resolves.toMatchObject({
       version: 1,
       totalCredits: 0,
       breakdown: [
@@ -3857,10 +3740,8 @@ describe("CHAT-03 run usage events", () => {
       ],
     });
 
-    // A run that never recorded usage settles nothing, so completion must not
-    // append a usage message. (The former pending-suppression variant is not
-    // product-reachable: both production emitters settle the org's pending
-    // usage immediately before emitting.)
+    // A run with no usage has no monetary receipt; it must not inherit another
+    // run's amount merely because both belong to the same member.
     const quietRun = await sendChatRun(actor, {
       agentId,
       prompt: "complete without recording usage",
@@ -3872,8 +3753,11 @@ describe("CHAT-03 run usage events", () => {
     await completeChatRunOk(quietRun.runId, quietSandboxHeaders);
     await flushWaitUntilForTest();
     await expect(
-      usageEventsForRun(actor, quietRun.threadId, quietRun.runId),
-    ).resolves.toHaveLength(0);
+      settledUsageForRun(actor, quietRun.threadId, quietRun.runId),
+    ).resolves.toBeUndefined();
+    await expect(
+      settledUsageForRun(actor, quietRun.threadId, agentRun.runId),
+    ).resolves.toBeUndefined();
   }, 60_000);
 });
 

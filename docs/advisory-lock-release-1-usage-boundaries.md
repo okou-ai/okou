@@ -2,13 +2,49 @@
 
 This note records the implemented boundary changes and the remaining implementation work. It does not certify Release 1 readiness. The remaining transaction propagation below is unfinished work, not an outgoing-writer compatibility exception.
 
-## Usage publication
+## Usage display and refresh hints
 
-`emitRunUsageEventAttempt$` owns its transaction and executes the context read, amount breakdown, hot-event lookup, archive-pointer validation and canonical append directly. Pure query/SQL builders receive only values. Canonical sequence allocation and event insertion remain one statement; initial events use the deterministic run identity and replacements retain the unique revoke edge and exact context pointer.
+Chat monetary display now reads settled billing data through the authenticated
+`POST /api/chat-threads/:id/usage` endpoint. Each request carries at most 100 Run
+identities. The owning commands obtain `writeDb$` themselves and execute their
+SQL directly; the reusable relation builder receives ordinary scope values.
+One statement sums processed raw events and hourly fragments, including applied
+allowance units, and excludes Runs with pending usage. Current thread ownership
+and Agent organization must match. Canonical billing attribution retains the
+original thread and member after Run deletion; the existing unknown-attribution
+fallback only uses a still-live Run. Explicitly threadless usage stays excluded.
+Already-unresolvable historical rows remain in generic financial reports; this
+change neither invents a per-Run binding nor certifies production convergence.
 
-Archive downloads finish before this transaction starts. The transaction checks the captured archive pointer when no hot event exists. A changed pointer or a hot event moved by retention causes a fresh attempt; stale absence cannot create a second initial event alongside an outgoing writer's random identity. Realtime publication remains after commit.
+The App schedules these reads under the mounted thread lifetime on initial
+history, relevant terminal/usage hints and catch-up. A synchronous notification
+listener starts supervised background work, so the usage HTTP request never
+blocks chat-event application, catch-up or presentation readiness. It never computes displayed money from `usage.recorded` payloads.
+A stale or duplicated hint therefore cannot replace the settled amount or create
+a second cost row. Read failure leaves the conversation usable and retries at a
+later refresh opportunity. During the actual outgoing-API rolling window, an old
+API can return 404 for the additive endpoint; the App leaves amounts unavailable
+until a supported read succeeds. This fallback can retire after all serving and
+rollback APIs provide the endpoint. R1 and R2 both provide it; no App floor or
+Runner drain is introduced.
 
-The retained `chat_usage_message` key still coordinates outgoing random-ID/no-retry writers. Remove it only when pre-Release-1 APIs are no longer serving, their in-flight requests have drained, and the rollback target has the deterministic append protocol. Usage archive preparation now owns its database queries through business-input commands. The immutable R2 reader receives only the published object metadata and bucket; no database is forwarded. The command validates the pointer across the object read and bounded latest-usage lookup. Other shared-thread/history read adapters still forward database capabilities and remain part of the wider interface cleanup.
+`maybeEmitRunUsageEvent$` now reads the committed amount, appends one ordinary
+canonical event with a random identity, and publishes realtime afterward. The
+existing full event payload remains readable by supported older Apps. Duplicate
+or delayed hints are accepted. The `chat_usage_message` advisory key, Run-parent
+serialization, deterministic initial identity, archive download/pointer checks,
+replacement/revoke edges and retry protocol were removed. An outgoing writer
+can overlap this hint writer without a monetary correctness dependency on their
+ordering. No persistent field, trigger or replacement lock was added.
+
+The user API regression obtains ledger amounts before and after real compaction,
+checks owner/thread isolation, concurrent/repeated settlement, late charges,
+allowance-funded and zero-priced usage. The UI regression supplies a stale 999
+credit hint while the ledger reports 8, and verifies the amount remains 8 on the
+correct Run. The old V7 usage-replacement fixture and exact event-count/revoke
+assertions were removed; general archive/history behavior remains covered by
+its independent tests. The new outgoing-API case preserves usable chat without
+rendering money from the hint. Behavior requires the integrated PR pipeline.
 
 ## Financial reporting ownership
 
@@ -19,7 +55,7 @@ passing a transaction to a query helper. Explicit result ordering, exact integer
 decoding, raw/hourly summation and retained attribution fallbacks are unchanged.
 Clerk email resolution and cache updates use an independent business-input
 command outside the reporting transaction. This closes these reporting reader
-boundaries; it does not yet replace the chat's persisted usage-display protocol.
+boundaries; the separate chat ledger read is described above.
 Existing user API totals, pagination, member isolation, late usage and compaction
 cases remain the behavioral verification for the integrated PR pipeline.
 

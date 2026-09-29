@@ -115,9 +115,15 @@ Reads that were checked and need no change: `usage-reporting-ledger.ts` and
 `usage.service.ts` group by member and never touch deletable data;
 `resolveUsageAllowanceAvailabilityForRun` and
 `activateUsageAllowanceWindowsForRun` serve a run that is live by construction;
-`chat-usage-event.service.ts` renders a live run inside a live chat thread and
-is a content reader, not a ledger reader; `x-resource-usage.service.ts` reads
-the requesting run while it is still executing.
+`x-resource-usage.service.ts` reads the requesting run while it is still
+executing. Advisory Lock Cleanup R1 changes chat amounts to an owned, bounded
+ledger read in `chat-run-usage.service.ts`; `chat-usage-event.service.ts` only
+publishes optional refresh hints with the existing event payload. The new read
+uses canonical attribution and current thread ownership, retaining the same
+live-Run fallback for unknown grouping identity. It does not infer per-Run
+amounts for already-unresolvable historical rows or substitute a hint payload
+for missing ledger provenance; those rows remain in generic financial reports.
+See [R1 usage boundaries](../advisory-lock-release-1-usage-boundaries.md).
 
 Advisory Lock Cleanup Release 1 keeps these fallbacks: neither a complete
 production inventory nor the required zero-gap/conflict conditions have been
@@ -131,10 +137,10 @@ artifacts and the prepared operator version before removing that key.
 Two transitional fallbacks remain until the operator backfill converges, both
 declared at their call sites:
 
-| Fallback                                         | Protects                                                | Removal condition                             |
-| ------------------------------------------------ | ------------------------------------------------------- | --------------------------------------------- |
-| `usage-record.service.ts` `agent_runs` join      | Rows whose attribution predates the grouping identity   | Inventory `thread_gaps: 0` and `conflicts: 0` |
-| `usage-allowance.service.ts` `loadRunCreatedAts` | Pending rows written before A1 whose run is still alive | Inventory `pending_anchor_gaps: 0`            |
+| Fallback                                                                 | Protects                                                | Removal condition                             |
+| ------------------------------------------------------------------------ | ------------------------------------------------------- | --------------------------------------------- |
+| `usage-record.service.ts` and `chat-run-usage.service.ts` live-Run joins | Rows whose attribution predates the grouping identity   | Inventory `thread_gaps: 0` and `conflicts: 0` |
+| `usage-allowance.service.ts` `loadRunCreatedAts`                         | Pending rows written before A1 whose run is still alive | Inventory `pending_anchor_gaps: 0`            |
 
 Both counters come from a complete, non-truncated
 `pnpm -F @okouai/db billing:attribution` dry-run inventory for the scope. The

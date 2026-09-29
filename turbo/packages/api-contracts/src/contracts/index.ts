@@ -571,6 +571,8 @@ export {
 export {
   chatThreadsContract,
   chatThreadByIdContract,
+  chatThreadUsageContract,
+  CHAT_THREAD_USAGE_RUN_LIMIT,
   chatThreadDraftContract,
   chatThreadMarkReadContract,
   chatThreadMarkUnreadContract,

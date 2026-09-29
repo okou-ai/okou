@@ -3535,7 +3535,7 @@ describe("okou workflow automations", () => {
     );
 
     expect(rejected.body.error.message).toMatch(
-      /Google Calendar (account selection|watch target) changed/,
+      /Google Calendar (account selection|watch target or connection) changed/,
     );
     await expect(wf.readAutomation(automation.body.id)).resolves.toMatchObject({
       id: automation.body.id,
