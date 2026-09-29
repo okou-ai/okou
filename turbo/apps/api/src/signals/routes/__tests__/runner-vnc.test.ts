@@ -241,6 +241,73 @@ describe("private Runner VNC authority", () => {
     expect((await check(f, 2)).body).toStrictEqual({ outcome: "valid" });
   });
 
+  it("requires the SSH-specific X509None capability and independent SSH authority", async () => {
+    const f = await api.fixture();
+    const ssh = await accept(
+      setupApp({ context, routes: sshConnectionsRoutes })(
+        sshConnectionsContract,
+      ).create({
+        headers: vncSessionHeaders,
+        body: {
+          id: randomUUID(),
+          displayName: "VNC gateway",
+          host: "gateway.example.com",
+          credential: inlineSshKey("deploy", "private-key"),
+        },
+      }),
+      [201],
+    );
+    await accept(
+      api.connections().update({
+        headers: vncSessionHeaders,
+        params: { connectionId: f.connectionId },
+        body: {
+          expectedGeneration: 1,
+          transport: { type: "ssh", connectionId: ssh.body.id },
+          security: { type: "x509_none", trust: { mode: "system" } },
+          credential: { type: "none" },
+        },
+      }),
+      [200],
+    );
+    const profiles = [
+      {
+        authMethod: "none" as const,
+        securityType: "x509_none" as const,
+        transportType: "ssh" as const,
+      },
+    ];
+    const kms = useSecretKmsProbe();
+    expect(await api.resolve(f, { supportedProfiles: profiles })).toStrictEqual(
+      { outcome: "unavailable" },
+    );
+    await accept(
+      setupApp({ context, routes: chatRemoteAccessRoutes })(
+        chatRemoteAccessContract,
+      ).updateHostDefault({
+        headers: vncSessionHeaders,
+        params: { protocol: "ssh", connectionId: ssh.body.id },
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    expect(
+      await api.resolve(f, {
+        supportedProfiles: [{ ...profiles[0]!, transportType: "direct" }],
+      }),
+    ).toStrictEqual({ outcome: "unsupported_profile" });
+    expect(await api.resolve(f, { supportedProfiles: profiles })).toMatchObject(
+      {
+        outcome: "resolved_transport",
+        authentication: { method: "none" },
+        security: { type: "x509_none" },
+        transport: { type: "ssh", connectionId: ssh.body.id },
+        generation: 2,
+      },
+    );
+    expect(kms.decryptCalls).toBe(0);
+  });
+
   it("rejects wrong auth classes and exact winning-process mismatches before KMS", async () => {
     const f = await api.fixture();
     const { generation } = await api.resolved(f);
