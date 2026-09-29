@@ -1,7 +1,6 @@
 // TODO(#8609): split large components to comply with max-lines-per-function (128)
 // oxlint-disable max-lines-per-function
-import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
-import { orgModelPolicies$ } from "../../../../signals/external/org-model-policies.ts";
+import { useGet, useLoadable, useSet } from "ccstate-react";
 import { Button } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
@@ -26,16 +25,15 @@ export function OrgProvidersTab() {
   const isAdminLoadable = useLoadable(isOrgAdmin$);
   const isAdmin =
     isAdminLoadable.state === "hasData" ? isAdminLoadable.data : false;
-  const auto = useLastResolved(orgModelPolicies$)?.modelMode === "auto";
 
   return (
     <div className="flex flex-col gap-6">
       {isAdmin && <OrgModelPoliciesSection />}
-      {!auto && <StaleBannerSection />}
-      {isAdmin && !auto && <ModelProviderConnectionsSection />}
-      {!auto && <ClaudeCodeDeviceAuthDialog />}
-      {!auto && <CodexDeviceAuthDialog />}
-      {isAdmin && !auto && (
+      <StaleBannerSection />
+      {isAdmin && <ModelProviderConnectionsSection />}
+      <ClaudeCodeDeviceAuthDialog />
+      <CodexDeviceAuthDialog />
+      {isAdmin && (
         <>
           <PersonalClaudeCodeDeviceAuthDialog />
           <PersonalCodexDeviceAuthDialog />

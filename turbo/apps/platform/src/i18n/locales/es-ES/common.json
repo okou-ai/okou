@@ -4903,7 +4903,6 @@
         "upgradeToPro": "Actualizar a Pro"
       },
       "autoMode": {
-        "active": "La política de la organización es Auto. Las suscripciones personales conectadas pueden añadir modelos para cada miembro.",
         "cancel": "Cancelar",
         "confirm": "Cambiar a Auto Model",
         "confirmDescription": "Esto elimina permanentemente las políticas de modelos de la organización, sus conexiones de proveedores y las credenciales que ya no se utilicen. Solo quedará Auto como política de la organización. Las suscripciones personales de los miembros seguirán conectadas y podrán añadir modelos. Volver a Custom no restaurará la configuración eliminada.",
@@ -5015,6 +5014,7 @@
           "stale": "Atención",
           "week": "Semana"
         },
+        "subscriptionsSectionTitle": "Suscripciones de modelos personales",
         "useAccount": "Usar"
       },
       "picker": {

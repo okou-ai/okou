@@ -4903,7 +4903,6 @@
         "upgradeToPro": "Fazer upgrade para o Pro"
       },
       "autoMode": {
-        "active": "A política da organização é Auto. Assinaturas pessoais conectadas podem adicionar modelos para cada membro.",
         "cancel": "Cancelar",
         "confirm": "Mudar para Auto Model",
         "confirmDescription": "Esta ação exclui permanentemente as políticas de modelos da organização, as conexões com provedores e os segredos que não são mais usados. Auto será a única política da organização. As assinaturas pessoais dos membros continuam conectadas e podem adicionar modelos. Voltar para Custom não restaurará as configurações excluídas.",
@@ -5015,6 +5014,7 @@
           "stale": "Atenção",
           "week": "Semana"
         },
+        "subscriptionsSectionTitle": "Assinaturas pessoais de modelos",
         "useAccount": "Usar"
       },
       "picker": {

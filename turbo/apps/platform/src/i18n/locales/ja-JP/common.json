@@ -4821,7 +4821,6 @@
         "upgradeToPro": "プロにアップグレード"
       },
       "autoMode": {
-        "active": "組織のポリシーは Auto です。接続済みの個人サブスクリプションから、メンバーごとにモデルを追加できます。",
         "cancel": "キャンセル",
         "confirm": "Auto Model に切り替える",
         "confirmDescription": "組織のモデルポリシー、Provider Connections、不要になったシークレットを完全に削除します。組織ポリシーは Auto のみになります。メンバーの個人サブスクリプションは接続されたままで、モデルを追加できます。Custom に戻しても削除された組織設定は復元されません。",
@@ -4933,6 +4932,7 @@
           "stale": "注意",
           "week": "週"
         },
+        "subscriptionsSectionTitle": "個人モデルサブスクリプション",
         "useAccount": "使用"
       },
       "picker": {

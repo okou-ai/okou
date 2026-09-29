@@ -4839,7 +4839,6 @@
         "upgradeToPro": "Upgrade auf Pro"
       },
       "autoMode": {
-        "active": "Die Organisationsrichtlinie ist Auto. Verbundene persönliche Abonnements können Mitgliedern weitere Modelle bereitstellen.",
         "cancel": "Abbrechen",
         "confirm": "Zu Auto Model wechseln",
         "confirmDescription": "Dadurch werden Organisationsrichtlinien, Provider-Verbindungen und nicht mehr benötigte Zugangsdaten dauerhaft gelöscht. Als Organisationsrichtlinie bleibt nur Auto. Persönliche Abonnements der Mitglieder bleiben verbunden und können Modelle bereitstellen. Beim Wechsel zurück zu Custom werden die gelöschten Organisationseinstellungen nicht wiederhergestellt.",
@@ -4951,6 +4950,7 @@
           "stale": "Aufmerksamkeit",
           "week": "Woche"
         },
+        "subscriptionsSectionTitle": "Persönliche Modellabonnements",
         "useAccount": "Verwenden"
       },
       "picker": {

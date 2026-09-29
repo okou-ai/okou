@@ -4821,7 +4821,6 @@
         "upgradeToPro": "Pro로 업그레이드"
       },
       "autoMode": {
-        "active": "조직 정책은 Auto입니다. 연결된 개인 구독에서 각 멤버의 모델을 추가할 수 있습니다.",
         "cancel": "취소",
         "confirm": "Auto Model로 전환",
         "confirmDescription": "조직의 모델 정책, Provider Connections 및 더 이상 사용하지 않는 보안 정보를 영구적으로 삭제합니다. 조직 정책은 Auto만 남습니다. 멤버의 개인 구독은 연결된 상태로 유지되며 모델을 추가할 수 있습니다. Custom으로 돌아가도 삭제된 조직 설정은 복원되지 않습니다.",
@@ -4933,6 +4932,7 @@
           "stale": "주의 필요",
           "week": "주간"
         },
+        "subscriptionsSectionTitle": "개인 모델 구독",
         "useAccount": "사용"
       },
       "picker": {

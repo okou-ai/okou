@@ -86,9 +86,43 @@ async function setupPanel(
   return await screen.findByRole("textbox", { name: "Message" });
 }
 
-test("Auto organizations keep the composer model picker available", async () => {
+/** The trigger names the model, optionally followed by its effort. */
+function hasAutoModelTrigger(): boolean {
+  const name = /^Auto(,|$)/;
+  return queryAllByRoleFast("button").some((button) => {
+    return (
+      name.test(button.getAttribute("aria-label") ?? "") ||
+      name.test(button.textContent?.trim() ?? "")
+    );
+  });
+}
+
+async function setupAutoComposer(
+  subscriptionModel?: SupportedRunModel,
+): Promise<void> {
   installRunChat({ selectedModel: "okou-1.0" });
-  configurePolicies(["okou-1.0"]);
+  const auto = autoPolicy();
+  context.mocks.data.orgModelPolicies(
+    subscriptionModel
+      ? [
+          auto,
+          {
+            ...auto,
+            id: "e1000000-0000-4000-a000-000000000099",
+            model: subscriptionModel,
+            modelLabel: getCanonicalModelDisplayName(subscriptionModel),
+            isDefault: false,
+            defaultProviderType: "codex-oauth-token",
+            runtimeProviderType: "codex-oauth-token",
+            credentialScope: "member",
+            subscriptionOptions: {
+              efforts: ["low", "high"],
+              serviceTier: null,
+            },
+          },
+        ]
+      : [auto],
+  );
   context.mocks.data.orgModelMode("auto");
   await setupPage({
     context,
@@ -99,15 +133,36 @@ test("Auto organizations keep the composer model picker available", async () => 
     },
   });
   await screen.findByRole("textbox", { name: "Message" });
+}
+
+function autoPolicy(): OrgModelPolicy {
+  return {
+    id: "e1000000-0000-4000-a000-000000000001",
+    model: "okou-1.0",
+    modelLabel: getCanonicalModelDisplayName("okou-1.0"),
+    isDefault: true,
+    defaultProviderType: "built-in",
+    runtimeProviderType: getBuiltInConcreteProviderType("okou-1.0"),
+    credentialScope: "org",
+    modelProviderId: null,
+    modelProviderSurfaceId: null,
+    routeStatus: "valid",
+    routeStatusReason: null,
+    createdAt: POLICY_DATE,
+    updatedAt: POLICY_DATE,
+  };
+}
+
+test("Auto hides the model picker until a subscription adds models", async () => {
+  await setupAutoComposer();
+  await findButton("Attach");
+  expect(hasAutoModelTrigger()).toBeFalsy();
+});
+
+test("Auto shows the model picker once a subscription adds models", async () => {
+  await setupAutoComposer("gpt-6-sol");
   await waitFor(() => {
-    expect(
-      queryAllByRoleFast("button").some((button) => {
-        return (
-          button.getAttribute("aria-label")?.includes("Auto") ||
-          button.textContent?.includes("Auto")
-        );
-      }),
-    ).toBeTruthy();
+    expect(hasAutoModelTrigger()).toBeTruthy();
   });
 });
 

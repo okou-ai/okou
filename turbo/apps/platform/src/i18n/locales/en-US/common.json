@@ -4831,7 +4831,6 @@
         "upgradeToPro": "Upgrade to Pro"
       },
       "autoMode": {
-        "active": "The organization policy is Auto. Connected personal subscriptions can add models for each member.",
         "cancel": "Cancel",
         "confirm": "Switch to Auto Model",
         "confirmDescription": "This permanently deletes organization model policies, provider connections and their unused secrets. The only organization policy will be Auto. Members' personal subscriptions remain connected and can add models. Switching back to Custom will not restore deleted organization settings.",
@@ -4943,6 +4942,7 @@
           "stale": "Attention",
           "week": "Week"
         },
+        "subscriptionsSectionTitle": "Personal Model Subscriptions",
         "useAccount": "Use"
       },
       "picker": {

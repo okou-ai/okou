@@ -79,19 +79,27 @@ export function PersonalProvidersTab() {
 
 function PersonalModelsHeading({
   accountTable = false,
+  subscriptions = false,
   action,
 }: {
   readonly accountTable?: boolean;
+  readonly subscriptions?: boolean;
   readonly action?: ReactNode;
 }) {
   const { t } = useTranslation();
   return (
     <SettingsSectionHeading
-      title={t(($) => {
-        return accountTable
-          ? $.settings.models.personal.accountsSectionTitle
-          : $.settings.models.personal.sectionTitle;
-      })}
+      title={
+        subscriptions
+          ? t(($) => {
+              return $.settings.models.personal.subscriptionsSectionTitle;
+            })
+          : t(($) => {
+              return accountTable
+                ? $.settings.models.personal.accountsSectionTitle
+                : $.settings.models.personal.sectionTitle;
+            })
+      }
       description={t(($) => {
         return accountTable
           ? $.settings.models.personal.accountsDescription
@@ -148,8 +156,9 @@ function OAuthAccountGroupsSection() {
     modelCapabilitiesLoadable.state === "loading";
   const providers =
     providersLoadable.state === "hasData" ? providersLoadable.data : [];
+  const auto = mode.state === "hasData" && mode.data.modelMode === "auto";
   const supportByok =
-    (mode.state === "hasData" && mode.data.modelMode === "auto") ||
+    auto ||
     modelCapabilitiesLoadable.state !== "hasData" ||
     modelCapabilitiesLoadable.data.supportByok;
   const actionPending = actionLoadable.state === "loading";
@@ -202,7 +211,11 @@ function OAuthAccountGroupsSection() {
 
   return (
     <section className="flex flex-col gap-4">
-      <PersonalModelsHeading accountTable action={addAccountAction} />
+      <PersonalModelsHeading
+        accountTable
+        subscriptions={auto}
+        action={addAccountAction}
+      />
       <TooltipProvider delay={100}>
         <PersonalProviderAccountsTable
           accountGroups={accountGroups}

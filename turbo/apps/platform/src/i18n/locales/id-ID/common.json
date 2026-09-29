@@ -4821,7 +4821,6 @@
         "upgradeToPro": "Upgrade ke Pro"
       },
       "autoMode": {
-        "active": "Kebijakan organisasi adalah Auto. Langganan pribadi yang terhubung dapat menambahkan model bagi setiap anggota.",
         "cancel": "Batal",
         "confirm": "Beralih ke Auto Model",
         "confirmDescription": "Tindakan ini menghapus permanen kebijakan model organisasi, koneksi penyedia, dan rahasia yang tidak lagi digunakan. Hanya Auto yang menjadi kebijakan organisasi. Langganan pribadi anggota tetap terhubung dan dapat menambahkan model. Beralih kembali ke Custom tidak memulihkan pengaturan organisasi yang dihapus.",
@@ -4933,6 +4932,7 @@
           "stale": "Perhatian",
           "week": "Minggu"
         },
+        "subscriptionsSectionTitle": "Langganan model pribadi",
         "useAccount": "Gunakan"
       },
       "picker": {

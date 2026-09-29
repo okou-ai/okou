@@ -4903,7 +4903,6 @@
         "upgradeToPro": "Passa a Pro"
       },
       "autoMode": {
-        "active": "La policy dell’organizzazione è Auto. Gli abbonamenti personali collegati possono aggiungere modelli per ogni membro.",
         "cancel": "Annulla",
         "confirm": "Passa ad Auto Model",
         "confirmDescription": "Questa operazione elimina definitivamente le policy dei modelli dell’organizzazione, le connessioni ai provider e i segreti non più utilizzati. Auto resterà l’unica policy dell’organizzazione. Gli abbonamenti personali dei membri restano collegati e possono aggiungere modelli. Tornare a Custom non ripristinerà le impostazioni eliminate.",
@@ -5015,6 +5014,7 @@
           "stale": "Attenzione",
           "week": "Settimana"
         },
+        "subscriptionsSectionTitle": "Abbonamenti personali ai modelli",
         "useAccount": "Usa"
       },
       "picker": {

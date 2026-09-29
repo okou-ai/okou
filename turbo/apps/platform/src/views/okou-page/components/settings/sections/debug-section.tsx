@@ -17,6 +17,7 @@ import { WorkerConnectionDiagnosticsBlock } from "../worker-connection-diagnosti
 import { BuiltInModelCooldownDiagnosticsBlock } from "../built-in-model-cooldown-diagnostics-block.tsx";
 import { IndexedDbDiagnosticsBlock } from "../indexeddb-diagnostics-block.tsx";
 import { WelcomeThreadCard } from "../welcome-thread-card.tsx";
+import { OrgModelModeControl } from "../../org-manage/org-model-mode-control.tsx";
 
 const CAPTURE_RUN_COUNT = 3;
 
@@ -82,6 +83,7 @@ export function DebugSection() {
   return (
     <div className="flex flex-col gap-6">
       <BuildInfoBlock />
+      <OrgModelModeControl />
       <WelcomeThreadCard />
       <ConnectionDiagnosticsBlock />
       <WorkerConnectionDiagnosticsBlock />

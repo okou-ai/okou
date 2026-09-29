@@ -36,7 +36,7 @@ import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts"
 
 const context = testContext();
 
-test("switches to Auto in Debug and hides organization provider settings", async () => {
+test("switches to Auto from Debug and simplifies model settings", async () => {
   mockAdminOrg();
   context.mocks.data.orgModelProviders([anthropicApiKeyProvider()]);
   await setupPage({
@@ -44,6 +44,12 @@ test("switches to Auto in Debug and hides organization provider settings", async
     path: "/agents?settings=model",
     featureSwitches: { [FeatureSwitchKey.OkouDebug]: true },
   });
+  await screen.findByRole("heading", { name: "Provider connections" });
+  expect(
+    screen.queryByRole("switch", { name: "Auto Model" }),
+  ).not.toBeInTheDocument();
+
+  click(routeButtonByName("Debug"));
   const toggle = await screen.findByRole("switch", { name: "Auto Model" });
   expect(toggle).not.toBeChecked();
   click(toggle);
@@ -55,14 +61,17 @@ test("switches to Auto in Debug and hides organization provider settings", async
   await waitFor(() => {
     expect(toggle).toBeChecked();
   });
-  await expect(screen.findByText("Auto")).resolves.toBeVisible();
-  expect(
-    queryAllByRoleFast("button").some((button) => {
-      return button.textContent?.trim() === "Add model";
-    }),
-  ).toBeFalsy();
+
+  click(routeButtonByName("Models"));
+  await expect(
+    screen.findByRole("heading", { name: "Personal Model Subscriptions" }),
+  ).resolves.toBeVisible();
+  expect(screen.queryByText("Default model")).not.toBeInTheDocument();
   expect(
     screen.queryByRole("heading", { name: "Provider connections" }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("switch", { name: "Auto Model" }),
   ).not.toBeInTheDocument();
 });
 

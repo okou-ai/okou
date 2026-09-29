@@ -4821,7 +4821,6 @@
         "upgradeToPro": "升级到Pro"
       },
       "autoMode": {
-        "active": "组织策略为 Auto。成员连接个人订阅后，可使用订阅带入的模型。",
         "cancel": "取消",
         "confirm": "切换至 Auto Model",
         "confirmDescription": "此操作会永久删除组织模型策略、组织 Provider Connections 及不再被引用的密钥，仅保留 Auto 组织策略。成员的个人订阅继续保留，并可带入模型。切回 Custom 不会恢复已删除的组织配置。",
@@ -4933,6 +4932,7 @@
           "stale": "需处理",
           "week": "本周"
         },
+        "subscriptionsSectionTitle": "个人模型订阅",
         "useAccount": "使用"
       },
       "picker": {
