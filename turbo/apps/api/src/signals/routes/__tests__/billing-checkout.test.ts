@@ -35,6 +35,7 @@ import {
 import { createStore } from "ccstate";
 import StripeSDK from "stripe";
 import { onTestFinished } from "vitest";
+import { z } from "zod";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -1065,9 +1066,12 @@ describe("POST /api/billing/checkout", () => {
       url: "https://checkout.stripe.com/session/test",
     });
 
-    expect(context.mocks.stripe.customers.create).toHaveBeenCalledWith({
-      metadata: { orgId: fixture.orgId },
-    });
+    expect(context.mocks.stripe.customers.create).toHaveBeenCalledWith(
+      {
+        metadata: { orgId: fixture.orgId },
+      },
+      { idempotencyKey: `stripe-customer:development::${fixture.orgId}` },
+    );
     expect(context.mocks.stripe.checkout.sessions.create).toHaveBeenCalledWith({
       mode: "subscription",
       customer: customerId,
@@ -1089,6 +1093,99 @@ describe("POST /api/billing/checkout", () => {
           purchaseCreatedAt: expect.any(String),
         },
       },
+    });
+  });
+
+  it("shares one published customer across concurrent checkouts", async () => {
+    const fixture = createOrgFixture();
+    authenticateOrg(fixture);
+    context.mocks.stripe.customers.create
+      .mockResolvedValueOnce({ id: `cus_${randomUUID()}` })
+      .mockResolvedValueOnce({ id: `cus_${randomUUID()}` });
+    context.mocks.stripe.checkout.sessions.create.mockImplementation(
+      (params) => {
+        const { customer } = z.object({ customer: z.string() }).parse(params);
+        return Promise.resolve({
+          url: `https://checkout.stripe.com/session/${customer}`,
+        });
+      },
+    );
+    const client = setupApp({ context, routes: billingCheckoutRoutes })(
+      billingCheckoutContract,
+    );
+    const request = {
+      headers: { authorization: "Bearer clerk-session" },
+      body: {
+        tier: "pro" as const,
+        successUrl: `${APP_ORIGIN}/billing?billing=success`,
+        cancelUrl: `${APP_ORIGIN}/billing?billing=canceled`,
+      },
+    };
+    const responses = await Promise.all([
+      accept(client.create(request), [200]),
+      accept(client.create(request), [200]),
+    ]);
+    expect(responses[0]?.body).toStrictEqual(responses[1]?.body);
+    await expect(readBillingStatus(fixture)).resolves.toMatchObject({
+      tier: "limited-free-1",
+      hasSubscription: false,
+    });
+
+    context.mocks.stripe.customers.create.mockRejectedValue(
+      new Error("An existing customer must remain usable"),
+    );
+    const repeated = await accept(client.create(request), [200]);
+    expect(repeated.body).toStrictEqual(responses[0]?.body);
+  });
+
+  it("recovers a customer after Stripe created it but its response was lost", async () => {
+    const fixture = createOrgFixture();
+    authenticateOrg(fixture);
+    const customers = new Map<string, string>();
+    let loseFirstResponse = true;
+    context.mocks.stripe.customers.create.mockImplementation(
+      (_params, options) => {
+        const { idempotencyKey } = z
+          .object({ idempotencyKey: z.string() })
+          .parse(options);
+        const id = customers.get(idempotencyKey) ?? `cus_${randomUUID()}`;
+        customers.set(idempotencyKey, id);
+        if (loseFirstResponse) {
+          loseFirstResponse = false;
+          return Promise.reject(new Error("Stripe customer response lost"));
+        }
+        return Promise.resolve({ id });
+      },
+    );
+    context.mocks.stripe.checkout.sessions.create.mockImplementation(
+      (params) => {
+        const { customer } = z.object({ customer: z.string() }).parse(params);
+        return Promise.resolve({
+          url: `https://checkout.stripe.com/session/${customer}`,
+        });
+      },
+    );
+    const client = setupApp({ context, routes: billingCheckoutRoutes })(
+      billingCheckoutContract,
+    );
+    const request = {
+      headers: { authorization: "Bearer clerk-session" },
+      body: {
+        tier: "pro" as const,
+        successUrl: `${APP_ORIGIN}/billing?billing=success`,
+        cancelUrl: `${APP_ORIGIN}/billing?billing=canceled`,
+      },
+    };
+    await accept(client.create(request), [500]);
+    const createdCustomer = [...customers.values()][0];
+    expect(createdCustomer).toBeDefined();
+    const recovered = await accept(client.create(request), [200]);
+    expect(recovered.body).toStrictEqual({
+      url: `https://checkout.stripe.com/session/${createdCustomer}`,
+    });
+    await expect(readBillingStatus(fixture)).resolves.toMatchObject({
+      tier: "limited-free-1",
+      hasSubscription: false,
     });
   });
 
@@ -1823,12 +1920,15 @@ describe("POST /api/billing/checkout", () => {
       vm0_environment: "preview",
       job_ref: "pr-123",
     };
-    expect(context.mocks.stripe.customers.create).toHaveBeenCalledWith({
-      metadata: {
-        orgId: fixture.orgId,
-        ...expectedPreviewMetadata,
+    expect(context.mocks.stripe.customers.create).toHaveBeenCalledWith(
+      {
+        metadata: {
+          orgId: fixture.orgId,
+          ...expectedPreviewMetadata,
+        },
       },
-    });
+      { idempotencyKey: `stripe-customer:preview:pr-123:${fixture.orgId}` },
+    );
     expect(context.mocks.stripe.checkout.sessions.create).toHaveBeenCalledWith(
       expect.objectContaining({
         metadata: {
@@ -1983,9 +2083,12 @@ describe("POST /api/billing/checkout", () => {
     expect(response.body).toStrictEqual({
       url: "https://checkout.stripe.com/session/plan",
     });
-    expect(context.mocks.stripe.customers.create).toHaveBeenCalledWith({
-      metadata: { orgId: fixture.orgId },
-    });
+    expect(context.mocks.stripe.customers.create).toHaveBeenCalledWith(
+      {
+        metadata: { orgId: fixture.orgId },
+      },
+      { idempotencyKey: `stripe-customer:development::${fixture.orgId}` },
+    );
     const expectedMetadata = {
       orgId: fixture.orgId,
       tier: "pro",
@@ -15568,6 +15671,122 @@ describe("usage pack allocation management", () => {
     expect(
       context.mocks.clerk.organizations.createOrganizationInvitation,
     ).not.toHaveBeenCalled();
+  });
+
+  it("keeps one payable invitation preview across concurrent requests for an email", async () => {
+    mockNow(new Date("2035-05-15T00:00:00.000Z"));
+    onTestFinished(() => {
+      clearMockNow();
+    });
+    await purchaseDeferredReplaySubscription();
+    mockUsagePackChangePreviews(1000, 2000);
+    const client = setupApp({ context, routes: orgInviteRoutes })(
+      orgInviteContract,
+    );
+    const request = {
+      headers: { authorization: "Bearer clerk-session" },
+      body: {
+        email: `concurrent-preview-${randomUUID()}@example.test`,
+        role: "member" as const,
+        usagePackUsd: 20 as const,
+      },
+    };
+    const previews = await Promise.all([
+      accept(client.previewPurchase(request), [200, 409]),
+      accept(client.previewPurchase(request), [200, 409]),
+    ]);
+    expect(
+      previews.some((preview) => {
+        return preview.status === 200;
+      }),
+    ).toBeTruthy();
+    const current = await accept(client.previewPurchase(request), [200]);
+    expect(current.body).toMatchObject({
+      immediateAmountCents: 1000,
+      purchasedCredits: 10_000,
+      bonusCredits: 200,
+    });
+    for (const preview of previews) {
+      if (
+        preview.status === 200 &&
+        preview.body.purchaseId !== current.body.purchaseId
+      ) {
+        const superseded = await accept(
+          client.confirmPurchase({
+            headers: request.headers,
+            params: { purchaseId: preview.body.purchaseId },
+            body: {},
+          }),
+          [409],
+        );
+        expect(superseded.body.error.code).toBe("INVITATION_PURCHASE_INACTIVE");
+      }
+    }
+  });
+
+  it("grants invitation credits once across concurrent payment and acceptance deliveries", async () => {
+    mockNow(new Date("2035-05-15T00:00:00.000Z"));
+    onTestFinished(() => {
+      clearMockNow();
+    });
+    const fixture = await purchaseDeferredReplaySubscription();
+    const email = `concurrent-invitation-${randomUUID()}@example.test`;
+    const invitationId = `inv_${randomUUID()}`;
+    const acceptedUserId = `user_${randomUUID()}`;
+    mockUsagePackChangePreviews(1000, 2000);
+    const preview = await accept(
+      setupApp({ context, routes: orgInviteRoutes })(
+        orgInviteContract,
+      ).previewPurchase({
+        headers: { authorization: "Bearer clerk-session" },
+        body: { email, role: "member", usagePackUsd: 20 },
+      }),
+      [200],
+    );
+    const purchase: InvitationPurchaseFixture = {
+      fixture,
+      existingMemberUserId: fixture.userId,
+      email,
+      purchaseId: preview.body.purchaseId,
+      paymentIntentId: `pi_${randomUUID()}`,
+    };
+    await Promise.all([
+      payInvitationPurchase(purchase, invitationId),
+      payInvitationPurchase(purchase, invitationId),
+    ]);
+    context.mocks.stripe.subscriptions.update.mockResolvedValue({});
+    await Promise.all([
+      postClerkInvitationAccepted({
+        purchase,
+        invitationId,
+        userId: acceptedUserId,
+      }),
+      postClerkInvitationAccepted({
+        purchase,
+        invitationId,
+        userId: acceptedUserId,
+      }),
+    ]);
+
+    const credits = await readDeferredReplayCredits(fixture);
+    expect(
+      credits.memberCredits?.filter((member) => {
+        return member.memberId === acceptedUserId;
+      }),
+    ).toStrictEqual([
+      expect.objectContaining({
+        memberId: acceptedUserId,
+        purchasedCredits: preview.body.purchasedCredits,
+        bonusCredits: preview.body.bonusCredits,
+        totalCredits: preview.body.totalCredits,
+      }),
+    ]);
+    expect(credits).toMatchObject({
+      hasUsagePack: true,
+      purchasedCredits: 20_000,
+      bonusCredits: 400,
+      totalCredits: 20_400,
+    });
   });
 
   it("activates one paid invitation exactly once after Clerk acceptance", async () => {

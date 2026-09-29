@@ -490,10 +490,13 @@ export interface StripeSubscriptionSchedulesApi {
 
 export interface StripeCustomersApi {
   retrieve(id: string): Promise<StripeCustomerRef>;
-  create(params: {
-    metadata?: StripeMetadataParam;
-    email?: string;
-  }): Promise<StripeCustomer>;
+  create(
+    params: {
+      metadata?: StripeMetadataParam;
+      email?: string;
+    },
+    options?: StripeRequestOptions,
+  ): Promise<StripeCustomer>;
   update(
     id: string,
     params: {

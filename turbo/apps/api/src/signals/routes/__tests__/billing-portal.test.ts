@@ -335,9 +335,12 @@ describe("POST /api/billing/portal", () => {
     expect(response.body).toStrictEqual({
       url: "https://billing.stripe.com/session/payment-method",
     });
-    expect(context.mocks.stripe.customers.create).toHaveBeenCalledWith({
-      metadata: { orgId },
-    });
+    expect(context.mocks.stripe.customers.create).toHaveBeenCalledWith(
+      {
+        metadata: { orgId },
+      },
+      { idempotencyKey: `stripe-customer:development::${orgId}` },
+    );
     expect(
       context.mocks.stripe.billingPortal.configurations.create,
     ).toHaveBeenCalledWith(
