@@ -3,7 +3,6 @@ import { command } from "ccstate";
 import {
   and,
   eq,
-  exists,
   getTableColumns,
   inArray,
   isNotNull,
@@ -413,41 +412,26 @@ async function loadGoogleCalendarCredentialObservation(args: {
   throw new Error("Invalid Google Calendar credential reference");
 }
 
-function googleCalendarCredentialCondition(
-  db: Db,
-  access: GoogleCalendarAccess,
-) {
+function googleCalendarCredentialCondition(access: GoogleCalendarAccess) {
   const { connection, kind, name, storedValue } = access.credential;
   const credential =
     kind === "secret"
-      ? exists(
-          db
-            .select({ id: secrets.id })
-            .from(secrets)
-            .where(
-              and(
-                eq(secrets.connectorId, connection.connectorId),
-                eq(secrets.name, name),
-                eq(secrets.encryptedValue, storedValue),
-                eq(secrets.orgId, connection.access.orgId),
-                eq(secrets.userId, connection.access.userId),
-              ),
-            ),
-        )
-      : exists(
-          db
-            .select({ id: variables.id })
-            .from(variables)
-            .where(
-              and(
-                eq(variables.connectorId, connection.connectorId),
-                eq(variables.name, name),
-                eq(variables.value, storedValue),
-                eq(variables.orgId, connection.access.orgId),
-                eq(variables.userId, connection.access.userId),
-              ),
-            ),
-        );
+      ? sql`EXISTS (
+          SELECT 1 FROM ${secrets}
+          WHERE ${secrets.connectorId} = ${connection.connectorId}
+            AND ${secrets.name} = ${name}
+            AND ${secrets.encryptedValue} = ${storedValue}
+            AND ${secrets.orgId} = ${connection.access.orgId}
+            AND ${secrets.userId} = ${connection.access.userId}
+        )`
+      : sql`EXISTS (
+          SELECT 1 FROM ${variables}
+          WHERE ${variables.connectorId} = ${connection.connectorId}
+            AND ${variables.name} = ${name}
+            AND ${variables.value} = ${storedValue}
+            AND ${variables.orgId} = ${connection.access.orgId}
+            AND ${variables.userId} = ${connection.access.userId}
+        )`;
   return and(
     eq(connectors.id, connection.connectorId),
     eq(connectors.orgId, connection.access.orgId),
@@ -2231,7 +2215,6 @@ async function ensureGoogleCalendarWatchForUserInternal(
   }
 
   const credentialCondition = googleCalendarCredentialCondition(
-    args.db,
     accessResult.access,
   );
   const prepared = await args.db.transaction(async (tx) => {
@@ -3097,7 +3080,7 @@ async function prepareGoogleCalendarReconciliation(
       access,
       baseline: result.baseline,
       credentialCondition: access
-        ? googleCalendarCredentialCondition(args.db, access)
+        ? googleCalendarCredentialCondition(access)
         : undefined,
     },
   };

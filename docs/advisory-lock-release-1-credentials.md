@@ -17,7 +17,7 @@ The six advisory acquisition definitions remain. This work prepares selected wri
 - Automatic MCP credential resolution retains the exact existing consent binding (`xmin` and its full-precision creation timestamp) and access ciphertext. Both outgoing and R1 reconnect publication replace that binding; token refresh leaves it unchanged. A concurrent expiry request may reuse a sibling refresh only while that same consent binding survives. Comparing only the account metadata timestamp rejects a legitimate sibling refresh, while comparing only changed token ciphertext would wrongly accept replacement authorization. Its refresh publication still claims the exact current account metadata and stored refresh ciphertext before writing output tokens; terminal failure marks only that observed state. Exact DCR registration retirement remains a separate resource-wide invalidation when the provider rejects that client. The legacy Automatic refresh transaction and propagated resolver helper graph still require migration.
 - Calendar baseline pagination and credential preparation move before the local decision transaction. Existing credential bytes and state snapshots fence publication. Cleanup after uncertain finalization rereads authoritative ownership and preserves a currently owned channel. Healthy existing watches remain usable while previous-channel cleanup is pending.
 
-- Credential secret/variable authorization predicates are pure SQL builders. Their complete account, owner, auth-method, storage-version and optional revision checks no longer receive a database or transaction from any caller.
+- Credential secret/variable authorization predicates are pure SQL builders. Their complete account, owner, auth-method, storage-version and optional revision checks no longer receive a database or transaction from any caller. Calendar watch publication's exact credential predicate is also a pure SQL builder; it receives only the observed account and stored credential bytes.
 
 ### Remaining implementation work
 
@@ -93,3 +93,25 @@ waiters. The stale-catalog test retains pre-request and in-flight provider
 refresh changes with credential-denial assertions; its duplicate "while auth
 waits" internal-lock variant is removed. These were the final callers of the
 connector account row-lock fixture, so that fixture is deleted entirely.
+
+### Refresh compatibility and missing protocol
+
+The outgoing Automatic refresh path handles `invalid_grant` by updating
+`connectors` by account ID alone. It also persists returned credentials without
+comparing the originally observed authorization. R1's exact account/token
+publication and failure predicates prevent those stale writes in future R1
+writers, but cannot constrain an already executing outgoing request. Removing
+the lifecycle/account advisory coordination therefore requires that outgoing
+writers are no longer serving or in flight and that supported rollback targets
+include these predicates.
+
+That is separate from the unfinished provider-rotation protocol. The current
+Automatic resolver still holds its transaction while decrypting, performing the
+provider refresh and encrypting output, and passes the transaction to its DCR
+store. The ordinary builtin and model-provider graphs also retain propagated
+handles. All supported rotating-token callers need a common protocol that
+preserves successful credential publication and rejects replacement/revoked
+authorization when provider work is moved outside the transaction. CAS after a
+provider response alone does not establish the provider-side single-use-token
+behavior. This is R1 implementation work, not a condition that deployment drain
+can satisfy and not permission for a permanent exception or an extra release.
