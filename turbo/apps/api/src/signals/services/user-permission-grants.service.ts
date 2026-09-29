@@ -353,6 +353,76 @@ export async function resolveActiveNetworkPolicyRefreshes(
   );
 }
 
+export const resolveActiveNetworkPolicyRefreshes$ = command(
+  async (
+    { set },
+    args: {
+      readonly scope: UserPermissionGrantScope;
+      readonly connectorSlugs: readonly string[];
+      readonly snapshot: ConnectorRuntimeSelection;
+      readonly checkedAt: Date;
+    },
+    signal: AbortSignal,
+  ): Promise<readonly ActiveNetworkPolicyRefresh[]> => {
+    const db = set(writeDb$);
+    const { scope, connectorSlugs, snapshot, checkedAt } = args;
+    if (connectorSlugs.length === 0) {
+      return [];
+    }
+
+    const uniqueConnectorSlugs = networkPolicyRefreshConnectorSlugs(
+      snapshot.serverFirewalls,
+      connectorSlugs,
+    );
+    if (uniqueConnectorSlugs.length === 0) {
+      return [];
+    }
+
+    const grants = await db
+      .select(userPermissionGrantSelection)
+      .from(userPermissionGrants)
+      .where(
+        and(
+          eq(userPermissionGrants.orgId, scope.orgId),
+          eq(userPermissionGrants.userId, scope.userId),
+          eq(userPermissionGrants.agentId, scope.agentId),
+          inArray(userPermissionGrants.connectorSlug, uniqueConnectorSlugs),
+          activeUserPermissionGrantCondition(checkedAt),
+        ),
+      )
+      .orderBy(
+        asc(userPermissionGrants.connectorSlug),
+        asc(userPermissionGrants.permission),
+      );
+    signal.throwIfAborted();
+    const indexes = await Promise.all(
+      uniqueConnectorSlugs.map(async (connectorSlug) => {
+        return {
+          connectorSlug,
+          index:
+            await snapshot.serverFirewalls.loadPermissionIndex(connectorSlug),
+        };
+      }),
+    );
+
+    signal.throwIfAborted();
+    return activeNetworkPolicyRefreshesForPermissionBaselines(
+      indexes.flatMap(({ connectorSlug, index }) => {
+        return index
+          ? [
+              {
+                connectorSlug,
+                permissionNames: [...index.permissionNames],
+                defaultPolicy: defaultFirewallPolicyForPermissionIndex(index),
+              },
+            ]
+          : [];
+      }),
+      grants,
+    );
+  },
+);
+
 function connectorCatalogIdentityJoin() {
   return and(
     eq(

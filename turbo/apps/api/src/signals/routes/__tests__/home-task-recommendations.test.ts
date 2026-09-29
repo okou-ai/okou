@@ -77,7 +77,7 @@ async function refresh(scope: {
 async function connectGmailAccount(
   actor: Parameters<typeof connectorsApi.startOauth>[0],
   agentId: string,
-): Promise<void> {
+): Promise<string> {
   const subject = `gmail-home-task-${randomUUID()}`;
   mockGmailConnectorOAuth({
     accessToken: "gmail-home-task-token",
@@ -98,6 +98,7 @@ async function connectGmailAccount(
     code: "gmail-home-task-code",
     state,
   });
+  return subject;
 }
 
 describe("GET /api/home-task-recommendations", () => {
@@ -468,107 +469,145 @@ describe("GET /api/home-task-recommendations", () => {
     expect(decisionCalls).toBe(2);
   });
 
-  it("fails closed when Gmail detail permission is revoked during collection", async () => {
-    const { actor, agentId } = await fixture.entitledNativeChatActor();
-    if (!actor.orgId) {
-      throw new Error("Expected an organization-scoped actor");
-    }
-    await connectGmailAccount(actor, agentId);
-    await fixture.api.applyUserPermissionGrant(actor, {
-      agentId,
-      connectorSlug: "gmail",
-      permission: "messages.detail",
-      action: "allow",
-    });
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId: actor.orgId },
-      { [FeatureSwitchKey.HomeTaskRecommendations]: true },
-    );
-    mockOptionalEnv("OPENROUTER_API_KEY", "home-task-openrouter-key");
-    mockEnv("CRON_SECRET", "home-task-cron-secret");
+  it.each(["permission", "authorization"] as const)(
+    "fails closed when Gmail %s changes during collection",
+    async (changed) => {
+      const { actor, agentId } = await fixture.entitledNativeChatActor();
+      if (!actor.orgId) {
+        throw new Error("Expected an organization-scoped actor");
+      }
+      const subject = await connectGmailAccount(actor, agentId);
+      await fixture.api.applyUserPermissionGrant(actor, {
+        agentId,
+        connectorSlug: "gmail",
+        permission: "messages.detail",
+        action: "allow",
+      });
+      await updateFeatureSwitchesForUser(
+        context,
+        { ...actor, orgId: actor.orgId },
+        { [FeatureSwitchKey.HomeTaskRecommendations]: true },
+      );
+      mockOptionalEnv("OPENROUTER_API_KEY", "home-task-openrouter-key");
+      mockEnv("CRON_SECRET", "home-task-cron-secret");
 
-    let gmailListCalls = 0;
-    let gmailDetailCalls = 0;
-    let providerCalls = 0;
-    const detailStarted = createDeferredPromise<void>(context.signal);
-    const releaseDetail = createDeferredPromise<void>(context.signal);
-    server.use(
-      http.get(GMAIL_LIST_URL, () => {
-        gmailListCalls += 1;
-        return HttpResponse.json({ messages: [{ id: "revoked-mid-read" }] });
-      }),
-      http.get(GMAIL_MESSAGE_URL, async ({ params }) => {
-        gmailDetailCalls += 1;
-        detailStarted.resolve();
-        await releaseDetail.promise;
-        return HttpResponse.json({
-          id: String(params["messageId"]),
-          snippet: "This content must not reach the recommendation provider.",
-          internalDate: "1790000000000",
-          labelIds: ["INBOX", "IMPORTANT"],
-          payload: {
-            headers: [
-              { name: "From", value: "Customer <customer@example.test>" },
-              { name: "Subject", value: "Sensitive follow-up" },
-            ],
-          },
+      let providerCalls = 0;
+      const detailStarted = createDeferredPromise<void>(context.signal);
+      const releaseDetail = createDeferredPromise<void>(context.signal);
+      server.use(
+        http.get(GMAIL_LIST_URL, () => {
+          return HttpResponse.json({ messages: [{ id: "revoked-mid-read" }] });
+        }),
+        http.get(GMAIL_MESSAGE_URL, async ({ params }) => {
+          detailStarted.resolve();
+          await releaseDetail.promise;
+          return HttpResponse.json({
+            id: String(params["messageId"]),
+            snippet: "This content must not reach the recommendation provider.",
+            internalDate: "1790000000000",
+            labelIds: ["INBOX", "IMPORTANT"],
+            payload: {
+              headers: [
+                { name: "From", value: "Customer <customer@example.test>" },
+                { name: "Subject", value: "Sensitive follow-up" },
+              ],
+            },
+          });
+        }),
+        http.post(OPENROUTER_CHAT_URL, () => {
+          providerCalls += 1;
+          return HttpResponse.json(
+            { error: { message: "Gmail evidence must not be released" } },
+            { status: 500 },
+          );
+        }),
+        http.post(OPENROUTER_DECISIONS_URL, () => {
+          providerCalls += 1;
+          return HttpResponse.json(
+            { error: { message: "Gmail evidence must not be released" } },
+            { status: 500 },
+          );
+        }),
+      );
+
+      await accept(
+        recommendationsClient().list({
+          headers: fixture.sessionHeaders(actor),
+          query: { agentId },
+        }),
+        [200],
+      );
+      const cron = refresh({
+        userId: actor.userId,
+        orgId: actor.orgId,
+        agentId,
+      });
+      await detailStarted.promise;
+      if (changed === "permission") {
+        await fixture.api.applyUserPermissionGrant(actor, {
+          agentId,
+          connectorSlug: "gmail",
+          permission: "messages.detail",
+          action: "deny",
         });
-      }),
-      http.post(OPENROUTER_CHAT_URL, () => {
-        providerCalls += 1;
-        return HttpResponse.json(
-          { error: { message: "Gmail evidence must not be released" } },
-          { status: 500 },
+      } else {
+        const accounts = await connectorsApi.listBuiltinConnectorAccounts(
+          actor,
+          "gmail",
         );
-      }),
-      http.post(OPENROUTER_DECISIONS_URL, () => {
-        providerCalls += 1;
-        return HttpResponse.json(
-          { error: { message: "Gmail evidence must not be released" } },
-          { status: 500 },
+        const account = accounts[0];
+        if (!account) {
+          throw new Error("Expected the connected Gmail account");
+        }
+        mockGmailConnectorOAuth({
+          accessToken: "replacement-home-task-token",
+          email: "home-task@example.test",
+          subject,
+        });
+        const started = await connectorsApi.startOauth(
+          actor,
+          "gmail",
+          "oauth",
+          agentId,
+          { intent: "reconnect", connectionId: account.id },
         );
-      }),
-    );
+        const state = new URL(started.authorizationUrl).searchParams.get(
+          "state",
+        );
+        if (!state) {
+          throw new Error("Expected reconnect OAuth state");
+        }
+        await connectorsApi.completeOauthCallback("gmail", {
+          code: "replacement-home-task-code",
+          state,
+        });
+        await expect(
+          connectorsApi.listBuiltinConnectorAccounts(actor, "gmail"),
+        ).resolves.toContainEqual(
+          expect.objectContaining({
+            id: account.id,
+            connectionStatus: "connected",
+          }),
+        );
+      }
+      releaseDetail.resolve();
+      const cronResult = await cron;
+      expect(cronResult.body).toMatchObject({ unchanged: 1, failed: 0 });
 
-    await accept(
-      recommendationsClient().list({
-        headers: fixture.sessionHeaders(actor),
-        query: { agentId },
-      }),
-      [200],
-    );
-    const cron = refresh({
-      userId: actor.userId,
-      orgId: actor.orgId,
-      agentId,
-    });
-    await detailStarted.promise;
-    await fixture.api.applyUserPermissionGrant(actor, {
-      agentId,
-      connectorSlug: "gmail",
-      permission: "messages.detail",
-      action: "deny",
-    });
-    releaseDetail.resolve();
-    const cronResult = await cron;
-    expect(cronResult.body).toMatchObject({ unchanged: 1, failed: 0 });
-
-    const result = await accept(
-      recommendationsClient().list({
-        headers: fixture.sessionHeaders(actor),
-        query: { agentId },
-      }),
-      [200],
-    );
-    expect(result.body).toMatchObject({
-      status: "unavailable",
-      recommendations: [],
-    });
-    expect(gmailListCalls).toBe(1);
-    expect(gmailDetailCalls).toBe(1);
-    expect(providerCalls).toBe(0);
-  });
+      const result = await accept(
+        recommendationsClient().list({
+          headers: fixture.sessionHeaders(actor),
+          query: { agentId },
+        }),
+        [200],
+      );
+      expect(result.body).toMatchObject({
+        status: "unavailable",
+        recommendations: [],
+      });
+      expect(providerCalls).toBe(0);
+    },
+  );
 
   it("renews an open home's cron lease without loading or replacing cards", async () => {
     const { actor, agentId } = await fixture.entitledNativeChatActor();

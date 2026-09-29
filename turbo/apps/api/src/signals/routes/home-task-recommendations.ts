@@ -16,7 +16,7 @@ import { authRoute } from "../auth/auth-route";
 import { setResHeader$ } from "../context/hono";
 import { queryOf } from "../context/request";
 import { clerk$ } from "../external/clerk";
-import { db$, writeDb$, type ReadonlyDb } from "../external/db";
+import { db$, type ReadonlyDb } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import { agentExists } from "../services/agent-data.service";
 import {
@@ -27,8 +27,8 @@ import { userFeatureSwitchOverrides } from "../services/feature-switches.service
 import { loadCurrentMembershipId } from "../services/morning-brief-membership.service";
 import {
   homeTaskRecommendationsUnavailable,
-  readHomeTaskRecommendations,
-  touchHomeTaskRecommendations,
+  readHomeTaskRecommendations$,
+  touchHomeTaskRecommendations$,
 } from "../services/home-task-recommendations.service";
 import { settle } from "../utils";
 
@@ -132,8 +132,8 @@ const list$ = command(async ({ get, set }, signal: AbortSignal) => {
     };
   }
   signal.throwIfAborted();
-  const body = await readHomeTaskRecommendations(
-    set(writeDb$),
+  const body = await set(
+    readHomeTaskRecommendations$,
     { userId: auth.userId, orgId: auth.orgId, agentId },
     signal,
   );
@@ -191,8 +191,8 @@ const touch$ = command(async ({ get, set }, signal: AbortSignal) => {
     return { status: 204 as const, body: undefined };
   }
   signal.throwIfAborted();
-  await touchHomeTaskRecommendations(
-    set(writeDb$),
+  await set(
+    touchHomeTaskRecommendations$,
     { userId: auth.userId, orgId: auth.orgId, agentId },
     signal,
   );
