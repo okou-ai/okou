@@ -2,7 +2,6 @@ import { githubInstallations } from "@okouai/db/schema/github-installation";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
-import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { chatThreadEventInsertSql } from "./chat-thread-event.service";
 import { isDeepStrictEqual } from "node:util";
 
@@ -148,6 +147,7 @@ import {
   prepareNotionPageContentUpdatedEventConfigForPersist$,
   validateNotionEventConfigForConnector$,
 } from "./notion-automation-event.service";
+import { workflowAutomationConnectorSelectionSql } from "./workflow-automation-account.service";
 import { readAcceptedOfficialWorkflowCatalog } from "./official-workflow-catalog-read.service";
 import {
   OFFICIAL_WORKFLOW_AUTOMATION_READ_ONLY_MESSAGE,
@@ -1750,30 +1750,6 @@ function eventAutomationConnectorSlug(
             : null;
 }
 
-function eventAutomationConnectorSelectionSql(args: {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly workflowId: string;
-  readonly connectorSlug: string;
-}) {
-  return sql`WITH selected AS (
-    SELECT ${chatThreadConnectorSelections.connectorId} AS connector_id
-    FROM ${workflowUserAutomationThreads}
-    JOIN ${chatThreadConnectorSelections}
-      ON ${chatThreadConnectorSelections.chatThreadId} = ${workflowUserAutomationThreads.chatThreadId}
-      AND ${chatThreadConnectorSelections.connectorSlug} = ${args.connectorSlug}
-    WHERE ${workflowUserAutomationThreads.orgId} = ${args.orgId}
-      AND ${workflowUserAutomationThreads.userId} = ${args.userId}
-      AND ${workflowUserAutomationThreads.workflowId} = ${args.workflowId}
-    LIMIT 1
-  ) SELECT CASE WHEN EXISTS(SELECT 1 FROM selected)
-    THEN (SELECT connector_id FROM selected)
-    ELSE (SELECT ${connectors.id} FROM ${connectors}
-      WHERE ${connectors.orgId} = ${args.orgId} AND ${connectors.userId} = ${args.userId}
-        AND ${connectors.connectorSlug} = ${args.connectorSlug} AND ${connectors.isDefault}
-      LIMIT 1) END AS "connectorId"`;
-}
-
 const readEventAutomationConnectorId$ = command(
   async (
     { set },
@@ -1788,7 +1764,7 @@ const readEventAutomationConnectorId$ = command(
     const db = set(writeDb$);
     const [selected] = parseRawRows(
       z.object({ connectorId: z.string().nullable() }),
-      await db.execute(eventAutomationConnectorSelectionSql(args)),
+      await db.execute(workflowAutomationConnectorSelectionSql(args)),
     );
     signal.throwIfAborted();
     return selected?.connectorId ?? null;
@@ -1907,7 +1883,10 @@ const insertEventAutomation$ = command(
         const [selected] = parseRawRows(
           z.object({ connectorId: z.string().nullable() }),
           await tx.execute(
-            eventAutomationConnectorSelectionSql({ ...owner, connectorSlug }),
+            workflowAutomationConnectorSelectionSql({
+              ...owner,
+              connectorSlug,
+            }),
           ),
         );
         eventConnectorId = selected?.connectorId ?? null;
