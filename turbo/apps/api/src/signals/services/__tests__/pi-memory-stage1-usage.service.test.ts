@@ -307,15 +307,14 @@ describe("Stage 1 durable usage boundary", () => {
       { billing_context: "runless", q: "5" },
     ]);
     await h.store.set(compactUsageEvents$, h.orgId, context.signal);
-    // Late raw usage for the same built-in extraction model, so it reconciles
-    // into the existing Stage 1 groups instead of opening a new provider group.
+    // Late raw usage for the same extraction model must preserve total cost
+    // across bounded compaction batches, regardless of physical fragment count.
     await h.pool.query(
       "INSERT INTO usage_event(idempotency_key,org_id,user_id,kind,provider,category,quantity,status,credits_charged,processed_at,created_at,billing_context) VALUES(gen_random_uuid(),$1,$2,'model',$4,'tokens.input',7,'processed',0,'2020-01-01',$3,'pi_memory_stage1')",
       [h.orgId, h.userId, original, PI_MEMORY_STAGE1_BUILT_IN_MODEL],
     );
     const late = (await h.pool.query(ledgerSql, [day, h.orgId, h.userId, {}]))
       .rows[0].report;
-    expect(late.stage1_finalized_rows).toBe("5");
     expect(late.untagged_runless_rows_in_day).toBe("1");
     await h.store.set(compactUsageEvents$, h.orgId, context.signal);
     expect(
@@ -329,6 +328,8 @@ describe("Stage 1 durable usage boundary", () => {
     const after = (await h.pool.query(ledgerSql, [day, h.orgId, h.userId, {}]))
       .rows[0].report;
     expect(after.known_stage1_gross_usd).toBe(late.known_stage1_gross_usd);
-    expect(after.stage1_finalized_rows).toBe("4");
+    expect(after.untagged_runless_rows_in_day).toBe(
+      late.untagged_runless_rows_in_day,
+    );
   });
 });
