@@ -22,6 +22,8 @@ import {
 } from "./builtin-connector-credential-access.service";
 import {
   parseOauthScopes,
+  refreshedConnectorMetadata,
+  type ConnectorRefreshPublicationResult,
   builtinConnectorStoredValueRef,
   storedValueSnapshot,
   decryptCredentialValueSnapshot,
@@ -233,10 +235,7 @@ const commitConnectorRefresh$ = command(
       readonly tokenExpiresAt: Date | null;
     },
     signal: AbortSignal,
-  ): Promise<
-    | { readonly kind: "ok"; readonly tokenExpiresAt: Date | null }
-    | { readonly kind: "connection-changed" }
-  > => {
+  ): Promise<ConnectorRefreshPublicationResult> => {
     const db = set(writeDb$);
     const access = refreshTokenAccess(args.connection);
     const inputRefs = Object.values(access.inputs);
@@ -331,20 +330,25 @@ const commitConnectorRefresh$ = command(
             });
         }
       }
-      await tx
+      const [published] = await tx
         .update(connectors)
-        .set({
-          ...(args.scopes === undefined
-            ? {}
-            : { oauthGrantedScopes: JSON.stringify(args.scopes) }),
-          tokenExpiresAt: args.tokenExpiresAt,
-          storageVersion: args.connection.runtimeMethod.method.storage.version,
-          needsReconnect: false,
-          reconnectReason: null,
-          updatedAt: sql`clock_timestamp()`,
-        })
-        .where(eq(connectors.id, args.connection.connectorId));
-      return { kind: "ok", tokenExpiresAt: args.tokenExpiresAt } as const;
+        .set(refreshedConnectorMetadata(args))
+        .where(eq(connectors.id, args.connection.connectorId))
+        .returning({
+          stateRevision: sql`${connectors.updatedAt}::text`.mapWith(
+            pgTextDecoder,
+          ),
+        });
+      if (!published) {
+        throw new Error(
+          "Connector disappeared while publishing refreshed credentials",
+        );
+      }
+      return {
+        kind: "ok",
+        tokenExpiresAt: args.tokenExpiresAt,
+        stateRevision: published.stateRevision,
+      } as const;
     });
     signal.throwIfAborted();
     return result;
@@ -490,10 +494,7 @@ const persistConnectorRefresh$ = command(
       readonly expiresIn: number | undefined;
     },
     signal: AbortSignal,
-  ): Promise<
-    | { readonly kind: "ok"; readonly tokenExpiresAt: Date | null }
-    | { readonly kind: "connection-changed" }
-  > => {
+  ): Promise<ConnectorRefreshPublicationResult> => {
     const access = refreshTokenAccess(args.connection);
     const tokenExpiresAt = refreshTokenExpiresAt(
       args.expiresIn,
@@ -627,6 +628,7 @@ export const refreshBuiltinConnectorCredentialAccess$ = command(
         )
       : {
           kind: "ok" as const,
+          stateRevision: args.connection.stateRevision,
           tokenExpiresAt: refreshTokenExpiresAt(
             refreshed.value.expiresIn,
             undefined,
@@ -641,6 +643,7 @@ export const refreshBuiltinConnectorCredentialAccess$ = command(
     return {
       kind: "ok",
       accessToken,
+      stateRevision: persisted.stateRevision,
       tokenExpiresAt: persisted.tokenExpiresAt,
     };
   },

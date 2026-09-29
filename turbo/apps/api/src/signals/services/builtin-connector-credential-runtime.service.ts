@@ -82,6 +82,7 @@ export type BuiltinConnectorCredentialRefreshResult =
   | {
       readonly kind: "ok";
       readonly accessToken: string;
+      readonly stateRevision: string;
       readonly tokenExpiresAt: Date | null;
     }
   | {
@@ -107,6 +108,31 @@ interface BuiltinConnectorCredentialRefreshArgs {
   };
   readonly runtimeEnvironmentName: string;
   readonly userId: string;
+}
+
+export type ConnectorRefreshPublicationResult =
+  | {
+      readonly kind: "ok";
+      readonly tokenExpiresAt: Date | null;
+      readonly stateRevision: string;
+    }
+  | { readonly kind: "connection-changed" };
+
+export function refreshedConnectorMetadata(args: {
+  readonly scopes: readonly string[] | undefined;
+  readonly tokenExpiresAt: Date | null;
+  readonly connection: BuiltinConnectorCredentialConnection;
+}) {
+  return {
+    ...(args.scopes === undefined
+      ? {}
+      : { oauthGrantedScopes: JSON.stringify(args.scopes) }),
+    tokenExpiresAt: args.tokenExpiresAt,
+    storageVersion: args.connection.runtimeMethod.method.storage.version,
+    needsReconnect: false,
+    reconnectReason: null,
+    updatedAt: sql`clock_timestamp()`,
+  };
 }
 
 export type BuiltinConnectorRefreshTokenAccess = Extract<
@@ -480,10 +506,7 @@ async function persistConnectorRefresh(
     readonly expiresIn: number | undefined;
   },
   signal: AbortSignal,
-): Promise<
-  | { readonly kind: "ok"; readonly tokenExpiresAt: Date | null }
-  | { readonly kind: "connection-changed" }
-> {
+): Promise<ConnectorRefreshPublicationResult> {
   const access = args.connection.runtimeMethod.method.access;
   if (access.kind !== "refresh-token") {
     throw new Error("Connector credential is not refreshable");
@@ -538,10 +561,7 @@ async function commitConnectorRefresh(
     >;
   },
   signal: AbortSignal,
-): Promise<
-  | { readonly kind: "ok"; readonly tokenExpiresAt: Date | null }
-  | { readonly kind: "connection-changed" }
-> {
+): Promise<ConnectorRefreshPublicationResult> {
   const result = await args.db.transaction(async (tx) => {
     // Outgoing account replacement/deletion still uses this coordinator.
     // Retire it only when those writers share the conditional storage protocol.
@@ -629,20 +649,25 @@ async function commitConnectorRefresh(
           });
       }
     }
-    await tx
+    const [published] = await tx
       .update(connectors)
-      .set({
-        ...(args.scopes === undefined
-          ? {}
-          : { oauthGrantedScopes: JSON.stringify(args.scopes) }),
-        tokenExpiresAt: args.tokenExpiresAt,
-        storageVersion: args.connection.runtimeMethod.method.storage.version,
-        needsReconnect: false,
-        reconnectReason: null,
-        updatedAt: sql`clock_timestamp()`,
-      })
-      .where(eq(connectors.id, args.connection.connectorId));
-    return { kind: "ok", tokenExpiresAt: args.tokenExpiresAt } as const;
+      .set(refreshedConnectorMetadata(args))
+      .where(eq(connectors.id, args.connection.connectorId))
+      .returning({
+        stateRevision: sql`${connectors.updatedAt}::text`.mapWith(
+          pgTextDecoder,
+        ),
+      });
+    if (!published) {
+      throw new Error(
+        "Connector disappeared while publishing refreshed credentials",
+      );
+    }
+    return {
+      kind: "ok",
+      tokenExpiresAt: args.tokenExpiresAt,
+      stateRevision: published.stateRevision,
+    } as const;
   });
   signal.throwIfAborted();
   return result;
@@ -906,6 +931,7 @@ export async function refreshBuiltinConnectorCredentialAccess(
       )
     : {
         kind: "ok" as const,
+        stateRevision: args.connection.stateRevision,
         tokenExpiresAt: refreshTokenExpiresAt(
           refreshed.value.expiresIn,
           undefined,
@@ -920,6 +946,7 @@ export async function refreshBuiltinConnectorCredentialAccess(
   return {
     kind: "ok",
     accessToken,
+    stateRevision: persisted.stateRevision,
     tokenExpiresAt: persisted.tokenExpiresAt,
   };
 }
