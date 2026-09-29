@@ -78,6 +78,7 @@ import {
   loadBillingOrganizationPendingInvitations,
 } from "./billing-clerk-directory.service";
 import { onRejection, settle } from "../utils";
+import { memberRewardWalletQuery } from "./get-started-member-reward";
 
 const PURPOSE = "usage_pack_invitation_purchase";
 const PURCHASE_ID_METADATA_KEY = "usagePackInvitationPurchaseId";
@@ -2111,6 +2112,14 @@ async function activateAcceptedPurchase(
       },
       signal,
     );
+    // Provider projection has returned. Publish grants only while owning the
+    // same wallet as settlement; no provider request follows this acquisition.
+    const [wallet] = await tx
+      .select()
+      .from(memberRewardWalletQuery(current.orgId));
+    if (!wallet) {
+      throw new Error("Invitation activation has no organization wallet");
+    }
     if (current.purchasedCredits > 0) {
       if (
         current.amountPaidCents === null ||
