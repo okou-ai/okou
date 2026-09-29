@@ -26,6 +26,7 @@ pub(super) enum Event {
 
 #[derive(Clone, Copy)]
 enum Profile {
+    None,
     Vnc,
     Plain,
 }
@@ -44,6 +45,10 @@ pub(crate) struct Peer {
 }
 
 impl Peer {
+    pub(crate) async fn none() -> Self {
+        Self::with_profile(Profile::None).await
+    }
+
     pub(crate) async fn new() -> Self {
         Self::with_profile(Profile::Vnc).await
     }
@@ -154,6 +159,7 @@ async fn serve(
     assert_eq!(socket.read_u16().await?, 2);
     socket.write_all(&[0, 1]).await?;
     let subtype = match profile {
+        Profile::None => 260,
         Profile::Vnc => 261,
         Profile::Plain => 262,
     };
@@ -162,6 +168,7 @@ async fn serve(
     socket.write_u8(1).await?;
     let mut socket = TlsAcceptor::from(config).accept(socket).await?;
     match profile {
+        Profile::None => {}
         Profile::Vnc => {
             socket.write_all(b"0123456789abcdef").await?;
             socket.flush().await?;

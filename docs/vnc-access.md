@@ -116,17 +116,18 @@ exposes `username` only for `username_password`,
 ciphertext. Credentials can be shared by multiple saved connections belonging
 to the same user and organization.
 
-Hosts contain a canonical DNS name or IP address, a port (default 5900), a
-credential selection and explicit `security`. Owner configuration accepts
+Hosts contain a canonical DNS name or IP address, a port (default 5900),
+explicit `security` and, for password-backed profiles, a credential selection.
+Owner configuration accepts `{ type: "x509_none", trust }`,
 `{ type: "x509_vnc", trust }` and `{ type: "x509_plain", trust }`; trust is
 either `{ mode: "system" }` or `{ mode: "custom_ca", caBundle: "..." }`.
-Either X509 security variant may also carry `serverName`, a separately
+Each X509 security variant may also carry `serverName`, a separately
 canonicalized DNS name or IP identity for certificate verification. Omitting it
 means use the saved VNC host; it never replaces the socket destination. Apple
 security variants do not accept `serverName` or an X.509 trust policy.
-The exact stored pairs are `vnc_password` / `x509_vnc`,
-`vnc_password` / `apple_vnc_password`, `username_password` / `x509_plain`, and
-`apple_dh_username_password` / `apple_dh`,
+The exact stored pairs are `none` / `x509_none` (without a credential),
+`vnc_password` / `x509_vnc`, `vnc_password` / `apple_vnc_password`,
+`username_password` / `x509_plain`, `apple_dh_username_password` / `apple_dh`,
 `apple_srp_username_password` / `apple_srp`, and
 `apple_rsa_srp_username_password` / `apple_rsa_srp`. None of the Apple profiles
 has an X.509 trust bundle or certificate identity; their routes are restricted as
@@ -148,11 +149,13 @@ Runners omit transport, which means direct-only; an authorized SSH row returns
 `unsupported_profile` before VNC credential decryption and never falls back to
 public TCP.
 
-Connection creation accepts either `credential: { id }` or
-`credential: { create: { name, authentication } }`. Inline credential and host
-creation commit atomically. Each saved connection has its own UUID; multiple
-connections can share the same canonical host and port, including the same
-credential. This permits independent login and security configurations, matching
+Connection creation accepts `credential: { type: "none" }` only with
+`security: { type: "x509_none", trust, ... }`; other profiles require either
+`credential: { id }` or `credential: { create: { name, authentication } }`.
+X509None metadata contains `{ credential: { type: "none" } }` rather than
+`credentialId` or `credentialName`. Inline credential and host creation commit
+atomically. Each saved connection has its own UUID; multiple connections can
+share the same canonical host and port, including the same credential. This permits independent login and security configurations, matching
 SSH. Updates and deletion address one saved UUID rather than every matching
 endpoint. Failed writes and creation retries cannot leave an orphaned inline
 credential.
@@ -167,7 +170,8 @@ reject stale versions; the caller must refresh metadata before deciding whether
 to resubmit. Credential authentication changes within the same method advance
 every referencing connection's generation. A referenced credential cannot
 change methods; change a connection's profile by atomically selecting a
-compatible credential and security type. Referenced credentials cannot be deleted
+compatible credential and security type, or by explicitly selecting
+`{ type: "none" }` together with X509None. Referenced credentials cannot be deleted
 until their hosts are rebound or deleted. Deleting a host retains its reusable
 credential.
 
