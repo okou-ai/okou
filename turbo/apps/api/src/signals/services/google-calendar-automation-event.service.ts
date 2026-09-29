@@ -1820,6 +1820,11 @@ async function restorePreparedCalendarWatch(args: {
     ) {
       return;
     }
+    // An acknowledged read may find a successful commit even when the caller
+    // saw a finalization error. Never roll a published channel back to an old one.
+    if (current.resourceId.length > 0 && !current.needsRewatch) {
+      return;
+    }
     const retainedPrevious = previousCalendarChannel(current);
     const previous = args.prepared.previousState;
     if (!retainedPrevious) {
@@ -1889,6 +1894,7 @@ async function retainRegisteredCalendarWatchForRetry(args: {
         and(
           eq(googleCalendarWatchStates.id, args.prepared.stateId),
           eq(googleCalendarWatchStates.channelId, args.prepared.channelId),
+          eq(googleCalendarWatchStates.needsRewatch, true),
         ),
       );
     lifecycleSignal.throwIfAborted();
@@ -1904,6 +1910,23 @@ async function cleanupRegisteredCalendarWatch(args: {
   readonly resourceUri: string;
   readonly expiration: string | number | undefined;
 }): Promise<void> {
+  // Resolve an uncertain local commit before deleting a remotely registered
+  // channel. A failed authoritative read leaves cleanup to reconciliation.
+  const [published] = await args.db
+    .select({ id: googleCalendarWatchStates.id })
+    .from(googleCalendarWatchStates)
+    .where(
+      and(
+        eq(googleCalendarWatchStates.id, args.prepared.stateId),
+        eq(googleCalendarWatchStates.channelId, args.prepared.channelId),
+        eq(googleCalendarWatchStates.resourceId, args.resourceId),
+        eq(googleCalendarWatchStates.needsRewatch, false),
+      ),
+    )
+    .limit(1);
+  if (published) {
+    return;
+  }
   const stopped = await stopCalendarChannelWithLifecycleOwnership({
     accessToken: args.access.accessToken,
     channel: {
@@ -2185,6 +2208,13 @@ async function prepareGoogleCalendarEnsureBaseline(
     { ...args, calendarId },
     signal,
   );
+  if (
+    observed &&
+    !args.forceRefresh &&
+    !watchNeedsRefresh(observed, nowDate())
+  ) {
+    return { kind: "ok", observed, baseline: null };
+  }
   if (
     observed &&
     (previousCalendarChannel(observed) || observed.resourceId.length === 0)
