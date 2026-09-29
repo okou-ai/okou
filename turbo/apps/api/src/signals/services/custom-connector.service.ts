@@ -23,6 +23,9 @@ import {
   type CustomConnectorValueInput,
   type UpdateCustomConnectorBody,
 } from "@okouai/api-contracts/contracts/custom-connectors";
+import { orgTierSchema } from "@okouai/api-contracts/contracts/orgs";
+import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
+import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
 import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
   canonicalizeFirewallBaseUrl,
@@ -95,6 +98,7 @@ import {
 import type { Tx } from "../../lib/db-types";
 import { writeCustomConnectorOAuthState } from "./custom-connector-oauth-write.service";
 import { invalidatePiStableContextsForOrg } from "./pi-stable-context-generation.service";
+import { orgPlanEntitlementValues } from "./org-plan-entitlements.service";
 
 const L = logger("CustomConnectorService");
 
@@ -1766,6 +1770,35 @@ function findCustomConnectorPrefixConflict(
   return null;
 }
 
+const ensureCustomConnectorOrgMetadata$ = command(
+  async ({ set }, orgId: string, signal: AbortSignal): Promise<void> => {
+    const db = set(writeDb$);
+    await db.transaction(async (tx) => {
+      const [inserted] = await tx
+        .insert(orgMetadataCanonicalWrites)
+        .values({ orgId: orgId })
+        .onConflictDoNothing()
+        .returning({ orgId: orgMetadata.orgId, tier: orgMetadata.tier });
+      if (inserted) {
+        await tx
+          .insert(orgPlanEntitlements)
+          .values(
+            orgPlanEntitlementValues(
+              {
+                orgId: inserted.orgId,
+                tier: orgTierSchema.parse(inserted.tier),
+                source: "org_metadata_migration",
+              },
+              { stripeSubscriptionId: null, sourceMetadata: {} },
+            ),
+          )
+          .onConflictDoNothing({ target: orgPlanEntitlements.orgId });
+      }
+    });
+    signal.throwIfAborted();
+  },
+);
+
 const persistCustomConnectorCreate$ = command(
   async (
     { set },
@@ -1788,6 +1821,10 @@ const persistCustomConnectorCreate$ = command(
       }
     | BadRequestResponse
   > => {
+    if (args.definition.kind === "http") {
+      await set(ensureCustomConnectorOrgMetadata$, args.orgId, signal);
+      signal.throwIfAborted();
+    }
     const db = set(writeDb$);
     return await db.transaction(async (tx) => {
       if (args.definition.kind === "http") {
@@ -1796,10 +1833,6 @@ const persistCustomConnectorCreate$ = command(
         );
         // This existing business parent also arbitrates an initially empty prefix
         // set. Read the namespace only after ownership is acquired at READ COMMITTED.
-        await tx
-          .insert(orgMetadata)
-          .values({ orgId: args.orgId })
-          .onConflictDoNothing();
         await tx
           .select({ orgId: orgMetadata.orgId })
           .from(orgMetadata)
@@ -2135,6 +2168,10 @@ const persistCustomConnectorUpdate$ = command(
     | BadRequestResponse
     | null
   > => {
+    if (args.definition.kind === "http") {
+      await set(ensureCustomConnectorOrgMetadata$, args.orgId, signal);
+      signal.throwIfAborted();
+    }
     const db = set(writeDb$);
     return await db.transaction(async (tx) => {
       if (args.definition.kind === "http") {
@@ -2143,10 +2180,6 @@ const persistCustomConnectorUpdate$ = command(
         );
         // This existing business parent also arbitrates an initially empty prefix
         // set. Read the namespace only after ownership is acquired at READ COMMITTED.
-        await tx
-          .insert(orgMetadata)
-          .values({ orgId: args.orgId })
-          .onConflictDoNothing();
         await tx
           .select({ orgId: orgMetadata.orgId })
           .from(orgMetadata)
