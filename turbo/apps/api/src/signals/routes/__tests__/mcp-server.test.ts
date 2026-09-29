@@ -3816,7 +3816,7 @@ describe("MCP chat mutations", () => {
     );
   });
 
-  it("replays an equivalent owned first-party text input without creating another message", async () => {
+  it("keeps an owned first-party text input separate from MCP retry identity", async () => {
     const f = await messageFixture();
     const thread = await f.chat.createThread(f.actor, {
       agentId: f.agent.agentId,
@@ -3838,29 +3838,24 @@ describe("MCP chat mutations", () => {
     const original = before.events.find((event) => {
       return event.id === requestId;
     });
-    if (!original) {
-      throw new Error("Expected the original first-party input");
+    if (original?.eventType !== "input.prompt") {
+      throw new Error("Expected the first-party input");
     }
+    expect(original.userMessage).toStrictEqual({
+      version: 1,
+      parts: [{ type: "text", text }],
+    });
     const token = f.auth.token({ scope: defaultScopes });
     for (let attempt = 0; attempt < 2; attempt++) {
-      const replay = await sendMessage(token, {
+      const failed = await callTool(token, "send_chat_message", {
         threadId: thread.id,
         text,
         requestId,
       });
-      expect(replay).toMatchObject({
-        inputRef: {
-          threadId: thread.id,
-          eventId: requestId,
-          seqId: original.seqId,
-        },
-        replayed: true,
-        disposition: "rejected",
-        runId: null,
+      expect(structuredToolError(failed)).toMatchObject({
+        code: "request_id_conflict",
+        retryable: false,
       });
-      expect(Date.parse(replay.acceptedAt)).toBe(
-        Date.parse(original.createdAt),
-      );
     }
     await expect(
       f.chat.listThreadEvents(f.actor, thread.id),

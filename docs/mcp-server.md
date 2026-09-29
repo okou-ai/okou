@@ -70,9 +70,12 @@ the tool's documented idempotency and inspection guidance before retrying.
 
 The catalog publishes `idempotentHint: false` for creation, metadata updates and
 message sends because their request identities are retained for a bounded time,
-not permanently. Each still supports an identical replay within 24 hours. After
-a successful response, use its `retryUntil` as the deadline; after a lost
-response, retry the identical request immediately within that documented window.
+not permanently. Current creations, updates, and source-bearing message sends
+support identical replay within 24 hours. Pre-cutover text-only MCP inputs,
+including a combined creation's initial message, are an exception after #37276:
+retrying them can conflict within that window. After a successful response, use
+its `retryUntil` as the deadline; after a lost response, retry the identical
+request immediately within that documented window for current inputs.
 The positive hints on queued-input revocation and run cancellation instead
 describe target-state mutations whose repeated calls do not recreate missing
 work.
@@ -536,14 +539,17 @@ different reference. Do not assume the original input is a valid visible
 history and retain the original `inputRef` separately.
 
 For a retry after timeout or a lost response, use the **same requestId, threadId
-and exact text within 24 hours of acceptance**. A matching authorized request
-reuses the original input without submitting it again. Changed text, thread,
-user or organization conflicts. The UUID shares the existing `clientEventId`
-namespace: an equivalent authorized text-only or MCP-attributed input can be
-reused regardless of which OAuth client retries it. The original source and
-name, if any, remain unchanged; the later client's ID is not part of retry
-identity. An input with different structured content conflicts. To intentionally
-submit another message, generate a new request ID.
+and exact text within 24 hours of acceptance**. A matching authorized
+MCP-attributed input is reused without submitting it again. Changed text,
+thread, user or organization conflicts. The UUID shares the existing
+`clientEventId` namespace: a same-ID first-party text-only input is not an MCP
+replay. A pre-cutover text-only MCP input is also no longer replayable after
+#37276, even if its original 24-hour window remains open; the requester waived
+the old-writer drain and such a retry can return `request_id_conflict`. A
+source-bearing input can be replayed by a different authorized OAuth client;
+the first source and name remain unchanged and the later client's ID is not
+part of retry identity. An input with different structured content conflicts.
+To intentionally submit another message, generate a new request ID.
 
 There is no deduplication guarantee after 24 hours. A retained original input
 past that window is rejected as expired. Once its live event has been removed
@@ -559,9 +565,9 @@ admission failure or concurrent identity conflict, as it does for first-party
 sends. MCP does not accept explicit model or service-tier changes here.
 
 Retry resolution reads the original immutable `chat_events` input, checks its
-exact text and either its single MCP source part or the prior text-only shape,
-and derives the receipt from its ID, sequence and creation time. The existing
-30-day live-event retention covers the 24-hour retry window. A locked recheck
+exact text and single MCP source part, and derives the receipt from its ID,
+sequence and creation time. The existing 30-day live-event retention covers the
+24-hour retry window for source-bearing inputs. A locked recheck
 and the event's unique ID prevent concurrent duplicate enqueue; losing writes
 roll back. No extra table, fingerprint, permanent identity record or migration
 is added. Current thread ownership is checked before resolving a receipt;
