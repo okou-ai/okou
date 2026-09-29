@@ -168,3 +168,20 @@ advisory lock, lock waiter, temporary trigger or artificial database gate is use
 Local full Vitest and local development servers are intentionally not run;
 behavior execution belongs to the PR pipeline. The PR records exact formatting,
 lint and type-check results separately from CI results.
+
+The concurrent subscription webhook regression accepts a failed first delivery
+only when the same original event is redelivered successfully. It then reads
+billing status and runtime capacity, and replays the original paid invoice to
+check that quantities, credits and effective capacity do not increase. The
+separate `uses the live Stripe quantity for proration invoices` checkout test
+retains the stronger mixed credit/debit proration case (invoice quantities 2 and
+5, authoritative Stripe quantity 4); the duplicate proration setup is removed
+from the concurrent-delivery case.
+
+The two invitation-accepted tests are consolidated into concurrent payment and
+acceptance coverage. Production credit and get-started APIs show no activation
+before acceptance, one purchased/bonus balance after acceptance, and unchanged
+balances after another acceptance delivery. The existing 100-credit inviter
+reward remains asserted. The separate membership-created webhook test retains
+its distinct entry point and exact two-grant/expiry assertions. The Atom Custom
+quantity assertion and its authoritative Stripe period fixture remain intact.

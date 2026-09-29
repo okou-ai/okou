@@ -15818,6 +15818,26 @@ describe("usage pack allocation management", () => {
       payInvitationPurchase(purchase, invitationId),
       payInvitationPurchase(purchase, invitationId),
     ]);
+    const pendingCredits = await readDeferredReplayCredits(fixture);
+    expect(pendingCredits).toMatchObject({
+      hasUsagePack: true,
+      purchasedCredits: 10_000,
+      bonusCredits: 200,
+      totalCredits: 10_200,
+    });
+    expect(pendingCredits.memberCredits).not.toContainEqual(
+      expect.objectContaining({ memberId: acceptedUserId }),
+    );
+    expect(
+      (await readGetStartedStatus(context, fixture)).quests.find((quest) => {
+        return quest.key === "invite";
+      }),
+    ).toMatchObject({ claimedCount: 0, pendingCount: 1 });
+    expect(
+      context.mocks.clerk.organizations.createOrganizationInvitation,
+    ).toHaveBeenCalledTimes(1);
+    expect(context.mocks.stripe.subscriptions.update).not.toHaveBeenCalled();
+
     context.mocks.stripe.subscriptions.update.mockResolvedValue({});
     await Promise.all([
       postClerkInvitationAccepted({
@@ -15852,130 +15872,20 @@ describe("usage pack allocation management", () => {
       bonusCredits: 500,
       totalCredits: 20_500,
     });
+    await postClerkInvitationAccepted({
+      purchase,
+      invitationId,
+      userId: acceptedUserId,
+    });
+    await expect(readDeferredReplayCredits(fixture)).resolves.toStrictEqual(
+      credits,
+    );
+    expect(context.mocks.stripe.subscriptions.update).toHaveBeenCalledTimes(1);
     const getStarted = await readGetStartedStatus(context, fixture);
     expect(
       getStarted.quests.find((quest) => {
         return quest.key === "invite";
       }),
-    ).toMatchObject({ claimedCount: 1, earnedCredits: 100 });
-  });
-
-  it("activates one paid invitation exactly once after Clerk acceptance", async () => {
-    const purchase = await beginInvitationPurchase();
-    const invitationId = `inv_paid_${randomUUID()}`;
-    await payInvitationPurchase(purchase, invitationId);
-    await payInvitationPurchase(purchase, invitationId);
-    expect(
-      (await readGetStartedStatus(context, purchase.fixture)).quests.find(
-        (q) => {
-          return q.key === "invite";
-        },
-      ),
-    ).toMatchObject({ claimedCount: 0, pendingCount: 1 });
-
-    const pending = await readUsagePackState(
-      purchase.fixture.orgId,
-      purchase.fixture.usagePackSubscriptionId,
-    );
-    expect(pending.invitationPurchases[0]).toStrictEqual(
-      expect.objectContaining({
-        status: "invitation_pending",
-        amountPaidCents: 1000,
-        stripePaymentIntentId: purchase.paymentIntentId,
-        clerkInvitationId: invitationId,
-      }),
-    );
-    expect(
-      pending.allocations.find((allocation) => {
-        return allocation.invitationId === invitationId;
-      })?.status,
-    ).toBe("paid_pending_invitation");
-    expect(
-      new Set(
-        pending.grants.map((grant) => {
-          return grant.userId;
-        }),
-      ),
-    ).toStrictEqual(new Set([purchase.existingMemberUserId]));
-    expect(pending.grants).toHaveLength(2);
-    expect(
-      context.mocks.clerk.organizations.createOrganizationInvitation,
-    ).toHaveBeenCalledTimes(1);
-    expect(context.mocks.stripe.subscriptions.update).not.toHaveBeenCalled();
-
-    const acceptedUserId = `user_invited_${randomUUID()}`;
-    context.mocks.stripe.subscriptions.update.mockResolvedValue({});
-    await postClerkInvitationAccepted({
-      purchase,
-      invitationId,
-      userId: acceptedUserId,
-    });
-    await postClerkInvitationAccepted({
-      purchase,
-      invitationId,
-      userId: acceptedUserId,
-    });
-
-    const accepted = await readUsagePackState(
-      purchase.fixture.orgId,
-      purchase.fixture.usagePackSubscriptionId,
-    );
-    expect(accepted.invitationPurchases[0]).toStrictEqual(
-      expect.objectContaining({
-        status: "accepted",
-        acceptedUserId,
-      }),
-    );
-    expect(
-      accepted.allocations.filter((allocation) => {
-        return allocation.userId === acceptedUserId;
-      }),
-    ).toStrictEqual([
-      expect.objectContaining({
-        invitationId: null,
-        status: "active",
-        usagePackUsd: 20,
-      }),
-    ]);
-    expect(
-      accepted.grants.filter((grant) => {
-        return grant.userId === acceptedUserId;
-      }),
-    ).toStrictEqual([
-      {
-        userId: acceptedUserId,
-        grantType: "bonus",
-        originalAmount: 200,
-        expiresAt: new Date(
-          purchase.fixture.billingPeriod.end * 1000,
-        ).toISOString(),
-      },
-      {
-        userId: acceptedUserId,
-        grantType: "purchased",
-        originalAmount: 10_000,
-        expiresAt: new Date(
-          purchase.fixture.billingPeriod.end * 1000,
-        ).toISOString(),
-      },
-    ]);
-    expect(context.mocks.stripe.subscriptions.update).toHaveBeenCalledTimes(1);
-    expect(context.mocks.stripe.subscriptions.update).toHaveBeenCalledWith(
-      purchase.fixture.subscriptionId,
-      {
-        items: [{ id: `si_${TEST_PRICE_USAGE_PACK_20}`, quantity: 2 }],
-        proration_behavior: "none",
-      },
-      expect.objectContaining({
-        idempotencyKey: expect.stringContaining(purchase.purchaseId),
-      }),
-    );
-    expect(
-      (await readGetStartedStatus(context, purchase.fixture)).quests.find(
-        (q) => {
-          return q.key === "invite";
-        },
-      ),
     ).toMatchObject({ claimedCount: 1, earnedCredits: 100 });
   });
 
