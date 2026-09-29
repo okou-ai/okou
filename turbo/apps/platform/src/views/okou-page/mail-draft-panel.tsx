@@ -43,6 +43,9 @@ import {
 } from "./attachment-chips.tsx";
 import { useGmailReconnect } from "./use-gmail-reconnect.ts";
 
+const STANDALONE_ACTION_CLASS_NAME =
+  "bg-foreground text-background hover:bg-foreground-hover active:bg-foreground-pressed";
+
 interface MailDraftPanelProps {
   readonly signals: MailDraftSignals;
   readonly onClose?: () => void;
@@ -164,9 +167,11 @@ function UnavailableMailDraftSidebar({
 function GmailReconnectButton({
   signals,
   connectionId,
+  standalone,
 }: {
   readonly signals: MailDraftSignals;
   readonly connectionId: string | undefined;
+  readonly standalone: boolean;
 }) {
   const { t } = useTranslation();
   const reloadDraft = useSet(signals.reloadDraft$);
@@ -178,6 +183,7 @@ function GmailReconnectButton({
     <Button
       type="button"
       size="sm"
+      className={standalone ? STANDALONE_ACTION_CLASS_NAME : undefined}
       disabled={reconnectDisabled}
       onClick={reconnect}
     >
@@ -1043,7 +1049,7 @@ function MailDraftDetails({
         </div>
         {attachments.length > 0 ? (
           <div className="grid gap-2.5 border-t border-border/60 pt-4">
-            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <div className="text-xs font-medium text-muted-foreground">
               {t(($) => {
                 return $.chat.attachments.title;
               })}
@@ -1159,7 +1165,13 @@ function MailDraftDetail({
             })}
           </a>
           {active ? (
-            <Button type="button" size="sm" disabled={pending} onClick={onSend}>
+            <Button
+              type="button"
+              size="sm"
+              className={close ? undefined : STANDALONE_ACTION_CLASS_NAME}
+              disabled={pending}
+              onClick={onSend}
+            >
               {sendLoadable.state === "loading" ? (
                 <Loader2 size={15} className="animate-spin" />
               ) : (
@@ -1203,6 +1215,7 @@ export function MailDraftPanel({ signals, onClose }: MailDraftPanelProps) {
           <GmailReconnectButton
             signals={signals}
             connectionId={draftLoadable.data.reconnectConnectionId}
+            standalone={!onClose}
           />
         }
       />
