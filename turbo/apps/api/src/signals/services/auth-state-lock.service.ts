@@ -3,6 +3,15 @@ import type { ConnectorAccountTarget } from "@okouai/api-contracts/contracts/con
 
 import type { Db } from "../external/db";
 
+export function builtinConnectorStateLockStatement(args: {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly connectorSlug: string;
+}) {
+  // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
+  return sql`SELECT pg_advisory_xact_lock(hashtext('connector_state:' || ${args.orgId} || ':' || ${args.userId} || ':' || ${args.connectorSlug}))`;
+}
+
 export async function lockBuiltinConnectorState(
   db: Db,
   args: {
@@ -11,10 +20,7 @@ export async function lockBuiltinConnectorState(
     readonly connectorSlug: string;
   },
 ): Promise<void> {
-  await db.execute(
-    // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-    sql`SELECT pg_advisory_xact_lock(hashtext('connector_state:' || ${args.orgId} || ':' || ${args.userId} || ':' || ${args.connectorSlug}))`,
-  );
+  await db.execute(builtinConnectorStateLockStatement(args));
 }
 
 export async function lockConnectorAccountTarget(

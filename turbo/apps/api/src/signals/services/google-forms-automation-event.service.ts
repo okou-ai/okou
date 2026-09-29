@@ -38,7 +38,10 @@ import { testOverride } from "../../lib/singleton";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import { safeJsonParse, safeUrlParse, settle, tapError } from "../utils";
-import { lockConnectorAccountTarget } from "./auth-state-lock.service";
+import {
+  builtinConnectorStateLockStatement,
+  lockConnectorAccountTarget,
+} from "./auth-state-lock.service";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import { loadConnectorRuntimeSnapshot } from "./connector-catalog-runtime.service";
 import {
@@ -585,14 +588,13 @@ function googleFormsLifecycleLockKey(
 // Outgoing API writers publish and delete by ID after remote I/O. Keep this
 // short publication lock until those API versions have drained and are no
 // longer rollback targets; Release 2 uses the snapshot predicates below.
-async function lockGoogleFormsLifecycle(
-  db: Db,
+function googleFormsLifecycleLockStatement(
   connectorId: string,
   formId: string,
-): Promise<void> {
+) {
   const lockKey = googleFormsLifecycleLockKey(connectorId, formId);
   // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-  await db.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`);
+  return sql`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
 }
 
 export async function hasEnabledGoogleFormsConsumer(
@@ -964,7 +966,9 @@ const publishGoogleFormsWatch$ = command(
   > => {
     const db = set(writeDb$);
     return await db.transaction(async (tx) => {
-      await lockGoogleFormsLifecycle(tx, args.connectorId, args.formId);
+      await tx.execute(
+        googleFormsLifecycleLockStatement(args.connectorId, args.formId),
+      );
       signal.throwIfAborted();
       const [current] = await tx
         .select()
@@ -1112,10 +1116,11 @@ const stopGoogleFormsWatchState$ = command(
       return { kind: "failed" };
     }
     return await db.transaction(async (tx) => {
-      await lockGoogleFormsLifecycle(
-        tx,
-        args.state.connectorId,
-        args.state.formId,
+      await tx.execute(
+        googleFormsLifecycleLockStatement(
+          args.state.connectorId,
+          args.state.formId,
+        ),
       );
       // A newly enabled consumer keeps its cursor. Reconciliation repairs any
       // remote gap caused by the completed stop request.
@@ -1258,7 +1263,9 @@ const reconcileGoogleFormsWatchState$ = command(
     }
     const watch = renewed.value;
     return await db.transaction(async (tx) => {
-      await lockGoogleFormsLifecycle(tx, state.connectorId, state.formId);
+      await tx.execute(
+        googleFormsLifecycleLockStatement(state.connectorId, state.formId),
+      );
       const currentTime = nowDate();
       const [updated] = await tx
         .update(googleFormsWatchStates)
@@ -1312,10 +1319,12 @@ const reprojectGoogleFormsAutomationOwnership$ = command(
   ): Promise<void> => {
     const db = set(writeDb$);
     await db.transaction(async (tx) => {
-      await lockConnectorAccountTarget(tx, {
-        ...args,
-        target: { kind: "builtin", connectorSlug: "google-forms" },
-      });
+      await tx.execute(
+        builtinConnectorStateLockStatement({
+          ...args,
+          connectorSlug: "google-forms",
+        }),
+      );
       const automations = await tx
         .select({
           id: workflowAutomations.id,
