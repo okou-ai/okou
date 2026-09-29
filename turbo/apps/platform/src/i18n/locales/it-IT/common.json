@@ -5019,6 +5019,10 @@
         "effort": "Sforzo",
         "effortScale": {
           "faster": "Più veloce",
+          "fewerCredits": "Meno crediti",
+          "higherUsage": "Consumo maggiore",
+          "lowerUsage": "Consumo minore",
+          "moreCredits": "Più crediti",
           "smarter": "Più intelligente"
         },
         "fast": "Veloce",
@@ -5026,6 +5030,7 @@
           "apiCost": "{{multiplier}}× il costo dei token API",
           "apiSpeed": "Fino a {{multiplier}}× la velocità del modello",
           "chatGptUsage": "{{multiplier}}× il consumo di ChatGPT",
+          "compactSummary": "Risposte più rapide · {{multiplier}}× crediti",
           "fasterResponses": "Risposte del modello più rapide",
           "modelSpeed": "{{multiplier}}× la velocità del modello",
           "okouCredits": "{{multiplier}}× i crediti modello Okou",
@@ -5033,6 +5038,7 @@
           "providerUsage": "Il consumo dipende dal fornitore",
           "summary": "{{speed}} · {{usage}}"
         },
+        "fastMode": "Modalità veloce",
         "generationPriceTiers": {
           "higher": "Costo più alto per generazione",
           "highest": "Costo massimo per generazione",

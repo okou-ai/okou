@@ -4937,6 +4937,10 @@
         "effort": "強度",
         "effortScale": {
           "faster": "速さ",
+          "fewerCredits": "消費クレジットが少ない",
+          "higherUsage": "使用量が多い",
+          "lowerUsage": "使用量が少ない",
+          "moreCredits": "消費クレジットが多い",
           "smarter": "賢さ"
         },
         "fast": "速い",
@@ -4944,6 +4948,7 @@
           "apiCost": "APIトークン料金 {{multiplier}}×",
           "apiSpeed": "モデル速度 最大{{multiplier}}×",
           "chatGptUsage": "ChatGPT使用量 {{multiplier}}×",
+          "compactSummary": "高速な応答 · クレジット消費 {{multiplier}}×",
           "fasterResponses": "モデルの応答が高速化",
           "modelSpeed": "モデル速度 {{multiplier}}×",
           "okouCredits": "Okouモデルクレジット消費 {{multiplier}}×",
@@ -4951,6 +4956,7 @@
           "providerUsage": "使用量はプロバイダーに依存",
           "summary": "{{speed}} · {{usage}}"
         },
+        "fastMode": "高速モード",
         "generationPriceTiers": {
           "higher": "1 回の生成あたりのコストは高め",
           "highest": "1 回の生成あたりのコストが最も高い",

@@ -4937,6 +4937,10 @@
         "effort": "思考强度",
         "effortScale": {
           "faster": "更快",
+          "fewerCredits": "更少积分",
+          "higherUsage": "更高用量",
+          "lowerUsage": "更低用量",
+          "moreCredits": "更多积分",
           "smarter": "更聪明"
         },
         "fast": "快速",
@@ -4944,6 +4948,7 @@
           "apiCost": "{{multiplier}}×API token成本",
           "apiSpeed": "模型速度最高{{multiplier}}×",
           "chatGptUsage": "{{multiplier}}×ChatGPT用量",
+          "compactSummary": "响应更快 · {{multiplier}}× 积分",
           "fasterResponses": "模型响应更快",
           "modelSpeed": "{{multiplier}}×模型速度",
           "okouCredits": "{{multiplier}}×Okou模型积分",
@@ -4951,6 +4956,7 @@
           "providerUsage": "用量取决于服务商",
           "summary": "{{speed}} · {{usage}}"
         },
+        "fastMode": "快速模式",
         "generationPriceTiers": {
           "higher": "单次生成成本较高",
           "highest": "单次生成成本最高",

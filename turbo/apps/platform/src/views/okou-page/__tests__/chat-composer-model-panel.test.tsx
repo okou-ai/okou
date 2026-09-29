@@ -106,9 +106,14 @@ test("Pick only chat models, with effort and Fast in the same panel", async () =
   // The trigger already names the level, so the panel does not repeat it above
   // the bar.
   expect(within(panel).queryByText("Max")).toBeNull();
+  expect(within(panel).getByText("Fewer credits")).toBeVisible();
+  expect(within(panel).getByText("More credits")).toBeVisible();
   expect(
-    within(panel).getByRole("switch", { name: "Fast" }),
-  ).toBeInTheDocument();
+    within(panel).getByText("Faster responses · 2× credits"),
+  ).toBeVisible();
+  expect(
+    within(panel).getByRole("switch", { name: "Fast mode" }),
+  ).toHaveAccessibleDescription("Faster responses · 2× credits");
   // Only the model list scrolls; effort and Fast stay pinned below it.
   const viewport = models.closest('[data-slot="scroll-area-viewport"]');
   expect(viewport).not.toBeNull();
@@ -128,7 +133,7 @@ test("Keep the panel open while changing effort, Fast and model", async () => {
   await expect(findButton("GPT 5.6 Sol, Low")).resolves.toBeInTheDocument();
   expect(panel).toBeVisible();
 
-  click(within(panel).getByRole("switch", { name: "Fast" }));
+  click(within(panel).getByRole("switch", { name: "Fast mode" }));
   await expect(
     findButton("GPT 5.6 Sol, Low, Fast"),
   ).resolves.toBeInTheDocument();
@@ -144,7 +149,7 @@ test("Keep the panel open while changing effort, Fast and model", async () => {
     "aria-valuetext",
     "High",
   );
-  expect(within(panel).queryByRole("switch", { name: "Fast" })).toBeNull();
+  expect(within(panel).queryByRole("switch", { name: "Fast mode" })).toBeNull();
 });
 
 test("Send with the model and effort chosen in the panel", async () => {
@@ -191,7 +196,7 @@ test("Name the model and its effort on the trigger, with a bolt for Fast", async
   // The bolt is the Fast state rather than decoration.
   expect(trigger.querySelector("svg.lucide-zap")).toBeNull();
   const panel = await openPanel("GPT 5.6 Sol, Max");
-  click(within(panel).getByRole("switch", { name: "Fast" }));
+  click(within(panel).getByRole("switch", { name: "Fast mode" }));
   const fastTrigger = await findButton("GPT 5.6 Sol, Max, Fast");
   expect(fastTrigger).toHaveTextContent(/^GPT 5\.6 Sol\s*· Max$/u);
   expect(fastTrigger.querySelector("svg.lucide-zap")).toBeInTheDocument();

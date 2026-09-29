@@ -106,7 +106,7 @@ export function ChatEffortTrigger({
           <ChatFastSetting
             selection={value}
             disabled={disabled}
-            fastImpact={<ModelFastImpact policy={policy} />}
+            fastImpact={<ModelFastImpact policy={policy} compact />}
             onChange={onChange}
           />
         ) : null}

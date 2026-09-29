@@ -4955,6 +4955,10 @@
         "effort": "प्रयास",
         "effortScale": {
           "faster": "तेज़",
+          "fewerCredits": "कम क्रेडिट",
+          "higherUsage": "अधिक उपयोग",
+          "lowerUsage": "कम उपयोग",
+          "moreCredits": "अधिक क्रेडिट",
           "smarter": "समझदार"
         },
         "fast": "तेज़",
@@ -4962,6 +4966,7 @@
           "apiCost": "{{multiplier}}× API टोकन लागत",
           "apiSpeed": "अधिकतम {{multiplier}}× मॉडल गति",
           "chatGptUsage": "{{multiplier}}× ChatGPT उपयोग",
+          "compactSummary": "तेज़ जवाब · {{multiplier}}× क्रेडिट",
           "fasterResponses": "मॉडल के तेज़ जवाब",
           "modelSpeed": "{{multiplier}}× मॉडल गति",
           "okouCredits": "{{multiplier}}× Okou मॉडल क्रेडिट",
@@ -4969,6 +4974,7 @@
           "providerUsage": "उपयोग प्रदाता पर निर्भर है",
           "summary": "{{speed}} · {{usage}}"
         },
+        "fastMode": "तेज़ मोड",
         "generationPriceTiers": {
           "higher": "प्रति जनरेशन अधिक लागत",
           "highest": "प्रति जनरेशन सबसे अधिक लागत",

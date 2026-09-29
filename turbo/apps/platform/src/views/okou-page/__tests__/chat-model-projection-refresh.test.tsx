@@ -245,7 +245,7 @@ async function setupHeldProjectionRefresh() {
   const user = userEvent.setup({ delay: null });
   await user.keyboard("{Home}");
   await expect(findButton("Effort, Low")).resolves.toBeInTheDocument();
-  click(screen.getByRole("switch", { name: "Fast" }));
+  click(screen.getByRole("switch", { name: "Fast mode" }));
   await expect(findButton("GPT 5.6 Sol Fast")).resolves.toBeInTheDocument();
   await user.keyboard("{Escape}");
   click(await findButton("GPT 5.6 Sol Fast"));
@@ -294,7 +294,7 @@ test("Keep Fast through a failed projection refresh", async () => {
   await user.keyboard("{Escape}");
   click(await findButton("Effort, Low"));
   await expect(
-    screen.findByRole("switch", { name: "Fast" }),
+    screen.findByRole("switch", { name: "Fast mode" }),
   ).resolves.toBeChecked();
 });
 

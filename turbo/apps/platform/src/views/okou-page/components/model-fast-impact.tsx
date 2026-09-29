@@ -13,12 +13,26 @@ import { formatLocalizedNumber } from "../../../i18n/format.ts";
  * model's run options, so a model whose Fast tier costs or gains differently is
  * configured there rather than here.
  */
-export function ModelFastImpact({ policy }: { policy: OrgModelPolicy }) {
+export function ModelFastImpact({
+  policy,
+  compact = false,
+}: {
+  policy: OrgModelPolicy;
+  compact?: boolean;
+}) {
   const { t } = useTranslation();
   const route = getMemberModelPolicyRoute(policy);
   const builtIn = isBuiltInModelProviderType(route.providerType);
   const provider = route.runtimeProviderType;
   const fast = getModelRunOptions(policy.model).fast;
+  if (compact && builtIn && fast) {
+    return t(
+      ($) => {
+        return $.settings.models.picker.fastImpact.compactSummary;
+      },
+      { multiplier: formatLocalizedNumber(fast.builtInCreditMultiplier) },
+    );
+  }
   let speed = t(($) => {
     return $.settings.models.picker.fastImpact.providerSpeed;
   });

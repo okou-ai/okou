@@ -4937,6 +4937,10 @@
         "effort": "강도",
         "effortScale": {
           "faster": "빠르게",
+          "fewerCredits": "크레딧 적게",
+          "higherUsage": "사용량 많이",
+          "lowerUsage": "사용량 적게",
+          "moreCredits": "크레딧 많이",
           "smarter": "똑똑하게"
         },
         "fast": "빠름",
@@ -4944,6 +4948,7 @@
           "apiCost": "API 토큰 비용 {{multiplier}}×",
           "apiSpeed": "모델 속도 최대 {{multiplier}}×",
           "chatGptUsage": "ChatGPT 사용량 {{multiplier}}×",
+          "compactSummary": "더 빠른 응답 · {{multiplier}}× 크레딧",
           "fasterResponses": "더 빠른 모델 응답",
           "modelSpeed": "모델 속도 {{multiplier}}×",
           "okouCredits": "Okou 모델 크레딧 사용량 {{multiplier}}×",
@@ -4951,6 +4956,7 @@
           "providerUsage": "사용량은 제공업체에 따라 다름",
           "summary": "{{speed}} · {{usage}}"
         },
+        "fastMode": "빠른 모드",
         "generationPriceTiers": {
           "higher": "생성당 비용 높음",
           "highest": "생성당 비용 가장 높음",

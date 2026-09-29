@@ -4937,6 +4937,10 @@
         "effort": "Upaya",
         "effortScale": {
           "faster": "Lebih cepat",
+          "fewerCredits": "Kredit lebih sedikit",
+          "higherUsage": "Penggunaan lebih tinggi",
+          "lowerUsage": "Penggunaan lebih rendah",
+          "moreCredits": "Kredit lebih banyak",
           "smarter": "Lebih cerdas"
         },
         "fast": "Cepat",
@@ -4944,6 +4948,7 @@
           "apiCost": "{{multiplier}}× biaya token API",
           "apiSpeed": "Hingga {{multiplier}}× kecepatan model",
           "chatGptUsage": "{{multiplier}}× penggunaan ChatGPT",
+          "compactSummary": "Respons lebih cepat · {{multiplier}}× kredit",
           "fasterResponses": "Respons model lebih cepat",
           "modelSpeed": "{{multiplier}}× kecepatan model",
           "okouCredits": "{{multiplier}}× kredit model Okou",
@@ -4951,6 +4956,7 @@
           "providerUsage": "Penggunaan bergantung pada penyedia",
           "summary": "{{speed}} · {{usage}}"
         },
+        "fastMode": "Mode cepat",
         "generationPriceTiers": {
           "higher": "Biaya lebih tinggi per generasi",
           "highest": "Biaya tertinggi per generasi",

@@ -412,15 +412,12 @@ test("Switch chat models immediately and adjust Fast from settings", async () =>
     ).not.toBeInTheDocument();
   });
   const settings = await openEffortPanel();
-  // The row carries Fast's speed and cost in the bolt's tooltip rather than as
-  // a second line of small print under the label.
-  await user.hover(within(settings).getByText("Fast"));
-  await expect(
-    screen.findByText("Faster model responses · 2× Okou model credits"),
-  ).resolves.toBeVisible();
-  click(screen.getByRole("switch", { name: "Fast" }));
+  expect(
+    within(settings).getByText("Faster responses · 2× credits"),
+  ).toBeVisible();
+  click(screen.getByRole("switch", { name: "Fast mode" }));
   await expect(findButton("GPT 5.6 Luna Fast")).resolves.toBeVisible();
-  expect(screen.getByRole("switch", { name: "Fast" })).toBeChecked();
+  expect(screen.getByRole("switch", { name: "Fast mode" })).toBeChecked();
   await user.keyboard("{Escape}");
   // Choosing the checked model again keeps Fast.
   const sameModelList = await openModelMenu("GPT 5.6 Luna Fast");
@@ -428,7 +425,7 @@ test("Switch chat models immediately and adjust Fast from settings", async () =>
   await expect(findButton("GPT 5.6 Luna Fast")).resolves.toBeVisible();
   await user.keyboard("{Escape}");
   await openEffortPanel();
-  expect(screen.getByRole("switch", { name: "Fast" })).toBeChecked();
+  expect(screen.getByRole("switch", { name: "Fast mode" })).toBeChecked();
 });
 
 test("Keep unavailable routes disabled and open plan comparison from the menu", async () => {
@@ -496,9 +493,9 @@ test("Adjust effort from the composer without opening the model picker", async (
   // The bolt is the Fast state rather than decoration, so it is absent until
   // Fast is on.
   expect(within(trigger).queryByRole("img", { hidden: true })).toBeNull();
-  click(screen.getByRole("switch", { name: "Fast" }));
+  click(screen.getByRole("switch", { name: "Fast mode" }));
   await waitFor(() => {
-    expect(screen.getByRole("switch", { name: "Fast" })).toBeChecked();
+    expect(screen.getByRole("switch", { name: "Fast mode" })).toBeChecked();
   });
 });
 
@@ -539,7 +536,7 @@ test("Choose effort for a new chat and keep Fast independent", async () => {
       expect(slider).toHaveAttribute("aria-valuetext", effort);
     });
   }
-  click(screen.getByRole("switch", { name: "Fast" }));
+  click(screen.getByRole("switch", { name: "Fast mode" }));
   await expect(findButton("GPT 5.6 Sol Fast")).resolves.toBeVisible();
   expect(slider).toHaveAttribute("aria-valuetext", "Max");
   await user.click(composer);
@@ -590,7 +587,7 @@ test("Select the default effort on an existing thread without changing Fast", as
   await waitFor(() => {
     expect(slider).toHaveAttribute("aria-valuetext", "Max");
   });
-  expect(screen.getByRole("switch", { name: "Fast" })).toBeChecked();
+  expect(screen.getByRole("switch", { name: "Fast mode" })).toBeChecked();
   await waitFor(() => {
     expect(updates).toContainEqual(
       expect.objectContaining({
