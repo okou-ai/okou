@@ -94,7 +94,7 @@ import {
   type PendingGoogleCalendarWatchStop,
 } from "./google-calendar-automation-event.service";
 import {
-  prepareGoogleFormsWatchStopForConnector,
+  prepareGoogleFormsWatchStopForConnector$,
   reconcileGoogleFormsWatchesForUser$,
   stopPreparedGoogleFormsWatches,
   type PendingGoogleFormsWatchStop,
@@ -1090,7 +1090,6 @@ interface DeleteBuiltinConnectorLocalStateArgs {
 
 interface PendingConnectorAutomationCleanup {
   readonly pendingGoogleCalendarWatchStop: PendingGoogleCalendarWatchStop | null;
-  readonly pendingGoogleFormsWatchStop: PendingGoogleFormsWatchStop | null;
   readonly pendingGoogleMeetSubscriptionDelete: PendingGoogleMeetSubscriptionDelete | null;
 }
 
@@ -1113,10 +1112,6 @@ async function prepareConnectorAutomationCleanup(
           signal,
         )
       : null;
-  const pendingGoogleFormsWatchStop =
-    args.connectorSlug === "google-forms"
-      ? await prepareGoogleFormsWatchStopForConnector(cleanupArgs, signal)
-      : null;
   const pendingGoogleMeetSubscriptionDelete =
     args.connectorSlug === "google-meet"
       ? await prepareGoogleMeetSubscriptionDeleteForConnector(
@@ -1126,7 +1121,6 @@ async function prepareConnectorAutomationCleanup(
       : null;
   return {
     pendingGoogleCalendarWatchStop,
-    pendingGoogleFormsWatchStop,
     pendingGoogleMeetSubscriptionDelete,
   };
 }
@@ -1156,7 +1150,6 @@ async function deleteBuiltinConnectorAccountLocalState(
       pendingTokenRevoke: null,
       pendingGoogleCalendarWatchStop: null,
       pendingGoogleMeetSubscriptionDelete: null,
-      pendingGoogleFormsWatchStop: null,
     };
   }
   const existing = account.connector;
@@ -1175,7 +1168,6 @@ async function deleteBuiltinConnectorAccountLocalState(
       pendingTokenRevoke: null,
       pendingGoogleCalendarWatchStop: null,
       pendingGoogleMeetSubscriptionDelete: null,
-      pendingGoogleFormsWatchStop: null,
     };
   }
 
@@ -1257,23 +1249,6 @@ async function stopPendingConnectorAutomationCleanup(
       capturedAbort ??= deleted.error;
     }
   }
-  if (pending.pendingGoogleFormsWatchStop !== null) {
-    const stopped = await settleIncludingAbort(
-      bestEffort(
-        stopPreparedGoogleFormsWatches(
-          pending.pendingGoogleFormsWatchStop,
-          signal,
-        ),
-        signal,
-      ),
-    );
-    if (signal.aborted) {
-      capturedAbort ??= signal.reason;
-    }
-    if (!stopped.ok) {
-      capturedAbort ??= stopped.error;
-    }
-  }
   return capturedAbort;
 }
 
@@ -1292,6 +1267,22 @@ async function stopPendingGoogleCalendarAutomationCleanup(
   }
   return stopped.ok ? null : stopped.error;
 }
+async function stopPendingGoogleFormsAutomationCleanup(
+  pending: PendingGoogleFormsWatchStop | null,
+  signal: AbortSignal,
+): Promise<unknown> {
+  if (pending === null) {
+    return null;
+  }
+  const stopped = await settleIncludingAbort(
+    bestEffort(stopPreparedGoogleFormsWatches(pending, signal), signal),
+  );
+  if (signal.aborted) {
+    return signal.reason;
+  }
+  return stopped.ok ? null : stopped.error;
+}
+
 export const deleteBuiltinConnectorLocalState$ = command(
   async (
     { get, set },
@@ -1316,6 +1307,18 @@ export const deleteBuiltinConnectorLocalState$ = command(
             userId: args.userId,
             overrides: featureSwitchOverrides,
           } satisfies FeatureSwitchContext);
+    const formsCleanup =
+      args.connectorSlug === "google-forms"
+        ? await set(
+            prepareGoogleFormsWatchStopForConnector$,
+            {
+              orgId: args.orgId,
+              userId: args.userId,
+              connectorId: args.sourceId,
+            },
+            signal,
+          )
+        : null;
     let postCommitAbort: unknown = null;
     const deleteResult = await writeDb.transaction(async (tx) => {
       return await deleteBuiltinConnectorAccountLocalState(
@@ -1339,6 +1342,10 @@ export const deleteBuiltinConnectorLocalState$ = command(
       signal,
     );
     postCommitAbort ??= automationCleanupAbort;
+    postCommitAbort ??= await stopPendingGoogleFormsAutomationCleanup(
+      formsCleanup,
+      signal,
+    );
     await finalizeConnectorStateChangeAfterCommit(
       {
         userId: args.userId,

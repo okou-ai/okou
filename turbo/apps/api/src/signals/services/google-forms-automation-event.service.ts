@@ -35,7 +35,7 @@ import { pgTextDecoder } from "../../lib/db-structured-result";
 import { logger } from "../../lib/log";
 import { testOverride } from "../../lib/singleton";
 import { nowDate } from "../../lib/time";
-import { writeDb$, type Db } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { safeJsonParse, safeUrlParse, settle, tapError } from "../utils";
 import { builtinConnectorStateLockStatement } from "./auth-state-lock.service";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
@@ -44,21 +44,13 @@ import {
   workflowAutomationSnapshotCondition,
   type WorkflowAutomationSnapshot,
 } from "./workflow-automation-snapshot";
-import {
-  loadConnectorRuntimeSnapshot,
-  loadConnectorRuntimeSnapshot$,
-} from "./connector-catalog-runtime.service";
+import { loadConnectorRuntimeSnapshot$ } from "./connector-catalog-runtime.service";
 import {
   loadBuiltinConnectorCredentialConnection$,
   loadBuiltinConnectorCredentialValues$,
   refreshBuiltinConnectorCredentialAccess$,
 } from "./builtin-connector-credential-command.service";
-import {
-  builtinConnectorCredentialRuntimeValueRef,
-  loadBuiltinConnectorCredentialConnection,
-  loadBuiltinConnectorCredentialValues,
-  refreshBuiltinConnectorCredentialAccess,
-} from "./builtin-connector-credential-runtime.service";
+import { builtinConnectorCredentialRuntimeValueRef } from "./builtin-connector-credential-runtime.service";
 import { googleFormsAccountProjectionStatement } from "./google-forms-automation-account.service";
 import { GoogleFormsSourceTransitionChangedError } from "./workflow-google-forms-queue.service";
 import {
@@ -228,106 +220,6 @@ function tokenNeedsRefresh(
   return (
     tokenExpiresAt.getTime() <= currentTime.getTime() + TOKEN_REFRESH_BUFFER_MS
   );
-}
-
-async function resolveLegacyGoogleFormsAccess(
-  args: {
-    readonly db: Db;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly connectorId: string;
-  },
-  signal: AbortSignal,
-): Promise<GoogleFormsAccessResult> {
-  const currentTime = nowDate();
-  const snapshot = await loadConnectorRuntimeSnapshot(args.db);
-  signal.throwIfAborted();
-  const loaded = await loadBuiltinConnectorCredentialConnection({
-    db: args.db,
-    snapshot,
-    orgId: args.orgId,
-    userId: args.userId,
-    connectorSlug: "google-forms",
-    connectorId: args.connectorId,
-  });
-  signal.throwIfAborted();
-  if (loaded.kind === "missing") {
-    return {
-      kind: "bad_request",
-      message:
-        "Connect Google Forms before adding a Google Forms response automation",
-    };
-  }
-  if (loaded.kind === "unavailable" || loaded.connection.needsReconnect) {
-    return {
-      kind: "bad_request",
-      message:
-        "Reconnect Google Forms before using Google Forms response automations",
-    };
-  }
-  const connection = loaded.connection;
-  const accessTokenValueRef = builtinConnectorCredentialRuntimeValueRef(
-    connection,
-    GOOGLE_FORMS_ACCESS_TOKEN_ENVIRONMENT_NAME,
-  );
-  if (accessTokenValueRef === null) {
-    return {
-      kind: "bad_request",
-      message:
-        "Reconnect Google Forms before using Google Forms response automations",
-    };
-  }
-  const values = await loadBuiltinConnectorCredentialValues({
-    connection,
-    db: args.db,
-    valueRefs: [accessTokenValueRef],
-  });
-  signal.throwIfAborted();
-  const accessToken = values.get(accessTokenValueRef);
-  if (!accessToken) {
-    return {
-      kind: "bad_request",
-      message:
-        "Reconnect Google Forms before using Google Forms response automations",
-    };
-  }
-  if (!tokenNeedsRefresh(connection.tokenExpiresAt, currentTime)) {
-    return {
-      kind: "ok",
-      access: { connectorId: connection.connectorId, accessToken },
-    };
-  }
-  const refreshed = await refreshBuiltinConnectorCredentialAccess(
-    {
-      connection,
-      db: args.db,
-      orgId: args.orgId,
-      userId: args.userId,
-      runtimeEnvironmentName: GOOGLE_FORMS_ACCESS_TOKEN_ENVIRONMENT_NAME,
-      persist: { db: args.db, markNeedsReconnectOnFailure: true },
-    },
-    signal,
-  );
-  if (refreshed.kind === "configuration-unavailable") {
-    return {
-      kind: "bad_request",
-      message: "Google OAuth client env vars are not configured",
-    };
-  }
-  if (refreshed.kind !== "ok") {
-    return {
-      kind: "bad_request",
-      message:
-        "Reconnect Google Forms before using Google Forms response automations",
-    };
-  }
-  return {
-    kind: "ok",
-    access: {
-      connectorId: connection.connectorId,
-      accessToken: refreshed.accessToken,
-    },
-  };
 }
 
 const resolveGoogleFormsAccess$ = command(
@@ -1864,30 +1756,33 @@ export interface PendingGoogleFormsWatchStop {
   }[];
 }
 
-export async function prepareGoogleFormsWatchStopForConnector(
-  args: {
-    readonly db: Db;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly connectorId: string;
+export const prepareGoogleFormsWatchStopForConnector$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly connectorId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<PendingGoogleFormsWatchStop | null> => {
+    const access = await set(resolveGoogleFormsAccess$, args, signal);
+    signal.throwIfAborted();
+    if (access.kind !== "ok") {
+      return null;
+    }
+    const db = set(writeDb$);
+    const states = await db
+      .select({
+        formId: googleFormsWatchStates.formId,
+        watchId: googleFormsWatchStates.watchId,
+      })
+      .from(googleFormsWatchStates)
+      .where(eq(googleFormsWatchStates.connectorId, args.connectorId));
+    signal.throwIfAborted();
+    return { accessToken: access.access.accessToken, watches: states };
   },
-  signal: AbortSignal,
-): Promise<PendingGoogleFormsWatchStop | null> {
-  const access = await resolveLegacyGoogleFormsAccess(args, signal);
-  signal.throwIfAborted();
-  if (access.kind !== "ok") {
-    return null;
-  }
-  const states = await args.db
-    .select({
-      formId: googleFormsWatchStates.formId,
-      watchId: googleFormsWatchStates.watchId,
-    })
-    .from(googleFormsWatchStates)
-    .where(eq(googleFormsWatchStates.connectorId, args.connectorId));
-  signal.throwIfAborted();
-  return { accessToken: access.access.accessToken, watches: states };
-}
+);
 
 export async function stopPreparedGoogleFormsWatches(
   pending: PendingGoogleFormsWatchStop,

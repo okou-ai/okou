@@ -25,7 +25,7 @@ The six advisory acquisition definitions remain. This work prepares selected wri
 - Model-provider firewall refresh, settings and account paths have not been migrated to the complete final command-owned conditional protocol. They still execute provider/KMS work through the locked helper graph.
 - Gmail now has explicit approval for local disable, stopping renewal and remote natural expiry without account-global `users.stop`. Its remote-stop code is removed. Ensure, renewal and watch reconciliation now use owning commands; legacy dispatch/queue SQL and shared credential callers remain. Calendar also has explicit approval for a remote gap and best-effort candidate cleanup; authority and basic deduplication remain required.
 - Calendar lifecycle preparation/activation/reconciliation still has helper-owned and propagated transaction paths. Current-channel remote stop remains inside the existing decision boundary.
-- Forms workflow-thread creation still accepts a transaction. Shared create/official authority preparation, account-deletion watch cleanup and queue model preparation retain legacy database interfaces. The regular Forms watch/configuration/dispatch credential path now uses owning commands. Other event sources still use the legacy workflow queue source callback; this does not claim to migrate those sources.
+- Forms workflow-thread creation still accepts a transaction. Shared create/official authority preparation and queue model preparation retain legacy database interfaces. Forms account-deletion watch preparation now has its own command outside deletion transactions. The regular Forms watch/configuration/dispatch credential path now uses owning commands. Other event sources still use the legacy workflow queue source callback; this does not claim to migrate those sources.
 
 ### Validation
 
@@ -181,8 +181,8 @@ structural schema matches main exactly. The final zero-trigger and no-new-field
 requirements remain in force, and Forms no longer introduces a trigger removal
 gate based on outgoing newest-response repair.
 
-Remaining R1 implementation is explicit: Forms account-deletion watch/credential
-preparation, shared creation and queue thread initialization still propagate handles; generic
+Remaining R1 implementation is explicit: shared Forms creation and queue thread
+initialization still propagate handles; generic
 account deletion, selection and credential callers retain their legacy outer
 transaction graphs. Cross-kind official transitions, initial materialization and
 other providers' finalization paths still need command ownership migration.
@@ -218,9 +218,18 @@ uses commands with plain source observations instead of passing a database and a
 store-capturing run callback through helpers. Fire permission reads retain the
 membership, workflow visibility, installed official workflow and agent visibility
 checks. Missing-thread initialization still calls the legacy thread transaction
-helper, so that specific graph remains unfinished. The account-deletion cleanup
-path also still uses its legacy credential preparation until its complete owning
-command migration; it is not hidden by the regular-path conversion.
+helper, so that specific graph remains unfinished.
+
+Account-deletion watch preparation now uses `prepareGoogleFormsWatchStopForConnector$`
+with ordinary owner/account inputs before the deletion transaction. It reads
+credentials through the same owning commands and returns only the token and
+exact watch identities. The legacy Forms credential resolver is removed.
+Best-effort remote cleanup runs only after the account deletion confirms a
+committed deletion; a missing account or an uncertain/failed transaction does
+not trigger cleanup. Concurrently replaced or unobserved remote candidates may
+remain until expiry under the accepted Forms behavior. The generic account
+selection, credential deletion and other providers' cleanup transaction graph
+still needs its own command-ownership migration.
 
 ### Gmail local stop and natural expiry
 
