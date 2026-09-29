@@ -1,4 +1,5 @@
 import { publishLegacyPlanInvoice$ } from "./legacy-plan-invoice.service";
+import { legacyPlanInvoiceAdmission } from "./legacy-plan-invoice";
 import { retireMarketingMetadata } from "../../lib/marketing-metadata";
 import { invoiceUsagePackCreditGrantSql } from "./usage-pack-credit-grant-sql";
 import {
@@ -3231,34 +3232,6 @@ async function cancelReplacedPlanSubscriptions(args: {
   }
 }
 
-async function cancelReplacedPlanSubscriptionsAfterInvoice(args: {
-  readonly orgId: string;
-  readonly customerId: string;
-  readonly invoiceId: string;
-  readonly newSubscriptionId: string;
-  readonly targetTier: BillingSubscriptionTier;
-  readonly knownOldSubscriptionId: string | null;
-}): Promise<void> {
-  const replacedSubscriptionIds = [
-    ...(args.knownOldSubscriptionId ? [args.knownOldSubscriptionId] : []),
-    ...(await replacedPlanSubscriptionIdsForCustomer({
-      customerId: args.customerId,
-      newSubscriptionId: args.newSubscriptionId,
-      targetTier: args.targetTier,
-    })),
-  ];
-  if (replacedSubscriptionIds.length === 0) {
-    return;
-  }
-
-  await cancelReplacedPlanSubscriptions({
-    orgId: args.orgId,
-    invoiceId: args.invoiceId,
-    oldSubscriptionIds: replacedSubscriptionIds,
-    newSubscriptionId: args.newSubscriptionId,
-  });
-}
-
 function isReplaceablePaidSubscriptionForAtomGrant(
   subscription: StripeSubscription,
 ): boolean {
@@ -3691,26 +3664,35 @@ const handlePlanSubscriptionInvoicePaid$ = command(
       return concurrencyResult.drainOrgId ?? fallbackDrainOrgId;
     }
 
-    const result = await set(
-      publishLegacyPlanInvoice$,
-      {
-        invoiceId: invoice.id,
-        customerId,
-        subscriptionId,
-        orgId: org.orgId,
-        details,
-      },
-      signal,
-    );
+    const publication = {
+      invoiceId: invoice.id,
+      customerId,
+      subscriptionId,
+      orgId: org.orgId,
+      details,
+    };
+    const replacedSubscriptionIds =
+      legacyPlanInvoiceAdmission(org, publication) === "rejected"
+        ? []
+        : await replacedPlanSubscriptionIdsForCustomer({
+            customerId,
+            newSubscriptionId: subscriptionId,
+            targetTier: details.tier,
+          });
+    signal.throwIfAborted();
+    const result = await set(publishLegacyPlanInvoice$, publication, signal);
     signal.throwIfAborted();
     if (result.processed && result.cancelReplaced) {
-      await cancelReplacedPlanSubscriptionsAfterInvoice({
+      await cancelReplacedPlanSubscriptions({
         orgId: org.orgId,
-        customerId,
         invoiceId: invoice.id,
         newSubscriptionId: subscriptionId,
-        targetTier: details.tier,
-        knownOldSubscriptionId: result.replacedSubscriptionId,
+        oldSubscriptionIds: [
+          ...replacedSubscriptionIds,
+          ...(result.replacedSubscriptionId
+            ? [result.replacedSubscriptionId]
+            : []),
+        ],
       });
       signal.throwIfAborted();
     }
