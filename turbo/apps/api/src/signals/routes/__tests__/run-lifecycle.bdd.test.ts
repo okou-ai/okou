@@ -76,8 +76,6 @@ import {
   upsertOrgPlanEntitlementFixture,
 } from "../../../test-fixtures/org-plan-entitlement";
 import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
-import { holdConnectorAccountFixture } from "../../../test-fixtures/connector-account-lock";
-import { waitForDeferredBlocker } from "../../../test-fixtures/pi-deferred-lock";
 import {
   API_TEST_CONNECTOR_CATALOG,
   API_TEST_CONNECTOR_FIREWALL_CONFIGS,
@@ -11017,10 +11015,19 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     "settles builtin Automatic DCR retirement racing $owner account $mutation",
     async ({ owner, mutation }) => {
       const catalog = await installAutomaticMcpCatalog();
+      const refreshRequested = createDeferredPromise<void>(context.signal);
+      const refreshResponse = createDeferredPromise<void>(context.signal);
       const provider = mockAutomaticMcpOAuthProvider(context, {
         registration: "dcr",
         initialExpiresIn: 3600,
-        refreshError: "invalid_client",
+        refreshResponse: async () => {
+          refreshRequested.resolve();
+          await refreshResponse.promise;
+          return HttpResponse.json(
+            { error: "invalid_client" },
+            { status: 400 },
+          );
+        },
       });
       const api = createRunsApi(context);
       const bdd = createBddApi(context);
@@ -11052,20 +11059,18 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
           }),
         );
       }
-      // Choose the first locked sibling from the returned IDs so the race is
-      // deterministic regardless of UUID generation or creation order.
-      const [heldConnectionId, mutationConnectionId] = siblingIds.sort();
-      if (!heldConnectionId || !mutationConnectionId) {
+      const [defaultConnectionId, mutationConnectionId] = siblingIds;
+      if (!defaultConnectionId || !mutationConnectionId) {
         throw new Error("Expected two distinct builtin MCP accounts");
       }
       await connectors.setDefaultBuiltinConnectorAccount(
         mutationActor,
         catalog.slug,
-        heldConnectionId,
+        defaultConnectionId,
       );
       const refreshConnectionId =
         owner === "same user"
-          ? heldConnectionId
+          ? defaultConnectionId
           : await connectAutomaticRuntime({
               actor,
               agentId,
@@ -11082,14 +11087,6 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       const claim = await api.claimRunnerJob(run.runId);
       const target = builtinConnectorRuntimeRegistration(claim, catalog.slug);
       expect(target.sourceId).toBe(refreshConnectionId);
-      const held = await holdConnectorAccountFixture(
-        {
-          orgId: actor.orgId,
-          userId: mutationActor.userId,
-          connectorId: heldConnectionId,
-        },
-        context.signal,
-      );
       const pending: Promise<unknown>[] = [];
       const outcome = await settleIncludingAbort(async () => {
         const refreshing = settleIncludingAbort(
@@ -11113,7 +11110,12 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
           ),
         );
         pending.push(refreshing);
-        const refreshingBackend = await held.waitForBlocked();
+        await Promise.race([
+          refreshRequested.promise,
+          refreshing.then(() => {
+            throw new Error("Expected the provider refresh request");
+          }),
+        ]);
         const mutating = settleIncludingAbort(async () => {
           if (mutation === "delete") {
             await connectors.deleteBuiltinConnectorAccount(
@@ -11130,10 +11132,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
           }
         });
         pending.push(mutating);
-        // Observe both requests reaching their conflicting lock before release.
-        // The fixed path waits on account ownership before taking sibling rows.
-        await waitForDeferredBlocker(refreshingBackend);
-        await held.release();
+        // Return the provider rejection while the independent account API is
+        // in flight; both operations must settle with the final account state.
+        refreshResponse.resolve();
         const [refreshed, mutated] = await Promise.all([refreshing, mutating]);
         expect(refreshed).toMatchObject({
           ok: true,
@@ -11159,8 +11160,8 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
             .sort(),
         ).toStrictEqual(
           mutation === "delete"
-            ? [heldConnectionId]
-            : [heldConnectionId, mutationConnectionId].sort(),
+            ? [defaultConnectionId]
+            : [defaultConnectionId, mutationConnectionId].sort(),
         );
         for (const account of retained) {
           expect(account).toMatchObject({
@@ -11169,7 +11170,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
             reconnectReason: "authorization_expired_or_revoked",
             isDefault:
               account.id ===
-              (mutation === "delete" ? heldConnectionId : mutationConnectionId),
+              (mutation === "delete"
+                ? defaultConnectionId
+                : mutationConnectionId),
           });
         }
         if (owner === "another user") {
@@ -11184,7 +11187,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
           ]);
         }
       });
-      await held.release();
+      if (!refreshResponse.settled()) {
+        refreshResponse.resolve();
+      }
       await Promise.all(pending);
       await api.requestCancelRun(actor, run.runId, [200]);
       for (const accountOwner of owner === "same user"

@@ -84,3 +84,12 @@ SQL COMMIT pause fixture is removed. Non-cancelled start/callback outcomes remai
 covered by the ordinary Automatic API suites; these cases no longer duplicate
 them. This exercises cancellation during notification, not an artificial pause
 inside database COMMIT.
+
+DCR retirement tests retain same-user/other-user delete and default-selection
+races. They now start the account API while the real provider token response is
+pending, release that external response and assert both request outcomes and
+the final account list. They no longer hold database rows or observe lock
+waiters. The stale-catalog test retains pre-request and in-flight provider
+refresh changes with credential-denial assertions; its duplicate "while auth
+waits" internal-lock variant is removed. These were the final callers of the
+connector account row-lock fixture, so that fixture is deleted entirely.

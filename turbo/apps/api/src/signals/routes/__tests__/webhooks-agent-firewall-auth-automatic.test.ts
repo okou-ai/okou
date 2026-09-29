@@ -6,7 +6,6 @@ import { describe, expect, it, onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
-import { holdConnectorAccountFixture } from "../../../test-fixtures/connector-account-lock";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { builtinConnectorsAutomaticRoutes } from "../connectors-automatic";
@@ -27,7 +26,6 @@ const headers = { authorization: "Bearer clerk-session" } as const;
 describe("builtin Automatic firewall credential destinations", () => {
   it.each([
     ["endpoint", "before auth"],
-    ["endpoint", "while auth waits"],
     ["endpoint", "during refresh"],
     ["auth", "during refresh"],
   ] as const)(
@@ -178,40 +176,7 @@ describe("builtin Automatic firewall credential destinations", () => {
               isolateSource: false,
             });
           }
-          if (timing === "while auth waits") {
-            if (!actor.orgId) {
-              throw new Error("Expected the account's organization");
-            }
-            // Hold a real database row to pause resolution after it captured A;
-            // construct and inspect the account only through production routes.
-            const held = await holdConnectorAccountFixture(
-              {
-                orgId: actor.orgId,
-                userId: actor.userId,
-                connectorId: connectionId,
-              },
-              context.signal,
-            );
-            const pending = settleIncludingAbort(request(originalBase));
-            const updating = await settleIncludingAbort(
-              (async () => {
-                await held.waitForBlocked();
-                await updateCatalog();
-              })(),
-            );
-            await held.release();
-            await pending;
-            if (!updating.ok) {
-              throw updating.error;
-            }
-            await expect(pending).resolves.toMatchObject({
-              ok: true,
-              value: {
-                status: 424,
-                body: { error: { code: "CONNECTOR_NOT_CONFIGURED" } },
-              },
-            });
-          } else if (refreshGate) {
+          if (refreshGate) {
             const pending = settleIncludingAbort(request(originalBase, true));
             const updating = await settleIncludingAbort(
               (async () => {
