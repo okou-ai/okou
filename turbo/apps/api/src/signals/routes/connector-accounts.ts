@@ -22,6 +22,7 @@ import {
   listConnectorAccountSummaries,
   renameConnectorAccount,
   setDefaultConnectorAccount,
+  setDefaultGoogleFormsAccount$,
 } from "../services/connector-account-lifecycle.service";
 import { commitConnectorRuntimeMutation } from "../services/connector-runtime-wakeup.service";
 import {
@@ -244,7 +245,18 @@ const setDefaultInner$ = command(
     }
     const writeDb = set(writeDb$);
     const updatedAt = await commitConnectorRuntimeMutation(
-      setDefaultConnectorAccount(writeDb, request, signal),
+      request.target.kind === "builtin" &&
+        request.target.connectorSlug === "google-forms"
+        ? set(
+            setDefaultGoogleFormsAccount$,
+            {
+              orgId: request.orgId,
+              userId: request.userId,
+              connectionId: request.connectionId,
+            },
+            signal,
+          )
+        : setDefaultConnectorAccount(writeDb, request, signal),
       (changed) => {
         return changed
           ? {

@@ -307,3 +307,27 @@ Cross-kind official transitions, Morning Brief's specialized lifecycle, initial
 materialization and the shared event/credential preparation helpers still need
 command-boundary migration. This scoped publication path does not relabel those
 remaining implementations as outgoing-writer drain.
+
+### Shared account projection SQL ownership
+
+The Forms account adapter no longer receives or executes a database handle.
+`googleFormsAccountProjectionStatement` is a pure SQL builder: one bounded SQL
+statement locks the owner's affected automation rows in ID order, resolves the
+existing thread selection/default, updates changed source projections and deletes
+the corresponding cursors. The owning reconciliation command executes it directly.
+The legacy multi-provider account adapter also executes this same statement,
+removing the reverse-order Forms helper and its per-automation forwarded reads.
+The remaining legacy adapter still receives its caller's transaction and remains
+unfinished outside the new owning commands.
+
+The Forms default-account API now calls `setDefaultGoogleFormsAccount$`, which
+accepts only owner/account identity, obtains `writeDb$`, validates the existing
+account and commits its default flags with source invalidation in one local
+transaction. It calls only value/SQL builders. Shared route account display and
+post-commit runtime invalidation still use legacy database helper interfaces;
+thread selection, account deletion and credential publication still have broader
+caller-owned transaction graphs. This change does not call those graphs complete.
+
+Focused ESLint, plain Oxlint, formatting and whitespace checks pass. Existing
+account selection/default/deletion API scenarios and the new publication-race
+cases remain the pipeline behavior checks for the shared SQL statement.

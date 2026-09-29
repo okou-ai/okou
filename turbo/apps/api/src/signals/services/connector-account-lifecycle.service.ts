@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import { command } from "ccstate";
 
 import {
   connectorAccountTargetKey,
@@ -42,9 +43,13 @@ import type { Tx } from "../../lib/db-types";
 import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import type { Db, ReadonlyDb } from "../external/db";
+import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { safeJsonParse, settle } from "../utils";
-import { lockConnectorAccountTarget } from "./auth-state-lock.service";
+import {
+  builtinConnectorStateLockStatement,
+  lockConnectorAccountTarget,
+} from "./auth-state-lock.service";
+import { googleFormsAccountProjectionStatement } from "./google-forms-automation-account.service";
 import { reprojectWorkflowAutomationsForOwner } from "./workflow-automation-account-projection.service";
 import { invalidateNotionPendingEventsForConnector } from "./notion-automation-account.service";
 import { isConnectorCatalogUnavailableError } from "./connector-catalog-reader.service";
@@ -934,6 +939,54 @@ export async function renameConnectorAccount(
     return updated?.updatedAt ?? null;
   });
 }
+
+export const setDefaultGoogleFormsAccount$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly connectionId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<Date | null> => {
+    const db = set(writeDb$);
+    return await db.transaction(async (tx) => {
+      await tx.execute(
+        builtinConnectorStateLockStatement({
+          ...args,
+          connectorSlug: "google-forms",
+        }),
+      );
+      const condition = and(
+        eq(connectors.orgId, args.orgId),
+        eq(connectors.userId, args.userId),
+        eq(connectors.connectorSlug, "google-forms"),
+      );
+      const [account] = await tx
+        .select({ id: connectors.id })
+        .from(connectors)
+        .where(and(condition, eq(connectors.id, args.connectionId)))
+        .for("update")
+        .limit(1);
+      if (!account) {
+        return null;
+      }
+      await tx
+        .update(connectors)
+        .set({ isDefault: false, updatedAt: sql`clock_timestamp()` })
+        .where(condition);
+      const [updated] = await tx
+        .update(connectors)
+        .set({ isDefault: true, updatedAt: sql`clock_timestamp()` })
+        .where(and(condition, eq(connectors.id, args.connectionId)))
+        .returning({ updatedAt: connectors.updatedAt });
+      await tx.execute(googleFormsAccountProjectionStatement(args));
+      signal.throwIfAborted();
+      return updated?.updatedAt ?? null;
+    });
+  },
+);
 
 export async function setDefaultConnectorAccount(
   db: Db,

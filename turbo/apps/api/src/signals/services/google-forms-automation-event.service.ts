@@ -54,7 +54,7 @@ import {
   loadBuiltinConnectorCredentialValues,
   refreshBuiltinConnectorCredentialAccess,
 } from "./builtin-connector-credential-runtime.service";
-import { googleFormsAccountProjectionMutation } from "./google-forms-automation-account.service";
+import { googleFormsAccountProjectionStatement } from "./google-forms-automation-account.service";
 import { GoogleFormsSourceTransitionChangedError } from "./workflow-google-forms-queue.service";
 import {
   AutomationEventSourceTiming,
@@ -1705,88 +1705,7 @@ export const reprojectGoogleFormsAutomationOwnership$ = command(
           connectorSlug: "google-forms",
         }),
       );
-      const automations = await tx
-        .select({
-          id: workflowAutomations.id,
-          enabled: workflowAutomations.enabled,
-          workflowId: workflowAutomations.workflowId,
-          eventConfig: workflowAutomations.eventConfig,
-          eventConnectorId: workflowAutomations.eventConnectorId,
-        })
-        .from(workflowAutomations)
-        .where(
-          and(
-            eq(workflowAutomations.orgId, args.orgId),
-            eq(workflowAutomations.ownerUserId, args.userId),
-            eq(workflowAutomations.kind, "event"),
-            eq(
-              workflowAutomations.eventType,
-              "google-forms-response-submitted",
-            ),
-          ),
-        )
-        .orderBy(asc(workflowAutomations.id))
-        .for("update");
-      for (const automation of automations) {
-        const [selection] = await tx
-          .select({ connectorId: chatThreadConnectorSelections.connectorId })
-          .from(workflowUserAutomationThreads)
-          .innerJoin(
-            chatThreadConnectorSelections,
-            and(
-              eq(
-                chatThreadConnectorSelections.chatThreadId,
-                workflowUserAutomationThreads.chatThreadId,
-              ),
-              eq(chatThreadConnectorSelections.connectorSlug, "google-forms"),
-            ),
-          )
-          .where(
-            and(
-              eq(workflowUserAutomationThreads.orgId, args.orgId),
-              eq(workflowUserAutomationThreads.userId, args.userId),
-              eq(
-                workflowUserAutomationThreads.workflowId,
-                automation.workflowId,
-              ),
-            ),
-          )
-          .limit(1);
-        const [defaultAccount] = selection
-          ? []
-          : await tx
-              .select({ connectorId: connectors.id })
-              .from(connectors)
-              .where(
-                and(
-                  eq(connectors.orgId, args.orgId),
-                  eq(connectors.userId, args.userId),
-                  eq(connectors.connectorSlug, "google-forms"),
-                  eq(connectors.isDefault, true),
-                ),
-              )
-              .limit(1);
-        const desiredConnectorId = selection
-          ? selection.connectorId
-          : (defaultAccount?.connectorId ?? null);
-        const mutation = googleFormsAccountProjectionMutation(
-          automation,
-          desiredConnectorId,
-        );
-        if (!mutation.changed) {
-          continue;
-        }
-        await tx
-          .update(workflowAutomations)
-          .set({
-            eventConnectorId: mutation.eventConnectorId,
-            eventConfig: mutation.eventConfig,
-          })
-          .where(eq(workflowAutomations.id, automation.id));
-        await tx
-          .delete(googleFormsAutomationCursors)
-          .where(eq(googleFormsAutomationCursors.automationId, automation.id));
-      }
+      await tx.execute(googleFormsAccountProjectionStatement(args));
       signal.throwIfAborted();
     });
     signal.throwIfAborted();
