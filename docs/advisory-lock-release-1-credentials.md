@@ -383,8 +383,9 @@ firewall no longer holds a transaction across provider I/O. Under the ordinary
 refresh decision, a cross-instance concurrent refresh of a rotating token can
 still make one request receive `invalid_grant` and publish reconnect state
 before the successful request publishes; the successful request then loses its
-CAS and the user reconnects. This is the same accepted concurrent-refresh risk
-class as Airtable revocation; same-process suppression narrows it. Propagated
+CAS and the user reconnects. Ethan explicitly accepted this consequence on
+2026-09-30, as the same concurrent-refresh risk class as Airtable revocation;
+same-process suppression narrows it. Propagated
 handles remain R1 implementation work. Outgoing transient-failure writers
 also retain their prior timestamp behavior until the normal compatibility gate.
 

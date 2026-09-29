@@ -183,7 +183,17 @@ Authenticate notifications and accept only the current authorized channel and
 source. Event update/cancellation semantics still apply to events actually
 consumed.
 
-For all three watch integrations, retain current account/source authorization,
+**Google Meet: the Calendar tradeoff also applies (accepted 2026-09-30).**
+Workspace Events subscriptions are created, renewed or deleted outside
+database transactions and published conditionally. Cleanup is best effort,
+and a consumer enabled while another consumer's cleanup is in flight may miss
+notifications until repair recreates its subscription.
+
+**Rotating refresh tokens: a rare cross-instance duplicate refresh may require
+reconnection (accepted 2026-09-30).** This extends the ordinary refresh decision
+beyond Airtable; no lock, lease or pre-consumption is used to prevent it.
+
+For all four watch integrations, retain current account/source authorization,
 explicit enabled state and basic deduplication through existing identities and
 unique constraints. Delayed preparation must not recreate revoked authority or
 re-enable an automation the user disabled. Provider requests and local writes

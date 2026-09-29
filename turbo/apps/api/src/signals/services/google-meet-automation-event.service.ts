@@ -14,6 +14,7 @@ import {
   workflowAutomations,
   workflows,
 } from "@okouai/db/schema/workflow";
+import { connectors } from "@okouai/db/schema/connector";
 import { optionalEnv } from "../../lib/env";
 import { writeDb$, type Db } from "../external/db";
 import { now, nowDate } from "../../lib/time";
@@ -658,6 +659,11 @@ async function deletePreparedGoogleMeetSubscription(
   signal.throwIfAborted();
 }
 
+/**
+ * Best-effort remote cleanup after an account deletion committed. Skips a
+ * subscription that local state has since adopted; a concurrent adoption after
+ * this read may lose notifications until repair (accepted gap).
+ */
 export async function deletePreparedGoogleMeetSubscriptionWithLifecycleLock(
   args: {
     readonly db: Db;
@@ -665,38 +671,21 @@ export async function deletePreparedGoogleMeetSubscriptionWithLifecycleLock(
   },
   signal: AbortSignal,
 ): Promise<void> {
-  let cleanupError: unknown = null;
-  await args.db.transaction(async (tx) => {
-    await lockBuiltinConnectorState(tx, {
-      orgId: args.pending.orgId,
-      userId: args.pending.userId,
-      connectorSlug: "google-meet",
-    });
-    signal.throwIfAborted();
-    const [adopted] = await tx
-      .select({ id: googleWorkspaceEventSubscriptionStates.id })
-      .from(googleWorkspaceEventSubscriptionStates)
-      .where(
-        eq(
-          googleWorkspaceEventSubscriptionStates.subscriptionName,
-          args.pending.subscriptionName,
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    if (adopted) {
-      return;
-    }
-    const deleted = await settleIncludingAbort(
-      bestEffort(deletePreparedGoogleMeetSubscription(args.pending, signal)),
-    );
-    if (!deleted.ok) {
-      cleanupError = deleted.error;
-    }
-  });
-  if (cleanupError !== null) {
-    throw cleanupError;
+  const [adopted] = await args.db
+    .select({ id: googleWorkspaceEventSubscriptionStates.id })
+    .from(googleWorkspaceEventSubscriptionStates)
+    .where(
+      eq(
+        googleWorkspaceEventSubscriptionStates.subscriptionName,
+        args.pending.subscriptionName,
+      ),
+    )
+    .limit(1);
+  signal.throwIfAborted();
+  if (adopted) {
+    return;
   }
+  await deletePreparedGoogleMeetSubscription(args.pending, signal);
 }
 
 async function listWorkspaceSubscriptions(
@@ -829,7 +818,24 @@ type GoogleMeetSubscriptionReconcileResult =
     }
   | { readonly kind: "bad_request"; readonly message: string };
 
-async function ensureGoogleMeetTranscriptGeneratedSubscriptionUnderLock(
+interface GoogleMeetSubscriptionPublication {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly connectorId: string;
+  readonly targetResource: string;
+  readonly eventTypes: readonly string[];
+  readonly topicName: string;
+  readonly subscription: z.infer<typeof workspaceSubscriptionSchema>;
+  readonly currentTime: Date;
+  readonly accessToken: string;
+}
+
+/**
+ * Prepares the remote Workspace Events subscription outside any transaction.
+ * Returns the subscription to publish, or a terminal result. Replacement and
+ * repair may miss notifications (accepted, as for Calendar).
+ */
+async function prepareGoogleMeetTranscriptGeneratedSubscription(
   args: {
     readonly db: Db;
     readonly orgId: string;
@@ -840,7 +846,12 @@ async function ensureGoogleMeetTranscriptGeneratedSubscriptionUnderLock(
 ): Promise<
   | {
       readonly kind: "ok";
-      readonly action: "unchanged" | "created" | "renewed";
+      readonly action: "unchanged";
+    }
+  | {
+      readonly kind: "prepared";
+      readonly created: boolean;
+      readonly publication: GoogleMeetSubscriptionPublication;
     }
   | { readonly kind: "bad_request"; readonly message: string }
 > {
@@ -935,9 +946,10 @@ async function ensureGoogleMeetTranscriptGeneratedSubscriptionUnderLock(
     };
   }
 
-  await persistWorkspaceSubscriptionState(
-    {
-      db: args.db,
+  return {
+    kind: "prepared",
+    created,
+    publication: {
       orgId: args.orgId,
       userId: args.userId,
       connectorId: accessResult.access.connectorId,
@@ -946,12 +958,8 @@ async function ensureGoogleMeetTranscriptGeneratedSubscriptionUnderLock(
       topicName: topicResult.topicName,
       subscription: subscription.value,
       currentTime,
+      accessToken: accessResult.access.accessToken,
     },
-    signal,
-  );
-  return {
-    kind: "ok",
-    action: created ? "created" : "renewed",
   };
 }
 
@@ -1097,64 +1105,159 @@ async function reconcileGoogleMeetSubscriptionLifecycle(
   },
   signal: AbortSignal,
 ): Promise<GoogleMeetSubscriptionReconcileResult> {
-  const transition = await args.db.transaction(async (tx) => {
+  const consumerArgs = {
+    db: args.db,
+    orgId: args.orgId,
+    userId: args.userId,
+    connectorId: args.connectorId,
+    allowStagedOfficialTarget: args.allowStagedOfficialTarget === true,
+  };
+  const wantsSubscription =
+    args.ensurePreparedOfficialTarget === true ||
+    (await hasEnabledGoogleMeetConsumer(consumerArgs, signal));
+  if (wantsSubscription) {
+    const prepared = await prepareGoogleMeetTranscriptGeneratedSubscription(
+      args,
+      signal,
+    );
+    if (prepared.kind !== "prepared") {
+      return prepared;
+    }
+    const published = await publishGoogleMeetSubscription(
+      {
+        ...consumerArgs,
+        requireConsumer: args.ensurePreparedOfficialTarget !== true,
+        publication: prepared.publication,
+      },
+      signal,
+    );
+    if (!published) {
+      // The consumer went away while the remote subscription was prepared.
+      // Removing a subscription this request created is best effort.
+      if (prepared.created) {
+        await settleIncludingAbort(
+          bestEffort(
+            deletePreparedGoogleMeetSubscription(
+              {
+                accessToken: prepared.publication.accessToken,
+                orgId: args.orgId,
+                subscriptionName: prepared.publication.subscription.name,
+                userId: args.userId,
+              },
+              signal,
+            ),
+          ),
+        );
+      }
+      return { kind: "ok", action: "unchanged" };
+    }
+    return {
+      kind: "ok",
+      action: prepared.created ? "created" : "renewed",
+    };
+  }
+
+  const states = await loadGoogleMeetSubscriptionStatesForOwner(
+    consumerArgs,
+    signal,
+  );
+  const state = googleMeetSubscriptionStateForCleanup(states);
+  const pendingDelete = state
+    ? await pendingGoogleMeetSubscriptionDeleteForState(
+        { db: args.db, state },
+        signal,
+      )
+    : null;
+  const removed = await removeGoogleMeetSubscriptionStates(
+    consumerArgs,
+    signal,
+  );
+  if (!removed) {
+    return { kind: "ok", action: "unchanged" };
+  }
+  // Remote cleanup follows the local decision and is best effort. A consumer
+  // enabled meanwhile may lose notifications until its repair recreates the
+  // subscription; that gap is accepted.
+  if (pendingDelete) {
+    const deleted = await settleIncludingAbort(
+      bestEffort(deletePreparedGoogleMeetSubscription(pendingDelete, signal)),
+    );
+    if (!deleted.ok) {
+      throw deleted.error;
+    }
+  }
+  return { kind: "ok", action: "removed" };
+}
+
+/**
+ * Short local publication. The outgoing-writer compatibility key is taken
+ * only for this local write; a disabled consumer or deleted account cannot be
+ * revived by a late remote preparation.
+ */
+async function publishGoogleMeetSubscription(
+  args: {
+    readonly db: Db;
+    readonly orgId: string;
+    readonly userId: string;
+    readonly connectorId: string;
+    readonly allowStagedOfficialTarget: boolean;
+    readonly requireConsumer: boolean;
+    readonly publication: GoogleMeetSubscriptionPublication;
+  },
+  signal: AbortSignal,
+): Promise<boolean> {
+  return await args.db.transaction(async (tx) => {
     await lockBuiltinConnectorState(tx, {
       orgId: args.orgId,
       userId: args.userId,
       connectorSlug: "google-meet",
     });
-    signal.throwIfAborted();
-    const hasConsumer =
-      args.ensurePreparedOfficialTarget === true ||
-      (await hasEnabledGoogleMeetConsumer(
-        {
-          db: tx,
-          orgId: args.orgId,
-          userId: args.userId,
-          connectorId: args.connectorId,
-          allowStagedOfficialTarget: args.allowStagedOfficialTarget === true,
-        },
-        signal,
-      ));
-    if (hasConsumer) {
-      return {
-        result: await ensureGoogleMeetTranscriptGeneratedSubscriptionUnderLock(
-          {
-            db: tx,
-            orgId: args.orgId,
-            userId: args.userId,
-            connectorId: args.connectorId,
-          },
-          signal,
+    const [connector] = await tx
+      .select({ id: connectors.id })
+      .from(connectors)
+      .where(
+        and(
+          eq(connectors.id, args.publication.connectorId),
+          eq(connectors.orgId, args.orgId),
+          eq(connectors.userId, args.userId),
         ),
-        cleanupError: null,
-      };
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (
+      !connector ||
+      (args.requireConsumer &&
+        !(await hasEnabledGoogleMeetConsumer({ ...args, db: tx }, signal)))
+    ) {
+      return false;
     }
-
-    const states = await loadGoogleMeetSubscriptionStatesForOwner(
-      {
-        db: tx,
-        orgId: args.orgId,
-        userId: args.userId,
-        connectorId: args.connectorId,
-      },
+    await persistWorkspaceSubscriptionState(
+      { db: tx, ...args.publication },
       signal,
     );
-    const state = googleMeetSubscriptionStateForCleanup(states);
-    const pendingDelete = state
-      ? await pendingGoogleMeetSubscriptionDeleteForState(
-          { db: tx, state },
-          signal,
-        )
-      : null;
-    let cleanupError: unknown = null;
-    if (pendingDelete) {
-      const deleted = await settleIncludingAbort(
-        bestEffort(deletePreparedGoogleMeetSubscription(pendingDelete, signal)),
-      );
-      if (!deleted.ok) {
-        cleanupError = deleted.error;
-      }
+    return true;
+  });
+}
+
+/** Deletes local subscription state only while no consumer is enabled. */
+async function removeGoogleMeetSubscriptionStates(
+  args: {
+    readonly db: Db;
+    readonly orgId: string;
+    readonly userId: string;
+    readonly connectorId: string;
+    readonly allowStagedOfficialTarget: boolean;
+  },
+  signal: AbortSignal,
+): Promise<boolean> {
+  return await args.db.transaction(async (tx) => {
+    await lockBuiltinConnectorState(tx, {
+      orgId: args.orgId,
+      userId: args.userId,
+      connectorSlug: "google-meet",
+    });
+    if (await hasEnabledGoogleMeetConsumer({ ...args, db: tx }, signal)) {
+      return false;
     }
     await tx
       .delete(googleWorkspaceEventSubscriptionStates)
@@ -1169,18 +1272,8 @@ async function reconcileGoogleMeetSubscriptionLifecycle(
           eq(googleWorkspaceEventSubscriptionStates.provider, "google-meet"),
         ),
       );
-    return {
-      result: {
-        kind: "ok" as const,
-        action: "removed" as const,
-      },
-      cleanupError,
-    };
+    return true;
   });
-  if (transition.cleanupError !== null) {
-    throw transition.cleanupError;
-  }
-  return transition.result;
 }
 
 export async function ensureGoogleMeetTranscriptGeneratedSubscriptionForUser(
