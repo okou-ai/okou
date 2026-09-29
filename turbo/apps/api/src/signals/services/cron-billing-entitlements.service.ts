@@ -1,3 +1,4 @@
+import { expiryLotDeductionsSql } from "./credit-usage-settlement-plan";
 import { cancelEmptyUsagePackSubscription$ } from "./billing-downgrade.service";
 import type { OrgTier } from "@okouai/api-contracts/contracts/orgs";
 import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
@@ -8,6 +9,7 @@ import { usagePackSubscriptions } from "@okouai/db/schema/usage-pack-subscriptio
 import { command } from "ccstate";
 import {
   and,
+  asc,
   eq,
   gt,
   inArray,
@@ -1154,52 +1156,85 @@ async function reconcileBillingCandidate(
   );
 }
 
-async function expireOrgCredits(
-  db: Db,
-  orgId: string,
-  now: Date,
-): Promise<number> {
-  return await db.transaction(async (tx) => {
-    const expired = await tx
-      .select({
-        id: creditExpiresRecord.id,
-        remaining: creditExpiresRecord.remaining,
-      })
-      .from(creditExpiresRecord)
-      .where(
-        and(
-          eq(creditExpiresRecord.orgId, orgId),
-          lte(creditExpiresRecord.expiresAt, now),
-          gt(creditExpiresRecord.remaining, 0),
-        ),
-      )
-      .for("update");
-
-    const totalExpired = expired.reduce((sum, record) => {
-      return sum + record.remaining;
-    }, 0);
-    if (totalExpired <= 0) {
-      return 0;
+/** Own each expiration before the legacy plan projection runs. */
+const expireAtomGrantCandidates$ = command(
+  async (
+    { set },
+    args: {
+      readonly candidates: readonly AtomGrantCandidate[];
+      readonly at: Date;
+    },
+    signal: AbortSignal,
+  ) => {
+    const db = set(writeDb$);
+    const ready: AtomGrantCandidate[] = [];
+    for (const candidate of args.candidates) {
+      const { orgId } = candidate;
+      const result = await settle(
+        db.transaction(async (tx) => {
+          // Settlement also owns the wallet before expiration lots. The outgoing
+          // cron does the reverse and has no advisory guard; its deadlock failure
+          // remains possible until those requests drain.
+          await tx
+            .select({ orgId: orgMetadata.orgId })
+            .from(orgMetadata)
+            .where(eq(orgMetadata.orgId, orgId))
+            .for("update");
+          const expired = await tx
+            .select({
+              id: creditExpiresRecord.id,
+              remaining: creditExpiresRecord.remaining,
+            })
+            .from(creditExpiresRecord)
+            .where(
+              and(
+                eq(creditExpiresRecord.orgId, orgId),
+                lte(creditExpiresRecord.expiresAt, args.at),
+                gt(creditExpiresRecord.remaining, 0),
+              ),
+            )
+            .orderBy(
+              asc(creditExpiresRecord.expiresAt),
+              asc(creditExpiresRecord.id),
+            )
+            .for("update");
+          const totalExpired = expired.reduce((sum, record) => {
+            return sum + record.remaining;
+          }, 0);
+          if (totalExpired <= 0) {
+            return;
+          }
+          await tx.execute(
+            expiryLotDeductionsSql(
+              expired.map((record) => {
+                return { id: record.id, amount: record.remaining };
+              }),
+            ),
+          );
+          await tx
+            .update(orgMetadata)
+            .set({
+              credits: sql`GREATEST(${orgMetadata.credits} - ${totalExpired}, 0)`,
+              updatedAt: args.at,
+            })
+            .where(eq(orgMetadata.orgId, orgId));
+          signal.throwIfAborted();
+        }),
+        signal,
+      );
+      signal.throwIfAborted();
+      if (!result.ok) {
+        L.warn("Atom grant candidate expiration failed", {
+          orgId,
+          error: result.error,
+        });
+        continue;
+      }
+      ready.push(candidate);
     }
-
-    for (const record of expired) {
-      await tx
-        .update(creditExpiresRecord)
-        .set({ remaining: 0 })
-        .where(eq(creditExpiresRecord.id, record.id));
-    }
-
-    await tx
-      .update(orgMetadata)
-      .set({
-        credits: sql`GREATEST(${orgMetadata.credits} - ${totalExpired}, 0)`,
-        updatedAt: now,
-      })
-      .where(eq(orgMetadata.orgId, orgId));
-
-    return totalExpired;
-  });
-}
+    return ready;
+  },
+);
 
 async function reconcileAtomGrantCandidate(
   context: ReconcileBillingContext,
@@ -1207,9 +1242,6 @@ async function reconcileAtomGrantCandidate(
   signal: AbortSignal,
 ): Promise<DowngradedSubscription[]> {
   const { db, now } = context;
-  await expireOrgCredits(db, candidate.orgId, now);
-  signal.throwIfAborted();
-
   const rows = await db.transaction(async (tx) => {
     return await writeOrgMetadataWithPlanEntitlements(tx, {
       writeOrgMetadata: async (writeTx) => {
@@ -1763,9 +1795,14 @@ const reconcileBillingEntitlementsForScope$ = command(
     );
     signal.throwIfAborted();
 
+    const atomGrantCandidates = await set(
+      expireAtomGrantCandidates$,
+      { candidates: candidateRows.atomGrantCandidates, at: now },
+      signal,
+    );
     const reconciledCandidates = await reconcileCandidateRows(
       { db, stripe, now, staleBefore },
-      candidateRows,
+      { ...candidateRows, atomGrantCandidates },
       signal,
     );
     const downgraded = [
