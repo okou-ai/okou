@@ -7,7 +7,6 @@ import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
 
-import type { Tx } from "../../lib/db-types";
 import { settle } from "../utils";
 import {
   OrgCreditExpirationRequired,
@@ -15,10 +14,7 @@ import {
   requireNoPendingOrgCreditExpiration,
 } from "./org-credit-expiration";
 import { expireOrgCredits$ } from "./org-credit-expiration.service";
-import {
-  orgPlanEntitlementValues,
-  writeOrgMetadataWithDefaultPlanEntitlement,
-} from "./org-plan-entitlements.service";
+import { orgPlanEntitlementValues } from "./org-plan-entitlements.service";
 
 const LIMITED_FREE_ONBOARDING_CREDITS = 1000;
 
@@ -26,39 +22,8 @@ const ONBOARDING_CREDIT_SOURCE = "onboarding";
 const ONBOARDING_CREDIT_IDEMPOTENCY_KEY = "limited-free-onboarding";
 const ONBOARDING_CREDIT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
-type DbTransaction = Tx;
-
 function onboardingCreditsExpiresAt(grantedAt: Date): Date {
   return new Date(grantedAt.getTime() + ONBOARDING_CREDIT_TTL_MS);
-}
-
-export async function grantOrgCredits(
-  tx: DbTransaction,
-  orgId: string,
-  amount: number,
-): Promise<void> {
-  await writeOrgMetadataWithDefaultPlanEntitlement(
-    tx,
-    orgId,
-    async (writeTx) => {
-      return await writeTx
-        .insert(orgMetadataCanonicalWrites)
-        .values({
-          orgId,
-          credits: amount,
-          createdAt: sql`now()`,
-          updatedAt: sql`now()`,
-        })
-        .onConflictDoUpdate({
-          target: orgMetadataCanonicalWrites.orgId,
-          set: {
-            credits: sql`${orgMetadata.credits} + ${amount}`,
-            updatedAt: sql`now()`,
-          },
-        })
-        .returning({ orgId: orgMetadata.orgId, tier: orgMetadata.tier });
-    },
-  );
 }
 
 /** The grant identity and its balance change commit together before publication. */

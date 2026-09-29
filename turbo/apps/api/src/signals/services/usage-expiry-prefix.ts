@@ -6,7 +6,6 @@ import {
   gt,
   inArray,
   lt,
-  lte,
   notInArray,
   or,
   sql,
@@ -96,7 +95,7 @@ export function usageExpiryScope(
   };
 }
 
-/** All expired lots remain atomic with the wallet clamp; only live lots shrink. */
+/** Expiration admission has already established that no expired remainder exists. */
 export function expiryLotsQuery(scope: UsageExpiryScope) {
   return new QueryBuilder()
     .select(expiryPrefixSelection())
@@ -105,14 +104,11 @@ export function expiryLotsQuery(scope: UsageExpiryScope) {
       and(
         eq(creditExpiresRecord.orgId, scope.orgId),
         gt(creditExpiresRecord.remaining, 0),
-        or(
-          lte(creditExpiresRecord.expiresAt, scope.at),
-          inArray(
-            creditExpiresRecord.id,
-            scope.prefix.lots.map((lot) => {
-              return lot.id;
-            }),
-          ),
+        inArray(
+          creditExpiresRecord.id,
+          scope.prefix.lots.map((lot) => {
+            return lot.id;
+          }),
         ),
       ),
     )
@@ -177,5 +173,9 @@ export function planCurrentExpiryDeduction(
       "Usage expiry prefix changed during preparation",
     );
   }
-  return planExpiryLotDeductions(lots, scope.amount, scope.at);
+  const plan = planExpiryLotDeductions(lots, scope.amount, scope.at);
+  return {
+    ...plan,
+    work: { expiredRows: plan.expiredRows, expiryRows: plan.expiryRows },
+  };
 }

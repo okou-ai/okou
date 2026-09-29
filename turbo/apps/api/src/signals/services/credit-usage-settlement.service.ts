@@ -1,4 +1,10 @@
 import {
+  OrgCreditExpirationRequired,
+  pendingOrgCreditExpirationQuery,
+  requireNoPendingOrgCreditExpiration,
+} from "./org-credit-expiration";
+import { expireOrgCredits$ } from "./org-credit-expiration.service";
+import {
   usageExpiryScope,
   expiryLotsQuery,
   unseenExpiryQuery,
@@ -53,6 +59,7 @@ import { usagePricingResolution$ } from "../context/usage-pricing-resolution";
 import {
   claimUsageWhere,
   settlementObservation,
+  settlementOrgLockWaitMs,
   emptySettlementReceipt,
   hasNoStandaloneUsage,
   planUsageCharges,
@@ -98,8 +105,7 @@ const commitUsageBatch$ = command(
   async ({ set }, args: SettlementBatchArgs, signal: AbortSignal) => {
     const { orgId, refresh, batch } = args;
     const db = set(writeDb$);
-    const { startedAt, work: seed } = settlementObservation(performance.now());
-    const work = { ...seed };
+    const { startedAt, work } = settlementObservation(batch.prices.length);
     const result = await db.transaction(async (tx) => {
       await tx.execute(usageEventCompactionLockSql("shared"));
       work.lockWaitMs = Math.round(performance.now() - startedAt);
@@ -139,8 +145,7 @@ const commitUsageBatch$ = command(
       const [wallet] = await tx.select().from(walletQuery(orgId));
       const [entitlement] = await tx.select().from(entitlementQuery(orgId));
       const at = nowDate();
-      const acquiredAt = Math.round(performance.now() - startedAt);
-      work.orgLockWaitMs = acquiredAt - work.lockWaitMs;
+      work.orgLockWaitMs = settlementOrgLockWaitMs(startedAt, work.lockWaitMs);
       const events = processPending
         ? await tx
             .update(usageEvent)
@@ -157,7 +162,6 @@ const commitUsageBatch$ = command(
         .select()
         .from(settlementPricingQuery(batch.pricingKeys));
       requireSettlementPricingSnapshot(batch.pricing, currentPricing);
-      work.pricingRows = batch.prices.length;
       const priced = preparedSettlementPrices(args, batch, events);
       const allocations = await tx.select().from(allocationQuery(priced));
       const anchors = await tx.select().from(anchorQuery(orgId, priced));
@@ -180,9 +184,13 @@ const commitUsageBatch$ = command(
       requireCurrentGrantPrefix(prefix, grants, unseenGrant);
       const deduction = planMemberGrantDeductions(charges.byUser, grants);
       await tx.execute(memberGrantDeductionsSql(deduction.updates));
-      work.affectedUsers = charges.byUser.size;
-      work.grantRows = grants.length;
+      Object.assign(work, deduction.work);
       const amount = deduction.sharedCredits;
+      const [pendingExpiry] =
+        amount > 0
+          ? await tx.select().from(pendingOrgCreditExpirationQuery(orgId, at))
+          : [];
+      requireNoPendingOrgCreditExpiration(orgId, pendingExpiry);
       const lotScope = usageExpiryScope(orgId, batch.lots, amount, at);
       const lots =
         amount > 0 ? await tx.select().from(expiryLotsQuery(lotScope)) : [];
@@ -190,8 +198,7 @@ const commitUsageBatch$ = command(
         amount > 0 ? await tx.select().from(unseenExpiryQuery(lotScope)) : [];
       const expiry = planCurrentExpiryDeduction(lotScope, lots, unseenLot);
       await tx.execute(expiryLotDeductionsSql(expiry.updates));
-      work.expiredRows = expiry.expiredRows;
-      work.expiryRows = expiry.expiryRows;
+      Object.assign(work, expiry.work);
       let afterCredits = wallet?.credits ?? 0;
       if (amount > 0) {
         const debit = orgDebitPlan(orgId, amount, expiry.expired, at);
@@ -241,6 +248,13 @@ export const settleOrgUsage$ = command(
       );
       signal.throwIfAborted();
       if (!outcome.ok) {
+        if (
+          outcome.error instanceof OrgCreditExpirationRequired &&
+          attempt < 3
+        ) {
+          await set(expireOrgCredits$, args.orgId, signal);
+          continue;
+        }
         if (
           outcome.error instanceof UsageSettlementSnapshotConflict &&
           attempt < 3

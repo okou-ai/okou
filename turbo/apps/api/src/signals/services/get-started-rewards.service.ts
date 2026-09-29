@@ -7,7 +7,6 @@ import {
   type GetStartedStatus,
 } from "@okouai/api-contracts/contracts/get-started";
 import { getStartedClaims } from "@okouai/db/schema/get-started-claim";
-import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
 import { and, count, desc, eq, or, sql } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
@@ -16,7 +15,6 @@ import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
 import { settle } from "../utils";
 import { createUsagePackCreditGrant } from "./usage-pack-credit.service";
-import { grantOrgCredits } from "./onboarding-credit-grants.service";
 
 export type GetStartedClaimRow = typeof getStartedClaims.$inferSelect;
 
@@ -323,44 +321,27 @@ async function persistGetStartedGrant(
 ): Promise<GetStartedClaimRow> {
   const grantedAt = nowDate();
   const expiresAt = new Date(grantedAt.getTime() + GET_STARTED_REWARD_TTL_MS);
-  let memberCreditGrantId: string | null = null;
-  let orgCreditRecordId: string | null = null;
-  if (claim.rewardTarget === "user") {
-    const grant = await createUsagePackCreditGrant(tx, {
-      orgId: claim.orgId,
-      userId: requiredBeneficiary(claim),
-      grantType: "bonus",
-      idempotencyKey: `get-started:${claim.id}`,
-      amount: claim.rewardAmount,
-      expiresAt,
-    });
-    memberCreditGrantId = grant.id;
-  } else {
-    const [record] = await tx
-      .insert(creditExpiresRecord)
-      .values({
-        orgId: claim.orgId,
-        source: "get_started_reward",
-        amount: claim.rewardAmount,
-        remaining: claim.rewardAmount,
-        expiresAt,
-        createdAt: grantedAt,
-      })
-      .returning({ id: creditExpiresRecord.id });
-    if (!record) {
-      throw new Error("Get started organization credit was not persisted");
-    }
-    orgCreditRecordId = record.id;
-    await grantOrgCredits(tx, claim.orgId, claim.rewardAmount);
+  if (claim.rewardTarget !== "user") {
+    throw new Error(
+      "Organization rewards belong to the Slack installation command",
+    );
   }
+  const grant = await createUsagePackCreditGrant(tx, {
+    orgId: claim.orgId,
+    userId: requiredBeneficiary(claim),
+    grantType: "bonus",
+    idempotencyKey: `get-started:${claim.id}`,
+    amount: claim.rewardAmount,
+    expiresAt,
+  });
   const [granted] = await tx
     .update(getStartedClaims)
     .set({
       status: "granted",
       rewardKey,
       rewardSlot,
-      memberCreditGrantId,
-      orgCreditRecordId,
+      memberCreditGrantId: grant.id,
+      orgCreditRecordId: null,
       grantedAt,
       expiresAt,
       ...(evidenceText === undefined
@@ -392,7 +373,7 @@ export async function awardCompletedGetStartedQuest(
   args: {
     readonly orgId: string;
     readonly userId: string;
-    readonly questKey: "connector" | "slack" | "imessage" | "checkin";
+    readonly questKey: "connector" | "imessage" | "checkin";
     readonly sourceKey: string;
   },
 ): Promise<GetStartedClaimRow> {
@@ -400,10 +381,7 @@ export async function awardCompletedGetStartedQuest(
     ...args,
     completedAt: nowDate(),
   });
-  const rewardKey =
-    args.questKey === "slack"
-      ? `slack:${args.sourceKey}`
-      : `${args.questKey}:${args.userId}:${args.sourceKey}`;
+  const rewardKey = `${args.questKey}:${args.userId}:${args.sourceKey}`;
   return grantGetStartedClaim(tx, claim, rewardKey);
 }
 

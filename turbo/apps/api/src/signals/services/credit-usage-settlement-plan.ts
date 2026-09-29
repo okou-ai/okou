@@ -34,8 +34,18 @@ function initialSettlementObservation(): SettlementWorkObservation {
   };
 }
 
-export function settlementObservation(startedAt: number) {
-  return { startedAt, work: initialSettlementObservation() };
+export function settlementObservation(pricingRows: number) {
+  return {
+    startedAt: performance.now(),
+    work: { ...initialSettlementObservation(), pricingRows },
+  };
+}
+
+export function settlementOrgLockWaitMs(
+  startedAt: number,
+  compactionWaitMs: number,
+) {
+  return Math.round(performance.now() - startedAt) - compactionWaitMs;
 }
 
 export function planUsageCharges(
@@ -104,6 +114,7 @@ export function planMemberGrantDeductions(
   }
   return {
     updates,
+    work: { affectedUsers: charges.size, grantRows: grants.length },
     sharedCredits: [...remaining.values()].reduce((total, charge) => {
       return total + charge;
     }, 0),

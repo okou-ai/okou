@@ -1,4 +1,4 @@
-import { awardCompletedGetStartedQuest } from "../services/get-started-rewards.service";
+import { persistSlackInstallation$ } from "../services/slack-installation-write.service";
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 import { command } from "ccstate";
@@ -10,8 +10,7 @@ import { request$ } from "../context/hono";
 import { queryOf } from "../context/request";
 import { waitUntil } from "../context/wait-until";
 import { db$, writeDb$ } from "../external/db";
-import type { Tx } from "../../lib/db-types";
-import { now, nowDate } from "../../lib/time";
+import { now } from "../../lib/time";
 import {
   exchangeSlackOAuthCode,
   exchangeSlackOAuthCodeForUser,
@@ -470,55 +469,6 @@ const handlePlatformInstall$ = command(
   },
 );
 
-async function persistSlackInstallation(
-  tx: Tx,
-  args: {
-    readonly fields: Pick<
-      SlackInstallation,
-      "encryptedBotToken" | "botUserId" | "slackWorkspaceName" | "botScopes"
-    >;
-    readonly workspaceId: string;
-    readonly state: OAuthState;
-    readonly isReinstall: boolean;
-  },
-  signal: AbortSignal,
-): Promise<SlackInstallation> {
-  const { fields } = args;
-  const isPlatformFlow = Boolean(args.state.orgId && args.state.userId);
-  const [installation] = args.isReinstall
-    ? await tx
-        .update(slackOrgInstallations)
-        .set({ ...fields, updatedAt: nowDate() })
-        .where(eq(slackOrgInstallations.slackWorkspaceId, args.workspaceId))
-        .returning()
-    : await tx
-        .insert(slackOrgInstallations)
-        .values({
-          ...fields,
-          slackWorkspaceId: args.workspaceId,
-          orgId: isPlatformFlow ? args.state.orgId : null,
-          installedByUserId: isPlatformFlow ? args.state.userId : null,
-        })
-        .returning();
-  signal.throwIfAborted();
-  if (!installation) {
-    throw new Error("Slack installation upsert did not return a row");
-  }
-  if (
-    args.state.orgId &&
-    args.state.userId &&
-    installation.orgId === args.state.orgId
-  ) {
-    await awardCompletedGetStartedQuest(tx, {
-      orgId: args.state.orgId,
-      userId: args.state.userId,
-      questKey: "slack",
-      sourceKey: installation.slackWorkspaceId,
-    });
-  }
-  return installation;
-}
-
 const handleInstallCallback$ = command(
   async (
     { set },
@@ -602,23 +552,22 @@ const handleInstallCallback$ = command(
         "This Slack workspace is already installed by another organization. Please contact the workspace admin to uninstall first.",
       );
     }
-    const installation = await writeDb.transaction((tx) => {
-      return persistSlackInstallation(
-        tx,
-        {
-          fields: {
-            encryptedBotToken,
-            botUserId: oauthResult.botUserId,
-            slackWorkspaceName: oauthResult.teamName,
-            botScopes,
-          },
-          workspaceId: oauthResult.teamId,
-          state: args.state,
-          isReinstall,
+    const installation = await set(
+      persistSlackInstallation$,
+      {
+        fields: {
+          encryptedBotToken,
+          botUserId: oauthResult.botUserId,
+          slackWorkspaceName: oauthResult.teamName,
+          botScopes,
         },
-        signal,
-      );
-    });
+        workspaceId: oauthResult.teamId,
+        orgId: args.state.orgId,
+        userId: args.state.userId,
+        isReinstall,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     if (args.state.orgId && args.state.userId) {
       return await set(
