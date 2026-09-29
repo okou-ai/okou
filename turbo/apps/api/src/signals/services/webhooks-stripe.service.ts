@@ -1696,7 +1696,13 @@ function atomPlanInvoiceDisposition(args: {
   readonly lockedOrg: LockedInvoicePaidOrg;
 }) {
   if (args.lockedOrg.lastProcessedInvoiceId === args.invoice.id) {
-    return "duplicate";
+    // Paid receipt identity alone does not authorize cleanup after another
+    // purchase has replaced the Plan binding but has not delivered its invoice.
+    return args.lockedOrg.tier === args.details.tier &&
+      args.lockedOrg.subscriptionStatus === ATOM_GRANT_SUBSCRIPTION_STATUS &&
+      args.lockedOrg.stripeSubscriptionId === null
+      ? "duplicate"
+      : "superseded";
   }
   if (atomUsagePackGrantWouldNotExtendEntitlement(args)) {
     return "member_only";
@@ -1819,7 +1825,11 @@ const prepareAtomPlanInvoice$ = command(
     const disposition = current
       ? atomPlanInvoiceDisposition({ invoice, details, lockedOrg: current })
       : "publish";
-    if (disposition === "member_only" || disposition === "rejected") {
+    if (
+      disposition === "member_only" ||
+      disposition === "rejected" ||
+      disposition === "superseded"
+    ) {
       return [];
     }
     if (disposition === "publish" && details.credits > 0) {
@@ -1894,8 +1904,10 @@ const publishAtomPlanInvoice$ = command(
         details,
         lockedOrg,
       });
-      if (disposition === "rejected") {
-        rejectAtomGrantTierReplacement({ invoice, details, lockedOrg });
+      if (disposition === "rejected" || disposition === "superseded") {
+        if (disposition === "rejected") {
+          rejectAtomGrantTierReplacement({ invoice, details, lockedOrg });
+        }
         return {
           processed: false,
           cancelReplaced: false,

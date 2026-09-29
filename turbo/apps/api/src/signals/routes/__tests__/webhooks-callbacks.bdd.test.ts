@@ -4988,6 +4988,150 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     expect(afterReplacedCancellation.credits).toBe(140_000);
   });
 
+  it.each(["legacy", "atom"] as const)(
+    "keeps a newer purchase when the previous %s invoice is redelivered",
+    async (source) => {
+      const bdd = createBddApi(context);
+      const runs = createRunsApi(context);
+      const billing = createBillingMediaApi(context);
+      const actor = bdd.user();
+      const granted = await runs.grantProEntitlement(actor);
+      const teamSubscriptionId = `sub_team_previous_${randomUUID()}`;
+      const teamSubscription = {
+        ...proSubscription({
+          id: teamSubscriptionId,
+          customerId: granted.customerId,
+        }),
+        items: { data: [{ price: { id: "price_bdd_team" } }] },
+      };
+      context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+        teamSubscription,
+      );
+      context.mocks.stripe.subscriptions.list.mockResolvedValue({ data: [] });
+      context.mocks.stripe.subscriptions.cancel.mockResolvedValue({
+        id: granted.subscriptionId,
+        status: "canceled",
+      });
+      const event = stripeEvent({
+        type: "invoice.paid",
+        object: {
+          id: `in_previous_${randomUUID()}`,
+          customer: granted.customerId,
+          ...(source === "legacy"
+            ? {
+                metadata: {},
+                parent: {
+                  subscription_details: { subscription: teamSubscriptionId },
+                },
+                lines: subscriptionLines(epochSeconds(30), "price_bdd_team"),
+              }
+            : {
+                metadata: {
+                  type: "atom_grant",
+                  purpose: "atom_grant",
+                  source: "atom_entitlement",
+                  orgId: orgOf(actor),
+                  tier: "team",
+                  duration: "7d",
+                  atomGrantExpiresAt: isoOf(epochSeconds(7)),
+                },
+                parent: null,
+                lines: {
+                  data: [
+                    {
+                      price: { id: "price_bdd_atom_grant" },
+                      quantity: 1,
+                      period: { start: epochSeconds(0), end: epochSeconds(7) },
+                      parent: { type: "invoice_item_details" },
+                    },
+                  ],
+                },
+              }),
+        },
+      });
+      await api.postStripeEvent(event, [200]);
+      expect((await billing.readBillingStatus(actor)).credits).toBe(140_000);
+      if (source === "legacy") {
+        await api.postStripeEvent(
+          stripeEvent({
+            type: "customer.subscription.deleted",
+            object: { id: teamSubscriptionId, metadata: {} },
+          }),
+          [200],
+        );
+      }
+
+      // Checkout binds the new subscription before its paid invoice arrives.
+      // The previous invoice ID still names the earlier paid grant.
+      const nextSubscriptionId = `sub_next_${randomUUID()}`;
+      mockEnv("OKOU_PRICE_CUSTOM", "price_bdd_next_custom");
+      const nextSubscription = {
+        ...proSubscription({
+          id: nextSubscriptionId,
+          customerId: granted.customerId,
+        }),
+        items: {
+          data: [
+            {
+              price: {
+                id:
+                  source === "legacy"
+                    ? "price_bdd_pro"
+                    : "price_bdd_next_custom",
+              },
+            },
+          ],
+        },
+      };
+      context.mocks.stripe.subscriptions.retrieve.mockResolvedValueOnce(
+        nextSubscription,
+      );
+      await api.postStripeEvent(
+        stripeEvent({
+          type: "checkout.session.completed",
+          object: {
+            id: `cs_next_${randomUUID()}`,
+            customer: granted.customerId,
+            subscription: nextSubscriptionId,
+            metadata: null,
+          },
+        }),
+        [200],
+      );
+      const before = await billing.readBillingStatus(actor);
+      expect(before.hasSubscription).toBeTruthy();
+      expect(before.subscriptionStatus).toBe("active");
+      context.mocks.stripe.subscriptions.list.mockResolvedValue({
+        data: [nextSubscription],
+      });
+      const canceledSubscriptions: string[] = [];
+      context.mocks.stripe.subscriptions.cancel.mockImplementation(
+        (subscriptionId: string) => {
+          canceledSubscriptions.push(subscriptionId);
+          return Promise.resolve({ id: subscriptionId, status: "canceled" });
+        },
+      );
+      await api.postStripeEvent(event, [200]);
+      // Deliver the provider's cancellation notifications through the public
+      // webhook API, so an accidental cancellation changes observable billing.
+      for (const subscriptionId of canceledSubscriptions) {
+        await api.postStripeEvent(
+          stripeEvent({
+            type: "customer.subscription.deleted",
+            object: { id: subscriptionId, metadata: {} },
+          }),
+          [200],
+        );
+      }
+      const after = await billing.readBillingStatus(actor);
+      expect(after.hasSubscription).toBeTruthy();
+      expect(after.subscriptionStatus).toBe("active");
+      expect(after.tier).toBe(before.tier);
+      expect(after.credits).toBe(before.credits);
+      expect(after.creditGrants).toStrictEqual(before.creditGrants);
+    },
+  );
+
   it("grants concurrency slots from Stripe subscription and picks queued chat threads until full", async () => {
     const bdd = createBddApi(context);
     const runs = createRunsApi(context);

@@ -34,7 +34,11 @@ export function legacyPlanInvoiceAdmission(
   args: LegacyPlanInvoice,
 ): "duplicate" | "rejected" | "publish" {
   if (wallet.lastProcessedInvoiceId === args.invoiceId) {
-    return "duplicate";
+    // A subscription-created delivery can replace the binding before its own
+    // invoice arrives. The previous invoice no longer owns replacement cleanup.
+    return legacyPlanEntitlementIsCurrent(wallet, args)
+      ? "duplicate"
+      : "rejected";
   }
   if (
     wallet.stripeSubscriptionId &&

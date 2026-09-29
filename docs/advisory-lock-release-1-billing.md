@@ -523,3 +523,29 @@ Existing public billing migration tests retain paid materialization, revision,
 invitation acceptance/refunds and original-event redelivery coverage. Local
 verification is formatting, scoped lint and API types; behavior execution remains
 with the sole PR's combined-head pipeline.
+
+## Paid invoice cleanup after a newer binding
+
+Legacy Plan and Atom invoice redelivery now checks whether the already-paid
+invoice still owns the current Plan before authorizing replacement cleanup.
+`last_processed_invoice_id` alone is insufficient: a later
+`checkout.session.completed` or `customer.subscription.created` can bind a new
+subscription before that purchase's paid invoice arrives. A legacy duplicate
+must still match its tier and subscription ID; an Atom duplicate must still
+match its tier, `atom_grant` status and unbound subscription state. Superseded
+receipts are acknowledged without updating entitlements or canceling the new
+subscription. Legitimate cleanup retries for the original current Plan remain.
+
+The API regression establishes both legacy and Atom grants through signed
+webhooks, binds a later purchase through Checkout completion, replays the
+original paid event, delivers any provider cancellation notifications through
+the webhook API, and verifies the later subscription and existing grant amounts
+through billing. It does not inspect internal locks or database snapshots.
+Focused lint and formatting pass; behavior verification belongs to the combined
+HEAD pipeline.
+
+This fixes the obsolete-receipt authorization case. Customer-wide replacement
+discovery can still observe a newer payable subscription before that subscription
+has any local binding, particularly for Atom grants. The common purchase and
+replacement-identity protocol remains unfinished Release 1 implementation;
+this local guard is not presented as a provider-side fence or a drain-only gate.
