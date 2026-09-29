@@ -1467,13 +1467,19 @@ describe("createApp", () => {
           reason: sdkReason,
           message: "private-sdk-error-message",
         });
-        const response = await accept(
-          authClient().snapshot({
-            headers: { authorization: "Bearer synthetic-session" },
-            extraHeaders: appHeaders(),
-          }),
-          [401],
-        );
+        const headers = { authorization: "Bearer synthetic-session" };
+        const extraHeaders = appHeaders();
+        const api = authClient();
+        const response = sdkReason.endsWith("non-eligible-non-get")
+          ? await accept(
+              api.create({
+                body: { agentId: "agent_auth_diagnostics" },
+                headers,
+                extraHeaders,
+              }),
+              [401],
+            )
+          : await accept(api.snapshot({ headers, extraHeaders }), [401]);
         expect(response.body).toStrictEqual({
           error: { message: "Not authenticated", code: "UNAUTHORIZED" },
         });
