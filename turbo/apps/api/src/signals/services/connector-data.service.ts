@@ -1,4 +1,11 @@
-import { awardCompletedGetStartedQuest } from "./get-started-rewards.service";
+import {
+  completedGetStartedQuestSql,
+  memberRewardWalletQuery,
+} from "./get-started-member-reward";
+import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
+import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
+import { slackRewardWalletEntitlement } from "./slack-installation-reward";
 import { command, computed, type Computed } from "ccstate";
 import {
   connectorReconnectReasonSchema,
@@ -2524,12 +2531,17 @@ export async function commitBuiltinConnectorTokenConnection(
     signal,
   );
   if (isOneClickConnectorGrantKind(args.runtimeMethod.method.grant.kind)) {
-    await awardCompletedGetStartedQuest(args.db, {
-      orgId: args.orgId,
-      userId: args.userId,
-      questKey: "connector",
-      sourceKey: `builtin:${args.runtimeMethod.connectorSlug}`,
-    });
+    await args.db.execute(
+      completedGetStartedQuestSql(
+        {
+          orgId: args.orgId,
+          userId: args.userId,
+          questKey: "connector",
+          sourceKey: `builtin:${args.runtimeMethod.connectorSlug}`,
+        },
+        nowDate(),
+      ),
+    );
   }
   await reprojectConnectedWorkflowAutomations(
     { ...args, connectorSlug: args.runtimeMethod.connectorSlug },
@@ -2667,6 +2679,18 @@ export const upsertBuiltinConnectorTokenConnection$ = command(
     );
     let postCommitAbort: unknown = null;
     const connectionResult = await writeDb.transaction(async (tx) => {
+      const [insertedWallet] = await tx
+        .insert(orgMetadataCanonicalWrites)
+        .values({ orgId: prepared.orgId })
+        .onConflictDoNothing()
+        .returning({ orgId: orgMetadata.orgId });
+      await tx.select().from(memberRewardWalletQuery(prepared.orgId));
+      if (insertedWallet) {
+        await tx
+          .insert(orgPlanEntitlements)
+          .values(slackRewardWalletEntitlement(prepared.orgId))
+          .onConflictDoNothing({ target: orgPlanEntitlements.orgId });
+      }
       const write = { ...prepared, db: tx };
       const resolution = await resolveBuiltinConnectorTokenConnectionMutation(
         write,

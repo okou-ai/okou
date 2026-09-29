@@ -255,9 +255,8 @@ async function getRewardAvailability(
   claim: GetStartedClaimRow,
   rewardKey: string,
 ): Promise<RewardAvailability> {
-  const limit = GET_STARTED_REWARDS[claim.questKey].limit;
   const ownerAwards =
-    limit === null
+    GET_STARTED_REWARDS[claim.questKey].limit === null
       ? undefined
       : and(
           claim.rewardTarget === "org"
@@ -278,6 +277,18 @@ async function getRewardAvailability(
     })
     .from(getStartedClaims)
     .where(or(eq(getStartedClaims.rewardKey, rewardKey), ownerAwards));
+  return getRewardAvailabilityFromAwards(claim, rewardKey, awards);
+}
+
+export function getRewardAvailabilityFromAwards(
+  claim: GetStartedClaimRow,
+  rewardKey: string,
+  awards: readonly {
+    readonly rewardKey: string | null;
+    readonly rewardSlot: number | null;
+  }[],
+): RewardAvailability {
+  const limit = GET_STARTED_REWARDS[claim.questKey].limit;
   if (
     awards.some((award) => {
       return award.rewardKey === rewardKey;
@@ -366,23 +377,6 @@ function requiredBeneficiary(claim: GetStartedClaimRow): string {
     throw new Error("Personal reward has no beneficiary");
   }
   return claim.beneficiaryUserId;
-}
-
-export async function awardCompletedGetStartedQuest(
-  tx: Tx,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly questKey: "connector" | "imessage" | "checkin";
-    readonly sourceKey: string;
-  },
-): Promise<GetStartedClaimRow> {
-  const claim = await createGetStartedClaim(tx, {
-    ...args,
-    completedAt: nowDate(),
-  });
-  const rewardKey = `${args.questKey}:${args.userId}:${args.sourceKey}`;
-  return grantGetStartedClaim(tx, claim, rewardKey);
 }
 
 export async function getStartedStatus(

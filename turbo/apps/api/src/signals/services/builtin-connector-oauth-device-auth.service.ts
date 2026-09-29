@@ -1,3 +1,8 @@
+import { memberRewardWalletQuery } from "./get-started-member-reward";
+import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
+import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
+import { slackRewardWalletEntitlement } from "./slack-installation-reward";
 import { Buffer } from "node:buffer";
 import { createHash, randomBytes } from "node:crypto";
 
@@ -815,6 +820,18 @@ const completeClaimedSession$ = command(
     );
     let postCommitAbort: unknown = null;
     const result = await args.writeDb.transaction(async (tx) => {
+      const [insertedWallet] = await tx
+        .insert(orgMetadataCanonicalWrites)
+        .values({ orgId: prepared.orgId })
+        .onConflictDoNothing()
+        .returning({ orgId: orgMetadata.orgId });
+      await tx.select().from(memberRewardWalletQuery(prepared.orgId));
+      if (insertedWallet) {
+        await tx
+          .insert(orgPlanEntitlements)
+          .values(slackRewardWalletEntitlement(prepared.orgId))
+          .onConflictDoNothing({ target: orgPlanEntitlements.orgId });
+      }
       const write = { ...prepared, db: tx };
       const resolution = await resolveBuiltinConnectorTokenConnectionMutation(
         write,

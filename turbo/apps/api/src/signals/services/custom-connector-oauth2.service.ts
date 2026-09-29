@@ -1,7 +1,12 @@
 import {
-  awardCompletedGetStartedQuest,
-  CUSTOM_CONNECTOR_GET_STARTED_SOURCE_KEY,
-} from "./get-started-rewards.service";
+  completedGetStartedQuestSql,
+  memberRewardWalletQuery,
+} from "./get-started-member-reward";
+import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
+import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
+import { slackRewardWalletEntitlement } from "./slack-installation-reward";
+import { CUSTOM_CONNECTOR_GET_STARTED_SOURCE_KEY } from "./get-started-rewards.service";
 import { feishuPlatformFromTokenUrl } from "@okouai/core/feishu-platform";
 import { Buffer } from "node:buffer";
 import { createHash, randomBytes } from "node:crypto";
@@ -1464,6 +1469,25 @@ export async function lockCustomConnectorOAuth2CredentialContract(args: {
   return { providerAdapter: definition.providerAdapter };
 }
 
+function customOAuthConnectionTarget(
+  connectorId: string,
+  token: CustomConnectorOAuthTokenResult,
+) {
+  return {
+    kind: "custom" as const,
+    customConnectorId: connectorId,
+    oauthScopes: token.scopes,
+    identity: token.userInfo
+      ? {
+          kind: "external" as const,
+          externalId: token.userInfo.id,
+          externalUsername: token.userInfo.username,
+          externalEmail: token.userInfo.email,
+        }
+      : { kind: "local" as const },
+  };
+}
+
 export async function storeCustomConnectorOAuth2Connection(
   args: {
     readonly db: Db;
@@ -1497,6 +1521,18 @@ export async function storeCustomConnectorOAuth2Connection(
   const encrypted = await encryptTokenValues(args);
   signal.throwIfAborted();
   return await args.db.transaction(async (tx) => {
+    const [insertedWallet] = await tx
+      .insert(orgMetadataCanonicalWrites)
+      .values({ orgId: args.orgId })
+      .onConflictDoNothing()
+      .returning({ orgId: orgMetadata.orgId });
+    await tx.select().from(memberRewardWalletQuery(args.orgId));
+    if (insertedWallet) {
+      await tx
+        .insert(orgPlanEntitlements)
+        .values(slackRewardWalletEntitlement(args.orgId))
+        .onConflictDoNothing({ target: orgPlanEntitlements.orgId });
+    }
     const contract = await lockCustomConnectorOAuth2CredentialContract({
       db: tx,
       orgId: args.orgId,
@@ -1526,19 +1562,7 @@ export async function storeCustomConnectorOAuth2Connection(
         authMethod: "oauth",
         storageVersion: args.storageVersion,
         tokenExpiresAt: args.token.expiresAt,
-        target: {
-          kind: "custom",
-          customConnectorId: args.connectorId,
-          oauthScopes: args.token.scopes,
-          identity: args.token.userInfo
-            ? {
-                kind: "external",
-                externalId: args.token.userInfo.id,
-                externalUsername: args.token.userInfo.username,
-                externalEmail: args.token.userInfo.email,
-              }
-            : { kind: "local" },
-        },
+        target: customOAuthConnectionTarget(args.connectorId, args.token),
         resolution: resolution.mutation,
         insertConnectionId: args.insertConnectionId,
         writeCredentials: async ({ db, connectorId }) => {
@@ -1568,12 +1592,17 @@ export async function storeCustomConnectorOAuth2Connection(
       },
       signal,
     );
-    await awardCompletedGetStartedQuest(tx, {
-      orgId: args.orgId,
-      userId: args.userId,
-      questKey: "connector",
-      sourceKey: CUSTOM_CONNECTOR_GET_STARTED_SOURCE_KEY,
-    });
+    await tx.execute(
+      completedGetStartedQuestSql(
+        {
+          orgId: args.orgId,
+          userId: args.userId,
+          questKey: "connector",
+          sourceKey: CUSTOM_CONNECTOR_GET_STARTED_SOURCE_KEY,
+        },
+        nowDate(),
+      ),
+    );
     return { kind: "stored", connectionId: connection.id };
   });
 }

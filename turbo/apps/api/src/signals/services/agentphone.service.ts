@@ -1,5 +1,4 @@
 import { resolveEnqueuedChatInputModel } from "./chat-input-model.service";
-import type { Tx } from "../../lib/db-types";
 import { touchNativeChatThread } from "./native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
@@ -47,11 +46,9 @@ import {
   resolveAgentPhoneUserLink,
   resolveOrgDefaultComposeId,
   storeOutboundAgentPhoneMessage,
-  touchAgentPhoneUserLink,
   type AgentPhoneChannel,
   type AgentPhoneUserLink,
 } from "./agentphone-shared.service";
-import { awardCompletedGetStartedQuest } from "./get-started-rewards.service";
 import {
   ensureAgentPhoneChatThreadRoute,
   findAgentPhoneRoutedChatThreadId,
@@ -130,14 +127,6 @@ export interface AgentPhoneMessageEvent {
   readonly receivedAt: Date | null;
   readonly recentHistory: readonly AgentPhoneRecentHistoryMessage[];
 }
-
-type LinkAgentPhoneUserResult =
-  | { readonly ok: true; readonly userLink: AgentPhoneUserLink }
-  | {
-      readonly ok: false;
-      readonly reason: "phone-handle-linked" | "org-linked" | "conflict";
-      readonly userLink?: AgentPhoneUserLink;
-    };
 
 interface WorkspaceAgent {
   readonly composeId: string;
@@ -308,112 +297,6 @@ export function buildAgentPhoneConnectUrl(params: {
     channel: params.channel,
   });
   return `${env("APP_URL")}/agentphone/connect?${query.toString()}`;
-}
-
-/**
- * Link a phone to the member, in the caller's transaction.
- *
- * Creating the link is what the Get started iMessage quest rewards, so the
- * award commits or rolls back with the row. Only a new row earns it: the
- * branches that find the member's existing link merely touch it, which keeps
- * phones linked before the quest shipped from being credited retroactively.
- * The source key is fixed rather than the phone or organization, so the member
- * has a single claim however often they unlink and link again, and the quest's
- * one reward slot is what holds the limit.
- */
-export async function linkAgentPhoneUser(
-  tx: Tx,
-  params: {
-    readonly phoneHandle: string;
-    readonly channel: AgentPhoneChannel;
-    readonly userId: string;
-    readonly orgId: string;
-  },
-): Promise<LinkAgentPhoneUserResult> {
-  const phoneHandle = normalizeAgentPhoneHandle(
-    params.phoneHandle,
-    params.channel,
-  );
-  const [existingPhoneLink] = await tx
-    .select()
-    .from(agentphoneUserLinks)
-    .where(eq(agentphoneUserLinks.phoneHandle, phoneHandle))
-    .limit(1);
-
-  if (existingPhoneLink) {
-    if (
-      existingPhoneLink.userId === params.userId &&
-      existingPhoneLink.orgId === params.orgId
-    ) {
-      return {
-        ok: true,
-        userLink: await touchAgentPhoneUserLink(
-          tx,
-          existingPhoneLink,
-          phoneHandle,
-          params.channel,
-        ),
-      };
-    }
-
-    return {
-      ok: false,
-      reason: "phone-handle-linked",
-      userLink: existingPhoneLink,
-    };
-  }
-
-  const [existingUserOrgLink] = await tx
-    .select()
-    .from(agentphoneUserLinks)
-    .where(
-      and(
-        eq(agentphoneUserLinks.userId, params.userId),
-        eq(agentphoneUserLinks.orgId, params.orgId),
-      ),
-    )
-    .limit(1);
-
-  if (existingUserOrgLink) {
-    if (existingUserOrgLink.phoneHandle === phoneHandle) {
-      return {
-        ok: true,
-        userLink: await touchAgentPhoneUserLink(
-          tx,
-          existingUserOrgLink,
-          phoneHandle,
-          params.channel,
-        ),
-      };
-    }
-
-    return {
-      ok: false,
-      reason: "org-linked",
-      userLink: existingUserOrgLink,
-    };
-  }
-
-  const [inserted] = await tx
-    .insert(agentphoneUserLinks)
-    .values({
-      phoneHandle,
-      userId: params.userId,
-      orgId: params.orgId,
-    })
-    .onConflictDoNothing()
-    .returning();
-
-  if (inserted) {
-    await awardCompletedGetStartedQuest(tx, {
-      orgId: params.orgId,
-      userId: params.userId,
-      questKey: "imessage",
-      sourceKey: "agentphone-link",
-    });
-    return { ok: true, userLink: inserted };
-  }
-  return { ok: false, reason: "conflict" };
 }
 
 /**

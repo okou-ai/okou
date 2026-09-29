@@ -1,3 +1,8 @@
+import { memberRewardWalletQuery } from "./get-started-member-reward";
+import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
+import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
+import { slackRewardWalletEntitlement } from "./slack-installation-reward";
 import { randomUUID } from "node:crypto";
 import { getStartedClaims } from "@okouai/db/schema/get-started-claim";
 import { usagePackInvitationPurchases } from "@okouai/db/schema/usage-pack-subscription";
@@ -98,6 +103,18 @@ export async function acceptGetStartedInvitation(
     return;
   }
   await db.transaction(async (tx) => {
+    const [insertedWallet] = await tx
+      .insert(orgMetadataCanonicalWrites)
+      .values({ orgId: args.orgId })
+      .onConflictDoNothing()
+      .returning({ orgId: orgMetadata.orgId });
+    await tx.select().from(memberRewardWalletQuery(args.orgId));
+    if (insertedWallet) {
+      await tx
+        .insert(orgPlanEntitlements)
+        .values(slackRewardWalletEntitlement(args.orgId))
+        .onConflictDoNothing({ target: orgPlanEntitlements.orgId });
+    }
     const [existingClaim] = await tx
       .select()
       .from(getStartedClaims)
