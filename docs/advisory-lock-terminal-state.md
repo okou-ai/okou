@@ -198,9 +198,11 @@ exactly seven deployments.
 | 7         | SSH owner and the three VNC acquisition definitions                                                                                      |           4 | Existing credential/host identity checks; conditional resource updates; deletion cannot revive revoked authority                      |
 | **Total** |                                                                                                                                          |      **28** | **Zero production acquisition definitions**                                                                                           |
 
-Preserve one implementation owner per focused PR. Independent work may proceed
-concurrently. Shared files and expected merge conflicts are coordination
-information, not reasons to serialize otherwise independent changes.
+Release 1 has one integration owner and one PR,
+[#37313](https://github.com/okou-ai/okou/pull/37313). Independent work may proceed
+concurrently in isolated worktrees with clear scope owners, and all effective
+changes are integrated into that PR. Shared files and expected merge conflicts
+are coordination information, not reasons to serialize independent work.
 
 Coordinate actual shared behavior:
 
@@ -230,7 +232,13 @@ they can feed these same two waves rather than requiring seven releases.
 | Wave                                                    | Work                                                                                                                                                                                                                                                                                                                                   | Required compatibility                                                                                                                                                             |
 | ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Release 1: prepare and directly retire compatible paths | Complete the replacement write protocols using existing fields. Retire non-GA paths directly. Also retire GA paths whose replacement is already compatible with every supported writer. For the remaining GA paths, retain only the advisory coordination and transaction boundaries actually needed to coexist with the outgoing API. | Outgoing code and Release 1 remain correct together. Every writer that Release 2 will overlap with must already support the replacement protocol.                                  |
-| Release 2: complete retirement                          | Remove the remaining advisory calls and temporary compatibility boundaries. Finish local transaction ownership, operational-tool and database-function cleanup, and the whole-API sweep.                                                                                                                                               | Release 1 and Release 2 coexist safely without relying on the removed locks. Incompatible pre-Release-1 writers are no longer serving, in flight, or retained as rollback targets. |
+| Release 2: complete retirement                          | Remove the remaining advisory calls and proven temporary compatibility boundaries, including trigger/FK transitions. Finish only transaction ownership steps explicitly required to remain with outgoing writers, retire prepared operator/function compatibility, and repeat the whole-API sweep.                                     | Release 1 and Release 2 coexist safely without relying on the removed locks. Incompatible pre-Release-1 writers are no longer serving, in flight, or retained as rollback targets. |
+
+Every R2 boundary needs a concrete outgoing-writer dependency and an already
+implemented R1 replacement protocol. Missing conditional writes, unbounded
+current-writer work, transaction forwarding without such a dependency, and
+trigger-dependent business logic are unfinished R1 implementation. They cannot
+be assigned to R2 merely because that release is planned.
 
 Do not add a preparation release or fallback for a feature that is still
 non-GA under the feature-switch policy. Confirm the actual affected paths:
