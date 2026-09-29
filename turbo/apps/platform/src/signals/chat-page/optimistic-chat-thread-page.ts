@@ -520,6 +520,7 @@ async function createNewThreadRecord(
 }
 
 const sendNewThreadMessage$ = command(
+  // oxlint-disable-next-line max-lines-per-function -- Preserve the ordered save/create/send transaction and its phase transitions together.
   async (
     { get, set },
     request: SendNewThreadMessageRequest,

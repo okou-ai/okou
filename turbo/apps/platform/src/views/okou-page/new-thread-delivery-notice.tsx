@@ -14,6 +14,7 @@ import { rootSignal$ } from "../../signals/root-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { Link } from "../router/link.tsx";
 
+// oxlint-disable-next-line complexity, max-lines-per-function -- One accessible status panel covers both delivery phases and all recovery controls.
 function NewThreadDeliveryItem({
   intent,
 }: {
