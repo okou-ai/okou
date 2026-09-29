@@ -181,7 +181,7 @@ import {
 } from "@okouai/core/generation-template-identity";
 import { resolveChatThreadSession } from "./chat-session-continuity.service";
 import { loadComputerUseHostGrantForAutoSend } from "./chat-computer-use-host.service";
-import { resolveRunChatThreadModelContext } from "./chat-run-event.service";
+import { resolveRunChatThreadModelContext$ } from "./chat-run-event.service";
 import { releaseThreadBrowsersForRun$ } from "./browser.service";
 import {
   modelProviderWriteTypeForLaunch,
@@ -223,7 +223,7 @@ import {
 } from "./telegram-queued-launch-context.service";
 import type { Tx } from "../../lib/db-types";
 import {
-  resolveBuiltInModelRuntimeRoute,
+  resolveBuiltInModelRuntimeRoute$,
   type BuiltInModelRuntimeRoute,
 } from "./built-in-model-runtime-route.service";
 import {
@@ -2388,72 +2388,83 @@ type QueuedMessageModelRouteResolution =
   | { readonly route: QueuedMessageModelRoute }
   | { readonly error: QueuedMessageModelRouteError };
 
-async function resolveQueuedMessageModelRoute(args: {
-  readonly db: Db;
-  readonly threadId: string;
-  readonly eventId: string;
-  readonly userId: string;
-  readonly orgId: string;
-  readonly contextType: QueuedUserMessageContextType;
-  readonly featureSwitchContext: FeatureSwitchContext;
-  readonly timing?: ChatCallbackPreCreateTimingCollector;
-}): Promise<QueuedMessageModelRouteResolution> {
-  const modelContext = await measureChatCallbackPreCreateTiming(
-    args.timing,
-    "api_dispatch_pre_create_agent_chat_callback_auto_send_resolve_model_pin",
-    "nested",
-    () => {
-      return resolveRunChatThreadModelContext({
-        db: args.db,
-        orgId: args.orgId,
-        userId: args.userId,
-        threadId: args.threadId,
-        eventId: args.eventId,
-        featureSwitchContext: args.featureSwitchContext,
-        providerModelSupport: "trust-enqueued",
-      });
+const resolveQueuedMessageModelRoute$ = command(
+  async (
+    { set },
+    args: {
+      readonly threadId: string;
+      readonly eventId: string;
+      readonly userId: string;
+      readonly orgId: string;
+      readonly contextType: QueuedUserMessageContextType;
+      readonly featureSwitchContext: FeatureSwitchContext;
+      readonly timing?: ChatCallbackPreCreateTimingCollector;
     },
-  );
-  if ("status" in modelContext) {
-    return { error: modelContext.body.error };
-  }
-  if (modelContext.providerAdmission.error) {
-    return { error: modelContext.providerAdmission.error.body.error };
-  }
-  const effectiveModelProvider =
-    modelContext.providerAdmission.effectiveModelProvider;
-  const selectedModel = modelContext.pin.selectedModel;
-  const builtInModelRuntimeRoute =
-    isBuiltInModelProviderType(effectiveModelProvider) && selectedModel
-      ? await resolveBuiltInModelRuntimeRoute(
-          args.db,
-          selectedModel,
-          modelContext.featureSwitchContext,
-        )
-      : undefined;
-  if (
-    isBuiltInModelProviderType(effectiveModelProvider) &&
-    !builtInModelRuntimeRoute
-  ) {
+    signal: AbortSignal,
+  ): Promise<QueuedMessageModelRouteResolution> => {
+    const modelContext = await measureChatCallbackPreCreateTiming(
+      args.timing,
+      "api_dispatch_pre_create_agent_chat_callback_auto_send_resolve_model_pin",
+      "nested",
+      () => {
+        return set(
+          resolveRunChatThreadModelContext$,
+          {
+            orgId: args.orgId,
+            userId: args.userId,
+            threadId: args.threadId,
+            eventId: args.eventId,
+            featureSwitchContext: args.featureSwitchContext,
+            providerModelSupport: "trust-enqueued",
+          },
+          signal,
+        );
+      },
+    );
+    signal.throwIfAborted();
+    if ("status" in modelContext) {
+      return { error: modelContext.body.error };
+    }
+    if (modelContext.providerAdmission.error) {
+      return { error: modelContext.providerAdmission.error.body.error };
+    }
+    const effectiveModelProvider =
+      modelContext.providerAdmission.effectiveModelProvider;
+    const selectedModel = modelContext.pin.selectedModel;
+    const builtInModelRuntimeRoute =
+      isBuiltInModelProviderType(effectiveModelProvider) && selectedModel
+        ? await set(
+            resolveBuiltInModelRuntimeRoute$,
+            selectedModel,
+            modelContext.featureSwitchContext,
+            signal,
+          )
+        : undefined;
+    signal.throwIfAborted();
+    if (
+      isBuiltInModelProviderType(effectiveModelProvider) &&
+      !builtInModelRuntimeRoute
+    ) {
+      return {
+        error: {
+          code: "MODEL_PROVIDER_UNAVAILABLE",
+          message:
+            "Every built-in model route for this model is temporarily unavailable",
+        },
+      };
+    }
     return {
-      error: {
-        code: "MODEL_PROVIDER_UNAVAILABLE",
-        message:
-          "Every built-in model route for this model is temporarily unavailable",
+      route: {
+        modelPin: modelContext.pin,
+        effectiveModelProvider,
+        builtInModelRuntimeRoute: builtInModelRuntimeRoute ?? undefined,
+        cliAgentType: modelContext.providerAdmission.cliAgentType,
+        codexServiceTier: modelContext.runCodexServiceTier,
+        reasoningEffort: modelContext.reasoningEffort,
       },
     };
-  }
-  return {
-    route: {
-      modelPin: modelContext.pin,
-      effectiveModelProvider,
-      builtInModelRuntimeRoute: builtInModelRuntimeRoute ?? undefined,
-      cliAgentType: modelContext.providerAdmission.cliAgentType,
-      codexServiceTier: modelContext.runCodexServiceTier,
-      reasoningEffort: modelContext.reasoningEffort,
-    },
-  };
-}
+  },
+);
 
 interface CreateQueuedChatRunInputArgs {
   readonly expectedThreadAgentId?: string;
@@ -3005,16 +3016,19 @@ const loadQueuedChatRunContext$ = command(
       args.userId,
     );
     signal.throwIfAborted();
-    const modelRouteResolution = await resolveQueuedMessageModelRoute({
-      eventId: args.queuedMessage.id,
-      db: args.db,
-      threadId: args.threadId,
-      userId: args.userId,
-      orgId: args.agent.orgId,
-      contextType: args.queuedMessage.contextType,
-      featureSwitchContext,
-      timing: args.timing,
-    });
+    const modelRouteResolution = await set(
+      resolveQueuedMessageModelRoute$,
+      {
+        eventId: args.queuedMessage.id,
+        threadId: args.threadId,
+        userId: args.userId,
+        orgId: args.agent.orgId,
+        contextType: args.queuedMessage.contextType,
+        featureSwitchContext,
+        timing: args.timing,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     const userMessageProjection = queuedUserMessageProjection(
       args.queuedMessage.userMessage,

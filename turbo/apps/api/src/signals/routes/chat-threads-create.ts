@@ -13,7 +13,6 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { clerk$ } from "../external/clerk";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
-import { type Db, writeDb$ } from "../external/db";
 import { publishThreadListChanged } from "../external/realtime";
 import {
   badRequestMessage,
@@ -27,15 +26,15 @@ import {
 } from "../services/chat-thread.service";
 import { agentExistsInOrg } from "../services/agent-deletion.service";
 import {
-  resolveDefaultModelFirstPin,
-  resolveModelSelectionPin,
+  resolveDefaultModelFirstPin$,
+  resolveModelSelectionPin$,
   validateCodexServiceTier,
 } from "../services/model-selection.service";
 import { chatThreadModelPinColumns } from "../services/chat-thread-model.service";
 import { chatThreadServiceTierFromCodex } from "../services/chat-thread-event.service";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import { hasCurrentVncMembership } from "../services/vnc-owner-lifecycle.service";
-import { loadNewChatThreadDefaults } from "../services/chat-thread-defaults.service";
+import { loadNewChatThreadDefaults$ } from "../services/chat-thread-defaults.service";
 import { resolveChatReasoningEffort } from "../services/chat-reasoning-effort.service";
 import type { RouteEntry } from "../route-entry";
 
@@ -126,30 +125,34 @@ const validateInitialRemoteAccess$ = command(
   },
 );
 
-async function initialThreadModel(
-  db: Db,
-  owner: { readonly orgId: string; readonly userId: string },
-  requested: {
-    readonly model?: string;
-    readonly serviceTier?: ChatThreadServiceTier | null;
+const initialThreadModel$ = command(
+  async (
+    { set },
+    owner: { readonly orgId: string; readonly userId: string },
+    requested: {
+      readonly model?: string;
+      readonly serviceTier?: ChatThreadServiceTier | null;
+    },
+    signal: AbortSignal,
+  ): Promise<{
+    readonly selectedModel: string | null;
+    readonly codexServiceTier: CodexServiceTier | null;
+  }> => {
+    const initial =
+      requested.model === undefined
+        ? await set(resolveDefaultModelFirstPin$, owner, signal)
+        : { selectedModel: requested.model, serviceTier: null };
+    signal.throwIfAborted();
+    const serviceTier =
+      requested.serviceTier === undefined
+        ? initial.serviceTier
+        : requested.serviceTier;
+    return {
+      selectedModel: initial.selectedModel,
+      codexServiceTier: serviceTier === "priority" ? "fast" : null,
+    };
   },
-): Promise<{
-  readonly selectedModel: string | null;
-  readonly codexServiceTier: CodexServiceTier | null;
-}> {
-  const initial =
-    requested.model === undefined
-      ? await resolveDefaultModelFirstPin(db, owner.orgId, owner.userId)
-      : { selectedModel: requested.model, serviceTier: null };
-  const serviceTier =
-    requested.serviceTier === undefined
-      ? initial.serviceTier
-      : requested.serviceTier;
-  return {
-    selectedModel: initial.selectedModel,
-    codexServiceTier: serviceTier === "priority" ? "fast" : null,
-  };
-}
+);
 
 const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
@@ -185,23 +188,26 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return notFound("Agent not found");
   }
 
-  const writeDb = set(writeDb$);
   const connectorSelections = body.data.connectorSelections ?? [];
-  const { selectedModel, codexServiceTier } = await initialThreadModel(
-    writeDb,
+  const { selectedModel, codexServiceTier } = await set(
+    initialThreadModel$,
     auth,
     body.data,
+    signal,
   );
   signal.throwIfAborted();
   if (!selectedModel) {
     return badRequestMessage("A model selection is required");
   }
-  const pin = await resolveModelSelectionPin({
-    db: writeDb,
-    orgId: auth.orgId,
-    userId: auth.userId,
-    modelSelection: modelFirstSelection(selectedModel),
-  });
+  const pin = await set(
+    resolveModelSelectionPin$,
+    {
+      orgId: auth.orgId,
+      userId: auth.userId,
+      modelSelection: modelFirstSelection(selectedModel),
+    },
+    signal,
+  );
   signal.throwIfAborted();
   if ("status" in pin) {
     return pin;
@@ -214,10 +220,14 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return codexServiceTierError;
   }
 
-  const defaults = await loadNewChatThreadDefaults(writeDb, {
-    orgId: auth.orgId,
-    userId: auth.userId,
-  });
+  const defaults = await set(
+    loadNewChatThreadDefaults$,
+    {
+      orgId: auth.orgId,
+      userId: auth.userId,
+    },
+    signal,
+  );
   signal.throwIfAborted();
   const effort = resolveChatReasoningEffort({
     selectedModel: pin.selectedModel,

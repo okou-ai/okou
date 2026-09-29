@@ -20,8 +20,8 @@ import type { RouteEntry } from "../route-entry";
 import { getMemberRoleAndUpdateCache$ } from "../services/auth.service";
 import { chatIndicators } from "../services/chat-thread.service";
 import {
-  getMcpChatThread,
-  listMcpChatThreads,
+  getMcpChatThread$,
+  listMcpChatThreads$,
 } from "../services/mcp-chat-threads.service";
 import { getMcpChatMessages } from "../services/mcp-chat-messages.service";
 import { getMcpChatStatus } from "../services/mcp-chat-status.service";
@@ -247,13 +247,13 @@ const serveAuthorizedMcp$ = command(
         },
         listThreads: async (input, readSignal) => {
           return await awaitWithSignal(
-            listMcpChatThreads(set(writeDb$), principal, input),
+            set(listMcpChatThreads$, principal, input, readSignal),
             readSignal,
           );
         },
         getThread: async (input, readSignal) => {
           return await awaitWithSignal(
-            getMcpChatThread(set(writeDb$), principal, input),
+            set(getMcpChatThread$, principal, input, readSignal),
             readSignal,
           );
         },

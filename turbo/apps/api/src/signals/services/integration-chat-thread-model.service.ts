@@ -1,8 +1,7 @@
 import { command } from "ccstate";
 
-import { writeDb$ } from "../external/db";
 import { publishThreadListChanged } from "../external/realtime";
-import { updateChatThreadMetadata } from "./chat-thread-metadata-update.service";
+import { updateChatThreadMetadata$ } from "./chat-thread-metadata-update.service";
 
 type IntegrationChatThreadModelResult =
   | { readonly kind: "updated" }
@@ -28,8 +27,8 @@ export const updateIntegrationChatThreadModel$ = command(
     if (args.chatThreadId === undefined) {
       return { kind: "no_thread" };
     }
-    const result = await updateChatThreadMetadata(
-      set(writeDb$),
+    const result = await set(
+      updateChatThreadMetadata$,
       {
         principal: { userId: args.userId, orgId: args.orgId },
         threadId: args.chatThreadId,

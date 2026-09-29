@@ -1,7 +1,7 @@
 /** Canonical ChatEvent write commands. */
 import type { ChatInputModelSelection } from "@okouai/api-contracts/contracts/chat-input-model";
-import { resolveChatInputModelSelection } from "./chat-input-model.service";
-import { resolveRequiredDefaultChatThreadModelPin } from "./chat-thread-model.service";
+import { resolveChatInputModelSelection$ } from "./chat-input-model.service";
+import { resolveRequiredDefaultChatThreadModelPin$ } from "./chat-thread-model.service";
 import { randomUUID } from "node:crypto";
 import { linkLayoutSegment } from "@okouai/api-contracts/contracts/link-layout";
 import { command, type Computed } from "ccstate";
@@ -58,7 +58,7 @@ import {
   type CancelRunResult,
 } from "./run-cancel.service";
 import { isCodexFastServiceTierSupported } from "./model-selection.service";
-import { loadNewChatThreadDefaults } from "./chat-thread-defaults.service";
+import { loadNewChatThreadDefaults$ } from "./chat-thread-defaults.service";
 import {
   appendChatThreadCreatedEvent,
   insertChatThread,
@@ -708,59 +708,66 @@ function requestedThreadRunSettings(
  * explicitly selected host is looked up: it is written to the thread, so it
  * must belong to the caller. The pick re-checks the thread's host.
  */
-async function requestedThreadComputerAccess(params: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly body: NormalSendBody;
-  readonly current: ThreadComputerAccess;
-}): Promise<ThreadComputerAccess | ReturnType<typeof notFound>> {
-  const explicitHost = Object.prototype.hasOwnProperty.call(
-    params.body,
-    "computerUseHostId",
-  );
-  const explicitCloudBrowser = Object.prototype.hasOwnProperty.call(
-    params.body,
-    "cloudBrowserEnabled",
-  );
-  if (!explicitHost && !explicitCloudBrowser) {
-    return {
-      computerUseHostId: params.current.computerUseHostId,
-      cloudBrowserEnabled: params.current.cloudBrowserEnabled,
-    };
-  }
-  const cloudBrowserEnabled = explicitCloudBrowser
-    ? (params.body.cloudBrowserEnabled ?? false)
-    : params.current.cloudBrowserEnabled;
-  const requestedHostId = explicitHost
-    ? (params.body.computerUseHostId ?? null)
-    : params.current.computerUseHostId;
-  if (explicitCloudBrowser && cloudBrowserEnabled) {
-    return { computerUseHostId: null, cloudBrowserEnabled: true };
-  }
-  if (!requestedHostId) {
-    return { computerUseHostId: null, cloudBrowserEnabled };
-  }
-  if (!explicitHost) {
-    return { computerUseHostId: requestedHostId, cloudBrowserEnabled: false };
-  }
-  const [host] = await params.db
-    .select({ id: computerUseHosts.id })
-    .from(computerUseHosts)
-    .where(
-      and(
-        eq(computerUseHosts.id, requestedHostId),
-        eq(computerUseHosts.orgId, params.orgId),
-        eq(computerUseHosts.userId, params.userId),
-        isNull(computerUseHosts.revokedAt),
-      ),
-    )
-    .limit(1);
-  if (!host) {
-    return notFound("Computer-use host not found");
-  }
-  return { computerUseHostId: host.id, cloudBrowserEnabled: false };
-}
+const requestedThreadComputerAccess$ = command(
+  async (
+    { set },
+    params: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly body: NormalSendBody;
+      readonly current: ThreadComputerAccess;
+    },
+    signal: AbortSignal,
+  ): Promise<ThreadComputerAccess | ReturnType<typeof notFound>> => {
+    const db = set(writeDb$);
+    const explicitHost = Object.prototype.hasOwnProperty.call(
+      params.body,
+      "computerUseHostId",
+    );
+    const explicitCloudBrowser = Object.prototype.hasOwnProperty.call(
+      params.body,
+      "cloudBrowserEnabled",
+    );
+    if (!explicitHost && !explicitCloudBrowser) {
+      return {
+        computerUseHostId: params.current.computerUseHostId,
+        cloudBrowserEnabled: params.current.cloudBrowserEnabled,
+      };
+    }
+    const cloudBrowserEnabled = explicitCloudBrowser
+      ? (params.body.cloudBrowserEnabled ?? false)
+      : params.current.cloudBrowserEnabled;
+    const requestedHostId = explicitHost
+      ? (params.body.computerUseHostId ?? null)
+      : params.current.computerUseHostId;
+    if (explicitCloudBrowser && cloudBrowserEnabled) {
+      return { computerUseHostId: null, cloudBrowserEnabled: true };
+    }
+    if (!requestedHostId) {
+      return { computerUseHostId: null, cloudBrowserEnabled };
+    }
+    if (!explicitHost) {
+      return { computerUseHostId: requestedHostId, cloudBrowserEnabled: false };
+    }
+    const [host] = await db
+      .select({ id: computerUseHosts.id })
+      .from(computerUseHosts)
+      .where(
+        and(
+          eq(computerUseHosts.id, requestedHostId),
+          eq(computerUseHosts.orgId, params.orgId),
+          eq(computerUseHosts.userId, params.userId),
+          isNull(computerUseHosts.revokedAt),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!host) {
+      return notFound("Computer-use host not found");
+    }
+    return { computerUseHostId: host.id, cloudBrowserEnabled: false };
+  },
+);
 
 interface ExistingSendThread {
   readonly kind: "existing";
@@ -781,92 +788,100 @@ interface NewSendThread {
 
 type SendThread = ExistingSendThread | NewSendThread;
 
-async function resolveExistingSendThread(
-  db: Db,
-  args: NormalSendArgs,
-  thread: ExistingSendThreadRow,
-  agentId: string,
-): Promise<ExistingSendThread | NormalSendFailure> {
-  const current = {
-    selectedModel: thread.selectedModel,
-    modelSettings: modelSettingsSchema.parse(thread.modelSettings),
-    modelSettingsPatch: undefined,
-    codexServiceTier: thread.codexServiceTier,
-    computerUseHostId: thread.computerUseHostId,
-    cloudBrowserEnabled: thread.cloudBrowserEnabled,
-  };
-  const runSettings = requestedThreadRunSettings(args.body, current);
-  if ("status" in runSettings) {
-    return runSettings;
-  }
-  const computerAccess = await requestedThreadComputerAccess({
-    db,
-    orgId: args.orgId,
-    userId: args.userId,
-    body: args.body,
-    current,
-  });
-  if ("status" in computerAccess) {
-    return computerAccess;
-  }
-  return {
-    kind: "existing",
-    threadId: thread.id,
-    agentId,
-    runSettings,
-    computerAccess,
-    current,
-  };
-}
-
-async function resolveNewSendThread(
-  db: Db,
-  args: NormalSendArgs,
-  orgPlanCapabilities: OrgPlanCapabilities | null | undefined,
-): Promise<NewSendThread | NormalSendFailure> {
-  if (args.body.revokesEventId !== undefined) {
-    return badRequestMessage("Recommended follow-up is no longer available");
-  }
-  const member = { orgId: args.orgId, userId: args.userId };
-  const initialModel =
-    args.body.model === undefined
-      ? await resolveRequiredDefaultChatThreadModelPin(
-          db,
-          member,
-          orgPlanCapabilities,
-        )
-      : null;
-  const defaults = await loadNewChatThreadDefaults(db, member);
-  const runSettings = requestedThreadRunSettings(args.body, {
-    selectedModel: initialModel?.selectedModel ?? null,
-    modelSettings: defaults.modelSettings,
-    codexServiceTier: initialModel?.serviceTier === "priority" ? "fast" : null,
-  });
-  if ("status" in runSettings) {
-    return runSettings;
-  }
-  const computerAccess = await requestedThreadComputerAccess({
-    db,
-    ...member,
-    body: args.body,
-    current: {
-      computerUseHostId: null,
-      cloudBrowserEnabled:
-        args.body.computerUseHostId === undefined &&
-        defaults.cloudBrowserEnabled,
+const resolveSendThread$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly body: NormalSendBody;
+      readonly existing?: {
+        readonly thread: ExistingSendThreadRow;
+        readonly agentId: string;
+      };
+      readonly orgPlanCapabilities: OrgPlanCapabilities | null | undefined;
     },
-  });
-  if ("status" in computerAccess) {
-    return computerAccess;
-  }
-  return {
-    kind: "new",
-    threadId: args.body.clientThreadId ?? randomUUID(),
-    clientThreadId: args.body.clientThreadId,
-    runSettings,
-    computerAccess,
-  };
-}
+    signal: AbortSignal,
+  ): Promise<SendThread | NormalSendFailure> => {
+    const member = { orgId: args.orgId, userId: args.userId };
+    if (args.existing) {
+      const current = {
+        ...args.existing.thread,
+        modelSettings: modelSettingsSchema.parse(
+          args.existing.thread.modelSettings,
+        ),
+        modelSettingsPatch: undefined,
+      };
+      const runSettings = requestedThreadRunSettings(args.body, current);
+      if ("status" in runSettings) {
+        return runSettings;
+      }
+      const computerAccess = await set(
+        requestedThreadComputerAccess$,
+        { ...member, body: args.body, current },
+        signal,
+      );
+      if ("status" in computerAccess) {
+        return computerAccess;
+      }
+      return {
+        kind: "existing",
+        threadId: args.existing.thread.id,
+        agentId: args.existing.agentId,
+        runSettings,
+        computerAccess,
+        current,
+      };
+    }
+    if (args.body.revokesEventId !== undefined) {
+      return badRequestMessage("Recommended follow-up is no longer available");
+    }
+    const initialModel =
+      args.body.model === undefined
+        ? await set(
+            resolveRequiredDefaultChatThreadModelPin$,
+            member,
+            args.orgPlanCapabilities,
+            signal,
+          )
+        : null;
+    const defaults = await set(loadNewChatThreadDefaults$, member, signal);
+    signal.throwIfAborted();
+    const runSettings = requestedThreadRunSettings(args.body, {
+      selectedModel: initialModel?.selectedModel ?? null,
+      modelSettings: defaults.modelSettings,
+      codexServiceTier:
+        initialModel?.serviceTier === "priority" ? "fast" : null,
+    });
+    if ("status" in runSettings) {
+      return runSettings;
+    }
+    const computerAccess = await set(
+      requestedThreadComputerAccess$,
+      {
+        ...member,
+        body: args.body,
+        current: {
+          computerUseHostId: null,
+          cloudBrowserEnabled:
+            args.body.computerUseHostId === undefined &&
+            defaults.cloudBrowserEnabled,
+        },
+      },
+      signal,
+    );
+    if ("status" in computerAccess) {
+      return computerAccess;
+    }
+    return {
+      kind: "new",
+      threadId: args.body.clientThreadId ?? randomUUID(),
+      clientThreadId: args.body.clientThreadId,
+      runSettings,
+      computerAccess,
+    };
+  },
+);
 
 /**
  * The minimal new thread row, written in the enqueue transaction with its
@@ -1231,11 +1246,12 @@ async function appendNormalSendInput(
 async function prepareNormalSend(
   db: Db,
   args: NormalSendArgs,
-  orgPlanCapabilities: OrgPlanCapabilities | null | undefined,
   signal: AbortSignal,
 ): Promise<
   | {
-      readonly thread: SendThread;
+      readonly authorized:
+        | Awaited<ReturnType<typeof loadAuthorizedAgent>>
+        | Awaited<ReturnType<typeof loadAuthorizedExistingSendThread>>;
       readonly agentRunSource: ChatAgentRunSourceAnnotation | null;
     }
   | NormalSendFailure
@@ -1287,32 +1303,7 @@ async function prepareNormalSend(
   if (invalidTemplate) {
     return invalidTemplate;
   }
-  const thread =
-    "thread" in authorized
-      ? await resolveExistingSendThread(
-          db,
-          args,
-          authorized.thread,
-          authorized.agent.id,
-        )
-      : await resolveNewSendThread(db, args, orgPlanCapabilities);
-  signal.throwIfAborted();
-  if ("status" in thread) {
-    return thread;
-  }
-  if (thread.kind === "existing") {
-    const revocation = await validateNormalRevocationTarget({
-      db,
-      threadId: thread.threadId,
-      revokesEventId: args.body.revokesEventId,
-      clientEventId: args.body.clientEventId,
-    });
-    signal.throwIfAborted();
-    if (revocation) {
-      return revocation;
-    }
-  }
-  return { thread, agentRunSource: source.source };
+  return { authorized, agentRunSource: source.source };
 }
 
 /** A direct user message moves its thread's sidebar recency after the pick. */
@@ -1342,6 +1333,71 @@ function normalSendThreadTouch(
   };
 }
 
+const prepareNormalSendInput$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly body: NormalSendBody;
+      readonly runSettings: ThreadRunSettings;
+      readonly orgPlanCapabilities: OrgPlanCapabilities | null | undefined;
+    },
+    signal: AbortSignal,
+  ) => {
+    const attachFileMetadata = await set(
+      resolveIncomingAttachFileMetadata$,
+      {
+        userId: args.userId,
+        orgId: args.orgId,
+        userMessage: args.body.userMessage,
+      },
+      signal,
+    );
+    const modelSelection = await set(
+      resolveChatInputModelSelection$,
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+        ...args.runSettings,
+        reasoningEffort: args.body.runOptions?.reasoningEffort,
+        orgPlanCapabilities: args.orgPlanCapabilities,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if ("status" in modelSelection) {
+      return modelSelection;
+    }
+    return { attachFileMetadata, modelSelection };
+  },
+);
+
+function preparedNormalSendEvent(
+  args: NormalSendArgs,
+  threadId: string,
+  modelSelection: Parameters<typeof normalSendEvent>[0]["modelSelection"],
+  agentRunSource: ChatAgentRunSourceAnnotation | null,
+) {
+  return normalSendEvent({
+    modelSelection,
+    id: args.body.clientEventId ?? randomUUID(),
+    threadId: threadId,
+    userMessage:
+      agentRunSource !== null
+        ? withAgentRunSourceAnnotation(args.body.userMessage, agentRunSource)
+        : args.mcpSource === undefined
+          ? args.body.userMessage
+          : {
+              ...args.body.userMessage,
+              parts: [...args.body.userMessage.parts, args.mcpSource],
+            },
+    triggerSource: normalSendTriggerSource(args.auth),
+    agentRunSource,
+    requiredOfficialWorkflowIds: args.requiredOfficialWorkflowIds,
+  });
+}
+
 /**
  * Direct send, shared by the web, the CLI, and MCP: authorize the agent and
  * thread, validate a follow-up revocation, record attachment references, then
@@ -1353,6 +1409,23 @@ function normalSendThreadTouch(
  * pick; a rejection appears in the thread as `input.rejected`. A direct
  * message's sidebar touch runs after the pick.
  */
+function settledNormalSendResponse(
+  body: NormalSendBody,
+  threadId: string,
+  createdAt: Date | null,
+) {
+  if (createdAt === null) {
+    // A conflict on the insert is accepted as a duplicate without a
+    // lookup. Only a follow-up with a server-generated id cannot have
+    // collided on its id, so its conflict is the revoke edge taken
+    // concurrently.
+    return body.revokesEventId && body.clientEventId === undefined
+      ? conflict("Recommended follow-up has already been used")
+      : acceptedSendResponse(threadId, nowDate(), true);
+  }
+  return acceptedSendResponse(threadId, createdAt, false);
+}
+
 export const sendNormalEvent$ = command(
   async (
     { get, set },
@@ -1365,53 +1438,65 @@ export const sendNormalEvent$ = command(
         ? undefined
         : await get(args.orgPlanCapabilities$);
     signal.throwIfAborted();
-    const prepared = await prepareNormalSend(
-      db,
-      args,
-      orgPlanCapabilities,
-      signal,
-    );
+    const prepared = await prepareNormalSend(db, args, signal);
     if ("status" in prepared) {
       return prepared;
     }
-    const { thread, agentRunSource } = prepared;
-    const attachFileMetadata = await set(
-      resolveIncomingAttachFileMetadata$,
+    const { authorized, agentRunSource } = prepared;
+    if ("status" in authorized) {
+      return authorized;
+    }
+    const thread = await set(
+      resolveSendThread$,
       {
-        userId: args.userId,
         orgId: args.orgId,
-        userMessage: args.body.userMessage,
+        userId: args.userId,
+        body: args.body,
+        orgPlanCapabilities,
+        existing:
+          "thread" in authorized
+            ? { thread: authorized.thread, agentId: authorized.agent.id }
+            : undefined,
       },
       signal,
     );
-    const modelSelection = await resolveChatInputModelSelection(db, {
-      orgId: args.orgId,
-      userId: args.userId,
-      ...thread.runSettings,
-      reasoningEffort: args.body.runOptions?.reasoningEffort,
-      orgPlanCapabilities,
-    });
     signal.throwIfAborted();
-    if ("status" in modelSelection) {
-      return modelSelection;
+    if ("status" in thread) {
+      return thread;
     }
-    const event = normalSendEvent({
+    if (thread.kind === "existing") {
+      const revocation = await validateNormalRevocationTarget({
+        db,
+        threadId: thread.threadId,
+        revokesEventId: args.body.revokesEventId,
+        clientEventId: args.body.clientEventId,
+      });
+      signal.throwIfAborted();
+      if (revocation) {
+        return revocation;
+      }
+    }
+    const input = await set(
+      prepareNormalSendInput$,
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+        body: args.body,
+        runSettings: thread.runSettings,
+        orgPlanCapabilities,
+      },
+      signal,
+    );
+    if ("status" in input) {
+      return input;
+    }
+    const { attachFileMetadata, modelSelection } = input;
+    const event = preparedNormalSendEvent(
+      args,
+      thread.threadId,
       modelSelection,
-      id: args.body.clientEventId ?? randomUUID(),
-      threadId: thread.threadId,
-      userMessage:
-        agentRunSource !== null
-          ? withAgentRunSourceAnnotation(args.body.userMessage, agentRunSource)
-          : args.mcpSource === undefined
-            ? args.body.userMessage
-            : {
-                ...args.body.userMessage,
-                parts: [...args.body.userMessage.parts, args.mcpSource],
-              },
-      triggerSource: normalSendTriggerSource(args.auth),
       agentRunSource,
-      requiredOfficialWorkflowIds: args.requiredOfficialWorkflowIds,
-    });
+    );
     const member = { userId: args.userId, orgId: args.orgId };
     const enqueued = await settle(
       (async () => {
@@ -1464,16 +1549,11 @@ export const sendNormalEvent$ = command(
       }
       throw enqueued.error;
     }
-    if (enqueued.value === null) {
-      // A conflict on the insert is accepted as a duplicate without a
-      // lookup. Only a follow-up with a server-generated id cannot have
-      // collided on its id, so its conflict is the revoke edge taken
-      // concurrently.
-      return args.body.revokesEventId && args.body.clientEventId === undefined
-        ? conflict("Recommended follow-up has already been used")
-        : acceptedSendResponse(thread.threadId, nowDate(), true);
-    }
-    return acceptedSendResponse(thread.threadId, enqueued.value, false);
+    return settledNormalSendResponse(
+      args.body,
+      thread.threadId,
+      enqueued.value,
+    );
   },
 );
 
