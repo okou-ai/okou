@@ -12,7 +12,7 @@ import { Buffer } from "node:buffer";
 import { createHash, randomBytes } from "node:crypto";
 
 import { command } from "ccstate";
-import { and, eq, exists } from "drizzle-orm";
+import { and, eq, exists, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   mcpOAuthScopeListSchema,
@@ -1380,6 +1380,7 @@ async function replaceConnectionTokens(args: {
 }): Promise<
   | { readonly kind: "replaced"; readonly encryptedAccessToken: string }
   | { readonly kind: "identity-mismatch" }
+  | { readonly kind: "publication-lost" }
 > {
   const identity = resolveRefreshedOAuthIdentity(
     args.storedIdentity,
@@ -1389,41 +1390,52 @@ async function replaceConnectionTokens(args: {
     return { kind: "identity-mismatch" };
   }
   const encrypted = await encryptTokenValues(args);
-  await args.db
-    .update(connectors)
-    .set({
-      tokenExpiresAt: args.token.expiresAt,
-      needsReconnect: false,
-      reconnectReason: null,
-      ...(args.token.scopes === null
-        ? {}
-        : { oauthScopes: JSON.stringify(args.token.scopes) }),
-      ...(identity.kind === "update"
-        ? {
-            externalId: identity.externalId,
-            externalUsername: identity.externalUsername,
-            externalEmail: identity.externalEmail,
-          }
-        : {}),
-      updatedAt: nowDate(),
-    })
-    .where(
-      and(
-        eq(connectors.id, args.connectionId),
-        eq(connectors.orgId, args.orgId),
-        eq(connectors.userId, args.userId),
-      ),
+  return await args.db.transaction(async (tx) => {
+    const [claimed] = await tx
+      .update(connectors)
+      .set({
+        tokenExpiresAt: args.token.expiresAt,
+        needsReconnect: false,
+        reconnectReason: null,
+        ...(args.token.scopes === null
+          ? {}
+          : { oauthScopes: JSON.stringify(args.token.scopes) }),
+        ...(identity.kind === "update"
+          ? {
+              externalId: identity.externalId,
+              externalUsername: identity.externalUsername,
+              externalEmail: identity.externalEmail,
+            }
+          : {}),
+        updatedAt: nowDate(),
+      })
+      .where(
+        and(
+          eq(connectors.id, args.connectionId),
+          eq(connectors.orgId, args.orgId),
+          eq(connectors.userId, args.userId),
+          storedRefreshTokenCondition(
+            args.connectionId,
+            args.storedIdentity.encryptedRefreshToken,
+          ),
+        ),
+      )
+      .returning({ id: connectors.id });
+    if (!claimed) {
+      return { kind: "publication-lost" } as const;
+    }
+    await tx.delete(secrets).where(eq(secrets.connectorId, args.connectionId));
+    await tx.insert(secrets).values(
+      connectionTokenRows({
+        ...args,
+        encrypted,
+      }),
     );
-  await args.db
-    .delete(secrets)
-    .where(eq(secrets.connectorId, args.connectionId));
-  await args.db.insert(secrets).values(
-    connectionTokenRows({
-      ...args,
-      encrypted,
-    }),
-  );
-  return { kind: "replaced", encryptedAccessToken: encrypted.accessToken };
+    return {
+      kind: "replaced",
+      encryptedAccessToken: encrypted.accessToken,
+    } as const;
+  });
 }
 
 export async function lockCustomConnectorOAuth2CredentialContract(args: {
@@ -1628,7 +1640,6 @@ async function loadConnection(args: {
   readonly memberConnectorId: string;
   readonly storageVersion: number;
   readonly definitionAuthMode: "oauth" | "automatic";
-  readonly lockRow?: boolean;
 }): Promise<StoredConnection | null> {
   const query = args.db
     .select({
@@ -1664,9 +1675,7 @@ async function loadConnection(args: {
         ),
       ),
     );
-  const rows = args.lockRow
-    ? await query.for("update").limit(1)
-    : await query.limit(1);
+  const rows = await query.limit(1);
   const connection = rows[0];
   if (!connection) {
     return null;
@@ -1771,15 +1780,45 @@ export class CustomConnectorOAuth2TokenRefreshError extends Error {
   }
 }
 
+/**
+ * Refresh publication decides by the refresh token it consumed: any reconnect
+ * or concurrent refresh replaces that secret row (KMS ciphertext is never
+ * reused), so a stale result or failure cannot overwrite the newer credential.
+ */
+function storedRefreshTokenCondition(
+  connectorId: string,
+  encryptedRefreshToken: string | null,
+) {
+  const refreshRow = and(
+    eq(secrets.connectorId, connectorId),
+    eq(secrets.name, CUSTOM_CONNECTOR_OAUTH_REFRESH_TOKEN_SECRET_NAME),
+  );
+  const observed = sql`EXISTS (SELECT 1 FROM ${secrets} WHERE ${refreshRow}`;
+  return encryptedRefreshToken === null
+    ? sql`NOT ${observed})`
+    : sql`${observed} AND ${secrets.encryptedValue} = ${encryptedRefreshToken})`;
+}
+
 async function markCustomConnectorNeedsReconnect(
   db: Db,
   connectorId: string,
   reconnectReason: "missing_refresh_token" | "authorization_expired_or_revoked",
+  observedEncryptedRefreshToken?: string | null,
 ): Promise<void> {
   await db
     .update(connectors)
     .set({ needsReconnect: true, reconnectReason, updatedAt: nowDate() })
-    .where(eq(connectors.id, connectorId));
+    .where(
+      and(
+        eq(connectors.id, connectorId),
+        observedEncryptedRefreshToken === undefined
+          ? undefined
+          : storedRefreshTokenCondition(
+              connectorId,
+              observedEncryptedRefreshToken,
+            ),
+      ),
+    );
 }
 
 async function storeRefreshedConnectionTokens(
@@ -1793,7 +1832,10 @@ async function storeRefreshedConnectionTokens(
     readonly featureContext: FeatureSwitchContext;
   },
   signal: AbortSignal,
-): Promise<CustomConnectorOAuth2AccessTokenResolution> {
+): Promise<
+  | CustomConnectorOAuth2AccessTokenResolution
+  | { readonly kind: "publication-lost" }
+> {
   const replacement = await replaceConnectionTokens({
     db: args.db,
     connectionId: args.connection.id,
@@ -1805,11 +1847,15 @@ async function storeRefreshedConnectionTokens(
     fallbackEncryptedIdToken: args.connection.encryptedIdToken ?? undefined,
     featureContext: args.featureContext,
   });
+  if (replacement.kind === "publication-lost") {
+    return replacement;
+  }
   if (replacement.kind === "identity-mismatch") {
     await markCustomConnectorNeedsReconnect(
       args.db,
       args.connection.id,
       "authorization_expired_or_revoked",
+      args.connection.encryptedRefreshToken,
     );
     return { kind: "reconnect-required" };
   }
@@ -1832,9 +1878,25 @@ interface ResolveCustomConnectorOAuth2AccessTokenArgs {
   readonly forceRefresh?: boolean;
 }
 
+/**
+ * A concurrent refresh or reconnect won publication. Serve its credential when
+ * usable; otherwise report the credential unavailable for this request.
+ */
+function currentAfterLostPublication(
+  current: StoredConnection | null,
+): CustomConnectorOAuth2AccessTokenResolution {
+  if (!current || current.needsReconnect) {
+    return { kind: "unavailable" };
+  }
+  const accessToken = storedConnectionAccessToken(current);
+  return accessToken.kind === "available" &&
+    connectionAccessTokenIsCurrent(current)
+    ? accessToken
+    : { kind: "unavailable" };
+}
+
 async function loadCustomOAuthConnection(
   args: ResolveCustomConnectorOAuth2AccessTokenArgs,
-  lockRow = false,
 ): Promise<StoredConnection | null> {
   return await loadConnection({
     db: args.db,
@@ -1844,7 +1906,6 @@ async function loadCustomOAuthConnection(
     memberConnectorId: args.memberConnectorId,
     storageVersion: args.connector.storageVersion,
     definitionAuthMode: "oauth",
-    lockRow,
   });
 }
 
@@ -1870,95 +1931,81 @@ async function resolveCustomConnectorOAuth2AccessToken(
   ) {
     return accessToken;
   }
-  return await args.db.transaction(async (tx) => {
-    const lockedConnection = await loadCustomOAuthConnection(
-      { ...args, db: tx },
-      true,
+  // Ordinary refresh: KMS and provider HTTP run outside any transaction and
+  // publication compares the consumed refresh token (see replaceConnectionTokens).
+  if (!connection.encryptedRefreshToken) {
+    await markCustomConnectorNeedsReconnect(
+      args.db,
+      connection.id,
+      "missing_refresh_token",
+      null,
     );
-    signal.throwIfAborted();
-    if (!lockedConnection) {
-      return { kind: "unavailable" };
-    }
-    const lockedAccessToken = storedConnectionAccessToken(lockedConnection);
-    const recoveredSinceInitialRead =
-      connection.needsReconnect ||
-      accessToken.kind !== "available" ||
-      (lockedAccessToken.kind === "available" &&
-        lockedAccessToken.encryptedAccessToken !==
-          accessToken.encryptedAccessToken);
-    if (
-      !lockedConnection.needsReconnect &&
-      lockedAccessToken.kind === "available" &&
-      (!args.forceRefresh || recoveredSinceInitialRead) &&
-      connectionAccessTokenIsCurrent(lockedConnection)
-    ) {
-      return lockedAccessToken;
-    }
-    if (!lockedConnection.encryptedRefreshToken) {
-      await markCustomConnectorNeedsReconnect(
-        tx,
-        lockedConnection.id,
-        "missing_refresh_token",
-      );
-      return { kind: "reconnect-required" };
-    }
-    const [credentials, refreshToken] = await Promise.all([
-      decryptCustomConnectorOAuth2Credentials(
-        args.connector,
-        args.featureContext,
-      ),
-      decryptStoredSecretValue(
-        lockedConnection.encryptedRefreshToken,
-        args.featureContext,
-      ),
-    ]);
-    signal.throwIfAborted();
-    if (!credentials) {
-      return { kind: "unavailable" };
-    }
-    const refreshResult = await settle(
-      refreshCustomConnectorOAuth2Token(
-        {
-          config: oauthConfig,
-          clientSecret: credentials.clientSecret,
-          refreshToken,
-        },
-        signal,
-      ),
-    );
-    if (!refreshResult.ok) {
-      if (
-        !isOAuthProviderHttpError(refreshResult.error) ||
-        refreshResult.error.oauthError !== "invalid_grant"
-      ) {
-        throw new CustomConnectorOAuth2TokenRefreshError(refreshResult.error);
-      }
-      await markCustomConnectorNeedsReconnect(
-        tx,
-        lockedConnection.id,
-        "authorization_expired_or_revoked",
-      );
-      return { kind: "reconnect-required" };
-    }
-    signal.throwIfAborted();
-    return await storeRefreshedConnectionTokens(
+    return { kind: "reconnect-required" };
+  }
+  const [credentials, refreshToken] = await Promise.all([
+    decryptCustomConnectorOAuth2Credentials(
+      args.connector,
+      args.featureContext,
+    ),
+    decryptStoredSecretValue(
+      connection.encryptedRefreshToken,
+      args.featureContext,
+    ),
+  ]);
+  signal.throwIfAborted();
+  if (!credentials) {
+    return { kind: "unavailable" };
+  }
+  const refreshResult = await settle(
+    refreshCustomConnectorOAuth2Token(
       {
-        db: tx,
-        orgId: args.orgId,
-        userId: args.userId,
-        connection: lockedConnection,
-        token: refreshResult.value,
-        fallbackRefreshToken: refreshToken,
-        featureContext: args.featureContext,
+        config: oauthConfig,
+        clientSecret: credentials.clientSecret,
+        refreshToken,
       },
       signal,
+    ),
+  );
+  if (!refreshResult.ok) {
+    if (
+      !isOAuthProviderHttpError(refreshResult.error) ||
+      refreshResult.error.oauthError !== "invalid_grant"
+    ) {
+      throw new CustomConnectorOAuth2TokenRefreshError(refreshResult.error);
+    }
+    await markCustomConnectorNeedsReconnect(
+      args.db,
+      connection.id,
+      "authorization_expired_or_revoked",
+      connection.encryptedRefreshToken,
     );
-  });
+    return { kind: "reconnect-required" };
+  }
+  signal.throwIfAborted();
+  const stored = await storeRefreshedConnectionTokens(
+    {
+      db: args.db,
+      orgId: args.orgId,
+      userId: args.userId,
+      connection,
+      token: refreshResult.value,
+      fallbackRefreshToken: refreshToken,
+      featureContext: args.featureContext,
+    },
+    signal,
+  );
+  if (stored.kind !== "publication-lost") {
+    return stored;
+  }
+  const current = await loadCustomOAuthConnection(args);
+  signal.throwIfAborted();
+  return currentAfterLostPublication(current);
 }
 
 async function handleAutomaticOAuthRefreshFailure(args: {
   readonly db: Db;
   readonly connectionId: string;
+  readonly observedEncryptedRefreshToken: string;
   readonly binding: CustomConnectorAutomaticOAuthBinding;
   readonly error: unknown;
 }): Promise<{ readonly kind: "reconnect-required" }> {
@@ -1982,6 +2029,7 @@ async function handleAutomaticOAuthRefreshFailure(args: {
       args.db,
       args.connectionId,
       "authorization_expired_or_revoked",
+      args.observedEncryptedRefreshToken,
     );
     return { kind: "reconnect-required" };
   }
@@ -1994,68 +2042,47 @@ async function handleAutomaticOAuthRefreshFailure(args: {
   throw args.error;
 }
 
-async function refreshLockedAutomaticOAuthAccessToken(
+/**
+ * Ordinary refresh for an automatic custom connector: binding/registration
+ * reads, KMS and provider HTTP run outside any transaction; publication
+ * compares the consumed refresh token.
+ */
+async function refreshAutomaticOAuthAccessToken(
   context: {
-    readonly db: Db;
     readonly args: ResolveCustomConnectorOAuth2AccessTokenArgs;
     readonly connector: CustomConnectorRow & {
       readonly kind: "mcp";
       readonly authMode: "automatic";
     };
-    readonly initialConnection: StoredConnection;
-    readonly initialAccessToken: ReturnType<typeof storedConnectionAccessToken>;
+    readonly connection: StoredConnection;
   },
   signal: AbortSignal,
-): Promise<CustomConnectorOAuth2AccessTokenResolution> {
-  const { db, args, connector, initialConnection, initialAccessToken } =
-    context;
-  const lockedConnection = await loadConnection({
-    db,
-    orgId: args.orgId,
-    userId: args.userId,
-    customConnectorId: connector.id,
-    memberConnectorId: args.memberConnectorId,
-    storageVersion: connector.storageVersion,
-    definitionAuthMode: "automatic",
-    lockRow: true,
-  });
-  signal.throwIfAborted();
-  if (!lockedConnection) {
-    return { kind: "unavailable" };
-  }
-  const lockedAccessToken = storedConnectionAccessToken(lockedConnection);
-  const recoveredSinceInitialRead =
-    initialConnection.needsReconnect ||
-    initialAccessToken.kind !== "available" ||
-    (lockedAccessToken.kind === "available" &&
-      lockedAccessToken.encryptedAccessToken !==
-        initialAccessToken.encryptedAccessToken);
-  if (
-    !lockedConnection.needsReconnect &&
-    lockedAccessToken.kind === "available" &&
-    (!args.forceRefresh || recoveredSinceInitialRead) &&
-    connectionAccessTokenIsCurrent(lockedConnection)
-  ) {
-    return lockedAccessToken;
-  }
-  if (!lockedConnection.encryptedRefreshToken) {
+): Promise<
+  | CustomConnectorOAuth2AccessTokenResolution
+  | { readonly kind: "publication-lost" }
+> {
+  const { args, connector, connection } = context;
+  const db = args.db;
+  if (!connection.encryptedRefreshToken) {
     await markCustomConnectorNeedsReconnect(
       db,
-      lockedConnection.id,
+      connection.id,
       "missing_refresh_token",
+      null,
     );
     return { kind: "reconnect-required" };
   }
   const binding = await readCustomConnectorAutomaticOAuthBinding(
     db,
-    lockedConnection.id,
+    connection.id,
   );
   signal.throwIfAborted();
   if (!binding) {
     await markCustomConnectorNeedsReconnect(
       db,
-      lockedConnection.id,
+      connection.id,
       "authorization_expired_or_revoked",
+      connection.encryptedRefreshToken,
     );
     return { kind: "reconnect-required" };
   }
@@ -2068,7 +2095,7 @@ async function refreshLockedAutomaticOAuthAccessToken(
     return { kind: "reconnect-required" };
   }
   const refreshToken = await decryptStoredSecretValue(
-    lockedConnection.encryptedRefreshToken,
+    connection.encryptedRefreshToken,
     args.featureContext,
   );
   signal.throwIfAborted();
@@ -2095,7 +2122,8 @@ async function refreshLockedAutomaticOAuthAccessToken(
   if (!refreshResult.ok) {
     return await handleAutomaticOAuthRefreshFailure({
       db,
-      connectionId: lockedConnection.id,
+      connectionId: connection.id,
+      observedEncryptedRefreshToken: connection.encryptedRefreshToken,
       binding,
       error: refreshResult.error,
     });
@@ -2105,7 +2133,7 @@ async function refreshLockedAutomaticOAuthAccessToken(
       db,
       orgId: args.orgId,
       userId: args.userId,
-      connection: lockedConnection,
+      connection,
       token: refreshResult.value,
       fallbackRefreshToken: refreshToken,
       featureContext: args.featureContext,
@@ -2144,18 +2172,24 @@ async function resolveAutomaticCustomConnectorOAuth2AccessToken(
   ) {
     return accessToken;
   }
-  return await args.db.transaction(async (tx) => {
-    return await refreshLockedAutomaticOAuthAccessToken(
-      {
-        db: tx,
-        args,
-        connector,
-        initialConnection: connection,
-        initialAccessToken: accessToken,
-      },
-      signal,
-    );
+  const refreshed = await refreshAutomaticOAuthAccessToken(
+    { args, connector, connection },
+    signal,
+  );
+  if (refreshed.kind !== "publication-lost") {
+    return refreshed;
+  }
+  const current = await loadConnection({
+    db: args.db,
+    orgId: args.orgId,
+    userId: args.userId,
+    customConnectorId: connector.id,
+    memberConnectorId: args.memberConnectorId,
+    storageVersion: connector.storageVersion,
+    definitionAuthMode: "automatic",
   });
+  signal.throwIfAborted();
+  return currentAfterLostPublication(current);
 }
 
 async function loadLiveCustomConnector(args: {
