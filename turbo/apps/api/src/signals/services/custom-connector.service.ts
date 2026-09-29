@@ -1,7 +1,7 @@
 import { command, computed, type Computed } from "ccstate";
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
-import { and, eq, gte, inArray, lt } from "drizzle-orm";
+import { and, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import {
   isIntegrationManagedCustomConnector,
   isIntegrationManagedCustomConnectorProviderAdapter,
