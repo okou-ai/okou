@@ -5790,11 +5790,11 @@
       "serverNameHint": "e.g. desktop.internal.example.com",
       "system": "System certificate authorities",
       "title": "Server certificate trust",
+      "x509None": "Encrypted without a VNC password (X509None)",
+      "x509NoneHelp": "TLS verifies the server and encrypts this session, but does not authenticate you to the VNC server. Anyone else who can reach that server may control its desktop. SSH protects only the path to the selected SSH host, not access by other clients or an onward hop. Choose this only for an endpoint you control.",
       "x509Plain": "Encrypted username and password (X509Plain)",
       "x509PlainHelp": "Requires VeNCrypt X509Plain. TLS verifies the server before sending the username and password.",
       "x509Vnc": "Encrypted VNC (X509Vnc)",
-      "x509None": "Encrypted without a VNC password (X509None)",
-      "x509NoneHelp": "TLS verifies the server and encrypts this session, but does not authenticate you to the VNC server. Anyone else who can reach that server may control its desktop. SSH protects only the path to the selected SSH host, not access by other clients or an onward hop. Choose this only for an endpoint you control.",
       "x509VncHelp": "Requires VeNCrypt X509Vnc. TLS verifies the server before sending the VNC password."
     },
     "summary_one": "{{count}} host configured",

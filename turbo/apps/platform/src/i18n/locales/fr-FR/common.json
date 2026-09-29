@@ -5873,11 +5873,11 @@
       "serverNameHint": "p. ex. desktop.internal.example.com",
       "system": "Autorités de certification du système",
       "title": "Confiance dans le certificat du serveur",
+      "x509None": "Chiffré sans mot de passe VNC (X509None)",
+      "x509NoneHelp": "TLS vérifie le serveur et chiffre la session, mais ne vous authentifie pas auprès du serveur VNC. Toute autre personne pouvant joindre ce serveur peut contrôler le bureau. SSH protège seulement le trajet vers l’hôte SSH choisi, pas l’accès d’autres clients ni un relais ultérieur. À choisir seulement pour un serveur sous votre contrôle.",
       "x509Plain": "Nom d’utilisateur et mot de passe chiffrés (X509Plain)",
       "x509PlainHelp": "Nécessite VeNCrypt X509Plain. TLS vérifie le serveur avant d’envoyer le nom d’utilisateur et le mot de passe.",
       "x509Vnc": "VNC chiffré (X509Vnc)",
-      "x509None": "Chiffré sans mot de passe VNC (X509None)",
-      "x509NoneHelp": "TLS vérifie le serveur et chiffre la session, mais ne vous authentifie pas auprès du serveur VNC. Toute autre personne pouvant joindre ce serveur peut contrôler le bureau. SSH protège seulement le trajet vers l’hôte SSH choisi, pas l’accès d’autres clients ni un relais ultérieur. À choisir seulement pour un serveur sous votre contrôle.",
       "x509VncHelp": "Nécessite VeNCrypt X509Vnc. TLS vérifie le serveur avant d’envoyer le mot de passe VNC."
     },
     "summary_one": "{{count}} hôte configuré",

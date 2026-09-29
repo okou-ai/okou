@@ -5775,11 +5775,11 @@
       "serverNameHint": "例如 desktop.internal.example.com",
       "system": "系統證書頒發機構",
       "title": "伺服器證書信任",
+      "x509None": "加密連線，無 VNC 密碼（X509None）",
+      "x509NoneHelp": "TLS 會驗證伺服器並加密工作階段，但不會向 VNC 伺服器驗證你的身分。其他能連上該伺服器的人也可能控制桌面。SSH 僅保護到所選 SSH 主機的連線，不能阻止其他用戶端或後續轉送存取。僅為你管理的端點選擇此設定。",
       "x509Plain": "加密的使用者名稱和密碼（X509Plain）",
       "x509PlainHelp": "需要VeNCrypt X509Plain。TLS會在傳送使用者名稱和密碼之前驗證伺服器。",
       "x509Vnc": "加密VNC（X509Vnc）",
-      "x509None": "加密連線，無 VNC 密碼（X509None）",
-      "x509NoneHelp": "TLS 會驗證伺服器並加密工作階段，但不會向 VNC 伺服器驗證你的身分。其他能連上該伺服器的人也可能控制桌面。SSH 僅保護到所選 SSH 主機的連線，不能阻止其他用戶端或後續轉送存取。僅為你管理的端點選擇此設定。",
       "x509VncHelp": "需要VeNCrypt X509Vnc。TLS會在傳送VNC密碼之前驗證伺服器。"
     },
     "summary_one": "已配置{{count}}臺主機",
