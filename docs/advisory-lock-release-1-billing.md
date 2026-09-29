@@ -106,9 +106,15 @@ This is a call-chain inventory, not a count of matching type signatures:
   still owns a transaction-aware callback and propagates it to snapshot guard
   helpers; those interfaces require implementation, not just lock deletion.
 - **Concurrency subscription projection:** the propagated upsert helper is
-  removed. All production writes advance the existing timestamp, and webhook/
-  cron results publish against the exact pre-read value. Only the temporary
-  acquisition helper and Stripe-read compatibility boundary remain. See
+  removed. Invoice and subscription publication commands accept business data,
+  obtain their own database and execute finite SQL directly. Snapshot reads and
+  Stripe I/O happen outside these transactions; a pure SQL builder constructs
+  their retained outgoing-writer advisory acquisition. All production writes
+  advance the existing timestamp, and webhook/cron publication compares its
+  exact pre-read value plus PostgreSQL's existing `xmin` row version. Legacy
+  invoice organization binding, Plan/allowance reconciliation and cron
+  preparation still pass writable databases or transactions to services and
+  remain unfinished ownership work. See
   [the projection protocol and removal gate](advisory-lock-release-1-concurrency-projection.md).
 - **Allocation and plan changes:** preview/claim/finalization, migration, pending
   snapshot, credit-grant and schedule helpers still accept transactions. Their
