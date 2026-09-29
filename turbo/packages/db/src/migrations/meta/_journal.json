@@ -1475,15 +1475,22 @@
     {
       "idx": 1288,
       "version": "7",
-      "when": 1790670371892,
-      "tag": "1288_retire_provisional_billing_purge",
+      "when": 1790661618887,
+      "tag": "1288_drop_retired_agent_grant_tables",
       "breakpoints": true
     },
     {
       "idx": 1289,
       "version": "7",
-      "when": 1790670386144,
-      "tag": "1289_retire_cloudflare_scope_change_trigger",
+      "when": 1790677751876,
+      "tag": "1289_retire_provisional_billing_purge",
+      "breakpoints": true
+    },
+    {
+      "idx": 1290,
+      "version": "7",
+      "when": 1790677760339,
+      "tag": "1290_retire_cloudflare_scope_change_trigger",
       "breakpoints": true
     }
   ]

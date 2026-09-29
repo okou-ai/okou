@@ -182,8 +182,8 @@ history. The prior `1289_google_forms_cursor_detachment` and
 inventory entries. The cursor schema is identical to main.
 
 Drizzle regenerates the two remaining custom migrations from the unchanged main
-journal: `1288_retire_provisional_billing_purge` and
-`1289_retire_cloudflare_scope_change_trigger`. Their SQL is unchanged; all
+journal: `1289_retire_provisional_billing_purge` and
+`1290_retire_cloudflare_scope_change_trigger`. Their SQL is unchanged; all
 historical files through 1287 remain byte-identical. The generated snapshots'
 structural schema matches main exactly. The final zero-trigger and no-new-field
 requirements remain in force, and Forms no longer introduces a trigger removal

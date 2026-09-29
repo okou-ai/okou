@@ -261,9 +261,10 @@ creation, chat host permission, screenshot and bounded input before activation.
 
 Adding or recreating a VNC host does not grant Agent-wide permission or change
 any chat's access. New hosts default off until their owner enables a host
-default or the chat explicitly overrides it. Existing grant rows remain only
-for compatibility with previously deployed APIs during their drain; they do
-not authorize Run access and the owner grant endpoints are retired.
+default or the chat explicitly overrides it. Retired Agent grant rows do not
+authorize Run access and the owner grant endpoints are retired. The physical
+Agent grant tables are removed by the separate #37272 migration; until it is
+actually deployed, old rows may still exist in the database.
 
 Manage VNC access with each saved host's chat default and the chat's `On`, `Off`,
 or `Use default` choice. Direct rows appear in live Run inventory when the Run's
@@ -333,12 +334,13 @@ unchanged; a future rotation must include VNC in its current inventory.
 
 The configuration tables are `vnc_credentials` and `vnc_connections`. Both use the
 organization/user pair as their owner, matching SSH configuration. The retired
-`agent_vnc_access` table remains physically present for older serving API
-versions during the code-only cleanup in PR #37305; current code does not read
-or write it, and only current chat host permission authorizes Run access.
-Physical table removal belongs to #37272 after that API version and its
-rollback floor have advanced. Current membership authorizes access to that
-owner's configuration. If the user leaves and rejoins before cleanup removes
+`agent_vnc_access` table is dropped by migration
+`1288_drop_retired_agent_grant_tables` in #37272, **after** the code-only API
+release in PR #37305 was promoted and older invocations drained. The migration
+is not a production receipt until deployed; current code does not read or
+write the retired table, and only current chat host permission authorizes Run
+access. Rollback to a pre-#37305 API will be unsupported after the drop.
+Current membership authorizes access to that owner's configuration. If the user leaves and rejoins before cleanup removes
 the configuration, it remains the same owner's data and is accessible again.
 Each saved connection retains its own identity across membership changes.
 

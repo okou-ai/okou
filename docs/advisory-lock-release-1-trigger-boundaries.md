@@ -11,7 +11,7 @@ application triggers**, backed by nine distinct trigger functions. PostgreSQL's
 internal constraint triggers are excluded. This is checked-in schema evidence,
 not a live production catalog query. The test constant's historical name is not
 approval to retain these objects in the terminal schema. Migration
-`1289_retire_cloudflare_scope_change_trigger` removes one redundant trigger
+`1290_retire_cloudflare_scope_change_trigger` removes one redundant trigger
 and its function. With the two unshipped Forms triggers withdrawn, eight
 application triggers remain in the proposed R1 schema.
 
@@ -119,7 +119,7 @@ scan or the age of the old migrations cannot establish that gate.
 | Table and trigger                                                | Current business guarantee                                                                                                                | Replacement work                                                                                                    |
 | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | `ssh_connections.ssh_cloudflare_access_binding_guard`            | A shared config read rejects a personal Cloudflare config owned by another user. The separate foreign key protects organization identity. | R1 writers implement the predicate; retirement still needs the historical writer gate below.                        |
-| `cloudflare_access_configs.cloudflare_access_scope_change_guard` | Rejects incompatible scope/owner changes while hosts still reference the config.                                                          | All conversion writers already implement this invariant. Migration 1289 retires it while the binding guard remains. |
+| `cloudflare_access_configs.cloudflare_access_scope_change_guard` | Rejects incompatible scope/owner changes while hosts still reference the config.                                                          | All conversion writers already implement this invariant. Migration 1290 retires it while the binding guard remains. |
 
 Migration 1203 creates both; 1222 updates scope-change behavior. The source audit
 at `29f6115` distinguishes these two boundaries rather than assuming they share
@@ -193,7 +193,7 @@ trigger-side shared config lock and rechecks ownership after a conversion.
 Thus removing only `cloudflare_access_scope_change_guard` and
 `reject_cloudflare_access_scope_change` does not require the foundation API to
 disappear first. Preserve the same-org foreign key and scope/owner check
-constraint. Migration `1289_retire_cloudflare_scope_change_trigger` retires this redundant
+constraint. Migration `1290_retire_cloudflare_scope_change_trigger` retires this redundant
 trigger/function and updates the expected schema inventory. Its metadata was
 generated with Drizzle; migrations 1203/1222 stay unchanged.
 The historical `test-cloudflare-access.ts` migration test applies selected old
