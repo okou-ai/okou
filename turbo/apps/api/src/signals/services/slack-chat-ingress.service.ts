@@ -6,7 +6,7 @@ import {
 import { slackChatThreadRoutes } from "@okouai/db/schema/slack-chat-thread-route";
 import { and, eq, sql } from "drizzle-orm";
 
-import { writeDb$, type Db } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { command } from "ccstate";
 import { randomUUID } from "node:crypto";
 import { loadNewChatThreadDefaults$ } from "./chat-thread-defaults.service";
@@ -230,74 +230,83 @@ interface SlackChatIngressAdmission {
   readonly retryCount: number;
 }
 
-export async function admitCanonicalSlackChatEvent(
-  db: Db,
-  args: {
-    readonly routeId: string;
-    readonly eventId: string;
-    readonly payload: string;
-    readonly isRetry: boolean;
-    readonly currentTime: Date;
+export const admitCanonicalSlackChatEvent$ = command(
+  async (
+    { set },
+    args: {
+      readonly routeId: string;
+      readonly eventId: string;
+      readonly payload: string;
+      readonly isRetry: boolean;
+      readonly currentTime: Date;
+    },
+    signal: AbortSignal,
+  ): Promise<SlackChatIngressAdmission> => {
+    const db = set(writeDb$);
+    const result = await db.transaction(async (tx) => {
+      const [inserted] = await tx
+        .insert(slackChatIngress)
+        .values({
+          routeId: args.routeId,
+          eventId: args.eventId,
+          payload: args.payload,
+          status: "pending",
+          retryCount: args.isRetry ? 1 : 0,
+          createdAt: args.currentTime,
+          updatedAt: args.currentTime,
+        })
+        .onConflictDoNothing({ target: slackChatIngress.eventId })
+        .returning({
+          id: slackChatIngress.id,
+          routeId: slackChatIngress.routeId,
+          status: slackChatIngress.status,
+          retryCount: slackChatIngress.retryCount,
+        });
+      signal.throwIfAborted();
+      if (inserted) {
+        return { ...inserted, inserted: true };
+      }
+
+      const [existing] = await tx
+        .select({
+          id: slackChatIngress.id,
+          routeId: slackChatIngress.routeId,
+          status: slackChatIngress.status,
+          retryCount: slackChatIngress.retryCount,
+        })
+        .from(slackChatIngress)
+        .where(eq(slackChatIngress.eventId, args.eventId))
+        .limit(1);
+      signal.throwIfAborted();
+      if (!existing) {
+        throw new Error("Failed to resolve canonical Slack ingress event");
+      }
+      if (existing.routeId !== args.routeId) {
+        throw new Error("Slack event ID is already bound to another route");
+      }
+      if (!args.isRetry) {
+        return { ...existing, inserted: false };
+      }
+
+      const [retried] = await tx
+        .update(slackChatIngress)
+        .set({
+          retryCount: sql`${slackChatIngress.retryCount} + 1`,
+          updatedAt: args.currentTime,
+        })
+        .where(eq(slackChatIngress.id, existing.id))
+        .returning({
+          id: slackChatIngress.id,
+          status: slackChatIngress.status,
+          retryCount: slackChatIngress.retryCount,
+        });
+      signal.throwIfAborted();
+      if (!retried) {
+        throw new Error("Failed to record canonical Slack ingress retry");
+      }
+      return { ...retried, inserted: false };
+    });
+    signal.throwIfAborted();
+    return result;
   },
-): Promise<SlackChatIngressAdmission> {
-  return await db.transaction(async (tx) => {
-    const [inserted] = await tx
-      .insert(slackChatIngress)
-      .values({
-        routeId: args.routeId,
-        eventId: args.eventId,
-        payload: args.payload,
-        status: "pending",
-        retryCount: args.isRetry ? 1 : 0,
-        createdAt: args.currentTime,
-        updatedAt: args.currentTime,
-      })
-      .onConflictDoNothing({ target: slackChatIngress.eventId })
-      .returning({
-        id: slackChatIngress.id,
-        routeId: slackChatIngress.routeId,
-        status: slackChatIngress.status,
-        retryCount: slackChatIngress.retryCount,
-      });
-    if (inserted) {
-      return { ...inserted, inserted: true };
-    }
-
-    const [existing] = await tx
-      .select({
-        id: slackChatIngress.id,
-        routeId: slackChatIngress.routeId,
-        status: slackChatIngress.status,
-        retryCount: slackChatIngress.retryCount,
-      })
-      .from(slackChatIngress)
-      .where(eq(slackChatIngress.eventId, args.eventId))
-      .limit(1);
-    if (!existing) {
-      throw new Error("Failed to resolve canonical Slack ingress event");
-    }
-    if (existing.routeId !== args.routeId) {
-      throw new Error("Slack event ID is already bound to another route");
-    }
-    if (!args.isRetry) {
-      return { ...existing, inserted: false };
-    }
-
-    const [retried] = await tx
-      .update(slackChatIngress)
-      .set({
-        retryCount: sql`${slackChatIngress.retryCount} + 1`,
-        updatedAt: args.currentTime,
-      })
-      .where(eq(slackChatIngress.id, existing.id))
-      .returning({
-        id: slackChatIngress.id,
-        status: slackChatIngress.status,
-        retryCount: slackChatIngress.retryCount,
-      });
-    if (!retried) {
-      throw new Error("Failed to record canonical Slack ingress retry");
-    }
-    return { ...retried, inserted: false };
-  });
-}
+);

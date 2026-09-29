@@ -55,7 +55,7 @@ import {
 import { listOrgModelPolicies$ } from "./model-policy.service";
 import { publishSlackAdminSignal$ } from "./slack-connect.service";
 import {
-  admitCanonicalSlackChatEvent,
+  admitCanonicalSlackChatEvent$,
   ensureCanonicalSlackChatThreadRoute$,
   findSlackDirectMessageChatThreadId$,
   findSlackChatThreadRoute$,
@@ -1514,13 +1514,17 @@ export const handleSlackEvents$ = command(
         signal.throwIfAborted();
         if (route.kind === "canonical") {
           const ingress = await onRejection(
-            admitCanonicalSlackChatEvent(db, {
-              routeId: route.routeId,
-              eventId: payload.event_id,
-              payload: verified.body,
-              isRetry: Boolean(retryNum),
-              currentTime: nowDate(),
-            }),
+            set(
+              admitCanonicalSlackChatEvent$,
+              {
+                routeId: route.routeId,
+                eventId: payload.event_id,
+                payload: verified.body,
+                isRetry: Boolean(retryNum),
+                currentTime: nowDate(),
+              },
+              signal,
+            ),
             (error) => {
               L.error("Canonical Slack ingress admission failed", {
                 type: "canonical_slack_ingress_admission",
