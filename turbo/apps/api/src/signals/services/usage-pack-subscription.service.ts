@@ -12,12 +12,14 @@ import {
   USAGE_PACK_ALLOCATION_STATUSES,
   usagePackAllocations,
   usagePackInvoiceFulfillments,
+  usagePackPendingSnapshotGuards,
   usagePackSubscriptions,
 } from "@okouai/db/schema/usage-pack-subscription";
 import { command } from "ccstate";
 import { z } from "zod";
 import {
   and,
+  asc,
   desc,
   eq,
   inArray,
@@ -61,6 +63,7 @@ import {
 import type { BillingReconciliationScope } from "./billing-reconciliation-scope";
 import { completeBillingOperationInvoiceWithInvoice } from "./billing-operation-invoice.service";
 import { writeUsagePackPendingSnapshots } from "./usage-pack-pending-snapshot.service";
+import { billingPurchaseCompatibilityLockSql } from "./billing-purchase-lock.service";
 import {
   BILLING_PURCHASE_PREVIEW_TTL_MS,
   billingPreviewExpiresAt,
@@ -3305,267 +3308,352 @@ interface ReconcileUsagePackSubscriptionResult {
   readonly orgIds: readonly string[];
 }
 
-async function retireStaleUsagePackSnapshot(
-  db: Db,
-  candidate: UsagePackSubscriptionRow,
-  pendingSnapshotStaleBefore: Date,
-  signal: AbortSignal,
-): Promise<void> {
-  await writeUsagePackPendingSnapshots(
-    db,
-    [candidate.orgId],
-    async (tx) => {
-      signal.throwIfAborted();
-      const [staleSnapshot] = await tx
-        .select({ id: usagePackSubscriptions.id })
+const retireReconciledUsagePackSnapshot$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly usagePackSubscriptionId: string;
+      readonly expiredCheckoutSessionId: string | null;
+      readonly staleBefore: Date;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    signal.throwIfAborted();
+    const db = set(writeDb$);
+    await db.transaction(async (tx) => {
+      await tx.execute(billingPurchaseCompatibilityLockSql(args.orgId));
+      // Outgoing trigger writers acquire the subscription before the guard.
+      // Preserve that order while owning the whole retirement commit here.
+      const roots = await tx
+        .select({
+          id: usagePackSubscriptions.id,
+          orgId: usagePackSubscriptions.orgId,
+          status: usagePackSubscriptions.subscriptionStatus,
+        })
         .from(usagePackSubscriptions)
         .where(
+          or(
+            eq(usagePackSubscriptions.orgId, args.orgId),
+            eq(usagePackSubscriptions.id, args.usagePackSubscriptionId),
+          ),
+        )
+        .orderBy(asc(usagePackSubscriptions.id))
+        .for("update");
+      if (
+        roots.some((root) => {
+          return root.orgId !== args.orgId;
+        })
+      ) {
+        throw new Error(
+          "Usage pack subscription moved outside its locked scope",
+        );
+      }
+      await tx
+        .insert(usagePackPendingSnapshotGuards)
+        .values({
+          orgId: args.orgId,
+          pendingSnapshotCount: 0,
+        })
+        .onConflictDoNothing();
+      const [guard] = await tx
+        .select()
+        .from(usagePackPendingSnapshotGuards)
+        .where(eq(usagePackPendingSnapshotGuards.orgId, args.orgId))
+        .for("update");
+      const pendingCount = roots.filter((root) => {
+        return (
+          root.status === "checkout_pending" ||
+          root.status === "purchase_pending"
+        );
+      }).length;
+      if (!guard || guard.pendingSnapshotCount !== pendingCount) {
+        throw new Error("Usage pack pending snapshot guard requires repair");
+      }
+      signal.throwIfAborted();
+      const updatedAt = nowDate();
+      const retired = await tx
+        .update(usagePackSubscriptions)
+        .set({ subscriptionStatus: "checkout_expired", updatedAt })
+        .where(
           and(
-            eq(usagePackSubscriptions.id, candidate.id),
-            eq(usagePackSubscriptions.orgId, candidate.orgId),
+            eq(usagePackSubscriptions.id, args.usagePackSubscriptionId),
+            eq(usagePackSubscriptions.orgId, args.orgId),
             inArray(usagePackSubscriptions.subscriptionStatus, [
               ...USAGE_PACK_PURCHASE_SNAPSHOT_STATUSES,
             ]),
             isNull(usagePackSubscriptions.stripeSubscriptionId),
-            isNull(usagePackSubscriptions.stripeCheckoutSessionId),
-            lte(usagePackSubscriptions.updatedAt, pendingSnapshotStaleBefore),
+            args.expiredCheckoutSessionId === null
+              ? and(
+                  isNull(usagePackSubscriptions.stripeCheckoutSessionId),
+                  lte(usagePackSubscriptions.updatedAt, args.staleBefore),
+                )
+              : eq(
+                  usagePackSubscriptions.stripeCheckoutSessionId,
+                  args.expiredCheckoutSessionId,
+                ),
           ),
         )
-        .limit(1);
-      if (staleSnapshot) {
-        await retireUsagePackCheckout(tx, staleSnapshot.id);
+        .returning({ id: usagePackSubscriptions.id });
+      if (retired.length > 0) {
+        await tx
+          .update(usagePackAllocations)
+          .set({ status: "inactive", updatedAt })
+          .where(
+            eq(
+              usagePackAllocations.usagePackSubscriptionId,
+              args.usagePackSubscriptionId,
+            ),
+          );
       }
-    },
-    [candidate.id],
-  );
-}
+      // Assign the complete result, since the outgoing trigger may already
+      // have applied its decrement within this same transaction.
+      await tx
+        .update(usagePackPendingSnapshotGuards)
+        .set({ pendingSnapshotCount: pendingCount - retired.length })
+        .where(eq(usagePackPendingSnapshotGuards.orgId, args.orgId));
+    });
+  },
+);
 
-async function reconcileUsagePackSubscriptionCandidate(
-  db: Db,
-  stripe: StripeClient,
-  candidate: UsagePackSubscriptionRow,
-  pendingSnapshotStaleBefore: Date,
-  signal: AbortSignal,
-): Promise<ReconcileUsagePackSubscriptionResult> {
-  const orgIds = new Set<string>();
-  let subscriptionId = candidate.stripeSubscriptionId;
-  if (!subscriptionId && !candidate.stripeCheckoutSessionId) {
-    await retireStaleUsagePackSnapshot(
-      db,
-      candidate,
-      pendingSnapshotStaleBefore,
-      signal,
-    );
-    signal.throwIfAborted();
-    return { reconciled: 0, orgIds: [] };
-  }
-  if (!subscriptionId && candidate.stripeCheckoutSessionId) {
-    const session = (await stripe.checkout.sessions.retrieve(
-      candidate.stripeCheckoutSessionId,
-    )) as UsagePackCheckoutSessionInput;
-    signal.throwIfAborted();
-    if (session.status !== "complete") {
-      if (session.status === "expired") {
-        await writeUsagePackPendingSnapshots(
-          db,
-          [candidate.orgId],
-          async (tx) => {
-            await retireUsagePackCheckout(tx, candidate.id);
-          },
-          [candidate.id],
-        );
-        signal.throwIfAborted();
-      }
+const reconcileUsagePackSubscriptionCandidate$ = command(
+  async (
+    { set },
+    candidate: UsagePackSubscriptionRow,
+    pendingSnapshotStaleBefore: Date,
+    signal: AbortSignal,
+  ): Promise<ReconcileUsagePackSubscriptionResult> => {
+    const db = set(writeDb$);
+    const stripe = getStripeClient();
+    const orgIds = new Set<string>();
+    let subscriptionId = candidate.stripeSubscriptionId;
+    if (!subscriptionId && !candidate.stripeCheckoutSessionId) {
+      await set(
+        retireReconciledUsagePackSnapshot$,
+        {
+          orgId: candidate.orgId,
+          usagePackSubscriptionId: candidate.id,
+          expiredCheckoutSessionId: null,
+          staleBefore: pendingSnapshotStaleBefore,
+        },
+        signal,
+      );
+      signal.throwIfAborted();
       return { reconciled: 0, orgIds: [] };
     }
-    subscriptionId = stripeObjectId(session.subscription);
-    if (!subscriptionId) {
-      throw new Error(
-        `Completed usage pack Checkout Session ${session.id} has no subscription`,
+    if (!subscriptionId && candidate.stripeCheckoutSessionId) {
+      const session = (await stripe.checkout.sessions.retrieve(
+        candidate.stripeCheckoutSessionId,
+      )) as UsagePackCheckoutSessionInput;
+      signal.throwIfAborted();
+      if (session.status !== "complete") {
+        if (session.status === "expired") {
+          await set(
+            retireReconciledUsagePackSnapshot$,
+            {
+              orgId: candidate.orgId,
+              usagePackSubscriptionId: candidate.id,
+              expiredCheckoutSessionId: candidate.stripeCheckoutSessionId,
+              staleBefore: pendingSnapshotStaleBefore,
+            },
+            signal,
+          );
+          signal.throwIfAborted();
+        }
+        return { reconciled: 0, orgIds: [] };
+      }
+      subscriptionId = stripeObjectId(session.subscription);
+      if (!subscriptionId) {
+        throw new Error(
+          `Completed usage pack Checkout Session ${session.id} has no subscription`,
+        );
+      }
+      const checkoutSubscription = (await stripe.subscriptions.retrieve(
+        subscriptionId,
+      )) as UsagePackSubscriptionInput;
+      signal.throwIfAborted();
+      const checkoutOutcome = await handleUsagePackCheckoutCompleted(
+        db,
+        session,
+        checkoutSubscription,
       );
+      signal.throwIfAborted();
+      if (!checkoutOutcome.handled) {
+        throw new Error(
+          `Usage pack Checkout Session ${session.id} lost its local correlation`,
+        );
+      }
+      if (checkoutOutcome.orgId) {
+        orgIds.add(checkoutOutcome.orgId);
+      }
     }
-    const checkoutSubscription = (await stripe.subscriptions.retrieve(
+    if (!subscriptionId) {
+      return { reconciled: 0, orgIds: [...orgIds] };
+    }
+
+    const subscription = (await stripe.subscriptions.retrieve(
       subscriptionId,
     )) as UsagePackSubscriptionInput;
     signal.throwIfAborted();
-    const checkoutOutcome = await handleUsagePackCheckoutCompleted(
+    const syncOutcome = await handleUsagePackSubscriptionUpdated(
       db,
-      session,
-      checkoutSubscription,
+      subscription,
     );
-    if (!checkoutOutcome.handled) {
+    signal.throwIfAborted();
+    if (!syncOutcome.handled) {
       throw new Error(
-        `Usage pack Checkout Session ${session.id} lost its local correlation`,
+        `Usage pack subscription ${subscriptionId} lost its local correlation`,
       );
     }
-    if (checkoutOutcome.orgId) {
-      orgIds.add(checkoutOutcome.orgId);
+    if (syncOutcome.orgId) {
+      orgIds.add(syncOutcome.orgId);
     }
-  }
-  if (!subscriptionId) {
-    return { reconciled: 0, orgIds: [...orgIds] };
-  }
+    if (
+      subscription.status === "canceled" ||
+      subscription.status === "incomplete_expired"
+    ) {
+      return { reconciled: 0, orgIds: [...orgIds] };
+    }
 
-  const subscription = (await stripe.subscriptions.retrieve(
-    subscriptionId,
-  )) as UsagePackSubscriptionInput;
-  signal.throwIfAborted();
-  const syncOutcome = await handleUsagePackSubscriptionUpdated(
-    db,
-    subscription,
-  );
-  if (!syncOutcome.handled) {
-    throw new Error(
-      `Usage pack subscription ${subscriptionId} lost its local correlation`,
+    const invoices = await stripe.invoices.list({
+      subscription: subscriptionId,
+      status: "paid",
+      limit: 1,
+    });
+    signal.throwIfAborted();
+    const invoice = invoices.data[0] as UsagePackInvoiceInput | undefined;
+    if (!invoice) {
+      return { reconciled: 0, orgIds: [...orgIds] };
+    }
+    const invoiceOutcome = await handleUsagePackInvoicePaid(db, invoice);
+    signal.throwIfAborted();
+    if (!invoiceOutcome.handled) {
+      throw new Error(
+        `Paid usage pack invoice ${invoice.id} lost its local correlation`,
+      );
+    }
+    if (invoiceOutcome.orgId) {
+      orgIds.add(invoiceOutcome.orgId);
+    }
+    return { reconciled: 1, orgIds: [...orgIds] };
+  },
+);
+
+export const reconcileUsagePackSubscriptions$ = command(
+  async (
+    { set },
+    scope: BillingReconciliationScope | undefined,
+    signal: AbortSignal,
+  ): Promise<
+    ReconcileUsagePackSubscriptionResult & {
+      readonly emptyCancellations: readonly EmptyUsagePackCancellation[];
+    }
+  > => {
+    signal.throwIfAborted();
+    const db = set(writeDb$);
+
+    const subscriptionChanges = await reconcileUsagePackSubscriptionChanges(
+      db,
+      scope,
+      signal,
     );
-  }
-  if (syncOutcome.orgId) {
-    orgIds.add(syncOutcome.orgId);
-  }
-  if (
-    subscription.status === "canceled" ||
-    subscription.status === "incomplete_expired"
-  ) {
-    return { reconciled: 0, orgIds: [...orgIds] };
-  }
-
-  const invoices = await stripe.invoices.list({
-    subscription: subscriptionId,
-    status: "paid",
-    limit: 1,
-  });
-  signal.throwIfAborted();
-  const invoice = invoices.data[0] as UsagePackInvoiceInput | undefined;
-  if (!invoice) {
-    return { reconciled: 0, orgIds: [...orgIds] };
-  }
-  const invoiceOutcome = await handleUsagePackInvoicePaid(db, invoice);
-  signal.throwIfAborted();
-  if (!invoiceOutcome.handled) {
-    throw new Error(
-      `Paid usage pack invoice ${invoice.id} lost its local correlation`,
+    const allocationChanges = await reconcileUsagePackAllocationChanges(
+      db,
+      scope,
+      signal,
     );
-  }
-  if (invoiceOutcome.orgId) {
-    orgIds.add(invoiceOutcome.orgId);
-  }
-  return { reconciled: 1, orgIds: [...orgIds] };
-}
 
-export async function reconcileUsagePackSubscriptions(
-  db: Db,
-  scope: BillingReconciliationScope | undefined,
-  signal: AbortSignal,
-): Promise<
-  ReconcileUsagePackSubscriptionResult & {
-    readonly emptyCancellations: readonly EmptyUsagePackCancellation[];
-  }
-> {
-  signal.throwIfAborted();
-
-  const subscriptionChanges = await reconcileUsagePackSubscriptionChanges(
-    db,
-    scope,
-    signal,
-  );
-  const allocationChanges = await reconcileUsagePackAllocationChanges(
-    db,
-    scope,
-    signal,
-  );
-
-  const at = nowDate();
-  const staleBefore = new Date(
-    at.getTime() - USAGE_PACK_RECONCILIATION_DELAY_MS,
-  );
-  const pendingSnapshotStaleBefore = new Date(
-    at.getTime() - USAGE_PACK_PENDING_SNAPSHOT_STALE_MS,
-  );
-  const candidates = await db
-    .select()
-    .from(usagePackSubscriptions)
-    .where(
-      and(
-        scope
-          ? inArray(usagePackSubscriptions.orgId, [...scope.orgIds])
-          : undefined,
-        or(
-          and(
-            isNull(usagePackSubscriptions.stripeSubscriptionId),
-            isNull(usagePackSubscriptions.stripeCheckoutSessionId),
-            inArray(usagePackSubscriptions.subscriptionStatus, [
-              ...USAGE_PACK_PURCHASE_SNAPSHOT_STATUSES,
-            ]),
-            lte(usagePackSubscriptions.updatedAt, pendingSnapshotStaleBefore),
-          ),
-          and(
-            isNull(usagePackSubscriptions.stripeSubscriptionId),
-            isNotNull(usagePackSubscriptions.stripeCheckoutSessionId),
-            eq(usagePackSubscriptions.subscriptionStatus, "checkout_pending"),
-            lte(usagePackSubscriptions.updatedAt, staleBefore),
-          ),
-          and(
-            isNotNull(usagePackSubscriptions.stripeSubscriptionId),
-            notInArray(usagePackSubscriptions.subscriptionStatus, [
-              ...TERMINAL_USAGE_PACK_SUBSCRIPTION_STATUSES,
-            ]),
-            or(
-              and(
-                isNull(usagePackSubscriptions.currentPeriodEnd),
-                lte(usagePackSubscriptions.updatedAt, staleBefore),
-              ),
-              lte(usagePackSubscriptions.currentPeriodEnd, at),
-              and(
-                inArray(usagePackSubscriptions.subscriptionStatus, [
-                  "past_due",
-                  "unpaid",
-                ]),
-                lte(usagePackSubscriptions.updatedAt, staleBefore),
+    const at = nowDate();
+    const staleBefore = new Date(
+      at.getTime() - USAGE_PACK_RECONCILIATION_DELAY_MS,
+    );
+    const pendingSnapshotStaleBefore = new Date(
+      at.getTime() - USAGE_PACK_PENDING_SNAPSHOT_STALE_MS,
+    );
+    const candidates = await db
+      .select()
+      .from(usagePackSubscriptions)
+      .where(
+        and(
+          scope
+            ? inArray(usagePackSubscriptions.orgId, [...scope.orgIds])
+            : undefined,
+          or(
+            and(
+              isNull(usagePackSubscriptions.stripeSubscriptionId),
+              isNull(usagePackSubscriptions.stripeCheckoutSessionId),
+              inArray(usagePackSubscriptions.subscriptionStatus, [
+                ...USAGE_PACK_PURCHASE_SNAPSHOT_STATUSES,
+              ]),
+              lte(usagePackSubscriptions.updatedAt, pendingSnapshotStaleBefore),
+            ),
+            and(
+              isNull(usagePackSubscriptions.stripeSubscriptionId),
+              isNotNull(usagePackSubscriptions.stripeCheckoutSessionId),
+              eq(usagePackSubscriptions.subscriptionStatus, "checkout_pending"),
+              lte(usagePackSubscriptions.updatedAt, staleBefore),
+            ),
+            and(
+              isNotNull(usagePackSubscriptions.stripeSubscriptionId),
+              notInArray(usagePackSubscriptions.subscriptionStatus, [
+                ...TERMINAL_USAGE_PACK_SUBSCRIPTION_STATUSES,
+              ]),
+              or(
+                and(
+                  isNull(usagePackSubscriptions.currentPeriodEnd),
+                  lte(usagePackSubscriptions.updatedAt, staleBefore),
+                ),
+                lte(usagePackSubscriptions.currentPeriodEnd, at),
+                and(
+                  inArray(usagePackSubscriptions.subscriptionStatus, [
+                    "past_due",
+                    "unpaid",
+                  ]),
+                  lte(usagePackSubscriptions.updatedAt, staleBefore),
+                ),
               ),
             ),
           ),
         ),
-      ),
-    )
-    .limit(100);
-  signal.throwIfAborted();
+      )
+      .limit(100);
+    signal.throwIfAborted();
 
-  const stripe = getStripeClient();
-  const orgIds = new Set([
-    ...subscriptionChanges.orgIds,
-    ...allocationChanges.orgIds,
-  ]);
-  let reconciled =
-    subscriptionChanges.reconciled + allocationChanges.reconciled;
-  for (const candidate of candidates) {
-    const result = await settle(
-      reconcileUsagePackSubscriptionCandidate(
-        db,
-        stripe,
-        candidate,
-        pendingSnapshotStaleBefore,
+    const orgIds = new Set([
+      ...subscriptionChanges.orgIds,
+      ...allocationChanges.orgIds,
+    ]);
+    let reconciled =
+      subscriptionChanges.reconciled + allocationChanges.reconciled;
+    for (const candidate of candidates) {
+      const result = await settle(
+        set(
+          reconcileUsagePackSubscriptionCandidate$,
+          candidate,
+          pendingSnapshotStaleBefore,
+          signal,
+        ),
         signal,
-      ),
-      signal,
-    );
-    if (!result.ok) {
-      L.error("usage pack subscription reconciliation failed", {
-        usagePackSubscriptionId: candidate.id,
-        orgId: candidate.orgId,
-        stripeSubscriptionId: candidate.stripeSubscriptionId,
-        stripeCheckoutSessionId: candidate.stripeCheckoutSessionId,
-        error: result.error,
-      });
-      continue;
+      );
+      if (!result.ok) {
+        L.error("usage pack subscription reconciliation failed", {
+          usagePackSubscriptionId: candidate.id,
+          orgId: candidate.orgId,
+          stripeSubscriptionId: candidate.stripeSubscriptionId,
+          stripeCheckoutSessionId: candidate.stripeCheckoutSessionId,
+          error: result.error,
+        });
+        continue;
+      }
+      reconciled += result.value.reconciled;
+      for (const orgId of result.value.orgIds) {
+        orgIds.add(orgId);
+      }
     }
-    reconciled += result.value.reconciled;
-    for (const orgId of result.value.orgIds) {
-      orgIds.add(orgId);
-    }
-  }
-  return {
-    reconciled,
-    orgIds: [...orgIds],
-    emptyCancellations: allocationChanges.emptyCancellations,
-  };
-}
+    return {
+      reconciled,
+      orgIds: [...orgIds],
+      emptyCancellations: allocationChanges.emptyCancellations,
+    };
+  },
+);

@@ -52,7 +52,7 @@ import {
   tierForKnownPlanPrice,
 } from "./billing-checkout.service";
 import {
-  reconcileUsagePackSubscriptions,
+  reconcileUsagePackSubscriptions$,
   stripeSubscriptionUsesMemberUsagePacks,
 } from "./usage-pack-subscription.service";
 import { reconcileUsagePackCreditRefunds } from "./usage-pack-credit-refund.service";
@@ -1755,8 +1755,8 @@ const reconcileBillingEntitlementsForScope$ = command(
     const usagePackMigrationReconciliation =
       await reconcileUsagePackSubscriptionMigrations(db, scope, signal);
     signal.throwIfAborted();
-    const usagePackReconciliation = await reconcileUsagePackSubscriptions(
-      db,
+    const usagePackReconciliation = await set(
+      reconcileUsagePackSubscriptions$,
       scope,
       signal,
     );

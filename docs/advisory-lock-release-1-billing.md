@@ -309,3 +309,21 @@ that the billing API still exposes the original tier and credit balance until
 payment. This proves the user-visible outcome without claiming a particular
 internal database interleaving. Separate expiration, replacement, and
 post-creation cancellation tests retain their distinct behavior coverage.
+
+Stale and provider-expired usage-pack Checkout retirement now executes in
+`retireReconciledUsagePackSnapshot$`. The command owns its database, locks the
+existing subscription roots before the existing pending-snapshot guard, checks
+the stored count against the locked rows, and commits the conditional retirement,
+allocation deactivation, and final count assignment together. It passes no
+handle to the old pending-snapshot callback API or `retireUsagePackCheckout`.
+Provider reads stay in the calling reconciliation command. An expired Session
+observation only retires that exact still-unbound Session; a concurrent paid
+subscription correlation cannot be undone by an older provider response.
+
+The `billing_purchase` acquisition in that commit remains compatible with the
+outgoing purchase writer; retirement does not establish admission for future
+remote purchases. Other subscription lifecycle, invoice fulfillment, allocation,
+and plan-change reconciliation still use the legacy database-aware service
+interfaces and remain explicit Release 1 implementation work. This finite
+retirement change does not retire the pending-count trigger or certify the full
+reconciliation caller graph as complete.
