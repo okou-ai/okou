@@ -869,7 +869,12 @@ async function planPurchaseSubscriptionState(
     const tier = tierForKnownPriceId(
       knownPlanPriceItem(subscription.items.data)?.price.id ?? "",
     );
+    // A legacy incomplete binding can still have its former paid Plan.
+    // Only recovery of that exact bound purchase may replace it. An unrelated
+    // active Plan is a competing purchase, even when this preview wants Team.
     const isReplaceableActivePlan =
+      existingSummary !== undefined &&
+      existingSummary.id === args.sourceSubscriptionId &&
       tier !== null &&
       (subscription.status === "active" ||
         subscription.status === "trialing") &&
@@ -887,7 +892,7 @@ async function planPurchaseSubscriptionState(
       subscription.status !== "incomplete_expired"
     );
   });
-  if (!existingSummary) {
+  if (hasCompetingPurchase || !existingSummary) {
     return { existing: null, hasCompetingPurchase };
   }
   const existing = await args.stripe.subscriptions.retrieve(
@@ -1138,6 +1143,9 @@ export const confirmPlanPurchase$ = command(
           },
           signal,
         );
+        if (subscriptionState.hasCompetingPurchase) {
+          return { status: "invalid_preview" };
+        }
         if (subscriptionState.existing) {
           return await completeExistingPlanPurchase(
             stripe,
@@ -1165,8 +1173,7 @@ export const confirmPlanPurchase$ = command(
           checkoutWouldReplaceWithSameOrLowerTier({
             currentTier: org.tier,
             targetTier: preview.tier,
-          }) ||
-          subscriptionState.hasCompetingPurchase
+          })
         ) {
           return { status: "invalid_preview" };
         }

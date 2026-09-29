@@ -1806,7 +1806,7 @@ describe("POST /api/billing/checkout", () => {
     expect(context.mocks.stripe.subscriptions.create).not.toHaveBeenCalled();
   });
 
-  it("allows only one of two Plan previews to create a subscription", async () => {
+  it("rejects competing Plan previews and stale purchase replays", async () => {
     const fixture = await trackedSeed();
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
     const customerId = `cus_${randomUUID().slice(0, 8)}`;
@@ -1885,9 +1885,17 @@ describe("POST /api/billing/checkout", () => {
       }),
       [200],
     );
+    const laterTierPreview = await accept(
+      client.create({
+        body: { ...purchaseBody, tier: "team" },
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [200],
+    );
     if (
       !("previewToken" in firstPreview.body) ||
-      !("previewToken" in secondPreview.body)
+      !("previewToken" in secondPreview.body) ||
+      !("previewToken" in laterTierPreview.body)
     ) {
       throw new Error("Expected two Plan purchase previews");
     }
@@ -1910,7 +1918,52 @@ describe("POST /api/billing/checkout", () => {
         })
         .sort(),
     ).toStrictEqual([200, 409]);
+    // The Pro creation is visible at Stripe before its paid webhook binds it
+    // locally. A Team preview made against the old state cannot ignore it.
+    const staleUpgrade = await accept(
+      client.confirm({
+        body: { previewToken: laterTierPreview.body.previewToken },
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [409],
+    );
+    expect(staleUpgrade.body).toStrictEqual({
+      error: {
+        message: "Plan purchase preview is no longer valid",
+        code: "CONFLICT",
+      },
+    });
+    if (!createdSubscription) {
+      throw new Error("Expected the winning Pro subscription");
+    }
+    context.mocks.stripe.subscriptions.list.mockResolvedValue({
+      data: [
+        createdSubscription,
+        {
+          ...createdSubscription,
+          id: `sub_later_${randomUUID()}`,
+          metadata: { orgId: fixture.orgId },
+          items: { data: [{ price: { id: TEST_PRICE_TEAM } }] },
+        },
+      ],
+      has_more: false,
+    });
+    // Even the original winning preview cannot resume an older purchase while
+    // a different paid subscription now exists for this organization.
+    const winningPreviewToken =
+      confirmations[0]?.status === 200
+        ? firstPreview.body.previewToken
+        : secondPreview.body.previewToken;
+    const replay = await accept(
+      client.confirm({
+        body: { previewToken: winningPreviewToken },
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [409],
+    );
+    expect(replay.body).toStrictEqual(staleUpgrade.body);
     expect(context.mocks.stripe.subscriptions.create).toHaveBeenCalledTimes(1);
+    expect(context.mocks.stripe.invoices.pay).not.toHaveBeenCalled();
   });
 
   it("uses hosted Checkout when an opted-in plan purchase has no saved card", async () => {

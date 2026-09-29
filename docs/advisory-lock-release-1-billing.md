@@ -40,6 +40,21 @@ and a fresh retry instead of overwriting its result. No transaction spans the
 provider reads. This is a publication predicate, not the still-missing admission
 protocol for two different purchases that can both become payable.
 
+### Plan purchase admission predicates
+
+An active Stripe Plan that is not the preview's bound source is a competing
+purchase. A stale Team preview cannot ignore an unbound Pro subscription just
+because Team is a higher tier. Recovery may retain a former lower-tier Plan only
+when the exact incomplete purchase is already the local subscription binding.
+Competing subscriptions are checked before replaying an existing purchase, so
+an old preview cannot resume its earlier invoice over a later paid Plan.
+
+The API regression retains concurrent same-tier confirmation, adds the stale
+higher-tier preview before local publication, and rejects replay after another
+paid subscription appears. These predicates fix admission and recovery cases;
+they do not replace the common arbitration still required for provider creates
+whose outcome is not yet observable.
+
 ### Invitation purchase transitions
 
 The invitation-creation, refund, and acceptance-activation claims use conditional
