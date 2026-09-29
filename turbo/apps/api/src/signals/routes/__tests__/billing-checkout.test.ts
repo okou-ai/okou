@@ -14815,10 +14815,12 @@ describe("usage pack allocation management", () => {
     ).toStrictEqual([]);
 
     context.mocks.stripe.subscriptions.update.mockClear();
+    // A stale late write left Stripe at three packages; removal still converges
+    // to the one package declared by the remaining local allocation.
     context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
       managedUsagePackSubscription(
         fixture,
-        new Map([[TEST_PRICE_USAGE_PACK_20, 2]]),
+        new Map([[TEST_PRICE_USAGE_PACK_20, 3]]),
       ),
     );
     const removalEvent = {

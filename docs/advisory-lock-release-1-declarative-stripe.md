@@ -44,10 +44,15 @@ Implemented for member usage packs (`usage-pack-allocation-change.service.ts`):
   so a stale late quantity is repaired instead of blocking the quote; an API
   test covers 2 → 1 repair before a 50 USD change preview with no invoice.
 
-Still unimplemented: confirmation, immediate member removal and the expired or
-deferred change reconcilers still validate Stripe against local quantities and
-throw on drift that the sync could not repair (for example, while a payment is
-in flight). Plan, migration, legacy Plan and concurrency writers,
+- Immediate member removal writes absolute quantities from local allocations
+  and no longer rejects temporary drift; only a Stripe `pending_update` still
+  blocks it. The API removal test starts from a stale quantity 3 and converges
+  to 1.
+
+Still unimplemented: change confirmation, the last-member deferred removal and
+the expired or deferred change reconcilers still validate Stripe against local
+quantities and throw on drift that the sync could not repair (for example,
+while a payment is in flight). Plan, migration, legacy Plan and concurrency writers,
 cancellation/restore ownership, webhook intent preservation, ordinary initial
 purchase admission and immediate unpaid concurrency identity remain as mapped
 below.

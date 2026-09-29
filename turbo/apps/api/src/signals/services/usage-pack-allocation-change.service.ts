@@ -2681,7 +2681,11 @@ async function applyImmediateUsagePackMemberRemoval(
   const currentQuantities = projectedQuantitiesAfterChanges(context, [change]);
   const sourceQuantities = packageQuantitiesForAllocations(context.allocations);
   const stripeQuantities = packageQuantitiesForSubscription(subscription);
+  // The removal writes absolute quantities derived from local allocations, so
+  // temporary configuration drift is repaired rather than blocking removal.
+  // A pending paid update still owns Stripe; do not discard its invoice.
   if (
+    subscription.pending_update &&
     !quantitiesMatch(stripeQuantities, sourceQuantities) &&
     !quantitiesMatch(stripeQuantities, currentQuantities)
   ) {
