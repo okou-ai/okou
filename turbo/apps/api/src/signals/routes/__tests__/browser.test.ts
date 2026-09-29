@@ -5953,15 +5953,16 @@ describe("okou browser route", () => {
     );
     expect(appendSystemPrompt).not.toContain("okou browser input-request");
     expect(appendSystemPrompt).toContain(
-      "Browser tab continuity: after `okou browser use`, a local binding may restore the selected tab",
+      "Browser tab continuity: When resuming a page after `okou browser use`",
     );
     expect(appendSystemPrompt).toContain("`okou browser tab list`");
     expect(appendSystemPrompt).toContain(
-      "If non-sensitive page/step evidence confirms the selected tab is the intended page, keep it",
+      "Keep the selected tab only if non-sensitive page evidence confirms it",
     );
     expect(appendSystemPrompt).toContain(
-      "An origin or selected flag alone is not proof, even with a single matching tab",
+      "Origin or selection alone is not proof, even with one match",
     );
+    expect(appendSystemPrompt).not.toContain("a local binding may restore");
     expect(appendSystemPrompt).toContain(
       "Never invoke raw `agent-browser tab list` or `agent-browser tab <id>` (including `--json`)",
     );
@@ -6003,7 +6004,7 @@ describe("okou browser route", () => {
       "Never invoke raw `agent-browser tab list` or `agent-browser tab <id>` (including `--json`)",
     );
     expect(appendSystemPrompt).toContain(
-      "If safe tab commands are unavailable or the intended page is missing or ambiguous, stop",
+      "If safe commands are unavailable or the page remains unclear, stop",
     );
     expect(appendSystemPrompt).toContain(
       "On a successful callback, run `okou browser use` and follow the tab-continuity check to confirm the existing intended page",
