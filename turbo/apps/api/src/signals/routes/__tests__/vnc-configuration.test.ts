@@ -1261,7 +1261,7 @@ describe("VNC owner configuration", () => {
     );
     const params = { credentialId: first.body.credentialId };
     const rotations = await Promise.all(
-      ["rotated-first", "rotated-second"].map((password) => {
+      ["rotated1", "rotated2"].map((password) => {
         return accept(
           credentials().update({
             headers,
