@@ -1679,14 +1679,19 @@ const reconcileUsagePackInvitationsAndConfiguration$ = command(
       signal,
     );
     signal.throwIfAborted();
-    const configuration = await set(
-      syncUsagePackSubscriptionConfigurations$,
-      scope,
+    const configuration = await settle(
+      set(syncUsagePackSubscriptionConfigurations$, scope, signal),
       signal,
     );
-    signal.throwIfAborted();
-    if (configuration.updated > 0 || configuration.failed > 0) {
-      L.warn("usage pack Stripe configuration reconciled", configuration);
+    if (!configuration.ok) {
+      L.warn("usage pack Stripe configuration sweep failed", {
+        error: configuration.error,
+      });
+    } else if (
+      configuration.value.updated > 0 ||
+      configuration.value.failed > 0
+    ) {
+      L.warn("usage pack Stripe configuration reconciled", configuration.value);
     }
     return invitations;
   },
