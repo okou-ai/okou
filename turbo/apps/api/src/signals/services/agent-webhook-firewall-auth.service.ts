@@ -89,7 +89,8 @@ import { badRequestMessage, insufficientCredits } from "../../lib/error";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import type { SandboxAuth } from "../../types/auth";
-import type { Db } from "../external/db";
+import { command } from "ccstate";
+import { writeDb$, type Db } from "../external/db";
 import { recordSandboxOperations } from "../external/sandbox-op-log";
 import { safeSync, settle, settleIncludingAbort, tapError } from "../utils";
 import {
@@ -105,11 +106,11 @@ import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import { resolveBuiltinConnectorAutomaticMcpCredential } from "./builtin-connector-automatic-oauth.service";
 import {
   loadRunCreditAdmissionState,
-  resolveOrgCreditAvailability,
+  resolveOrgCreditAvailability$,
   runHasActiveCreditAdmission,
   type RunCreditAdmissionState,
 } from "./run-admission.service";
-import { resolveUsageAllowanceAvailabilityForRun } from "./usage-allowance.service";
+import { resolveUsageAllowanceAvailabilityForRun$ } from "./usage-allowance-run-availability.service";
 import {
   connectorRuntimeCredentialStatusForAccess,
   type ConnectorCredentialStatus,
@@ -466,60 +467,86 @@ function mergeExpiresAt(
   return Math.min(expiresAt, additionalExpiresAt);
 }
 
-async function resolveBillableFirewallCacheExpiry(params: {
-  readonly db: Db;
-  readonly auth: SandboxAuth;
-  readonly run: FirewallAuthRun;
-  readonly firewallBillable: boolean | undefined;
-}): Promise<
-  { readonly expiresAt?: number } | ReturnType<typeof insufficientCredits>
-> {
-  if (params.firewallBillable !== true) {
-    return {};
-  }
+type BillableFirewallCacheExpiry =
+  | { readonly expiresAt?: number }
+  | ReturnType<typeof insufficientCredits>
+  | ReturnType<typeof badRequestMessage>
+  | ReturnType<typeof forbiddenTerminalRun>;
 
-  const availability = await resolveOrgCreditAvailability({
-    db: params.db,
-    orgId: params.auth.orgId,
-    userId: params.auth.userId,
-  });
-  if (!availability) {
-    return insufficientCredits();
-  }
-  if (availability.status !== "active") {
-    return insufficientCredits();
-  }
-  if (runHasActiveCreditAdmission(params.run)) {
-    return {
-      expiresAt:
-        Math.floor(nowDate().getTime() / 1000) +
-        NORMAL_BILLABLE_FIREWALL_LEASE_SECONDS,
-    };
-  }
-  const allowance =
-    availability.spendableCredits > 0
-      ? null
-      : await resolveUsageAllowanceAvailabilityForRun(params.db, {
-          orgId: params.auth.orgId,
-          runId: params.auth.runId,
-        });
-  const spendableUnits =
-    availability.usagePackCredits +
-    Math.max(availability.spendableCredits, 0) +
-    (allowance?.remainingUnits ?? 0);
-  if (spendableUnits <= 0) {
-    return insufficientCredits();
-  }
-
-  const leaseSeconds =
-    spendableUnits <= LOW_BILLABLE_FIREWALL_CREDIT_THRESHOLD
-      ? LOW_BILLABLE_FIREWALL_LEASE_SECONDS
-      : NORMAL_BILLABLE_FIREWALL_LEASE_SECONDS;
-
-  return {
-    expiresAt: Math.floor(nowDate().getTime() / 1000) + leaseSeconds,
-  };
-}
+export const resolveBillableFirewallCacheExpiry$ = command(
+  async (
+    { set },
+    params: {
+      readonly auth: SandboxAuth;
+      readonly firewallBillable: boolean | undefined;
+    },
+    signal: AbortSignal,
+  ): Promise<BillableFirewallCacheExpiry> => {
+    if (params.firewallBillable !== true) {
+      return {};
+    }
+    const db = set(writeDb$);
+    const [run] = await db
+      .select({
+        status: agentRuns.status,
+        creditAdmitted: agentRuns.creditAdmitted,
+      })
+      .from(agentRuns)
+      .where(
+        and(
+          eq(agentRuns.id, params.auth.runId),
+          eq(agentRuns.orgId, params.auth.orgId),
+          eq(agentRuns.userId, params.auth.userId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!run) {
+      return badRequestMessage("Run not found");
+    }
+    if (!firewallAuthRunIsActive(run.status)) {
+      return forbiddenTerminalRun();
+    }
+    const availability = await set(
+      resolveOrgCreditAvailability$,
+      {
+        orgId: params.auth.orgId,
+        userId: params.auth.userId,
+      },
+      signal,
+    );
+    if (!availability || availability.status !== "active") {
+      return insufficientCredits();
+    }
+    if (runHasActiveCreditAdmission(run)) {
+      return {
+        expiresAt:
+          Math.floor(nowDate().getTime() / 1000) +
+          NORMAL_BILLABLE_FIREWALL_LEASE_SECONDS,
+      };
+    }
+    const allowance =
+      availability.spendableCredits > 0
+        ? null
+        : await set(
+            resolveUsageAllowanceAvailabilityForRun$,
+            { orgId: params.auth.orgId, runId: params.auth.runId },
+            signal,
+          );
+    const spendableUnits =
+      availability.usagePackCredits +
+      Math.max(availability.spendableCredits, 0) +
+      (allowance?.remainingUnits ?? 0);
+    if (spendableUnits <= 0) {
+      return insufficientCredits();
+    }
+    const leaseSeconds =
+      spendableUnits <= LOW_BILLABLE_FIREWALL_CREDIT_THRESHOLD
+        ? LOW_BILLABLE_FIREWALL_LEASE_SECONDS
+        : NORMAL_BILLABLE_FIREWALL_LEASE_SECONDS;
+    return { expiresAt: Math.floor(nowDate().getTime() / 1000) + leaseSeconds };
+  },
+);
 
 interface SecretTokenLookupArgs {
   readonly runId?: string;
@@ -6305,6 +6332,7 @@ async function prepareFirewallAuthRequest(
   db: Db,
   auth: SandboxAuth,
   body: FirewallAuthBody,
+  billableCacheExpiry: BillableFirewallCacheExpiry,
 ): Promise<PreparedFirewallAuthRequest> {
   const matchedFirewall = body.matchedFirewall;
   const customConnectorId = matchedFirewall?.customConnectorId;
@@ -6369,12 +6397,6 @@ async function prepareFirewallAuthRequest(
   if (!preparation.ok) {
     return { ok: false, response: preparation.response };
   }
-  const billableCacheExpiry = await resolveBillableFirewallCacheExpiry({
-    db,
-    auth,
-    run,
-    firewallBillable: body.firewallBillable,
-  });
   if ("status" in billableCacheExpiry) {
     return { ok: false, response: billableCacheExpiry };
   }
@@ -6390,13 +6412,19 @@ async function resolveFirewallAuthWithTimings(
   db: Db,
   auth: SandboxAuth,
   body: FirewallAuthBody,
+  billableCacheExpiry: BillableFirewallCacheExpiry,
   timingRecords: FirewallAuthTimingRecord[],
 ): Promise<ResolveFirewallAuthResult> {
   const preparation = await measureFirewallAuthStage(
     timingRecords,
     "firewall_auth_prepare",
     async () => {
-      return await prepareFirewallAuthRequest(db, auth, body);
+      return await prepareFirewallAuthRequest(
+        db,
+        auth,
+        body,
+        billableCacheExpiry,
+      );
     },
     (result) => {
       return result.ok;
@@ -6455,12 +6483,14 @@ export async function resolveFirewallAuth(
   db: Db,
   auth: SandboxAuth,
   body: FirewallAuthBody,
+  billableCacheExpiry: BillableFirewallCacheExpiry,
 ): Promise<ResolveFirewallAuthResult> {
   const timingRecords: FirewallAuthTimingRecord[] = [];
   return await resolveFirewallAuthWithTimings(
     db,
     auth,
     body,
+    billableCacheExpiry,
     timingRecords,
   ).finally(() => {
     recordFirewallAuthTimings(auth.runId, timingRecords);

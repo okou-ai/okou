@@ -504,21 +504,6 @@ async function loadActiveUsageAllowanceEntitlement(
   );
 }
 
-async function loadRunCreatedAt(
-  tx: UsageAllowanceStore,
-  args: {
-    readonly orgId: string;
-    readonly runId: string;
-  },
-): Promise<Date | null> {
-  const [row] = await tx
-    .select({ createdAt: agentRuns.createdAt })
-    .from(agentRuns)
-    .where(and(eq(agentRuns.orgId, args.orgId), eq(agentRuns.id, args.runId)))
-    .limit(1);
-  return row?.createdAt ?? null;
-}
-
 async function lockActiveWindowAt(
   tx: UsageAllowanceStore,
   args: {
@@ -559,36 +544,6 @@ async function lockActiveWindowAt(
           orgUsageAllowanceWindows.startsAt,
           orgUsageAllowanceEntitlements.effectiveAt,
         ),
-        eq(orgUsageAllowanceWindows.kind, args.kind),
-        lte(orgUsageAllowanceWindows.startsAt, args.at),
-        gt(orgUsageAllowanceWindows.expiresAt, args.at),
-      ),
-    )
-    .orderBy(desc(orgUsageAllowanceWindows.startsAt))
-    .limit(1)
-    .for("update");
-  return window ?? null;
-}
-
-async function lockIssuedWindowAt(
-  tx: UsageAllowanceStore,
-  args: {
-    readonly orgId: string;
-    readonly kind: UsageAllowanceWindowKind;
-    readonly at: Date;
-  },
-): Promise<UsageAllowanceWindow | null> {
-  const [window] = await tx
-    .select({
-      id: orgUsageAllowanceWindows.id,
-      kind: orgUsageAllowanceWindows.kind,
-      unitLimit: orgUsageAllowanceWindows.unitLimit,
-      consumedUnits: orgUsageAllowanceWindows.consumedUnits,
-    })
-    .from(orgUsageAllowanceWindows)
-    .where(
-      and(
-        eq(orgUsageAllowanceWindows.orgId, args.orgId),
         eq(orgUsageAllowanceWindows.kind, args.kind),
         lte(orgUsageAllowanceWindows.startsAt, args.at),
         gt(orgUsageAllowanceWindows.expiresAt, args.at),
@@ -695,27 +650,6 @@ async function ensureWindowsForRun(
     runCreatedAt: args.runCreatedAt,
   });
   return { shortWindow, weeklyWindow };
-}
-
-async function loadExistingWindowsAt(
-  tx: UsageAllowanceStore,
-  args: {
-    readonly orgId: string;
-    readonly at: Date;
-  },
-): Promise<UsageAllowanceWindows | null> {
-  const shortWindow = await lockIssuedWindowAt(tx, {
-    orgId: args.orgId,
-    kind: "short",
-    at: args.at,
-  });
-  const weeklyWindow = await lockIssuedWindowAt(tx, {
-    orgId: args.orgId,
-    kind: "weekly",
-    at: args.at,
-  });
-
-  return shortWindow && weeklyWindow ? { shortWindow, weeklyWindow } : null;
 }
 
 async function readWindowAvailability(
@@ -905,37 +839,4 @@ export async function activateUsageAllowanceWindowsForRun(
   await lockOrgCredits(tx, args.orgId);
   const windows = await ensureWindowsForRun(tx, args);
   return windows ? availabilityFromWindows(windows) : null;
-}
-
-export async function resolveUsageAllowanceAvailabilityForRun(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly runId: string;
-  },
-): Promise<UsageAllowanceAvailability | null> {
-  const at = await loadRunCreatedAt(db, args);
-  if (!at) {
-    return null;
-  }
-  const issued = await loadExistingWindowsAt(db, { orgId: args.orgId, at });
-  const [row] = issued
-    ? []
-    : await db.select().from(allowanceRefreshQuery(args.orgId));
-  const refresh = await prepareAllowanceRefresh(row);
-  return await db.transaction(async (tx) => {
-    await lockOrgCredits(tx, args.orgId);
-    const runCreatedAt = await loadRunCreatedAt(tx, args);
-    if (!runCreatedAt) {
-      return null;
-    }
-    const existingWindows = await loadExistingWindowsAt(tx, {
-      orgId: args.orgId,
-      at: runCreatedAt,
-    });
-    const windows =
-      existingWindows ??
-      (await ensureWindowsForRun(tx, { ...args, runCreatedAt, refresh }));
-    return windows ? availabilityFromWindows(windows) : null;
-  });
 }

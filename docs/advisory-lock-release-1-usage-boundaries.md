@@ -392,3 +392,39 @@ subscription before its own invoice replaces `last_processed_invoice_id`.
 The shared purchase/remote-object ownership protocol must fence that cleanup as
 well as quantity/schedule writes. This is unfinished R1 implementation, not an
 outgoing-writer drain gate or a claim that local receipt idempotency orders Stripe.
+
+## Firewall allowance admission ownership
+
+The firewall route now invokes `resolveBillableFirewallCacheExpiry$` with only
+its authenticated Run identity, billable flag and final cancellation signal.
+That command directly verifies Run ownership/status and calls the owned credit
+availability and Run allowance commands. The credential resolver receives only
+the completed billing result, preserving credential-error precedence and the
+existing 5-second low-balance / 30-second ordinary cache expiry. Its separate
+legacy credential database graph remains unfinished; this change does not
+classify that graph as compliant.
+
+`resolveUsageAllowanceAvailabilityForRun$` replaces the ordinary helper and its
+handle-taking Run/window loaders. Before its transaction, it reads one Run and
+at most two covering windows and prepares any Stripe entitlement refresh. Its
+transaction owns the existing compatibility key, the Run parent, entitlement
+and at most two selected windows; it executes every SQL statement directly.
+Already-issued Run windows remain authoritative across entitlement cancellation
+or rollover. If either window is missing, only a currently valid entitlement
+covering the Run's creation time may create the missing windows. Entitlement
+refresh still checks the prepared whole-row snapshot before publication. No
+provider request runs in this transaction, and no database handle leaves it.
+
+The existing credit compatibility key still protects outgoing window writers
+that use the advisory key without the prepared parent/entitlement ownership
+protocol. Removing it requires the complete money-writer protocol and actual
+outgoing serving/in-flight/rollback compatibility evidence. Other remaining
+usage helpers and activation callers are implementation work, not completed by
+that deployment evidence.
+
+Existing firewall API coverage retains invalid/foreign/terminal Run rejection,
+active credit admission after exhaustion, credits after subscription deletion,
+expired-credit denial and bounded cache expiry. Allowance tests retain Run-time
+window anchoring and denial when the entitlement does not cover the Run.
+Focused lint and formatting pass; the final combined HEAD pipeline owns type
+and behavioral verification. No local Vitest or development server was run.
