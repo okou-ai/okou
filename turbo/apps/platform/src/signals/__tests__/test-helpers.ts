@@ -5,7 +5,10 @@ import { afterEach, beforeAll, beforeEach } from "vitest";
 import { installPlatformLifecycle } from "../../test/platform-lifecycle.ts";
 import { installSharedDatabaseWorkerBootstrap } from "../../test/shared-database-worker-bootstrap.ts";
 import { logger, resetLoggerForTest } from "../log";
-import { resetLocalStorageForTest$ } from "../external/local-storage";
+import {
+  resetDeliveryLocalStorageForTest$,
+  resetLocalStorageForTest$,
+} from "../external/local-storage";
 import { resetAllMockHandlers } from "../../mocks/handlers";
 import { createTestMocks, type TestMocks } from "./test-mocks.ts";
 
@@ -138,6 +141,7 @@ export function testContext(): TestContext {
         store = createStore();
         context.signal.addEventListener("abort", () => {
           store?.set(resetLocalStorageForTest$);
+          store?.set(resetDeliveryLocalStorageForTest$);
           resetLoggerForTest();
 
           store = null;

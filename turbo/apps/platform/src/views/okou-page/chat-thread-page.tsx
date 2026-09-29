@@ -7667,12 +7667,21 @@ function inputPromptRunAnchor(inputEvent: ChatInputEvent | undefined) {
  * replaces it, so the spinner subscribes on its own instead of making the whole
  * message row re-render on every optimistic change.
  */
-function OptimisticSpinner({ eventId }: { eventId: string }) {
+function OptimisticSpinner({
+  eventId,
+  thread,
+}: {
+  eventId: string;
+  thread: ChatPanelSignals;
+}) {
   // Streaming deltas rebuild the optimistic buffer, so compare the ids instead
   // of the set identity: a pending message keeps every other spinner idle.
   const optimisticEventIds = useGet(optimisticEventIds$, {
     equalityFn: equalSets,
   });
+  const delivery = useLastResolved(thread.deliveryIntents$)?.find(
+    (item) => {return item.clientEventId === eventId},
+  );
   // The slot repeats the bubble's own padding and line metrics so the spinner
   // centers on the first line of text however many lines the message wraps to.
   // It stays reserved when the message is confirmed, so the bubble never
@@ -7683,7 +7692,8 @@ function OptimisticSpinner({ eventId }: { eventId: string }) {
       className="flex shrink-0 py-3 text-[0.9375rem] leading-[1.7]"
     >
       <span className="flex h-[1.7em] w-3.5 items-center">
-        {optimisticEventIds.has(eventId) ? (
+        {optimisticEventIds.has(eventId) &&
+        (!delivery || delivery.status === "prepared") ? (
           <LazySpinner
             size={14}
             data-optimistic-user-message
@@ -7691,6 +7701,64 @@ function OptimisticSpinner({ eventId }: { eventId: string }) {
           />
         ) : null}
       </span>
+    </div>
+  );
+}
+
+function MessageDeliveryStatus({
+  eventId,
+  thread,
+}: {
+  eventId: string;
+  thread: ChatPanelSignals;
+}) {
+  const intents = useLastResolved(thread.deliveryIntents$);
+  const delivery = intents?.find((item) => {return item.clientEventId === eventId});
+  const optimisticIds = useGet(optimisticEventIds$, { equalityFn: equalSets });
+  const [retryState, retry] = useLoadableSet(thread.retryInputDelivery$);
+  const signal = useGet(pageSignal$);
+  if (
+    !delivery ||
+    delivery.kind !== "existing-thread" ||
+    !optimisticIds.has(eventId)
+  ) {
+    return null;
+  }
+  if (delivery.status === "prepared") {
+    return (
+      <p role="status" className="text-xs text-muted-foreground">
+        Sending message…
+      </p>
+    );
+  }
+  const label =
+    delivery.status === "rejected"
+      ? delivery.rejection === "authentication"
+        ? "Message not sent. Sign in again, then check delivery before retrying."
+        : "Message not sent. Your text and uploaded file references are saved in this browser."
+      : delivery.status === "uncertain"
+        ? "Delivery unconfirmed. Check the server before retrying."
+        : "Message accepted; waiting for confirmation in the chat history.";
+  return (
+    <div
+      role={delivery.status === "rejected" ? "alert" : "status"}
+      className="mt-1 flex max-w-[85%] flex-wrap items-center justify-end gap-2 text-xs text-muted-foreground"
+    >
+      <span>{label}</span>
+      <Button
+        type="button"
+        size="sm"
+        variant="neutral"
+        disabled={retryState.state === "loading" || !navigator.locks}
+        onClick={() => {
+          detach(retry(eventId, signal), Reason.DomCallback);
+        }}
+      >
+        {retryState.state === "loading" ? "Checking…" : "Check and retry"}
+      </Button>
+      {!navigator.locks ? (
+        <span>Safe retry requires a browser with Web Locks support.</span>
+      ) : null}
     </div>
   );
 }
@@ -7775,12 +7843,15 @@ function PagedUserMessage({
                 document={renderDocument}
                 attachments={allAttachments}
                 onImageClick={openLightbox}
-                leading={<OptimisticSpinner eventId={event.id} />}
+                leading={
+                  <OptimisticSpinner eventId={event.id} thread={thread} />
+                }
               />
               {/* The row belongs to the bubble, not to the button inside it.
                   Sharing hides the button and a message nobody can copy has
                   none, and in both cases the next message in the burst is
                   still pulled up by the height this row holds. */}
+              <MessageDeliveryStatus eventId={event.id} thread={thread} />
               <UserMessageActions
                 showCopy={canCopy && sharingPhase === "idle"}
                 runId={sharingPhase === "idle" ? inputEvent?.runId : undefined}

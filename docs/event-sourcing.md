@@ -40,9 +40,19 @@ optimistic event should be deleted.
 
 These exceptional inconsistencies are rare. Maintaining a second rollback
 lifecycle for them adds defensive complexity and can remove an event that was
-persisted but has not reached the client yet. A stale optimistic projection is
-recoverable: refreshing the page discards page-local optimistic state and
-reloads the authoritative persistent state, restoring eventual consistency.
+persisted but has not reached the client yet. A refresh discards the page-local
+buffer and reloads the authoritative persistent state. For **existing-thread
+user prompts**, a separate, owner-and-organization-scoped browser delivery intent
+preserves the prepared POST body, uploaded-file references, and original event
+IDs before the composer is cleared. On refresh the page reprojects an unmatched
+intent as an optimistic message with an explicit rejected, unconfirmed, or
+awaiting-confirmation state; it never mistakes a cache-only miss for proof of
+non-delivery. A manual retry first catches up canonical server events and, only
+when still unmatched, resends with the original ID. Matching canonical events
+remove the optimistic projection through normal reconciliation and delete the
+local intent. An abort or transport failure never removes the optimistic event.
+The recovery copy is limited to 24 intents per identity, 256 KiB per intent,
+and seven days; it is not an event log or an automatic resend queue.
 
 ## Session Output Streaming
 

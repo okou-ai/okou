@@ -222,6 +222,10 @@ import {
 } from "./user-message-files.ts";
 import type { ChatForwardContext } from "./chat-forward.ts";
 import {
+  deliveryIntentsForThread,
+  type ExistingThreadDeliveryIntent,
+} from "./chat-delivery-intents.ts";
+import {
   createComposerConnectorSignals,
   type ComposerConnectorSignals,
 } from "../okou-page/connectors.ts";
@@ -680,6 +684,8 @@ function createDraftSync(threadId: string, draft: DraftSignals) {
         );
         return;
       }
+      // A subsequent edit cancels this clear rather than overwriting the newer draft.
+      const clearSignal = set(draftSyncReset$, signal);
       await set(
         patchChatThreadDraft$,
         {
@@ -687,7 +693,7 @@ function createDraftSync(threadId: string, draft: DraftSignals) {
           userMessage: null,
           attachments: null,
         },
-        signal,
+        clearSignal,
       );
     },
   );
@@ -3024,6 +3030,10 @@ function sendRuntimeOptions(
 interface SendMessageDeps {
   readonly threadId: string;
   readonly agentId: string;
+  prepareInput$: Command<
+    Promise<ExistingThreadDeliveryIntent | null>,
+    [SendInputChatEvent, AbortSignal]
+  >;
   modelSelectionForSend$: Command<
     Promise<ModelProviderSelection | null>,
     [AbortSignal]
@@ -3031,7 +3041,7 @@ interface SendMessageDeps {
   draft: DraftSignals;
   cancelDraftSync$: Command<void, []>;
   flushDraftClear$: Command<Promise<void>, [AbortSignal]>;
-  sendEvent$: Command<Promise<void>, [SendChatEventInput, AbortSignal]>;
+  sendEvent$: Command<Promise<boolean>, [SendChatEventInput, AbortSignal]>;
 }
 
 interface ValidatedSendMessageRequest {
@@ -3139,31 +3149,39 @@ function createPerformSendMessage(deps: SendMessageDeps) {
         generationTemplate,
         attachments: result.attachments,
       });
-      set(cancelDraftSync$);
-      set(draft.clear$);
       const { runOptions, realAgentInPreviewEnabled } = sendRuntimeOptions(
         get(featureSwitch$),
         request.modelSelection,
       );
-      await Promise.all([
+      const input = sendInputForRequest({
+        request,
+        result,
+        userMessage,
+        runOptions,
+        realAgentInPreviewEnabled,
+      });
+      const intent = await set(deps.prepareInput$, input, signal);
+      if (!intent) {
+        return false;
+      }
+      signal.throwIfAborted();
+      set(cancelDraftSync$);
+      set(draft.clear$);
+      const [draftClear, send] = await Promise.allSettled([
         flushDraftForSend(request.options?.forward, () => {
           return set(flushDraftClear$, signal);
         }),
-        set(
-          sendEvent$,
-          sendInputForRequest({
-            request,
-            result,
-            userMessage,
-            runOptions,
-            realAgentInPreviewEnabled,
-          }),
-          signal,
-        ),
+        set(sendEvent$, { ...input, preparedIntent: intent }, signal),
       ]);
       signal.throwIfAborted();
-      L.debug("sendMessage$ POST accepted", { threadId });
-      return true;
+      if (send.status === "rejected") {
+        throw send.reason;
+      }
+      if (draftClear.status === "rejected" && !signal.aborted) {
+        L.debug("sendMessage$ remote draft clear failed", { threadId });
+      }
+      signal.throwIfAborted();
+      return send.value;
     },
   );
 }
@@ -3241,44 +3259,51 @@ function createQueueMessage(deps: SendMessageDeps) {
       const features = get(featureSwitch$);
       const userMessage = queueUserMessage(options, result);
 
-      set(cancelDraftSync$);
-      set(draft.clear$);
-
       const { runOptions, realAgentInPreviewEnabled } = sendRuntimeOptions(
         features,
         modelSelection,
       );
-      await Promise.all([
+      const input: SendInputChatEvent = {
+        kind: "input",
+        delivery: "queue",
+        agentId,
+        prompt: result.prompt,
+        hasTextContent: result.hasTextContent,
+        userMessage,
+        selectedModel: modelSelection?.selectedModel ?? null,
+        ...(runOptions === undefined ? {} : { runOptions }),
+        ...(realAgentInPreviewEnabled ? { realAgentInPreview: true } : {}),
+        ...(options.computerUseHostId === undefined
+          ? {}
+          : { computerUseHostId: options.computerUseHostId }),
+        ...(options.cloudBrowserEnabled === undefined
+          ? {}
+          : { cloudBrowserEnabled: options.cloudBrowserEnabled }),
+        ...(options.forward ? { source: options.forward } : {}),
+        ...(options.onOptimisticSend
+          ? { onOptimisticSend: options.onOptimisticSend }
+          : {}),
+      };
+      const intent = await set(deps.prepareInput$, input, signal);
+      if (!intent) {
+        return false;
+      }
+      signal.throwIfAborted();
+      set(cancelDraftSync$);
+      set(draft.clear$);
+      const [draftClear, send] = await Promise.allSettled([
         options.forward ? Promise.resolve() : set(flushDraftClear$, signal),
-        set(
-          sendEvent$,
-          {
-            kind: "input",
-            delivery: "queue",
-            agentId,
-            prompt: result.prompt,
-            hasTextContent: result.hasTextContent,
-            userMessage,
-            selectedModel: modelSelection?.selectedModel ?? null,
-            ...(runOptions === undefined ? {} : { runOptions }),
-            ...(realAgentInPreviewEnabled ? { realAgentInPreview: true } : {}),
-            ...(options.computerUseHostId === undefined
-              ? {}
-              : { computerUseHostId: options.computerUseHostId }),
-            ...(options.cloudBrowserEnabled === undefined
-              ? {}
-              : { cloudBrowserEnabled: options.cloudBrowserEnabled }),
-            ...(options.forward ? { source: options.forward } : {}),
-            ...(options.onOptimisticSend
-              ? { onOptimisticSend: options.onOptimisticSend }
-              : {}),
-          },
-          signal,
-        ),
+        set(sendEvent$, { ...input, preparedIntent: intent }, signal),
       ]);
       signal.throwIfAborted();
-
-      return true;
+      if (send.status === "rejected") {
+        throw send.reason;
+      }
+      if (draftClear.status === "rejected" && !signal.aborted) {
+        L.debug("queueMessage$ remote draft clear failed", { threadId });
+      }
+      signal.throwIfAborted();
+      return send.value;
     },
   );
 }
@@ -3289,7 +3314,7 @@ interface RecallMessageDeps {
   chatEvents$: Computed<ChatEvent[]>;
   draft: DraftSignals;
   queueDraftSync$: Command<Promise<void>, [AbortSignal]>;
-  sendEvent$: Command<Promise<void>, [SendChatEventInput, AbortSignal]>;
+  sendEvent$: Command<Promise<boolean>, [SendChatEventInput, AbortSignal]>;
 }
 
 function createRecallMessage(deps: RecallMessageDeps) {
@@ -3405,7 +3430,7 @@ function createInterruptLiveRuns({
   readonly threadId: string;
   readonly agentId: string;
   chatEvents$: Computed<ChatEvent[]>;
-  sendEvent$: Command<Promise<void>, [SendChatEventInput, AbortSignal]>;
+  sendEvent$: Command<Promise<boolean>, [SendChatEventInput, AbortSignal]>;
 }) {
   const optimisticCreateUnsettled$ =
     optimisticChatThreadCreateUnsettled(threadId);
@@ -3663,6 +3688,7 @@ function createThreadComposerSignalsWithContext(
     cancelDraftSync$,
     flushDraftClear$,
     sendEvent$: chatEvents.sendEvent$,
+    prepareInput$: chatEvents.prepareInput$,
   });
   return createChatThreadComposerSignals({
     chatEvents,
@@ -3801,6 +3827,8 @@ export function createChatPanelSignals(
   return {
     threadId,
     agentId,
+    deliveryIntents$: deliveryIntentsForThread(threadId),
+    retryInputDelivery$: chatEvents.retryInput$,
     threadDraft$,
     threadMeta$,
     optimisticCreateUnsettled$,

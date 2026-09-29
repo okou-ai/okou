@@ -31,6 +31,7 @@ import type { ChatThreadFeedbackSignals } from "./chat-thread-feedback.ts";
 import type { ChatThreadSharingSignals } from "./chat-thread-sharing.ts";
 import type { ChatThreadPinSignals } from "./chat-thread-pin.ts";
 import type { ChatForwardContext } from "./chat-forward.ts";
+import type { ChatDeliveryIntent } from "./chat-delivery-intents.ts";
 import type { ChatConversationLocatorSignals } from "./chat-conversation-locator.ts";
 import type { RunDetailSignals } from "./run-detail.ts";
 
@@ -135,6 +136,11 @@ export interface QueueMessageOptions {
 }
 
 export interface ChatPanelSignals {
+  readonly deliveryIntents$: Computed<Promise<ChatDeliveryIntent[]>>;
+  readonly retryInputDelivery$: Command<
+    Promise<boolean>,
+    [string, AbortSignal]
+  >;
   readonly runDetails$: Computed<ReadonlyMap<string, RunDetailSignals>>;
   readonly threadId: string;
   readonly agentId: string;
