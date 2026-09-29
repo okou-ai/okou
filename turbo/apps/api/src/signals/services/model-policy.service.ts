@@ -1255,7 +1255,16 @@ async function persistOrgModelPolicyUpdates(params: {
   const tx = params.db;
   await tx
     .insert(orgModelPolicies)
-    .values(replacementPolicyValues(params, params.now))
+    .values(
+      replacementPolicyValues(
+        {
+          orgId: params.orgId,
+          userId: params.userId,
+          policies: params.policies,
+        },
+        params.now,
+      ),
+    )
     .onConflictDoNothing({
       target: [orgModelPolicies.orgId, orgModelPolicies.model],
     });
