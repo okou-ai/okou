@@ -151,7 +151,7 @@ executed directly by their owning commands. Pi invalidation/recapture still
 propagates their transaction and remains implementation work. Transient provider
 refresh failures no longer mutate newer authorization metadata; rotating-token
 and explicit revocation protocols still need provider-specific completion.
-The Airtable reconnect-on-uncertain-refresh choice remains pending.
+Airtable is decided: ordinary refresh like every other provider, accepting that a rare concurrent refresh may revoke the grant and require reconnection.
 
 ## Correction follow-up and acceptance gaps
 
@@ -490,8 +490,9 @@ The principal unfinished Release 1 requirements remain shared Stripe quantity/
 schedule publication and ordinary purchase admission, actual caller-specific
 credential rotation, monetary writer/finite trial provenance, Morning Brief
 latest-choice/native ownership, and the remaining database-handle graph.
-Airtable's verified token-family revocation behavior is a specific open
-implementation and product tradeoff, documented in the credential inventory.
+Airtable's token-family revocation tradeoff is decided (ordinary refresh,
+accepted reconnect risk) and is no longer an open R1 item; see the credential
+inventory.
 No field, coordination table, JSON claim, new trigger or third release is used
 to hide these gaps.
 
