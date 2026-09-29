@@ -1,36 +1,6 @@
 import { connectors } from "@okouai/db/schema/connector";
 import { and, eq } from "drizzle-orm";
 import { holdDeferredRow } from "./pi-deferred-lock";
-import {
-  barrierQueryBinds,
-  barrierQueryText,
-  withDatabaseTransactionBarrierFixture,
-  type TransactionBarrier,
-} from "./database-transaction-barrier";
-
-/** Pause the real account writer at COMMIT, after its final cancellation check. */
-export async function withConnectorAccountCommitBarrierFixture<T>(
-  connectorId: string,
-  work: (barrier: TransactionBarrier) => Promise<T>,
-  signal: AbortSignal,
-): Promise<T> {
-  return await withDatabaseTransactionBarrierFixture(
-    {
-      select: (queryArgs) => {
-        return (
-          barrierQueryText(queryArgs).startsWith('update "connectors"') &&
-          barrierQueryBinds(queryArgs, connectorId)
-        );
-      },
-      stopAt: (queryArgs) => {
-        return barrierQueryText(queryArgs) === "commit";
-      },
-      work,
-    },
-    signal,
-  );
-}
-
 /** Pause an API reconnect at its account row; all resulting state is asserted through routes. */
 export async function holdConnectorAccountFixture(
   args: {

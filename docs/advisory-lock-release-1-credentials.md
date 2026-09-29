@@ -75,3 +75,12 @@ account-lock fixture and lock waiter are removed from these cases. A reconnect
 token response deletes its account through the API before returning, and the
 callback must reject publication without recreating that account. Concurrent
 callbacks based on one account revision still allow only one completion receipt.
+
+Automatic post-commit cancellation cases abort the request at the Ably provider
+boundary, then read the account, sync the running target and request firewall
+authorization through production APIs. They verify both retained OAuth token
+use and no-auth credential removal, plus the runtime wakeup payload. The private
+SQL COMMIT pause fixture is removed. Non-cancelled start/callback outcomes remain
+covered by the ordinary Automatic API suites; these cases no longer duplicate
+them. This exercises cancellation during notification, not an artificial pause
+inside database COMMIT.
