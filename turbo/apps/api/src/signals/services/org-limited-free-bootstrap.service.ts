@@ -8,24 +8,21 @@ import {
   VOLUME_ORG_USER_ID,
 } from "@okouai/core/storage-names";
 import { agents } from "@okouai/db/schema/agent";
-import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
+import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
+import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { storages } from "@okouai/db/schema/storage";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, notExists, sql } from "drizzle-orm";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { writeDb$ } from "../external/db";
 import { deleteS3Objects, listS3ObjectsUnderPrefix } from "../external/s3";
 import { nowDate } from "../../lib/time";
-import { writeAgentInstructionsStorageInTransaction$ } from "./agent-instructions-storage.service";
+import { writeAgentInstructionsStorage$ } from "./agent-instructions-storage.service";
 import { newStorageS3Location } from "./storage-s3-prefix.utils";
-import {
-  grantOnboardingCredits,
-  LIMITED_FREE_ONBOARDING_CREDITS,
-  onboardingCreditsExpiresAt,
-} from "./onboarding-credit-grants.service";
+import { grantOnboardingCredits$ } from "./onboarding-credit-grants.service";
 import { upsertOrgNoSecretModelProvider$ } from "./model-provider.service";
 import {
   DEFAULT_AGENT_AVATAR_URL,
@@ -33,275 +30,291 @@ import {
   DEFAULT_AGENT_NAME,
   DEFAULT_AGENT_SOUND,
 } from "./default-agent-profile";
-import {
-  upsertOrgPlanEntitlement,
-  writeOrgMetadataWithPlanEntitlements,
-} from "./org-plan-entitlements.service";
-import type { Tx } from "../../lib/db-types";
-import { onRejection } from "../utils";
+import { onRejection, settle } from "../utils";
+import { orgPlanEntitlementValues } from "./org-plan-entitlements.service";
 
 const L = logger("org-limited-free-bootstrap.service");
-
-type DbTransaction = Tx;
 
 interface EnsureOrgLimitedFreeBootstrapArgs {
   readonly orgId: string;
   readonly ownerUserId: string;
 }
 
-type BootstrapOwnerMembershipArgs = EnsureOrgLimitedFreeBootstrapArgs;
-
-type BootstrapReservation =
-  | {
-      readonly status: "skipped";
-      readonly agentId: string;
-    }
-  | {
-      readonly status: "reserved";
-      readonly agentId: string;
-    };
-
 interface EnsureOrgLimitedFreeBootstrapResult {
   readonly bootstrapped: boolean;
   readonly agentId: string | null;
 }
 
-interface BootstrapInstructionsStorage {
-  readonly id: string;
+interface BootstrapCandidate extends EnsureOrgLimitedFreeBootstrapArgs {
+  readonly agentId: string;
+  readonly agentName: string;
+  readonly storageId: string;
   readonly s3Prefix: string;
 }
 
-async function ensureBootstrapInstructionsStorage(
-  tx: DbTransaction,
-  orgId: string,
-): Promise<BootstrapInstructionsStorage> {
-  const { storageId, s3Prefix } = newStorageS3Location(orgId);
-  const [storage] = await tx
-    .insert(storages)
-    .values({
-      id: storageId,
-      orgId,
-      userId: VOLUME_ORG_USER_ID,
-      name: getInstructionsStorageName(DEFAULT_AGENT_NAME),
-      s3Prefix,
-    })
-    .onConflictDoUpdate({
-      target: [storages.orgId, storages.userId, storages.name],
-      // Own the real parent before deciding whether seed publication is still
-      // needed. Preserve the canonical identity, HEAD and timestamps on reuse.
-      set: { name: sql`${storages.name}` },
-    })
-    .returning({ id: storages.id, s3Prefix: storages.s3Prefix });
-  if (!storage) {
-    throw new Error("Expected bootstrap instructions Storage after upsert");
-  }
-  return storage;
-}
+class BootstrapPublicationLost extends Error {}
 
-async function lockOrgBootstrap(
-  tx: DbTransaction,
-  orgId: string,
-): Promise<void> {
-  await tx.execute(
-    // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-    sql`SELECT pg_advisory_xact_lock(hashtext('org_bootstrap:' || ${orgId}))`,
-  );
-}
-
-async function existingDefaultAgentId(
-  tx: DbTransaction,
-  orgId: string,
-): Promise<string | null> {
-  const [orgRow] = await tx
-    .select({ defaultAgentId: orgMetadata.defaultAgentId })
-    .from(orgMetadata)
-    .where(eq(orgMetadata.orgId, orgId))
-    .limit(1);
-
-  if (!orgRow?.defaultAgentId) {
-    return null;
-  }
-
-  const [existing] = await tx
-    .select({ id: agents.id })
-    .from(agents)
-    .where(and(eq(agents.id, orgRow.defaultAgentId), eq(agents.orgId, orgId)))
-    .limit(1);
-
-  return existing?.id ?? null;
-}
-
-async function upsertBootstrapOwnerMembership(
-  tx: DbTransaction,
-  args: BootstrapOwnerMembershipArgs,
-): Promise<void> {
-  const cachedAt = nowDate();
-  await tx
-    .insert(orgMembersCache)
-    .values({
-      orgId: args.orgId,
-      userId: args.ownerUserId,
-      role: "admin",
-      cachedAt,
-    })
-    .onConflictDoUpdate({
-      target: [orgMembersCache.orgId, orgMembersCache.userId],
-      set: { role: "admin", cachedAt },
-    });
-
-  await tx
-    .insert(orgMembersMetadata)
-    .values({
-      orgId: args.orgId,
-      userId: args.ownerUserId,
-      createdAt: cachedAt,
-      updatedAt: cachedAt,
-    })
-    .onConflictDoNothing();
-}
-
-function isPaidTier(tier: string): boolean {
-  return tier === "pro" || tier === "team" || tier === "custom";
-}
-
-async function reserveBootstrapAgent(
-  tx: DbTransaction,
-  args: BootstrapOwnerMembershipArgs & { readonly agentId: string },
-): Promise<BootstrapReservation> {
-  await upsertBootstrapOwnerMembership(tx, args);
-
-  const existingAgentId = await existingDefaultAgentId(tx, args.orgId);
-  if (existingAgentId) {
-    return { status: "skipped", agentId: existingAgentId };
-  }
-
-  return { status: "reserved", agentId: args.agentId };
-}
-
-async function finalizeBootstrap(
-  tx: DbTransaction,
-  args: {
-    readonly orgId: string;
-    readonly ownerUserId: string;
-    readonly agentId: string;
-  },
-): Promise<EnsureOrgLimitedFreeBootstrapResult> {
-  const existingAgentId = await existingDefaultAgentId(tx, args.orgId);
-  if (existingAgentId) {
-    return { bootstrapped: false, agentId: existingAgentId };
-  }
-
-  const createdAt = nowDate();
-  await tx
-    .insert(agents)
-    .values({
-      id: args.agentId,
-      orgId: args.orgId,
-      name: DEFAULT_AGENT_NAME,
-      owner: args.ownerUserId,
-      visibility: "public",
-      displayName: DEFAULT_AGENT_DISPLAY_NAME,
-      description: null,
-      sound: DEFAULT_AGENT_SOUND,
-      avatarUrl: DEFAULT_AGENT_AVATAR_URL,
-      modelProviderId: null,
-      selectedModel: null,
-      preferPersonalProvider: false,
-      createdAt,
-      updatedAt: createdAt,
-    })
-    .onConflictDoNothing();
-
-  const [agentRow] = await tx
-    .select({ id: agents.id })
-    .from(agents)
-    .where(
-      and(eq(agents.orgId, args.orgId), eq(agents.name, DEFAULT_AGENT_NAME)),
-    )
-    .limit(1);
-  if (!agentRow) {
-    throw new Error("Expected canonical Agent after bootstrap upsert");
-  }
-
-  const [orgRow] = await tx
-    .select({ tier: orgMetadata.tier })
-    .from(orgMetadata)
-    .where(eq(orgMetadata.orgId, args.orgId))
-    .limit(1);
-  const tier = orgRow?.tier ?? "limited-free-1";
-
-  if (isPaidTier(tier)) {
-    await tx
-      .update(orgMetadata)
-      .set({ defaultAgentId: agentRow.id, updatedAt: nowDate() })
-      .where(eq(orgMetadata.orgId, args.orgId));
-    return { bootstrapped: true, agentId: agentRow.id };
-  }
-
-  await writeOrgMetadataWithPlanEntitlements(tx, {
-    writeOrgMetadata: async (writeTx) => {
-      return await writeTx
-        .insert(orgMetadataCanonicalWrites)
+const prepareBootstrapMembership$ = command(
+  async (
+    { set },
+    args: EnsureOrgLimitedFreeBootstrapArgs,
+    signal: AbortSignal,
+  ) => {
+    const db = set(writeDb$);
+    const cachedAt = nowDate();
+    await db.transaction(async (tx) => {
+      await tx
+        .insert(orgMembersCache)
         .values({
           orgId: args.orgId,
-          defaultAgentId: agentRow.id,
-          tier: "limited-free-1",
-          onboardingPaymentPending: false,
-          onboardingComplete: false,
-          updatedAt: nowDate(),
+          userId: args.ownerUserId,
+          role: "admin",
+          cachedAt,
         })
         .onConflictDoUpdate({
-          target: orgMetadataCanonicalWrites.orgId,
-          set: {
-            defaultAgentId: agentRow.id,
-            tier: "limited-free-1",
-            onboardingPaymentPending: false,
-            updatedAt: nowDate(),
-          },
-        })
-        .returning({
-          orgId: orgMetadata.orgId,
+          target: [orgMembersCache.orgId, orgMembersCache.userId],
+          set: { role: "admin", cachedAt },
         });
-    },
-    writePlanEntitlement: async (writeTx, row) => {
-      await upsertOrgPlanEntitlement(writeTx, {
-        orgId: row.orgId,
-        tier: "limited-free-1",
-        source: "org_metadata_bootstrap",
+      await tx
+        .insert(orgMembersMetadata)
+        .values({
+          orgId: args.orgId,
+          userId: args.ownerUserId,
+          createdAt: cachedAt,
+          updatedAt: cachedAt,
+        })
+        .onConflictDoNothing();
+    });
+    signal.throwIfAborted();
+    const [existing] = await db
+      .select({ id: agents.id })
+      .from(orgMetadata)
+      .innerJoin(
+        agents,
+        and(
+          eq(agents.id, orgMetadata.defaultAgentId),
+          eq(agents.orgId, orgMetadata.orgId),
+        ),
+      )
+      .where(eq(orgMetadata.orgId, args.orgId));
+    signal.throwIfAborted();
+    return existing?.id ?? null;
+  },
+);
+
+const publishBootstrapCandidate$ = command(
+  async (
+    { set },
+    candidate: BootstrapCandidate,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    await db.transaction(async (tx) => {
+      // DB/API rollout: outgoing writers publish the default unconditionally.
+      // Remove in Release 2 after pre-Release-1 requests drain and all serving
+      // and rollback API versions use conditional default publication.
+      await tx.execute(
+        // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
+        sql`SELECT pg_advisory_xact_lock(hashtext('org_bootstrap:' || ${candidate.orgId}))`,
+      );
+      const [metadata] = await tx
+        .select({
+          tier: orgMetadata.tier,
+          defaultAgentId: orgMetadata.defaultAgentId,
+        })
+        .from(orgMetadata)
+        .where(eq(orgMetadata.orgId, candidate.orgId))
+        .for("update");
+      if (!metadata) {
+        throw new Error(
+          "Organization disappeared before bootstrap publication",
+        );
+      }
+      if (metadata.defaultAgentId) {
+        throw new BootstrapPublicationLost();
+      }
+      const paid = ["pro", "team", "custom"].includes(metadata.tier);
+      if (!paid) {
+        const [grant] = await tx
+          .select({ id: creditExpiresRecord.id })
+          .from(creditExpiresRecord)
+          .where(
+            and(
+              eq(creditExpiresRecord.orgId, candidate.orgId),
+              eq(
+                creditExpiresRecord.stripeInvoiceId,
+                "limited-free-onboarding",
+              ),
+            ),
+          );
+        if (!grant) {
+          // A paid-to-free transition raced preparation. Retry the bootstrap
+          // through its normal entrypoint instead of publishing without credit.
+          throw new Error(
+            "Onboarding credit grant is required before default publication",
+          );
+        }
+      }
+      const createdAt = nowDate();
+      await tx.insert(agents).values({
+        id: candidate.agentId,
+        orgId: candidate.orgId,
+        name: candidate.agentName,
+        owner: candidate.ownerUserId,
+        visibility: "public",
+        displayName: DEFAULT_AGENT_DISPLAY_NAME,
+        description: null,
+        sound: DEFAULT_AGENT_SOUND,
+        avatarUrl: DEFAULT_AGENT_AVATAR_URL,
+        modelProviderId: null,
+        selectedModel: null,
+        preferPersonalProvider: false,
+        createdAt,
+        updatedAt: createdAt,
       });
-    },
-  });
+      const [published] = await tx
+        .update(orgMetadata)
+        .set({
+          defaultAgentId: candidate.agentId,
+          ...(!paid
+            ? { tier: "limited-free-1", onboardingPaymentPending: false }
+            : {}),
+          updatedAt: nowDate(),
+        })
+        .where(
+          and(
+            eq(orgMetadata.orgId, candidate.orgId),
+            isNull(orgMetadata.defaultAgentId),
+          ),
+        )
+        .returning({ agentId: orgMetadata.defaultAgentId });
+      if (!published) {
+        // The candidate Agent must never become visible after losing the CAS.
+        throw new BootstrapPublicationLost();
+      }
+      if (!paid) {
+        const entitlement = orgPlanEntitlementValues(
+          {
+            orgId: candidate.orgId,
+            tier: "limited-free-1",
+            source: "org_metadata_bootstrap",
+          },
+          { stripeSubscriptionId: null, sourceMetadata: {} },
+        );
+        await tx
+          .insert(orgPlanEntitlements)
+          .values(entitlement)
+          .onConflictDoUpdate({
+            target: orgPlanEntitlements.orgId,
+            set: { ...entitlement, stripeProductId: null, metadataHash: null },
+          });
+      }
+      signal.throwIfAborted();
+    });
+  },
+);
 
-  await grantOnboardingCredits(
-    tx,
-    args.orgId,
-    LIMITED_FREE_ONBOARDING_CREDITS,
-    onboardingCreditsExpiresAt(nowDate()),
-  );
+const cleanupBootstrapCandidate$ = command(
+  async ({ get, set }, candidate: BootstrapCandidate): Promise<void> => {
+    const db = set(writeDb$);
+    // Lock the publication row before deciding that an uncertain COMMIT lost.
+    // A request still committing must release this row before compensation can
+    // observe its authoritative outcome. Read failure retains the candidate.
+    const canRemove = await db.transaction(async (tx) => {
+      await tx
+        .select({ orgId: orgMetadata.orgId })
+        .from(orgMetadata)
+        .where(eq(orgMetadata.orgId, candidate.orgId))
+        .for("update");
+      const [existing] = await tx
+        .select({ id: agents.id })
+        .from(agents)
+        .where(
+          and(
+            eq(agents.orgId, candidate.orgId),
+            eq(agents.name, candidate.agentName),
+          ),
+        );
+      if (existing) {
+        return false;
+      }
+      await tx.delete(storages).where(
+        and(
+          eq(storages.id, candidate.storageId),
+          eq(storages.orgId, candidate.orgId),
+          eq(storages.userId, VOLUME_ORG_USER_ID),
+          eq(storages.s3Prefix, candidate.s3Prefix),
+          notExists(
+            tx
+              .select({ id: agents.id })
+              .from(agents)
+              .where(
+                and(
+                  eq(agents.orgId, candidate.orgId),
+                  eq(agents.name, candidate.agentName),
+                ),
+              ),
+          ),
+        ),
+      );
+      return true;
+    });
+    if (!canRemove) {
+      return;
+    }
+    const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
+    const objects = await get(
+      listS3ObjectsUnderPrefix(bucket, candidate.s3Prefix),
+    );
+    await get(
+      deleteS3Objects(
+        bucket,
+        objects.map((object) => {
+          return object.key;
+        }),
+      ),
+    );
+  },
+);
 
-  return { bootstrapped: true, agentId: agentRow.id };
-}
+const prepareAndPublishBootstrapCandidate$ = command(
+  async (
+    { set },
+    candidate: BootstrapCandidate,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    await db.insert(storages).values({
+      id: candidate.storageId,
+      orgId: candidate.orgId,
+      userId: VOLUME_ORG_USER_ID,
+      name: getInstructionsStorageName(candidate.agentName),
+      s3Prefix: candidate.s3Prefix,
+    });
+    signal.throwIfAborted();
+    await set(
+      writeAgentInstructionsStorage$,
+      {
+        orgId: candidate.orgId,
+        agentName: candidate.agentName,
+        instructions: SEED_INSTRUCTIONS,
+      },
+      signal,
+    );
+    await set(publishBootstrapCandidate$, candidate, signal);
+  },
+);
 
 export const ensureOrgLimitedFreeBootstrap$ = command(
   async (
-    { get, set },
+    { set },
     args: EnsureOrgLimitedFreeBootstrapArgs,
     signal: AbortSignal,
   ): Promise<EnsureOrgLimitedFreeBootstrapResult> => {
-    const writeDb = set(writeDb$);
-    const agentId = randomUUID();
-    const reservation = await writeDb.transaction(async (tx) => {
-      return await reserveBootstrapAgent(tx, {
-        ...args,
-        agentId,
-      });
-    });
-    signal.throwIfAborted();
-
-    if (reservation.status === "skipped") {
-      return { bootstrapped: false, agentId: reservation.agentId };
+    const existingId = await set(prepareBootstrapMembership$, args, signal);
+    if (existingId) {
+      return { bootstrapped: false, agentId: existingId };
     }
-
     await set(
       upsertOrgNoSecretModelProvider$,
       {
@@ -311,112 +324,53 @@ export const ensureOrgLimitedFreeBootstrap$ = command(
       },
       signal,
     );
-    signal.throwIfAborted();
-
-    // Retain the actual generation outside the transaction: a newly inserted
-    // parent can roll back after uploading bytes, leaving no row to find later.
-    let instructionsStorage: BootstrapInstructionsStorage | undefined;
-    const cleanupUnclaimedInstructions = async (): Promise<void> => {
-      const attemptedStorage = instructionsStorage;
-      if (!attemptedStorage) {
-        return;
-      }
-      const s3Prefix = await writeDb.transaction(
-        async (tx) => {
-          await lockOrgBootstrap(tx, args.orgId);
-          const identity = and(
-            eq(storages.id, attemptedStorage.id),
-            eq(storages.orgId, args.orgId),
-            eq(storages.userId, VOLUME_ORG_USER_ID),
-            eq(storages.name, getInstructionsStorageName(DEFAULT_AGENT_NAME)),
-          );
-          const [storage] = await tx
-            .select({ s3Prefix: storages.s3Prefix })
-            .from(storages)
-            .where(identity)
-            .for("update");
-          if (!storage) {
-            // This generation was rolled back or already deleted. A replacement
-            // has its own UUID/prefix and must never be adopted by compensation.
-            return attemptedStorage.s3Prefix;
-          }
-          if (await existingDefaultAgentId(tx, args.orgId)) {
-            return null;
-          }
-          const [deleted] = await tx
-            .delete(storages)
-            .where(identity)
-            .returning({ s3Prefix: storages.s3Prefix });
-          if (!deleted) {
-            throw new Error(
-              "Locked bootstrap instructions Storage disappeared",
-            );
-          }
-          return deleted.s3Prefix;
-        },
-        { isolationLevel: "read committed" },
-      );
-
-      if (!s3Prefix) {
-        return;
-      }
-      const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
-      const objects = await get(listS3ObjectsUnderPrefix(bucket, s3Prefix));
-      await get(
-        deleteS3Objects(
-          bucket,
-          objects.map((object) => {
-            return object.key;
-          }),
-        ),
-      );
+    await set(grantOnboardingCredits$, args.orgId, signal);
+    const agentId = randomUUID();
+    const candidate: BootstrapCandidate = {
+      ...args,
+      agentId,
+      agentName: `${DEFAULT_AGENT_NAME}-${agentId}`,
+      ...newStorageS3Location(args.orgId),
     };
-
-    const bootstrap = writeDb.transaction(
-      async (tx) => {
-        // Keep the advisory key until every serving/rollback writer owns the
-        // Storage parent before its fresh default-Agent decision.
-        await lockOrgBootstrap(tx, args.orgId);
-        instructionsStorage = await ensureBootstrapInstructionsStorage(
-          tx,
-          args.orgId,
-        );
-        signal.throwIfAborted();
-        const existingAgentId = await existingDefaultAgentId(tx, args.orgId);
-        if (existingAgentId) {
-          return { bootstrapped: false, agentId: existingAgentId };
-        }
-
-        await set(
-          writeAgentInstructionsStorageInTransaction$,
-          {
-            tx,
-            orgId: args.orgId,
-            agentName: DEFAULT_AGENT_NAME,
-            instructions: SEED_INSTRUCTIONS,
-          },
-          signal,
-        );
-        signal.throwIfAborted();
-
-        return await finalizeBootstrap(tx, {
-          orgId: args.orgId,
-          ownerUserId: args.ownerUserId,
-          agentId: reservation.agentId,
-        });
-      },
-      { isolationLevel: "read committed" },
+    const attempt = await settle(
+      onRejection(
+        set(prepareAndPublishBootstrapCandidate$, candidate, signal),
+        () => {
+          return set(cleanupBootstrapCandidate$, candidate);
+        },
+      ),
+      signal,
     );
-    const result = await onRejection(bootstrap, cleanupUnclaimedInstructions);
-    signal.throwIfAborted();
-
-    if (result.bootstrapped) {
-      L.debug("Org limited-free bootstrap completed", {
-        orgId: args.orgId,
-        agentId: result.agentId,
-      });
+    if (!attempt.ok) {
+      const db = set(writeDb$);
+      const [published] = await db
+        .select({ id: agents.id })
+        .from(orgMetadata)
+        .innerJoin(
+          agents,
+          and(
+            eq(agents.id, orgMetadata.defaultAgentId),
+            eq(agents.orgId, orgMetadata.orgId),
+          ),
+        )
+        .where(eq(orgMetadata.orgId, args.orgId));
+      signal.throwIfAborted();
+      if (
+        published?.id === candidate.agentId ||
+        attempt.error instanceof BootstrapPublicationLost
+      ) {
+        return {
+          bootstrapped: published?.id === candidate.agentId,
+          agentId: published?.id ?? null,
+        };
+      }
+      throw attempt.error;
     }
-
-    return result;
+    signal.throwIfAborted();
+    L.debug("Org limited-free bootstrap completed", {
+      orgId: args.orgId,
+      agentId,
+    });
+    return { bootstrapped: true, agentId };
   },
 );

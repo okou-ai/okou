@@ -130,6 +130,20 @@ describe("default Agent bootstrap", () => {
     });
     const beforeRetry = await accept(api.agents.list({ headers }), [200]);
     expect(beforeRetry.body).toStrictEqual([]);
+    // Credits have their own atomic lifetime. Failed remote preparation must
+    // neither publish a partial Agent nor duplicate this committed grant.
+    const grantedBeforeRetry = await accept(
+      api.billing.get({ headers }),
+      [200],
+    );
+    expect(grantedBeforeRetry.body.credits).toBe(1000);
+    expect(grantedBeforeRetry.body.creditGrants).toStrictEqual([
+      expect.objectContaining({
+        source: "onboarding",
+        amount: 1000,
+        remaining: 1000,
+      }),
+    ]);
 
     const retries = await Promise.all([
       accept(api.status.getStatus({ headers }), [200]),
