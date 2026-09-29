@@ -48,7 +48,7 @@ export interface BuiltinConnectorCredentialConnection {
   readonly tokenExpiresAt: Date | null;
 }
 
-type BuiltinConnectorCredentialConnectionResult =
+export type BuiltinConnectorCredentialConnectionResult =
   | { readonly kind: "missing" }
   | { readonly kind: "unavailable" }
   | {
@@ -62,11 +62,11 @@ interface BuiltinConnectorStoredValueRef {
   readonly valueRef: string;
 }
 
-interface BuiltinConnectorStoredValue extends BuiltinConnectorStoredValueRef {
+export interface BuiltinConnectorStoredValue extends BuiltinConnectorStoredValueRef {
   readonly storedValue: string;
 }
 
-type PreparedConnectorRefreshOutput =
+export type PreparedConnectorRefreshOutput =
   | {
       readonly kind: "secret";
       readonly name: string;
@@ -78,7 +78,7 @@ type PreparedConnectorRefreshOutput =
       readonly value: string;
     };
 
-type BuiltinConnectorCredentialRefreshResult =
+export type BuiltinConnectorCredentialRefreshResult =
   | {
       readonly kind: "ok";
       readonly accessToken: string;
@@ -109,7 +109,7 @@ interface BuiltinConnectorCredentialRefreshArgs {
   readonly userId: string;
 }
 
-type BuiltinConnectorRefreshTokenAccess = Extract<
+export type BuiltinConnectorRefreshTokenAccess = Extract<
   ConnectorRuntimeMethod["method"]["access"],
   { readonly kind: "refresh-token" }
 >;
@@ -118,11 +118,13 @@ interface TerminalOAuthRefreshFailure {
   readonly reconnectReason: ConnectorReconnectReason | null;
 }
 
-function parseOauthScopes(value: string | null): readonly string[] | null {
+export function parseOauthScopes(
+  value: string | null,
+): readonly string[] | null {
   return value === null ? null : oauthScopesSchema.parse(JSON.parse(value));
 }
 
-function builtinConnectorStoredValueRef(
+export function builtinConnectorStoredValueRef(
   valueRef: string,
 ): BuiltinConnectorStoredValueRef {
   if (valueRef.startsWith("$secrets.")) {
@@ -282,7 +284,7 @@ async function loadBuiltinConnectorStoredValues(args: {
   return storedValueSnapshot(rows);
 }
 
-function storedValueSnapshot(
+export function storedValueSnapshot(
   rows: readonly {
     readonly kind: string;
     readonly name: string;
@@ -305,7 +307,7 @@ function storedValueSnapshot(
   return values;
 }
 
-async function decryptCredentialValueSnapshot(
+export async function decryptCredentialValueSnapshot(
   snapshot: ReadonlyMap<string, BuiltinConnectorStoredValue>,
   featureSwitchContext?: FeatureSwitchContext,
 ): Promise<ReadonlyMap<string, string>> {
@@ -333,7 +335,7 @@ export async function loadBuiltinConnectorCredentialValues(args: {
   );
 }
 
-function refreshTokenExpiresAt(
+export function refreshTokenExpiresAt(
   expiresIn: number | undefined,
   defaultExpiresInMs: number | undefined,
 ): Date | null {
@@ -345,7 +347,7 @@ function refreshTokenExpiresAt(
     : new Date(nowDate().getTime() + defaultExpiresInMs);
 }
 
-async function prepareConnectorRefreshOutputs(
+export async function prepareConnectorRefreshOutputs(
   args: {
     readonly access: BuiltinConnectorRefreshTokenAccess;
     readonly connection: BuiltinConnectorCredentialConnection;
@@ -384,7 +386,7 @@ async function prepareConnectorRefreshOutputs(
   return prepared;
 }
 
-function connectorRefreshInputConditions(args: {
+export function connectorRefreshInputConditions(args: {
   readonly access: BuiltinConnectorRefreshTokenAccess;
   readonly connection: BuiltinConnectorCredentialConnection;
 }) {
@@ -422,7 +424,7 @@ function connectorRefreshInputConditions(args: {
   return { secretCondition, variableCondition };
 }
 
-function connectorRefreshStateSelection() {
+export function connectorRefreshStateSelection() {
   return {
     authMethod: connectors.authMethod,
     externalEmail: connectors.externalEmail,
@@ -434,7 +436,7 @@ function connectorRefreshStateSelection() {
   };
 }
 
-function connectorRefreshStateMatches(
+export function connectorRefreshStateMatches(
   current:
     | {
         readonly authMethod: string;
@@ -679,7 +681,7 @@ async function markConnectorCredentialNeedsReconnectAfterRefreshFailure(
   return row !== undefined;
 }
 
-function terminalOAuthRefreshFailure(
+export function terminalOAuthRefreshFailure(
   error: unknown,
 ): TerminalOAuthRefreshFailure | null {
   if (
@@ -780,7 +782,7 @@ async function loadConnectorRefreshInputs(
   return { kind: "ok", inputs, snapshot };
 }
 
-function connectorRefreshAccessToken(args: {
+export function connectorRefreshAccessToken(args: {
   readonly access: BuiltinConnectorRefreshTokenAccess;
   readonly connection: BuiltinConnectorCredentialConnection;
   readonly outputs: Readonly<Record<string, string | undefined>>;

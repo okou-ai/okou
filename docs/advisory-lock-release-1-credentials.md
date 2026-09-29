@@ -23,9 +23,9 @@ The six advisory acquisition definitions remain. This work prepares selected wri
 
 - Builtin OAuth callback, Automatic OAuth refresh and its legacy retirement store, ordinary refresh's legacy helper-owned commit path and its nine resolver chains still propagate root database or transaction values. Automatic callback including state claim, catalog preparation and post-commit wakeup has a command-owned boundary. Other builtin/custom callback routes still use the legacy state helper; it remains only for those actual callers.
 - Model-provider firewall refresh, settings and account paths have not been migrated to the complete final command-owned conditional protocol. They still execute provider/KMS work through the locked helper graph.
-- Gmail lifecycle is unchanged. The user decision about omitting account-global users.stop is still pending; the accepted Forms gap is not authorization for a Gmail behavior change.
+- Gmail now has explicit approval for local disable, stopping renewal and remote natural expiry without account-global `users.stop`. Its implementation is separate from Forms and remains tracked until the actual caller graph is changed. Calendar also has explicit approval for a remote gap and best-effort candidate cleanup; authority and basic deduplication remain required.
 - Calendar lifecycle preparation/activation/reconciliation still has helper-owned and propagated transaction paths. Current-channel remote stop remains inside the existing decision boundary.
-- Forms workflow-thread creation still accepts a transaction. Its credential/catalog resolver helpers and shared queue model preparation still receive root database handles. Other event sources still use the legacy workflow queue source callback; the Forms admission change does not claim to migrate those sources.
+- Forms workflow-thread creation still accepts a transaction. Shared create/official authority preparation, account-deletion watch cleanup and queue model preparation retain legacy database interfaces. The regular Forms watch/configuration/dispatch credential path now uses owning commands. Other event sources still use the legacy workflow queue source callback; this does not claim to migrate those sources.
 
 ### Validation
 
@@ -181,8 +181,8 @@ structural schema matches main exactly. The final zero-trigger and no-new-field
 requirements remain in force, and Forms no longer introduces a trigger removal
 gate based on outgoing newest-response repair.
 
-Remaining R1 implementation is explicit: Forms access/catalog/credential helpers,
-shared creation and queue thread initialization still propagate handles; generic
+Remaining R1 implementation is explicit: Forms account-deletion watch/credential
+preparation, shared creation and queue thread initialization still propagate handles; generic
 account deletion, selection and credential callers retain their legacy outer
 transaction graphs. Cross-kind official transitions, initial materialization and
 other providers' finalization paths still need command ownership migration.
@@ -196,3 +196,29 @@ provider work without the common stale-authorization predicate. Its removal
 requires the credential protocol and outgoing-writer gates, not cursor replay.
 Accepted Forms trigger loss does not authorize stale credential publication or a
 Gmail behavior change.
+
+### Forms credential and dispatch command follow-up
+
+Regular Forms configuration, ensure, reconcile and dispatch now call the owning
+builtin credential commands. Connection and encrypted input snapshots are read
+by commands using `writeDb$`; KMS decryption, provider refresh and output encryption
+finish before the publication command opens its local transaction. That command
+executes the existing account/input predicates and credential writes directly.
+It passes no database or transaction to another function. Pure existing value,
+crypto and SQL-condition helpers remain shared with unmigrated provider callers.
+
+The credential behavior is preserved: stale authorization cannot inherit a new
+connection's token, failed old refresh cannot mark a replacement as revoked, and
+provider output is returned only after its conditional local publication wins.
+The old helper interface remains for actual non-migrated callers; the provider
+rotation common-protocol obligation is not declared complete by this boundary
+change alone.
+
+Forms watch lookup, event history and duplicate reads own their SQL. Dispatch
+uses commands with plain source observations instead of passing a database and a
+store-capturing run callback through helpers. Fire permission reads retain the
+membership, workflow visibility, installed official workflow and agent visibility
+checks. Missing-thread initialization still calls the legacy thread transaction
+helper, so that specific graph remains unfinished. The account-deletion cleanup
+path also still uses its legacy credential preparation until its complete owning
+command migration; it is not hidden by the regular-path conversion.

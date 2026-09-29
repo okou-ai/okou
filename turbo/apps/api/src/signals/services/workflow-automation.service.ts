@@ -110,7 +110,7 @@ import {
   readGoogleFormsActivationAccount$,
   reprojectGoogleFormsAutomationOwnership$,
   hasEnabledGoogleFormsConsumer$,
-  prepareGoogleFormsResponseEventConfigForPersist,
+  prepareGoogleFormsResponseEventConfigForPersist$,
 } from "./google-forms-automation-event.service";
 import { resolveGoogleMeetAutomationConnectorId } from "./google-meet-automation-account.service";
 import {
@@ -2617,6 +2617,11 @@ const cleanFailedGoogleFormsAutomation$ = command(
     }
   },
 );
+const missingGoogleFormsUrlResult = {
+  kind: "bad-request",
+  message: "formUrl is required for Google Forms response automations",
+} as const;
+
 const createGoogleFormsEventAutomationForWorkflow$ = command(
   async (
     { set },
@@ -2628,16 +2633,17 @@ const createGoogleFormsEventAutomationForWorkflow$ = command(
   ): Promise<AutomationResult> => {
     const db = set(writeDb$);
     if (!("formUrl" in args.input.eventConfig)) {
-      return {
-        kind: "bad-request",
-        message: "formUrl is required for Google Forms response automations",
-      };
+      return missingGoogleFormsUrlResult;
     }
-    const connectorId = await resolveGoogleFormsAutomationConnectorId(db, {
-      orgId: args.input.orgId,
-      userId: args.input.member.userId,
-      workflowId: args.context.workflowId,
-    });
+    const connectorId = await set(
+      readGoogleFormsActivationAccount$,
+      {
+        orgId: args.input.orgId,
+        userId: args.input.member.userId,
+        workflowId: args.context.workflowId,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     if (connectorId === null) {
       return {
@@ -2646,8 +2652,8 @@ const createGoogleFormsEventAutomationForWorkflow$ = command(
           "Connect Google Forms before adding a Google Forms response automation",
       };
     }
-    const prepared = await prepareGoogleFormsResponseEventConfigForPersist(
-      db,
+    const prepared = await set(
+      prepareGoogleFormsResponseEventConfigForPersist$,
       {
         orgId: args.input.orgId,
         userId: args.input.member.userId,
@@ -3965,48 +3971,51 @@ async function prepareOfficialGithubEvent(
     : prepared;
 }
 
-async function prepareOfficialGoogleFormsEvent(
-  db: Db,
-  input: CreateGoogleFormsEventAutomationInput,
-  signal: AbortSignal,
-): Promise<OfficialAutomationEventPreparationResult> {
-  if (!("formUrl" in input.eventConfig)) {
-    return {
-      kind: "bad-request",
-      message: "formUrl is required for Google Forms response automations",
-    };
-  }
-  const connectorId = await resolveGoogleFormsAutomationConnectorId(db, {
-    orgId: input.orgId,
-    userId: input.member.userId,
-    workflowId: input.workflowId,
-  });
-  signal.throwIfAborted();
-  if (connectorId === null) {
-    return {
-      kind: "bad-request",
-      message:
-        "Connect Google Forms before using Google Forms response automations",
-    };
-  }
-  const prepared = await prepareGoogleFormsResponseEventConfigForPersist(
-    db,
-    {
-      orgId: input.orgId,
-      userId: input.member.userId,
-      connectorId,
-      eventConfig: input.eventConfig,
-    },
-    signal,
-  );
-  signal.throwIfAborted();
-  return prepared.kind === "ok"
-    ? preparedOfficialEvent(prepared.eventConfig, {
-        eventConnectorId: connectorId,
-        googleFormsSeedCursor: prepared.seedCursor,
-      })
-    : prepared;
-}
+const prepareOfficialGoogleFormsEvent$ = command(
+  async (
+    { set },
+    input: CreateGoogleFormsEventAutomationInput,
+    signal: AbortSignal,
+  ): Promise<OfficialAutomationEventPreparationResult> => {
+    if (!("formUrl" in input.eventConfig)) {
+      return missingGoogleFormsUrlResult;
+    }
+    const connectorId = await set(
+      readGoogleFormsActivationAccount$,
+      {
+        orgId: input.orgId,
+        userId: input.member.userId,
+        workflowId: input.workflowId,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (connectorId === null) {
+      return {
+        kind: "bad-request",
+        message:
+          "Connect Google Forms before using Google Forms response automations",
+      };
+    }
+    const prepared = await set(
+      prepareGoogleFormsResponseEventConfigForPersist$,
+      {
+        orgId: input.orgId,
+        userId: input.member.userId,
+        connectorId,
+        eventConfig: input.eventConfig,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    return prepared.kind === "ok"
+      ? preparedOfficialEvent(prepared.eventConfig, {
+          eventConnectorId: connectorId,
+          googleFormsSeedCursor: prepared.seedCursor,
+        })
+      : prepared;
+  },
+);
 
 async function prepareOfficialGoogleMeetEvent(
   db: Db,
@@ -4099,7 +4108,7 @@ export const prepareOfficialAutomationReconfiguration$ = command(
       return await prepareOfficialGoogleCalendarEvent(db, input, signal);
     }
     if (automationCreateInputIsGoogleForms(input)) {
-      return await prepareOfficialGoogleFormsEvent(db, input, signal);
+      return await set(prepareOfficialGoogleFormsEvent$, input, signal);
     }
     if (automationCreateInputIsGoogleMeet(input)) {
       return await prepareOfficialGoogleMeetEvent(db, input, signal);
