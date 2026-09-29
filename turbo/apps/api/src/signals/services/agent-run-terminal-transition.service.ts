@@ -6,6 +6,7 @@ import { and, inArray, type SQL } from "drizzle-orm";
 
 import { cleanupDisconnectedPersonalModelProviderAccounts } from "./model-provider-account.service";
 import type { Tx } from "../../lib/db-types";
+import type { Db } from "../external/db";
 
 type TerminalRunStatus = Extract<
   RunStatus,
@@ -69,23 +70,23 @@ export interface ReleasedRunSlot {
 
 /**
  * The single release of run slots: deletes the active rows of the given runs
- * and returns the slots this call freed. Every path that ends a run's slot
- * calls it inside the transaction that commits the path's other writes, then
- * schedules `scheduleReleasedSlotPicks$` after commit, before any other side
- * effect. The row is the per-thread active-run lock, so a concurrent launch
- * may wait on this uncommitted DELETE while holding other locks. This MUST be
- * the last statement of the enclosing transaction. `condition` narrows the
- * release to rows that still match it at delete time.
+ * and returns the slots this call freed. Callers with other writes pass their
+ * transaction; standalone releases pass the database directly. Schedule
+ * `scheduleReleasedSlotPicks$` after commit, before any other side effect.
+ * The row is the per-thread active-run lock, so a concurrent launch may wait
+ * on this uncommitted DELETE while holding other locks. When called inside a
+ * transaction, this MUST be its last statement. `condition` narrows the release
+ * to rows that still match it at delete time.
  */
 export async function releaseRunSlots(
-  tx: Tx,
+  db: Db,
   runIds: readonly string[],
   condition?: SQL,
 ): Promise<readonly ReleasedRunSlot[]> {
   if (runIds.length === 0) {
     return [];
   }
-  return await tx
+  return await db
     .delete(activeAgentRuns)
     .where(and(inArray(activeAgentRuns.runId, [...runIds]), condition))
     .returning({

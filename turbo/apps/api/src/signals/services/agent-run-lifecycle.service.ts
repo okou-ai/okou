@@ -13,7 +13,7 @@ import type { ReleasedRunSlot } from "./agent-run-terminal-transition.service";
 const L = logger("RunLifecycle");
 
 /**
- * After a transaction that called `releaseRunSlots` commits: org-pick each
+ * After the slot release commits: org-pick each
  * organization that got a slot back, in its own background task per
  * organization, independent of the path's other side effects. Call it before
  * those effects so a failing or slow terminal callback cannot delay it.

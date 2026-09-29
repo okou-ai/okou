@@ -96,8 +96,8 @@ export const captureRunActivity$ = command(
  * A run that reached `running` keeps its active row after it turns terminal
  * until the runner reports completion. When the runner never does, release the
  * row once the run has been terminal and its sandbox silent for the
- * cancellation-recovery grace. A bounded read, then the release in its own
- * transaction; the freed organizations are picked after it commits.
+ * cancellation-recovery grace. A bounded read, then one atomic release
+ * statement; the freed organizations are picked after it commits.
  */
 export const releaseStaleTerminalActiveAgentRuns$ = command(
   async (
@@ -159,15 +159,13 @@ export const releaseStaleTerminalActiveAgentRuns$ = command(
         }
         // Recheck the silence: a sandbox that resumed heartbeating since the
         // candidate read still has a runner and keeps its row.
-        const released = await db.transaction(async (tx) => {
-          return await releaseRunSlots(
-            tx,
-            silent.map((row) => {
-              return row.runId;
-            }),
-            lt(activeAgentRuns.lastHeartbeatAt, staleBefore),
-          );
-        });
+        const released = await releaseRunSlots(
+          db,
+          silent.map((row) => {
+            return row.runId;
+          }),
+          lt(activeAgentRuns.lastHeartbeatAt, staleBefore),
+        );
         return { released, silent };
       })(),
     );
