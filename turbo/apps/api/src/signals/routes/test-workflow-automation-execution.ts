@@ -9,8 +9,8 @@ import { bodyResultOf } from "../context/request";
 import { writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
 import type { RouteEntry } from "../route-entry";
-import { dispatchRunCallbacks } from "../services/agent-run-callback.service";
-import { handleWorkflowAutomationResultEmailInternalCallback } from "../services/internal-workflow-automation-result-email-callback.service";
+import { dispatchRunCallbacks$ } from "../services/agent-run-callback.service";
+import { handleWorkflowAutomationResultEmailInternalCallback$ } from "../services/internal-workflow-automation-result-email-callback.service";
 import { executeMorningBriefEnrollmentForMember$ } from "../services/morning-brief-enrollment-worker.service";
 import { executeMorningBriefGenerationRetentionWork$ } from "../services/morning-brief-generation-retention-worker.service";
 import { executeDueNotionAutomationEventsForAutomation$ } from "../services/notion-automation-event.service";
@@ -163,12 +163,15 @@ const dispatchTestWorkflowAutomationCallbacks$ = command(
     const db = set(writeDb$);
     const dispatches = await Promise.all(
       Array.from({ length: body.dispatch_count }, async () => {
-        return await dispatchRunCallbacks(
-          db,
-          body.run_id,
-          body.status,
-          undefined,
-          body.status === "failed" ? body.error : undefined,
+        return await set(
+          dispatchRunCallbacks$,
+          {
+            db,
+            runId: body.run_id,
+            status: body.status,
+            error: body.status === "failed" ? body.error : undefined,
+          },
+          signal,
         );
       }),
     );
@@ -226,8 +229,8 @@ const interruptTestWorkflowAutomationResultEmailCallback$ = command(
       .set({ attempts: 1, lastAttemptAt: nowDate() })
       .where(eq(agentRunCallbacks.id, callback.id));
     signal.throwIfAborted();
-    const result = await handleWorkflowAutomationResultEmailInternalCallback(
-      db,
+    const result = await set(
+      handleWorkflowAutomationResultEmailInternalCallback$,
       {
         callbackId: callback.id,
         runId: bodyResult.data.run_id,

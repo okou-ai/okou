@@ -23,12 +23,13 @@ import {
   describe,
   expect,
   it,
+  onTestFinished,
 } from "vitest";
 
 import { createDeferredPromise } from "../../signals/utils";
 import {
-  createInstrumentedPgStream,
   instrumentPgPool,
+  PgConnectionRuntime,
   withPgPoolAcquisitionCapture,
 } from "../db-instrumentation";
 import { env } from "../env";
@@ -271,12 +272,13 @@ describe("instrumentPgPool", () => {
   let provider: BasicTracerProvider;
   let tracer: Tracer;
   let pools: Pool[];
+  let connections: PgConnectionRuntime;
   let testAbortController: AbortController;
 
   function createPool(
     config: PoolConfig = {},
     stream: PgStreamFactory = () => {
-      return createInstrumentedPgStream();
+      return connections.createStream();
     },
     queryTracer: Tracer = tracer,
   ): Pool {
@@ -342,6 +344,7 @@ describe("instrumentPgPool", () => {
     });
     tracer = provider.getTracer("db-instrumentation-test");
     pools = [];
+    connections = new PgConnectionRuntime();
     testAbortController = new AbortController();
   });
 
@@ -456,7 +459,7 @@ describe("instrumentPgPool", () => {
   it("keeps a fast lookup on the single primary path", async () => {
     const controlledLookup = createControlledLookup(testAbortController.signal);
     const pool = createPool({}, () => {
-      return createInstrumentedPgStream({
+      return connections.createStream({
         lookup: controlledLookup.lookup,
         lookupHedgeDelayMs: 60_000,
       });
@@ -483,7 +486,7 @@ describe("instrumentPgPool", () => {
   it("uses a successful secondary lookup for one real database client", async () => {
     const controlledLookup = createControlledLookup(testAbortController.signal);
     const pool = createPool({}, () => {
-      return createInstrumentedPgStream({
+      return connections.createStream({
         lookup: controlledLookup.lookup,
         lookupHedgeDelayMs: 0,
       });
@@ -520,7 +523,7 @@ describe("instrumentPgPool", () => {
   it("attributes, bounds, and releases secondary lookup capacity", async () => {
     const controlledLookup = createControlledLookup(testAbortController.signal);
     const stream: PgStreamFactory = () => {
-      return createInstrumentedPgStream({
+      return connections.createStream({
         lookup: controlledLookup.lookup,
         lookupHedgeDelayMs: 0,
       });
@@ -592,10 +595,84 @@ describe("instrumentPgPool", () => {
     ).toBeUndefined();
   });
 
+  it("retains hedge capacity across pool replacement until the losing DNS lookup settles", async () => {
+    // HTTP clients cannot hold individual Node DNS callbacks across pool
+    // shutdown. Exercise real PG clients at the connection boundary instead.
+    const controlledLookup = createControlledLookup(testAbortController.signal);
+    const stream: PgStreamFactory = () => {
+      return connections.createStream({
+        lookup: controlledLookup.lookup,
+        lookupHedgeDelayMs: 0,
+      });
+    };
+    const startedSpans: ReadableSpan[] = [];
+    const spanProcessor = new SimpleSpanProcessor(new InMemorySpanExporter());
+    const observedProvider = new BasicTracerProvider({
+      spanProcessors: [
+        {
+          onStart(span) {
+            startedSpans.push(span);
+          },
+          onEnd(span) {
+            spanProcessor.onEnd(span);
+          },
+          forceFlush() {
+            return spanProcessor.forceFlush();
+          },
+          shutdown() {
+            return spanProcessor.shutdown();
+          },
+        },
+      ],
+    });
+    const observedTracer = observedProvider.getTracer("dns-pool-replacement");
+
+    onTestFinished(async () => {
+      await observedProvider.shutdown();
+    });
+    const firstPool = createPool({}, stream, observedTracer);
+    const firstQuery = firstPool.query("SELECT 118 AS winning_secondary");
+    const firstPrimary = await controlledLookup.next();
+    const firstSecondary = await controlledLookup.next();
+    await firstSecondary.complete();
+    expect((await firstQuery).rowCount).toBe(1);
+
+    // Pool shutdown does not cancel the losing system DNS lookup. Replacing
+    // the pool must not create another process-wide hedge permit.
+    pools = pools.filter((pool) => {
+      return pool !== firstPool;
+    });
+    await firstPool.end();
+    const nextPool = createPool({}, stream, observedTracer);
+    const nextStatement = "SELECT 119 AS replacement_primary_only";
+    const nextQuery = nextPool.query(nextStatement);
+    const nextPrimary = await controlledLookup.next();
+    await expect
+      .poll(() => {
+        return startedSpans.find((span) => {
+          return span.attributes["db.statement"] === nextStatement;
+        })?.attributes[CONNECTION_LOOKUP_HEDGE_BUDGET_UNAVAILABLE_ATTRIBUTE];
+      })
+      .toBe(true);
+    await nextPrimary.complete();
+    expect((await nextQuery).rowCount).toBe(1);
+    expect(controlledLookup.callCount).toBe(3);
+
+    await firstPrimary.complete();
+    const laterPool = createPool({}, stream, observedTracer);
+    const laterQuery = laterPool.query("SELECT 120 AS released_hedge_budget");
+    const laterPrimary = await controlledLookup.next();
+    const laterSecondary = await controlledLookup.next();
+    await laterSecondary.complete();
+    expect((await laterQuery).rowCount).toBe(1);
+    await laterPrimary.complete();
+    expect(controlledLookup.callCount).toBe(5);
+  });
+
   it("keeps primary errors authoritative after a secondary starts", async () => {
     const controlledLookup = createControlledLookup(testAbortController.signal);
     const pool = createPool({}, () => {
-      return createInstrumentedPgStream({
+      return connections.createStream({
         lookup: controlledLookup.lookup,
         lookupHedgeDelayMs: 0,
       });
@@ -621,7 +698,7 @@ describe("instrumentPgPool", () => {
   it("waits for the primary after a secondary lookup error", async () => {
     const controlledLookup = createControlledLookup(testAbortController.signal);
     const pool = createPool({}, () => {
-      return createInstrumentedPgStream({
+      return connections.createStream({
         lookup: controlledLookup.lookup,
         lookupHedgeDelayMs: 0,
       });
@@ -647,7 +724,7 @@ describe("instrumentPgPool", () => {
   it("cancels a pending secondary when the socket is destroyed", async () => {
     const controlledLookup = createControlledLookup(testAbortController.signal);
     const databaseUrl = new URL(env("DATABASE_URL"));
-    const socket = createInstrumentedPgStream({
+    const socket = connections.createStream({
       lookup: controlledLookup.lookup,
       lookupHedgeDelayMs: 0,
     });

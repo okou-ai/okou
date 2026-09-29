@@ -1,4 +1,4 @@
-import { command } from "ccstate";
+import { command, type Command } from "ccstate";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { and, eq, isNotNull } from "drizzle-orm";
 
@@ -8,7 +8,7 @@ import { writeDb$, type Db } from "../external/db";
 import { publishActiveInputToRunnerGroup } from "../external/realtime";
 import { settle, tapError } from "../utils";
 import { orgHasRunCapacity } from "./agent-run-create.service";
-import { dispatchFailedRunCallbacks } from "./agent-run-callback.service";
+import { dispatchFailedRunCallbacks$ } from "./agent-run-callback.service";
 import {
   consumeChatQueueHead$,
   rejectUnconsumedChatQueueHead$,
@@ -207,7 +207,7 @@ export const pickQueuedChatThread$ = command(
             chatThreadId: claim.chatThreadId,
             orgId: claim.orgId,
             head,
-            dispatchFailedCallbacks: dispatchFailedRunCallbacks,
+            dispatchFailedCallbacks: dispatchFailedRunCallbacks$,
           },
           signal,
         ),
@@ -242,7 +242,7 @@ export const pickQueuedChatThread$ = command(
             chatThreadId: claim.chatThreadId,
             orgId: claim.orgId,
             eventId: head.id,
-            dispatchFailedCallbacks: dispatchFailedRunCallbacks,
+            dispatchFailedCallbacks: dispatchFailedRunCallbacks$,
           },
           signal,
         );
@@ -285,47 +285,67 @@ export const pickQueuedChatThread$ = command(
  * touch) and then `publish` (the UI realtime event) run last, also when the
  * pick fails. No entry awaits the pick.
  */
-export const scheduleEnqueuedChatThreadPick$ = command(
-  (
-    { set },
-    input: {
-      readonly chatThreadId: string;
-      readonly afterPick?: (
-        pick: ChatQueuePick,
-        signal: AbortSignal,
-      ) => Promise<void>;
-      readonly touch?: () => Promise<void>;
-      readonly publish?: () => Promise<void>;
+export function createEnqueuedChatThreadPickScheduler<AfterPickInput>(
+  afterPick$: Command<
+    Promise<void>,
+    [AfterPickInput, ChatQueuePick, AbortSignal]
+  >,
+) {
+  return command(
+    (
+      { set },
+      input: {
+        readonly chatThreadId: string;
+        readonly afterPick?: AfterPickInput;
+        readonly touch?: () => Promise<void>;
+        readonly publish?: () => Promise<void>;
+      },
+    ): void => {
+      const backgroundSignal = new AbortController().signal;
+      waitUntil(
+        (async () => {
+          const picked = await settle(
+            (async () => {
+              const pick = await set(
+                pickQueuedChatThread$,
+                { chatThreadId: input.chatThreadId },
+                backgroundSignal,
+              );
+              if (input.afterPick !== undefined) {
+                await set(afterPick$, input.afterPick, pick, backgroundSignal);
+              }
+            })(),
+          );
+          await input.touch?.();
+          await input.publish?.();
+          if (!picked.ok) {
+            L.error("Failed to pick enqueued chat thread", {
+              chatThreadId: input.chatThreadId,
+              error: picked.error,
+            });
+          }
+        })(),
+      );
+      waitUntil(
+        notifyRunningChatRunOfPendingInput(set(writeDb$), input.chatThreadId),
+      );
     },
-  ): void => {
-    const backgroundSignal = new AbortController().signal;
-    waitUntil(
-      (async () => {
-        const picked = await settle(
-          (async () => {
-            const pick = await set(
-              pickQueuedChatThread$,
-              { chatThreadId: input.chatThreadId },
-              backgroundSignal,
-            );
-            await input.afterPick?.(pick, backgroundSignal);
-          })(),
-        );
-        await input.touch?.();
-        await input.publish?.();
-        if (!picked.ok) {
-          L.error("Failed to pick enqueued chat thread", {
-            chatThreadId: input.chatThreadId,
-            error: picked.error,
-          });
-        }
-      })(),
-    );
-    waitUntil(
-      notifyRunningChatRunOfPendingInput(set(writeDb$), input.chatThreadId),
-    );
+  );
+}
+
+const runEnqueuedChatThreadAfterPick$ = command(
+  (
+    _context,
+    afterPick: (pick: ChatQueuePick, signal: AbortSignal) => Promise<void>,
+    pick: ChatQueuePick,
+    signal: AbortSignal,
+  ) => {
+    return afterPick(pick, signal);
   },
 );
+
+export const scheduleEnqueuedChatThreadPick$ =
+  createEnqueuedChatThreadPickScheduler(runEnqueuedChatThreadAfterPick$);
 
 /** Keyset page size for passes over queued threads and organizations. */
 const PICK_PAGE_SIZE = 100;

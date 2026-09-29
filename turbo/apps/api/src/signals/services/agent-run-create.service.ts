@@ -42,7 +42,7 @@ import {
 } from "@okouai/api-contracts/contracts/openrouter-routing";
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { randomUUID } from "node:crypto";
-import { command, computed, type Computed } from "ccstate";
+import { command, computed, type Command, type Computed } from "ccstate";
 import {
   PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
   CANONICAL_CLAUDE_CONFIG_DIR,
@@ -1023,11 +1023,17 @@ type CreateRunErrorResult = Exclude<
   { readonly status: 201 }
 >;
 
-export type DispatchFailedRunCallbacks = (
-  db: Db,
-  runId: string,
-  error: string,
-) => Promise<void>;
+export interface DispatchFailedRunCallbackInput {
+  readonly db: Db;
+  readonly runId: string;
+  readonly error: string;
+  readonly callbacks: NonNullable<CreateAgentRunArgs["callbacks"]>;
+}
+
+export type DispatchFailedRunCallbacks = Command<
+  Promise<void>,
+  [DispatchFailedRunCallbackInput, AbortSignal]
+>;
 
 /**
  * A run producer's own write that must commit atomically with the Run insert.
@@ -8379,53 +8385,67 @@ async function persistFailedLaunch(
   };
 }
 
-async function commitFailedLaunch(
-  args: CommitFailedLaunchArgs,
-): Promise<
-  CreateRunSuccessResult | CreateRunErrorResult | QueueFirstRunClaimLost
-> {
-  const message = runFailureMessage(args.error);
-  const committed = await args.db.transaction(async (tx) => {
-    return await persistFailedLaunch(tx, args, message);
-  });
-
-  if (isRouteError(committed)) {
-    return committed;
-  }
-  if (committed.kind === "queue-first-claim-lost") {
-    return committed;
-  }
-
-  if (args.createArgs.chatThreadId) {
-    recordFirstAssistantEventEligibility({
-      runId: args.identity.runId,
-      apiStartedAt: args.createArgs.apiStartTime,
+const commitFailedLaunch$ = command(
+  async (
+    { set },
+    args: CommitFailedLaunchArgs,
+    signal: AbortSignal,
+  ): Promise<
+    CreateRunSuccessResult | CreateRunErrorResult | QueueFirstRunClaimLost
+  > => {
+    const message = runFailureMessage(args.error);
+    const committed = await args.db.transaction(async (tx) => {
+      return await persistFailedLaunch(tx, args, message);
     });
-  }
+    signal.throwIfAborted();
 
-  if (args.createArgs.dispatchFailedCallbacks) {
-    await tapError(
-      args.createArgs.dispatchFailedCallbacks(
-        args.db,
-        args.identity.runId,
-        message,
+    if (isRouteError(committed)) {
+      return committed;
+    }
+    if (committed.kind === "queue-first-claim-lost") {
+      return committed;
+    }
+
+    if (args.createArgs.chatThreadId) {
+      recordFirstAssistantEventEligibility({
+        runId: args.identity.runId,
+        apiStartedAt: args.createArgs.apiStartTime,
+      });
+    }
+
+    if (args.createArgs.dispatchFailedCallbacks) {
+      await tapError(
+        set(
+          args.createArgs.dispatchFailedCallbacks,
+          {
+            db: args.db,
+            runId: args.identity.runId,
+            error: message,
+            callbacks: args.createArgs.callbacks ?? [],
+          },
+          signal,
+        ),
+        (error) => {
+          L.error("Failed to dispatch failed-run callbacks", {
+            runId: args.identity.runId,
+            error,
+          });
+        },
+      );
+    }
+    const response = failedRunResponse(
+      runRecordFromLaunchIdentity(
+        args.identity,
+        "pending",
+        committed.createdAt,
       ),
-      (error) => {
-        L.error("Failed to dispatch failed-run callbacks", {
-          runId: args.identity.runId,
-          error,
-        });
-      },
+      args.error,
     );
-  }
-  const response = failedRunResponse(
-    runRecordFromLaunchIdentity(args.identity, "pending", committed.createdAt),
-    args.error,
-  );
-  return committed.queueFirstClaim
-    ? { ...response, queueFirstClaim: committed.queueFirstClaim }
-    : response;
-}
+    return committed.queueFirstClaim
+      ? { ...response, queueFirstClaim: committed.queueFirstClaim }
+      : response;
+  },
+);
 
 async function activatePreparedLaunchUsageAllowance(args: {
   readonly tx: DbTransaction;
@@ -11053,15 +11073,19 @@ const createAtomicLaunchRun$ = command(
       ) {
         return conflict(OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE);
       }
-      return await commitFailedLaunch({
-        db: input.db,
-        createArgs: input.args,
-        context: input.context,
-        identity,
-        callbackRows,
-        error: launchResult.error,
-        timing: input.timing,
-      });
+      return await set(
+        commitFailedLaunch$,
+        {
+          db: input.db,
+          createArgs: input.args,
+          context: input.context,
+          identity,
+          callbackRows,
+          error: launchResult.error,
+          timing: input.timing,
+        },
+        signal,
+      );
     }
 
     const launch = launchResult.value;

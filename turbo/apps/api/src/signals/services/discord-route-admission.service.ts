@@ -29,7 +29,7 @@ import {
   discordIngressSenderBindings,
   type DiscordVerifiedBinding,
 } from "./discord-data.service";
-import { sendDiscordIngressNotice } from "./internal-discord-chat-run-callback.service";
+import { sendDiscordIngressNotice$ } from "./internal-discord-chat-run-callback.service";
 
 function requireDiscordResult<T>(result: DiscordApiResult<T>): T {
   if (result.kind === "ok") {
@@ -275,30 +275,34 @@ async function loadAssignedDiscordRoute(
   return route;
 }
 
-async function terminalAgentUnavailable(
-  db: Db,
-  { claim, message, source: { binding } }: DiscordAdmissionContext,
-  signal: AbortSignal,
-): Promise<void> {
-  const terminal = await terminalIngress(db, {
-    ...claim,
-    reason: "agent_unavailable",
-  });
-  signal.throwIfAborted();
-  if (terminal) {
-    await sendDiscordIngressNotice(
-      db,
-      {
-        ingressId: claim.ingressId,
-        connectionId: binding.connectionId,
-        channelId: message.channel_id,
-        content:
-          "No accessible workspace default agent is configured. Ask a workspace admin to set one in Okou.",
-      },
-      signal,
-    );
-  }
-}
+const terminalAgentUnavailable$ = command(
+  async (
+    { set },
+    db: Db,
+    { claim, message, source: { binding } }: DiscordAdmissionContext,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const terminal = await terminalIngress(db, {
+      ...claim,
+      reason: "agent_unavailable",
+    });
+    signal.throwIfAborted();
+    if (terminal) {
+      await set(
+        sendDiscordIngressNotice$,
+        db,
+        {
+          ingressId: claim.ingressId,
+          connectionId: binding.connectionId,
+          channelId: message.channel_id,
+          content:
+            "No accessible workspace default agent is configured. Ask a workspace admin to set one in Okou.",
+        },
+        signal,
+      );
+    }
+  },
+);
 
 type DiscordRouteKey = Pick<
   DiscordChatThreadRouteBinding,
@@ -321,7 +325,7 @@ const createDiscordAdmissionRoute$ = command(
     const agent = effectiveAgent ?? (await get(discordEffectiveAgent(binding)));
     signal.throwIfAborted();
     if (!agent) {
-      await terminalAgentUnavailable(db, context, signal);
+      await set(terminalAgentUnavailable$, db, context, signal);
       signal.throwIfAborted();
       return undefined;
     }
@@ -373,7 +377,7 @@ const resolveCanonicalDiscordRoute$ = command(
       isDm && !assignedRoute ? await get(discordEffectiveAgent(binding)) : null;
     signal.throwIfAborted();
     if (isDm && !assignedRoute && !effectiveAgent) {
-      await terminalAgentUnavailable(db, context, signal);
+      await set(terminalAgentUnavailable$, db, context, signal);
       signal.throwIfAborted();
       return undefined;
     }

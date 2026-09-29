@@ -11,7 +11,6 @@ import {
   type Span,
   type Tracer,
 } from "@opentelemetry/api";
-import { createStore, state } from "ccstate";
 import type { Pool, PoolClient } from "pg";
 
 import { singleton } from "./singleton";
@@ -66,6 +65,7 @@ type PoolConnectCallback = (
   release?: PoolRelease,
 ) => void;
 type LookupSource = "primary" | "secondary";
+type ClaimSecondaryLookup = () => (() => void) | undefined;
 
 interface InstrumentedPgStreamOptions {
   lookup?: LookupFunction;
@@ -73,24 +73,9 @@ interface InstrumentedPgStreamOptions {
 }
 
 const systemLookup: LookupFunction = dnsLookup;
-const secondaryLookupInFlight$ = state(false);
-// eslint-disable-next-line ccstate/no-create-store -- Pre-2026-09-29 legacy only; no new violations or suppressions. DNS budget; replace with an explicit process owner.
-const lookupHedgeStore = createStore();
 
 class PoolQuerySpan {
   constructor(readonly span: Span) {}
-}
-
-function claimSecondaryLookup(): boolean {
-  if (lookupHedgeStore.get(secondaryLookupInFlight$)) {
-    return false;
-  }
-  lookupHedgeStore.set(secondaryLookupInFlight$, true);
-  return true;
-}
-
-function releaseSecondaryLookup(): void {
-  lookupHedgeStore.set(secondaryLookupInFlight$, false);
 }
 
 function createHedgedLookup(
@@ -98,13 +83,14 @@ function createHedgedLookup(
   lookup: LookupFunction,
   hedgeDelayMs: number,
   querySpan: Span | undefined,
+  claimSecondaryLookup: ClaimSecondaryLookup,
 ): LookupFunction {
   return function hedgedLookup(hostname, options, callback): void {
     let delivered = false;
     let primarySettled = false;
     let secondaryStarted = false;
     let secondarySettled = false;
-    let holdsHedgeBudget = false;
+    let releaseSecondaryLookup: (() => void) | undefined;
     let hedgeDelayController: AbortController | undefined;
 
     function removePendingHedgeListeners(): void {
@@ -119,9 +105,10 @@ function createHedgedLookup(
     }
 
     function releaseHedgeBudget(): void {
-      if (holdsHedgeBudget && primarySettled && secondarySettled) {
-        holdsHedgeBudget = false;
-        releaseSecondaryLookup();
+      if (releaseSecondaryLookup && primarySettled && secondarySettled) {
+        const release = releaseSecondaryLookup;
+        releaseSecondaryLookup = undefined;
+        release();
       }
     }
 
@@ -170,7 +157,8 @@ function createHedgedLookup(
       if (primarySettled || socket.destroyed || !socket.connecting) {
         return;
       }
-      if (!claimSecondaryLookup()) {
+      releaseSecondaryLookup = claimSecondaryLookup();
+      if (!releaseSecondaryLookup) {
         querySpan?.setAttribute(
           CONNECTION_LOOKUP_HEDGE_BUDGET_UNAVAILABLE_ATTRIBUTE,
           true,
@@ -178,7 +166,6 @@ function createHedgedLookup(
         return;
       }
 
-      holdsHedgeBudget = true;
       secondaryStarted = true;
       querySpan?.setAttribute(CONNECTION_LOOKUP_HEDGED_ATTRIBUTE, true);
       lookup(hostname, options, onSecondaryLookup);
@@ -214,6 +201,7 @@ class InstrumentedPgSocket extends Socket {
     private readonly lookup: LookupFunction,
     private readonly lookupHedgeDelayMs: number,
     private readonly querySpan: Span | undefined,
+    private readonly claimSecondaryLookup: ClaimSecondaryLookup,
   ) {
     super();
   }
@@ -245,6 +233,7 @@ class InstrumentedPgSocket extends Socket {
               this.lookup,
               this.lookupHedgeDelayMs,
               this.querySpan,
+              this.claimSecondaryLookup,
             ),
           },
           connectionListener,
@@ -282,8 +271,30 @@ function normalizeAddressFamily(
   return undefined;
 }
 
-export function createInstrumentedPgStream(
-  options: InstrumentedPgStreamOptions = {},
+/** Owns the DNS hedge capacity shared by a database runtime's pool generations. */
+export class PgConnectionRuntime {
+  private secondaryLookupInFlight = false;
+
+  private claimSecondaryLookup(): (() => void) | undefined {
+    if (this.secondaryLookupInFlight) {
+      return undefined;
+    }
+    this.secondaryLookupInFlight = true;
+    return () => {
+      this.secondaryLookupInFlight = false;
+    };
+  }
+
+  createStream(options: InstrumentedPgStreamOptions = {}): Socket {
+    return createInstrumentedPgStream(options, () => {
+      return this.claimSecondaryLookup();
+    });
+  }
+}
+
+function createInstrumentedPgStream(
+  options: InstrumentedPgStreamOptions,
+  claimSecondaryLookup: ClaimSecondaryLookup,
 ): Socket {
   const markedSpan = context.active().getValue(POOL_QUERY_SPAN_KEY);
   const querySpan =
@@ -294,6 +305,7 @@ export function createInstrumentedPgStream(
     options.lookup ?? systemLookup,
     options.lookupHedgeDelayMs ?? LOOKUP_HEDGE_DELAY_MS,
     querySpan,
+    claimSecondaryLookup,
   );
   if (!querySpan) {
     return socket;

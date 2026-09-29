@@ -1,6 +1,6 @@
 import { resolveEnqueuedChatInputModel } from "./chat-input-model.service";
 import { randomUUID } from "node:crypto";
-import { command, createStore } from "ccstate";
+import { command } from "ccstate";
 import { discordGatewayEnvelopeSchema } from "@okouai/api-contracts/contracts/discord-gateway";
 import { MAX_DISCORD_FILE_SIZE_BYTES } from "@okouai/api-contracts/contracts/integrations-discord-files";
 import { discordChatIngress } from "@okouai/db/schema/discord-chat-ingress";
@@ -42,7 +42,7 @@ import {
   canonicalInputContentType,
   canonicalInputMessageFiles,
   InputFileImportError,
-  materializeCanonicalInputFile$,
+  createCanonicalInputFileCommands,
   type CanonicalInputAsset,
 } from "./canonical-asset.service";
 import { createChatEventSourcePart } from "./chat-event-annotation.service";
@@ -57,8 +57,9 @@ import {
   type DiscordChatEventContext,
 } from "./chat-event.service";
 import {
+  createEnqueuedChatThreadPickScheduler,
   enqueueChatInput,
-  scheduleEnqueuedChatThreadPick$,
+  type ChatQueuePick,
 } from "./chat-thread-queue-drain.service";
 import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
 import { createUserMessageDocument } from "./chat-user-message.service";
@@ -72,8 +73,8 @@ import {
 import { getDiscordAppConfig } from "./discord-config";
 import { readDiscordHistoryPage$ } from "./discord-context.service";
 import {
-  sendDiscordChatReply,
-  sendDiscordIngressNotice,
+  sendDiscordChatReply$,
+  sendDiscordIngressNotice$,
   type DiscordIngressNotice,
   type DiscordReplyRequest,
 } from "./internal-discord-chat-run-callback.service";
@@ -94,123 +95,152 @@ class DiscordAttachmentImportError extends InputFileImportError {
   }
 }
 
-async function downloadInputAttachment(
-  args: {
-    readonly connectionId: string;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly guildId: string;
-    readonly discordUserId: string;
-    readonly messageId: string;
-    readonly attachment: DiscordAttachmentDownload;
-  },
-  signal: AbortSignal,
-): Promise<Response> {
-  const first = await settle(
-    fetchDiscordAttachment(args.attachment, signal),
-    signal,
-  );
-  if (first.ok) {
-    return new Response(new Uint8Array(first.value.bytes).buffer, {
-      headers: { "content-type": first.value.contentType },
-    });
-  }
-  if (
-    !(first.error instanceof DiscordFileFetchError) ||
-    (first.error.statusCode !== 403 && first.error.statusCode !== 404)
-  ) {
-    throw first.error;
-  }
-  // A CDN capability can expire after lookup. A fresh store rechecks binding,
-  // membership and both parties' access before refreshing it once.
-  // eslint-disable-next-line ccstate/no-create-store -- Pre-2026-09-29 legacy only; no new violations or suppressions. Access refresh; preserve revalidation when reusing the request Store.
-  const access = await createStore().set(
-    requireDiscordConversationAccess$,
-    {
-      orgId: args.orgId,
-      userId: args.userId,
-      guildId: args.guildId,
-      channelId: args.attachment.channelId,
-      mode: "read",
-    },
-    signal,
-  );
-  if (access.kind === "denied") {
-    throw new DiscordAttachmentImportError(
-      "Discord file access could not be verified",
-      access.response.status,
-      (access.response.body.error.retryAfterSeconds ?? 0) * 1000,
-    );
-  }
-  if (
-    access.binding.connectionId !== args.connectionId ||
-    access.binding.discordUserId !== args.discordUserId
-  ) {
-    throw new InputFileImportError(
-      "download-failed",
-      "Discord connection changed before file refresh",
-      403,
-    );
-  }
-  const refreshed = await discordClient.fetchDiscordMessage(
-    {
-      botToken: access.botToken,
-      channelId: args.attachment.channelId,
-      messageId: args.messageId,
-    },
-    signal,
-  );
-  if (refreshed.kind !== "ok") {
-    throw new DiscordAttachmentImportError(
-      "Discord attachment metadata is unavailable",
-      refreshed.status,
-      refreshed.kind === "discord-error" ? (refreshed.retryAfterMs ?? 0) : 0,
-    );
-  }
-  if (
-    refreshed.data.id !== args.messageId ||
-    refreshed.data.channel_id !== args.attachment.channelId ||
-    refreshed.data.author.id !== args.discordUserId
-  ) {
-    throw new InputFileImportError(
-      "invalid-url",
-      "Discord attachment message identity changed",
-    );
-  }
-  const attachment = refreshed.data.attachments.find((file) => {
-    return file.id === args.attachment.attachmentId;
-  });
-  if (!attachment) {
-    throw new InputFileImportError(
-      "download-failed",
-      "Discord attachment is no longer available",
-      404,
-    );
-  }
-  if (
-    attachment.filename !== args.attachment.filename ||
-    attachment.size !== args.attachment.size
-  ) {
-    throw new InputFileImportError(
-      "invalid-url",
-      "Discord attachment identity changed during refresh",
-    );
-  }
-  const file = await fetchDiscordAttachment(
-    {
-      channelId: args.attachment.channelId,
-      attachmentId: attachment.id,
-      filename: attachment.filename,
-      size: attachment.size,
-      contentType: attachment.content_type,
-      url: attachment.url,
-    },
-    signal,
-  );
-  return new Response(new Uint8Array(file.bytes).buffer, {
-    headers: { "content-type": file.contentType },
-  });
+interface InputAttachmentDownload {
+  readonly connectionId: string;
+  readonly orgId: string;
+  readonly userId: string;
+  readonly guildId: string;
+  readonly discordUserId: string;
+  readonly messageId: string;
+  readonly attachment: DiscordAttachmentDownload;
 }
+
+const downloadInputAttachment$ = command(
+  async (
+    { set },
+    args: InputAttachmentDownload,
+    signal: AbortSignal,
+  ): Promise<Response> => {
+    const first = await settle(
+      fetchDiscordAttachment(args.attachment, signal),
+      signal,
+    );
+    if (first.ok) {
+      return new Response(new Uint8Array(first.value.bytes).buffer, {
+        headers: { "content-type": first.value.contentType },
+      });
+    }
+    if (
+      !(first.error instanceof DiscordFileFetchError) ||
+      (first.error.statusCode !== 403 && first.error.statusCode !== 404)
+    ) {
+      throw first.error;
+    }
+    // A CDN capability can expire after lookup. Recheck binding, membership
+    // and both parties' access before refreshing it once.
+    const access = await set(
+      requireDiscordConversationAccess$,
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+        guildId: args.guildId,
+        channelId: args.attachment.channelId,
+        mode: "read",
+      },
+      signal,
+    );
+    if (access.kind === "denied") {
+      throw new DiscordAttachmentImportError(
+        "Discord file access could not be verified",
+        access.response.status,
+        (access.response.body.error.retryAfterSeconds ?? 0) * 1000,
+      );
+    }
+    if (
+      access.binding.connectionId !== args.connectionId ||
+      access.binding.discordUserId !== args.discordUserId
+    ) {
+      throw new InputFileImportError(
+        "download-failed",
+        "Discord connection changed before file refresh",
+        403,
+      );
+    }
+    const refreshed = await discordClient.fetchDiscordMessage(
+      {
+        botToken: access.botToken,
+        channelId: args.attachment.channelId,
+        messageId: args.messageId,
+      },
+      signal,
+    );
+    if (refreshed.kind !== "ok") {
+      throw new DiscordAttachmentImportError(
+        "Discord attachment metadata is unavailable",
+        refreshed.status,
+        refreshed.kind === "discord-error" ? (refreshed.retryAfterMs ?? 0) : 0,
+      );
+    }
+    if (
+      refreshed.data.id !== args.messageId ||
+      refreshed.data.channel_id !== args.attachment.channelId ||
+      refreshed.data.author.id !== args.discordUserId
+    ) {
+      throw new InputFileImportError(
+        "invalid-url",
+        "Discord attachment message identity changed",
+      );
+    }
+    const attachment = refreshed.data.attachments.find((file) => {
+      return file.id === args.attachment.attachmentId;
+    });
+    if (!attachment) {
+      throw new InputFileImportError(
+        "download-failed",
+        "Discord attachment is no longer available",
+        404,
+      );
+    }
+    if (
+      attachment.filename !== args.attachment.filename ||
+      attachment.size !== args.attachment.size
+    ) {
+      throw new InputFileImportError(
+        "invalid-url",
+        "Discord attachment identity changed during refresh",
+      );
+    }
+    const file = await fetchDiscordAttachment(
+      {
+        channelId: args.attachment.channelId,
+        attachmentId: attachment.id,
+        filename: attachment.filename,
+        size: attachment.size,
+        contentType: attachment.content_type,
+        url: attachment.url,
+      },
+      signal,
+    );
+    return new Response(new Uint8Array(file.bytes).buffer, {
+      headers: { "content-type": file.contentType },
+    });
+  },
+);
+
+const downloadIngressAttachment$ = command(
+  async (
+    { set },
+    args: {
+      readonly attachment: InputAttachmentDownload;
+      readonly onError: (error: unknown) => void;
+    },
+    signal: AbortSignal,
+  ): Promise<Response> => {
+    const downloaded = await settle(
+      set(downloadInputAttachment$, args.attachment, signal),
+      signal,
+    );
+    if (!downloaded.ok) {
+      args.onError(downloaded.error);
+      // The canonical importer must still persist the original failure.
+      throw downloaded.error;
+    }
+    return downloaded.value;
+  },
+);
+
+const { materializeCanonicalInputFile$: materializeDiscordInputFile$ } =
+  createCanonicalInputFileCommands(downloadIngressAttachment$);
 
 function discordResult<T>(result: DiscordApiResult<T>): T {
   if (result.kind === "ok") {
@@ -527,7 +557,7 @@ const materializeIngressAttachment$ = command(
     const { accessArgs, message, attachment, chatThreadId } = args;
     let retryAfterMs = 0;
     const asset = await set(
-      materializeCanonicalInputFile$,
+      materializeDiscordInputFile$,
       {
         userId: accessArgs.userId,
         orgId: accessArgs.orgId,
@@ -550,34 +580,25 @@ const materializeIngressAttachment$ = command(
         ),
         size: attachment.size,
         maxBytes: MAX_DISCORD_FILE_SIZE_BYTES,
-        download: async (downloadSignal) => {
-          const downloaded = await settle(
-            downloadInputAttachment(
-              {
-                ...accessArgs,
-                discordUserId: message.author.id,
-                messageId: message.id,
-                attachment: {
-                  channelId: message.channel_id,
-                  attachmentId: attachment.id,
-                  filename: attachment.filename,
-                  size: attachment.size,
-                  contentType: attachment.content_type,
-                  url: attachment.url,
-                },
-              },
-              downloadSignal,
-            ),
-            downloadSignal,
-          );
-          if (!downloaded.ok) {
-            if (downloaded.error instanceof DiscordAttachmentImportError) {
-              retryAfterMs = downloaded.error.retryAfterMs;
+        download: {
+          attachment: {
+            ...accessArgs,
+            discordUserId: message.author.id,
+            messageId: message.id,
+            attachment: {
+              channelId: message.channel_id,
+              attachmentId: attachment.id,
+              filename: attachment.filename,
+              size: attachment.size,
+              contentType: attachment.content_type,
+              url: attachment.url,
+            },
+          },
+          onError: (error) => {
+            if (error instanceof DiscordAttachmentImportError) {
+              retryAfterMs = error.retryAfterMs;
             }
-            // The canonical importer must still persist the original failure.
-            throw downloaded.error;
-          }
-          return downloaded.value;
+          },
         },
       },
       signal,
@@ -1109,23 +1130,48 @@ function recordIngressFailure(
   });
 }
 
-async function finishRecordedIngressFailure(
-  db: Db,
-  recorded: RecordedIngressFailure | null,
-  signal: AbortSignal,
-): Promise<void> {
-  if (recorded?.notification) {
-    await publishChatThreadMessageCreatedSafely(recorded.notification);
-    signal.throwIfAborted();
-    await publishThreadListChanged(recorded.notification);
-    signal.throwIfAborted();
-  }
-  if (recorded?.reply?.kind === "chat") {
-    await sendDiscordChatReply(db, recorded.reply.request, signal);
-  } else if (recorded?.reply?.kind === "notice") {
-    await sendDiscordIngressNotice(db, recorded.reply.notice, signal);
-  }
-}
+const finishRecordedIngressFailure$ = command(
+  async (
+    { set },
+    db: Db,
+    recorded: RecordedIngressFailure | null,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    if (recorded?.notification) {
+      await publishChatThreadMessageCreatedSafely(recorded.notification);
+      signal.throwIfAborted();
+      await publishThreadListChanged(recorded.notification);
+      signal.throwIfAborted();
+    }
+    if (recorded?.reply?.kind === "chat") {
+      await set(sendDiscordChatReply$, db, recorded.reply.request, signal);
+    } else if (recorded?.reply?.kind === "notice") {
+      await set(sendDiscordIngressNotice$, db, recorded.reply.notice, signal);
+    }
+  },
+);
+
+const sendIngressQueueWaitNotice$ = command(
+  async (
+    { set },
+    target: Omit<DiscordIngressNotice, "content">,
+    pick: ChatQueuePick,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const content = chatQueueWaitNotice(pick.reason);
+    if (content) {
+      await set(
+        sendDiscordIngressNotice$,
+        set(writeDb$),
+        { ...target, content },
+        signal,
+      );
+    }
+  },
+);
+
+const scheduleDiscordIngressChatThreadPick$ =
+  createEnqueuedChatThreadPickScheduler(sendIngressQueueWaitNotice$);
 
 export const processCanonicalDiscordIngress$ = command(
   async (
@@ -1162,7 +1208,7 @@ export const processCanonicalDiscordIngress$ = command(
         },
         signal,
       );
-      await finishRecordedIngressFailure(db, recorded, signal);
+      await set(finishRecordedIngressFailure$, db, recorded, signal);
       throw result.error;
     }
     if (!result.value) {
@@ -1174,22 +1220,12 @@ export const processCanonicalDiscordIngress$ = command(
       orgId: ingress.orgId,
     });
     signal.throwIfAborted();
-    set(scheduleEnqueuedChatThreadPick$, {
+    set(scheduleDiscordIngressChatThreadPick$, {
       chatThreadId: ingress.chatThreadId,
-      afterPick: async (pick, pickSignal) => {
-        const notice = chatQueueWaitNotice(pick.reason);
-        if (notice) {
-          await sendDiscordIngressNotice(
-            db,
-            {
-              ingressId: args.ingressId,
-              connectionId: ingress.connectionId,
-              channelId: ingress.destinationChannelId,
-              content: notice,
-            },
-            pickSignal,
-          );
-        }
+      afterPick: {
+        ingressId: args.ingressId,
+        connectionId: ingress.connectionId,
+        channelId: ingress.destinationChannelId,
       },
       publish: async () => {
         await publishChatThreadMessageCreatedSafely({
@@ -1257,7 +1293,7 @@ const drainCanonicalDiscordIngress$ = command(
         },
         signal,
       );
-      await finishRecordedIngressFailure(db, recorded, signal);
+      await set(finishRecordedIngressFailure$, db, recorded, signal);
     }
     const rows = await db
       .select({ id: discordChatIngress.id })

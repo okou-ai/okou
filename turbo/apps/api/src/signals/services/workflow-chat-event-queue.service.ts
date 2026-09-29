@@ -503,7 +503,7 @@ async function assembleAutomationRunForTarget(
     kind: "assembled",
     run: assembled.run,
     rejection,
-    launched: assembled.launched,
+    launched: { kind: "automation", record: assembled.launched },
   };
 }
 

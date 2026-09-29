@@ -1,4 +1,4 @@
-import { runEventHistory } from "./run-event-provenance.service";
+import { runEventHistory$ } from "./run-event-provenance.service";
 import { isDeepStrictEqual } from "node:util";
 import { command } from "ccstate";
 import {
@@ -198,7 +198,7 @@ export const maybeEmitRunUsageEvent$ = command(
       // An archived usage event is only found through canonical history.
       const history = hotUsageEvent
         ? undefined
-        : await runEventHistory(tx, context.chatThreadId, runId, signal);
+        : await set(runEventHistory$, tx, context.chatThreadId, runId, signal);
       const archivedUsageEvent = history
         ? [...history].reverse().find((event) => {
             return (
