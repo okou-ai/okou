@@ -236,6 +236,9 @@ function configureGoogleFormsCreationMock(args?: {
         expect(url.searchParams.get("fields")).toBe(
           "responses(responseId,createTime,lastSubmittedTime,respondentEmail),nextPageToken",
         );
+        if (url.searchParams.has("filter")) {
+          return HttpResponse.json({ responses: [] });
+        }
         return HttpResponse.json({
           responses: [
             {
@@ -247,6 +250,19 @@ function configureGoogleFormsCreationMock(args?: {
         });
       },
     ),
+    http.get("https://forms.googleapis.com/v1/forms/:formId/watches", () => {
+      return HttpResponse.json({
+        watches: recorder.watchIds.map((id) => {
+          return {
+            id,
+            createTime: "2026-08-05T10:00:00Z",
+            expireTime: args?.expireTime ?? "2099-08-12T10:00:00Z",
+            eventType: "RESPONSES",
+            target: { topic: { topicName: GOOGLE_FORMS_TOPIC_NAME } },
+          };
+        }),
+      });
+    }),
     http.post(
       "https://forms.googleapis.com/v1/forms/:formId/watches",
       async ({ request }) => {

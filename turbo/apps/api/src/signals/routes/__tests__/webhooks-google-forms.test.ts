@@ -2,6 +2,7 @@ import { Buffer } from "node:buffer";
 import { generateKeyPairSync, randomUUID, sign as signData } from "node:crypto";
 
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { testGoogleFormsWatchRenewalContract } from "@okouai/api-contracts/contracts/test-google-forms-watch-renewal";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
 import { HttpResponse, http } from "msw";
@@ -24,6 +25,7 @@ import { createRouteMocks } from "./helpers/route-test";
 import { chatThreadRoutes } from "../chat-threads";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { workflowAutomationsRoutes } from "../workflow-automations";
+import { testGoogleFormsWatchRenewalRoutes } from "../test-google-forms-watch-renewal";
 import { webhooksGoogleFormsRoutes } from "../webhooks-google-forms";
 
 const TEST_APP_ROUTES = Object.freeze([
@@ -126,6 +128,7 @@ interface FormsApiRecorder {
   responseFields: string[];
   stoppedWatchIds: string[];
   watchIds: string[];
+  remoteWatchIds: Set<string>;
 }
 
 function configureFormsApi(
@@ -137,6 +140,7 @@ function configureFormsApi(
     responseFields: [],
     stoppedWatchIds: [],
     watchIds: [],
+    remoteWatchIds: new Set(),
   };
   server.use(
     http.get(
@@ -226,6 +230,19 @@ function configureFormsApi(
         });
       },
     ),
+    http.get("https://forms.googleapis.com/v1/forms/:formId/watches", () => {
+      return HttpResponse.json({
+        watches: [...recorder.remoteWatchIds].map((id) => {
+          return {
+            id,
+            createTime: "2026-08-05T09:45:00Z",
+            expireTime: "2099-08-12T09:45:00Z",
+            eventType: "RESPONSES",
+            target: { topic: { topicName: TOPIC_NAME } },
+          };
+        }),
+      });
+    }),
     http.post(
       "https://forms.googleapis.com/v1/forms/:formId/watches",
       async ({ request }) => {
@@ -237,6 +254,7 @@ function configureFormsApi(
         });
         const watchId = `forms-watch-${randomUUID()}`;
         recorder.watchIds.push(watchId);
+        recorder.remoteWatchIds.add(watchId);
         return HttpResponse.json({
           id: watchId,
           createTime: "2026-08-05T09:45:00Z",
@@ -260,6 +278,7 @@ function configureFormsApi(
           throw new Error("Expected a Google Forms watch ID");
         }
         recorder.stoppedWatchIds.push(params.watchId);
+        recorder.remoteWatchIds.delete(params.watchId);
         return new HttpResponse(null, { status: 204 });
       },
     ),
@@ -382,6 +401,59 @@ async function setupGoogleFormsAutomation() {
 }
 
 describe("Google Forms Pub/Sub webhook", () => {
+  it("repairs a remotely missing healthy watch and catches up from its retained cursor", async () => {
+    const { actor, chatThreadId, formsApi } =
+      await setupGoogleFormsAutomation();
+    if (!actor.orgId) {
+      throw new Error("Expected an org-scoped workflow actor");
+    }
+    const previousWatchId = formsApi.watchIds[0];
+    if (!previousWatchId) {
+      throw new Error("Expected a Google Forms watch");
+    }
+    // Simulate an external deletion while the local watch still expires in 2099.
+    formsApi.remoteWatchIds.clear();
+    const renewal = setupApp({
+      context,
+      routes: testGoogleFormsWatchRenewalRoutes,
+    })(testGoogleFormsWatchRenewalContract);
+    const repair = await accept(
+      renewal.renew({ body: { org_id: actor.orgId, user_id: actor.userId } }),
+      [200],
+    );
+    expect(repair.body).toStrictEqual({ success: true, renewed: 1, failed: 0 });
+    expect(formsApi.responseFilters[0]).toBe(`timestamp > ${SEED_CURSOR}`);
+    await flushWaitUntilForTest();
+    const firstEvents = await workflows.readThreadEvents(chatThreadId);
+    expect(
+      firstEvents.filter((event) => {
+        return event.eventType === "input.automation";
+      }),
+    ).toHaveLength(1);
+    const retry = await accept(
+      renewal.renew({ body: { org_id: actor.orgId, user_id: actor.userId } }),
+      [200],
+    );
+    expect(retry.body).toStrictEqual({ success: true, renewed: 0, failed: 0 });
+    expect(formsApi.responseFilters.at(-1)).toBe(
+      `timestamp > ${RESPONSE_SUBMITTED_TIME}`,
+    );
+    await flushWaitUntilForTest();
+    const retryEvents = await workflows.readThreadEvents(chatThreadId);
+    expect(
+      retryEvents.filter((event) => {
+        return event.eventType === "input.automation";
+      }),
+    ).toHaveLength(1);
+    const previous = await postWebhook(
+      formsPushBody("retired-watch-after-repair", previousWatchId),
+    );
+    expect(previous).toMatchObject({
+      status: 200,
+      body: { watchStates: 0, dispatched: 0 },
+    });
+  });
+
   it("delivers metadata without response data", async () => {
     const { automationId, chatThreadId, formsApi } =
       await setupGoogleFormsAutomation();
