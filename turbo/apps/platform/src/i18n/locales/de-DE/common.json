@@ -1760,7 +1760,6 @@
         "slideCountAuto": "Automatisch",
         "slideCountRange": "{{range}} Folien"
       },
-      "createWorkflow": "Workflow erstellen",
       "message": "Nachricht",
       "modelForThisChat": "Modell für diesen Chat",
       "placeholder": "Bitten Sie mich, Workflows zu automatisieren und Aufgaben zu verwalten...",
@@ -2077,10 +2076,6 @@
       "retry": "Erneut versuchen",
       "title": "Fernzugriff",
       "unavailableSsh": "nicht verfügbarer SSH-Host"
-    },
-    "replaceDraft": {
-      "description": "Wenn Sie fortfahren, wird Ihr aktueller Composer-Entwurf gelöscht und eine Workflow-Eingabeaufforderung gestartet.",
-      "title": "Composer-Entwurf ersetzen?"
     },
     "run": {
       "collapseWorkHistory": "Arbeitsverlauf einklappen",

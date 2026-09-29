@@ -1789,7 +1789,6 @@
         "slideCountAuto": "Automatico",
         "slideCountRange": "{{range}} diapositive"
       },
-      "createWorkflow": "Crea flusso di lavoro",
       "message": "Messaggio",
       "modelForThisChat": "Modello per questa chat",
       "placeholder": "Chiedimi di automatizzare i flussi di lavoro, gestire le attività...",
@@ -2119,10 +2118,6 @@
       "retry": "Riprova",
       "title": "Accesso remoto",
       "unavailableSsh": "host SSH non disponibile"
-    },
-    "replaceDraft": {
-      "description": "Continuando, la bozza corrente nell'editor verrà cancellata e verrà avviato un prompt del workflow.",
-      "title": "Sostituire la bozza nell'editor?"
     },
     "run": {
       "collapseWorkHistory": "Comprimi la cronologia lavorativa",

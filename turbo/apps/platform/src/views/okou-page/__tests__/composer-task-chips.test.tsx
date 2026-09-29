@@ -25,9 +25,6 @@ import {
   mockTemplateChat,
 } from "./chat-composer-template-gallery-test-helpers.ts";
 
-const CREATE_WORKFLOW_PROMPT =
-  "Help me create a workflow for this agent. Use the workflow-setup skill, then ask me for the desired outcome, automation, and action before creating the workflow and automation.";
-
 function button(
   label: string,
   container: ParentNode = document.body,
@@ -49,19 +46,6 @@ async function setupChips(enabled = true): Promise<HTMLElement> {
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
       [FeatureSwitchKey.ComposerTaskChips]: enabled,
-    },
-  });
-  return await findComposerEditor();
-}
-
-/** The chips and the add menu are separate switches, so both are named. */
-async function setupChipsWithAddMenu(chips: boolean): Promise<HTMLElement> {
-  await setupPage({
-    context,
-    path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: {
-      [FeatureSwitchKey.ComposerTaskChips]: chips,
-      [FeatureSwitchKey.ComposerAddMenu]: true,
     },
   });
   return await findComposerEditor();
@@ -92,21 +76,6 @@ function composerCard(editor: HTMLElement): HTMLElement {
 // it is addressed by that action rather than by a wrapping group.
 function selectedTask(editor: HTMLElement, task: string): HTMLElement {
   return button(`Remove ${task}`, composerCard(editor));
-}
-
-async function addMenuRow(
-  editor: HTMLElement,
-  label: string,
-): Promise<HTMLElement> {
-  click(button("Add", composerCard(editor)));
-  const menu = await screen.findByRole("menu", { name: "Add" });
-  const row = queryAllByRoleFast("menuitem", menu).find((candidate) => {
-    return candidate.textContent?.trim() === label;
-  });
-  if (!row) {
-    throw new Error(`Expected the ${label} row`);
-  }
-  return row;
 }
 
 function templateShelf(name: string): HTMLElement {
@@ -743,42 +712,6 @@ test("Choosing a built-in workflow preserves the draft and preferences until the
     type: "workflow",
     selection: { workflowTemplateId: "workflow-template:morning-brief" },
   });
-});
-
-/**
- * The add menu's row and the Workflow chip start the same job, so the row
- * leaves the composer where the chip would: the prompt in the draft and the
- * workflow ideas open, rather than a written prompt the member still has to
- * pair with a chip.
- */
-test("Create workflow writes its prompt and opens the workflow task", async () => {
-  mockTemplateChat();
-  const editor = await setupChipsWithAddMenu(true);
-  click(await addMenuRow(editor, "Create workflow"));
-
-  await waitFor(() => {
-    expect(editor).toHaveTextContent(CREATE_WORKFLOW_PROMPT);
-  });
-  expect(selectedTask(editor, "Workflow")).toBeVisible();
-  await expect(
-    screen.findByRole("group", { name: "Workflows" }),
-  ).resolves.toBeVisible();
-});
-
-// With the chips off there is no task to open, and the row is still the prompt.
-test("Create workflow selects no task while the chips are off", async () => {
-  mockTemplateChat();
-  const editor = await setupChipsWithAddMenu(false);
-  click(await addMenuRow(editor, "Create workflow"));
-
-  await waitFor(() => {
-    expect(editor).toHaveTextContent(CREATE_WORKFLOW_PROMPT);
-  });
-  expect(
-    queryAllByRoleFast("button", composerCard(editor)).some((item) => {
-      return item.getAttribute("aria-label") === "Remove Workflow";
-    }),
-  ).toBeFalsy();
 });
 
 test("Reply tracking prepares a custom workflow request without an unrelated template", async () => {

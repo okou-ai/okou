@@ -1789,7 +1789,6 @@
         "slideCountAuto": "Automático",
         "slideCountRange": "{{range}} slides"
       },
-      "createWorkflow": "Criar fluxo de trabalho",
       "message": "Mensagem",
       "modelForThisChat": "Modelo para este chat",
       "placeholder": "Peça para automatizar fluxos de trabalho, gerenciar tarefas...",
@@ -2119,10 +2118,6 @@
       "retry": "Tentar novamente",
       "title": "Acesso remoto",
       "unavailableSsh": "host SSH indisponível"
-    },
-    "replaceDraft": {
-      "description": "Continuar limpará o rascunho atual do editor e iniciará um prompt de fluxo de trabalho.",
-      "title": "Substituir rascunho do editor?"
     },
     "run": {
       "collapseWorkHistory": "Recolher histórico de trabalho",

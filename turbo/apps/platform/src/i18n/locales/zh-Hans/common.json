@@ -1757,7 +1757,6 @@
         "slideCountAuto": "自动",
         "slideCountRange": "{{range}} 页"
       },
-      "createWorkflow": "创建工作流",
       "message": "消息",
       "modelForThisChat": "本次对话使用的模型",
       "placeholder": "让我自动化工作流、管理任务…",
@@ -2069,10 +2068,6 @@
       "retry": "重试",
       "title": "远程访问",
       "unavailableSsh": "不可用的 SSH 主机"
-    },
-    "replaceDraft": {
-      "description": "继续将清空你当前的输入框草稿，并开始一个工作流提示词。",
-      "title": "替换输入框草稿？"
     },
     "run": {
       "collapseWorkHistory": "收起工作记录",

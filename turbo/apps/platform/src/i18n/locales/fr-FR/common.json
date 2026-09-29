@@ -1789,7 +1789,6 @@
         "slideCountAuto": "Automatique",
         "slideCountRange": "{{range}} diapositives"
       },
-      "createWorkflow": "Créer un workflow",
       "message": "Message",
       "modelForThisChat": "Modèle pour cette discussion",
       "placeholder": "Demandez-moi d’automatiser des workflows, de gérer des tâches...",
@@ -2119,10 +2118,6 @@
       "retry": "Réessayer",
       "title": "Accès à distance",
       "unavailableSsh": "hôte SSH indisponible"
-    },
-    "replaceDraft": {
-      "description": "Continuer effacera votre brouillon actuel dans la zone de saisie et démarrera un prompt de workflow.",
-      "title": "Remplacer le brouillon du compositeur ?"
     },
     "run": {
       "collapseWorkHistory": "Réduire l'historique du travail",

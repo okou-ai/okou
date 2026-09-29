@@ -1760,7 +1760,6 @@
         "slideCountAuto": "Auto",
         "slideCountRange": "{{range}} slides"
       },
-      "createWorkflow": "Create workflow",
       "message": "Message",
       "modelForThisChat": "Model for this chat",
       "placeholder": "Ask me to automate workflows, manage tasks...",
@@ -2077,10 +2076,6 @@
       "retry": "Retry",
       "title": "Remote access",
       "unavailableSsh": "unavailable SSH host"
-    },
-    "replaceDraft": {
-      "description": "Continuing will clear your current composer draft and start a workflow prompt.",
-      "title": "Replace composer draft?"
     },
     "run": {
       "collapseWorkHistory": "Collapse work history",

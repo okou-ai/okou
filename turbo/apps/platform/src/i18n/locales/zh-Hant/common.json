@@ -1757,7 +1757,6 @@
         "slideCountAuto": "自動",
         "slideCountRange": "{{range}} 頁"
       },
-      "createWorkflow": "建立工作流",
       "message": "訊息",
       "modelForThisChat": "本次對話使用的模型",
       "placeholder": "讓我自動化工作流、管理任務…",
@@ -2069,10 +2068,6 @@
       "retry": "重試",
       "title": "遠端存取",
       "unavailableSsh": "無法使用的 SSH 主機"
-    },
-    "replaceDraft": {
-      "description": "繼續將清空你當前的輸入框草稿，並開始一個工作流提示詞。",
-      "title": "替換輸入框草稿？"
     },
     "run": {
       "collapseWorkHistory": "收起工作記錄",

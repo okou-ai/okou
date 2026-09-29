@@ -35,9 +35,8 @@ export type ComposerAddMenuGroup = readonly [
 
 /**
  * The composer toolbar's `+`: one entry point for what a message can gain,
- * rather than a button per capability. Attach, template and create workflow
- * each answered the same question from their own icon, and the toolbar had no
- * room left for the next one.
+ * rather than a button per capability. It groups attachments, templates and
+ * skill imports in one menu.
  *
  * Rows are single-line on purpose. Every label is already a noun the product
  * uses elsewhere, so a description line would only restate it.

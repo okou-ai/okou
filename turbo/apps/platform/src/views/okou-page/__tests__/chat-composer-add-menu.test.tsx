@@ -71,7 +71,7 @@ function menuItem(menu: HTMLElement, label: string): HTMLElement {
   return item;
 }
 
-test("keeps attach and template without the workflow toolbar button while the add menu is off", async () => {
+test("keeps separate attach and template buttons while the add menu is off", async () => {
   const editor = await setupComposer({
     [FeatureSwitchKey.ComposerAddMenu]: false,
   });
@@ -79,11 +79,10 @@ test("keeps attach and template without the workflow toolbar button while the ad
 
   expect(within(card).getByLabelText("Attach")).toBeVisible();
   expect(within(card).getByLabelText("Template")).toBeVisible();
-  expect(within(card).queryByLabelText("Create workflow")).toBeNull();
   expect(within(card).queryByLabelText("Add")).toBeNull();
 });
 
-test("groups attach, template and workflow actions in the add menu", async () => {
+test("groups attach, template and import skills actions in the add menu", async () => {
   const editor = await setupComposer({
     [FeatureSwitchKey.ComposerAddMenu]: true,
   });
@@ -91,18 +90,16 @@ test("groups attach, template and workflow actions in the add menu", async () =>
 
   expect(within(card).queryByLabelText("Attach")).toBeNull();
   expect(within(card).queryByLabelText("Template")).toBeNull();
-  expect(within(card).queryByLabelText("Create workflow")).toBeNull();
 
   const menu = await openAddMenu(editor);
   expect(menuItemLabels(menu)).toStrictEqual([
     "Attach",
     "Template",
-    "Create workflow",
     "Import skills",
   ]);
 });
 
-test("adds import skills after create workflow and opens its dialog", async () => {
+test("opens the import skills dialog from the add menu", async () => {
   const editor = await setupComposer({
     [FeatureSwitchKey.ComposerAddMenu]: true,
   });
@@ -111,7 +108,6 @@ test("adds import skills after create workflow and opens its dialog", async () =
   expect(menuItemLabels(menu)).toStrictEqual([
     "Attach",
     "Template",
-    "Create workflow",
     "Import skills",
   ]);
   click(menuItem(menu, "Import skills"));

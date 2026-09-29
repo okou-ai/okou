@@ -1757,7 +1757,6 @@
         "slideCountAuto": "自動",
         "slideCountRange": "{{range}}枚"
       },
-      "createWorkflow": "ワークフローの作成",
       "message": "メッセージ",
       "modelForThisChat": "このチャットのモデル",
       "placeholder": "ワークフローの自動化、タスクの管理を依頼してください...",
@@ -2069,10 +2068,6 @@
       "retry": "再試行",
       "title": "リモートアクセス",
       "unavailableSsh": "利用できない SSH ホスト"
-    },
-    "replaceDraft": {
-      "description": "続行すると、現在のコンポーザーの下書きが消去され、ワークフローのプロンプトが開始されます。",
-      "title": "コンポーザーの下書きを置き換えますか？"
     },
     "run": {
       "collapseWorkHistory": "作業履歴を折りたたむ",

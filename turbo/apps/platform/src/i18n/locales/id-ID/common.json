@@ -1757,7 +1757,6 @@
         "slideCountAuto": "Otomatis",
         "slideCountRange": "{{range}} slide"
       },
-      "createWorkflow": "Buat alur kerja",
       "message": "Pesan",
       "modelForThisChat": "Model untuk chat ini",
       "placeholder": "Minta saya mengotomatiskan alur kerja, mengelola tugas...",
@@ -2069,10 +2068,6 @@
       "retry": "Coba lagi",
       "title": "Akses jarak jauh",
       "unavailableSsh": "host SSH tidak tersedia"
-    },
-    "replaceDraft": {
-      "description": "Melanjutkan akan menghapus draf composer saat ini dan memulai prompt alur kerja.",
-      "title": "Ganti draf composer?"
     },
     "run": {
       "collapseWorkHistory": "Ciutkan riwayat kerja",
