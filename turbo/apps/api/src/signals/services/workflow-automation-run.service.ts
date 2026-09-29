@@ -16,6 +16,7 @@ import {
   ScheduleOccurrenceUnavailableError,
   workflowAutomationQueueEventWriter,
   type WorkflowScheduleClaimPlan,
+  type PreparedWorkflowAutomationQueueInput,
 } from "./workflow-chat-event-queue.service";
 import {
   censusWorkflowAdmission,
@@ -194,6 +195,82 @@ function workflowQueueEntryTiming(
   return timing;
 }
 
+type WorkflowQueueSources = Pick<
+  RunWorkflowAutomationNowArgs,
+  | "googleFormsSource"
+  | "googleCalendarSource"
+  | "gmailSource"
+  | "googleMeetSource"
+  | "notionSource"
+  | "stripeSource"
+  | "queueReceipt"
+>;
+
+/** Route prepared business values to the command that owns that source's SQL. */
+const enqueuePreparedWorkflowInput$ = command(
+  async (
+    { set },
+    input: PreparedWorkflowAutomationQueueInput,
+    source: WorkflowQueueSources,
+    orgId: string,
+    signal: AbortSignal,
+  ): Promise<string | null> => {
+    return await (source.googleFormsSource
+      ? set(
+          enqueueGoogleFormsWorkflowInput$,
+          {
+            input,
+            source: source.googleFormsSource,
+          },
+          signal,
+        )
+      : source.googleCalendarSource
+        ? set(
+            enqueueGoogleCalendarWorkflowInput$,
+            {
+              input,
+              source: source.googleCalendarSource,
+            },
+            signal,
+          )
+        : source.gmailSource
+          ? set(
+              enqueueGmailWorkflowInput$,
+              { input, source: source.gmailSource },
+              signal,
+            )
+          : source.googleMeetSource
+            ? set(
+                enqueueGoogleMeetWorkflowInput$,
+                {
+                  input,
+                  source: source.googleMeetSource,
+                },
+                signal,
+              )
+            : source.notionSource
+              ? set(
+                  enqueueNotionWorkflowInput$,
+                  { input, source: source.notionSource },
+                  signal,
+                )
+              : source.stripeSource
+                ? set(
+                    enqueueStripeWorkflowInput$,
+                    {
+                      input,
+                      source: source.stripeSource,
+                    },
+                    signal,
+                  )
+                : set(
+                    enqueueWorkflowInput$,
+                    { input, orgId, receipt: source.queueReceipt },
+                    signal,
+                  ));
+  },
+);
+
 export const runWorkflowAutomationNow$ = command(
   async (
     { set },
@@ -232,81 +309,39 @@ export const runWorkflowAutomationNow$ = command(
           "api_dispatch_pre_create_agent_workflow_automation_queue_admission",
           async () => {
             const attempt = await settle(
-              args.googleFormsSource
+              !scheduleClaim && !replacePendingTicks
                 ? set(
-                    enqueueGoogleFormsWorkflowInput$,
+                    enqueuePreparedWorkflowInput$,
+                    preparedInput,
                     {
-                      input: preparedInput,
-                      source: args.googleFormsSource,
+                      googleFormsSource: args.googleFormsSource,
+                      googleCalendarSource: args.googleCalendarSource,
+                      gmailSource: args.gmailSource,
+                      googleMeetSource: args.googleMeetSource,
+                      notionSource: args.notionSource,
+                      stripeSource: args.stripeSource,
+                      queueReceipt: args.queueReceipt,
                     },
+                    automation.orgId,
                     signal,
                   )
-                : args.googleCalendarSource
-                  ? set(
-                      enqueueGoogleCalendarWorkflowInput$,
-                      {
-                        input: preparedInput,
-                        source: args.googleCalendarSource,
-                      },
-                      signal,
-                    )
-                  : args.gmailSource
-                    ? set(
-                        enqueueGmailWorkflowInput$,
-                        { input: preparedInput, source: args.gmailSource },
-                        signal,
-                      )
-                    : args.googleMeetSource
-                      ? set(
-                          enqueueGoogleMeetWorkflowInput$,
-                          {
-                            input: preparedInput,
-                            source: args.googleMeetSource,
-                          },
-                          signal,
-                        )
-                      : args.notionSource
-                        ? set(
-                            enqueueNotionWorkflowInput$,
-                            { input: preparedInput, source: args.notionSource },
-                            signal,
-                          )
-                        : args.stripeSource
-                          ? set(
-                              enqueueStripeWorkflowInput$,
-                              {
-                                input: preparedInput,
-                                source: args.stripeSource,
-                              },
-                              signal,
-                            )
-                          : !scheduleClaim && !replacePendingTicks
-                            ? set(
-                                enqueueWorkflowInput$,
-                                {
-                                  input: preparedInput,
-                                  orgId: automation.orgId,
-                                  receipt: args.queueReceipt,
-                                },
-                                signal,
-                              )
-                            : enqueueChatInput(db, {
-                                chatThreadId,
-                                orgId: automation.orgId,
-                                appendInput,
-                                measureStep: (step, operation) => {
-                                  return measureWorkflowAdmissionStep(
-                                    timing,
-                                    workflowQueueAdmissionStepAction(step),
-                                    operation,
-                                  );
-                                },
-                                ...queueAdmissionSourceTransition({
-                                  scheduleClaim,
-                                  replacePendingTicks,
-                                  timing,
-                                }),
-                              }),
+                : enqueueChatInput(db, {
+                    chatThreadId,
+                    orgId: automation.orgId,
+                    appendInput,
+                    measureStep: (step, operation) => {
+                      return measureWorkflowAdmissionStep(
+                        timing,
+                        workflowQueueAdmissionStepAction(step),
+                        operation,
+                      );
+                    },
+                    ...queueAdmissionSourceTransition({
+                      scheduleClaim,
+                      replacePendingTicks,
+                      timing,
+                    }),
+                  }),
             );
             if (!attempt.ok) {
               if (attempt.error instanceof ScheduleOccurrenceUnavailableError) {

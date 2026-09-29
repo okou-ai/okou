@@ -48,7 +48,6 @@ import {
   isSlackDirectMessageSessionThreadTs,
   slackSessionThreadTs,
 } from "./slack-chat-ingress.service";
-import { insertChatEvent, insertChatEventContext } from "./chat-event.service";
 import { createChatEventSourcePart } from "./chat-event-annotation.service";
 import { createUserMessageDocument } from "./chat-user-message.service";
 

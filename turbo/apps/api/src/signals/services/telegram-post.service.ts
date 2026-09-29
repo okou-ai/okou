@@ -67,7 +67,6 @@ import {
   type TelegramOwnerLink,
 } from "./telegram-chat-ingress.service";
 import { updateIntegrationChatThreadModel$ } from "./integration-chat-thread-model.service";
-import { insertChatEvent, insertChatEventContext } from "./chat-event.service";
 import { createChatEventSourcePart } from "./chat-event-annotation.service";
 import { createUserMessageDocument } from "./chat-user-message.service";
 import {

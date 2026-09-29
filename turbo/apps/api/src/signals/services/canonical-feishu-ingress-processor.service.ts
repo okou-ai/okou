@@ -47,7 +47,6 @@ import {
   feishuRouteThreadId,
 } from "./feishu-chat-ingress.service";
 import { resolveFeishuCustomConnectorOAuthConnection } from "./feishu-custom-connector.service";
-import { insertChatEvent, insertChatEventContext } from "./chat-event.service";
 import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
 import type { ChatQueueWaitReason } from "./chat-queue-wait-reason";
 import { createChatEventSourcePart } from "./chat-event-annotation.service";

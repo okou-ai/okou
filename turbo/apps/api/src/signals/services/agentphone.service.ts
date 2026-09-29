@@ -60,7 +60,6 @@ import { createChatEventSourcePart } from "./chat-event-annotation.service";
 import { scheduleEnqueuedChatThreadPick$ } from "./chat-thread-queue-drain.service";
 import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
 import { listOrgModelPolicies$ } from "./model-policy.service";
-import { insertChatEvent, insertChatEventContext } from "./chat-event.service";
 import { createUserMessageDocument } from "./chat-user-message.service";
 import { InputFileImportError } from "./canonical-asset.service";
 import {

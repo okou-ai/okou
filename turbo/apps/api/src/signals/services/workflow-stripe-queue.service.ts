@@ -69,6 +69,34 @@ export class StripeDeliveryTargetChangedError extends Error {
   }
 }
 
+function stripeSourceConfigMatches(
+  source: StripeQueueSource,
+  automation: typeof workflowAutomations.$inferSelect,
+  connector: typeof connectors.$inferSelect,
+): boolean {
+  const config = stripeInvoicePaidEventConfigSchema.safeParse(
+    automation.eventConfig,
+  );
+  const billingReason = stripeInvoiceBillingReasonSchema.safeParse(
+    source.billingReason,
+  );
+  return !(
+    !config.success ||
+    automation.kind !== "event" ||
+    automation.eventType !== "stripe-invoice-paid" ||
+    !automation.enabled ||
+    !source.livemode ||
+    automation.eventConnectorId !== source.connectorId ||
+    config.data.connectorId !== source.connectorId ||
+    config.data.stripeAccountId !== source.stripeAccountId ||
+    connector.externalId !== source.stripeAccountId ||
+    connector.needsReconnect ||
+    (config.data.billingReasons?.length &&
+      (!billingReason.success ||
+        !config.data.billingReasons.includes(billingReason.data)))
+  );
+}
+
 function stripeSourceCredentialAccess(
   source: StripeQueueSource,
   automation: typeof workflowAutomations.$inferSelect | undefined,
@@ -87,27 +115,7 @@ function stripeSourceCredentialAccess(
   ) {
     throw new StripeDeliveryTargetChangedError("automation_target_unavailable");
   }
-  const config = stripeInvoicePaidEventConfigSchema.safeParse(
-    automation.eventConfig,
-  );
-  const billingReason = stripeInvoiceBillingReasonSchema.safeParse(
-    source.billingReason,
-  );
-  if (
-    !config.success ||
-    automation.kind !== "event" ||
-    automation.eventType !== "stripe-invoice-paid" ||
-    !automation.enabled ||
-    !source.livemode ||
-    automation.eventConnectorId !== source.connectorId ||
-    config.data.connectorId !== source.connectorId ||
-    config.data.stripeAccountId !== source.stripeAccountId ||
-    connector.externalId !== source.stripeAccountId ||
-    connector.needsReconnect ||
-    (config.data.billingReasons?.length &&
-      (!billingReason.success ||
-        !config.data.billingReasons.includes(billingReason.data)))
-  ) {
+  if (!stripeSourceConfigMatches(source, automation, connector)) {
     throw new StripeDeliveryTargetChangedError("automation_no_longer_matches");
   }
   const access = resolveBuiltinConnectorCredentialAccess({

@@ -393,15 +393,17 @@ export const rejectUnconsumedChatQueueHead$ = command(
  * creating the run, and mapping its outcome are shared: 201 launched, and
  * every failure takes the single rejection exit.
  */
+interface ConsumeChatQueueHeadArgs {
+  readonly chatThreadId: string;
+  readonly orgId: string;
+  readonly head: { readonly id: string; readonly createdAt: Date };
+  readonly dispatchFailedCallbacks: DispatchFailedRunCallbacks;
+}
+
 export const consumeChatQueueHead$ = command(
   async (
     { set },
-    input: {
-      readonly chatThreadId: string;
-      readonly orgId: string;
-      readonly head: { readonly id: string; readonly createdAt: Date };
-      readonly dispatchFailedCallbacks: DispatchFailedRunCallbacks;
-    },
+    input: ConsumeChatQueueHeadArgs,
     signal: AbortSignal,
   ): Promise<ChatQueueHeadConsumption> => {
     const db = set(writeDb$);

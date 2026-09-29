@@ -86,7 +86,6 @@ import {
   disconnectTeamsConnection$,
   publishTeamsChanged$,
 } from "./teams-connect.service";
-import { insertChatEvent, insertChatEventContext } from "./chat-event.service";
 import { createChatEventSourcePart } from "./chat-event-annotation.service";
 import { createUserMessageDocument } from "./chat-user-message.service";
 
