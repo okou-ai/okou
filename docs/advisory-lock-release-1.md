@@ -98,6 +98,14 @@ the baseline. A definition can serve multiple runtime callers.
 
 ## Correction follow-up and acceptance gaps
 
+The zero-trigger terminal constraint from `4fa8844` applies to all application
+triggers, including nine that predate this PR. The
+[trigger retirement inventory](./advisory-lock-release-1-trigger-boundaries.md)
+records all eleven current definitions: seven billing attribution, two
+SSH/Cloudflare and two Forms. Their explicit writer replacements remain an
+acceptance requirement; the existing schema-test constant named
+`EXPECTED_PERMANENT_TRIGGERS` does not grant a permanent exception.
+
 The binding command shape added in commit `77a12aa` is retained. Commands take
 business inputs and an optional final `AbortSignal`, resolve `writeDb$` internally,
 and directly execute finite SQL in their own transaction. Neither the root `db`
