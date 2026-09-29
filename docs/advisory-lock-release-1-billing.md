@@ -231,6 +231,13 @@ request later writes 2. A database CAS after Stripe succeeds cannot undo that
 remote effect, and different Stripe idempotency keys only deduplicate each
 operation individually.
 
+The [Stripe protocol evidence review](advisory-lock-release-1-stripe-protocol-evidence.md)
+records the investigated item/schedule identity alternatives, verified provider
+contracts, and remaining admission and recovery obligations. In particular,
+Stripe permits replacing an unpaid pending update, and creating a schedule from
+a subscription has no expected previous schedule identity. Neither primitive
+alone establishes the common write protocol.
+
 The current allocation, plan-change, migration and invitation rows have useful
 business identities and recovery states, but this PR does not establish one
 compatible ordering protocol across all of those writers. Concurrency add-on
