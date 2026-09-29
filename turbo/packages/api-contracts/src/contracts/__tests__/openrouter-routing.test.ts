@@ -16,7 +16,6 @@ const usRouted: readonly (readonly [OpenRouterApi, string])[] = [
   ["messages", "anthropic/claude-sonnet-4.6"],
   ["responses", "openai/gpt-6-astra"],
   ["responses", "openai/gpt-5.6-sol"],
-  ["responses", "openai/gpt-5.6-terra"],
   ["responses", "openai/gpt-5.6-luna"],
 ];
 
@@ -47,7 +46,7 @@ describe("platform OpenRouter regional selection", () => {
 
   it.each([
     ["messages", "anthropic/claude-fable-5.1"],
-    ["chat/completions", "openai/gpt-5.6-terra"],
+    ["chat/completions", "openai/gpt-6-luna"],
     ["responses", "deepseek/deepseek-v4.1-flash"],
     ["responses", "deepseek/deepseek-v4-flash"],
     ["responses", "deepseek/deepseek-v4-pro"],
@@ -66,7 +65,7 @@ describe("platform OpenRouter regional selection", () => {
 
   it("binds US Responses auth to the exact selected path without migrating unverified Chat Completions", () => {
     const routing = {
-      model: "openai/gpt-5.6-terra",
+      model: "openai/gpt-6-astra",
       credentialOwner: "builtin",
       usRoutingEnabled: true,
     } as const;

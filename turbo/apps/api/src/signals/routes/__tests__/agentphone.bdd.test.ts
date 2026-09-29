@@ -1126,79 +1126,63 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(lastSend(sends).toNumber).toBe(phone);
   });
 
-  it.each(["reuse", "reset"] as const)(
-    "linked iMessage sessions support %s",
-    async (scenario) => {
-      const ap = createAgentPhoneBddApi(context);
-      const { actor, phone, runnerGroup, sends } = await entitledLinkedActor();
-      const conversationId = uniqueConversationId();
+  it("reuses the linked iMessage session for follow-up messages", async () => {
+    const ap = createAgentPhoneBddApi(context);
+    const { actor, phone, runnerGroup, sends } = await entitledLinkedActor();
+    const conversationId = uniqueConversationId();
 
-      const beforeFirstCompletion = sends.messages.length;
-      const messageId1 = await ap.postAgentPhoneInboundMessage({
-        channel: "imessage",
-        from: phone,
-        body: "start session",
-        conversationId,
-        isGroup: false,
-      });
-      const run1 = await claimDispatchedRun(runnerGroup);
-      await completeSandboxRun(run1.sandboxToken, run1.runId, 0);
-      await waitForSendCount(sends, beforeFirstCompletion + 1);
-      expect(lastSend(sends).body).toBe("Task completed successfully.");
-      // Session persistence happens in background callback processing, so
-      // wait for the session id to be saved before reading it.
-      const session1 = await waitForRunSessionIdPresent(actor, run1.runId);
+    const beforeFirstCompletion = sends.messages.length;
+    const messageId1 = await ap.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: phone,
+      body: "start session",
+      conversationId,
+      isGroup: false,
+    });
+    const run1 = await claimDispatchedRun(runnerGroup);
+    await completeSandboxRun(run1.sandboxToken, run1.runId, 0);
+    await waitForSendCount(sends, beforeFirstCompletion + 1);
+    expect(lastSend(sends).body).toBe("Task completed successfully.");
+    // Session persistence happens in background callback processing, so
+    // wait for the session id to be saved before reading it.
+    const session1 = await waitForRunSessionIdPresent(actor, run1.runId);
 
-      if (scenario === "reuse") {
-        // The follow-up DM reuses the saved session and carries stored context.
-        await ap.postAgentPhoneInboundMessage({
-          channel: "imessage",
-          from: phone,
-          body: "follow up",
-          conversationId,
-          isGroup: false,
-        });
-        const run2 = await claimDispatchedRun(runnerGroup);
-        expect(run2.appendSystemPrompt).toContain("# Phone Message Context");
-        expect(run2.appendSystemPrompt).toContain("RELATIVE_INDEX");
-        expect(run2.appendSystemPrompt).toContain(`MSG_ID: ${messageId1}`);
-        expect(run2.appendSystemPrompt).toContain("SENDER: {id: BOT}");
+    // The follow-up DM reuses the saved session and carries stored context.
+    await ap.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: phone,
+      body: "follow up",
+      conversationId,
+      isGroup: false,
+    });
+    const run2 = await claimDispatchedRun(runnerGroup);
+    expect(run2.appendSystemPrompt).toContain("# Phone Message Context");
+    expect(run2.appendSystemPrompt).toContain("RELATIVE_INDEX");
+    expect(run2.appendSystemPrompt).toContain(`MSG_ID: ${messageId1}`);
+    expect(run2.appendSystemPrompt).toContain("SENDER: {id: BOT}");
 
-        const beforeRun2Completion = sends.messages.length;
-        await completeSandboxRun(run2.sandboxToken, run2.runId, 0);
-        await waitForSendCount(sends, beforeRun2Completion + 1);
-        expect(lastSend(sends).body).toBe("Task completed successfully.");
-        await waitForRunSessionId(actor, run2.runId, session1);
+    const beforeRun2Completion = sends.messages.length;
+    await completeSandboxRun(run2.sandboxToken, run2.runId, 0);
+    await waitForSendCount(sends, beforeRun2Completion + 1);
+    expect(lastSend(sends).body).toBe("Task completed successfully.");
+    await waitForRunSessionId(actor, run2.runId, session1);
+  });
 
-        return;
-      }
+  it("forwards unrecognized slash commands as agent prompts", async () => {
+    const ap = createAgentPhoneBddApi(context);
+    const { phone, runnerGroup } = await entitledLinkedActor();
 
-      // /new_session over iMessage replies without the SMS reliability warning.
-      const beforeNewSession = sends.messages.length;
-      await ap.postAgentPhoneInboundMessage({
-        channel: "imessage",
-        from: phone,
-        body: "/new_session",
-        conversationId,
-        isGroup: false,
-      });
-      await waitForSendCount(sends, beforeNewSession + 1);
-      expect(lastSend(sends).body).toBe("New session started.");
+    await ap.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: phone,
+      body: "/unrecognized_command",
+      conversationId: uniqueConversationId(),
+      isGroup: false,
+    });
 
-      // The next DM starts a fresh session.
-      await ap.postAgentPhoneInboundMessage({
-        channel: "imessage",
-        from: phone,
-        body: "fresh start",
-        conversationId,
-        isGroup: false,
-      });
-      const run3 = await claimDispatchedRun(runnerGroup);
-      await completeSandboxRun(run3.sandboxToken, run3.runId, 0);
-      const session3 = await waitForRunSessionIdPresent(actor, run3.runId);
-      expect(session3).not.toBe(session1);
-    },
-  );
+    const run = await claimDispatchedRun(runnerGroup);
+    expect(run.prompt).toBe("/unrecognized_command");
+  });
 
   it("replies to failed linked iMessage runs", async () => {
     const ap = createAgentPhoneBddApi(context);
@@ -1233,14 +1217,12 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       beforeEach(async () => {
         preparedScenario = await prepareScenario();
       });
-      it("switches the existing DM thread and the member default", async () => {
+      it("switches only the existing DM thread", async () => {
         const { actor, send, sends, complete } = preparedScenario;
         const integrations = createBddIntegrationApi(context);
         if (scenario.model !== "claude-fable-5-1") {
-          // No DM thread exists yet, so only the member default changes and
-          // the new thread initializes from it.
-          await send(`/model ${scenario.model}`);
-          expect(lastSend(sends).body).toContain("Switched to");
+          // The browser preference still controls initialization of new threads.
+          await integrations.updateUserModelPreference(actor, scenario.model);
         }
         const original = await complete(
           "start the selected model session",
@@ -1253,7 +1235,10 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         expect(lastSend(sends).body).toContain("Switched to");
         await expect(
           integrations.readUserModelPreference(actor),
-        ).resolves.toMatchObject({ selectedModel: scenario.otherModel });
+        ).resolves.toMatchObject({
+          selectedModel:
+            scenario.model === "claude-fable-5-1" ? null : scenario.model,
+        });
         const lifecycle = await createChatFilesBddApi(
           context,
         ).requestThreadEvents(actor, {}, [200]);
@@ -1287,63 +1272,9 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     },
   );
 
-  describe.each(modelSessionScenarios)(
-    "starts a new $channel DM on request (conversation: $withConversation)",
-    (scenario) => {
-      async function prepareScenario() {
-        return await modelSessionScenario(scenario);
-      }
-      let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
-      beforeEach(async () => {
-        preparedScenario = await prepareScenario();
-      });
-      it("retains the old thread as history after an explicit reset", async () => {
-        const { actor, complete, send, sends } = preparedScenario;
-        const original = await complete(
-          "start the default model session",
-          "claude-fable-5-1",
-        );
-        await send("/model gpt-6-astra");
-        expect(lastSend(sends).body).toContain("Switched to");
-        const alternate = await complete(
-          "continue after switching the DM model",
-          "gpt-6-astra",
-        );
-        expect(alternate.selectedModel).toBe("gpt-6-astra");
-        expect(alternate.threadId).toBe(original.threadId);
-        expect(alternate.threadCount).toBe(1);
-
-        await send("/new_session");
-        expect(lastSend(sends).body).toContain("New session started");
-        const reset = await complete(
-          "start again after resetting the DM",
-          "gpt-6-astra",
-        );
-        expect(reset.resumedSessionId).toBeUndefined();
-        expect(reset.selectedModel).toBe("gpt-6-astra");
-        expect(reset.threadId).not.toBe(alternate.threadId);
-        expect(reset.threadCount).toBe(2);
-        const history = await createChatFilesBddApi(context).listThreadEvents(
-          actor,
-          original.threadId,
-        );
-        expect(history.events).toContainEqual(
-          expect.objectContaining({
-            eventType: "input.prompt",
-            userMessage: expect.objectContaining({
-              parts: expect.arrayContaining([
-                { type: "text", text: "start the default model session" },
-              ]),
-            }),
-          }),
-        );
-      });
-    },
-  );
-
   it("uses the organization default for input when the stored DM model becomes unavailable", async () => {
     const integrations = createBddIntegrationApi(context);
-    const { actor, complete, send } = await modelSessionScenario({
+    const { actor, complete } = await modelSessionScenario({
       channel: "sms",
       withConversation: false,
     });
@@ -1367,19 +1298,17 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(available.threadId).toBe(preferred.threadId);
     expect(available.selectedModel).toBe("gpt-6-astra");
     expect(available.threadCount).toBe(1);
-    await send("/new_session");
-    const fresh = await complete(
-      "start with the available workspace default",
+    const continued = await complete(
+      "continue with the available workspace default",
       "claude-fable-5-1",
     );
-    expect(fresh.selectedModel).toBe("claude-fable-5-1");
-    expect(fresh.threadId).not.toBe(preferred.threadId);
-    expect(fresh.threadCount).toBe(2);
+    expect(continued.threadId).toBe(preferred.threadId);
+    expect(continued.threadCount).toBe(1);
   });
 
   it("keeps the DM service tier captured when its thread was created", async () => {
     const integrations = createBddIntegrationApi(context);
-    const { actor, complete, send } = await modelSessionScenario({
+    const { actor, complete } = await modelSessionScenario({
       channel: "sms",
       withConversation: false,
     });
@@ -1399,11 +1328,13 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(standard.serviceTier).toBe("fast");
     expect(standard.threadId).toBe(fast.threadId);
     expect(standard.threadCount).toBe(1);
-    await send("/new_session");
-    const fresh = await complete("start with standard service", "gpt-6-astra");
-    expect(fresh.serviceTier).toBeUndefined();
-    expect(fresh.threadId).not.toBe(fast.threadId);
-    expect(fresh.threadCount).toBe(2);
+    const continued = await complete(
+      "continue with fast service",
+      "gpt-6-astra",
+    );
+    expect(continued.serviceTier).toBe("fast");
+    expect(continued.threadId).toBe(fast.threadId);
+    expect(continued.threadCount).toBe(1);
   });
 
   it("shares one canonical session across AgentPhone and web messages on the same thread", async () => {
@@ -2065,21 +1996,14 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(alreadyConnected).toContain("start using Okou");
     expect(alreadyConnected).toContain(SMS_RISK_WARNING);
 
+    const before = await integrations.readUserModelPreference(actor);
     const modelOptions = await commandReply("/model");
-    expect(modelOptions).toContain("Available models");
-    expect(modelOptions).toContain("Current: workspace default");
-    expect(modelOptions).toContain("/model claude-sonnet-5");
-    expect(modelOptions).toContain("(workspace default)");
-
+    expect(modelOptions).toContain("existing Okou conversation");
     const switched = await commandReply("/model claude-sonnet-5");
-    expect(switched).toContain("Switched to ");
-
-    const optionsAfterSwitch = await commandReply("/model");
-    expect(optionsAfterSwitch).toContain("Current: Claude Sonnet 5");
-    expect(optionsAfterSwitch).toContain("(current, workspace default)");
-
-    const unknownModel = await commandReply("/model not-a-model");
-    expect(unknownModel).toContain('Error: Unknown model "not-a-model".');
+    expect(switched).toContain("existing Okou conversation");
+    await expect(
+      integrations.readUserModelPreference(actor),
+    ).resolves.toStrictEqual(before);
 
     const disconnected = await commandReply("/disconnect");
     expect(disconnected).toContain(
@@ -2092,10 +2016,6 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(disconnectAgain).toContain(
       "Error: This phone number is not connected.",
     );
-
-    const newSessionUnlinked = await commandReply("/new_session");
-    expect(newSessionUnlinked).toContain("/agentphone/connect?");
-    expect(newSessionUnlinked).toContain(SMS_RISK_WARNING);
 
     const modelUnlinked = await commandReply("/model");
     expect(modelUnlinked).toContain("/agentphone/connect?");
@@ -2347,22 +2267,6 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         );
       }),
     ).toBeFalsy();
-
-    // The linked sender can still run account commands in the group.
-    const beforeSessionReset = sends.messages.length;
-    await ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: phone,
-      body: "/new_session @Okou",
-      conversationId,
-      isGroup: true,
-    });
-    await waitForSendMatching(sends, beforeSessionReset, (send) => {
-      return (
-        send.toNumber === bddGroupId(conversationId) &&
-        send.body === "New session started."
-      );
-    });
   });
 
   it("preserves a mention-only iMessage prompt with the preceding task", async () => {

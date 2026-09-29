@@ -8,9 +8,7 @@ import { IMAGE_MODEL_CONFIGS, resolveImageModel } from "./image-model-catalog";
  */
 const MODEL_DISPLAY_NAMES = Object.freeze<Record<string, string>>({
   // Okou built-in aliases
-  "okou-1.0": "Okou 1.0",
-  "okou-1.0-pro": "Okou 1.0 Pro",
-  "okou-1.0-max": "Okou 1.0 Max",
+  "okou-1.0": "Auto",
   // Anthropic direct (claude-code-oauth-token, anthropic-api-key, built-in)
   "claude-fable-5-1": "Claude Fable 5.1",
   "claude-fable-5": "Claude Fable 5",
@@ -49,7 +47,6 @@ const MODEL_DISPLAY_NAMES = Object.freeze<Record<string, string>>({
   "gpt-6-luna": "GPT 6 Luna",
   "openai/gpt-6-luna": "GPT 6 Luna",
   "gpt-5.6-sol": "GPT 5.6 Sol",
-  "gpt-5.6-terra": "GPT 5.6 Terra",
   "gpt-5.6-luna": "GPT 5.6 Luna",
   "gpt-5.5": "GPT 5.5",
   "openai/gpt-5.5": "GPT 5.5",

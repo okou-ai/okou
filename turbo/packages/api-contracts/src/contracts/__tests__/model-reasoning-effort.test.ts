@@ -62,13 +62,10 @@ describe("chat reasoning effort capabilities", () => {
     expect(defaultModelReasoningEffort("deepseek-v4-flash")).toBe("high");
   });
 
-  it.each(["okou-1.0", "okou-1.0-pro", "okou-1.0-max"])(
-    "leaves %s reasoning to its preset",
-    (model) => {
-      expect(getModelReasoningEfforts(model)).toStrictEqual([]);
-      expect(defaultModelReasoningEffort(model)).toBeUndefined();
-    },
-  );
+  it("leaves Auto reasoning to its preset", () => {
+    expect(getModelReasoningEfforts("okou-1.0")).toStrictEqual([]);
+    expect(defaultModelReasoningEffort("okou-1.0")).toBeUndefined();
+  });
 
   it("keeps each model's override independent", () => {
     const settings = withModelReasoningEffort(
@@ -114,8 +111,8 @@ describe("chat reasoning effort capabilities", () => {
   });
 
   it("recognizes native and provider-prefixed model identities", () => {
-    expect(getModelReasoningEfforts("openai/gpt-5.6-terra")).toStrictEqual(
-      getModelReasoningEfforts("gpt-5.6-terra"),
+    expect(getModelReasoningEfforts("openai/gpt-6-luna")).toStrictEqual(
+      getModelReasoningEfforts("gpt-6-luna"),
     );
     expect(
       getModelReasoningEfforts("anthropic/claude-fable-5.1"),

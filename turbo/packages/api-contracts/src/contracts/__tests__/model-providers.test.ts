@@ -74,7 +74,6 @@ describe("model-first canonical catalog", () => {
       "gpt-6-sol",
       "gpt-6-luna",
       "gpt-5.6-sol",
-      "gpt-5.6-terra",
       "gpt-5.6-luna",
     ]);
     expect(isCodexFastModeModel("gpt-5.5")).toBe(false);
@@ -85,7 +84,6 @@ describe("model-first canonical catalog", () => {
     expect(isCodexFastModeModel("gpt-6-luna")).toBe(true);
     expect(isCodexFastModeModel("openai/gpt-6-luna")).toBe(true);
     expect(isCodexFastModeModel("openai/gpt-5.6-sol")).toBe(true);
-    expect(isCodexFastModeModel("gpt-5.6-terra")).toBe(true);
     expect(isCodexFastModeModel("gpt-5.6-luna")).toBe(true);
     expect(isCodexFastModeModel("custom-model")).toBe(false);
     expect(isCodexFastModeModel(null)).toBe(false);
@@ -115,8 +113,6 @@ describe("model-first canonical catalog", () => {
 
   it("exposes the curated flat model list only", () => {
     expect(SUPPORTED_RUN_MODELS).toEqual([
-      "okou-1.0-max",
-      "okou-1.0-pro",
       "okou-1.0",
       "claude-fable-5-1",
       "claude-fable-5",
@@ -130,7 +126,6 @@ describe("model-first canonical catalog", () => {
       "gpt-6-sol",
       "gpt-6-luna",
       "gpt-5.6-sol",
-      "gpt-5.6-terra",
       "gpt-5.6-luna",
       "gpt-5.5",
       "deepseek-v4.1-flash",
@@ -147,9 +142,6 @@ describe("model-first canonical catalog", () => {
     expect(supportedRunModelSchema.safeParse("gpt-6-sol").success).toBe(true);
     expect(supportedRunModelSchema.safeParse("gpt-6-luna").success).toBe(true);
     expect(supportedRunModelSchema.safeParse("gpt-5.6-sol").success).toBe(true);
-    expect(supportedRunModelSchema.safeParse("gpt-5.6-terra").success).toBe(
-      true,
-    );
     expect(supportedRunModelSchema.safeParse("gpt-5.6-luna").success).toBe(
       true,
     );
@@ -214,8 +206,6 @@ describe("model-first canonical catalog", () => {
     expect(isLimitedFree1RestrictedRunModel("openai/gpt-6-luna")).toBe(false);
     expect(isLimitedFree1RestrictedRunModel("gpt-5.6-sol")).toBe(true);
     expect(isLimitedFree1RestrictedRunModel("openai/gpt-5.6-sol")).toBe(true);
-    expect(isLimitedFree1RestrictedRunModel("gpt-5.6-terra")).toBe(true);
-    expect(isLimitedFree1RestrictedRunModel("openai/gpt-5.6-terra")).toBe(true);
     expect(isLimitedFree1RestrictedRunModel("gpt-5.6-luna")).toBe(false);
     expect(isLimitedFree1RestrictedRunModel("openai/gpt-5.6-luna")).toBe(false);
     expect(isLimitedFree1RestrictedRunModel("deepseek-v4.1-flash")).toBe(false);
@@ -284,7 +274,6 @@ describe("model-first canonical catalog", () => {
     expect(getCanonicalModelDisplayName("gpt-6-sol")).toBe("GPT 6 Sol");
     expect(getCanonicalModelDisplayName("gpt-6-luna")).toBe("GPT 6 Luna");
     expect(getCanonicalModelDisplayName("gpt-5.6-sol")).toBe("GPT 5.6 Sol");
-    expect(getCanonicalModelDisplayName("gpt-5.6-terra")).toBe("GPT 5.6 Terra");
     expect(getCanonicalModelDisplayName("gpt-5.6-luna")).toBe("GPT 5.6 Luna");
     expect(getCanonicalModelDisplayName("gpt-5.5")).toBe("GPT 5.5");
     expect(getCanonicalModelDisplayName("deepseek-v4.1-flash")).toBe(
@@ -330,34 +319,6 @@ describe("model-first canonical catalog", () => {
     expect(isSupportedRunModel("deepseek-v4-pro")).toBe(true);
   });
 
-  it("keeps historical models readable in the shared schema catalog", () => {
-    expect(SUPPORTED_RUN_MODELS).toEqual([
-      "okou-1.0-max",
-      "okou-1.0-pro",
-      "okou-1.0",
-      "claude-fable-5-1",
-      "claude-fable-5",
-      "claude-opus-5-5",
-      "claude-opus-5",
-      "claude-opus-4-8",
-      "claude-sonnet-5-5",
-      "claude-sonnet-5",
-      "claude-sonnet-4-6",
-      "gpt-6-astra",
-      "gpt-6-sol",
-      "gpt-6-luna",
-      "gpt-5.6-sol",
-      "gpt-5.6-terra",
-      "gpt-5.6-luna",
-      "gpt-5.5",
-      "deepseek-v4.1-flash",
-      "deepseek-v4-pro",
-      "deepseek-v4-flash",
-    ]);
-    expect(SUPPORTED_RUN_MODELS).toContain("gpt-5.5");
-    expect(SUPPORTED_RUN_MODELS).toContain("claude-sonnet-4-6");
-  });
-
   it.each([
     "gpt-5.5",
     "openai/gpt-5.5",
@@ -371,6 +332,9 @@ describe("model-first canonical catalog", () => {
   ])("keeps %s historical while removing current provider access", (model) => {
     expect(getRunModelAccess(model)).toBe("retired");
     expect(getRunModelAccess(model, true)).toBe("retired");
+    expect(getRunModelRouteAccess(model, "openrouter-codex", false)).toBe(
+      "retired",
+    );
     expect(getProvidersForModel(model)).toEqual([]);
   });
 
@@ -505,13 +469,6 @@ describe("model-first canonical catalog", () => {
     ]);
     expect(getProvidersForModel("gpt-5.5")).toEqual([]);
     expect(getProvidersForModel("gpt-5.6-sol")).toEqual([
-      "built-in",
-      "openai-api-key",
-      "codex-oauth-token",
-      "openrouter-codex",
-      "vercel-ai-gateway-codex",
-    ]);
-    expect(getProvidersForModel("gpt-5.6-terra")).toEqual([
       "built-in",
       "openai-api-key",
       "codex-oauth-token",
@@ -833,8 +790,6 @@ describe("model-first canonical catalog", () => {
       "claude-opus-5",
       "claude-sonnet-5-5",
       "claude-sonnet-5",
-      "okou-1.0-max",
-      "okou-1.0-pro",
       "okou-1.0",
       "deepseek-v4.1-flash",
       "deepseek-v4-flash",
@@ -842,7 +797,6 @@ describe("model-first canonical catalog", () => {
       "gpt-6-sol",
       "gpt-6-luna",
       "gpt-5.6-sol",
-      "gpt-5.6-terra",
       "gpt-5.6-luna",
     ]);
     expect(getBuiltInModelRouteVendors()).toEqual([
@@ -887,14 +841,10 @@ describe("model-first canonical catalog", () => {
     }
   });
 
-  it.each([
-    ["okou-1.0", "@preset/okou-1-0", "$"],
-    ["okou-1.0-pro", "@preset/okou-1-0-pro", "$$"],
-    ["okou-1.0-max", "@preset/okou-1-0-max", "$$$"],
-  ] as const)(
+  it.each([["okou-1.0", "@preset/okou-1-0", "$"]] as const)(
     "routes %s only through its built-in OpenRouter preset",
     (model, preset, tier) => {
-      expect(getCanonicalModelDisplayName(model)).toMatch(/^Okou 1\.0/u);
+      expect(getCanonicalModelDisplayName(model)).toBe("Auto");
       expect(getBuiltInModelPriceTier(model)).toBe(tier);
       expect(getProvidersForModel(model)).toEqual(["built-in"]);
       expect(getBuiltInModelRouteCandidates(model)).toEqual([
@@ -910,8 +860,6 @@ describe("model-first canonical catalog", () => {
 
   it("keeps only the base Okou model available to restricted cohorts", () => {
     expect(isLimitedFree1RestrictedRunModel("okou-1.0")).toBe(false);
-    expect(isLimitedFree1RestrictedRunModel("okou-1.0-pro")).toBe(true);
-    expect(isLimitedFree1RestrictedRunModel("okou-1.0-max")).toBe(true);
   });
 
   it("recognizes only own Okou model IDs", () => {
@@ -947,26 +895,10 @@ describe("model-first canonical catalog", () => {
     {
       model: "okou-1.0",
       preset: "@preset/okou-1-0",
-      displayName: "Okou 1.0",
+      displayName: "Auto",
       sourceModel: "GPT-6 Luna",
       sourceModelId: "openai/gpt-6-luna",
       reasoningEffort: "max",
-    },
-    {
-      model: "okou-1.0-pro",
-      preset: "@preset/okou-1-0-pro",
-      displayName: "Okou 1.0 Pro",
-      sourceModel: "GPT-6 Sol",
-      sourceModelId: "openai/gpt-6-sol",
-      reasoningEffort: "low",
-    },
-    {
-      model: "okou-1.0-max",
-      preset: "@preset/okou-1-0-max",
-      displayName: "Okou 1.0 Max",
-      sourceModel: "GPT-6 Sol",
-      sourceModelId: "openai/gpt-6-sol",
-      reasoningEffort: "high",
     },
   ] as const)(
     "projects Codex metadata for Okou $model to its OpenRouter Preset",
@@ -1050,8 +982,6 @@ describe("model-first canonical catalog", () => {
   it("exposes price tiers for built-in reasoning models", () => {
     expect(BUILT_IN_MODEL_PRICE_TIER).toEqual(
       expect.objectContaining({
-        "okou-1.0-max": "$$$",
-        "okou-1.0-pro": "$$",
         "okou-1.0": "$",
         "claude-fable-5-1": "$$$$",
         "claude-fable-5": "$$$$",
@@ -1061,7 +991,6 @@ describe("model-first canonical catalog", () => {
         "gpt-6-sol": "$$$",
         "gpt-6-luna": "$",
         "gpt-5.6-sol": "$$$",
-        "gpt-5.6-terra": "$$",
         "gpt-5.6-luna": "$",
         "claude-opus-4-8": "$$$",
         "claude-sonnet-5": "$$",
@@ -1078,7 +1007,6 @@ describe("model-first canonical catalog", () => {
     expect(getBuiltInModelPriceTier("gpt-6-sol")).toBe("$$$");
     expect(getBuiltInModelPriceTier("gpt-6-luna")).toBe("$");
     expect(getBuiltInModelPriceTier("gpt-5.6-sol")).toBe("$$$");
-    expect(getBuiltInModelPriceTier("gpt-5.6-terra")).toBe("$$");
     expect(getBuiltInModelPriceTier("gpt-5.6-luna")).toBe("$");
     expect(getBuiltInModelPriceTier("claude-opus-4-8")).toBe("$$$");
     expect(getBuiltInModelPriceTier("claude-sonnet-5")).toBe("$$");
@@ -1100,8 +1028,6 @@ describe("model-first canonical catalog", () => {
     expect(MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS).toEqual(
       expect.objectContaining({
         "okou-1.0": 272_001,
-        "okou-1.0-pro": 272_001,
-        "okou-1.0-max": 272_001,
       }),
     );
   });
@@ -1443,7 +1369,6 @@ describe("openai-api-key codex provider", () => {
       "gpt-6-sol",
       "gpt-6-luna",
       "gpt-5.6-sol",
-      "gpt-5.6-terra",
       "gpt-5.6-luna",
     ]);
     expect(getDefaultModel("openai-api-key")).toBe("gpt-5.6-sol");
@@ -1663,7 +1588,6 @@ describe("codex-oauth-token codex provider", () => {
       "gpt-6-sol",
       "gpt-6-luna",
       "gpt-5.6-sol",
-      "gpt-5.6-terra",
       "gpt-5.6-luna",
     ]);
     expect(getDefaultModel("codex-oauth-token")).toBe("gpt-5.6-sol");
@@ -1870,11 +1794,7 @@ describe("codex-framework gateway providers (openrouter-codex, vercel-ai-gateway
     "%s offers current GPT models with gpt-5.6-luna default",
     (type) => {
       expect(getModels(type)).toEqual(
-        expect.arrayContaining([
-          "openai/gpt-5.6-sol",
-          "openai/gpt-5.6-terra",
-          "openai/gpt-5.6-luna",
-        ]),
+        expect.arrayContaining(["openai/gpt-5.6-sol", "openai/gpt-5.6-luna"]),
       );
       if (type === "openrouter-codex") {
         expect(getModels(type)).toEqual(

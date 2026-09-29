@@ -176,7 +176,7 @@ async function fixture(args: {
     });
   await writeFile(file, memory.toJsonl());
   const model = {
-    ...getBuiltinModel("openai", "gpt-5.6-terra"),
+    ...getBuiltinModel("openai", "gpt-6-luna"),
     baseUrl: "https://pending-tools.example/v1",
     ...(args.preResponseCompaction ? { contextWindow: 10000 } : {}),
   };

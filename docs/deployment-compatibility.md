@@ -1,5 +1,33 @@
 # Deployment Compatibility
 
+## Integration model commands are thread-scoped (2026-09-29)
+
+The integration `/model` command now reads the effective model of an existing
+routed chat thread (using the organization default when the thread's stored
+choice is unavailable) and updates only that thread through the existing
+metadata path. It no longer writes the member's shared model preference; new
+threads continue to initialize from the member preference and then the
+organization default. A command without an existing route does not create a
+thread or change a preference. Slack slash commands identify only the main DM
+route; other Slack contexts need a main DM conversation first. Slack, Teams,
+and Discord model pickers bind to the original chat thread and reject stale
+submissions if that route changes. Telegram and AgentPhone no longer recognize
+the session-reset command: unrecognized slash inputs use their ordinary message
+paths, including agent admission when addressed and connected.
+
+This is an API-only behavior change with no schema, event, queue payload, App,
+CLI, or Runner contract change. Existing queued inputs retain their captured
+model. During an API rollout an older instance can still accept a model command
+and write the member preference as well as a routed thread; after promotion,
+new instances read and update only the thread. Old Slack modals and Teams cards
+lack the original chat-thread binding and must be reopened; old Discord model
+controls lack the signed thread tag and expire rather than changing another
+conversation. No retained compatibility reader or rollback floor is needed;
+rolling back the API temporarily restores the previous command behavior.
+
+The release-7 section below records the behavior at that historical release,
+not the new command contract.
+
 ## Image model thread columns and `image_model_updated` dropped
 
 Final step of "Image model becomes a member setting" (#37246, released

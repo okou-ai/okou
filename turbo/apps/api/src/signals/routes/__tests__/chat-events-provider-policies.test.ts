@@ -762,7 +762,7 @@ describe("CHAT-02: model-first provider policies", () => {
   it("exposes the owner's run trace URL after tracing is disabled", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const orgId = requireOrgId(actor);
-    await configureBuiltInPiModel(actor, "gpt-5.6-terra");
+    await configureBuiltInPiModel(actor, "gpt-6-luna");
     const pricing = await createGptUsagePricingResolution();
     mockPiResourceArchiveDownloads();
     const checkpointObjects = mockPiCheckpointObjectStore();
@@ -781,7 +781,7 @@ describe("CHAT-02: model-first provider policies", () => {
     const traced = await sendChatRun(actor, {
       agentId,
       prompt: tracedPrompt,
-      model: "gpt-5.6-terra",
+      model: "gpt-6-luna",
     });
     await completeSandboxFirstPiRun({
       actor,
@@ -807,7 +807,7 @@ describe("CHAT-02: model-first provider policies", () => {
       agentId,
       threadId: traced.threadId,
       prompt: "continue without tracing",
-      model: "gpt-5.6-terra",
+      model: "gpt-6-luna",
     });
     await flushWaitUntilForTest();
     expect((await api.readRun(actor, untraced.runId)).status).toBe("pending");
@@ -835,7 +835,7 @@ describe("CHAT-02: model-first provider policies", () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const orgId = requireOrgId(actor);
     await publishPendingPiInstructions(actor, agentId);
-    await configureBuiltInPiModel(actor, "gpt-5.6-terra");
+    await configureBuiltInPiModel(actor, "gpt-6-luna");
     mockPiResourceArchiveDownloads(true);
     mockOptionalEnv("LANGFUSE_PUBLIC_KEY", "pk-lf-bdd-trace-admission");
     mockOptionalEnv("LANGFUSE_SECRET_KEY", "sk-lf-bdd-trace-admission");
@@ -852,7 +852,7 @@ describe("CHAT-02: model-first provider policies", () => {
     const run = await sendChatRun(actor, {
       agentId,
       prompt: "preserve the Langfuse trace gate through claim",
-      model: "gpt-5.6-terra",
+      model: "gpt-6-luna",
     });
     await flushWaitUntilForTest();
     await expect(
@@ -910,7 +910,7 @@ describe("CHAT-02: model-first provider policies", () => {
     const untraced = await sendChatRun(actor, {
       agentId,
       prompt: "run without trace admission",
-      model: "gpt-5.6-terra",
+      model: "gpt-6-luna",
     });
     await flushWaitUntilForTest();
     const untracedClaim = await claimChatRun(runnerGroup, untraced.runId);
@@ -1582,14 +1582,6 @@ describe("CHAT-02: model-first provider policies", () => {
       model: "okou-1.0",
       preset: "@preset/okou-1-0",
     },
-    {
-      model: "okou-1.0-pro",
-      preset: "@preset/okou-1-0-pro",
-    },
-    {
-      model: "okou-1.0-max",
-      preset: "@preset/okou-1-0-max",
-    },
   ] as const)(
     "routes built-in $model only through its OpenRouter Preset",
     async ({ model, preset }) => {
@@ -1802,7 +1794,7 @@ describe("CHAT-02: model-first provider policies", () => {
       [
         "claude-sonnet-5",
         "claude-fable-5-1",
-        "gpt-5.6-terra",
+        "gpt-5.6-luna",
         "deepseek-v4-flash",
       ] as const
     ).flatMap((model) => {

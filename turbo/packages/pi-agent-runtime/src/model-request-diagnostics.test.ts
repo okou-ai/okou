@@ -24,7 +24,7 @@ import { normalizeContext } from "@earendil-works/pi-ai";
 const route = {
   provider: "openai-codex",
   baseUrl: "https://chatgpt.com/backend-api",
-  model: "gpt-5.6-terra",
+  model: "gpt-6-luna",
   apiKey: "synthetic-token",
   accountId: "synthetic-account",
   dialect: "openai-codex-responses",

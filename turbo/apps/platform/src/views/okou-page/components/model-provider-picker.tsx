@@ -35,6 +35,7 @@ import {
   getProvidersForModel,
   isBuiltInModelProviderType,
   isCodexFastModeModel,
+  isActiveRunModel,
   isSupportedRunModel,
   type ModelProviderType,
   type OrgModelPolicy,
@@ -250,7 +251,7 @@ function selectionAllowedValue(
   policies: OrgModelPolicy[],
   modelCapabilities: ModelPlanCapabilities,
 ): ModelProviderSelection | null {
-  if (!value) {
+  if (!value || !isActiveRunModel(value.selectedModel)) {
     return null;
   }
   const policy = policies.find((candidate) => {
@@ -370,14 +371,14 @@ function modelFirstSelectionFromRaw(
   if (raw.startsWith(CODEX_FAST_OPTION_PREFIX)) {
     const selectedModel = raw.slice(CODEX_FAST_OPTION_PREFIX.length);
     if (
-      isSupportedRunModel(selectedModel) &&
+      isActiveRunModel(selectedModel) &&
       isCodexFastModeModel(selectedModel)
     ) {
       return { selectedModel, codexServiceTier: "fast" };
     }
     return null;
   }
-  if (!isSupportedRunModel(raw)) {
+  if (!isActiveRunModel(raw)) {
     return null;
   }
   return {
@@ -450,7 +451,7 @@ export function ModelFirstPolicyRowContent({
     <span className="flex w-full min-w-0 items-center gap-2">
       {iconType && <ProviderIcon type={iconType} size={16} />}
       <span className="min-w-0 flex-1 truncate">
-        {policy.modelLabel || getCanonicalModelDisplayName(policy.model)}
+        {getCanonicalModelDisplayName(policy.model)}
       </span>
       {builtInPriceTier !== undefined ? (
         <PriceTierBadge
@@ -488,8 +489,7 @@ function ModelFirstPolicyRow({
     isMemberModelPolicyConfigurable(policy) &&
     isCodexFastModeModel(policy.model);
   if (fastAvailable) {
-    const modelLabel =
-      policy.modelLabel || getCanonicalModelDisplayName(policy.model);
+    const modelLabel = getCanonicalModelDisplayName(policy.model);
     const selected = selection?.selectedModel === policy.model;
     const fastSelected = selected && selection.codexServiceTier === "fast";
     const fastLabel = t(($) => {
@@ -708,7 +708,9 @@ export function resolveModelFirstModelPickerState({
   placeholder: string;
   fastLabel: string;
 }): ModelFirstModelPickerState {
-  const policies = policyResponse?.policies ?? [];
+  const policies = (policyResponse?.policies ?? []).filter((policy) => {
+    return isActiveRunModel(policy.model);
+  });
   const selection = selectionAllowedValue(value, policies, modelCapabilities);
   return {
     policies,
@@ -898,8 +900,7 @@ function SubscribedExplicitModelFirstModelPickerContent({
         options={state.policies.map((policy) => {
           return {
             model: policy.model,
-            label:
-              policy.modelLabel || getCanonicalModelDisplayName(policy.model),
+            label: getCanonicalModelDisplayName(policy.model),
             content: (
               <ModelFirstPolicyRowContent
                 policy={policy}

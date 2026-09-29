@@ -13,7 +13,7 @@ const PI_SESSION_CONSTRUCTION_MODEL: PiAgentModelConfig = {
   provider: "openai",
   baseUrl: "https://api.openai.com/v1",
   apiKey: "session-construction-digest",
-  model: "gpt-5.6-terra",
+  model: "gpt-6-luna",
   dialect: "openai-responses",
   transport: "sse",
   thinkingLevel: "max",

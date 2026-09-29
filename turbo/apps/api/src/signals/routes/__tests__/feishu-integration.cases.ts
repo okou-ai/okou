@@ -4189,7 +4189,7 @@ export function registerFeishuIntegrationTests(
         ).toBeTruthy();
         expect(
           commandReplies.some((content) => {
-            return content.includes("Choose a model");
+            return content.includes("existing Okou conversation");
           }),
         ).toBeTruthy();
         clearConnectorInvalidationMocks();
@@ -6515,7 +6515,7 @@ export function registerSharedFeishuConversationTests(): void {
       return preference.body.selectedModel;
     }
 
-    it("switches the main Feishu DM thread and the member default with /model", async () => {
+    it("switches the main Feishu DM thread without changing the member default", async () => {
       const fixture = await setupFeishuRunFixture();
       const { actor, appId, callbackUrl, defaultAgentId } = fixture;
       await startFeishuDmSession(fixture);
@@ -6537,7 +6537,7 @@ export function registerSharedFeishuConversationTests(): void {
           return messageContent(message).includes("Model switched");
         }),
       ).toBeTruthy();
-      await expect(readFeishuMemberModel(actor)).resolves.toBe("gpt-6-astra");
+      await expect(readFeishuMemberModel(actor)).resolves.toBeNull();
       await expect(readFeishuThreadEvents(actor)).resolves.toContainEqual(
         expect.objectContaining({
           kind: "model_selection_updated",
@@ -6548,7 +6548,7 @@ export function registerSharedFeishuConversationTests(): void {
       await removeFeishuInstallation(fixture);
     });
 
-    it("changes only the member default when /model precedes any Feishu thread", async () => {
+    it("rejects /model before any Feishu thread without changing the member default", async () => {
       const fixture = await setupFeishuRunFixture();
       const { actor, appId, callbackUrl } = fixture;
       await connectFixtureUser(fixture);
@@ -6559,7 +6559,12 @@ export function registerSharedFeishuConversationTests(): void {
       });
       await flushWaitUntilForTest();
 
-      await expect(readFeishuMemberModel(actor)).resolves.toBe("gpt-6-astra");
+      await expect(readFeishuMemberModel(actor)).resolves.toBeNull();
+      expect(
+        fixtureState.outboundMessages.some((message) => {
+          return messageContent(message).includes("existing Okou conversation");
+        }),
+      ).toBeTruthy();
       await expect(readFeishuThreadEvents(actor)).resolves.not.toContainEqual(
         expect.objectContaining({ kind: "model_selection_updated" }),
       );

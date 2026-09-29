@@ -191,9 +191,7 @@ export interface DefaultOrgModelPolicySeed {
 }
 
 const SUPPORTED_RUN_MODEL_LABELS: Record<SupportedRunModel, string> = {
-  "okou-1.0-max": "Okou 1.0 Max",
-  "okou-1.0-pro": "Okou 1.0 Pro",
-  "okou-1.0": "Okou 1.0",
+  "okou-1.0": "Auto",
   "claude-fable-5-1": "Claude Fable 5.1",
   "claude-fable-5": "Claude Fable 5",
   "claude-opus-5-5": "Claude Opus 5.5",
@@ -209,7 +207,6 @@ const SUPPORTED_RUN_MODEL_LABELS: Record<SupportedRunModel, string> = {
   "gpt-6-sol": "GPT 6 Sol",
   "gpt-6-luna": "GPT 6 Luna",
   "gpt-5.6-sol": "GPT 5.6 Sol",
-  "gpt-5.6-terra": "GPT 5.6 Terra",
   "gpt-5.6-luna": "GPT 5.6 Luna",
   "gpt-5.5": "GPT 5.5",
 };
@@ -299,7 +296,6 @@ export const CODEX_FAST_MODE_MODELS = [
   "gpt-6-sol",
   "gpt-6-luna",
   "gpt-5.6-sol",
-  "gpt-5.6-terra",
   "gpt-5.6-luna",
 ] as const satisfies readonly SupportedRunModel[];
 
@@ -416,22 +412,6 @@ export const BUILT_IN_MODEL_TO_PROVIDER = {
       },
     ],
   },
-  "okou-1.0-max": {
-    candidates: [
-      {
-        concreteType: "openrouter-codex",
-        apiModel: OKOU_MODEL_METADATA["okou-1.0-max"].presetModel,
-      },
-    ],
-  },
-  "okou-1.0-pro": {
-    candidates: [
-      {
-        concreteType: "openrouter-codex",
-        apiModel: OKOU_MODEL_METADATA["okou-1.0-pro"].presetModel,
-      },
-    ],
-  },
   "okou-1.0": {
     candidates: [
       {
@@ -494,15 +474,6 @@ export const BUILT_IN_MODEL_TO_PROVIDER = {
       {
         concreteType: "openrouter-codex",
         apiModel: "openai/gpt-5.6-sol",
-      },
-    ],
-  },
-  "gpt-5.6-terra": {
-    candidates: [
-      { concreteType: "openai-api-key" },
-      {
-        concreteType: "openrouter-codex",
-        apiModel: "openai/gpt-5.6-terra",
       },
     ],
   },
@@ -841,7 +812,6 @@ export const MODEL_PROVIDER_TYPES = {
       "openai/gpt-6-sol",
       "openai/gpt-6-luna",
       "openai/gpt-5.6-sol",
-      "openai/gpt-5.6-terra",
       "openai/gpt-5.6-luna",
       "deepseek/deepseek-v4.1-flash",
       "deepseek/deepseek-v4-flash",
@@ -864,11 +834,7 @@ export const MODEL_PROVIDER_TYPES = {
       OPENAI_BASE_URL: "https://ai-gateway.vercel.sh/v1",
       OPENAI_MODEL: "$model",
     } satisfies ModelProviderEnvBindings,
-    models: [
-      "openai/gpt-5.6-sol",
-      "openai/gpt-5.6-terra",
-      "openai/gpt-5.6-luna",
-    ] as string[],
+    models: ["openai/gpt-5.6-sol", "openai/gpt-5.6-luna"] as string[],
     defaultModel: "openai/gpt-5.6-luna",
   },
   "openai-api-key": {
@@ -886,7 +852,6 @@ export const MODEL_PROVIDER_TYPES = {
       "gpt-6-sol",
       "gpt-6-luna",
       "gpt-5.6-sol",
-      "gpt-5.6-terra",
       "gpt-5.6-luna",
     ] as string[],
     defaultModel: "gpt-5.6-sol",
@@ -962,7 +927,6 @@ export const MODEL_PROVIDER_TYPES = {
       "gpt-6-sol",
       "gpt-6-luna",
       "gpt-5.6-sol",
-      "gpt-5.6-terra",
       "gpt-5.6-luna",
     ] as string[],
     defaultModel: "gpt-5.6-sol",
@@ -1091,8 +1055,6 @@ export function getModelProviderPresentationLabel(
 }
 
 const MODEL_FIRST_PROVIDER_COMPATIBILITY = {
-  "okou-1.0-max": ["built-in"],
-  "okou-1.0-pro": ["built-in"],
   "okou-1.0": ["built-in"],
   "claude-fable-5-1": [
     "built-in",
@@ -1156,13 +1118,6 @@ const MODEL_FIRST_PROVIDER_COMPATIBILITY = {
     "openrouter-codex",
     "vercel-ai-gateway-codex",
   ],
-  "gpt-5.6-terra": [
-    "built-in",
-    "openai-api-key",
-    "codex-oauth-token",
-    "openrouter-codex",
-    "vercel-ai-gateway-codex",
-  ],
   "gpt-5.6-luna": [
     "built-in",
     "openai-api-key",
@@ -1196,12 +1151,10 @@ const PROVIDER_RUNTIME_MODEL_ALIASES: Partial<
     "gpt-6-sol": "openai/gpt-6-sol",
     "gpt-6-luna": "openai/gpt-6-luna",
     "gpt-5.6-sol": "openai/gpt-5.6-sol",
-    "gpt-5.6-terra": "openai/gpt-5.6-terra",
     "gpt-5.6-luna": "openai/gpt-5.6-luna",
   },
   "vercel-ai-gateway-codex": {
     "gpt-5.6-sol": "openai/gpt-5.6-sol",
-    "gpt-5.6-terra": "openai/gpt-5.6-terra",
     "gpt-5.6-luna": "openai/gpt-5.6-luna",
   },
 };
@@ -1437,8 +1390,6 @@ const CODEX_MODEL_CATALOG_OVERRIDES: Readonly<
 > = {
   "deepseek-v4.1-flash": DEEPSEEK_V4_1_FLASH_MODEL_CATALOG,
   "okou-1.0": OKOU_MODEL_CODEX_CATALOG,
-  "okou-1.0-pro": OKOU_MODEL_CODEX_CATALOG,
-  "okou-1.0-max": OKOU_MODEL_CODEX_CATALOG,
 };
 
 /**

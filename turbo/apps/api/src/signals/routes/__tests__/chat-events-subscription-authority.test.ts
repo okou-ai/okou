@@ -81,7 +81,7 @@ describe("CHAT-02: run-level model overrides", () => {
         {
           agentId: f.agentId,
           threadId: f.thread.id,
-          model: "gpt-5.6-terra",
+          model: "gpt-6-luna",
           prompt,
           clientEventId,
         },
@@ -130,7 +130,7 @@ describe("CHAT-02: run-level model overrides", () => {
       const waiting = await sendWaitingChatInput(f.actor, {
         agentId: f.agentId,
         threadId: f.thread.id,
-        model: "gpt-5.6-terra",
+        model: "gpt-6-luna",
         prompt: "overlap subscription capture with thread preparation",
         clientEventId,
       });
@@ -262,7 +262,7 @@ describe("CHAT-02: run-level model overrides", () => {
       mockPiCheckpointObjectStore();
       const run = await sendChatRun(actor, {
         agentId,
-        model: "gpt-5.6-terra",
+        model: "gpt-6-luna",
         prompt: "preserve final subscription authority",
         runOptions: { codexServiceTier: "fast" },
       });
@@ -331,7 +331,7 @@ describe("CHAT-02: run-level model overrides", () => {
     mockPiCheckpointObjectStore();
     const run = await sendChatRun(actor, {
       agentId,
-      model: "gpt-5.6-terra",
+      model: "gpt-6-luna",
       prompt: "retain subscription revocation at execution",
       runOptions: { codexServiceTier: "fast" },
     });
@@ -374,10 +374,10 @@ describe("CHAT-02: run-level model overrides", () => {
   }, 30_000);
 
   const representativeModels = {
-    "codex-oauth-token": "gpt-5.6-terra",
+    "codex-oauth-token": "gpt-6-luna",
     "openai-api-key": "gpt-5.6-sol",
     "openrouter-codex": "gpt-5.6-luna",
-    "vercel-ai-gateway-codex": "gpt-5.6-terra",
+    "vercel-ai-gateway-codex": "gpt-5.6-luna",
   } as const;
 
   it.each(
@@ -396,7 +396,7 @@ describe("CHAT-02: run-level model overrides", () => {
       const first = await sendChatRun(actor, {
         agentId,
         model: route.selectedModel,
-        prompt: "Terra standard start",
+        prompt: "Luna standard start",
       });
       const firstClaim = await claimChatRun(runnerGroup, first.runId);
       expect(firstClaim.claim.resumeSession).toBeNull();
@@ -407,10 +407,10 @@ describe("CHAT-02: run-level model overrides", () => {
       expect(firstClaim.claim.piModelConfig).not.toHaveProperty("serviceTier");
       await completeSandboxFirstPiRun({
         actor,
-        answer: "Terra standard sandbox answer",
+        answer: "Luna standard sandbox answer",
         checkpointObjects: objects,
         claim: firstClaim,
-        prompt: "Terra standard start",
+        prompt: "Luna standard start",
         run: first,
         responsesModel: { provider: "openai", model: route.selectedModel },
         usagePricingResolution: pricing,
@@ -423,7 +423,7 @@ describe("CHAT-02: run-level model overrides", () => {
         agentId,
         threadId: first.threadId,
         model: route.selectedModel,
-        prompt: "Terra Fast continuation",
+        prompt: "Luna Fast continuation",
         runOptions: { codexServiceTier: "fast" },
       });
       await flushWaitUntilForTest();
@@ -441,10 +441,10 @@ describe("CHAT-02: run-level model overrides", () => {
       });
       await completeSandboxFirstPiRun({
         actor,
-        answer: "Terra Fast sandbox answer",
+        answer: "Luna Fast sandbox answer",
         checkpointObjects: objects,
         claim: fastClaim,
-        prompt: "Terra Fast continuation",
+        prompt: "Luna Fast continuation",
         run: fast,
         responsesModel: { provider: "openai", model: route.selectedModel },
         usagePricingResolution: pricing,
@@ -464,7 +464,7 @@ describe("CHAT-02: run-level model overrides", () => {
         agentId,
         threadId: first.threadId,
         model: route.selectedModel,
-        prompt: "Terra standard return",
+        prompt: "Luna standard return",
       });
       await flushWaitUntilForTest();
       const standardClaim = await claimChatRun(runnerGroup, standard.runId);
@@ -476,10 +476,10 @@ describe("CHAT-02: run-level model overrides", () => {
       );
       await completeSandboxFirstPiRun({
         actor,
-        answer: "Terra standard sandbox answer",
+        answer: "Luna standard sandbox answer",
         checkpointObjects: objects,
         claim: standardClaim,
-        prompt: "Terra standard return",
+        prompt: "Luna standard return",
         run: standard,
         responsesModel: { provider: "openai", model: route.selectedModel },
         usagePricingResolution: pricing,
@@ -542,12 +542,12 @@ describe("CHAT-02: run-level model overrides", () => {
       ]);
       const source = await sendChatRun(actor, {
         agentId,
-        prompt: "source run for Terra handoff",
+        prompt: "source run for Luna handoff",
         model: "claude-fable-5-1",
       });
       const anchor = await sendChatRun(actor, {
         agentId,
-        prompt: "hold the Terra target thread",
+        prompt: "hold the Luna target thread",
         model: "claude-fable-5-1",
       });
       const anchorClaim = await claimChatRun(runnerGroup, anchor.runId);
@@ -566,7 +566,7 @@ describe("CHAT-02: run-level model overrides", () => {
         agentId,
         threadId: anchor.threadId,
         clientEventId: queuedId,
-        prompt: "queued Terra Fast",
+        prompt: "queued Luna Fast",
         model: route.selectedModel,
         runOptions: { codexServiceTier: "fast" as const },
       };
@@ -610,7 +610,7 @@ describe("CHAT-02: run-level model overrides", () => {
       const immediateBody = {
         agentId,
         clientEventId: immediateId,
-        prompt: "immediate Terra Fast",
+        prompt: "immediate Luna Fast",
         model: route.selectedModel,
         runOptions: { codexServiceTier: "fast" as const },
       };

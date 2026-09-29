@@ -44,7 +44,7 @@ describe("CHAT-02: model-first provider policies", () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const orgId = requireOrgId(actor);
     await api.heartbeatRunner(runnerGroup);
-    await configureBuiltInPiModel(actor, "gpt-5.6-terra");
+    await configureBuiltInPiModel(actor, "gpt-6-luna");
 
     const usagePricingResolution = await createGptUsagePricingResolution();
     mockPiCheckpointObjectStore();
@@ -64,7 +64,7 @@ describe("CHAT-02: model-first provider policies", () => {
           agentId,
           threadId: thread.id,
           prompt: "exercise overlapped legacy context preparation",
-          model: "gpt-5.6-terra",
+          model: "gpt-6-luna",
         },
         usagePricingResolution,
       );
@@ -98,7 +98,7 @@ describe("CHAT-02: model-first provider policies", () => {
   it("preserves the input after the first preparation failure without waiting for another branch", async () => {
     const { actor, agentId } = await entitledChatActor();
     const orgId = requireOrgId(actor);
-    await configureBuiltInPiModel(actor, "gpt-5.6-terra");
+    await configureBuiltInPiModel(actor, "gpt-6-luna");
 
     const usagePricingResolution = await createGptUsagePricingResolution();
     const thread = await chat.createThread(actor, { agentId });
@@ -118,7 +118,7 @@ describe("CHAT-02: model-first provider policies", () => {
         threadId: thread.id,
         prompt,
         clientEventId,
-        model: "gpt-5.6-terra",
+        model: "gpt-6-luna",
       },
       [201],
       { usagePricingResolution },
@@ -178,14 +178,14 @@ describe("CHAT-02: model-first provider policies", () => {
       prompt: "hold admission capacity",
       model: "claude-fable-5-1",
     });
-    await configureBuiltInPiModel(actor, "gpt-5.6-terra");
+    await configureBuiltInPiModel(actor, "gpt-6-luna");
 
     const usagePricingResolution = await createGptUsagePricingResolution();
     mockPiCheckpointObjectStore();
     const prompt = "keep the complete admission independent";
     const waiting = await sendWaitingChatInput(
       actor,
-      { agentId, prompt, model: "gpt-5.6-terra" },
+      { agentId, prompt, model: "gpt-6-luna" },
       usagePricingResolution,
     );
 

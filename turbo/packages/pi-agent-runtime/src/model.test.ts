@@ -14,7 +14,7 @@ import { piAgentStreamForConfig, resolvePiAgentModel } from "./model";
 const CODEX_ROUTE = {
   provider: "openai-codex",
   baseUrl: "https://chatgpt.com/backend-api",
-  model: "gpt-5.6-terra",
+  model: "gpt-6-luna",
   apiKey: "opaque-not-a-jwt",
   accountId: "account-id-from-binding",
   dialect: "openai-codex-responses",
@@ -47,11 +47,11 @@ async function codexFailureResult(response: () => Response) {
   return { providerFetch, result: await stream.result() };
 }
 
-const OPENAI_TERRA = {
+const OPENAI_LUNA = {
   provider: "openai",
   baseUrl: "https://api.openai.com/v1",
   apiKey: "test-key",
-  model: "gpt-5.6-terra",
+  model: "gpt-6-luna",
   dialect: "openai-responses",
   transport: "sse",
 } as const;
@@ -212,7 +212,7 @@ describe("Pi agent model adapter", () => {
         config: {
           provider: "openai",
           baseUrl: provider.baseUrl,
-          model: "gpt-5.6-terra",
+          model: "gpt-6-luna",
           apiKeyEnv: "OPENAI_API_KEY",
           credentialSecretName: "OPENAI_API_KEY",
         },
@@ -235,7 +235,7 @@ describe("Pi agent model adapter", () => {
       expect(provider.requests[0]).toMatchObject({
         url: "/responses",
         headers: { authorization: "Bearer selected-public-key" },
-        body: { model: "gpt-5.6-terra", stream: true, store: false },
+        body: { model: "gpt-6-luna", stream: true, store: false },
       });
       expect(provider.requests[0]?.headers).not.toHaveProperty(
         "chatgpt-account-id",
@@ -246,27 +246,27 @@ describe("Pi agent model adapter", () => {
   });
 
   it("projects public Responses catalog capabilities onto the SDK model", () => {
-    const model = resolvePiAgentModel(OPENAI_TERRA);
+    const model = resolvePiAgentModel(OPENAI_LUNA);
 
     expect(model).toMatchObject({
-      id: "gpt-5.6-terra",
+      id: "gpt-6-luna",
       provider: "openai",
       baseUrl: "https://api.openai.com/v1",
       api: "openai-responses",
       reasoning: true,
       input: ["text", "image"],
       cost: {
-        input: 2,
-        output: 12,
-        cacheRead: 0.2,
-        cacheWrite: 2.5,
+        input: 0.1,
+        output: 0.5,
+        cacheRead: 0.01,
+        cacheWrite: 0.125,
         tiers: [
           {
             inputTokensAbove: 272_000,
-            input: 4,
-            output: 18,
-            cacheRead: 0.4,
-            cacheWrite: 5,
+            input: 0.2,
+            output: 0.75,
+            cacheRead: 0.02,
+            cacheWrite: 0.25,
           },
         ],
       },
@@ -308,10 +308,10 @@ describe("Pi agent model adapter", () => {
       model: "deepseek/deepseek-v4-pro",
     },
     {
-      name: "OpenRouter Terra",
+      name: "OpenRouter Luna",
       provider: "openrouter",
       baseUrl: "https://openrouter.ai/api/v1",
-      model: "openai/gpt-5.6-terra",
+      model: "openai/gpt-6-luna",
     },
   ])(
     "projects $name catalog metadata onto Responses without Chat fields",
@@ -375,11 +375,7 @@ describe("Pi agent model adapter", () => {
     }
   });
 
-  it.each([
-    ["okou-1.0", "@preset/okou-1-0", "Okou 1.0", 0.2, 1.2],
-    ["okou-1.0-pro", "@preset/okou-1-0-pro", "Okou 1.0 Pro", 5, 30],
-    ["okou-1.0-max", "@preset/okou-1-0-max", "Okou 1.0 Max", 5, 30],
-  ] as const)(
+  it.each([["okou-1.0", "@preset/okou-1-0", "Auto", 0.2, 1.2]] as const)(
     "resolves independent %s metadata for request preset %s",
     (catalogModel, model, name, input, output) => {
       expect(
@@ -412,7 +408,7 @@ describe("Pi agent model adapter", () => {
         provider: "openai",
         baseUrl: "https://api.openai.com/v1",
         apiKey: "test-key",
-        model: "gpt-5.6-terra",
+        model: "gpt-6-luna",
         dialect: "openai-responses",
         transport: "sse",
       } as const,
@@ -424,7 +420,7 @@ describe("Pi agent model adapter", () => {
         baseUrl: "https://chatgpt.com/backend-api",
         apiKey: "opaque-not-a-jwt",
         accountId: "account-id-from-binding",
-        model: "gpt-5.6-terra",
+        model: "gpt-6-luna",
         dialect: "openai-codex-responses",
         transport: "sse",
       } as const,
@@ -497,8 +493,8 @@ describe("Pi agent model adapter", () => {
     },
     {
       provider: "openai",
-      catalogModel: "gpt-5.6-terra",
-      model: "company-terra-production",
+      catalogModel: "gpt-6-luna",
+      model: "company-luna-production",
     },
   ])(
     "uses $provider/$catalogModel metadata for gateway request model $model",
@@ -524,7 +520,7 @@ describe("Pi agent model adapter", () => {
     { provider: "deepseek", model: "deepseek-v4.2-flash" },
     { provider: "openrouter", model: "deepseek/deepseek-v4.2-flash" },
     { provider: "openai", model: "deepseek-v4.1-flash" },
-    { provider: "unknown", model: "gpt-5.6-terra" },
+    { provider: "unknown", model: "gpt-6-luna" },
     { provider: "openai", model: "unknown-model" },
     { provider: "openrouter", model: "unknown/model" },
     {
@@ -549,14 +545,14 @@ describe("Pi agent model adapter", () => {
       resolvePiAgentModel({
         provider: "openai-codex",
         baseUrl: "https://chatgpt.com/backend-api",
-        model: "gpt-5.6-terra",
+        model: "gpt-6-luna",
         apiKey: "opaque-access-token",
         accountId: "account-id",
         dialect: "openai-codex-responses",
         transport: "sse",
       }),
     ).toMatchObject({
-      id: "gpt-5.6-terra",
+      id: "gpt-6-luna",
       provider: "openai-codex",
       baseUrl: "https://chatgpt.com/backend-api",
       api: "openai-codex-responses",
@@ -575,7 +571,7 @@ describe("Pi agent model adapter", () => {
       const config =
         policy.dialect === "openai-codex-responses"
           ? { ...CODEX_ROUTE }
-          : { ...OPENAI_TERRA };
+          : { ...OPENAI_LUNA };
       const model = resolvePiAgentModel(config);
       if (!model) throw new Error("Expected a supported standard model");
       // Untyped callers can still tamper with an otherwise valid config. The
@@ -604,7 +600,7 @@ describe("Pi agent model adapter", () => {
         const config = {
           provider: "openai-codex",
           baseUrl: provider.baseUrl,
-          model: "gpt-5.6-terra",
+          model: "gpt-6-luna",
           apiKey: "opaque-not-a-jwt",
           accountId: "account-id-from-binding",
           dialect: "openai-codex-responses",
@@ -635,7 +631,7 @@ describe("Pi agent model adapter", () => {
           expect(request?.body).toMatchObject({ service_tier: "priority" });
         }
         expect(request?.body).toMatchObject({
-          model: "gpt-5.6-terra",
+          model: "gpt-6-luna",
           store: false,
           stream: true,
         });
@@ -654,7 +650,7 @@ describe("Pi agent model adapter", () => {
     const config = {
       provider: "openai-codex",
       baseUrl: "https://chatgpt.com/backend-api",
-      model: "gpt-5.6-terra",
+      model: "gpt-6-luna",
       apiKey: "opaque-not-a-jwt",
       accountId: "account-id-from-binding",
       dialect: "openai-codex-responses",

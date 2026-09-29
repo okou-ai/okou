@@ -398,7 +398,7 @@ describe("Pi native pending-tool continuation", () => {
       };
     });
     const faux = createFauxCore({
-      api: "terra-okou-resume-test",
+      api: "luna-okou-resume-test",
       provider: "openai",
     });
     faux.setResponses([

@@ -11,12 +11,12 @@ import {
   ACCOUNT_MENU_SUBSCRIPTION_PROVIDERS,
   accountMenuSubscriptionUsageRowsRefreshPromise$,
   accountMenuSubscriptionUsageRowsCache$,
-  accountMenuSubscriptionUsageWindows,
   type AccountMenuSubscriptionUsage,
   type AccountMenuSubscriptionUsageRow,
   type AccountMenuSubscriptionUsageWindow,
   type AccountMenuSubscriptionUsageRowsCacheKey,
 } from "../../signals/okou-page/account-menu-subscriptions.ts";
+import { subscriptionUsageWindows } from "../../lib/subscription-usage-windows.ts";
 import { CodexResetCreditsMenuItem } from "./components/preferences/codex-reset-usage-dialog.tsx";
 import { formatSubscriptionUsageReset } from "./subscription-usage-format.ts";
 import { formatLocalizedNumber } from "../../i18n/format.ts";
@@ -152,7 +152,7 @@ function AccountMenuSubscriptionProviderSection({
   ) => void;
 }) {
   const { t } = useTranslation();
-  const windows = accountMenuSubscriptionUsageWindows(usage);
+  const windows = subscriptionUsageWindows(usage);
 
   return (
     <section

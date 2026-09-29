@@ -11,7 +11,7 @@
       ],
       "api": "openai-responses",
       "provider": "openai",
-      "model": "gpt-5.6-terra",
+      "model": "gpt-6-luna",
       "usage": {
         "input": 0,
         "output": 0,

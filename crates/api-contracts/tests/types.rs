@@ -273,7 +273,7 @@ fn generated_pi_runtime_configs_round_trip_full_wire_shapes() {
     let priority_model_value = json!({
         "provider": "openai",
         "baseUrl": "https://api.openai.com/v1",
-        "model": "gpt-5.6-terra",
+        "model": "gpt-6-luna",
         "thinkingLevel": "low",
         "serviceTier": "priority",
         "apiKeyEnv": "OPENAI_API_KEY",
@@ -352,7 +352,7 @@ fn generated_pi_model_config_v2_round_trips_both_dialects() {
         "transport": "sse",
         "provider": "openai",
         "baseUrl": "https://api.openai.com/v1",
-        "model": "gpt-5.6-terra",
+        "model": "gpt-6-luna",
         "thinkingLevel": "low",
         "credentialBindings": [{
             "kind": "api-key",
@@ -366,7 +366,7 @@ fn generated_pi_model_config_v2_round_trips_both_dialects() {
         "transport": "sse",
         "provider": "openai-codex",
         "baseUrl": "https://chatgpt.com/backend-api",
-        "model": "gpt-5.6-terra",
+        "model": "gpt-6-luna",
         "thinkingLevel": "low",
         "credentialBindings": [
             {
@@ -870,7 +870,7 @@ fn generated_pi_model_config_v3_preserves_native_fast() {
         "transport": "sse",
         "provider": "openai-codex",
         "baseUrl": "https://chatgpt.com/backend-api",
-        "model": "gpt-5.6-terra",
+        "model": "gpt-6-luna",
         "serviceTier": "fast",
         "credentialBindings": [
             { "kind": "access-token", "environment": "CHATGPT_ACCESS_TOKEN", "secretName": "CHATGPT_ACCESS_TOKEN" },

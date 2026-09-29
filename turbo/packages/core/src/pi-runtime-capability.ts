@@ -43,30 +43,15 @@ export const PI_RUNTIME_RESOLVABLE_MODELS = {
   // `deepseek-flash` and `deepseek-v4.1-flash` exist only as hand-pinned
   // definitions; the pinned upstream DeepSeek catalog does not carry them.
   deepseek: ["deepseek-flash", "deepseek-v4.1-flash", "deepseek-v4-flash"],
-  openai: [
-    "gpt-6-sol",
-    "gpt-6-luna",
-    "gpt-5.6-sol",
-    "gpt-5.6-terra",
-    "gpt-5.6-luna",
-  ],
-  "openai-codex": [
-    "gpt-6-sol",
-    "gpt-6-luna",
-    "gpt-5.6-sol",
-    "gpt-5.6-terra",
-    "gpt-5.6-luna",
-  ],
+  openai: ["gpt-6-sol", "gpt-6-luna", "gpt-5.6-sol", "gpt-5.6-luna"],
+  "openai-codex": ["gpt-6-sol", "gpt-6-luna", "gpt-5.6-sol", "gpt-5.6-luna"],
   openrouter: [
     "okou-1.0",
-    "okou-1.0-pro",
-    "okou-1.0-max",
     "deepseek/deepseek-v4.1-flash",
     "deepseek/deepseek-v4-flash",
     "openai/gpt-6-sol",
     "openai/gpt-6-luna",
     "openai/gpt-5.6-sol",
-    "openai/gpt-5.6-terra",
     "openai/gpt-5.6-luna",
   ],
 } as const satisfies Record<PiCatalogProvider, readonly string[]>;

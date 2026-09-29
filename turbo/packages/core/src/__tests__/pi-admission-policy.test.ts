@@ -37,8 +37,6 @@ import { PI_RUNTIME_RESOLVABLE_MODELS } from "../pi-runtime-capability";
  * unexplained diff is a regression.
  */
 const EXPECTED_ADMITTED_ROUTES = [
-  "okou-1.0-max | built-in | openrouter-codex | standard",
-  "okou-1.0-pro | built-in | openrouter-codex | standard",
   "okou-1.0 | built-in | openrouter-codex | standard",
   "claude-opus-5-5 | built-in | built-in | standard",
   "claude-opus-5-5 | built-in | built-in | fast",
@@ -141,21 +139,6 @@ const EXPECTED_ADMITTED_ROUTES = [
   "gpt-5.6-sol | vercel-ai-gateway-codex | vercel-ai-gateway-codex | fast",
   "gpt-5.6-sol | custom-openai-responses | custom-openai-responses | standard",
   "gpt-5.6-sol | custom-openai-responses | custom-openai-responses | fast",
-  "gpt-5.6-terra | built-in | built-in | standard",
-  "gpt-5.6-terra | built-in | openai-api-key | standard",
-  "gpt-5.6-terra | built-in | openai-api-key | fast",
-  "gpt-5.6-terra | built-in | openrouter-codex | standard",
-  "gpt-5.6-terra | built-in | openrouter-codex | fast",
-  "gpt-5.6-terra | openai-api-key | openai-api-key | standard",
-  "gpt-5.6-terra | openai-api-key | openai-api-key | fast",
-  "gpt-5.6-terra | codex-oauth-token | codex-oauth-token | standard",
-  "gpt-5.6-terra | codex-oauth-token | codex-oauth-token | fast",
-  "gpt-5.6-terra | openrouter-codex | openrouter-codex | standard",
-  "gpt-5.6-terra | openrouter-codex | openrouter-codex | fast",
-  "gpt-5.6-terra | vercel-ai-gateway-codex | vercel-ai-gateway-codex | standard",
-  "gpt-5.6-terra | vercel-ai-gateway-codex | vercel-ai-gateway-codex | fast",
-  "gpt-5.6-terra | custom-openai-responses | custom-openai-responses | standard",
-  "gpt-5.6-terra | custom-openai-responses | custom-openai-responses | fast",
   "gpt-5.6-luna | built-in | built-in | standard",
   "gpt-5.6-luna | built-in | openai-api-key | standard",
   "gpt-5.6-luna | built-in | openai-api-key | fast",
@@ -193,10 +176,10 @@ const EXPECTED_ADMITTED_ROUTES = [
 
 /**
  * The enumeration is driven by `ACTIVE_RUN_MODELS` and their providers, so it
- * does not shrink when admission narrows: all 240 combinations are still
- * evaluated, and fewer of them are admitted.
+ * shrinks only when a model is retired or a route is removed. The remaining
+ * 216 combinations are all evaluated.
  */
-const ENUMERATED_COMBINATIONS = 250;
+const ENUMERATED_COMBINATIONS = 216;
 
 interface Combination {
   readonly selectedModel: string;
@@ -290,13 +273,10 @@ describe("Pi admission policy table", () => {
       "claude-sonnet-5",
     ]);
     expect(ACTIVE_RUN_MODELS.filter(isPiGptModel)).toStrictEqual([
-      "okou-1.0-max",
-      "okou-1.0-pro",
       "okou-1.0",
       "gpt-6-sol",
       "gpt-6-luna",
       "gpt-5.6-sol",
-      "gpt-5.6-terra",
       "gpt-5.6-luna",
     ]);
     expect(ACTIVE_RUN_MODELS.filter(isPiDeepSeekModel)).toStrictEqual([

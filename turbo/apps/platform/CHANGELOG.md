@@ -11,6 +11,21 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.986.0](https://github.com/okou-ai/okou/compare/app-v0.985.0...app-v0.986.0) (2026-09-29)
+
+
+### Features
+
+* retire okou 1.0 pro and max and label base auto ([#37363](https://github.com/okou-ai/okou/issues/37363)) ([bf7c3d6](https://github.com/okou-ai/okou/commit/bf7c3d6bd75218646f5c5b131a138558a26b21d7))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.529.0
+    * @okouai/core bumped to 8.722.0
+
 ## [0.985.0](https://github.com/okou-ai/okou/compare/app-v0.984.6...app-v0.985.0) (2026-09-29)
 
 

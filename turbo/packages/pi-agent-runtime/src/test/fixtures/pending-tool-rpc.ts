@@ -107,7 +107,7 @@ await runPiOfficialRpcMode({
   appendSystemPrompt: null,
   model: {
     provider: "openai",
-    model: "gpt-5.6-terra",
+    model: "gpt-6-luna",
     dialect: "openai-responses",
     transport: "sse",
     apiKey: "synthetic-key",

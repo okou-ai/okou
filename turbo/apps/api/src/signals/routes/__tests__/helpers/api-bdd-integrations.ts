@@ -247,6 +247,7 @@ interface SlackPickerSubmissionArgs {
   readonly slackUserId: string;
   readonly selectedValue: string;
   readonly channelId?: string;
+  readonly chatThreadId?: string;
 }
 
 function signedSlackHeaders(
@@ -306,7 +307,10 @@ function slackPickerSubmission(
       ...(args.channelId === undefined
         ? {}
         : {
-            private_metadata: JSON.stringify({ channelId: args.channelId }),
+            private_metadata: JSON.stringify({
+              channelId: args.channelId,
+              ...(args.chatThreadId ? { chatThreadId: args.chatThreadId } : {}),
+            }),
           }),
       state: {
         values: {

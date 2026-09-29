@@ -51,7 +51,7 @@ describe("Pi sandbox RPC preparation observability", () => {
         appendSystemPrompt: null,
         model: {
           provider: "openai",
-          model: "gpt-5.6-terra",
+          model: "gpt-6-luna",
           dialect: "openai-responses" as const,
           transport: "sse" as const,
           apiKey: "synthetic-key",

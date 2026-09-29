@@ -31,6 +31,11 @@ const pickerStateSchema = z.object({
   page: z.number().int().min(0).max(4_294_967_295),
   // Organization selection happens before a DM has selected its binding.
   connectionId: z.union([z.uuid(), z.literal("-")]),
+  // Signed fingerprint of the thread targeted when the model picker opened.
+  modelThreadTag: z
+    .string()
+    .regex(/^[A-Za-z0-9_-]{11}$/)
+    .optional(),
 });
 
 export type DiscordPickerState = z.infer<typeof pickerStateSchema>;
@@ -141,7 +146,7 @@ export function createDiscordPickerCustomId(
       : Buffer.from(state.connectionId.replaceAll("-", ""), "hex").toString(
           "base64url",
         );
-  const payload = `okou:1:${state.action}:${state.page.toString(36)}:${expiresAt.toString(36)}:${connection}`;
+  const payload = `okou:1:${state.action}:${state.page.toString(36)}:${expiresAt.toString(36)}:${connection}${state.modelThreadTag ? `:${state.modelThreadTag}` : ""}`;
   const mac = pickerMac({
     payload,
     actor: args.actor,
@@ -160,13 +165,21 @@ export function parseDiscordPickerCustomId(args: {
   }
 
   const match =
-    /^okou:1:(agent|model|org):([0-9a-z]{1,7}):([0-9a-z]{1,11}):(-|[A-Za-z0-9_-]{22}):([A-Za-z0-9_-]{22})$/.exec(
+    /^okou:1:(agent|model|org):([0-9a-z]{1,7}):([0-9a-z]{1,11}):(-|[A-Za-z0-9_-]{22})(?::([A-Za-z0-9_-]{11}))?:([A-Za-z0-9_-]{22})$/.exec(
       args.customId,
     );
   if (!match) {
     return null;
   }
-  const [, action, pageText, expiryText, connectionText, signature] = match;
+  const [
+    ,
+    action,
+    pageText,
+    expiryText,
+    connectionText,
+    modelThreadTag,
+    signature,
+  ] = match;
   if (
     action === undefined ||
     pageText === undefined ||
@@ -209,6 +222,7 @@ export function parseDiscordPickerCustomId(args: {
     action,
     page: Number.parseInt(pageText, 36),
     connectionId,
+    ...(modelThreadTag ? { modelThreadTag } : {}),
   });
   return state.success ? state.data : null;
 }
