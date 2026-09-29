@@ -152,9 +152,19 @@ export function planAllowanceCandidates(
 }
 
 export function windowQuery(orgId: string, plan: AllowanceSettlementPlan) {
-  const times = plan.candidates.map((candidate) => {
-    return candidate.at.getTime();
+  const anchors = plan.candidates.map((candidate) => {
+    return candidate.at.toISOString();
   });
+  // Only the latest covering window of each kind can affect a candidate.
+  // The existing org/kind/starts index serves each finite anchor lookup.
+  // The UUID tie break matches latestWindow's stable sort over owned rows.
+  const selected = sql`SELECT chosen.id FROM unnest(${sql.param(anchors)}::timestamp[]) AS anchors(at)
+    CROSS JOIN (VALUES ('short'), ('weekly')) AS kinds(kind)
+    CROSS JOIN LATERAL (
+      SELECT ${orgUsageAllowanceWindows.id} AS id FROM ${orgUsageAllowanceWindows}
+      WHERE ${and(eq(orgUsageAllowanceWindows.orgId, orgId), eq(orgUsageAllowanceWindows.kind, sql`kinds.kind`), lte(orgUsageAllowanceWindows.startsAt, sql`anchors.at`), gt(orgUsageAllowanceWindows.expiresAt, sql`anchors.at`))}
+      ORDER BY ${orgUsageAllowanceWindows.startsAt} DESC, ${orgUsageAllowanceWindows.id} ASC LIMIT 1
+    ) AS chosen`;
   return new QueryBuilder()
     .select({
       id: orgUsageAllowanceWindows.id,
@@ -165,24 +175,7 @@ export function windowQuery(orgId: string, plan: AllowanceSettlementPlan) {
       consumedUnits: orgUsageAllowanceWindows.consumedUnits,
     })
     .from(orgUsageAllowanceWindows)
-    .where(
-      and(
-        eq(orgUsageAllowanceWindows.orgId, orgId),
-        inArray(orgUsageAllowanceWindows.kind, ["short", "weekly"]),
-        times.length === 0
-          ? sql`false`
-          : and(
-              lte(
-                orgUsageAllowanceWindows.startsAt,
-                new Date(Math.max(...times)),
-              ),
-              gt(
-                orgUsageAllowanceWindows.expiresAt,
-                new Date(Math.min(...times)),
-              ),
-            ),
-      ),
-    )
+    .where(inArray(orgUsageAllowanceWindows.id, selected))
     .orderBy(
       sql`CASE WHEN ${orgUsageAllowanceWindows.kind} = 'short' THEN 0 ELSE 1 END`,
       asc(orgUsageAllowanceWindows.id),
