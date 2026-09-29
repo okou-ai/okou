@@ -6,7 +6,7 @@ import { resolveConnectorAuthClient } from "@okouai/connectors/connector-auth-me
 import { connectors } from "@okouai/db/schema/connector";
 import { secrets } from "@okouai/db/schema/secret";
 import { variables } from "@okouai/db/schema/variable";
-import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { pgTextDecoder } from "../../lib/db-structured-result";
