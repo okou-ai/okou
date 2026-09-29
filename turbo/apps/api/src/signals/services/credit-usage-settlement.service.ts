@@ -1,3 +1,13 @@
+import { prepareUsageSettlementBatch$ } from "./credit-usage-batch-prepare.service";
+import {
+  requireCompleteUsageClaim,
+  requiredSettlementDebit,
+  type PreparedUsageBatch,
+  preparedSettlementPrices,
+  reportCommittedSettlementPricing,
+  requireSettlementPricingSnapshot,
+  settlementPricingQuery,
+} from "./credit-usage-batch";
 import { socialDataJobs } from "@okouai/db/schema/social-data-job";
 import {
   managedRunQuery,
@@ -15,14 +25,12 @@ import {
 import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { usageEvent } from "@okouai/db/schema/usage-event";
-import { usagePricing } from "@okouai/db/schema/usage-pricing";
 import { command } from "ccstate";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import { usagePricingResolution$ } from "../context/usage-pricing-resolution";
-import { priceUsageEvents } from "./credit-usage-pricing";
 import {
-  pendingUsageClaimCondition,
+  claimUsageWhere,
   initialSettlementObservation,
   emptySettlementReceipt,
   hasNoStandaloneUsage,
@@ -57,14 +65,19 @@ import {
 
 interface UsageSettlementArgs {
   readonly orgId: string;
+  readonly idempotencyKeys?: readonly string[];
   readonly refresh?: PreparedUsageAllowanceRefresh;
   readonly social?: SocialSettlementClaim;
 }
 
+interface SettlementBatchArgs extends UsageSettlementArgs {
+  readonly batch: PreparedUsageBatch;
+}
+
 /** All financial rows commit together; only plain values leave this command. */
-export const settleOrgUsage$ = command(
-  async ({ get, set }, args: UsageSettlementArgs, signal: AbortSignal) => {
-    const { orgId, refresh } = args;
+const commitUsageBatch$ = command(
+  async ({ get, set }, args: SettlementBatchArgs, signal: AbortSignal) => {
+    const { orgId, refresh, batch } = args;
     const db = set(writeDb$);
     const resolution = get(usagePricingResolution$);
     const startedAt = performance.now();
@@ -93,7 +106,10 @@ export const settleOrgUsage$ = command(
       // Parent ownership precedes usage and its allocation FK rows, matching
       // deletion, launch activation and compaction. Own parents before the
       // entitlement as well: launch and cleanup can already own those Runs.
-      const parents = await tx.select().from(pendingParentsQuery(orgId));
+      const key = managed?.idempotencyKey;
+      const parents = await tx
+        .select()
+        .from(pendingParentsQuery(orgId, batch.events, key));
       const [wallet] = await tx.select().from(walletQuery(orgId));
       const [entitlement] = await tx.select().from(entitlementQuery(orgId));
       work.orgLockWaitMs =
@@ -102,16 +118,24 @@ export const settleOrgUsage$ = command(
         ? await tx
             .update(usageEvent)
             .set({ status: "processed", creditsCharged: 0, processedAt: at })
-            .where(pendingUsageClaimCondition(orgId, parents))
+            .where(claimUsageWhere(orgId, parents, batch.events, key))
             .returning()
         : [];
+      requireCompleteUsageClaim(
+        batch.events.length,
+        events.length,
+        args.social !== undefined,
+      );
       work.pendingEvents = events.length;
       if (hasNoStandaloneUsage(events, args.social)) {
         return emptySettlementReceipt(work);
       }
-      const pricing = events.length ? await tx.select().from(usagePricing) : [];
-      work.pricingRows = pricing.length;
-      const priced = priceUsageEvents(events, pricing, orgId, resolution);
+      const currentPricing = await tx
+        .select()
+        .from(settlementPricingQuery(batch.pricingKeys));
+      requireSettlementPricingSnapshot(batch.pricing, currentPricing);
+      work.pricingRows = batch.prices.length;
+      const priced = preparedSettlementPrices(args, batch, events, resolution);
       const allocations = await tx.select().from(allocationQuery(priced));
       const anchors = await tx.select().from(anchorQuery(orgId, priced));
       const plan = planAllowanceCandidates(priced, allocations, anchors);
@@ -135,38 +159,30 @@ export const settleOrgUsage$ = command(
       await tx.execute(memberGrantDeductionsSql(deduction.updates));
       work.affectedUsers = charges.byUser.size;
       work.grantRows = grants.length;
+      const amount = deduction.sharedCredits;
       const lots =
-        deduction.sharedCredits > 0
-          ? await tx.select().from(expiryLotsQuery(orgId))
-          : [];
-      const expiry = planExpiryLotDeductions(lots, deduction.sharedCredits, at);
+        amount > 0 ? await tx.select().from(expiryLotsQuery(orgId)) : [];
+      const expiry = planExpiryLotDeductions(lots, amount, at);
       await tx.execute(expiryLotDeductionsSql(expiry.updates));
       work.expiredRows = expiry.expiredRows;
       work.expiryRows = expiry.expiryRows;
       let afterCredits = wallet?.credits ?? 0;
-      if (deduction.sharedCredits > 0) {
-        const debit = orgDebitPlan(
-          orgId,
-          deduction.sharedCredits,
-          expiry.expired,
-          at,
-        );
+      if (amount > 0) {
+        const debit = orgDebitPlan(orgId, amount, expiry.expired, at);
         const [debited] = await tx
           .insert(orgMetadataCanonicalWrites)
           .values(debit.values)
           .onConflictDoUpdate(debit.conflict)
           .returning();
-        if (!debited) {
-          throw new Error("Organization debit returned no metadata row");
-        }
-        const defaultPlan = settlementDefaultPlan(debited);
+        const metadata = requiredSettlementDebit(debited);
+        const defaultPlan = settlementDefaultPlan(metadata);
         if (defaultPlan) {
           await tx
             .insert(orgPlanEntitlements)
             .values(defaultPlan)
             .onConflictDoNothing({ target: orgPlanEntitlements.orgId });
         }
-        afterCredits = debited.credits;
+        afterCredits = metadata.credits;
       }
       if (args.social && job) {
         const [receipt] = managed
@@ -181,7 +197,7 @@ export const settleOrgUsage$ = command(
       return settlementReceipt({
         orgId,
         events: priced,
-        sharedCredits: deduction.sharedCredits,
+        sharedCredits: amount,
         beforeCredits: wallet?.credits ?? 0,
         afterCredits,
         expired: expiry.expired,
@@ -189,6 +205,26 @@ export const settleOrgUsage$ = command(
       });
     });
     signal.throwIfAborted();
+    return { result, startedAt };
+  },
+);
+
+export const settleOrgUsage$ = command(
+  async ({ get, set }, args: UsageSettlementArgs, signal: AbortSignal) => {
+    const batch = await set(prepareUsageSettlementBatch$, args, signal);
+    const { result, startedAt } = await set(
+      commitUsageBatch$,
+      args,
+      batch,
+      signal,
+    );
+    if (result?.work.pendingEvents && !args.social) {
+      reportCommittedSettlementPricing(
+        args.orgId,
+        batch,
+        get(usagePricingResolution$),
+      );
+    }
     return result ? completeSettlementReceipt(result, startedAt) : null;
   },
 );

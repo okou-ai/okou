@@ -1,8 +1,15 @@
+import { usageEvent } from "@okouai/db/schema/usage-event";
+import { and, asc, eq, gt } from "drizzle-orm";
+import { writeDb$ } from "../external/db";
+import {
+  USAGE_SETTLEMENT_BATCH_SIZE,
+  UsageSettlementSnapshotConflict,
+} from "./credit-usage-batch";
 import { command } from "ccstate";
 import { recordBillingOperationTimings } from "../external/sandbox-op-log";
 import { settleOrgUsage$ } from "./credit-usage-settlement.service";
 import { logger } from "../../lib/log";
-import { safeSync, tapError } from "../utils";
+import { safeSync, tapError, settle } from "../utils";
 import { maybeEmitRunUsageEvent$ } from "./chat-usage-event.service";
 import { enqueueCreditLowBalanceAlert$ } from "./credit-low-balance-alert.service";
 import { triggerAutoRecharge$ } from "./credit-recharge.service";
@@ -118,17 +125,90 @@ export const completeProcessedOrgUsage$ = command(
  * before running recharge, notification, and usage-event delivery effects.
  * Effects run after COMMIT so callers never retain ledger locks during I/O.
  */
+export const processUsageEventKeys$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly idempotencyKeys: readonly string[];
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    let attempts = 0;
+    for (let offset = 0; offset < args.idempotencyKeys.length; ) {
+      const idempotencyKeys = args.idempotencyKeys.slice(
+        offset,
+        offset + USAGE_SETTLEMENT_BATCH_SIZE,
+      );
+      const refresh = await set(
+        prepareUsageAllowanceRefresh$,
+        { orgId: args.orgId, requirePendingUsage: true },
+        signal,
+      );
+      const outcome = await settle(
+        set(
+          settleOrgUsage$,
+          { orgId: args.orgId, idempotencyKeys, refresh },
+          signal,
+        ),
+      );
+      signal.throwIfAborted();
+      if (!outcome.ok) {
+        if (
+          outcome.error instanceof UsageSettlementSnapshotConflict &&
+          attempts++ < 3
+        ) {
+          continue;
+        }
+        throw outcome.error;
+      }
+      attempts = 0;
+      offset += USAGE_SETTLEMENT_BATCH_SIZE;
+      const result = outcome.value;
+      if (result) {
+        await set(
+          completeProcessedOrgUsage$,
+          { orgId: args.orgId, result },
+          signal,
+        );
+      }
+    }
+  },
+);
+
+/** Background catch-up pages between committed batches, never inside a transaction. */
 export const processOrgUsageEvents$ = command(
   async ({ set }, orgId: string, signal: AbortSignal): Promise<void> => {
-    const refresh = await set(
-      prepareUsageAllowanceRefresh$,
-      { orgId, requirePendingUsage: true },
-      signal,
-    );
-    const result = await set(settleOrgUsage$, { orgId, refresh }, signal);
-    signal.throwIfAborted();
-    if (result) {
-      await set(completeProcessedOrgUsage$, { orgId, result }, signal);
+    const db = set(writeDb$);
+    let afterId: string | undefined;
+    while (true) {
+      const batch = await db
+        .select({ id: usageEvent.id, key: usageEvent.idempotencyKey })
+        .from(usageEvent)
+        .where(
+          and(
+            eq(usageEvent.orgId, orgId),
+            eq(usageEvent.status, "pending"),
+            afterId ? gt(usageEvent.id, afterId) : undefined,
+          ),
+        )
+        .orderBy(asc(usageEvent.id))
+        .limit(USAGE_SETTLEMENT_BATCH_SIZE);
+      signal.throwIfAborted();
+      if (batch.length === 0) {
+        return;
+      }
+      await set(
+        processUsageEventKeys$,
+        {
+          orgId,
+          idempotencyKeys: batch.map((row) => {
+            return row.key;
+          }),
+        },
+        signal,
+      );
+      afterId = batch.at(-1)?.id;
     }
   },
 );

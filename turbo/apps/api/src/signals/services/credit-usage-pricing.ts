@@ -58,6 +58,7 @@ export function priceUsageEvents(
   pricingRecords: readonly UsagePricingRecord[],
   orgId: string,
   pricingResolution: UsagePricingResolution,
+  reportErrors = true,
 ): PricedUsageEvent[] {
   const pricingByKey = new Map(
     pricingRecords.map((pricing) => {
@@ -99,17 +100,19 @@ export function priceUsageEvents(
       pricingByKey.get(`${record.kind}|${lookupProvider}|__fallback__`);
 
     if (!pricing) {
-      L.error("Missing usage_pricing — charged zero", {
-        ...usageUnderbillingFields("missing_pricing", "confirmed"),
-        orgId,
-        runId: record.runId,
-        idempotencyKey: record.idempotencyKey,
-        userId: record.userId,
-        kind: record.kind,
-        provider: record.provider,
-        category: record.category,
-        quantity: record.quantity,
-      });
+      if (reportErrors) {
+        L.error("Missing usage_pricing — charged zero", {
+          ...usageUnderbillingFields("missing_pricing", "confirmed"),
+          orgId,
+          runId: record.runId,
+          idempotencyKey: record.idempotencyKey,
+          userId: record.userId,
+          kind: record.kind,
+          provider: record.provider,
+          category: record.category,
+          quantity: record.quantity,
+        });
+      }
       pricedEvents.push({
         record,
         grossCredits: 0,
@@ -118,7 +121,7 @@ export function priceUsageEvents(
       continue;
     }
 
-    if (!exactPricing) {
+    if (!exactPricing && reportErrors) {
       L.error("Missing usage_pricing — billed at fallback rate", {
         ...usageUnderbillingFields("fallback_pricing", "confirmed"),
         orgId,

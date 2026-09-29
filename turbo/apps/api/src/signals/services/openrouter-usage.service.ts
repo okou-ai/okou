@@ -10,7 +10,7 @@ import {
   resolveUsagePricingProvider,
   usagePricingResolution$,
 } from "../context/usage-pricing-resolution";
-import { processOrgUsageEvents$ } from "./credit-usage.service";
+import { processUsageEventKeys$ } from "./credit-usage.service";
 
 const OPENROUTER_USAGE_IDEMPOTENCY_NAMESPACE =
   "3cf6f344-d67b-4d96-ae5d-fd6c0d134b70";
@@ -164,7 +164,16 @@ export const recordOpenRouterUsage$ = command(
       .onConflictDoNothing({ target: [usageEvent.idempotencyKey] });
     signal.throwIfAborted();
 
-    await set(processOrgUsageEvents$, args.orgId, signal);
+    await set(
+      processUsageEventKeys$,
+      {
+        orgId: args.orgId,
+        idempotencyKeys: eventRows.map((event) => {
+          return event.idempotencyKey;
+        }),
+      },
+      signal,
+    );
     signal.throwIfAborted();
 
     const processed = await writeDb

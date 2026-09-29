@@ -26,7 +26,7 @@ import {
   type UsagePricingResolution,
 } from "../context/usage-pricing-resolution";
 import { writeDb$, type Db } from "../external/db";
-import { processOrgUsageEvents$ } from "./credit-usage.service";
+import { processUsageEventKeys$ } from "./credit-usage.service";
 import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import { resolveActiveRunCreditAdmission } from "./run-admission.service";
 import { readUsageAllowanceAvailabilitySnapshot } from "./usage-allowance.service";
@@ -283,7 +283,11 @@ export const recordManagedUsage$ = command(
       signal.throwIfAborted();
     });
     signal.throwIfAborted();
-    await set(processOrgUsageEvents$, args.actor.orgId, signal);
+    await set(
+      processUsageEventKeys$,
+      { orgId: args.actor.orgId, idempotencyKeys: [identity.idempotencyKey] },
+      signal,
+    );
     signal.throwIfAborted();
     const [processed] = await db
       .select()

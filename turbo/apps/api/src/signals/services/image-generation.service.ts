@@ -26,7 +26,7 @@ import { db$, writeDb$ } from "../external/db";
 import { checkBillableOperationCredits$ } from "./billable-operation-admission.service";
 import { storeGeneratedArtifactObject$ } from "./artifact-storage.service";
 import { recordWebUploadedFile$ } from "./run-uploaded-files.service";
-import { processOrgUsageEvents$ } from "./credit-usage.service";
+import { processUsageEventKeys$ } from "./credit-usage.service";
 import {
   builtInGenerationUsageIdempotencyKey,
   type BuiltInGenerationUsageIdempotency,
@@ -2572,7 +2572,19 @@ export const recordGeneratedImage$ = command(
       .onConflictDoNothing({ target: [usageEvent.idempotencyKey] });
     signal.throwIfAborted();
 
-    await set(processOrgUsageEvents$, params.orgId, signal);
+    await set(
+      processUsageEventKeys$,
+      {
+        orgId: params.orgId,
+        idempotencyKeys: usageRows.map((row) => {
+          return builtInGenerationUsageIdempotencyKey({
+            ...params.usageIdempotency,
+            category: row.category,
+          });
+        }),
+      },
+      signal,
+    );
     signal.throwIfAborted();
 
     return {

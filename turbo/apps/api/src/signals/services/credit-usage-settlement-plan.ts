@@ -1,3 +1,7 @@
+import {
+  usageSnapshotCondition,
+  type PendingUsageSnapshot,
+} from "./credit-usage-batch";
 import type { SocialSettlementClaim } from "./social-data-settlement-plan";
 import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
@@ -295,7 +299,11 @@ export function settlementReceipt(args: {
   };
 }
 
-export function pendingParentsQuery(orgId: string) {
+export function pendingParentsQuery(
+  orgId: string,
+  snapshots: readonly PendingUsageSnapshot[],
+  socialKey: string | undefined,
+) {
   const builder = new QueryBuilder();
   return builder
     .select({ id: agentRuns.id })
@@ -312,6 +320,14 @@ export function pendingParentsQuery(orgId: string) {
                 eq(usageEvent.runId, agentRuns.id),
                 eq(usageEvent.orgId, orgId),
                 eq(usageEvent.status, "pending"),
+                socialKey
+                  ? eq(usageEvent.idempotencyKey, socialKey)
+                  : inArray(
+                      usageEvent.id,
+                      snapshots.map(({ event }) => {
+                        return event.id;
+                      }),
+                    ),
               ),
             ),
         ),
@@ -354,11 +370,16 @@ export function completeSettlementReceipt(
   };
 }
 
-export function pendingUsageClaimCondition(
+export function claimUsageWhere(
   orgId: string,
   parents: readonly { id: string }[],
+  snapshots: readonly PendingUsageSnapshot[],
+  socialKey?: string,
 ) {
   return and(
+    socialKey
+      ? eq(usageEvent.idempotencyKey, socialKey)
+      : usageSnapshotCondition(snapshots),
     eq(usageEvent.orgId, orgId),
     eq(usageEvent.status, "pending"),
     or(
