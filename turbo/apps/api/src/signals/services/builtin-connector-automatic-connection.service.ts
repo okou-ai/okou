@@ -1,5 +1,6 @@
 import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
 import { builtinConnectorAccountOauthBindings } from "@okouai/db/schema/connector-account-oauth-binding";
+import { connectorOauthStates } from "@okouai/db/schema/connector-oauth-state";
 import { connectorCatalogActiveSnapshot } from "@okouai/db/schema/connector-catalog";
 import { builtinConnectorDcrRegistrations } from "@okouai/db/schema/connector-dcr-registration";
 import { connectors } from "@okouai/db/schema/connector";
@@ -37,12 +38,12 @@ function automaticConnectionOwnerCondition(owner: AutomaticConnectionOwner) {
   );
 }
 
-export const readAutomaticCallbackAccount$ = command(
+export const readAutomaticAccountSnapshot$ = command(
   async (
     { set },
     args: AutomaticConnectionOwner & {
       readonly connectionId: string;
-      readonly expectedRevision: string | null;
+      readonly expectedRevision?: string | null;
     },
     signal: AbortSignal,
   ): Promise<AutomaticCallbackAccountSnapshot | null> => {
@@ -62,7 +63,12 @@ export const readAutomaticCallbackAccount$ = command(
         and(
           automaticConnectionOwnerCondition(args),
           eq(connectors.id, args.connectionId),
-          eq(connectors.updatedAt, sql`${args.expectedRevision}::timestamp`),
+          args.expectedRevision === undefined
+            ? undefined
+            : eq(
+                connectors.updatedAt,
+                sql`${args.expectedRevision}::timestamp`,
+              ),
         ),
       )
       .limit(1);
@@ -75,10 +81,12 @@ export interface AutomaticConnectionPublication extends AutomaticConnectionOwner
   readonly catalogIdentity: ExternalCatalogIdentity;
   readonly account: ConnectorAccountMutationIntent;
   readonly expected: AutomaticCallbackAccountSnapshot | null;
+  readonly authMethod: string;
+  readonly storageVersion: number;
   readonly binding: Omit<
     typeof builtinConnectorAccountOauthBindings.$inferInsert,
     "connectorAccountId" | "createdAt"
-  >;
+  > | null;
   readonly identity: {
     readonly id: string;
     readonly username: string | null;
@@ -94,9 +102,10 @@ export interface AutomaticConnectionPublication extends AutomaticConnectionOwner
 
 function automaticConnectionMetadata(input: AutomaticConnectionPublication) {
   return {
-    authMethod: input.binding.authMethod,
-    automaticAuthType: "oauth" as const,
-    storageVersion: input.binding.storageVersion,
+    authMethod: input.authMethod,
+    automaticAuthType:
+      input.binding === null ? ("none" as const) : ("oauth" as const),
+    storageVersion: input.storageVersion,
     externalId: input.identity?.id ?? null,
     externalUsername: input.identity?.username ?? null,
     externalEmail: input.identity?.email ?? null,
@@ -114,7 +123,7 @@ function automaticConnectionMetadata(input: AutomaticConnectionPublication) {
 function automaticBoundRegistrationCondition(
   input: AutomaticConnectionPublication,
 ) {
-  if (!input.binding.dcrRegistrationId) {
+  if (!input.binding?.dcrRegistrationId) {
     throw new Error("Automatic DCR publication requires its registration");
   }
   return and(
@@ -152,7 +161,7 @@ function automaticReconnectCondition(input: AutomaticConnectionPublication) {
 }
 
 /** Provider exchange and encryption finish before this finite publication. */
-export const publishAutomaticCallbackConnection$ = command(
+export const publishAutomaticConnection$ = command(
   async (
     { set },
     input: AutomaticConnectionPublication,
@@ -177,7 +186,7 @@ export const publishAutomaticCallbackConnection$ = command(
       }
       await tx.execute(builtinConnectorAutomaticLifecycleLockStatement(input));
       await tx.execute(builtinConnectorStateLockStatement(input));
-      if (input.binding.registrationMethod === "dcr") {
+      if (input.binding?.registrationMethod === "dcr") {
         const [registration] = await tx
           .select({ id: builtinConnectorDcrRegistrations.id })
           .from(builtinConnectorDcrRegistrations)
@@ -252,11 +261,89 @@ export const publishAutomaticCallbackConnection$ = command(
           }),
         );
       }
-      await tx
-        .insert(builtinConnectorAccountOauthBindings)
-        .values({ ...input.binding, connectorAccountId: connectionId });
+      if (input.binding !== null) {
+        await tx
+          .insert(builtinConnectorAccountOauthBindings)
+          .values({ ...input.binding, connectorAccountId: connectionId });
+      }
       signal.throwIfAborted();
       return { kind: "connected", connectionId };
+    });
+  },
+);
+
+export const publishAutomaticAuthorizationState$ = command(
+  async (
+    { set },
+    args: AutomaticConnectionOwner & {
+      readonly catalogIdentity: ExternalCatalogIdentity;
+      readonly account: ConnectorAccountMutationIntent;
+      readonly expected: AutomaticCallbackAccountSnapshot | null;
+      readonly state: typeof connectorOauthStates.$inferInsert;
+      readonly authorizationUrl: string;
+    },
+    signal: AbortSignal,
+  ): Promise<
+    | {
+        readonly kind: "authorization";
+        readonly authorizationUrl: string;
+        readonly oauthAttemptId: string;
+      }
+    | {
+        readonly kind: "error";
+        readonly reason: "invalid-account" | "stale-contract";
+      }
+  > => {
+    const db = set(writeDb$);
+    return await db.transaction(async (tx) => {
+      const [catalog] = await tx
+        .select({ sourceId: connectorCatalogActiveSnapshot.sourceId })
+        .from(connectorCatalogActiveSnapshot)
+        .where(builtinDcrCatalogCondition(args.catalogIdentity))
+        .for("share")
+        .limit(1);
+      if (!catalog) {
+        return { kind: "error", reason: "stale-contract" };
+      }
+      await tx.execute(builtinConnectorAutomaticLifecycleLockStatement(args));
+      await tx.execute(builtinConnectorStateLockStatement(args));
+      if (args.account.intent === "reconnect") {
+        if (!args.expected) {
+          return { kind: "error", reason: "invalid-account" };
+        }
+        const [account] = await tx
+          .select({ id: connectors.id })
+          .from(connectors)
+          .where(
+            and(
+              automaticConnectionOwnerCondition(args),
+              eq(connectors.id, args.account.connectionId),
+              eq(
+                connectors.updatedAt,
+                sql`${args.expected.stateRevision}::timestamp`,
+              ),
+              sql`${connectors}.xmin::text = ${args.expected.rowVersion}`,
+            ),
+          )
+          .for("update")
+          .limit(1);
+        if (!account) {
+          return { kind: "error", reason: "invalid-account" };
+        }
+      }
+      const [state] = await tx
+        .insert(connectorOauthStates)
+        .values(args.state)
+        .returning({ id: connectorOauthStates.id });
+      if (!state) {
+        throw new Error("Failed to create Automatic OAuth state");
+      }
+      signal.throwIfAborted();
+      return {
+        kind: "authorization",
+        authorizationUrl: args.authorizationUrl,
+        oauthAttemptId: state.id,
+      };
     });
   },
 );
