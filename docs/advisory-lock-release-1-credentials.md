@@ -323,3 +323,38 @@ failure could conditionally restore an in-memory token, and an uncertain commit
 requires authoritative reread, but neither addresses process loss. Do not
 classify shared one-time rotation as complete or merely waiting for old writers
 to drain on the strength of this proposal.
+
+### Concrete mixed-writer refresh gap
+
+The command publication predicate does not yet prepare every refresh writer. In
+pre-R1 `agent-webhook-firewall-auth.service.ts`, `refreshAccessTokenForSource` holds the
+existing connector-state key across provider HTTP, but `markRefreshFailure`
+updates the account by identity without the new snapshot predicate. A new
+command can refresh outside that key first, then the old writer can use the
+still-stored old token, receive `invalid_grant`, and publish terminal reconnect
+state. The new successful writer subsequently acquires the key but fails its
+publication check. This is unfinished R1 protocol work, not a proven compatible
+boundary awaiting deployment alone.
+
+Moving new refresh HTTP under the existing key would protect that particular
+old firewall interleaving. It would not cover the entire old graph: the legacy
+shared refresh helper already performs HTTP outside the key, and its failure
+UPDATE uses an `updatedAt` condition without acquiring the key. Every actual
+failure writer must be covered before declaring preparation complete.
+
+For a provider that permits one refresh success and whose rejected token reuse
+does not invalidate the successful credential, refusing the failed request
+without persisting terminal reconnect state can remove this local loser/winner
+window. It must never return another authorization's newly stored token or fall
+back to the expired token. Persistent-revocation UI projection and every caller
+still need implementation and API verification.
+
+That direction requires provider-specific evidence. For example,
+[Auth0 documents token-family revocation on refresh-token reuse](https://auth0.com/docs/secure/tokens/refresh-tokens/refresh-token-rotation):
+a local non-mutating failure cannot recover a winner already revoked remotely.
+Automatic OAuth supports arbitrary issuers, but this audit did not establish
+that a currently connected issuer uses that policy. Conversely, multiple refresh
+successes do not by themselves prove that the later result invalidates the earlier
+one; [Microsoft explicitly preserves previously used refresh tokens](https://learn.microsoft.com/en-us/entra/identity-platform/refresh-tokens).
+Do not generalize either behavior to every adapter, introduce a secret-deletion
+claim, or describe the no-new-fields protocol as globally impossible.

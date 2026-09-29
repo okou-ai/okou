@@ -6775,17 +6775,17 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     expect(autoSlug.prefixTemplates).toStrictEqual([`https://api.${host}/v1/`]);
     expect(autoSlug.connected).toBeFalsy();
 
-    const duplicateAutoSlug = await connectorsApi.requestCreateCustomConnector(
+    const sharedPrefix = await connectorsApi.createCustomConnector(
       admin,
       manualHttpCustomConnectorCreateBody({
-        displayName: "BDD Duplicate Auto Slug",
+        displayName: "BDD Shared Prefix",
         prefixTemplates: [`https://api.${host}/v1`],
       }),
-      [400],
     );
-    expectApiError(duplicateAutoSlug.body);
-    expect(duplicateAutoSlug.body.error.message).toContain(
-      `"${autoSlug.displayName}"`,
+    expect(sharedPrefix.id).not.toBe(autoSlug.id);
+    expect(sharedPrefix.slug).not.toBe(autoSlug.slug);
+    expect(sharedPrefix.prefixTemplates).toStrictEqual(
+      autoSlug.prefixTemplates,
     );
 
     const wildcard = await connectorsApi.createCustomConnector(
@@ -6829,19 +6829,15 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       "https://api.github.com/v3/",
     ]);
 
-    const builtinTrailingDotOverlap =
-      await connectorsApi.requestCreateCustomConnector(
-        admin,
-        manualHttpCustomConnectorCreateBody({
-          displayName: "Custom GitHub Trailing Dot",
-          prefixTemplates: ["https://api.github.com./v3/"],
-        }),
-        [400],
-      );
-    expectApiError(builtinTrailingDotOverlap.body);
-    expect(builtinTrailingDotOverlap.body.error.message).toContain(
-      `"${builtinOverlap.displayName}"`,
+    const builtinTrailingDotOverlap = await connectorsApi.createCustomConnector(
+      admin,
+      manualHttpCustomConnectorCreateBody({
+        displayName: "Custom GitHub Trailing Dot",
+        prefixTemplates: ["https://api.github.com./v3/"],
+      }),
     );
+    expect(builtinTrailingDotOverlap.id).not.toBe(builtinOverlap.id);
+    expect(builtinTrailingDotOverlap.slug).not.toBe(builtinOverlap.slug);
 
     const listed = await connectorsApi.listCustomConnectors(admin);
     expect(
@@ -6850,9 +6846,22 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
           return connector.id;
         })
         .sort(),
-    ).toStrictEqual([autoSlug.id, wildcard.id, builtinOverlap.id].sort());
+    ).toStrictEqual(
+      [
+        autoSlug.id,
+        sharedPrefix.id,
+        wildcard.id,
+        builtinOverlap.id,
+        builtinTrailingDotOverlap.id,
+      ].sort(),
+    );
 
     await connectorsApi.deleteCustomConnector(admin, autoSlug.id);
+    await connectorsApi.deleteCustomConnector(admin, sharedPrefix.id);
+    await connectorsApi.deleteCustomConnector(
+      admin,
+      builtinTrailingDotOverlap.id,
+    );
     await connectorsApi.deleteCustomConnector(admin, wildcard.id);
     await connectorsApi.deleteCustomConnector(admin, builtinOverlap.id);
     await expect(
