@@ -6,6 +6,7 @@ import { publishChatThreadMessageCreatedSafely } from "../external/realtime";
 import { settle, settleIncludingAbort } from "../utils";
 import {
   revokePendingScheduleTicks,
+  prepareWorkflowAutomationQueueInput,
   ScheduleOccurrenceUnavailableError,
   workflowAutomationQueueEventWriter,
   type PersistWorkflowQueueSourceTransition,
@@ -30,6 +31,7 @@ import type {
   RunWorkflowAutomationNowArgs,
   RunWorkflowAutomationResult,
 } from "./workflow-automation-launch.service";
+import { enqueueGoogleFormsWorkflowInput$ } from "./workflow-google-forms-queue.service";
 
 /**
  * The producer-owned write that commits with the queue event: claim and bind
@@ -152,7 +154,7 @@ export const runWorkflowAutomationNow$ = command(
         ? { chatThreadId, automationId: automation.id }
         : undefined;
 
-    const appendInput = await workflowAutomationQueueEventWriter(db, {
+    const preparedInput = await prepareWorkflowAutomationQueueInput(db, {
       automation,
       queueEventId: args.queueEventId,
       workflowName: args.automationContext.workflowName,
@@ -168,6 +170,18 @@ export const runWorkflowAutomationNow$ = command(
       timing,
     });
     signal.throwIfAborted();
+    if (
+      args.googleFormsSource &&
+      (scheduleClaim || persistSourceTransition || replacePendingTicks)
+    ) {
+      throw new Error(
+        "Google Forms admission cannot carry another source transition",
+      );
+    }
+    const appendInput = workflowAutomationQueueEventWriter(
+      preparedInput,
+      timing,
+    );
 
     const schedulePath: WorkflowAdmissionSchedulePath =
       automation.kind !== "schedule"
@@ -184,30 +198,41 @@ export const runWorkflowAutomationNow$ = command(
           "api_dispatch_pre_create_agent_workflow_automation_queue_admission",
           async () => {
             const attempt = await settle(
-              enqueueChatInput(db, {
-                chatThreadId,
-                orgId: automation.orgId,
-                appendInput,
-                measureStep: (step, operation) => {
-                  const action = {
-                    transaction: "api_dispatch_workflow_enqueue_transaction",
-                    callback:
-                      "api_dispatch_workflow_enqueue_transaction_callback",
-                    queue_upsert: "api_dispatch_workflow_enqueue_queue_upsert",
-                  } as const;
-                  return measureWorkflowAdmissionStep(
-                    timing,
-                    action[step],
-                    operation,
-                  );
-                },
-                ...queueAdmissionSourceTransition({
-                  scheduleClaim,
-                  persistSourceTransition,
-                  replacePendingTicks,
-                  timing,
-                }),
-              }),
+              args.googleFormsSource
+                ? set(
+                    enqueueGoogleFormsWorkflowInput$,
+                    {
+                      input: preparedInput,
+                      source: args.googleFormsSource,
+                    },
+                    signal,
+                  )
+                : enqueueChatInput(db, {
+                    chatThreadId,
+                    orgId: automation.orgId,
+                    appendInput,
+                    measureStep: (step, operation) => {
+                      const action = {
+                        transaction:
+                          "api_dispatch_workflow_enqueue_transaction",
+                        callback:
+                          "api_dispatch_workflow_enqueue_transaction_callback",
+                        queue_upsert:
+                          "api_dispatch_workflow_enqueue_queue_upsert",
+                      } as const;
+                      return measureWorkflowAdmissionStep(
+                        timing,
+                        action[step],
+                        operation,
+                      );
+                    },
+                    ...queueAdmissionSourceTransition({
+                      scheduleClaim,
+                      persistSourceTransition,
+                      replacePendingTicks,
+                      timing,
+                    }),
+                  }),
             );
             if (!attempt.ok) {
               if (attempt.error instanceof ScheduleOccurrenceUnavailableError) {

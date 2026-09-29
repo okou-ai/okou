@@ -38,10 +38,7 @@ import { testOverride } from "../../lib/singleton";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import { safeJsonParse, safeUrlParse, settle, tapError } from "../utils";
-import {
-  builtinConnectorStateLockStatement,
-  lockConnectorAccountTarget,
-} from "./auth-state-lock.service";
+import { builtinConnectorStateLockStatement } from "./auth-state-lock.service";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import { loadConnectorRuntimeSnapshot } from "./connector-catalog-runtime.service";
 import {
@@ -50,7 +47,7 @@ import {
   loadBuiltinConnectorCredentialValues,
   refreshBuiltinConnectorCredentialAccess,
 } from "./builtin-connector-credential-runtime.service";
-import type { WorkflowQueueAdmissionTransaction } from "./workflow-chat-event-queue.service";
+import { GoogleFormsSourceTransitionChangedError } from "./workflow-google-forms-queue.service";
 import {
   AutomationEventSourceTiming,
   type AutomationEventRunTiming,
@@ -1920,117 +1917,6 @@ async function responsePreviouslyDelivered(args: {
   return previous !== undefined;
 }
 
-class GoogleFormsSourceTransitionChangedError extends Error {
-  constructor() {
-    super("Google Forms source changed before durable queue admission");
-    this.name = "GoogleFormsSourceTransitionChangedError";
-  }
-}
-
-async function persistGoogleFormsSourceTransition(
-  args: {
-    readonly tx: WorkflowQueueAdmissionTransaction;
-    readonly state: GoogleFormsWatchStateRow;
-    readonly automation: GoogleFormsEventAutomationRow;
-    readonly decoded: DecodedGoogleFormsPubSubPush;
-    readonly response: GoogleFormResponse;
-    readonly cursor: string;
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  await lockConnectorAccountTarget(args.tx, {
-    orgId: args.automation.automation.orgId,
-    userId: args.automation.automation.ownerUserId,
-    target: { kind: "builtin", connectorSlug: "google-forms" },
-  });
-  const [currentState] = await args.tx
-    .select({ id: googleFormsWatchStates.id })
-    .from(googleFormsWatchStates)
-    .where(
-      and(
-        eq(googleFormsWatchStates.id, args.state.id),
-        eq(googleFormsWatchStates.orgId, args.state.orgId),
-        eq(googleFormsWatchStates.userId, args.state.userId),
-        eq(googleFormsWatchStates.connectorId, args.state.connectorId),
-        eq(googleFormsWatchStates.formId, args.decoded.formId),
-        eq(googleFormsWatchStates.watchId, args.decoded.watchId),
-      ),
-    )
-    .for("key share")
-    .limit(1);
-  const [currentAutomation] = await args.tx
-    .select({ id: workflowAutomations.id })
-    .from(workflowAutomations)
-    .where(
-      and(
-        eq(workflowAutomations.id, args.automation.automation.id),
-        eq(workflowAutomations.orgId, args.state.orgId),
-        eq(workflowAutomations.ownerUserId, args.state.userId),
-        eq(workflowAutomations.enabled, true),
-        eq(workflowAutomations.eventConnectorId, args.state.connectorId),
-        sql`${workflowAutomations.eventConfig} ->> 'connectorId' = ${args.state.connectorId}`,
-        sql`${workflowAutomations.eventConfig} -> 'form' ->> 'id' = ${args.state.formId}`,
-      ),
-    )
-    .for("update")
-    .limit(1);
-  const [currentCursor] = await args.tx
-    .select({ automationId: googleFormsAutomationCursors.automationId })
-    .from(googleFormsAutomationCursors)
-    .where(
-      and(
-        eq(
-          googleFormsAutomationCursors.automationId,
-          args.automation.automation.id,
-        ),
-        eq(googleFormsAutomationCursors.watchStateId, args.state.id),
-        eq(googleFormsAutomationCursors.lastSeenSubmittedTime, args.cursor),
-      ),
-    )
-    .for("update")
-    .limit(1);
-  signal.throwIfAborted();
-  if (!currentState || !currentAutomation || !currentCursor) {
-    throw new GoogleFormsSourceTransitionChangedError();
-  }
-  const [processed] = await args.tx
-    .insert(googleFormsProcessedEvents)
-    .values({
-      watchStateId: args.state.id,
-      automationId: args.automation.automation.id,
-      pubsubMessageId: args.decoded.messageId,
-      responseId: args.response.responseId,
-      lastSubmittedTime: args.response.lastSubmittedTime,
-      createdAt: nowDate(),
-    })
-    .onConflictDoNothing()
-    .returning({ id: googleFormsProcessedEvents.id });
-  if (!processed) {
-    throw new GoogleFormsSourceTransitionChangedError();
-  }
-  const [advanced] = await args.tx
-    .update(googleFormsAutomationCursors)
-    .set({
-      lastSeenSubmittedTime: args.response.lastSubmittedTime,
-      updatedAt: nowDate(),
-    })
-    .where(
-      and(
-        eq(
-          googleFormsAutomationCursors.automationId,
-          args.automation.automation.id,
-        ),
-        eq(googleFormsAutomationCursors.watchStateId, args.state.id),
-        eq(googleFormsAutomationCursors.lastSeenSubmittedTime, args.cursor),
-      ),
-    )
-    .returning({ automationId: googleFormsAutomationCursors.automationId });
-  signal.throwIfAborted();
-  if (!advanced) {
-    throw new GoogleFormsSourceTransitionChangedError();
-  }
-}
-
 function googleFormsTriggerContext(args: {
   readonly automation: GoogleFormsEventAutomationRow;
   readonly response: GoogleFormResponse;
@@ -2111,18 +1997,18 @@ const startGoogleFormsWorkflowRun$ = command(
           apiStartTime: args.apiStartTime,
           triggerSource: "automation-event",
           triggerBrief: googleFormsTriggerBrief(args),
-          persistSourceTransition: async (tx) => {
-            await persistGoogleFormsSourceTransition(
-              {
-                tx,
-                state: args.state,
-                automation: args.automation,
-                decoded: args.decoded,
-                response: args.response,
-                cursor: args.cursor,
-              },
-              signal,
-            );
+          googleFormsSource: {
+            orgId: args.state.orgId,
+            userId: args.state.userId,
+            connectorId: args.state.connectorId,
+            automationId: args.automation.automation.id,
+            watchStateId: args.state.id,
+            formId: args.state.formId,
+            watchId: args.decoded.watchId,
+            pubsubMessageId: args.decoded.messageId,
+            responseId: args.response.responseId,
+            lastSubmittedTime: args.response.lastSubmittedTime,
+            cursor: args.cursor,
           },
           timing: args.timing.collectorForRunStart(),
         },

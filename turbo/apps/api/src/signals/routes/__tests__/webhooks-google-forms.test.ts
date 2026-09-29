@@ -582,6 +582,53 @@ describe("Google Forms Pub/Sub webhook", () => {
     ]);
   });
 
+  it("does not enqueue a response after the automation is disabled during retrieval", async () => {
+    const { automationId, chatThreadId, formsApi } =
+      await setupGoogleFormsAutomation();
+    const watchId = formsApi.watchIds[0];
+    if (!watchId) {
+      throw new Error("Expected a Google Forms watch");
+    }
+    server.use(
+      http.get(
+        "https://forms.googleapis.com/v1/forms/:formId/responses",
+        async () => {
+          await accept(
+            automationsClient().disable({
+              headers: authHeaders(),
+              params: { id: automationId },
+            }),
+            [200],
+          );
+          return HttpResponse.json({
+            responses: [
+              {
+                responseId: "response-after-disable",
+                createTime: RESPONSE_CREATE_TIME,
+                lastSubmittedTime: RESPONSE_SUBMITTED_TIME,
+              },
+            ],
+          });
+        },
+      ),
+    );
+    const pushed = await postWebhook(
+      formsPushBody("response-after-disable", watchId),
+    );
+    expect(pushed).toMatchObject({
+      status: 200,
+      body: { dispatched: 0 },
+    });
+    await flushWaitUntilForTest();
+    const events = await workflows.readThreadEvents(chatThreadId);
+    expect(
+      events.filter((event) => {
+        return event.eventType === "input.automation";
+      }),
+    ).toStrictEqual([]);
+    expect(formsApi.stoppedWatchIds).toContain(watchId);
+  });
+
   it("delivers metadata without response data and de-duplicates a retry", async () => {
     const { automationId, chatThreadId, formsApi } =
       await setupGoogleFormsAutomation();

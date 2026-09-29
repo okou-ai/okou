@@ -13,6 +13,7 @@ import type {
   PersistWorkflowQueueSourceTransition,
   WorkflowScheduleClaimPlan,
 } from "./workflow-chat-event-queue.service";
+import type { GoogleFormsQueueSource } from "./workflow-google-forms-queue.service";
 import type { InternalRunCallbackKind } from "./internal-run-callback";
 import {
   finalizeClaimedRunUserMessage,
@@ -123,6 +124,8 @@ export interface RunWorkflowAutomationNowArgs {
    * This callback is never serialized into the durable queue payload.
    */
   readonly persistSourceTransition?: PersistWorkflowQueueSourceTransition;
+  /** Forms input and cursor admission are owned by one finite SQL command. */
+  readonly googleFormsSource?: GoogleFormsQueueSource;
   /**
    * Consumes the due schedule occurrence in the same transaction as the queue
    * event. Only journaled legacy Morning Brief ticks pass one.

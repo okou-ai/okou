@@ -10,6 +10,8 @@ import { and, eq, inArray } from "drizzle-orm";
 import { AUTONOMY_BUDGET_EXHAUSTED_MESSAGE } from "../../lib/error";
 import type { Tx } from "../../lib/db-types";
 import { writeDb$, type Db } from "../external/db";
+import { nowDate } from "../../lib/time";
+import type { PreparedChatEventRow } from "./chat-event-append.service";
 import {
   childAutonomyBudget,
   loadRunAutonomyBudget,
@@ -100,14 +102,13 @@ interface WorkflowAutomationQueueEventArgs {
 }
 
 /**
- * Build the run-less `input.automation` event for a fired automation. The
- * returned writer inserts it; a retried ingress that reuses `queueEventId`
- * writes nothing and returns null.
+ * Prepare the run-less input, model selection and context before queue admission.
+ * No database or transaction handle escapes in the returned ordinary values.
  */
-export async function workflowAutomationQueueEventWriter(
+export async function prepareWorkflowAutomationQueueInput(
   db: Db,
   args: WorkflowAutomationQueueEventArgs,
-): Promise<(tx: Db | Tx) => Promise<string | null>> {
+) {
   const { automation } = args;
   const [workflow] = await measureWorkflowAdmissionStep(
     args.timing,
@@ -137,53 +138,88 @@ export async function workflowAutomationQueueEventWriter(
   const userMessage = args.agentRunSource
     ? withAgentRunSourceAnnotation(automationUserMessage, args.agentRunSource)
     : automationUserMessage;
-  return async (tx) => {
-    // The entry owns its context row; it commits with the event that points
-    // at it, under the same id.
-    const values = {
-      id: args.queueEventId ?? randomUUID(),
+  const id = args.queueEventId ?? randomUUID();
+  const createdAt = nowDate();
+  const values = {
+    id,
+    createdAt,
+    chatThreadId: args.chatThreadId,
+    eventType: "input.automation" as const,
+    modelSelection: await measureWorkflowAdmissionStep(
+      args.timing,
+      "api_dispatch_workflow_enqueue_model_selection",
+      async () => {
+        return await resolveEnqueuedChatInputModel(db, {
+          threadId: args.chatThreadId,
+          orgId: automation.orgId,
+          userId: automation.ownerUserId,
+        });
+      },
+    ),
+    content: null,
+    userMessage,
+    runId: null,
+    automationId: automation.id,
+    workflowName: args.workflowName,
+    workflowAutomationEventType: args.workflowAutomationEventType,
+    workflowAutomationEventPayload: args.workflowAutomationEventPayload,
+    connectorSourceId: args.connectorSourceId,
+    triggerBrief: args.triggerBrief ?? null,
+  };
+  return {
+    values,
+    event: {
+      id,
+      createdAt,
       chatThreadId: args.chatThreadId,
       eventType: "input.automation" as const,
-      modelSelection: await measureWorkflowAdmissionStep(
-        args.timing,
-        "api_dispatch_workflow_enqueue_model_selection",
-        async () => {
-          return await resolveEnqueuedChatInputModel(tx, {
-            threadId: args.chatThreadId,
-            orgId: automation.orgId,
-            userId: automation.ownerUserId,
-          });
-        },
-      ),
-      content: null,
-      userMessage,
       runId: null,
+      payload: { userMessage },
+      modelSelection: values.modelSelection,
+      contextType: "automation",
+      contextId: id,
+    } satisfies PreparedChatEventRow,
+    context: {
+      id,
+      createdAt,
+      chatThreadId: args.chatThreadId,
       automationId: automation.id,
       workflowName: args.workflowName,
-      workflowAutomationEventType: args.workflowAutomationEventType,
-      workflowAutomationEventPayload: args.workflowAutomationEventPayload,
-      connectorSourceId: args.connectorSourceId,
+      eventType: args.workflowAutomationEventType ?? null,
+      eventPayload: args.workflowAutomationEventPayload ?? null,
+      connectorSourceId: args.connectorSourceId ?? null,
       triggerBrief: args.triggerBrief ?? null,
-    };
+    },
+    conflict:
+      args.queueEventId === undefined ? ("none" as const) : ("id" as const),
+  };
+}
+
+export type PreparedWorkflowAutomationQueueInput = Awaited<
+  ReturnType<typeof prepareWorkflowAutomationQueueInput>
+>;
+
+/** Legacy non-Forms callers still use the generic transaction callback. */
+export function workflowAutomationQueueEventWriter(
+  prepared: PreparedWorkflowAutomationQueueInput,
+  timing: ApiDispatchTimingCollector | undefined,
+): (tx: Db | Tx) => Promise<string | null> {
+  return async (tx) => {
     await measureWorkflowAdmissionStep(
-      args.timing,
+      timing,
       "api_dispatch_workflow_enqueue_event_context_insert",
       async () => {
-        await insertChatEventContext(tx, values);
+        await insertChatEventContext(tx, prepared.values);
       },
     );
     const inserted = await measureWorkflowAdmissionStep(
-      args.timing,
+      timing,
       "api_dispatch_workflow_enqueue_event_insert",
       async () => {
-        return await insertChatEvent(
-          tx,
-          values,
-          args.queueEventId === undefined ? "none" : "id",
-        );
+        return await insertChatEvent(tx, prepared.values, prepared.conflict);
       },
     );
-    if (!inserted && args.queueEventId === undefined) {
+    if (!inserted && prepared.conflict === "none") {
       throw new Error("Workflow queue event insert returned no row");
     }
     return inserted?.id ?? null;
