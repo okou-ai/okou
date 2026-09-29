@@ -221,6 +221,24 @@ of these syntax counts.
 
 ## Validation and release readiness
 
+The `25209f4` Forms follow-up makes repair publication update only the watch
+binding on cursor conflict. Explicit disable owns automation/cursor SQL in one
+command; official source changes and compensation now explicitly reset the
+appropriate cursor in their existing atomic commit. The remaining enable and
+official reconciliation handle propagation is still implementation work.
+Migration 1290 is temporary compatibility for the inspected outgoing unconditional
+cursor writers, subject to the implementation and deployment gates in the
+[credential/watch inventory](./advisory-lock-release-1-credentials.md).
+
+The `bcabda2` Usage follow-up prepares at most 100 exact operation events outside
+the commit. Managed, OpenRouter and image-generation calls settle their own
+idempotency keys; background catch-up pages between transactions. The commit
+rechecks event and pricing snapshots before atomic financial writes. Standalone
+pricing is prepared outside SQL, and conflicts roll back before bounded
+re-preparation. Social retains its receipt and reservation release in the same
+commit. Grant/expiry-lot access and the remaining Social preparation are still
+unfinished bounds; the event limit alone does not certify a short transaction.
+
 Individual source branch checks are evidence for those revisions only. The
 combined head must pass its own relevant static checks, types, API tests and
 migration pipeline. Full local Vitest and local development servers are not run.
