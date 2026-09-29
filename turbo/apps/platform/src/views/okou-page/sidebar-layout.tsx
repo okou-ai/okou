@@ -24,6 +24,7 @@ import {
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
 import { AvatarFromUrl } from "./sidebar-shared.tsx";
 import { QueueDrawer } from "../queue-page/queue-drawer.tsx";
+import { NewThreadDeliveryNotice } from "./new-thread-delivery-notice.tsx";
 import {
   sidebarExpanded$,
   setSidebarExpanded$,
@@ -461,6 +462,7 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
             (activeRoute === "me" ||
               (activeRoute === "agentChat" && chatListVisible))
           ) && <MobileTopBar pwaNavigation={pwaNavigation} />}
+        <NewThreadDeliveryNotice />
         {pwaNavigation ? (
           <>
             <div className="flex min-h-0 flex-1 flex-col [--okou-safe-b:0px]">

@@ -17,6 +17,15 @@ import { i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
 import { nowDate } from "../../lib/time.ts";
 import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
+import { authenticatedIdentity$ } from "../auth.ts";
+import {
+  deliveryIntentsChanged$,
+  saveDeliveryIntent,
+  updateDeliveryIntent,
+  type NewThreadDeliveryIntent,
+} from "./chat-delivery-intents.ts";
+import { newThreadDeliveryFailure } from "./new-thread-delivery.ts";
+import { detach, Reason, settle } from "../utils.ts";
 import { currentChatThreadId$ } from "../agent-chat.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
@@ -85,6 +94,7 @@ interface SendNewThreadMessageRequest {
   routeSearchParams?: URLSearchParams;
   forward?: ChatForwardContext;
   onOptimisticSend?: () => void;
+  onAcceptedSend?: () => void;
   connectorSelections?: readonly ConnectorAccountSelection[];
   initialRemoteAccessOverrides?: readonly InitialRemoteAccessOverride[];
 }
@@ -406,6 +416,7 @@ async function createChatThread(
       fetchOptions: { signal },
     }),
     [201],
+    signal,
   );
   signal.throwIfAborted();
 }
@@ -515,7 +526,7 @@ const sendNewThreadMessage$ = command(
     signal: AbortSignal,
   ): Promise<{
     readonly threadId: string;
-    readonly sendResult: Promise<void>;
+    readonly sendResult: Promise<boolean>;
   } | null> => {
     const { agentId, prompt } = request;
     const { computerUseHostId, cloudBrowserEnabled } = request;
@@ -544,6 +555,8 @@ const sendNewThreadMessage$ = command(
     const threadId = crypto.randomUUID();
     const clientEventId = crypto.randomUUID();
     const chatThreadEventId = crypto.randomUUID();
+    const identity = await get(authenticatedIdentity$);
+    signal.throwIfAborted();
     const createBody = newThreadCreateBody({
       agentId,
       title: undefined,
@@ -568,6 +581,25 @@ const sendNewThreadMessage$ = command(
       cloudBrowserEnabled,
       sourceRunId: request.forward?.runId,
     });
+    const intent: NewThreadDeliveryIntent = {
+      kind: "new-thread",
+      phase: "create",
+      threadId,
+      clientEventId,
+      createEventId: chatThreadEventId,
+      createdAt: nowDate().toISOString(),
+      status: "prepared",
+      rejection: null,
+      createBody,
+      body: sendBody,
+    };
+    if (!saveDeliveryIntent(identity, intent)) {
+      toast.error(
+        "Message not sent: this browser could not save a recovery copy. Free up storage and try again.",
+      );
+      return null;
+    }
+    set(deliveryIntentsChanged$);
     set(
       appendOptimisticChatEvent$,
       createOptimisticChatEventEntry(
@@ -597,24 +629,89 @@ const sendNewThreadMessage$ = command(
     }
     request.onOptimisticSend?.();
     set(draft.clear$);
-    const clearDraftResult =
-      request.forward || request.preserveAgentDraft
-        ? Promise.resolve()
-        : set(clearAgentDraftById$, agentId, signal);
+    if (!request.forward && !request.preserveAgentDraft) {
+      detach(
+        settle(set(clearAgentDraftById$, agentId, signal)),
+        Reason.Daemon,
+        "clear agent draft after first-message recovery save",
+      );
+    }
     const createClient = get(apiClient$);
     L.debug("sendNewThreadMessage$ POST chat-threads start", { threadId });
-    const createResult = createNewThreadRecord(
-      createClient,
-      createBody,
-      signal,
-    );
-    const sendResult = (async (): Promise<void> => {
-      await Promise.all([clearDraftResult, createResult]);
+    const sendResult = (async (): Promise<boolean> => {
+      const currentIdentity = await settle(get(authenticatedIdentity$));
       signal.throwIfAborted();
-      await sendChatEvent(createClient, sendBody, signal);
+      if (
+        !currentIdentity.ok ||
+        currentIdentity.value.userId !== identity.userId ||
+        currentIdentity.value.orgId !== identity.orgId
+      ) {
+        updateDeliveryIntent(identity, clientEventId, {
+          status: "rejected",
+          rejection: "authentication",
+        });
+        set(deliveryIntentsChanged$);
+        return false;
+      }
+      const created = await settle(
+        createNewThreadRecord(createClient, createBody, signal),
+      );
       signal.throwIfAborted();
+      if (!created.ok) {
+        updateDeliveryIntent(
+          identity,
+          clientEventId,
+          newThreadDeliveryFailure(created.error),
+        );
+        set(deliveryIntentsChanged$);
+        return false;
+      }
+      updateDeliveryIntent(identity, clientEventId, {
+        phase: "prompt",
+        status: "prepared",
+        rejection: null,
+      });
+      set(deliveryIntentsChanged$);
+      const promptIdentity = await settle(get(authenticatedIdentity$));
+      signal.throwIfAborted();
+      if (
+        !promptIdentity.ok ||
+        promptIdentity.value.userId !== identity.userId ||
+        promptIdentity.value.orgId !== identity.orgId
+      ) {
+        updateDeliveryIntent(identity, clientEventId, {
+          status: "rejected",
+          rejection: "authentication",
+        });
+        set(deliveryIntentsChanged$);
+        return false;
+      }
+      const sent = await settle(sendChatEvent(createClient, sendBody, signal));
+      signal.throwIfAborted();
+      if (!sent.ok) {
+        updateDeliveryIntent(
+          identity,
+          clientEventId,
+          newThreadDeliveryFailure(sent.error),
+        );
+        set(deliveryIntentsChanged$);
+        return false;
+      }
+      updateDeliveryIntent(identity, clientEventId, {
+        status: "accepted",
+        rejection: null,
+      });
+      set(deliveryIntentsChanged$);
+      request.onAcceptedSend?.();
       L.debug("sendNewThreadMessage$ POST chat/events 201", { threadId });
+      return true;
     })();
+    // Navigation can fail before its caller begins awaiting the in-flight send.
+    detach(
+      sendResult,
+      Reason.Daemon,
+      "first-message delivery after navigation",
+    );
     return { threadId, sendResult };
   },
 );
@@ -641,9 +738,9 @@ export const sendNewThread$ = command(
       },
       signal,
     );
-    await result.sendResult;
+    const sent = await result.sendResult;
     signal.throwIfAborted();
-    return true;
+    return sent;
   },
 );
 
@@ -657,8 +754,8 @@ export const sendNewThreadWithoutNavigation$ = command(
     if (!result) {
       return false;
     }
-    await result.sendResult;
+    const sent = await result.sendResult;
     signal.throwIfAborted();
-    return true;
+    return sent;
   },
 );
