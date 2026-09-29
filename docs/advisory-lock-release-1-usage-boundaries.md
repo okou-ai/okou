@@ -219,3 +219,12 @@ legacy helper ownership; converting orchestration callers does not certify those
 separate write protocols. Plan/Atom cancellation replay and plan activation remain
 implementation work. Focused Prettier, Oxlint and ESLint passed; combined types and
 behavior checks must use the integrated PR HEAD.
+
+The Atom member-credit-only invoice path now uses `grantAtomMemberCredits$`.
+It owns the wallet, then the current plan entitlement, validates the same active
+Pro/Team and Stripe-customer contract, and directly executes the unique member
+grant statement. A duplicate cannot overwrite remaining credits. It receives no
+database, forwards no transaction and performs no provider I/O inside the commit.
+This member-only grant does not trigger shared-wallet expiration. The separate
+Atom plan replacement and its bundled member grant remain in the unfinished
+plan publication/cancellation graph.

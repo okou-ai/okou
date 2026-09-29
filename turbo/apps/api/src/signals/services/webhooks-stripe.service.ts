@@ -1,3 +1,4 @@
+import { invoiceUsagePackCreditGrantSql } from "./usage-pack-credit-grant-sql";
 import {
   atomicOrgCreditExpirationSql,
   orgCreditInvoiceGrantSql,
@@ -1570,47 +1571,59 @@ const handleCreditPurchaseInvoicePaid$ = command(
   },
 );
 
-async function processAtomUsagePackCreditGrantInvoicePaid(
-  db: Db,
-  invoice: InvoiceInput,
-  details: AtomUsagePackCreditGrantInvoiceDetails,
-): Promise<void> {
-  await db.transaction(async (tx) => {
-    const [activePlan] = await tx
-      .select({
-        stripeCustomerId: orgMetadata.stripeCustomerId,
-      })
-      .from(orgPlanEntitlements)
-      .innerJoin(orgMetadata, eq(orgMetadata.orgId, orgPlanEntitlements.orgId))
-      .where(
-        and(
-          eq(orgPlanEntitlements.orgId, details.orgId),
-          inArray(orgPlanEntitlements.planKey, ["pro", "team"]),
-          eq(orgPlanEntitlements.status, "active"),
-          or(
-            isNull(orgPlanEntitlements.expiresAt),
-            gt(orgPlanEntitlements.expiresAt, nowDate()),
-          ),
-        ),
-      )
-      .for("update")
-      .limit(1);
-    if (!activePlan || activePlan.stripeCustomerId !== details.customerId) {
-      throw new Error(
-        `Atom usage pack grant ${invoice.id} requires an active Pro or Team plan`,
-      );
-    }
-
-    await createUsagePackCreditGrant(tx, {
+const grantAtomMemberCredits$ = command(
+  async (
+    { set },
+    args: {
+      readonly invoiceId: string;
+      readonly details: AtomUsagePackCreditGrantInvoiceDetails;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    const { invoiceId, details } = args;
+    const grant = invoiceUsagePackCreditGrantSql({
       orgId: details.orgId,
       userId: details.userId,
       grantType: "bonus",
-      idempotencyKey: `atom-usage-pack:${invoice.id}:${details.userId}`,
+      idempotencyKey: `atom-usage-pack:${invoiceId}:${details.userId}`,
       amount: details.credits,
       expiresAt: details.creditsExpiresAt,
     });
-  });
-}
+    await db.transaction(async (tx) => {
+      const [wallet] = await tx
+        .select({ customerId: orgMetadata.stripeCustomerId })
+        .from(orgMetadata)
+        .where(eq(orgMetadata.orgId, details.orgId))
+        .for("update");
+      const [activePlan] = await tx
+        .select({ orgId: orgPlanEntitlements.orgId })
+        .from(orgPlanEntitlements)
+        .where(
+          and(
+            eq(orgPlanEntitlements.orgId, details.orgId),
+            inArray(orgPlanEntitlements.planKey, ["pro", "team"]),
+            eq(orgPlanEntitlements.status, "active"),
+            or(
+              isNull(orgPlanEntitlements.expiresAt),
+              gt(orgPlanEntitlements.expiresAt, nowDate()),
+            ),
+          ),
+        )
+        .for("update");
+      if (!activePlan || wallet?.customerId !== details.customerId) {
+        throw new Error(
+          `Atom usage pack grant ${invoiceId} requires an active Pro or Team plan`,
+        );
+      }
+      if ((await tx.execute(grant)).rowCount !== 1) {
+        throw new Error("Atom member grant invoice identity changed");
+      }
+      signal.throwIfAborted();
+    });
+    signal.throwIfAborted();
+  },
+);
 
 function rejectAtomGrantTierReplacement(args: {
   readonly invoice: InvoiceInput;
@@ -1876,7 +1889,11 @@ const handleAtomGrantInvoicePaid$ = command(
     }
 
     if (details.kind === "usagePackCredits") {
-      await processAtomUsagePackCreditGrantInvoicePaid(db, invoice, details);
+      await set(
+        grantAtomMemberCredits$,
+        { invoiceId: invoice.id, details },
+        signal,
+      );
       signal.throwIfAborted();
       L.debug("atom member usage pack credit grant invoice processed", {
         invoiceId: invoice.id,
