@@ -65,6 +65,7 @@ export interface BuiltinConnectorCredentialReadGroup {
    * Single-statement and connector-locked callers do not need this condition.
    */
   readonly connectorStateRevision?: bigint;
+  readonly connectorUpdatedAt?: string;
   readonly names: readonly string[];
 }
 
@@ -180,6 +181,7 @@ function assertDeclaredNames(args: {
 function connectorIdentityExists(
   access: BuiltinConnectorCredentialAccess,
   connectorStateRevision: bigint | undefined,
+  connectorUpdatedAt: string | undefined,
 ): SQL {
   return exists(
     new QueryBuilder()
@@ -199,6 +201,12 @@ function connectorIdentityExists(
             builtinCredentialAccessConnector.storageVersion,
             access.storageVersion,
           ),
+          connectorUpdatedAt === undefined
+            ? undefined
+            : eq(
+                sql`${builtinCredentialAccessConnector.updatedAt}::text`,
+                connectorUpdatedAt,
+              ),
           connectorStateRevision === undefined
             ? undefined
             : eq(
@@ -233,7 +241,11 @@ export function builtinConnectorCredentialSecretReadCondition(args: {
         eq(secrets.type, "connector"),
         inArray(secrets.name, names),
         eq(secrets.connectorId, group.access.connectorId),
-        connectorIdentityExists(group.access, group.connectorStateRevision),
+        connectorIdentityExists(
+          group.access,
+          group.connectorStateRevision,
+          group.connectorUpdatedAt,
+        ),
       ),
     ];
   });
@@ -260,7 +272,11 @@ export function builtinConnectorCredentialVariableReadCondition(args: {
         eq(variables.type, "connector"),
         inArray(variables.name, names),
         eq(variables.connectorId, group.access.connectorId),
-        connectorIdentityExists(group.access, group.connectorStateRevision),
+        connectorIdentityExists(
+          group.access,
+          group.connectorStateRevision,
+          group.connectorUpdatedAt,
+        ),
       ),
     ];
   });

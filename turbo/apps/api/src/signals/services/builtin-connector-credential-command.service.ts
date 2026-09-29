@@ -164,6 +164,7 @@ const loadBuiltinConnectorStoredValues$ = command(
           groups: [
             {
               access: args.connection.access,
+              connectorUpdatedAt: args.connection.stateRevision,
               names: secretNames,
             },
           ],
@@ -181,6 +182,7 @@ const loadBuiltinConnectorStoredValues$ = command(
           groups: [
             {
               access: args.connection.access,
+              connectorUpdatedAt: args.connection.stateRevision,
               names: variableNames,
             },
           ],

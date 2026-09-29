@@ -282,6 +282,7 @@ async function loadBuiltinConnectorStoredValues(args: {
         groups: [
           {
             access: args.connection.access,
+            connectorUpdatedAt: args.connection.stateRevision,
             names: secretNames,
           },
         ],
@@ -299,6 +300,7 @@ async function loadBuiltinConnectorStoredValues(args: {
         groups: [
           {
             access: args.connection.access,
+            connectorUpdatedAt: args.connection.stateRevision,
             names: variableNames,
           },
         ],
