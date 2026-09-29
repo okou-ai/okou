@@ -299,6 +299,7 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
   it("groups active concurrency by workspace member", async () => {
     const actor = await entitledActor();
     const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
+    await bdd.completeOnboarding(member);
     const actorCompose = await createClaudeAgent(actor, "bdd-actor-usage");
     const memberCompose = await createClaudeAgent(member, "bdd-member-usage");
 
@@ -465,6 +466,7 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
     const actor = await entitledActor();
     const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
+    await bdd.completeOnboarding(member);
     const target = await createClaudeAgent(actor, "bdd-target");
     const other = await createClaudeAgent(actor, "bdd-other");
     const memberCompose = await createClaudeAgent(member, "bdd-member");
@@ -1161,6 +1163,19 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
       storageOwner: "organization",
       versionId: volumeVersion,
       files: [volumeFile],
+    });
+    // Runs no longer create missing artifacts; the custom artifact exists.
+    const customMemoryFile = storageTextFile("notes.md", "custom memory");
+    const customMemory = await storages.prepareStorage(actor, {
+      storageName: "custom-memory",
+      storageOwner: "user",
+      files: [customMemoryFile],
+    });
+    await storages.commitStorage(actor, {
+      storageName: "custom-memory",
+      storageOwner: "user",
+      versionId: customMemory.versionId,
+      files: [customMemoryFile],
     });
     const refreshedVolumeArchiveSize = 23_456;
     const forcedPrepare = await storages.prepareStorage(actor, {
@@ -3095,6 +3110,7 @@ describe("RUN-04/OPS-01: agent run logs", () => {
   async function setupRunLogFixture() {
     const actor = await entitledActor();
     const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
+    await bdd.completeOnboarding(member);
     await api.ensureOrgModelProvider(actor);
     const agentOne = await bdd.createAgent(actor, {
       displayName: "BDD logs agent one",

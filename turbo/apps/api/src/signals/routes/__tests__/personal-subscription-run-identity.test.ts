@@ -1337,6 +1337,7 @@ describe("member-effective model policy contract", () => {
     await configureOrganizationApi(f, "custom");
     const bdd = createBddApi(context);
     const member = bdd.user({ orgId: f.actor.orgId, orgRole: "org:member" });
+    await bdd.completeOnboarding(member);
     const misc = createMiscRoutesApi(context);
     const before = await misc.listModelPolicies(f.actor);
     const other = await misc.listModelPolicies(member);

@@ -5272,6 +5272,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       orgId: actor.orgId,
       orgRole: "org:member",
     });
+    await bdd.completeOnboarding(actor2);
 
     const slackUser2 = uniqueSlackUserId();
     await integrations.connectSlackUser(actor2, {

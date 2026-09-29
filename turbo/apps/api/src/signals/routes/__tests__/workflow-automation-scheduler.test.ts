@@ -30,7 +30,7 @@ import { createApp } from "../../../app-factory";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { mockEnv } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
-import type { ApiTestUser } from "./helpers/api-bdd";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { mockGmailConnectorOAuth } from "./helpers/api-bdd-connectors";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
@@ -849,6 +849,7 @@ describe("okou workflow automation scheduler", () => {
         orgId: scenario.orgId,
         orgRole: "org:member",
       });
+      await createBddApi(context).completeOnboarding(member);
       // The same membership cache fixture and real CLI read used by the scheduler's access test.
       await store.set(
         seedOrgMembership$,
