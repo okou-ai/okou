@@ -50,6 +50,27 @@ and a fresh retry instead of overwriting its result. No transaction spans the
 provider reads. This is a publication predicate, not the still-missing admission
 protocol for two different purchases that can both become payable.
 
+### Usage-pack Checkout completion commit
+
+Webhook delivery and Checkout reconciliation now dispatch the same
+`handleUsagePackCheckoutCompleted$` command using the Session and provider
+subscription as ordinary inputs. Its publication command obtains `writeDb$` and
+owns all SQL: existing subscription roots lock before the existing pending-count
+guard, the root is reread under lock and its allocations are read, correlation
+and shape are validated, and subscription binding, matching Plan metadata, and the final
+pending count commit together. The retained trigger may also update the count;
+the command assigns the verified final value rather than applying a second delta.
+No transaction or database handle reaches a helper, and no Stripe call occurs
+inside this commit. Customer and Session mismatches reject before local writes.
+
+The webhook Checkout dispatcher is now a command so it can dispatch this owned
+commit directly. Its other invitation, one-time-credit and canonical Plan-binding
+branches still invoke legacy database-aware services; converting the dispatcher
+to a command does **not** finish those chains. Ordinary subscription lifecycle
+synchronization and the purchase creation/confirmation graphs also remain
+unfinished. This change does not establish remote quantity ordering or retire
+the pending-count trigger while those writers remain.
+
 ### Plan purchase admission predicates
 
 An active Stripe Plan that is not the preview's bound source is a competing

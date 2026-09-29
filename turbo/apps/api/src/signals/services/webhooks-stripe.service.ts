@@ -73,7 +73,7 @@ import {
 } from "./org-plan-entitlements.service";
 import type { Tx } from "../../lib/db-types";
 import {
-  handleUsagePackCheckoutCompleted,
+  handleUsagePackCheckoutCompleted$,
   handleUsagePackInvoicePaid,
   handleUsagePackSubscriptionCreated,
   handleUsagePackSubscriptionDeleted,
@@ -3763,10 +3763,11 @@ const handleCheckoutCompleted$ = command(
     const stripe = getStripeClient();
     const subscription = await stripe.subscriptions.retrieve(subscriptionId);
     signal.throwIfAborted();
-    const usagePackOutcome = await handleUsagePackCheckoutCompleted(
-      db,
+    const usagePackOutcome = await set(
+      handleUsagePackCheckoutCompleted$,
       session,
       subscription,
+      signal,
     );
     signal.throwIfAborted();
     const orgIds = await bindSubscriptionToCustomerOrg(db, {
