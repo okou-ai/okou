@@ -1,20 +1,23 @@
-import type { DefaultModelFirstPin } from "./model-selection.service";
-import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
-import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
   feishuChatIngress,
   type FeishuChatIngressStatus,
 } from "@okouai/db/schema/feishu-chat-ingress";
-import { feishuChatThreadRoutes } from "@okouai/db/schema/feishu-chat-thread-route";
 import { feishuOrgEvents } from "@okouai/db/schema/feishu-org-event";
+import type { FeishuInboundMessage } from "./feishu-dispatch.service";
+import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
+import { feishuChatThreadRoutes } from "@okouai/db/schema/feishu-chat-thread-route";
 import { and, eq, sql } from "drizzle-orm";
 
-import type { Db } from "../external/db";
-import type { FeishuInboundMessage } from "./feishu-dispatch.service";
+import { writeDb$, type Db } from "../external/db";
+import { command } from "ccstate";
+import { randomUUID } from "node:crypto";
+import { loadNewChatThreadDefaults$ } from "./chat-thread-defaults.service";
 import {
-  appendChatThreadCreatedEvent,
-  insertChatThread,
-} from "./chat-thread-create.service";
+  integrationChatThreadValues,
+  integrationThreadCreatedEventSql,
+  type IntegrationChatThreadCreation,
+} from "./integration-chat-thread-publication";
 
 interface FeishuChatThreadRouteKey {
   readonly connectionId: string;
@@ -39,40 +42,6 @@ function routeWhere(key: FeishuChatThreadRouteKey) {
   );
 }
 
-async function loadRoute(
-  db: Pick<Db, "select" | "update">,
-  key: FeishuChatThreadRouteKey,
-): Promise<FeishuChatThreadRouteBinding | undefined> {
-  const [route] = await db
-    .select({
-      id: feishuChatThreadRoutes.id,
-      connectionId: feishuChatThreadRoutes.connectionId,
-      chatId: feishuChatThreadRoutes.chatId,
-      threadId: feishuChatThreadRoutes.threadId,
-      userId: feishuChatThreadRoutes.userId,
-      chatThreadId: feishuChatThreadRoutes.chatThreadId,
-    })
-    .from(feishuChatThreadRoutes)
-    .where(routeWhere(key))
-    .limit(1);
-  if (
-    route &&
-    key.threadId === INTEGRATION_DM_SESSION_KEY &&
-    route.chatId !== key.chatId
-  ) {
-    const [updated] = await db
-      .update(feishuChatThreadRoutes)
-      .set({ chatId: key.chatId })
-      .where(and(eq(feishuChatThreadRoutes.id, route.id), routeWhere(key)))
-      .returning({ chatId: feishuChatThreadRoutes.chatId });
-    if (!updated) {
-      throw new Error("Failed to update Feishu DM route destination");
-    }
-    return { ...route, ...updated };
-  }
-  return route;
-}
-
 /** Route key of the conversation a Feishu message belongs to. */
 export function feishuRouteThreadId(
   message: Pick<
@@ -92,95 +61,118 @@ export function feishuRouteThreadId(
 }
 
 /** Read the chat thread a Feishu conversation already routes to. */
-export async function findFeishuRoutedChatThreadId(
-  db: Pick<Db, "select">,
-  key: FeishuChatThreadRouteKey,
-): Promise<string | undefined> {
-  const [route] = await db
-    .select({ chatThreadId: feishuChatThreadRoutes.chatThreadId })
-    .from(feishuChatThreadRoutes)
-    .where(routeWhere(key))
-    .limit(1);
-  return route?.chatThreadId;
-}
-
-export async function ensureFeishuChatThreadRoute(
-  db: Db,
-  args: FeishuChatThreadRouteKey & {
-    readonly orgId: string;
-    readonly agentId: string;
-    readonly currentTime: Date;
-    readonly initialModel: DefaultModelFirstPin;
+export const findFeishuRoutedChatThreadId$ = command(
+  async (
+    { set },
+    key: FeishuChatThreadRouteKey,
+    signal?: AbortSignal,
+  ): Promise<string | undefined> => {
+    const db = set(writeDb$);
+    const [route] = await db
+      .select({ chatThreadId: feishuChatThreadRoutes.chatThreadId })
+      .from(feishuChatThreadRoutes)
+      .where(routeWhere(key))
+      .limit(1);
+    signal?.throwIfAborted();
+    return route?.chatThreadId;
   },
-): Promise<FeishuChatThreadRouteBinding> {
-  return await db.transaction(async (tx) => {
-    const existing = await loadRoute(tx, args);
-    if (existing) {
-      return existing;
-    }
+);
 
-    const { initialModel } = args;
-    if (!initialModel.selectedModel) {
-      throw new Error("A model selection is required");
-    }
-    const thread = await insertChatThread(tx, {
-      orgId: args.orgId,
-      userId: args.userId,
-      agentId: args.agentId,
-      selectedModel: initialModel.selectedModel,
-      codexServiceTier: initialModel.serviceTier === "priority" ? "fast" : null,
-      title: null,
-      lastReadAt: args.currentTime,
-      lastMessageAt: args.currentTime,
-      createdAt: args.currentTime,
-      updatedAt: args.currentTime,
-    });
-    if (!thread) {
-      throw new Error("Failed to create canonical Feishu chat thread");
-    }
+const ROUTE_COLUMNS = {
+  id: feishuChatThreadRoutes.id,
+  connectionId: feishuChatThreadRoutes.connectionId,
+  chatId: feishuChatThreadRoutes.chatId,
+  threadId: feishuChatThreadRoutes.threadId,
+  userId: feishuChatThreadRoutes.userId,
+  chatThreadId: feishuChatThreadRoutes.chatThreadId,
+} as const;
 
-    const [route] = await tx
-      .insert(feishuChatThreadRoutes)
-      .values({
-        connectionId: args.connectionId,
-        chatId: args.chatId,
-        threadId: args.threadId,
-        userId: args.userId,
-        chatThreadId: thread.id,
-        createdAt: args.currentTime,
-      })
-      .onConflictDoNothing({
-        target: [
-          feishuChatThreadRoutes.connectionId,
-          feishuChatThreadRoutes.chatId,
-          feishuChatThreadRoutes.threadId,
-          feishuChatThreadRoutes.userId,
-        ],
-      })
-      .returning({
-        id: feishuChatThreadRoutes.id,
-        connectionId: feishuChatThreadRoutes.connectionId,
-        chatId: feishuChatThreadRoutes.chatId,
-        threadId: feishuChatThreadRoutes.threadId,
-        userId: feishuChatThreadRoutes.userId,
-        chatThreadId: feishuChatThreadRoutes.chatThreadId,
-      });
-
-    if (!route) {
-      await tx.delete(chatThreads).where(eq(chatThreads.id, thread.id));
-      const conflicted = await loadRoute(tx, args);
-      if (!conflicted) {
-        throw new Error(
-          "Failed to resolve Feishu chat thread route after conflict",
-        );
+/** The unique route and its new thread/event commit in this command alone. */
+export const ensureFeishuChatThreadRoute$ = command(
+  async (
+    { set },
+    args: FeishuChatThreadRouteKey & IntegrationChatThreadCreation,
+    signal: AbortSignal,
+  ): Promise<FeishuChatThreadRouteBinding> => {
+    const defaults = await set(
+      loadNewChatThreadDefaults$,
+      { orgId: args.orgId, userId: args.userId },
+      signal,
+    );
+    const candidateId = randomUUID();
+    const db = set(writeDb$);
+    const result = await db.transaction(async (tx) => {
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const [existing] = await tx
+          .select(ROUTE_COLUMNS)
+          .from(feishuChatThreadRoutes)
+          .where(routeWhere(args))
+          .limit(1);
+        if (existing) {
+          if (
+            args.threadId === INTEGRATION_DM_SESSION_KEY &&
+            existing.chatId !== args.chatId
+          ) {
+            const [updated] = await tx
+              .update(feishuChatThreadRoutes)
+              .set({ chatId: args.chatId })
+              .where(
+                and(
+                  eq(feishuChatThreadRoutes.id, existing.id),
+                  routeWhere(args),
+                ),
+              )
+              .returning({
+                chatId: feishuChatThreadRoutes.chatId,
+              });
+            if (!updated) {
+              throw new Error("Failed to update Feishu DM route destination");
+            }
+            return { ...existing, ...updated };
+          }
+          return existing;
+        }
+        if (attempt === 1) {
+          break;
+        }
+        const thread = integrationChatThreadValues(args, candidateId, defaults);
+        await tx.insert(chatThreads).values(thread);
+        const [route] = await tx
+          .insert(feishuChatThreadRoutes)
+          .values({
+            connectionId: args.connectionId,
+            chatId: args.chatId,
+            threadId: args.threadId,
+            userId: args.userId,
+            chatThreadId: thread.id,
+            createdAt: args.currentTime,
+          })
+          .onConflictDoNothing({
+            target: [
+              feishuChatThreadRoutes.connectionId,
+              feishuChatThreadRoutes.chatId,
+              feishuChatThreadRoutes.threadId,
+              feishuChatThreadRoutes.userId,
+            ],
+          })
+          .returning(ROUTE_COLUMNS);
+        if (route) {
+          await tx.execute(
+            integrationThreadCreatedEventSql(args.orgId, thread),
+          );
+          signal.throwIfAborted();
+          return route;
+        }
+        await tx.delete(chatThreads).where(eq(chatThreads.id, thread.id));
       }
-      return conflicted;
-    }
-
-    await appendChatThreadCreatedEvent(tx, { orgId: args.orgId, thread });
-    return route;
-  });
-}
+      throw new Error(
+        "Failed to resolve Feishu chat thread route after conflict",
+      );
+    });
+    signal.throwIfAborted();
+    return result;
+  },
+);
 
 interface FeishuChatIngressAdmission {
   readonly id: string;
