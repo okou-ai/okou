@@ -1,3 +1,4 @@
+import { isTransientOAuthRefreshFailure } from "./oauth-refresh-failure.service";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import type { ConnectorReconnectReason } from "@okouai/api-contracts/contracts/connector-schemas";
 import { refreshConnectorAuthProviderAccessTokenWithMethod } from "@okouai/connectors/auth-providers";
@@ -430,7 +431,10 @@ const connectorCredentialRefreshFailure$ = command(
     kind: "invalid-output" | "missing-input" | "provider-failed",
     signal: AbortSignal,
   ): Promise<BuiltinConnectorCredentialRefreshResult> => {
-    if (args.persist?.markNeedsReconnectOnFailure === true) {
+    if (
+      kind !== "invalid-output" &&
+      args.persist?.markNeedsReconnectOnFailure === true
+    ) {
       await set(
         markConnectorCredentialNeedsReconnectAfterRefreshFailure$,
         {
@@ -588,6 +592,9 @@ export const refreshBuiltinConnectorCredentialAccess$ = command(
         orgId: args.orgId,
         userId: args.userId,
       });
+      if (isTransientOAuthRefreshFailure(refreshed.error)) {
+        return { kind: "provider-failed" };
+      }
       return await set(
         connectorCredentialRefreshFailure$,
         args,

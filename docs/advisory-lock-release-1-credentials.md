@@ -349,6 +349,39 @@ requires authoritative reread, but neither addresses process loss. Do not
 classify shared one-time rotation as complete or merely waiting for old writers
 to drain on the strength of this proposal.
 
+### Transient refresh failure publication
+
+R1's shared firewall and both ordinary builtin refresh implementations now
+leave credential metadata unchanged for known transient provider failures:
+network/fetch errors, rate limits, 5xx, OAuth `server_error` /
+`temporarily_unavailable`, malformed provider responses and invalid output.
+The failed request still returns its provider failure and cannot use an expired
+or unpublished token. An outage is not a new authorization revision, so it must
+not fence another request's successfully prepared token. Caller cancellation is
+still propagated; the firewall's explicit refresh timeout is an upstream failure.
+
+Missing local refresh inputs, `invalid_grant` (including its existing subtype
+handling), terminal Codex errors, unknown failures and explicit provider
+revocation retain their current guarded reconnect behavior. In particular,
+`markStripeConnectorsDeauthorized` remains an authoritative revocation writer.
+A generic rule allowing publication across identical ciphertext plus changed
+reconnect flags would conflate that writer with refresh failure and is not used.
+
+Public API regressions exercise both directions: Forms succeeds while a
+concurrent firewall request receives 503, and firewall succeeds while a
+concurrent Forms request receives 503. Each interleaving occurs at Google's
+token HTTP endpoint. They require retry deduplication, subsequent Forms provider
+access with the published token, successful firewall authorization using that
+same stored token and a connected public account. No SQL gate or lock waiter
+constructs the interleaving. The test is committed for the combined PR pipeline;
+local verification is limited to types/lint/format under the parent owner.
+
+This completes only the transient failure writer protocol. A single-use
+`invalid_grant` loser racing a successful publisher, provider-side reuse
+revocation, the shared firewall's provider-I/O transaction and propagated
+handles are still R1 implementation work. Outgoing transient-failure writers
+also retain their prior timestamp behavior until the normal compatibility gate.
+
 ### Concrete mixed-writer refresh gap
 
 The command publication predicate does not yet prepare every refresh writer. In

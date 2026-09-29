@@ -19,6 +19,7 @@ import {
   mockGoogleFormsConnectorOAuth,
 } from "./helpers/api-bdd-connectors";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { chatEventDisplayText } from "./helpers/chat-event";
@@ -864,6 +865,117 @@ describe("Google Forms Pub/Sub webhook", () => {
       }),
     ).toHaveLength(1);
   });
+
+  it.each(["firewall", "Forms"] as const)(
+    "keeps a successful refresh after a concurrent %s provider outage",
+    async (failingWriter) => {
+      const startedAt = now();
+      const { actor, chatThreadId, formsApi } =
+        await setupGoogleFormsAutomation();
+      const watchId = formsApi.watchIds[0];
+      if (!watchId) {
+        throw new Error("Expected a Google Forms watch");
+      }
+      await expect(
+        postWebhook(formsPushBody("before-refresh-outage", watchId)),
+      ).resolves.toMatchObject({ status: 200, body: { dispatched: 1 } });
+      await flushWaitUntilForTest();
+      const events = await workflows.readThreadEvents(chatThreadId);
+      const runId = events.find((event) => {
+        return event.eventType === "input.prompt" && event.runId;
+      })?.runId;
+      if (!runId) {
+        throw new Error("Expected a running Forms workflow");
+      }
+      await runs.heartbeatRunner(RUNNER_GROUP);
+      await runs.claimRunnerJob(runId);
+      const connection = await connectors.readConnectorBySlug(
+        actor,
+        "google-forms",
+      );
+      const fw = createFirewallApi(context);
+      const body = {
+        encryptedSecrets: fw.encryptedSecretsBody({}),
+        authHeaders: {
+          Authorization: `Bearer ${secretTemplate("GOOGLE_FORMS_TOKEN")}`,
+        },
+        secretConnectorMap: { GOOGLE_FORMS_TOKEN: "google-forms" },
+        secretConnectorMetadataMap: {
+          GOOGLE_FORMS_TOKEN: {
+            sourceType: "connector" as const,
+            sourceId: connection.id,
+          },
+        },
+      };
+      mockNow(startedAt + 2 * 60 * 60 * 1000);
+      const headers = fw.sandboxHeaders(actor, runId);
+      const refreshedForms = configureFormsApi(["forms-refresh-success"]);
+      let preparedSuccess = false;
+      server.use(
+        http.post("https://oauth2.googleapis.com/token", async () => {
+          if (preparedSuccess) {
+            return HttpResponse.json(
+              { error: "server_error" },
+              { status: 503 },
+            );
+          }
+          preparedSuccess = true;
+          // The successful request has read its credential snapshot. A real
+          // second API request encounters an outage before that first request
+          // receives its successful token response and publishes it.
+          if (failingWriter === "firewall") {
+            const failed = await fw.requestFirewallAuth(
+              headers,
+              { ...body, forceRefresh: true },
+              [502],
+            );
+            expect(failed.body).toMatchObject({
+              error: { failureReason: "upstream_provider" },
+            });
+          } else {
+            const failed = await postWebhook(
+              formsPushBody("during-refresh-outage", watchId),
+            );
+            expect(failed).toMatchObject({
+              status: 200,
+              body: { dispatched: 0 },
+            });
+            await expect(
+              connectors.readConnectorBySlug(actor, "google-forms"),
+            ).resolves.toMatchObject({ connectionStatus: "connected" });
+          }
+          return HttpResponse.json({
+            access_token: "forms-refresh-success",
+            expires_in: 3600,
+          });
+        }),
+      );
+      if (failingWriter === "Forms") {
+        const published = await fw.requestFirewallAuth(
+          headers,
+          { ...body, forceRefresh: true },
+          [200],
+        );
+        expect(published.body).toMatchObject({
+          headers: { Authorization: "Bearer forms-refresh-success" },
+        });
+      }
+      const retry = await postWebhook(
+        formsPushBody("after-refresh-outage", watchId),
+      );
+      expect(retry).toMatchObject({ status: 200, body: { duplicates: 1 } });
+      expect(refreshedForms.authorizationHeaders).toContain(
+        "Bearer forms-refresh-success",
+      );
+      const resolved = await fw.requestFirewallAuth(headers, body, [200]);
+      expect(resolved.body).toMatchObject({
+        headers: { Authorization: "Bearer forms-refresh-success" },
+      });
+      await expect(
+        connectors.readConnectorBySlug(actor, "google-forms"),
+      ).resolves.toMatchObject({ connectionStatus: "connected" });
+    },
+  );
 
   it("acknowledges events without dispatching after Forms access becomes unavailable", async () => {
     const startedAt = now();

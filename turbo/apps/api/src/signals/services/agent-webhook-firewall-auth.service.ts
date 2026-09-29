@@ -7,6 +7,10 @@ import {
   publishModelPoliciesChangedForOrgSafely,
   publishPersonalModelProvidersChangedSafely,
 } from "../external/realtime";
+import {
+  isFetchNetworkError,
+  isTransientOAuthRefreshFailure,
+} from "./oauth-refresh-failure.service";
 import { Buffer } from "node:buffer";
 import { performance } from "node:perf_hooks";
 import { isDeepStrictEqual } from "node:util";
@@ -909,29 +913,10 @@ function refreshFailureReasonFromError(
       ? "reconnect_required"
       : undefined;
   }
-  if (isOAuthProviderHttpError(error)) {
-    if (error.oauthError === "invalid_grant") {
-      return "reconnect_required";
-    }
-    if (
-      error.oauthError === "server_error" ||
-      error.oauthError === "temporarily_unavailable" ||
-      error.status >= 500 ||
-      error.status === 429
-    ) {
-      return "upstream_provider";
-    }
+  if (isOAuthProviderHttpError(error) && error.oauthError === "invalid_grant") {
+    return "reconnect_required";
   }
-  if (
-    isProviderHttpError(error) &&
-    (error.status >= 500 || error.status === 429)
-  ) {
-    return "upstream_provider";
-  }
-  if (isProviderResponseError(error)) {
-    return "upstream_provider";
-  }
-  if (isFetchNetworkError(error)) {
+  if (isTransientOAuthRefreshFailure(error)) {
     return "upstream_provider";
   }
   return undefined;
@@ -1034,12 +1019,6 @@ function connectorReconnectReasonFromRefreshFailure(
     return "authorization_expired_or_revoked";
   }
   return null;
-}
-
-function isFetchNetworkError(error: unknown): boolean {
-  return (
-    error instanceof TypeError && error.message.toLowerCase().includes("fetch")
-  );
 }
 
 function isRefreshTimeoutError(error: unknown, signal: AbortSignal): boolean {
@@ -2629,15 +2608,17 @@ async function markRefreshFailure(
   },
 ): Promise<void> {
   const { errorCode, failureReason, connectorReconnectReason } = failure;
+  // A transient outage changed no credential or authority. Mutating the owner
+  // version here would reject a concurrent successful conditional publication.
+  if (failureReason === "upstream_provider") {
+    return;
+  }
   if (args.sourceType === "model-provider") {
-    const updates =
-      failureReason === "upstream_provider"
-        ? { updatedAt: sql`clock_timestamp()` }
-        : {
-            needsReconnect: true,
-            lastRefreshErrorCode: errorCode,
-            updatedAt: sql`clock_timestamp()`,
-          };
+    const updates = {
+      needsReconnect: true,
+      lastRefreshErrorCode: errorCode,
+      updatedAt: sql`clock_timestamp()`,
+    };
     if (args.sourceId) {
       await args.db
         .update(modelProviderAccounts)
@@ -2682,15 +2663,11 @@ async function markRefreshFailure(
   }
   await args.db
     .update(connectors)
-    .set(
-      failureReason === "upstream_provider"
-        ? { updatedAt: sql`clock_timestamp()` }
-        : {
-            needsReconnect: true,
-            reconnectReason: connectorReconnectReason,
-            updatedAt: sql`clock_timestamp()`,
-          },
-    )
+    .set({
+      needsReconnect: true,
+      reconnectReason: connectorReconnectReason,
+      updatedAt: sql`clock_timestamp()`,
+    })
     .where(
       and(
         eq(connectors.orgId, args.orgId),
