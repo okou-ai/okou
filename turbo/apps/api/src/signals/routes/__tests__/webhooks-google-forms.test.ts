@@ -604,12 +604,21 @@ describe("Google Forms Pub/Sub webhook", () => {
   );
 
   it.each([
-    { outcome: "delayed response", status: 409 },
-    { outcome: "provider failure", status: 400 },
+    {
+      outcome: "delayed response",
+      status: 409,
+      deleteDuringPreparation: false,
+    },
+    {
+      outcome: "provider failure",
+      status: 400,
+      deleteDuringPreparation: false,
+    },
+    { outcome: "thread deletion", status: 409, deleteDuringPreparation: true },
   ])(
-    "preserves a newer enable interval after an older $outcome",
-    async ({ outcome, status }) => {
-      const { automationId, chatThreadId, formsApi } =
+    "preserves the current lifecycle after an older $outcome",
+    async ({ outcome, status, deleteDuringPreparation }) => {
+      const { actor, automationId, chatThreadId, formsApi } =
         await setupGoogleFormsAutomation();
       await accept(
         automationsClient().disable({
@@ -650,6 +659,10 @@ describe("Google Forms Pub/Sub webhook", () => {
               );
               expect(preparing.body.enabled).toBeFalsy();
               // A real user changes the lifecycle while the provider request is in flight.
+              if (deleteDuringPreparation) {
+                await chat.deleteThread(actor, chatThreadId);
+                return HttpResponse.json({ responses: [] });
+              }
               await accept(
                 automationsClient().disable({
                   headers: authHeaders(),
@@ -703,10 +716,16 @@ describe("Google Forms Pub/Sub webhook", () => {
         }),
         [200],
       );
-      expect(current.body.enabled).toBeTruthy();
+      expect(current.body.enabled).toBe(!deleteDuringPreparation);
       const watchId = formsApi.watchIds.at(-1);
       if (!watchId) {
         throw new Error("Expected the replacement watch");
+      }
+      if (deleteDuringPreparation) {
+        await expect(
+          postWebhook(formsPushBody("after-deleted-thread", watchId)),
+        ).resolves.toMatchObject({ status: 200, body: { dispatched: 0 } });
+        return;
       }
       await expect(
         postWebhook(formsPushBody("after-newer-enable", watchId)),

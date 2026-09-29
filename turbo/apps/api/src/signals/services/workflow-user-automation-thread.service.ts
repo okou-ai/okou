@@ -185,13 +185,14 @@ export async function disableThreadBoundWorkflowAutomations(
     return [];
   }
 
+  // A disabled Forms automation may be preparing a new interval remotely.
+  // Invalidate that observation too before the bound thread is deleted.
   const disabled = await db
     .update(workflowAutomations)
     .set({ enabled: false, nextRunAt: null, updatedAt: args.currentTime })
     .where(
       and(
         eq(workflowAutomations.ownerUserId, args.userId),
-        eq(workflowAutomations.enabled, true),
         inArray(
           workflowAutomations.workflowId,
           bindings.map((binding) => {
