@@ -1,4 +1,5 @@
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
 import { usageAllowanceAllocations } from "@okouai/db/schema/org-usage-allowance";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { usageEventHourlyRollup } from "@okouai/db/schema/usage-event-hourly-rollup";
@@ -8,6 +9,7 @@ import {
   asc,
   count,
   eq,
+  inArray,
   isNotNull,
   isNull,
   lt,
@@ -77,6 +79,7 @@ const compactionRowSchema = z.object({
   affectedShortWindows: z.int(),
   affectedWeeklyWindows: z.int(),
   reconciled: z.boolean(),
+  observedRunIds: z.array(z.uuid()).max(USAGE_EVENT_COMPACTION_RAW_SEED_LIMIT),
 });
 
 // The explicit null order matches a reverse scan of the deployed
@@ -142,7 +145,7 @@ function candidateCtes(args: {
 }): SQL {
   return sql`
     raw_candidates AS MATERIALIZED (
-      SELECT event.id, event.run_id
+      SELECT event.id, event.run_id, event.billing_run_id, event.billing_context
       FROM ${usageEvent} ${event}
       WHERE ${eligibleRawPredicate(args.cutoff, args.orgId)}
       ORDER BY ${oldestProcessedEventOrder}
@@ -156,6 +159,17 @@ function candidateCtes(args: {
       )
       ORDER BY ${agentRuns.id}
       FOR KEY SHARE SKIP LOCKED
+    ),
+    retained_attributions AS MATERIALIZED (
+      SELECT run_id, org_id, user_id, run_started_at
+      FROM ${billingRunAttribution}
+      WHERE run_id IN (
+        SELECT candidate.billing_run_id FROM raw_candidates candidate
+        WHERE candidate.billing_context = 'run'
+          AND (candidate.run_id IS NULL OR candidate.run_id IN (SELECT id FROM retained_runs))
+      )
+      ORDER BY run_id
+      FOR UPDATE
     ),
     raw_seed AS MATERIALIZED (
       SELECT
@@ -171,9 +185,16 @@ function candidateCtes(args: {
         allocation.short_window_id,
         allocation.weekly_window_id,
         event.quantity,
-        COALESCE(event.credits_charged, 0)::bigint AS credits_charged
+        COALESCE(event.credits_charged, 0)::bigint AS credits_charged,
+        (event.billing_context <> 'run' OR (
+          attribution.run_id IS NOT NULL
+          AND attribution.org_id = event.org_id
+          AND attribution.user_id = event.user_id
+          AND attribution.run_started_at = event.billing_anchor_at
+        )) AS billing_identity_valid
       FROM ${usageEvent} ${event}
       INNER JOIN raw_candidates candidate ON candidate.id = event.id
+      LEFT JOIN retained_attributions attribution ON attribution.run_id = event.billing_run_id
       LEFT JOIN ${usageAllowanceAllocations} ${allocation}
         ON ${eq(allocation.usageEventId, event.id)}
       WHERE ${eligibleRawPredicate(args.cutoff, args.orgId)}
@@ -429,6 +450,8 @@ function compactionSummarySelect(): SQL {
       source_totals.allowance_units::text AS "allowanceUnits",
       window_reconciliation.short_windows AS "affectedShortWindows",
       window_reconciliation.weekly_windows AS "affectedWeeklyWindows",
+      ARRAY(SELECT DISTINCT billing_run_id FROM inserted_hourly
+            WHERE billing_context = 'run') AS "observedRunIds",
       (
         source_totals.quantity = inserted_totals.quantity
         AND source_totals.credits_charged = inserted_totals.credits_charged
@@ -436,6 +459,7 @@ function compactionSummarySelect(): SQL {
         AND window_reconciliation.reconciled
         AND row_counts.locked_raw_rows = row_counts.raw_rows_deleted
         AND row_counts.selected_grains >= row_counts.hourly_rows_inserted
+        AND NOT EXISTS (SELECT 1 FROM raw_seed WHERE NOT billing_identity_valid)
       ) AS "reconciled"
     FROM source_totals
     CROSS JOIN inserted_totals
@@ -543,6 +567,17 @@ const compactUsageEventBatch$ = command(
           hourlyRowsInserted: compaction.hourlyRowsInserted,
         });
         throw new Error("Usage event compaction reconciliation failed");
+      }
+      if (compaction.observedRunIds.length > 0) {
+        await tx
+          .update(billingRunAttribution)
+          .set({ usageObserved: true })
+          .where(
+            and(
+              inArray(billingRunAttribution.runId, compaction.observedRunIds),
+              eq(billingRunAttribution.usageObserved, false),
+            ),
+          );
       }
       signal.throwIfAborted();
       const [remaining] = await tx

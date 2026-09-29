@@ -26,9 +26,8 @@ application triggers remain in the proposed R1 schema.
 | `usage_event.mark_raw_billing_usage_observed` and `usage_event_hourly_rollup.mark_hourly_billing_usage_observed`   | Marks attribution as having observed usage, protecting its retention.                                                | Raw insertion and compaction must include the monotone attribution update in their atomic writes.                                   |
 
 Retirement of these seven triggers still requires **unfinished replacement
-protocols**, not only outgoing-version drain. Voice,
-Pi Stage 1, hourly compaction and operator
-linkage also need a complete explicit capture/observation audit. Existing
+protocols**, not only outgoing-version drain. Operator linkage and the complete
+caller/retention audit remain open. Existing
 attribution readers and the retained convergence fallbacks do not replace
 these writes.
 
@@ -77,6 +76,18 @@ The following producer changes are implemented:
   the existing date-admission window. Pure builders replace all transaction-aware
   X ingestion helpers. X retention cleanup also owns its database and bounded
   deletion. Existing Runner usage and X API tests cover the business contract.
+
+- `compactUsageEventBatch$` retains at most 500 raw events and their canonical
+  attribution rows in a stable parent-first order. It validates organization,
+  user and original allowance anchor before committing each immutable hourly
+  fragment. The same command transaction explicitly marks only this batch's
+  Run identities observed; a failed identity or amount reconciliation rolls
+  back both insertion and deletion. No trigger is needed for these writes.
+  Existing API coverage preserves totals across compaction, late usage and a
+  repeated compaction run.
+- Pi Stage 1 explicitly supplies its runless billing identity and database
+  occurrence/allowance timestamp. This removes its implicit anchor initialization,
+  but does not complete ownership of its worker and provider caller graph.
 
 The standalone managed path commits before financial settlement as before;
 Social keeps its combined financial commit. No billing trigger is removed. Existing public API

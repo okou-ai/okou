@@ -6,7 +6,7 @@ import type {
   PiMemoryStage1Model,
   PiMemoryStage1ProviderUsage,
 } from "@okouai/pi-agent-runtime/api";
-import { inArray } from "drizzle-orm";
+import { inArray, sql } from "drizzle-orm";
 import { v5 as uuidv5 } from "uuid";
 
 import type { Db } from "../external/db";
@@ -118,6 +118,9 @@ export async function recordPiMemoryStage1Usage(
     .map((entry) => {
       return {
         runId: null,
+        billingRunId: null,
+        createdAt: sql`now()`,
+        billingAnchorAt: sql`now()`,
         billingContext: "pi_memory_stage1",
         idempotencyKey: idempotencyKey(args, entry.category),
         orgId: args.billing.orgId,
