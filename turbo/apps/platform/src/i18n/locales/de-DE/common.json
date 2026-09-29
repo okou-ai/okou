@@ -4890,7 +4890,6 @@
         "description": "Verbinden Sie ein von Administratoren verwaltetes Gateway über Anthropic Messages, OpenAI Responses oder beide Protokolle.",
         "dialogDescription": "Konfigurieren Sie jedes Protokoll mit der API-Basis-URL, die von Claude Code oder Codex verwendet wird.",
         "editTitle": "Modellanbieter bearbeiten",
-        "empty": "Keine benutzerdefinierten Modellanbieter konfiguriert.",
         "errors": {
           "invalidMappings": "Modellzuordnungen müssen ein JSON-Objekt sein, dessen Werte die Namen der Upstream-Modelle sind.",
           "missingProtocol": "Aktivieren Sie mindestens ein Protokoll.",

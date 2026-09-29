@@ -4872,7 +4872,6 @@
         "description": "透過Anthropic Messages、OpenAI Responses或兩者，連線由管理員管理的閘道器。",
         "dialogDescription": "為每個協議配置Claude Code或Codex使用的API基礎URL。",
         "editTitle": "編輯模型服務商",
-        "empty": "還沒有配置自定義模型服務商。",
         "errors": {
           "invalidMappings": "模型對映必須是一個JSON物件，其值為上游模型名稱。",
           "missingProtocol": "請至少啟用一個協議。",

@@ -4872,7 +4872,6 @@
         "description": "Hubungkan gateway yang dikelola admin melalui Anthropic Messages, OpenAI Responses, atau keduanya.",
         "dialogDescription": "Konfigurasikan setiap protokol dengan URL dasar API yang digunakan oleh Claude Code atau Codex.",
         "editTitle": "Edit penyedia model",
-        "empty": "Belum ada penyedia model kustom yang dikonfigurasi.",
         "errors": {
           "invalidMappings": "Pemetaan model harus berupa objek JSON dengan nilai berupa nama model upstream.",
           "missingProtocol": "Aktifkan setidaknya satu protokol.",

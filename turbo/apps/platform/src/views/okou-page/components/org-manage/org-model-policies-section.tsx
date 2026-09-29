@@ -16,6 +16,7 @@ import {
   Pencil,
   Plus,
   Trash,
+  X,
 } from "lucide-react";
 import {
   Button,
@@ -30,6 +31,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  IconButton,
   Input,
   Select,
   SelectContent,
@@ -631,7 +633,7 @@ function PolicyRow({
   connections,
   disabled,
   canDelete,
-  canManage,
+  canEdit,
   onEdit,
   onDelete,
 }: {
@@ -640,7 +642,7 @@ function PolicyRow({
   connections: ModelProviderConnectionResponse[];
   disabled: boolean;
   canDelete: boolean;
-  canManage: boolean;
+  canEdit: boolean;
   onEdit: (policy: OrgModelPolicy) => void;
   onDelete: (policy: OrgModelPolicy) => void;
 }) {
@@ -664,12 +666,7 @@ function PolicyRow({
   return (
     <div
       data-testid={`org-model-policy-row-${policy.model}`}
-      className={cn(
-        "relative grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 rounded-lg px-3 py-3.5 transition-colors after:pointer-events-none after:absolute after:bottom-0 after:left-[3.75rem] after:right-3 after:h-px after:bg-divider/50 after:content-[''] last:after:hidden hover:bg-gray-50 dark:hover:bg-gray-100",
-        canManage
-          ? "lg:grid-cols-[minmax(0,1fr)_236px_96px_36px]"
-          : "lg:grid-cols-[minmax(0,1fr)_236px_96px]",
-      )}
+      className="relative grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 rounded-lg px-3 py-3.5 transition-colors after:pointer-events-none after:absolute after:bottom-0 after:left-[3.75rem] after:right-3 after:h-px after:bg-divider/50 after:content-[''] last:after:hidden hover:bg-gray-50 dark:hover:bg-gray-100 lg:grid-cols-[minmax(0,1fr)_236px_96px_36px]"
     >
       <div className="col-start-1 row-start-1 flex min-w-0 flex-col justify-center">
         <div className="flex min-w-0 items-center gap-2">
@@ -700,8 +697,8 @@ function PolicyRow({
           </p>
         )}
       </div>
-      {canManage && (
-        <div className="col-start-2 row-start-1 flex items-center justify-end lg:col-start-4">
+      <div className="col-start-2 row-start-1 flex items-center justify-end lg:col-start-4">
+        {canEdit ? (
           <PolicyActionsMenu
             policy={policy}
             disabled={disabled}
@@ -709,8 +706,23 @@ function PolicyRow({
             onEdit={onEdit}
             onDelete={onDelete}
           />
-        </div>
-      )}
+        ) : (
+          <IconButton
+            showTooltip
+            type="button"
+            className="shrink-0 text-muted-foreground hover:text-destructive"
+            disabled={disabled || !canDelete}
+            aria-label={`${t(($) => {
+              return $.settings.models.actions.deleteModel;
+            })} ${policy.modelLabel}`}
+            onClick={() => {
+              onDelete(policy);
+            }}
+          >
+            <X size={14} />
+          </IconButton>
+        )}
+      </div>
       <div className="col-start-1 row-start-2 flex min-w-0 flex-col justify-center lg:col-start-2 lg:row-start-1">
         <div className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
           <span className="flex size-7 shrink-0 items-center justify-center">
@@ -1860,7 +1872,7 @@ export function OrgModelPoliciesSection() {
     openEditModelDialog(policy);
   };
   const handleDeletePolicy = (policy: OrgModelPolicy) => {
-    if (saving || !canManageModelPolicies || policies.length <= 1) {
+    if (saving || policies.length <= 1) {
       return;
     }
     submit(removePolicy(policies, policy.model));
@@ -1895,14 +1907,7 @@ export function OrgModelPoliciesSection() {
           }
         />
         <div className="overflow-hidden rounded-xl bg-card border border-surface-border">
-          <div
-            className={cn(
-              "hidden gap-3 border-b border-border/50 px-5 py-3 text-xs font-medium text-muted-foreground lg:grid",
-              canManageModelPolicies
-                ? "lg:grid-cols-[minmax(0,1fr)_236px_96px_36px]"
-                : "lg:grid-cols-[minmax(0,1fr)_236px_96px]",
-            )}
-          >
+          <div className="hidden gap-3 border-b border-border/50 px-5 py-3 text-xs font-medium text-muted-foreground lg:grid lg:grid-cols-[minmax(0,1fr)_236px_96px_36px]">
             <span>
               {t(($) => {
                 return $.settings.models.policies.model;
@@ -1918,7 +1923,7 @@ export function OrgModelPoliciesSection() {
                 return $.settings.models.policies.pricing;
               })}
             </span>
-            {canManageModelPolicies && <span />}
+            <span />
           </div>
           <div className="p-2">
             {visiblePolicies.map((policy) => {
@@ -1928,9 +1933,9 @@ export function OrgModelPoliciesSection() {
                   policy={policy}
                   providers={providers}
                   connections={connections}
-                  disabled={false}
+                  disabled={saving}
                   canDelete={policies.length > 1}
-                  canManage={canManageModelPolicies}
+                  canEdit={canManageModelPolicies}
                   onEdit={handleEditPolicy}
                   onDelete={handleDeletePolicy}
                 />

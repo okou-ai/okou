@@ -537,8 +537,84 @@ test("Keep models readable but hide configuration for an unconfigured workspace"
   expect(screen.queryByText("Add model")).not.toBeInTheDocument();
   expect(within(row).queryByLabelText("Actions for GPT 5.6 Luna")).toBeNull();
   expect(
+    within(row).getByLabelText("Delete model GPT 5.6 Luna"),
+  ).toBeDisabled();
+  expect(
     screen.queryByRole("heading", { name: "Provider connections" }),
   ).toBeNull();
+});
+
+test("Delete a built-in model directly without exposing editing", async () => {
+  mockAdminOrg();
+  context.mocks.data.orgModelProviders([]);
+  context.mocks.data.orgModelPolicies([
+    builtInPolicy(
+      "00000000-0000-4000-a000-000000000211",
+      "gpt-5.6-luna",
+      "GPT 5.6 Luna",
+      true,
+    ),
+    builtInPolicy(
+      "00000000-0000-4000-a000-000000000212",
+      "deepseek-v4-flash",
+      "DeepSeek V4 Flash",
+      false,
+    ),
+  ]);
+  mockGatewayConnectionLifecycle([]);
+  await openProvidersTab();
+
+  const row = await screen.findByTestId(
+    "org-model-policy-row-deepseek-v4-flash",
+  );
+  expect(
+    within(row).queryByLabelText("Actions for DeepSeek V4 Flash"),
+  ).toBeNull();
+  click(within(row).getByLabelText("Delete model DeepSeek V4 Flash"));
+  await waitFor(() => {
+    expect(
+      screen.queryByTestId("org-model-policy-row-deepseek-v4-flash"),
+    ).not.toBeInTheDocument();
+  });
+  expect(
+    screen.getByRole("combobox", { name: "Default model" }),
+  ).toHaveTextContent("GPT 5.6 Luna");
+  const soleRow = screen.getByTestId("org-model-policy-row-gpt-5.6-luna");
+  expect(
+    within(soleRow).getByLabelText("Delete model GPT 5.6 Luna"),
+  ).toBeDisabled();
+});
+
+test("Deleting the default built-in model promotes the remaining route", async () => {
+  mockAdminOrg();
+  context.mocks.data.orgModelProviders([]);
+  context.mocks.data.orgModelPolicies([
+    builtInPolicy(
+      "00000000-0000-4000-a000-000000000211",
+      "gpt-5.6-luna",
+      "GPT 5.6 Luna",
+      true,
+    ),
+    builtInPolicy(
+      "00000000-0000-4000-a000-000000000212",
+      "deepseek-v4-flash",
+      "DeepSeek V4 Flash",
+      false,
+    ),
+  ]);
+  mockGatewayConnectionLifecycle([]);
+  await openProvidersTab();
+
+  const row = await screen.findByTestId("org-model-policy-row-gpt-5.6-luna");
+  click(within(row).getByLabelText("Delete model GPT 5.6 Luna"));
+  await waitFor(() => {
+    expect(
+      screen.queryByTestId("org-model-policy-row-gpt-5.6-luna"),
+    ).not.toBeInTheDocument();
+  });
+  expect(
+    screen.getByRole("combobox", { name: "Default model" }),
+  ).toHaveTextContent("DeepSeek V4 Flash");
 });
 
 test("Keep model configuration for a selected workspace API key", async () => {
@@ -571,6 +647,9 @@ test("Hide model configuration after the last API-key route moves to built-in", 
     expect(
       within(row).queryByLabelText("Actions for Claude Opus 5"),
     ).toBeNull();
+    expect(
+      within(row).getByLabelText("Delete model Claude Opus 5"),
+    ).toBeEnabled();
   });
   expect(
     screen.getByRole("combobox", { name: "Default model" }),
@@ -586,6 +665,9 @@ test("Keep existing provider connections visible without an API-key route", asyn
   expect(screen.queryByText("Add model")).toBeNull();
   const row = screen.getByTestId("org-model-policy-row-gpt-5.6-luna");
   expect(within(row).queryByLabelText("Actions for GPT 5.6 Luna")).toBeNull();
+  expect(
+    within(row).getByLabelText("Delete model GPT 5.6 Luna"),
+  ).toBeDisabled();
 });
 
 test("Keep OAuth subscriptions available without showing workspace edits", async () => {
@@ -616,6 +698,7 @@ test("Keep OAuth subscriptions available without showing workspace edits", async
   expect(within(row).getByText("ChatGPT (Codex)")).toBeInTheDocument();
   expect(screen.queryByText("Add model")).toBeNull();
   expect(within(row).queryByLabelText("Actions for GPT 5.6 Sol")).toBeNull();
+  expect(within(row).getByLabelText("Delete model GPT 5.6 Sol")).toBeEnabled();
   await expect(screen.findByRole("alert")).resolves.toBeInTheDocument();
 });
 
