@@ -16,6 +16,7 @@ import {
 } from "@okouai/db/schema/usage-pack-subscription";
 import {
   and,
+  asc,
   desc,
   eq,
   inArray,
@@ -55,6 +56,7 @@ import {
   reconcileUsagePackAllocationChangeSubscription,
   usagePackInvoiceFulfillmentExists,
   usagePackBillingCompatibilityLockSql,
+  usagePackPreviewSubscriptionMatches,
   type UsagePackChangeInvoiceInput,
 } from "./usage-pack-allocation-change.service";
 import type { BillingReconciliationScope } from "./billing-reconciliation-scope";
@@ -1136,6 +1138,41 @@ function retirePlanPreviewSql(orgId: string, at: Date) {
   `;
 }
 
+function subscriptionPreviewSourceStatus(
+  prepared: PreparedSubscriptionChange,
+  current: {
+    readonly subscription: UsagePackSubscriptionRow;
+    readonly org: typeof orgMetadata.$inferSelect | undefined;
+    readonly allocations: readonly UsagePackAllocationRow[];
+  },
+): boolean | "plan_ending" {
+  const { context } = prepared;
+  const { subscription, org } = current;
+  if (
+    subscription.tier !== context.subscription.tier ||
+    subscription.stripePlanPriceId !== context.subscription.stripePlanPriceId
+  ) {
+    return false;
+  }
+  if (prepared.hasScheduledChanges && subscription.cancelAtPeriodEnd) {
+    return "plan_ending";
+  }
+  if (
+    !usagePackPreviewSubscriptionMatches(context.subscription, subscription)
+  ) {
+    return false;
+  }
+  if (
+    !org ||
+    org.tier !== context.subscription.tier ||
+    org.pendingSubscriptionScheduleId !== context.pendingPlanScheduleId ||
+    org.pendingSubscriptionTargetTier !== context.pendingPlanTargetTier
+  ) {
+    return false;
+  }
+  return allocationSnapshotsMatch(context.allocations, current.allocations);
+}
+
 function subscriptionPreviewSnapshotMatches(
   prepared: PreparedSubscriptionChange,
   current: {
@@ -1147,24 +1184,10 @@ function subscriptionPreviewSnapshotMatches(
   },
 ): boolean | "plan_ending" {
   const { context } = prepared;
-  const { subscription, org, openAllocation, openSubscription, allocations } =
-    current;
-  if (
-    subscription.tier !== context.subscription.tier ||
-    subscription.stripePlanPriceId !== context.subscription.stripePlanPriceId
-  ) {
-    return false;
-  }
-  if (prepared.hasScheduledChanges && subscription.cancelAtPeriodEnd) {
-    return "plan_ending";
-  }
-  if (
-    !org ||
-    org.tier !== context.subscription.tier ||
-    org.pendingSubscriptionScheduleId !== context.pendingPlanScheduleId ||
-    org.pendingSubscriptionTargetTier !== context.pendingPlanTargetTier
-  ) {
-    return false;
+  const { openAllocation, openSubscription } = current;
+  const source = subscriptionPreviewSourceStatus(prepared, current);
+  if (source !== true) {
+    return source;
   }
   const expectedOpenAllocationIds = new Set(
     context.openAllocationChanges.map((change) => {
@@ -1184,11 +1207,41 @@ function subscriptionPreviewSnapshotMatches(
         );
       })
     : openAllocation.length === 0;
-  return (
-    openAllocationMatches &&
-    openSubscription.length === 0 &&
-    allocationSnapshotsMatch(context.allocations, allocations)
+  return openAllocationMatches && openSubscription.length === 0;
+}
+
+function previewRowsAfterRetirement(
+  openAllocation: readonly UsagePackAllocationChangeRow[],
+  openSubscription: readonly UsagePackSubscriptionChangeRow[],
+  at: Date,
+) {
+  const retiring = new Set(
+    openSubscription
+      .filter((root) => {
+        return root.status === "previewed";
+      })
+      .map((root) => {
+        return root.id;
+      }),
   );
+  return {
+    openSubscription: openSubscription.filter((root) => {
+      return root.status !== "previewed";
+    }),
+    openAllocation: openAllocation.filter((change) => {
+      return (
+        !(
+          change.subscriptionChangeId &&
+          retiring.has(change.subscriptionChangeId)
+        ) &&
+        !(
+          change.status === "previewed" &&
+          change.previewExpiresAt &&
+          change.previewExpiresAt <= at
+        )
+      );
+    }),
+  };
 }
 
 function allocationChangePreviewValue(
@@ -1262,24 +1315,34 @@ const persistSubscriptionChangePreview$ = command(
       await tx.execute(
         usagePackBillingCompatibilityLockSql(context.subscription.orgId),
       );
-      const [subscription] = await tx
+      const roots = await tx
         .select()
         .from(usagePackSubscriptions)
-        .where(
-          and(
-            eq(usagePackSubscriptions.id, context.subscription.id),
-            eq(usagePackSubscriptions.orgId, context.subscription.orgId),
-          ),
-        )
-        .for("update")
-        .limit(1);
+        .where(eq(usagePackSubscriptions.orgId, context.subscription.orgId))
+        .orderBy(asc(usagePackSubscriptions.id))
+        .for("update");
+      const subscription = roots.find((row) => {
+        return row.id === context.subscription.id;
+      });
       if (!subscription) {
         return null;
       }
-      await tx.execute(
-        retirePlanPreviewSql(context.subscription.orgId, args.createdAt),
-      );
-      const [openAllocation, openSubscription, orgs] = await Promise.all([
+      const allocations = await tx
+        .select()
+        .from(usagePackAllocations)
+        .where(
+          eq(usagePackAllocations.usagePackSubscriptionId, subscription.id),
+        )
+        .orderBy(asc(usagePackAllocations.id))
+        .for("update");
+      const [org] = await tx
+        .select()
+        .from(orgMetadata)
+        .where(eq(orgMetadata.orgId, subscription.orgId))
+        .for("update")
+        .limit(1);
+      signal.throwIfAborted();
+      const [openAllocation, openSubscription] = await Promise.all([
         tx
           .select()
           .from(usagePackAllocationChanges)
@@ -1299,41 +1362,30 @@ const persistSubscriptionChangePreview$ = command(
           .from(usagePackSubscriptionChanges)
           .where(
             and(
-              eq(
-                usagePackSubscriptionChanges.usagePackSubscriptionId,
-                subscription.id,
-              ),
+              eq(usagePackSubscriptionChanges.orgId, subscription.orgId),
               inArray(usagePackSubscriptionChanges.status, [
                 ...OPEN_SUBSCRIPTION_CHANGE_STATUSES,
               ]),
             ),
-          )
-          .limit(1),
-        tx
-          .select()
-          .from(orgMetadata)
-          .where(eq(orgMetadata.orgId, subscription.orgId))
-          .for("update")
-          .limit(1),
+          ),
       ]);
-      const allocations = await tx
-        .select()
-        .from(usagePackAllocations)
-        .where(
-          eq(usagePackAllocations.usagePackSubscriptionId, subscription.id),
-        )
-        .for("update");
       signal.throwIfAborted();
       const snapshot = subscriptionPreviewSnapshotMatches(args.prepared, {
         subscription,
-        org: orgs[0],
-        openAllocation,
-        openSubscription,
+        org,
+        ...previewRowsAfterRetirement(
+          openAllocation,
+          openSubscription,
+          args.createdAt,
+        ),
         allocations,
       });
       if (snapshot !== true) {
         return snapshot === "plan_ending" ? snapshot : null;
       }
+      await tx.execute(
+        retirePlanPreviewSql(context.subscription.orgId, args.createdAt),
+      );
       const [root] = await tx
         .insert(usagePackSubscriptionChanges)
         .values(subscriptionChangePreviewValues(args))
@@ -2232,17 +2284,15 @@ const markPreparedChangeApplying$ = command(
     const db = set(writeDb$);
     const result = await db.transaction(async (tx) => {
       await tx.execute(usagePackBillingCompatibilityLockSql(args.orgId));
-      const [subscription] = await tx
+      const roots = await tx
         .select({ id: usagePackSubscriptions.id })
         .from(usagePackSubscriptions)
-        .where(
-          and(
-            eq(usagePackSubscriptions.id, args.subscriptionId),
-            eq(usagePackSubscriptions.orgId, args.orgId),
-          ),
-        )
-        .for("update")
-        .limit(1);
+        .where(eq(usagePackSubscriptions.orgId, args.orgId))
+        .orderBy(asc(usagePackSubscriptions.id))
+        .for("update");
+      const subscription = roots.find((row) => {
+        return row.id === args.subscriptionId;
+      });
       if (!subscription) {
         return null;
       }

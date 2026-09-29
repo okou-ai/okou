@@ -368,6 +368,26 @@ entry accepts business data, but its later `applyStoredSubscriptionChange(db,
 and admission are complete here; finalization and the common remote protocol
 are still unfinished Release 1 implementation.
 
+The final local-order review aligns these three preview/confirmation commits
+with paid fulfillment, Plan activation and Checkout publication: they lock all
+existing subscription roots for the organization in ID order before child rows.
+Plan preview publication locks allocations before organization metadata as those
+paid writers do. The prepared subscription's customer/binding, status, tier,
+Price, billing periods and cancellation flag must still match before an old
+quote can publish. Plan source/allocation checks now precede preview retirement,
+so a rejected stale request cannot retire another valid preview. Earlier code
+also committed retirement before returning a failed final check; the owning
+command conversion initially preserved that behavior and this follow-up closes
+it. The existing expired/superseded reason semantics remain unchanged for a
+valid replacement.
+
+The added API regression pauses both package and Plan pricing at Stripe, delivers
+a real subscription-cancellation webhook, and verifies that both stale previews
+are rejected while the cancellation, original allocation and credits remain
+visible through billing APIs. Remaining legacy writers have not all adopted
+this root order, and the common remote Stripe protocol is still required before
+removing their compatibility boundary.
+
 ## Unresolved Release 1 work
 
 Billing Release 1 preparation is **not complete**. The important unresolved

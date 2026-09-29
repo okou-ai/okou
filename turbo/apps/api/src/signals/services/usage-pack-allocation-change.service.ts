@@ -16,6 +16,7 @@ import {
 } from "@okouai/db/schema/usage-pack-subscription";
 import {
   and,
+  asc,
   desc,
   eq,
   gt,
@@ -1090,6 +1091,25 @@ async function previewUsagePackChangeInStripe(
   };
 }
 
+export function usagePackPreviewSubscriptionMatches(
+  expected: UsagePackSubscriptionRow,
+  current: UsagePackSubscriptionRow,
+): boolean {
+  return (
+    current.id === expected.id &&
+    current.orgId === expected.orgId &&
+    current.tier === expected.tier &&
+    current.stripePlanPriceId === expected.stripePlanPriceId &&
+    current.stripeCustomerId === expected.stripeCustomerId &&
+    current.stripeSubscriptionId === expected.stripeSubscriptionId &&
+    current.subscriptionStatus === expected.subscriptionStatus &&
+    current.cancelAtPeriodEnd === expected.cancelAtPeriodEnd &&
+    current.currentPeriodStart?.getTime() ===
+      expected.currentPeriodStart?.getTime() &&
+    current.currentPeriodEnd?.getTime() === expected.currentPeriodEnd?.getTime()
+  );
+}
+
 function allocationChangePreviewValues(
   context: UsagePackChangeContext,
   source: UsagePackAllocationRow,
@@ -1132,18 +1152,19 @@ const persistUsagePackChangePreview$ = command(
     const db = set(writeDb$);
     const [change] = await db.transaction(async (tx) => {
       await tx.execute(usagePackBillingCompatibilityLockSql(args.orgId));
-      const [root] = await tx
-        .select({ id: usagePackSubscriptions.id })
+      const roots = await tx
+        .select()
         .from(usagePackSubscriptions)
-        .where(
-          and(
-            eq(usagePackSubscriptions.id, context.subscription.id),
-            eq(usagePackSubscriptions.orgId, args.orgId),
-          ),
-        )
-        .for("update")
-        .limit(1);
-      if (!root) {
+        .where(eq(usagePackSubscriptions.orgId, args.orgId))
+        .orderBy(asc(usagePackSubscriptions.id))
+        .for("update");
+      const root = roots.find((row) => {
+        return row.id === context.subscription.id;
+      });
+      if (
+        !root ||
+        !usagePackPreviewSubscriptionMatches(context.subscription, root)
+      ) {
         return [];
       }
       // A Plan preview may have committed while Stripe prepared these prices.
