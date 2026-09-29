@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { http, HttpResponse } from "msw";
 import {
   builtinConnectorAutomaticContract,
   builtinConnectorNoAuthGrantContract,
@@ -9,9 +10,7 @@ import { describe, expect, it, onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
-import { holdConnectorAccountFixture } from "../../../test-fixtures/connector-account-lock";
-import { waitForDeferredBlocker } from "../../../test-fixtures/pi-deferred-lock";
-import { settleIncludingAbort } from "../../utils";
+import { server } from "../../../mocks/server";
 import { builtinConnectorsAutomaticRoutes } from "../connectors-automatic";
 import { builtinConnectorsRoutes } from "../connectors";
 import { connectorAccountRoutes } from "../connector-accounts";
@@ -165,43 +164,32 @@ describe("builtin Automatic account and consent ownership", () => {
     });
     mocks.clerk.session(first.userId, first.orgId);
     const retiring = await oauthStart(first, firstAccount.body.connectionId);
-    const held = await holdConnectorAccountFixture(
-      { ...second, connectorId: secondAccount.body.connectionId },
-      context.signal,
-    );
-    mocks.clerk.session(second.userId, second.orgId);
-    const replacementResult = settleIncludingAbort(
-      accept(
-        setupApp({ context, routes })(
-          builtinConnectorNoAuthGrantContract,
-        ).connect({
-          headers,
-          params: { connectorSlug: second.slug },
-          body: {
-            authMethod: "replacement-connect",
-            account: {
-              intent: "reconnect",
-              connectionId: secondAccount.body.connectionId,
+    server.use(
+      http.post(`${provider.issuer}/token`, async () => {
+        mocks.clerk.session(second.userId, second.orgId);
+        const replacement = await accept(
+          setupApp({ context, routes })(
+            builtinConnectorNoAuthGrantContract,
+          ).connect({
+            headers,
+            params: { connectorSlug: second.slug },
+            body: {
+              authMethod: "replacement-connect",
+              account: {
+                intent: "reconnect",
+                connectionId: secondAccount.body.connectionId,
+              },
             },
-          },
-        }),
-        [200],
-      ),
+          }),
+          [200],
+        );
+        expect(replacement.body.id).toBe(secondAccount.body.connectionId);
+        return HttpResponse.json({ error: "invalid_client" }, { status: 400 });
+      }),
     );
-    const replacementBackend = await held.waitForBlocked();
-    const retirementResult = settleIncludingAbort(
-      callback(retiring.state, provider.issuer),
+    expect((await callback(retiring.state, provider.issuer)).body.status).toBe(
+      "error",
     );
-    await waitForDeferredBlocker(replacementBackend);
-    await held.release();
-    await expect(replacementResult).resolves.toMatchObject({
-      ok: true,
-      value: { status: 200, body: { id: secondAccount.body.connectionId } },
-    });
-    await expect(retirementResult).resolves.toMatchObject({
-      ok: true,
-      value: { body: { status: "error" } },
-    });
     mocks.clerk.session(second.userId, second.orgId);
     const retained = await accept(
       accounts().connection({
@@ -276,34 +264,31 @@ describe("builtin Automatic account and consent ownership", () => {
       secondAccount.body.connectionId,
     );
 
-    // The row lock models database contention. Both competing callbacks must
-    // arrive before release, whether they wait on a lifecycle or account lock.
-    const held = await holdConnectorAccountFixture(
-      { ...first, connectorId: firstAccount.body.connectionId },
-      context.signal,
+    let nestedCallbackStarted = false;
+    server.use(
+      http.post(`${provider.issuer}/token`, async () => {
+        if (!nestedCallbackStarted) {
+          nestedCallbackStarted = true;
+          const secondResult = await callback(
+            secondReconnect.state,
+            provider.issuer,
+          );
+          expect(secondResult.body.status).toBe("error");
+        }
+        return HttpResponse.json({ error: "invalid_client" }, { status: 400 });
+      }),
     );
-    const firstResult = settleIncludingAbort(
-      callback(firstReconnect.state, provider.issuer),
-    );
-    const firstBackend = await held.waitForBlocked();
-    const secondResult = settleIncludingAbort(
-      callback(secondReconnect.state, provider.issuer),
-    );
-    await waitForDeferredBlocker(firstBackend);
-    await held.release();
-    for (const result of await Promise.all([firstResult, secondResult])) {
-      expect(result).toMatchObject({
-        ok: true,
-        value: { body: { status: "error" } },
-      });
-    }
+    expect(
+      (await callback(firstReconnect.state, provider.issuer)).body.status,
+    ).toBe("error");
+    expect(nestedCallbackStarted).toBeTruthy();
     for (const account of [
       {
         actor: first,
         id: firstAccount.body.connectionId,
         attemptId: firstReconnect.attemptId,
-        connectionStatus: "connected",
-        reconnectReason: null,
+        connectionStatus: "reconnect-required",
+        reconnectReason: "authorization_expired_or_revoked",
       },
       {
         actor: second,

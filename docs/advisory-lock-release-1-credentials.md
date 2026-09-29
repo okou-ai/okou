@@ -64,3 +64,13 @@ replacement token to Google; a successful creation response alone is not the
 assertion. The test no longer requires exactly two watch calls and one stop
 call. DCR's common published client and both usable OAuth callbacks remain
 covered unchanged.
+
+Automatic callback security tests also use provider HTTP boundaries. One rejected
+DCR token exchange performs a real sibling-account replacement before retirement;
+the replacement stays connected. Cross-method exchanges each return a real
+`invalid_client`, so both rejected registrations become unusable rather than
+assuming the old transaction admitted only one provider request. The internal
+account-lock fixture and lock waiter are removed from these cases. A reconnect
+token response deletes its account through the API before returning, and the
+callback must reject publication without recreating that account. Concurrent
+callbacks based on one account revision still allow only one completion receipt.
