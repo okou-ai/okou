@@ -31,6 +31,7 @@ import {
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
+import { isUniqueViolation } from "../../lib/pg-errors";
 import {
   createClerkReadContext,
   type ClerkClient,
@@ -330,6 +331,10 @@ function clerkMembershipIdentity(
     : null;
 }
 
+// Release 1 API compatibility: outgoing purchase writers read state and then
+// update by ID. Keep their lock until they have drained and rollback targets
+// use conditional transitions. Stripe projection ordering remains a separate
+// prerequisite; these local transitions alone do not retire the organization lock.
 async function lockPurchase(
   tx: Pick<WriteTx, "execute">,
   purchaseId: string,
@@ -337,17 +342,6 @@ async function lockPurchase(
   await tx.execute(
     // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
     sql`SELECT pg_advisory_xact_lock(hashtextextended(${`usage_pack_invitation:${purchaseId}`}, 0))`,
-  );
-}
-
-async function lockInvitationEmail(
-  tx: Pick<WriteTx, "execute">,
-  orgId: string,
-  email: string,
-): Promise<void> {
-  await tx.execute(
-    // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-    sql`SELECT pg_advisory_xact_lock(hashtextextended(${`usage_pack_invitation_email:${orgId}:${email}`}, 0))`,
   );
 }
 
@@ -421,7 +415,6 @@ async function insertPendingInvitationPurchase(
   signal: AbortSignal,
 ): Promise<string | null> {
   return await db.transaction(async (tx) => {
-    await lockInvitationEmail(tx, args.orgId, args.email);
     signal.throwIfAborted();
     await tx
       .update(usagePackInvitationPurchases)
@@ -757,56 +750,18 @@ function validateSuccessfulPayment(
   }
 }
 
-async function supersedeCompetingPendingCheckout(
-  tx: WriteTx,
-  purchase: UsagePackInvitationPurchaseRow,
-): Promise<boolean> {
-  const [competing] = await tx
-    .select({
-      id: usagePackInvitationPurchases.id,
-      status: usagePackInvitationPurchases.status,
-    })
-    .from(usagePackInvitationPurchases)
-    .where(
-      and(
-        ne(usagePackInvitationPurchases.id, purchase.id),
-        eq(usagePackInvitationPurchases.orgId, purchase.orgId),
-        eq(
-          usagePackInvitationPurchases.normalizedEmail,
-          purchase.normalizedEmail,
-        ),
-        inArray(
-          usagePackInvitationPurchases.status,
-          OPEN_INVITATION_PURCHASE_STATUSES,
-        ),
-      ),
-    )
-    .limit(1);
-  if (competing?.status === "checkout_pending") {
-    await tx
-      .update(usagePackInvitationPurchases)
-      .set({
-        status: "failed",
-        failureReason: "superseded_by_paid_purchase",
-        updatedAt: nowDate(),
-      })
-      .where(
-        and(
-          eq(usagePackInvitationPurchases.id, competing.id),
-          eq(usagePackInvitationPurchases.status, "checkout_pending"),
-        ),
-      );
-  }
-  return competing !== undefined && competing.status !== "checkout_pending";
-}
-
-async function recordSuccessfulPayment(
+async function persistSuccessfulPayment(
   db: Db,
   args: SuccessfulPaymentArgs,
+  conflictingPurchase: boolean,
 ): Promise<UsagePackInvitationPurchaseRow> {
   return await db.transaction(async (tx) => {
     await lockPurchase(tx, args.purchaseId);
-    const purchase = await loadPurchase(tx, args.purchaseId);
+    const [purchase] = await tx
+      .select()
+      .from(usagePackInvitationPurchases)
+      .where(eq(usagePackInvitationPurchases.id, args.purchaseId))
+      .limit(1);
     if (!purchase) {
       throw new Error(
         `Unknown usage pack invitation purchase ${args.purchaseId}`,
@@ -828,8 +783,47 @@ async function recordSuccessfulPayment(
     ) {
       return purchase;
     }
-    await lockInvitationEmail(tx, purchase.orgId, purchase.normalizedEmail);
-    const superseded = await supersedeCompetingPendingCheckout(tx, purchase);
+    const [competing] = await tx
+      .select({
+        id: usagePackInvitationPurchases.id,
+        status: usagePackInvitationPurchases.status,
+      })
+      .from(usagePackInvitationPurchases)
+      .where(
+        and(
+          ne(usagePackInvitationPurchases.id, purchase.id),
+          eq(usagePackInvitationPurchases.orgId, purchase.orgId),
+          eq(
+            usagePackInvitationPurchases.normalizedEmail,
+            purchase.normalizedEmail,
+          ),
+          inArray(
+            usagePackInvitationPurchases.status,
+            OPEN_INVITATION_PURCHASE_STATUSES,
+          ),
+        ),
+      )
+      .limit(1);
+    let superseded =
+      conflictingPurchase ||
+      (competing !== undefined && competing.status !== "checkout_pending");
+    if (!conflictingPurchase && competing?.status === "checkout_pending") {
+      const [retired] = await tx
+        .update(usagePackInvitationPurchases)
+        .set({
+          status: "failed",
+          failureReason: "superseded_by_paid_purchase",
+          updatedAt: nowDate(),
+        })
+        .where(
+          and(
+            eq(usagePackInvitationPurchases.id, competing.id),
+            eq(usagePackInvitationPurchases.status, "checkout_pending"),
+          ),
+        )
+        .returning({ id: usagePackInvitationPurchases.id });
+      superseded = !retired;
+    }
     const invalidPayment =
       args.amountPaidCents !== purchase.expectedAmountCents ||
       args.paidAt >= purchase.currentPeriodEnd;
@@ -850,13 +844,45 @@ async function recordSuccessfulPayment(
             : null,
         updatedAt: nowDate(),
       })
-      .where(eq(usagePackInvitationPurchases.id, purchase.id))
+      .where(
+        and(
+          eq(usagePackInvitationPurchases.id, purchase.id),
+          inArray(usagePackInvitationPurchases.status, [
+            "checkout_pending",
+            "failed",
+            "payment_succeeded",
+          ]),
+        ),
+      )
       .returning();
     if (!updated) {
       throw new Error("Failed to record invitation payment");
     }
     return updated;
   });
+}
+
+async function recordSuccessfulPayment(
+  db: Db,
+  args: SuccessfulPaymentArgs,
+): Promise<UsagePackInvitationPurchaseRow> {
+  const recorded = await settle(persistSuccessfulPayment(db, args, false));
+  if (recorded.ok) {
+    return recorded.value;
+  }
+  if (
+    !isUniqueViolation(
+      recorded.error,
+      "uq_usage_pack_invitation_purchases_current_email",
+    )
+  ) {
+    throw recorded.error;
+  }
+  // A concurrent paid purchase can fill the email slot after our SELECT. The
+  // unique index picks the winner for both outgoing and current writers. Save
+  // the losing payment's real receipt for the existing refund path; never
+  // retry an active insertion or create a second payable invitation.
+  return await persistSuccessfulPayment(db, args, true);
 }
 
 async function claimInvitationCreation(
@@ -866,23 +892,31 @@ async function claimInvitationCreation(
 ): Promise<UsagePackInvitationPurchaseRow | null> {
   return await db.transaction(async (tx) => {
     await lockPurchase(tx, purchaseId);
-    const purchase = await loadPurchase(tx, purchaseId);
-    if (!purchase || purchase.clerkInvitationId || purchase.allocationId) {
-      return null;
-    }
     const staleBefore = new Date(nowDate().getTime() - RECONCILIATION_DELAY_MS);
-    const canClaim =
-      purchase.status === "payment_succeeded" ||
-      (allowRecovery &&
-        purchase.status === "creating_invitation" &&
-        purchase.updatedAt <= staleBefore);
-    if (!canClaim) {
-      return null;
-    }
     const [claimed] = await tx
       .update(usagePackInvitationPurchases)
       .set({ status: "creating_invitation", updatedAt: nowDate() })
-      .where(eq(usagePackInvitationPurchases.id, purchase.id))
+      .where(
+        and(
+          eq(usagePackInvitationPurchases.id, purchaseId),
+          isNull(usagePackInvitationPurchases.clerkInvitationId),
+          isNull(usagePackInvitationPurchases.allocationId),
+          or(
+            eq(usagePackInvitationPurchases.status, "payment_succeeded"),
+            ...(allowRecovery
+              ? [
+                  and(
+                    eq(
+                      usagePackInvitationPurchases.status,
+                      "creating_invitation",
+                    ),
+                    lte(usagePackInvitationPurchases.updatedAt, staleBefore),
+                  ),
+                ]
+              : []),
+          ),
+        ),
+      )
       .returning();
     return claimed ?? null;
   });
@@ -892,10 +926,15 @@ async function persistInvitation(
   db: Db,
   purchase: UsagePackInvitationPurchaseRow,
   invitationId: string,
-): Promise<void> {
-  await db.transaction(async (tx) => {
+): Promise<boolean> {
+  return await db.transaction(async (tx) => {
     await lockPurchase(tx, purchase.id);
-    const current = await loadPurchase(tx, purchase.id);
+    const [current] = await tx
+      .select()
+      .from(usagePackInvitationPurchases)
+      .where(eq(usagePackInvitationPurchases.id, purchase.id))
+      .for("update")
+      .limit(1);
     if (!current) {
       throw new Error(`Unknown usage pack invitation purchase ${purchase.id}`);
     }
@@ -905,10 +944,13 @@ async function persistInvitation(
           "Invitation purchase resolved a different Clerk invite",
         );
       }
-      return;
+      return true;
     }
-    if (current.status !== "creating_invitation") {
-      return;
+    if (
+      current.status !== "creating_invitation" ||
+      current.updatedAt.getTime() !== purchase.updatedAt.getTime()
+    ) {
+      return false;
     }
     const [inserted] = await tx
       .insert(usagePackAllocations)
@@ -950,13 +992,19 @@ async function persistInvitation(
         status: "invitation_pending",
         updatedAt: nowDate(),
       })
-      .where(eq(usagePackInvitationPurchases.id, current.id));
+      .where(
+        and(
+          eq(usagePackInvitationPurchases.id, current.id),
+          eq(usagePackInvitationPurchases.status, current.status),
+        ),
+      );
+    return true;
   });
 }
 
 async function releaseInvitationCreationClaimAfterReadLimit(
   db: Db,
-  purchaseId: string,
+  purchase: UsagePackInvitationPurchaseRow,
   error: unknown,
 ): Promise<void> {
   if (!(error instanceof BillingClerkReadRateLimitError)) {
@@ -967,7 +1015,8 @@ async function releaseInvitationCreationClaimAfterReadLimit(
     .set({ status: "payment_succeeded", updatedAt: nowDate() })
     .where(
       and(
-        eq(usagePackInvitationPurchases.id, purchaseId),
+        eq(usagePackInvitationPurchases.id, purchase.id),
+        eq(usagePackInvitationPurchases.updatedAt, purchase.updatedAt),
         eq(usagePackInvitationPurchases.status, "creating_invitation"),
         isNull(usagePackInvitationPurchases.clerkInvitationId),
         isNull(usagePackInvitationPurchases.allocationId),
@@ -992,11 +1041,7 @@ async function ensurePaidInvitationCreated(
   const membership = await onRejection(
     membershipForPurchase(clerk, purchase, readContext, signal),
     async (error) => {
-      await releaseInvitationCreationClaimAfterReadLimit(
-        db,
-        purchase.id,
-        error,
-      );
+      await releaseInvitationCreationClaimAfterReadLimit(db, purchase, error);
     },
   );
   if (membership) {
@@ -1020,11 +1065,7 @@ async function ensurePaidInvitationCreated(
       signal,
     ),
     async (error) => {
-      await releaseInvitationCreationClaimAfterReadLimit(
-        db,
-        purchase.id,
-        error,
-      );
+      await releaseInvitationCreationClaimAfterReadLimit(db, purchase, error);
     },
   );
   const existing = pending.find((invitation) => {
@@ -1082,8 +1123,9 @@ async function ensurePaidInvitationCreated(
         getStartedClaimId: rewardClaim.id,
       },
     }));
-  await persistInvitation(db, purchase, invitation.id);
-  await linkGetStartedInvitation(db, rewardClaim.id, invitation.id);
+  if (await persistInvitation(db, purchase, invitation.id)) {
+    await linkGetStartedInvitation(db, rewardClaim.id, invitation.id);
+  }
 }
 
 async function finalizeRefund(
@@ -1093,7 +1135,12 @@ async function finalizeRefund(
 ): Promise<void> {
   await db.transaction(async (tx) => {
     await lockPurchase(tx, purchaseId);
-    const purchase = await loadPurchase(tx, purchaseId);
+    const [purchase] = await tx
+      .select()
+      .from(usagePackInvitationPurchases)
+      .where(eq(usagePackInvitationPurchases.id, purchaseId))
+      .for("update")
+      .limit(1);
     if (!purchase || purchase.status === "refunded") {
       return;
     }
@@ -1112,7 +1159,12 @@ async function finalizeRefund(
         refundedAt: at,
         updatedAt: at,
       })
-      .where(eq(usagePackInvitationPurchases.id, purchase.id));
+      .where(
+        and(
+          eq(usagePackInvitationPurchases.id, purchase.id),
+          eq(usagePackInvitationPurchases.status, purchase.status),
+        ),
+      );
   });
 }
 
@@ -1127,7 +1179,12 @@ async function removeRefundedInvitationProjection(
   await db.transaction(async (tx) => {
     await lockUsagePackBillingOrg(tx, purchase.orgId);
     await lockPurchase(tx, purchase.id);
-    const current = await loadPurchase(tx, purchase.id);
+    const [current] = await tx
+      .select()
+      .from(usagePackInvitationPurchases)
+      .where(eq(usagePackInvitationPurchases.id, purchase.id))
+      .for("update")
+      .limit(1);
     if (!current || current.status === "refunded") {
       return;
     }
@@ -1169,7 +1226,13 @@ async function recordFailedRefund(
       failureReason: `stripe_refund_failed:${refundId}`,
       updatedAt: nowDate(),
     })
-    .where(eq(usagePackInvitationPurchases.id, purchase.id));
+    .where(
+      and(
+        eq(usagePackInvitationPurchases.id, purchase.id),
+        eq(usagePackInvitationPurchases.status, "refunding"),
+        eq(usagePackInvitationPurchases.refundAttempt, purchase.refundAttempt),
+      ),
+    );
 }
 
 async function applyStripeRefundState(
@@ -1192,7 +1255,13 @@ async function applyStripeRefundState(
       stripeRefundId: refund.id,
       updatedAt: nowDate(),
     })
-    .where(eq(usagePackInvitationPurchases.id, purchase.id));
+    .where(
+      and(
+        eq(usagePackInvitationPurchases.id, purchase.id),
+        eq(usagePackInvitationPurchases.status, "refunding"),
+        eq(usagePackInvitationPurchases.refundAttempt, purchase.refundAttempt),
+      ),
+    );
 }
 
 async function refundPurchase(
@@ -1202,23 +1271,26 @@ async function refundPurchase(
 ): Promise<void> {
   const purchase = await db.transaction(async (tx) => {
     await lockPurchase(tx, purchaseId);
-    const current = await loadPurchase(tx, purchaseId);
-    if (!current || current.status === "refunded") {
-      return null;
-    }
     const staleBefore = new Date(nowDate().getTime() - RECONCILIATION_DELAY_MS);
-    const canClaim =
-      current.status === "refund_pending" ||
-      (allowRecovery &&
-        current.status === "refunding" &&
-        current.updatedAt <= staleBefore);
-    if (!canClaim) {
-      return null;
-    }
     const [claimed] = await tx
       .update(usagePackInvitationPurchases)
       .set({ status: "refunding", updatedAt: nowDate() })
-      .where(eq(usagePackInvitationPurchases.id, current.id))
+      .where(
+        and(
+          eq(usagePackInvitationPurchases.id, purchaseId),
+          or(
+            eq(usagePackInvitationPurchases.status, "refund_pending"),
+            ...(allowRecovery
+              ? [
+                  and(
+                    eq(usagePackInvitationPurchases.status, "refunding"),
+                    lte(usagePackInvitationPurchases.updatedAt, staleBefore),
+                  ),
+                ]
+              : []),
+          ),
+        ),
+      )
       .returning();
     return claimed ?? null;
   });
@@ -1945,23 +2017,31 @@ async function activateAcceptedPurchase(
 ): Promise<void> {
   const purchase = await db.transaction(async (tx) => {
     await lockPurchase(tx, purchaseId);
-    const current = await loadPurchase(tx, purchaseId);
-    if (!current || current.status === "accepted") {
-      return null;
-    }
     const staleBefore = new Date(nowDate().getTime() - RECONCILIATION_DELAY_MS);
-    const canClaim =
-      current.status === "accepted_pending_activation" ||
-      (allowRecovery &&
-        current.status === "activating" &&
-        current.updatedAt <= staleBefore);
-    if (!canClaim) {
-      return null;
-    }
     const [claimed] = await tx
       .update(usagePackInvitationPurchases)
       .set({ status: "activating", updatedAt: nowDate() })
-      .where(eq(usagePackInvitationPurchases.id, current.id))
+      .where(
+        and(
+          eq(usagePackInvitationPurchases.id, purchaseId),
+          isNotNull(usagePackInvitationPurchases.acceptedUserId),
+          isNotNull(usagePackInvitationPurchases.allocationId),
+          or(
+            eq(
+              usagePackInvitationPurchases.status,
+              "accepted_pending_activation",
+            ),
+            ...(allowRecovery
+              ? [
+                  and(
+                    eq(usagePackInvitationPurchases.status, "activating"),
+                    lte(usagePackInvitationPurchases.updatedAt, staleBefore),
+                  ),
+                ]
+              : []),
+          ),
+        ),
+      )
       .returning();
     return claimed ?? null;
   });
@@ -1971,7 +2051,12 @@ async function activateAcceptedPurchase(
   await db.transaction(async (tx) => {
     await lockUsagePackBillingOrg(tx, purchase.orgId);
     await lockPurchase(tx, purchase.id);
-    const current = await loadPurchase(tx, purchase.id);
+    const [current] = await tx
+      .select()
+      .from(usagePackInvitationPurchases)
+      .where(eq(usagePackInvitationPurchases.id, purchase.id))
+      .for("update")
+      .limit(1);
     if (!current || current.status === "accepted") {
       return;
     }
@@ -2042,7 +2127,12 @@ async function activateAcceptedPurchase(
     await tx
       .update(usagePackInvitationPurchases)
       .set({ status: "accepted", updatedAt: at })
-      .where(eq(usagePackInvitationPurchases.id, current.id));
+      .where(
+        and(
+          eq(usagePackInvitationPurchases.id, current.id),
+          eq(usagePackInvitationPurchases.status, current.status),
+        ),
+      );
   });
 }
 
@@ -2090,7 +2180,12 @@ async function markLateAcceptanceForRefund(
 ): Promise<boolean> {
   return await db.transaction(async (tx) => {
     await lockPurchase(tx, candidate.id);
-    const current = await loadPurchase(tx, candidate.id);
+    const [current] = await tx
+      .select()
+      .from(usagePackInvitationPurchases)
+      .where(eq(usagePackInvitationPurchases.id, candidate.id))
+      .for("update")
+      .limit(1);
     if (
       !current ||
       !ACCEPTABLE_INVITATION_PURCHASE_STATUSES.has(current.status)
@@ -2106,7 +2201,12 @@ async function markLateAcceptanceForRefund(
         acceptedAt: args.acceptedAt,
         updatedAt: nowDate(),
       })
-      .where(eq(usagePackInvitationPurchases.id, current.id));
+      .where(
+        and(
+          eq(usagePackInvitationPurchases.id, current.id),
+          eq(usagePackInvitationPurchases.status, current.status),
+        ),
+      );
     return true;
   });
 }
@@ -2118,7 +2218,12 @@ async function recordInvitationAcceptance(
 ): Promise<void> {
   await db.transaction(async (tx) => {
     await lockPurchase(tx, candidate.id);
-    const purchase = await loadPurchase(tx, candidate.id);
+    const [purchase] = await tx
+      .select()
+      .from(usagePackInvitationPurchases)
+      .where(eq(usagePackInvitationPurchases.id, candidate.id))
+      .for("update")
+      .limit(1);
     if (!purchase || purchase.status === "accepted") {
       return;
     }
@@ -2156,7 +2261,12 @@ async function recordInvitationAcceptance(
         status: "accepted_pending_activation",
         updatedAt: nowDate(),
       })
-      .where(eq(usagePackInvitationPurchases.id, purchase.id));
+      .where(
+        and(
+          eq(usagePackInvitationPurchases.id, purchase.id),
+          eq(usagePackInvitationPurchases.status, purchase.status),
+        ),
+      );
   });
 }
 
