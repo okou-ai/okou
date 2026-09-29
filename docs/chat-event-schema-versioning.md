@@ -12,8 +12,11 @@ general client rules instead of a per-endpoint negotiation:
 - The Web App is gated by the enforced Web client floor (`X-Client-Version`
   with `426 Upgrade Required`). A schema bump that old App builds cannot read
   raises that floor.
-- CLI artifacts are commit-addressed and live at most about two hours, so they
-  track the current API without a separate version floor.
+- Runs may use a commit-addressed CLI package captured when their execution
+  context was created or a compatible CLI installed in the runner rootfs.
+  Neither necessarily advances with each API deployment. Before adding a
+  persisted kind, inspect the CLI's actual readers and gate or drain any
+  incompatible supported callers rather than assuming a fixed expiry.
 
 Platform and CLI readers still require Snapshot responses to include the
 paired `lastEventId`; they do not reconstruct missing response metadata from
@@ -45,13 +48,18 @@ branch after the last old-writer acceptance plus drain; #37276). Existing
 messages are never inferred or retroactively labeled.
 
 Before activating the writer, verify that the prepared reader is serving from
-every current API/App and history/snapshot path, independently deploy and
+every current API/App and history/snapshot path, and independently deploy and
 verify the Web client floor at `0.982.0` or newer (the first reader-capable App;
-#37277 / PR #37278), and let outstanding old CLI contexts drain through their
-queue, execution and finalization bounds. A
-merged reader PR, newer `main`, or production release tag alone does not prove
-this gate. Older rollback artifacts are expressly unsupported for this change;
-restoring one after source-bearing events exist requires a separate coordinated
+#37277 / PR #37278). Inspect the actual CLI read paths rather than requiring
+a blanket old-context drain: `okou chat messages` validates Raw Event and
+Snapshot rows with `chatEventRowSchema`, whose `payload.userMessage` is opaque;
+other current CLI chat commands do not parse that document's source kind. This
+new MCP part does not require a CLI floor or old-run drain for those paths. If
+an independently supported strict CLI reader is identified, verify its
+compatibility or gate and drain it before activation. A merged reader PR,
+newer `main`, or production release tag alone does not prove the serving gate.
+Older rollback artifacts are expressly unsupported for this change; restoring
+one after source-bearing events exist requires a separate coordinated
 compatibility decision. Do not activate the writer until the current-serving
 compatibility boundary is satisfied.
 
