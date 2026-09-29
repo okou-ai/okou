@@ -51,7 +51,7 @@ export function omittedOrgCreditExpirationQuery(
     .where(
       and(
         expiredOrgCreditsWhere(orgId, at),
-        notInArray(creditExpiresRecord.id, ids),
+        notInArray(creditExpiresRecord.id, [...ids]),
       ),
     )
     .limit(1)
@@ -90,7 +90,7 @@ function orgCreditExpirationSql(
     SELECT ${creditExpiresRecord.id} AS id,
            ${creditExpiresRecord.remaining} AS remaining
     FROM ${creditExpiresRecord}
-    WHERE ${and(expiredOrgCreditsWhere(orgId, at), ids ? inArray(creditExpiresRecord.id, ids) : undefined)}
+    WHERE ${and(expiredOrgCreditsWhere(orgId, at), ids ? inArray(creditExpiresRecord.id, [...ids]) : undefined)}
     ORDER BY ${creditExpiresRecord.expiresAt}, ${creditExpiresRecord.id}
     FOR UPDATE
   ), cleared AS (
