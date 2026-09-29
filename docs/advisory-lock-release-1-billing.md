@@ -46,7 +46,10 @@ The invitation-creation, refund, and acceptance-activation claims use conditiona
 `UPDATE ... RETURNING` over their existing business states. Recovery also checks
 the existing stale-work timestamp. Refund result publication matches the actual
 `refund_attempt`, so an older failed or pending result cannot reopen a completed
-or newer refund. A Clerk read-limit response only releases the claim whose
+or newer refund. Successful completion and projection cleanup also retain the
+claimed refund attempt, so a delayed result cannot finalize a later attempt.
+Invitation expiry matches the creation claim's original timestamp. A Clerk
+read-limit response only releases the claim whose
 existing timestamp it read; a superseded invitation-creation result is not
 published into another claim.
 

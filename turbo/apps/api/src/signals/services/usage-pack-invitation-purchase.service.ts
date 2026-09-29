@@ -1089,6 +1089,7 @@ async function ensurePaidInvitationCreated(
         and(
           eq(usagePackInvitationPurchases.id, purchase.id),
           eq(usagePackInvitationPurchases.status, "creating_invitation"),
+          eq(usagePackInvitationPurchases.updatedAt, purchase.updatedAt),
         ),
       )
       .returning({ id: usagePackInvitationPurchases.id });
@@ -1130,18 +1131,22 @@ async function ensurePaidInvitationCreated(
 
 async function finalizeRefund(
   db: Db,
-  purchaseId: string,
+  claimedPurchase: UsagePackInvitationPurchaseRow,
   refundId: string | null,
 ): Promise<void> {
   await db.transaction(async (tx) => {
-    await lockPurchase(tx, purchaseId);
+    await lockPurchase(tx, claimedPurchase.id);
     const [purchase] = await tx
       .select()
       .from(usagePackInvitationPurchases)
-      .where(eq(usagePackInvitationPurchases.id, purchaseId))
+      .where(eq(usagePackInvitationPurchases.id, claimedPurchase.id))
       .for("update")
       .limit(1);
-    if (!purchase || purchase.status === "refunded") {
+    if (
+      !purchase ||
+      purchase.status !== "refunding" ||
+      purchase.refundAttempt !== claimedPurchase.refundAttempt
+    ) {
       return;
     }
     const at = nowDate();
@@ -1151,7 +1156,7 @@ async function finalizeRefund(
         .set({ status: "inactive", updatedAt: at })
         .where(eq(usagePackAllocations.id, purchase.allocationId));
     }
-    await tx
+    const [refunded] = await tx
       .update(usagePackInvitationPurchases)
       .set({
         status: "refunded",
@@ -1162,9 +1167,17 @@ async function finalizeRefund(
       .where(
         and(
           eq(usagePackInvitationPurchases.id, purchase.id),
-          eq(usagePackInvitationPurchases.status, purchase.status),
+          eq(usagePackInvitationPurchases.status, "refunding"),
+          eq(
+            usagePackInvitationPurchases.refundAttempt,
+            claimedPurchase.refundAttempt,
+          ),
         ),
-      );
+      )
+      .returning({ id: usagePackInvitationPurchases.id });
+    if (!refunded) {
+      throw new Error("Invitation refund changed before local completion");
+    }
   });
 }
 
@@ -1185,7 +1198,12 @@ async function removeRefundedInvitationProjection(
       .where(eq(usagePackInvitationPurchases.id, purchase.id))
       .for("update")
       .limit(1);
-    if (!current || current.status === "refunded") {
+    if (
+      !current ||
+      current.status === "refunded" ||
+      current.refundAttempt !== purchase.refundAttempt ||
+      current.allocationId !== purchase.allocationId
+    ) {
       return;
     }
     if (current.status !== "refunding") {
@@ -1209,7 +1227,7 @@ async function completeSuccessfulRefund(
   refundId: string | null,
 ): Promise<void> {
   await removeRefundedInvitationProjection(db, purchase);
-  await finalizeRefund(db, purchase.id, refundId);
+  await finalizeRefund(db, purchase, refundId);
 }
 
 async function recordFailedRefund(
