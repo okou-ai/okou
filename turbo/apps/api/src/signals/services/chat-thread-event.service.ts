@@ -64,7 +64,6 @@ export class ChatThreadEventIdConflictError extends Error {
 async function insertChatThreadEvent(
   db: ChatThreadEventWriter,
   args: ChatThreadEventAppend,
-  strict: boolean,
 ): Promise<void> {
   let orgId = args.orgId ?? undefined;
   if (orgId === undefined) {
@@ -80,14 +79,11 @@ async function insertChatThreadEvent(
     throw new Error("Unable to resolve org for chat thread event");
   }
 
-  const inserted = await executeRawRows(
+  await executeRawRows(
     db,
     chatThreadEventInsertSql({ ...args, orgId }),
     z.object({ id: z.string().uuid() }),
   );
-  if (strict && inserted.length === 0) {
-    throw new ChatThreadEventIdConflictError();
-  }
 }
 
 /** Pure statement preparation; the owning command executes and commits it. */
@@ -127,15 +123,7 @@ export async function appendChatThreadEvent(
   db: ChatThreadEventWriter,
   args: ChatThreadEventAppend,
 ): Promise<void> {
-  await insertChatThreadEvent(db, args, false);
-}
-
-/** A conflicting event id aborts the caller's transaction instead of dropping projection evidence. */
-export async function appendChatThreadEventStrict(
-  db: ChatThreadEventWriter,
-  args: ChatThreadEventAppend & { readonly eventId: string },
-): Promise<void> {
-  await insertChatThreadEvent(db, args, true);
+  await insertChatThreadEvent(db, args);
 }
 
 /**

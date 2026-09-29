@@ -270,22 +270,14 @@ export function checkOrgPlanRunAdmission(params: {
     : undefined;
 }
 
-/** Admission reads ordinary current balances; financial settlement owns the debit. */
-export const checkOrgCreditsForRunAdmission$ = command(
+/** Read ordinary balances; settlement remains the owner of every debit. */
+export const resolveOrgCreditAvailability$ = command(
   async (
     { set },
-    params: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly modelProviderType: string | null | undefined;
-      readonly selectedModel?: string | null;
-    },
+    params: { readonly orgId: string; readonly userId: string },
     signal?: AbortSignal,
-  ): Promise<RunAdmissionFailure | undefined> => {
+  ): Promise<OrgCreditAvailability | null> => {
     const db = set(writeDb$);
-    if (getRunModelAccess(params.selectedModel) === "retired") {
-      return badRequestMessage(RETIRED_RUN_MODEL_MESSAGE);
-    }
     const at = nowDate();
     const expired = db
       .select({
@@ -331,26 +323,95 @@ export const checkOrgCreditsForRunAdmission$ = command(
       .limit(1);
     signal?.throwIfAborted();
     if (!balance || balance.credits === null) {
-      return insufficientCredits();
+      return null;
     }
     const capabilities = await set(
       loadOrgPlanCapabilities$,
       params.orgId,
       signal,
     );
+    signal?.throwIfAborted();
+    return capabilities
+      ? {
+          status: capabilities.status,
+          supportByok: capabilities.supportByok,
+          restrictedBuiltInModels: capabilities.restrictedBuiltInModels,
+          spendableCredits: balance.credits - balance.expired,
+          usagePackCredits: balance.purchased,
+        }
+      : null;
+  },
+);
+
+export const resolveActiveRunCreditAdmission$ = command(
+  async (
+    { set },
+    params: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly runId?: string;
+    },
+    signal?: AbortSignal,
+  ) => {
+    if (!params.runId) {
+      return false;
+    }
+    const db = set(writeDb$);
+    const [run] = await db
+      .select({
+        status: agentRuns.status,
+        creditAdmitted: agentRuns.creditAdmitted,
+      })
+      .from(agentRuns)
+      .where(
+        and(
+          eq(agentRuns.id, params.runId),
+          eq(agentRuns.orgId, params.orgId),
+          eq(agentRuns.userId, params.userId),
+        ),
+      )
+      .limit(1);
+    signal?.throwIfAborted();
+    return run !== undefined && runHasActiveCreditAdmission(run);
+  },
+);
+
+/** Admission prepares bounded allowance state before the launch transaction. */
+export const checkOrgCreditsForRunAdmission$ = command(
+  async (
+    { set },
+    params: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly modelProviderType: string | null | undefined;
+      readonly selectedModel?: string | null;
+    },
+    signal?: AbortSignal,
+  ): Promise<RunAdmissionFailure | undefined> => {
+    if (getRunModelAccess(params.selectedModel) === "retired") {
+      return badRequestMessage(RETIRED_RUN_MODEL_MESSAGE);
+    }
+    const availability = await set(
+      resolveOrgCreditAvailability$,
+      { orgId: params.orgId, userId: params.userId },
+      signal,
+    );
+    signal?.throwIfAborted();
+    if (!availability) {
+      return insufficientCredits();
+    }
     const denied = checkOrgPlanRunAdmission({
-      capabilities,
+      capabilities: availability,
       modelProviderType: params.modelProviderType,
       selectedModel: params.selectedModel,
     });
     if (denied) {
       return denied;
     }
-    signal?.throwIfAborted();
     if (
       !isBuiltInModelProviderType(params.modelProviderType) ||
-      balance.purchased > 0 ||
-      balance.credits - balance.expired > 0
+      availability.usagePackCredits > 0 ||
+      availability.spendableCredits > 0
     ) {
       return undefined;
     }

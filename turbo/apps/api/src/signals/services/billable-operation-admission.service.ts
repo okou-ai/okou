@@ -1,10 +1,9 @@
 import { command } from "ccstate";
 
-import { writeDb$ } from "../external/db";
 import { resolveUsageAllowanceAvailability$ } from "./usage-allowance-availability.service";
 import {
-  resolveActiveRunCreditAdmission,
-  resolveOrgCreditAvailability,
+  resolveActiveRunCreditAdmission$,
+  resolveOrgCreditAvailability$,
 } from "./run-admission.service";
 
 export const checkBillableOperationCredits$ = command(
@@ -17,23 +16,28 @@ export const checkBillableOperationCredits$ = command(
     },
     signal: AbortSignal,
   ): Promise<boolean> => {
-    const writeDb = set(writeDb$);
-    const availability = await resolveOrgCreditAvailability({
-      db: writeDb,
-      orgId: args.orgId,
-      userId: args.userId,
-    });
+    const availability = await set(
+      resolveOrgCreditAvailability$,
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+      },
+      signal,
+    );
     signal.throwIfAborted();
 
     if (!availability || availability.status !== "active") {
       return false;
     }
-    const activeRunAdmission = await resolveActiveRunCreditAdmission({
-      db: writeDb,
-      runId: args.runId,
-      orgId: args.orgId,
-      userId: args.userId,
-    });
+    const activeRunAdmission = await set(
+      resolveActiveRunCreditAdmission$,
+      {
+        runId: args.runId,
+        orgId: args.orgId,
+        userId: args.userId,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     if (activeRunAdmission) {
       return true;

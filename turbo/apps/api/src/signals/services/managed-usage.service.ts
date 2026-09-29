@@ -18,6 +18,8 @@ import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { usagePricing } from "@okouai/db/schema/usage-pricing";
+import { usagePackCreditGrants } from "@okouai/db/schema/usage-pack-credit-grant";
+import { nowDate } from "../../lib/time";
 import { command } from "ccstate";
 import { and, eq, gt, lte, sql, sum } from "drizzle-orm";
 
@@ -33,8 +35,14 @@ import {
 } from "../context/usage-pricing-resolution";
 import { writeDb$, type Db } from "../external/db";
 import { processUsageEventKeys$ } from "./credit-usage.service";
-import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
-import { resolveActiveRunCreditAdmission } from "./run-admission.service";
+import {
+  loadOrgPlanCapabilities,
+  loadOrgPlanCapabilities$,
+} from "./org-plan-entitlement-read.service";
+import {
+  resolveActiveRunCreditAdmission,
+  resolveActiveRunCreditAdmission$,
+} from "./run-admission.service";
 import { readUsageAllowanceAvailabilitySnapshot } from "./usage-allowance.service";
 import { getSpendableUsagePackCredits } from "./usage-pack-credit.service";
 
@@ -238,14 +246,141 @@ export async function checkManagedCreditsSnapshotInDb(
     : insufficientCredits();
 }
 
+const checkManagedCreditBalance$ = command(
+  async (
+    { set },
+    args: ManagedUsageCreditCheckArgs,
+    pricingResolution: UsagePricingResolution,
+    signal: AbortSignal,
+  ): Promise<
+    ManagedUsageErrorResponse | ManagedUsageUncoveredBalance | null
+  > => {
+    const writeDb = set(writeDb$);
+    const pricingProvider = resolveUsagePricingProvider(
+      pricingResolution,
+      args.resource.kind,
+      args.resource.provider,
+    );
+    const expired = writeDb.$with("expired").as(
+      writeDb
+        .select({
+          total: sql`COALESCE(${sum(creditExpiresRecord.remaining)}, 0)::bigint`
+            .mapWith(pgInt8ToBigIntDecoder)
+            .as("expired_total"),
+        })
+        .from(creditExpiresRecord)
+        .where(
+          and(
+            eq(creditExpiresRecord.orgId, args.orgId),
+            lte(creditExpiresRecord.expiresAt, sql`now()`),
+            gt(creditExpiresRecord.remaining, sql`0`),
+          ),
+        ),
+    );
+    const rows = await writeDb
+      .with(expired)
+      .select({
+        credits: sql`${orgMetadata.credits}`.mapWith(
+          nullableDriverValueDecoder(pgInt8ToBigIntDecoder),
+        ),
+        unsettledExpired: expired.total,
+        unitPrice: sql`${usagePricing.unitPrice}`.mapWith(
+          nullableDriverValueDecoder(pgInt8ToBigIntDecoder),
+        ),
+        unitSize: sql`${usagePricing.unitSize}`.mapWith(
+          nullableDriverValueDecoder(pgInt8ToBigIntDecoder),
+        ),
+      })
+      .from(expired)
+      .leftJoin(orgMetadata, eq(orgMetadata.orgId, args.orgId))
+      .leftJoin(
+        usagePricing,
+        and(
+          eq(usagePricing.kind, args.resource.kind),
+          eq(usagePricing.provider, pricingProvider),
+          eq(usagePricing.category, args.resource.category),
+        ),
+      );
+    signal.throwIfAborted();
+
+    const row = rows[0];
+    if (row?.unitPrice === null || row?.unitSize === null) {
+      return pricingNotConfigured(args.label);
+    }
+
+    if (!row || row.credits === null) {
+      return insufficientCredits();
+    }
+
+    const credits = row.credits;
+    const quantity = args.resource.quantity ?? 1;
+    const requiredCredits =
+      estimatedCredits(row.unitPrice, row.unitSize, quantity) +
+      BigInt(args.reservedCredits ?? 0);
+    const capabilities = await set(
+      loadOrgPlanCapabilities$,
+      args.orgId,
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!capabilities || capabilities.status !== "active") {
+      return insufficientCredits();
+    }
+    const activeRunAdmission = await set(
+      resolveActiveRunCreditAdmission$,
+      {
+        runId: args.runId,
+        orgId: args.orgId,
+        userId: args.userId,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (activeRunAdmission && !args.enforceBalance) {
+      return null;
+    }
+    const spendableCredits = credits - row.unsettledExpired;
+    const [memberCredits] = await writeDb
+      .select({
+        total:
+          sql`COALESCE(SUM(${usagePackCreditGrants.remainingAmount}), 0)::bigint`.mapWith(
+            pgInt8ToBigIntDecoder,
+          ),
+      })
+      .from(usagePackCreditGrants)
+      .where(
+        and(
+          eq(usagePackCreditGrants.orgId, args.orgId),
+          eq(usagePackCreditGrants.userId, args.userId),
+          gt(usagePackCreditGrants.expiresAt, nowDate()),
+          gt(usagePackCreditGrants.remainingAmount, 0),
+        ),
+      );
+    signal.throwIfAborted();
+    const usagePackCredits = memberCredits?.total ?? 0n;
+    if (
+      usagePackCredits + (spendableCredits > 0n ? spendableCredits : 0n) >=
+      requiredCredits
+    ) {
+      return null;
+    }
+
+    return {
+      requiredCredits,
+      spendableCredits:
+        usagePackCredits + (spendableCredits > 0n ? spendableCredits : 0n),
+    };
+  },
+);
+
 export const checkManagedCredits$ = command(
   async (
     { get, set },
     args: ManagedUsageCreditCheckArgs,
     signal: AbortSignal,
   ): Promise<ManagedUsageErrorResponse | null> => {
-    const balance = await checkManagedCreditBalance(
-      set(writeDb$),
+    const balance = await set(
+      checkManagedCreditBalance$,
       args,
       get(usagePricingResolution$),
       signal,

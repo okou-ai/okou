@@ -151,3 +151,28 @@ ownership change does not remove or weaken those assertions. Scoped lint and
 formatting pass. The isolated worktree's core type check currently fails only
 at other caller migrations to the new model command exports; the combined
 HEAD must pass types and behavior checks in the main PR pipeline.
+
+## Chat metadata and MCP publication
+
+`updateChatThreadMetadata$` prepares model selection after an owned-thread check,
+then `commitMetadata$` directly owns the current thread row, validates the existing
+mutation receipt, updates metadata, and appends at most three ordered thread events
+in one finite transaction. A matching accepted mutation is replayed before a now
+unavailable model can reject it. The event statement builder receives only ordinary
+values; sequence allocation and event insertion remain in the same commit.
+
+MCP creation now prepares the model and member defaults before publication. Its
+own command directly checks the selected Agent, inserts the request-ID thread and
+its exact creation event, and commits them together. A conflicting request ID is
+read back under the existing principal, identity and 24-hour retry rules. Thread
+and event readback share one finite read snapshot; model response projection runs
+after that snapshot commits. MCP thread list/get commands own their finite reads,
+and model projection uses ordinary route snapshots. No helper receives their
+`Db` or transaction. Realtime remains after the publication commit.
+
+Direct chat input and queued-run model preparation now invoke the same commands
+without supplying a database. Credit admission on this model path uses owned
+balance reads and the bounded allowance-availability command. The broader direct
+send queue callback, launch/producer graph and other legacy credit-admission
+callers still require their own ownership migration; this section does not mark
+those paths complete.
