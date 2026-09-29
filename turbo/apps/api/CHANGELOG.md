@@ -8,6 +8,23 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.695.1](https://github.com/okou-ai/okou/compare/api-v1.695.0...api-v1.695.1) (2026-09-29)
+
+
+### Refactoring
+
+* **api:** remove redundant stale slot release transaction ([#37308](https://github.com/okou-ai/okou/issues/37308)) ([dfe37c1](https://github.com/okou-ai/okou/commit/dfe37c15a1e09d0066fefe0cc616c0d49794cee7))
+* remove morning brief, chat link, and figma feature switches ([#37309](https://github.com/okou-ai/okou/issues/37309)) ([5b862cc](https://github.com/okou-ai/okou/commit/5b862cc3ec791e4b10dcbdfa6e64b98fd10d7611))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.720.2
+    * @okouai/db bumped to 1.313.1
+    * @okouai/pi-agent-runtime bumped to 1.41.5
+
 ## [1.695.0](https://github.com/okou-ai/okou/compare/api-v1.694.0...api-v1.695.0) (2026-09-29)
 
 

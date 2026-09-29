@@ -1,5 +1,20 @@
 # Changelog
 
+## [9.373.2](https://github.com/okou-ai/okou/compare/cli-v9.373.1...cli-v9.373.2) (2026-09-29)
+
+
+### Bug Fixes
+
+* **cli:** include markdown link in chat get output ([#37302](https://github.com/okou-ai/okou/issues/37302)) ([669e3ca](https://github.com/okou-ai/okou/commit/669e3ca5a281142c2408448e523da70cc67d341c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/core bumped to 8.720.2
+    * @okouai/pi-agent-runtime bumped to 1.41.5
+
 ## [9.373.1](https://github.com/okou-ai/okou/compare/cli-v9.373.0...cli-v9.373.1) (2026-09-29)
 
 
