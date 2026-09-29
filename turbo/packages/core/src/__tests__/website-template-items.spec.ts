@@ -108,10 +108,8 @@ describe("website template items", () => {
       slug: "black-slabs",
       title: "Black Slabs",
       templateId: "template:black-slabs",
-      resourceId: "template:black-slabs",
       previewImageUrl:
         "https://static.vm0.io/vm0/artifact-templates/website/website-studio-v2-20260727-ccff774/black-slabs-preview-960x540.webp",
-      sourcePath: "black-slabs",
     });
   });
 
@@ -132,13 +130,12 @@ describe("website template items", () => {
     }
   });
 
-  it("resolves picker, slug, template, and resource identifiers", () => {
+  it("resolves picker, slug, and template identifiers", () => {
     const item = WEBSITE_TEMPLATE_ITEMS[0]!;
 
     expect(findWebsiteTemplateItem(item.id)).toBe(item);
     expect(findWebsiteTemplateItem(item.slug)).toBe(item);
     expect(findWebsiteTemplateItem(item.templateId)).toBe(item);
-    expect(findWebsiteTemplateItem(item.resourceId)).toBe(item);
     expect(findWebsiteTemplateItem("template:web-prototype")).toBeUndefined();
   });
 
@@ -201,25 +198,25 @@ describe("website template items", () => {
       const pkg = findWebsiteTemplatePackage(item.templateId);
       expect(pkg).toMatchObject({
         templateId: item.templateId,
-        resourceId: item.resourceId,
-        slug: item.sourcePath,
+        resourceId: item.templateId,
+        slug: item.slug,
         name: item.title,
         description: item.description,
         source: {
-          path: item.sourcePath,
+          path: item.slug,
           archive: {
             type: "tar.gz",
             sha256: EXPECTED_WEBSITE_TEMPLATE_SHA256[item.slug],
           },
         },
       });
-      expect(findWebsiteTemplateResource(item.resourceId)).toEqual(
+      expect(findWebsiteTemplateResource(item.templateId)).toEqual(
         expect.objectContaining({
-          id: item.resourceId,
+          id: item.templateId,
           kind: "template",
           targets: ["website"],
           source: expect.objectContaining({
-            path: item.sourcePath,
+            path: item.slug,
             archive: expect.objectContaining({ type: "tar.gz" }),
           }),
         }),
@@ -229,15 +226,15 @@ describe("website template items", () => {
 
   it("keeps all v2 packages additive to the picker catalog", () => {
     for (const item of WEBSITE_TEMPLATE_ITEMS) {
-      const resourceId = `${item.resourceId}-v2`;
+      const resourceId = `${item.templateId}-v2`;
       const pkg = findWebsiteTemplatePackage(resourceId);
 
       expect(pkg).toMatchObject({
         templateId: `${item.templateId}-v2`,
         resourceId,
-        slug: item.sourcePath,
+        slug: item.slug,
         source: {
-          path: item.sourcePath,
+          path: item.slug,
           archive: {
             type: "tar.gz",
             sha256: EXPECTED_WEBSITE_TEMPLATE_V2_SHA256[item.slug],
@@ -286,7 +283,7 @@ describe("website template items", () => {
           kind: "template",
           targets: ["website"],
           source: expect.objectContaining({
-            path: item.sourcePath,
+            path: item.slug,
             archive: expect.objectContaining({ type: "tar.gz" }),
           }),
         }),

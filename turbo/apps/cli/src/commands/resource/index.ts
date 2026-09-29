@@ -13,7 +13,6 @@ import {
   findImageStyle,
   findPresentationReverseTemplateResource,
   findPresentationRunbookResource,
-  findTool,
   findTemplate,
   findWebsiteTemplateResource,
   type RegistryEntry,
@@ -37,7 +36,6 @@ function candidateIds(id: string): readonly string[] {
     `template:${id}`,
     `design-system:${id}`,
     `color-system:${id}`,
-    `tool:${id}`,
     `image-style:${id}`,
   ];
 }
@@ -50,7 +48,6 @@ export function findRegistryResourceForPull(
       findTemplate(candidate) ??
       findDesignSystem(candidate) ??
       findColorSystem(candidate) ??
-      findTool(candidate) ??
       findImageStyle(candidate) ??
       findPresentationReverseTemplateResource(candidate) ??
       findPresentationRunbookResource(candidate) ??

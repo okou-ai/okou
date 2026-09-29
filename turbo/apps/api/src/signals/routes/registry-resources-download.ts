@@ -8,7 +8,6 @@ import {
   findPresentationRunbookResource,
   findSkill,
   findTemplate,
-  findTool,
   findWebsiteTemplateResource,
   type RegistryEntry,
 } from "@okouai/core/resource-registry";
@@ -244,7 +243,6 @@ export function resolvePrivateRegistryResourceArchive(
 function findRegistryResource(id: string): RegistryEntry | undefined {
   return (
     findSkill(id) ??
-    findTool(id) ??
     findTemplate(id) ??
     findDesignSystem(id) ??
     findColorSystem(id) ??

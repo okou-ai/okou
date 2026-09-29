@@ -44,7 +44,7 @@ import {
 import {
   builtInGenerationRequestWithInternal,
   completeBuiltInGenerationJob$,
-  createBuiltInGenerationJob$,
+  createImageGenerationJob$,
   failBuiltInGenerationJob$,
   markBuiltInGenerationRunning$,
   mergeBuiltInGenerationJobInternal$,
@@ -534,10 +534,9 @@ const postImageInner$ = command(
     }
 
     const { privateArtifacts } = await set(
-      createBuiltInGenerationJob$,
+      createImageGenerationJob$,
       {
         generationId,
-        type: "image",
         orgId: auth.orgId,
         privateArtifacts: requiredPrivateArtifacts,
         userId: auth.userId,

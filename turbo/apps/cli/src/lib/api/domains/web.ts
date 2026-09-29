@@ -22,14 +22,21 @@ import { assertPrivateArtifactUrl } from "../../artifact-url";
 import { getPlatformOrigin } from "../../platform-url";
 import { downloadHostedSiteFiles } from "../../host/clone-hosted-site";
 
-const BUILT_IN_GENERATION_POLL_INTERVAL_MS = 2_000;
-const BUILT_IN_GENERATION_WAIT_TIMEOUT_MS_BY_TYPE = {
-  image: 15 * 60 * 1000,
-  video: 30 * 60 * 1000,
-  presentation: 60 * 60 * 1000,
-  website: 60 * 60 * 1000,
-} as const satisfies Record<BuiltInGenerationAcceptedResponse["type"], number>;
+const IMAGE_GENERATION_POLL_INTERVAL_MS = 2_000;
+const IMAGE_GENERATION_WAIT_TIMEOUT_MS = 15 * 60 * 1000;
 const ABLY_CONNECT_TIMEOUT_MS = 10_000;
+
+type ImageGenerationAcceptedResponse = BuiltInGenerationAcceptedResponse & {
+  readonly type: "image";
+};
+
+type ImageGenerationResponse = Omit<
+  BuiltInGenerationResponse,
+  "type" | "result"
+> & {
+  readonly type: "image";
+  readonly result?: GenerateWebImageResult;
+};
 
 /**
  * Known extension → MIME map for accurate upload metadata. Unknown extensions
@@ -387,30 +394,27 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isBuiltInGenerationAcceptedResponse(
+function isImageGenerationAcceptedResponse(
   value: unknown,
-): value is BuiltInGenerationAcceptedResponse {
+): value is ImageGenerationAcceptedResponse {
   if (!isRecord(value)) {
     return false;
   }
   return (
     typeof value.generationId === "string" &&
     value.status === "queued" &&
-    (value.type === "image" ||
-      value.type === "video" ||
-      value.type === "presentation" ||
-      value.type === "website") &&
+    value.type === "image" &&
     isRecord(value.realtime)
   );
 }
 
-interface BuiltInGenerationNotifier {
+interface ImageGenerationNotifier {
   wait(timeoutMs: number): Promise<void>;
   close(): void;
 }
 
-function createBuiltInGenerationRealtime(
-  accepted: BuiltInGenerationAcceptedResponse,
+function createImageGenerationRealtime(
+  accepted: ImageGenerationAcceptedResponse,
 ): Realtime {
   let nextAuthRequest = accepted.realtime.tokenRequest;
   const authCallback: NonNullable<AuthOptions["authCallback"]> = (
@@ -461,10 +465,10 @@ function waitForRealtimeConnected(
   });
 }
 
-async function createBuiltInGenerationNotifier(
-  accepted: BuiltInGenerationAcceptedResponse,
-): Promise<BuiltInGenerationNotifier | null> {
-  const ably = createBuiltInGenerationRealtime(accepted);
+async function createImageGenerationNotifier(
+  accepted: ImageGenerationAcceptedResponse,
+): Promise<ImageGenerationNotifier | null> {
+  const ably = createImageGenerationRealtime(accepted);
 
   try {
     await waitForRealtimeConnected(ably);
@@ -525,11 +529,11 @@ async function createBuiltInGenerationNotifier(
   }
 }
 
-async function getBuiltInGenerationStatus(
+async function getImageGenerationStatus(
   baseUrl: string,
   token: string,
   generationId: string,
-): Promise<BuiltInGenerationResponse> {
+): Promise<ImageGenerationResponse> {
   const response = await fetch(
     new URL(`/api/built-in-generations/${generationId}`, baseUrl),
     { headers: authenticatedJsonHeaders(token) },
@@ -543,13 +547,13 @@ async function getBuiltInGenerationStatus(
     throw new ApiRequestError(message, code, response.status);
   }
 
-  return (await response.json()) as BuiltInGenerationResponse;
+  return (await response.json()) as ImageGenerationResponse;
 }
 
-function readBuiltInGenerationResult<T>(
-  status: BuiltInGenerationResponse,
+function readImageGenerationResult(
+  status: ImageGenerationResponse,
   fallback: string,
-): T | undefined {
+): GenerateWebImageResult | undefined {
   if (status.status === "completed") {
     if (!status.result) {
       throw new ApiRequestError(
@@ -558,7 +562,7 @@ function readBuiltInGenerationResult<T>(
         502,
       );
     }
-    return status.result as T;
+    return status.result;
   }
 
   if (status.status === "failed") {
@@ -615,35 +619,34 @@ function statusForBuiltInGenerationError(code: string): number {
   return 500;
 }
 
-async function waitForBuiltInGenerationResult<T>(args: {
-  readonly accepted: BuiltInGenerationAcceptedResponse;
+async function waitForImageGenerationResult(args: {
+  readonly accepted: ImageGenerationAcceptedResponse;
   readonly baseUrl: string;
   readonly token: string;
   readonly fallback: string;
-}): Promise<T> {
-  let notifier: BuiltInGenerationNotifier | null = null;
+}): Promise<GenerateWebImageResult> {
+  let notifier: ImageGenerationNotifier | null = null;
   let notifierCreated = false;
   const startedAt = Date.now();
-  const timeoutMs =
-    BUILT_IN_GENERATION_WAIT_TIMEOUT_MS_BY_TYPE[args.accepted.type];
+  const timeoutMs = IMAGE_GENERATION_WAIT_TIMEOUT_MS;
 
   try {
     while (Date.now() - startedAt < timeoutMs) {
-      const status = await getBuiltInGenerationStatus(
+      const status = await getImageGenerationStatus(
         args.baseUrl,
         args.token,
         args.accepted.generationId,
       );
-      const result = readBuiltInGenerationResult<T>(status, args.fallback);
+      const result = readImageGenerationResult(status, args.fallback);
       if (result) {
         return result;
       }
 
       const elapsed = Date.now() - startedAt;
       const remaining = timeoutMs - elapsed;
-      const waitMs = Math.min(BUILT_IN_GENERATION_POLL_INTERVAL_MS, remaining);
+      const waitMs = Math.min(IMAGE_GENERATION_POLL_INTERVAL_MS, remaining);
       if (!notifierCreated) {
-        notifier = await createBuiltInGenerationNotifier(args.accepted);
+        notifier = await createImageGenerationNotifier(args.accepted);
         notifierCreated = true;
       }
       if (notifier) {
@@ -663,17 +666,15 @@ async function waitForBuiltInGenerationResult<T>(args: {
   );
 }
 
-async function readBuiltInGenerationResponse<
-  T extends { readonly url: string },
->(args: {
+async function readImageGenerationResponse(args: {
   readonly response: Response;
   readonly baseUrl: string;
   readonly token: string;
   readonly fallback: string;
-}): Promise<T> {
+}): Promise<GenerateWebImageResult> {
   const body: unknown = await args.response.json();
-  if (isBuiltInGenerationAcceptedResponse(body)) {
-    const result = await waitForBuiltInGenerationResult<T>({
+  if (isImageGenerationAcceptedResponse(body)) {
+    const result = await waitForImageGenerationResult({
       accepted: body,
       baseUrl: args.baseUrl,
       token: args.token,
@@ -688,7 +689,7 @@ async function readBuiltInGenerationResponse<
       502,
     );
   }
-  return body as T;
+  return body as GenerateWebImageResult;
 }
 
 /**
@@ -895,7 +896,7 @@ export async function generateWebImage(
     throw new ApiRequestError(message, code, response.status);
   }
 
-  return readBuiltInGenerationResponse<GenerateWebImageResult>({
+  return readImageGenerationResponse({
     response,
     baseUrl,
     token,

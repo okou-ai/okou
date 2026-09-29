@@ -19,6 +19,7 @@ import { badRequestMessage } from "../../lib/error";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import {
+  checkTemplatePages,
   loadTemplatePackage$,
   resolveTemplateUploads$,
   type ResolvedUpload,
@@ -51,28 +52,6 @@ function checkSource(
   }
   if (source.sizeBytes > MAX_USER_TEMPLATE_SOURCE_BYTES) {
     return `The source file must be ${MAX_USER_TEMPLATE_SOURCE_BYTES.toString()} bytes or smaller`;
-  }
-  return null;
-}
-
-function checkPages(pages: readonly ResolvedUpload[]): string | null {
-  const wrongType = pages.findIndex((page) => {
-    return page.contentType !== USER_TEMPLATE_PAGE_CONTENT_TYPE;
-  });
-  if (wrongType !== -1) {
-    return `Page ${(wrongType + 1).toString()} must be a ${USER_TEMPLATE_PAGE_CONTENT_TYPE}`;
-  }
-  const oversized = pages.findIndex((page) => {
-    return page.sizeBytes > MAX_USER_TEMPLATE_PAGE_BYTES;
-  });
-  if (oversized !== -1) {
-    return `Page ${(oversized + 1).toString()} must be no larger than ${MAX_USER_TEMPLATE_PAGE_BYTES.toString()} bytes`;
-  }
-  const total = pages.reduce((sum, page) => {
-    return sum + page.sizeBytes;
-  }, 0);
-  if (total > MAX_USER_TEMPLATE_TOTAL_PAGE_BYTES) {
-    return `Page images must total ${MAX_USER_TEMPLATE_TOTAL_PAGE_BYTES.toString()} bytes or fewer`;
   }
   return null;
 }
@@ -124,7 +103,11 @@ function checkPagesFor(
 ): string | null {
   switch (kind) {
     case "presentation": {
-      return checkPages(pages);
+      return checkTemplatePages(pages, {
+        contentType: USER_TEMPLATE_PAGE_CONTENT_TYPE,
+        maxPageBytes: MAX_USER_TEMPLATE_PAGE_BYTES,
+        maxTotalBytes: MAX_USER_TEMPLATE_TOTAL_PAGE_BYTES,
+      });
     }
     case "document":
     case "illustration": {
@@ -294,9 +277,7 @@ export const publishUserTemplate$ = command(
       {
         orgId: args.orgId,
         storageName: getUserTemplateStorageName(created.id),
-        files: packageResult.files.map((file) => {
-          return { path: file.path, content: file.content };
-        }),
+        files: packageResult.files,
       },
       signal,
     );
