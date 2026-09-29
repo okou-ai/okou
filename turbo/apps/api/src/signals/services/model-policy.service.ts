@@ -1,14 +1,16 @@
 import { createHash } from "node:crypto";
 import { FeatureSwitchKey, isFeatureEnabled } from "@okouai/core";
 import type { OnboardingSubscriptionProvider } from "@okouai/api-contracts/contracts/onboarding";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
+import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import {
   builtInModelKeyIdsByVendor$,
-  resolveBuiltInModelRuntimeRouteWithKeys,
+  resolveBuiltInModelRuntimeRouteWithKeys$,
+  type BuiltInModelRuntimeRoute,
   type BuiltInModelKeyIdsByVendor,
 } from "./built-in-model-runtime-route.service";
 import {
-  loadMemberModelRouteContext,
+  loadModelRouteSources$,
+  type ModelRouteSources,
   resolveEffectivePolicyRoute,
   type ResolvedModelFirstPolicyRoute,
 } from "./effective-model-route.service";
@@ -60,10 +62,11 @@ import {
   paidPlanRequired,
 } from "../../lib/error";
 import { nowDate } from "../../lib/time";
-import { writeDb$, type Db } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import {
-  loadOrgPlanCapabilities,
+  loadOrgPlanCapabilities$,
+  orgPlanCapabilitiesFromRow,
   runtimeStatusForEntitlement,
   type OrgPlanCapabilities,
 } from "./org-plan-entitlement-read.service";
@@ -189,79 +192,6 @@ function parseCredentialScope(
   return value === "org" || value === "member" ? value : null;
 }
 
-function loadRows(
-  db: Db,
-  orgId: string,
-  allModels = false,
-): Promise<OrgModelPolicyRow[]> {
-  return db
-    .select({
-      id: orgModelPolicies.id,
-      orgId: orgModelPolicies.orgId,
-      model: orgModelPolicies.model,
-      isDefault: orgModelPolicies.isDefault,
-      defaultProviderType: orgModelPolicies.defaultProviderType,
-      credentialScope: orgModelPolicies.credentialScope,
-      modelProviderId: orgModelPolicies.modelProviderId,
-      modelProviderSurfaceId: orgModelPolicies.modelProviderSurfaceId,
-      createdByUserId: orgModelPolicies.createdByUserId,
-      updatedByUserId: orgModelPolicies.updatedByUserId,
-      createdAt: orgModelPolicies.createdAt,
-      updatedAt: orgModelPolicies.updatedAt,
-    })
-    .from(orgModelPolicies)
-    .where(
-      and(
-        eq(orgModelPolicies.orgId, orgId),
-        allModels
-          ? undefined
-          : inArray(orgModelPolicies.model, [...ACTIVE_RUN_MODELS]),
-      ),
-    );
-}
-
-// Seeds/repaired defaults and replacement writes share one organization-local
-// fence. Normal selection reads take no lock when no repair is needed.
-async function lockPolicyWrites(
-  db: Db,
-  orgId: string,
-  userId: string,
-): Promise<{ readonly initializeSeed: boolean }> {
-  await db.execute(modelPolicyWriterLockSql(orgId));
-
-  const before = await loadRows(db, orgId, true);
-  let initializeSeed = false;
-  if (before.length === 0) {
-    // The existing partial UNIQUE default slot arbitrates an empty policy set.
-    // Insert just its real default row: inserting the entire seed could add
-    // unwanted models after a concurrent writer replaces that seed.
-    const [inserted] = await db
-      .insert(orgModelPolicies)
-      .values(policySeedValues(orgId, userId))
-      .onConflictDoNothing()
-      .returning({ id: orgModelPolicies.id });
-    initializeSeed = inserted !== undefined;
-  }
-
-  // A writer may replace every row while this SELECT waits. Compare against a
-  // fresh statement before accepting ownership of the complete current set.
-  // R1's legacy key remains until every supported writer uses this protocol.
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const lockedIds = await lockPolicyParents(db, orgId);
-    const current = await loadRows(db, orgId, true);
-    if (
-      current.length > 0 &&
-      current.length === lockedIds.size &&
-      current.every((row) => {
-        return lockedIds.has(row.id);
-      })
-    ) {
-      return { initializeSeed };
-    }
-  }
-  throw new Error("Model policies changed concurrently; retry the operation");
-}
-
 function policyRevision(rows: readonly OrgModelPolicyRow[]): string {
   return createHash("sha256")
     .update(
@@ -274,49 +204,6 @@ function policyRevision(rows: readonly OrgModelPolicyRow[]): string {
     .digest("hex");
 }
 
-async function lockPolicyParents(db: Db, orgId: string): Promise<Set<string>> {
-  // Parent rows precede child policy rows. This also fences FK SET NULL from
-  // provider/surface deletion without acquiring A's credential lifecycle lock.
-  await db
-    .select({ id: modelProviders.id })
-    .from(modelProviders)
-    .where(
-      and(
-        eq(modelProviders.orgId, orgId),
-        eq(modelProviders.userId, ORG_SENTINEL_USER_ID),
-      ),
-    )
-    .orderBy(asc(modelProviders.id))
-    .for("share");
-  await db
-    .select({ id: modelProviderConnections.id })
-    .from(modelProviderConnections)
-    .where(eq(modelProviderConnections.orgId, orgId))
-    .orderBy(asc(modelProviderConnections.id))
-    .for("share");
-  await db
-    .select({ id: modelProviderSurfaces.id })
-    .from(modelProviderSurfaces)
-    .innerJoin(
-      modelProviderConnections,
-      eq(modelProviderSurfaces.connectionId, modelProviderConnections.id),
-    )
-    .where(eq(modelProviderConnections.orgId, orgId))
-    .orderBy(asc(modelProviderSurfaces.id))
-    .for("share", { of: modelProviderSurfaces });
-  const policies = await db
-    .select({ id: orgModelPolicies.id })
-    .from(orgModelPolicies)
-    .where(eq(orgModelPolicies.orgId, orgId))
-    .orderBy(asc(orgModelPolicies.id))
-    .for("no key update");
-  return new Set(
-    policies.map((policy) => {
-      return policy.id;
-    }),
-  );
-}
-
 function policiesByModel(
   rows: readonly OrgModelPolicyRow[],
 ): Map<string, OrgModelPolicyRow> {
@@ -325,28 +212,6 @@ function policiesByModel(
       return [row.model, row];
     }),
   );
-}
-
-async function loadModelsAllowedForNewOrgPolicy(
-  db: Db,
-  lockRows = false,
-): Promise<ReadonlySet<SupportedRunModel>> {
-  const query = db
-    .select({
-      model: runModelCatalog.model,
-      allowNewOrgPolicy: runModelCatalog.allowNewOrgPolicy,
-    })
-    .from(runModelCatalog)
-    .where(inArray(runModelCatalog.model, [...ACTIVE_RUN_MODELS]));
-  const rows = lockRows ? await query.for("share") : await query;
-  const allowed = new Set<SupportedRunModel>();
-  for (const row of rows) {
-    const model = parseSupportedModel(row.model);
-    if (model && row.allowNewOrgPolicy) {
-      allowed.add(model);
-    }
-  }
-  return allowed;
 }
 
 function modelsAvailableToAdd(
@@ -510,293 +375,231 @@ export function shouldReplaceExistingDefaultForPlan(
   );
 }
 
-async function ensureModelPolicy(
-  db: Db,
+function lazyModelPolicyWritePlan(
   orgId: string,
   userId: string,
-  model: SupportedRunModel,
-): Promise<void> {
-  const now = nowDate();
-  await db
-    .insert(orgModelPolicies)
-    .values({
-      model,
-      isDefault: false,
-      defaultProviderType: "built-in",
-      credentialScope: "org",
-      modelProviderId: null,
-      orgId,
-      createdByUserId: userId,
-      updatedByUserId: userId,
-      createdAt: now,
-      updatedAt: now,
-    })
-    .onConflictDoNothing({
-      target: [orgModelPolicies.orgId, orgModelPolicies.model],
-    });
-}
-
-async function setDefaultModelPolicy(
-  db: Db,
-  orgId: string,
-  userId: string,
-  model: SupportedRunModel,
-  options: {
-    readonly resetRouteToBuiltIn?: boolean;
-  },
-): Promise<void> {
-  await ensureModelPolicy(db, orgId, userId, model);
-  const now = nowDate();
-  await db
-    .update(orgModelPolicies)
-    .set({
-      isDefault: false,
-      updatedByUserId: userId,
-      updatedAt: now,
-    })
-    .where(
-      and(
-        eq(orgModelPolicies.orgId, orgId),
-        eq(orgModelPolicies.isDefault, true),
-      ),
-    );
-  await db
-    .update(orgModelPolicies)
-    .set({
-      isDefault: true,
-      ...(options?.resetRouteToBuiltIn === true
-        ? {
-            defaultProviderType: "built-in",
-            credentialScope: "org",
-            modelProviderId: null,
-            modelProviderSurfaceId: null,
-          }
-        : {}),
-      updatedByUserId: userId,
-      updatedAt: now,
-    })
-    .where(
-      and(eq(orgModelPolicies.orgId, orgId), eq(orgModelPolicies.model, model)),
-    );
-}
-
-async function ensureOrgModelPoliciesLocked(
-  db: Db,
-  orgId: string,
-  userId: string,
+  existing: readonly OrgModelPolicyRow[],
   initializeSeed: boolean,
-): Promise<EnsuredOrgModelPolicyFacts> {
-  const orgPlanCapabilities = await loadOrgPlanCapabilities(db, orgId);
+  orgPlanCapabilities: OrgPlanCapabilities | null,
+) {
   const capabilities = modelPolicyCapabilities(orgPlanCapabilities);
   const seedDefaultModel = getSeedDefaultModelForPlan(capabilities);
-  const existing = await loadRows(db, orgId);
-  if (existing.length > 0 && !initializeSeed) {
-    const existingDefault = existing.find((policy) => {
+  const active = existing.filter((row) => {
+    return parseSupportedModel(row.model);
+  });
+  let defaultModel = seedDefaultModel;
+  let resetRouteToBuiltIn = true;
+  const seedAll = active.length === 0 || initializeSeed;
+  if (!seedAll) {
+    const existingDefault = active.find((policy) => {
       return policy.isDefault;
     });
     if (!shouldReplaceExistingDefaultForPlan(existingDefault, capabilities)) {
-      return {
-        orgPlanCapabilities,
-        policies: sortRowsByCatalog(existing),
-      };
+      return null;
     }
-
-    if (!capabilities.supportByok || capabilities.restrictedBuiltInModels) {
-      await setDefaultModelPolicy(db, orgId, userId, seedDefaultModel, {
-        resetRouteToBuiltIn: !capabilities.supportByok,
+    resetRouteToBuiltIn = !capabilities.supportByok;
+    if (capabilities.supportByok && !capabilities.restrictedBuiltInModels) {
+      const allowed = active.filter((policy) => {
+        return getRunModelAccess(policy.model) === "allowed";
       });
-      return {
-        orgPlanCapabilities,
-        policies: sortRowsByCatalog(await loadRows(db, orgId)),
-      };
+      const fallback =
+        allowed.find((policy) => {
+          return policy.model === seedDefaultModel;
+        }) ?? sortRowsByCatalog(allowed)[0];
+      if (!fallback) {
+        return null;
+      }
+      defaultModel = parseSupportedModel(fallback.model) ?? seedDefaultModel;
     }
-
-    const activePolicies = existing.filter((policy) => {
-      return getRunModelAccess(policy.model) === "allowed";
-    });
-    const fallbackDefault =
-      activePolicies.find((policy) => {
-        return policy.model === seedDefaultModel;
-      }) ?? sortRowsByCatalog(activePolicies)[0];
-    if (fallbackDefault) {
-      await setDefaultModelPolicy(
-        db,
-        orgId,
-        userId,
-        parseSupportedModel(fallbackDefault.model) ?? seedDefaultModel,
-        {},
-      );
-      return {
-        orgPlanCapabilities,
-        policies: sortRowsByCatalog(await loadRows(db, orgId)),
-      };
-    }
-    return {
-      orgPlanCapabilities,
-      policies: sortRowsByCatalog(existing),
-    };
   }
-
-  // A retired default can be the only persisted policy while the new API is
-  // deployed ahead of the Stage 2 migration. Transfer the org-wide default
-  // slot before inserting the rest of the active seed so the hidden row does
-  // not collide with the partial unique default index.
-  await setDefaultModelPolicy(db, orgId, userId, seedDefaultModel, {
-    resetRouteToBuiltIn: true,
-  });
-  const initialized = await loadRows(db, orgId);
-  const existingModels = new Set(
-    initialized.map((policy) => {
-      return policy.model;
-    }),
-  );
-  const missing = getDefaultOrgModelPolicySeed(seedDefaultModel)
-    .filter((seed) => {
-      return !existingModels.has(seed.model);
-    })
-    .map((seed) => {
+  const seeds = seedAll
+    ? getDefaultOrgModelPolicySeed(defaultModel)
+    : [
+        {
+          model: defaultModel,
+          defaultProviderType: "built-in",
+          credentialScope: "org",
+          modelProviderId: null,
+        },
+      ];
+  const now = nowDate();
+  return {
+    defaultModel,
+    resetRouteToBuiltIn,
+    now,
+    insertValues: seeds.map((seed) => {
       return {
         ...seed,
+        isDefault: false,
         orgId,
         createdByUserId: userId,
         updatedByUserId: userId,
+        createdAt: now,
+        updatedAt: now,
       };
-    });
-
-  if (missing.length === 0) {
-    return {
-      orgPlanCapabilities,
-      policies: sortRowsByCatalog(initialized),
-    };
-  }
-
-  await db
-    .insert(orgModelPolicies)
-    .values(missing)
-    .onConflictDoNothing({
-      target: [orgModelPolicies.orgId, orgModelPolicies.model],
-    });
-
-  return {
-    orgPlanCapabilities,
-    policies: sortRowsByCatalog(await loadRows(db, orgId)),
+    }),
   };
 }
 
-/**
- * A caller that already read the organization's plan in this request supplies
- * it; otherwise the plan and the policies are read in parallel.
- */
-export async function loadOrgModelPolicyFacts(
-  db: Db,
-  orgId: string,
-  suppliedPlanCapabilities?: OrgPlanCapabilities | null,
-): Promise<EnsuredOrgModelPolicyFacts> {
-  const [orgPlanCapabilities, policies] = await Promise.all([
-    suppliedPlanCapabilities === undefined
-      ? loadOrgPlanCapabilities(db, orgId)
-      : suppliedPlanCapabilities,
-    loadRows(db, orgId),
-  ]);
-  return {
-    orgPlanCapabilities,
-    policies: sortRowsByCatalog(policies),
-  };
-}
+/** Read-only request observations; a supplied plan remains authoritative. */
+export const loadOrgModelPolicyFacts$ = command(
+  async (
+    { set },
+    orgId: string,
+    suppliedPlanCapabilities?: OrgPlanCapabilities | null,
+    abortSignal?: AbortSignal,
+  ): Promise<EnsuredOrgModelPolicyFacts> => {
+    const db = set(writeDb$);
+    const [orgPlanCapabilities, policies] = await Promise.all([
+      suppliedPlanCapabilities === undefined
+        ? set(loadOrgPlanCapabilities$, orgId, abortSignal)
+        : suppliedPlanCapabilities,
+      db
+        .select()
+        .from(orgModelPolicies)
+        .where(
+          and(
+            eq(orgModelPolicies.orgId, orgId),
+            inArray(orgModelPolicies.model, [...ACTIVE_RUN_MODELS]),
+          ),
+        ),
+    ]);
+    abortSignal?.throwIfAborted();
+    return { orgPlanCapabilities, policies: sortRowsByCatalog(policies) };
+  },
+);
 
-export async function ensureOrgModelPolicyFacts(
-  db: Db,
-  orgId: string,
-  userId: string,
-  suppliedPlanCapabilities?: OrgPlanCapabilities | null,
-): Promise<EnsuredOrgModelPolicyFacts> {
-  const initial = await loadOrgModelPolicyFacts(
-    db,
-    orgId,
-    suppliedPlanCapabilities,
-  );
-  const capabilities = modelPolicyCapabilities(initial.orgPlanCapabilities);
-  if (
-    initial.policies.length > 0 &&
-    !shouldReplaceExistingDefaultForPlan(
-      initial.policies.find((policy) => {
-        return policy.isDefault;
-      }),
-      capabilities,
-    )
-  ) {
-    return initial;
-  }
-  return db.transaction(async (tx) => {
-    const ownership = await lockPolicyWrites(tx, orgId, userId);
-    return ensureOrgModelPoliciesLocked(
-      tx,
+/** Own the entire finite repair commit; no transaction-capable value escapes. */
+export const ensureOrgModelPolicyFacts$ = command(
+  async (
+    { set },
+    orgId: string,
+    userId: string,
+    suppliedPlanCapabilities?: OrgPlanCapabilities | null,
+    abortSignal?: AbortSignal,
+  ): Promise<EnsuredOrgModelPolicyFacts> => {
+    const initial = await set(
+      loadOrgModelPolicyFacts$,
       orgId,
-      userId,
-      ownership.initializeSeed,
+      suppliedPlanCapabilities,
+      abortSignal,
     );
-  });
-}
-
-export async function ensureOrgModelPolicies(
-  db: Db,
-  orgId: string,
-  userId: string,
-): Promise<readonly OrgModelPolicyRow[]> {
-  return (await ensureOrgModelPolicyFacts(db, orgId, userId)).policies;
-}
-
-async function listOrgProviderRoutes(
-  db: Db,
-  orgId: string,
-): Promise<ProviderRouteInfo[]> {
-  const rows = await db
-    .select({
-      id: modelProviders.id,
-      userId: modelProviders.userId,
-      type: modelProviders.type,
-      selectedModel: modelProviders.selectedModel,
-    })
-    .from(modelProviders)
-    .where(
-      and(
-        eq(modelProviders.orgId, orgId),
-        eq(modelProviders.userId, ORG_SENTINEL_USER_ID),
-      ),
-    );
-
-  return rows.flatMap((row) => {
-    const type = parseProviderType(row.type);
-    return type
-      ? [
-          {
-            id: row.id,
-            userId: row.userId,
-            type,
-            selectedModel: row.selectedModel,
-          },
-        ]
-      : [];
-  });
-}
-
-async function listOrgSurfaceRoutes(
-  db: Db,
-  orgId: string,
-): Promise<SurfaceRouteInfo[]> {
-  return await db
-    .select({
-      id: modelProviderSurfaces.id,
-      protocol: modelProviderSurfaces.protocol,
-      modelMappings: modelProviderSurfaces.modelMappings,
-    })
-    .from(modelProviderSurfaces)
-    .innerJoin(
-      modelProviderConnections,
-      eq(modelProviderSurfaces.connectionId, modelProviderConnections.id),
-    )
-    .where(eq(modelProviderConnections.orgId, orgId));
-}
+    if (
+      initial.policies.length > 0 &&
+      !shouldReplaceExistingDefaultForPlan(
+        initial.policies.find((policy) => {
+          return policy.isDefault;
+        }),
+        modelPolicyCapabilities(initial.orgPlanCapabilities),
+      )
+    ) {
+      return initial;
+    }
+    const db = set(writeDb$);
+    const result = await db.transaction(async (tx) => {
+      await tx.execute(modelPolicyWriterLockSql(orgId));
+      const owner = eq(orgModelPolicies.orgId, orgId);
+      const before = await tx.select().from(orgModelPolicies).where(owner);
+      let initializeSeed = false;
+      if (before.length === 0) {
+        const [inserted] = await tx
+          .insert(orgModelPolicies)
+          .values(policySeedValues(orgId, userId))
+          .onConflictDoNothing()
+          .returning({ id: orgModelPolicies.id });
+        initializeSeed = inserted !== undefined;
+      }
+      let existing: OrgModelPolicyRow[] = [];
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        for (const statement of modelPolicyParentLockSql(orgId)) {
+          await tx.execute(statement);
+        }
+        const locked = await tx
+          .select()
+          .from(orgModelPolicies)
+          .where(owner)
+          .orderBy(asc(orgModelPolicies.id))
+          .for("no key update");
+        existing = await tx.select().from(orgModelPolicies).where(owner);
+        if (policySetOwned(locked, existing)) {
+          break;
+        }
+        if (attempt === 2) {
+          throw new Error(
+            "Model policies changed concurrently; retry the operation",
+          );
+        }
+      }
+      const [entitlement] = await tx
+        .select(ORG_PLAN_CAPABILITY_SELECTION)
+        .from(orgPlanEntitlements)
+        .where(eq(orgPlanEntitlements.orgId, orgId))
+        .limit(1);
+      if (!entitlement) {
+        const [org] = await tx
+          .select({ id: orgMetadata.orgId })
+          .from(orgMetadata)
+          .where(eq(orgMetadata.orgId, orgId))
+          .limit(1);
+        if (org) {
+          throw new Error(`Missing org plan entitlement for ${orgId}`);
+        }
+      }
+      const orgPlanCapabilities = entitlement
+        ? orgPlanCapabilitiesFromRow(entitlement, orgId)
+        : null;
+      const plan = lazyModelPolicyWritePlan(
+        orgId,
+        userId,
+        existing,
+        initializeSeed,
+        orgPlanCapabilities,
+      );
+      if (plan) {
+        await tx
+          .insert(orgModelPolicies)
+          .values(plan.insertValues)
+          .onConflictDoNothing({
+            target: [orgModelPolicies.orgId, orgModelPolicies.model],
+          });
+        await tx
+          .update(orgModelPolicies)
+          .set({
+            isDefault: false,
+            updatedByUserId: userId,
+            updatedAt: plan.now,
+          })
+          .where(and(owner, eq(orgModelPolicies.isDefault, true)));
+        await tx
+          .update(orgModelPolicies)
+          .set({
+            isDefault: true,
+            updatedByUserId: userId,
+            updatedAt: plan.now,
+            ...(plan.resetRouteToBuiltIn
+              ? {
+                  defaultProviderType: "built-in",
+                  credentialScope: "org",
+                  modelProviderId: null,
+                  modelProviderSurfaceId: null,
+                }
+              : {}),
+          })
+          .where(and(owner, eq(orgModelPolicies.model, plan.defaultModel)));
+      }
+      const policies = await tx
+        .select()
+        .from(orgModelPolicies)
+        .where(
+          and(owner, inArray(orgModelPolicies.model, [...ACTIVE_RUN_MODELS])),
+        );
+      abortSignal?.throwIfAborted();
+      return { orgPlanCapabilities, policies: sortRowsByCatalog(policies) };
+    });
+    abortSignal?.throwIfAborted();
+    return result;
+  },
+);
 
 interface PolicyRouteSnapshot {
   readonly providers: readonly Pick<
@@ -1150,125 +953,162 @@ function memberRouteAvailability(params: {
     : "available";
 }
 
-async function listOrgModelPolicies(
-  db: Db,
-  orgId: string,
-  userId: string,
-  keyIdsByVendor: BuiltInModelKeyIdsByVendor,
-): Promise<OrgModelPoliciesResponse> {
-  await ensureOrgModelPolicies(db, orgId, userId);
-  const persistedRows = await loadRows(db, orgId, true);
-  const rows = sortRowsByCatalog(
-    persistedRows.filter((row) => {
-      return (
-        parseSupportedModel(row.model) &&
-        getRunModelAccess(row.model) === "allowed"
-      );
-    }),
-  );
-  const modelsAllowedForNewPolicy = await loadModelsAllowedForNewOrgPolicy(db);
-  const member = await loadMemberModelRouteContext(db, orgId, userId);
-  const featureSwitchContext = await loadUserFeatureSwitchContext(
-    db,
-    orgId,
-    userId,
-  );
-  const capabilities = await loadOrgPlanCapabilities(db, orgId);
-  const providers = await listOrgProviderRoutes(db, orgId);
-  const surfaces = await listOrgSurfaceRoutes(db, orgId);
-  const providersById = new Map(
-    providers.map((provider) => {
-      return [provider.id, provider];
-    }),
-  );
-  const surfacesById = new Map(
-    surfaces.map((surface) => {
-      return [surface.id, surface];
-    }),
-  );
-  const policies = await Promise.all(
-    rows.map(async (row) => {
-      const policy = serializePolicy(row, providersById, surfacesById);
-      const runtimeRoute = isBuiltInModelProviderType(
-        policy.defaultProviderType,
-      )
-        ? await resolveBuiltInModelRuntimeRouteWithKeys(
-            db,
-            policy.model,
-            featureSwitchContext,
-            keyIdsByVendor,
-          )
-        : null;
-      const administrative: OrgModelPolicy = isBuiltInModelProviderType(
-        policy.defaultProviderType,
-      )
-        ? { ...policy, runtimeProviderType: runtimeRoute?.providerType ?? null }
-        : policy;
-      const effective = await resolveEffectivePolicyRoute({
-        db,
-        orgId,
-        policy: row,
-        member,
-        capabilities:
-          capabilities?.status === "active"
-            ? capabilities
-            : { restrictedBuiltInModels: false, supportByok: true },
-      });
-      const providerType =
-        effective?.modelProviderType ?? policy.defaultProviderType;
-      const credentialScope =
-        effective?.modelProviderCredentialScope ?? policy.credentialScope;
-      const planDenied = checkOrgPlanRunAdmission({
-        capabilities,
-        modelProviderType: providerType,
-        selectedModel: policy.model,
-      });
-      const availability = memberRouteAvailability({
-        planDenied: !!planDenied,
+function projectMemberModelPolicy(args: {
+  readonly policy: OrgModelPolicy;
+  readonly row: OrgModelPolicyRow;
+  readonly sources: ModelRouteSources;
+  readonly capabilities: OrgPlanCapabilities | null;
+  readonly runtimeRoute: BuiltInModelRuntimeRoute | null;
+}): OrgModelPolicy {
+  const { policy, runtimeRoute, capabilities } = args;
+  const effective = resolveEffectivePolicyRoute({
+    sources: args.sources,
+    policy: args.row,
+    capabilities:
+      capabilities?.status === "active"
+        ? capabilities
+        : { restrictedBuiltInModels: false, supportByok: true },
+  });
+  const providerType =
+    effective?.modelProviderType ?? policy.defaultProviderType;
+  const credentialScope =
+    effective?.modelProviderCredentialScope ?? policy.credentialScope;
+  return {
+    ...policy,
+    ...(isBuiltInModelProviderType(policy.defaultProviderType)
+      ? { runtimeProviderType: runtimeRoute?.providerType ?? null }
+      : {}),
+    memberEffective: {
+      providerType,
+      runtimeProviderType: isBuiltInModelProviderType(providerType)
+        ? (runtimeRoute?.providerType ?? null)
+        : providerType,
+      credentialScope,
+      availability: memberRouteAvailability({
+        planDenied: !!checkOrgPlanRunAdmission({
+          capabilities,
+          modelProviderType: providerType,
+          selectedModel: policy.model,
+        }),
         effective,
         orgRouteAvailable:
           policy.routeStatus === "valid" &&
           (!isBuiltInModelProviderType(providerType) || runtimeRoute !== null),
-      });
-      return {
-        ...administrative,
-        memberEffective: {
-          providerType,
-          runtimeProviderType: isBuiltInModelProviderType(providerType)
-            ? (runtimeRoute?.providerType ?? null)
-            : providerType,
-          credentialScope,
-          availability,
-          accountSelection:
-            credentialScope === "member"
-              ? "capture_required"
-              : "not_applicable",
-        },
-      } satisfies OrgModelPolicy;
-    }),
-  );
-  const workspaceDefault = selectWorkspaceDefaultPolicy(policies);
-  const okouModelsEnabled = isFeatureEnabled(
-    FeatureSwitchKey.OkouModels,
-    featureSwitchContext,
-  );
-
-  return {
-    policies,
-    revision: policyRevision(persistedRows),
-    // Permanent since the personal subscription priority rollout completed.
-    // Removing the field needs its own client-compatibility window.
-    writePreconditionRequired: true,
-    modelsAvailableToAdd: modelsAvailableToAdd(
-      persistedRows,
-      modelsAllowedForNewPolicy,
-    ).filter((model) => {
-      return okouModelsEnabled || !isOkouRunModel(model);
-    }),
-    workspaceDefaultModel: workspaceDefault?.model ?? null,
-    workspaceDefaultPolicyId: workspaceDefault?.id ?? null,
+      }),
+      accountSelection:
+        credentialScope === "member" ? "capture_required" : "not_applicable",
+    },
   };
 }
+
+const readOrgModelPolicies$ = command(
+  async (
+    { set },
+    orgId: string,
+    userId: string,
+    keyIdsByVendor: BuiltInModelKeyIdsByVendor,
+    abortSignal: AbortSignal,
+  ): Promise<OrgModelPoliciesResponse> => {
+    await set(
+      ensureOrgModelPolicyFacts$,
+      orgId,
+      userId,
+      undefined,
+      abortSignal,
+    );
+    const db = set(writeDb$);
+    const persistedRows = await db
+      .select()
+      .from(orgModelPolicies)
+      .where(eq(orgModelPolicies.orgId, orgId));
+    const rows = sortRowsByCatalog(
+      persistedRows.filter((row) => {
+        return (
+          parseSupportedModel(row.model) &&
+          getRunModelAccess(row.model) === "allowed"
+        );
+      }),
+    );
+    const [catalog, sources, featureSwitchContext, capabilities] =
+      await Promise.all([
+        db
+          .select(POLICY_CATALOG_SELECTION)
+          .from(runModelCatalog)
+          .where(inArray(runModelCatalog.model, [...ACTIVE_RUN_MODELS])),
+        set(
+          loadModelRouteSources$,
+          orgId,
+          userId,
+          rows.map((row) => {
+            return row.model;
+          }),
+          abortSignal,
+        ),
+        set(loadUserFeatureSwitchContext$, orgId, userId, abortSignal),
+        set(loadOrgPlanCapabilities$, orgId, abortSignal),
+      ]);
+    abortSignal.throwIfAborted();
+    const modelsAllowedForNewPolicy = new Set(
+      catalog.flatMap((row) => {
+        const model = parseSupportedModel(row.model);
+        return model && row.allowNewOrgPolicy ? [model] : [];
+      }),
+    );
+    const providersById = new Map(
+      sources.providers.flatMap((provider) => {
+        const type = parseProviderType(provider.type);
+        return type ? [[provider.id, { ...provider, type }] as const] : [];
+      }),
+    );
+    const surfacesById = new Map(
+      sources.surfaces.map((surface) => {
+        return [surface.id, surface];
+      }),
+    );
+    const policies: OrgModelPolicy[] = [];
+    for (const row of rows) {
+      const policy = serializePolicy(row, providersById, surfacesById);
+      const runtimeRoute = isBuiltInModelProviderType(
+        policy.defaultProviderType,
+      )
+        ? await set(
+            resolveBuiltInModelRuntimeRouteWithKeys$,
+            policy.model,
+            featureSwitchContext,
+            keyIdsByVendor,
+            abortSignal,
+          )
+        : null;
+      policies.push(
+        projectMemberModelPolicy({
+          policy,
+          row,
+          sources,
+          capabilities,
+          runtimeRoute,
+        }),
+      );
+    }
+    const workspaceDefault = selectWorkspaceDefaultPolicy(policies);
+    const okouModelsEnabled = isFeatureEnabled(
+      FeatureSwitchKey.OkouModels,
+      featureSwitchContext,
+    );
+    return {
+      policies,
+      revision: policyRevision(persistedRows),
+      writePreconditionRequired: true,
+      modelsAvailableToAdd: modelsAvailableToAdd(
+        persistedRows,
+        modelsAllowedForNewPolicy,
+      ).filter((model) => {
+        return okouModelsEnabled || !isOkouRunModel(model);
+      }),
+      workspaceDefaultModel: workspaceDefault?.model ?? null,
+      workspaceDefaultPolicyId: workspaceDefault?.id ?? null,
+    };
+  },
+);
 
 /** Ordinary snapshots only: onboarding must not overwrite an administrator's set. */
 export function onboardingModelPolicyWritePlan(params: {
@@ -1363,16 +1203,16 @@ export const listOrgModelPolicies$ = command(
   async (
     { get, set },
     params: { readonly orgId: string; readonly userId: string },
-    signal: AbortSignal,
+    abortSignal: AbortSignal,
   ): Promise<OrgModelPoliciesResponse> => {
-    const db = set(writeDb$);
-    const response = await listOrgModelPolicies(
-      db,
+    const response = await set(
+      readOrgModelPolicies$,
       params.orgId,
       params.userId,
       await get(builtInModelKeyIdsByVendor$),
+      abortSignal,
     );
-    signal.throwIfAborted();
+    abortSignal.throwIfAborted();
     return response;
   },
 );
@@ -1594,10 +1434,10 @@ const commitOrgModelPolicyReplacement$ = command(
   async (
     { set },
     params: ModelPolicyReplacement,
-    signal: AbortSignal,
+    abortSignal: AbortSignal,
   ): Promise<void> => {
     const db = set(writeDb$);
-    signal.throwIfAborted();
+    abortSignal.throwIfAborted();
     await db.transaction(async (tx) => {
       await tx.execute(modelPolicyWriterLockSql(params.orgId));
       const owner = eq(orgModelPolicies.orgId, params.orgId);
@@ -1677,7 +1517,7 @@ const commitOrgModelPolicyReplacement$ = command(
         entitlement,
         catalog,
       });
-      signal.throwIfAborted();
+      abortSignal.throwIfAborted();
       await tx
         .insert(orgModelPolicies)
         .values(plan.insertValues)
@@ -1715,9 +1555,9 @@ const commitOrgModelPolicyReplacement$ = command(
           .set(update.values)
           .where(update.condition);
       }
-      signal.throwIfAborted();
+      abortSignal.throwIfAborted();
     });
-    signal.throwIfAborted();
+    abortSignal.throwIfAborted();
   },
 );
 
@@ -1727,7 +1567,7 @@ export const updateOrgModelPolicies$ = command(
     params: Omit<ModelPolicyReplacement, "revision"> & {
       readonly revision?: string;
     },
-    signal: AbortSignal,
+    abortSignal: AbortSignal,
   ): Promise<ServiceResult<OrgModelPoliciesResponse>> => {
     if (!params.revision) {
       return policyRefreshConflict();
@@ -1736,9 +1576,9 @@ export const updateOrgModelPolicies$ = command(
       set(
         commitOrgModelPolicyReplacement$,
         { ...params, revision: params.revision },
-        signal,
+        abortSignal,
       ),
-      signal,
+      abortSignal,
     );
     if (!written.ok) {
       if (written.error instanceof RejectedModelPolicyUpdate) {
@@ -1746,14 +1586,32 @@ export const updateOrgModelPolicies$ = command(
       }
       throw written.error;
     }
-    const db = set(writeDb$);
-    const response = await listOrgModelPolicies(
-      db,
+    const response = await set(
+      readOrgModelPolicies$,
       params.orgId,
       params.userId,
       await get(builtInModelKeyIdsByVendor$),
+      abortSignal,
     );
-    signal.throwIfAborted();
+    abortSignal.throwIfAborted();
     return ok(response);
   },
 );
+
+const ORG_PLAN_CAPABILITY_SELECTION = {
+  planKey: orgPlanEntitlements.planKey,
+  status: orgPlanEntitlements.status,
+  baseConcurrencyLimit: orgPlanEntitlements.baseConcurrencyLimit,
+  canBuyConcurrency: orgPlanEntitlements.canBuyConcurrency,
+  canBuyCredits: orgPlanEntitlements.canBuyCredits,
+  showUsagePack: orgPlanEntitlements.showUsagePack,
+  autoRechargeAllowed: orgPlanEntitlements.autoRechargeAllowed,
+  supportByok: orgPlanEntitlements.supportByok,
+  restrictedBuiltInModels: orgPlanEntitlements.restrictedBuiltInModels,
+  videoGenerationAllowed: orgPlanEntitlements.videoGenerationAllowed,
+  workflowWebhookAutomationAllowed:
+    orgPlanEntitlements.workflowWebhookTriggerAllowed,
+  audioLifetimeLimit: orgPlanEntitlements.audioLifetimeLimit,
+  audioDailyRateLimit: orgPlanEntitlements.audioDailyRateLimit,
+  audioDailyDurationSeconds: orgPlanEntitlements.audioDailyDurationSeconds,
+} as const;

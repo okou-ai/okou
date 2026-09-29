@@ -1,6 +1,6 @@
-import type { Db } from "../external/db";
+import { command } from "ccstate";
 import {
-  resolveDefaultModelFirstPin,
+  resolveDefaultModelFirstPin$,
   type DefaultModelFirstPin,
   type ModelFirstPin,
 } from "./model-selection.service";
@@ -20,23 +20,24 @@ export function chatThreadModelPinColumns(pin: ModelFirstPin): {
   };
 }
 
-export async function resolveRequiredDefaultChatThreadModelPin(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
+export const resolveRequiredDefaultChatThreadModelPin$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+    },
+    orgPlanCapabilities?: OrgPlanCapabilities | null,
+    abortSignal?: AbortSignal,
+  ): Promise<DefaultModelFirstPin> => {
+    const pin = await set(
+      resolveDefaultModelFirstPin$,
+      { orgId: args.orgId, userId: args.userId, orgPlanCapabilities },
+      abortSignal,
+    );
+    if (!pin.selectedModel) {
+      throw new Error("A model selection is required");
+    }
+    return pin;
   },
-  orgPlanCapabilities?: OrgPlanCapabilities | null,
-): Promise<DefaultModelFirstPin> {
-  const pin = await resolveDefaultModelFirstPin(
-    db,
-    args.orgId,
-    args.userId,
-    "member",
-    orgPlanCapabilities,
-  );
-  if (!pin.selectedModel) {
-    throw new Error("A model selection is required");
-  }
-  return pin;
-}
+);

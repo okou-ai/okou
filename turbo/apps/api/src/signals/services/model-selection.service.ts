@@ -1,47 +1,35 @@
 import {
-  prepareMemberModelRouteContext,
-  providerTypeForSurfaceProtocol,
+  loadModelRouteSources$,
   resolveEffectivePolicyRoute,
-  type PreparedMemberModelRouteContext,
+  type ModelRouteSources,
   type ResolvedModelFirstPolicyRoute,
 } from "./effective-model-route.service";
 import {
-  getFrameworkForType,
-  getBuiltInConcreteProviderType,
   isCodexFastModeModel,
   isBuiltInModelProviderType,
   getRunModelAccess,
   getRunModelRouteAccess,
   RETIRED_RUN_MODEL_MESSAGE,
   isSupportedRunModel,
-  isModelSupportedByProvider,
   modelProviderTypeSchema,
   type ModelProviderCredentialScope,
   type ModelProviderWriteType,
 } from "@okouai/api-contracts/contracts/model-providers";
 import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
-import type { SupportedFramework } from "@okouai/core/frameworks";
 import { modelProviders } from "@okouai/db/schema/model-provider";
-import {
-  modelProviderConnections,
-  modelProviderSurfaces,
-} from "@okouai/db/schema/model-provider-gateway";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { and, eq, or } from "drizzle-orm";
 
 import { badRequestMessage, insufficientCredits } from "../../lib/error";
-import type { Db } from "../external/db";
+import { command } from "ccstate";
+import { writeDb$ } from "../external/db";
 import {
-  ensureOrgModelPolicyFacts,
-  loadOrgModelPolicyFacts,
+  ensureOrgModelPolicyFacts$,
+  loadOrgModelPolicyFacts$,
   type OrgModelPolicyRow,
 } from "./model-policy.service";
 import {
-  checkOrgCreditsForRunAdmission,
-  checkOrgPlanRunAdmission,
-} from "./run-admission.service";
-import {
-  loadOrgPlanCapabilities,
+  loadOrgPlanCapabilities$,
   type OrgPlanCapabilities,
 } from "./org-plan-entitlement-read.service";
 
@@ -67,13 +55,7 @@ export interface DefaultModelFirstPin extends ModelFirstPin {
   readonly serviceTier: ChatThreadServiceTier | null;
 }
 
-const modelRoutingFactsSource = Symbol("modelRoutingFactsSource");
-
-/**
- * Immutable facts for one selection decision. Identity plus the private DB
- * provenance make the scope explicit; callers receive resolved pins, never a
- * cacheable facts object. A null capability or policy field is authoritative.
- */
+/** One selection's ordinary immutable observations. No database provenance or loaders. */
 interface ModelRoutingFacts {
   readonly identity: {
     readonly orgId: string;
@@ -82,8 +64,7 @@ interface ModelRoutingFacts {
   };
   readonly orgPlanCapabilities: OrgPlanCapabilities | null;
   readonly policies: readonly OrgModelPolicyRow[];
-  readonly member: PreparedMemberModelRouteContext;
-  readonly [modelRoutingFactsSource]: Db;
+  readonly sources: ModelRouteSources;
 }
 
 export type ExternalModelProviderPlanCapabilitiesSource =
@@ -96,10 +77,6 @@ export type ExternalModelProviderPlanCapabilitiesSource =
 interface ModelSelectionRequest {
   readonly modelProviderId: string;
   readonly selectedModel: string;
-}
-
-interface AvailableModelProviderPin {
-  readonly type: string;
 }
 
 function modelFirstPinFromRoute(
@@ -147,58 +124,64 @@ function modelRouteAllowedForOrgPlan(args: {
   );
 }
 
-async function prepareModelRoutingFacts(params: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly selectedModel: string | null;
-  readonly orgPlanCapabilities?: OrgPlanCapabilities | null;
-}): Promise<ModelRoutingFacts> {
-  const policyFactsPromise =
-    params.userId === "__no_preference__"
-      ? loadOrgModelPolicyFacts(
-          params.db,
-          params.orgId,
-          params.orgPlanCapabilities,
-        )
-      : ensureOrgModelPolicyFacts(
-          params.db,
-          params.orgId,
-          params.userId,
-          params.orgPlanCapabilities,
-        );
-  const [policyFacts, member] = await Promise.all([
-    policyFactsPromise,
-    prepareMemberModelRouteContext(params.db, params.orgId, params.userId),
-  ]);
-  return Object.freeze({
-    identity: Object.freeze({
-      orgId: params.orgId,
-      userId: params.userId,
-      selectedModel: params.selectedModel,
-    }),
-    orgPlanCapabilities:
-      policyFacts.orgPlanCapabilities === null
-        ? null
-        : Object.freeze({ ...policyFacts.orgPlanCapabilities }),
-    policies: Object.freeze(
-      policyFacts.policies.map((policy) => {
-        return Object.freeze({ ...policy });
-      }),
-    ),
-    member,
-    [modelRoutingFactsSource]: params.db,
-  });
-}
+const prepareModelRoutingFacts$ = command(
+  async (
+    { set },
+    params: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly selectedModel: string | null;
+      readonly orgPlanCapabilities?: OrgPlanCapabilities | null;
+    },
+    abortSignal?: AbortSignal,
+  ): Promise<ModelRoutingFacts> => {
+    const policyFacts =
+      params.userId === "__no_preference__"
+        ? await set(
+            loadOrgModelPolicyFacts$,
+            params.orgId,
+            params.orgPlanCapabilities,
+            abortSignal,
+          )
+        : await set(
+            ensureOrgModelPolicyFacts$,
+            params.orgId,
+            params.userId,
+            params.orgPlanCapabilities,
+            abortSignal,
+          );
+    const sources = await set(
+      loadModelRouteSources$,
+      params.orgId,
+      params.userId,
+      params.selectedModel
+        ? [params.selectedModel]
+        : policyFacts.policies.map((policy) => {
+            return policy.model;
+          }),
+      abortSignal,
+    );
+    return {
+      identity: {
+        orgId: params.orgId,
+        userId: params.userId,
+        selectedModel: params.selectedModel,
+      },
+      orgPlanCapabilities: policyFacts.orgPlanCapabilities,
+      policies: policyFacts.policies,
+      sources,
+    };
+  },
+);
 
-async function resolveValidPolicyRoute(params: {
+function resolveValidPolicyRoute(params: {
   readonly facts: ModelRoutingFacts;
   readonly capabilities: Pick<
     OrgPlanCapabilities,
     "restrictedBuiltInModels" | "supportByok"
   >;
   readonly selectedModel: string;
-}): Promise<ResolvedModelFirstPolicyRoute | null> {
+}): ResolvedModelFirstPolicyRoute | null {
   if (!isSupportedRunModel(params.selectedModel)) {
     return null;
   }
@@ -206,10 +189,8 @@ async function resolveValidPolicyRoute(params: {
     return candidate.model === params.selectedModel;
   });
   return policy
-    ? await resolveEffectivePolicyRoute({
-        db: params.facts[modelRoutingFactsSource],
-        orgId: params.facts.identity.orgId,
-        member: params.facts.member,
+    ? resolveEffectivePolicyRoute({
+        sources: params.facts.sources,
         capabilities: params.capabilities,
         policy,
       })
@@ -220,81 +201,97 @@ async function resolveValidPolicyRoute(params: {
  * `orgPlanCapabilities` is the organization's plan when the caller already
  * read it in this request; omitted, the plan is read with the policies.
  */
-export async function resolveDefaultModelFirstPin(
-  db: Db,
-  orgId: string,
-  userId: string,
-  defaultSource: "member" | "workspace" = "member",
-  orgPlanCapabilities?: OrgPlanCapabilities | null,
-): Promise<DefaultModelFirstPin> {
-  const facts = await prepareModelRoutingFacts({
-    db,
-    orgId,
-    userId,
-    selectedModel: null,
-    orgPlanCapabilities,
-  });
-  const capabilities = modelRouteCapabilities(facts.orgPlanCapabilities);
-  if (defaultSource === "member" && userId !== "__no_preference__") {
-    const [preference] = await db
-      .select({
-        selectedModel: orgMembersMetadata.selectedModel,
-        serviceTier: orgMembersMetadata.serviceTier,
-      })
-      .from(orgMembersMetadata)
-      .where(
-        and(
-          eq(orgMembersMetadata.orgId, orgId),
-          eq(orgMembersMetadata.userId, userId),
-        ),
-      )
-      .limit(1);
-    if (preference?.selectedModel) {
-      const preferredRoute = await resolveValidPolicyRoute({
-        facts,
-        capabilities,
-        selectedModel: preference.selectedModel,
-      });
-      if (preferredRoute) {
-        const serviceTier =
-          preference.serviceTier === "priority" &&
-          isCodexFastServiceTierSupported({
-            selectedModel: preferredRoute.selectedModel,
-          })
-            ? "priority"
-            : null;
-        return { ...modelFirstPinFromRoute(preferredRoute), serviceTier };
+export const resolveDefaultModelFirstPin$ = command(
+  async (
+    { set },
+    params: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly defaultSource?: "member" | "workspace";
+      readonly orgPlanCapabilities?: OrgPlanCapabilities | null;
+    },
+    abortSignal?: AbortSignal,
+  ): Promise<DefaultModelFirstPin> => {
+    const db = set(writeDb$);
+    const {
+      orgId,
+      userId,
+      orgPlanCapabilities,
+      defaultSource = "member",
+    } = params;
+    const facts = await set(
+      prepareModelRoutingFacts$,
+      {
+        orgId,
+        userId,
+        selectedModel: null,
+        orgPlanCapabilities,
+      },
+      abortSignal,
+    );
+    const capabilities = modelRouteCapabilities(facts.orgPlanCapabilities);
+    if (defaultSource === "member" && userId !== "__no_preference__") {
+      const [preference] = await db
+        .select({
+          selectedModel: orgMembersMetadata.selectedModel,
+          serviceTier: orgMembersMetadata.serviceTier,
+        })
+        .from(orgMembersMetadata)
+        .where(
+          and(
+            eq(orgMembersMetadata.orgId, orgId),
+            eq(orgMembersMetadata.userId, userId),
+          ),
+        )
+        .limit(1);
+      abortSignal?.throwIfAborted();
+      if (preference?.selectedModel) {
+        const preferredRoute = resolveValidPolicyRoute({
+          facts,
+          capabilities,
+          selectedModel: preference.selectedModel,
+        });
+        if (preferredRoute) {
+          const serviceTier =
+            preference.serviceTier === "priority" &&
+            isCodexFastServiceTierSupported({
+              selectedModel: preferredRoute.selectedModel,
+            })
+              ? "priority"
+              : null;
+          return { ...modelFirstPinFromRoute(preferredRoute), serviceTier };
+        }
       }
     }
-  }
 
-  const route = await resolveWorkspaceDefaultModelFirstRoute({
-    facts,
-    capabilities,
-  });
-  return route
-    ? { ...modelFirstPinFromRoute(route), serviceTier: null }
-    : {
-        modelProviderId: null,
-        modelProviderType: null,
-        modelProviderCredentialScope: null,
-        selectedModel: null,
-        serviceTier: null,
-      };
-}
+    const route = resolveWorkspaceDefaultModelFirstRoute({
+      facts,
+      capabilities,
+    });
+    return route
+      ? { ...modelFirstPinFromRoute(route), serviceTier: null }
+      : {
+          modelProviderId: null,
+          modelProviderType: null,
+          modelProviderCredentialScope: null,
+          selectedModel: null,
+          serviceTier: null,
+        };
+  },
+);
 
-async function resolveWorkspaceDefaultModelFirstRoute(params: {
+function resolveWorkspaceDefaultModelFirstRoute(params: {
   readonly facts: ModelRoutingFacts;
   readonly capabilities: Pick<
     OrgPlanCapabilities,
     "restrictedBuiltInModels" | "supportByok"
   >;
-}): Promise<ResolvedModelFirstPolicyRoute | null> {
+}): ResolvedModelFirstPolicyRoute | null {
   const policy = params.facts.policies.find((candidate) => {
     return candidate.isDefault;
   });
   return policy
-    ? await resolveValidPolicyRoute({
+    ? resolveValidPolicyRoute({
         facts: params.facts,
         capabilities: params.capabilities,
         selectedModel: policy.model,
@@ -302,276 +299,130 @@ async function resolveWorkspaceDefaultModelFirstRoute(params: {
     : null;
 }
 
-async function loadAvailableModelProviderPin(params: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly modelProviderId: string;
-}): Promise<AvailableModelProviderPin | null> {
-  const [provider] = await params.db
-    .select({ type: modelProviders.type })
-    .from(modelProviders)
-    .where(
-      and(
-        eq(modelProviders.id, params.modelProviderId),
-        eq(modelProviders.orgId, params.orgId),
-        or(
-          eq(modelProviders.userId, params.userId),
-          eq(modelProviders.userId, ORG_SENTINEL_USER_ID),
-        ),
-      ),
-    )
-    .limit(1);
-  return provider ?? null;
-}
-
-export async function resolveModelSelectionPin(params: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly modelSelection: ModelSelectionRequest;
-  /** The organization's plan, when the caller already read it in this request. */
-  readonly orgPlanCapabilities?: OrgPlanCapabilities | null;
-}): Promise<
-  | ModelFirstPin
-  | ReturnType<typeof badRequestMessage>
-  | ReturnType<typeof insufficientCredits>
-> {
-  const { db, orgId, userId, modelSelection } = params;
-  if (getRunModelAccess(modelSelection.selectedModel) === "retired") {
-    return badRequestMessage(RETIRED_RUN_MODEL_MESSAGE);
-  }
-  if (modelSelection.modelProviderId !== MODEL_FIRST_SELECTION_PROVIDER_ID) {
-    const capabilities = modelRouteCapabilities(
-      params.orgPlanCapabilities === undefined
-        ? await loadOrgPlanCapabilities(db, orgId)
-        : params.orgPlanCapabilities,
-    );
-    const provider = await loadAvailableModelProviderPin({
-      db,
-      orgId,
-      userId,
-      modelProviderId: modelSelection.modelProviderId,
-    });
-    if (!provider) {
-      return badRequestMessage("Unknown model provider for this workspace");
+export const resolveModelSelectionPin$ = command(
+  async (
+    { set },
+    params: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly modelSelection: ModelSelectionRequest;
+      /** The organization's plan, when the caller already read it in this request. */
+      readonly orgPlanCapabilities?: OrgPlanCapabilities | null;
+    },
+    abortSignal?: AbortSignal,
+  ): Promise<
+    | ModelFirstPin
+    | ReturnType<typeof badRequestMessage>
+    | ReturnType<typeof insufficientCredits>
+  > => {
+    const db = set(writeDb$);
+    const { orgId, userId, modelSelection } = params;
+    if (getRunModelAccess(modelSelection.selectedModel) === "retired") {
+      return badRequestMessage(RETIRED_RUN_MODEL_MESSAGE);
     }
-    if (
-      !modelRouteAllowedForOrgPlan({
-        capabilities,
+    if (modelSelection.modelProviderId !== MODEL_FIRST_SELECTION_PROVIDER_ID) {
+      const capabilities = modelRouteCapabilities(
+        params.orgPlanCapabilities === undefined
+          ? await set(loadOrgPlanCapabilities$, orgId, abortSignal)
+          : params.orgPlanCapabilities,
+      );
+      const [provider] = await db
+        .select({ type: modelProviders.type })
+        .from(modelProviders)
+        .where(
+          and(
+            eq(modelProviders.id, modelSelection.modelProviderId),
+            eq(modelProviders.orgId, orgId),
+            or(
+              eq(modelProviders.userId, userId),
+              eq(modelProviders.userId, ORG_SENTINEL_USER_ID),
+            ),
+          ),
+        )
+        .limit(1);
+      abortSignal?.throwIfAborted();
+      if (!provider) {
+        return badRequestMessage("Unknown model provider for this workspace");
+      }
+      if (
+        !modelRouteAllowedForOrgPlan({
+          capabilities,
+          selectedModel: modelSelection.selectedModel,
+          modelProviderType: provider.type,
+        })
+      ) {
+        return insufficientCredits();
+      }
+      if (
+        isBuiltInModelProviderType(provider.type) &&
+        !isSupportedRunModel(modelSelection.selectedModel)
+      ) {
+        return badRequestMessage("Invalid model selection");
+      }
+      return {
+        modelProviderId: modelSelection.modelProviderId,
+        modelProviderType: null,
+        modelProviderCredentialScope: null,
         selectedModel: modelSelection.selectedModel,
-        modelProviderType: provider.type,
-      })
-    ) {
-      return insufficientCredits();
+      };
     }
-    if (
-      isBuiltInModelProviderType(provider.type) &&
-      !isSupportedRunModel(modelSelection.selectedModel)
-    ) {
+
+    if (!isSupportedRunModel(modelSelection.selectedModel)) {
       return badRequestMessage("Invalid model selection");
     }
-    return {
-      modelProviderId: modelSelection.modelProviderId,
-      modelProviderType: null,
-      modelProviderCredentialScope: null,
-      selectedModel: modelSelection.selectedModel,
-    };
-  }
 
-  if (!isSupportedRunModel(modelSelection.selectedModel)) {
-    return badRequestMessage("Invalid model selection");
-  }
-
-  const facts = await prepareModelRoutingFacts({
-    db,
-    orgId,
-    userId,
-    selectedModel: modelSelection.selectedModel,
-    orgPlanCapabilities: params.orgPlanCapabilities,
-  });
-  // Resolve the configured route without plan filtering first. Model access is
-  // decided from that route so BYOK never inherits a built-in-only model gate.
-  const route = await resolveValidPolicyRoute({
-    facts,
-    capabilities: {
-      restrictedBuiltInModels: false,
-      supportByok: true,
-    },
-    selectedModel: modelSelection.selectedModel,
-  });
-  if (!route) {
-    return badRequestMessage(
-      "The selected model is not available in this workspace",
+    const facts = await set(
+      prepareModelRoutingFacts$,
+      {
+        orgId,
+        userId,
+        selectedModel: modelSelection.selectedModel,
+        orgPlanCapabilities: params.orgPlanCapabilities,
+      },
+      abortSignal,
     );
-  }
-  const planCapabilities = modelRouteCapabilities(facts.orgPlanCapabilities);
-  if (
-    modelRouteAllowedForOrgPlan({
-      capabilities: planCapabilities,
-      selectedModel: route.selectedModel,
-      modelProviderType: route.modelProviderType,
-    })
-  ) {
-    return modelFirstPinFromRoute(route);
-  }
-  // The unfiltered route is the member's own route and the plan cannot use it.
-  // Resolving again under the plan restores the workspace route the member
-  // falls back to, so a personal subscription the plan does not cover keeps
-  // reporting its own availability instead of failing the whole selection.
-  const planRoute = await resolveValidPolicyRoute({
-    facts,
-    capabilities: planCapabilities,
-    selectedModel: modelSelection.selectedModel,
-  });
-  return planRoute ? modelFirstPinFromRoute(planRoute) : insufficientCredits();
-}
-
-async function resolveEffectiveModelProviderType(params: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly modelPin: ModelFirstPin;
-  readonly requestedModelProvider: string | undefined;
-}): Promise<string | null | undefined> {
-  if (params.modelPin.modelProviderType) {
-    return params.modelPin.modelProviderType;
-  }
-  if (!params.modelPin.modelProviderId) {
-    return params.requestedModelProvider;
-  }
-
-  const [provider] = await params.db
-    .select({ type: modelProviders.type })
-    .from(modelProviders)
-    .where(
-      and(
-        eq(modelProviders.id, params.modelPin.modelProviderId),
-        eq(modelProviders.orgId, params.orgId),
-        or(
-          eq(modelProviders.userId, params.userId),
-          eq(modelProviders.userId, ORG_SENTINEL_USER_ID),
-        ),
-      ),
-    )
-    .limit(1);
-
-  return provider?.type ?? params.requestedModelProvider;
-}
-
-/** Whether the pinned custom surface maps the model for the effective provider. */
-async function customSurfaceMapsModel(params: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly modelProviderId: string | null;
-  readonly effectiveModelProvider: string | null | undefined;
-  readonly selectedModel: string;
-}): Promise<boolean> {
-  if (params.modelProviderId === null) {
-    return false;
-  }
-  const [customSurface] = await params.db
-    .select({
-      protocol: modelProviderSurfaces.protocol,
-      modelMappings: modelProviderSurfaces.modelMappings,
-    })
-    .from(modelProviderSurfaces)
-    .innerJoin(
-      modelProviderConnections,
-      eq(modelProviderSurfaces.connectionId, modelProviderConnections.id),
-    )
-    .where(
-      and(
-        eq(modelProviderSurfaces.id, params.modelProviderId),
-        eq(modelProviderConnections.orgId, params.orgId),
-      ),
-    )
-    .limit(1);
-  const surfaceProviderType = customSurface
-    ? providerTypeForSurfaceProtocol(customSurface.protocol)
-    : null;
-  return (
-    surfaceProviderType !== null &&
-    surfaceProviderType === params.effectiveModelProvider &&
-    typeof customSurface?.modelMappings[params.selectedModel] === "string"
-  );
-}
-
-/**
- * `trust-enqueued` skips re-validating that the resolved provider supports
- * the model an enqueue already captured; a mismatch fails at execution.
- */
-export type ProviderModelSupport = "validate" | "trust-enqueued";
-
-export async function resolveModelFirstProviderAdmission(params: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly modelPin: ModelFirstPin;
-  readonly requestedModelProvider: string | undefined;
-  readonly externalPlanCapabilities: ExternalModelProviderPlanCapabilitiesSource;
-  readonly providerModelSupport: ProviderModelSupport;
-}): Promise<{
-  readonly effectiveModelProvider: string | null | undefined;
-  readonly cliAgentType: SupportedFramework | null;
-  readonly error:
-    | Awaited<ReturnType<typeof checkOrgCreditsForRunAdmission>>
-    | ReturnType<typeof badRequestMessage>;
-}> {
-  const effectiveModelProvider =
-    await resolveEffectiveModelProviderType(params);
-  const selectedModel = params.modelPin.selectedModel;
-  const parsedProvider = modelProviderTypeSchema.safeParse(
-    effectiveModelProvider,
-  );
-  const knownProvider = parsedProvider.success ? parsedProvider.data : null;
-  const cliAgentType = knownProvider
-    ? getFrameworkForType(
-        isBuiltInModelProviderType(knownProvider) &&
-          isSupportedRunModel(selectedModel)
-          ? getBuiltInConcreteProviderType(selectedModel)
-          : knownProvider,
-      )
-    : null;
-  if (
-    params.providerModelSupport === "validate" &&
-    isSupportedRunModel(selectedModel) &&
-    (!knownProvider ||
-      !isModelSupportedByProvider(selectedModel, knownProvider)) &&
-    !(await customSurfaceMapsModel({
-      db: params.db,
-      orgId: params.orgId,
-      modelProviderId: params.modelPin.modelProviderId,
-      effectiveModelProvider,
-      selectedModel,
-    }))
-  ) {
-    return {
-      effectiveModelProvider,
-      cliAgentType,
-      error: badRequestMessage(
-        "The selected model is not supported by the current model provider",
-      ),
-    };
-  }
-  const error = isBuiltInModelProviderType(effectiveModelProvider)
-    ? await checkOrgCreditsForRunAdmission({
-        db: params.db,
-        orgId: params.orgId,
-        userId: params.userId,
-        modelProviderType: effectiveModelProvider,
-        selectedModel,
+    // Resolve the configured route without plan filtering first. Model access is
+    // decided from that route so BYOK never inherits a built-in-only model gate.
+    const route = resolveValidPolicyRoute({
+      facts,
+      capabilities: {
+        restrictedBuiltInModels: false,
+        supportByok: true,
+      },
+      selectedModel: modelSelection.selectedModel,
+    });
+    if (!route) {
+      return badRequestMessage(
+        "The selected model is not available in this workspace",
+      );
+    }
+    const planCapabilities = modelRouteCapabilities(facts.orgPlanCapabilities);
+    if (
+      modelRouteAllowedForOrgPlan({
+        capabilities: planCapabilities,
+        selectedModel: route.selectedModel,
+        modelProviderType: route.modelProviderType,
       })
-    : checkOrgPlanRunAdmission({
-        capabilities:
-          params.externalPlanCapabilities.kind === "resolved"
-            ? params.externalPlanCapabilities.capabilities
-            : await loadOrgPlanCapabilities(params.db, params.orgId),
-        modelProviderType: effectiveModelProvider,
-        selectedModel,
-      });
-  return { effectiveModelProvider, cliAgentType, error };
-}
+    ) {
+      return modelFirstPinFromRoute(route);
+    }
+    // The unfiltered route is the member's own route and the plan cannot use it.
+    // Resolving again under the plan restores the workspace route the member
+    // falls back to, so a personal subscription the plan does not cover keeps
+    // reporting its own availability instead of failing the whole selection.
+    const planRoute = resolveValidPolicyRoute({
+      facts,
+      capabilities: planCapabilities,
+      selectedModel: modelSelection.selectedModel,
+    });
+    return planRoute
+      ? modelFirstPinFromRoute(planRoute)
+      : insufficientCredits();
+  },
+);
+
+/** An enqueue already validated its model; execution may trust that choice. */
+export type ProviderModelSupport = "validate" | "trust-enqueued";
 
 export function isCodexFastServiceTierSupported(params: {
   readonly selectedModel: string | null | undefined;

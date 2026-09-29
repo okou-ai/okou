@@ -21,7 +21,8 @@ import {
   modelProviderSurfaces,
 } from "@okouai/db/schema/model-provider-gateway";
 import { and, eq, inArray, isNull } from "drizzle-orm";
-import type { Db } from "../external/db";
+import { command } from "ccstate";
+import { writeDb$ } from "../external/db";
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 
 const ORG_SENTINEL_USER_ID = "__org__";
@@ -54,135 +55,127 @@ export interface MemberModelRouteContext {
   readonly subscriptions: readonly PersonalCandidate[];
 }
 
-interface LoadedPersonalModelRouteMetadata {
-  readonly kind: "loaded";
-  readonly subscriptions: readonly PersonalCandidate[];
+export interface ModelRouteSources {
+  readonly member: MemberModelRouteContext;
+  readonly providers: readonly {
+    readonly id: string;
+    readonly type: string;
+    readonly userId: string;
+    readonly selectedModel: string | null;
+  }[];
+  readonly surfaces: readonly {
+    readonly id: string;
+    readonly protocol: string;
+    readonly modelMappings: Record<string, string>;
+  }[];
 }
 
-/**
- * One request's member observations. `not-applicable` is authoritative;
- * `not-loaded` is the only state that may issue the scoped metadata read.
- */
-export interface PreparedMemberModelRouteContext {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly memberScoped: boolean;
-  readonly personalMetadata:
-    | { readonly kind: "not-applicable" }
-    | {
-        readonly kind: "not-loaded";
-        readonly load: () => Promise<LoadedPersonalModelRouteMetadata>;
-      };
-}
-
-type ModelRouteMemberContext =
-  | MemberModelRouteContext
-  | PreparedMemberModelRouteContext;
-
-export function prepareMemberModelRouteContext(
-  db: Db,
-  orgId: string,
-  userId: string,
-): PreparedMemberModelRouteContext {
-  if (userId === "__no_preference__" || userId === ORG_SENTINEL_USER_ID) {
-    return Object.freeze({
-      orgId,
-      userId,
-      memberScoped: false,
-      personalMetadata: Object.freeze({ kind: "not-applicable" as const }),
-    });
-  }
-
-  let loading: Promise<LoadedPersonalModelRouteMetadata> | undefined;
-  const personalMetadata = Object.freeze({
-    kind: "not-loaded" as const,
-    load: (): Promise<LoadedPersonalModelRouteMetadata> => {
-      loading ??= (async () => {
-        const subscriptions = await loadPersonalModelRouteSubscriptions(
-          db,
-          orgId,
-          userId,
-        );
-        return Object.freeze({
-          kind: "loaded" as const,
-          subscriptions: Object.freeze(
-            subscriptions.map((candidate) => {
-              return Object.freeze({ ...candidate });
-            }),
-          ),
-        });
-      })();
-      return loading;
-    },
-  });
-  return Object.freeze({
-    orgId,
-    userId,
-    memberScoped: true,
-    personalMetadata,
-  });
-}
-
-export async function loadMemberModelRouteContext(
-  db: Db,
-  orgId: string,
-  userId: string,
-): Promise<MemberModelRouteContext> {
-  const prepared = prepareMemberModelRouteContext(db, orgId, userId);
-  if (prepared.personalMetadata.kind === "not-applicable") {
-    return { memberScoped: false, subscriptions: [] };
-  }
-  const loaded = await prepared.personalMetadata.load();
-  return {
-    memberScoped: true,
-    subscriptions: loaded.subscriptions,
-  };
-}
-
-/** Request-local metadata only. This also runs under thread lifecycle locks.
- * Never call account list/capture, decrypt, or probe a provider here. A type is
- * a candidate only while its logical provider has a connected account. */
-async function loadPersonalModelRouteSubscriptions(
-  db: Db,
-  orgId: string,
-  userId: string,
-): Promise<readonly PersonalCandidate[]> {
-  const accounts = await db
-    .select({
-      type: modelProviderAccounts.type,
-      providerId: modelProviderAccounts.modelProviderId,
-      isActive: modelProviderAccounts.isActive,
-      needsReconnect: modelProviderAccounts.needsReconnect,
-    })
-    .from(modelProviderAccounts)
-    .where(
-      and(
-        eq(modelProviderAccounts.orgId, orgId),
-        eq(modelProviderAccounts.userId, userId),
-        inArray(modelProviderAccounts.type, [...PERSONAL_TYPES]),
-        isNull(modelProviderAccounts.disconnectedAt),
-      ),
-    );
+function personalModelRouteSubscriptions(
+  accounts: readonly {
+    readonly type: string;
+    readonly modelProviderId: string | null;
+    readonly isActive: boolean;
+    readonly needsReconnect: boolean;
+  }[],
+): readonly PersonalCandidate[] {
   return PERSONAL_TYPES.flatMap((type) => {
     const connected = accounts.filter((account) => {
       return account.type === type;
     });
     const first = connected[0];
-    if (!first) {
-      return [];
-    }
-    return [
-      {
-        type,
-        // This is a logical candidate, never an admitted account ID.
-        providerId: first.providerId,
-        needsReconnect: connected.some((account) => {
-          return account.isActive && account.needsReconnect;
-        }),
-      },
-    ];
+    return first
+      ? [
+          {
+            type,
+            providerId: first.modelProviderId,
+            needsReconnect: connected.some((account) => {
+              return account.isActive && account.needsReconnect;
+            }),
+          },
+        ]
+      : [];
   });
 }
+
+/** Plain request observations; no account capture, decryption or provider I/O. */
+export const loadModelRouteSources$ = command(
+  async (
+    { set },
+    orgId: string,
+    userId: string,
+    models?: readonly string[],
+    abortSignal?: AbortSignal,
+  ): Promise<ModelRouteSources> => {
+    const db = set(writeDb$);
+    const memberScoped =
+      userId !== "__no_preference__" && userId !== ORG_SENTINEL_USER_ID;
+    const needsPersonal =
+      memberScoped &&
+      (models === undefined ||
+        models.some((model) => {
+          return getProvidersForModel(model).some((type) => {
+            return PERSONAL_TYPES.some((personal) => {
+              return personal === type;
+            });
+          });
+        }));
+    const [accounts, providers, surfaces] = await Promise.all([
+      needsPersonal
+        ? db
+            .select({
+              type: modelProviderAccounts.type,
+              modelProviderId: modelProviderAccounts.modelProviderId,
+              isActive: modelProviderAccounts.isActive,
+              needsReconnect: modelProviderAccounts.needsReconnect,
+            })
+            .from(modelProviderAccounts)
+            .where(
+              and(
+                eq(modelProviderAccounts.orgId, orgId),
+                eq(modelProviderAccounts.userId, userId),
+                inArray(modelProviderAccounts.type, [...PERSONAL_TYPES]),
+                isNull(modelProviderAccounts.disconnectedAt),
+              ),
+            )
+        : [],
+      db
+        .select({
+          id: modelProviders.id,
+          type: modelProviders.type,
+          userId: modelProviders.userId,
+          selectedModel: modelProviders.selectedModel,
+        })
+        .from(modelProviders)
+        .where(
+          and(
+            eq(modelProviders.orgId, orgId),
+            eq(modelProviders.userId, ORG_SENTINEL_USER_ID),
+          ),
+        ),
+      db
+        .select({
+          id: modelProviderSurfaces.id,
+          protocol: modelProviderSurfaces.protocol,
+          modelMappings: modelProviderSurfaces.modelMappings,
+        })
+        .from(modelProviderSurfaces)
+        .innerJoin(
+          modelProviderConnections,
+          eq(modelProviderSurfaces.connectionId, modelProviderConnections.id),
+        )
+        .where(eq(modelProviderConnections.orgId, orgId)),
+    ]);
+    abortSignal?.throwIfAborted();
+    return {
+      member: {
+        memberScoped,
+        subscriptions: personalModelRouteSubscriptions(accounts),
+      },
+      providers,
+      surfaces,
+    };
+  },
+);
 
 export function providerTypeForSurfaceProtocol(
   protocol: string,
@@ -197,9 +190,8 @@ function isOAuthMemberProviderType(type: ModelProviderType): boolean {
   return type === "claude-code-oauth-token" || type === "codex-oauth-token";
 }
 
-async function resolveCustomSurfacePolicyRoute(params: {
-  readonly db: Db;
-  readonly orgId: string;
+function resolveCustomSurfacePolicyRoute(params: {
+  readonly sources: ModelRouteSources;
   readonly policy: {
     readonly model: SupportedRunModel;
     readonly modelProviderId: string | null;
@@ -207,7 +199,7 @@ async function resolveCustomSurfacePolicyRoute(params: {
   };
   readonly providerType: ModelProviderType;
   readonly credentialScope: ModelProviderCredentialScope;
-}): Promise<ResolvedModelFirstPolicyRoute | null> {
+}): ResolvedModelFirstPolicyRoute | null {
   if (
     params.credentialScope !== "org" ||
     params.policy.modelProviderId !== null ||
@@ -215,23 +207,9 @@ async function resolveCustomSurfacePolicyRoute(params: {
   ) {
     return null;
   }
-  const [surface] = await params.db
-    .select({
-      protocol: modelProviderSurfaces.protocol,
-      modelMappings: modelProviderSurfaces.modelMappings,
-    })
-    .from(modelProviderSurfaces)
-    .innerJoin(
-      modelProviderConnections,
-      eq(modelProviderSurfaces.connectionId, modelProviderConnections.id),
-    )
-    .where(
-      and(
-        eq(modelProviderSurfaces.id, params.policy.modelProviderSurfaceId),
-        eq(modelProviderConnections.orgId, params.orgId),
-      ),
-    )
-    .limit(1);
+  const surface = params.sources.surfaces.find((candidate) => {
+    return candidate.id === params.policy.modelProviderSurfaceId;
+  });
   if (
     !surface ||
     providerTypeForSurfaceProtocol(surface.protocol) !== params.providerType ||
@@ -313,41 +291,6 @@ function parsePolicyRoute(policy: ModelRoutePolicy): {
   return { providerType, credentialScope };
 }
 
-function policyCanUsePersonalMetadata(args: {
-  readonly policy: ModelRoutePolicy;
-  readonly credentialScope: ModelProviderCredentialScope;
-}): boolean {
-  if (args.credentialScope === "member") {
-    return true;
-  }
-  // Subscriptions only ever carry a personal type, so a model that supports
-  // none of them can never match one and needs no metadata read.
-  return getProvidersForModel(args.policy.model).some((providerType) => {
-    return PERSONAL_TYPES.some((personalType): boolean => {
-      return personalType === providerType;
-    });
-  });
-}
-
-async function memberContextForPolicy(
-  member: ModelRouteMemberContext,
-  policy: ModelRoutePolicy,
-  credentialScope: ModelProviderCredentialScope,
-): Promise<MemberModelRouteContext> {
-  if (!("personalMetadata" in member)) {
-    return member;
-  }
-  if (
-    !member.memberScoped ||
-    !policyCanUsePersonalMetadata({ policy, credentialScope }) ||
-    member.personalMetadata.kind === "not-applicable"
-  ) {
-    return { memberScoped: member.memberScoped, subscriptions: [] };
-  }
-  const loaded = await member.personalMetadata.load();
-  return { memberScoped: true, subscriptions: loaded.subscriptions };
-}
-
 function policyRouteAllowedForPlan(args: {
   readonly policy: ModelRoutePolicy;
   readonly providerType: ModelProviderType;
@@ -370,16 +313,14 @@ function policyRouteAllowedForPlan(args: {
 }
 
 /** Shared by runtime model selection and the additive member response. */
-export async function resolveEffectivePolicyRoute(params: {
-  readonly db: Db;
-  readonly orgId: string;
+export function resolveEffectivePolicyRoute(params: {
+  readonly sources: ModelRouteSources;
   readonly capabilities: Pick<
     OrgPlanCapabilities,
     "restrictedBuiltInModels" | "supportByok"
   >;
-  readonly member: ModelRouteMemberContext;
   readonly policy: ModelRoutePolicy;
-}): Promise<ResolvedModelFirstPolicyRoute | null> {
+}): ResolvedModelFirstPolicyRoute | null {
   const { policy } = params;
   if (
     !isSupportedRunModel(policy.model) ||
@@ -388,11 +329,7 @@ export async function resolveEffectivePolicyRoute(params: {
     return null;
   }
   const { providerType, credentialScope } = parsePolicyRoute(policy);
-  const member = await memberContextForPolicy(
-    params.member,
-    policy,
-    credentialScope,
-  );
+  const member = params.sources.member;
   // Organization Subscription policies keep their required member route under either switch state.
   // A missing nullable org FK is configuration loss, not malformed structure.
   if (member.memberScoped && credentialScope === "org") {
@@ -424,9 +361,8 @@ export async function resolveEffectivePolicyRoute(params: {
     return null;
   }
   if (policy.modelProviderSurfaceId) {
-    return await resolveCustomSurfacePolicyRoute({
-      db: params.db,
-      orgId: params.orgId,
+    return resolveCustomSurfacePolicyRoute({
+      sources: params.sources,
       policy: {
         model: policy.model,
         modelProviderId: policy.modelProviderId,
@@ -451,17 +387,9 @@ export async function resolveEffectivePolicyRoute(params: {
     modelProviderId: policy.modelProviderId,
   });
   if (legacyOrgProviderId) {
-    const [provider] = await params.db
-      .select({ type: modelProviders.type })
-      .from(modelProviders)
-      .where(
-        and(
-          eq(modelProviders.id, legacyOrgProviderId),
-          eq(modelProviders.orgId, params.orgId),
-          eq(modelProviders.userId, ORG_SENTINEL_USER_ID),
-        ),
-      )
-      .limit(1);
+    const provider = params.sources.providers.find((candidate) => {
+      return candidate.id === legacyOrgProviderId;
+    });
     if (provider?.type !== providerType) {
       return null;
     }
