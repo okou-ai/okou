@@ -2797,6 +2797,8 @@ describe("CHAT-01 chat thread read state", () => {
     expect(orgless.body.error.code).toBe("UNAUTHORIZED");
 
     const peer = bdd.user({ orgId: owner.orgId });
+    await bdd.readOnboardingStatus(peer);
+    await bdd.completeOnboarding(peer);
     if (!peer.orgId) {
       throw new Error("Expected an organization-scoped peer");
     }
@@ -2927,6 +2929,8 @@ describe("CHAT-01 chat thread read state", () => {
       runnerGroup,
     } = await entitledChatActor("Active ids owner agent");
     const peer = bdd.user({ orgId: owner.orgId });
+    await bdd.readOnboardingStatus(peer);
+    await bdd.completeOnboarding(peer);
     const sameUserOtherOrg = bdd.user({ userId: owner.userId });
 
     const peerAgent = await bdd.createAgent(peer, {

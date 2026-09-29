@@ -15,7 +15,7 @@ import { server } from "../../../../mocks/server";
 import { generateSandboxToken } from "../../../auth/tokens";
 import { cliAuthTestRoutes } from "../../cli-auth-test";
 import { webhooksAgentFirewallAuthRoutes } from "../../webhooks-agent-firewall-auth";
-import type { ApiTestUser } from "./api-bdd";
+import { createBddApi, type ApiTestUser } from "./api-bdd";
 import { encryptSecretForTests } from "./encrypt-secret";
 
 type FirewallAuthBody = z.infer<
@@ -134,6 +134,7 @@ export function createFirewallApi(context: TestContext) {
         }),
         [200],
       );
+      await createBddApi(context).completeOnboarding(actor);
     },
 
     async seedTestConnector(

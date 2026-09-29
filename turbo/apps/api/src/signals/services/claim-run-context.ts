@@ -1619,7 +1619,14 @@ function workflowAutomationAgentRunAuth(automation: {
 }
 
 function automationSelectionCommand(
-  args: AssembleWorkflowAutomationRunArgs,
+  args: Pick<
+    AssembleWorkflowAutomationRunArgs,
+    | "due"
+    | "apiStartTime"
+    | "queueEventId"
+    | "triggerSource"
+    | "connectorSourceId"
+  >,
   model: Extract<ModelContext, { readonly ok: true }>,
   timing: ApiDispatchTimingCollector,
 ): AgentRunSelectionInput &
@@ -1665,7 +1672,7 @@ function automationSelectionCommand(
 }
 
 function workflowAutomationTiming(
-  args: AssembleWorkflowAutomationRunArgs,
+  args: Pick<AssembleWorkflowAutomationRunArgs, "apiStartTime" | "timing">,
 ): ApiDispatchTimingCollector {
   const timing = args.timing ?? new ApiDispatchTimingCollector();
   if (!args.timing) {
@@ -5271,8 +5278,28 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         : null;
     },
   );
+  const capturedAutomationTarget$ = computed(
+    async (get): Promise<LaunchTarget | null> => {
+      const event = await get(event$);
+      if (!event) {
+        return null;
+      }
+      const [row] = await get(db$)
+        .select({
+          automation: workflowAutomationColumns(),
+          agentId: workflows.agentId,
+        })
+        .from(workflowAutomations)
+        .innerJoin(workflows, eq(workflows.id, workflowAutomations.workflowId))
+        .where(eq(workflowAutomations.id, event.automationId))
+        .limit(1);
+      return row ?? null;
+    },
+  );
   const target$ = computed(async (get): Promise<LaunchTarget | null> => {
-    get(internalTargetRevision$);
+    if (get(internalTargetRevision$) === 0) {
+      return get(capturedAutomationTarget$);
+    }
     const event = await get(event$);
     if (!event) {
       return null;
@@ -6407,7 +6434,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   const automationLaunchEffectsResolveAutomationModel$ = command(
     async (
       { set },
-      args: AssembleWorkflowAutomationRunArgs,
+      args: Pick<AssembleWorkflowAutomationRunArgs, "due" | "queueEventId">,
       timing: ApiDispatchTimingCollector,
       signal: AbortSignal,
     ): Promise<ModelContext> => {
@@ -6474,12 +6501,29 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     }
     return await model;
   });
+  const internalAutomationDatabase$ = state<Db | null>(null);
+  const automationExecutionInput$ = computed(async (get) => {
+    const [head, event, target] = await Promise.all([
+      get(head$),
+      get(event$),
+      get(capturedAutomationTarget$),
+    ]);
+    if (!head || !event || !target) return null;
+    const database = get(internalAutomationDatabase$);
+    if (!database) throw new Error("Automation execution has not started");
+    return {
+      db: database,
+      due: { ...target, chatThreadId: event.chatThreadId },
+      apiStartTime: head.apiStartTime,
+      queueEventId: event.id,
+      connectorSourceId: event.connectorSourceId ?? undefined,
+      triggerSource: manualTriggerSource(target.automation),
+    };
+  });
   const workflowAutomationLaunchReadGraphIdentityInput$ = computed(
     async (get) => {
-      const args = get(workflowAutomationLaunchReadGraphInput$);
-      if (await get(workflowAutomationLaunchReadGraphReadiness$)) {
-        return null;
-      }
+      const args = await get(automationExecutionInput$);
+      if (!args) return null;
       return {
         db: args.db,
         timing: get(workflowAutomationLaunchReadGraphTiming$),
@@ -6496,19 +6540,16 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   );
   const workflowAutomationLaunchReadGraphSelectionInput$ = computed(
     async (get) => {
-      const [identity, model] = await Promise.all([
+      const [identity, model, args] = await Promise.all([
         get(workflowAutomationLaunchReadGraphIdentityInput$),
         get(workflowAutomationLaunchReadGraphModel$),
+        get(automationExecutionInput$),
       ]);
-      return identity && model.ok
+      return identity && model.ok && args
         ? {
             db: identity.db,
             timing: identity.timing,
-            command: automationSelectionCommand(
-              get(workflowAutomationLaunchReadGraphInput$),
-              model,
-              identity.timing,
-            ),
+            command: automationSelectionCommand(args, model, identity.timing),
           }
         : null;
     },
@@ -6539,16 +6580,17 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     workflowAutomationLaunchReadGraphSelectionInput$;
   const prepareAutomationModel$ = command(
     async ({ get, set }, signal: AbortSignal): Promise<ModelContext> => {
-      const failure = await get(readiness$);
+      const args = await get(automationExecutionInput$);
       signal.throwIfAborted();
-      return failure
-        ? { ok: false, failure }
-        : await set(
-            resolveAutomationModel$,
-            get(workflowAutomationLaunchInput$),
-            get(timing$),
-            signal,
-          );
+      return !args
+        ? {
+            ok: false,
+            failure: {
+              kind: "conflict",
+              message: "Workflow automation no longer exists",
+            },
+          }
+        : await set(resolveAutomationModel$, args, get(timing$), signal);
     },
   );
   const assembleWorkflowAutomationRun$ = command(
@@ -6558,14 +6600,16 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     ): Promise<AssembledWorkflowAutomationRun | RunFailure> => {
       const args = get(workflowAutomationLaunchInput$);
       const timing = get(timing$);
-      const [selection, model, computerUseHostGrant, runInput] =
+      const [selection, model, computerUseHostGrant, runInput, readiness] =
         await Promise.all([
           get(workflowAutomationLaunchSelectionInput$),
           get(workflowAutomationLaunchModel$),
           get(computerUseHostGrant$),
           get(workflowAutomationLaunchRunInput$),
+          get(readiness$),
         ]);
       signal.throwIfAborted();
+      if (readiness) return readiness;
       if (!model.ok) {
         return model.failure;
       }
@@ -6584,6 +6628,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         kind: "assembled",
         run: {
           ...selection.command,
+          triggerSource: args.triggerSource ?? "automation-schedule",
           body: { ...selection.command.body, prompt: runInput.prompt },
           computerUseHostId: computerUseHostGrant?.hostId,
           appendSystemPrompt: runInput.appendSystemPrompt,
@@ -6614,11 +6659,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         ...args,
         db: set(writeDb$),
       });
-      set(internalTiming$, workflowAutomationTiming(args));
-      set(
-        workflowAutomationLaunchInternalModel$,
-        set(prepareAutomationModel$, signal),
-      );
       set(internalAssembly$, set(assembleWorkflowAutomationRun$, signal));
     },
   );
@@ -6658,6 +6698,29 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     reconcileOfficialWorkflow$:
       initializeQueuedAutomationReconcileOfficialWorkflow$,
   } = reconciliation;
+  const internalAutomationPreparation$ = state<Promise<void> | null>(null);
+  const initializeAutomationExecution$ = command(
+    async ({ get, set }, head: ChatQueueHeadContext, signal: AbortSignal) => {
+      set(internalAutomationDatabase$, set(writeDb$));
+      set(initializeQueuedAutomationInternalHead$, head);
+      set(internalTiming$, workflowAutomationTiming(head));
+      const input = await get(automationExecutionInput$);
+      signal.throwIfAborted();
+      if (!input) {
+        set(queuedAutomationAssemblerInternalEarlyAssembly$, {
+          kind: "rejected",
+          rejection: {
+            userId: head.userId,
+            error: {
+              code: "CONFLICT",
+              message: "Workflow automation no longer exists",
+            },
+          },
+        });
+        return;
+      }
+    },
+  );
   const initializeQueuedAutomationInitializeQueuedAutomation$ = command(
     async (
       { get, set },
@@ -6769,6 +6832,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   );
   const queuedAutomationAssemblerAssembly$ = computed(
     async (get): Promise<ChatQueueRunAssembly> => {
+      const preparation = get(internalAutomationPreparation$);
+      if (preparation) await preparation;
       const early = get(queuedAutomationAssemblerInternalEarlyAssembly$);
       if (early) {
         return early;
@@ -6807,23 +6872,19 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     },
   );
   const queuedAutomationAssemblerIdentityInput$ = computed(async (get) => {
-    return get(queuedAutomationAssemblerInternalEarlyAssembly$)
-      ? null
-      : await get(workflowAutomationLaunchIdentityInput$);
+    return await get(workflowAutomationLaunchIdentityInput$);
   });
   const queuedAutomationAssemblerSelectionInput$ = computed(async (get) => {
-    return get(queuedAutomationAssemblerInternalEarlyAssembly$)
-      ? null
-      : await get(workflowAutomationLaunchSelectionInput$);
+    return await get(workflowAutomationLaunchSelectionInput$);
   });
   const queuedAutomationAssemblerMemberAccountSnapshot$ = computed(
     async (get) => {
-      return get(queuedAutomationAssemblerInternalEarlyAssembly$)
-        ? null
-        : await get(workflowAutomationLaunchMemberAccountSnapshot$);
+      return await get(workflowAutomationLaunchMemberAccountSnapshot$);
     },
   );
   const queuedAutomationAssemblerCallbackInputs$ = computed(async (get) => {
+    const preparation = get(internalAutomationPreparation$);
+    if (preparation) await preparation;
     if (get(queuedAutomationAssemblerInternalEarlyAssembly$)) {
       return undefined;
     }
@@ -6833,10 +6894,10 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     return {};
   });
   const queuedAutomationAssemblerConnectorSourceId$ = computed(async (get) => {
-    return get(queuedAutomationAssemblerInternalEarlyAssembly$)
-      ? undefined
-      : ((await get(queuedAutomationAssemblerEvent$))?.connectorSourceId ??
-          undefined);
+    return (
+      (await get(queuedAutomationAssemblerEvent$))?.connectorSourceId ??
+      undefined
+    );
   });
   const queuedAutomationAssemblerCommand$ = computed(async (get) => {
     const assembly = await get(queuedAutomationAssemblerAssembly$);
@@ -12436,6 +12497,9 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     );
   });
   const storageMounts$ = computed(async (get) => {
+    return get(preparedStorage$);
+  });
+  const runnerStorage$ = computed(async (get) => {
     const [input, preparedStorage, piResources] = await Promise.all([
       get(runnerInput$),
       get(preparedStorage$),
@@ -12592,7 +12656,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       );
       await set(
         head.contextType === "automation"
-          ? initializeQueuedAutomationInitializeQueuedAutomation$
+          ? initializeAutomationExecution$
           : initializeQueuedPrompt$,
         head,
         signal,
@@ -12601,14 +12665,17 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       const identityInput = await get(identityInput$);
       signal.throwIfAborted();
       if (!identityInput) {
-        const assembly = await get(assembly$);
+        const assembly =
+          head.contextType === "automation"
+            ? get(queuedAutomationAssemblerInternalEarlyAssembly$)
+            : await get(assembly$);
         signal.throwIfAborted();
         await set(
           rejectChatQueueHead$,
           {
             head,
             rejection:
-              assembly.kind === "rejected"
+              assembly?.kind === "rejected"
                 ? assembly.rejection
                 : unreadyQueueHeadRejection(head),
           },
@@ -12618,24 +12685,44 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       }
       const authorization = await set(authorizeSelectedAgentRun$, signal);
       if (authorization) {
-        const assembly = await get(assembly$);
+        const rejection =
+          head.contextType === "automation"
+            ? {
+                userId: identityInput.auth.userId,
+                error: authorization.body.error,
+              }
+            : claimAssemblyRejection(
+                await get(assembly$),
+                head,
+                authorization.body.error,
+              );
         signal.throwIfAborted();
-        await set(
-          rejectChatQueueHead$,
-          {
-            head,
-            rejection: claimAssemblyRejection(
-              assembly,
-              head,
-              authorization.body.error,
-            ),
-          },
-          signal,
-        );
+        await set(rejectChatQueueHead$, { head, rejection }, signal);
         return null;
       }
       set(internalRunIds$, { runId: randomUUID(), newSessionId: randomUUID() });
       return head;
+    },
+  );
+  const startClaimResources$ = command(
+    ({ set }, head: ChatQueueHeadContext, signal: AbortSignal) => {
+      signal.throwIfAborted();
+      if (head.contextType === "automation") {
+        set(
+          workflowAutomationLaunchInternalModel$,
+          set(prepareAutomationModel$, signal),
+        );
+        set(
+          internalAutomationPreparation$,
+          set(
+            initializeQueuedAutomationInitializeQueuedAutomation$,
+            head,
+            signal,
+          ),
+        );
+      }
+      set(internalAdmission$, set(checkClaimAdmission$, signal));
+      set(internalRunnerInput$, set(prepareRunnerInput$, signal));
     },
   );
   const prepareRunContext$ = command(
@@ -12648,12 +12735,11 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       if (!head) {
         return { kind: "passed" };
       }
-      set(internalAdmission$, set(checkClaimAdmission$, signal));
-      set(internalRunnerInput$, set(prepareRunnerInput$, signal));
+      set(startClaimResources$, head, signal);
       const resources = await settle(
         Promise.all([
           get(runPlan$),
-          get(storageMounts$),
+          get(runnerStorage$),
           set(prepareCallbacks$, signal),
           set(claimRunPrepareStoredContextDraft$, signal),
           get(assembly$),
@@ -12662,6 +12748,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           get(runMemberSnapshot$),
           get(runDisabledPaidToolsSnapshot$),
           get(runEnvironmentSnapshot$),
+          get(storageMounts$),
         ]),
         signal,
       );

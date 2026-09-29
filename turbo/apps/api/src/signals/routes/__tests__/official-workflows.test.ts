@@ -113,6 +113,7 @@ import { installDurableUserExportStorage } from "./helpers/durable-user-export-s
 import { createEmailOutboxStateApi } from "./helpers/email-outbox-state";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { holdSecretKms } from "./helpers/hold-secret-kms";
+import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { createRouteMocks } from "./helpers/route-test";
 import {
   readAgentRunFamilyCountsFixture,
@@ -8766,6 +8767,187 @@ describe("Official Workflow Run admission", () => {
       });
     },
   );
+
+  it("prepares storage and runtime secrets while Official reconciliation holds callback configuration", async () => {
+    installCatalogStorageFixture();
+    const suffix = randomUUID().replaceAll("-", "").slice(0, 10);
+    const definitionName = `api-test-reconcile-parallel-${suffix}`;
+    const blueprint = gmailLabelBlueprint();
+    await syncCatalog(catalog([activeDefinition(definitionName, [blueprint])]));
+    const { actor } = await workflowBdd.setupWorkflowOrg({
+      tier: "team",
+      model: "claude-fable-5-1",
+    });
+    const { agentId } = await workflowBdd.createAgent(actor);
+    const reconciliationEntered = createDeferredPromise<void>(context.signal);
+    const releaseReconciliation = createDeferredPromise<void>(context.signal);
+    let holdLookup = false;
+    onTestFinished(async () => {
+      if (!releaseReconciliation.settled()) {
+        releaseReconciliation.resolve(undefined);
+      }
+      await flushWaitUntilForTest();
+      const createdRuns = await runs.listAgentRuns(actor, {
+        agent: agentId,
+        limit: 100,
+      });
+      for (const run of createdRuns.runs) {
+        await runs.requestCancelRun(actor, run.id, [200, 400]);
+      }
+      await flushWaitUntilForTest();
+      installCatalogStorageFixture();
+      await bdd.deleteAgent(actor, agentId);
+      await cleanupCatalog();
+    });
+    mockGmailConnectorOAuth({ email: `parallel-${suffix}@example.test` });
+    await workflowBdd.connectConnector(actor, "gmail");
+    mockOptionalEnv("GMAIL_PUBSUB_TOPIC_NAME", GMAIL_TOPIC_NAME);
+    server.use(
+      http.get(
+        "https://gmail.googleapis.com/gmail/v1/users/me/labels",
+        async () => {
+          if (holdLookup) {
+            if (!reconciliationEntered.settled()) {
+              reconciliationEntered.resolve(undefined);
+            }
+            await releaseReconciliation.promise;
+          }
+          return HttpResponse.json({
+            labels: [{ id: "Label_important", name: "Important" }],
+          });
+        },
+      ),
+      http.post("https://gmail.googleapis.com/gmail/v1/users/me/watch", () => {
+        return HttpResponse.json({
+          historyId: "100",
+          expiration: "4102444800000",
+        });
+      }),
+      http.post("https://gmail.googleapis.com/gmail/v1/users/me/stop", () => {
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    await setOfficialWorkflowsEnabled(actor, true);
+    const headers = authHeaders(actor);
+    const installed = await accept(
+      officialClient().install({
+        headers,
+        params: { definitionName },
+        body: {
+          agentId,
+          blueprints: [
+            {
+              blueprintKey: "gmail-label-trigger",
+              bindings: [{ key: "label-name", value: "Important" }],
+            },
+          ],
+        },
+      }),
+      [201],
+    );
+    const automation = installed.body.workflow.automations[0];
+    if (!automation) {
+      throw new Error("Expected an Official Gmail automation");
+    }
+    await syncCatalog(
+      catalog([
+        activeDefinition(definitionName, [
+          {
+            ...blueprint,
+            desiredState: { ...blueprint.desiredState, autonomyBudget: 5 },
+            runtime: { resultEmail: true },
+          },
+        ]),
+      ]),
+    );
+    const accepted = await readAcceptedDefinitionFixture(definitionName);
+    if (!accepted.storage.headVersionId) {
+      throw new Error("Expected the accepted Official workflow archive");
+    }
+    configureResultEmailRecipient(actor);
+    const runnerGroup = runs.configureRunnerGroup();
+    runs.acceptTelemetryIngest();
+    const signingEntered = createDeferredPromise<void>(context.signal);
+    const kmsEntered = createDeferredPromise<void>(context.signal);
+    const kms = useSecretKmsProbe(() => {
+      if (!kmsEntered.settled()) {
+        kmsEntered.resolve(undefined);
+      }
+      return undefined;
+    });
+    context.mocks.s3.getSignedUrl.mockImplementation((_client, command) => {
+      const key = requiredS3ObjectKey((command as GetObjectCommand).input.Key);
+      if (
+        key.endsWith(`/${accepted.storage.headVersionId}/archive.tar.gz`) &&
+        !signingEntered.settled()
+      ) {
+        signingEntered.resolve(undefined);
+      }
+      return Promise.resolve(
+        `https://r2.example.com/${encodeURIComponent(key)}`,
+      );
+    });
+    const before = await readAgentRunFamilyCountsFixture(context, agentId);
+    holdLookup = true;
+    const enqueued = await accept(
+      automationClient().run({ headers, params: { id: automation.id } }),
+      [201],
+    );
+    await Promise.all([
+      reconciliationEntered.promise,
+      signingEntered.promise,
+      kmsEntered.promise,
+    ]);
+    expect(kms.generateDataKeyCalls).toBe(1);
+    await expect(
+      readAgentRunFamilyCountsFixture(context, agentId),
+    ).resolves.toStrictEqual(before);
+    const queued = await chat.listThreadEvents(
+      actor,
+      enqueued.body.chatThreadId,
+    );
+    expect(
+      queued.events.some((event) => {
+        return event.eventType === "input.automation" && !event.runId;
+      }),
+    ).toBeTruthy();
+    await expect(
+      readWorkflowAutomationAutonomyFixture(context, automation.id),
+    ).resolves.toMatchObject({ officialResultEmailEnabled: false });
+    holdLookup = false;
+    releaseReconciliation.resolve(undefined);
+    const runId = await launchedAutomationRunId(
+      actor,
+      enqueued.body.chatThreadId,
+    );
+    if (!runId) {
+      throw new Error(
+        "Expected the run after Official reconciliation completes",
+      );
+    }
+    await expect(
+      readWorkflowAutomationAutonomyFixture(context, automation.id),
+    ).resolves.toMatchObject({
+      officialResultEmailEnabled: true,
+      autonomyBudget: 5,
+    });
+    await completeSuccessfulRun(
+      runnerGroup,
+      runId,
+      "Reconciled result email callback",
+    );
+    const source = await outbox.findSourceState({
+      sourceRunId: runId,
+      sourceWorkflowAutomationId: automation.id,
+    });
+    expect(source.claim).not.toBeNull();
+    expect(source.items).toStrictEqual([
+      expect.objectContaining({
+        source_run_id: runId,
+        source_workflow_automation_id: automation.id,
+      }),
+    ]);
+  });
 
   it("repairs a stale applied fingerprint and reconciles a changed release at admission", async () => {
     const {

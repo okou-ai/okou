@@ -126,9 +126,16 @@ and never submits the pending run.
 
 Explicit commands initialize or repair model policy facts when needed, refresh
 an expired usage allowance when required and reconcile an official automation.
-The parent separately submits
-the pending transaction and activates the committed run. Official reconciliation invalidates the final automation target read before
-launch preparation. Non-official inputs do not reconcile official workflows.
+The parent separately submits the pending transaction and activates the committed
+run. Official reconciliation starts alongside independent resource work. Only
+reads of its actual results wait: the final automation target, launch prompt and
+event policy, autonomy budget, and automation callback definitions. Reconciliation
+invalidates those snapshots before their final read. Session, model, member,
+connector and storage preparation, including runtime-secret KMS encryption, use
+the claim's captured execution identity and start without that barrier. Official
+executable content still comes from the accepted catalog revision and storage
+version; reconciliation does not rewrite it. Ordinary Web inputs start both
+sets of work immediately and do not reconcile official workflows.
 Storage selection and local URL signing perform no database writes. Discord access, rejection
 delivery and typing notifications receive the request dispatcher instead of
 creating a Store inside the pick's work.
@@ -257,7 +264,12 @@ PostgreSQL fault rejects only the selected cache write after a pending run and
 job exist; the run must still be claimable with a complete URL. Deferred external
 KMS and signing observations verify that both start before either completes,
 while the input remains unconsumed and no runner job is available until KMS
-finishes. Synthetic non-chat mounts have no equivalent chat input, so their
+finishes. An Official automation test holds the real Gmail label lookup during
+reconciliation: the accepted workflow archive signing and runtime KMS still
+start, with no run, job or callback rows committed. After release, completing the
+run verifies the result-email callback from the updated automation configuration.
+Internal callbacks do not have HTTP secrets and need no KMS encryption.
+Synthetic non-chat mounts have no equivalent chat input, so their
 existing fixture tests explicitly seed cache entries and retain exact URL reuse,
 52-mount completeness, hard-expiry and owned/primary selection assertions. They
 no longer expect resource preparation to persist a new cache entry.

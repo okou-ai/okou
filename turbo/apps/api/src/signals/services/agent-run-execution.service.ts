@@ -1357,15 +1357,16 @@ class StorageManifestEntryPhaseTiming {
       window.startedAt === undefined
         ? startedAt
         : Math.min(window.startedAt, startedAt);
-    return await Promise.resolve()
-      .then(operation)
-      .finally(() => {
-        const finishedAt = now();
-        window.finishedAt =
-          window.finishedAt === undefined
-            ? finishedAt
-            : Math.max(window.finishedAt, finishedAt);
-      });
+    const invoke = async () => {
+      return await operation();
+    };
+    return await invoke().finally(() => {
+      const finishedAt = now();
+      window.finishedAt =
+        window.finishedAt === undefined
+          ? finishedAt
+          : Math.max(window.finishedAt, finishedAt);
+    });
   }
 
   private record(
