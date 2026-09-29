@@ -21,7 +21,11 @@ import {
   fulfillmentRootsWhere,
   requireFulfillmentAllocationSnapshot,
 } from "./usage-pack-fulfillment-plan";
-import { atomicOrgCreditExpirationSql } from "./org-credit-expiration";
+import {
+  pendingOrgCreditExpirationQuery,
+  requireNoPendingOrgCreditExpiration,
+} from "./org-credit-expiration";
+import { expireOrgCredits$ } from "./org-credit-expiration.service";
 import type { EmptyUsagePackCancellation } from "./billing-downgrade.service";
 import {
   type BillingPurchaseConfirmResponse,
@@ -3267,6 +3271,20 @@ const activateUsagePackPlanFromSubscription$ = command(
   },
 );
 
+const expireFirstPaidUpgradeDebt$ = command(
+  async ({ set }, orgId: string, signal: AbortSignal): Promise<void> => {
+    const db = set(writeDb$);
+    const [debt] = await db
+      .select({ orgId: orgMetadata.orgId })
+      .from(orgMetadata)
+      .where(firstPaidUpgradeDebtWhere(orgId));
+    signal.throwIfAborted();
+    if (debt) {
+      await set(expireOrgCredits$, orgId, signal);
+    }
+  },
+);
+
 const commitUsagePackFulfillment$ = command(
   async (
     { set },
@@ -3276,6 +3294,7 @@ const commitUsagePackFulfillment$ = command(
     const db = set(writeDb$);
     const prepared = fulfillmentPreparedWrites(args);
     const orgId = args.context.subscription.orgId;
+    await set(expireFirstPaidUpgradeDebt$, orgId, signal);
     await db.transaction(async (tx) => {
       await tx.execute(usagePackBillingCompatibilityLockSql(orgId));
       await tx.execute(billingPurchaseCompatibilityLockSql(orgId));
@@ -3326,7 +3345,10 @@ const commitUsagePackFulfillment$ = command(
         .from(orgMetadata)
         .where(debtWhere);
       if (debt) {
-        await tx.execute(atomicOrgCreditExpirationSql(orgId, nowDate()));
+        const [pending] = await tx
+          .select()
+          .from(pendingOrgCreditExpirationQuery(orgId, nowDate()));
+        requireNoPendingOrgCreditExpiration(orgId, pending);
         await tx
           .update(orgMetadata)
           .set({ credits: 0, updatedAt: nowDate() })
