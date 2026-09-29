@@ -50,6 +50,7 @@ import {
 import { parseScheduledAtTime } from "@okouai/core/timezone";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agents } from "@okouai/db/schema/agent";
+import { connectors } from "@okouai/db/schema/connector";
 import { googleCalendarWatchStates } from "@okouai/db/schema/google-calendar-event";
 import { googleFormsAutomationCursors } from "@okouai/db/schema/google-forms-event";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
@@ -64,7 +65,7 @@ import {
   type WorkflowScheduleType,
 } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
-import { and, asc, eq, isNotNull, isNull, or } from "drizzle-orm";
+import { and, asc, eq, isNotNull, isNull, or, sql } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
 import { nowDate } from "../../lib/time";
@@ -5317,6 +5318,39 @@ const ensureEnabledAutomationEventWatch$ = command(
   },
 );
 
+function orphanedEnableCompensationCondition(
+  previous: AutomationRow,
+  enabled: AutomationRow,
+) {
+  const observation = workflowAutomationSnapshot(enabled);
+  if (
+    previous.enabled ||
+    previous.officialBlueprintKey !== null ||
+    enabled.eventConnectorId === null ||
+    enabled.eventType === null ||
+    observation === undefined
+  ) {
+    return sql`false`;
+  }
+  // Connector deletion changes xmin through FK SET NULL, without publishing a
+  // new automation intent. A failed first enable must still return this exact
+  // orphaned source to disabled. A rebound account or changed source is excluded.
+  return and(
+    eq(workflowAutomations.id, enabled.id),
+    eq(workflowAutomations.orgId, enabled.orgId),
+    eq(workflowAutomations.ownerUserId, enabled.ownerUserId),
+    eq(workflowAutomations.workflowId, enabled.workflowId),
+    eq(workflowAutomations.kind, "event"),
+    eq(workflowAutomations.eventType, enabled.eventType),
+    eq(workflowAutomations.enabled, true),
+    isNull(workflowAutomations.officialBlueprintKey),
+    isNull(workflowAutomations.eventConnectorId),
+    sql`${workflowAutomations.updatedAt} = ${observation.observedUpdatedAt}::timestamptz`,
+    sql`${workflowAutomations.eventConfig} IS NOT DISTINCT FROM ${enabled.eventConfig === null ? null : JSON.stringify(enabled.eventConfig)}::jsonb`,
+    sql`NOT EXISTS (SELECT 1 FROM ${connectors} WHERE ${connectors.id} = ${enabled.eventConnectorId}::uuid)`,
+  );
+}
+
 const restoreDisabledWorkflowAutomation$ = command(
   async (
     { set },
@@ -5361,7 +5395,13 @@ const restoreDisabledWorkflowAutomation$ = command(
         .where(
           and(
             eq(workflowAutomations.id, previousAutomation.id),
-            workflowAutomationSnapshotCondition(snapshot),
+            or(
+              workflowAutomationSnapshotCondition(snapshot),
+              orphanedEnableCompensationCondition(
+                previousAutomation,
+                enabledAutomation,
+              ),
+            ),
           ),
         )
         .returning({ id: workflowAutomations.id });
