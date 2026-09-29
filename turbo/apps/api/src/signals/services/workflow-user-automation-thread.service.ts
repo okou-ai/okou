@@ -148,7 +148,7 @@ interface WorkflowUserAutomationThreadOwner {
 }
 
 /** The one binding row a workflow's automations share for this owner. */
-function workflowUserAutomationThreadOwnerCondition(
+export function workflowUserAutomationThreadOwnerCondition(
   owner: WorkflowUserAutomationThreadOwner,
 ) {
   return and(
@@ -396,16 +396,17 @@ interface WorkflowThreadOwner extends WorkflowUserAutomationThreadOwner {
   readonly currentTime: Date;
 }
 
-function preparedWorkflowThreadValues(
+export function preparedWorkflowThreadValues(
   args: WorkflowThreadOwner,
   preparation: WorkflowThreadPreparation,
+  threadId: string,
 ) {
   const pin = preparation.initialModel;
   if (!pin.selectedModel) {
     throw new Error("A model selection is required");
   }
   return {
-    id: randomUUID(),
+    id: threadId,
     userId: args.userId,
     agentId: args.agentId,
     title: preparation.title,
@@ -474,7 +475,11 @@ export const ensureWorkflowUserAutomationThread$ = command(
       if (binding?.chatThreadId) {
         return binding.chatThreadId;
       }
-      const values = preparedWorkflowThreadValues(args, preparation);
+      const values = preparedWorkflowThreadValues(
+        args,
+        preparation,
+        randomUUID(),
+      );
       await tx.insert(chatThreads).values(values);
       await tx.execute(
         chatThreadEventInsertSql({

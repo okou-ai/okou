@@ -326,11 +326,6 @@ interface MorningBriefLogicalChoicePatch {
   readonly expectedEpoch?: number;
 }
 
-export type MorningBriefChoiceApplication =
-  | { readonly kind: "applied"; readonly row: MorningBriefNativeScheduleRow }
-  | { readonly kind: "stale"; readonly row: MorningBriefNativeScheduleRow }
-  | { readonly kind: "absent" };
-
 interface MorningBriefReconciledAutomationState {
   readonly kind: string;
   readonly scheduleType: string | null;
@@ -533,83 +528,10 @@ export function morningBriefLogicalChoicePlan(
   };
 }
 
-export async function applyMorningBriefLogicalChoice(
-  tx: MorningBriefNativeWriter,
-  owner: MorningBriefMemberIdentity,
-  patch: MorningBriefLogicalChoicePatch,
-  at: Date,
-): Promise<MorningBriefChoiceApplication> {
-  const current = await lockMorningBriefNativeSchedule(tx, owner);
-  if (current === undefined) {
-    return { kind: "absent" };
-  }
-  if (
-    patch.expectedEpoch !== undefined &&
-    patch.expectedEpoch !== current.ownerEpoch
-  ) {
-    return { kind: "stale", row: current };
-  }
-
-  const inFlight = await loadUnsettledOccurrence(tx, owner);
-  const legacyInFlight =
-    current.phase === "legacy" && current.legacyAutomationId !== null
-      ? await hasCurrentUnsettledLegacyClaim(tx, current.legacyAutomationId)
-      : false;
-
-  const plan = morningBriefLogicalChoicePlan(
-    current,
-    patch,
-    inFlight,
-    legacyInFlight,
-    at,
-  );
-
-  const [row] = await tx
-    .update(morningBriefNativeSchedules)
-    .set(plan.values)
-    .where(
-      and(
-        morningBriefScheduleWhere(owner),
-        // The fresh predicate: a compensation that read an older epoch cannot
-        // restore that epoch's state over a newer writer.
-        eq(morningBriefNativeSchedules.ownerEpoch, current.ownerEpoch),
-      ),
-    )
-    .returning();
-  if (row !== undefined && plan.revokes) {
-    // Disable/re-enable and destination replacement revoke the old occurrence
-    // immediately. A provider call that already escaped may still finish, but
-    // its pinned attempt remains only deduplication evidence: it cannot deliver,
-    // settle again or be resumed under the new epoch.
-    await tx
-      .update(morningBriefNativeOccurrences)
-      .set({
-        state: "settled",
-        outcome: "revoked",
-        settledAt: at,
-        leaseToken: null,
-        leaseExpiresAt: null,
-        deferredUntil: null,
-        deliveryPending: false,
-        updatedAt: at,
-      })
-      .where(
-        and(
-          eq(morningBriefNativeOccurrences.orgId, owner.orgId),
-          eq(morningBriefNativeOccurrences.userId, owner.userId),
-          eq(morningBriefNativeOccurrences.ownerEpoch, current.ownerEpoch),
-          isNull(morningBriefNativeOccurrences.settledAt),
-        ),
-      );
-  }
-  return row === undefined ? { kind: "absent" } : { kind: "applied", row };
-}
-
 /**
  * Where the scheduling obligation stands after a logical-choice write.
  *
- * Split out of {@link applyMorningBriefLogicalChoice} so each branch is
- * readable on its own: a disabled choice owes nothing, a revocation restarts
+ * The pure choice planner keeps each branch readable: a disabled choice owes nothing, a revocation restarts
  * from now, an in-flight execution keeps the obligation it already holds, and a
  * future unconsumed slot is recomputed under the edited recurrence.
  */

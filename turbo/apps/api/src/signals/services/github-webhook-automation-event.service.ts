@@ -237,7 +237,7 @@ interface GithubWebhookAutomationRow {
   readonly config: GithubWebhookAutomationEventConfig;
 }
 
-function parseConfigForEventType(
+export function parseGithubWebhookAutomationConfig(
   eventType: GithubWebhookAutomationEventType,
   eventConfig: unknown,
 ): GithubWebhookAutomationEventConfig | null {
@@ -302,7 +302,10 @@ export async function prepareGithubWebhookEventConfigForPersist(
     };
   }
 
-  const eventConfig = parseConfigForEventType(args.eventType, args.eventConfig);
+  const eventConfig = parseGithubWebhookAutomationConfig(
+    args.eventType,
+    args.eventConfig,
+  );
   if (!eventConfig) {
     return {
       kind: "bad-request",
@@ -614,7 +617,7 @@ const loadGithubWebhookAutomations$ = command(
     const automations: GithubWebhookAutomationRow[] = [];
     const currentTime = nowDate();
     for (const row of rows) {
-      const config = parseConfigForEventType(
+      const config = parseGithubWebhookAutomationConfig(
         args.eventType,
         row.automation.eventConfig,
       );

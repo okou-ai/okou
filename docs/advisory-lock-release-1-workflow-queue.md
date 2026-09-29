@@ -88,6 +88,18 @@ transaction handles to another function.
   predicate builders receive ordinary values only. The response's committed
   Stripe/Calendar/webhook reads run after that transaction in an owning command.
 
+- Generic event automation creation now uses `insertEventAutomation$` for the
+  complete finite source-selection, workflow binding, optional thread and created
+  event, and automation write. It retains the outgoing builtin credential key,
+  Agent-before-Workflow parent order, binding exclusion, exact expected account
+  predicate and Forms publication snapshot. SQL builders take ordinary values;
+  no store/helper executes through this transaction. The caller receives the
+  committed receipt before its existing watch compensation/cancellation handoff.
+  Creation contexts no longer contain `db`; Gmail/Calendar/Forms and generic
+  chat-run-finished/GitHub entry paths invoke the owned writer directly. Failed
+  watch cleanup invokes an owning single-row DELETE command instead of capturing
+  a database handle in `onRejection` callbacks.
+
 ## Implementation still required
 
 These are implementation tasks, not conditions satisfied by draining old API
@@ -98,10 +110,11 @@ requests:
   a fixed row bound remains to be implemented without revoking a winner before
   its new occurrence is admitted.
 - Morning Brief preference, native delivery, installation/reconciliation and
-  revocation still have inherited native-authority helper chains. Event automation
-  creation and workflow copy still propagate handles through the shared thread
-  initializer; schedule insertion and Official metadata attachment are completed
-  boundaries, not completion of those enclosing creation graphs. The absent
+  revocation still have inherited native-authority helper chains. Webhook and
+  Stripe-specific creation and workflow copy still propagate handles through the
+  shared thread initializer; their entry contexts are ordinary values now, but
+  those remaining transaction internals are not completed. Notion/Meet provider
+  preparation and Official reconfiguration have separate remaining caller work. The absent
   native-owner key remains necessary for the current shared writer protocol:
   first materialization can otherwise race an ordinary/selected classification.
   Preparing its terminal protocol is still implementation work, not merely an
