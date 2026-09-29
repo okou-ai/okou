@@ -12910,7 +12910,9 @@ describe("usage pack allocation management", () => {
       fixture.billingPeriod,
       { latestInvoice: invoice },
     );
+    // The pre-confirmation configuration repair reads the unchanged Plan first.
     context.mocks.stripe.subscriptions.retrieve
+      .mockResolvedValueOnce(oldSubscription)
       .mockResolvedValueOnce(oldSubscription)
       .mockResolvedValueOnce(oldSubscription)
       .mockResolvedValue(upgradedSubscription);
@@ -13025,7 +13027,9 @@ describe("usage pack allocation management", () => {
       fixture.billingPeriod,
       { latestInvoice: invoice },
     );
+    // The pre-confirmation configuration repair reads the unchanged Plan first.
     context.mocks.stripe.subscriptions.retrieve
+      .mockResolvedValueOnce(oldSubscription)
       .mockResolvedValueOnce(oldSubscription)
       .mockResolvedValue(upgradedSubscription);
     context.mocks.stripe.subscriptions.update.mockResolvedValue(
