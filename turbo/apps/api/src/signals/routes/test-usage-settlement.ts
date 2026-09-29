@@ -23,6 +23,7 @@ import {
   testEndpointNotFoundResponse,
 } from "./test-endpoint-helpers";
 import { writeOrgMetadataWithDefaultPlanEntitlement } from "../services/org-plan-entitlements.service";
+import { prepareUsageAllowanceRefresh$ } from "../services/usage-allowance.service";
 import { settle } from "../utils";
 
 const body$ = bodyResultOf(testUsageSettlementContract.process);
@@ -66,12 +67,18 @@ const rollbackUsageSettlement$ = command(
 
     const db = set(writeDb$);
     const pricingResolution = get(usagePricingResolution$);
+    const refresh = await set(
+      prepareUsageAllowanceRefresh$,
+      { orgId: bodyResult.data.org_id, requirePendingUsage: true },
+      signal,
+    );
     const result = await settle(
       db.transaction(async (tx) => {
         await processOrgUsageEventsInTransaction(
           tx,
           bodyResult.data.org_id,
           pricingResolution,
+          refresh,
           signal,
         );
         // The same financial operation has run, but its transaction has not

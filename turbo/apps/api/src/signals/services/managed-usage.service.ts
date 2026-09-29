@@ -28,6 +28,7 @@ import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import { resolveActiveRunCreditAdmission } from "./run-admission.service";
 import {
   lockOrgCredits,
+  type PreparedUsageAllowanceRefresh,
   readUsageAllowanceAvailabilitySnapshot,
   resolveUsageAllowanceAvailability,
 } from "./usage-allowance.service";
@@ -437,7 +438,9 @@ async function readManagedUsageReceipt(
 // The caller holds shared compaction protection before locking its job row.
 export async function recordManagedUsageInCompactionLockedTransaction(
   tx: Tx,
-  args: ManagedUsageRecordArgs,
+  args: ManagedUsageRecordArgs & {
+    readonly allowanceRefresh?: PreparedUsageAllowanceRefresh;
+  },
   pricingResolution: UsagePricingResolution,
   signal: AbortSignal,
 ): Promise<ManagedUsageRecordResult> {
@@ -454,6 +457,7 @@ export async function recordManagedUsageInCompactionLockedTransaction(
       // Settlement timing excludes earlier waits in this larger transaction.
       lockWaitMs: 0,
       orgLockWaitMs: 0,
+      refresh: args.allowanceRefresh,
     },
     signal,
   );

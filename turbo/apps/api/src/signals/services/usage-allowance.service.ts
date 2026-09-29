@@ -3,6 +3,7 @@ import {
   orgUsageAllowanceWindows,
   usageAllowanceAllocations,
 } from "@okouai/db/schema/org-usage-allowance";
+import { usageEvent } from "@okouai/db/schema/usage-event";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import {
@@ -15,6 +16,7 @@ import {
   inArray,
   isNotNull,
   isNull,
+  notExists,
   lte,
   or,
   sql,
@@ -22,7 +24,9 @@ import {
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import type { Db } from "../external/db";
+import { command } from "ccstate";
+import { QueryBuilder } from "drizzle-orm/pg-core";
+import { writeDb$, type Db } from "../external/db";
 import { recordBillingOperationTimings } from "../external/sandbox-op-log";
 import { safeSync } from "../utils";
 import { getStripeClient } from "../external/stripe-client";
@@ -235,35 +239,149 @@ export function activeAllowanceCutoff(status: string, now: Date): Date {
     : now;
 }
 
-async function refreshUsageAllowanceEntitlementFromStripe(
+export interface PreparedUsageAllowanceRefresh {
+  readonly entitlementId: string;
+  readonly snapshot: string;
+  readonly subscription: UsageAllowanceSubscriptionInput;
+}
+function allowanceRefreshQuery(orgId: string) {
+  return new QueryBuilder()
+    .select({
+      id: orgUsageAllowanceEntitlements.id,
+      status: orgUsageAllowanceEntitlements.status,
+      expiresAt: orgUsageAllowanceEntitlements.expiresAt,
+      stripeSubscriptionId: orgUsageAllowanceEntitlements.stripeSubscriptionId,
+      snapshot: sql`${orgUsageAllowanceEntitlements}::text`
+        .mapWith(pgTextDecoder)
+        .as("snapshot"),
+    })
+    .from(orgUsageAllowanceEntitlements)
+    .where(
+      and(
+        eq(orgUsageAllowanceEntitlements.orgId, orgId),
+        inArray(orgUsageAllowanceEntitlements.status, [
+          ...ACTIVE_ALLOWANCE_STATUSES,
+        ]),
+        lte(orgUsageAllowanceEntitlements.effectiveAt, nowDate()),
+      ),
+    )
+    .limit(1)
+    .as("allowance_refresh");
+}
+async function prepareAllowanceRefresh(
+  row:
+    | {
+        readonly id: string;
+        readonly status: string;
+        readonly expiresAt: Date | null;
+        readonly stripeSubscriptionId: string | null;
+        readonly snapshot: string;
+      }
+    | undefined,
+): Promise<PreparedUsageAllowanceRefresh | undefined> {
+  if (
+    !row?.stripeSubscriptionId ||
+    !row.expiresAt ||
+    row.expiresAt > activeAllowanceCutoff(row.status, nowDate())
+  ) {
+    return undefined;
+  }
+  const subscription = (await getStripeClient().subscriptions.retrieve(
+    row.stripeSubscriptionId,
+  )) as UsageAllowanceSubscriptionInput;
+  return { entitlementId: row.id, snapshot: row.snapshot, subscription };
+}
+function pendingAllowanceRefreshQuery(orgId: string) {
+  const queryBuilder = new QueryBuilder();
+  const anchor = sql`COALESCE(${usageEvent.billingAnchorAt}, ${agentRuns.createdAt}, ${usageEvent.createdAt})`;
+  const issuedWindow = (kind: UsageAllowanceWindowKind) => {
+    return queryBuilder
+      .select({ id: orgUsageAllowanceWindows.id })
+      .from(orgUsageAllowanceWindows)
+      .where(
+        and(
+          eq(orgUsageAllowanceWindows.orgId, orgId),
+          eq(orgUsageAllowanceWindows.kind, kind),
+          lte(orgUsageAllowanceWindows.startsAt, anchor),
+          gt(orgUsageAllowanceWindows.expiresAt, anchor),
+        ),
+      );
+  };
+  return queryBuilder
+    .select({ id: usageEvent.id })
+    .from(usageEvent)
+    .leftJoin(
+      agentRuns,
+      and(eq(agentRuns.id, usageEvent.runId), eq(agentRuns.orgId, orgId)),
+    )
+    .where(
+      and(
+        eq(usageEvent.orgId, orgId),
+        eq(usageEvent.status, "pending"),
+        notExists(
+          queryBuilder
+            .select({ id: usageAllowanceAllocations.usageEventId })
+            .from(usageAllowanceAllocations)
+            .where(eq(usageAllowanceAllocations.usageEventId, usageEvent.id)),
+        ),
+        or(notExists(issuedWindow("short")), notExists(issuedWindow("weekly"))),
+      ),
+    )
+    .limit(1)
+    .as("pending_allowance_refresh");
+}
+
+/** Stripe preparation owns no financial row, advisory lock, or SQL transaction. */
+export const prepareUsageAllowanceRefresh$ = command(
+  async (
+    { set },
+    args: { readonly orgId: string; readonly requirePendingUsage?: boolean },
+    signal: AbortSignal,
+  ) => {
+    const db = set(writeDb$);
+    if (args.requirePendingUsage) {
+      const [pending] = await db
+        .select()
+        .from(pendingAllowanceRefreshQuery(args.orgId));
+      signal.throwIfAborted();
+      if (!pending) {
+        return undefined;
+      }
+    }
+    const [row] = await db.select().from(allowanceRefreshQuery(args.orgId));
+    signal.throwIfAborted();
+    const prepared = await prepareAllowanceRefresh(row);
+    signal.throwIfAborted();
+    return prepared;
+  },
+);
+
+async function applyPreparedUsageAllowanceRefresh(
   tx: UsageAllowanceStore,
   entitlement: UsageAllowanceEntitlement,
   now: Date,
+  prepared: PreparedUsageAllowanceRefresh | undefined,
 ): Promise<UsageAllowanceEntitlement | null> {
   if (!entitlement.stripeSubscriptionId) {
     return null;
   }
 
-  L.warn(
-    "usage allowance entitlement expired locally, refreshing from Stripe",
-    {
-      orgId: entitlement.orgId,
-      entitlementId: entitlement.id,
-      stripeSubscriptionId: entitlement.stripeSubscriptionId,
-      expiresAt: entitlement.expiresAt,
-    },
-  );
-
-  // Compare the actual entitlement snapshot when publishing remote work.
-  // Release 2 can move retrieval outside the local write transaction without
-  // reviving an entitlement changed or revoked while Stripe was in flight.
+  // An expired entitlement must be checked against the exact snapshot used
+  // before Stripe I/O. A changed snapshot aborts the entire financial write;
+  // it must never silently fall through to charging credits instead.
+  if (
+    prepared?.entitlementId !== entitlement.id ||
+    prepared.snapshot !== entitlement.snapshot
+  ) {
+    throw new Error(
+      "Usage allowance entitlement changed before prepared Stripe refresh",
+    );
+  }
   const unchanged = and(
     eq(orgUsageAllowanceEntitlements.id, entitlement.id),
     eq(sql`${orgUsageAllowanceEntitlements}::text`, entitlement.snapshot),
   );
-  const subscription = (await getStripeClient().subscriptions.retrieve(
-    entitlement.stripeSubscriptionId,
-  )) as UsageAllowanceSubscriptionInput;
+  const subscription = prepared.subscription;
   const periodEnd = subscriptionScheduledEnd(subscription);
 
   if (subscriptionIsTerminalAllowance(subscription)) {
@@ -368,6 +486,7 @@ export async function lockOrgCredits(
 async function loadActiveUsageAllowanceEntitlement(
   tx: UsageAllowanceStore,
   orgId: string,
+  refresh?: PreparedUsageAllowanceRefresh,
 ): Promise<UsageAllowanceEntitlement | null> {
   const currentTime = nowDate();
   const [row] = await tx
@@ -409,7 +528,12 @@ async function loadActiveUsageAllowanceEntitlement(
   if (!row.expiresAt || row.expiresAt > cutoff) {
     return row;
   }
-  return await refreshUsageAllowanceEntitlementFromStripe(tx, row, currentTime);
+  return await applyPreparedUsageAllowanceRefresh(
+    tx,
+    row,
+    currentTime,
+    refresh,
+  );
 }
 
 async function loadRunCreatedAt(
@@ -576,11 +700,16 @@ async function ensureWindowsForRun(
   tx: UsageAllowanceStore,
   args: {
     readonly orgId: string;
+    readonly refresh?: PreparedUsageAllowanceRefresh;
     readonly runId: string;
     readonly runCreatedAt: Date;
   },
 ): Promise<UsageAllowanceWindows | null> {
-  const entitlement = await loadActiveUsageAllowanceEntitlement(tx, args.orgId);
+  const entitlement = await loadActiveUsageAllowanceEntitlement(
+    tx,
+    args.orgId,
+    args.refresh,
+  );
   if (!entitlement || !entitlementCoversAt(entitlement, args.runCreatedAt)) {
     return null;
   }
@@ -643,8 +772,13 @@ async function readWindowAvailability(
 async function resolveAvailabilityInLockedTransaction(
   tx: UsageAllowanceStore,
   orgId: string,
+  refresh?: PreparedUsageAllowanceRefresh,
 ): Promise<UsageAllowanceAvailability | null> {
-  const entitlement = await loadActiveUsageAllowanceEntitlement(tx, orgId);
+  const entitlement = await loadActiveUsageAllowanceEntitlement(
+    tx,
+    orgId,
+    refresh,
+  );
   if (!entitlement) {
     return null;
   }
@@ -760,11 +894,13 @@ export async function resolveUsageAllowanceAvailability(
   let lockWaitMs = 0;
   let availability = await readUsageAllowanceAvailabilitySnapshot(db, orgId);
   if (availability === "allowance_refresh_required") {
+    const [row] = await db.select().from(allowanceRefreshQuery(orgId));
+    const refresh = await prepareAllowanceRefresh(row);
     availability = await db.transaction(async (tx) => {
       const lockStartedAt = performance.now();
       await lockOrgCredits(tx, orgId);
       lockWaitMs = Math.round(performance.now() - lockStartedAt);
-      return await resolveAvailabilityInLockedTransaction(tx, orgId);
+      return await resolveAvailabilityInLockedTransaction(tx, orgId, refresh);
     });
   }
   // Availability is a snapshot, not a reservation. Include any refresh COMMIT
@@ -795,6 +931,7 @@ export async function activateUsageAllowanceWindowsForRun(
     readonly orgId: string;
     readonly runId: string;
     readonly runCreatedAt: Date;
+    readonly refresh?: PreparedUsageAllowanceRefresh;
   },
 ): Promise<UsageAllowanceAvailability | null> {
   await lockOrgCredits(tx, args.orgId);
@@ -809,6 +946,15 @@ export async function resolveUsageAllowanceAvailabilityForRun(
     readonly runId: string;
   },
 ): Promise<UsageAllowanceAvailability | null> {
+  const at = await loadRunCreatedAt(db, args);
+  if (!at) {
+    return null;
+  }
+  const issued = await loadExistingWindowsAt(db, { orgId: args.orgId, at });
+  const [row] = issued
+    ? []
+    : await db.select().from(allowanceRefreshQuery(args.orgId));
+  const refresh = await prepareAllowanceRefresh(row);
   return await db.transaction(async (tx) => {
     await lockOrgCredits(tx, args.orgId);
     const runCreatedAt = await loadRunCreatedAt(tx, args);
@@ -821,7 +967,7 @@ export async function resolveUsageAllowanceAvailabilityForRun(
     });
     const windows =
       existingWindows ??
-      (await ensureWindowsForRun(tx, { ...args, runCreatedAt }));
+      (await ensureWindowsForRun(tx, { ...args, runCreatedAt, refresh }));
     return windows ? availabilityFromWindows(windows) : null;
   });
 }
@@ -1124,6 +1270,7 @@ async function ensureIssuedWindowsForCandidates(
   tx: UsageAllowanceStore,
   args: {
     readonly orgId: string;
+    readonly refresh?: PreparedUsageAllowanceRefresh;
     readonly candidates: readonly AnchoredUsageAllowanceCandidate[];
     readonly shortWindows: UsageAllowanceWindowState[];
     readonly weeklyWindows: UsageAllowanceWindowState[];
@@ -1138,7 +1285,11 @@ async function ensureIssuedWindowsForCandidates(
   if (!missingWindows) {
     return;
   }
-  const entitlement = await loadActiveUsageAllowanceEntitlement(tx, args.orgId);
+  const entitlement = await loadActiveUsageAllowanceEntitlement(
+    tx,
+    args.orgId,
+    args.refresh,
+  );
   if (!entitlement) {
     return;
   }
@@ -1219,6 +1370,7 @@ export async function applyUsageAllowanceToUsageEventsInLockedTransaction(
   tx: UsageAllowanceStore,
   args: {
     readonly orgId: string;
+    readonly refresh?: PreparedUsageAllowanceRefresh;
     readonly events: readonly UsageAllowanceEventInput[];
   },
 ): Promise<{
@@ -1271,6 +1423,7 @@ export async function applyUsageAllowanceToUsageEventsInLockedTransaction(
   await ensureIssuedWindowsForCandidates(tx, {
     orgId: args.orgId,
     candidates: anchoredCandidates,
+    refresh: args.refresh,
     shortWindows,
     weeklyWindows,
   });

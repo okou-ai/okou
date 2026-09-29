@@ -370,7 +370,11 @@ import {
   isFreePlanForCreditAdmission,
   resolveOrgCreditAvailability,
 } from "./run-admission.service";
-import { activateUsageAllowanceWindowsForRun } from "./usage-allowance.service";
+import {
+  activateUsageAllowanceWindowsForRun,
+  prepareUsageAllowanceRefresh$,
+  type PreparedUsageAllowanceRefresh,
+} from "./usage-allowance.service";
 import {
   ApiDispatchPhaseCollector,
   ApiDispatchTimingCollector,
@@ -924,6 +928,7 @@ export function isThreadSessionSnapshotStale(
 }
 
 interface CommitPreparedLaunchArgs {
+  readonly allowanceRefresh?: PreparedUsageAllowanceRefresh;
   readonly db: Db;
   readonly createArgs: CreateAgentRunArgs;
   readonly enforceBuiltInCredits: boolean;
@@ -8463,6 +8468,7 @@ async function activatePreparedLaunchUsageAllowance(args: {
             orgId: args.commit.createArgs.orgId,
             runId: args.run.id,
             runCreatedAt: args.run.createdAt,
+            refresh: args.commit.allowanceRefresh,
           });
         },
       );
@@ -10906,6 +10912,7 @@ function flushQueueFirstClaimLostTiming(args: {
 }
 
 interface AtomicLaunchRunInput {
+  readonly allowanceRefresh?: PreparedUsageAllowanceRefresh;
   readonly db: Db;
   readonly args: CreateAgentRunArgs;
   readonly enforceBuiltInCredits: boolean;
@@ -10981,6 +10988,7 @@ async function commitAtomicLaunch(
     async () => {
       return await commitPreparedLaunch({
         db: input.db,
+        allowanceRefresh: input.allowanceRefresh,
         createArgs: input.args,
         enforceBuiltInCredits: input.enforceBuiltInCredits,
         context: input.context,
@@ -11008,7 +11016,19 @@ const commitAndActivateAtomicLaunch$ = command(
     },
     signal: AbortSignal,
   ): Promise<QueueFirstAgentRunResult> => {
-    const result = await commitAtomicLaunch(args, signal);
+    const allowanceRefresh = isBuiltInModelProviderType(
+      args.input.context.modelProvider?.type,
+    )
+      ? await set(
+          prepareUsageAllowanceRefresh$,
+          { orgId: args.input.args.orgId },
+          signal,
+        )
+      : undefined;
+    const result = await commitAtomicLaunch(
+      { ...args, input: { ...args.input, allowanceRefresh } },
+      signal,
+    );
     if (!("status" in result) || result.status !== 201) {
       return result;
     }

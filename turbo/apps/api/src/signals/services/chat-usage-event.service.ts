@@ -1,4 +1,15 @@
 import { runEventHistory } from "./run-event-provenance.service";
+import { randomUUID } from "node:crypto";
+import { QueryBuilder } from "drizzle-orm/pg-core";
+import { chatEventSnapshots } from "@okouai/db/schema/chat-event-snapshot";
+import { READABLE_CHAT_EVENT_SNAPSHOT_SCHEMA_VERSIONS } from "./chat-event-snapshot-upgrade.service";
+import { parseRawRows } from "../../lib/db-raw-rows";
+import { nowDate } from "../../lib/time";
+import {
+  appendCanonicalChatEventsSql,
+  chatEventAppendResultSchema,
+  type PreparedChatEventRow,
+} from "./chat-event-append.service";
 import { isDeepStrictEqual } from "node:util";
 import { command } from "ccstate";
 import { v5 as uuidv5 } from "uuid";
@@ -8,6 +19,7 @@ import {
   desc,
   eq,
   exists,
+  inArray,
   isNotNull,
   max,
   sql,
@@ -33,15 +45,12 @@ import { logger } from "../../lib/log";
 import { writeDb$ } from "../external/db";
 import { publishChatThreadMessageCreatedSafely } from "../external/realtime";
 import { chatEventTypeIn } from "./chat-event-type.service";
-import { insertChatEvent, replaceLoadedChatEvent } from "./chat-event.service";
 import {
   buildFinalizedUsageRelation,
   type FinalizedUsageRelation,
 } from "./finalized-usage-relation";
-import type { Tx } from "../../lib/db-types";
 
 const L = logger("ChatUsageMessage");
-type WriteTx = Tx;
 
 const TERMINAL_RUN_STATUSES = ["completed", "failed", "cancelled"] as const;
 const USAGE_CONTEXT_GROUP_BY_COLUMNS = [
@@ -80,16 +89,17 @@ function usageCreditsExpression(usage: FinalizedUsageRelation) {
   return sql`${usage.creditsCharged} + ${usage.allowanceUnits}`;
 }
 
-async function loadUsageEventContext(tx: WriteTx, runId: string) {
+function usageEventContextQuery(runId: string) {
+  const queryBuilder = new QueryBuilder();
   const usage = buildFinalizedUsageRelation();
-  return await tx
+  return queryBuilder
     .select({
       status: agentRuns.status,
       chatThreadId: agentRuns.chatThreadId,
       orgId: agentRuns.orgId,
       userId: chatThreads.userId,
       hasPending: exists(
-        tx
+        queryBuilder
           .select({ id: usageEvent.id })
           .from(usageEvent)
           .where(
@@ -102,39 +112,43 @@ async function loadUsageEventContext(tx: WriteTx, runId: string) {
         .mapWith(pgIntegerDecoder)
         .as("finalized_count"),
       totalCredits:
-        sql`COALESCE(${sum(usageCreditsExpression(usage))}, 0)::bigint`.mapWith(
-          pgInt8ToSafeIntegerDecoder,
-        ),
+        sql`COALESCE(${sum(usageCreditsExpression(usage))}, 0)::bigint`
+          .mapWith(pgInt8ToSafeIntegerDecoder)
+          .as("total_credits"),
       settledAt: sql`COALESCE(
         ${max(agentRuns.completedAt)},
         ${max(agentRuns.createdAt)}
-      )`.mapWith(agentRuns.createdAt),
+      )`
+        .mapWith(agentRuns.createdAt)
+        .as("settled_at"),
     })
     .from(agentRuns)
     .leftJoin(chatThreads, eq(chatThreads.id, agentRuns.chatThreadId))
     .leftJoin(usage, eq(usage.runId, agentRuns.id))
     .where(and(eq(agentRuns.id, runId), isNotNull(agentRuns.triggerSource)))
     .groupBy(...USAGE_CONTEXT_GROUP_BY_COLUMNS)
-    .limit(1);
+    .limit(1)
+    .as("usage_context");
 }
 
-async function loadUsageBreakdownRows(tx: WriteTx, runId: string) {
+function usageBreakdownQuery(runId: string) {
+  const queryBuilder = new QueryBuilder();
   const usage = buildFinalizedUsageRelation();
-  return await tx
+  return queryBuilder
     .select({
       kind: usage.kind,
-      provider: sql`COALESCE(NULLIF(${usage.provider}, ''), 'unknown')`.mapWith(
-        pgTextDecoder,
-      ),
-      credits:
-        sql`COALESCE(${sum(usageCreditsExpression(usage))}, 0)::bigint`.mapWith(
-          pgInt8ToSafeIntegerDecoder,
-        ),
+      provider: sql`COALESCE(NULLIF(${usage.provider}, ''), 'unknown')`
+        .mapWith(pgTextDecoder)
+        .as("provider"),
+      credits: sql`COALESCE(${sum(usageCreditsExpression(usage))}, 0)::bigint`
+        .mapWith(pgInt8ToSafeIntegerDecoder)
+        .as("credits"),
     })
     .from(usage)
     .where(eq(usage.runId, runId))
     .groupBy(usage.kind, usage.provider)
-    .orderBy(usage.kind, usage.provider);
+    .orderBy(usage.kind, usage.provider)
+    .as("usage_breakdown");
 }
 
 interface EmittedRunUsage {
@@ -145,12 +159,130 @@ interface EmittedRunUsage {
   readonly totalCredits: number;
 }
 
+function usageArchiveHeadQuery(threadId: string) {
+  return new QueryBuilder()
+    .select({
+      objectKey: chatEventSnapshots.objectKey,
+      lastSeqId: chatEventSnapshots.lastSeqId,
+    })
+    .from(chatEventSnapshots)
+    .where(
+      and(
+        eq(chatEventSnapshots.chatThreadId, threadId),
+        inArray(chatEventSnapshots.archiveSchemaVersion, [
+          ...READABLE_CHAT_EVENT_SNAPSHOT_SCHEMA_VERSIONS,
+        ]),
+      ),
+    )
+    .orderBy(desc(chatEventSnapshots.archiveSchemaVersion))
+    .limit(1)
+    .as("usage_archive_head");
+}
+const prepareRunUsageArchive$ = command(
+  async ({ set }, runId: string, signal: AbortSignal) => {
+    const db = set(writeDb$);
+    const [run] = await db
+      .select({ chatThreadId: agentRuns.chatThreadId })
+      .from(agentRuns)
+      .where(eq(agentRuns.id, runId))
+      .limit(1);
+    signal.throwIfAborted();
+    if (!run?.chatThreadId) {
+      return null;
+    }
+    const [hot] = await db
+      .select({ id: chatEvents.id })
+      .from(chatEvents)
+      .where(
+        and(eq(chatEvents.runId, runId), chatEventTypeIn(["usage.recorded"])),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    const [head] = await db
+      .select()
+      .from(usageArchiveHeadQuery(run.chatThreadId));
+    signal.throwIfAborted();
+    // Canonical archive reads can download R2 objects and must finish before
+    // taking the writer's SQL transaction or its outgoing-writer compatibility key.
+    const history = hot
+      ? undefined
+      : await runEventHistory(db, run.chatThreadId, runId, signal);
+    signal.throwIfAborted();
+    const archived = history
+      ? [...history].reverse().find((event) => {
+          return event.runId === runId && event.eventType === "usage.recorded";
+        })
+      : undefined;
+    return {
+      threadId: run.chatThreadId,
+      loaded: !hot,
+      head,
+      event: archived
+        ? { ...archived, createdAt: new Date(archived.createdAt) }
+        : undefined,
+    };
+  },
+);
+function usageAppendValues(args: {
+  readonly runId: string;
+  readonly threadId: string;
+  readonly payload: ChatEventUsagePayload;
+  readonly target:
+    | {
+        readonly id: string;
+        readonly createdAt: Date;
+        readonly contextType: string | null;
+        readonly contextId: string | null;
+      }
+    | undefined;
+}): PreparedChatEventRow {
+  const target = args.target;
+  return {
+    id: target
+      ? randomUUID()
+      : uuidv5(`okou:run-usage:${args.runId}`, uuidv5.URL),
+    chatThreadId: args.threadId,
+    runId: args.runId,
+    eventType: "usage.recorded",
+    payload: { usage: args.payload },
+    contextType: target?.contextType,
+    contextId: target?.contextId,
+    revokesEventId: target?.id,
+    createdAt: target
+      ? new Date(Math.max(nowDate().getTime(), target.createdAt.getTime() + 1))
+      : new Date(args.payload.settledAt),
+  };
+}
+
+function usageArchiveMatches(
+  archive: {
+    readonly loaded: boolean;
+    readonly threadId: string;
+    readonly head:
+      | { readonly objectKey: string; readonly lastSeqId: number }
+      | undefined;
+  },
+  head: { readonly objectKey: string; readonly lastSeqId: number } | undefined,
+  threadId: string,
+): boolean {
+  return (
+    archive.loaded &&
+    archive.threadId === threadId &&
+    head?.objectKey === archive.head?.objectKey &&
+    head?.lastSeqId === archive.head?.lastSeqId
+  );
+}
+
 const emitRunUsageEventAttempt$ = command(
   async (
     { set },
     runId: string,
     signal: AbortSignal,
   ): Promise<EmittedRunUsage | "conflict" | null> => {
+    const archive = await set(prepareRunUsageArchive$, runId, signal);
+    if (!archive) {
+      return null;
+    }
     const db = set(writeDb$);
     const emitted = await db.transaction(async (tx) => {
       // DB/API rollout: outgoing writers assign random initial event IDs and
@@ -163,7 +295,7 @@ const emitRunUsageEventAttempt$ = command(
       );
       signal.throwIfAborted();
 
-      const [context] = await loadUsageEventContext(tx, runId);
+      const [context] = await tx.select().from(usageEventContextQuery(runId));
       signal.throwIfAborted();
 
       if (!context) {
@@ -183,7 +315,11 @@ const emitRunUsageEventAttempt$ = command(
         return null;
       }
 
-      const breakdownRows = await loadUsageBreakdownRows(tx, runId);
+      const breakdown = usageBreakdownQuery(runId);
+      const breakdownRows = await tx
+        .select()
+        .from(breakdown)
+        .orderBy(breakdown.kind, breakdown.provider);
       signal.throwIfAborted();
 
       const payload: ChatEventUsagePayload = {
@@ -211,25 +347,19 @@ const emitRunUsageEventAttempt$ = command(
         .limit(1);
       signal.throwIfAborted();
 
-      // An archived usage event is only found through canonical history.
-      const history = hotUsageEvent
-        ? undefined
-        : await runEventHistory(tx, context.chatThreadId, runId, signal);
-      const archivedUsageEvent = history
-        ? [...history].reverse().find((event) => {
-            return (
-              event.runId === runId && event.eventType === "usage.recorded"
-            );
-          })
-        : undefined;
-      const existingUsageEvent =
-        hotUsageEvent ??
-        (archivedUsageEvent
-          ? {
-              ...archivedUsageEvent,
-              createdAt: new Date(archivedUsageEvent.createdAt),
-            }
-          : undefined);
+      // If retention moved the hot event, retry preparation. If a snapshot
+      // advanced while external data was read, never treat stale absence as a
+      // first event; the old writer may have used a random event identity.
+      const [head] = hotUsageEvent
+        ? []
+        : await tx.select().from(usageArchiveHeadQuery(context.chatThreadId));
+      if (
+        !hotUsageEvent &&
+        !usageArchiveMatches(archive, head, context.chatThreadId)
+      ) {
+        return "conflict" as const;
+      }
+      const existingUsageEvent = hotUsageEvent ?? archive.event;
       signal.throwIfAborted();
 
       if (
@@ -239,25 +369,21 @@ const emitRunUsageEventAttempt$ = command(
         return null;
       }
 
-      const event = {
-        chatThreadId: context.chatThreadId,
-        eventType: "usage.recorded" as const,
-        content: null,
+      const row = usageAppendValues({
         runId,
-        // A replacement inherits the exact context pointer, including null.
-        usagePayload: payload,
-      };
-      const inserted = existingUsageEvent
-        ? await replaceLoadedChatEvent(tx, existingUsageEvent, event)
-        : await insertChatEvent(
-            tx,
-            {
-              ...event,
-              id: uuidv5(`okou:run-usage:${runId}`, uuidv5.URL),
-              createdAt: new Date(payload.settledAt),
-            },
-            "id",
-          );
+        threadId: context.chatThreadId,
+        payload,
+        target: existingUsageEvent,
+      });
+      const [inserted] = parseRawRows(
+        chatEventAppendResultSchema,
+        await tx.execute(
+          appendCanonicalChatEventsSql(
+            [row],
+            existingUsageEvent ? "any" : "id",
+          ),
+        ),
+      );
       signal.throwIfAborted();
 
       if (!inserted) {

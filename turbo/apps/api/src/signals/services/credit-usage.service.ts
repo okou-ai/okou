@@ -27,6 +27,8 @@ import {
 import { triggerAutoRecharge$ } from "./credit-recharge.service";
 import {
   applyUsageAllowanceToUsageEventsInLockedTransaction,
+  prepareUsageAllowanceRefresh$,
+  type PreparedUsageAllowanceRefresh,
   lockOrgCredits,
 } from "./usage-allowance.service";
 import type { Tx } from "../../lib/db-types";
@@ -477,6 +479,7 @@ async function settleMemberGrants(
 }
 
 interface SettlementLockObservation {
+  readonly refresh?: PreparedUsageAllowanceRefresh;
   readonly startedAt: number;
   readonly lockWaitMs: number;
   readonly orgLockWaitMs: number;
@@ -529,6 +532,7 @@ export async function processOrgUsageEventsInTransaction(
   tx: WriteTx,
   orgId: string,
   pricingResolution: UsagePricingResolution,
+  refresh: PreparedUsageAllowanceRefresh | undefined,
   signal: AbortSignal,
 ): Promise<ProcessOrgUsageEventsResult> {
   const observation = await acquireSettlementLocksWithObservation(tx, orgId);
@@ -537,7 +541,7 @@ export async function processOrgUsageEventsInTransaction(
     tx,
     orgId,
     pricingResolution,
-    observation,
+    { ...observation, refresh },
     signal,
   );
 }
@@ -671,6 +675,7 @@ export async function processOrgUsageEventsInLockedTransaction(
     tx,
     {
       orgId,
+      refresh: observation.refresh,
       events: pricedEvents.map((event) => {
         return {
           usageEventId: event.record.id,
@@ -869,12 +874,18 @@ export const processOrgUsageEvents$ = command(
   async ({ get, set }, orgId: string, signal: AbortSignal): Promise<void> => {
     const writeDb = set(writeDb$);
     const pricingResolution = get(usagePricingResolution$);
+    const refresh = await set(
+      prepareUsageAllowanceRefresh$,
+      { orgId, requirePendingUsage: true },
+      signal,
+    );
     const transactionStartedAt = performance.now();
     const result = await writeDb.transaction((tx) => {
       return processOrgUsageEventsInTransaction(
         tx,
         orgId,
         pricingResolution,
+        refresh,
         signal,
       );
     });

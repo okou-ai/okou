@@ -48,7 +48,10 @@ import {
   type SocialDataProviderPlan,
 } from "./social-data-provider-catalog";
 import { lockUsageEventCompaction } from "./usage-event-compaction-lock.service";
-import { resolveUsageAllowanceAvailability } from "./usage-allowance.service";
+import {
+  resolveUsageAllowanceAvailability,
+  prepareUsageAllowanceRefresh$,
+} from "./usage-allowance.service";
 
 export const SOCIAL_DATA_RECONCILIATION_TIMEOUT_MS = 240_000;
 const CLAIM_MS = 180_000;
@@ -640,6 +643,28 @@ const settleSocialDataJob$ = command(
   async ({ get, set }, claim: Claim, signal: AbortSignal): Promise<void> => {
     const db = set(writeDb$);
     const resolution = get(usagePricingResolution$);
+    const [current] = await db
+      .select({
+        creditsCharged: socialDataJobs.creditsCharged,
+        actualCostUsdMicros: socialDataJobs.actualCostUsdMicros,
+        maxCredits: socialDataJobs.maxCredits,
+      })
+      .from(socialDataJobs)
+      .where(claimedWhere(claim));
+    signal.throwIfAborted();
+    if (!current || current.creditsCharged !== null) {
+      return;
+    }
+    const allowanceRefresh =
+      current.actualCostUsdMicros !== null &&
+      current.actualCostUsdMicros > 0 &&
+      current.maxCredits > 0
+        ? await set(
+            prepareUsageAllowanceRefresh$,
+            { orgId: claim.job.orgId },
+            signal,
+          )
+        : undefined;
     const effects = await db.transaction(async (tx) => {
       await lockUsageEventCompaction(tx, "shared");
       signal.throwIfAborted();
@@ -661,6 +686,7 @@ const settleSocialDataJob$ = command(
           : await recordManagedUsageInCompactionLockedTransaction(
               tx,
               {
+                allowanceRefresh,
                 actor: {
                   orgId: job.orgId,
                   userId: job.userId,
