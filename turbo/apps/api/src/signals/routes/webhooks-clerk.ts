@@ -1,4 +1,4 @@
-import { acceptGetStartedInvitation } from "../services/get-started-invitation.service";
+import { acceptGetStartedInvitation$ } from "../services/get-started-invitation-acceptance.service";
 import { webhookClerkContract } from "@okouai/api-contracts/contracts/webhooks";
 import { orgCache } from "@okouai/db/schema/org-cache";
 import { command } from "ccstate";
@@ -345,18 +345,16 @@ function enqueueUsagePackMembershipAcceptance(
   );
 }
 
-async function handleOrganizationInvitationAcceptedWebhook(
+function handleOrganizationInvitationAcceptedWebhook(
   data: unknown,
   db: Db,
   signal: AbortSignal,
-): Promise<Response> {
+): Response {
   const identity = organizationInvitationAcceptedIdentity(data);
   if (!identity) {
     L.error("organizationInvitation.accepted event missing identity", { data });
     return new Response("OK", { status: 200 });
   }
-  await acceptGetStartedInvitation(db, identity);
-  signal.throwIfAborted();
   enqueueUsagePackInvitationAcceptance(
     "organizationInvitation.accepted",
     identity,
@@ -390,17 +388,6 @@ async function handleOrganizationMembershipCreatedWebhook(
       data,
     });
     return new Response("OK", { status: 200 });
-  }
-
-  if (
-    (identity.getStartedClaimId || identity.purchaseId) &&
-    identity.createdAt
-  ) {
-    await acceptGetStartedInvitation(db, {
-      ...identity,
-      acceptedAt: identity.createdAt,
-    });
-    signal.throwIfAborted();
   }
 
   if (identity.purchaseId) {
@@ -664,6 +651,10 @@ const postClerkWebhook$ = command(
     }
 
     if (event.type === "organizationInvitation.accepted") {
+      const identity = organizationInvitationAcceptedIdentity(event.data);
+      if (identity) {
+        await set(acceptGetStartedInvitation$, identity, signal);
+      }
       return handleOrganizationInvitationAcceptedWebhook(
         event.data,
         set(writeDb$),
@@ -672,6 +663,17 @@ const postClerkWebhook$ = command(
     }
 
     if (event.type === "organizationMembership.created") {
+      const identity = organizationMembershipIdentity(event.data);
+      if (
+        identity?.createdAt &&
+        (identity.getStartedClaimId || identity.purchaseId)
+      ) {
+        await set(
+          acceptGetStartedInvitation$,
+          { ...identity, acceptedAt: identity.createdAt },
+          signal,
+        );
+      }
       return handleOrganizationMembershipCreatedWebhook(
         event.data,
         set(writeDb$),
