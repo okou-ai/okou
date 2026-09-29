@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.101.0](https://github.com/okou-ai/okou/compare/guest-agent-v0.100.0...guest-agent-v0.101.0) (2026-09-29)
+
+
+### Features
+
+* add opt-in claude sonnet 5.5 support ([#37361](https://github.com/okou-ai/okou/issues/37361)) ([7d0ab10](https://github.com/okou-ai/okou/commit/7d0ab10383588e7706a5560a14c5b7af3dde712a))
+
 ## [0.100.0](https://github.com/okou-ai/okou/compare/guest-agent-v0.99.0...guest-agent-v0.100.0) (2026-09-28)
 
 

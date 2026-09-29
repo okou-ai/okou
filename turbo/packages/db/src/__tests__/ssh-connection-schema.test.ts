@@ -2,8 +2,6 @@ import { getTableConfig, PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 
 import { schema } from "../index";
-import { agentSshAccess } from "../schema/agent-ssh-access";
-import { agents } from "../schema/agent";
 import { sshCredentials } from "../schema/ssh-credential";
 import { sshConnections } from "../schema/ssh-connection";
 import { cloudflareAccessConfigs } from "../schema/cloudflare-access-config";
@@ -12,7 +10,6 @@ describe("SSH connection schema", () => {
   it("exports the standalone SSH tables", () => {
     expect(schema.sshConnections).toBe(sshConnections);
     expect(schema.sshCredentials).toBe(sshCredentials);
-    expect(schema.agentSshAccess).toBe(agentSshAccess);
     expect(schema.cloudflareAccessConfigs).toBe(cloudflareAccessConfigs);
   });
 
@@ -119,26 +116,5 @@ describe("SSH connection schema", () => {
         return check.name;
       }),
     ).toContain("chk_ssh_credentials_auth");
-  });
-
-  it("keys sparse SSH access by user and cascades from the referenced Agent", () => {
-    const accessConfig = getTableConfig(agentSshAccess);
-    expect(accessConfig.primaryKeys[0]?.getName()).toBe(
-      "agent_ssh_access_pkey",
-    );
-    expect(
-      accessConfig.primaryKeys[0]?.columns.map((column) => {
-        return column.name;
-      }),
-    ).toStrictEqual(["org_id", "user_id", "agent_id"]);
-    const agentForeignKey = accessConfig.foreignKeys[0];
-    expect(agentForeignKey?.getName()).toBe("agent_ssh_access_agent_fk");
-    expect(agentForeignKey?.onDelete).toBe("cascade");
-    expect(agentForeignKey?.reference().foreignTable).toBe(agents);
-    expect(
-      agentForeignKey?.reference().columns.map((column) => {
-        return column.name;
-      }),
-    ).toStrictEqual(["agent_id"]);
   });
 });

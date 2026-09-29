@@ -1475,8 +1475,15 @@
     {
       "idx": 1288,
       "version": "7",
-      "when": 1790665518563,
-      "tag": "1288_chat_thread_canonical_session",
+      "when": 1790661618887,
+      "tag": "1288_drop_retired_agent_grant_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 1289,
+      "version": "7",
+      "when": 1790678810787,
+      "tag": "1289_chat_thread_canonical_session",
       "breakpoints": true
     }
   ]

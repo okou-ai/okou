@@ -8,6 +8,23 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.697.0](https://github.com/okou-ai/okou/compare/api-v1.696.1...api-v1.697.0) (2026-09-29)
+
+
+### Features
+
+* add opt-in claude sonnet 5.5 support ([#37361](https://github.com/okou-ai/okou/issues/37361)) ([7d0ab10](https://github.com/okou-ai/okou/commit/7d0ab10383588e7706a5560a14c5b7af3dde712a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.528.0
+    * @okouai/core bumped to 8.721.0
+    * @okouai/db bumped to 1.313.4
+    * @okouai/pi-agent-runtime bumped to 1.42.0
+
 ## [1.696.1](https://github.com/okou-ai/okou/compare/api-v1.696.0...api-v1.696.1) (2026-09-29)
 
 

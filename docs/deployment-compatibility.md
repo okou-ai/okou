@@ -211,21 +211,28 @@ this table** during user, organization and membership cleanup. The earlier
 production drain proved only that pre-#37274 binaries had stopped serving; it
 did not make a same-release VNC grant table drop safe.
 
-PR #37305 removes this last production VNC grant dependency and the test-only
+PR #37305 removed this last production VNC grant dependency and the test-only
 SSH grant writer, while **retaining both physical grant tables and their schema
-declarations**. During its rollout the old API can continue to use the table
-because there is no drop migration. Current chat-scoped SSH/VNC host authority,
-VNC configuration cleanup and historical migration replay remain unchanged.
+declarations**. It merged as `712de8a72b7e4613311ea1b29812074dba43e0ce`.
+The production API containing it (`4608b8d21cd67cccf9ca1a50aa654e94130085ea`)
+completed [promotion](https://github.com/okou-ai/okou/actions/runs/36524823248/job/109268010829)
+at 2026-09-29 05:22:31 UTC. At 05:52:55 UTC, the READY Vercel deployment
+`dpl_3Wn7roDDKTdDvuSA2JkUzkPQpQca` owned all four production API aliases,
+and cache-bypassed `/api/build-info` on each reported that SHA. The elapsed
+window exceeded Vercel's 30-minute maximum extended function invocation bound.
+Current chat-scoped SSH/VNC host authority, VNC configuration cleanup and
+historical migration replay remain unchanged.
 
-**Separate future contraction (#37272):** Deploy a new table-drop migration only
-after an API version containing the code-only PR has been promoted to every
-production API target, all earlier invocations that access either table have
-drained, and the rollback floor excludes those binaries. Recheck live aliases,
-serving versions and the actual function-execution bound immediately before
-deploying that migration; a merge, one sampled response or the #37274 drain
-alone is insufficient. Because migrations run before API promotion, combining
-the last-reader removal and the physical drop in one release is unsafe. No
-table-drop migration or production migration receipt is included here.
+**Separate physical contraction (#37272, not yet deployed):** Generated migration
+`1288_drop_retired_agent_grant_tables` drops `agent_ssh_access` and
+`agent_vnc_access` without cascading into other objects. The user excludes
+rollback compatibility with pre-#37305 APIs after this migration, but not safety
+for any earlier API still serving. Immediately before any **authorized**
+production table-drop deployment, recheck all aliases and serving builds plus
+the full old-invocation execution bound; a merged PR, prior check or one sampled
+response is insufficient. Since migrations run before API promotion, combining
+the final-reader removal and table drop in one release was unsafe. The above is
+pre-drop gate evidence, **not** a production migration receipt.
 
 ## Video model columns and `video_model_updated` dropped (#37249)
 
@@ -7207,7 +7214,7 @@ completion requests return the remaining delay without sending early.
 
 ## Canonical Chat application sessions
 
-Migration `1288_chat_thread_canonical_session` adds a unique index on
+Migration `1289_chat_thread_canonical_session` adds a unique index on
 `chat_threads.agent_session_id`. A thread may have no session before its first
 admitted run, and PostgreSQL continues to allow multiple null bindings. An
 application session may be the current binding of at most one thread. Historical

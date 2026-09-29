@@ -21,7 +21,11 @@ import {
   setApiTestConnectorCatalogRuntimeProjectionIdentityReadHook,
 } from "../../../test-fixtures/connector-catalog";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { clearAllDetached, createDeferredPromise, settle } from "../../utils";
+import {
+  clearAllDetached,
+  collectAllDetachedErrorsForTest,
+  createDeferredPromise,
+} from "../../utils";
 import { chatThreadRoutes } from "../chat-threads";
 import { connectorAccountRoutes } from "../connector-accounts";
 import type { ApiTestUser } from "./helpers/api-bdd";
@@ -659,9 +663,9 @@ describe("CHAT-02: thread connector account selection", () => {
     }
     // Enqueue can replace the first lease while both requests prepare the same
     // head. A losing snapshot fails once; it must not retry the second input.
-    const picks = await settle(clearAllDetached());
-    if (!picks.ok) {
-      expect(picks.error).toMatchObject({
+    const pickErrors = await collectAllDetachedErrorsForTest();
+    for (const error of pickErrors) {
+      expect(error).toMatchObject({
         message: "Chat thread session changed during run preparation",
       });
     }
