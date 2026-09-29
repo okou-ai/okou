@@ -11,9 +11,9 @@ use guest_contracts::private_duplex::{
     ACTIVATE, MAX_FRAME_BYTES, MAX_STREAMS_PER_RUN, PREFACE, READY, VSOCK_PORT,
 };
 const RETRY: Duration = Duration::from_millis(100);
-// An older Runner may bind 52001 without a Guest RPC consumer. Never leave
-// the only pending Guest worker waiting indefinitely for its activation.
-const INGRESS_WAIT: Duration = Duration::from_secs(5);
+// Bound a stalled ingress acknowledgement so the only pending Guest worker
+// can close this attempt and retry. Runner and Guest ship as one artifact.
+const INGRESS_ACK_TIMEOUT: Duration = Duration::from_secs(5);
 
 struct WorkerCount(Arc<AtomicUsize>);
 impl Drop for WorkerCount {
@@ -33,7 +33,7 @@ pub(crate) fn run() {
         }
         match super::connection::connect_vsock_port(VSOCK_PORT) {
             Ok(mut stream) => {
-                if await_activation(&mut stream, INGRESS_WAIT).is_err() {
+                if await_activation(&mut stream, INGRESS_ACK_TIMEOUT).is_err() {
                     std::thread::sleep(RETRY);
                     continue;
                 }
@@ -56,8 +56,8 @@ pub(crate) fn run() {
     }
 }
 
-fn await_activation(stream: &mut UnixStream, ingress_wait: Duration) -> io::Result<()> {
-    stream.set_read_timeout(Some(ingress_wait))?;
+fn await_activation(stream: &mut UnixStream, ack_timeout: Duration) -> io::Result<()> {
+    stream.set_read_timeout(Some(ack_timeout))?;
     stream.write_all(&[PREFACE])?;
     let mut marker = [0];
     stream.read_exact(&mut marker)?;
@@ -125,12 +125,12 @@ mod tests {
     }
 
     #[test]
-    fn old_host_without_ingress_ack_times_out_without_activation() {
-        let (mut guest, mut old_host) = UnixStream::pair().unwrap();
+    fn missing_ingress_ack_times_out_without_activation() {
+        let (mut guest, mut unresponsive_host) = UnixStream::pair().unwrap();
         let worker =
             std::thread::spawn(move || await_activation(&mut guest, Duration::from_millis(20)));
         let mut preface = [0];
-        old_host.read_exact(&mut preface).unwrap();
+        unresponsive_host.read_exact(&mut preface).unwrap();
         assert_eq!(preface, [PREFACE]);
         assert!(matches!(
             worker.join().unwrap().unwrap_err().kind(),

@@ -112,7 +112,7 @@ impl Fixture {
     }
     async fn connect_rpc(&self) -> UnixStream {
         let mut peer = UnixStream::connect(&self.path).await.unwrap();
-        // Preserve the first byte of a legacy request across ingress routing.
+        // Preserve the first byte of an existing RPC request across ingress routing.
         peer.write_all(&[0]).await.unwrap();
         peer
     }
@@ -198,7 +198,7 @@ async fn duplex_waiting_on_shared_listener_does_not_hold_park_reservation() {
 }
 
 #[tokio::test]
-async fn legacy_rpc_request_survives_shared_ingress_byte_for_byte() {
+async fn existing_rpc_request_survives_shared_ingress_byte_for_byte() {
     assert_eq!(
         guest_contracts::private_duplex::VSOCK_PORT,
         runner_rpc_proto::VSOCK_PORT
@@ -240,7 +240,7 @@ async fn endpoint_close_drops_idle_duplex_even_when_old_capability_is_retained()
 }
 
 #[tokio::test]
-async fn full_duplex_queue_rejects_excess_without_disrupting_legacy_rpc() {
+async fn full_duplex_queue_rejects_excess_without_disrupting_existing_rpc() {
     let fixture = Fixture::new().await;
     let mut first = UnixStream::connect(&fixture.path).await.unwrap();
     first.write_all(&[PREFACE]).await.unwrap();
@@ -264,7 +264,7 @@ async fn full_duplex_queue_rejects_excess_without_disrupting_legacy_rpc() {
 }
 
 #[tokio::test]
-async fn silent_connection_does_not_block_legacy_rpc_or_duplex() {
+async fn silent_connection_does_not_block_existing_rpc_or_duplex() {
     let fixture = Fixture::new().await;
     let _silent = UnixStream::connect(&fixture.path).await.unwrap();
     let _rpc = fixture.connect_rpc().await;

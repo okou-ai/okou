@@ -151,8 +151,8 @@ impl Drop for GuestRpcEndpoint {
 }
 
 /// One ingress owns port 52001. Classify only the first byte of each connection:
-/// 0xff cannot begin any valid bounded RPC request length. Preserve every legacy
-/// byte for the original RPC decoder; idle duplex candidates hold no park fence.
+/// 0xff cannot begin any valid bounded RPC request length. Preserve every RPC
+/// byte for the existing decoder; idle duplex candidates hold no park fence.
 async fn route_connections(
     shared: Arc<Shared>,
     rpc: mpsc::Sender<(UnixStream, u8)>,

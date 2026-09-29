@@ -50,7 +50,7 @@ impl Drop for Registration {
 
 impl RunGuestChannels {
     /// Install only from the executor while it owns the prepared live sandbox.
-    /// Unsupported/old guest providers return None; never fall back to cached state.
+    /// Providers without a live duplex acceptor return None; never use cached state.
     pub fn register(
         &self,
         run_id: RunId,
