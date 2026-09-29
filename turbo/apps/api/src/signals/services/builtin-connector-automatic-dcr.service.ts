@@ -5,7 +5,10 @@ import { builtinConnectorAccountOauthBindings } from "@okouai/db/schema/connecto
 import { connectors } from "@okouai/db/schema/connector";
 import { writeDb$, type Db } from "../external/db";
 import { nowDate } from "../../lib/time";
-import { lockConnectorAccountTarget } from "./auth-state-lock.service";
+import {
+  builtinConnectorStateLockStatement,
+  lockConnectorAccountTarget,
+} from "./auth-state-lock.service";
 import {
   decryptStoredSecretValue,
   encryptStoredSecretValue,
@@ -23,6 +26,16 @@ export interface BuiltinConnectorAutomaticContractOwner {
   readonly contractHash: string;
 }
 
+function builtinConnectorAutomaticLifecycleLockStatement(
+  owner: Pick<
+    BuiltinConnectorAutomaticContractOwner,
+    "orgId" | "connectorSlug"
+  >,
+) {
+  // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
+  return sql`SELECT pg_advisory_xact_lock(hashtext(${JSON.stringify(["connector-mcp-oauth", owner.orgId, owner.connectorSlug])}))`;
+}
+
 /** Reconnects can cross method contracts, so take this lock before any account row. */
 export async function lockBuiltinConnectorAutomaticLifecycle(
   db: Db,
@@ -31,10 +44,7 @@ export async function lockBuiltinConnectorAutomaticLifecycle(
     "orgId" | "connectorSlug"
   >,
 ): Promise<void> {
-  await db.execute(
-    // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-    sql`SELECT pg_advisory_xact_lock(hashtext(${JSON.stringify(["connector-mcp-oauth", owner.orgId, owner.connectorSlug])}))`,
-  );
+  await db.execute(builtinConnectorAutomaticLifecycleLockStatement(owner));
 }
 
 function ownerCondition(owner: BuiltinConnectorAutomaticContractOwner) {
@@ -179,7 +189,7 @@ export const publishBuiltinDcrRegistration$ = command(
       // Outgoing Automatic OAuth writers still rely on lifecycle coordination.
       // Remove only after those writers drain and rollback targets implement
       // conditional publication and exact registration retirement.
-      await lockBuiltinConnectorAutomaticLifecycle(tx, owner);
+      await tx.execute(builtinConnectorAutomaticLifecycleLockStatement(owner));
       const [current] = await tx
         .select()
         .from(builtinConnectorDcrRegistrations)
@@ -211,11 +221,13 @@ export const publishBuiltinDcrRegistration$ = command(
           );
         }
         for (const accountOwner of accountOwners) {
-          await lockConnectorAccountTarget(tx, {
-            orgId: owner.orgId,
-            userId: accountOwner.userId,
-            target: { kind: "builtin", connectorSlug: owner.connectorSlug },
-          });
+          await tx.execute(
+            builtinConnectorStateLockStatement({
+              orgId: owner.orgId,
+              userId: accountOwner.userId,
+              connectorSlug: owner.connectorSlug,
+            }),
+          );
         }
         await tx
           .update(connectors)
