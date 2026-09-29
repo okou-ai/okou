@@ -441,7 +441,7 @@ export async function recordManagedUsageInCompactionLockedTransaction(
   pricingResolution: UsagePricingResolution,
   signal: AbortSignal,
 ): Promise<ManagedUsageRecordResult> {
-  await lockOrgCredits(tx, args.actor.orgId);
+  await lockOrgCredits(tx, args.actor.orgId, "settlement");
   signal.throwIfAborted();
   const identity = await insertManagedUsageEvent(tx, args, signal);
   signal.throwIfAborted();

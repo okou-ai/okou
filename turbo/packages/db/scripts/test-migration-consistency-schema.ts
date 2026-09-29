@@ -1358,14 +1358,6 @@ const EXPECTED_PERMANENT_FUNCTIONS = [
     schemaName: "public",
   },
   {
-    bodyHash: "9d5c181a9f7d32a4a02430ee95af739c",
-    functionName: "purge_quiescent_provisional_billing_attribution",
-    identityArguments:
-      "billed_org text, billed_user text, quiescent_run_ids uuid[]",
-    kind: "f",
-    schemaName: "public",
-  },
-  {
     bodyHash: "78a8128b76b3379792960174c17b9bf1",
     functionName: "validate_ssh_cloudflare_access_binding",
     identityArguments: "",

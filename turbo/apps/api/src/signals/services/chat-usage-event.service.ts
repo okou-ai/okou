@@ -1,6 +1,7 @@
 import { runEventHistory } from "./run-event-provenance.service";
 import { isDeepStrictEqual } from "node:util";
 import { command } from "ccstate";
+import { v5 as uuidv5 } from "uuid";
 import {
   and,
   count,
@@ -136,11 +137,26 @@ async function loadUsageBreakdownRows(tx: WriteTx, runId: string) {
     .orderBy(usage.kind, usage.provider);
 }
 
-export const maybeEmitRunUsageEvent$ = command(
-  async ({ set }, runId: string, signal: AbortSignal): Promise<boolean> => {
+interface EmittedRunUsage {
+  readonly action: "emitted" | "revised";
+  readonly chatThreadId: string;
+  readonly orgId: string;
+  readonly userId: string;
+  readonly totalCredits: number;
+}
+
+const emitRunUsageEventAttempt$ = command(
+  async (
+    { set },
+    runId: string,
+    signal: AbortSignal,
+  ): Promise<EmittedRunUsage | "conflict" | null> => {
     const db = set(writeDb$);
     const emitted = await db.transaction(async (tx) => {
-      // Multiple terminal side effects can attempt emission for the same run.
+      // DB/API rollout: outgoing writers assign random initial event IDs and
+      // do not retry a lost replacement. Retain their key through Release 1;
+      // remove it after those serving/in-flight/rollback APIs are gone. Both
+      // Release 1 and 2 then use the stable initial ID and unique revoke edge.
       await tx.execute(
         // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
         sql`SELECT pg_advisory_xact_lock(hashtext('chat_usage_message:' || ${runId}))`,
@@ -233,14 +249,19 @@ export const maybeEmitRunUsageEvent$ = command(
       };
       const inserted = existingUsageEvent
         ? await replaceLoadedChatEvent(tx, existingUsageEvent, event)
-        : await insertChatEvent(tx, {
-            ...event,
-            createdAt: new Date(payload.settledAt),
-          });
+        : await insertChatEvent(
+            tx,
+            {
+              ...event,
+              id: uuidv5(`okou:run-usage:${runId}`, uuidv5.URL),
+              createdAt: new Date(payload.settledAt),
+            },
+            "id",
+          );
       signal.throwIfAborted();
 
       if (!inserted) {
-        return null;
+        return "conflict" as const;
       }
 
       return {
@@ -255,28 +276,42 @@ export const maybeEmitRunUsageEvent$ = command(
     });
     signal.throwIfAborted();
 
-    if (!emitted) {
-      return false;
+    return emitted;
+  },
+);
+
+/** Retry only an observed identity/revoke conflict, using a fresh usage snapshot. */
+export const maybeEmitRunUsageEvent$ = command(
+  async ({ set }, runId: string, signal: AbortSignal): Promise<boolean> => {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const emitted = await set(emitRunUsageEventAttempt$, runId, signal);
+      signal.throwIfAborted();
+      if (!emitted) {
+        return false;
+      }
+      if (emitted === "conflict") {
+        continue;
+      }
+      await publishChatThreadMessageCreatedSafely({
+        userId: emitted.userId,
+        orgId: emitted.orgId,
+        threadId: emitted.chatThreadId,
+      });
+      signal.throwIfAborted();
+      L.debug(
+        emitted.action === "emitted"
+          ? "Emitted chat usage message"
+          : "Revised chat usage message",
+        {
+          runId,
+          chatThreadId: emitted.chatThreadId,
+          totalCredits: emitted.totalCredits,
+        },
+      );
+      return true;
     }
-
-    await publishChatThreadMessageCreatedSafely({
-      userId: emitted.userId,
-      orgId: emitted.orgId,
-      threadId: emitted.chatThreadId,
-    });
-    signal.throwIfAborted();
-
-    L.debug(
-      emitted.action === "emitted"
-        ? "Emitted chat usage message"
-        : "Revised chat usage message",
-      {
-        runId,
-        chatThreadId: emitted.chatThreadId,
-        totalCredits: emitted.totalCredits,
-      },
+    throw new Error(
+      "Run usage publication repeatedly lost its conditional append",
     );
-
-    return true;
   },
 );

@@ -119,6 +119,15 @@ Reads that were checked and need no change: `usage-reporting-ledger.ts` and
 is a content reader, not a ledger reader; `x-resource-usage.service.ts` reads
 the requesting run while it is still executing.
 
+Advisory Lock Cleanup Release 1 keeps these fallbacks: neither a complete
+production inventory nor the required zero-gap/conflict conditions have been
+established by the code cleanup. Operator age and CI coverage do not establish
+data convergence. The bounded operator now owns live Run FK parents before
+source rows; contention rolls the batch back without advancing its checkpoint.
+It temporarily retains the shared compaction key for outgoing API/worker
+compatibility. Release 2 requires those writers to drain, compatible rollback
+artifacts and the prepared operator version before removing that key.
+
 Two transitional fallbacks remain until the operator backfill converges, both
 declared at their call sites:
 
@@ -254,14 +263,14 @@ A live/pending run or generation callback cannot be treated as proof of no
 obligation. Nor can absence of raw usage after normal compaction or current
 Clerk ledger cleanup prove that the run was never billed: inspect retained
 hourly/allowance and other billing evidence and reconciliation disposition.
-`purge_quiescent_provisional_billing_attribution(org, user, run_ids)` is a
-bounded, idempotent SQL boundary for that future coordinator: at most 500 IDs,
-exact org/user, the compaction lock, no observed usage, no live run/job, and no
-raw/hourly/allowance references. The caller must establish quiescence and settle
-other obligations first; the function is not account-deletion authority. Its
-monotone usage marker prevents current ledger teardown from making previously
-billed runs appear provisional. It has no production caller in A1 and does not
-activate purge or change current cleanup semantics.
+The unused `purge_quiescent_provisional_billing_attribution(org, user, run_ids)`
+function is retired by the Advisory Lock Cleanup Release 1 migration. It had
+no API or operator caller and never activated purge. Historical migration 1119
+remains unchanged; the final schema no longer offers an executable advisory
+lock through this unused entry point. Current account deletion, retained
+attribution and the monotone `usage_observed` marker remain unchanged.
+Any future purge still requires exact owner checks, producer quiescence,
+settled obligations and absence of live run/job/raw/hourly/allowance references.
 
 The purge must match exact org/user ownership, preserve surviving members and
 organizations, and never use the optional `users` preferences table as deletion

@@ -3397,7 +3397,7 @@ describe("CHAT-03 run usage events", () => {
     ]);
   }, 60_000);
 
-  it("revises run usage when later usage settles", async () => {
+  it("converges on one usage revision when concurrent settlement requests repeat", async () => {
     const { actor, agentId } = await entitledChatActorWithoutRunner(
       "Usage message agent",
     );
@@ -3454,7 +3454,11 @@ describe("CHAT-03 run usage events", () => {
     );
 
     const billing = createBillingMediaApi(context);
-    await billing.processOrgUsageEvents(actor);
+    await Promise.all([
+      billing.processOrgUsageEvents(actor),
+      billing.processOrgUsageEvents(actor),
+      billing.processOrgUsageEvents(actor),
+    ]);
 
     let usageEvents = await usageEventsForRun(actor, threadId, runId);
     expect(usageEvents).toHaveLength(1);
@@ -3504,7 +3508,11 @@ describe("CHAT-03 run usage events", () => {
       [200],
     );
     mockNow(new Date("2030-01-01T00:00:00.000Z"));
-    await billing.processOrgUsageEvents(actor);
+    await Promise.all([
+      billing.processOrgUsageEvents(actor),
+      billing.processOrgUsageEvents(actor),
+      billing.processOrgUsageEvents(actor),
+    ]);
     usageEvents = await usageEventsForRun(actor, threadId, runId);
     expect(usageEvents).toStrictEqual([initialUsageEvent]);
 
@@ -3526,7 +3534,11 @@ describe("CHAT-03 run usage events", () => {
       [200],
     );
     mockNow(new Date("2030-01-01T00:00:01.000Z"));
-    await billing.processOrgUsageEvents(actor);
+    await Promise.all([
+      billing.processOrgUsageEvents(actor),
+      billing.processOrgUsageEvents(actor),
+      billing.processOrgUsageEvents(actor),
+    ]);
     usageEvents = await usageEventsForRun(actor, threadId, runId);
     expect(usageEvents).toHaveLength(2);
     const firstRevision = usageEvents[1];
@@ -3572,7 +3584,11 @@ describe("CHAT-03 run usage events", () => {
       [200],
     );
     mockNow(new Date("2030-01-01T00:00:02.000Z"));
-    await billing.processOrgUsageEvents(actor);
+    await Promise.all([
+      billing.processOrgUsageEvents(actor),
+      billing.processOrgUsageEvents(actor),
+      billing.processOrgUsageEvents(actor),
+    ]);
     usageEvents = await usageEventsForRun(actor, threadId, runId);
     expect(usageEvents).toHaveLength(3);
     expect(usageEvents[2]).toMatchObject({

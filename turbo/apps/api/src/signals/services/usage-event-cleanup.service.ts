@@ -11,10 +11,12 @@ export async function deleteOrgUsageData(db: Db, orgId: string): Promise<void> {
   await db.transaction(async (tx) => {
     await lockUsageEventCompaction(tx);
     await tx.delete(socialDataJobs).where(eq(socialDataJobs.orgId, orgId));
+    // Retain raw rows before hourly rows, matching compaction. If deletion
+    // waits for a batch, the next statement sees its newly committed rollups.
+    await tx.delete(usageEvent).where(eq(usageEvent.orgId, orgId));
     await tx
       .delete(usageEventHourlyRollup)
       .where(eq(usageEventHourlyRollup.orgId, orgId));
-    await tx.delete(usageEvent).where(eq(usageEvent.orgId, orgId));
     await tx
       .delete(orgUsageAllowanceEntitlements)
       .where(eq(orgUsageAllowanceEntitlements.orgId, orgId));
@@ -28,9 +30,9 @@ export async function deleteUserUsageData(
   await db.transaction(async (tx) => {
     await lockUsageEventCompaction(tx);
     await tx.delete(socialDataJobs).where(eq(socialDataJobs.userId, userId));
+    await tx.delete(usageEvent).where(eq(usageEvent.userId, userId));
     await tx
       .delete(usageEventHourlyRollup)
       .where(eq(usageEventHourlyRollup.userId, userId));
-    await tx.delete(usageEvent).where(eq(usageEvent.userId, userId));
   });
 }
