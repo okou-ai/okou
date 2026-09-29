@@ -1,3 +1,4 @@
+import { retireMarketingMetadata } from "../../lib/marketing-metadata";
 import { invoiceUsagePackCreditGrantSql } from "./usage-pack-credit-grant-sql";
 import {
   atomicOrgCreditExpirationSql,
@@ -12,7 +13,10 @@ import { orgConcurrencySubscriptions } from "@okouai/db/schema/org-concurrency-s
 import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
-import { usagePackSubscriptions } from "@okouai/db/schema/usage-pack-subscription";
+import {
+  usagePackSubscriptions,
+  usagePackAllocations,
+} from "@okouai/db/schema/usage-pack-subscription";
 import {
   orgUsageAllowanceEntitlements,
   orgUsageAllowanceWindows,
@@ -78,6 +82,7 @@ import {
 import { disableIneligibleWorkflowWebhookAutomationsForOrg } from "./workflow-webhook-automation-entitlement.service";
 import {
   ensureOrgMetadataPlanEntitlement,
+  orgPlanEntitlementValues,
   orgPlanEntitlementOrgIdForStripeSubscription,
   upsertOrgPlanEntitlement,
   writeOrgMetadataWithPlanEntitlements,
@@ -4400,43 +4405,254 @@ const handleUsageAllowanceSubscriptionUpdated$ = command(
   },
 );
 
-async function upsertSubscriptionUpdatedPlanEntitlements(
-  tx: WriteTx,
-  args: {
-    readonly rows: readonly { readonly orgId: string }[];
-    readonly tier: BillingSubscriptionTier;
-    readonly planItem: SubscriptionInput["items"]["data"][number];
-    readonly subscription: SubscriptionInput;
-    readonly scheduledEnd: Date | null;
-  },
-): Promise<void> {
-  const itemPeriodStart = args.planItem.current_period_start
-    ? new Date(args.planItem.current_period_start * 1000)
-    : null;
-  const itemPeriodEnd = args.planItem.current_period_end
-    ? new Date(args.planItem.current_period_end * 1000)
-    : null;
-  for (const row of args.rows) {
-    const showUsagePack = await stripeSubscriptionUsesMemberUsagePacks(tx, {
-      orgId: row.orgId,
-      stripeSubscriptionId: args.subscription.id,
-    });
-    await upsertOrgPlanEntitlement(tx, {
-      orgId: row.orgId,
-      tier: args.tier,
-      source: "stripe_subscription",
-      status: args.subscription.status,
-      stripeSubscriptionId: args.subscription.id,
-      stripePriceId: args.planItem.price.id,
-      currentPeriodStart: itemPeriodStart,
-      currentPeriodEnd: itemPeriodEnd,
-      cancelAt: args.scheduledEnd,
-      expiresAt: args.scheduledEnd,
-      showUsagePack,
-      sourceMetadata: args.subscription.metadata ?? {},
-    });
-  }
+interface LegacyPlanPublication {
+  readonly orgId: string;
+  readonly subscription: SubscriptionInput;
+  readonly previousAttributes: SubscriptionPreviousAttributes | undefined;
+  readonly scheduledEnd: Date | null;
 }
+
+function legacyPlanPublication(args: Omit<LegacyPlanPublication, "orgId">) {
+  const { subscription, previousAttributes, scheduledEnd } = args;
+  const willCancel =
+    subscriptionWillCancel(subscription) || scheduledEnd !== null;
+  const pendingScheduleId = subscriptionScheduleId(subscription);
+  const clearPendingChange = subscriptionPendingChangeCleared(
+    subscription,
+    previousAttributes,
+    willCancel,
+  );
+  const trialEnd = subscriptionTrialEnd(subscription);
+  const previousTrialEnd =
+    typeof previousAttributes?.trial_end === "number"
+      ? new Date(previousAttributes.trial_end * 1000)
+      : null;
+  const trialShortened =
+    subscription.status === "trialing" &&
+    trialEnd !== null &&
+    previousTrialEnd !== null &&
+    trialEnd < previousTrialEnd;
+  const planItem = knownBillingPlanPriceItem(subscription.items.data);
+  const planTier = planItem ? tierForKnownPlanPrice(planItem.price) : null;
+  const metadataOrgId = subscription.metadata?.orgId;
+  return {
+    planItem,
+    planTier,
+    trialEnd: trialShortened ? trialEnd : null,
+    target:
+      planTier === "custom" && metadataOrgId
+        ? or(
+            eq(orgMetadata.stripeSubscriptionId, subscription.id),
+            and(
+              eq(orgMetadata.orgId, metadataOrgId),
+              eq(orgMetadata.tier, "custom"),
+              isNull(orgMetadata.stripeSubscriptionId),
+            ),
+          )
+        : eq(orgMetadata.stripeSubscriptionId, subscription.id),
+    values: {
+      ...(planTier
+        ? { tier: planTier, stripeSubscriptionId: subscription.id }
+        : {}),
+      subscriptionStatus: subscription.status,
+      cancelAtPeriodEnd: willCancel,
+      updatedAt: nowDate(),
+      ...(scheduledEnd ? { currentPeriodEnd: scheduledEnd } : {}),
+      ...(scheduledEnd && pendingScheduleId
+        ? {
+            pendingSubscriptionScheduleId: pendingScheduleId,
+            pendingSubscriptionTargetTier: CANCELED_SUBSCRIPTION_TARGET_TIER,
+            pendingSubscriptionChangeAt: scheduledEnd,
+          }
+        : {}),
+      ...(clearPendingChange
+        ? {
+            pendingSubscriptionScheduleId: null,
+            pendingSubscriptionTargetTier: null,
+            pendingSubscriptionChangeAt: null,
+          }
+        : {}),
+      ...(trialShortened ? { currentPeriodEnd: trialEnd } : {}),
+    },
+  };
+}
+
+function trialShorteningWhere(orgId: string, end: Date) {
+  return and(
+    eq(creditExpiresRecord.orgId, orgId),
+    eq(creditExpiresRecord.source, "subscription_renewal"),
+    gt(creditExpiresRecord.expiresAt, end),
+    gt(creditExpiresRecord.remaining, 0),
+  );
+}
+
+function legacyPlanEntitlement(
+  args: LegacyPlanPublication,
+  input: {
+    readonly tier: BillingSubscriptionTier;
+    readonly item: SubscriptionInput["items"]["data"][number];
+    readonly showUsagePack: boolean;
+    readonly owner: string | undefined;
+  },
+) {
+  const duplicateOwner =
+    input.owner !== undefined && input.owner !== args.orgId;
+  const metadata = retireMarketingMetadata(args.subscription.metadata ?? {});
+  return {
+    ...orgPlanEntitlementValues(
+      {
+        orgId: args.orgId,
+        tier: input.tier,
+        source: "stripe_subscription",
+        status: args.subscription.status,
+        stripeSubscriptionId: args.subscription.id,
+        stripePriceId: input.item.price.id,
+        currentPeriodStart: input.item.current_period_start
+          ? new Date(input.item.current_period_start * 1000)
+          : null,
+        currentPeriodEnd: input.item.current_period_end
+          ? new Date(input.item.current_period_end * 1000)
+          : null,
+        cancelAt: args.scheduledEnd,
+        expiresAt: args.scheduledEnd,
+        showUsagePack: input.showUsagePack,
+      },
+      {
+        stripeSubscriptionId: duplicateOwner ? null : args.subscription.id,
+        sourceMetadata: duplicateOwner
+          ? {
+              ...metadata,
+              stripeSubscriptionSnapshotSkipped:
+                "duplicate_stripe_subscription_id",
+            }
+          : metadata,
+      },
+    ),
+    stripeProductId: null,
+    metadataHash: null,
+  };
+}
+
+const publishLegacyPlanSubscription$ = command(
+  async (
+    { set },
+    args: LegacyPlanPublication,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const db = set(writeDb$);
+    const prepared = legacyPlanPublication(args);
+    const lots = prepared.trialEnd
+      ? await db
+          .select({ id: creditExpiresRecord.id })
+          .from(creditExpiresRecord)
+          .where(trialShorteningWhere(args.orgId, prepared.trialEnd))
+      : [];
+    signal.throwIfAborted();
+    const lotIds = lots.map((row) => {
+      return row.id;
+    });
+    const result = await db.transaction(async (tx) => {
+      const [wallet] = await tx
+        .select({ orgId: orgMetadata.orgId })
+        .from(orgMetadata)
+        .where(and(eq(orgMetadata.orgId, args.orgId), prepared.target))
+        .for("update");
+      if (!wallet) {
+        return false;
+      }
+      const publication = legacyPlanPublication(args);
+      if (publication.trialEnd) {
+        const [unprepared] = await tx
+          .select({ id: creditExpiresRecord.id })
+          .from(creditExpiresRecord)
+          .where(
+            and(
+              trialShorteningWhere(args.orgId, publication.trialEnd),
+              notInArray(creditExpiresRecord.id, lotIds),
+            ),
+          )
+          .limit(1);
+        if (unprepared) {
+          throw new Error(
+            "Subscription credit lots changed during trial shortening",
+          );
+        }
+      }
+      await tx
+        .update(orgMetadata)
+        .set(publication.values)
+        .where(eq(orgMetadata.orgId, args.orgId));
+      if (publication.planTier && publication.planItem) {
+        const [memberPack] = await tx
+          .select({ id: usagePackAllocations.id })
+          .from(usagePackSubscriptions)
+          .innerJoin(
+            usagePackAllocations,
+            eq(
+              usagePackAllocations.usagePackSubscriptionId,
+              usagePackSubscriptions.id,
+            ),
+          )
+          .where(
+            and(
+              eq(usagePackSubscriptions.orgId, args.orgId),
+              eq(
+                usagePackSubscriptions.stripeSubscriptionId,
+                args.subscription.id,
+              ),
+              notInArray(usagePackSubscriptions.subscriptionStatus, [
+                "canceled",
+                "incomplete_expired",
+                "invalid",
+              ]),
+              inArray(usagePackAllocations.status, [
+                "pending_payment",
+                "active",
+                "pending_invitation",
+                "paid_pending_invitation",
+              ]),
+            ),
+          )
+          .limit(1);
+        const [owner] = await tx
+          .select({ orgId: orgPlanEntitlements.orgId })
+          .from(orgPlanEntitlements)
+          .where(
+            eq(orgPlanEntitlements.stripeSubscriptionId, args.subscription.id),
+          )
+          .limit(1);
+        const entitlement = legacyPlanEntitlement(args, {
+          tier: publication.planTier,
+          item: publication.planItem,
+          showUsagePack: memberPack !== undefined,
+          owner: owner?.orgId,
+        });
+        await tx
+          .insert(orgPlanEntitlements)
+          .values(entitlement)
+          .onConflictDoUpdate({
+            target: orgPlanEntitlements.orgId,
+            set: entitlement,
+          });
+      }
+      if (publication.trialEnd) {
+        await tx
+          .update(creditExpiresRecord)
+          .set({ expiresAt: publication.trialEnd })
+          .where(
+            and(
+              trialShorteningWhere(args.orgId, publication.trialEnd),
+              inArray(creditExpiresRecord.id, lotIds),
+            ),
+          );
+      }
+      signal.throwIfAborted();
+      return true;
+    });
+    signal.throwIfAborted();
+    return result;
+  },
+);
 
 const handleSubscriptionUpdatedLegacy$ = command(
   async (
@@ -4457,106 +4673,30 @@ const handleSubscriptionUpdatedLegacy$ = command(
       subscription,
     );
     signal.throwIfAborted();
-    const stripe = getStripeClient();
-    const periodEnd = await subscriptionScheduledEnd(stripe, subscription);
-    signal.throwIfAborted();
-    const willCancel =
-      subscriptionWillCancel(subscription) || periodEnd !== null;
-    const pendingScheduleId = subscriptionScheduleId(subscription);
-    const clearPendingChange = subscriptionPendingChangeCleared(
+    const scheduledEnd = await subscriptionScheduledEnd(
+      getStripeClient(),
       subscription,
-      previousAttributes,
-      willCancel,
     );
-    const trialEnd = subscriptionTrialEnd(subscription);
-    const previousTrialEnd =
-      typeof previousAttributes?.trial_end === "number"
-        ? new Date(previousAttributes.trial_end * 1000)
-        : null;
-    const trialShortened =
-      subscription.status === "trialing" &&
-      trialEnd !== null &&
-      previousTrialEnd !== null &&
-      trialEnd < previousTrialEnd;
-    const planItem = knownBillingPlanPriceItem(subscription.items.data);
-    const planTier = planItem ? tierForKnownPlanPrice(planItem.price) : null;
-    const metadataOrgId = subscription.metadata?.orgId;
-    const planTarget =
-      planTier === "custom" && metadataOrgId
-        ? or(
-            eq(orgMetadata.stripeSubscriptionId, subscription.id),
-            and(
-              eq(orgMetadata.orgId, metadataOrgId),
-              eq(orgMetadata.tier, "custom"),
-              isNull(orgMetadata.stripeSubscriptionId),
-            ),
-          )
-        : eq(orgMetadata.stripeSubscriptionId, subscription.id);
-
-    const planOrgIds = await db.transaction(async (tx) => {
-      const rows = await tx
-        .update(orgMetadata)
-        .set({
-          ...(planTier ? { tier: planTier } : {}),
-          ...(planTier ? { stripeSubscriptionId: subscription.id } : {}),
-          subscriptionStatus: subscription.status,
-          cancelAtPeriodEnd: willCancel,
-          updatedAt: nowDate(),
-          ...(periodEnd ? { currentPeriodEnd: periodEnd } : {}),
-          ...(periodEnd && pendingScheduleId
-            ? {
-                pendingSubscriptionScheduleId: pendingScheduleId,
-                pendingSubscriptionTargetTier:
-                  CANCELED_SUBSCRIPTION_TARGET_TIER,
-                pendingSubscriptionChangeAt: periodEnd,
-              }
-            : {}),
-          ...(clearPendingChange
-            ? {
-                pendingSubscriptionScheduleId: null,
-                pendingSubscriptionTargetTier: null,
-                pendingSubscriptionChangeAt: null,
-              }
-            : {}),
-          ...(trialShortened ? { currentPeriodEnd: trialEnd } : {}),
-        })
-        .where(planTarget)
-        .returning({ orgId: orgMetadata.orgId });
-
-      if (planTier && planItem) {
-        await upsertSubscriptionUpdatedPlanEntitlements(tx, {
-          rows,
-          tier: planTier,
-          planItem,
-          subscription,
-          scheduledEnd: periodEnd,
-        });
-      }
-
-      if (!trialShortened) {
-        return rows.map((row) => {
-          return row.orgId;
-        });
-      }
-
-      for (const row of rows) {
-        await tx
-          .update(creditExpiresRecord)
-          .set({ expiresAt: trialEnd })
-          .where(
-            and(
-              eq(creditExpiresRecord.orgId, row.orgId),
-              eq(creditExpiresRecord.source, "subscription_renewal"),
-              gt(creditExpiresRecord.expiresAt, trialEnd),
-              gt(creditExpiresRecord.remaining, 0),
-            ),
-          );
-      }
-      return rows.map((row) => {
-        return row.orgId;
-      });
-    });
     signal.throwIfAborted();
+    const input = { subscription, previousAttributes, scheduledEnd };
+    const targets = await db
+      .select({ orgId: orgMetadata.orgId })
+      .from(orgMetadata)
+      .where(legacyPlanPublication(input).target);
+    signal.throwIfAborted();
+    const planOrgIds: string[] = [];
+    for (const target of targets) {
+      if (
+        await set(
+          publishLegacyPlanSubscription$,
+          { ...input, orgId: target.orgId },
+          signal,
+        )
+      ) {
+        planOrgIds.push(target.orgId);
+      }
+      signal.throwIfAborted();
+    }
     return [
       ...new Set([...allowanceOrgIds, ...concurrencyOrgIds, ...planOrgIds]),
     ];

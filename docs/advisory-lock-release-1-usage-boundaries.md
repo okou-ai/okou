@@ -83,7 +83,7 @@ The transaction-bearing preparation APIs `prepareVolumeServerSideWithDb$` and `w
 | Agent/threadless deletion       | `deleteAgentInTransaction` and `deleteIfStillEligible` retain transaction-aware conversation, artifact, Storage, and lifecycle helper graphs. Their compatibility admission now executes direct SQL, but the remaining lifecycle helpers still receive the transaction.                                                                                                                                                                                |
 | Other Storage publication       | `commitPreparedCustomConnectorSkillStorage` and `official-workflow-catalog-sync` -> `commitPreparedVolumeServerSide({db,...})` -> version and Pi index helpers. Ordinary upload uses `commitVerifiedStorageVersion` -> `commitStorageVersionInTransaction` -> `commitActiveStorageVersion`, with mounted-Run, immutable-checkpoint, HEAD, lineage and Pi projection helpers receiving the transaction. These guards must move together into the owner. |
 | Other lifecycle Storage cleanup | Multi-Agent and Clerk deletion still use transaction-aware Storage/instructions and Pi memory candidate cleanup helpers.                                                                                                                                                                                                                                                                                                                               |
-| Bootstrap-adjacent rewards      | Bootstrap's onboarding grant command owns its own SQL, but `get-started-rewards.persistGetStartedGrant` still calls the legacy `grantOrgCredits(tx, ...)` helper for the existing atomic reward receipt. It cannot be replaced with a separate committed grant.                                                                                                                                                                                        |
+| Bootstrap-adjacent rewards      | Bootstrap onboarding and all three Slack reward writers now own their SQL commands. Each keeps the unique reward/grant receipt and arithmetic wallet change in the same transaction, with the common expired-remainder admission. Their adjacent reader and fixture ownership is inventoried separately below.                                                                                                                                         |
 
 No persistent fields, generic lock service, lease, saga or new coordination table were added. The internal Model policy row-lock/blocked-transaction and manufactured-unrepaired-state tests were removed; API initialization races, stale snapshot rejection, model/preference preservation and OAuth configuration preservation remain. The provider-routing test now constructs policy state through the public API. Artificial settlement rollback injection was removed while concurrent retry, exact grants/lots/balances, allowance consumption and public receipt assertions remain.
 
@@ -115,7 +115,7 @@ adders have no expired-remainder predicate and could otherwise add credits betwe
 two clamps. Release 2 may bound this command only once the complete R1 writer
 graph is prepared and incompatible serving/in-flight/rollback writers are gone.
 
-This monetary preparation does **not** complete the ownership graph: subscription/Atom-plan grants and migration/plan activation still forward transaction handles through metadata and pending-snapshot helpers. The ordinary paid usage-pack fulfillment commit is now owned as described below. The remaining boundaries are implementation work, not a drain gate.
+This monetary preparation does **not** complete the ownership graph: subscription/Atom-plan invoice grants and migration snapshot materialization still forward transaction handles through metadata and pending-snapshot helpers. Usage-pack plan activation and subscription.updated allowance/plan publication now own their commits as described below. The ordinary paid usage-pack fulfillment commit is now owned as described below. The remaining boundaries are implementation work, not a drain gate.
 
 Slack is the only organization-scoped get-started reward. All three production
 entry points now commit through business-only commands: direct installation,
@@ -216,8 +216,8 @@ Stripe events, reconciliation, migration finalization/replay and both migration
 confirmation APIs, preserving each caller's final `AbortSignal`. Migration remote
 scheduling, snapshot materialization and invitation completion still use their
 legacy helper ownership; converting orchestration callers does not certify those
-separate write protocols. Plan/Atom cancellation replay and plan activation remain
-implementation work. Focused Prettier, Oxlint and ESLint passed; combined types and
+separate write protocols. Plan/Atom cancellation replay remains implementation
+work; usage-pack plan activation is now owned as described below. Focused Prettier, Oxlint and ESLint passed; combined types and
 behavior checks must use the integrated PR HEAD.
 
 The Atom member-credit-only invoice path now uses `grantAtomMemberCredits$`.
@@ -241,4 +241,10 @@ Focused Prettier, Oxlint, ESLint, and diff checks cover this change. Existing us
 
 Stripe allowance updates now enumerate their organization targets outside any transaction and dispatch one business-input command per organization. Each command prepares active window IDs outside its transaction, then owns the wallet before the current entitlement and directly updates that entitlement and those windows. It reevaluates the existing Stripe-binding/custom-plan admission from current rows, preserves consumed units, and rejects an active window added after preparation so a redelivered event can prepare again. Cancellation still expires every prepared currently active window; credit-limit changes still update both short and weekly limits. Provider work and target enumeration do not run inside this transaction, and the former target/window helpers no longer receive database or transaction handles.
 
-This closes the allowance publication subgraph, not the adjacent legacy plan projection or the remaining global Stripe quantity/schedule protocol. Focused formatting, Oxlint, ESLint, and diff checks passed; integrated API behavior remains a PR-pipeline check.
+This closes the allowance publication subgraph. The adjacent subscription.updated plan projection is described below; the global Stripe quantity/schedule protocol remains separate implementation work. Focused formatting, Oxlint, ESLint, and diff checks passed; integrated API behavior remains a PR-pipeline check.
+
+### Legacy subscription.updated plan publication
+
+`publishLegacyPlanSubscription$` now owns the organization plan projection, its plan entitlement, and trial shortening in one local SQL transaction per organization. Stripe scheduled-end preparation and organization/credit-lot enumeration run outside transactions. The command rechecks the current subscription/custom-plan binding while owning the wallet, directly reads current member-pack eligibility and subscription entitlement ownership, and preserves the existing duplicate-Stripe-identity behavior and marketing-metadata retirement. Trial shortening only updates the prepared, still-positive matching renewal lots; a newly eligible lot aborts the entire publication for event redelivery. It does not extend or revive expired credits.
+
+`handleSubscriptionUpdatedLegacy$` dispatches these ordinary-value commands and the allowance/concurrency owners, with its caller's final abort signal. The former transaction-bearing plan-entitlement helper is removed. The separate invoice grant/replacement path and the usage-pack lifecycle synchronizer remain outside this completion claim. Focused formatting, Oxlint, ESLint, and diff checks passed; user-visible billing, allowance, and trial results still require the combined-head API pipeline.
