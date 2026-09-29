@@ -41,6 +41,7 @@ type OfficialWorkflowReconciliationCommand = Command<
 const configuredOfficialWorkflowReconciliationCommand$ = state<
   OfficialWorkflowReconciliationCommand | undefined
 >(undefined);
+// eslint-disable-next-line ccstate/no-create-store -- Legacy command registry; replace with an explicit process owner.
 const configurationStore = createStore();
 
 /** Configure Official Workflow reconciliation from the API composition root. */

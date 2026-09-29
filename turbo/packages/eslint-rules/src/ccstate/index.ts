@@ -13,6 +13,7 @@
  * - test-context-in-hooks: Ensure testContext() in test hooks
  * - computed-const-args-package-scope: Enforce package scope for constant functions
  * - no-store-in-params: Prevent Store type in function params
+ * - no-create-store: Restrict Store creation to configured entry points
  * - no-side-effect-in-render: Prevent side-effect calls (set, detach) directly in render
  * - command-async-signal: Async commands must accept AbortSignal as last param
  * - no-command-in-command: Prevent runtime command creation inside commands
@@ -45,6 +46,7 @@ import noComputedSignal from "./rules/no-computed-signal.ts";
 import testContextInHooks from "./rules/test-context-in-hooks.ts";
 import computedConstArgsPackageScope from "./rules/computed-const-args-package-scope.ts";
 import noStoreInParams from "./rules/no-store-in-params.ts";
+import noCreateStore from "./rules/no-create-store.ts";
 import setupPageRender from "./rules/setup-page-render.ts";
 import noSideEffectInRender from "./rules/no-side-effect-in-render.ts";
 import commandAsyncSignal from "./rules/command-async-signal.ts";
@@ -91,6 +93,7 @@ const plugin = {
     "test-context-in-hooks": testContextInHooks,
     "computed-const-args-package-scope": computedConstArgsPackageScope,
     "no-store-in-params": noStoreInParams,
+    "no-create-store": noCreateStore,
     "setup-page-render": setupPageRender,
     "no-side-effect-in-render": noSideEffectInRender,
     "command-async-signal": commandAsyncSignal,

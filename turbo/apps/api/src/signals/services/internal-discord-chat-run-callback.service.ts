@@ -96,6 +96,7 @@ async function currentDestinationAccess(
       return null;
     }
   }
+  // eslint-disable-next-line ccstate/no-create-store -- Legacy reply access check; migrate to the request command graph.
   const access = await createStore().set(
     requireDiscordConversationAccess$,
     {
