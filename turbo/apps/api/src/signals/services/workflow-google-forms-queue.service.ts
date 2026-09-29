@@ -40,6 +40,20 @@ export class GoogleFormsSourceTransitionChangedError extends Error {
   }
 }
 
+function googleFormsQueueAutomationCondition(source: GoogleFormsQueueSource) {
+  return and(
+    eq(workflowAutomations.id, source.automationId),
+    eq(workflowAutomations.orgId, source.orgId),
+    eq(workflowAutomations.ownerUserId, source.userId),
+    eq(workflowAutomations.kind, "event"),
+    eq(workflowAutomations.eventType, "google-forms-response-submitted"),
+    eq(workflowAutomations.enabled, true),
+    eq(workflowAutomations.eventConnectorId, source.connectorId),
+    sql`${workflowAutomations.eventConfig} ->> 'connectorId' = ${source.connectorId}`,
+    sql`${workflowAutomations.eventConfig} -> 'form' ->> 'id' = ${source.formId}`,
+  );
+}
+
 /** The input, source receipt, cursor and queue record have one local owner. */
 export const enqueueGoogleFormsWorkflowInput$ = command(
   async (
@@ -102,22 +116,7 @@ export const enqueueGoogleFormsWorkflowInput$ = command(
       const [automation] = await tx
         .select({ id: workflowAutomations.id })
         .from(workflowAutomations)
-        .where(
-          and(
-            eq(workflowAutomations.id, source.automationId),
-            eq(workflowAutomations.orgId, source.orgId),
-            eq(workflowAutomations.ownerUserId, source.userId),
-            eq(workflowAutomations.kind, "event"),
-            eq(
-              workflowAutomations.eventType,
-              "google-forms-response-submitted",
-            ),
-            eq(workflowAutomations.enabled, true),
-            eq(workflowAutomations.eventConnectorId, source.connectorId),
-            sql`${workflowAutomations.eventConfig} ->> 'connectorId' = ${source.connectorId}`,
-            sql`${workflowAutomations.eventConfig} -> 'form' ->> 'id' = ${source.formId}`,
-          ),
-        )
+        .where(googleFormsQueueAutomationCondition(source))
         .for("update")
         .limit(1);
       const cursorCondition = and(

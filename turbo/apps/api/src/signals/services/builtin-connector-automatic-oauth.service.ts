@@ -986,7 +986,9 @@ function automaticAccountSnapshotCondition(account: ObservedAutomaticAccount) {
     eq(connectors.id, account.id),
     eq(connectors.orgId, account.orgId),
     eq(connectors.userId, account.userId),
-    eq(connectors.connectorSlug, account.connectorSlug),
+    account.connectorSlug === null
+      ? isNull(connectors.connectorSlug)
+      : eq(connectors.connectorSlug, account.connectorSlug),
     eq(connectors.authMethod, account.authMethod),
     eq(connectors.storageVersion, account.storageVersion),
     eq(connectors.updatedAt, sql`${account.stateRevision}::timestamp`),
@@ -1007,6 +1009,48 @@ function automaticStoredRefreshTokenCondition(args: {
       AND ${secrets.name} = ${args.name}
       AND ${secrets.encryptedValue} = ${args.encryptedValue}
   )`;
+}
+
+function automaticRefreshMetadata(
+  account: ObservedAutomaticAccount,
+  token: McpAutomaticOAuthTokenResult,
+  identity: ReturnType<typeof resolveRefreshedOAuthIdentity>,
+) {
+  return {
+    tokenExpiresAt: token.expiresAt,
+    oauthGrantedScopes:
+      token.scopes === null
+        ? account.oauthGrantedScopes
+        : JSON.stringify(token.scopes),
+    ...(identity.kind === "update"
+      ? {
+          externalId: identity.externalId,
+          externalUsername: identity.externalUsername,
+          externalEmail: identity.externalEmail,
+        }
+      : {}),
+    updatedAt: sql`clock_timestamp()`,
+  };
+}
+
+function automaticInitialAccountSnapshotCondition(
+  context: LockedAutomaticCredentialContext,
+) {
+  return and(
+    context.accountIdentity,
+    eq(connectors.updatedAt, sql`${context.initialRevision}::timestamp`),
+    sql`${connectors}.xmin::text = ${context.initialRowVersion}`,
+  );
+}
+
+function automaticAccountTokenOwnerCondition(
+  account: ObservedAutomaticAccount,
+) {
+  return and(
+    eq(secrets.connectorId, account.id),
+    eq(secrets.orgId, account.orgId),
+    eq(secrets.userId, account.userId),
+  );
 }
 
 async function markReconnect(
@@ -1130,21 +1174,7 @@ async function refreshLockedAutomatic(
   // The token bundle and metadata either publish together or the transaction rolls back.
   const [published] = await tx
     .update(connectors)
-    .set({
-      tokenExpiresAt: refreshed.value.expiresAt,
-      oauthGrantedScopes:
-        refreshed.value.scopes === null
-          ? account.oauthGrantedScopes
-          : JSON.stringify(refreshed.value.scopes),
-      ...(identity.kind === "update"
-        ? {
-            externalId: identity.externalId,
-            externalUsername: identity.externalUsername,
-            externalEmail: identity.externalEmail,
-          }
-        : {}),
-      updatedAt: sql`clock_timestamp()`,
-    })
+    .set(automaticRefreshMetadata(account, refreshed.value, identity))
     .where(
       and(
         automaticAccountSnapshotCondition(account),
@@ -1223,14 +1253,7 @@ async function resolveLockedAutomatic(
   context: LockedAutomaticCredentialContext,
   signal: AbortSignal,
 ): Promise<CredentialResult> {
-  const {
-    contract,
-    accessName,
-    initialAccessEncrypted,
-    initialRevision,
-    initialRowVersion,
-    accountIdentity,
-  } = context;
+  const { contract, accessName, initialAccessEncrypted } = context;
   await lockBuiltinConnectorAutomaticLifecycle(
     tx,
     contractOwner(args.orgId, contract),
@@ -1247,13 +1270,7 @@ async function resolveLockedAutomatic(
       rowVersion: sql`${connectors}.xmin::text`.mapWith(pgTextDecoder),
     })
     .from(connectors)
-    .where(
-      and(
-        accountIdentity,
-        eq(connectors.updatedAt, sql`${initialRevision}::timestamp`),
-        sql`${connectors}.xmin::text = ${initialRowVersion}`,
-      ),
-    )
+    .where(automaticInitialAccountSnapshotCondition(context))
     .for("update")
     .limit(1);
   signal.throwIfAborted();
@@ -1306,13 +1323,7 @@ async function resolveLockedAutomatic(
   const tokenRows = await tx
     .select({ name: secrets.name, encryptedValue: secrets.encryptedValue })
     .from(secrets)
-    .where(
-      and(
-        eq(secrets.connectorId, account.id),
-        eq(secrets.orgId, args.orgId),
-        eq(secrets.userId, args.userId),
-      ),
-    );
+    .where(automaticAccountTokenOwnerCondition(account));
   const access = tokenRows.find((token) => {
     return token.name === accessName;
   });

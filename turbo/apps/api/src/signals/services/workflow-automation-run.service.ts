@@ -121,6 +121,47 @@ function queueAdmissionSourceTransition(args: {
   };
 }
 
+function workflowQueueSchedulePath(
+  args: RunWorkflowAutomationNowArgs,
+): WorkflowAdmissionSchedulePath {
+  return args.due.automation.kind !== "schedule"
+    ? "non_schedule"
+    : args.scheduleClaim
+      ? "journaled_schedule"
+      : "unjournaled_schedule";
+}
+
+function workflowQueueInputPreparation(
+  args: RunWorkflowAutomationNowArgs,
+  timing: ApiDispatchTimingCollector,
+) {
+  if (
+    args.googleFormsSource &&
+    (args.scheduleClaim ||
+      args.persistSourceTransition ||
+      args.due.automation.kind === "schedule")
+  ) {
+    throw new Error(
+      "Google Forms admission cannot carry another source transition",
+    );
+  }
+  return {
+    automation: args.due.automation,
+    queueEventId: args.queueEventId,
+    workflowName: args.automationContext.workflowName,
+    displayPrompt: workflowAutomationDisplayMessage(args.automationContext),
+    agentRunSource: args.agentRunSource,
+    workflowAutomationEventType: args.automationContext.eventType,
+    workflowAutomationEventPayload: persistedWorkflowAutomationEventPayload(
+      args.automationContext.event,
+    ),
+    connectorSourceId: args.connectorSourceId,
+    chatThreadId: args.due.chatThreadId,
+    triggerBrief: args.triggerBrief,
+    timing,
+  };
+}
+
 /**
  * Workflow entry for every trigger. Entry-owned state stays here: an automated
  * schedule tick coalesces this automation's older unconsumed ticks, and a
@@ -154,41 +195,17 @@ export const runWorkflowAutomationNow$ = command(
         ? { chatThreadId, automationId: automation.id }
         : undefined;
 
-    const preparedInput = await prepareWorkflowAutomationQueueInput(db, {
-      automation,
-      queueEventId: args.queueEventId,
-      workflowName: args.automationContext.workflowName,
-      displayPrompt: workflowAutomationDisplayMessage(args.automationContext),
-      agentRunSource: args.agentRunSource,
-      workflowAutomationEventType: args.automationContext.eventType,
-      workflowAutomationEventPayload: persistedWorkflowAutomationEventPayload(
-        args.automationContext.event,
-      ),
-      connectorSourceId: args.connectorSourceId,
-      chatThreadId,
-      triggerBrief: args.triggerBrief,
-      timing,
-    });
+    const preparedInput = await prepareWorkflowAutomationQueueInput(
+      db,
+      workflowQueueInputPreparation(args, timing),
+    );
     signal.throwIfAborted();
-    if (
-      args.googleFormsSource &&
-      (scheduleClaim || persistSourceTransition || replacePendingTicks)
-    ) {
-      throw new Error(
-        "Google Forms admission cannot carry another source transition",
-      );
-    }
     const appendInput = workflowAutomationQueueEventWriter(
       preparedInput,
       timing,
     );
 
-    const schedulePath: WorkflowAdmissionSchedulePath =
-      automation.kind !== "schedule"
-        ? "non_schedule"
-        : scheduleClaim
-          ? "journaled_schedule"
-          : "unjournaled_schedule";
+    const schedulePath = workflowQueueSchedulePath(args);
     let admissionOutcome: WorkflowAdmissionOutcome = "failed";
     const enqueued = await flushWorkflowAdmission(
       censusWorkflowAdmission(

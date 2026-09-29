@@ -2488,7 +2488,6 @@ async function persistRefreshOutputValues(
 async function markRefreshSuccess(
   args: RefreshAccessTokenArgs,
   prepared: PreparedRefreshTokenContext,
-  context: RefreshTokenContext,
   expected: RefreshState,
   outputs: readonly ValidatedRefreshOutput[],
   refresh: {
@@ -2496,6 +2495,7 @@ async function markRefreshSuccess(
     readonly scopes?: readonly string[];
   },
 ): Promise<Record<string, string> | null> {
+  const context = prepared.context;
   const expiresAt = new Date(
     nowDate().getTime() +
       (refresh.expiresIn ?? DEFAULT_ACCESS_TOKEN_EXPIRES_IN_SECS) * 1000,
@@ -2595,10 +2595,13 @@ async function markRefreshFailure(
   args: RefreshAccessTokenArgs,
   context: RefreshTokenContext,
   expected: RefreshState,
-  errorCode: string | null,
-  failureReason: FirewallAuthFailureReason | undefined,
-  connectorReconnectReason: ConnectorReconnectReason | null,
+  failure: {
+    readonly errorCode: string | null;
+    readonly failureReason: FirewallAuthFailureReason | undefined;
+    readonly connectorReconnectReason: ConnectorReconnectReason | null;
+  },
 ): Promise<void> {
+  const { errorCode, failureReason, connectorReconnectReason } = failure;
   if (args.sourceType === "model-provider") {
     const updates =
       failureReason === "upstream_provider"
@@ -2678,14 +2681,11 @@ async function markRefreshTokenMissing(
   context: RefreshTokenContext,
   expected: RefreshState,
 ): Promise<RefreshAccessTokenResult> {
-  await markRefreshFailure(
-    args,
-    context,
-    expected,
-    null,
-    "reconnect_required",
-    null,
-  );
+  await markRefreshFailure(args, context, expected, {
+    errorCode: null,
+    failureReason: "reconnect_required",
+    connectorReconnectReason: null,
+  });
   return refreshTokenMissingResult();
 }
 
@@ -2696,13 +2696,14 @@ async function markAndReturnRefreshFailure(
   args: RefreshAccessTokenArgs,
   context: RefreshTokenContext,
   expected: RefreshState,
-  error: unknown,
-  signal: AbortSignal,
   retry: {
+    readonly error: unknown;
     readonly attempted: boolean;
     readonly firstProviderStatus: number | null;
   },
+  signal: AbortSignal,
 ): Promise<RefreshAccessTokenResult> {
+  const { error } = retry;
   const connectorAccess = args.connectorAccessBySlug.get(args.accessSourceKey);
   if (
     args.sourceType === "connector" &&
@@ -2712,14 +2713,11 @@ async function markAndReturnRefreshFailure(
     error.status === 401 &&
     error.providerErrorCode === "TOKEN_EXPIRED"
   ) {
-    await markRefreshFailure(
-      args,
-      context,
-      expected,
-      "invalid_grant",
-      "reconnect_required",
-      "credential_expired",
-    );
+    await markRefreshFailure(args, context, expected, {
+      errorCode: "invalid_grant",
+      failureReason: "reconnect_required",
+      connectorReconnectReason: "credential_expired",
+    });
     return refreshFailedResult("reconnect_required");
   }
   const { errorCode, failureReason } = classifyRefreshFailure(error, signal);
@@ -2735,14 +2733,14 @@ async function markAndReturnRefreshFailure(
       firstProviderStatus: retry.firstProviderStatus,
     });
   }
-  await markRefreshFailure(
-    args,
-    context,
-    expected,
+  await markRefreshFailure(args, context, expected, {
     errorCode,
     failureReason,
-    connectorReconnectReasonFromRefreshFailure(error, failureReason),
-  );
+    connectorReconnectReason: connectorReconnectReasonFromRefreshFailure(
+      error,
+      failureReason,
+    ),
+  });
   return refreshFailedResult(failureReason);
 }
 
@@ -3082,9 +3080,12 @@ async function refreshPreparedLockedAccessToken(args: {
       refreshArgs,
       prepared.context,
       lockedState,
-      refreshResult.error,
+      {
+        error: refreshResult.error,
+        attempted: retryAttempted,
+        firstProviderStatus,
+      },
       refreshSignal,
-      { attempted: retryAttempted, firstProviderStatus },
     );
   }
 
@@ -3104,21 +3105,17 @@ async function refreshPreparedLockedAccessToken(args: {
       providerStatus: null,
       retryAttempted,
     });
-    await markRefreshFailure(
-      refreshArgs,
-      prepared.context,
-      lockedState,
-      null,
-      "upstream_provider",
-      null,
-    );
+    await markRefreshFailure(refreshArgs, prepared.context, lockedState, {
+      errorCode: null,
+      failureReason: "upstream_provider",
+      connectorReconnectReason: null,
+    });
     return refreshFailedResult("upstream_provider");
   }
 
   const returnedSecretValues = await markRefreshSuccess(
     refreshArgs,
     prepared,
-    prepared.context,
     lockedState,
     outputValidation.outputs,
     refreshResult.value,
