@@ -168,7 +168,6 @@ import {
 import {
   type AgentExecutionConfig as agentRunCreateAgentExecutionConfig,
   type AgentExecutionDefinition,
-  type AgentExecutionArtifact,
   buildAgentExecutionConfig,
 } from "./agent-execution-config";
 import {
@@ -451,7 +450,6 @@ import { userDisabledPaidTools } from "@okouai/db/schema/user-disabled-paid-tool
 import { SEED_SKILLS } from "@okouai/core/seed-skills";
 import { isStaffOrg } from "@okouai/core/staff-org";
 import { resolveSkillRef, parseGitHubTreeUrl } from "@okouai/core/github-url";
-import { expandMountPath } from "@okouai/api-contracts/contracts/agents";
 import { previewAutomationBypass$ } from "../context/hono";
 import { VERCEL_AUTOMATION_BYPASS_ENV } from "../../lib/preview-automation-bypass";
 import { isWebChatTriggerSource } from "./chat-trigger-source.service";
@@ -4719,6 +4717,8 @@ export interface CreateAgentRunArgs {
   >;
   /** Override the missing-root policy for this producer's artifact mounts. */
   readonly artifactMissingRootPolicy?: ArtifactMissingRootPolicy;
+  /** Internal producer pin for the auto-injected memory mount baseline. */
+  readonly pinnedMemoryVersionId?: string;
   readonly timing?: ApiDispatchTimingCollector;
   readonly timingDimensions?: ApiDispatchTimingDimensions;
 }
@@ -5312,24 +5312,6 @@ function withoutSupersededAutoMemoryArtifacts(
   });
 }
 
-function resolveAgentExecutionArtifactMountPath(
-  artifact: AgentExecutionArtifact,
-): string {
-  return expandMountPath(artifact.mount_path);
-}
-
-function composeArtifacts(
-  content: agentRunCreateAgentExecutionConfig,
-): readonly AgentRunCreateContextArtifact[] {
-  return (content.artifacts ?? []).map((artifact) => {
-    return {
-      name: artifact.name,
-      version: artifact.version,
-      mountPath: resolveAgentExecutionArtifactMountPath(artifact),
-    };
-  });
-}
-
 function withPinnedPiContinuationMemory(
   artifacts: readonly AgentRunCreateContextArtifact[],
   previousRunStorageMounts: readonly PersistedStorageMount[] | undefined,
@@ -5379,29 +5361,32 @@ function withPinnedPiContinuationMemory(
 function artifactsForRun(args: {
   readonly resolved: Pick<
     ResolvedRunExecution,
-    "agentSessionId" | "content" | "artifacts" | "previousRunStorageMounts"
+    "agentSessionId" | "artifacts" | "previousRunStorageMounts"
   >;
   readonly framework: SupportedFramework;
   readonly piSandbox: PiModelConfig | undefined;
   readonly includeAutoMemory: boolean;
-  readonly bodyArtifacts: readonly AgentRunCreateContextArtifact[] | undefined;
+  readonly pinnedMemoryVersionId: string | undefined;
 }): RunArtifacts {
   const isContinuation = Boolean(args.resolved.agentSessionId);
-  const composeContextArtifacts = isContinuation
-    ? []
-    : composeArtifacts(args.resolved.content);
-  const unpinnedBaseArtifacts = isContinuation
-    ? args.resolved.artifacts
-    : [...composeContextArtifacts, ...args.resolved.artifacts];
   const baseArtifacts =
     isContinuation && args.piSandbox !== undefined && args.includeAutoMemory
       ? withPinnedPiContinuationMemory(
-          unpinnedBaseArtifacts,
+          args.resolved.artifacts,
           args.resolved.previousRunStorageMounts,
         )
-      : unpinnedBaseArtifacts;
-  const bodyArtifacts = args.bodyArtifacts ?? [];
-  const artifacts = [...baseArtifacts, ...bodyArtifacts];
+      : args.resolved.artifacts;
+  // A producer-pinned memory baseline claims the auto-memory slot last.
+  const artifacts =
+    args.pinnedMemoryVersionId === undefined
+      ? baseArtifacts
+      : [
+          ...baseArtifacts,
+          {
+            ...autoMemoryArtifact(args.framework, args.piSandbox),
+            version: args.pinnedMemoryVersionId,
+          },
+        ];
   if (!args.includeAutoMemory) {
     return {
       artifacts: artifacts.filter((artifact) => {
@@ -11897,14 +11882,17 @@ function createRunPreparedConnectorObjects(
 }
 
 export function prepareRunOutputMetadata(args: {
-  readonly createArgs: Pick<CreateAgentRunArgs, "injectSkillVolumes">;
+  readonly createArgs: Pick<
+    CreateAgentRunArgs,
+    "injectSkillVolumes" | "pinnedMemoryVersionId"
+  >;
   readonly systemSkillStorageResolution: SystemSkillStorageResolution;
   readonly connectorScope: EffectiveConnectorScope;
   readonly connectorCatalogSelection: RunConnectorCatalogSelection;
   readonly customConnectorContext: CustomConnectorRuntimeContext;
   readonly framework: SupportedFramework;
   readonly piSandbox: PiModelConfig | undefined;
-  readonly body: Pick<CreateRunBody, "artifacts" | "additionalVolumes">;
+  readonly body: Pick<CreateRunBody, "additionalVolumes">;
   readonly resolved: RunStorageExecution;
   readonly officialWorkflowRun: OfficialWorkflowRunObservation | undefined;
 }): {
@@ -11930,7 +11918,7 @@ export function prepareRunOutputMetadata(args: {
     framework: args.framework,
     piSandbox: args.piSandbox,
     includeAutoMemory: true,
-    bodyArtifacts: args.body.artifacts,
+    pinnedMemoryVersionId: args.createArgs.pinnedMemoryVersionId,
   }).artifacts;
   return {
     additionalVolumes: additionalVolumes.volumes,

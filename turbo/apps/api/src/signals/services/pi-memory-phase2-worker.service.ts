@@ -4,7 +4,6 @@ import {
 } from "./pi-memory-quota.service";
 import { checkOrgCreditsForRunAdmission } from "./run-admission.service";
 import { piMemoryPhase2SelectionDigest } from "@okouai/pi-agent-runtime/api";
-import { PI_MEMORY_ROOT } from "@okouai/api-contracts/contracts/runners";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
@@ -295,13 +294,6 @@ const dispatchClaim$ = command(
           triggerSource: "agent",
           // Private BYOK runs need an encrypted namespace for dynamic secrets.
           secrets: {},
-          artifacts: [
-            {
-              name: "memory",
-              version: claim.baseVersion.versionId,
-              mountPath: PI_MEMORY_ROOT,
-            },
-          ],
         },
         apiStartTime: now(),
         modelProviderType: credential.pin.modelProvider,
@@ -356,6 +348,7 @@ const dispatchClaim$ = command(
         piExecution: true,
         piLaunchConfig: { maintenance },
         artifactMissingRootPolicy: "fail",
+        pinnedMemoryVersionId: claim.baseVersion.versionId,
       },
       signal,
     );

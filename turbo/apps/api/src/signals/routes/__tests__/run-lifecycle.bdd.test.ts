@@ -2502,46 +2502,6 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       versionId: preparedAdditionalStorage.versionId,
       files: [additionalFile],
     });
-    const customArtifactName = `bdd-phase3-artifact-${randomUUID().slice(0, 8)}`;
-    const customArtifactMountPath = "/phase3-writeback";
-    const pinnedArtifactName = `bdd-phase3-pinned-${randomUUID().slice(0, 8)}`;
-    const pinnedArtifactMountPath = "/phase3-pinned";
-    const pinnedArtifactFile = storageTextFile(
-      "pinned.txt",
-      `canonical pinned Storage ${pinnedArtifactName}`,
-    );
-    const preparedPinnedArtifact = await storages.prepareStorage(actor, {
-      storageName: pinnedArtifactName,
-      storageOwner: "user",
-      files: [pinnedArtifactFile],
-    });
-    const committedPinnedArtifact = await storages.commitStorage(actor, {
-      storageName: pinnedArtifactName,
-      storageOwner: "user",
-      versionId: preparedPinnedArtifact.versionId,
-      files: [pinnedArtifactFile],
-    });
-    expect(committedPinnedArtifact).toMatchObject({
-      versionId: preparedPinnedArtifact.versionId,
-      headVersionId: preparedPinnedArtifact.versionId,
-    });
-    // Runs no longer create missing artifacts, so the unpinned writeback
-    // artifact exists before the first run and follows its HEAD afterwards.
-    const initialCustomArtifactFile = storageTextFile(
-      "checkpoint.txt",
-      `initial custom writeback ${customArtifactName}`,
-    );
-    const preparedInitialCustomArtifact = await storages.prepareStorage(actor, {
-      storageName: customArtifactName,
-      storageOwner: "user",
-      files: [initialCustomArtifactFile],
-    });
-    await storages.commitStorage(actor, {
-      storageName: customArtifactName,
-      storageOwner: "user",
-      versionId: preparedInitialCustomArtifact.versionId,
-      files: [initialCustomArtifactFile],
-    });
     const composeName = `bdd-storage-persistence-${randomUUID().slice(0, 8)}`;
     const compose = await api.createDirectAgent(actor, {
       version: "1",
@@ -2564,17 +2524,6 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     const initialRun = await api.createDirectRun(actor, {
       agentId: compose.agentId,
       prompt: "persist canonical storage mounts",
-      artifacts: [
-        {
-          name: customArtifactName,
-          mountPath: customArtifactMountPath,
-        },
-        {
-          name: pinnedArtifactName,
-          version: preparedPinnedArtifact.versionId,
-          mountPath: pinnedArtifactMountPath,
-        },
-      ],
       additionalVolumes: [
         {
           name: additionalStorageName,
@@ -2608,23 +2557,6 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
         mountPath: "/phase3-additional",
       }),
     );
-    const initialCustomArtifact = initialManifest.storageMounts.find(
-      (mount) => {
-        return mount.name === customArtifactName;
-      },
-    );
-    if (!initialCustomArtifact) {
-      throw new Error("Expected the custom canonical writeback mount");
-    }
-    const initialPinnedArtifact = initialManifest.storageMounts.find(
-      (mount) => {
-        return mount.name === pinnedArtifactName;
-      },
-    );
-    if (!initialPinnedArtifact) {
-      throw new Error("Expected the pinned canonical writeback mount");
-    }
-
     const memoryFile = storageTextFile(
       "MEMORY.md",
       `canonical memory ${initialRun.runId}`,
@@ -2657,26 +2589,6 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
                 ? {}
                 : { missingRootPolicy: initialMemory.missingRootPolicy }),
             },
-            {
-              name: initialCustomArtifact.name,
-              version: initialCustomArtifact.versionId,
-              mountPath: initialCustomArtifact.mountPath,
-              ...(initialCustomArtifact.missingRootPolicy === undefined
-                ? {}
-                : {
-                    missingRootPolicy: initialCustomArtifact.missingRootPolicy,
-                  }),
-            },
-            {
-              name: initialPinnedArtifact.name,
-              version: initialPinnedArtifact.versionId,
-              mountPath: initialPinnedArtifact.mountPath,
-              ...(initialPinnedArtifact.missingRootPolicy === undefined
-                ? {}
-                : {
-                    missingRootPolicy: initialPinnedArtifact.missingRootPolicy,
-                  }),
-            },
           ],
         },
       },
@@ -2700,48 +2612,6 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       checkpoint_canonical: true,
     });
 
-    const customArtifactFile = storageTextFile(
-      "checkpoint.txt",
-      `canonical custom writeback ${initialRun.runId}`,
-    );
-    const preparedCustomArtifact = await storages.prepareStorage(actor, {
-      storageName: customArtifactName,
-      storageOwner: "user",
-      files: [customArtifactFile],
-    });
-    const committedCustomArtifact = await storages.commitStorage(actor, {
-      storageName: customArtifactName,
-      storageOwner: "user",
-      versionId: preparedCustomArtifact.versionId,
-      files: [customArtifactFile],
-    });
-    expect(committedCustomArtifact).toMatchObject({
-      versionId: preparedCustomArtifact.versionId,
-      headVersionId: preparedCustomArtifact.versionId,
-    });
-    const newerPinnedArtifactFile = storageTextFile(
-      "pinned.txt",
-      `newer pinned Storage ${initialRun.runId}`,
-    );
-    const preparedNewerPinnedArtifact = await storages.prepareStorage(actor, {
-      storageName: pinnedArtifactName,
-      storageOwner: "user",
-      files: [newerPinnedArtifactFile],
-    });
-    expect(preparedNewerPinnedArtifact.versionId).not.toBe(
-      preparedPinnedArtifact.versionId,
-    );
-    const committedNewerPinnedArtifact = await storages.commitStorage(actor, {
-      storageName: pinnedArtifactName,
-      storageOwner: "user",
-      versionId: preparedNewerPinnedArtifact.versionId,
-      files: [newerPinnedArtifactFile],
-    });
-    expect(committedNewerPinnedArtifact).toMatchObject({
-      versionId: preparedNewerPinnedArtifact.versionId,
-      headVersionId: preparedNewerPinnedArtifact.versionId,
-    });
-
     const sessionRun = await api.createDirectRun(actor, {
       sessionId: initialRun.sessionId,
       prompt: "continue canonical storage session",
@@ -2760,20 +2630,6 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
           storageId: initialMemory.storageId,
           versionId: preparedMemory.versionId,
           mountPath: initialMemory.mountPath,
-          writeback: true,
-        }),
-        expect.objectContaining({
-          name: customArtifactName,
-          storageId: initialCustomArtifact.storageId,
-          versionId: preparedCustomArtifact.versionId,
-          mountPath: customArtifactMountPath,
-          writeback: true,
-        }),
-        expect.objectContaining({
-          name: pinnedArtifactName,
-          storageId: initialPinnedArtifact.storageId,
-          versionId: preparedPinnedArtifact.versionId,
-          mountPath: pinnedArtifactMountPath,
           writeback: true,
         }),
       ]),

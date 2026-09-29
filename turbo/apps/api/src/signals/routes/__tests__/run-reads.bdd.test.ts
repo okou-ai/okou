@@ -1164,19 +1164,6 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
       versionId: volumeVersion,
       files: [volumeFile],
     });
-    // Runs no longer create missing artifacts; the custom artifact exists.
-    const customMemoryFile = storageTextFile("notes.md", "custom memory");
-    const customMemory = await storages.prepareStorage(actor, {
-      storageName: "custom-memory",
-      storageOwner: "user",
-      files: [customMemoryFile],
-    });
-    await storages.commitStorage(actor, {
-      storageName: "custom-memory",
-      storageOwner: "user",
-      versionId: customMemory.versionId,
-      files: [customMemoryFile],
-    });
     const refreshedVolumeArchiveSize = 23_456;
     const forcedPrepare = await storages.prepareStorage(actor, {
       storageName: volumeName,
@@ -1243,9 +1230,6 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
       prompt: "pin the volume by version prefix",
       modelProviderType: "anthropic-api-key",
       vars: { VOL_VERSION: versionPrefix },
-      artifacts: [
-        { name: "memory", mountPath: CANONICAL_CLAUDE_MEMORY_MOUNT_PATH },
-      ],
     });
     const claim1 = await api.claimRunnerJob(r1.runId);
     expect(
@@ -1334,72 +1318,6 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
     const byAgentClaim = await api.claimRunnerJob(byAgent.body.runId);
     await api.requestCancelRun(actor, byAgent.body.runId, [200]);
     await finishCancelledRun(byAgent.body.runId, byAgentClaim.sandboxToken);
-
-    const strictMemory = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
-      prompt: "user-authored memory stays strict",
-      vars: { VOL_VERSION: volumeVersion },
-      artifacts: [{ name: "memory", mountPath: "/mnt/user-memory" }],
-    });
-    const strictClaim = await api.claimRunnerJob(strictMemory.runId);
-    expect(
-      expectCanonicalStorageManifest(strictClaim.storageManifest)
-        ?.storageMounts.filter((mount) => {
-          return mount.name === "memory";
-        })
-        .map((mount) => {
-          return {
-            name: mount.name,
-            mountPath: mount.mountPath,
-            missingRootPolicy: mount.missingRootPolicy,
-          };
-        }),
-    ).toStrictEqual([
-      {
-        name: "memory",
-        mountPath: "/mnt/user-memory",
-        missingRootPolicy: undefined,
-      },
-    ]);
-    await api.requestCancelRun(actor, strictMemory.runId, [200]);
-    await finishCancelledRun(strictMemory.runId, strictClaim.sandboxToken);
-
-    const customCanonical = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
-      prompt: "custom artifact claims the canonical memory mount",
-      vars: { VOL_VERSION: volumeVersion },
-      artifacts: [
-        {
-          name: "custom-memory",
-          mountPath: CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
-        },
-      ],
-    });
-    const customClaim = await api.claimRunnerJob(customCanonical.runId);
-    expect(
-      expectCanonicalStorageManifest(customClaim.storageManifest)
-        ?.storageMounts.filter((mount) => {
-          return (
-            mount.name === "memory" ||
-            mount.mountPath === CANONICAL_CLAUDE_MEMORY_MOUNT_PATH
-          );
-        })
-        .map((mount) => {
-          return {
-            name: mount.name,
-            mountPath: mount.mountPath,
-            missingRootPolicy: mount.missingRootPolicy,
-          };
-        }),
-    ).toStrictEqual([
-      {
-        name: "custom-memory",
-        mountPath: CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
-        missingRootPolicy: undefined,
-      },
-    ]);
-    await api.requestCancelRun(actor, customCanonical.runId, [200]);
-    await finishCancelledRun(customCanonical.runId, customClaim.sandboxToken);
 
     const continued = await api.createDirectRun(actor, {
       sessionId: r1.sessionId,

@@ -27,14 +27,13 @@ import {
 /**
  * Agent run request schema — subset of unified schema.
  * Server-side defaults are injected by agent-runs-create.service.ts:
- * artifacts, disallowedTools.
+ * disallowedTools.
  * Fields not used by unattended workflow runs are omitted:
  * triggerSource, vars, secrets, volumeVersions, permissionPolicies.
  */
 export const runCreateBodySchema = unifiedRunRequestSchema
   .omit({
     triggerSource: true,
-    artifacts: true,
     disallowedTools: true,
     volumeVersions: true,
     vars: true,
