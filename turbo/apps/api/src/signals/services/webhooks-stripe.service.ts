@@ -2986,6 +2986,9 @@ const publishConcurrencyInvoice$ = command(
         eq(orgConcurrencySubscriptions.stripeSubscriptionId, subscriptionId),
       )
       .limit(1);
+    if (!existing && values.length === 0) {
+      return { handled: true, drainOrgId: orgId };
+    }
     const originalVersion = and(
       eq(orgConcurrencySubscriptions.stripeSubscriptionId, subscriptionId),
       existing
