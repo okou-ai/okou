@@ -5698,6 +5698,30 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       credits: 1000,
       onboardingPaymentPending: false,
     });
+    // This scenario exercises legacy Custom policy fallback, not the new Auto default.
+    await api.updateOrgModelPolicies(actor, [
+      {
+        model: "gpt-6-luna",
+        isDefault: true,
+        defaultProviderType: "built-in",
+        credentialScope: "org",
+        modelProviderId: null,
+      },
+      {
+        model: "gpt-6-astra",
+        isDefault: false,
+        defaultProviderType: "built-in",
+        credentialScope: "org",
+        modelProviderId: null,
+      },
+      {
+        model: "claude-fable-5-1",
+        isDefault: false,
+        defaultProviderType: "built-in",
+        credentialScope: "org",
+        modelProviderId: null,
+      },
+    ]);
     const modelPolicies = await misc.listModelPolicies(actor);
     expect(modelPolicies.workspaceDefaultModel).toBe("gpt-6-luna");
     expect(

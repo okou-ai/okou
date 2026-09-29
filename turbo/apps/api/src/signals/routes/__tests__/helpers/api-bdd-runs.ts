@@ -1023,6 +1023,10 @@ export function createRunsApi(
       actor: ApiTestUser,
       body: OrgModelProviderUpsertRequest,
     ): Promise<{ readonly providerId: string }> {
+      if (!actor.orgId) {
+        throw new Error("Custom organization provider setup requires an org");
+      }
+      await setCustomOrgModelModeIfPresentFixture(actor.orgId);
       const response = await accept(
         runApp(context)(modelProvidersMainContract).upsert({
           headers: authenticate(context, actor),

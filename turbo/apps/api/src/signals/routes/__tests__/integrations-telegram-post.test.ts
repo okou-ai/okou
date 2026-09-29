@@ -26,6 +26,7 @@ import {
   setTelegramThinkingMessageIdFixture,
 } from "../../../test-fixtures/chat-events";
 import { installTelegramContextFailureFixture } from "../../../test-fixtures/telegram-context-failure";
+import { setCustomOrgModelModeIfPresentFixture } from "../../../test-fixtures/org-metadata";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { settleIncludingAbort } from "../../utils";
 import { createFixtureTracker } from "./helpers/route-test";
@@ -236,6 +237,8 @@ async function seedTelegramPostFixture(
       : undefined,
   };
 
+  // Existing Telegram routing scenarios use the legacy Custom workspace policy.
+  await setCustomOrgModelModeIfPresentFixture(seeded.orgId);
   return seeded;
 }
 
