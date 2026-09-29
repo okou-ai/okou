@@ -304,9 +304,8 @@ or write it, and only current chat host permission authorizes Run access.
 Physical table removal belongs to #37272 after that API version and its
 rollback floor have advanced. Current membership authorizes access to that
 owner's configuration. If the user leaves and rejoins before cleanup removes
-the configuration, it remains the same
-owner's data and is accessible again. Each saved connection retains its own
-identity across membership changes.
+the configuration, it remains the same owner's data and is accessible again.
+Each saved connection retains its own identity across membership changes.
 
 Mutation transactions use shared cleanup-scope locks and an exclusive owner
 lock. Cleanup takes an exclusive scope lock and
