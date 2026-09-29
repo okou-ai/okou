@@ -144,11 +144,11 @@ export interface PiStableContextPublicationFence {
   readonly token: string;
 }
 
-function subjectForScope(scope: PiStableContextScope): string {
+export function subjectForScope(scope: PiStableContextScope): string {
   return scope.userId ?? PI_STABLE_CONTEXT_AGENT_SUBJECT;
 }
 
-function generationScopeCondition(scope: PiStableContextScope) {
+export function generationScopeCondition(scope: PiStableContextScope) {
   return and(
     eq(piStableContextGenerations.orgId, scope.orgId),
     eq(piStableContextGenerations.agentId, scope.agentId),
@@ -180,7 +180,9 @@ function publicationKeyCondition(
   );
 }
 
-function publicationScopeCondition(fence: PiStableContextPublicationFence) {
+export function publicationScopeCondition(
+  fence: PiStableContextPublicationFence,
+) {
   return and(
     publicationKeyCondition(fence.scope, fence.publicationKey),
     eq(piStableContextPublications.generation, fence.generation),
@@ -188,7 +190,7 @@ function publicationScopeCondition(fence: PiStableContextPublicationFence) {
   );
 }
 
-function headScopeCondition(scope: PiStableContextScope): SQL {
+export function headScopeCondition(scope: PiStableContextScope): SQL {
   const base = and(
     eq(piStableContextHeads.orgId, scope.orgId),
     eq(piStableContextHeads.agentId, scope.agentId),
@@ -651,7 +653,7 @@ export async function beginPiStableContextPublication(
   });
 }
 
-function rebindStorageMount(
+export function rebindStorageMount(
   mount: PiStableContextBuildInput["storageMounts"][number],
   resource: {
     readonly storageId: string;
