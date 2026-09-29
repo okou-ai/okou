@@ -3,6 +3,7 @@ import {
   type UserLocale,
 } from "@okouai/api-contracts/contracts/user-preferences";
 import { agents } from "@okouai/db/schema/agent";
+import { googleFormsAutomationCursors } from "@okouai/db/schema/google-forms-event";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import {
   workflowAutomations,
@@ -184,7 +185,7 @@ export async function disableThreadBoundWorkflowAutomations(
     return [];
   }
 
-  return await db
+  const disabled = await db
     .update(workflowAutomations)
     .set({ enabled: false, nextRunAt: null, updatedAt: args.currentTime })
     .where(
@@ -200,12 +201,40 @@ export async function disableThreadBoundWorkflowAutomations(
       ),
     )
     .returning({
+      id: workflowAutomations.id,
+      officialBlueprintKey: workflowAutomations.officialBlueprintKey,
+      officialIntendedEnabled: workflowAutomations.officialIntendedEnabled,
       orgId: workflowAutomations.orgId,
       ownerUserId: workflowAutomations.ownerUserId,
       eventType: workflowAutomations.eventType,
       eventConfig: workflowAutomations.eventConfig,
       eventConnectorId: workflowAutomations.eventConnectorId,
     });
+  const resetForms = disabled
+    .filter((row) => {
+      return (
+        row.eventType === "google-forms-response-submitted" &&
+        (row.officialBlueprintKey === null ||
+          row.officialIntendedEnabled === false)
+      );
+    })
+    .map((row) => {
+      return row.id;
+    });
+  if (resetForms.length > 0) {
+    await db
+      .delete(googleFormsAutomationCursors)
+      .where(inArray(googleFormsAutomationCursors.automationId, resetForms));
+  }
+  return disabled.map((row) => {
+    return {
+      orgId: row.orgId,
+      ownerUserId: row.ownerUserId,
+      eventType: row.eventType,
+      eventConfig: row.eventConfig,
+      eventConnectorId: row.eventConnectorId,
+    };
+  });
 }
 
 async function createAutomationChatThread(

@@ -191,3 +191,9 @@ authorization when provider work is moved outside the transaction. CAS after a
 provider response alone does not establish the provider-side single-use-token
 behavior. This is R1 implementation work, not a condition that deployment drain
 can satisfy and not permission for a permanent exception or an extra release.
+
+### Explicit Forms lifecycle writers follow-up
+
+Thread deletion now removes the cursor with the same SQL transaction that disables an ordinary Forms automation; an official automation with preserved enabled intent retains its repair cursor. Membership cleanup uses its own command transaction to disable ordinary automations and delete their Forms cursors. Connector removal deletes cursors whose retained event configuration still identifies that account, after the existing FK clears the projected connector. Publication takes the connector parent row before its automation row to match connector deletion ordering.
+
+The thread-deletion and credential-storage operations still belong to legacy caller-owned transaction graphs. Their cursor lifecycle SQL is explicit, but their handle propagation is implementation work, not an outgoing-writer drain gate. The provider-backed disable/re-enable API regression also exercises deletion of the bound chat thread, and checks the re-created thread for skipped disabled-period responses.

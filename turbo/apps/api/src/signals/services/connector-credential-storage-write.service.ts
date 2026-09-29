@@ -1,8 +1,10 @@
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { connectors } from "@okouai/db/schema/connector";
+import { googleFormsAutomationCursors } from "@okouai/db/schema/google-forms-event";
+import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { secrets } from "@okouai/db/schema/secret";
 import { variables } from "@okouai/db/schema/variable";
-import { eq, inArray, isNotNull, sql, type SQL } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, sql, type SQL } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
@@ -158,7 +160,36 @@ async function deleteConnectorCredentialStorageConnectionsWhere(
   await db.delete(chatThreadConnectorSelections).where(conditions.selection);
   signal.throwIfAborted();
   await deleteConnectorOwnedCredentialRowsWhere(db, conditions, signal);
-  await db.delete(connectors).where(conditions.connection);
+  const deleted = await db
+    .delete(connectors)
+    .where(conditions.connection)
+    .returning({ id: connectors.id });
+  if (deleted.length > 0) {
+    // FK deletion has already cleared event_connector_id. Use the retained
+    // source config to invalidate only cursors belonging to deleted accounts.
+    // A subsequent projection onto a new account is a different source.
+    await db.delete(googleFormsAutomationCursors).where(
+      inArray(
+        googleFormsAutomationCursors.automationId,
+        db
+          .select({ id: workflowAutomations.id })
+          .from(workflowAutomations)
+          .where(
+            and(
+              eq(
+                workflowAutomations.eventType,
+                "google-forms-response-submitted",
+              ),
+              sql`${workflowAutomations.eventConfig} ->> 'connectorId' = ANY(${sql.param(
+                deleted.map((row) => {
+                  return row.id;
+                }),
+              )}::text[])`,
+            ),
+          ),
+      ),
+    );
+  }
   signal.throwIfAborted();
 }
 

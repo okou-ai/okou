@@ -11,6 +11,7 @@ import { modelProviders } from "@okouai/db/schema/model-provider";
 import { modelProviderAuthSessions } from "@okouai/db/schema/model-provider-auth-session";
 import { secrets } from "@okouai/db/schema/secret";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
+import { googleFormsAutomationCursors } from "@okouai/db/schema/google-forms-event";
 import { logger } from "../../lib/log";
 import { publishCancelToRunnerGroup } from "../external/realtime";
 import { tapError } from "../utils";
@@ -34,6 +35,51 @@ interface OrgMemberCleanupInput {
   readonly userId: string;
   readonly membershipId?: string;
 }
+
+const disableDepartedMemberAutomations$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly currentTime: Date;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    await db.transaction(async (tx) => {
+      const disabled = await tx
+        .update(workflowAutomations)
+        .set({ enabled: false, updatedAt: args.currentTime })
+        .where(
+          and(
+            eq(workflowAutomations.orgId, args.orgId),
+            eq(workflowAutomations.ownerUserId, args.userId),
+            eq(workflowAutomations.enabled, true),
+            isNull(workflowAutomations.officialBlueprintKey),
+          ),
+        )
+        .returning({
+          id: workflowAutomations.id,
+          eventType: workflowAutomations.eventType,
+        });
+      const formsIds = disabled
+        .filter((row) => {
+          return row.eventType === "google-forms-response-submitted";
+        })
+        .map((row) => {
+          return row.id;
+        });
+      if (formsIds.length > 0) {
+        await tx
+          .delete(googleFormsAutomationCursors)
+          .where(inArray(googleFormsAutomationCursors.automationId, formsIds));
+      }
+      signal.throwIfAborted();
+    });
+    signal.throwIfAborted();
+  },
+);
 
 /** `onSlotsReleased` receives the slots the revoked runs released as soon as
  * the revocation commits, before any other effect of this cleanup. */
@@ -72,17 +118,11 @@ export const cleanupOrgMemberResources$ = command(
     // schedule, collection and delivery ownership. Disabling the row here would
     // both contend with that reconciler and silently pause the brief of a member
     // who rejoins.
-    await db
-      .update(workflowAutomations)
-      .set({ enabled: false, updatedAt: currentTime })
-      .where(
-        and(
-          eq(workflowAutomations.orgId, args.orgId),
-          eq(workflowAutomations.ownerUserId, args.userId),
-          eq(workflowAutomations.enabled, true),
-          isNull(workflowAutomations.officialBlueprintKey),
-        ),
-      );
+    await set(
+      disableDepartedMemberAutomations$,
+      { ...args, currentTime },
+      signal,
+    );
     signal.throwIfAborted();
     await db
       .insert(morningBriefEnrollments)

@@ -1045,6 +1045,28 @@ function googleFormsCursorTargetCondition(args: {
   );
 }
 
+function preparedGoogleFormsWatchValues(
+  args: GoogleFormsWatchPublication,
+  currentTime: Date,
+) {
+  if (args.watch === null) {
+    throw new Error("Google Forms watch preparation is missing");
+  }
+  return {
+    orgId: args.orgId,
+    userId: args.userId,
+    connectorId: args.connectorId,
+    formId: args.formId,
+    watchId: args.watch.id,
+    topicName: args.topicName,
+    expireTime: watchExpireTime(args.watch),
+    lastRenewedAt: currentTime,
+    needsRewatch: false,
+    createdAt: currentTime,
+    updatedAt: currentTime,
+  };
+}
+
 const publishGoogleFormsWatch$ = command(
   async (
     { set },
@@ -1059,6 +1081,27 @@ const publishGoogleFormsWatch$ = command(
         googleFormsLifecycleLockStatement(args.connectorId, args.formId),
       );
       signal.throwIfAborted();
+      // Connector deletion takes its row before FK source invalidation. Take
+      // that parent lock before the automation to keep publication in this order.
+      const [account] = await tx
+        .select({ id: connectors.id })
+        .from(connectors)
+        .where(
+          and(
+            eq(connectors.id, args.connectorId),
+            eq(connectors.orgId, args.orgId),
+            eq(connectors.userId, args.userId),
+          ),
+        )
+        .for("key share")
+        .limit(1);
+      if (!account) {
+        return {
+          kind: "superseded",
+          message:
+            "Google Forms account changed during watch setup; retry the request",
+        };
+      }
       if (args.resetAutomationId !== undefined && args.cursor !== null) {
         if (args.automationSnapshot === undefined) {
           throw new Error(
@@ -1105,19 +1148,7 @@ const publishGoogleFormsWatch$ = command(
         const currentTime = nowDate();
         const [inserted] = await tx
           .insert(googleFormsWatchStates)
-          .values({
-            orgId: args.orgId,
-            userId: args.userId,
-            connectorId: args.connectorId,
-            formId: args.formId,
-            watchId: args.watch.id,
-            topicName: args.topicName,
-            expireTime: watchExpireTime(args.watch),
-            lastRenewedAt: currentTime,
-            needsRewatch: false,
-            createdAt: currentTime,
-            updatedAt: currentTime,
-          })
+          .values(preparedGoogleFormsWatchValues(args, currentTime))
           .onConflictDoNothing()
           .returning();
         // The existing identity is authoritative when another preparer won.

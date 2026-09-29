@@ -19,6 +19,7 @@ import {
   mockGoogleFormsConnectorOAuth,
 } from "./helpers/api-bdd-connectors";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { chatEventDisplayText } from "./helpers/chat-event";
 import { createRouteMocks } from "./helpers/route-test";
@@ -38,6 +39,7 @@ const mocks = createRouteMocks(context);
 const workflows = createWorkflowsBddApi(context);
 const connectors = createConnectorBddApi(context);
 const runs = createRunsApi(context);
+const chat = createChatFilesBddApi(context);
 
 const FORM_ID = `1FAIpQLScWebhookGoogleFormsTest${randomUUID().replaceAll("-", "")}`;
 const FORM_URL = `https://docs.google.com/forms/d/${FORM_ID}/edit`;
@@ -506,81 +508,100 @@ describe("Google Forms Pub/Sub webhook", () => {
     ]);
   });
 
-  it("does not replay disabled-period responses after explicit re-enable", async () => {
-    const { automationId, chatThreadId, formsApi } =
-      await setupGoogleFormsAutomation();
-    const originalWatchId = formsApi.watchIds[0];
-    await accept(
-      automationsClient().disable({
-        headers: authHeaders(),
-        params: { id: automationId },
-      }),
-      [200],
-    );
-    expect(formsApi.stoppedWatchIds).toContain(originalWatchId);
-    const resumedCursor = "2026-08-05T10:15:00.123456Z";
-    const resumedResponseTime = "2026-08-05T10:16:00.123456Z";
-    const filters: string[] = [];
-    server.use(
-      http.get(
-        "https://forms.googleapis.com/v1/forms/:formId/responses",
-        ({ request }) => {
-          const filter = new URL(request.url).searchParams.get("filter");
-          if (filter === null) {
+  it.each(["explicit disable", "chat thread deletion"])(
+    "does not replay disabled-period responses after %s and re-enable",
+    async (stop) => {
+      const { actor, automationId, chatThreadId, formsApi } =
+        await setupGoogleFormsAutomation();
+      const originalWatchId = formsApi.watchIds[0];
+      if (stop === "chat thread deletion") {
+        await chat.deleteThread(actor, chatThreadId);
+      } else {
+        await accept(
+          automationsClient().disable({
+            headers: authHeaders(),
+            params: { id: automationId },
+          }),
+          [200],
+        );
+      }
+      expect(formsApi.stoppedWatchIds).toContain(originalWatchId);
+      const resumedCursor = "2026-08-05T10:15:00.123456Z";
+      const resumedResponseTime = "2026-08-05T10:16:00.123456Z";
+      const filters: string[] = [];
+      server.use(
+        http.get(
+          "https://forms.googleapis.com/v1/forms/:formId/responses",
+          ({ request }) => {
+            const filter = new URL(request.url).searchParams.get("filter");
+            if (filter === null) {
+              return HttpResponse.json({
+                responses: [
+                  {
+                    responseId: "response-while-disabled",
+                    createTime: resumedCursor,
+                    lastSubmittedTime: resumedCursor,
+                  },
+                ],
+              });
+            }
+            filters.push(filter);
+            expect(filter).toBe(`timestamp > ${resumedCursor}`);
             return HttpResponse.json({
               responses: [
                 {
-                  responseId: "response-while-disabled",
-                  createTime: resumedCursor,
-                  lastSubmittedTime: resumedCursor,
+                  responseId: "response-after-resume",
+                  createTime: resumedResponseTime,
+                  lastSubmittedTime: resumedResponseTime,
+                  respondentEmail: "after-resume@example.test",
                 },
               ],
             });
-          }
-          filters.push(filter);
-          expect(filter).toBe(`timestamp > ${resumedCursor}`);
-          return HttpResponse.json({
-            responses: [
-              {
-                responseId: "response-after-resume",
-                createTime: resumedResponseTime,
-                lastSubmittedTime: resumedResponseTime,
-                respondentEmail: "after-resume@example.test",
-              },
-            ],
-          });
-        },
-      ),
-    );
-    await accept(
-      automationsClient().enable({
-        headers: authHeaders(),
-        params: { id: automationId },
-      }),
-      [200],
-    );
-    const resumedWatchId = formsApi.watchIds.at(-1);
-    if (!resumedWatchId || resumedWatchId === originalWatchId) {
-      throw new Error("Expected a new watch after explicit re-enable");
-    }
-    const pushed = await postWebhook(
-      formsPushBody("response-after-explicit-resume", resumedWatchId),
-    );
-    expect(pushed).toMatchObject({
-      status: 200,
-      body: { watchStates: 1, dispatched: 1 },
-    });
-    expect(filters).toStrictEqual([`timestamp > ${resumedCursor}`]);
-    await flushWaitUntilForTest();
-    const events = await workflows.readThreadEvents(chatThreadId);
-    const delivered = events.filter((event) => {
-      return event.eventType === "input.automation";
-    });
-    expect(delivered).toHaveLength(1);
-    expect(delivered.map(chatEventDisplayText)).toStrictEqual([
-      `A new response from after-resume@example.test was submitted to Google Form "${FORM_TITLE}".`,
-    ]);
-  });
+          },
+        ),
+      );
+      await accept(
+        automationsClient().enable({
+          headers: authHeaders(),
+          params: { id: automationId },
+        }),
+        [200],
+      );
+      const resumedWatchId = formsApi.watchIds.at(-1);
+      if (!resumedWatchId || resumedWatchId === originalWatchId) {
+        throw new Error("Expected a new watch after explicit re-enable");
+      }
+      const pushed = await postWebhook(
+        formsPushBody("response-after-explicit-resume", resumedWatchId),
+      );
+      expect(pushed).toMatchObject({
+        status: 200,
+        body: { watchStates: 1, dispatched: 1 },
+      });
+      expect(filters).toStrictEqual([`timestamp > ${resumedCursor}`]);
+      await flushWaitUntilForTest();
+      const current = await accept(
+        automationsClient().get({
+          headers: authHeaders(),
+          params: { id: automationId },
+        }),
+        [200],
+      );
+      if (!current.body.chatThreadId) {
+        throw new Error("Expected the resumed automation's chat thread");
+      }
+      const events = await workflows.readThreadEvents(
+        current.body.chatThreadId,
+      );
+      const delivered = events.filter((event) => {
+        return event.eventType === "input.automation";
+      });
+      expect(delivered).toHaveLength(1);
+      expect(delivered.map(chatEventDisplayText)).toStrictEqual([
+        `A new response from after-resume@example.test was submitted to Google Form "${FORM_TITLE}".`,
+      ]);
+    },
+  );
 
   it.each([
     { outcome: "delayed response", status: 409 },
