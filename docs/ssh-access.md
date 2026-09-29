@@ -131,8 +131,10 @@ The Agent-wide SSH authorization row and services-popover grant switch are
 retired. Configure each saved host's chat default in Remote control; choose
 `On`, `Off`, or `Use default` per host from the chat's Remote access menu.
 Creating the first host does not write Agent-grant records or enable chat
-access by itself. Retained legacy grant tables do not authorize Run access. **Add connectors**
-continues to offer zero-host SSH setup.
+access by itself. Retired Agent grant rows never authorize Run access; migration
+`1288_drop_retired_agent_grant_tables` in #37272 removes the physical tables,
+without changing host authority. **Add connectors** continues to offer zero-host
+SSH setup.
 The Connectors dialog and Discover directory include this setup entry when
 no hosts are configured. In Discover, it appears after built-in shelves and
 under **Remote access**, participates in search, and stays out of the Custom
