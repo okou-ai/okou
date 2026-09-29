@@ -41,7 +41,7 @@ import { disconnectFeishuCustomConnectorOAuthConnection } from "./feishu-custom-
 import { publishFeishuOrgChanged } from "./feishu-realtime.service";
 import {
   feishuRouteThreadId,
-  findFeishuRoutedChatThreadId,
+  findFeishuRoutedChatThreadId$,
 } from "./feishu-chat-ingress.service";
 import { updateIntegrationChatThreadModel$ } from "./integration-chat-thread-model.service";
 import { listOrgModelPolicies$ } from "./model-policy.service";
@@ -792,12 +792,16 @@ const handleModelCommand$ = command(
       await replyModelUnavailable(args, signal);
       return;
     }
-    const chatThreadId = await findFeishuRoutedChatThreadId(args.db, {
-      connectionId: args.connection.id,
-      chatId: args.message.chatId,
-      threadId: feishuRouteThreadId(args.message),
-      userId: args.connection.userId,
-    });
+    const chatThreadId = await set(
+      findFeishuRoutedChatThreadId$,
+      {
+        connectionId: args.connection.id,
+        chatId: args.message.chatId,
+        threadId: feishuRouteThreadId(args.message),
+        userId: args.connection.userId,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     const threadModel = await set(
       updateIntegrationChatThreadModel$,

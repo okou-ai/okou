@@ -43,7 +43,7 @@ import {
   buildFeishuChatOpenUrl,
 } from "./feishu-config";
 import {
-  ensureFeishuChatThreadRoute,
+  ensureFeishuChatThreadRoute$,
   feishuRouteThreadId,
 } from "./feishu-chat-ingress.service";
 import { resolveFeishuCustomConnectorOAuthConnection } from "./feishu-custom-connector.service";
@@ -381,20 +381,24 @@ const persistCanonicalFeishuIngress$ = command(
     signal: AbortSignal,
   ): Promise<PersistedCanonicalFeishuIngress> => {
     const routeThreadId = feishuRouteThreadId(args.message);
-    const route = await ensureFeishuChatThreadRoute(args.db, {
-      initialModel: await set(
-        resolveDefaultModelFirstPin$,
-        { orgId: args.installation.orgId, userId: args.connection.userId },
-        signal,
-      ),
-      connectionId: args.connection.id,
-      chatId: args.message.chatId,
-      threadId: routeThreadId,
-      userId: args.connection.userId,
-      orgId: args.installation.orgId,
-      agentId: args.agentId,
-      currentTime: args.ingress.createdAt,
-    });
+    const route = await set(
+      ensureFeishuChatThreadRoute$,
+      {
+        initialModel: await set(
+          resolveDefaultModelFirstPin$,
+          { orgId: args.installation.orgId, userId: args.connection.userId },
+          signal,
+        ),
+        connectionId: args.connection.id,
+        chatId: args.message.chatId,
+        threadId: routeThreadId,
+        userId: args.connection.userId,
+        orgId: args.installation.orgId,
+        agentId: args.agentId,
+        currentTime: args.ingress.createdAt,
+      },
+      signal,
+    );
     signal.throwIfAborted();
 
     const assets = await set(
