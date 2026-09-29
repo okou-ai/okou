@@ -19,12 +19,12 @@ import { nowDate } from "../../lib/time.ts";
 import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
 import { authenticatedIdentity$ } from "../auth.ts";
 import {
+  classifyDeliveryFailure,
   deliveryIntentsChanged$,
   saveDeliveryIntent,
   updateDeliveryIntent,
   type NewThreadDeliveryIntent,
 } from "./chat-delivery-intents.ts";
-import { newThreadDeliveryFailure } from "./new-thread-delivery.ts";
 import { detach, Reason, settle } from "../utils.ts";
 import { currentChatThreadId$ } from "../agent-chat.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
@@ -661,7 +661,7 @@ const sendNewThreadMessage$ = command(
         updateDeliveryIntent(
           identity,
           clientEventId,
-          newThreadDeliveryFailure(created.error),
+          classifyDeliveryFailure(created.error),
         );
         set(deliveryIntentsChanged$);
         return false;
@@ -692,7 +692,7 @@ const sendNewThreadMessage$ = command(
         updateDeliveryIntent(
           identity,
           clientEventId,
-          newThreadDeliveryFailure(sent.error),
+          classifyDeliveryFailure(sent.error),
         );
         set(deliveryIntentsChanged$);
         return false;
