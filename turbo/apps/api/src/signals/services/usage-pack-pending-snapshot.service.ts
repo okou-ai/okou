@@ -23,9 +23,9 @@ async function lockPendingSnapshotOrgs(
   for (const orgId of orderedOrgIds) {
     await tx.execute(billingPurchaseCompatibilityLockSql(orgId));
   }
-  // Outgoing lifecycle writers lock the subscription before their AFTER
-  // trigger locks the guard. Lock all existing roots before any guard, also
-  // covering transactions that retire several grandfathered snapshots.
+  // Lifecycle writers own subscription roots before the explicit count guard.
+  // Preserve that order when retiring several grandfathered snapshots.
+  // Migration 1132 already retired the historical 0954 trigger.
   const roots = await tx
     .select({
       id: usagePackSubscriptions.id,
@@ -173,9 +173,8 @@ export async function writeUsagePackPendingSnapshots<T>(
         );
       }
     }
-    // The retained trigger may already have changed the count. Assign the
-    // verified final state; never repeat its increment/decrement or probe its
-    // presence to choose which writer owns the side effect.
+    // Commit the verified final count with the business rows. Migration 1132
+    // retired the historical trigger; every current writer owns this count.
     await persistPendingCounts(tx, orderedOrgIds, after);
     return result;
   });

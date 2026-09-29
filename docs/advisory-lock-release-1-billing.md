@@ -476,9 +476,9 @@ The `billing_purchase` acquisition in that commit remains compatible with the
 outgoing purchase writer; retirement does not establish admission for future
 remote purchases. Other subscription lifecycle, invoice fulfillment, allocation,
 and plan-change reconciliation still use the legacy database-aware service
-interfaces and remain explicit Release 1 implementation work. This finite
-retirement change does not retire the pending-count trigger or certify the full
-reconciliation caller graph as complete.
+interfaces and remain explicit Release 1 implementation work. The pending-count trigger was already retired by historical migration 1132;
+this finite retirement change does not certify the full reconciliation caller
+graph as complete.
 
 ### Cancellation changes during preview preparation
 
@@ -496,3 +496,30 @@ Both are corrected without changing the expected 200/409 responses. Public API
 checks retain the allocation and credit balance, reject stale package and Plan
 quotes, and verify a fresh preview succeeds after cancellation. The final combined
 pipeline must verify these fixes; source checks do not replace behavior checks.
+
+### Migration materialization and completion ownership
+
+Migration confirmation admission, paid snapshot materialization and invitation
+completion now execute their SQL in business-input commands that obtain
+`writeDb$` internally. Materialization owns only the exact migration and its
+corresponding subscription/allocation selection, rather than forwarding a
+transaction into the organization-wide pending-snapshot callback. It inserts an
+actual Stripe subscription status, never `purchase_pending` or `checkout_pending`,
+so it does not change the existing pending count. It verifies the prepared
+configuration and immutable selection identities under migration ownership before
+publishing. Invitation completion performs invoice arithmetic before its local
+transaction and checks that same prepared configuration before publishing its
+payment-backed invitation records and completion state together.
+
+The historical pending-count trigger was dropped by migration
+`1132_retire_prepared_domain_triggers`; comments that still called it retained
+are corrected. No migration or schema shape changes are introduced here.
+The shared `usage_pack_billing` compatibility boundary remains: confirmation,
+revision, remote schedule publication and other billing writers have not yet
+implemented the common provider protocol. These command changes do not complete
+that protocol or turn its missing implementation into a deployment-drain gate.
+
+Existing public billing migration tests retain paid materialization, revision,
+invitation acceptance/refunds and original-event redelivery coverage. Local
+verification is formatting, scoped lint and API types; behavior execution remains
+with the sole PR's combined-head pipeline.

@@ -38,8 +38,10 @@ import {
   type StripeSubscriptionItem,
   type StripeSubscriptionUpdateItemParam,
 } from "../external/stripe-client";
-import { lockUsagePackBillingOrg } from "./usage-pack-allocation-change.service";
-import { writeUsagePackPendingSnapshots } from "./usage-pack-pending-snapshot.service";
+import {
+  lockUsagePackBillingOrg,
+  usagePackBillingCompatibilityLockSql,
+} from "./usage-pack-allocation-change.service";
 import type { BillingReconciliationScope } from "./billing-reconciliation-scope";
 import {
   handleUsagePackInvoicePaid$,
@@ -495,6 +497,18 @@ function migrationScheduleRevisionHash(
     .update("\0")
     .update(JSON.stringify(selectionIds))
     .digest("hex");
+}
+
+function assertMigrationConfiguration(
+  expected: string,
+  migration: MigrationRow,
+  selections: readonly MigrationSelectionRow[],
+): void {
+  if (migrationScheduleRevisionHash(migration, selections) !== expected) {
+    throw new Error(
+      `Usage pack migration ${migration.id} configuration changed`,
+    );
+  }
 }
 
 function revisionPreviewTokenSignature(encodedPayload: string): Buffer {
@@ -1650,60 +1664,87 @@ async function persistMigrationInvoiceState(
   return updated ?? migration;
 }
 
-async function materializeUsagePackSnapshot(
-  db: Db,
-  migration: MigrationRow,
-  selections: readonly MigrationSelectionRow[],
-  subscription: StripeSubscription,
-): Promise<void> {
-  await db.transaction(async (tx) => {
-    await lockUsagePackBillingOrg(tx, migration.orgId);
-    await writeUsagePackPendingSnapshots(
-      tx,
-      [migration.orgId],
-      async (tx) => {
-        const [locked] = await tx
-          .select()
-          .from(usagePackSubscriptionMigrations)
-          .where(eq(usagePackSubscriptionMigrations.id, migration.id))
-          .for("update")
-          .limit(1);
-        if (!locked || locked.status === "failed") {
-          throw new Error(`Usage pack migration ${migration.id} is not active`);
+const materializeUsagePackSnapshot$ = command(
+  async (
+    { set },
+    args: {
+      readonly migration: MigrationRow;
+      readonly selections: readonly MigrationSelectionRow[];
+      readonly subscription: StripeSubscription;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    const { migration, selections, subscription } = args;
+    const expectedConfiguration = migrationScheduleRevisionHash(
+      migration,
+      selections,
+    );
+    await db.transaction(async (tx) => {
+      await tx.execute(usagePackBillingCompatibilityLockSql(migration.orgId));
+      const [existing] = await tx
+        .select()
+        .from(usagePackSubscriptions)
+        .where(eq(usagePackSubscriptions.id, migration.id))
+        .for("update")
+        .limit(1);
+      const [locked] = await tx
+        .select()
+        .from(usagePackSubscriptionMigrations)
+        .where(
+          and(
+            eq(usagePackSubscriptionMigrations.id, migration.id),
+            eq(usagePackSubscriptionMigrations.orgId, migration.orgId),
+          ),
+        )
+        .for("update")
+        .limit(1);
+      if (!locked || locked.status === "failed") {
+        throw new Error(`Usage pack migration ${migration.id} is not active`);
+      }
+      const currentSelections = await tx
+        .select()
+        .from(usagePackSubscriptionMigrationSelections)
+        .where(
+          eq(
+            usagePackSubscriptionMigrationSelections.migrationId,
+            migration.id,
+          ),
+        );
+      assertMigrationConfiguration(
+        expectedConfiguration,
+        locked,
+        currentSelections,
+      );
+      if (!existing) {
+        // Actual Stripe states are never the local pending Checkout states;
+        // materialization neither claims nor changes the pending count.
+        await tx.insert(usagePackSubscriptions).values({
+          id: migration.id,
+          orgId: migration.orgId,
+          tier: migration.targetTier,
+          stripePlanPriceId: migration.stripePlanPriceId,
+          stripeCustomerId: migration.stripeCustomerId,
+          stripeSubscriptionId: migration.stripeSubscriptionId,
+          subscriptionStatus: subscription.status,
+          cancelAtPeriodEnd: subscription.cancel_at_period_end,
+        });
+        if (selections.length > 0) {
+          await tx.insert(usagePackAllocations).values(
+            selections.map((selection) => {
+              return {
+                usagePackSubscriptionId: migration.id,
+                orgId: migration.orgId,
+                userId: selection.userId,
+                invitationId: selection.invitationId,
+                usagePackUsd: selection.usagePackUsd,
+                stripePriceId: selection.stripePriceId,
+                status: "pending_payment" as const,
+              };
+            }),
+          );
         }
-        const [existing] = await tx
-          .select()
-          .from(usagePackSubscriptions)
-          .where(eq(usagePackSubscriptions.id, migration.id))
-          .limit(1);
-        if (!existing) {
-          await tx.insert(usagePackSubscriptions).values({
-            id: migration.id,
-            orgId: migration.orgId,
-            tier: migration.targetTier,
-            stripePlanPriceId: migration.stripePlanPriceId,
-            stripeCustomerId: migration.stripeCustomerId,
-            stripeSubscriptionId: migration.stripeSubscriptionId,
-            subscriptionStatus: subscription.status,
-            cancelAtPeriodEnd: subscription.cancel_at_period_end,
-          });
-          if (selections.length > 0) {
-            await tx.insert(usagePackAllocations).values(
-              selections.map((selection) => {
-                return {
-                  usagePackSubscriptionId: migration.id,
-                  orgId: migration.orgId,
-                  userId: selection.userId,
-                  invitationId: selection.invitationId,
-                  usagePackUsd: selection.usagePackUsd,
-                  stripePriceId: selection.stripePriceId,
-                  status: "pending_payment" as const,
-                };
-              }),
-            );
-          }
-          return;
-        }
+      } else {
         if (
           existing.orgId !== migration.orgId ||
           existing.stripeCustomerId !== migration.stripeCustomerId ||
@@ -1725,11 +1766,12 @@ async function materializeUsagePackSnapshot(
             `Usage pack migration ${migration.id} allocations changed`,
           );
         }
-      },
-      [migration.id],
-    );
-  });
-}
+      }
+      signal.throwIfAborted();
+    });
+    signal.throwIfAborted();
+  },
+);
 
 function invoiceLinePriceId(line: StripeInvoiceLine): string | null {
   const price = line.pricing?.price_details?.price;
@@ -1932,104 +1974,136 @@ function invoicePaidAt(invoice: StripeInvoice): Date {
   return typeof paidAt === "number" ? new Date(paidAt * 1000) : nowDate();
 }
 
-async function completeMigrationInvitations(
-  db: Db,
-  migration: MigrationRow,
-  invoice: StripeInvoice,
-): Promise<void> {
-  const selections = await loadMigrationSelections(db, migration.id);
-  const credits = selectionCreditsForInvoice(invoice, selections);
-  const payment = paidInvoicePaymentIntent(invoice);
-  const paymentIntentId = payment?.id ?? migration.stripePaymentIntentId;
-  const paidAmounts = paidAmountsBySelection(
-    safeInvoiceAmount(invoice, "paid"),
-    payment?.amountPaidCents ?? 0,
-    selections,
-    credits,
-  );
-  await db.transaction(async (tx) => {
-    await lockUsagePackBillingOrg(tx, migration.orgId);
-    const [locked] = await tx
+const completeMigrationInvitations$ = command(
+  async (
+    { set },
+    args: { readonly migration: MigrationRow; readonly invoice: StripeInvoice },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    const { migration, invoice } = args;
+    const selections = await db
       .select()
-      .from(usagePackSubscriptionMigrations)
-      .where(eq(usagePackSubscriptionMigrations.id, migration.id))
-      .for("update")
-      .limit(1);
-    if (!locked || locked.status === "failed") {
-      throw new Error(`Usage pack migration ${migration.id} cannot complete`);
-    }
-    if (locked.status === "completed") {
-      return;
-    }
-    const allocations = await tx
-      .select()
-      .from(usagePackAllocations)
-      .where(eq(usagePackAllocations.usagePackSubscriptionId, migration.id));
-    if (allocations.length !== selections.length) {
-      throw new Error(
-        `Usage pack migration ${migration.id} allocations changed`,
+      .from(usagePackSubscriptionMigrationSelections)
+      .where(
+        eq(usagePackSubscriptionMigrationSelections.migrationId, migration.id),
       );
-    }
-    for (const selection of selections) {
-      if (!selection.invitationId) {
-        continue;
+    signal.throwIfAborted();
+    const credits = selectionCreditsForInvoice(invoice, selections);
+    const payment = paidInvoicePaymentIntent(invoice);
+    const paymentIntentId = payment?.id ?? migration.stripePaymentIntentId;
+    const paidAmounts = paidAmountsBySelection(
+      safeInvoiceAmount(invoice, "paid"),
+      payment?.amountPaidCents ?? 0,
+      selections,
+      credits,
+    );
+    const expectedConfiguration = migrationScheduleRevisionHash(
+      migration,
+      selections,
+    );
+    await db.transaction(async (tx) => {
+      await tx.execute(usagePackBillingCompatibilityLockSql(migration.orgId));
+      const [locked] = await tx
+        .select()
+        .from(usagePackSubscriptionMigrations)
+        .where(eq(usagePackSubscriptionMigrations.id, migration.id))
+        .for("update")
+        .limit(1);
+      if (!locked || locked.status === "failed") {
+        throw new Error(`Usage pack migration ${migration.id} cannot complete`);
       }
-      const allocation = allocations.find((candidate) => {
-        return candidate.invitationId === selection.invitationId;
-      });
-      const selectionCredit = credits.get(selection.id);
-      if (
-        !allocation ||
-        !allocation.currentPeriodStart ||
-        !allocation.currentPeriodEnd ||
-        !selectionCredit ||
-        !selection.normalizedEmail ||
-        !selection.role ||
-        !selection.inviterUserId
-      ) {
+      if (locked.status === "completed") {
+        return;
+      }
+      const currentSelections = await tx
+        .select()
+        .from(usagePackSubscriptionMigrationSelections)
+        .where(
+          eq(
+            usagePackSubscriptionMigrationSelections.migrationId,
+            migration.id,
+          ),
+        );
+      assertMigrationConfiguration(
+        expectedConfiguration,
+        locked,
+        currentSelections,
+      );
+      const allocations = await tx
+        .select()
+        .from(usagePackAllocations)
+        .where(eq(usagePackAllocations.usagePackSubscriptionId, migration.id));
+      if (allocations.length !== selections.length) {
         throw new Error(
-          `Usage pack migration invitation ${selection.invitationId} is incomplete`,
+          `Usage pack migration ${migration.id} allocations changed`,
         );
       }
-      const amountPaidCents = paidAmounts.get(selection.id) ?? 0;
-      await tx.insert(usagePackInvitationPurchases).values({
-        usagePackSubscriptionId: migration.id,
-        allocationId: allocation.id,
-        orgId: migration.orgId,
-        normalizedEmail: selection.normalizedEmail,
-        role: selection.role,
-        inviterUserId: selection.inviterUserId,
-        usagePackUsd: selection.usagePackUsd,
-        stripePriceId: selection.stripePriceId,
-        status: "invitation_pending",
-        currentPeriodStart: allocation.currentPeriodStart,
-        currentPeriodEnd: allocation.currentPeriodEnd,
-        prorationTimestamp: Math.floor(migration.effectiveAt.getTime() / 1000),
-        unitAmountCents: selection.unitAmountCents,
-        expectedAmountCents: amountPaidCents,
-        amountPaidCents,
-        currency: migration.currency,
-        purchasedCredits: selectionCredit.purchasedCredits,
-        bonusCredits: selectionCredit.bonusCredits,
-        stripePaymentIntentId: amountPaidCents > 0 ? paymentIntentId : null,
-        clerkInvitationId: selection.invitationId,
-        paidAt: invoicePaidAt(invoice),
-      });
-    }
-    const completedAt = nowDate();
-    await tx
-      .update(usagePackSubscriptionMigrations)
-      .set({
-        status: "completed",
-        stripeInvoiceId: invoice.id,
-        stripePaymentIntentId: paymentIntentId,
-        hostedInvoiceUrl: invoice.hosted_invoice_url ?? null,
-        completedAt,
-        updatedAt: completedAt,
-      })
-      .where(eq(usagePackSubscriptionMigrations.id, migration.id));
-  });
-}
+      for (const selection of selections) {
+        if (!selection.invitationId) {
+          continue;
+        }
+        const allocation = allocations.find((candidate) => {
+          return candidate.invitationId === selection.invitationId;
+        });
+        const selectionCredit = credits.get(selection.id);
+        if (
+          !allocation ||
+          !allocation.currentPeriodStart ||
+          !allocation.currentPeriodEnd ||
+          !selectionCredit ||
+          !selection.normalizedEmail ||
+          !selection.role ||
+          !selection.inviterUserId
+        ) {
+          throw new Error(
+            `Usage pack migration invitation ${selection.invitationId} is incomplete`,
+          );
+        }
+        const amountPaidCents = paidAmounts.get(selection.id) ?? 0;
+        await tx.insert(usagePackInvitationPurchases).values({
+          usagePackSubscriptionId: migration.id,
+          allocationId: allocation.id,
+          orgId: migration.orgId,
+          normalizedEmail: selection.normalizedEmail,
+          role: selection.role,
+          inviterUserId: selection.inviterUserId,
+          usagePackUsd: selection.usagePackUsd,
+          stripePriceId: selection.stripePriceId,
+          status: "invitation_pending",
+          currentPeriodStart: allocation.currentPeriodStart,
+          currentPeriodEnd: allocation.currentPeriodEnd,
+          prorationTimestamp: Math.floor(
+            migration.effectiveAt.getTime() / 1000,
+          ),
+          unitAmountCents: selection.unitAmountCents,
+          expectedAmountCents: amountPaidCents,
+          amountPaidCents,
+          currency: migration.currency,
+          purchasedCredits: selectionCredit.purchasedCredits,
+          bonusCredits: selectionCredit.bonusCredits,
+          stripePaymentIntentId: amountPaidCents > 0 ? paymentIntentId : null,
+          clerkInvitationId: selection.invitationId,
+          paidAt: invoicePaidAt(invoice),
+        });
+      }
+      const completedAt = nowDate();
+      await tx
+        .update(usagePackSubscriptionMigrations)
+        .set({
+          status: "completed",
+          stripeInvoiceId: invoice.id,
+          stripePaymentIntentId: paymentIntentId,
+          hostedInvoiceUrl: invoice.hosted_invoice_url ?? null,
+          completedAt,
+          updatedAt: completedAt,
+        })
+        .where(eq(usagePackSubscriptionMigrations.id, migration.id));
+      signal.throwIfAborted();
+    });
+    signal.throwIfAborted();
+  },
+);
 
 function correlatedMigrationInvoice(
   invoice: StripeInvoice,
@@ -2084,7 +2158,11 @@ const finalizeAppliedMigration$ = command(
         },
       };
     }
-    await materializeUsagePackSnapshot(db, migration, selections, subscription);
+    await set(
+      materializeUsagePackSnapshot$,
+      { migration, selections, subscription },
+      signal,
+    );
     signal.throwIfAborted();
     const metadata = usagePackSubscriptionMetadata({
       orgId: migration.orgId,
@@ -2116,7 +2194,7 @@ const finalizeAppliedMigration$ = command(
         `Usage pack migration invoice ${invoice.id} was not handled`,
       );
     }
-    await completeMigrationInvitations(db, migration, invoice);
+    await set(completeMigrationInvitations$, { migration, invoice }, signal);
     signal.throwIfAborted();
     L.debug("usage pack subscription migration completed", {
       migrationId: migration.id,
@@ -2426,85 +2504,98 @@ const reconcileMigration$ = command(
   },
 );
 
-async function claimMigrationConfirmation(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly migrationId: string;
-    readonly ownerIds: readonly string[];
-  },
-): Promise<
-  | { readonly status: "ready"; readonly migration: MigrationRow }
-  | { readonly status: "not_found" }
-  | { readonly status: "expired" }
-  | { readonly status: "owners_changed" }
-  | { readonly status: "conflict" }
-> {
-  return await db.transaction(async (tx) => {
-    await lockUsagePackBillingOrg(tx, args.orgId);
-    const [migration] = await tx
-      .select()
-      .from(usagePackSubscriptionMigrations)
-      .where(
-        and(
-          eq(usagePackSubscriptionMigrations.id, args.migrationId),
-          eq(usagePackSubscriptionMigrations.orgId, args.orgId),
-        ),
-      )
-      .for("update")
-      .limit(1);
-    if (!migration) {
-      return { status: "not_found" as const };
-    }
-    if (migration.status === "completed" || migration.status === "failed") {
-      return { status: "conflict" as const };
-    }
-    if (migration.status === "previewed") {
-      const selections = await loadMigrationSelections(tx, migration.id);
-      if (!paidOwnersStillPresent(selections, args.ownerIds)) {
-        const completedAt = nowDate();
-        await tx
-          .update(usagePackSubscriptionMigrations)
-          .set({
-            status: "failed",
-            failureReason: "owners_changed",
-            completedAt,
-            updatedAt: completedAt,
-          })
-          .where(eq(usagePackSubscriptionMigrations.id, migration.id));
-        return { status: "owners_changed" as const };
-      }
-      if (migration.previewExpiresAt <= nowDate()) {
-        const completedAt = nowDate();
-        await tx
-          .update(usagePackSubscriptionMigrations)
-          .set({
-            status: "failed",
-            failureReason: "preview_expired",
-            completedAt,
-            updatedAt: completedAt,
-          })
-          .where(eq(usagePackSubscriptionMigrations.id, migration.id));
-        return { status: "expired" as const };
-      }
-      const [claimed] = await tx
-        .update(usagePackSubscriptionMigrations)
-        .set({ status: "applying", updatedAt: nowDate() })
+const claimMigrationConfirmation$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly migrationId: string;
+      readonly ownerIds: readonly string[];
+    },
+    signal: AbortSignal,
+  ): Promise<
+    | { readonly status: "ready"; readonly migration: MigrationRow }
+    | { readonly status: "not_found" }
+    | { readonly status: "expired" }
+    | { readonly status: "owners_changed" }
+    | { readonly status: "conflict" }
+  > => {
+    const db = set(writeDb$);
+    return await db.transaction(async (tx) => {
+      await tx.execute(usagePackBillingCompatibilityLockSql(args.orgId));
+      const [migration] = await tx
+        .select()
+        .from(usagePackSubscriptionMigrations)
         .where(
           and(
-            eq(usagePackSubscriptionMigrations.id, migration.id),
-            eq(usagePackSubscriptionMigrations.status, "previewed"),
+            eq(usagePackSubscriptionMigrations.id, args.migrationId),
+            eq(usagePackSubscriptionMigrations.orgId, args.orgId),
           ),
         )
-        .returning();
-      if (!claimed) {
+        .for("update")
+        .limit(1);
+      signal.throwIfAborted();
+      if (!migration) {
+        return { status: "not_found" as const };
+      }
+      if (migration.status === "completed" || migration.status === "failed") {
         return { status: "conflict" as const };
       }
-      return { status: "ready" as const, migration: claimed };
-    }
-    return { status: "ready" as const, migration };
-  });
-}
+      if (migration.status === "previewed") {
+        const selections = await tx
+          .select()
+          .from(usagePackSubscriptionMigrationSelections)
+          .where(
+            eq(
+              usagePackSubscriptionMigrationSelections.migrationId,
+              migration.id,
+            ),
+          );
+        if (!paidOwnersStillPresent(selections, args.ownerIds)) {
+          const completedAt = nowDate();
+          await tx
+            .update(usagePackSubscriptionMigrations)
+            .set({
+              status: "failed",
+              failureReason: "owners_changed",
+              completedAt,
+              updatedAt: completedAt,
+            })
+            .where(eq(usagePackSubscriptionMigrations.id, migration.id));
+          return { status: "owners_changed" as const };
+        }
+        if (migration.previewExpiresAt <= nowDate()) {
+          const completedAt = nowDate();
+          await tx
+            .update(usagePackSubscriptionMigrations)
+            .set({
+              status: "failed",
+              failureReason: "preview_expired",
+              completedAt,
+              updatedAt: completedAt,
+            })
+            .where(eq(usagePackSubscriptionMigrations.id, migration.id));
+          return { status: "expired" as const };
+        }
+        const [claimed] = await tx
+          .update(usagePackSubscriptionMigrations)
+          .set({ status: "applying", updatedAt: nowDate() })
+          .where(
+            and(
+              eq(usagePackSubscriptionMigrations.id, migration.id),
+              eq(usagePackSubscriptionMigrations.status, "previewed"),
+            ),
+          )
+          .returning();
+        if (!claimed) {
+          return { status: "conflict" as const };
+        }
+        return { status: "ready" as const, migration: claimed };
+      }
+      return { status: "ready" as const, migration };
+    });
+  },
+);
 
 export const confirmUsagePackSubscriptionMigration$ = command(
   async (
@@ -2516,8 +2607,7 @@ export const confirmUsagePackSubscriptionMigration$ = command(
     },
     signal: AbortSignal,
   ): Promise<MigrationConfirmResult> => {
-    const db = set(writeDb$);
-    const claimed = await claimMigrationConfirmation(db, args);
+    const claimed = await set(claimMigrationConfirmation$, args, signal);
     signal.throwIfAborted();
     if (claimed.status !== "ready") {
       return claimed;
