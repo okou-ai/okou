@@ -7,7 +7,7 @@ import type { Db } from "../external/db";
 type ReadDb = Pick<Db, "selectDistinct">;
 
 /**
- * Record that the thread has pending input; an existing row keeps its age.
+ * Record the latest enqueue time for the thread's pending input.
  * New input also clears any lease: a picker that read the queue as empty
  * before this input committed then deletes or releases zero rows, the row
  * survives, and the enqueuer's own pick can take the lease.
@@ -25,7 +25,7 @@ export async function markChatThreadQueued(
     })
     .onConflictDoUpdate({
       target: queuedChatThreads.chatThreadId,
-      set: { claimId: null, claimExpiresAt: null },
+      set: { queuedAt: nowDate(), claimId: null, claimExpiresAt: null },
     });
 }
 

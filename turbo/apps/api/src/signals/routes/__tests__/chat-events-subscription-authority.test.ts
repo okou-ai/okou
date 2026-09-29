@@ -9,6 +9,7 @@ import { testContext } from "../../../__tests__/test-context";
 import { now } from "../../../lib/time";
 import { holdPiContextPreparationStagesFixture } from "../../../test-fixtures/pi-context-preparation";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { clearAllDetached } from "../../utils";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { readThreadSessionConversation } from "./helpers/runtime-state";
 import {
@@ -200,55 +201,48 @@ describe("CHAT-02: run-level model overrides", () => {
       ]);
     });
 
-    it("keeps an unavailable capture ahead of a speculative thread failure", async () => {
+    it("preserves the input when a captured account disconnects and session preparation fails", async () => {
       const f = await prepareSubscriptionThread();
       const clientEventId = randomUUID();
       await sendHeldInput(
         f,
         clientEventId,
-        "prefer unavailable capture over thread failure",
+        "preserve the input after session preparation fails",
       );
 
       await Promise.all([
         f.preparation.arrival("subscription-account"),
         f.preparation.arrival("thread-session"),
       ]);
+      // The queued model graph already captured the shared account metadata.
+      // Disconnecting it now cannot rewrite that snapshot; the adjacent case
+      // verifies the exact-account authority rejects it before run admission.
       await authDeviceSupport.deletePersonalModelProviderAccount(
         f.actor,
         f.captured.accountSourceId,
       );
-      f.preparation.reject(
-        "thread-session",
-        jsonHttpException(422, "session preparation failed"),
-      );
+      const sessionError = jsonHttpException(422, "session preparation failed");
+      f.preparation.reject("thread-session", sessionError);
       await f.preparation.departure("thread-session");
-      // The thread failure alone does not settle the input while the capture
-      // is still held.
       await expectInputNotConsumed(f.actor, f.thread.id, clientEventId);
       f.preparation.release("subscription-account");
-
-      const events = await waitForRejection(f);
-      expect(
-        f.preparation.hasArrived("post-authorization-context"),
-      ).toBeFalsy();
+      await f.preparation.arrival("post-authorization-context");
       f.preparation.releaseAll();
+
+      await expect(clearAllDetached()).rejects.toBe(sessionError);
+      const { events } = await chat.listThreadEvents(f.actor, f.thread.id);
       expect(events).toStrictEqual([
         expect.objectContaining({
           eventType: "input.prompt",
           id: clientEventId,
         }),
-        expect.objectContaining({
-          eventType: "input.rejected",
-          revokesEventId: clientEventId,
-          error: "conflict",
-        }),
-        expect.objectContaining({
-          eventType: "output.error",
-          error: "conflict",
-          content:
-            "The selected subscription account is unavailable. Reconnect it before starting another run.",
-        }),
       ]);
+      await expect(
+        api.listAgentRuns(f.actor, {
+          status: "queued,pending,running,completed,failed,timeout,cancelled",
+          limit: 100,
+        }),
+      ).resolves.toMatchObject({ runs: [] });
     });
   });
 

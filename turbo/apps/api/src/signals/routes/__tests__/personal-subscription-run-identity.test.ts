@@ -7,7 +7,7 @@ import {
   deleteOrgPlanEntitlementFixture,
 } from "../../../test-fixtures/org-plan-entitlement";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
-import { createDeferredPromise } from "../../utils";
+import { clearAllDetached, createDeferredPromise } from "../../utils";
 import { readRunUsageEventsFixture } from "../../../test-fixtures/chat-events";
 import { http, HttpResponse } from "msw";
 import { server } from "../../../mocks/server";
@@ -357,17 +357,40 @@ describe("personal subscription run identity", () => {
     },
   );
 
-  it("keeps recovery identity unknown when launch preparation fails", async () => {
+  it("preserves the input without capturing run recovery identity when launch preparation fails", async () => {
     const f = await fixture("codex-oauth-token");
-    context.mocks.s3.getSignedUrl.mockRejectedValue(
-      new Error("Archive signing failed"),
+    const preparationError = new Error("Archive signing failed");
+    context.mocks.s3.getSignedUrl.mockRejectedValue(preparationError);
+    const chat = createChatFilesBddApi(context);
+    const clientEventId = randomUUID();
+    const sent = await chat.requestSendEvent(
+      f.actor,
+      {
+        agentId: f.agentId,
+        prompt: "use my selected subscription",
+        model: f.model,
+        clientEventId,
+      },
+      [201],
     );
-    const runId = await f.start();
-    await expect(runs.readRun(f.actor, runId)).resolves.toMatchObject({
-      status: "failed",
-      error: "Archive signing failed",
-      source: { account: { status: "unknown" } },
-    });
+    if (sent.status !== 201) {
+      throw new Error("Expected the chat send to be queued");
+    }
+    expect(sent.body.runId).toBeNull();
+    await expect(clearAllDetached()).rejects.toBe(preparationError);
+    const { events } = await chat.listThreadEvents(f.actor, sent.body.threadId);
+    expect(events).toStrictEqual([
+      expect.objectContaining({
+        id: clientEventId,
+        eventType: "input.prompt",
+      }),
+    ]);
+    await expect(
+      runs.listAgentRuns(f.actor, {
+        status: "queued,pending,running,completed,failed,timeout,cancelled",
+        limit: 100,
+      }),
+    ).resolves.toMatchObject({ runs: [] });
   });
 
   it("preserves proven singleton recovery while both UI switches remain off", async () => {

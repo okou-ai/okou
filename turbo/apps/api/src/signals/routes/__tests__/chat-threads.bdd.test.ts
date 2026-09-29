@@ -3390,9 +3390,7 @@ describe("CHAT-03 run usage events", () => {
   }, 60_000);
 
   it("revises run usage when later usage settles", async () => {
-    const { actor, agentId } = await entitledChatActorWithoutRunner(
-      "Usage message agent",
-    );
+    const { actor, agentId } = await entitledChatActor("Usage message agent");
     const provider = `bdd-usage-${randomUUID().slice(0, 8)}`;
     const missingProvider = `${provider}-free`;
     const category = "api_request";
@@ -3404,6 +3402,7 @@ describe("CHAT-03 run usage events", () => {
       agentId,
       prompt: "record billable usage",
     });
+    await cancelChatRun(actor, runId);
     const sandboxHeaders = {
       authorization: `Bearer ${api.sandboxTokenForRun(actor, runId)}`,
     };
@@ -3591,7 +3590,7 @@ describe("CHAT-03 run usage events", () => {
 
   // Chat Event V8 transition: removed in PR-3 with the V7 Snapshot upgrade.
   it("revises run usage archived only in a V7 Snapshot", async () => {
-    const { actor, agentId } = await entitledChatActorWithoutRunner(
+    const { actor, agentId } = await entitledChatActor(
       "V7 archived usage agent",
     );
     installFakeChatEventR2(context);
@@ -3604,6 +3603,7 @@ describe("CHAT-03 run usage events", () => {
       agentId,
       prompt: "record usage archived by a V7 Snapshot",
     });
+    await cancelChatRun(actor, runId);
     const launched = (await chat.listThreadEvents(actor, threadId)).events.at(
       -1,
     );
@@ -3700,7 +3700,7 @@ describe("CHAT-03 run usage events", () => {
     const selectedModel = DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL;
     expect(fixture.selectedModel).toBe(selectedModel);
 
-    const { actor, agentId } = await entitledChatActorWithoutRunner(
+    const { actor, agentId } = await entitledChatActor(
       "Allowance usage message agent",
     );
     const orgId = actor.orgId;
@@ -3740,6 +3740,7 @@ describe("CHAT-03 run usage events", () => {
       prompt: "record allowance-covered usage",
       model: selectedModel,
     });
+    await cancelChatRun(actor, runId);
     const sandboxHeaders = {
       authorization: `Bearer ${api.sandboxTokenForRun(actor, runId)}`,
     };

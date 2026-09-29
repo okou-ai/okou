@@ -20,7 +20,7 @@ import {
   setApiTestConnectorCatalogRuntimeProjectionIdentityReadHook,
 } from "../../../test-fixtures/connector-catalog";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createDeferredPromise } from "../../utils";
+import { clearAllDetached, createDeferredPromise } from "../../utils";
 import { chatThreadRoutes } from "../chat-threads";
 import { connectorAccountRoutes } from "../connector-accounts";
 import type { ApiTestUser } from "./helpers/api-bdd";
@@ -390,7 +390,7 @@ describe("CHAT-02: thread connector account selection", () => {
     await cancelChatRun(fixture.actor, run.runId, claimed.sandboxHeaders);
   });
 
-  it("rejects the input when thread selection and provider resolution fail at pick", async () => {
+  it("preserves the input when thread selection and provider resolution fail at pick", async () => {
     const fixture = await selectedThreadConnectorFixture(
       "Runtime context thread priority thread",
     );
@@ -431,30 +431,26 @@ describe("CHAT-02: thread connector account selection", () => {
       runId: null,
       threadId: fixture.threadId,
     });
-    // The send only enqueues; the background pick meets both failures and
-    // rejects the input instead of leaving it for the cron to retry.
-    await flushWaitUntilForTest();
+    // Both background branches fail before pending admission. Observe the
+    // failure without consuming the input or fabricating a rejected run.
+    await expect(clearAllDetached()).rejects.toBe(providerError);
     expect(providerFailureStarted.settled()).toBeTruthy();
     expect(kms.decryptCalls).toBeGreaterThan(0);
     const messages = await chat.listThreadEvents(
       fixture.actor,
       fixture.threadId,
     );
-    expect(
-      messages.events.filter((event) => {
-        return event.eventType === "input.rejected";
-      }),
-    ).toStrictEqual([
+    expect(messages.events).toStrictEqual([
       expect.objectContaining({
-        revokesEventId: clientEventId,
-        error: "internal_error",
+        eventType: "input.prompt",
+        id: clientEventId,
       }),
     ]);
     expect(
       messages.events.some((event) => {
         return event.eventType === "output.error";
       }),
-    ).toBeTruthy();
+    ).toBeFalsy();
     expect(
       messages.events.some((event) => {
         return event.eventType === "input.prompt" && event.runId !== undefined;

@@ -14,7 +14,7 @@ import {
 import { withAgentPhoneQueueAssemblyFailureFixture } from "../../../test-fixtures/agentphone-queue-assembly-failure";
 import { bindLegacyAgentPhoneThreadFixture } from "../../../test-fixtures/agentphone-legacy-thread-route";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { settle } from "../../utils";
+import { clearAllDetached, settle } from "../../utils";
 import {
   createBddApi,
   expectApiError,
@@ -307,7 +307,7 @@ async function completeSandboxRun(
     sandboxHeaders,
     [200],
   );
-  await flushWaitUntilForTest();
+  await clearAllDetached();
 }
 
 function expectConnectedWelcome(
@@ -764,7 +764,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
   });
 
   it.each(["direct message", "group conversation"] as const)(
-    "rebinds a legacy preferred-agent %s once to the immutable org default with a fresh session",
+    "rebinds a legacy preferred-agent %s to the org default while resetting native history in the same session",
     async (conversation) => {
       const bdd = createBddApi(context);
       const ap = createAgentPhoneBddApi(context);
@@ -900,7 +900,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         actor,
         rebound.runId,
       );
-      expect(reboundSession).not.toBe(originalSession);
+      expect(reboundSession).toBe(originalSession);
       await ap.postAgentPhoneInboundMessage({
         channel: conversationId ? "imessage" : "sms",
         from: phone,
@@ -1594,10 +1594,12 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(drained.body.job).toBeNull();
   });
 
-  it("delivers the queued AgentPhone launch failure with debug enabled", async () => {
+  it("preserves a queued AgentPhone input when launch preparation fails with debug enabled", async () => {
     mockEnv("APP_URL", "https://app.okou.ai");
     const ap = createAgentPhoneBddApi(context);
     const integrations = createBddIntegrationApi(context);
+    const runs = createRunsApi(context);
+    const chat = createChatFilesBddApi(context);
     const { actor, phone, runnerGroup, sends } = await entitledLinkedActor();
     await integrations.enableOkouDebug(actor);
 
@@ -1616,20 +1618,52 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
 
     mockEnv("SECRETS_KMS_KEY_ID", undefined);
     const beforeCompletion = sends.messages.length;
-    await completeSandboxRun(activeRun.sandboxToken, activeRun.runId, 0);
-    await waitForSendCount(sends, beforeCompletion + 2);
+    await expect(
+      completeSandboxRun(activeRun.sandboxToken, activeRun.runId, 0),
+    ).rejects.toThrow(
+      "SECRETS_KMS_KEY_ID is required for KMS secret encryption",
+    );
 
     const completionBodies = sends.messages
       .slice(beforeCompletion)
       .map((send) => {
         return send.body;
       });
-    expect(completionBodies).toHaveLength(2);
-    expect(completionBodies).toStrictEqual(
-      expect.arrayContaining([
-        "Task completed successfully.",
-        "Oops, something went wrong. Please try again later.",
-      ]),
+    expect(completionBodies).toStrictEqual(["Task completed successfully."]);
+    const runList = await runs.listAgentRuns(actor, {
+      status: "queued,pending,running,completed,failed,timeout,cancelled",
+      limit: 100,
+    });
+    expect(runList.runs).toStrictEqual([
+      expect.objectContaining({ id: activeRun.runId, status: "completed" }),
+    ]);
+    const lifecycle = await chat.requestThreadEvents(actor, {}, [200]);
+    if (lifecycle.status !== 200) {
+      throw new Error("Expected AgentPhone thread lifecycle events");
+    }
+    const thread = lifecycle.body.events.find((event) => {
+      return event.kind === "created";
+    });
+    if (!thread) {
+      throw new Error("Expected an AgentPhone chat thread");
+    }
+    const messages = await chat.listThreadEvents(actor, thread.chatThreadId);
+    const pending = messages.events.find((event) => {
+      return (
+        event.eventType === "input.prompt" &&
+        event.userMessage.parts.some((part) => {
+          return (
+            part.type === "text" && part.text === "fail this queued Okou launch"
+          );
+        })
+      );
+    });
+    if (!pending) {
+      throw new Error("Expected the original queued input after the failure");
+    }
+    expect(pending.runId).toBeUndefined();
+    expect(messages.events).not.toContainEqual(
+      expect.objectContaining({ revokesEventId: pending.id }),
     );
   });
 

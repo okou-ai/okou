@@ -9569,15 +9569,11 @@ describe("Official Workflow Run admission", () => {
           );
         }),
       ).toHaveLength(1);
-      // The run-end takeover skips the terminalized Official source and
-      // launches the ordinary message behind it; the later sweep adds no run.
+      // One pick terminalizes only the Official source. The ordinary input
+      // remains queued until the next explicit organization pass below.
       await expect(
         readAgentRunFamilyCountsFixture(context, agentId),
-      ).resolves.toStrictEqual({
-        run_count: beforeQueuedRunFamily.run_count + 1,
-        callback_count: beforeQueuedRunFamily.callback_count + 1,
-        runner_job_count: beforeQueuedRunFamily.runner_job_count + 1,
-      });
+      ).resolves.toStrictEqual(beforeQueuedRunFamily);
 
       await assertOfficialQueueSnapshot(
         actor,

@@ -290,6 +290,7 @@ import {
   min,
   ne,
   notExists,
+  notInArray,
   or,
   sql,
   sum,
@@ -354,7 +355,14 @@ import {
 import { recordSandboxOperation } from "../external/sandbox-op-log";
 import type { SlackUserInfo } from "../external/slack-message-client";
 import { getOfficialTelegramBotConfig } from "../external/telegram-official";
-import { joinAll, onRejection, safeSync, settle, tapError } from "../utils";
+import {
+  joinAll,
+  joinAllInOrder,
+  onRejection,
+  safeSync,
+  settle,
+  tapError,
+} from "../utils";
 import {
   agentConnectorScopeFromRows,
   type AgentConnectorScopeSnapshot,
@@ -754,6 +762,7 @@ interface ThreadClaim {
 interface OrgPickCursor {
   readonly queuedAt: Date;
   readonly chatThreadId: string;
+  readonly visitedThreadIds: readonly string[];
 }
 
 function createOrgCapacityObject(
@@ -855,6 +864,11 @@ function createThreadClaimObject(
                   gt(queuedChatThreads.chatThreadId, after.chatThreadId),
                 ),
               ),
+          after === null
+            ? undefined
+            : notInArray(queuedChatThreads.chatThreadId, [
+                ...after.visitedThreadIds,
+              ]),
           notExists(
             database
               .select({ runId: activeAgentRuns.runId })
@@ -884,7 +898,15 @@ function createThreadClaimObject(
       if (!candidate) {
         return null;
       }
-      set(internalOrgCursor$, candidate);
+      set(internalOrgCursor$, (previous) => {
+        return {
+          ...candidate,
+          visitedThreadIds: [
+            ...(previous?.visitedThreadIds ?? []),
+            candidate.chatThreadId,
+          ],
+        };
+      });
       threadId = candidate.chatThreadId;
     }
     const database = set(writeDb$);
@@ -4716,7 +4738,7 @@ function createStorageEntryObjects(
       "nested",
       async () => {
         const [requested, sessionWriteback, missingArtifacts] =
-          await Promise.all([
+          await joinAllInOrder([
             get(requestedEntries$),
             get(sessionWritebackEntries$),
             get(missingArtifacts$),
@@ -4837,7 +4859,7 @@ const materializeAgentRunStorage$ = command(
       plan,
       signal,
     );
-    const [requested, sessionWriteback] = await joinAll([
+    const [requested, sessionWriteback] = await joinAllInOrder([
       set(materializeStorageEntries$, requestedPlan, signal),
       plan.sessionWriteback === undefined
         ? Promise.resolve(undefined)
@@ -15627,6 +15649,13 @@ function createRunConnectorSelectionObjects(
   return { connectorSelection$, connectorSnapshot$ };
 }
 
+function settledRunContextValue<T>(result: PromiseSettledResult<T>): T {
+  if (result.status === "rejected") {
+    throw result.reason;
+  }
+  return result.value;
+}
+
 function createRunRuntimeObjects(
   input$: Computed<PrepareRunContextInput>,
   { bodyContext$ }: ReturnType<typeof createRunBodyObjects>,
@@ -15638,14 +15667,18 @@ function createRunRuntimeObjects(
 ) {
   const connectorContext$ = computed(async (get) => {
     const input = get(input$);
-    const [bodyContext, modelProvider, selection, snapshot] = await Promise.all(
-      [
+    const [bodyResult, modelResult, selectionResult, snapshotResult] =
+      await Promise.allSettled([
         get(bodyContext$),
         get(modelRoute$),
         get(connectorSelection$),
         get(connectorSnapshot$),
-      ],
-    );
+      ]);
+    // Read in parallel, then preserve catalog authority before provider errors.
+    const selection = settledRunContextValue(selectionResult);
+    const bodyContext = settledRunContextValue(bodyResult);
+    const modelProvider = settledRunContextValue(modelResult);
+    const snapshot = settledRunContextValue(snapshotResult);
     if (isRouteError(bodyContext)) {
       return bodyContext;
     }
@@ -15672,14 +15705,24 @@ function createRunRuntimeObjects(
   });
   const runtimeContext$ = computed(
     async (get): Promise<PreparedRuntimeContext | CreateRunErrorResult> => {
-      const [bodyContext, modelProvider, selection, snapshot, connectors] =
-        await Promise.all([
-          get(bodyContext$),
-          get(modelRoute$),
-          get(connectorSelection$),
-          get(connectorSnapshot$),
-          get(connectorContext$),
-        ]);
+      const [
+        bodyResult,
+        modelResult,
+        selectionResult,
+        snapshotResult,
+        connectorResult,
+      ] = await Promise.allSettled([
+        get(bodyContext$),
+        get(modelRoute$),
+        get(connectorSelection$),
+        get(connectorSnapshot$),
+        get(connectorContext$),
+      ]);
+      const selection = settledRunContextValue(selectionResult);
+      const bodyContext = settledRunContextValue(bodyResult);
+      const modelProvider = settledRunContextValue(modelResult);
+      const snapshot = settledRunContextValue(snapshotResult);
+      const connectors = settledRunContextValue(connectorResult);
       if (isRouteError(bodyContext)) {
         return bodyContext;
       }
@@ -15885,18 +15928,23 @@ function createRunContextObjects(input$: Computed<PrepareRunContextInput>) {
         return gate;
       }
       const [
-        bodyContext,
-        runtimeContext,
-        userTimezone,
-        selectedImageModel,
-        officialWorkflowRun,
-      ] = await Promise.all([
+        bodyResult,
+        runtimeResult,
+        timezoneResult,
+        imageResult,
+        workflowResult,
+      ] = await Promise.allSettled([
         get(bodyContext$),
         get(runtimeContext$),
         get(userTimezone$),
         get(imageModel$),
         get(officialWorkflow$),
       ]);
+      const bodyContext = settledRunContextValue(bodyResult);
+      const runtimeContext = settledRunContextValue(runtimeResult);
+      const userTimezone = settledRunContextValue(timezoneResult);
+      const selectedImageModel = settledRunContextValue(imageResult);
+      const officialWorkflowRun = settledRunContextValue(workflowResult);
       if (isRouteError(bodyContext)) {
         return bodyContext;
       }
@@ -16110,6 +16158,123 @@ const createRun$ = command(
   },
 );
 
+interface FailedDirectLaunchInput {
+  readonly input: AtomicLaunchRunInput;
+  readonly identity: LaunchRunIdentity;
+  readonly callbackRows: readonly AgentRunCallbackInsert[];
+  readonly error: unknown;
+}
+
+function failedDirectLaunchRows(
+  args: FailedDirectLaunchInput,
+  message: string,
+): LaunchRunRowsArgs {
+  const { input, identity, callbackRows } = args;
+  return {
+    userId: input.args.userId,
+    orgId: input.args.orgId,
+    identity,
+    status: "failed",
+    resolved: input.context.resolved,
+    body: input.context.body,
+    runStorageMounts: undefined,
+    sessionStorageMounts: undefined,
+    modelProvider: input.context.modelProvider,
+    agentRunModelPin: input.args.agentRunModelPin,
+    selectedImageModel: input.context.selectedImageModel,
+    callbackRows,
+    chatThreadId: input.args.chatThreadId,
+    agentRunMetadata: input.args.agentRunMetadata,
+    apiStartTime: input.args.apiStartTime,
+    runnerGroup: undefined,
+    launchSnapshot: input.context.launchSnapshot,
+    langfuseTraceEnabled: false,
+    officialWorkflowProvenance: input.context.officialWorkflowRun?.provenance,
+    error: message,
+    creditAdmitted: false,
+  };
+}
+
+// Direct/background callers retain their failed-run response and callback
+// contract. Queue-first preparation failures must leave the input untouched.
+const commitFailedDirectLaunch$ = command(
+  async (
+    _store,
+    args: FailedDirectLaunchInput,
+    signal: AbortSignal,
+  ): Promise<CreateRunSuccessResult | CreateRunErrorResult> => {
+    const { input, identity } = args;
+    if (input.args.queueFirstAssociation) {
+      throw args.error;
+    }
+    signal.throwIfAborted();
+    const message =
+      args.error instanceof Error ? args.error.message : "Run failed";
+    const rows = failedDirectLaunchRows(args, message);
+    const committed = await input.db.transaction(async (tx) => {
+      await acquireOfficialWorkflowRunCatalogAdmissionLock(
+        tx,
+        input.context.officialWorkflowRun,
+      );
+      const admissionFailure = await validateOfficialWorkflowRunForInsert(tx, {
+        observation: input.context.officialWorkflowRun,
+        orgId: input.args.orgId,
+        userId: input.args.userId,
+        agentId: input.context.resolved.agentId,
+        automationId: input.args.agentRunMetadata?.workflowAutomationId,
+        runStorageMounts: undefined,
+        allowMissingMountsForFailedRun: true,
+      });
+      signal.throwIfAborted();
+      if (admissionFailure) {
+        return conflict(admissionFailure.message);
+      }
+      if (identity.shouldCreateSession) {
+        await tx.insert(agentSessions).values(launchSessionValues(rows));
+      }
+      const createdAt = nowDate();
+      await tx
+        .insert(agentRuns)
+        .values(
+          launchRunValues(rows, createdAt, launchRunMetadataValues(rows)),
+        );
+      if (args.callbackRows.length > 0) {
+        await tx.insert(agentRunCallbacks).values([...args.callbackRows]);
+      }
+      await input.args.persistProducerRunBinding?.(tx, {
+        runId: identity.runId,
+        status: "failed",
+      });
+      return { createdAt };
+    });
+    signal.throwIfAborted();
+    if ("status" in committed) {
+      return committed;
+    }
+    if (input.args.dispatchFailedCallbacks) {
+      await tapError(
+        input.args.dispatchFailedCallbacks(input.db, identity.runId, message),
+        (error) => {
+          L.error("Failed to dispatch failed-run callbacks", {
+            runId: identity.runId,
+            error,
+          });
+        },
+      );
+    }
+    return {
+      status: 201,
+      body: {
+        runId: identity.runId,
+        status: "failed",
+        sessionId: identity.sessionId,
+        error: message,
+        createdAt: committed.createdAt.toISOString(),
+      },
+    };
+  },
+);
+
 function createLaunchObjects() {
   const { materializeStorage$ } = createStorageMaterializationObjects();
   const createAtomicLaunchRun$ = command(
@@ -16165,6 +16330,13 @@ function createLaunchObjects() {
           launchResult.error instanceof OfficialWorkflowArtifactResolutionError
         ) {
           return conflict(OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE);
+        }
+        if (!input.args.queueFirstAssociation) {
+          return await set(
+            commitFailedDirectLaunch$,
+            { input, identity, callbackRows, error: launchResult.error },
+            signal,
+          );
         }
         throw launchResult.error;
       }
@@ -20947,6 +21119,8 @@ type QueuedModelContext = Awaited<
 
 // Prompt, history and integration dependency graph.
 
+class QueuedPromptInputInvalidError extends Error {}
+
 type PromptDiscordContext = {
   readonly sourceChannelId: string;
   readonly botUserId: string;
@@ -20960,7 +21134,7 @@ function resolveQueuedOfficialWorkflowContext(args: {
 }) {
   const hasClaim = args.requiredOfficialWorkflowIds !== null;
   if (hasClaim && !isWebChatContextType(args.contextType)) {
-    throw new Error(
+    throw new QueuedPromptInputInvalidError(
       `Queued ${args.contextType} input cannot carry an Official Workflow source claim`,
     );
   }
@@ -20969,7 +21143,7 @@ function resolveQueuedOfficialWorkflowContext(args: {
       ? webChatQueueContextFromContextId(args.contextId)
       : null;
   if (args.contextType === "web" && webContext === null) {
-    throw new Error(`Invalid Web chat context: ${args.contextId}`);
+    throw new QueuedPromptInputInvalidError("Invalid Web chat context");
   }
   // Both Official agent markers identify the claim here, never the source Run.
   // Recognizing both also keeps annotation-based source/budget recovery shared.
@@ -20984,7 +21158,7 @@ function resolveQueuedOfficialWorkflowContext(args: {
     (contextRequiresClaim && !hasClaim) ||
     (hasClaim && webContext === null && officialAgentContext === null)
   ) {
-    throw new Error(
+    throw new QueuedPromptInputInvalidError(
       "Queued Official Workflow context and source claim do not match",
     );
   }
@@ -22039,10 +22213,17 @@ function createPromptQueuedEvent(input$: ReturnType<typeof createPromptInput>) {
     if (!event.contextType) {
       throw new Error("Queued user message is missing its context type");
     }
-    const requiredOfficialWorkflowIds =
-      parseCanonicalChatEventRequiredOfficialWorkflowIds(
+    const parsedClaim = safeSync(() => {
+      return parseCanonicalChatEventRequiredOfficialWorkflowIds(
         event.requiredOfficialWorkflowIds,
       );
+    });
+    if ("error" in parsedClaim) {
+      throw new QueuedPromptInputInvalidError(
+        "Invalid Official Workflow source claim",
+      );
+    }
+    const requiredOfficialWorkflowIds = parsedClaim.ok;
     const official = resolveQueuedOfficialWorkflowContext({
       contextType: event.contextType,
       contextId: event.contextId,
@@ -22073,7 +22254,7 @@ function createPromptSourceAutonomyBudget(
     }
     const source = agentRunSourceAnnotation(event.userMessage);
     if (!source) {
-      throw new Error(
+      throw new QueuedPromptInputInvalidError(
         "Queued Official agent input is missing its source Run annotation",
       );
     }
@@ -23769,7 +23950,8 @@ function queuedPromptPreparationRejection(
 ): ChatQueueRunAssembly {
   if (
     !(error instanceof DiscordQueuedLaunchUnavailableError) &&
-    !(error instanceof QueuedPromptLaunchUnavailableError)
+    !(error instanceof QueuedPromptLaunchUnavailableError) &&
+    !(error instanceof QueuedPromptInputInvalidError)
   ) {
     throw error;
   }
@@ -23781,7 +23963,9 @@ function queuedPromptPreparationRejection(
         code:
           error instanceof DiscordQueuedLaunchUnavailableError
             ? "DISCORD_ACCESS_REVOKED"
-            : "CONFLICT",
+            : error instanceof QueuedPromptInputInvalidError
+              ? "INTERNAL_ERROR"
+              : "CONFLICT",
         message: error.message,
       },
     },
@@ -23809,11 +23993,15 @@ function createPromptAssembleQueuedPromptRun({
       set(internalInput$, { db, head, timing });
       set(internalModel$, null);
       set(internalDiscordMaterial$, null);
-      const [queued, agent] = await Promise.all([
-        get(queuedMessage$),
-        get(agent$),
-      ]);
+      const selected = await settle(
+        Promise.all([get(queuedMessage$), get(agent$)]),
+        signal,
+      );
       signal.throwIfAborted();
+      if (!selected.ok) {
+        return queuedPromptPreparationRejection(selected.error, head);
+      }
+      const [queued, agent] = selected.value;
       if (queued?.id !== head.id) {
         return { kind: "not-ready" };
       }

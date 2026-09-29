@@ -26,7 +26,9 @@ rows. Unexpected errors leave the lease to expire. There is no claim heartbeat,
 session preparation retry, or active-run conflict retry.
 
 An organization pass captures a finite count of currently pickable threads and
-uses one factory with an oldest-first `(queuedAt, threadId)` cursor. It advances
+uses one factory with an oldest-first `(queuedAt, threadId)` cursor and a set of
+visited thread IDs. Enqueue retains its existing queue-time refresh; a concurrent
+enqueue cannot make the same thread eligible twice in that pass. It advances
 to another thread after an empty queue, lost claim, revoked input or permanent
 business rejection. A null result is not proof that the organization has no
 work. The pass stops when capacity is exhausted or its captured candidate budget

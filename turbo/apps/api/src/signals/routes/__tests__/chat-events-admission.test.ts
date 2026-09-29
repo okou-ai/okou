@@ -1,21 +1,23 @@
 import { randomUUID } from "node:crypto";
 import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
-import type { ChatEvent } from "@okouai/api-contracts/contracts/chat-threads";
 import { mailContract } from "@okouai/api-contracts/contracts/mail";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { readCanonicalChatEventStorageFixture } from "../../../test-fixtures/chat-events";
 import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
+import { readQueuedChatThreadClaimFixture } from "../../../test-fixtures/queued-chat-thread";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import {
   createUnassociatedThreadBoundAgentRunFixture,
   createUnassociatedThreadBoundAgentRunsServiceFixture,
 } from "../../../test-fixtures/thread-bound-run-admission";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { clearAllDetached } from "../../utils";
 import { mailRoutes } from "../mail";
 import { expectApiError } from "./helpers/api-bdd";
 import { mockGmailConnectorOAuth } from "./helpers/api-bdd-connectors";
@@ -64,8 +66,6 @@ async function entitledChatActor() {
   ]);
   return result;
 }
-
-type FailedMessage = Extract<ChatEvent, { eventType: "run.failed" }>;
 
 describe("CHAT-02: thread run admission invariant", () => {
   it("rejects thread-bound run creation without a queue association at both service boundaries", async () => {
@@ -533,7 +533,7 @@ describe("CHAT-02: interrupting active chat runs", () => {
 });
 
 describe("CHAT-02: dispatch failure", () => {
-  it("fails the run and delivers the terminal chat callback when dispatch cannot start", async () => {
+  it("preserves the queued input and lease when run preparation cannot configure dispatch", async () => {
     const { actor, agentId } = await entitledChatActor();
     const routeRequests = chatCallbacks.failIfChatCallbackRouteIsFetched();
     mockOptionalEnv("RUNNER_DEFAULT_GROUP", undefined);
@@ -558,26 +558,31 @@ describe("CHAT-02: dispatch failure", () => {
     });
     const threadId = sent.body.threadId;
 
-    // The pick creates the run and fails it when dispatch cannot start.
-    const messages = await waitForThreadMessages(actor, threadId, (items) => {
-      return assistantMessages(items).some((message) => {
+    // Preparation failed before pending admission. Observe the owned
+    // background failure instead of waiting for a fabricated terminal run.
+    await expect(clearAllDetached()).rejects.toThrow(
+      "No executor configured: set RUNNER_DEFAULT_GROUP",
+    );
+    const messages = await chat.listThreadEvents(actor, threadId);
+    expect(userMessages(messages.events)).toStrictEqual([
+      expect.objectContaining({
+        id: messageId,
+        eventType: "input.prompt",
+      }),
+    ]);
+    expect(
+      messages.events.some((message) => {
         return (
-          message.eventType === "run.failed" &&
-          message.runLifecycleEvent === "failed"
+          message.runId !== undefined || message.revokesEventId !== undefined
         );
-      });
+      }),
+    ).toBeFalsy();
+    expect(assistantMessages(messages.events)).toStrictEqual([]);
+    const runs = await api.listAgentRuns(actor, {
+      status: "queued,pending,running,completed,failed,timeout,cancelled",
+      limit: 100,
     });
-    const runId = userMessages(messages.events).find((message) => {
-      return message.revokesEventId === messageId;
-    })?.runId;
-    if (runId === undefined) {
-      throw new Error("Expected the picked input to carry the failed run");
-    }
-    await flushWaitUntilForTest();
-
-    const run = await api.readRun(actor, runId);
-    expect(run.status).toBe("failed");
-    expect(run.error).toContain("RUNNER_DEFAULT_GROUP");
+    expect(runs.runs).toStrictEqual([]);
     await expect(
       readThreadSessionBinding(context, threadId),
     ).resolves.toMatchObject({
@@ -586,65 +591,11 @@ describe("CHAT-02: dispatch failure", () => {
       run_session_id: null,
     });
 
-    const failedMarker = assistantMessages(messages.events).find(
-      (message): message is FailedMessage => {
-        return (
-          message.eventType === "run.failed" &&
-          message.runId === runId &&
-          message.runLifecycleEvent === "failed"
-        );
-      },
-    );
-    if (!failedMarker) {
-      throw new Error("Expected a failed lifecycle marker");
-    }
-    expect(failedMarker.error).toStrictEqual(expect.any(String));
-    expect(userMessages(messages.events)).toContainEqual(
-      expect.objectContaining({
-        content: null,
-        revokesEventId: messageId,
-        runId: runId,
-      }),
-    );
-    expect(
-      userMessages(messages.events).some((message) => {
-        return (
-          message.revokesEventId === messageId &&
-          chatEventDisplayText(message) === "fail before worker start"
-        );
-      }),
-    ).toBeTruthy();
-    const replay = await chat.requestSendEvent(
-      actor,
-      {
-        agentId,
-        threadId,
-        prompt: "fail before worker start",
-        clientEventId: messageId,
-      },
-      [201],
-    );
-    if (replay.status !== 201) {
-      throw new Error("Expected the replayed send to be accepted");
-    }
-    // The retry conflicts on the stored input and is accepted as a duplicate
-    // at request time without reading the original send back.
-    expect(replay.body).toStrictEqual({
-      runId: null,
-      threadId,
-      createdAt: expect.any(String),
-    });
-    expect(Date.parse(replay.body.createdAt ?? "")).toBeGreaterThanOrEqual(
-      Date.parse(sent.body.createdAt ?? ""),
-    );
-    await flushWaitUntilForTest();
-    const afterReplay = await chat.listThreadEvents(actor, threadId);
-    expect(userMessages(afterReplay.events)).toHaveLength(
-      userMessages(messages.events).length,
-    );
-    await api.requestClaimRunnerJob(true, runId, [404]);
+    const claim = await readQueuedChatThreadClaimFixture(threadId);
+    expect(claim?.claimId).toStrictEqual(expect.any(String));
+    expect(claim?.claimExpiresAt?.getTime()).toBeGreaterThan(now());
     expect(routeRequests()).toBe(0);
-  }, 60_000);
+  });
 });
 
 describe("CHAT-02: admission without spendable credits", () => {

@@ -1,8 +1,10 @@
+import { randomUUID } from "node:crypto";
 import { DEFAULT_IMAGE_MODEL } from "@okouai/core/image-model-catalog";
 import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { clearAllDetached } from "../../utils";
 import {
   readRunImageModelSnapshotFixture,
   setRetiredOrgMemberImageModelFixture,
@@ -17,7 +19,6 @@ const {
   entitledNativeChatActor,
   sendChatRun,
   sendWaitingChatInput,
-  waitForRunStatus,
   cancelChatRun,
 } = createChatEventsFixture(context);
 
@@ -126,21 +127,40 @@ describe("CHAT-02: run image model snapshot", () => {
     await cancelChatRun(actor, retiredEverywhere.runId);
   }, 90_000);
 
-  it("persists the image snapshot when dispatch fails before runner start", async () => {
+  it("does not persist an image snapshot before dispatch preparation succeeds", async () => {
     const { actor, agentId } = await imageModelSnapshotActor();
     await chat.updateUserModelPreference(actor, null, "gpt-image-2");
     mockOptionalEnv("RUNNER_DEFAULT_GROUP", undefined);
-
-    // The pick creates the run and fails it when dispatch cannot start.
-    const sent = await sendChatRun(actor, {
-      agentId,
-      prompt: "image snapshot survives pre-runner dispatch failure",
-    });
-    await waitForRunStatus(actor, sent.runId, "failed");
-    await expect(readRunImageModelSnapshotFixture(sent.runId)).resolves.toBe(
-      "gpt-image-2",
+    const clientEventId = randomUUID();
+    const sent = await chat.requestSendEvent(
+      actor,
+      {
+        agentId,
+        clientEventId,
+        prompt: "image snapshot waits for successful run preparation",
+      },
+      [201],
     );
-  }, 90_000);
+    if (sent.status !== 201) {
+      throw new Error("Expected the chat input to be queued");
+    }
+    await expect(clearAllDetached()).rejects.toThrow(
+      "No executor configured: set RUNNER_DEFAULT_GROUP",
+    );
+    const { events } = await chat.listThreadEvents(actor, sent.body.threadId);
+    expect(events).toStrictEqual([
+      expect.objectContaining({
+        id: clientEventId,
+        eventType: "input.prompt",
+      }),
+    ]);
+    await expect(
+      api.listAgentRuns(actor, {
+        status: "queued,pending,running,completed,failed,timeout,cancelled",
+        limit: 100,
+      }),
+    ).resolves.toMatchObject({ runs: [] });
+  });
 
   it("persists the resolved image model on a run picked from the org queue", async () => {
     const { actor, agentId } = await imageModelSnapshotActor();

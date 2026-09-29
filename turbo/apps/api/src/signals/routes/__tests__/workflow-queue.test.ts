@@ -22,6 +22,7 @@ import { setOrgModelPolicyProviderTypeFixture } from "../../../test-fixtures/org
 import { readWorkflowRunTriggerSourceFixture } from "../../../test-fixtures/workflow-queue";
 import { withWorkflowQueueAssemblyFailureFixture } from "../../../test-fixtures/workflow-queue-assembly-failure";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { clearAllDetached, settle } from "../../utils";
 import { chatEventsRoutes } from "../chat-events";
 import { chatThreadRoutes } from "../chat-threads";
 import { modelProvidersRoutes } from "../model-providers";
@@ -431,15 +432,19 @@ async function busyQueueFixture(pendingCount: number): Promise<{
   return { scenario, automation, runningRunId };
 }
 
-/** Manual Run now; its background pick finishes before this returns. */
-async function runAutomationNow(automationId: string) {
-  const response = await accept(
+async function requestAutomationNow(automationId: string) {
+  return await accept(
     automationsClient().run({
       headers: authHeaders(),
       params: { id: automationId },
     }),
     [201],
   );
+}
+
+/** Manual Run now; its background pick finishes before this returns. */
+async function runAutomationNow(automationId: string) {
+  const response = await requestAutomationNow(automationId);
   await flushWaitUntilForTest();
   return response;
 }
@@ -1216,6 +1221,20 @@ describe("workflow queue", () => {
 
     await completeRunThroughSandbox(scenario, runningRunId);
 
+    // One organization pass rejects this thread's invalid head. A later
+    // business wake visits the remaining automation without retrying the pick.
+    await expect(
+      workflowRunIds(webhookAutomation.threadId),
+    ).resolves.toStrictEqual([runningRunId]);
+    await expect(
+      pendingAutomationEvents(webhookAutomation.threadId),
+    ).resolves.toStrictEqual([scheduleEvent]);
+    await refreshConcurrencyEntitlement(
+      scenario.actor,
+      scenario.customerId,
+      context.signal,
+    );
+
     const events = await readProjectedChatEvents(context, {
       threadId: webhookAutomation.threadId,
       headers: authHeaders(),
@@ -1498,9 +1517,10 @@ describe("workflow queue", () => {
     // infrastructure fault only for this queued input's first context read,
     // before assembly has loaded any schedule bookkeeping.
     await withWorkflowQueueAssemblyFailureFixture(queued.id, async () => {
-      await expect(
-        completeRunThroughSandbox(scenario, busyRunId),
-      ).rejects.toMatchObject({ cause: { code: "57014" } });
+      await requestRunCompletionThroughSandbox(scenario, busyRunId);
+      await expect(clearAllDetached()).rejects.toMatchObject({
+        cause: { code: "57014" },
+      });
     });
 
     const events = await wf.readThreadEvents(webhookAutomation.threadId);
@@ -1816,7 +1836,7 @@ describe("workflow queue", () => {
     ).resolves.toStrictEqual([runningRunId]);
   });
 
-  it("queues manual Run now behind an unclaimed user message on an idle thread", async () => {
+  it("keeps manual Run now behind the user message when enqueue races the cancellation pick", async () => {
     const scenario = await setup();
     const automation = await createScheduleAutomation(scenario);
     expect(automation.threadId).toBeNull();
@@ -1849,14 +1869,20 @@ describe("workflow queue", () => {
     await flushWaitUntilForTest();
     expect(userMessage.body.runId).toBeNull();
 
-    // Cancelling the first run leaves an idle thread whose oldest unclaimed
-    // work is the user message.
+    // Cancelling frees the slot and schedules a pick. A concurrent enqueue
+    // can replace that lease; only one pick may consume the oldest input.
     await runsApi.requestCancelRun(scenario.actor, firstRunId, [200]);
     await expect(
       runsApi.readRun(scenario.actor, firstRunId),
     ).resolves.toMatchObject({ status: "cancelled" });
 
-    const manual = await runAutomationNow(automation.automationId);
+    const manual = await requestAutomationNow(automation.automationId);
+    const picked = await settle(clearAllDetached());
+    if (!picked.ok) {
+      expect(picked.error).toMatchObject({
+        message: "Chat thread session changed during run preparation",
+      });
+    }
     expect(manual.body).toStrictEqual({
       runId: null,
       chatThreadId: threadId,
@@ -1873,9 +1899,34 @@ describe("workflow queue", () => {
         typeof message.runId === "string"
       );
     });
-    expect(claimedUserMessage?.runId).toStrictEqual(expect.any(String));
+    const userRunId = claimedUserMessage?.runId;
+    if (typeof userRunId !== "string") {
+      throw new Error("Expected exactly one pick to launch the user message");
+    }
+    await expect(workflowRunIds(threadId)).resolves.toStrictEqual([
+      firstRunId,
+      userRunId,
+    ]);
 
-    await flushWaitUntilForTest();
+    await requestRunCompletionThroughSandbox(scenario, userRunId);
+    await clearAllDetached();
+    // If the losing request retained a lease, its expiration is the next
+    // admission boundary. Advance the test clock, then issue a separate wake.
+    mockNow(now() + 60_001);
+    await refreshConcurrencyEntitlement(
+      scenario.actor,
+      scenario.customerId,
+      context.signal,
+    );
+    await expect(pendingAutomationEvents(threadId)).resolves.toStrictEqual([]);
+    const finalRunIds = await workflowRunIds(threadId);
+    expect(finalRunIds).toHaveLength(3);
+    const manualRunId = finalRunIds[2];
+    if (!manualRunId) {
+      throw new Error("Expected the manual automation after the user run");
+    }
+    await runsApi.requestCancelRun(scenario.actor, manualRunId, [200]);
+    await clearAllDetached();
   });
 
   it("queues concurrent schedule Run now requests and drains each exactly once", async () => {
