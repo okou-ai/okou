@@ -89,3 +89,25 @@ has equivalent coverage. No replacement internal gate or trigger was introduced.
 Scoped formatting and lint checks cover these edits. Behavioral verification
 must come from the combined PR HEAD's pipeline; no full local Vitest or local
 application server is run for this work.
+
+## SSH and VNC test ownership cleanup
+
+The SSH and VNC connection-lock fixture APIs and their PostgreSQL waiter
+inspection are removed. They previously held a connection row open and inspected
+`pg_blocking_pids` to enforce an internal execution order. The VNC-only fixture
+route and contract are deleted; SSH's unrelated runtime and credential fixtures
+remain explicitly outside this cleanup.
+
+The SSH automation test retains public host pinning, subsequent chat-access
+revocation, denied further pinning and unchanged trust/generation assertions.
+Separate existing public API tests retain equal and conflicting concurrent first
+observations, exactly one trust winner, stale generations and credential isolation.
+It no longer asserts that a request waits for a manufactured row lock.
+
+The VNC shared-Agent test now invokes real Agent deletion and membership-deletion
+webhook requests concurrently, requires both to succeed, and checks that the
+removed member's hosts disappear while the creator's independent host remains.
+It no longer asserts that Agent deletion completes at a particular internal lock
+wait point. The separate public concurrent credential-rotation test is unchanged:
+two requests with `expectedRevision: 1` must yield exactly one 200 and one 409,
+advance dependent hosts, preserve an independent host and reject stale writes.

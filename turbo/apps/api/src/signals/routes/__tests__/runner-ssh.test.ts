@@ -1004,47 +1004,9 @@ describe("official Runner SSH authority", () => {
     expect(kms.decryptCalls).toBe(2);
   });
 
-  it("waits for the owner connection lock before pinning and denies later chat revocation", async () => {
+  it("pins an automation host and denies later chat revocation", async () => {
     const f = await fixture({ triggerSource: "automation-schedule" });
-    const scope = {
-      orgId: f.orgId,
-      userId: f.userId,
-      connectionId: f.connectionId,
-    };
-    const lock = (
-      action:
-        | "hold-connection-lock"
-        | "read-connection-lock"
-        | "release-connection-lock",
-    ) => {
-      return accept(
-        stateClient().action({ body: { action, ...scope } }),
-        [200],
-      );
-    };
-    const held = lock("hold-connection-lock");
-    await expect
-      .poll(async () => {
-        return (await lock("read-connection-lock")).body.held;
-      })
-      .toBe(true);
-    const pending = pin(f);
-    const releaseLock = async () => {
-      await lock("release-connection-lock");
-      await Promise.all([held, pending]);
-    };
-    await onRejection(
-      (async () => {
-        await expect
-          .poll(async () => {
-            return (await lock("read-connection-lock")).body.waiting;
-          })
-          .toBe(true);
-      })(),
-      releaseLock,
-    );
-    await releaseLock();
-    await expect(pending).resolves.toStrictEqual({
+    await expect(pin(f)).resolves.toStrictEqual({
       outcome: "pinned",
       generation: 2,
     });

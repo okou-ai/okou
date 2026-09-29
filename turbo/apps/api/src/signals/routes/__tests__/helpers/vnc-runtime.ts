@@ -8,7 +8,6 @@ import {
   testSshConnectionStateContract,
   type TestSshConnectionStateActionBody,
 } from "@okouai/api-contracts/contracts/test-ssh-connection-state";
-import { testVncAuthorityStateContract } from "@okouai/api-contracts/contracts/test-vnc-authority-state";
 import { vncConnectionsContract } from "@okouai/api-contracts/contracts/vnc-connections";
 import { vncCredentialsContract } from "@okouai/api-contracts/contracts/vnc-credentials";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -18,7 +17,6 @@ import { mockEnv } from "../../../../lib/env";
 import { chatRemoteAccessRoutes } from "../../chat-remote-access";
 import { runnerVncRoutes } from "../../runner-vnc";
 import { testSshConnectionStateRoutes } from "../../test-ssh-connection-state";
-import { testVncAuthorityStateRoutes } from "../../test-vnc-authority-state";
 import { vncConnectionsRoutes } from "../../vnc-connections";
 import { updateFeatureSwitchesForUser } from "./feature-switches";
 import { createRouteMocks } from "./route-test";
@@ -98,11 +96,6 @@ export function createVncRuntimeApi(context: TestContext) {
   const credentials = () => {
     return setupApp({ context, routes: vncConnectionsRoutes })(
       vncCredentialsContract,
-    );
-  };
-  const state = () => {
-    return setupApp({ context, routes: testVncAuthorityStateRoutes })(
-      testVncAuthorityStateContract,
     );
   };
   function authenticate(owner: Owner) {
@@ -263,7 +256,6 @@ export function createVncRuntimeApi(context: TestContext) {
     runner,
     connections,
     credentials,
-    state,
     authenticate,
     runtime,
     setDefault,

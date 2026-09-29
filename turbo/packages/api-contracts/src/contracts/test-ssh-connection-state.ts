@@ -11,18 +11,6 @@ export const testSshConnectionStateActionBodySchema = z.discriminatedUnion(
   [
     z
       .object({
-        action: z.enum([
-          "hold-connection-lock",
-          "read-connection-lock",
-          "release-connection-lock",
-        ]),
-        orgId: z.string().min(1),
-        userId: z.string().min(1),
-        connectionId: z.uuid(),
-      })
-      .strict(),
-    z
-      .object({
         action: z.literal("create-runtime"),
         agentId: z.uuid().optional(),
         runnerGroup: z.string().min(1).optional(),
@@ -75,8 +63,6 @@ export const testSshConnectionStateActionResponseSchema = z
     threadId: z.uuid().optional(),
     agentId: z.uuid().optional(),
     sandboxToken: z.string().optional(),
-    held: z.boolean().optional(),
-    waiting: z.boolean().optional(),
   })
   .strict();
 

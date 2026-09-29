@@ -12,10 +12,7 @@ import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
 import { and, eq, sql } from "drizzle-orm";
-import { z } from "zod";
 
-import { executeRawRows } from "../../lib/db-raw-rows";
-import { testOverride } from "../../lib/singleton";
 import { nowDate } from "../../lib/time";
 import { generateSandboxToken } from "../auth/tokens";
 import { request$ } from "../context/hono";
@@ -23,7 +20,6 @@ import { bodyResultOf } from "../context/request";
 import { writeDb$, type Db } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import { matchSshConnectionCredentials } from "../services/ssh-connection.service";
-import { createDeferredPromise } from "../utils";
 import {
   isTestEndpointAllowed,
   testEndpointNotFoundResponse,
@@ -32,106 +28,6 @@ import {
 type TestSshConnectionStateAction<
   TAction extends TestSshConnectionStateActionBody["action"],
 > = Extract<TestSshConnectionStateActionBody, { action: TAction }>;
-
-interface ConnectionLockGate {
-  readonly connectionId: string;
-  readonly orgId: string;
-  readonly userId: string;
-  holderPid: number | null;
-  readonly released: ReturnType<typeof createDeferredPromise<void>>;
-}
-
-const connectionLockGate = testOverride<ConnectionLockGate | null>(() => {
-  return null;
-});
-
-async function connectionLock(
-  db: Db,
-  body: TestSshConnectionStateAction<
-    "hold-connection-lock" | "read-connection-lock" | "release-connection-lock"
-  >,
-  signal: AbortSignal,
-) {
-  if (body.action === "hold-connection-lock") {
-    if (connectionLockGate.get()) {
-      throw new Error("An SSH connection lock is already active");
-    }
-    const gate: ConnectionLockGate = {
-      ...body,
-      holderPid: null,
-      released: createDeferredPromise<void>(signal),
-    };
-    connectionLockGate.set(gate);
-    await db
-      .transaction(async (tx) => {
-        const [row] = await tx
-          .select({ id: sshConnections.id })
-          .from(sshConnections)
-          .where(
-            and(
-              eq(sshConnections.id, body.connectionId),
-              eq(sshConnections.orgId, body.orgId),
-              eq(sshConnections.userId, body.userId),
-            ),
-          )
-          .for("update");
-        signal.throwIfAborted();
-        if (!row) {
-          throw new Error("Missing owned SSH connection to lock");
-        }
-        const [holder] = await executeRawRows(
-          tx,
-          sql`SELECT pg_backend_pid() AS pid`,
-          z.object({ pid: z.int() }),
-        );
-        signal.throwIfAborted();
-        if (!holder) {
-          throw new Error("Missing SSH connection lock holder");
-        }
-        gate.holderPid = holder.pid;
-        await gate.released.promise;
-      })
-      .finally(() => {
-        connectionLockGate.clear();
-      });
-    return { status: 200 as const, body: { ok: true as const } };
-  }
-  const gate = connectionLockGate.get();
-  const owned =
-    gate?.connectionId === body.connectionId &&
-    gate.orgId === body.orgId &&
-    gate.userId === body.userId;
-  if (body.action === "release-connection-lock") {
-    if (!owned) {
-      throw new Error("Missing owned SSH connection lock gate");
-    }
-    gate.released.resolve(undefined);
-    return { status: 200 as const, body: { ok: true as const } };
-  }
-  if (!owned || gate.holderPid === null) {
-    return {
-      status: 200 as const,
-      body: { ok: true as const, held: false, waiting: false },
-    };
-  }
-  const [row] = await executeRawRows(
-    db,
-    sql`
-    SELECT EXISTS (
-      SELECT 1 FROM pg_stat_activity WHERE ${gate.holderPid} = ANY(pg_blocking_pids(pid))
-    ) AS waiting
-  `,
-    z.object({ waiting: z.boolean() }),
-  );
-  signal.throwIfAborted();
-  if (!row) {
-    throw new Error("Missing SSH connection lock state");
-  }
-  return {
-    status: 200 as const,
-    body: { ok: true as const, held: true, waiting: row.waiting },
-  };
-}
 
 async function createRuntime(
   db: Db,
@@ -293,11 +189,6 @@ const mutateSshConnectionState$ = command(
 
     const db = set(writeDb$);
     switch (bodyResult.data.action) {
-      case "hold-connection-lock":
-      case "read-connection-lock":
-      case "release-connection-lock": {
-        return await connectionLock(db, bodyResult.data, signal);
-      }
       case "create-runtime": {
         return await createRuntime(db, bodyResult.data);
       }
