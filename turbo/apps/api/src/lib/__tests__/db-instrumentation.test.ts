@@ -1,6 +1,3 @@
-import { lookup as dnsLookup } from "node:dns";
-import type { LookupFunction } from "node:net";
-
 import {
   context,
   ProxyTracerProvider,
@@ -23,13 +20,11 @@ import {
   describe,
   expect,
   it,
-  onTestFinished,
 } from "vitest";
 
-import { createDeferredPromise } from "../../signals/utils";
 import {
+  createInstrumentedPgStream,
   instrumentPgPool,
-  PgConnectionRuntime,
   withPgPoolAcquisitionCapture,
 } from "../db-instrumentation";
 import { env } from "../env";
@@ -38,10 +33,6 @@ const ACQUIRE_DURATION_ATTRIBUTE = "vm0.db.pool.acquire.duration_ms";
 const ACQUIRE_PATH_ATTRIBUTE = "vm0.db.pool.acquire.path";
 const CONNECTION_LOOKUP_DURATION_ATTRIBUTE =
   "vm0.db.connection.lookup.duration_ms";
-const CONNECTION_LOOKUP_HEDGED_ATTRIBUTE = "vm0.db.connection.lookup.hedged";
-const CONNECTION_LOOKUP_HEDGE_BUDGET_UNAVAILABLE_ATTRIBUTE =
-  "vm0.db.connection.lookup.hedge_budget_unavailable";
-const CONNECTION_LOOKUP_SOURCE_ATTRIBUTE = "vm0.db.connection.lookup.source";
 const CONNECTION_SOCKET_CONNECT_DURATION_ATTRIBUTE =
   "vm0.db.connection.socket_connect.duration_ms";
 const CONNECTION_ATTEMPT_COUNT_ATTRIBUTE = "vm0.db.connection.attempt_count";
@@ -53,9 +44,6 @@ const CONNECTION_ADDRESS_FAMILY_ATTRIBUTE = "vm0.db.connection.address_family";
 
 const CONNECTION_ATTRIBUTE_NAMES = [
   CONNECTION_LOOKUP_DURATION_ATTRIBUTE,
-  CONNECTION_LOOKUP_HEDGED_ATTRIBUTE,
-  CONNECTION_LOOKUP_HEDGE_BUDGET_UNAVAILABLE_ATTRIBUTE,
-  CONNECTION_LOOKUP_SOURCE_ATTRIBUTE,
   CONNECTION_SOCKET_CONNECT_DURATION_ATTRIBUTE,
   CONNECTION_ATTEMPT_COUNT_ATTRIBUTE,
   CONNECTION_ATTEMPT_FAILED_COUNT_ATTRIBUTE,
@@ -64,72 +52,6 @@ const CONNECTION_ATTRIBUTE_NAMES = [
 ] as const;
 
 type AcquirePath = "idle" | "new" | "queued";
-type PgStreamFactory = NonNullable<PoolConfig["stream"]>;
-
-interface ControlledLookupInvocation {
-  complete(): Promise<void>;
-  fail(error: NodeJS.ErrnoException): void;
-}
-
-interface ControlledLookup {
-  readonly callCount: number;
-  readonly lookup: LookupFunction;
-  next(): Promise<ControlledLookupInvocation>;
-}
-
-const systemLookup: LookupFunction = dnsLookup;
-
-function createControlledLookup(signal: AbortSignal): ControlledLookup {
-  const invocations: ControlledLookupInvocation[] = [];
-  const waiters: ((invocation: ControlledLookupInvocation) => void)[] = [];
-  let callCount = 0;
-
-  const lookup: LookupFunction = (hostname, options, callback): void => {
-    callCount += 1;
-    const invocation: ControlledLookupInvocation = {
-      complete(): Promise<void> {
-        const completion = createDeferredPromise<void>(signal);
-        systemLookup(hostname, options, (error, address, family) => {
-          callback(error, address, family);
-          completion.resolve();
-        });
-        return completion.promise;
-      },
-      fail(error: NodeJS.ErrnoException): void {
-        callback(error, "", 0);
-      },
-    };
-    const waiter = waiters.shift();
-    if (waiter) {
-      waiter(invocation);
-    } else {
-      invocations.push(invocation);
-    }
-  };
-
-  return {
-    get callCount(): number {
-      return callCount;
-    },
-    lookup,
-    next(): Promise<ControlledLookupInvocation> {
-      const invocation = invocations.shift();
-      if (invocation) {
-        return Promise.resolve(invocation);
-      }
-      const nextInvocation =
-        createDeferredPromise<ControlledLookupInvocation>(signal);
-      waiters.push(nextInvocation.resolve);
-      return nextInvocation.promise;
-    },
-  };
-}
-
-function createLookupError(message: string): NodeJS.ErrnoException {
-  const error: NodeJS.ErrnoException = new Error(message);
-  error.code = "ENOTFOUND";
-  return error;
-}
 
 function expectAcquisition(span: ReadableSpan, path: AcquirePath): void {
   expect(span.attributes[ACQUIRE_PATH_ATTRIBUTE]).toBe(path);
@@ -272,14 +194,9 @@ describe("instrumentPgPool", () => {
   let provider: BasicTracerProvider;
   let tracer: Tracer;
   let pools: Pool[];
-  let connections: PgConnectionRuntime;
-  let testAbortController: AbortController;
 
   function createPool(
     config: PoolConfig = {},
-    stream: PgStreamFactory = () => {
-      return connections.createStream();
-    },
     queryTracer: Tracer = tracer,
   ): Pool {
     const pool = instrumentPgPool(
@@ -289,7 +206,7 @@ describe("instrumentPgPool", () => {
         idleTimeoutMillis: 0,
         max: 1,
         ...config,
-        stream,
+        stream: createInstrumentedPgStream,
       }),
       queryTracer,
     );
@@ -344,12 +261,9 @@ describe("instrumentPgPool", () => {
     });
     tracer = provider.getTracer("db-instrumentation-test");
     pools = [];
-    connections = new PgConnectionRuntime();
-    testAbortController = new AbortController();
   });
 
   afterEach(async () => {
-    testAbortController.abort();
     await Promise.all(
       pools.map((pool) => {
         return pool.end();
@@ -438,7 +352,6 @@ describe("instrumentPgPool", () => {
     // infrastructure boundary with a real pool and a non-recording tracer.
     const pool = createPool(
       {},
-      undefined,
       new ProxyTracerProvider().getTracer("db-instrumentation-noop-test"),
     );
     const capture = {
@@ -454,292 +367,6 @@ describe("instrumentPgPool", () => {
       { durationMs: expect.any(Number), path: "new" },
     ]);
     expect(exporter.getFinishedSpans()).toHaveLength(0);
-  });
-
-  it("keeps a fast lookup on the single primary path", async () => {
-    const controlledLookup = createControlledLookup(testAbortController.signal);
-    const pool = createPool({}, () => {
-      return connections.createStream({
-        lookup: controlledLookup.lookup,
-        lookupHedgeDelayMs: 60_000,
-      });
-    });
-    const statement = "SELECT 111 AS primary_lookup";
-    const query = pool.query(statement);
-
-    const primary = await controlledLookup.next();
-    await primary.complete();
-    const result = await query;
-
-    expect(result.rowCount).toBe(1);
-    expect(controlledLookup.callCount).toBe(1);
-    expect(pool.totalCount).toBe(1);
-    const span = findSpan(statement);
-    expectConnectionAcquisition(span);
-    expect(span.attributes[CONNECTION_LOOKUP_HEDGED_ATTRIBUTE]).toBeUndefined();
-    expect(
-      span.attributes[CONNECTION_LOOKUP_HEDGE_BUDGET_UNAVAILABLE_ATTRIBUTE],
-    ).toBeUndefined();
-    expect(span.attributes[CONNECTION_LOOKUP_SOURCE_ATTRIBUTE]).toBeUndefined();
-  });
-
-  it("uses a successful secondary lookup for one real database client", async () => {
-    const controlledLookup = createControlledLookup(testAbortController.signal);
-    const pool = createPool({}, () => {
-      return connections.createStream({
-        lookup: controlledLookup.lookup,
-        lookupHedgeDelayMs: 0,
-      });
-    });
-    let connectedClientCount = 0;
-    pool.on("connect", () => {
-      connectedClientCount += 1;
-    });
-    const statement = "SELECT 112 AS secondary_lookup";
-    const query = pool.query(statement);
-
-    const primary = await controlledLookup.next();
-    const secondary = await controlledLookup.next();
-    await secondary.complete();
-    const result = await query;
-    await primary.complete();
-
-    expect(result.rowCount).toBe(1);
-    expect(controlledLookup.callCount).toBe(2);
-    expect(connectedClientCount).toBe(1);
-    expect(pool.totalCount).toBe(1);
-    const span = findSpan(statement);
-    expectConnectionAcquisition(span);
-    expect(span.attributes[CONNECTION_LOOKUP_HEDGED_ATTRIBUTE]).toBeTruthy();
-    expect(span.attributes[CONNECTION_LOOKUP_SOURCE_ATTRIBUTE]).toBe(
-      "secondary",
-    );
-    expect(
-      span.attributes[CONNECTION_LOOKUP_HEDGE_BUDGET_UNAVAILABLE_ATTRIBUTE],
-    ).toBeUndefined();
-    expect(span.attributes[CONNECTION_ATTEMPT_COUNT_ATTRIBUTE]).toBe(1);
-  });
-
-  it("attributes, bounds, and releases secondary lookup capacity", async () => {
-    const controlledLookup = createControlledLookup(testAbortController.signal);
-    const stream: PgStreamFactory = () => {
-      return connections.createStream({
-        lookup: controlledLookup.lookup,
-        lookupHedgeDelayMs: 0,
-      });
-    };
-    const pool = createPool({ max: 2 }, stream);
-    let connectedClientCount = 0;
-    pool.on("connect", () => {
-      connectedClientCount += 1;
-    });
-    const statementA = "SELECT 113 AS hedged_connection";
-    const statementB = "SELECT 114 AS primary_only_connection";
-    const queryA = pool.query(statementA);
-    const queryB = pool.query(statementB);
-
-    const primaryA = await controlledLookup.next();
-    const primaryB = await controlledLookup.next();
-    const secondaryA = await controlledLookup.next();
-    await secondaryA.complete();
-    const resultA = await queryA;
-
-    expect(controlledLookup.callCount).toBe(3);
-
-    await primaryB.complete();
-    const resultB = await queryB;
-    await primaryA.complete();
-
-    expect(resultA.rowCount).toBe(1);
-    expect(resultB.rowCount).toBe(1);
-    expect(connectedClientCount).toBe(2);
-    expect(pool.totalCount).toBe(2);
-    const spanA = findSpan(statementA);
-    const spanB = findSpan(statementB);
-    expect(spanA.attributes[CONNECTION_LOOKUP_SOURCE_ATTRIBUTE]).toBe(
-      "secondary",
-    );
-    expect(
-      spanA.attributes[CONNECTION_LOOKUP_HEDGE_BUDGET_UNAVAILABLE_ATTRIBUTE],
-    ).toBeUndefined();
-    expect(
-      spanB.attributes[CONNECTION_LOOKUP_HEDGED_ATTRIBUTE],
-    ).toBeUndefined();
-    expect(
-      spanB.attributes[CONNECTION_LOOKUP_SOURCE_ATTRIBUTE],
-    ).toBeUndefined();
-    expect(
-      spanB.attributes[CONNECTION_LOOKUP_HEDGE_BUDGET_UNAVAILABLE_ATTRIBUTE],
-    ).toBeTruthy();
-
-    const laterPool = createPool({}, stream);
-    const laterStatement = "SELECT 117 AS hedge_after_release";
-    const laterQuery = laterPool.query(laterStatement);
-    const laterPrimary = await controlledLookup.next();
-    const laterSecondary = await controlledLookup.next();
-    await laterSecondary.complete();
-    const laterResult = await laterQuery;
-    await laterPrimary.complete();
-
-    expect(laterResult.rowCount).toBe(1);
-    expect(controlledLookup.callCount).toBe(5);
-    expect(laterPool.totalCount).toBe(1);
-    const laterSpan = findSpan(laterStatement);
-    expect(laterSpan.attributes[CONNECTION_LOOKUP_SOURCE_ATTRIBUTE]).toBe(
-      "secondary",
-    );
-    expect(
-      laterSpan.attributes[
-        CONNECTION_LOOKUP_HEDGE_BUDGET_UNAVAILABLE_ATTRIBUTE
-      ],
-    ).toBeUndefined();
-  });
-
-  it("retains hedge capacity across pool replacement until the losing DNS lookup settles", async () => {
-    // HTTP clients cannot hold individual Node DNS callbacks across pool
-    // shutdown. Exercise real PG clients at the connection boundary instead.
-    const controlledLookup = createControlledLookup(testAbortController.signal);
-    const stream: PgStreamFactory = () => {
-      return connections.createStream({
-        lookup: controlledLookup.lookup,
-        lookupHedgeDelayMs: 0,
-      });
-    };
-    const startedSpans: ReadableSpan[] = [];
-    const spanProcessor = new SimpleSpanProcessor(new InMemorySpanExporter());
-    const observedProvider = new BasicTracerProvider({
-      spanProcessors: [
-        {
-          onStart(span) {
-            startedSpans.push(span);
-          },
-          onEnd(span) {
-            spanProcessor.onEnd(span);
-          },
-          forceFlush() {
-            return spanProcessor.forceFlush();
-          },
-          shutdown() {
-            return spanProcessor.shutdown();
-          },
-        },
-      ],
-    });
-    const observedTracer = observedProvider.getTracer("dns-pool-replacement");
-
-    onTestFinished(async () => {
-      await observedProvider.shutdown();
-    });
-    const firstPool = createPool({}, stream, observedTracer);
-    const firstQuery = firstPool.query("SELECT 118 AS winning_secondary");
-    const firstPrimary = await controlledLookup.next();
-    const firstSecondary = await controlledLookup.next();
-    await firstSecondary.complete();
-    expect((await firstQuery).rowCount).toBe(1);
-
-    // Pool shutdown does not cancel the losing system DNS lookup. Replacing
-    // the pool must not create another process-wide hedge permit.
-    pools = pools.filter((pool) => {
-      return pool !== firstPool;
-    });
-    await firstPool.end();
-    const nextPool = createPool({}, stream, observedTracer);
-    const nextStatement = "SELECT 119 AS replacement_primary_only";
-    const nextQuery = nextPool.query(nextStatement);
-    const nextPrimary = await controlledLookup.next();
-    await expect
-      .poll(() => {
-        return startedSpans.find((span) => {
-          return span.attributes["db.statement"] === nextStatement;
-        })?.attributes[CONNECTION_LOOKUP_HEDGE_BUDGET_UNAVAILABLE_ATTRIBUTE];
-      })
-      .toBe(true);
-    await nextPrimary.complete();
-    expect((await nextQuery).rowCount).toBe(1);
-    expect(controlledLookup.callCount).toBe(3);
-
-    await firstPrimary.complete();
-    const laterPool = createPool({}, stream, observedTracer);
-    const laterQuery = laterPool.query("SELECT 120 AS released_hedge_budget");
-    const laterPrimary = await controlledLookup.next();
-    const laterSecondary = await controlledLookup.next();
-    await laterSecondary.complete();
-    expect((await laterQuery).rowCount).toBe(1);
-    await laterPrimary.complete();
-    expect(controlledLookup.callCount).toBe(5);
-  });
-
-  it("keeps primary errors authoritative after a secondary starts", async () => {
-    const controlledLookup = createControlledLookup(testAbortController.signal);
-    const pool = createPool({}, () => {
-      return connections.createStream({
-        lookup: controlledLookup.lookup,
-        lookupHedgeDelayMs: 0,
-      });
-    });
-    const statement = "SELECT 115 AS primary_lookup_error";
-    const queryError = captureRejection(pool.query(statement));
-
-    const primary = await controlledLookup.next();
-    const secondary = await controlledLookup.next();
-    const expectedError = createLookupError("primary lookup failed");
-    primary.fail(expectedError);
-    const actualError = await queryError;
-    await secondary.complete();
-
-    expect(actualError).toBe(expectedError);
-    expect(controlledLookup.callCount).toBe(2);
-    const span = findSpan(statement);
-    expect(span.status.code).toBe(SpanStatusCode.ERROR);
-    expect(span.attributes[CONNECTION_LOOKUP_HEDGED_ATTRIBUTE]).toBeTruthy();
-    expect(span.attributes[CONNECTION_LOOKUP_SOURCE_ATTRIBUTE]).toBe("primary");
-  });
-
-  it("waits for the primary after a secondary lookup error", async () => {
-    const controlledLookup = createControlledLookup(testAbortController.signal);
-    const pool = createPool({}, () => {
-      return connections.createStream({
-        lookup: controlledLookup.lookup,
-        lookupHedgeDelayMs: 0,
-      });
-    });
-    const statement = "SELECT 116 AS secondary_lookup_error";
-    const query = pool.query(statement);
-
-    const primary = await controlledLookup.next();
-    const secondary = await controlledLookup.next();
-    secondary.fail(createLookupError("secondary lookup failed"));
-    expect(pool.totalCount).toBe(1);
-    await primary.complete();
-    const result = await query;
-
-    expect(result.rowCount).toBe(1);
-    expect(controlledLookup.callCount).toBe(2);
-    expect(pool.totalCount).toBe(1);
-    const span = findSpan(statement);
-    expect(span.attributes[CONNECTION_LOOKUP_HEDGED_ATTRIBUTE]).toBeTruthy();
-    expect(span.attributes[CONNECTION_LOOKUP_SOURCE_ATTRIBUTE]).toBe("primary");
-  });
-
-  it("cancels a pending secondary when the socket is destroyed", async () => {
-    const controlledLookup = createControlledLookup(testAbortController.signal);
-    const databaseUrl = new URL(env("DATABASE_URL"));
-    const socket = connections.createStream({
-      lookup: controlledLookup.lookup,
-      lookupHedgeDelayMs: 0,
-    });
-    const closed = createDeferredPromise<void>(testAbortController.signal);
-    socket.once("close", () => {
-      closed.resolve();
-    });
-
-    socket.connect(Number(databaseUrl.port || "5432"), databaseUrl.hostname);
-    const primary = await controlledLookup.next();
-    socket.destroy();
-    await closed.promise;
-    await primary.complete();
-
-    expect(controlledLookup.callCount).toBe(1);
   });
 
   it("reserves idle and new capacity for earlier synchronous queries", async () => {

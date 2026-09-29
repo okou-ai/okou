@@ -3,7 +3,10 @@ import { attachDatabasePool } from "@vercel/functions";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 
-import { instrumentPgPool, PgConnectionRuntime } from "./db-instrumentation";
+import {
+  createInstrumentedPgStream,
+  instrumentPgPool,
+} from "./db-instrumentation";
 import type { ApiDb } from "./db-types";
 import { env } from "./env";
 import { logger } from "./log";
@@ -17,12 +20,7 @@ interface SingletonValue<T> {
   readonly reset: () => void;
 }
 
-interface DatabaseRuntime {
-  readonly db: () => ApiDb;
-  readonly closePool: () => Promise<void>;
-}
-
-function createPool(connections: PgConnectionRuntime): Pool {
+const pool = singleton((): Pool => {
   // The official pg instrumentation normally hooks Pool through
   // require-in-the-middle. The single-file Vercel bundle prevents that hook,
   // so instrument this lazy singleton directly. The tracer is a no-op when no
@@ -37,7 +35,7 @@ function createPool(connections: PgConnectionRuntime): Pool {
       idleTimeoutMillis: env("DB_POOL_IDLE_TIMEOUT_MS"),
       connectionTimeoutMillis: env("DB_POOL_CONNECT_TIMEOUT_MS"),
       stream: () => {
-        return connections.createStream();
+        return createInstrumentedPgStream();
       },
     }),
     trace.getTracer("vm0-api/pg"),
@@ -62,40 +60,21 @@ function createPool(connections: PgConnectionRuntime): Pool {
   attachDatabasePool(pgPool);
 
   return pgPool;
-}
-
-const databaseRuntime = singleton((): DatabaseRuntime => {
-  // The connection owner outlives replaceable pools: a winning DNS hedge can
-  // finish a query while its original lookup is still using process capacity.
-  const connections = new PgConnectionRuntime();
-  const pool = singleton((): Pool => {
-    return createPool(connections);
-  });
-
-  const database: SingletonValue<ApiDb> = singleton((): ApiDb => {
-    return drizzle(pool());
-  });
-
-  return {
-    db: database,
-    async closePool(): Promise<void> {
-      const current = pool.peek();
-      if (current) {
-        // Relinquish this exact pool before its asynchronous shutdown. A new
-        // borrower can create a fresh pool while the old one closes, but both
-        // generations retain the same connection owner and DNS hedge budget.
-        pool.reset();
-        database.reset();
-        await current.end();
-      }
-    },
-  };
 });
 
-export function db(): ApiDb {
-  return databaseRuntime().db();
-}
+export const db: SingletonValue<ApiDb> = singleton((): ApiDb => {
+  return drizzle(pool());
+});
 
 export async function closeDbPool(): Promise<void> {
-  await databaseRuntime.peek()?.closePool();
+  const current = pool.peek();
+  if (current) {
+    // Relinquish this exact pool before its asynchronous shutdown. A timed-out
+    // test can make fixture cleanup and suite teardown close concurrently; the
+    // first caller owns `current`, while later work must either observe no pool
+    // or create a fresh one instead of reusing a pool whose `end()` has begun.
+    pool.reset();
+    db.reset();
+    await current.end();
+  }
 }

@@ -1,6 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { lookup as dnsLookup, type LookupAddress } from "node:dns";
-import { Socket, type LookupFunction, type SocketConnectOpts } from "node:net";
+import { Socket } from "node:net";
 import { performance } from "node:perf_hooks";
 
 import {
@@ -21,10 +20,6 @@ const POOL_ACQUIRE_DURATION_ATTRIBUTE = "vm0.db.pool.acquire.duration_ms";
 const POOL_ACQUIRE_PATH_ATTRIBUTE = "vm0.db.pool.acquire.path";
 const CONNECTION_LOOKUP_DURATION_ATTRIBUTE =
   "vm0.db.connection.lookup.duration_ms";
-const CONNECTION_LOOKUP_HEDGED_ATTRIBUTE = "vm0.db.connection.lookup.hedged";
-const CONNECTION_LOOKUP_HEDGE_BUDGET_UNAVAILABLE_ATTRIBUTE =
-  "vm0.db.connection.lookup.hedge_budget_unavailable";
-const CONNECTION_LOOKUP_SOURCE_ATTRIBUTE = "vm0.db.connection.lookup.source";
 const CONNECTION_SOCKET_CONNECT_DURATION_ATTRIBUTE =
   "vm0.db.connection.socket_connect.duration_ms";
 const CONNECTION_ATTEMPT_COUNT_ATTRIBUTE = "vm0.db.connection.attempt_count";
@@ -33,7 +28,6 @@ const CONNECTION_ATTEMPT_FAILED_COUNT_ATTRIBUTE =
 const CONNECTION_ATTEMPT_TIMEOUT_COUNT_ATTRIBUTE =
   "vm0.db.connection.attempt_timeout_count";
 const CONNECTION_ADDRESS_FAMILY_ATTRIBUTE = "vm0.db.connection.address_family";
-const LOOKUP_HEDGE_DELAY_MS = 150;
 
 type AnyArgs = readonly unknown[];
 type PgQuery = (...args: AnyArgs) => unknown;
@@ -64,199 +58,9 @@ type PoolConnectCallback = (
   client?: PoolClient,
   release?: PoolRelease,
 ) => void;
-type LookupSource = "primary" | "secondary";
-type ClaimSecondaryLookup = () => (() => void) | undefined;
-
-interface InstrumentedPgStreamOptions {
-  lookup?: LookupFunction;
-  lookupHedgeDelayMs?: number;
-}
-
-const systemLookup: LookupFunction = dnsLookup;
 
 class PoolQuerySpan {
   constructor(readonly span: Span) {}
-}
-
-function createHedgedLookup(
-  socket: Socket,
-  lookup: LookupFunction,
-  hedgeDelayMs: number,
-  querySpan: Span | undefined,
-  claimSecondaryLookup: ClaimSecondaryLookup,
-): LookupFunction {
-  return function hedgedLookup(hostname, options, callback): void {
-    let delivered = false;
-    let primarySettled = false;
-    let secondaryStarted = false;
-    let secondarySettled = false;
-    let releaseSecondaryLookup: (() => void) | undefined;
-    let hedgeDelayController: AbortController | undefined;
-
-    function removePendingHedgeListeners(): void {
-      socket.removeListener("close", cancelPendingHedge);
-      socket.removeListener("timeout", cancelPendingHedge);
-    }
-
-    function cancelPendingHedge(): void {
-      hedgeDelayController?.abort();
-      hedgeDelayController = undefined;
-      removePendingHedgeListeners();
-    }
-
-    function releaseHedgeBudget(): void {
-      if (releaseSecondaryLookup && primarySettled && secondarySettled) {
-        const release = releaseSecondaryLookup;
-        releaseSecondaryLookup = undefined;
-        release();
-      }
-    }
-
-    function deliver(
-      source: LookupSource,
-      error: NodeJS.ErrnoException | null,
-      address: string | LookupAddress[],
-      family?: number,
-    ): void {
-      if (delivered) {
-        return;
-      }
-      delivered = true;
-      cancelPendingHedge();
-      if (secondaryStarted) {
-        querySpan?.setAttribute(CONNECTION_LOOKUP_SOURCE_ATTRIBUTE, source);
-      }
-      callback(error, address, family);
-    }
-
-    function onPrimaryLookup(
-      error: NodeJS.ErrnoException | null,
-      address: string | LookupAddress[],
-      family?: number,
-    ): void {
-      primarySettled = true;
-      releaseHedgeBudget();
-      deliver("primary", error, address, family);
-    }
-
-    function onSecondaryLookup(
-      error: NodeJS.ErrnoException | null,
-      address: string | LookupAddress[],
-      family?: number,
-    ): void {
-      secondarySettled = true;
-      releaseHedgeBudget();
-      if (error === null) {
-        deliver("secondary", error, address, family);
-      }
-    }
-
-    function startSecondaryLookup(): void {
-      hedgeDelayController = undefined;
-      removePendingHedgeListeners();
-      if (primarySettled || socket.destroyed || !socket.connecting) {
-        return;
-      }
-      releaseSecondaryLookup = claimSecondaryLookup();
-      if (!releaseSecondaryLookup) {
-        querySpan?.setAttribute(
-          CONNECTION_LOOKUP_HEDGE_BUDGET_UNAVAILABLE_ATTRIBUTE,
-          true,
-        );
-        return;
-      }
-
-      secondaryStarted = true;
-      querySpan?.setAttribute(CONNECTION_LOOKUP_HEDGED_ATTRIBUTE, true);
-      lookup(hostname, options, onSecondaryLookup);
-    }
-
-    lookup(hostname, options, onPrimaryLookup);
-    if (primarySettled || socket.destroyed || !socket.connecting) {
-      return;
-    }
-
-    socket.once("close", cancelPendingHedge);
-    socket.once("timeout", cancelPendingHedge);
-    const delayController = new AbortController();
-    hedgeDelayController = delayController;
-    const delaySignal = AbortSignal.any([
-      delayController.signal,
-      AbortSignal.timeout(hedgeDelayMs),
-    ]);
-    delaySignal.addEventListener(
-      "abort",
-      () => {
-        if (!delayController.signal.aborted) {
-          startSecondaryLookup();
-        }
-      },
-      { once: true },
-    );
-  };
-}
-
-class InstrumentedPgSocket extends Socket {
-  constructor(
-    private readonly lookup: LookupFunction,
-    private readonly lookupHedgeDelayMs: number,
-    private readonly querySpan: Span | undefined,
-    private readonly claimSecondaryLookup: ClaimSecondaryLookup,
-  ) {
-    super();
-  }
-
-  override connect(
-    options: SocketConnectOpts,
-    connectionListener?: () => void,
-  ): this;
-  override connect(
-    port: number,
-    host: string,
-    connectionListener?: () => void,
-  ): this;
-  override connect(port: number, connectionListener?: () => void): this;
-  override connect(path: string, connectionListener?: () => void): this;
-  override connect(
-    optionsOrPortOrPath: SocketConnectOpts | number | string,
-    hostOrListener?: string | (() => void),
-    connectionListener?: () => void,
-  ): this {
-    if (typeof optionsOrPortOrPath === "number") {
-      if (typeof hostOrListener === "string") {
-        return super.connect(
-          {
-            port: optionsOrPortOrPath,
-            host: hostOrListener,
-            lookup: createHedgedLookup(
-              this,
-              this.lookup,
-              this.lookupHedgeDelayMs,
-              this.querySpan,
-              this.claimSecondaryLookup,
-            ),
-          },
-          connectionListener,
-        );
-      }
-      if (hostOrListener) {
-        return super.connect(optionsOrPortOrPath, hostOrListener);
-      }
-      return super.connect(optionsOrPortOrPath);
-    }
-
-    if (typeof optionsOrPortOrPath === "string") {
-      if (typeof hostOrListener === "function") {
-        return super.connect(optionsOrPortOrPath, hostOrListener);
-      }
-      return super.connect(optionsOrPortOrPath);
-    }
-
-    if (typeof hostOrListener === "function") {
-      return super.connect(optionsOrPortOrPath, hostOrListener);
-    }
-    return super.connect(optionsOrPortOrPath);
-  }
 }
 
 function normalizeAddressFamily(
@@ -271,42 +75,13 @@ function normalizeAddressFamily(
   return undefined;
 }
 
-/** Owns the DNS hedge capacity shared by a database runtime's pool generations. */
-export class PgConnectionRuntime {
-  private secondaryLookupInFlight = false;
-
-  private claimSecondaryLookup(): (() => void) | undefined {
-    if (this.secondaryLookupInFlight) {
-      return undefined;
-    }
-    this.secondaryLookupInFlight = true;
-    return () => {
-      this.secondaryLookupInFlight = false;
-    };
-  }
-
-  createStream(options: InstrumentedPgStreamOptions = {}): Socket {
-    return createInstrumentedPgStream(options, () => {
-      return this.claimSecondaryLookup();
-    });
-  }
-}
-
-function createInstrumentedPgStream(
-  options: InstrumentedPgStreamOptions,
-  claimSecondaryLookup: ClaimSecondaryLookup,
-): Socket {
+export function createInstrumentedPgStream(): Socket {
   const markedSpan = context.active().getValue(POOL_QUERY_SPAN_KEY);
   const querySpan =
     markedSpan instanceof PoolQuerySpan && markedSpan.span.isRecording()
       ? markedSpan.span
       : undefined;
-  const socket = new InstrumentedPgSocket(
-    options.lookup ?? systemLookup,
-    options.lookupHedgeDelayMs ?? LOOKUP_HEDGE_DELAY_MS,
-    querySpan,
-    claimSecondaryLookup,
-  );
+  const socket = new Socket();
   if (!querySpan) {
     return socket;
   }
