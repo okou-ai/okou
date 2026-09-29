@@ -11,6 +11,14 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.984.5](https://github.com/okou-ai/okou/compare/app-v0.984.4...app-v0.984.5) (2026-09-29)
+
+
+### Bug Fixes
+
+* **app:** remove create workflow entries from the composer ([#37340](https://github.com/okou-ai/okou/issues/37340)) ([0921863](https://github.com/okou-ai/okou/commit/092186302b426413bc2ee76ee35c5be1f574d685))
+* **app:** show credit costs in the model menu ([#37343](https://github.com/okou-ai/okou/issues/37343)) ([0c1fbd7](https://github.com/okou-ai/okou/commit/0c1fbd7004c513ab84dbaac91d28247747da3bee))
+
 ## [0.984.4](https://github.com/okou-ai/okou/compare/app-v0.984.3...app-v0.984.4) (2026-09-29)
 
 

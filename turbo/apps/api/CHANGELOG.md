@@ -8,6 +8,18 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.696.0](https://github.com/okou-ai/okou/compare/api-v1.695.3...api-v1.696.0) (2026-09-29)
+
+
+### Features
+
+* **api:** attribute mcp chat inputs to verified oauth clients ([#37275](https://github.com/okou-ai/okou/issues/37275)) ([a1096e6](https://github.com/okou-ai/okou/commit/a1096e622f424ae6286535d793948a87fb27bb9e))
+
+
+### Bug Fixes
+
+* **api:** classify expired clerk session auth diagnostics ([#37338](https://github.com/okou-ai/okou/issues/37338)) ([0ba0aae](https://github.com/okou-ai/okou/commit/0ba0aae9250b80739d0fa3638d706ccb74e3262e))
+
 ## [1.695.3](https://github.com/okou-ai/okou/compare/api-v1.695.2...api-v1.695.3) (2026-09-29)
 
 
