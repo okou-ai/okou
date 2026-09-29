@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { testContext } from "../../../__tests__/test-context";
+import { setCustomOrgModelModeIfPresentFixture } from "../../../test-fixtures/org-metadata";
 import { generateSandboxToken } from "../../auth/tokens";
 import { createBddApi, expectApiError } from "./helpers/api-bdd";
 import {
@@ -773,6 +774,11 @@ describe("CLI-TEST: test-enable-connector", () => {
 
 describe("CLI-TEST: test-codex-oauth", () => {
   async function readCodexProvider(actor: ReturnType<typeof bdd.user>) {
+    if (!actor.orgId) {
+      throw new Error("Expected an organization for the legacy provider test");
+    }
+    // This test inspects the org provider projection of a Custom workspace.
+    await setCustomOrgModelModeIfPresentFixture(actor.orgId);
     const providers = await support.listModelProviders(actor);
     const provider = providers.body.modelProviders.find((candidate) => {
       return candidate.type === "codex-oauth-token";
