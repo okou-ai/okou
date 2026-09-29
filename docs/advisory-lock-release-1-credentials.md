@@ -516,3 +516,20 @@ It removes the direct projection-clearing fixture and exact provider-read counts
 Normal notification, repair-to-usable-watch and permission tests remain; no old
 channel recovery state, advisory gate or trigger is restored to retain the prior
 200-with-zero-dispatch implementation detail.
+
+### Gmail recreated-label publication
+
+The combined `213f0fa` pipeline exposed a normal-delivery regression: label
+lookup published a recreated label ID, then queue admission compared the old
+configuration and rejected the same event. Label publication now returns the
+committed automation snapshot; event matching carries that ordinary value into
+queue admission. The conditional update also accepts the identical already
+published label config, so another message in the same history response can
+continue from the original snapshot. Different user configuration, disabled
+state, changed account or missing watch still rejects publication. No database
+handle escapes and no new lock, field or recovery mechanism is introduced.
+
+The existing public API regression now supplies two real message identities in
+one provider history response. It requires two visible workflow inputs and the
+new label identity from the automation API. This preserves normal delivery and
+does not impose gap-free watch recovery or provider invocation counts.

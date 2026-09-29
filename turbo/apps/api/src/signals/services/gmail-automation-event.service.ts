@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import { OAuth2Client } from "google-auth-library";
 import { command } from "ccstate";
-import { and, asc, eq, getTableColumns, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, getTableColumns, inArray, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   gmailLabelAppliedEventConfigSchema,
@@ -1451,6 +1451,10 @@ interface GmailEventAutomationRow {
   readonly config: GmailAutomationEventConfig;
 }
 
+type GmailLabelEventAutomationRow = GmailEventAutomationRow & {
+  readonly config: GmailLabelAppliedEventConfig;
+};
+
 interface GmailWorkflowRunStartTestInput {
   readonly automationId: string;
   readonly workflowName: string;
@@ -1833,21 +1837,22 @@ const updateResolvedGmailLabelId$ = command(
   async (
     { set },
     args: {
-      readonly automation: GmailEventAutomationRow & {
-        readonly config: GmailLabelAppliedEventConfig;
-      };
+      readonly automation: GmailLabelEventAutomationRow;
       readonly connectorId: string;
       readonly watchStateId: string;
       readonly labelId: string;
     },
     signal: AbortSignal,
-  ): Promise<void> => {
+  ): Promise<GmailLabelEventAutomationRow | null> => {
     const db = set(writeDb$);
     if (args.automation.config.resolvedLabelId === args.labelId) {
-      return;
+      return args.automation;
     }
-
-    await db.transaction(async (tx) => {
+    const config: GmailLabelAppliedEventConfig = {
+      ...args.automation.config,
+      resolvedLabelId: args.labelId,
+    };
+    const published = await db.transaction(async (tx) => {
       await tx.execute(
         builtinConnectorStateLockStatement({
           orgId: args.automation.automation.orgId,
@@ -1867,48 +1872,59 @@ const updateResolvedGmailLabelId$ = command(
         .for("key share")
         .limit(1);
       if (!currentState) {
-        return;
+        return null;
       }
-      await tx
+      const [automation] = await tx
         .update(workflowAutomations)
         .set({
-          eventConfig: {
-            ...args.automation.config,
-            resolvedLabelId: args.labelId,
-          },
+          eventConfig: config,
           updatedAt: nowDate(),
         })
         .where(
           and(
             eq(workflowAutomations.id, args.automation.automation.id),
+            eq(workflowAutomations.orgId, args.automation.automation.orgId),
+            eq(
+              workflowAutomations.ownerUserId,
+              args.automation.automation.ownerUserId,
+            ),
+            eq(workflowAutomations.enabled, true),
+            eq(workflowAutomations.kind, "event"),
+            eq(workflowAutomations.eventType, "gmail-label-applied"),
             eq(workflowAutomations.eventConnectorId, args.connectorId),
-            eq(workflowAutomations.eventConfig, args.automation.config),
+            // Another notification can already have published this same label.
+            // A different user configuration must never be overwritten.
+            or(
+              sql`${workflowAutomations.eventConfig} IS NOT DISTINCT FROM ${JSON.stringify(args.automation.automation.eventConfig)}::jsonb`,
+              eq(workflowAutomations.eventConfig, config),
+            ),
           ),
-        );
+        )
+        .returning(workflowAutomationColumns());
+      return automation ? { ...args.automation, automation, config } : null;
     });
     signal.throwIfAborted();
+    return published;
   },
 );
 
-const labelAppliedAutomationMatchesEvent$ = command(
+const matchGmailLabelAutomation$ = command(
   async (
     { set },
     args: {
       readonly accessToken: string;
       readonly connectorId: string;
       readonly watchStateId: string;
-      readonly automation: GmailEventAutomationRow & {
-        readonly config: GmailLabelAppliedEventConfig;
-      };
+      readonly automation: GmailLabelEventAutomationRow;
       readonly event: GmailHistoryLabelAdded;
       readonly labelCache: Map<string, GmailLabelResolveResult>;
     },
     signal: AbortSignal,
-  ): Promise<boolean> => {
+  ): Promise<GmailLabelEventAutomationRow | null> => {
     const eventLabelIds = new Set(args.event.labelIds);
     const resolvedLabelId = args.automation.config.resolvedLabelId;
     if (resolvedLabelId && eventLabelIds.has(resolvedLabelId)) {
-      return true;
+      return args.automation;
     }
 
     const labelName = args.automation.config.labelName;
@@ -1932,13 +1948,13 @@ const labelAppliedAutomationMatchesEvent$ = command(
         labelName,
         message: label.message,
       });
-      return false;
+      return null;
     }
     if (!eventLabelIds.has(label.labelId)) {
-      return false;
+      return null;
     }
 
-    await set(
+    return await set(
       updateResolvedGmailLabelId$,
       {
         automation: args.automation,
@@ -1948,7 +1964,6 @@ const labelAppliedAutomationMatchesEvent$ = command(
       },
       signal,
     );
-    return true;
   },
 );
 
@@ -2059,11 +2074,11 @@ const dispatchGmailLabelAppliedHistoryEvent$ = command(
     }[] = [];
     for (const automation of labelAutomations) {
       const runTiming = args.sourceTiming.createRunTiming();
-      const matches = await runTiming.measure(
+      const matched = await runTiming.measure(
         "api_dispatch_pre_create_agent_automation_event_match_automations",
         async () => {
           return await set(
-            labelAppliedAutomationMatchesEvent$,
+            matchGmailLabelAutomation$,
             {
               accessToken: args.accessToken,
               connectorId: args.state.connectorId,
@@ -2077,8 +2092,8 @@ const dispatchGmailLabelAppliedHistoryEvent$ = command(
         },
       );
       signal.throwIfAborted();
-      if (matches) {
-        matchingAutomations.push({ automation, timing: runTiming });
+      if (matched) {
+        matchingAutomations.push({ automation: matched, timing: runTiming });
       }
     }
     if (matchingAutomations.length === 0) {
