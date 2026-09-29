@@ -40,13 +40,27 @@ transaction handles to another function.
   re-read their claim sequence after acquiring the automation row, so an older
   claim cannot overwrite a newer run.
 
+- `enqueueWorkflowScheduleInput$` owns the Morning Brief occurrence claim, exact
+  queue-event binding, ordinary schedule coalescing, event and queue wake-up.
+  The poller sends an ordinary claim ID, owner identity and schedule anchor;
+  neither a transaction callback nor a database handle crosses that boundary.
+  The existing native-owner compatibility key and native/automation row order
+  remain. Claim sequence is sampled after the automation row is locked. A lost
+  occurrence rolls back its candidate input, and a failed admission identifies
+  its exact claim for the existing settlement path. Pending tick coalescing is
+  one set-based statement scoped to that automation and thread; manual inputs
+  are excluded and the existing unique revoke edge arbitrates a concurrent pick.
+  This removes the inherited per-event SQL loop; it does not claim a fixed row
+  cap on a pre-existing schedule backlog.
+
 ## Implementation still required
 
 These are implementation tasks, not conditions satisfied by draining old API
 requests:
 
-- Morning Brief's schedule claim, queue-event binding and pending-tick coalescing
-  still pass transaction callbacks through the legacy enqueue path.
+- Morning Brief schedule settlement, expiry and the poller's failure paths still
+  forward database handles through the native-authority helper graph. The
+  completed queue boundary below does not finish those paths.
 - Producer Run binding still carries `persistProducerRunBinding(tx, run)` into
   the shared Run creation transaction.
 - Workflow launch still forwards a database handle through compute-unit grant

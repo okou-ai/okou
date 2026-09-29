@@ -1,3 +1,4 @@
+import { enqueueWorkflowScheduleInput$ } from "./workflow-schedule-queue.service";
 import { enqueueStripeWorkflowInput$ } from "./workflow-stripe-queue.service";
 import { enqueueNotionWorkflowInput$ } from "./workflow-notion-queue.service";
 import { enqueueGoogleMeetWorkflowInput$ } from "./workflow-google-meet-queue.service";
@@ -6,16 +7,11 @@ import { enqueueGmailWorkflowInput$ } from "./workflow-gmail-queue.service";
 import { enqueueGoogleCalendarWorkflowInput$ } from "./workflow-google-calendar-queue.service";
 import { command } from "ccstate";
 
-import type { Tx } from "../../lib/db-types";
-import { writeDb$ } from "../external/db";
 import { publishChatThreadMessageCreatedSafely } from "../external/realtime";
 import { settle, settleIncludingAbort } from "../utils";
 import {
-  revokePendingScheduleTicks,
   prepareWorkflowAutomationQueueInput$,
   ScheduleOccurrenceUnavailableError,
-  workflowAutomationQueueEventWriter,
-  type WorkflowScheduleClaimPlan,
   type PreparedWorkflowAutomationQueueInput,
 } from "./workflow-chat-event-queue.service";
 import {
@@ -24,10 +20,7 @@ import {
   type WorkflowAdmissionOutcome,
   type WorkflowAdmissionSchedulePath,
 } from "./workflow-queue-admission-timing.service";
-import {
-  enqueueChatInput,
-  scheduleEnqueuedChatThreadPick$,
-} from "./chat-thread-queue-drain.service";
+import { scheduleEnqueuedChatThreadPick$ } from "./chat-thread-queue-drain.service";
 import { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
 import {
   persistedWorkflowAutomationEventPayload,
@@ -60,59 +53,6 @@ async function flushWorkflowAdmission<T>(
     throw result.error;
   }
   return result.value;
-}
-
-function queueAdmissionSourceTransition(args: {
-  readonly scheduleClaim: WorkflowScheduleClaimPlan | undefined;
-  readonly replacePendingTicks:
-    | { readonly chatThreadId: string; readonly automationId: string }
-    | undefined;
-  readonly timing: ApiDispatchTimingCollector;
-}): {
-  readonly persistSourceTransition?: (tx: Tx, eventId: string) => Promise<void>;
-} {
-  const { scheduleClaim, replacePendingTicks } = args;
-  if (!scheduleClaim && !replacePendingTicks) {
-    return {};
-  }
-  return {
-    persistSourceTransition: async (tx, eventId) => {
-      if (scheduleClaim) {
-        const claim = await measureWorkflowAdmissionStep(
-          args.timing,
-          "api_dispatch_workflow_enqueue_schedule_claim",
-          async () => {
-            return await scheduleClaim.claim(tx);
-          },
-        );
-        if (claim.kind === "unavailable") {
-          throw new ScheduleOccurrenceUnavailableError();
-        }
-        await measureWorkflowAdmissionStep(
-          args.timing,
-          "api_dispatch_workflow_enqueue_event_binding",
-          async () => {
-            await scheduleClaim.bindQueueEvent(tx, {
-              claimId: claim.claimId,
-              queueEventId: eventId,
-            });
-          },
-        );
-      }
-      if (replacePendingTicks) {
-        await measureWorkflowAdmissionStep(
-          args.timing,
-          "api_dispatch_workflow_enqueue_replace_pending_ticks",
-          async () => {
-            await revokePendingScheduleTicks(tx, {
-              ...replacePendingTicks,
-              excludeEventId: eventId,
-            });
-          },
-        );
-      }
-    },
-  };
 }
 
 function workflowQueueSchedulePath(
@@ -169,17 +109,6 @@ function workflowQueueInputPreparation(
  * trigger waits for a launch, and a launch rejection appears in the thread as
  * `input.rejected`.
  */
-function workflowQueueAdmissionStepAction(
-  step: "transaction" | "callback" | "queue_upsert",
-) {
-  const actions = {
-    transaction: "api_dispatch_workflow_enqueue_transaction",
-    callback: "api_dispatch_workflow_enqueue_transaction_callback",
-    queue_upsert: "api_dispatch_workflow_enqueue_queue_upsert",
-  } as const;
-  return actions[step];
-}
-
 function workflowQueueEntryTiming(
   supplied: ApiDispatchTimingCollector | undefined,
   apiStartTime: RunWorkflowAutomationNowArgs["apiStartTime"],
@@ -288,7 +217,6 @@ export const runWorkflowAutomationNow$ = command(
     args: RunWorkflowAutomationNowArgs,
     signal: AbortSignal,
   ): Promise<RunWorkflowAutomationResult> => {
-    const db = set(writeDb$);
     const { automation, chatThreadId } = args.due;
     const timing = workflowQueueEntryTiming(args.timing, args.apiStartTime);
 
@@ -305,11 +233,6 @@ export const runWorkflowAutomationNow$ = command(
       signal,
     );
     signal.throwIfAborted();
-    const appendInput = workflowAutomationQueueEventWriter(
-      preparedInput,
-      timing,
-    );
-
     const sources: WorkflowQueueSources = {
       googleFormsSource: args.googleFormsSource,
       googleCalendarSource: args.googleCalendarSource,
@@ -338,23 +261,16 @@ export const runWorkflowAutomationNow$ = command(
                     automation.orgId,
                     signal,
                   )
-                : enqueueChatInput(db, {
-                    chatThreadId,
-                    orgId: automation.orgId,
-                    appendInput,
-                    measureStep: (step, operation) => {
-                      return measureWorkflowAdmissionStep(
-                        timing,
-                        workflowQueueAdmissionStepAction(step),
-                        operation,
-                      );
-                    },
-                    ...queueAdmissionSourceTransition({
+                : set(
+                    enqueueWorkflowScheduleInput$,
+                    {
+                      input: preparedInput,
+                      orgId: automation.orgId,
                       scheduleClaim,
-                      replacePendingTicks,
-                      timing,
-                    }),
-                  }),
+                      replacePendingTicks: replacePendingTicks !== undefined,
+                    },
+                    signal,
+                  ),
             );
             if (!attempt.ok) {
               if (attempt.error instanceof ScheduleOccurrenceUnavailableError) {
@@ -392,8 +308,7 @@ export const runWorkflowAutomationNow$ = command(
     );
     signal.throwIfAborted();
 
-    // A superseded occurrence adds no queue item; the claim plan's owner
-    // records why.
+    // A superseded occurrence adds no queue item; the poller receives that result.
     if (enqueued) {
       set(scheduleEnqueuedChatThreadPick$, {
         chatThreadId,
@@ -406,6 +321,9 @@ export const runWorkflowAutomationNow$ = command(
         },
       });
     }
-    return { kind: "enqueued" };
+    return {
+      kind: "enqueued",
+      scheduleOccurrence: enqueued ? "admitted" : "superseded",
+    };
   },
 );

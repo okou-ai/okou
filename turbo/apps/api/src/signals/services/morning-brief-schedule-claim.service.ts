@@ -16,9 +16,7 @@ import {
   type MorningBriefStateReader,
 } from "./morning-brief-migration-state.service";
 import { advanceTimeAutomationAfterCompletion } from "./time-automation";
-import { scheduleExpired } from "./schedule-expiry-policy";
 import {
-  consumeSelectedLegacyMorningBriefObligation,
   lockMorningBriefLegacyWriterAuthority,
   settleSelectedLegacyMorningBriefObligation,
   type MorningBriefLegacyWriterAuthority,
@@ -33,21 +31,6 @@ const MAX_CONSECUTIVE_FAILURES = 3;
 
 type MorningBriefScheduleClaimRow =
   typeof morningBriefScheduleClaims.$inferSelect;
-
-/**
- * The owner identity a claim is written for, resolved before the claim
- * transaction and re-verified against the locked automation row inside it.
- */
-interface MorningBriefScheduleClaimOwner {
-  readonly orgId: string;
-  readonly ownerUserId: string;
-  readonly workflowId: string;
-}
-
-type MorningBriefScheduleClaimAttempt =
-  | { readonly kind: "claimed"; readonly claim: MorningBriefScheduleClaimRow }
-  /** The locked row no longer matches the due occurrence this tick resolved. */
-  | { readonly kind: "unavailable" };
 
 /**
  * Whether the poller should journal this automation.
@@ -72,127 +55,6 @@ export async function isCanonicalMorningBriefAutomation(
     userId: automation.ownerUserId,
   });
   return state.kind === "installed" && state.automation.id === automation.id;
-}
-
-async function nextClaimSequence(
-  tx: Tx,
-  automationId: string,
-): Promise<number> {
-  const [current] = await tx
-    .select({ claimSequence: morningBriefScheduleClaims.claimSequence })
-    .from(morningBriefScheduleClaims)
-    .where(eq(morningBriefScheduleClaims.automationId, automationId))
-    .orderBy(desc(morningBriefScheduleClaims.claimSequence))
-    .limit(1);
-  return (current?.claimSequence ?? 0) + 1;
-}
-
-/**
- * Consume the due occurrence and journal it in the caller's transaction.
- *
- * The locked automation row must still be the same enabled automation whose
- * `next_run_at` is the anchor this tick resolved, and clearing the schedule,
- * recording `last_run_at` and inserting the journal row all commit together. A caller
- * that aborts leaves the schedule exactly as it found it.
- */
-export async function claimMorningBriefSchedule(
-  tx: Tx,
-  args: {
-    readonly automationId: string;
-    readonly owner: MorningBriefScheduleClaimOwner;
-    readonly scheduledAnchorAt: Date;
-    readonly claimedAt: Date;
-  },
-): Promise<MorningBriefScheduleClaimAttempt> {
-  const lineage = {
-    orgId: args.owner.orgId,
-    userId: args.owner.ownerUserId,
-    workflowId: args.owner.workflowId,
-    automationId: args.automationId,
-  };
-  const authority = await lockMorningBriefLegacyWriterAuthority(tx, lineage);
-  if (authority.kind === "stale") {
-    return { kind: "unavailable" };
-  }
-  const [locked] = await tx
-    .select(workflowAutomationColumns())
-    .from(workflowAutomations)
-    .where(eq(workflowAutomations.id, args.automationId))
-    .limit(1)
-    .for("update");
-  if (
-    !locked ||
-    !locked.enabled ||
-    locked.orgId !== args.owner.orgId ||
-    locked.ownerUserId !== args.owner.ownerUserId ||
-    locked.workflowId !== args.owner.workflowId ||
-    locked.nextRunAt?.getTime() !== args.scheduledAnchorAt.getTime() ||
-    scheduleExpired(args.scheduledAnchorAt, nowDate())
-  ) {
-    return { kind: "unavailable" };
-  }
-
-  if (
-    !(await consumeSelectedLegacyMorningBriefObligation(
-      tx,
-      lineage,
-      authority,
-      { occurrenceAt: locked.nextRunAt, claimedAt: args.claimedAt },
-    ))
-  ) {
-    return { kind: "unavailable" };
-  }
-
-  const claimSequence = await nextClaimSequence(tx, args.automationId);
-  const [claim] = await tx
-    .insert(morningBriefScheduleClaims)
-    .values({
-      automationId: args.automationId,
-      orgId: locked.orgId,
-      ownerUserId: locked.ownerUserId,
-      workflowId: locked.workflowId,
-      scheduledAnchorAt: args.scheduledAnchorAt,
-      claimedAt: args.claimedAt,
-      claimSequence,
-    })
-    .returning();
-  if (!claim) {
-    throw new Error("Morning Brief schedule claim insert returned no row");
-  }
-  await tx
-    .update(workflowAutomations)
-    .set({
-      nextRunAt: null,
-      lastRunAt: args.claimedAt,
-      updatedAt: args.claimedAt,
-    })
-    .where(
-      and(
-        eq(workflowAutomations.id, args.automationId),
-        eq(workflowAutomations.nextRunAt, args.scheduledAnchorAt),
-      ),
-    );
-  return { kind: "claimed", claim };
-}
-
-/** Bind the exact queue event this claim inserted, in the same transaction. */
-export async function bindMorningBriefScheduleClaimQueueEvent(
-  tx: Tx,
-  args: { readonly claimId: string; readonly queueEventId: string },
-): Promise<void> {
-  const bound = await tx
-    .update(morningBriefScheduleClaims)
-    .set({ queueEventId: args.queueEventId, updatedAt: nowDate() })
-    .where(
-      and(
-        eq(morningBriefScheduleClaims.id, args.claimId),
-        isNull(morningBriefScheduleClaims.queueEventId),
-      ),
-    )
-    .returning({ id: morningBriefScheduleClaims.id });
-  if (bound.length === 0) {
-    throw new Error("Morning Brief schedule claim already bound a queue event");
-  }
 }
 
 /** The journaled occurrence a queue event was admitted for, if any. */

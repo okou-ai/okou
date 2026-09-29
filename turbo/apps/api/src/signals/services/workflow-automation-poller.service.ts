@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { WorkflowScheduleAdmissionError } from "./workflow-schedule-queue.service";
 import { MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
@@ -20,15 +22,8 @@ import {
   type AutomationRow,
   type RunWorkflowAutomationResult,
 } from "./workflow-automation-launch.service";
-import {
-  bindMorningBriefScheduleClaimQueueEvent,
-  claimMorningBriefSchedule,
-  isCanonicalMorningBriefAutomation,
-} from "./morning-brief-schedule-claim.service";
-import type {
-  ScheduleUnclaimed,
-  WorkflowScheduleClaimPlan,
-} from "./workflow-chat-event-queue.service";
+import { isCanonicalMorningBriefAutomation } from "./morning-brief-schedule-claim.service";
+import type { WorkflowScheduleClaimPlan } from "./workflow-chat-event-queue.service";
 import {
   preRunFailureFromError,
   recordPreRunFailure,
@@ -180,123 +175,6 @@ async function claimAutomation(
     )
     .returning(workflowAutomationColumns());
   return claimed ?? null;
-}
-
-/**
- * The journaled variant of the claim above.
- *
- * It does not consume the schedule here. The plan runs inside the queue
- * admission transaction, so clearing `next_run_at`, recording the occurrence
- * and inserting the queue event either all commit or all roll back.
- */
-function morningBriefScheduleClaimPlan(args: {
-  readonly automation: AutomationRow;
-  readonly scheduledAnchorAt: Date;
-  readonly claimedAt: Date;
-  readonly onClaimed: (claimId: string) => void;
-  readonly onUnclaimed: (reason: ScheduleUnclaimed) => void;
-}): WorkflowScheduleClaimPlan {
-  return {
-    claim: async (tx) => {
-      const attempt = await claimMorningBriefSchedule(tx, {
-        automationId: args.automation.id,
-        owner: {
-          orgId: args.automation.orgId,
-          ownerUserId: args.automation.ownerUserId,
-          workflowId: args.automation.workflowId,
-        },
-        scheduledAnchorAt: args.scheduledAnchorAt,
-        claimedAt: args.claimedAt,
-      });
-      if (attempt.kind === "unavailable") {
-        args.onUnclaimed("superseded");
-        return { kind: "unavailable" };
-      }
-      args.onClaimed(attempt.claim.id);
-      return { kind: "claimed", claimId: attempt.claim.id };
-    },
-    bindQueueEvent: bindMorningBriefScheduleClaimQueueEvent,
-  };
-}
-
-interface JournaledScheduleExecution {
-  readonly scheduleClaim: WorkflowScheduleClaimPlan | undefined;
-  /** Whether the occurrence was left unconsumed, logged once when it was. */
-  readonly unclaimed: () => boolean;
-  readonly recordFailure: (error: unknown) => Promise<void>;
-}
-
-/**
- * The per-tick state a journaled occurrence needs: the claim plan the queue
- * admission runs, whether that plan consumed the schedule, and the settlement
- * the failure paths use. An unjournaled tick gets no plan and keeps the legacy
- * pre-run failure update.
- */
-function journaledScheduleExecution(
-  args: {
-    readonly db: Db;
-    readonly automation: AutomationRow;
-    readonly scheduledAnchorAt: Date | null;
-    readonly claimedAt: Date;
-  },
-  signal: AbortSignal,
-): JournaledScheduleExecution {
-  const { automation } = args;
-  let claimId: string | undefined;
-  let unclaimedReason: ScheduleUnclaimed | undefined;
-  return {
-    scheduleClaim:
-      args.scheduledAnchorAt === null
-        ? undefined
-        : morningBriefScheduleClaimPlan({
-            automation,
-            scheduledAnchorAt: args.scheduledAnchorAt,
-            claimedAt: args.claimedAt,
-            onClaimed: (claimed) => {
-              claimId = claimed;
-            },
-            onUnclaimed: (reason) => {
-              unclaimedReason = reason;
-            },
-          }),
-    unclaimed: () => {
-      if (unclaimedReason === undefined) {
-        return false;
-      }
-      // The schedule was never consumed, so this tick fired nothing and the
-      // same due instant remains for the next one.
-      log.debug("Workflow automation schedule occurrence was not claimed", {
-        automationId: automation.id,
-        orgId: automation.orgId,
-        userId: automation.ownerUserId,
-        reason: unclaimedReason,
-      });
-      return true;
-    },
-    recordFailure: async (error) => {
-      // A journaled occurrence settles through the shared operation that the
-      // completion callback uses; only an unjournaled tick keeps the legacy
-      // update that can overlap a failed-Run callback.
-      if (claimId !== undefined) {
-        await settleJournaledSchedulePreRunFailure(args.db, {
-          automation,
-          claimId,
-          failure: preRunFailureFromError(error),
-        });
-        return;
-      }
-      // Failing before any claim is not authority to mutate the schedule: a
-      // competing tick may already own this occurrence. The update only lands
-      // while the original due instant is still unconsumed.
-      await recordPreRunFailure(
-        args.db,
-        automation,
-        preRunFailureFromError(error),
-        signal,
-        args.scheduledAnchorAt ?? undefined,
-      );
-    },
-  };
 }
 
 type DueMode =
@@ -580,15 +458,39 @@ const launchClaimedDueRow$ = command(
   ): Promise<void> => {
     const db = set(writeDb$);
     const { row, claimed, currentTime, counters } = args;
-    const execution = journaledScheduleExecution(
-      {
-        db: db,
-        automation: claimed,
-        scheduledAnchorAt: args.journaled ? args.scheduledAnchorAt : null,
-        claimedAt: currentTime,
-      },
-      signal,
-    );
+    const scheduleClaim: WorkflowScheduleClaimPlan | undefined =
+      args.journaled && args.scheduledAnchorAt !== null
+        ? {
+            claimId: randomUUID(),
+            automationId: claimed.id,
+            orgId: claimed.orgId,
+            ownerUserId: claimed.ownerUserId,
+            workflowId: claimed.workflowId,
+            scheduledAnchorAt: args.scheduledAnchorAt,
+            claimedAt: currentTime,
+          }
+        : undefined;
+    const recordFailure = async (error: unknown) => {
+      if (
+        scheduleClaim &&
+        (error instanceof WorkflowScheduleAdmissionError || signal.aborted)
+      ) {
+        await settleJournaledSchedulePreRunFailure(db, {
+          automation: claimed,
+          claimId: scheduleClaim.claimId,
+          failure: preRunFailureFromError(error),
+        });
+      } else {
+        await recordPreRunFailure(
+          db,
+          claimed,
+          preRunFailureFromError(error),
+          signal,
+          args.journaled ? (args.scheduledAnchorAt ?? undefined) : undefined,
+        );
+      }
+      counters.skipped++;
+    };
     const chatThreadId = await tapError(
       row.chatThreadId
         ? Promise.resolve(row.chatThreadId)
@@ -604,10 +506,7 @@ const launchClaimedDueRow$ = command(
             },
             signal,
           ),
-      async (error) => {
-        await execution.recordFailure(error);
-        counters.skipped++;
-      },
+      recordFailure,
     );
     signal.throwIfAborted();
     if (!chatThreadId) {
@@ -631,20 +530,17 @@ const launchClaimedDueRow$ = command(
           row,
           currentTime,
           scheduleContext,
-          scheduleClaim: execution.scheduleClaim,
+          scheduleClaim,
         },
         signal,
       ),
-      async (error) => {
-        await execution.recordFailure(error);
-        counters.skipped++;
-      },
+      recordFailure,
     );
     signal.throwIfAborted();
     if (!result) {
       return;
     }
-    if (execution.unclaimed()) {
+    if (result.scheduleOccurrence === "superseded") {
       if (args.expiryEnabled && args.scheduledAnchorAt) {
         await deferWorkflowSchedule(db, {
           automationId: row.automation.id,

@@ -69,7 +69,10 @@ type RunErrorResponse = {
  * A fired automation is enqueued as `input.automation`; the pick launches or
  * rejects it later, and a rejection appears in the thread as `input.rejected`.
  */
-export type RunWorkflowAutomationResult = { readonly kind: "enqueued" };
+export type RunWorkflowAutomationResult = {
+  readonly kind: "enqueued";
+  readonly scheduleOccurrence?: "admitted" | "superseded";
+};
 
 /** Why a queued automation head cannot launch. */
 type RunFailure =

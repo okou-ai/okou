@@ -9,7 +9,6 @@ import { command } from "ccstate";
 import { and, eq, inArray } from "drizzle-orm";
 
 import { AUTONOMY_BUDGET_EXHAUSTED_MESSAGE } from "../../lib/error";
-import type { Tx } from "../../lib/db-types";
 import { writeDb$, type Db } from "../external/db";
 import { now, nowDate } from "../../lib/time";
 import type { PreparedChatEventRow } from "./chat-event-append.service";
@@ -20,11 +19,6 @@ import {
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
 import { listPendingChatInputs } from "./chat-event-queue.service";
-import {
-  insertChatEvent,
-  insertChatEventContext,
-  revokeChatEvent,
-} from "./chat-event.service";
 import type {
   ChatQueueHeadContext,
   ChatQueueHeadRejection,
@@ -51,33 +45,17 @@ import {
 } from "./workflow-automation-launch.service";
 import { buildWorkflowAutomationQueuedLaunchMaterial } from "./workflow-automation-queued-launch-context.service";
 import { manualTriggerSource } from "./workflow-automation-trigger-source";
-import {
-  measureWorkflowAdmissionStep,
-  recordWorkflowAdmissionDuration,
-} from "./workflow-queue-admission-timing.service";
+import { recordWorkflowAdmissionDuration } from "./workflow-queue-admission-timing.service";
 
-export type WorkflowQueueAdmissionTransaction = Tx;
-
-export type ScheduleUnclaimed = "superseded";
-
-export type WorkflowScheduleClaimAttempt =
-  | { readonly kind: "claimed"; readonly claimId: string }
-  | { readonly kind: "unavailable" };
-
-/**
- * Consumes the due Morning Brief occurrence in the transaction that writes its
- * queue event. The schedule CAS, the journal row and the queue event commit
- * together, so a claim never outlives a rolled-back event and an admitted event
- * always carries the occurrence it was fired for.
- */
+/** Ordinary occurrence identity prepared by the poller before queue admission. */
 export interface WorkflowScheduleClaimPlan {
-  readonly claim: (
-    tx: WorkflowQueueAdmissionTransaction,
-  ) => Promise<WorkflowScheduleClaimAttempt>;
-  readonly bindQueueEvent: (
-    tx: WorkflowQueueAdmissionTransaction,
-    args: { readonly claimId: string; readonly queueEventId: string },
-  ) => Promise<void>;
+  readonly claimId: string;
+  readonly automationId: string;
+  readonly orgId: string;
+  readonly ownerUserId: string;
+  readonly workflowId: string;
+  readonly scheduledAnchorAt: Date;
+  readonly claimedAt: Date;
 }
 
 /**
@@ -229,33 +207,6 @@ export const prepareWorkflowAutomationQueueInput$ = command(
   },
 );
 
-/** Legacy non-Forms callers still use the generic transaction callback. */
-export function workflowAutomationQueueEventWriter(
-  prepared: PreparedWorkflowAutomationQueueInput,
-  timing: ApiDispatchTimingCollector | undefined,
-): (tx: Db | Tx) => Promise<string | null> {
-  return async (tx) => {
-    await measureWorkflowAdmissionStep(
-      timing,
-      "api_dispatch_workflow_enqueue_event_context_insert",
-      async () => {
-        await insertChatEventContext(tx, prepared.values);
-      },
-    );
-    const inserted = await measureWorkflowAdmissionStep(
-      timing,
-      "api_dispatch_workflow_enqueue_event_insert",
-      async () => {
-        return await insertChatEvent(tx, prepared.values, prepared.conflict);
-      },
-    );
-    if (!inserted && prepared.conflict === "none") {
-      throw new Error("Workflow queue event insert returned no row");
-    }
-    return inserted?.id ?? null;
-  };
-}
-
 /**
  * The automation's still-unconsumed events on its thread, read in bounded
  * steps without a join: the thread's pending automation inputs, their
@@ -328,39 +279,6 @@ export async function hasPendingAutomationEvent(
   args: { readonly chatThreadId: string; readonly automationId: string },
 ): Promise<boolean> {
   return (await pendingAutomationEventIds(db, args)).length > 0;
-}
-
-/**
- * Schedule coalescing belongs to the schedule trigger: when a new tick is
- * enqueued, the automation's older unconsumed schedule ticks are revoked;
- * explicit manual runs stay distinct queue items. `excludeEventId` keeps the
- * new tick itself when the revoke runs in its insert transaction. A revoke
- * that loses its unique revoke edge means the tick was already picked; the
- * new tick is enqueued either way, so an occasional extra tick can run.
- */
-export async function revokePendingScheduleTicks(
-  db: Db | Tx,
-  args: {
-    readonly chatThreadId: string;
-    readonly automationId: string;
-    readonly excludeEventId?: string;
-  },
-): Promise<void> {
-  const pending = await pendingAutomationEventIds(db, {
-    chatThreadId: args.chatThreadId,
-    automationId: args.automationId,
-    scheduleTicksOnly: true,
-  });
-  for (const eventId of pending) {
-    if (eventId === args.excludeEventId) {
-      continue;
-    }
-    await revokeChatEvent(db, eventId, {
-      chatThreadId: args.chatThreadId,
-      eventType: "control.revoke",
-      runId: null,
-    });
-  }
 }
 
 interface QueuedAutomationEvent {
