@@ -3854,6 +3854,9 @@ describe("MCP chat mutations", () => {
       });
       expect(structuredToolError(failed)).toMatchObject({
         code: "request_id_conflict",
+        message: expect.stringContaining(
+          "cannot be replayed as an MCP submission",
+        ),
         retryable: false,
       });
     }

@@ -551,13 +551,14 @@ the first source and name remain unchanged and the later client's ID is not
 part of retry identity. An input with different structured content conflicts.
 To intentionally submit another message, generate a new request ID.
 
-There is no deduplication guarantee after 24 hours. A retained original input
-past that window is rejected as expired. Once its live event has been removed
-by retention, its old request ID may be treated as a new submission. Inspect
-the conversation before intentionally submitting new work after the window;
-do not retry an uncertain old request automatically. The catalog therefore does
-not mark sends as generally idempotent even though exact replay remains safe
-before the returned `retryUntil`.
+There is no deduplication guarantee after 24 hours. A retained original
+source-bearing input past that window is rejected as expired; a pre-cutover
+text-only input conflicts instead while its event remains. Once the live event
+has been removed by retention, its old request ID may be treated as a new
+submission. Inspect the conversation before intentionally submitting new work
+after the window; do not retry an uncertain old request automatically. The
+catalog therefore does not mark sends as generally idempotent even though exact
+source-bearing replay remains safe before the returned `retryUntil`.
 
 Retry protection covers input creation and dispatch. Ordinary send preparation
 can reconcile obsolete model settings with current policy before a later

@@ -43,10 +43,10 @@ metadata leaves the name absent and the authorized send succeeds. Replays
 preserve the original name and source, even when another authorized OAuth
 client retries the same request ID and text; retry identity does not require
 the original client ID. After the #37276 cleanup, pre-cutover text-only MCP
-inputs remain readable but no longer match an MCP retry. The requester explicitly waived the old-writer
-24-hour drain, so a still-eligible old input may return `request_id_conflict`
-instead of its original receipt. Existing messages are never inferred or
-retroactively labeled.
+inputs remain readable but no longer match an MCP retry. The requester
+explicitly waived the old-writer 24-hour drain, so a still-eligible old input
+may return `request_id_conflict` instead of its original receipt. Existing
+messages are never inferred or retroactively labeled.
 
 Before activating the writer, verify that the prepared reader is serving from
 every current API/App and history/snapshot path, and independently deploy and
