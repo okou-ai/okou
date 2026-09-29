@@ -685,7 +685,7 @@ describe("GET/PUT /api/model-policies", () => {
     );
   });
 
-  it("repairs a workspace whose only historical policy is a retired default", async () => {
+  it("seeds active policies when only a retired default is stored", async () => {
     const fixture = seedFixture();
     useSession(fixture);
     const client = apiClient();
@@ -701,10 +701,18 @@ describe("GET/PUT /api/model-policies", () => {
     expect(listed.body.workspaceDefaultModel).toBe(
       DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
     );
-    expect(listed.body.policies).toStrictEqual([
+    expect(
+      listed.body.policies.map((policy) => {
+        return policy.model;
+      }),
+    ).toStrictEqual(DEFAULT_ORG_MODEL_POLICY_MODELS);
+    expect(
+      listed.body.policies.filter((policy) => {
+        return policy.isDefault;
+      }),
+    ).toStrictEqual([
       expect.objectContaining({
         model: DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
-        isDefault: true,
       }),
     ]);
 
