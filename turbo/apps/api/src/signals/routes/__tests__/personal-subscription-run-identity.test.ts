@@ -370,12 +370,13 @@ describe("personal subscription run identity", () => {
     });
   });
 
-  it("preserves proven singleton recovery while both UI switches remain off", async () => {
+  it("preserves run-scoped account recovery while both UI switches remain off", async () => {
     const f = await fixture("codex-oauth-token", false);
     const runId = await f.start();
     const claim = await f.claim(runId);
     const captured = accountId(claim, f.type);
-    expect(captured).not.toBe(f.connected.id);
+    // A member-scoped route now pins its exact account even with UI switches off.
+    expect(captured).toBe(f.connected.id);
     await finish(f.actor, runId, claim, "failed");
     const requests: string[] = [];
     server.use(
