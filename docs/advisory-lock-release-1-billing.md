@@ -31,6 +31,15 @@ call. No App or Runner contract changes. Stripe's finite idempotency retention
 is not presented as a permanent remote operation log; a remote success followed
 by a lost response beyond that retention remains the existing recovery window.
 
+### Checkout completion publication
+
+`completeCheckoutSession$` reads the existing metadata row before calling Stripe
+and publishes the subscription binding only when that exact PostgreSQL row
+snapshot still matches. A concurrent billing transition causes a pending response
+and a fresh retry instead of overwriting its result. No transaction spans the
+provider reads. This is a publication predicate, not the still-missing admission
+protocol for two different purchases that can both become payable.
+
 ### Invitation purchase transitions
 
 The invitation-creation, refund, and acceptance-activation claims use conditional
@@ -123,7 +132,19 @@ operation individually.
 
 The current allocation, plan-change, migration and invitation rows have useful
 business identities and recovery states, but this PR does not establish one
-compatible ordering protocol across all of those writers. It adds no persisted
+compatible ordering protocol across all of those writers. Concurrency add-on
+change, cancellation and restoration also write the shared schedule; they do not
+have persisted purchase/change identities and previously did not enter the
+`usage_pack_billing` boundary. Their current random schedule idempotency keys are
+not a cross-operation ordering protocol. A complete replacement must include
+these GA writers even if a particular usage-pack UI is staff-only.
+
+Plan purchase creation also cannot use `stripe_subscription_id` as an unchecked
+reservation. The current webhook explicitly rejects replacing an active/trialing
+binding with an incomplete subscription, billing management reads that binding,
+and Stripe `default_incomplete` can immediately activate zero-cost/trial
+subscriptions. Merely publishing a candidate ID before payment would change
+those observable semantics without establishing common admission. It adds no persisted
 field, coordination table or JSON marker to hide that gap. Additional
 implementation belongs to the same Release 1 wave before calling it ready; this
 finding alone is not evidence that a third release is required.

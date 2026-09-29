@@ -11,10 +11,11 @@ import type {
 } from "@okouai/api-contracts/contracts/billing";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { env } from "../../lib/env";
+import { pgTextDecoder } from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$, type ReadonlyDb } from "../external/db";
 import {
@@ -1301,6 +1302,7 @@ export const completeCheckoutSession$ = command(
         stripeCustomerId: orgMetadata.stripeCustomerId,
         stripeSubscriptionId: orgMetadata.stripeSubscriptionId,
         tier: orgMetadata.tier,
+        billingSnapshot: sql`${orgMetadata}::text`.mapWith(pgTextDecoder),
       })
       .from(orgMetadata)
       .where(eq(orgMetadata.orgId, args.orgId))
@@ -1356,7 +1358,7 @@ export const completeCheckoutSession$ = command(
     const alreadyPaidSubscription =
       org.stripeSubscriptionId === subscription.id && org.tier === tier;
 
-    await db
+    const [published] = await db
       .update(orgMetadata)
       .set({
         stripeSubscriptionId: subscription.id,
@@ -1368,9 +1370,16 @@ export const completeCheckoutSession$ = command(
         and(
           eq(orgMetadata.orgId, args.orgId),
           eq(orgMetadata.stripeCustomerId, customerId),
+          eq(sql`${orgMetadata}::text`, org.billingSnapshot),
         ),
-      );
+      )
+      .returning({ orgId: orgMetadata.orgId });
     signal.throwIfAborted();
+    if (!published) {
+      // Checkout/provider reads happen outside the write. A newer billing
+      // transition owns the binding; the client can retry from current state.
+      return { status: "pending" };
+    }
 
     const latestInvoice = expandedLatestInvoice(subscription);
     if (alreadyPaidSubscription) {
