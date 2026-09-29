@@ -1,6 +1,7 @@
 import {
   orgUsageAllowanceEntitlements,
   orgUsageAllowanceWindows,
+  usageAllowanceAllocations,
 } from "@okouai/db/schema/org-usage-allowance";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";

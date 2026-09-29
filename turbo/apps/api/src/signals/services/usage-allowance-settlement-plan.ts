@@ -5,18 +5,7 @@ import {
   orgUsageAllowanceWindows,
   usageAllowanceAllocations,
 } from "@okouai/db/schema/org-usage-allowance";
-import {
-  and,
-  asc,
-  eq,
-  gt,
-  inArray,
-  isNotNull,
-  isNull,
-  lte,
-  or,
-  sql,
-} from "drizzle-orm";
+import { and, asc, eq, gt, inArray, lte, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import type { PricedUsageEvent } from "./credit-usage-pricing";
@@ -230,21 +219,6 @@ export function allowanceNeedsWindows(
   });
 }
 
-export function activeAllowanceEntitlementCondition(orgId: string, at: Date) {
-  return and(
-    eq(orgUsageAllowanceEntitlements.orgId, orgId),
-    inArray(orgUsageAllowanceEntitlements.status, [
-      ...ACTIVE_ALLOWANCE_STATUSES,
-    ]),
-    lte(orgUsageAllowanceEntitlements.effectiveAt, at),
-    or(
-      isNull(orgUsageAllowanceEntitlements.expiresAt),
-      gt(orgUsageAllowanceEntitlements.expiresAt, at),
-      isNotNull(orgUsageAllowanceEntitlements.stripeSubscriptionId),
-    ),
-  );
-}
-
 export function planPreparedAllowanceEntitlement(
   entitlement: AllowanceEntitlement | undefined,
   refresh: PreparedUsageAllowanceRefresh | undefined,
@@ -340,7 +314,9 @@ export function planNewAllowanceWindows(
           createdByRunId: candidate.runId,
         };
         windows.push(window);
-        inserted.push(window);
+        // Allocation mutates the owned in-memory window. Keep the INSERT's
+        // initial zero consumption independent; the delta applies exactly once.
+        inserted.push({ ...window });
       }
     }
   }
