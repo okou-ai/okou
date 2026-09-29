@@ -1238,7 +1238,7 @@ describe("VNC owner configuration", () => {
     ).toStrictEqual([saved.body]);
   });
 
-  it("advances shared host generations on password rotation and rejects stale edits and deletes", async () => {
+  it("accepts one concurrent password rotation, advances every shared host and rejects stale writes", async () => {
     useSecretKmsProbe();
     await owner();
     const first = await accept(
@@ -1260,18 +1260,32 @@ describe("VNC owner configuration", () => {
       [201],
     );
     const params = { credentialId: first.body.credentialId };
-    const rotated = await accept(
-      credentials().update({
-        headers,
-        params,
-        body: {
-          expectedRevision: 1,
-          authentication: passwordAuthentication("rotated"),
-        },
+    const rotations = await Promise.all(
+      ["rotated-first", "rotated-second"].map((password) => {
+        return accept(
+          credentials().update({
+            headers,
+            params,
+            body: {
+              expectedRevision: 1,
+              authentication: passwordAuthentication(password),
+            },
+          }),
+          [200, 409],
+        );
       }),
-      [200],
     );
-    expect(rotated.body.revision).toBe(2);
+    expect(
+      rotations
+        .map((result) => {
+          return result.status;
+        })
+        .sort(),
+    ).toStrictEqual([200, 409]);
+    const rotated = rotations.find((result) => {
+      return result.status === 200;
+    });
+    expect(rotated?.body).toMatchObject({ revision: 2 });
     const hosts = (await accept(connections().list({ headers }), [200])).body
       .connections;
     expect(hosts).toHaveLength(3);

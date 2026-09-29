@@ -34,7 +34,7 @@ import { fetchClerkMembershipRequests } from "../external/clerk-membership-reque
 import { badRequestMessage, notFound } from "../../lib/error";
 import { now, nowDate } from "../../lib/time";
 import { onRejection, settle } from "../utils";
-import { cleanupOrgMemberResources } from "./org-member-cleanup.service";
+import { cleanupOrgMemberResources$ } from "./org-member-cleanup.service";
 import { scheduleReleasedSlotPicks$ } from "./agent-run-lifecycle.service";
 import type { ReleasedRunSlot } from "./agent-run-terminal-transition.service";
 import { refundUsagePackMemberCredits } from "./usage-pack-credit-refund.service";
@@ -316,27 +316,34 @@ export const orgDetail$ = command(
   },
 );
 
-async function commitOrgMemberRemoval(
-  db: Db,
-  args: { readonly orgId: string; readonly userId: string },
-  reservationId: string | null,
-  deleteMembership: () => Promise<void>,
-  onSlotsReleased: (slots: readonly ReleasedRunSlot[]) => void,
-): Promise<void> {
-  // Once Clerk accepts the deletion, billing and resource cleanup must finish
-  // even if the originating request disconnects.
-  const commitSignal = new AbortController().signal;
-  await onRejection(deleteMembership(), async () => {
-    await cancelUsagePackMemberRemovalReservation(db, reservationId);
-  });
-  commitSignal.throwIfAborted();
-  await removeUsagePackMemberAllocation(db, args, commitSignal);
-  commitSignal.throwIfAborted();
-  await refundUsagePackMemberCredits(db, args, commitSignal);
-  commitSignal.throwIfAborted();
-  await cleanupOrgMemberResources(db, args, onSlotsReleased, commitSignal);
-  commitSignal.throwIfAborted();
-}
+const commitOrgMemberRemoval$ = command(
+  async (
+    { set },
+    args: { readonly orgId: string; readonly userId: string },
+    continuation: {
+      readonly reservationId: string | null;
+      readonly deleteMembership: () => Promise<void>;
+      readonly onSlotsReleased: (slots: readonly ReleasedRunSlot[]) => void;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    signal.throwIfAborted();
+    const { reservationId, deleteMembership, onSlotsReleased } = continuation;
+    const db = set(writeDb$);
+    // Once Clerk accepts the deletion, billing and resource cleanup must finish
+    // even if the originating request disconnects.
+    await onRejection(deleteMembership(), async () => {
+      await cancelUsagePackMemberRemovalReservation(db, reservationId);
+    });
+    signal.throwIfAborted();
+    await removeUsagePackMemberAllocation(db, args, signal);
+    signal.throwIfAborted();
+    await refundUsagePackMemberCredits(db, args, signal);
+    signal.throwIfAborted();
+    await set(cleanupOrgMemberResources$, args, onSlotsReleased, signal);
+    signal.throwIfAborted();
+  },
+);
 
 export const leaveOrg$ = command(
   async (
@@ -359,19 +366,22 @@ export const leaveOrg$ = command(
       signal,
     );
     signal.throwIfAborted();
-    await commitOrgMemberRemoval(
-      writeDb,
+    await set(
+      commitOrgMemberRemoval$,
       args,
-      reservationId,
-      async () => {
-        await client.organizations.deleteOrganizationMembership({
-          organizationId: args.orgId,
-          userId: args.userId,
-        });
+      {
+        reservationId,
+        deleteMembership: async () => {
+          await client.organizations.deleteOrganizationMembership({
+            organizationId: args.orgId,
+            userId: args.userId,
+          });
+        },
+        onSlotsReleased: (slots) => {
+          set(scheduleReleasedSlotPicks$, slots);
+        },
       },
-      (slots) => {
-        set(scheduleReleasedSlotPicks$, slots);
-      },
+      new AbortController().signal,
     );
     signal.throwIfAborted();
 
@@ -427,19 +437,22 @@ export const removeOrgMember$ = command(
       signal,
     );
     signal.throwIfAborted();
-    await commitOrgMemberRemoval(
-      writeDb,
+    await set(
+      commitOrgMemberRemoval$,
       { orgId: args.orgId, userId: target.id },
-      reservationId,
-      async () => {
-        await client.organizations.deleteOrganizationMembership({
-          organizationId: args.orgId,
-          userId: target.id,
-        });
+      {
+        reservationId,
+        deleteMembership: async () => {
+          await client.organizations.deleteOrganizationMembership({
+            organizationId: args.orgId,
+            userId: target.id,
+          });
+        },
+        onSlotsReleased: (slots) => {
+          set(scheduleReleasedSlotPicks$, slots);
+        },
       },
-      (slots) => {
-        set(scheduleReleasedSlotPicks$, slots);
-      },
+      new AbortController().signal,
     );
     signal.throwIfAborted();
 

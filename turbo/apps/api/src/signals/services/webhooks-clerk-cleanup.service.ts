@@ -69,7 +69,7 @@ import {
 } from "../external/stripe-client";
 import { settle, tapError } from "../utils";
 import { cancelAndRefundOrgBillingForDeletion } from "./org-deletion-billing.service";
-import { cleanupOrgMemberResources } from "./org-member-cleanup.service";
+import { cleanupOrgMemberResources$ } from "./org-member-cleanup.service";
 import { scheduleReleasedSlotPicks$ } from "./agent-run-lifecycle.service";
 import { removeUsagePackMemberAllocation } from "./usage-pack-allocation-change.service";
 import { refundUsagePackMemberCredits } from "./usage-pack-credit-refund.service";
@@ -91,7 +91,7 @@ import {
   type ReleasedRunSlot,
   transitionAgentRunsToTerminal,
 } from "./agent-run-terminal-transition.service";
-import { eraseVncOwnerData } from "./vnc-owner-lifecycle.service";
+import { eraseVncOwnerData$ } from "./vnc-owner-lifecycle.service";
 import {
   deleteDiscordOrgData,
   deleteDiscordUserData,
@@ -922,7 +922,7 @@ export const cleanupClerkDeletedOrg$ = command(
   async ({ get, set }, orgId: string, signal: AbortSignal): Promise<void> => {
     const db = set(writeDb$);
     const released = releasedSlotCollector();
-    await eraseVncOwnerData(db, { kind: "organization", orgId });
+    await set(eraseVncOwnerData$, { kind: "organization", orgId }, signal);
     signal.throwIfAborted();
     await cancelOrgRuns(db, orgId, released.collect, {
       cascadeOwnedAgents: true,
@@ -975,7 +975,7 @@ export const cleanupClerkDeletedUser$ = command(
     const { userId } = args;
     const db = set(writeDb$);
     const released = releasedSlotCollector();
-    await eraseVncOwnerData(db, { kind: "user", userId });
+    await set(eraseVncOwnerData$, { kind: "user", userId }, signal);
     signal.throwIfAborted();
     // Only the user's own runs: members' runs on Agents the user owns continue.
     await cancelUserRuns(db, userId, released.collect, {
@@ -998,7 +998,7 @@ export const cleanupClerkDeletedUser$ = command(
     signal.throwIfAborted();
     for (const orgId of emptyOrgIds) {
       signal.throwIfAborted();
-      await eraseVncOwnerData(db, { kind: "organization", orgId });
+      await set(eraseVncOwnerData$, { kind: "organization", orgId }, signal);
       signal.throwIfAborted();
       await cancelOrgRuns(db, orgId, released.collect, {
         cascadeOwnedAgents: true,
@@ -1040,23 +1040,27 @@ export const cleanupClerkDeletedUser$ = command(
   },
 );
 
-async function commitClerkDeletedOrgMembershipCleanup(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly membershipId?: string;
+const commitClerkDeletedOrgMembershipCleanup$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly membershipId?: string;
+    },
+    onSlotsReleased: SlotsReleased,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    signal.throwIfAborted();
+    const db = set(writeDb$);
+    await removeUsagePackMemberAllocation(db, args, signal);
+    signal.throwIfAborted();
+    await refundUsagePackMemberCredits(db, args, signal);
+    signal.throwIfAborted();
+    await set(cleanupOrgMemberResources$, args, onSlotsReleased, signal);
+    signal.throwIfAborted();
   },
-  onSlotsReleased: SlotsReleased,
-): Promise<void> {
-  const commitSignal = new AbortController().signal;
-  await removeUsagePackMemberAllocation(db, args, commitSignal);
-  commitSignal.throwIfAborted();
-  await refundUsagePackMemberCredits(db, args, commitSignal);
-  commitSignal.throwIfAborted();
-  await cleanupOrgMemberResources(db, args, onSlotsReleased, commitSignal);
-  commitSignal.throwIfAborted();
-}
+);
 
 export const cleanupClerkDeletedOrgMembership$ = command(
   async (
@@ -1068,10 +1072,14 @@ export const cleanupClerkDeletedOrgMembership$ = command(
     },
     signal: AbortSignal,
   ): Promise<void> => {
-    const db = set(writeDb$);
-    await commitClerkDeletedOrgMembershipCleanup(db, args, (slots) => {
-      set(scheduleReleasedSlotPicks$, slots);
-    });
+    await set(
+      commitClerkDeletedOrgMembershipCleanup$,
+      args,
+      (slots) => {
+        set(scheduleReleasedSlotPicks$, slots);
+      },
+      new AbortController().signal,
+    );
     signal.throwIfAborted();
   },
 );

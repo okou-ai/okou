@@ -9,7 +9,9 @@ import { vncConnections } from "@okouai/db/schema/vnc-connection";
 import { vncCredentials } from "@okouai/db/schema/vnc-credential";
 import { and, asc, count, eq } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
-import type { Db, ReadonlyDb } from "../external/db";
+import { command } from "ccstate";
+import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
+import { writeDb$, type ReadonlyDb } from "../external/db";
 import { settle } from "../utils";
 import {
   canonicalizeVncHost,
@@ -19,7 +21,6 @@ import {
   validateVncProfileRoute,
   vncFailure,
   type VncResult,
-  type VncTransaction,
 } from "./vnc-configuration.utils";
 import {
   inspectVncCreationId,
@@ -28,9 +29,21 @@ import {
 import {
   findVncCredential,
   prepareVncCredentialSelection,
-  selectVncCredential,
 } from "./vnc-credential.service";
-import { enterVncWrite, type VncOwner } from "./vnc-owner-lifecycle.service";
+import {
+  vncMemberIdentityWhere,
+  type VncOwner,
+} from "./vnc-owner-lifecycle.service";
+
+const vncCredentialMetadata = Object.freeze({
+  id: vncCredentials.id,
+  name: vncCredentials.name,
+  username: vncCredentials.username,
+  authMethod: vncCredentials.authMethod,
+  revision: vncCredentials.revision,
+  createdAt: vncCredentials.createdAt,
+  updatedAt: vncCredentials.updatedAt,
+});
 
 const metadata = Object.freeze({
   id: vncConnections.id,
@@ -142,37 +155,6 @@ function response(
   };
 }
 
-async function hasOwnedSshConnection(
-  tx: VncTransaction,
-  owner: VncOwner,
-  connectionId: string,
-): Promise<boolean> {
-  const [row] = await tx
-    .select({ id: sshConnections.id })
-    .from(sshConnections)
-    .where(
-      and(
-        eq(sshConnections.id, connectionId),
-        eq(sshConnections.orgId, owner.orgId),
-        eq(sshConnections.userId, owner.userId),
-      ),
-    )
-    .limit(1)
-    .for("key share");
-  return row !== undefined;
-}
-
-async function hasReferencedSshConnection(
-  tx: VncTransaction,
-  owner: VncOwner,
-  connectionId: string | null,
-): Promise<boolean> {
-  return (
-    connectionId === null ||
-    (await hasOwnedSshConnection(tx, owner, connectionId))
-  );
-}
-
 export async function listVncConnections(
   db: ReadonlyDb,
   owner: VncOwner,
@@ -212,305 +194,450 @@ export async function summarizeVncConnections(
   return row;
 }
 
-async function selectUpdateVncCredential(args: {
-  readonly tx: VncTransaction;
-  readonly owner: VncOwner;
-  readonly prepared: Awaited<
-    ReturnType<typeof prepareVncCredentialSelection>
-  > | null;
-  readonly currentCredentialId: string;
-  readonly securityType: Metadata["securityType"];
-}): Promise<VncResult<CredentialMetadata>> {
-  if (
-    args.prepared?.create !== undefined &&
-    !isVncProfileCompatible(args.prepared.create.authMethod, args.securityType)
-  ) {
-    return vncFailure("profileMismatch");
-  }
-  const selected =
-    args.prepared === null
-      ? undefined
-      : await selectVncCredential(args.tx, args.owner, args.prepared);
-  if (selected && !selected.ok) {
-    return selected;
-  }
-  const credential =
-    selected?.value ??
-    (await findVncCredential(args.tx, args.owner, args.currentCredentialId));
-  if (!credential) {
-    throw new Error("VNC connection credential is missing");
-  }
-  return isVncProfileCompatible(credential.authMethod, args.securityType)
-    ? { ok: true, value: credential }
-    : vncFailure("profileMismatch");
-}
-
-export async function createVncConnection(args: {
-  readonly db: Db;
+interface CreateVncConnectionArgs {
+  readonly memberCreatedAt: string;
   readonly owner: VncOwner;
   readonly body: CreateVncConnectionRequest;
   readonly featureContext: FeatureSwitchContext;
-}): Promise<VncResult<VncConnectionResponse | undefined>> {
-  const preflight = await inspectVncCreationId(
-    args.db,
-    args.owner,
-    vncConnections,
-    args.body.id,
-  );
-  if (!preflight.ok) {
-    return preflight;
-  }
-  if (!preflight.value) {
-    return { ok: true, value: undefined };
-  }
-  const host = canonicalizeVncHost(args.body.host);
-  if (!host.ok) {
-    return host;
-  }
-  const security = prepareVncSecurity(args.body.security);
-  if (!security.ok) {
-    return security;
-  }
-  const transport = prepareVncTransport(args.body.transport, host.value);
+}
+
+const prepareCreateVncConnection$ = command(
+  async ({ set }, args: CreateVncConnectionArgs, signal: AbortSignal) => {
+    const db = set(writeDb$);
+    const preflight = await inspectVncCreationId(
+      db,
+      args.owner,
+      vncConnections,
+      args.body.id,
+    );
+    signal.throwIfAborted();
+    if (!preflight.ok) {
+      return preflight;
+    }
+    if (!preflight.value) {
+      return { ok: true as const, value: undefined };
+    }
+    const host = canonicalizeVncHost(args.body.host);
+    if (!host.ok) {
+      return host;
+    }
+    const security = prepareVncSecurity(args.body.security);
+    if (!security.ok) {
+      return security;
+    }
+    const transport = prepareVncTransport(args.body.transport, host.value);
+    if (!transport.ok) {
+      return transport;
+    }
+    const route = validateVncProfileRoute(
+      security.value.securityType,
+      host.value,
+      transport.value.transportType,
+    );
+    if (!route.ok) {
+      return route;
+    }
+    if (
+      "create" in args.body.credential &&
+      !isVncProfileCompatible(
+        args.body.credential.create.authentication.method,
+        security.value.securityType,
+      )
+    ) {
+      return vncFailure("profileMismatch");
+    }
+    const preparedCredential = await prepareVncCredentialSelection(
+      args.body.credential,
+      args.featureContext,
+    );
+    signal.throwIfAborted();
+    return {
+      ok: true as const,
+      value: { host, security, transport, preparedCredential },
+    };
+  },
+);
+
+export const createVncConnection$ = command(
+  async (
+    { set },
+    args: CreateVncConnectionArgs,
+    signal: AbortSignal,
+  ): Promise<VncResult<VncConnectionResponse | undefined>> => {
+    const db = set(writeDb$);
+    const prepared = await set(prepareCreateVncConnection$, args, signal);
+    signal.throwIfAborted();
+    if (!prepared.ok || prepared.value === undefined) {
+      return prepared;
+    }
+    const { host, security, transport, preparedCredential } = prepared.value;
+    const transaction = await settle(
+      db.transaction(async (tx) => {
+        const [member] = await tx
+          .select({ userId: orgMembersMetadata.userId })
+          .from(orgMembersMetadata)
+          .where(vncMemberIdentityWhere(args))
+          .for("update");
+        if (!member) {
+          return vncFailure("membershipRevoked");
+        }
+        signal.throwIfAborted();
+        const owner = args.owner;
+        const [existing] = await tx
+          .select({
+            orgId: vncConnections.orgId,
+            userId: vncConnections.userId,
+          })
+          .from(vncConnections)
+          .where(eq(vncConnections.id, args.body.id));
+        if (existing) {
+          return existing.orgId === owner.orgId &&
+            existing.userId === owner.userId
+            ? { ok: true as const, value: undefined }
+            : vncFailure("resourceIdConflict");
+        }
+        if (transport.value.sshConnectionId !== null) {
+          const [ssh] = await tx
+            .select({ id: sshConnections.id })
+            .from(sshConnections)
+            .where(
+              and(
+                eq(sshConnections.id, transport.value.sshConnectionId),
+                eq(sshConnections.orgId, owner.orgId),
+                eq(sshConnections.userId, owner.userId),
+              ),
+            )
+            .for("key share");
+          if (!ssh) {
+            return vncFailure("sshConnectionNotFound");
+          }
+        }
+        let credential: CredentialMetadata | undefined;
+        if (preparedCredential?.create !== undefined) {
+          [credential] = await tx
+            .insert(vncCredentials)
+            .values({ ...owner, ...preparedCredential.create })
+            .returning(vncCredentialMetadata);
+        } else {
+          [credential] = await tx
+            .select(vncCredentialMetadata)
+            .from(vncCredentials)
+            .where(
+              and(
+                eq(vncCredentials.id, preparedCredential.id),
+                eq(vncCredentials.orgId, owner.orgId),
+                eq(vncCredentials.userId, owner.userId),
+              ),
+            )
+            .for("key share");
+        }
+        if (!credential) {
+          return vncFailure("credentialNotFound");
+        }
+        if (
+          !isVncProfileCompatible(
+            credential.authMethod,
+            security.value.securityType,
+          )
+        ) {
+          return vncFailure("profileMismatch");
+        }
+        const [created] = await tx
+          .insert(vncConnections)
+          .values({
+            ...owner,
+            id: args.body.id,
+            displayName: args.body.displayName,
+            host: host.value,
+            port: args.body.port,
+            ...transport.value,
+            credentialId: credential.id,
+            authMethod: credential.authMethod,
+            ...security.value,
+          })
+          .returning(metadata);
+        if (!created) {
+          throw new Error("VNC connection insert returned no row");
+        }
+        return { ok: true as const, value: response(created, credential) };
+      }),
+    );
+    signal.throwIfAborted();
+    if (!transaction.ok) {
+      return resolveVncCreationConflict(
+        db,
+        args.owner,
+        vncConnections,
+        args.body.id,
+        transaction.error,
+      );
+    }
+    return transaction.value;
+  },
+);
+
+interface UpdateVncConnectionArgs {
+  readonly memberCreatedAt: string;
+  readonly owner: VncOwner;
+  readonly connectionId: string;
+  readonly body: UpdateVncConnectionRequest;
+  readonly featureContext: FeatureSwitchContext;
+}
+
+const prepareUpdateVncConnection$ = command(
+  async ({ set }, args: UpdateVncConnectionArgs, signal: AbortSignal) => {
+    const db = set(writeDb$);
+    const host =
+      args.body.host === undefined
+        ? undefined
+        : canonicalizeVncHost(args.body.host);
+    if (host !== undefined && !host.ok) {
+      return host;
+    }
+    const security =
+      args.body.security === undefined
+        ? undefined
+        : prepareVncSecurity(args.body.security);
+    if (security !== undefined && !security.ok) {
+      return security;
+    }
+    const [initial] = await db
+      .select({ generation: vncConnections.generation })
+      .from(vncConnections)
+      .where(ownedConnection(args.owner, args.connectionId));
+    signal.throwIfAborted();
+    if (!initial) {
+      return vncFailure("connectionNotFound");
+    }
+    if (initial.generation !== args.body.expectedGeneration) {
+      return vncFailure("generationConflict");
+    }
+    const preparedCredential =
+      args.body.credential === undefined
+        ? undefined
+        : await prepareVncCredentialSelection(
+            args.body.credential,
+            args.featureContext,
+          );
+    signal.throwIfAborted();
+    return { ok: true as const, value: { host, security, preparedCredential } };
+  },
+);
+
+function resolveVncConnectionUpdate(
+  current: Metadata,
+  args: UpdateVncConnectionArgs,
+  host: ReturnType<typeof canonicalizeVncHost> | undefined,
+  security: ReturnType<typeof prepareVncSecurity> | undefined,
+  preparedCredential:
+    | Awaited<ReturnType<typeof prepareVncCredentialSelection>>
+    | undefined,
+) {
+  const newHost = (host?.ok ? host.value : undefined) ?? current.host;
+  const newPort = args.body.port ?? current.port;
+  const requestedTransport =
+    args.body.transport ??
+    (current.transportType === "ssh" && current.sshConnectionId !== null
+      ? ({
+          type: "ssh",
+          connectionId: current.sshConnectionId,
+        } as const)
+      : ({ type: "direct" } as const));
+  const transport = prepareVncTransport(requestedTransport, newHost);
   if (!transport.ok) {
     return transport;
   }
+  const securityType =
+    (security?.ok ? security.value : undefined)?.securityType ??
+    current.securityType;
   const route = validateVncProfileRoute(
-    security.value.securityType,
-    host.value,
+    securityType,
+    newHost,
     transport.value.transportType,
   );
   if (!route.ok) {
     return route;
   }
   if (
-    "create" in args.body.credential &&
-    !isVncProfileCompatible(
-      args.body.credential.create.authentication.method,
-      security.value.securityType,
-    )
+    preparedCredential?.create !== undefined &&
+    !isVncProfileCompatible(preparedCredential.create.authMethod, securityType)
   ) {
     return vncFailure("profileMismatch");
   }
-  const preparedCredential = await prepareVncCredentialSelection(
-    args.body.credential,
-    args.featureContext,
-  );
-  const transaction = await settle(
-    args.db.transaction(async (tx) => {
-      await enterVncWrite(tx, args.owner);
+  return {
+    ok: true as const,
+    value: { newHost, newPort, transport, securityType },
+  };
+}
+
+export const updateVncConnection$ = command(
+  async (
+    { set },
+    args: UpdateVncConnectionArgs,
+    signal: AbortSignal,
+  ): Promise<VncResult<VncConnectionResponse>> => {
+    const db = set(writeDb$);
+    const prepared = await set(prepareUpdateVncConnection$, args, signal);
+    signal.throwIfAborted();
+    if (!prepared.ok) {
+      return prepared;
+    }
+    const { host, security, preparedCredential } = prepared.value;
+    return db.transaction(async (tx) => {
+      const [member] = await tx
+        .select({ userId: orgMembersMetadata.userId })
+        .from(orgMembersMetadata)
+        .where(vncMemberIdentityWhere(args))
+        .for("update");
+      if (!member) {
+        return vncFailure("membershipRevoked");
+      }
+      signal.throwIfAborted();
       const owner = args.owner;
-      const creation = await inspectVncCreationId(
-        tx,
-        owner,
-        vncConnections,
-        args.body.id,
-      );
-      if (!creation.ok) {
-        return creation;
+      const [current] = await tx
+        .select(metadata)
+        .from(vncConnections)
+        .where(ownedConnection(owner, args.connectionId))
+        .for("update");
+      if (!current) {
+        return vncFailure("connectionNotFound");
       }
-      if (!creation.value) {
-        return { ok: true as const, value: undefined };
+      if (current.generation !== args.body.expectedGeneration) {
+        return vncFailure("generationConflict");
       }
-      if (
-        !(await hasReferencedSshConnection(
-          tx,
-          owner,
-          transport.value.sshConnectionId,
-        ))
-      ) {
-        return vncFailure("sshConnectionNotFound");
+      if (current.generation === 2_147_483_647) {
+        return vncFailure("exhausted");
       }
-      const credential = await selectVncCredential(
-        tx,
-        owner,
+      const resolved = resolveVncConnectionUpdate(
+        current,
+        args,
+        host,
+        security,
         preparedCredential,
       );
-      if (!credential.ok) {
-        return credential;
+      if (!resolved.ok) {
+        return resolved;
       }
-      if (
-        !isVncProfileCompatible(
-          credential.value.authMethod,
-          security.value.securityType,
-        )
-      ) {
+      const { newHost, newPort, transport, securityType } = resolved.value;
+      if (transport.value.sshConnectionId !== null) {
+        const [ssh] = await tx
+          .select({ id: sshConnections.id })
+          .from(sshConnections)
+          .where(
+            and(
+              eq(sshConnections.id, transport.value.sshConnectionId),
+              eq(sshConnections.orgId, owner.orgId),
+              eq(sshConnections.userId, owner.userId),
+            ),
+          )
+          .for("key share");
+        if (!ssh) {
+          return vncFailure("sshConnectionNotFound");
+        }
+      }
+      let credential: CredentialMetadata | undefined;
+      if (preparedCredential?.create !== undefined) {
+        [credential] = await tx
+          .insert(vncCredentials)
+          .values({ ...owner, ...preparedCredential.create })
+          .returning(vncCredentialMetadata);
+      } else {
+        [credential] = await tx
+          .select(vncCredentialMetadata)
+          .from(vncCredentials)
+          .where(
+            and(
+              eq(
+                vncCredentials.id,
+                preparedCredential?.id ?? current.credentialId,
+              ),
+              eq(vncCredentials.orgId, owner.orgId),
+              eq(vncCredentials.userId, owner.userId),
+            ),
+          )
+          .for("key share");
+      }
+      if (!credential) {
+        return vncFailure("credentialNotFound");
+      }
+      if (!isVncProfileCompatible(credential.authMethod, securityType)) {
         return vncFailure("profileMismatch");
       }
-      const [created] = await tx
-        .insert(vncConnections)
-        .values({
-          ...owner,
-          id: args.body.id,
+      const [updated] = await tx
+        .update(vncConnections)
+        .set({
           displayName: args.body.displayName,
-          host: host.value,
-          port: args.body.port,
+          host: newHost,
+          port: newPort,
           ...transport.value,
-          credentialId: credential.value.id,
-          authMethod: credential.value.authMethod,
-          ...security.value,
+          credentialId: credential.id,
+          authMethod: credential.authMethod,
+          ...security?.value,
+          generation: current.generation + 1,
+          updatedAt: nowDate(),
         })
+        .where(
+          and(
+            ownedConnection(owner, args.connectionId),
+            eq(vncConnections.generation, args.body.expectedGeneration),
+          ),
+        )
         .returning(metadata);
-      if (!created) {
-        throw new Error("VNC connection insert returned no row");
+      if (!updated) {
+        throw new Error("VNC connection update returned no row");
       }
-      return { ok: true as const, value: response(created, credential.value) };
-    }),
-  );
-  if (!transaction.ok) {
-    return resolveVncCreationConflict(
-      args.db,
-      args.owner,
-      vncConnections,
-      args.body.id,
-      transaction.error,
-    );
-  }
-  return transaction.value;
-}
-
-export async function updateVncConnection(args: {
-  readonly db: Db;
-  readonly owner: VncOwner;
-  readonly connectionId: string;
-  readonly body: UpdateVncConnectionRequest;
-  readonly featureContext: FeatureSwitchContext;
-}): Promise<VncResult<VncConnectionResponse>> {
-  const host =
-    args.body.host === undefined
-      ? undefined
-      : canonicalizeVncHost(args.body.host);
-  if (host !== undefined && !host.ok) {
-    return host;
-  }
-  const security =
-    args.body.security === undefined
-      ? undefined
-      : prepareVncSecurity(args.body.security);
-  if (security !== undefined && !security.ok) {
-    return security;
-  }
-  const [initial] = await args.db
-    .select({ generation: vncConnections.generation })
-    .from(vncConnections)
-    .where(ownedConnection(args.owner, args.connectionId));
-  if (!initial) {
-    return vncFailure("connectionNotFound");
-  }
-  if (initial.generation !== args.body.expectedGeneration) {
-    return vncFailure("generationConflict");
-  }
-  const preparedCredential =
-    args.body.credential === undefined
-      ? undefined
-      : await prepareVncCredentialSelection(
-          args.body.credential,
-          args.featureContext,
-        );
-  return args.db.transaction(async (tx) => {
-    await enterVncWrite(tx, args.owner);
-    const owner = args.owner;
-    const [current] = await tx
-      .select(metadata)
-      .from(vncConnections)
-      .where(ownedConnection(owner, args.connectionId))
-      .for("update");
-    if (!current) {
-      return vncFailure("connectionNotFound");
-    }
-    if (current.generation !== args.body.expectedGeneration) {
-      return vncFailure("generationConflict");
-    }
-    if (current.generation === 2_147_483_647) {
-      return vncFailure("exhausted");
-    }
-    const newHost = host?.value ?? current.host;
-    const newPort = args.body.port ?? current.port;
-    const requestedTransport =
-      args.body.transport ??
-      (current.transportType === "ssh" && current.sshConnectionId !== null
-        ? ({
-            type: "ssh",
-            connectionId: current.sshConnectionId,
-          } as const)
-        : ({ type: "direct" } as const));
-    const transport = prepareVncTransport(requestedTransport, newHost);
-    if (!transport.ok) {
-      return transport;
-    }
-    if (
-      !(await hasReferencedSshConnection(
-        tx,
-        owner,
-        transport.value.sshConnectionId,
-      ))
-    ) {
-      return vncFailure("sshConnectionNotFound");
-    }
-    const securityType = security?.value.securityType ?? current.securityType;
-    const route = validateVncProfileRoute(
-      securityType,
-      newHost,
-      transport.value.transportType,
-    );
-    if (!route.ok) {
-      return route;
-    }
-    const credential = await selectUpdateVncCredential({
-      tx,
-      owner,
-      prepared: preparedCredential ?? null,
-      currentCredentialId: current.credentialId,
-      securityType,
+      return { ok: true as const, value: response(updated, credential) };
     });
-    if (!credential.ok) {
-      return credential;
-    }
-    const [updated] = await tx
-      .update(vncConnections)
-      .set({
-        displayName: args.body.displayName,
-        host: newHost,
-        port: newPort,
-        ...transport.value,
-        credentialId: credential.value.id,
-        authMethod: credential.value.authMethod,
-        ...security?.value,
-        generation: current.generation + 1,
-        updatedAt: nowDate(),
-      })
-      .where(ownedConnection(owner, args.connectionId))
-      .returning(metadata);
-    if (!updated) {
-      throw new Error("VNC connection update returned no row");
-    }
-    return { ok: true as const, value: response(updated, credential.value) };
-  });
-}
+  },
+);
 
-export function deleteVncConnection(args: {
-  readonly db: Db;
-  readonly owner: VncOwner;
-  readonly connectionId: string;
-  readonly expectedGeneration: number;
-}): Promise<VncResult<undefined>> {
-  return args.db.transaction(async (tx) => {
-    await enterVncWrite(tx, args.owner);
-    const owner = args.owner;
-    const [current] = await tx
-      .select({ generation: vncConnections.generation })
-      .from(vncConnections)
-      .where(ownedConnection(owner, args.connectionId))
-      .for("update");
-    if (!current) {
-      return vncFailure("connectionNotFound");
-    }
-    if (current.generation !== args.expectedGeneration) {
-      return vncFailure("generationConflict");
-    }
-    await tx
-      .delete(vncConnections)
-      .where(ownedConnection(owner, args.connectionId));
-    return { ok: true as const, value: undefined };
-  });
-}
+export const deleteVncConnection$ = command(
+  (
+    { set },
+    args: {
+      readonly memberCreatedAt: string;
+      readonly owner: VncOwner;
+      readonly connectionId: string;
+      readonly expectedGeneration: number;
+    },
+    signal: AbortSignal,
+  ): Promise<VncResult<undefined>> => {
+    const db = set(writeDb$);
+    return db.transaction(async (tx) => {
+      const [member] = await tx
+        .select({ userId: orgMembersMetadata.userId })
+        .from(orgMembersMetadata)
+        .where(vncMemberIdentityWhere(args))
+        .for("update");
+      if (!member) {
+        return vncFailure("membershipRevoked");
+      }
+      signal.throwIfAborted();
+      const owner = args.owner;
+      const [current] = await tx
+        .select({ generation: vncConnections.generation })
+        .from(vncConnections)
+        .where(ownedConnection(owner, args.connectionId))
+        .for("update");
+      if (!current) {
+        return vncFailure("connectionNotFound");
+      }
+      if (current.generation !== args.expectedGeneration) {
+        return vncFailure("generationConflict");
+      }
+      const [deleted] = await tx
+        .delete(vncConnections)
+        .where(
+          and(
+            ownedConnection(owner, args.connectionId),
+            eq(vncConnections.generation, args.expectedGeneration),
+          ),
+        )
+        .returning({ id: vncConnections.id });
+      if (!deleted) {
+        return vncFailure("generationConflict");
+      }
+      return { ok: true as const, value: undefined };
+    });
+  },
+);

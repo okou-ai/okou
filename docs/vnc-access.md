@@ -10,6 +10,41 @@ X509Plain, SSH-protected Apple classic password, Apple DH, Apple Direct SRP
 and Apple RSA/SRP profiles.
 The feature remains unavailable until a separate activation decision.
 
+## Advisory Lock Cleanup Release 1
+
+VNC is not GA. Configuration and owner cleanup no longer acquire advisory
+locks, and no compatibility fallback is added for its old writer shape.
+
+A write captures the existing `org_members_metadata.created_at` value with
+PostgreSQL timestamp precision **before** its live Clerk membership lookup.
+Clerk remains the membership authority; the preference row is only the existing
+member lifecycle identity. KMS encryption and endpoint preparation run outside
+the transaction. The mutation command then locks the matching existing member
+row, checks the requested credential revision or host generation, executes its
+bounded SQL and commits. It never recreates the parent after the external
+membership decision or passes the transaction to a helper.
+
+User, organization and membership erasure lock the same member rows and erase
+VNC hosts, credentials and those member rows in one local transaction. This
+moves the already-required preference erasure earlier in authoritative cleanup.
+An admitted write either commits before erasure and is deleted with its owner,
+or loses the captured member identity and returns unavailable. An unrelated
+preference update leaves `created_at` unchanged. Read-only VNC admission does
+not initialize member preferences. Overlapping owner erasure uses a stable row
+order; unrelated owners remain independent.
+
+Credential rotation retains the existing revision and advances every referencing
+host's generation. Connection updates and deletes use their existing generation
+conditions. Override writes retain their live host/thread FK parents while
+inserting, so cleanup cannot leave a surviving access override. Live Runner
+membership and credential revision checks remain unchanged. No App/Runner wire
+contract, persisted field, coordination table or authorization flag is added.
+
+The separate obsolete Agent grant-table contraction is not part of this change.
+Shared initial-chat creation still has its own transaction-aware override
+validation/insert helpers; retiring that wider command graph is tracked by the
+Release 1 API transaction inventory, not certified by the VNC lock removal.
+
 ## Supported profiles and rollout state
 
 | Boundary                                 | X509Vnc                                                                   | X509Plain                                                                 | Activation meaning                     |
