@@ -61,10 +61,7 @@ import { type Db, db$, type ReadonlyDb, writeDb$ } from "../external/db";
 import { inferMimetype } from "./chat-event-shared.service";
 import { revokeMorningBriefDeliveryOwnership } from "./morning-brief-delivery.service";
 import { revokeMorningBriefNativeThreadAuthority } from "./morning-brief-native-schedule.service";
-import {
-  appendChatThreadEvent,
-  chatThreadServiceTierFromCodex,
-} from "./chat-thread-event.service";
+import { appendChatThreadEvent } from "./chat-thread-event.service";
 import {
   deleteChatThreadDraft,
   persistChatThreadDraft,
@@ -80,7 +77,10 @@ import {
   prepareChatThreadConnectorSelections,
   type PreparedChatThreadConnectorSelection,
 } from "./chat-thread-connector-selection.service";
-import { loadNewChatThreadModelSettings } from "./chat-thread-model-settings.service";
+import {
+  appendChatThreadCreatedEvent,
+  insertChatThread,
+} from "./chat-thread-create.service";
 import {
   insertInitialRemoteAccessOverrides,
   ownsInitialRemoteAccessHosts,
@@ -736,6 +736,7 @@ interface CreateChatThreadArgs {
   readonly modelProviderCredentialScope: ModelProviderCredentialScope | null;
   readonly selectedModel: string | null;
   readonly modelSettings?: ModelSettings;
+  readonly cloudBrowserEnabled?: boolean;
   readonly codexServiceTier: CodexServiceTier | null;
   readonly connectorSelections?: readonly PreparedChatThreadConnectorSelection[];
   readonly initialRemoteAccessOverrides?: readonly InitialRemoteAccessOverride[];
@@ -746,12 +747,6 @@ export async function createChatThreadInTransaction(
   tx: Tx,
   args: CreateChatThreadArgs,
 ) {
-  const modelSettings =
-    args.modelSettings ??
-    (await loadNewChatThreadModelSettings(tx, {
-      orgId: args.orgId,
-      userId: args.userId,
-    }));
   const preparedConnectorSelections =
     await prepareChatThreadConnectorSelections(tx, {
       orgId: args.orgId,
@@ -792,7 +787,8 @@ export async function createChatThreadInTransaction(
       message: "Remote access host not found",
     };
   }
-  const insert = tx.insert(chatThreads).values({
+  const createdThread = await insertChatThread(tx, {
+    orgId: args.orgId,
     ...(args.clientThreadId !== undefined ? { id: args.clientThreadId } : {}),
     userId: args.userId,
     agentId: args.agentId,
@@ -808,17 +804,9 @@ export async function createChatThreadInTransaction(
         : modelProviderTypeSchema.parse(args.modelProviderType),
     modelProviderCredentialScope: args.modelProviderCredentialScope,
     selectedModel: args.selectedModel,
-    modelSettings,
+    modelSettings: args.modelSettings,
+    cloudBrowserEnabled: args.cloudBrowserEnabled,
     codexServiceTier: args.codexServiceTier,
-  });
-  // The primary key and (id, user_id) are both unique. PostgreSQL can detect
-  // either first for concurrent inserts of the same client id, so an id-only
-  // conflict target can leak a 23505 from the composite constraint. These are
-  // the table's only unique constraints; other database faults still propagate.
-  // Each caller resolves a skipped insert according to its own replay policy.
-  const [createdThread] = await insert.onConflictDoNothing().returning({
-    id: chatThreads.id,
-    createdAt: chatThreads.createdAt,
   });
   if (!createdThread) {
     return { kind: "client_thread_conflict" as const };
@@ -832,22 +820,16 @@ export async function createChatThreadInTransaction(
     createdThread.id,
     initialRemoteAccessOverrides,
   );
-  await appendChatThreadEvent(tx, {
-    kind: "created",
-    userId: args.userId,
+  await appendChatThreadCreatedEvent(tx, {
     orgId: args.orgId,
-    chatThreadId: createdThread.id,
-    agentId: args.agentId,
     eventId: args.eventId,
-    title: args.title ?? null,
-    selectedModel: args.selectedModel,
-    modelSettings,
-    serviceTier: chatThreadServiceTierFromCodex(args.codexServiceTier),
-    computerUseHostId: null,
-    cloudBrowserEnabled: false,
-    createdAt: createdThread.createdAt,
+    thread: createdThread,
   });
-  return { kind: "created" as const, ...createdThread };
+  return {
+    kind: "created" as const,
+    id: createdThread.id,
+    createdAt: createdThread.createdAt,
+  };
 }
 
 export const createChatThread$ = command(

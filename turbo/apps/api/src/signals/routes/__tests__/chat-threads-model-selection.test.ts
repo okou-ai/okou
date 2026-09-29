@@ -295,7 +295,7 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
       modelSettings: {},
       serviceTier: null,
       computerUseHostId: null,
-      cloudBrowserEnabled: false,
+      cloudBrowserEnabled: true,
     });
   });
 

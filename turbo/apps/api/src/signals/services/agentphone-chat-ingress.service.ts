@@ -1,13 +1,13 @@
 import { resolveRequiredDefaultChatThreadModelPin } from "./chat-thread-model.service";
 import { agentphoneChatThreadRoutes } from "@okouai/db/schema/agentphone-chat-thread-route";
-import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { and, eq } from "drizzle-orm";
 
 import type { Db } from "../external/db";
-import { appendChatThreadEvent } from "./chat-thread-event.service";
-import { loadNewChatThreadModelSettings } from "./chat-thread-model-settings.service";
-import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
+import {
+  appendChatThreadCreatedEvent,
+  insertChatThread,
+} from "./chat-thread-create.service";
 import type { Tx } from "../../lib/db-types";
 
 interface AgentPhoneChatThreadRouteKey {
@@ -78,69 +78,27 @@ async function loadRoute(
   return route;
 }
 
-interface CreatedAgentPhoneChatThread {
-  readonly selectedModel: string | null;
-  readonly serviceTier: ChatThreadServiceTier | null;
-  readonly id: string;
-  readonly createdAt: Date;
-  readonly modelSettings: ModelSettings;
-}
-
 async function createCanonicalAgentPhoneChatThread(
   tx: AgentPhoneChatThreadTransaction,
   args: AgentPhoneChatThreadCreateArgs,
-): Promise<CreatedAgentPhoneChatThread> {
+): Promise<NonNullable<Awaited<ReturnType<typeof insertChatThread>>>> {
   const initialModel = await resolveRequiredDefaultChatThreadModelPin(tx, args);
-  const modelSettings = await loadNewChatThreadModelSettings(tx, {
+  const thread = await insertChatThread(tx, {
     orgId: args.orgId,
     userId: args.userId,
+    agentId: args.agentId,
+    selectedModel: initialModel.selectedModel,
+    codexServiceTier: initialModel.serviceTier === "priority" ? "fast" : null,
+    title: null,
+    lastReadAt: args.currentTime,
+    lastMessageAt: args.currentTime,
+    createdAt: args.currentTime,
+    updatedAt: args.currentTime,
   });
-  const [thread] = await tx
-    .insert(chatThreads)
-    .values({
-      userId: args.userId,
-      agentId: args.agentId,
-      computerUseHostId: null,
-      cloudBrowserEnabled: false,
-      selectedModel: initialModel.selectedModel,
-      modelSettings,
-      codexServiceTier: initialModel.serviceTier === "priority" ? "fast" : null,
-      title: null,
-      lastReadAt: args.currentTime,
-      lastMessageAt: args.currentTime,
-      createdAt: args.currentTime,
-      updatedAt: args.currentTime,
-    })
-    .returning({ id: chatThreads.id, createdAt: chatThreads.createdAt });
   if (!thread) {
     throw new Error("Failed to create canonical AgentPhone chat thread");
   }
-  return {
-    ...thread,
-    modelSettings,
-    selectedModel: initialModel.selectedModel,
-    serviceTier: initialModel.serviceTier,
-  };
-}
-
-async function appendCanonicalAgentPhoneChatThreadCreatedEvent(
-  tx: AgentPhoneChatThreadTransaction,
-  args: AgentPhoneChatThreadCreateArgs,
-  thread: CreatedAgentPhoneChatThread,
-): Promise<void> {
-  await appendChatThreadEvent(tx, {
-    kind: "created",
-    userId: args.userId,
-    orgId: args.orgId,
-    chatThreadId: thread.id,
-    agentId: args.agentId,
-    title: null,
-    selectedModel: thread.selectedModel,
-    modelSettings: thread.modelSettings,
-    serviceTier: thread.serviceTier,
-    computerUseHostId: null,
-    createdAt: thread.createdAt,
-  });
+  return thread;
 }
 
 async function updateRouteConversationContext(
@@ -197,7 +155,7 @@ export async function ensureAgentPhoneChatThreadRoute(
       return conflicted;
     }
 
-    await appendCanonicalAgentPhoneChatThreadCreatedEvent(tx, args, thread);
+    await appendChatThreadCreatedEvent(tx, { orgId: args.orgId, thread });
     return route;
   });
 }

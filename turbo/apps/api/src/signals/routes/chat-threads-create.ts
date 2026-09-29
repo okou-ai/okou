@@ -35,7 +35,7 @@ import { chatThreadModelPinColumns } from "../services/chat-thread-model.service
 import { chatThreadServiceTierFromCodex } from "../services/chat-thread-event.service";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import { hasCurrentVncMembership } from "../services/vnc-owner-lifecycle.service";
-import { loadNewChatThreadModelSettings } from "../services/chat-thread-model-settings.service";
+import { loadNewChatThreadDefaults } from "../services/chat-thread-defaults.service";
 import { resolveChatReasoningEffort } from "../services/chat-reasoning-effort.service";
 import type { RouteEntry } from "../route-entry";
 
@@ -214,14 +214,14 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return codexServiceTierError;
   }
 
-  const modelSettings = await loadNewChatThreadModelSettings(writeDb, {
+  const defaults = await loadNewChatThreadDefaults(writeDb, {
     orgId: auth.orgId,
     userId: auth.userId,
   });
   signal.throwIfAborted();
   const effort = resolveChatReasoningEffort({
     selectedModel: pin.selectedModel,
-    modelSettings,
+    modelSettings: defaults.modelSettings,
     requested: body.data.reasoningEffort,
   });
   if ("status" in effort) {
@@ -239,6 +239,7 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       eventId: body.data.eventId,
       ...chatThreadModelPinColumns(pin),
       modelSettings: effort.modelSettings,
+      cloudBrowserEnabled: defaults.cloudBrowserEnabled,
       codexServiceTier,
       connectorSelections,
       initialRemoteAccessOverrides,

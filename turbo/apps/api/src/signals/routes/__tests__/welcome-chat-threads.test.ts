@@ -227,7 +227,7 @@ describe("POST /api/welcome-chat-threads", () => {
       title: "Welcome to Okou",
       selectedModel: MODEL,
       serviceTier: null,
-      cloudBrowserEnabled: false,
+      cloudBrowserEnabled: true,
     });
     const rows = await chat.listThreadEventRows(actor, body.id);
     expect(rows).toHaveLength(1);

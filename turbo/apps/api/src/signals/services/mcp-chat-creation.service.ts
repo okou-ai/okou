@@ -33,7 +33,7 @@ import {
   chatThreadModelPinColumns,
   resolveRequiredDefaultChatThreadModelPin,
 } from "./chat-thread-model.service";
-import { loadNewChatThreadModelSettings } from "./chat-thread-model-settings.service";
+import { loadNewChatThreadDefaults } from "./chat-thread-defaults.service";
 import { resolveChatReasoningEffort } from "./chat-reasoning-effort.service";
 import { mcpChatThreadModels } from "./mcp-chat-thread-model.service";
 import { submitMcpChatInput$ } from "./mcp-chat-send.service";
@@ -307,15 +307,15 @@ async function initializeThread(
     }
     pin = resolved;
   }
-  const settings = await loadNewChatThreadModelSettings(tx, principal);
+  const defaults = await loadNewChatThreadDefaults(tx, principal);
   signal.throwIfAborted();
   const modelSettings =
     input.model === undefined
-      ? settings
+      ? defaults.modelSettings
       : (() => {
           const effort = resolveChatReasoningEffort({
             selectedModel: pin.selectedModel,
-            modelSettings: settings,
+            modelSettings: defaults.modelSettings,
             requested: undefined,
           });
           if ("status" in effort) {
@@ -335,6 +335,7 @@ async function initializeThread(
     eventId: creationEventId(input),
     ...chatThreadModelPinColumns(pin),
     modelSettings,
+    cloudBrowserEnabled: defaults.cloudBrowserEnabled,
     codexServiceTier,
     connectorSelections: [],
   });

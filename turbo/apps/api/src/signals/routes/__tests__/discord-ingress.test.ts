@@ -26,6 +26,7 @@ import { testDiscordIngressRoutes } from "../test-discord-ingress";
 import { userModelPreferenceRoutes } from "../user-model-preference";
 import { webDownloadRoutes } from "../web-download";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
 import {
@@ -177,6 +178,76 @@ async function discordStatus(actor: ConnectedDiscordActor) {
 }
 
 describe("canonical Discord ingress", () => {
+  it.each([true, false])(
+    "copies the Chat browser preference (%s) into new threads without changing existing routes",
+    async (enabled) => {
+      const actor = await connected();
+      const provider = mockDiscordProvider(actor);
+      const preferences = createMiscRoutesApi(context);
+      const chat = createChatFilesBddApi(context);
+      await preferences.updatePreferences(
+        actor.actor,
+        { cloudBrowserEnabledByDefault: enabled },
+        [200],
+      );
+      const first = discordMessageForTest(actor, {
+        channelId: provider.guildChannelId,
+        content: `<@${actor.botUserId}> start with my browser preference`,
+      });
+      provider.messages.set(first.id, first);
+      await postDiscordMessage(context, first);
+      await flushWaitUntilForTest();
+      const [guildThread] = await discordChatThreads(context, actor);
+      if (!guildThread) {
+        throw new Error("Expected the guild thread");
+      }
+      expect(guildThread.cloudBrowserEnabled).toBe(enabled);
+      await expect(
+        chat.readThreadMetadata(actor.actor, guildThread.id),
+      ).resolves.toMatchObject({ cloudBrowserEnabled: enabled });
+      const firstRun = await launchedRun(actor, guildThread.id);
+      await runsApi.requestCancelRun(actor.actor, firstRun.runId, [200]);
+      await flushWaitUntilForTest();
+
+      await preferences.updatePreferences(
+        actor.actor,
+        { cloudBrowserEnabledByDefault: !enabled },
+        [200],
+      );
+      const followup = discordMessageForTest(actor, {
+        channelId: first.id,
+        content: `<@${actor.botUserId}> continue the same task`,
+      });
+      provider.messages.set(followup.id, followup);
+      await postDiscordMessage(context, followup);
+      await flushWaitUntilForTest();
+      await expect(
+        chat.readThreadMetadata(actor.actor, guildThread.id),
+      ).resolves.toMatchObject({ cloudBrowserEnabled: enabled });
+
+      const dm = discordMessageForTest(actor, {
+        channelId: provider.dmChannelId,
+        guild: false,
+        content: "start a new task with the updated browser preference",
+      });
+      provider.messages.set(dm.id, dm);
+      await postDiscordMessage(context, dm);
+      await flushWaitUntilForTest();
+      const dmThread = (await discordChatThreads(context, actor)).find(
+        (thread) => {
+          return thread.id !== guildThread.id;
+        },
+      );
+      if (!dmThread) {
+        throw new Error("Expected the new DM thread");
+      }
+      expect(dmThread.cloudBrowserEnabled).toBe(!enabled);
+      await expect(
+        chat.readThreadMetadata(actor.actor, dmThread.id),
+      ).resolves.toMatchObject({ cloudBrowserEnabled: !enabled });
+    },
+  );
+
   it.each(["unmentioned", "unbound", "disabled"] as const)(
     "ignores %s messages without canonical chat or provider thread side effects",
     async (scenario) => {
