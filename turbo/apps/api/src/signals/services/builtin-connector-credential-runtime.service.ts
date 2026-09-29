@@ -6,7 +6,7 @@ import { resolveConnectorAuthClient } from "@okouai/connectors/connector-auth-me
 import { connectors } from "@okouai/db/schema/connector";
 import { secrets } from "@okouai/db/schema/secret";
 import { variables } from "@okouai/db/schema/variable";
-import { and, eq, isNotNull, sql } from "drizzle-orm";
+import { and, eq, gt, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { pgTextDecoder } from "../../lib/db-structured-result";
@@ -685,6 +685,91 @@ async function markConnectorCredentialNeedsReconnectAfterRefreshFailure(
   return row !== undefined;
 }
 
+async function readCurrentConnectorRefreshWinner(
+  args: BuiltinConnectorCredentialRefreshArgs,
+  signal: AbortSignal,
+): Promise<BuiltinConnectorCredentialRefreshResult> {
+  const valueRef = builtinConnectorCredentialRuntimeValueRef(
+    args.connection,
+    args.runtimeEnvironmentName,
+  );
+  if (valueRef === null) {
+    return { kind: "connection-changed" };
+  }
+  const target = builtinConnectorStoredValueRef(valueRef);
+  const identity = and(
+    eq(connectors.id, args.connection.connectorId),
+    eq(connectors.orgId, args.orgId),
+    eq(connectors.userId, args.userId),
+    eq(connectors.connectorSlug, args.connection.connectorSlug),
+    eq(connectors.authMethod, args.connection.runtimeMethod.authMethodId),
+    eq(connectors.storageVersion, args.connection.storageVersion),
+    args.connection.externalId === null
+      ? isNull(connectors.externalId)
+      : eq(connectors.externalId, args.connection.externalId),
+    args.connection.externalEmail === null
+      ? isNull(connectors.externalEmail)
+      : eq(connectors.externalEmail, args.connection.externalEmail),
+    eq(connectors.needsReconnect, false),
+    ne(sql`${connectors.updatedAt}::text`, args.connection.stateRevision),
+    // A concurrent publication can replace this request's result only when
+    // its committed credential is still usable. Unknown expiry is not proof.
+    gt(connectors.tokenExpiresAt, sql`clock_timestamp()`),
+  );
+  const db = args.persist?.db ?? args.db;
+  const [winner] =
+    target.kind === "secret"
+      ? await db
+          .select({
+            value: secrets.encryptedValue,
+            tokenExpiresAt: connectors.tokenExpiresAt,
+          })
+          .from(connectors)
+          .innerJoin(
+            secrets,
+            and(
+              eq(secrets.connectorId, connectors.id),
+              eq(secrets.orgId, args.orgId),
+              eq(secrets.userId, args.userId),
+              eq(secrets.type, "connector"),
+              eq(secrets.name, target.name),
+            ),
+          )
+          .where(identity)
+          .limit(1)
+      : await db
+          .select({
+            value: variables.value,
+            tokenExpiresAt: connectors.tokenExpiresAt,
+          })
+          .from(connectors)
+          .innerJoin(
+            variables,
+            and(
+              eq(variables.connectorId, connectors.id),
+              eq(variables.orgId, args.orgId),
+              eq(variables.userId, args.userId),
+              eq(variables.type, "connector"),
+              eq(variables.name, target.name),
+            ),
+          )
+          .where(identity)
+          .limit(1);
+  signal.throwIfAborted();
+  if (!winner?.tokenExpiresAt) {
+    return { kind: "connection-changed" };
+  }
+  const accessToken =
+    target.kind === "secret"
+      ? await decryptStoredSecretValue(winner.value, args.featureSwitchContext)
+      : winner.value;
+  signal.throwIfAborted();
+  if (winner.tokenExpiresAt.getTime() <= nowDate().getTime()) {
+    return { kind: "connection-changed" };
+  }
+  return { kind: "ok", accessToken, tokenExpiresAt: winner.tokenExpiresAt };
+}
+
 function terminalOAuthRefreshFailure(
   error: unknown,
 ): TerminalOAuthRefreshFailure | null {
@@ -727,7 +812,9 @@ async function terminalConnectorCredentialRefreshFailure(
       },
       signal,
     );
-  return { kind: updated ? "reconnect-required" : "connection-changed" };
+  return updated
+    ? { kind: "reconnect-required" }
+    : await readCurrentConnectorRefreshWinner(args, signal);
 }
 
 async function connectorCredentialRefreshFailure(
@@ -914,7 +1001,10 @@ export async function refreshBuiltinConnectorCredentialAccess(
         ),
       };
   if (persisted.kind === "connection-changed") {
-    return persisted;
+    // Another writer can commit a usable token while this provider call is in
+    // flight. Never return this call's unpublished output or revive a source
+    // whose owner, principal, method, storage, or reconnect state has changed.
+    return await readCurrentConnectorRefreshWinner(args, signal);
   }
   return {
     kind: "ok",
