@@ -1446,6 +1446,55 @@ describe("createApp", () => {
       },
     );
 
+    it.each([
+      {
+        sdkReason: "session-token-expired-refresh-non-eligible-non-get",
+        loggedReason: "session-token-expired-refresh-non-eligible-non-get",
+      },
+      {
+        sdkReason: "session-token-expired-refresh-fetch-error",
+        loggedReason: "session-token-expired-refresh-fetch-error",
+      },
+      {
+        sdkReason: "session-token-expired-refresh-private-provider-detail",
+        loggedReason: "session-token-expired-refresh-other",
+      },
+    ])(
+      "classifies an expired session refresh outcome without logging arbitrary SDK text ($loggedReason)",
+      async ({ sdkReason, loggedReason }) => {
+        context.mocks.clerk.authenticateRequest.mockResolvedValue({
+          isAuthenticated: false,
+          reason: sdkReason,
+          message: "private-sdk-error-message",
+        });
+        const response = await accept(
+          authClient().snapshot({
+            headers: { authorization: "Bearer synthetic-session" },
+            extraHeaders: appHeaders(),
+          }),
+          [401],
+        );
+        expect(response.body).toStrictEqual({
+          error: { message: "Not authenticated", code: "UNAUTHORIZED" },
+        });
+        const diagnosticLogs =
+          context.mocks.axiomLogging.info.mock.calls.filter(([message]) => {
+            return message === "temporary auth failure";
+          });
+        expect(diagnosticLogs.at(-1)?.[1]).toMatchObject({
+          auth_failure_reason: "clerk_rejected",
+          clerk_reason: loggedReason,
+          has_bearer_token: true,
+        });
+        expect(JSON.stringify(diagnosticLogs)).not.toContain(
+          "private-provider-detail",
+        );
+        expect(JSON.stringify(diagnosticLogs)).not.toContain(
+          "private-sdk-error-message",
+        );
+      },
+    );
+
     // The single redaction exception verifies credentials never reach logs.
     it("excludes credentials, arbitrary SDK text and malformed correlation headers", async () => {
       const secret = "private-auth-diagnostic-value";
