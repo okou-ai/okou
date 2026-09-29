@@ -124,6 +124,12 @@ scope is intentional evidence, not a whole-package completion claim:
   entitlement together in `ensureCustomConnectorOrgMetadata$`, using direct SQL
   and preserving existing paid entitlements. This repairs the combined API
   regression that returned 500 when creating a chat after a custom connector.
+- `c332058`: rejected Model Policy updates now roll back default-row preparation
+  before returning their original conflict/validation response; the unseeded
+  policy assertion is unchanged.
+- `ec10bad`: a losing credential refresh returns connection-changed. It cannot
+  reuse a replacement authorization merely because the account/method/storage
+  identity stayed the same; the existing API rejection assertion is preserved.
 - `7b2e6d3`: usage display writers acquire the existing Run parent before
   validating hot/archive state, preventing a second initial append after the
   first writer is archived. This is part of the R1/R2 common protocol.
