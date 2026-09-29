@@ -84,7 +84,6 @@ function snapshotThread(
     modelSettings: {},
     computerUseHostId: null,
     cloudBrowserEnabled: false,
-    selectedImageModel: null,
   };
 }
 
@@ -100,7 +99,6 @@ function threadMetadata(id: string, title: string): ChatThreadMetadata {
     archived: false,
     computerUseHostId: null,
     cloudBrowserEnabled: false,
-    selectedImageModel: null,
   };
 }
 
@@ -122,7 +120,6 @@ function threadEvent(args: {
     serviceTier: null,
     computerUseHostId: null,
     cloudBrowserEnabled: false,
-    selectedImageModel: null,
     createdAt: UPDATED_AT,
   };
 }

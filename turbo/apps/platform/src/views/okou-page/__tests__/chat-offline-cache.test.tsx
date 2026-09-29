@@ -77,7 +77,6 @@ function threadSnapshot(
     serviceTier: null,
     computerUseHostId: null,
     cloudBrowserEnabled: false,
-    selectedImageModel: null,
   };
 }
 

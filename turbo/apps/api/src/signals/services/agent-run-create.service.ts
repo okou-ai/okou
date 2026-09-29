@@ -145,7 +145,6 @@ import {
 } from "@okouai/core/feature-switch";
 import { isStaffOrg } from "@okouai/core/staff-org";
 import {
-  DEFAULT_IMAGE_MODEL_ENV,
   IMAGE_MODEL_CONFIGS,
   type ImageModel,
 } from "@okouai/core/image-model-catalog";
@@ -356,7 +355,7 @@ import {
 } from "./chat-queued-event.service";
 import { recordFirstAssistantEventEligibility } from "./chat-first-assistant-event-metric.service";
 import { isWebChatTriggerSource } from "./chat-trigger-source.service";
-import { resolveMediaModelsForRun } from "./run-media-model.service";
+import { resolveImageModelForRun } from "./run-image-model.service";
 import {
   cappedBaseConcurrencyLimit,
   loadOrgConcurrencyAdmissionState,
@@ -534,31 +533,13 @@ function builtInImageModelPrompt(model: ImageModel): string {
   ].join("\n");
 }
 
-/**
- * Released CLIs read this variable to omit `--model` and pick a size default
- * for the run's image model. The current CLI no longer reads it; keep it until
- * no supported CLI does (see docs/deployment-compatibility.md).
- */
-function withDefaultImageModelPlatformEnvironment(
-  platformEnvironment: Record<string, string> | undefined,
-  model: ImageModel | null,
-): Record<string, string> | undefined {
-  if (model === null) {
-    return platformEnvironment;
-  }
-  return {
-    ...platformEnvironment,
-    [DEFAULT_IMAGE_MODEL_ENV]: IMAGE_MODEL_CONFIGS[model].alias,
-  };
-}
-
 function withFinalRunAppendSystemPrompt(args: {
   readonly body: CreateRunBody;
   readonly framework: SupportedFramework;
   readonly chatThreadId: string | undefined;
   readonly imageRecognitionAvailable: boolean;
   readonly mcpConnectorSlugs: readonly string[];
-  readonly selectedImageModel: ImageModel | null;
+  readonly selectedImageModel: ImageModel;
   readonly cliAvailable: boolean;
 }): CreateRunBody {
   const appendedParts: string[] = [];
@@ -578,9 +559,7 @@ function withFinalRunAppendSystemPrompt(args: {
   ) {
     appendedParts.push(CODEX_WEB_IMAGE_GENERATION_UPLOAD_PROMPT);
   }
-  if (args.selectedImageModel !== null) {
-    appendedParts.push(builtInImageModelPrompt(args.selectedImageModel));
-  }
+  appendedParts.push(builtInImageModelPrompt(args.selectedImageModel));
   // Keep this policy last so custom and integration prompts cannot override it.
   appendedParts.push(RESTRICTED_EXPLICIT_CONTENT_PROMPT);
 
@@ -6493,7 +6472,7 @@ interface LaunchRunRowsArgs {
   readonly sessionStorageMounts: readonly PersistedStorageMount[] | undefined;
   readonly modelProvider: ResolvedModelProviderEnvironment | null;
   readonly agentRunModelPin: AgentRunModelPin | undefined;
-  readonly selectedImageModel: ImageModel | null;
+  readonly selectedImageModel: ImageModel;
   readonly callbackRows: readonly AgentRunCallbackInsert[];
   readonly chatThreadId: string | undefined;
   readonly agentRunMetadata: AgentRunMetadata | undefined;
@@ -9075,10 +9054,7 @@ function buildAtomicLaunchPayload(
         args.createArgs.okouTokenCloudBrowserEnabled,
       imageRecognitionAvailable: args.context.imageRecognitionAvailable,
       chatThreadId: args.createArgs.chatThreadId,
-      platformEnvironment: withDefaultImageModelPlatformEnvironment(
-        args.createArgs.platformEnvironment,
-        args.context.selectedImageModel,
-      ),
+      platformEnvironment: args.createArgs.platformEnvironment,
       userTimezone: args.context.userTimezone,
       featureSwitchContext: args.context.featureSwitchContext,
       timing: args.timing,
@@ -9144,7 +9120,7 @@ interface PreparedRunContext {
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly imageRecognitionAvailable: boolean;
   /** Resolved once at run start and used as the run's built-in image default. */
-  readonly selectedImageModel: ImageModel | null;
+  readonly selectedImageModel: ImageModel;
 }
 
 interface FinalizedPreparedRunContext extends PreparedRunContext {
@@ -9766,7 +9742,7 @@ export type RunContextParallelStage =
   | "connector-contexts"
   | "model-provider"
   | "user-timezone"
-  | "media-models"
+  | "image-model"
   | "official-workflow";
 
 type RunContextParallelHook = (args: {
@@ -10609,22 +10585,22 @@ async function resolvePreparedOfficialWorkflowRun(
   throw resolved.error;
 }
 
-async function resolvePreparedMediaModels(
+async function resolvePreparedImageModel(
   db: Db,
   args: CreateAgentRunArgs,
   signal: AbortSignal,
 ) {
-  const testHold = observeRunContextParallelStage("media-models", args);
+  const testHold = observeRunContextParallelStage("image-model", args);
   if (testHold) {
     await testHold;
   }
-  const models = await resolveMediaModelsForRun({
+  const model = await resolveImageModelForRun({
     db,
     orgId: args.orgId,
     userId: args.userId,
   });
   signal.throwIfAborted();
-  return models;
+  return model;
 }
 
 async function prepareRunIndependentObservations(
@@ -10633,12 +10609,13 @@ async function prepareRunIndependentObservations(
   piSandbox: PiModelConfig | undefined,
   signal: AbortSignal,
 ) {
-  // Preserve the historical timezone -> cancellation -> media -> workflow
-  // precedence while settling every branch started under this request owner.
-  const [userTimezoneResult, mediaModelsResult, officialWorkflowRunResult] =
+  // Preserve the historical timezone -> cancellation -> image model ->
+  // workflow precedence while settling every branch started under this
+  // request owner.
+  const [userTimezoneResult, imageModelResult, officialWorkflowRunResult] =
     await Promise.allSettled([
       resolvePreparedUserTimezone(input),
-      resolvePreparedMediaModels(input.db, input.args, signal),
+      resolvePreparedImageModel(input.db, input.args, signal),
       resolvePreparedOfficialWorkflowRun(
         input.db,
         input.args,
@@ -10651,8 +10628,8 @@ async function prepareRunIndependentObservations(
     throw userTimezoneResult.reason;
   }
   signal.throwIfAborted();
-  if (mediaModelsResult.status === "rejected") {
-    throw mediaModelsResult.reason;
+  if (imageModelResult.status === "rejected") {
+    throw imageModelResult.reason;
   }
   if (officialWorkflowRunResult.status === "rejected") {
     throw officialWorkflowRunResult.reason;
@@ -10660,7 +10637,7 @@ async function prepareRunIndependentObservations(
   signal.throwIfAborted();
   return {
     userTimezone: userTimezoneResult.value,
-    mediaModels: mediaModelsResult.value,
+    selectedImageModel: imageModelResult.value,
     officialWorkflowRun: officialWorkflowRunResult.value,
   };
 }
@@ -10757,9 +10734,8 @@ function prepareRunContext(
       if (isRouteError(validationAndObservations)) {
         return validationAndObservations;
       }
-      const { userTimezone, mediaModels, officialWorkflowRun } =
+      const { userTimezone, selectedImageModel, officialWorkflowRun } =
         validationAndObservations;
-      const { selectedImageModel } = mediaModels;
       if (isRouteError(officialWorkflowRun)) {
         return officialWorkflowRun;
       }

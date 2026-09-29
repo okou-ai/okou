@@ -1,9 +1,9 @@
 /**
- * Sprite generation source-selection packet.
+ * Sprite generation authoring instructions.
  *
  * `okou generate sprite` does not run a server-side pipeline. Like the website
- * and styled-image commands, it "bounces" a structured authoring packet back to
- * the calling agent: the resolved sprite plan, the image generation guidance, the
+ * and styled-image commands, it prints authoring instructions for the calling
+ * agent: the resolved sprite plan, the image generation guidance, the
  * upstream sprite skill to resolve, and the hard containment rules the agent
  * must honor when it drives built-in image generation plus local postprocessing.
  */
@@ -29,22 +29,6 @@ interface SpriteAuthoringOptions {
   readonly prompt: string;
   readonly plan: SpritePlan;
   readonly visibility?: ArtifactVisibility;
-}
-
-interface SpriteAuthoringPacket {
-  readonly type: "generation-source-selection";
-  readonly kind: "sprite";
-  readonly prompt: string;
-  readonly plan: SpritePlan;
-  readonly outputDir: string;
-  readonly skill: {
-    readonly repo: string;
-    readonly ref: string;
-    readonly skillPath: string;
-    readonly references: readonly string[];
-    readonly script: string;
-  };
-  readonly instructions: string;
 }
 
 const SPRITE_SKILL = {
@@ -89,9 +73,9 @@ const EXPECTED_OUTPUTS = [
   "`pipeline-meta.json`",
 ] as const;
 
-export function createSpriteAuthoringPacket(
+export function createSpriteAuthoringInstructions(
   options: SpriteAuthoringOptions,
-): SpriteAuthoringPacket {
+): string {
   const { prompt, plan } = options;
   const outputDir = `./generated/sprites/${plan.name}`;
   const visibilityFlag =
@@ -113,7 +97,7 @@ export function createSpriteAuthoringPacket(
     ["Reference", plan.reference],
   ];
 
-  const instructions = [
+  return [
     "# Okou generate sprite",
     "",
     "This is a federated generation source-selection packet for the current agent.",
@@ -176,14 +160,4 @@ export function createSpriteAuthoringPacket(
     "- For hero/player body actions, confirm body height matches the accepted idle/run scale within ~10-15%.",
     "- Report the output directory, the final assets, and the resolved plan.",
   ].join("\n");
-
-  return {
-    type: "generation-source-selection",
-    kind: "sprite",
-    prompt,
-    plan,
-    outputDir,
-    skill: SPRITE_SKILL,
-    instructions,
-  };
 }

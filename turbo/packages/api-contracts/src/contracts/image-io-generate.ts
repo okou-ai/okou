@@ -16,11 +16,6 @@ export const imageIoGenerateRequestSchema = z
     /** Fail before creating bytes when private artifact creation is unavailable. */
     requirePrivateArtifact: z.boolean().optional(),
     prompt: z.string().optional(),
-    /**
-     * Ignored: the member's image model setting chooses the model. Released
-     * CLIs still send it; remove once no supported CLI does.
-     */
-    model: z.string().optional(),
     size: z.string().optional(),
     quality: z.string().optional(),
     background: z.string().optional(),

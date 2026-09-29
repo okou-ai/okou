@@ -10,7 +10,7 @@ import {
   prepareArtifactVisibility,
   type ArtifactVisibility,
 } from "./artifact-visibility";
-import { createStyledImageCompilationPacket } from "./image-style-authoring";
+import { createStyledImageCompilationInstructions } from "./image-style-authoring";
 import {
   findImageStyle,
   listImageStyles,
@@ -21,7 +21,7 @@ import {
 } from "@okouai/core/image-model-catalog";
 import { formatRegistryListing } from "./resource-listing";
 import { dispatchGenerate } from "../generate/lib/dispatch";
-import type { GenerationType } from "../generate/lib/lister";
+import type { GenerationType } from "../generate/lib/generation-type";
 
 interface ImageOptions {
   prompt?: string;
@@ -422,7 +422,7 @@ ${formatRegistryListing(styles, "image styles")}`;
             throw unknownStyleError(styleId, config.usageCommand);
           }
 
-          const packet = createStyledImageCompilationPacket({
+          const instructions = createStyledImageCompilationInstructions({
             prompt: resolvedPrompt,
             style,
             sourceMode: options.styleSource,
@@ -441,7 +441,7 @@ ${formatRegistryListing(styles, "image styles")}`;
             ],
           });
 
-          console.log(packet.instructions);
+          console.log(instructions);
           return;
         }
 

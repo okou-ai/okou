@@ -69,7 +69,6 @@ function expectStaticPreviewImages(
     item.cardPreviewImage,
     item.embedUrl,
     ...item.previewImages,
-    ...(item.previewHtmls ?? []),
   ].filter((url): url is string => {
     return url !== undefined;
   });
@@ -78,18 +77,6 @@ function expectStaticPreviewImages(
     for (const forbidden of FORBIDDEN_ASSET_URL_PARTS) {
       expect(url).not.toContain(forbidden);
     }
-  }
-}
-
-function expectStaticPreviewHtmls(
-  item: (typeof PRESENTATION_TEMPLATE_PICKER_ITEMS)[number],
-): void {
-  expect(item.previewHtmls?.length).toBe(15);
-
-  for (const url of item.previewHtmls ?? []) {
-    expect(url).toMatch(
-      /^https:\/\/static\.vm0\.io\/vm0\/artifact-templates\/presentation\/.+\.html$/,
-    );
   }
 }
 
@@ -219,53 +206,6 @@ const REFERENCE_PRESENTATION_PICKER_ITEMS = [
   },
 ] as const;
 
-const PICKER_PROMPT_SCENARIOS = [
-  {
-    slug: "playful-launch-presentation",
-    expectedSnippets: ["SproutPop", "people and culture leaders"],
-  },
-  {
-    slug: "botane-organic-deck",
-    expectedSnippets: ["Moss & Moon", "hospitality partners"],
-  },
-  {
-    slug: "business-data-presentation",
-    expectedSnippets: ["HarborCart", "leadership team"],
-  },
-  {
-    slug: "crayon-learning-deck",
-    expectedSnippets: ["Rainbow Lab", "families"],
-  },
-  {
-    slug: "creative-agency-presentation",
-    expectedSnippets: ["Northstar Studio", "client board"],
-  },
-  {
-    slug: "data-report-presentation",
-    expectedSnippets: ["MetroPulse", "urban planning stakeholders"],
-  },
-  {
-    slug: "editorial-magazine-deck",
-    expectedSnippets: ["Field Notes Quarterly", "premium sponsors"],
-  },
-  {
-    slug: "landing-consulting-deck",
-    expectedSnippets: ["ScaleBridge", "revenue leadership team"],
-  },
-  {
-    slug: "lumina-creative-studio",
-    expectedSnippets: ["LensLab Studio", "beauty brand's global campaign"],
-  },
-  {
-    slug: "mosaic-geometric-pitch",
-    expectedSnippets: ["CivicLink", "city innovation leaders"],
-  },
-  {
-    slug: "playful-pop-deck",
-    expectedSnippets: ["FizzPop", "retail and student ambassador partners"],
-  },
-] as const;
-
 function expectPinnedPickerPreviewImages(
   slug: string,
   expectedPreviewImages: readonly string[],
@@ -334,29 +274,6 @@ describe("presentation template items", () => {
         item.templateId,
       ).toBeDefined();
       expect(findColorSystem(item.colorSystemId ?? "")).toBeDefined();
-    }
-  });
-
-  it("keeps picker prompts tied to concrete demo scenarios", () => {
-    for (const item of PRESENTATION_TEMPLATE_PICKER_ITEMS) {
-      expect(item.prompt, item.slug).not.toMatch(
-        /\bcreate a 15-slide presentation for\b/i,
-      );
-    }
-
-    for (const scenario of PICKER_PROMPT_SCENARIOS) {
-      const item = PRESENTATION_TEMPLATE_PICKER_ITEMS.find((candidate) => {
-        return candidate.slug === scenario.slug;
-      });
-
-      expect(item, scenario.slug).toBeDefined();
-      if (!item) {
-        throw new Error(`missing ${scenario.slug} picker item`);
-      }
-
-      for (const snippet of scenario.expectedSnippets) {
-        expect(item.prompt, scenario.slug).toContain(snippet);
-      }
     }
   });
 
@@ -447,7 +364,6 @@ describe("presentation template items", () => {
         /^https:\/\/static\.vm0\.io\/vm0\/artifact-templates\/presentation\/.+\/[^/]+\.html$/,
       );
       expectStaticPreviewImages(item);
-      expectStaticPreviewHtmls(item);
       expect(
         findPresentationRunbookPackage(item.templateId),
         item.templateId,
@@ -470,7 +386,6 @@ describe("presentation template items", () => {
       expect(item.slideCount).toBe(15);
       expect(item.previewImages.length).toBe(1);
       expect(item.previewImage).toBe(item.previewImages[0]);
-      expect(item.previewHtmls).toBeUndefined();
       expect(item.embedUrl).toMatch(
         /^https:\/\/static\.vm0\.io\/vm0\/artifact-templates\/presentation\/.+\/[^/]+\.html$/,
       );

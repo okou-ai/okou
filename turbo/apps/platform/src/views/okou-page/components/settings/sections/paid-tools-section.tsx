@@ -21,7 +21,7 @@ import {
   SelectValue,
 } from "@okouai/ui/components/ui/select";
 import { Switch } from "@okouai/ui/components/ui/switch";
-import { IMAGE_MODEL_PRICE_TIER } from "@okouai/api-contracts/contracts/media-model-price-tiers";
+import { IMAGE_MODEL_PRICE_TIER } from "@okouai/api-contracts/contracts/image-model-price-tiers";
 import {
   IMAGE_MODEL_CONFIGS,
   PUBLIC_IMAGE_MODELS,

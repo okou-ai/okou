@@ -314,17 +314,12 @@ test("Follow model preference changes made in another session", async () => {
   await readyComposer();
   await expect(modelPicker("Claude Fable 5.1")).resolves.toBeVisible();
 
-  context.mocks.data.userModelPreference({
-    ...preference("claude-opus-5-5"),
-    selectedImageModel: "gpt-image-1",
-  });
+  context.mocks.data.userModelPreference(preference("claude-opus-5-5"));
   triggerAblyEvent("userPreferenceChanged", {
-    kinds: ["defaultModel", "defaultImageModel", "futurePreferenceKind"],
+    kinds: ["defaultModel", "futurePreferenceKind"],
   });
 
   await expect(modelPicker("Claude Opus 5.5")).resolves.toBeVisible();
-  // The member's image model changed too, but the composer never names it.
-  expect(document.body).not.toHaveTextContent("GPT Image");
 });
 
 test("Explain model availability by plan and provider", async () => {
@@ -512,7 +507,6 @@ test("Choose effort for a new chat and keep Fast independent", async () => {
   const creates: {
     reasoningEffort?: string | null;
     serviceTier?: string | null;
-    imageModel?: string;
   }[] = [];
   installRunChat({
     selectedModel: "gpt-5.6-sol",
@@ -559,8 +553,6 @@ test("Choose effort for a new chat and keep Fast independent", async () => {
       }),
     );
   });
-  // Media models are a member setting; a new thread carries no pin.
-  expect(creates[0]?.imageModel).toBeUndefined();
 });
 
 test("Select the default effort on an existing thread without changing Fast", async () => {

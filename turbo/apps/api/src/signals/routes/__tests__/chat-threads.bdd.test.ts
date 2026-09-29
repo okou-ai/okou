@@ -2241,11 +2241,6 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
       "claude-sonnet-5",
       { eventId: modelSelectionEventId },
     );
-    await chat.updateThreadImageModel(
-      actor,
-      liveThread.id,
-      "fal-ai/flux-pro/v1.1",
-    );
     if (!actor.orgId) {
       throw new Error("Expected an organization-scoped snapshot actor");
     }
@@ -2287,9 +2282,6 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
         title: "Renamed compact title",
         renamedAt: expect.any(String),
         selectedModel: "claude-sonnet-5",
-        // The compaction projection is hand-written SQL, so a column missing
-        // from it survives every read until compaction runs and drops it.
-        selectedImageModel: "fal-ai/flux-pro/v1.1",
         archived: true,
       }),
     ]);

@@ -117,7 +117,6 @@ function installWorkflowQueueFixture(
       archived: false,
       computerUseHostId: null,
       cloudBrowserEnabled: false,
-      selectedImageModel: null,
     });
   });
   testContextValue.mocks.api(chatThreadsContract.snapshot, ({ respond }) => {
@@ -139,7 +138,6 @@ function installWorkflowQueueFixture(
             serviceTier: null,
             computerUseHostId: null,
             cloudBrowserEnabled: false,
-            selectedImageModel: null,
           },
         ],
         latestEventId: null,

@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.720.3](https://github.com/okou-ai/okou/compare/core-v8.720.2...core-v8.720.3) (2026-09-29)
+
+
+### Bug Fixes
+
+* add temporary app auth failure diagnostics ([#37314](https://github.com/okou-ai/okou/issues/37314)) ([a0069c7](https://github.com/okou-ai/okou/commit/a0069c7083eca42aca3fbbf1736a422ff5d700c5))
+
 ## [8.720.2](https://github.com/okou-ai/okou/compare/core-v8.720.1...core-v8.720.2) (2026-09-29)
 
 

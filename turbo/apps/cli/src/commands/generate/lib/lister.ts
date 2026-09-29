@@ -24,43 +24,23 @@ import {
   DEFAULT_IMAGE_MODEL,
   IMAGE_MODEL_CONFIGS,
 } from "@okouai/core/image-model-catalog";
+import {
+  getConnectorGenerationType,
+  type ConnectorGenerationType,
+  type GenerationType,
+} from "./generation-type";
+
 const IMAGE_MODEL_SETTING_SUMMARY = `the image model selected in Settings › Built-in tools (default ${IMAGE_MODEL_CONFIGS[DEFAULT_IMAGE_MODEL].alias})`;
-
-type ConnectorGenerationType = "audio" | "code" | "document" | "image" | "text";
-
-type BuiltInGenerationType =
-  | "dashboard-design"
-  | "docs-design"
-  | "image"
-  | "mobile-app-design"
-  | "music"
-  | "poster"
-  | "presentation"
-  | "report"
-  | "sprite"
-  | "website";
-export type GenerationType = ConnectorGenerationType | BuiltInGenerationType;
-
-interface BuiltInGenerationProvider {
-  label: string;
-  model: string;
-  command: string;
-  reason: string;
-}
 
 interface BuiltInGenerationCommand {
   label: string;
   command: string;
-  models: string;
+  description: string;
 }
 
 interface GenerationContext {
   readonly lines: readonly string[];
 }
-
-const BUILT_IN_GENERATION_PROVIDERS: Partial<
-  Record<GenerationType, readonly BuiltInGenerationProvider[]>
-> = {};
 
 const BUILT_IN_GENERATION_COMMANDS: Partial<
   Record<GenerationType, BuiltInGenerationCommand>
@@ -68,47 +48,47 @@ const BUILT_IN_GENERATION_COMMANDS: Partial<
   image: {
     label: "Built-in image generation",
     command: "okou generate image --provider built-in -h",
-    models: `Uses ${IMAGE_MODEL_SETTING_SUMMARY}. Available: OpenAI: gpt-image-2.5-flare, gpt-image-2.5-sunburst; fal.ai: gpt-image-1, gpt-image-2, flux-2-pro, ideogram-4, flux-pro-1.1, flux-pro-1.1-ultra, qwen-image-3, seedream4, nano-banana-2, nano-banana-2-lite; BytePlus: seedream5-pro, seedream5-lite`,
+    description: `Models: Uses ${IMAGE_MODEL_SETTING_SUMMARY}. Available: OpenAI: gpt-image-2.5-flare, gpt-image-2.5-sunburst; fal.ai: gpt-image-1, gpt-image-2, flux-2-pro, ideogram-4, flux-pro-1.1, flux-pro-1.1-ultra, qwen-image-3, seedream4, nano-banana-2, nano-banana-2-lite; BytePlus: seedream5-pro, seedream5-lite`,
   },
   presentation: {
     label: "Built-in presentation generation",
     command: "okou generate presentation -h",
-    models: "gpt-5.5",
+    description: "Returns authoring instructions for the calling agent.",
   },
   report: {
     label: "Built-in report generation",
     command: "okou generate report -h",
-    models: "gpt-5.5",
+    description: "Returns authoring instructions for the calling agent.",
   },
   "docs-design": {
     label: "Built-in docs design generation",
     command: "okou generate docs-design -h",
-    models: "gpt-5.5",
+    description: "Returns authoring instructions for the calling agent.",
   },
   poster: {
     label: "Built-in poster generation",
     command: "okou generate poster -h",
-    models: "gpt-5.5",
+    description: "Returns authoring instructions for the calling agent.",
   },
   "dashboard-design": {
     label: "Built-in dashboard design generation",
     command: "okou generate dashboard-design -h",
-    models: "gpt-5.5",
+    description: "Returns authoring instructions for the calling agent.",
   },
   "mobile-app-design": {
     label: "Built-in mobile app design generation",
     command: "okou generate mobile-app-design -h",
-    models: "gpt-5.5",
+    description: "Returns authoring instructions for the calling agent.",
   },
   website: {
     label: "Built-in website generation",
     command: "okou generate website -h",
-    models: "gpt-5.5",
+    description: "Returns authoring instructions for the calling agent.",
   },
   sprite: {
     label: "Built-in sprite asset generation",
     command: "okou generate sprite -h",
-    models: `Built-in image generation with ${IMAGE_MODEL_SETTING_SUMMARY}`,
+    description: `Models: Built-in image generation with ${IMAGE_MODEL_SETTING_SUMMARY}`,
   },
 };
 
@@ -159,36 +139,6 @@ interface GenerationCandidate {
   authMethod?: string;
   actionLabel?: string;
   actionUrl?: string;
-}
-
-function getConnectorGenerationType(
-  generationType: GenerationType,
-): ConnectorGenerationType | null {
-  switch (generationType) {
-    case "music":
-      return "audio";
-    case "dashboard-design":
-    case "docs-design":
-    case "mobile-app-design":
-    case "poster":
-    case "presentation":
-    case "report":
-    case "sprite":
-    case "website":
-      return null;
-    case "audio":
-    case "code":
-    case "document":
-    case "image":
-    case "text":
-      return generationType;
-  }
-}
-
-function getBuiltInProviders(
-  generationType: GenerationType,
-): readonly BuiltInGenerationProvider[] {
-  return BUILT_IN_GENERATION_PROVIDERS[generationType] ?? [];
 }
 
 function getBuiltInCommand(
@@ -451,35 +401,22 @@ function renderActions(
   }
 }
 
-function renderBuiltInProvider(params: {
+function renderBuiltInCommand(params: {
   generationType: GenerationType;
   unavailableMessage: string | undefined;
 }): void {
   const { generationType, unavailableMessage } = params;
   const command = getBuiltInCommand(generationType);
-  if (command) {
-    console.log("");
-    console.log("Built-in command:");
-    console.log(`  Okou  ${command.label}`);
-    console.log(`  Models: ${command.models}`);
-    if (unavailableMessage) {
-      console.log(`  Availability: ${unavailableMessage}`);
-    }
-    console.log(`  Use: ${command.command}`);
-    return;
-  }
-
-  const providers = getBuiltInProviders(generationType);
-  if (providers.length === 0) return;
+  if (!command) return;
 
   console.log("");
-  console.log(
-    providers.length === 1 ? "Built-in provider:" : "Built-in providers:",
-  );
-  for (const provider of providers) {
-    console.log(`  Okou  ${provider.label}  Model: ${provider.model}`);
-    console.log(`  Use: ${provider.command}`);
+  console.log("Built-in command:");
+  console.log(`  Okou  ${command.label}`);
+  console.log(`  ${command.description}`);
+  if (unavailableMessage) {
+    console.log(`  Availability: ${unavailableMessage}`);
   }
+  console.log(`  Use: ${command.command}`);
 }
 
 function renderGenerationContext(generationType: GenerationType): void {
@@ -539,7 +476,7 @@ function renderText(params: {
     }
   }
 
-  renderBuiltInProvider({
+  renderBuiltInCommand({
     generationType,
     unavailableMessage,
   });

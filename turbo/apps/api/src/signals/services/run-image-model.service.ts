@@ -2,7 +2,6 @@
  * Resolves the built-in image model snapshotted onto a run.
  *
  * The image model is a member setting: member default, then catalog default.
- * A thread's stored image model is legacy data and is never read.
  */
 import { isImageModelId } from "@okouai/api-contracts/contracts/image-models";
 import {
@@ -14,15 +13,11 @@ import { and, eq } from "drizzle-orm";
 
 import type { ReadonlyDb } from "../external/db";
 
-interface RunMediaModels {
-  readonly selectedImageModel: ImageModel;
-}
-
-export async function resolveMediaModelsForRun(args: {
+export async function resolveImageModelForRun(args: {
   readonly db: ReadonlyDb;
   readonly orgId: string;
   readonly userId: string;
-}): Promise<RunMediaModels> {
+}): Promise<ImageModel> {
   const [member] = await args.db
     .select({ selectedImageModel: orgMembersMetadata.selectedImageModel })
     .from(orgMembersMetadata)
@@ -36,7 +31,5 @@ export async function resolveMediaModelsForRun(args: {
   // Stored selections can outlive their catalog entries. Treat those values
   // as unset so data the user can no longer reach does not fail run dispatch.
   const stored = member?.selectedImageModel;
-  return {
-    selectedImageModel: isImageModelId(stored) ? stored : DEFAULT_IMAGE_MODEL,
-  };
+  return isImageModelId(stored) ? stored : DEFAULT_IMAGE_MODEL;
 }

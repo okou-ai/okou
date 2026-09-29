@@ -434,9 +434,6 @@ const prepareImageRequest$ = command(
       auth.tokenType === "agent" || auth.tokenType === "sandbox"
         ? auth.runId
         : undefined;
-    // The model is the member's image model setting, never the request's:
-    // released CLIs still send `model`, and it is ignored rather than
-    // rejected so they keep working.
     const runImageModel = await loadRunImageModel(
       db,
       auth.orgId,

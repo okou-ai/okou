@@ -94,11 +94,7 @@ test("Pick only chat models, with effort and Fast in the same panel", async () =
   });
   expect(modelRadio(models, "GPT 5.6 Sol")).toBeChecked();
   expect(modelRadio(models, "Claude Sonnet 5")).not.toBeChecked();
-  // The panel switches the chat model only: no image category, no image
-  // model row and no separate effort control beside it.
-  expect(within(panel).queryByText("Image")).toBeNull();
-  expect(panel).not.toHaveTextContent("Images use");
-  expect(panel).not.toHaveTextContent("GPT Image");
+  // Effort lives inside the panel, not as a separate control beside it.
   expect(
     queryAllByRoleFast("button").some((button) => {
       return button.getAttribute("aria-label")?.startsWith("Effort, ");
@@ -156,7 +152,6 @@ test("Send with the model and effort chosen in the panel", async () => {
   const creates: {
     model?: SupportedRunModel;
     reasoningEffort?: string;
-    imageModel?: string;
   }[] = [];
   const composer = await setupPanel(
     ["gpt-5.6-sol", "claude-sonnet-5"],
@@ -187,8 +182,6 @@ test("Send with the model and effort chosen in the panel", async () => {
       }),
     );
   });
-  // Media models are a member setting; a new thread carries no pin.
-  expect(creates[0]?.imageModel).toBeUndefined();
 });
 
 test("Name the model and its effort on the trigger, with a bolt for Fast", async () => {

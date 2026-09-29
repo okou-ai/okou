@@ -1,16 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
-import { imageModelIdSchema } from "../image-models";
 import {
   chatThreadByIdContract,
   chatEventsContract,
   chatThreadComputerUseHostContract,
   chatThreadDraftSchema,
-  chatThreadEventSchema,
   chatThreadArtifactGoogleDriveSyncSchema,
   chatThreadsContract,
-  chatThreadSnapshotArchiveSchema,
   chatEventSchema,
   generationTemplateRequestSchema,
   userMessageDocumentSchema,
@@ -198,51 +195,6 @@ describe("chat thread event sequence contract", () => {
       success: true,
       data: { sinceSeqId: 42 },
     });
-  });
-
-  it("accepts image model fields and pre-image-model payloads", () => {
-    const selectedImageModel = imageModelIdSchema.parse("fal-ai/flux-pro/v1.1");
-    const createdAt = "2026-08-17T00:00:00.000Z";
-    const imageModelEvent = {
-      id: "11111111-1111-4111-8111-111111111111",
-      seqId: 1,
-      kind: "image_model_updated" as const,
-      chatThreadId: "22222222-2222-4222-8222-222222222222",
-      agentId: "33333333-3333-4333-8333-333333333333",
-      title: null,
-      selectedImageModel,
-      createdAt,
-    };
-
-    expect(chatThreadEventSchema.parse(imageModelEvent)).toMatchObject({
-      kind: "image_model_updated",
-      selectedImageModel,
-    });
-
-    const snapshotThread = {
-      id: "22222222-2222-4222-8222-222222222222",
-      agentId: "33333333-3333-4333-8333-333333333333",
-      title: "Cached before image model persistence",
-      sortAt: createdAt,
-      createdAt,
-      updatedAt: createdAt,
-      pinnedAt: null,
-      archived: false,
-      renamedAt: null,
-    };
-    expect(
-      chatThreadSnapshotArchiveSchema.safeParse({
-        chatThreads: [snapshotThread],
-      }).success,
-    ).toBe(true);
-    expect(
-      chatThreadsContract.snapshot.responses[200].safeParse({
-        url: "https://r2.example.com/snapshot.json",
-        expiresInSeconds: 900,
-        latestEventId: null,
-        latestSeqId: null,
-      }).success,
-    ).toBe(true);
   });
 
   it("accepts an empty response when no snapshot row exists", () => {

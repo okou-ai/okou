@@ -674,7 +674,7 @@ describe("FILE-02 and CHAIN-BILLING-MEDIA: media generation, quota, and status A
     expect(stt.body.error.code).toBe("AUDIO_INPUT_QUOTA_EXCEEDED");
 
     // The validations below describe gpt-image-1, selected as the member's
-    // image model; the endpoint ignores a request's `model`.
+    // image model.
     await api.selectImageModel(admin, "gpt-image-1");
     const missingImageIoPrompt = await api.requestImageIoGenerate(
       admin,
@@ -684,15 +684,15 @@ describe("FILE-02 and CHAIN-BILLING-MEDIA: media generation, quota, and status A
     expectApiError(missingImageIoPrompt.body);
     expect(missingImageIoPrompt.body.error.message).toBe("prompt is required");
 
-    // An unknown request model is ignored rather than rejected, so the request
-    // passes validation with the member's model and reaches the credit gate.
-    const ignoredImageIoModel = await api.requestImageIoGenerate(
+    // A valid request passes validation with the member's model and reaches
+    // the credit gate.
+    const creditGatedImageIo = await api.requestImageIoGenerate(
       admin,
-      { prompt: "a concise billing usage chart", model: "not-a-model" },
+      { prompt: "a concise billing usage chart" },
       [402],
     );
-    expectApiError(ignoredImageIoModel.body);
-    expect(ignoredImageIoModel.body.error.code).toBe("INSUFFICIENT_CREDITS");
+    expectApiError(creditGatedImageIo.body);
+    expect(creditGatedImageIo.body.error.code).toBe("INSUFFICIENT_CREDITS");
 
     const unsupportedImageSize = await api.requestImageIoGenerate(
       admin,

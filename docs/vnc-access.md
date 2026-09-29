@@ -332,14 +332,15 @@ unchanged; a future rotation must include VNC in its current inventory.
 ## Membership and deletion lifecycle
 
 The configuration tables are `vnc_credentials` and `vnc_connections`. Both use the
-organization/user pair as their owner, matching SSH configuration. The
-`agent_vnc_access` table temporarily retains historical grants with the same
-composite organization/user/Agent key as SSH; current chat host permission,
-not those rows, authorizes Run access. Current membership authorizes access to
-that owner's configuration. If the user leaves
-and rejoins before cleanup removes the configuration, it remains the same
-owner's data and is accessible again. Each saved connection retains its own
-identity across membership changes.
+organization/user pair as their owner, matching SSH configuration. The retired
+`agent_vnc_access` table remains physically present for older serving API
+versions during the code-only cleanup in PR #37305; current code does not read
+or write it, and only current chat host permission authorizes Run access.
+Physical table removal belongs to #37272 after that API version and its
+rollback floor have advanced. Current membership authorizes access to that
+owner's configuration. If the user leaves and rejoins before cleanup removes
+the configuration, it remains the same owner's data and is accessible again.
+Each saved connection retains its own identity across membership changes.
 
 Mutation transactions use shared cleanup-scope locks and an exclusive owner
 lock. Cleanup takes an exclusive scope lock and
@@ -348,8 +349,7 @@ without retaining a VNC authority ledger or creation receipts. They do not cance
 a request that passed membership admission before cleanup and only enters its
 write transaction afterward; such an in-flight request can still finish.
 
-Current user, organization and member cleanup removes hosts before credentials,
-and removes owner grants, including grants with no hosts.
+Current user, organization and member cleanup removes hosts before credentials.
 Member cleanup removes the organization's configuration for that user. It follows
 the existing organization/user cleanup path, including when a deletion event
 arrives after the user has rejoined. Membership checks and KMS calls run outside

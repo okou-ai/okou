@@ -11,7 +11,6 @@ export interface EventDrivenChatThread extends ChatThreadSnapshotProjection {
   readonly sortAt: string;
   readonly archived: boolean;
   readonly cloudBrowserEnabled: boolean;
-  readonly selectedImageModel: string | null;
   readonly modelSettings: ModelSettings;
 }
 
@@ -39,8 +38,7 @@ function isDeferrableUpdate(kind: ReplayChatThreadEvent["kind"]): boolean {
   return (
     kind === "model_selection_updated" ||
     kind === "service_tier_updated" ||
-    kind === "computer_use_host_updated" ||
-    kind === "image_model_updated"
+    kind === "computer_use_host_updated"
   );
 }
 
@@ -89,9 +87,6 @@ function updatedThreadFields(
       cloudBrowserEnabled: event.cloudBrowserEnabled ?? false,
     };
   }
-  if (event.kind === "image_model_updated") {
-    return { selectedImageModel: event.selectedImageModel ?? null };
-  }
   return null;
 }
 
@@ -116,7 +111,6 @@ function applyEvent(
       serviceTier: event.serviceTier,
       computerUseHostId: event.computerUseHostId,
       cloudBrowserEnabled: event.cloudBrowserEnabled ?? false,
-      selectedImageModel: event.selectedImageModel ?? null,
     });
     const pendingUpdates = pendingThreadUpdates.get(event.chatThreadId) ?? [];
     pendingThreadUpdates.delete(event.chatThreadId);
@@ -175,10 +169,6 @@ function applyEvent(
   });
 }
 
-/**
- * `selectedImageModel` remains optional during the compatibility window tracked
- * by #27688, so an absent value replays as an unset pin.
- */
 export function replayChatThreadEvents(
   snapshot: readonly ChatThreadSnapshotProjection[],
   events: readonly ReplayChatThreadEvent[],
@@ -192,7 +182,6 @@ export function replayChatThreadEvents(
       serviceTier: thread.serviceTier ?? null,
       computerUseHostId: thread.computerUseHostId ?? null,
       cloudBrowserEnabled: thread.cloudBrowserEnabled ?? false,
-      selectedImageModel: thread.selectedImageModel ?? null,
     });
   }
   const pendingThreadUpdates = new Map<string, ReplayChatThreadEvent[]>();

@@ -1468,15 +1468,22 @@
     {
       "idx": 1287,
       "version": "7",
-      "when": 1790650838487,
-      "tag": "1287_retire_provisional_billing_purge",
+      "when": 1790643255359,
+      "tag": "1287_drop_image_model_thread_columns",
       "breakpoints": true
     },
     {
       "idx": 1288,
       "version": "7",
-      "when": 1790653891198,
-      "tag": "1288_google_forms_cursor_detachment",
+      "when": 1790657138157,
+      "tag": "1288_retire_provisional_billing_purge",
+      "breakpoints": true
+    },
+    {
+      "idx": 1289,
+      "version": "7",
+      "when": 1790657147885,
+      "tag": "1289_google_forms_cursor_detachment",
       "breakpoints": true
     }
   ]

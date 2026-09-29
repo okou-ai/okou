@@ -1,7 +1,4 @@
-import type {
-  GenerationOutputKind,
-  GenerationTarget,
-} from "@okouai/core/resource-registry";
+import type { GenerationTarget } from "@okouai/core/resource-registry";
 import type { ArtifactVisibility } from "./artifact-visibility";
 
 /** Generation targets authored as static HTML from a target-specific resource index. */
@@ -46,38 +43,6 @@ interface HtmlArtifactSelectionOutputSchema {
   readonly rationale: "string";
 }
 
-interface HtmlArtifactAuthoringPacket {
-  readonly type: "generation-source-selection";
-  readonly kind: HtmlArtifactKind;
-  readonly prompt: string;
-  readonly artifact: {
-    readonly outputMode: "primary-artifact-with-supporting-assets";
-    readonly primaryArtifact: {
-      readonly kind: GenerationOutputKind;
-      readonly path: string;
-    };
-    readonly supportingAssets: readonly {
-      readonly kind: GenerationOutputKind | "metadata";
-      readonly path: string;
-      readonly optional: boolean;
-    }[];
-    readonly previewKind: "hosted-url";
-    readonly outputDir: string;
-  };
-  readonly selection: {
-    readonly indexUrl: string;
-    readonly outputSchema: HtmlArtifactSelectionOutputSchema;
-  };
-  readonly authoring: {
-    readonly details: readonly string[];
-    readonly artifactRules: readonly string[];
-  };
-  readonly outputDir: string;
-  readonly site: string;
-  readonly hostCommand: string;
-  readonly instructions: string;
-}
-
 function slugify(value: string): string {
   const slug = value
     .toLowerCase()
@@ -106,9 +71,9 @@ function outputDirForSite(site: string): string {
   return `./generated/mockups/${site}`;
 }
 
-export function createHtmlArtifactAuthoringPacket(
+export function createHtmlArtifactAuthoringInstructions(
   options: HtmlArtifactAuthoringOptions,
-): HtmlArtifactAuthoringPacket {
+): string {
   const site =
     options.siteSlug ?? slugify(options.slugSource ?? options.prompt);
   const outputDir = outputDirForSite(site);
@@ -160,38 +125,7 @@ export function createHtmlArtifactAuthoringPacket(
     "- If a source file cannot be fetched, state that limitation and fall back to the index metadata for that resource.",
     "",
   ];
-  const artifact = {
-    outputMode: "primary-artifact-with-supporting-assets",
-    primaryArtifact: {
-      kind: options.kind,
-      path: `${outputDir}/index.html`,
-    },
-    supportingAssets: [
-      {
-        kind: "image",
-        path: `${outputDir}/assets/`,
-        optional: true,
-      },
-      {
-        kind: "audio",
-        path: `${outputDir}/assets/`,
-        optional: true,
-      },
-      {
-        kind: "video",
-        path: `${outputDir}/assets/`,
-        optional: true,
-      },
-      {
-        kind: "metadata",
-        path: `${outputDir}/metadata.json`,
-        optional: true,
-      },
-    ],
-    previewKind: "hosted-url",
-    outputDir,
-  } as const;
-  const instructions = [
+  return [
     `# Okou generate ${options.kind}`,
     "",
     "This is a generation source-selection packet for the current agent.",
@@ -206,8 +140,8 @@ export function createHtmlArtifactAuthoringPacket(
     `Author a production-quality ${title} as a static HTML artifact using the selected generation resources.`,
     "",
     "## Artifact Output Model",
-    `- Primary artifact: \`${artifact.primaryArtifact.kind}\` at \`${artifact.primaryArtifact.path}\`.`,
-    `- Output mode: \`${artifact.outputMode}\`.`,
+    `- Primary artifact: \`${options.kind}\` at \`${outputDir}/index.html\`.`,
+    "- Output mode: `primary-artifact-with-supporting-assets`.",
     "- Supporting images, audio, video, or metadata may live inside the same output directory when the result needs them.",
     "- Treat the output directory as a project bundle when multiple media types are generated, while keeping the HTML entry point primary.",
     "",
@@ -274,23 +208,4 @@ export function createHtmlArtifactAuthoringPacket(
           `For a requested file copy, use \`okou web upload-file -f <file>${visibilityFlag}\` and return the exact URL it prints.`,
         ]),
   ].join("\n");
-
-  return {
-    type: "generation-source-selection",
-    kind: options.kind,
-    prompt: options.prompt,
-    artifact,
-    selection: {
-      indexUrl: resourceIndexUrl,
-      outputSchema: selectionSchema,
-    },
-    authoring: {
-      details: options.details,
-      artifactRules: options.artifactRules,
-    },
-    outputDir,
-    site,
-    hostCommand,
-    instructions,
-  };
 }

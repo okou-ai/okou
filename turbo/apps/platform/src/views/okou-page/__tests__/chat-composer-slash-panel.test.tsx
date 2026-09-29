@@ -39,7 +39,7 @@ function setupModels(): void {
     selectedModel: "claude-fable-5-1",
     serviceTier: null,
     modelSettings: {},
-    selectedImageModel: "gpt-image-2",
+    selectedImageModel: null,
     updatedAt: "2026-09-07T00:00:00.000Z",
   });
   context.mocks.api(workflowsCollectionContract.composer, ({ respond }) => {

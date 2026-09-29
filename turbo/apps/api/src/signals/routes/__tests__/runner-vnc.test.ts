@@ -61,7 +61,7 @@ describe("private Runner VNC authority", () => {
   it("uses current chat VNC and exact SSH dependency access during an active Run", async () => {
     const f = await api.fixture({
       defaultEnabled: false,
-      runtime: { chat: true, access: false },
+      runtime: { chat: true },
     });
     if (!f.threadId) {
       throw new Error("Missing fixture chat thread");

@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
 
-import { avatarTemplateStylePresetId } from "../avatar-template";
 import { generationTemplateKind } from "../generation-template-kind";
 import { generationTemplateIdentity } from "../generation-template-identity";
 
@@ -35,13 +34,13 @@ describe("generationTemplateKind", () => {
     expect(generationTemplateKind(website)).toBe("website");
   });
 
-  it("splits the two products that still share the video envelope", () => {
+  it("classifies historical video and avatar selections sharing the video envelope", () => {
     expect(
       generationTemplateKind(videoTemplate("video-template:kinetic")),
     ).toBe("video");
-    expect(
-      generationTemplateKind(videoTemplate(avatarTemplateStylePresetId(42))),
-    ).toBe("avatar");
+    expect(generationTemplateKind(videoTemplate("avatar-template:42"))).toBe(
+      "avatar",
+    );
   });
 
   it("does not mistake a malformed avatar preset id for an avatar", () => {
@@ -55,14 +54,13 @@ describe("generationTemplateKind", () => {
 });
 
 describe("generationTemplateIdentity reporting", () => {
-  it("keeps creative video and avatar apart inside the video envelope", () => {
+  it("keeps historical video and avatar apart inside the video envelope", () => {
     expect(
       generationTemplateIdentity(videoTemplate("video-template:kinetic"))
         .category,
     ).toBe("video");
     expect(
-      generationTemplateIdentity(videoTemplate(avatarTemplateStylePresetId(42)))
-        .category,
+      generationTemplateIdentity(videoTemplate("avatar-template:42")).category,
     ).toBe("avatar");
   });
 });

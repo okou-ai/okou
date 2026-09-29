@@ -66,7 +66,6 @@ export interface ThreadMeta {
   readonly serviceTier: "priority" | null;
   readonly computerUseHostId: string | null;
   readonly cloudBrowserEnabled: boolean;
-  readonly selectedImageModel: string | null;
 }
 
 interface BootstrapThreadMetaEntry {
@@ -342,7 +341,6 @@ const canonicalThreadMetaMap$ = computed((get) => {
       serviceTier: thread.serviceTier,
       computerUseHostId: thread.computerUseHostId,
       cloudBrowserEnabled: thread.cloudBrowserEnabled,
-      selectedImageModel: thread.selectedImageModel,
     });
   }
   return metaById;
@@ -377,7 +375,6 @@ function threadMetaFromMetadata(metadata: ChatThreadMetadata): ThreadMeta {
     serviceTier: metadata.serviceTier,
     computerUseHostId: metadata.computerUseHostId,
     cloudBrowserEnabled: metadata.cloudBrowserEnabled,
-    selectedImageModel: metadata.selectedImageModel,
   };
 }
 
@@ -610,7 +607,6 @@ export const registerOptimisticChatThreadEvent$ = command(
       serviceTier: null,
       computerUseHostId: null,
       cloudBrowserEnabled: false,
-      selectedImageModel: null,
       createdAt: nowDate().toISOString(),
       ...input,
     };

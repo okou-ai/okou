@@ -73,12 +73,6 @@ export function chatThreadColumns() {
     codexServiceTier: varchar("codex_service_tier", {
       length: 20,
     }).$type<CodexServiceTier>(),
-    /**
-     * Per-thread built-in image generation model default. Null falls through to
-     * the member default and then to the system default. Image parameters such
-     * as size, aspect ratio, and quality remain per generation.
-     */
-    selectedImageModel: varchar("selected_image_model", { length: 255 }),
     computerUseHostId: uuid("computer_use_host_id").references(
       () => {
         return computerUseHosts.id;

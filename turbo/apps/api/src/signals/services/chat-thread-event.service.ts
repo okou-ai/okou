@@ -13,7 +13,6 @@ import type {
   ChatThreadServiceTier,
   CodexServiceTier,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import type { ImageModelId } from "@okouai/api-contracts/contracts/image-models";
 import { agents } from "@okouai/db/schema/agent";
 import {
   chatThreadEventSequences,
@@ -52,7 +51,6 @@ interface ChatThreadEventAppend {
   readonly serviceTier?: ChatThreadServiceTier | null;
   readonly computerUseHostId?: string | null;
   readonly cloudBrowserEnabled?: boolean;
-  readonly selectedImageModel?: ImageModelId | null;
   readonly createdAt?: Date;
 }
 
@@ -97,8 +95,7 @@ async function insertChatThreadEvent(
       id, user_id, org_id, seq_id, chat_thread_id, kind, agent_id,
       reassigned_agent_id, title,
       pin_order, selected_model, model_settings, model_settings_patch,
-      service_tier, computer_use_host_id, cloud_browser_enabled,
-      selected_image_model, created_at
+      service_tier, computer_use_host_id, cloud_browser_enabled, created_at
     ) SELECT
       ${args.eventId ?? randomUUID()}::uuid, ${args.userId}, ${orgId}, last_seq_id,
       ${args.chatThreadId}::uuid, ${args.kind}::chat_thread_event_kind,
@@ -108,7 +105,7 @@ async function insertChatThreadEvent(
       ${args.modelSettings === undefined ? null : JSON.stringify(args.modelSettings)}::jsonb,
       ${args.modelSettingsPatch === undefined ? null : JSON.stringify(args.modelSettingsPatch)}::jsonb,
       ${args.serviceTier ?? null}, ${args.computerUseHostId ?? null}::uuid,
-      ${args.cloudBrowserEnabled ?? false}, ${args.selectedImageModel ?? null},
+      ${args.cloudBrowserEnabled ?? false},
       COALESCE(${args.createdAt ? args.createdAt.toISOString() : null}::timestamp, timezone('UTC', now()))
     FROM reserved
     ON CONFLICT (id) DO NOTHING
@@ -194,7 +191,6 @@ type ChatThreadEventRow = {
   readonly serviceTier: ChatThreadServiceTier | null;
   readonly computerUseHostId: string | null;
   readonly cloudBrowserEnabled: boolean;
-  readonly selectedImageModel: string | null;
   readonly createdAt: Date;
 };
 
@@ -213,7 +209,6 @@ const chatThreadEventSelection = Object.freeze({
   serviceTier: chatThreadEvents.serviceTier,
   computerUseHostId: chatThreadEvents.computerUseHostId,
   cloudBrowserEnabled: chatThreadEvents.cloudBrowserEnabled,
-  selectedImageModel: chatThreadEvents.selectedImageModel,
   createdAt: chatThreadEvents.createdAt,
 });
 
@@ -232,7 +227,6 @@ const pageChatThreadEventSelection = Object.freeze({
   serviceTier: pageChatThreadEvent.serviceTier,
   computerUseHostId: pageChatThreadEvent.computerUseHostId,
   cloudBrowserEnabled: pageChatThreadEvent.cloudBrowserEnabled,
-  selectedImageModel: pageChatThreadEvent.selectedImageModel,
   createdAt: pageChatThreadEvent.createdAt,
 });
 
@@ -276,7 +270,6 @@ function toApiChatThreadEvent(
     serviceTier: row.serviceTier,
     computerUseHostId: row.computerUseHostId,
     cloudBrowserEnabled: row.cloudBrowserEnabled,
-    selectedImageModel: row.selectedImageModel,
     createdAt: row.createdAt.toISOString(),
   };
 }

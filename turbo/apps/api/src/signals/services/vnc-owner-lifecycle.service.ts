@@ -1,8 +1,6 @@
 import { vncConnections } from "@okouai/db/schema/vnc-connection";
 import { vncCredentials } from "@okouai/db/schema/vnc-credential";
-import { agentVncAccess } from "@okouai/db/schema/agent-vnc-access";
-import { agents } from "@okouai/db/schema/agent";
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 
 import { command } from "ccstate";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
@@ -128,31 +126,7 @@ export const eraseVncOwnerData$ = command(
               eq(vncCredentials.orgId, scope.orgId),
               eq(vncCredentials.userId, scope.userId),
             );
-    const grantCondition =
-      scope.kind === "user"
-        ? eq(agentVncAccess.userId, scope.userId)
-        : scope.kind === "organization"
-          ? eq(agentVncAccess.orgId, scope.orgId)
-          : and(
-              eq(agentVncAccess.orgId, scope.orgId),
-              eq(agentVncAccess.userId, scope.userId),
-            );
     await db.transaction(async (tx) => {
-      // Preserve existing obsolete-grant cleanup until its separate contraction.
-      await tx
-        .select({ id: agents.id })
-        .from(agents)
-        .where(
-          inArray(
-            agents.id,
-            tx
-              .select({ id: agentVncAccess.agentId })
-              .from(agentVncAccess)
-              .where(grantCondition),
-          ),
-        )
-        .orderBy(asc(agents.id))
-        .for("share");
       await tx
         .select({ orgId: orgMembersMetadata.orgId })
         .from(orgMembersMetadata)
@@ -173,7 +147,6 @@ export const eraseVncOwnerData$ = command(
         .for("update");
       await tx.delete(vncConnections).where(connectionCondition);
       await tx.delete(vncCredentials).where(credentialCondition);
-      await tx.delete(agentVncAccess).where(grantCondition);
       // This is the existing preference-row lifecycle, not a new authority flag.
       // A late admission must match the captured exact database timestamp; it
       // cannot create this parent after its external membership lookup.

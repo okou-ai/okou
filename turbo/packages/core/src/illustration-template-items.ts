@@ -1,4 +1,4 @@
-export const ILLUSTRATION_ASSET_BASE =
+const ILLUSTRATION_ASSET_BASE =
   "https://static.vm0.io/vm0/artifact-templates/illustration/assets";
 
 /**
@@ -9,17 +9,12 @@ export const ILLUSTRATION_ASSET_BASE =
  * {@link illustrationAssetUrl}.
  */
 const ILLUSTRATION_ASSET_PATHS: Record<string, string> = {
-  "images/emboss-deboss.jpg":
-    "a02bb092-3077-4912-a5be-58d940a0e993/ref-sleeping-cat-ivory.jpg",
   "refs/emboss-deboss/ref-sleeping-cat-ivory.jpg":
     "a02bb092-3077-4912-a5be-58d940a0e993/ref-sleeping-cat-ivory.jpg",
   "refs/emboss-deboss/ref-beyond-ivory.jpg":
     "7d58d19d-7af8-40bb-8fc6-d0e19854ae77/ref-beyond-ivory.jpg",
   "refs/emboss-deboss/ref-wind-space-blush.jpg":
     "8e2f9926-14bd-459d-b2b1-5b06569b4f9e/ref-wind-space-blush.jpg",
-  "images/cozy-parlor.jpg":
-    "d6892556-c737-4b2d-96e2-8011cb89e73b/cozy-parlor.jpg",
-  "images/crowd-ink.png": "61a6e547-8dcd-4a70-9c08-436721562ce9/crowd-ink.png",
   "images/editorial-flatfolk.png":
     "5ccf0d60-b59e-4fe8-8388-1cdb8c5e57d9/editorial-flatfolk.png",
   "images/endpaper.png": "0712c960-8336-4ef5-b6bf-9a6bea30ee6a/endpaper.png",
@@ -32,17 +27,11 @@ const ILLUSTRATION_ASSET_PATHS: Record<string, string> = {
     "b782b0a8-8fc4-4f1a-a5d9-fc8be7cd5eae/grain-poster.png",
   "images/grainy-duotone.png":
     "94e6a6bf-545a-4579-b1ab-672d9ebaadf0/grainy-duotone.png",
-  "images/iberian-vignette.png":
-    "d7c62c13-7ed0-4e7b-9fbb-b35edfd7f610/iberian-vignette.png",
   "images/ink-mascot.png":
     "3a32149b-beed-468a-ab95-d7c66161b056/ink-mascot.png",
-  "images/ink-storefront.png":
-    "dedb5189-f068-4648-a2c4-b970a04becbb/ink-storefront.png",
   "images/inkdab.png": "52f4536c-8bcb-459a-bd9e-db122b587c5a/inkdab.png",
   "images/inkstomp.png": "b4374019-26c4-43dc-ac72-738119dd8aed/inkstomp.png",
   "images/iso-scene.png": "a5584c98-8d92-43f7-a3ce-36d3a50dee70/iso-scene.png",
-  "images/jade-blockprint.png":
-    "01de3009-d39e-4ae5-92e0-9ebab0b67f7b/jade-blockprint.png",
   "images/light-pop-portrait.png":
     "9380ec74-934d-4a30-a7c4-6b331141ba68/light-pop-portrait.png",
   "images/loose-contour.png":
@@ -62,16 +51,10 @@ const ILLUSTRATION_ASSET_PATHS: Record<string, string> = {
     "ee24ef09-ae82-4dac-b6a0-cf0506498936/postcard-illustration.png",
   "images/riso-relic.png":
     "e7fa57b9-c322-4caa-8dd7-cea841a63c1e/riso-relic.png",
-  "images/shadow-pop.png":
-    "66da8950-89fe-43d4-afdb-07d12e196718/shadow-pop.png",
-  "images/soft-vector.png":
-    "f4ef44c0-0bf6-441f-aacc-ad5d90240719/soft-vector.png",
   "images/sticker-sheet.png":
     "a4dcdc0b-a08a-4996-bc13-d7c1a6e4beb2/sticker-sheet.png",
   "images/sunlit-gouache.png":
     "e1479a4d-be2b-4aeb-bfac-5db0fc5d5b88/sunlit-gouache.png",
-  "images/tiny-wanderer.jpg":
-    "d500f1d8-f427-40af-a281-c470c4c3067c/tiny-wanderer.jpg",
   "refs/cozy-parlor/ref-frog-letters.jpg":
     "03982053-3118-403a-88db-7888b76dca20/ref-frog-letters.jpg",
   "refs/cozy-parlor/ref-hedgehog-records.jpg":
@@ -399,7 +382,7 @@ const ILLUSTRATION_ASSET_PATHS: Record<string, string> = {
 };
 
 /** Resolve an illustration asset's logical path to its full CDN URL. */
-export function illustrationAssetUrl(path: string): string {
+function illustrationAssetUrl(path: string): string {
   const objectPath = ILLUSTRATION_ASSET_PATHS[path];
   if (!objectPath) {
     throw new Error(`Unknown illustration asset path: ${path}`);
@@ -407,25 +390,23 @@ export function illustrationAssetUrl(path: string): string {
   return `${ILLUSTRATION_ASSET_BASE}/${objectPath}`;
 }
 
-export interface IllustrationStyle {
+interface IllustrationStyle {
   slug: string;
   title: string;
   image: string;
   /** Optional path under ASSET_BASE used as the card cover, e.g. "refs/<slug>/<file>". */
   cover?: string;
-  sample: string;
   width: number;
   height: number;
   refs: readonly string[];
 }
 
-export const ILLUSTRATION_STYLES: readonly IllustrationStyle[] = [
+const ILLUSTRATION_STYLES: readonly IllustrationStyle[] = [
   {
     slug: "emboss-deboss",
     title: "Emboss & Deboss",
     image: "emboss-deboss.jpg",
     cover: "refs/emboss-deboss/ref-sleeping-cat-ivory.jpg",
-    sample: "ref-sleeping-cat-ivory.jpg",
     width: 1024,
     height: 1536,
     refs: [
@@ -439,7 +420,6 @@ export const ILLUSTRATION_STYLES: readonly IllustrationStyle[] = [
     title: "Ink Storefront",
     image: "ink-storefront.png",
     cover: "refs/ink-storefront/ref-l1-lupo.png",
-    sample: "ref-l1-lupo.png",
     width: 1024,
     height: 1536,
     refs: ["ref-l1-lupo.png", "ref-l1-petit-pain.png", "ref-l2-fleur-fern.png"],
@@ -449,7 +429,6 @@ export const ILLUSTRATION_STYLES: readonly IllustrationStyle[] = [
     title: "Tiny Wanderer",
     image: "tiny-wanderer.jpg",
     cover: "refs/tiny-wanderer/varA.jpg",
-    sample: "varA.jpg",
     width: 512,
     height: 768,
     refs: ["varA.jpg", "varB.jpg", "varC.jpg", "varD.jpg"],
@@ -459,7 +438,6 @@ export const ILLUSTRATION_STYLES: readonly IllustrationStyle[] = [
     title: "Crowd Ink",
     image: "crowd-ink.png",
     cover: "refs/crowd-ink/anchor.png",
-    sample: "anchor.png",
     width: 1536,
     height: 1024,
     refs: [
@@ -475,7 +453,6 @@ export const ILLUSTRATION_STYLES: readonly IllustrationStyle[] = [
     title: "Cozy Parlor",
     image: "cozy-parlor.jpg",
     cover: "refs/cozy-parlor/ref-otter-painter.jpg",
-    sample: "ref-otter-painter.jpg",
     width: 512,
     height: 768,
     refs: [
@@ -490,7 +467,6 @@ export const ILLUSTRATION_STYLES: readonly IllustrationStyle[] = [
     title: "Iberian Vignette",
     image: "iberian-vignette.png",
     cover: "refs/iberian-vignette/ref-l1-manana.png",
-    sample: "ref-l1-manana.png",
     width: 848,
     height: 1264,
     refs: [
@@ -505,7 +481,6 @@ export const ILLUSTRATION_STYLES: readonly IllustrationStyle[] = [
     title: "Shadow Pop",
     image: "shadow-pop.png",
     cover: "refs/shadow-pop/ref-default-mail-l2.png",
-    sample: "ref-default-mail-l2.png",
     width: 1024,
     height: 1024,
     refs: [
@@ -521,7 +496,6 @@ export const ILLUSTRATION_STYLES: readonly IllustrationStyle[] = [
     title: "Jade Blockprint",
     image: "jade-blockprint.png",
     cover: "refs/jade-blockprint/ref-sage-sprout-l1.png",
-    sample: "ref-sage-sprout-l1.png",
     width: 1024,
     height: 1024,
     refs: [
@@ -539,7 +513,6 @@ export const ILLUSTRATION_STYLES: readonly IllustrationStyle[] = [
     slug: "loose-contour",
     title: "Loose Contour",
     image: "loose-contour.png",
-    sample: "ref-l3-balanced-vignette.png",
     width: 1024,
     height: 1024,
     refs: [
@@ -555,7 +528,6 @@ export const ILLUSTRATION_STYLES: readonly IllustrationStyle[] = [
     title: "Soft Vector",
     image: "soft-vector.png",
     cover: "refs/soft-vector/ref-bike-lime.png",
-    sample: "ref-desk-violet.png",
     width: 1024,
     height: 1024,
     refs: ["ref-bike-lime.png", "ref-desk-violet.png", "ref-mug-mustard.png"],
@@ -564,7 +536,6 @@ export const ILLUSTRATION_STYLES: readonly IllustrationStyle[] = [
     slug: "grain-poster",
     title: "Grain Poster",
     image: "grain-poster.png",
-    sample: "ref-twilightdesk-twilight-l3-solo.png",
     width: 704,
     height: 1472,
     refs: [
@@ -581,7 +552,6 @@ export const ILLUSTRATION_STYLES: readonly IllustrationStyle[] = [
     slug: "sunlit-gouache",
     title: "Sunlit Gouache",
     image: "sunlit-gouache.png",
-    sample: "ref-bookshop-interior.jpg",
     width: 1024,
     height: 1536,
     refs: [
@@ -596,7 +566,6 @@ export const ILLUSTRATION_STYLES: readonly IllustrationStyle[] = [
     slug: "folk-muse",
     title: "Folk Muse",
     image: "folk-muse.png",
-    sample: "ref-canonical.png",
     width: 1024,
     height: 1536,
     refs: [
@@ -610,7 +579,6 @@ export const ILLUSTRATION_STYLES: readonly IllustrationStyle[] = [
     slug: "light-pop-portrait",
     title: "Light Pop Portrait",
     image: "light-pop-portrait.png",
-    sample: "ref-sleepy-girl-bunny-peach.png",
     width: 1024,
     height: 1024,
     refs: [
@@ -626,7 +594,6 @@ export const ILLUSTRATION_STYLES: readonly IllustrationStyle[] = [
     slug: "postcard-illustration",
     title: "Postcard Illustration",
     image: "postcard-illustration.png",
-    sample: "ref-sensoji.png",
     width: 1024,
     height: 1536,
     refs: ["ref-sensoji.png", "ref-shibuya.png"],
@@ -635,7 +602,6 @@ export const ILLUSTRATION_STYLES: readonly IllustrationStyle[] = [
     slug: "mosaic-still-life",
     title: "Mosaic Still Life",
     image: "mosaic-still-life.png",
-    sample: "ref-reading-nook.jpg",
     width: 1024,
     height: 1536,
     refs: [
@@ -653,7 +619,6 @@ export const ILLUSTRATION_STYLES: readonly IllustrationStyle[] = [
     slug: "painterly-botanical",
     title: "Painterly Botanical",
     image: "painterly-botanical.png",
-    sample: "ref-wisteria-lavender.png",
     width: 1024,
     height: 1536,
     refs: [
@@ -671,7 +636,6 @@ export const ILLUSTRATION_STYLES: readonly IllustrationStyle[] = [
     slug: "op-ed-cover",
     title: "Op-Ed Cover",
     image: "op-ed-cover.png",
-    sample: "ref-slowest-bowl.png",
     width: 896,
     height: 1152,
     refs: [
@@ -684,7 +648,6 @@ export const ILLUSTRATION_STYLES: readonly IllustrationStyle[] = [
     slug: "endpaper",
     title: "Endpaper",
     image: "endpaper.png",
-    sample: "ref-mossy-teal-cats-l2.png",
     width: 1024,
     height: 1536,
     refs: [
@@ -699,7 +662,6 @@ export const ILLUSTRATION_STYLES: readonly IllustrationStyle[] = [
     slug: "inkstomp",
     title: "Inkstomp",
     image: "inkstomp.png",
-    sample: "ref-quiet-quitter.png",
     width: 1024,
     height: 1536,
     refs: [
@@ -717,7 +679,6 @@ export const ILLUSTRATION_STYLES: readonly IllustrationStyle[] = [
     slug: "mellow-pop",
     title: "Mellow Pop",
     image: "mellow-pop.png",
-    sample: "ref-mint-open-book-l2.png",
     width: 1024,
     height: 1536,
     refs: [
@@ -736,7 +697,6 @@ export const ILLUSTRATION_STYLES: readonly IllustrationStyle[] = [
     slug: "papernook",
     title: "Papernook",
     image: "papernook.png",
-    sample: "ref-researcher.png",
     width: 1024,
     height: 1536,
     refs: [
@@ -751,7 +711,6 @@ export const ILLUSTRATION_STYLES: readonly IllustrationStyle[] = [
     slug: "ink-mascot",
     title: "Ink Mascot",
     image: "ink-mascot.png",
-    sample: "ref-content-terracotta.png",
     width: 1024,
     height: 1536,
     refs: [
@@ -769,7 +728,6 @@ export const ILLUSTRATION_STYLES: readonly IllustrationStyle[] = [
     slug: "riso-relic",
     title: "Riso Relic",
     image: "riso-relic.png",
-    sample: "ref-rotary-phone-mustard-ringring.png",
     width: 1024,
     height: 1536,
     refs: [
@@ -784,7 +742,6 @@ export const ILLUSTRATION_STYLES: readonly IllustrationStyle[] = [
     slug: "editorial-flatfolk",
     title: "Editorial Flatfolk",
     image: "editorial-flatfolk.png",
-    sample: "ref-harbor.png",
     width: 1024,
     height: 1024,
     refs: ["ref-alpine.png", "ref-harbor.png", "ref-park.png"],
@@ -793,7 +750,6 @@ export const ILLUSTRATION_STYLES: readonly IllustrationStyle[] = [
     slug: "flat-poster",
     title: "Flat Poster",
     image: "flat-poster.png",
-    sample: "ref-teacup-lavender-takeabeat.png",
     width: 1024,
     height: 1536,
     refs: [
@@ -810,7 +766,6 @@ export const ILLUSTRATION_STYLES: readonly IllustrationStyle[] = [
     slug: "grainy-duotone",
     title: "Grainy Duotone",
     image: "grainy-duotone.png",
-    sample: "ref-magnifier-lavender-mustard-l2.png",
     width: 1056,
     height: 992,
     refs: [
@@ -827,7 +782,6 @@ export const ILLUSTRATION_STYLES: readonly IllustrationStyle[] = [
     slug: "sticker-sheet",
     title: "Sticker Sheet",
     image: "sticker-sheet.png",
-    sample: "ref-desk.jpg",
     width: 848,
     height: 1264,
     refs: [
@@ -841,7 +795,6 @@ export const ILLUSTRATION_STYLES: readonly IllustrationStyle[] = [
     slug: "folk-storybook",
     title: "Folk Storybook",
     image: "folk-storybook.png",
-    sample: "ref-reading-nook.jpg",
     width: 1024,
     height: 1024,
     refs: ["ref-chill-tussle.jpg", "ref-puzzle.jpg", "ref-reading-nook.jpg"],
@@ -850,7 +803,6 @@ export const ILLUSTRATION_STYLES: readonly IllustrationStyle[] = [
     slug: "inkdab",
     title: "Inkdab",
     image: "inkdab.png",
-    sample: "ref-reading-lavender-rich.png",
     width: 1024,
     height: 1024,
     refs: [
@@ -865,7 +817,6 @@ export const ILLUSTRATION_STYLES: readonly IllustrationStyle[] = [
     slug: "iso-scene",
     title: "Iso Scene",
     image: "iso-scene.png",
-    sample: "blue-city-construction.png",
     width: 1024,
     height: 1024,
     refs: [
@@ -879,7 +830,6 @@ export const ILLUSTRATION_STYLES: readonly IllustrationStyle[] = [
     slug: "notion-illustration",
     title: "Notion Illustration",
     image: "notion-illustration.png",
-    sample: "ref-reading-windowseat.png",
     width: 1088,
     height: 960,
     refs: [
@@ -968,13 +918,11 @@ export interface IllustrationTemplateItem {
   readonly previewImage: string;
   readonly previewImages: readonly string[];
   readonly cardPreviewImage?: string;
-  readonly variationCount: number;
   /** Intrinsic pixel dimensions of the style's reference frame, used to reserve
    * the card's aspect ratio so the full illustration renders without cropping,
    * letterboxing, or layout shift. */
   readonly width: number;
   readonly height: number;
-  readonly tag: "illustration";
 }
 
 function illustrationPreviewImage(style: IllustrationStyle): string {
@@ -1006,9 +954,7 @@ export const ILLUSTRATION_TEMPLATE_ITEMS: readonly IllustrationTemplateItem[] =
       previewImages: style.refs.map((ref) => {
         return illustrationAssetUrl(`refs/${style.slug}/${ref}`);
       }),
-      variationCount: style.refs.length,
       width: style.width,
       height: style.height,
-      tag: "illustration",
     };
   });

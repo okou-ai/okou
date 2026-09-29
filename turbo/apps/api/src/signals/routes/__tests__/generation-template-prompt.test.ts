@@ -399,7 +399,6 @@ describe("buildGenerationTemplatePrompt", () => {
     );
     expect(imageWorkflow).toContain("never call `okou generate image`");
     expect(imageWorkflow).toContain("or a template image wrapper directly");
-    expect(imageWorkflow).not.toContain("a fourth is rejected");
     expect(result.prompt).toContain("until it prints QA_READY");
     expect(result.prompt).toContain("okou host ./publish --site <slug>");
     expect(result.prompt).toContain("checks/verify-published.sh <url>");

@@ -77,7 +77,6 @@ async function fixture(overrides: Partial<RuntimeBody> = {}) {
         triggerSource: "web",
         status: "running",
         chat: false,
-        access: false,
         runnerGroup: `ssh-consumers-${randomUUID()}`,
         ...owner,
       },
@@ -111,7 +110,7 @@ async function fixture(overrides: Partial<RuntimeBody> = {}) {
 
 describe("live chat SSH Run inventory", () => {
   it("filters multiple SSH hosts by the Run's chat, current defaults, and sparse overrides", async () => {
-    const f = await fixture({ chat: true, access: false });
+    const f = await fixture({ chat: true });
     const first = await createHost();
     const second = await createHost("second.example.com");
     if (!f.threadId) {
@@ -146,7 +145,6 @@ describe("live chat SSH Run inventory", () => {
       userId: f.userId,
       orgId: f.orgId,
       chat: true,
-      access: false,
     });
     const otherThreadIds = async () => {
       return (
@@ -189,7 +187,6 @@ describe("live chat SSH Run inventory", () => {
       userId: f.userId,
       orgId: f.orgId,
       chat: false,
-      access: true,
     });
     await accept(inventory().list({ headers: withoutChat.token() }), [404]);
   });

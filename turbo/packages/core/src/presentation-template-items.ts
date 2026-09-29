@@ -1,14 +1,12 @@
 export interface PresentationTemplateItem {
   readonly slug: string;
   readonly title: string;
-  readonly prompt: string;
   readonly embedUrl: string;
   readonly previewImage: string;
   readonly previewImages: readonly string[];
   readonly slideCount?: number;
   readonly cardPreviewImage?: string;
   readonly cardPreviewImagesByTheme?: Readonly<Record<string, string>>;
-  readonly previewHtmls?: readonly string[];
   readonly colorSystemId?: string;
   readonly templateId: string;
 }
@@ -1041,24 +1039,6 @@ const CRAYON_PREVIEW_IMAGES = [
   "https://static.vm0.io/vm0/artifact-templates/presentation/d82049a8-dbb6-4425-9043-058720a335a6/slide-15.png",
 ] as const satisfies readonly [string, ...string[]];
 
-const CRAYON_PREVIEW_HTMLS = [
-  "https://static.vm0.io/vm0/artifact-templates/presentation/351717b6-5c48-42c5-a349-d8a815bc229f/slide-01.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/c4116423-38ef-48d9-9728-695bf265e510/slide-02.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/2cb2711a-0638-4673-a47b-69a51116e21d/slide-03.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/32f3a867-b29d-4b0e-ba32-073167892556/slide-04.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/e7e49363-33ae-48c6-998a-f911e51bf340/slide-05.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/0c005465-e491-4d84-915c-efc892bf6030/slide-06.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/3baf78ed-8cec-4da1-9734-3a8ca51a1d6c/slide-07.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/803373ba-fa20-4ebd-84ad-cb73f4e10dcd/slide-08.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/27ef439c-3dc2-49d2-b5ca-de98d20f2ca6/slide-09.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/c498a285-2d3f-4c76-9ebb-d26ad42f677c/slide-10.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/b79a2ac4-ef78-4a3c-b47e-6f1310756b7c/slide-11.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/e8dac0bc-f2a2-440c-ade3-c979d34b7459/slide-12.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/3f6c4cae-cac2-4cf1-93d8-d2d4609cad8e/slide-13.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/0742c906-1dcb-4bec-80e3-f0e5387e727d/slide-14.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/d13fd530-4917-4378-8e2b-8c0befd96119/slide-15.html",
-] as const satisfies readonly [string, ...string[]];
-
 const CREATIVE_AGENCY_PREVIEW_IMAGES = [
   "https://static.vm0.io/vm0/artifact-templates/presentation/6494f661-c935-4ab2-9181-600097bde23b/creative-agency-presentation.png",
   "https://static.vm0.io/vm0/artifact-templates/presentation/a1883f03-854f-4f31-9da5-5d1f80179ea9/slide-02.png",
@@ -1075,24 +1055,6 @@ const CREATIVE_AGENCY_PREVIEW_IMAGES = [
   "https://static.vm0.io/vm0/artifact-templates/presentation/7557bbcc-8502-43eb-8d91-fa2b8035e15d/slide-13.png",
   "https://static.vm0.io/vm0/artifact-templates/presentation/07fa40fd-5c73-4913-9ed2-a248e3e56865/slide-14.png",
   "https://static.vm0.io/vm0/artifact-templates/presentation/62403bf8-6aac-40af-b279-95239dc20139/slide-15.png",
-] as const satisfies readonly [string, ...string[]];
-
-const CREATIVE_AGENCY_PREVIEW_HTMLS = [
-  "https://static.vm0.io/vm0/artifact-templates/presentation/440dde23-496f-4e4c-9b78-226deda76c4c/slide-01.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/80de0f45-96af-4131-8cc8-9f6a058efe96/slide-02.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/5acb529d-e17a-4b7b-b418-1dc49f50bc53/slide-03.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/ebc56020-ec50-4125-8467-f6361648687b/slide-04.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/20d61d5a-a7d2-4cf5-a7ba-2d507e8df1d8/slide-05.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/8a89a5f5-af1c-4b64-941d-59fd55904c43/slide-06.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/152b7fb4-5619-4344-a714-0a29434f082c/slide-07.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/aa8de55e-a778-4a24-b530-9c76bcb85991/slide-08.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/afe9346a-de0f-4141-9434-e5bda6f09efe/slide-09.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/995f23c4-bda7-4f8c-80bb-cd5e4eda3f57/slide-10.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/de3d07df-083a-4218-8c86-fcff79251a47/slide-11.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/a21f6ee8-f967-4415-9825-27c08a28cc09/slide-12.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/f25909ac-88d6-48eb-859c-488d5bbacd9f/slide-13.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/1bea8f97-d0e5-4240-bae5-c3bbe5cd5ba2/slide-14.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/188bdf52-0a5b-466a-8417-b8920e35fb5a/slide-15.html",
 ] as const satisfies readonly [string, ...string[]];
 
 const DATA_REPORT_PREVIEW_IMAGES = [
@@ -1113,24 +1075,6 @@ const DATA_REPORT_PREVIEW_IMAGES = [
   "https://static.vm0.io/vm0/artifact-templates/presentation/a0269c99-9d1b-44e2-b49a-0980820b3b90/slide-15.png",
 ] as const satisfies readonly [string, ...string[]];
 
-const DATA_REPORT_PREVIEW_HTMLS = [
-  "https://static.vm0.io/vm0/artifact-templates/presentation/16310322-2d80-4142-a5f5-7bcff8c3eed0/slide-01.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/be665757-c3d0-4091-b957-9b2090d6523d/slide-02.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/38b3ce82-7212-44d1-a5ae-a9477ce5e086/slide-03.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/90d4ca26-8f11-413d-a9d5-611c3dfb7971/slide-04.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/b08266e5-92fe-45c8-82bd-a02a1921e780/slide-05.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/e958c1d0-9674-4149-94e5-23a6b78b7151/slide-06.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/99d8ebd7-fdc7-427a-a000-a24675b1a730/slide-07.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/04fc9197-1543-487c-82eb-0560cde0c17d/slide-08.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/f979bae9-63ad-49fb-81f1-f4149e244fe0/slide-09.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/eb896ae1-adf1-4681-948d-564c73a6ac82/slide-10.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/479c66d1-7999-43ef-a24c-e18399053105/slide-11.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/5e9763c0-7dfb-495c-af1d-9cf25bcfcb4c/slide-12.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/a9f6fc70-1099-461a-be6b-a4bbabce5f4a/slide-13.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/be6017d7-be11-436c-b67a-050ebee5fdb7/slide-14.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/41099f41-7548-4a11-beb5-cebde83df691/slide-15.html",
-] as const satisfies readonly [string, ...string[]];
-
 const EDITORIAL_MAGAZINE_PREVIEW_IMAGES = [
   "https://static.vm0.io/vm0/artifact-templates/presentation/adf552b2-53ed-4282-b08c-2359f3b124ff/editorial-magazine-deck.png",
   "https://static.vm0.io/vm0/artifact-templates/presentation/63b4c9a6-7f1a-4f49-af9b-dd93d9d9138a/slide-02.png",
@@ -1147,24 +1091,6 @@ const EDITORIAL_MAGAZINE_PREVIEW_IMAGES = [
   "https://static.vm0.io/vm0/artifact-templates/presentation/172f784b-3502-485f-9ab4-e4714afa7b22/slide-13.png",
   "https://static.vm0.io/vm0/artifact-templates/presentation/2897a88f-0b4c-4892-bb32-eb4545cc3acc/slide-14.png",
   "https://static.vm0.io/vm0/artifact-templates/presentation/c453a78d-8109-423b-ae0e-278123d38239/slide-15.png",
-] as const satisfies readonly [string, ...string[]];
-
-const EDITORIAL_MAGAZINE_PREVIEW_HTMLS = [
-  "https://static.vm0.io/vm0/artifact-templates/presentation/539b64b7-ba42-4f62-a54f-1427b2afddb3/slide-01.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/b1a544b4-a4a1-4292-ba63-61843a14c5b3/slide-02.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/d4880c62-7c63-4696-b80a-2bed0108a988/slide-03.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/84ddea62-a1eb-425f-8b09-450f104aa3a5/slide-04.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/02425e87-5b9f-4680-bc3d-2c58c7d2adc1/slide-05.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/85d7e4f9-31bc-4ba8-9b21-11be2342d135/slide-06.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/58c58583-41fb-4d78-be75-1c905a8776f1/slide-07.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/15c39a3c-05e0-41e5-b5b8-71ae03377232/slide-08.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/a9decabb-f920-46b6-a5f9-a5ec3d12b962/slide-09.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/62965071-8c8d-4b14-970c-3e7903c85195/slide-10.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/8d81c8d4-c1d4-49e1-b9cf-60ee42b1c225/slide-11.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/1539da62-2481-4dfc-8b5b-5ca6118bc1f3/slide-12.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/326ebe33-8072-4a14-af18-70ec77f59360/slide-13.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/b45db466-6e73-418e-9e65-f86a3c17be8b/slide-14.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/512d2421-0d60-44ed-81b1-29620a93ed5c/slide-15.html",
 ] as const satisfies readonly [string, ...string[]];
 
 const LANDING_CONSULTING_PREVIEW_IMAGES = [
@@ -1185,24 +1111,6 @@ const LANDING_CONSULTING_PREVIEW_IMAGES = [
   "https://static.vm0.io/vm0/artifact-templates/presentation/a5f1fff4-18f9-4eaa-860c-c9ce8b57922d/slide-15.png",
 ] as const satisfies readonly [string, ...string[]];
 
-const LANDING_CONSULTING_PREVIEW_HTMLS = [
-  "https://static.vm0.io/vm0/artifact-templates/presentation/b02b4e7a-861d-4db3-af6f-a6e1f492a805/slide-01.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/512dda48-57e2-4264-aba7-21500b56e38c/slide-02.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/a15f57d1-fbad-4a2a-ae3b-e02f97eef373/slide-03.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/45047a7b-242c-4cda-a8d1-98471d8bd8e7/slide-04.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/a138a120-8d27-4bfe-8e9b-2dee7e8398ad/slide-05.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/8a2d4e51-7515-442b-9ff6-8ea1d74cbaed/slide-06.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/a0d46684-2831-4653-80af-34e0e6492da7/slide-07.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/c43fff61-c6a6-4524-a222-9ccbfb25e82e/slide-08.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/e7016072-aada-44f8-93cf-15c2cf0bbcf9/slide-09.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/f4b22edf-cf10-4f7c-acbe-fbe5dab95f08/slide-10.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/100de24b-6e80-40c7-864c-2dece1e3fcef/slide-11.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/135a102e-1f28-4fc3-8d26-f57bc93ce1f9/slide-12.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/d5e42744-3bbc-4e85-9f6a-dae697986214/slide-13.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/4507a7cb-ac95-4363-96bb-03def14afbe3/slide-14.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/9b54f283-b5de-4d49-a525-d3ad1b2304e8/slide-15.html",
-] as const satisfies readonly [string, ...string[]];
-
 const LUMINA_PREVIEW_IMAGES = [
   "https://static.vm0.io/vm0/artifact-templates/presentation/a9c9d0c7-726c-4013-802d-cde1feefd058/lumina-creative-studio.png",
   "https://static.vm0.io/vm0/artifact-templates/presentation/592fe965-5a74-4366-b8b9-e58605dcc16e/slide-02.png",
@@ -1219,24 +1127,6 @@ const LUMINA_PREVIEW_IMAGES = [
   "https://static.vm0.io/vm0/artifact-templates/presentation/40783c03-36a1-40a7-91e4-f974d9aa8a58/slide-13.png",
   "https://static.vm0.io/vm0/artifact-templates/presentation/8a7c8c68-12e8-4500-ae37-5b7db7d782c7/slide-14.png",
   "https://static.vm0.io/vm0/artifact-templates/presentation/a913f8f3-3aa4-47d6-b29b-fe39de18ebaa/slide-15.png",
-] as const satisfies readonly [string, ...string[]];
-
-const LUMINA_PREVIEW_HTMLS = [
-  "https://static.vm0.io/vm0/artifact-templates/presentation/77b00b14-0909-4e10-afea-3c39ae74db73/slide-01.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/01faf670-8355-43f4-bd87-a283eff2500b/slide-02.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/1721d052-b4d9-4c8e-be68-b9d433dcc504/slide-03.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/995dc4b4-929d-4788-9f42-6da9e37c7ffd/slide-04.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/c20a8bfb-4b85-4407-abc7-ac8b5e04f13d/slide-05.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/4c6d6b98-8f11-4afe-8d44-1d07f0fc52f6/slide-06.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/2f236399-80f4-48d9-aa92-9f5c4fb2d161/slide-07.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/e02a7dc9-1fe7-454b-82ea-5968d10d5d73/slide-08.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/5373c442-9cb4-4245-99c0-270fe449880c/slide-09.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/e3234608-ff95-4de6-84b4-50f077062609/slide-10.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/7779e5ca-9759-470c-abe2-3d9aa7e68e5c/slide-11.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/9e45d5c9-9b2d-4b28-95ad-965a8566d48b/slide-12.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/009219ba-4047-4e84-87d7-9d1295728751/slide-13.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/da94d8b8-375e-413f-91c0-8b84f631744e/slide-14.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/5c3ad467-780a-4a59-b95c-26379e13e598/slide-15.html",
 ] as const satisfies readonly [string, ...string[]];
 
 const MOSAIC_GEOMETRIC_PREVIEW_IMAGES = [
@@ -1257,24 +1147,6 @@ const MOSAIC_GEOMETRIC_PREVIEW_IMAGES = [
   "https://static.vm0.io/vm0/artifact-templates/presentation/5355056e-e86d-4a65-afa3-9e3be0d05a32/slide-15.png",
 ] as const satisfies readonly [string, ...string[]];
 
-const MOSAIC_GEOMETRIC_PREVIEW_HTMLS = [
-  "https://static.vm0.io/vm0/artifact-templates/presentation/58a4dec5-db7a-4e03-835e-e49637dba964/slide-01.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/62d75fe7-4224-4943-a765-f558ab426bce/slide-02.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/b4482261-179a-4ca0-8a00-0186a51fcc1c/slide-03.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/af249477-c261-41cd-86d4-8e1aba376a32/slide-04.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/e7f1da55-2c8c-4858-aa13-33ab42d216ba/slide-05.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/2992c1ee-84db-4ab5-b251-a317a160de66/slide-06.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/35e0c6f8-f96e-4c67-8375-62ce1c47178f/slide-07.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/61a88e05-442b-4b25-9488-2f5e2df4dcf8/slide-08.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/140aac80-54d7-46bb-af05-40121cc85f0a/slide-09.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/60b1ad5d-631b-42fc-8b29-bedf3b4e2a6c/slide-10.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/3c3fd19a-8087-4177-bdd9-e7dde6109a2f/slide-11.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/0cc9cb46-0019-4d45-a33d-5fff36c2a754/slide-12.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/29123d43-c90a-48e4-9d1d-f1657f396a34/slide-13.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/23284bc3-078b-4cd2-a3e2-f207605e6ad1/slide-14.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/ac616f61-f1bc-44af-8862-c219f7f74bfe/slide-15.html",
-] as const satisfies readonly [string, ...string[]];
-
 const PLAYFUL_POP_PREVIEW_IMAGES = [
   "https://static.vm0.io/vm0/artifact-templates/presentation/3b6e8fbf-15f4-46cc-a2a6-8d3ef33d9d32/playful-pop-deck.png",
   "https://static.vm0.io/vm0/artifact-templates/presentation/083b8e2c-ea0a-434b-93c9-69d129ed242c/slide-02.png",
@@ -1291,24 +1163,6 @@ const PLAYFUL_POP_PREVIEW_IMAGES = [
   "https://static.vm0.io/vm0/artifact-templates/presentation/82b45a46-b5f3-4a97-a480-e07cadac0a96/slide-13.png",
   "https://static.vm0.io/vm0/artifact-templates/presentation/85672b12-bd99-4748-9b56-ec39aae695f5/slide-14.png",
   "https://static.vm0.io/vm0/artifact-templates/presentation/805bd601-9e99-40b1-a66a-34251c70c787/slide-15.png",
-] as const satisfies readonly [string, ...string[]];
-
-const PLAYFUL_POP_PREVIEW_HTMLS = [
-  "https://static.vm0.io/vm0/artifact-templates/presentation/098f0ce4-c773-4479-ad85-221c9114881a/slide-01.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/009db4d7-19f9-4266-a08d-2eb827678fde/slide-02.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/a143dba3-9e72-44c5-a105-0e5228125a1c/slide-03.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/b541db0e-322e-4604-9b13-ff117b5fcf7f/slide-04.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/3fa2f420-248a-4679-b76e-fb620fd67868/slide-05.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/859a88eb-5f9c-469b-b6c7-5987fe9e92f0/slide-06.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/23b1ec6d-ba39-41a6-923f-7c125c530f08/slide-07.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/b469c7a6-5151-488d-a59f-e38e091e376d/slide-08.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/46c96f07-8232-44fd-932e-e0a6e6abc0a0/slide-09.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/465fb0cb-18ff-4284-a184-d6a7cc8aa49c/slide-10.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/a72c8c6c-c5d5-4fac-95bd-f299102d344e/slide-11.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/27203fae-eb0e-49eb-8077-e69f7a888382/slide-12.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/bde44218-8dfd-418e-863a-f6e99808b2b3/slide-13.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/f84b61fc-4775-4ee3-ab28-fa9762b602fe/slide-14.html",
-  "https://static.vm0.io/vm0/artifact-templates/presentation/c3eaf388-6b9f-49b6-90af-ce27eedb87e2/slide-15.html",
 ] as const satisfies readonly [string, ...string[]];
 
 const PRESENTATION_TEMPLATE_REFERENCE_PREVIEW_IMAGES = {
@@ -1355,8 +1209,6 @@ export const PRESENTATION_TEMPLATE_PICKER_ITEMS: readonly PresentationTemplateIt
     {
       slug: "data-report-presentation",
       title: "Candy charts",
-      prompt:
-        "/gen presentation, create a 15-slide research findings deck for MetroPulse, a city mobility study comparing bike-share, buses, rideshare, and commuter rail across 12 neighborhoods. Present it to urban planning stakeholders with cover, contents, study context, methodology, demand trends, neighborhood segments, mode comparison, peak-hour bottlenecks, equity impact, emissions estimate, 12-month forecast, recommendations, summary, and contact. Make it chart-led, sharp, vivid, and number-first.",
       embedUrl:
         "https://static.vm0.io/vm0/artifact-templates/presentation/920c6119-1833-4902-bda9-327af1bd8f7f/data-report-presentation.html",
       previewImage: DATA_REPORT_PREVIEW_IMAGES[0],
@@ -1370,15 +1222,12 @@ export const PRESENTATION_TEMPLATE_PICKER_ITEMS: readonly PresentationTemplateIt
         ]["prism"],
       previewImages: DATA_REPORT_PREVIEW_IMAGES,
       slideCount: 15,
-      previewHtmls: DATA_REPORT_PREVIEW_HTMLS,
       colorSystemId: "color-system:prism",
       templateId: "template:html-ppt-data-report",
     },
     {
       slug: "editorial-magazine-deck",
       title: "Paper magazine",
-      prompt:
-        "/gen presentation, create a 15-slide media kit for Field Notes Quarterly, an independent culture magazine pitching its autumn issue on craft, travel, food, and design to premium sponsors. Include cover, editor letter, issue theme, audience profile, editorial departments, contributor roster, feature previews, photography gallery, distribution plan, partnership formats, audience metrics, sponsor examples, rate card, production timeline, and contact. Make it restrained, paper-forward, serif, and magazine-like.",
       embedUrl:
         "https://static.vm0.io/vm0/artifact-templates/presentation/85360bd6-8b80-43ba-9c9c-001b7d96f205/editorial-magazine-deck.html",
       previewImage: EDITORIAL_MAGAZINE_PREVIEW_IMAGES[0],
@@ -1392,15 +1241,12 @@ export const PRESENTATION_TEMPLATE_PICKER_ITEMS: readonly PresentationTemplateIt
         ]["warm-sand"],
       previewImages: EDITORIAL_MAGAZINE_PREVIEW_IMAGES,
       slideCount: 15,
-      previewHtmls: EDITORIAL_MAGAZINE_PREVIEW_HTMLS,
       colorSystemId: "color-system:warm-sand",
       templateId: "template:html-ppt-editorial-magazine",
     },
     {
       slug: "vantage",
       title: "Numbered boardroom",
-      prompt:
-        "/gen presentation, create a 15-slide business proposal for Vantage Partners helping a robotics manufacturer launch a new service program. Present it to enterprise buyers with cover, agenda, market context, buyer pain points, proposed solution, service model, operating plan, proof metrics, roadmap, commercials, implementation timeline, team, and close. Make it business-focused, confident, structured, and modern.",
       embedUrl:
         "https://static.vm0.io/vm0/artifact-templates/presentation/acada4b0-952c-4354-a382-56dcf49bb7e9/vantage.html",
       previewImage:
@@ -1419,8 +1265,6 @@ export const PRESENTATION_TEMPLATE_PICKER_ITEMS: readonly PresentationTemplateIt
     {
       slug: "taped-consulting",
       title: "Polaroid wall",
-      prompt:
-        "/gen presentation, create a 15-slide transformation proposal for Clearpath Advisory helping a healthcare network improve patient intake operations. Present it to operations executives with cover, agenda, current-state diagnosis, opportunity, engagement model, workstreams, field research, process redesign, timeline, proof metrics, testimonials, pricing, and next steps. Make it consulting-focused, tactile, polished, and persuasive.",
       embedUrl:
         "https://static.vm0.io/vm0/artifact-templates/presentation/ffa53ff0-36b0-4bd1-b44a-4c2d8d66aaa6/taped-consulting.html",
       previewImage:
@@ -1440,8 +1284,6 @@ export const PRESENTATION_TEMPLATE_PICKER_ITEMS: readonly PresentationTemplateIt
     {
       slug: "strata",
       title: "Red staircase",
-      prompt:
-        "/gen presentation, create a 15-slide agency proposal for Strata Studio helping a fintech brand redesign its onboarding and lifecycle communications. Present it to the client leadership team with cover, agenda, business challenge, strategic principles, design direction, service scope, sprint process, sample work, measurement plan, timeline, investment, team, and next steps. Make it Swiss-minimal, precise, editorial, and agency-grade.",
       embedUrl:
         "https://static.vm0.io/vm0/artifact-templates/presentation/040ddb5c-6819-436a-bd3a-87cb5de2be0e/strata.html",
       previewImage: PRESENTATION_TEMPLATE_REFERENCE_PREVIEW_IMAGES["strata"][0],
@@ -1457,8 +1299,6 @@ export const PRESENTATION_TEMPLATE_PICKER_ITEMS: readonly PresentationTemplateIt
     {
       slug: "sticker-scrapbook",
       title: "Sticker notebook",
-      prompt:
-        "/gen presentation, create a 15-slide brand collaboration deck for Patch Party, a youth culture festival launching sponsor activations, creator booths, and collectible merch. Present it to brand partners with cover, agenda, audience story, event concept, activation zones, creator plan, media moments, sponsor packages, timeline, reach metrics, testimonials, budget, and contact. Make it vibrant, scrapbook-like, sticker-heavy, and celebratory.",
       embedUrl:
         "https://static.vm0.io/vm0/artifact-templates/presentation/f15ccce7-90f1-4773-b4c8-c7eaf903ce76/sticker-scrapbook.html",
       previewImage:
@@ -1478,8 +1318,6 @@ export const PRESENTATION_TEMPLATE_PICKER_ITEMS: readonly PresentationTemplateIt
     {
       slug: "schoolhouse",
       title: "Kraft poster",
-      prompt:
-        "/gen presentation, create a 15-slide community education deck for Maple Hall launching a weekend skills program for families and local makers. Present it to city partners with cover, agenda, mission, audience needs, program tracks, sample day, instructor team, venue plan, safety approach, outcomes, testimonials, membership tiers, budget, and registration steps. Make it warm, retro, classroom-inspired, and approachable.",
       embedUrl:
         "https://static.vm0.io/vm0/artifact-templates/presentation/cb03f77b-982d-4708-8781-2a0ab450a4fb/schoolhouse.html",
       previewImage:
@@ -1499,8 +1337,6 @@ export const PRESENTATION_TEMPLATE_PICKER_ITEMS: readonly PresentationTemplateIt
     {
       slug: "prospectus",
       title: "Homepage pitch",
-      prompt:
-        "/gen presentation, create a 15-slide business plan for Atlas Harbor, a B2B logistics platform expanding into regional fulfillment. Present it to strategic partners with cover, agenda, market context, customer problem, solution, operating model, product experience, growth plan, financial model, implementation roadmap, risks, team, partnership terms, and next steps. Make it corporate, polished, structured, and proposal-ready.",
       embedUrl:
         "https://static.vm0.io/vm0/artifact-templates/presentation/64a9b8c5-f89d-4379-998c-9da755f7ca62/prospectus.html",
       previewImage:
@@ -1520,8 +1356,6 @@ export const PRESENTATION_TEMPLATE_PICKER_ITEMS: readonly PresentationTemplateIt
     {
       slug: "pixel-glitch",
       title: "Arcade pixels",
-      prompt:
-        "/gen presentation, create a 15-slide creative studio deck for Arcade Signal pitching a retro-futurist campaign for an indie game launch. Present it to the publisher team with cover, agenda, audience insight, campaign concept, visual world, channel plan, creator program, launch timeline, asset gallery, performance targets, budget, team, and next steps. Make it pixelated, energetic, digital, and sharp.",
       embedUrl:
         "https://static.vm0.io/vm0/artifact-templates/presentation/274e4cc3-d811-40a1-a091-526db9a62734/pixel-glitch.html",
       previewImage:
@@ -1541,8 +1375,6 @@ export const PRESENTATION_TEMPLATE_PICKER_ITEMS: readonly PresentationTemplateIt
     {
       slug: "nocturne",
       title: "Midnight stage",
-      prompt:
-        "/gen presentation, create a 15-slide annual keynote for NightOps Cloud reviewing reliability, infrastructure scale, and the roadmap for autonomous operations. Present it to technical customers with cover, agenda, state of the platform, usage growth, reliability metrics, architecture, product updates, customer stories, roadmap, ecosystem, pricing changes, and closing call to action. Make it dark, data-rich, polished, and keynote-ready.",
       embedUrl:
         "https://static.vm0.io/vm0/artifact-templates/presentation/dd4ecb89-b6b1-4ed0-bfca-4ebf3db3a664/nocturne.html",
       previewImage:
@@ -1561,8 +1393,6 @@ export const PRESENTATION_TEMPLATE_PICKER_ITEMS: readonly PresentationTemplateIt
     {
       slug: "neo-brutalism",
       title: "Shadow shop",
-      prompt:
-        "/gen presentation, create a 15-slide founder pitch for BlockForge, a developer tooling startup launching a collaborative build system. Present it to early-stage investors with cover, agenda, problem, product, technical edge, market, traction, customer proof, business model, go-to-market, competition, roadmap, team, funding ask, and next steps. Make it bold, direct, high-contrast, and brutalist.",
       embedUrl:
         "https://static.vm0.io/vm0/artifact-templates/presentation/4d8a4052-b43d-498a-81cc-b4c743103ff2/neo-brutalism.html",
       previewImage:
@@ -1582,8 +1412,6 @@ export const PRESENTATION_TEMPLATE_PICKER_ITEMS: readonly PresentationTemplateIt
     {
       slug: "meridian",
       title: "Cobalt blocks",
-      prompt:
-        "/gen presentation, create a 15-slide agency capabilities deck for Meridian Works, a data strategy studio helping enterprise teams modernize analytics operations. Present it to a prospective client executive team with cover, agenda, market context, client challenges, service model, team, process, case studies, measurement plan, operating rhythm, timeline, commercial model, and contact. Make it professional, sharp, data-led, and executive-ready.",
       embedUrl:
         "https://static.vm0.io/vm0/artifact-templates/presentation/58cc240d-7d84-49a7-92ba-57eea4168730/meridian.html",
       previewImage:
@@ -1602,8 +1430,6 @@ export const PRESENTATION_TEMPLATE_PICKER_ITEMS: readonly PresentationTemplateIt
     {
       slug: "blueprint-academy",
       title: "Drafting campus",
-      prompt:
-        "/gen presentation, create a 15-slide curriculum proposal for Northline Academy launching an applied AI certificate for working professionals. Present it to academic leadership with cover, agenda, program context, learner needs, curriculum map, module sequence, faculty team, classroom experience, assessment model, outcomes, partnerships, enrollment plan, budget, and next steps. Make it academic, structured, blueprint-like, and credible.",
       embedUrl:
         "https://static.vm0.io/vm0/artifact-templates/presentation/f64cd670-7565-483f-b872-117a18c0c414/blueprint-academy.html",
       previewImage:
@@ -1623,8 +1449,6 @@ export const PRESENTATION_TEMPLATE_PICKER_ITEMS: readonly PresentationTemplateIt
     {
       slug: "bloom-pitch",
       title: "Petal pitch",
-      prompt:
-        "/gen presentation, create a 15-slide investor pitch for PetalLoop, a climate-friendly flower delivery marketplace raising a seed round. Include cover, agenda, market shift, customer problem, solution, product flow, traction, business model, go-to-market, competitive position, roadmap, team, financial plan, ask, and next steps. Make it playful, optimistic, organic, and investor-ready.",
       embedUrl:
         "https://static.vm0.io/vm0/artifact-templates/presentation/d29707fb-9b85-44bc-be55-cf3cf082f68d/bloom-pitch.html",
       previewImage:
@@ -1644,8 +1468,6 @@ export const PRESENTATION_TEMPLATE_PICKER_ITEMS: readonly PresentationTemplateIt
     {
       slug: "playful-pop-deck",
       title: "Neon candy",
-      prompt:
-        "/gen presentation, create a 15-slide campus launch deck for FizzPop, a sparkling tea brand planning a colorful back-to-school sampling tour, creator challenge, and limited-edition flavor drop. Present it to retail and student ambassador partners with cover, agenda, brand world, audience insight, campaign idea, flavor lineup, activation map, event flow, content plan, gallery, reach metrics, partner testimonials, budget, and contact. Make it neon, bouncy, rounded, and pop-art playful.",
       embedUrl:
         "https://static.vm0.io/vm0/artifact-templates/presentation/6b2f388a-119f-4ecc-8638-5cc309779b67/playful-pop-deck.html",
       previewImage: PLAYFUL_POP_PREVIEW_IMAGES[0],
@@ -1657,15 +1479,12 @@ export const PRESENTATION_TEMPLATE_PICKER_ITEMS: readonly PresentationTemplateIt
         ],
       previewImages: PLAYFUL_POP_PREVIEW_IMAGES,
       slideCount: 15,
-      previewHtmls: PLAYFUL_POP_PREVIEW_HTMLS,
       colorSystemId: "color-system:pop-art",
       templateId: "template:html-ppt-playful-pop",
     },
     {
       slug: "mosaic-geometric-pitch",
       title: "Bauhaus tiles",
-      prompt:
-        "/gen presentation, create a 15-slide modular identity pitch for CivicLink, a new transit app unifying buses, bikes, scooters, and commuter rail under one visual system. Present it to city innovation leaders with cover, agenda, brand problem, design principles, logo grid, color and icon system, app moments, rollout process, station signage gallery, accessibility impact, pilot metrics, stakeholder quotes, implementation budget, and contact. Make it bold, modular, Bauhaus-geometric, and colourful.",
       embedUrl:
         "https://static.vm0.io/vm0/artifact-templates/presentation/65f0f224-4bf0-4b11-9f3e-ddb1a11b1ec3/mosaic-geometric-pitch.html",
       previewImage: MOSAIC_GEOMETRIC_PREVIEW_IMAGES[0],
@@ -1679,15 +1498,12 @@ export const PRESENTATION_TEMPLATE_PICKER_ITEMS: readonly PresentationTemplateIt
         ]["carnival"],
       previewImages: MOSAIC_GEOMETRIC_PREVIEW_IMAGES,
       slideCount: 15,
-      previewHtmls: MOSAIC_GEOMETRIC_PREVIEW_HTMLS,
       colorSystemId: "color-system:carnival",
       templateId: "template:html-ppt-mosaic-geometric",
     },
     {
       slug: "lumina-creative-studio",
       title: "Brush stickers",
-      prompt:
-        "/gen presentation, create a 15-slide portfolio deck for LensLab Studio, a photography and motion team pitching a beauty brand's global campaign shoot across studio sets, street casting, and social cutdowns. Include cover, agenda, studio point of view, campaign concept, team, production services, creative process, location plan, image gallery, motion deliverables, campaign metrics, client quotes, package options, and contact. Make it bold, sticker-tagged, sharp, and creative-studio oriented.",
       embedUrl:
         "https://static.vm0.io/vm0/artifact-templates/presentation/08fe05a2-a7dd-4355-822d-14fb6a0987b3/lumina-creative-studio.html",
       previewImage: LUMINA_PREVIEW_IMAGES[0],
@@ -1701,15 +1517,12 @@ export const PRESENTATION_TEMPLATE_PICKER_ITEMS: readonly PresentationTemplateIt
         ]["prism"],
       previewImages: LUMINA_PREVIEW_IMAGES,
       slideCount: 15,
-      previewHtmls: LUMINA_PREVIEW_HTMLS,
       colorSystemId: "color-system:prism",
       templateId: "template:html-ppt-lumina",
     },
     {
       slug: "landing-consulting-deck",
       title: "Neon browser",
-      prompt:
-        "/gen presentation, create a 15-slide growth proposal for ScaleBridge advising a B2B fintech SaaS team on reducing onboarding drop-off and improving trial-to-paid conversion. Present it to the revenue leadership team with cover, agenda, opportunity size, diagnosis, desired outcomes, engagement model, workstreams, sprint process, benchmark gallery, proof metrics, client testimonials, pricing tiers, decision timeline, and contact. Make it landing-page-like, sharp, high-contrast, and conversion-oriented.",
       embedUrl:
         "https://static.vm0.io/vm0/artifact-templates/presentation/998aed16-60a1-4d84-b60e-1ab093de8fa6/landing-consulting-deck.html",
       previewImage: LANDING_CONSULTING_PREVIEW_IMAGES[0],
@@ -1723,15 +1536,12 @@ export const PRESENTATION_TEMPLATE_PICKER_ITEMS: readonly PresentationTemplateIt
         ]["pop-art"],
       previewImages: LANDING_CONSULTING_PREVIEW_IMAGES,
       slideCount: 15,
-      previewHtmls: LANDING_CONSULTING_PREVIEW_HTMLS,
       colorSystemId: "color-system:pop-art",
       templateId: "template:html-ppt-landing-consulting",
     },
     {
       slug: "creative-agency-presentation",
       title: "Foliage gallery",
-      prompt:
-        "/gen presentation, create a 15-slide rebrand pitch for Northstar Studio proposing a new identity, website, and launch campaign for a boutique hotel group expanding into three coastal cities. Present it to the client board with cover, agenda, brand challenge, strategic insight, creative direction, visual territories, service scope, project process, case-study gallery, launch roadmap, impact metrics, client quotes, investment, and contact. Make it minimal, editorial, sharp, and agency-grade.",
       embedUrl:
         "https://static.vm0.io/vm0/artifact-templates/presentation/527ad859-e0dd-4cfd-90a4-09e5030b71e1/creative-agency-presentation.html",
       previewImage: CREATIVE_AGENCY_PREVIEW_IMAGES[0],
@@ -1745,15 +1555,12 @@ export const PRESENTATION_TEMPLATE_PICKER_ITEMS: readonly PresentationTemplateIt
         ]["coral-studio"],
       previewImages: CREATIVE_AGENCY_PREVIEW_IMAGES,
       slideCount: 15,
-      previewHtmls: CREATIVE_AGENCY_PREVIEW_HTMLS,
       colorSystemId: "color-system:coral-studio",
       templateId: "template:html-ppt-creative-agency",
     },
     {
       slug: "crayon-learning-deck",
       title: "Crayon doodle",
-      prompt:
-        "/gen presentation, create a 15-slide parent-night deck for Rainbow Lab, a summer art-and-science camp where kids build storybooks, cardboard cities, and tiny robots. Present it to families with cover, agenda, camp promise, learning goals, weekly themes, instructor team, sample day, workshop stations, student gallery, safety plan, progress metrics, parent quotes, pricing, and registration steps. Make it bright, rounded, joyful, and crayon-like.",
       embedUrl:
         "https://static.vm0.io/vm0/artifact-templates/presentation/63af1d38-51e8-493e-b975-1728f4f796da/crayon-learning-deck.html",
       previewImage: CRAYON_PREVIEW_IMAGES[0],
@@ -1767,15 +1574,12 @@ export const PRESENTATION_TEMPLATE_PICKER_ITEMS: readonly PresentationTemplateIt
         ]["prism"],
       previewImages: CRAYON_PREVIEW_IMAGES,
       slideCount: 15,
-      previewHtmls: CRAYON_PREVIEW_HTMLS,
       colorSystemId: "color-system:prism",
       templateId: "template:html-ppt-crayon",
     },
     {
       slug: "business-data-presentation",
       title: "Berry dashboard",
-      prompt:
-        "/gen presentation, create a 15-slide executive data readout for HarborCart, an omnichannel grocery retailer reviewing 2026 growth, loyalty behavior, basket mix, and store-to-delivery conversion. Present it to the leadership team with cover, agenda, business context, KPI scorecard, regional segments, channel comparison, customer cohorts, operational drivers, forecast, strategic bets, risks, recommendations, and appendix contact. Make it number-first, chart-led, confident, modern, and readable.",
       embedUrl:
         "https://static.vm0.io/vm0/artifact-templates/presentation/95648bba-2a52-497e-b1b8-9cdd0cab9d93/business-data-presentation.html",
       previewImage: BUSINESS_DATA_CDN_PREVIEW_IMAGES[0],
@@ -1795,8 +1599,6 @@ export const PRESENTATION_TEMPLATE_PICKER_ITEMS: readonly PresentationTemplateIt
     {
       slug: "botane-organic-deck",
       title: "Mauve garden",
-      prompt:
-        "/gen presentation, create a 15-slide brand story deck for Moss & Moon, a coastal wellness retreat launching a seasonal herb garden, tea bar, and slow-living membership program. Present it to hospitality partners with cover, agenda, origin story, guest philosophy, retreat spaces, treatment menu, garden-to-table process, photography gallery, sustainability metrics, member testimonials, packages, and contact. Make it calm, editorial, rounded, and organic.",
       embedUrl:
         "https://static.vm0.io/vm0/artifact-templates/presentation/0babab92-7ad9-414e-b44f-7a060ed48bcc/botane-organic-deck.html",
       previewImage: BOTANE_ORGANIC_PREVIEW_IMAGES[0],
@@ -1814,8 +1616,6 @@ export const PRESENTATION_TEMPLATE_PICKER_ITEMS: readonly PresentationTemplateIt
     {
       slug: "playful-launch-presentation",
       title: "Sunburst playroom",
-      prompt:
-        "/gen presentation, create a 15-slide launch deck for SproutPop, a playful habit-building app for remote teams introducing a shared 30-day wellness challenge. Present it to people and culture leaders with cover, agenda, launch story, audience pain points, product vision, feature tour, rollout timeline, activation moments, team, early metrics, testimonials, pricing, and next steps. Make it saturated, joyful, idea-led, and structured.",
       embedUrl:
         "https://static.vm0.io/vm0/artifact-templates/presentation/daf7c2d1-5195-4c09-ad4b-8d85778fc104/playful-launch-presentation.html",
       previewImage: PLAYFUL_LAUNCH_CDN_PREVIEW_IMAGES[0],

@@ -23,7 +23,7 @@ const STAGES: readonly PiContextPreparationStage[] = [
   "connector-contexts",
   "model-provider",
   "user-timezone",
-  "media-models",
+  "image-model",
   "official-workflow",
 ];
 

@@ -39,7 +39,7 @@ const creations = [
   },
   {
     path: "/api/image-io/generate",
-    body: { prompt: "A private landscape", model: "flux-pro-1.1" },
+    body: { prompt: "A private landscape" },
   },
 ] as const;
 
