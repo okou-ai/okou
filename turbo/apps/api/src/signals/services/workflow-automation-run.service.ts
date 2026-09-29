@@ -206,6 +206,17 @@ type WorkflowQueueSources = Pick<
   | "queueReceipt"
 >;
 
+function hasWorkflowQueueSource(source: WorkflowQueueSources): boolean {
+  return Boolean(
+    source.googleFormsSource ||
+    source.googleCalendarSource ||
+    source.gmailSource ||
+    source.googleMeetSource ||
+    source.notionSource ||
+    source.stripeSource,
+  );
+}
+
 /** Route prepared business values to the command that owns that source's SQL. */
 const enqueuePreparedWorkflowInput$ = command(
   async (
@@ -299,6 +310,15 @@ export const runWorkflowAutomationNow$ = command(
       timing,
     );
 
+    const sources: WorkflowQueueSources = {
+      googleFormsSource: args.googleFormsSource,
+      googleCalendarSource: args.googleCalendarSource,
+      gmailSource: args.gmailSource,
+      googleMeetSource: args.googleMeetSource,
+      notionSource: args.notionSource,
+      stripeSource: args.stripeSource,
+      queueReceipt: args.queueReceipt,
+    };
     const schedulePath = workflowQueueSchedulePath(args);
     let admissionOutcome: WorkflowAdmissionOutcome = "failed";
     const enqueued = await flushWorkflowAdmission(
@@ -309,19 +329,12 @@ export const runWorkflowAutomationNow$ = command(
           "api_dispatch_pre_create_agent_workflow_automation_queue_admission",
           async () => {
             const attempt = await settle(
-              !scheduleClaim && !replacePendingTicks
+              hasWorkflowQueueSource(sources) ||
+                (!scheduleClaim && !replacePendingTicks)
                 ? set(
                     enqueuePreparedWorkflowInput$,
                     preparedInput,
-                    {
-                      googleFormsSource: args.googleFormsSource,
-                      googleCalendarSource: args.googleCalendarSource,
-                      gmailSource: args.gmailSource,
-                      googleMeetSource: args.googleMeetSource,
-                      notionSource: args.notionSource,
-                      stripeSource: args.stripeSource,
-                      queueReceipt: args.queueReceipt,
-                    },
+                    sources,
                     automation.orgId,
                     signal,
                   )
