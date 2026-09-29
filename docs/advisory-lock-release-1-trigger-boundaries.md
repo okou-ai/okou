@@ -85,9 +85,18 @@ The following producer changes are implemented:
   user and original allowance anchor before committing each immutable hourly
   fragment. The same command transaction explicitly marks only this batch's
   Run identities observed; a failed identity or amount reconciliation rolls
-  back both insertion and deletion. No trigger is needed for these writes.
-  Existing API coverage preserves totals across compaction, late usage and a
-  repeated compaction run.
+  back both insertion and deletion. This explicit path covers already resolved
+  `run` rows. It does not yet replace trigger-assisted legacy identity resolution:
+  `candidateCtes` retains and validates attribution only for `billing_context =
+'run'`, while `billingGrainColumns` and `mutationCtes` copy other contexts and
+  their anchors unchanged. The current hourly capture trigger can still resolve
+  `legacy_unknown` with a surviving Run or `missing_run` with later canonical
+  attribution. R1 must explicitly resolve those cases within the bounded batch,
+  or establish an exclusion invariant for eligible data and supported writers.
+  No such data/retention evidence has been obtained; outgoing API drain alone
+  is insufficient. This is a source-level conditional dependency, not a claim
+  that affected production rows were observed. Existing API coverage preserves
+  totals across compaction, late usage and a repeated compaction run.
 - The retained `billing-attribution` operator now retains canonical attribution
   before its bounded source rows, sets the original allowance anchor explicitly,
   and marks matching raw/hourly identities observed in the same commit. Conflicting
@@ -116,6 +125,22 @@ owner. Preserve the historical migrations. Once all R1 writers
 explicitly maintain the guarantees, use serving, in-flight and rollback evidence
 to retire current trigger/function definitions in a new migration. A source
 scan or the age of the old migrations cannot establish that gate.
+
+## Remaining fixture and legacy-resolution evidence
+
+A limited writer trace at `903d90e` also identified direct Run INSERTs in
+`dev-bench-seed.ts:insertProfileRows` and both bulk Run insertion sites in
+`chat-threads.bench.ts`. Those benchmark/dev fixtures currently obtain canonical
+attribution from the Run INSERT trigger. Before retirement, make their intended
+billing state explicit or demonstrate that their datasets do not require that
+identity. They are not proof of a serving API compatibility requirement.
+
+The traced production Run, generation, raw usage and operator writers supply
+identity and observation explicitly; their remaining command-ownership chains
+are separate obligations. This review did not certify every fixture alias,
+producer adapter, retention/deletion transition or production-data convergence.
+The compaction legacy-resolution case above remains specific R1 implementation
+work; the broad trigger audit is not declared complete.
 
 ## Canonical mutation guard: independent retirement evidence
 

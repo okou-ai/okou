@@ -483,3 +483,12 @@ subsequent Slack/Discord ownership and SSH/VNC test cleanup require their own
 combined-head validation. The removed SSH/VNC waiter fixtures and Stripe test
 triggers are documented in the workflow queue inventory, with retained public
 revision, source-isolation and replay outcomes explicitly listed.
+
+A subsequent limited trigger-writer trace identified a concrete remaining R1
+case: compaction still copies non-`run` legacy billing grain while the hourly
+capture trigger may resolve it from a live Run or later attribution. Its bounded
+current-`run` path does not establish legacy independence. Explicit bounded
+resolution or a demonstrated exclusion invariant is required; no production
+convergence evidence was obtained. Three benchmark/dev Run INSERT sites also
+need an explicit fixture decision. See the trigger inventory for the exact
+conditional dependency and review limits.
