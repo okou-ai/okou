@@ -100,6 +100,17 @@ transaction handles to another function.
   watch cleanup invokes an owning single-row DELETE command instead of capturing
   a database handle in `onRejection` callbacks.
 
+- Notion configuration creation, Official reconfiguration preparation and
+  re-enable validation invoke owning credential commands with business inputs.
+  Account selection is an owned scalar read; the shared pure SQL builder preserves
+  explicit null selections rather than falling back to a default account.
+  GitHub configuration preparation and update own their exact installation/read
+  and automation/write SQL. Official chat-run-finished preparation owns its
+  watched-thread authorization and self-watch binding reads; Official Meet
+  preparation owns account selection. These commands do not receive a database
+  handle. Event-update orchestration no longer carries a `db` argument into
+  Gmail/Calendar configuration commands through object spread.
+
 ## Implementation still required
 
 These are implementation tasks, not conditions satisfied by draining old API
@@ -113,12 +124,10 @@ requests:
   revocation still have inherited native-authority helper chains. Webhook and
   Stripe-specific creation and workflow copy still propagate handles through the
   shared thread initializer; their entry contexts are ordinary values now, but
-  those remaining transaction internals are not completed. Notion configuration
-  preparation and re-enable validation now invoke owning credential commands with
-  business inputs; account selection is an owned scalar read, including explicit
-  null selections. Provider preparation happens before publication. The final
-  enable writer and Official reconfiguration still have separate inherited
-  transaction work; Meet provider preparation remains separate. The absent
+  those remaining transaction internals are not completed. The final enable
+  writer, workflow ownership/loading helpers and Official reconfiguration commit
+  still have inherited transaction work; Meet watch/credential preparation remains
+  separate from its completed account-selection read. The absent
   native-owner key remains necessary for the current shared writer protocol:
   first materialization can otherwise race an ordinary/selected classification.
   Preparing its terminal protocol is still implementation work, not merely an

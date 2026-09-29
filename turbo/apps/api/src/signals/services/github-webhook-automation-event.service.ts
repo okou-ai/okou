@@ -271,50 +271,6 @@ export function parseGithubWebhookAutomationConfig(
   }
 }
 
-export async function prepareGithubWebhookEventConfigForPersist(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly eventType: GithubWebhookAutomationEventType;
-    readonly eventConfig: GithubWebhookAutomationEventConfig;
-  },
-): Promise<
-  | {
-      readonly kind: "ok";
-      readonly eventConfig: GithubWebhookAutomationEventConfig;
-    }
-  | { readonly kind: "bad-request"; readonly message: string }
-> {
-  const [installation] = await db
-    .select({ id: githubInstallations.id })
-    .from(githubInstallations)
-    .where(
-      and(
-        eq(githubInstallations.orgId, args.orgId),
-        eq(githubInstallations.status, "active"),
-      ),
-    )
-    .limit(1);
-  if (!installation) {
-    return {
-      kind: "bad-request",
-      message: "Install GitHub before creating GitHub webhook automations",
-    };
-  }
-
-  const eventConfig = parseGithubWebhookAutomationConfig(
-    args.eventType,
-    args.eventConfig,
-  );
-  if (!eventConfig) {
-    return {
-      kind: "bad-request",
-      message: "eventConfig must match the GitHub automation type",
-    };
-  }
-  return { kind: "ok", eventConfig };
-}
-
 function normalized(value: string): string {
   return value.trim().toLowerCase();
 }

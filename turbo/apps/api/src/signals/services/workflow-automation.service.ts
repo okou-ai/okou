@@ -91,11 +91,7 @@ import {
   insertWorkflowAutomation,
   workflowAutomationColumns,
 } from "./autonomy-budget-schema.service";
-import {
-  prepareGithubWebhookEventConfigForPersist,
-  parseGithubWebhookAutomationConfig,
-} from "./github-webhook-automation-event.service";
-import { prepareGithubWorkflowRunEventConfigForPersist } from "./github-workflow-run-event.service";
+import { parseGithubWebhookAutomationConfig } from "./github-webhook-automation-event.service";
 import {
   readGmailAutomationConnectorId$,
   gmailSelectedAccountCondition,
@@ -1826,6 +1822,26 @@ interface CreatedEventAutomation {
   readonly snapshot: WorkflowAutomationSnapshot;
 }
 
+function createdEventAutomationReceipt(
+  row: AutomationRow & WorkflowAutomationSnapshot,
+  chatThreadId: string,
+  warning: GoogleCalendarWatchActionRequiredReason | undefined,
+): CreatedEventAutomation {
+  const summary = eventRowToSummary(row, chatThreadId, {
+    googleCalendar: warning,
+  });
+  if (!summary) {
+    throw new Error("Unsupported created workflow automation event");
+  }
+  return {
+    summary,
+    snapshot: {
+      observedUpdatedAt: row.observedUpdatedAt,
+      observedXmin: row.observedXmin,
+    },
+  };
+}
+
 function requireCreatedEventAutomation(
   result: CreatedEventAutomation | null,
 ): CreatedEventAutomation {
@@ -1980,19 +1996,7 @@ const insertEventAutomation$ = command(
           .limit(1);
         warning = googleCalendarWarningFromState(state);
       }
-      const summary = eventRowToSummary(row, chatThreadId, {
-        googleCalendar: warning,
-      });
-      if (!summary) {
-        throw new Error("Unsupported created workflow automation event");
-      }
-      return {
-        summary,
-        snapshot: {
-          observedUpdatedAt: row.observedUpdatedAt,
-          observedXmin: row.observedXmin,
-        },
-      };
+      return createdEventAutomationReceipt(row, chatThreadId, warning);
     });
   },
 );
@@ -4100,38 +4104,48 @@ function preparedOfficialEvent(
   };
 }
 
-async function prepareOfficialChatRunFinishedEvent(
-  db: Db,
-  input: CreateChatRunFinishedEventAutomationInput,
-  signal: AbortSignal,
-): Promise<OfficialAutomationEventPreparationResult> {
-  const [thread] = await db
-    .select({ userId: chatThreads.userId })
-    .from(chatThreads)
-    .where(eq(chatThreads.id, input.eventConfig.chatThreadId))
-    .limit(1);
-  signal.throwIfAborted();
-  if (!thread || thread.userId !== input.member.userId) {
-    return {
-      kind: "bad-request",
-      message: `Chat thread not found: ${input.eventConfig.chatThreadId}`,
-    };
-  }
-  const automationThreadId = await loadWorkflowUserAutomationThreadId(db, {
-    orgId: input.orgId,
-    userId: input.member.userId,
-    workflowId: input.workflowId,
-  });
-  signal.throwIfAborted();
-  if (automationThreadId === input.eventConfig.chatThreadId) {
-    return {
-      kind: "bad-request",
-      message:
-        "A workflow cannot watch run-finished events from its own chat thread",
-    };
-  }
-  return preparedOfficialEvent(input.eventConfig);
-}
+const prepareOfficialChatRunFinishedEvent$ = command(
+  async (
+    { set },
+    input: CreateChatRunFinishedEventAutomationInput,
+    signal: AbortSignal,
+  ): Promise<OfficialAutomationEventPreparationResult> => {
+    const db = set(writeDb$);
+    const [thread] = await db
+      .select({ userId: chatThreads.userId })
+      .from(chatThreads)
+      .where(eq(chatThreads.id, input.eventConfig.chatThreadId))
+      .limit(1);
+    signal.throwIfAborted();
+    if (!thread || thread.userId !== input.member.userId) {
+      return {
+        kind: "bad-request",
+        message: `Chat thread not found: ${input.eventConfig.chatThreadId}`,
+      };
+    }
+    const [binding] = await db
+      .select({ chatThreadId: workflowUserAutomationThreads.chatThreadId })
+      .from(workflowUserAutomationThreads)
+      .where(
+        and(
+          eq(workflowUserAutomationThreads.orgId, input.orgId),
+          eq(workflowUserAutomationThreads.userId, input.member.userId),
+          eq(workflowUserAutomationThreads.workflowId, input.workflowId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    const automationThreadId = binding?.chatThreadId ?? null;
+    if (automationThreadId === input.eventConfig.chatThreadId) {
+      return {
+        kind: "bad-request",
+        message:
+          "A workflow cannot watch run-finished events from its own chat thread",
+      };
+    }
+    return preparedOfficialEvent(input.eventConfig);
+  },
+);
 
 const prepareOfficialNotionEvent$ = command(
   async (
@@ -4333,21 +4347,27 @@ const prepareOfficialGoogleCalendarEvent$ = command(
     );
   },
 );
-async function prepareOfficialGithubEvent(
-  db: Db,
-  input: CreateGithubEventAutomationInput,
-  signal: AbortSignal,
-): Promise<OfficialAutomationEventPreparationResult> {
-  const prepared = await prepareGithubAutomationEventConfig(db, {
-    orgId: input.orgId,
-    eventType: input.eventType,
-    eventConfig: input.eventConfig,
-  });
-  signal.throwIfAborted();
-  return prepared.kind === "ok"
-    ? preparedOfficialEvent(prepared.eventConfig)
-    : prepared;
-}
+const prepareOfficialGithubEvent$ = command(
+  async (
+    { set },
+    input: CreateGithubEventAutomationInput,
+    signal: AbortSignal,
+  ): Promise<OfficialAutomationEventPreparationResult> => {
+    const prepared = await set(
+      prepareGithubAutomationEventConfig$,
+      {
+        orgId: input.orgId,
+        eventType: input.eventType,
+        eventConfig: input.eventConfig,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    return prepared.kind === "ok"
+      ? preparedOfficialEvent(prepared.eventConfig)
+      : prepared;
+  },
+);
 
 const prepareOfficialGoogleFormsEvent$ = command(
   async (
@@ -4395,28 +4415,36 @@ const prepareOfficialGoogleFormsEvent$ = command(
   },
 );
 
-async function prepareOfficialGoogleMeetEvent(
-  db: Db,
-  input: CreateGoogleMeetEventAutomationInput,
-  signal: AbortSignal,
-): Promise<OfficialAutomationEventPreparationResult> {
-  const eventConnectorId = await resolveGoogleMeetAutomationConnectorId(db, {
-    orgId: input.orgId,
-    userId: input.member.userId,
-    workflowId: input.workflowId,
-  });
-  signal.throwIfAborted();
-  if (eventConnectorId === null) {
-    return {
-      kind: "bad-request",
-      message: "Connect Google Meet before using Google Meet event automations",
-    };
-  }
-  const eventConfig = googleMeetTranscriptGeneratedEventConfigSchema.parse(
-    input.eventConfig,
-  );
-  return preparedOfficialEvent(eventConfig, { eventConnectorId });
-}
+const prepareOfficialGoogleMeetEvent$ = command(
+  async (
+    { set },
+    input: CreateGoogleMeetEventAutomationInput,
+    signal: AbortSignal,
+  ): Promise<OfficialAutomationEventPreparationResult> => {
+    const eventConnectorId = await set(
+      readEventAutomationConnectorId$,
+      {
+        orgId: input.orgId,
+        userId: input.member.userId,
+        workflowId: input.workflowId,
+        connectorSlug: "google-meet",
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (eventConnectorId === null) {
+      return {
+        kind: "bad-request",
+        message:
+          "Connect Google Meet before using Google Meet event automations",
+      };
+    }
+    const eventConfig = googleMeetTranscriptGeneratedEventConfigSchema.parse(
+      input.eventConfig,
+    );
+    return preparedOfficialEvent(eventConfig, { eventConnectorId });
+  },
+);
 
 async function prepareOfficialStripeEvent(
   db: Db,
@@ -4474,13 +4502,13 @@ export const prepareOfficialAutomationReconfiguration$ = command(
       };
     }
     if (automationCreateInputIsChatRunFinished(input)) {
-      return await prepareOfficialChatRunFinishedEvent(db, input, signal);
+      return await set(prepareOfficialChatRunFinishedEvent$, input, signal);
     }
     if (automationCreateInputIsGmail(input)) {
       return await set(prepareOfficialGmailEvent$, input, signal);
     }
     if (automationCreateInputIsGithub(input)) {
-      return await prepareOfficialGithubEvent(db, input, signal);
+      return await set(prepareOfficialGithubEvent$, input, signal);
     }
     if (automationCreateInputIsGoogleCalendar(input)) {
       return await set(prepareOfficialGoogleCalendarEvent$, input, signal);
@@ -4489,7 +4517,7 @@ export const prepareOfficialAutomationReconfiguration$ = command(
       return await set(prepareOfficialGoogleFormsEvent$, input, signal);
     }
     if (automationCreateInputIsGoogleMeet(input)) {
-      return await prepareOfficialGoogleMeetEvent(db, input, signal);
+      return await set(prepareOfficialGoogleMeetEvent$, input, signal);
     }
     if (automationCreateInputIsNotion(input)) {
       return await set(prepareOfficialNotionEvent$, input, signal);
@@ -4594,35 +4622,44 @@ interface UpdateAutomationInput {
     | GoogleCalendarAutomationEventConfig;
 }
 
-async function updateAutomationEventConfig(
-  db: Db,
-  args: {
-    readonly automationId: string;
-    readonly eventConfig:
-      | GmailAutomationEventConfig
-      | GithubAutomationEventConfig
-      | GoogleCalendarAutomationEventConfig;
-    readonly eventConnectorId?: string;
+const updateGithubAutomationEventConfig$ = command(
+  async (
+    { set },
+    args: {
+      readonly automationId: string;
+      readonly eventConfig: GithubAutomationEventConfig;
+    },
+    signal: AbortSignal,
+  ): Promise<WorkflowAutomationSummary> => {
+    const db = set(writeDb$);
+    const [row] = await db
+      .update(workflowAutomations)
+      .set({ eventConfig: args.eventConfig, updatedAt: nowDate() })
+      .where(eq(workflowAutomations.id, args.automationId))
+      .returning(workflowAutomationColumns());
+    signal.throwIfAborted();
+    if (!row) {
+      throw new Error("Failed to update workflow automation");
+    }
+    const [binding] = await db
+      .select({ chatThreadId: workflowUserAutomationThreads.chatThreadId })
+      .from(workflowUserAutomationThreads)
+      .where(
+        workflowUserAutomationThreadOwnerCondition({
+          orgId: row.orgId,
+          userId: row.ownerUserId,
+          workflowId: row.workflowId,
+        }),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    const summary = eventRowToSummary(row, binding?.chatThreadId ?? null);
+    if (!summary) {
+      throw new Error("Unsupported GitHub workflow automation event");
+    }
+    return summary;
   },
-  signal: AbortSignal,
-): Promise<WorkflowAutomationSummary> {
-  const [row] = await db
-    .update(workflowAutomations)
-    .set({
-      eventConfig: args.eventConfig,
-      ...(args.eventConnectorId === undefined
-        ? {}
-        : { eventConnectorId: args.eventConnectorId }),
-      updatedAt: nowDate(),
-    })
-    .where(eq(workflowAutomations.id, args.automationId))
-    .returning(workflowAutomationColumns());
-  signal.throwIfAborted();
-  if (!row) {
-    throw new Error("Failed to update workflow automation");
-  }
-  return await rowToSummary(db, row);
-}
+);
 
 function parseGithubAutomationEventConfig(
   eventType: GithubAutomationEventType,
@@ -4649,47 +4686,51 @@ function parseGithubAutomationEventConfig(
   return result.success ? result.data : null;
 }
 
-async function prepareGithubAutomationEventConfig(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly eventType: GithubAutomationEventType;
-    readonly eventConfig: unknown;
+const prepareGithubAutomationEventConfig$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly eventType: GithubAutomationEventType;
+      readonly eventConfig: unknown;
+    },
+    signal: AbortSignal,
+  ) => {
+    const eventConfig = parseGithubAutomationEventConfig(
+      args.eventType,
+      args.eventConfig,
+    );
+    if (!eventConfig) {
+      return {
+        kind: "bad-request" as const,
+        message: "eventConfig must match the GitHub automation type",
+      };
+    }
+    const db = set(writeDb$);
+    const [installation] = await db
+      .select({ id: githubInstallations.id })
+      .from(githubInstallations)
+      .where(
+        and(
+          eq(githubInstallations.orgId, args.orgId),
+          eq(githubInstallations.status, "active"),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!installation) {
+      return {
+        kind: "bad-request" as const,
+        message:
+          args.eventType === "github-workflow-run-completed"
+            ? "Install GitHub before creating GitHub workflow run automations"
+            : "Install GitHub before creating GitHub webhook automations",
+      };
+    }
+    return { kind: "ok" as const, eventConfig };
   },
-) {
-  const parsed = parseGithubAutomationEventConfig(
-    args.eventType,
-    args.eventConfig,
-  );
-  if (!parsed) {
-    return {
-      kind: "bad-request" as const,
-      message: "eventConfig must match the GitHub automation type",
-    };
-  }
-  if (args.eventType === "github-workflow-run-completed") {
-    return await prepareGithubWorkflowRunEventConfigForPersist(db, {
-      orgId: args.orgId,
-      eventConfig: githubWorkflowRunCompletedEventConfigSchema.parse(parsed),
-    });
-  }
+);
 
-  const eventConfig =
-    args.eventType === "github-pull-request"
-      ? githubPullRequestEventConfigSchema.parse(parsed)
-      : args.eventType === "github-workflow-job-completed"
-        ? githubWorkflowJobCompletedEventConfigSchema.parse(parsed)
-        : args.eventType === "github-pull-request-review-submitted"
-          ? githubPullRequestReviewSubmittedEventConfigSchema.parse(parsed)
-          : args.eventType === "github-deployment-status-created"
-            ? githubDeploymentStatusCreatedEventConfigSchema.parse(parsed)
-            : githubIssueCommentCreatedEventConfigSchema.parse(parsed);
-  return await prepareGithubWebhookEventConfigForPersist(db, {
-    orgId: args.orgId,
-    eventType: args.eventType,
-    eventConfig,
-  });
-}
 const persistGmailEventConfiguration$ = command(
   async (
     { set },
@@ -5251,7 +5292,6 @@ const updateEventAutomationForWorkflow$ = command(
   async (
     { set },
     args: {
-      readonly db: Db;
       readonly orgId: string;
       readonly member: WorkflowMember;
       readonly automation: AutomationRow;
@@ -5308,19 +5348,23 @@ const updateEventAutomationForWorkflow$ = command(
       );
     }
     if (supportedGithubEventType(args.automation.eventType)) {
-      const eventConfig = await prepareGithubAutomationEventConfig(args.db, {
-        orgId: args.orgId,
-        eventType: args.automation.eventType,
-        eventConfig: args.eventConfig,
-      });
+      const eventConfig = await set(
+        prepareGithubAutomationEventConfig$,
+        {
+          orgId: args.orgId,
+          eventType: args.automation.eventType,
+          eventConfig: args.eventConfig,
+        },
+        signal,
+      );
       signal.throwIfAborted();
       if (eventConfig.kind !== "ok") {
         return eventConfig;
       }
       return {
         kind: "ok",
-        summary: await updateAutomationEventConfig(
-          args.db,
+        summary: await set(
+          updateGithubAutomationEventConfig$,
           {
             automationId: args.automation.id,
             eventConfig: eventConfig.eventConfig,
@@ -5375,7 +5419,6 @@ export const updateWorkflowAutomation$ = command(
       return await set(
         updateEventAutomationForWorkflow$,
         {
-          db: writeDb,
           orgId: args.orgId,
           member: args.member,
           automation,
@@ -5616,13 +5659,14 @@ const ensureEventAutomationCanBeEnabled$ = command(
     signal: AbortSignal,
   ): Promise<AutomationActionFailure | null> => {
     if (supportedGithubEventType(args.automation.eventType)) {
-      const preparedConfig = await prepareGithubAutomationEventConfig(
-        set(writeDb$),
+      const preparedConfig = await set(
+        prepareGithubAutomationEventConfig$,
         {
           orgId: args.orgId,
           eventType: args.automation.eventType,
           eventConfig: args.automation.eventConfig,
         },
+        signal,
       );
       signal.throwIfAborted();
       return preparedConfig.kind === "ok" ? null : preparedConfig;

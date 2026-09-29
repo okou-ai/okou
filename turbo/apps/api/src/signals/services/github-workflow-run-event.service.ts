@@ -79,43 +79,6 @@ interface GithubWorkflowRunAutomationRow {
   readonly config: GithubWorkflowRunCompletedEventConfig;
 }
 
-export async function prepareGithubWorkflowRunEventConfigForPersist(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly eventConfig: GithubWorkflowRunCompletedEventConfig;
-  },
-): Promise<
-  | {
-      readonly kind: "ok";
-      readonly eventConfig: GithubWorkflowRunCompletedEventConfig;
-    }
-  | { readonly kind: "bad-request"; readonly message: string }
-> {
-  const [installation] = await db
-    .select({ id: githubInstallations.id })
-    .from(githubInstallations)
-    .where(
-      and(
-        eq(githubInstallations.orgId, args.orgId),
-        eq(githubInstallations.status, "active"),
-      ),
-    )
-    .limit(1);
-  if (!installation) {
-    return {
-      kind: "bad-request",
-      message: "Install GitHub before creating GitHub workflow run automations",
-    };
-  }
-  return {
-    kind: "ok",
-    eventConfig: githubWorkflowRunCompletedEventConfigSchema.parse(
-      args.eventConfig,
-    ),
-  };
-}
-
 function normalized(value: string): string {
   return value.trim().toLowerCase();
 }
