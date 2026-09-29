@@ -411,3 +411,43 @@ the new channel dispatches, without requiring a precise number or order of watch
 baseline or stop requests. Focused core types, formatting and changed-file lint
 are checked locally; behavior remains subject to the combined PR-head pipeline.
 No local Vitest suite or development server is run.
+
+### Provider-specific refresh evidence and unresolved admission
+
+The following first-party evidence was read on 2026-09-29. It describes supported
+adapter contracts, not the number or state of production connections. It does
+not justify one generic policy for every OAuth issuer.
+
+| Adapter                                                 | Verified provider behavior                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Consequence for this change                                                                                                                                                                                                                                                                                            |
+| ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Airtable OAuth, `https://airtable.com/oauth2/v1/token`  | The [API reference](https://airtable.com/developers/web/api/oauth-reference) says a refresh invalidates both previous access and refresh tokens; a recent refresh can return 409. The [official troubleshooting article](https://support.airtable.com/articles/6412360049-troubleshooting-disconnected-oauth-integrations-in-airtable) says OAuth safety violations revoke the integration and access, including reuse after the duplicate-refresh grace period. Neither inspected page gives the duration of that grace period. | This actual supported issuer prevents treating duplicate remote refresh as a harmless local CAS loser. Avoiding duplicate remote consumption still needs a protocol or an explicitly accepted availability tradeoff. It is not an outgoing-writer drain condition.                                                     |
+| Calendly OAuth, `https://auth.calendly.com/oauth/token` | The [rotation guide](https://developer.calendly.com/docs/authentication/refresh-token-rotation-guide) explicitly tests `R1 -> R2`, rejection when reusing `R1`, then successful `R2 -> R3`. Reuse returns `invalid_grant`; the enforcement deadline was 2026-08-31.                                                                                                                                                                                                                                                              | A rejected concurrent use must not permanently prevent the successful request from publishing its exact observed credential bundle. The actual Calendly caller remains the firewall refresh graph; a classifier change only in the separate Google/Notion consumer command would not complete that caller's migration. |
+| PostHog CIMD OAuth                                      | Our storage-v2 client is the public metadata URL documented in [deployment compatibility](./deployment-compatibility.md#posthog-cimd-oauth). At upstream commit [`d6225edecf52e800edb6ff846bd966ae9ed8f92a`](https://github.com/PostHog/posthog/blob/d6225edecf52e800edb6ff846bd966ae9ed8f92a/posthog/api/oauth/views.py#L870), `OAuthValidator.rotate_refresh_token` returns false for CIMD and DCR clients. Its non-rotating save branch inserts a new access token without revoking siblings.                                 | PostHog's global 120-second reuse-protection configuration applies to rotating clients; it is not evidence that our actual CIMD client revokes a successful sibling. The actual branch must be checked before using provider-wide settings as a blocker.                                                               |
+| Box, Stripe Apps, Optimizely CMP                        | [Box](https://developer.box.com/guides/authentication/tokens/refresh), [Stripe Apps](https://docs.stripe.com/stripe-apps/api-authentication/oauth) and [CMP](https://docs.developers.optimizely.com/content-marketing-platform/docs/authentication-1) document single-use rotation. The inspected material does not establish family-wide revocation after duplicate use. Our Stripe adapter uses Marketplace authorization and `/v1/oauth/token`; it is not Stripe Connect.                                                     | Single-use failure/publication handling is necessary. Do not describe whole-family revocation as proven for these adapters from that evidence.                                                                                                                                                                         |
+
+The current firewall provider request has a 30-second default abort timeout;
+`FIREWALL_AUTH_REFRESH_TIMEOUT_MS` may override it with any positive integer.
+It starts at the provider call, after the existing lock wait. An aborted client
+request does not prove that the provider never accepted it or that an already
+transmitted request cannot arrive later. A request/runtime deadline therefore
+does not prove that Airtable's unspecified reuse grace covers all interleavings.
+No production provider request was made to test this behavior.
+
+A concrete problematic order is two callers reading the same usable Airtable
+refresh token, one publishing its successful successor, then the other old-token
+request arriving after the provider's grace period. Local publication CAS can
+reject the second database write but cannot undo remote revocation. Keeping the
+old token in otherwise unchanged committed business state does not elect one
+remote caller. Holding a SQL transaction across provider HTTP violates the final
+short-transaction boundary.
+
+One possible business choice is to atomically consume the existing refresh
+credential before HTTP and make only the successful consumer eligible to publish.
+It adds no field, but an owner crash before HTTP then loses a still-valid local
+credential and may require the user to reconnect. A failed or ambiguous request
+cannot safely restore the old token because remote consumption is unknown.
+This availability tradeoff has **not been accepted** and is not implemented.
+Reinterpreting a timestamp or reconnect flag as a renewable claim would instead
+introduce the prohibited coordination protocol. The current Airtable admission
+and the remaining firewall command migration are explicit R1 gaps; this evidence
+is not approval to retain a permanent lock or add a third release.
