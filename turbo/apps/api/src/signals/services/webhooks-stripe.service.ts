@@ -2869,11 +2869,18 @@ function concurrencyInvoiceEntitlementValue(args: {
   };
 }
 
-async function handleConcurrencyInvoicePaid(
+async function prepareConcurrencyInvoiceEntitlements(
   db: Db,
   getClerk: ClerkClientProvider,
   invoice: InvoiceInput,
-): Promise<PaidWebhookOutcome> {
+): Promise<
+  | PaidWebhookOutcome
+  | {
+      readonly orgId: string;
+      readonly subscriptionId: string;
+      readonly values: (typeof orgConcurrencyEntitlements.$inferInsert)[];
+    }
+> {
   const lines = concurrencyInvoiceLines(invoice);
   const hasConcurrencyPurpose = invoiceHasConcurrencyPurpose(invoice);
   if (lines.length === 0 && !hasConcurrencyPurpose) {
@@ -2928,6 +2935,23 @@ async function handleConcurrencyInvoicePaid(
     });
   }
 
+  return { orgId: org.orgId, subscriptionId, values };
+}
+
+async function handleConcurrencyInvoicePaid(
+  db: Db,
+  getClerk: ClerkClientProvider,
+  invoice: InvoiceInput,
+): Promise<PaidWebhookOutcome> {
+  const prepared = await prepareConcurrencyInvoiceEntitlements(
+    db,
+    getClerk,
+    invoice,
+  );
+  if ("handled" in prepared) {
+    return prepared;
+  }
+  const { orgId, subscriptionId, values } = prepared;
   const persisted = await db.transaction(async (tx) => {
     await lockConcurrencySubscriptionState(tx, subscriptionId);
     const [existing] = await tx
@@ -2943,6 +2967,15 @@ async function handleConcurrencyInvoicePaid(
         eq(orgConcurrencySubscriptions.stripeSubscriptionId, subscriptionId),
       )
       .limit(1);
+    const originalVersion = and(
+      eq(orgConcurrencySubscriptions.stripeSubscriptionId, subscriptionId),
+      existing
+        ? eq(
+            orgConcurrencySubscriptions.updatedAt,
+            sql`${existing.updatedAtText}::timestamp`,
+          )
+        : undefined,
+    );
     // Paid invoice lines are immutable evidence, not the current renewable
     // subscription state. Delayed first invoices must not revive canceled plans.
     const state = await retrieveConcurrencySubscriptionState(subscriptionId);
@@ -2958,18 +2991,7 @@ async function handleConcurrencyInvoicePaid(
             currentPeriodEnd: nowDate(),
             updatedAt: concurrencySubscriptionUpdatedAt(nowDate()),
           })
-          .where(
-            and(
-              eq(
-                orgConcurrencySubscriptions.stripeSubscriptionId,
-                subscriptionId,
-              ),
-              eq(
-                orgConcurrencySubscriptions.updatedAt,
-                sql`${existing.updatedAtText}::timestamp`,
-              ),
-            ),
-          )
+          .where(originalVersion)
           .returning({ id: orgConcurrencySubscriptions.stripeSubscriptionId });
         if (!retired) {
           throw new Error(
@@ -2988,7 +3010,7 @@ async function handleConcurrencyInvoicePaid(
             .onConflictDoNothing()
             .returning({ id: orgConcurrencyEntitlements.id });
     const projection = {
-      orgId: org.orgId,
+      orgId: orgId,
       stripePriceId: state.stripePriceId,
       slots: state.slots,
       subscriptionStatus: state.subscriptionStatus,
@@ -3002,18 +3024,7 @@ async function handleConcurrencyInvoicePaid(
             ...projection,
             updatedAt: concurrencySubscriptionUpdatedAt(nowDate()),
           })
-          .where(
-            and(
-              eq(
-                orgConcurrencySubscriptions.stripeSubscriptionId,
-                subscriptionId,
-              ),
-              eq(
-                orgConcurrencySubscriptions.updatedAt,
-                sql`${existing.updatedAtText}::timestamp`,
-              ),
-            ),
-          )
+          .where(originalVersion)
           .returning({ id: orgConcurrencySubscriptions.stripeSubscriptionId })
       : await tx
           .insert(orgConcurrencySubscriptions)
@@ -3039,21 +3050,21 @@ async function handleConcurrencyInvoicePaid(
   if (!persisted) {
     L.warn("concurrency invoice.paid subscription has no concurrency item", {
       invoiceId: invoice.id,
-      orgId: org.orgId,
+      orgId: orgId,
       subscriptionId,
     });
-    return { handled: true, drainOrgId: org.orgId };
+    return { handled: true, drainOrgId: orgId };
   }
 
   L.debug("concurrency invoice.paid processed", {
     invoiceId: invoice.id,
-    orgId: org.orgId,
+    orgId: orgId,
     subscriptionId,
     insertedLines: persisted.insertedLines,
     slots: persisted.state.slots,
   });
 
-  return { handled: true, drainOrgId: org.orgId };
+  return { handled: true, drainOrgId: orgId };
 }
 
 type BindSubscriptionToCustomerOrgArgs = {
