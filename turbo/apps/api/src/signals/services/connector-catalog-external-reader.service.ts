@@ -242,7 +242,7 @@ function identityKey(identity: ExternalCatalogIdentity): string {
   ].join("\0");
 }
 
-function identityLogFields(identity: ExternalCatalogIdentity) {
+export function identityLogFields(identity: ExternalCatalogIdentity) {
   return {
     sourceId: identity.sourceId,
     schemaVersion: identity.schemaVersion,
@@ -309,7 +309,7 @@ function measureCatalogLoadSync<T>(
   return timing ? timing.measureSync(actionType, operation) : operation();
 }
 
-function externalCatalogJoin(capabilityDigest: string) {
+export function externalCatalogJoin(capabilityDigest: string) {
   return and(
     eq(
       connectorCatalogCompatibilityEvaluation.sourceId,
@@ -438,7 +438,7 @@ async function readCurrentCatalog(args: {
   return decodeAcceptedConnectorCatalogPayload({ ...args, row });
 }
 
-function decodeAcceptedConnectorCatalogPayload(args: {
+export function decodeAcceptedConnectorCatalogPayload(args: {
   readonly identity: ExternalCatalogIdentity;
   readonly capability: ExecutableCapabilityState;
   readonly timing?: ConnectorCatalogLoadTiming;
@@ -571,7 +571,7 @@ function deleteInFlightCatalog(
   }
 }
 
-async function readCachedConnectorCatalogSnapshot(args: {
+export async function readCachedConnectorCatalogSnapshot(args: {
   readonly load: () => Promise<AcceptedConnectorCatalogSnapshot | undefined>;
   readonly identity: ExternalCatalogIdentity;
   readonly timing: ConnectorCatalogLoadTiming | undefined;

@@ -1,4 +1,5 @@
 import { gatewayTypecheckBoundary } from "./rules/gateway-typecheck-boundary.ts";
+import { maxSignalOwnerLines } from "./rules/max-signal-owner-lines.ts";
 import { noCatchAbort } from "./rules/no-catch-abort.ts";
 import { noCrossTestTimeStaggering } from "./rules/no-cross-test-time-staggering.ts";
 import { noDatabaseTrigger } from "./rules/no-database-trigger.ts";
@@ -32,6 +33,7 @@ export const apiLintPlugin = {
   },
   rules: {
     "gateway-typecheck-boundary": gatewayTypecheckBoundary,
+    "max-signal-owner-lines": maxSignalOwnerLines,
     "no-catch-abort": noCatchAbort,
     "no-cross-test-time-staggering": noCrossTestTimeStaggering,
     "no-database-trigger": noDatabaseTrigger,

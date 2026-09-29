@@ -665,6 +665,22 @@ export async function convertCloudflareAccessToOrganization(args: {
     ) {
       return cloudflareAccessFailure("exhausted");
     }
+    // The config lock serializes new bindings; check only references affected
+    // by this promotion, including any retained reference from another owner.
+    const [incompatible] = await tx
+      .select({ id: sshConnections.id })
+      .from(sshConnections)
+      .where(
+        and(
+          eq(sshConnections.cloudflareAccessId, args.configId),
+          eq(sshConnections.orgId, args.owner.orgId),
+          ne(sshConnections.userId, args.owner.userId),
+        ),
+      )
+      .limit(1);
+    if (incompatible) {
+      return cloudflareAccessFailure("inUse");
+    }
     const [converted] = await tx
       .update(cloudflareAccessConfigs)
       .set({

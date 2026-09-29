@@ -1,7 +1,7 @@
 /**
- * Shared execution signals for an already selected agent and model. The graph
- * owns typed read nodes, resource materialization, and atomic pending writes.
- * Chat picking and background launch compose these capabilities separately.
+ * Execution support for non-chat callers, plus shared pure transformations and
+ * transaction primitives. Chat owns its claim graph and pending transaction in
+ * claim-run-context.ts and pick-chat-run.service.ts.
  */
 import { state, computed, command, type State, type Computed } from "ccstate";
 import { settle, onRejection, tapError, safeSync } from "../utils";
@@ -117,6 +117,7 @@ import {
   inArray,
   or,
   asc,
+  desc,
   isNotNull,
   ne,
 } from "drizzle-orm";
@@ -130,11 +131,7 @@ import {
   type RunContextResponse,
   runCreateBodySchema,
 } from "@okouai/api-contracts/contracts/run-routes";
-import { newStorageS3Location } from "./storage-s3-prefix.utils";
-import { computeContentHashFromHashes } from "@okouai/api-contracts/contracts/storage-content-hash";
-import { publishPiResourceVersionIndex } from "./pi-resource-version-index.service";
 import {
-  enqueueMemorySummaryProjection,
   createMemorySummaryProjectionObjects,
   type MemorySummaryProjectionReadInput,
 } from "./memory-summary-projection.service";
@@ -538,7 +535,7 @@ interface PresignCandidateInput {
   readonly usePublicEndpoint: boolean;
 }
 
-interface ContextArtifact {
+export interface ContextArtifact {
   readonly name: string;
   readonly version?: string;
   readonly mountPath: string;
@@ -630,7 +627,7 @@ interface StorageIndexRequest {
   readonly exactVersionId: string | null;
 }
 
-interface StorageIndexRow {
+export interface StorageIndexRow {
   readonly orgId: string;
   readonly userId: string;
   readonly name: string;
@@ -647,12 +644,6 @@ interface StorageIndexRow {
   readonly exactFileCount: number | null;
 }
 
-interface ArtifactStorageRow {
-  readonly id: string;
-  readonly headVersionId: string | null;
-  readonly s3Prefix: string;
-}
-
 interface StorageVersionIndexEntry {
   readonly id: string;
   readonly s3Key: string;
@@ -660,7 +651,7 @@ interface StorageVersionIndexEntry {
   readonly fileCount: number;
 }
 
-interface StorageIndexEntry {
+export interface StorageIndexEntry {
   readonly storageId: string;
   readonly headVersionId: string | null;
   readonly s3Prefix: string;
@@ -692,7 +683,7 @@ interface PreparedWritebackStorageEntry<
   readonly runContextArtifact: NonNullable<RunContextResponse["artifact"]>;
 }
 
-interface PreparedStorageEntries<
+export interface PreparedStorageEntries<
   TMount extends StorageMountMetadata = StoredStorageMountEntry,
 > {
   readonly composeEntries: readonly PreparedReadOnlyStorageEntry<TMount>[];
@@ -748,7 +739,7 @@ interface StorageManifestEntryPhaseTimings {
   readonly artifact: StorageManifestEntryPhaseTiming;
 }
 
-interface ResolvedStorageEntries {
+export interface ResolvedStorageEntries {
   readonly input: BuildStorageManifestEntriesArgs;
   readonly branch: StorageManifestCacheBranch;
   readonly phaseTimings: StorageManifestEntryPhaseTimings;
@@ -763,13 +754,13 @@ interface ResolvedAgentRunStorage {
 }
 
 /** Read-only selection. Missing writeback roots are initialized by materialization. */
-interface AgentRunStoragePlan {
+export interface AgentRunStoragePlan {
   readonly requested: ResolvedStorageEntries;
   readonly sessionWriteback: ResolvedStorageEntries | undefined;
   readonly missingArtifacts: readonly ContextArtifact[];
 }
 
-interface MaterializedAgentRunStorage {
+export interface MaterializedAgentRunStorage {
   readonly resolved: ResolvedAgentRunStorage;
   readonly prepared: PreparedAgentRunStorage;
 }
@@ -839,17 +830,6 @@ const STORAGE_MANIFEST_SOURCES = [
   "artifact",
   "unknown",
 ] as const satisfies readonly StorageManifestSource[];
-
-const STORAGE_MANIFEST_ARTIFACT_ENSURE_ACTION_TYPES = [
-  "api_dispatch_prepare_storage_manifest_ensure_artifact_lookup_storage",
-  "api_dispatch_prepare_storage_manifest_ensure_artifact_insert_storage",
-  "api_dispatch_prepare_storage_manifest_ensure_artifact_refetch_storage",
-  "api_dispatch_prepare_storage_manifest_ensure_artifact_skip_initialized",
-  "api_dispatch_prepare_storage_manifest_ensure_artifact_insert_initial_version",
-] as const satisfies readonly ApiDispatchTimingActionType[];
-
-type StorageManifestArtifactEnsureActionType =
-  (typeof STORAGE_MANIFEST_ARTIFACT_ENSURE_ACTION_TYPES)[number];
 
 type StorageManifestSourceCounts = Record<StorageManifestSource, number>;
 
@@ -929,7 +909,7 @@ function emptyStorageManifestSourceCountsByKind(): StorageManifestSourceCountsBy
   };
 }
 
-class StorageManifestBuildStats {
+export class StorageManifestBuildStats {
   private requestedComposeCount = 0;
   private requestedAdditionalCount = 0;
   private requestedArtifactCount = 0;
@@ -1318,83 +1298,6 @@ class StorageManifestBuildStats {
   }
 }
 
-class StorageManifestArtifactEnsureTiming {
-  private readonly windows = new Map<
-    StorageManifestArtifactEnsureActionType,
-    StorageManifestPhaseTimingWindow
-  >();
-
-  constructor(
-    private readonly timing: ApiDispatchTimingCollector | undefined,
-  ) {}
-
-  async measure<T>(
-    actionType: StorageManifestArtifactEnsureActionType,
-    operation: () => Promise<T>,
-  ): Promise<T> {
-    if (!this.timing) {
-      return await operation();
-    }
-
-    const window = this.windowFor(actionType);
-    const startedAt = now();
-    window.startedAt =
-      window.startedAt === undefined
-        ? startedAt
-        : Math.min(window.startedAt, startedAt);
-    return await operation().finally(() => {
-      const finishedAt = now();
-      window.finishedAt =
-        window.finishedAt === undefined
-          ? finishedAt
-          : Math.max(window.finishedAt, finishedAt);
-    });
-  }
-
-  flush(): void {
-    if (!this.timing) {
-      return;
-    }
-
-    for (const actionType of STORAGE_MANIFEST_ARTIFACT_ENSURE_ACTION_TYPES) {
-      const window = this.windows.get(actionType);
-      const finishedAt = window?.finishedAt ?? now();
-      this.timing.recordElapsed(
-        actionType,
-        "nested",
-        window?.startedAt ?? finishedAt,
-        finishedAt,
-      );
-    }
-  }
-
-  private windowFor(
-    actionType: StorageManifestArtifactEnsureActionType,
-  ): StorageManifestPhaseTimingWindow {
-    const existing = this.windows.get(actionType);
-    if (existing) {
-      return existing;
-    }
-
-    const created: StorageManifestPhaseTimingWindow = {
-      startedAt: undefined,
-      finishedAt: undefined,
-    };
-    this.windows.set(actionType, created);
-    return created;
-  }
-}
-
-async function measureStorageManifestArtifactEnsure<T>(
-  timing: StorageManifestArtifactEnsureTiming | undefined,
-  actionType: StorageManifestArtifactEnsureActionType,
-  operation: () => Promise<T>,
-): Promise<T> {
-  return timing
-    ? await timing.measure(actionType, operation)
-    : await operation();
-}
-
 class StorageManifestEntryPhaseTiming {
   private readonly resolveWindow: StorageManifestPhaseTimingWindow = {
     startedAt: undefined,
@@ -1417,7 +1320,7 @@ class StorageManifestEntryPhaseTiming {
       | undefined,
   ) {}
 
-  async measureResolve<T>(operation: () => Promise<T>): Promise<T> {
+  async measureResolve<T>(operation: () => T | Promise<T>): Promise<T> {
     return await this.measure(this.resolveWindow, operation);
   }
 
@@ -1443,7 +1346,7 @@ class StorageManifestEntryPhaseTiming {
 
   private async measure<T>(
     window: StorageManifestPhaseTimingWindow,
-    operation: () => Promise<T>,
+    operation: () => T | Promise<T>,
   ): Promise<T> {
     if (!this.timing) {
       return await operation();
@@ -1454,13 +1357,15 @@ class StorageManifestEntryPhaseTiming {
       window.startedAt === undefined
         ? startedAt
         : Math.min(window.startedAt, startedAt);
-    return await operation().finally(() => {
-      const finishedAt = now();
-      window.finishedAt =
-        window.finishedAt === undefined
-          ? finishedAt
-          : Math.max(window.finishedAt, finishedAt);
-    });
+    return await Promise.resolve()
+      .then(operation)
+      .finally(() => {
+        const finishedAt = now();
+        window.finishedAt =
+          window.finishedAt === undefined
+            ? finishedAt
+            : Math.max(window.finishedAt, finishedAt);
+      });
   }
 
   private record(
@@ -1607,29 +1512,11 @@ function dedupArtifacts(
   return [...byName.values()];
 }
 
-async function findStorage(
-  db: Db,
-  lookup: StorageLookup,
-): Promise<ArtifactStorageRow | undefined> {
-  const [storage] = await db
-    .select({
-      id: storages.id,
-      headVersionId: storages.headVersionId,
-      s3Prefix: storages.s3Prefix,
-    })
-    .from(storages)
-    .where(
-      and(
-        eq(storages.orgId, lookup.orgId),
-        eq(storages.userId, lookup.userId),
-        eq(storages.name, lookup.name),
-      ),
-    )
-    .limit(1);
-  return storage;
-}
-
-function storageIndexKey(orgId: string, userId: string, name: string): string {
+export function storageIndexKey(
+  orgId: string,
+  userId: string,
+  name: string,
+): string {
   return JSON.stringify([orgId, userId, name]);
 }
 
@@ -1645,11 +1532,17 @@ function isFullStorageVersionId(version: string): boolean {
   return version.length === VERSION_ID_LENGTH && isValidVersionPrefix(version);
 }
 
-const headStorageVersions = alias(storageVersions, "head_storage_versions");
+export const headStorageVersions = alias(
+  storageVersions,
+  "head_storage_versions",
+);
 
-const exactStorageVersions = alias(storageVersions, "exact_storage_versions");
+export const exactStorageVersions = alias(
+  storageVersions,
+  "exact_storage_versions",
+);
 
-function uniqueStorageIndexRequests(
+export function uniqueStorageIndexRequests(
   requests: readonly StorageRequest[],
 ): readonly StorageIndexRequest[] {
   const requestsByKey = new Map<string, StorageIndexRequest>();
@@ -1671,7 +1564,9 @@ function uniqueStorageIndexRequests(
   return [...requestsByKey.values()];
 }
 
-function buildStorageIndex(rows: readonly StorageIndexRow[]): StorageIndex {
+export function buildStorageIndex(
+  rows: readonly StorageIndexRow[],
+): StorageIndex {
   const exactVersionsByStorageId = new Map<
     string,
     Map<string, StorageVersionIndexEntry>
@@ -1727,10 +1622,98 @@ function buildStorageIndex(rows: readonly StorageIndexRow[]): StorageIndex {
   return index;
 }
 
-interface StorageIndexInput {
+export interface StorageIndexInput {
   readonly db: Db;
   readonly requests: readonly StorageRequest[];
   readonly timing: ApiDispatchTimingCollector | undefined;
+}
+
+export interface StoragePrefixVersionRequest {
+  readonly storageId: string;
+  readonly version: string;
+}
+
+export interface StoragePrefixVersionRow extends StorageVersionIndexEntry {
+  readonly storageId: string;
+}
+
+export function storagePrefixVersionRequests(
+  requests: readonly StorageRequest[],
+  index: StorageIndex,
+): readonly StoragePrefixVersionRequest[] {
+  const unique = new Map<string, StoragePrefixVersionRequest>();
+  for (const request of requests) {
+    const version = request.version;
+    if (
+      version === undefined ||
+      version === "latest" ||
+      isFullStorageVersionId(version)
+    ) {
+      continue;
+    }
+    const storage = index.get(
+      storageIndexKey(
+        request.lookup.orgId,
+        request.lookup.userId,
+        request.lookup.name,
+      ),
+    );
+    if (storage) {
+      unique.set(JSON.stringify([storage.storageId, version]), {
+        storageId: storage.storageId,
+        version,
+      });
+    }
+  }
+  return [...unique.values()];
+}
+
+export function storageIndexWithPrefixVersions(
+  index: StorageIndex,
+  versions: readonly StoragePrefixVersionRow[],
+): StorageIndex {
+  if (versions.length === 0) {
+    return index;
+  }
+  const byStorage = new Map<string, Map<string, StorageVersionIndexEntry>>();
+  for (const version of versions) {
+    const entries =
+      byStorage.get(version.storageId) ??
+      new Map<string, StorageVersionIndexEntry>();
+    entries.set(version.id, version);
+    byStorage.set(version.storageId, entries);
+  }
+  return new Map(
+    [...index].map(([key, entry]) => {
+      const added = byStorage.get(entry.storageId);
+      return [
+        key,
+        added
+          ? {
+              ...entry,
+              exactVersions: new Map([...entry.exactVersions, ...added]),
+            }
+          : entry,
+      ];
+    }),
+  );
+}
+
+function storageIndexRequestColumns(requests: readonly StorageIndexRequest[]) {
+  return {
+    orgIds: requests.map((request) => {
+      return request.lookup.orgId;
+    }),
+    userIds: requests.map((request) => {
+      return request.lookup.userId;
+    }),
+    names: requests.map((request) => {
+      return request.lookup.name;
+    }),
+    exactVersionIds: requests.map((request) => {
+      return request.exactVersionId;
+    }),
+  };
 }
 
 function createStorageIndexObject(
@@ -1748,18 +1731,8 @@ function createStorageIndexObject(
           return new Map<string, StorageIndexEntry>();
         }
 
-        const orgIds = uniqueRequests.map((request) => {
-          return request.lookup.orgId;
-        });
-        const userIds = uniqueRequests.map((request) => {
-          return request.lookup.userId;
-        });
-        const names = uniqueRequests.map((request) => {
-          return request.lookup.name;
-        });
-        const exactVersionIds = uniqueRequests.map((request) => {
-          return request.exactVersionId;
-        });
+        const { orgIds, userIds, names, exactVersionIds } =
+          storageIndexRequestColumns(uniqueRequests);
         // Raw array interpolation expands to a SQL tuple in Drizzle. Keep each
         // zipped array in one driver parameter so the statement shape stays fixed.
         const rows: StorageIndexRow[] = await input.db
@@ -1808,209 +1781,41 @@ function createStorageIndexObject(
             ),
           );
 
-        return buildStorageIndex(rows);
+        const index = buildStorageIndex(rows);
+        const prefixes = storagePrefixVersionRequests(input.requests, index);
+        const queries = prefixes.map((request) => {
+          return input.db
+            .select({
+              storageId: storageVersions.storageId,
+              id: storageVersions.id,
+              s3Key: storageVersions.s3Key,
+              archiveSize: storageVersions.archiveSize,
+              fileCount: storageVersions.fileCount,
+            })
+            .from(storageVersions)
+            .where(
+              and(
+                eq(storageVersions.storageId, request.storageId),
+                or(
+                  eq(storageVersions.id, request.version),
+                  isValidVersionPrefix(request.version)
+                    ? like(storageVersions.id, `${request.version}%`)
+                    : undefined,
+                ),
+              ),
+            )
+            .orderBy(desc(eq(storageVersions.id, request.version)))
+            .limit(2);
+        });
+        const [first, second, ...remaining] = queries;
+        const versions = first
+          ? await (second ? unionAll(first, second, ...remaining) : first)
+          : [];
+        return storageIndexWithPrefixVersions(index, versions);
       },
     );
   });
 }
-
-interface EnsureArtifactStorageArgs {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly name: string;
-  readonly timing?: StorageManifestArtifactEnsureTiming;
-  readonly stats?: StorageManifestBuildStats;
-}
-
-async function findOrCreateArtifactStorage(
-  args: EnsureArtifactStorageArgs,
-  lookup: StorageLookup,
-): Promise<ArtifactStorageRow | undefined> {
-  const storage = await measureStorageManifestArtifactEnsure(
-    args.timing,
-    "api_dispatch_prepare_storage_manifest_ensure_artifact_lookup_storage",
-    async () => {
-      return await findStorage(args.db, lookup);
-    },
-  );
-  if (storage) {
-    return storage;
-  }
-
-  args.stats?.recordArtifactEnsureMissingStorage();
-  const [created] = await measureStorageManifestArtifactEnsure(
-    args.timing,
-    "api_dispatch_prepare_storage_manifest_ensure_artifact_insert_storage",
-    async () => {
-      const location = newStorageS3Location(args.orgId);
-      return await args.db
-        .insert(storages)
-        .values({
-          id: location.storageId,
-          orgId: args.orgId,
-          userId: args.userId,
-          name: args.name,
-          s3Prefix: location.s3Prefix,
-        })
-        .onConflictDoNothing()
-        .returning({
-          id: storages.id,
-          headVersionId: storages.headVersionId,
-          s3Prefix: storages.s3Prefix,
-        });
-    },
-  );
-  if (created) {
-    args.stats?.recordArtifactEnsureCreatedStorage();
-    return created;
-  }
-
-  const refetched = await measureStorageManifestArtifactEnsure(
-    args.timing,
-    "api_dispatch_prepare_storage_manifest_ensure_artifact_refetch_storage",
-    async () => {
-      return await findStorage(args.db, lookup);
-    },
-  );
-  if (refetched) {
-    args.stats?.recordArtifactEnsureLostCreateRace();
-  }
-  return refetched;
-}
-
-async function recordInitializedArtifactFastPath(
-  args: EnsureArtifactStorageArgs,
-): Promise<void> {
-  args.stats?.recordArtifactEnsureAlreadyInitialized();
-  await measureStorageManifestArtifactEnsure(
-    args.timing,
-    "api_dispatch_prepare_storage_manifest_ensure_artifact_skip_initialized",
-    async () => {},
-  );
-}
-
-async function insertInitialArtifactVersion(args: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly name: string;
-  readonly storage: ArtifactStorageRow;
-  readonly versionId: string;
-  readonly s3Key: string;
-  readonly timing?: StorageManifestArtifactEnsureTiming;
-}): Promise<boolean> {
-  return await measureStorageManifestArtifactEnsure(
-    args.timing,
-    "api_dispatch_prepare_storage_manifest_ensure_artifact_insert_initial_version",
-    async () => {
-      return await args.db.transaction(async (tx) => {
-        await tx
-          .insert(storageVersions)
-          .values({
-            id: args.versionId,
-            storageId: args.storage.id,
-            s3Key: args.s3Key,
-            size: 0,
-            archiveSize: 0,
-            fileCount: 0,
-            message: "Initial empty artifact",
-            createdBy: args.userId,
-          })
-          .onConflictDoNothing();
-        const [updated] = await tx
-          .update(storages)
-          .set({
-            headVersionId: args.versionId,
-            size: 0,
-            fileCount: 0,
-            updatedAt: nowDate(),
-          })
-          .where(
-            and(
-              eq(storages.id, args.storage.id),
-              isNull(storages.headVersionId),
-            ),
-          )
-          .returning({ id: storages.id });
-        await publishPiResourceVersionIndex({
-          db: tx,
-          versionId: args.versionId,
-          projection: { schemaVersion: 1, files: [] },
-          archiveSize: 0,
-        });
-        if (updated) {
-          await enqueueMemorySummaryProjection({
-            db: tx,
-            storage: {
-              id: args.storage.id,
-              orgId: args.orgId,
-              userId: args.userId,
-              name: args.name,
-            },
-            storageVersionId: args.versionId,
-          });
-        }
-        return updated !== undefined;
-      });
-    },
-  );
-}
-
-async function initializeEmptyArtifactStorage(
-  args: EnsureArtifactStorageArgs,
-  storage: ArtifactStorageRow,
-): Promise<string | null> {
-  args.stats?.recordArtifactEnsureMissingHeadVersion();
-  const versionId = computeContentHashFromHashes(storage.id, []);
-  const s3Key = `${storage.s3Prefix}/${versionId}`;
-  const initializedHead = await insertInitialArtifactVersion({
-    db: args.db,
-    orgId: args.orgId,
-    userId: args.userId,
-    name: args.name,
-    storage,
-    versionId,
-    s3Key,
-    timing: args.timing,
-  });
-  if (initializedHead) {
-    args.stats?.recordArtifactEnsureInitializedEmptyVersion();
-  }
-  return initializedHead ? versionId : null;
-}
-
-interface InitializedArtifactRoot {
-  readonly lookup: StorageLookup;
-  readonly storage: ArtifactStorageRow;
-  readonly initializedVersionId: string | null;
-}
-
-const ensureArtifactStorage$ = command(
-  async (
-    _context,
-    args: EnsureArtifactStorageArgs,
-    signal: AbortSignal,
-  ): Promise<InitializedArtifactRoot> => {
-    const lookup = artifactStorageLookup(args.orgId, args.userId, args.name);
-    const storage = await findOrCreateArtifactStorage(args, lookup);
-    signal.throwIfAborted();
-    if (!storage) {
-      throw new Error(`Failed to create artifact storage "${args.name}"`);
-    }
-    if (storage.headVersionId) {
-      await recordInitializedArtifactFastPath(args);
-      signal.throwIfAborted();
-      return { lookup, storage, initializedVersionId: null };
-    }
-    const initializedVersionId = await initializeEmptyArtifactStorage(
-      args,
-      storage,
-    );
-    signal.throwIfAborted();
-    return { lookup, storage, initializedVersionId };
-  },
-);
 
 function resolveLatestVersion(
   index: StorageIndex,
@@ -2062,93 +1867,36 @@ function resolvePreloadedExactVersion(
   return match ? storageResolutionFromVersion(storage, lookup, match) : null;
 }
 
-async function queryExactVersion(
-  db: Db,
-  storage: StorageIndexEntry,
-  lookup: StorageLookup,
-  version: string,
-): Promise<StorageResolution | null> {
-  const [match] = await db
-    .select({
-      id: storageVersions.id,
-      s3Prefix: storages.s3Prefix,
-      s3Key: storageVersions.s3Key,
-      archiveSize: storageVersions.archiveSize,
-      fileCount: storageVersions.fileCount,
-    })
-    .from(storageVersions)
-    .innerJoin(storages, eq(storageVersions.storageId, storages.id))
-    .where(
-      and(
-        eq(storageVersions.storageId, storage.storageId),
-        eq(storageVersions.id, version),
-        eq(storages.orgId, lookup.orgId),
-        eq(storages.userId, lookup.userId),
-        eq(storages.name, lookup.name),
-      ),
-    )
-    .limit(1);
-  return match
-    ? {
-        storageId: storage.storageId,
-        versionId: match.id,
-        s3Prefix: match.s3Prefix,
-        s3Key: match.s3Key,
-        archiveSize: match.archiveSize,
-        fileCount: match.fileCount,
-        resolvedOrgId: lookup.orgId,
-        resolvedUserId: lookup.userId,
-      }
-    : null;
-}
-
-async function resolvePinnedVersion(
-  db: Db,
+function resolvePinnedVersion(
   index: StorageIndex,
   lookup: StorageLookup,
   version: string,
-): Promise<StorageResolution> {
+): StorageResolution {
   const storage = index.get(
     storageIndexKey(lookup.orgId, lookup.userId, lookup.name),
   );
   if (!storage) {
     throw new Error(`Storage "${lookup.name}" not found in database`);
   }
-
-  if (isFullStorageVersionId(version)) {
-    const exactMatch = resolvePreloadedExactVersion(storage, lookup, version);
-    if (exactMatch) {
-      return exactMatch;
-    }
-    throw new Error(`Storage "${lookup.name}" version "${version}" not found`);
-  }
-
-  const exactMatch = await queryExactVersion(db, storage, lookup, version);
+  const exactMatch = resolvePreloadedExactVersion(storage, lookup, version);
   if (exactMatch) {
     return exactMatch;
   }
-
+  if (isFullStorageVersionId(version)) {
+    throw new Error(`Storage "${lookup.name}" version "${version}" not found`);
+  }
   if (!isValidVersionPrefix(version)) {
     throw new Error(
       `Version prefix too short. Minimum ${MIN_VERSION_PREFIX_LENGTH} characters required.`,
     );
   }
-
-  const matches = await db
-    .select({
-      id: storageVersions.id,
-      s3Key: storageVersions.s3Key,
-      archiveSize: storageVersions.archiveSize,
-      fileCount: storageVersions.fileCount,
-    })
-    .from(storageVersions)
-    .where(
-      and(
-        eq(storageVersions.storageId, storage.storageId),
-        like(storageVersions.id, `${version}%`),
-      ),
-    )
-    .limit(2);
+  const versions = new Map(storage.exactVersions);
+  if (storage.headVersion) {
+    versions.set(storage.headVersion.id, storage.headVersion);
+  }
+  const matches = [...versions.values()].filter((candidate) => {
+    return candidate.id.startsWith(version);
+  });
   if (matches.length === 0) {
     throw new Error(`Storage "${lookup.name}" version "${version}" not found`);
   }
@@ -2157,32 +1905,21 @@ async function resolvePinnedVersion(
       `Ambiguous version prefix "${version}" for storage "${lookup.name}". Please use more characters.`,
     );
   }
-
   const match = matches[0];
   if (!match) {
     throw new Error(`Storage "${lookup.name}" version "${version}" not found`);
   }
-  return {
-    storageId: storage.storageId,
-    versionId: match.id,
-    s3Prefix: storage.s3Prefix,
-    s3Key: match.s3Key,
-    archiveSize: match.archiveSize,
-    fileCount: match.fileCount,
-    resolvedOrgId: lookup.orgId,
-    resolvedUserId: lookup.userId,
-  };
+  return storageResolutionFromVersion(storage, lookup, match);
 }
 
-async function resolveStorageVersion(
-  db: Db,
+function resolveStorageVersion(
   index: StorageIndex,
   lookup: StorageLookup,
   version: string | undefined,
-): Promise<StorageResolution> {
+): StorageResolution {
   return version === undefined || version === "latest"
     ? resolveLatestVersion(index, lookup)
-    : await resolvePinnedVersion(db, index, lookup, version);
+    : resolvePinnedVersion(index, lookup, version);
 }
 
 function isMissingStorageError(error: unknown): boolean {
@@ -2214,60 +1951,58 @@ function volumeStorageLookup(
   };
 }
 
-async function resolveVolumeStorage(args: {
+function resolveVolumeStorage(args: {
   readonly db: Db;
   readonly index: StorageIndex;
   readonly volume: ResolvedVolume | AdditionalVolume;
   readonly primaryOrgId: string;
   readonly allowSystemFallback: boolean;
-}): Promise<StorageResolution | null> {
+}): StorageResolution | null {
   if (args.allowSystemFallback && args.volume.system) {
-    const systemResult = await settle(
-      resolveStorageVersion(
-        args.db,
+    const systemResult = safeSync(() => {
+      return resolveStorageVersion(
         args.index,
         volumeStorageLookup(SYSTEM_ORG_ID, args.volume),
         volumeVersion(args.volume),
-      ),
-    );
-    if (systemResult.ok) {
-      return systemResult.value;
+      );
+    });
+    if ("ok" in systemResult) {
+      return systemResult.ok;
     }
     if (!isMissingStorageError(systemResult.error)) {
       throw systemResult.error;
     }
   }
 
-  return await resolveStorageVersion(
-    args.db,
+  return resolveStorageVersion(
     args.index,
     volumeStorageLookup(args.primaryOrgId, args.volume),
     volumeVersion(args.volume),
   );
 }
 
-async function resolveComposeStorageInput(args: {
+function resolveComposeStorageInput(args: {
   readonly db: Db;
   readonly index: StorageIndex;
   readonly agentOrgId: string;
   readonly volume: ResolvedVolume;
-}): Promise<ResolvedManifestStorageInput | null> {
-  const resolvedResult = await settle(
-    resolveVolumeStorage({
+}): ResolvedManifestStorageInput | null {
+  const resolvedResult = safeSync(() => {
+    return resolveVolumeStorage({
       db: args.db,
       index: args.index,
       volume: args.volume,
       primaryOrgId: args.agentOrgId,
       allowSystemFallback: true,
-    }),
-  );
-  if (!resolvedResult.ok) {
+    });
+  });
+  if ("error" in resolvedResult) {
     if (args.volume.optional && isMissingStorageError(resolvedResult.error)) {
       return null;
     }
     throw resolvedResult.error;
   }
-  if (!resolvedResult.value) {
+  if (!resolvedResult.ok) {
     return null;
   }
   return {
@@ -2276,17 +2011,17 @@ async function resolveComposeStorageInput(args: {
     vasStorageName: args.volume.vasStorageName,
     instructionsTargetFilename: args.volume.instructionsTargetFilename,
     optional: args.volume.optional,
-    resolved: resolvedResult.value,
+    resolved: resolvedResult.ok,
   };
 }
 
-async function resolveAdditionalStorageInput(args: {
+function resolveAdditionalStorageInput(args: {
   readonly db: Db;
   readonly index: StorageIndex;
   readonly runtimeOrgId: string;
   readonly volume: AdditionalVolume;
   readonly source: StorageManifestSource;
-}): Promise<ResolvedManifestStorageInput | null> {
+}): ResolvedManifestStorageInput | null {
   const { source } = args;
   if (source === "connector_skill" || source === "custom_connector_skill") {
     return resolveConnectorSkillStorageInput({
@@ -2305,22 +2040,22 @@ async function resolveAdditionalStorageInput(args: {
   if (args.volume.expectedStorageId !== undefined) {
     throw new Error("Exact Storage identity is unavailable for this source");
   }
-  const resolvedResult = await settle(
-    resolveVolumeStorage({
+  const resolvedResult = safeSync(() => {
+    return resolveVolumeStorage({
       db: args.db,
       index: args.index,
       volume: args.volume,
       primaryOrgId: args.runtimeOrgId,
       allowSystemFallback: true,
-    }),
-  );
-  if (!resolvedResult.ok) {
+    });
+  });
+  if ("error" in resolvedResult) {
     if (isMissingStorageError(resolvedResult.error)) {
       return null;
     }
     throw resolvedResult.error;
   }
-  if (!resolvedResult.value) {
+  if (!resolvedResult.ok) {
     return null;
   }
   return {
@@ -2330,7 +2065,7 @@ async function resolveAdditionalStorageInput(args: {
     ...(args.volume.baselineCandidate === true
       ? { baselineCandidate: args.volume.baselineCandidate }
       : {}),
-    resolved: resolvedResult.value,
+    resolved: resolvedResult.ok,
   };
 }
 
@@ -2340,7 +2075,7 @@ const CONNECTOR_SKILL_REGISTRATION_ERROR =
 const CUSTOM_CONNECTOR_SKILL_REGISTRATION_ERROR =
   "Custom connector skill registration is unavailable";
 
-class OfficialWorkflowArtifactResolutionError extends Error {
+export class OfficialWorkflowArtifactResolutionError extends Error {
   constructor() {
     super("Official Workflow artifact registration is unavailable");
     this.name = "OfficialWorkflowArtifactResolutionError";
@@ -2446,16 +2181,15 @@ function resolveOfficialWorkflowStorageInput(args: {
   };
 }
 
-async function resolveArtifactStorageInput(args: {
+export function resolveArtifactStorageInput(args: {
   readonly db: Db;
   readonly index: StorageIndex;
   readonly runtimeOrgId: string;
   readonly userId: string;
   readonly artifact: ContextArtifact;
   readonly source: StorageManifestSource;
-}): Promise<ResolvedManifestArtifactInput> {
-  const resolved = await resolveStorageVersion(
-    args.db,
+}): ResolvedManifestArtifactInput {
+  const resolved = resolveStorageVersion(
     args.index,
     artifactStorageLookup(args.runtimeOrgId, args.userId, args.artifact.name),
     args.artifact.version,
@@ -2508,7 +2242,7 @@ function workflowSkillStoragePresignedUrlRequest(args: {
   };
 }
 
-function readOnlyStoragePresignedUrlRequest(args: {
+export function readOnlyStoragePresignedUrlRequest(args: {
   readonly bucket: string;
   readonly resolved: StorageResolution;
 }): ReadOnlyStoragePresignedUrlRequest {
@@ -2527,7 +2261,7 @@ interface StorageManifestPresignedUrlRequests {
   readonly readOnlyRequests: readonly ReadOnlyStoragePresignedUrlRequest[];
 }
 
-function storageManifestPresignedUrlRequests(args: {
+export function storageManifestPresignedUrlRequests(args: {
   readonly bucket: string;
   readonly plans: readonly ResolvedManifestStoragePlan[];
 }): StorageManifestPresignedUrlRequests {
@@ -3019,7 +2753,7 @@ function normalizeAdditionalVolumeSources(args: {
   return args.sources;
 }
 
-async function resolveStorageManifestInputs(
+export async function resolveStorageManifestInputs(
   args: PrepareAgentRunStorageManifestArgs,
 ): Promise<StorageManifestInputs> {
   return await measureApiDispatchTiming(
@@ -3039,53 +2773,6 @@ async function resolveStorageManifestInputs(
     },
   );
 }
-
-const ensureStorageManifestArtifacts$ = command(
-  async (
-    { set },
-    args: {
-      readonly db: Db;
-      readonly runtimeOrgId: string;
-      readonly userId: string;
-      readonly artifacts: readonly ContextArtifact[];
-      readonly timing?: ApiDispatchTimingCollector;
-      readonly stats?: StorageManifestBuildStats;
-    },
-    signal: AbortSignal,
-  ): Promise<readonly InitializedArtifactRoot[]> => {
-    const artifactEnsureTiming = new StorageManifestArtifactEnsureTiming(
-      args.timing,
-    );
-    return await measureApiDispatchTiming(
-      args.timing,
-      "api_dispatch_prepare_storage_manifest_ensure_artifacts",
-      "nested",
-      async () => {
-        const initializedRoots = await Promise.all(
-          args.artifacts.map((artifact) => {
-            return set(
-              ensureArtifactStorage$,
-              {
-                db: args.db,
-                orgId: args.runtimeOrgId,
-                userId: args.userId,
-                name: artifact.name,
-                timing: artifactEnsureTiming,
-                stats: args.stats,
-              },
-              signal,
-            );
-          }),
-        );
-        artifactEnsureTiming.flush();
-        return initializedRoots;
-      },
-      () => {
-        return args.stats?.artifactEnsureDimensions();
-      },
-    );
-  },
-);
 
 function storageManifestRequests(args: {
   readonly agentOrgId: string;
@@ -3292,7 +2979,7 @@ interface PrefetchedStorageManifestPresignedUrls {
   readonly prefetchedRows: StorageManifestPresignedUrlCacheSnapshot;
 }
 
-function finalStorageManifestPlans(
+export function finalStorageManifestPlans(
   resolved: ResolvedStorageManifestEntryPlans,
 ): {
   readonly composePlans: readonly ResolvedManifestStoragePlan[];
@@ -3541,7 +3228,7 @@ const generatePreparedStorageEntriesFromPlans$ = command(
   },
 );
 
-async function resolveStorageEntries(
+export async function resolveStorageEntries(
   input: BuildStorageManifestEntriesArgs,
   branch: StorageManifestCacheBranch,
 ): Promise<ResolvedStorageEntries> {
@@ -3557,7 +3244,7 @@ async function resolveStorageEntries(
   return { input, branch, phaseTimings, resolved };
 }
 
-const materializeStorageEntries$ = command(
+export const materializeStorageEntries$ = command(
   async (
     { set },
     args: {
@@ -3589,7 +3276,46 @@ const materializeStorageEntries$ = command(
   },
 );
 
-function storageEntriesMetadata(
+/** Assemble runner mounts from immutable version plans and already signed URLs. */
+export function buildSignedStorageEntries(
+  plan: ResolvedStorageEntries,
+  urlsByCacheKey: ReadonlyMap<string, StoragePresignedUrlResult>,
+): PreparedStorageEntries {
+  const { composePlans, additionalPlans } = finalStorageManifestPlans(
+    plan.resolved,
+  );
+  const entries = (plans: readonly ResolvedManifestStoragePlan[]) => {
+    return plans.map((entry) => {
+      const args = {
+        bucket: plan.input.bucket,
+        plan: entry,
+        urlsByCacheKey,
+        stats: plan.input.stats,
+      };
+      if (isSystemOwnedStoragePlan(entry)) {
+        plan.input.stats?.recordSystemResolvedStorage(1);
+        return buildSystemStorageEntry(args);
+      }
+      return isWorkflowSkillStoragePlan(entry)
+        ? buildWorkflowSkillStorageEntry(args)
+        : buildReadOnlyStorageEntry(args);
+    });
+  };
+  return {
+    composeEntries: entries(composePlans),
+    additionalEntries: entries(additionalPlans),
+    writebackEntries: preparedWritebackStorageEntries({
+      bucket: plan.input.bucket,
+      inputs: plan.resolved.artifactInputs,
+      urlsByCacheKey,
+      stats: plan.input.stats,
+    }),
+    resolvedComposeEntryCount: plan.resolved.composePlans.length,
+    resolvedAdditionalEntryCount: plan.resolved.additionalPlans.length,
+  };
+}
+
+export function storageEntriesMetadata(
   plan: ResolvedStorageEntries,
 ): PreparedStorageEntries<StorageMountMetadata> {
   const finalPlans = mergeStorageEntries({
@@ -3628,7 +3354,7 @@ function persistedMountIdentity(
   return JSON.stringify([mount.name, mount.mountPath]);
 }
 
-function assertUniquePersistedMountPaths(
+export function assertUniquePersistedMountPaths(
   mounts: readonly PersistedStorageMount[],
 ): void {
   const paths = new Set<string>();
@@ -3640,7 +3366,7 @@ function assertUniquePersistedMountPaths(
   }
 }
 
-function persistedStorageMountRequests(
+export function persistedStorageMountRequests(
   mounts: readonly PersistedStorageMount[],
 ): readonly StorageRequest[] {
   return mounts.map((mount) => {
@@ -3655,11 +3381,11 @@ function persistedStorageMountRequests(
   });
 }
 
-async function resolvePersistedStorageMounts(args: {
+function resolvePersistedStorageMounts(args: {
   readonly db: Db;
   readonly index: StorageIndex;
   readonly mounts: readonly PersistedStorageMount[];
-}): Promise<ResolvedStorageManifestEntryPlans> {
+}): ResolvedStorageManifestEntryPlans {
   const additionalPlans: ResolvedManifestStoragePlan[] = [];
   const artifactInputs: ResolvedManifestArtifactInput[] = [];
 
@@ -3685,16 +3411,16 @@ async function resolvePersistedStorageMounts(args: {
       throw new Error(`Storage "${mount.name}" identity does not match`);
     }
 
-    const resolvedResult = await settle(
-      resolveStorageVersion(args.db, args.index, lookup, mount.version),
-    );
-    if (!resolvedResult.ok) {
+    const resolvedResult = safeSync(() => {
+      return resolveStorageVersion(args.index, lookup, mount.version);
+    });
+    if ("error" in resolvedResult) {
       if (mount.optional && isMissingStorageError(resolvedResult.error)) {
         continue;
       }
       throw resolvedResult.error;
     }
-    const resolved = resolvedResult.value;
+    const resolved = resolvedResult.ok;
 
     if (mount.writeback) {
       artifactInputs.push({
@@ -3731,7 +3457,7 @@ async function resolvePersistedStorageMounts(args: {
   return { composePlans: [], additionalPlans, artifactInputs };
 }
 
-async function resolveValidatedPersistedStorageMounts(args: {
+export function resolveValidatedPersistedStorageMounts(args: {
   readonly db: Db;
   readonly bucket: string;
   readonly storageIndex: StorageIndex;
@@ -3742,9 +3468,9 @@ async function resolveValidatedPersistedStorageMounts(args: {
   >;
   readonly timing?: ApiDispatchTimingCollector;
   readonly stats?: StorageManifestBuildStats;
-}): Promise<ResolvedStorageEntries> {
+}): ResolvedStorageEntries {
   const phaseTimings = createStorageManifestEntryPhaseTimings(args);
-  return await (async () => {
+  const result = safeSync(() => {
     const input: BuildStorageManifestEntriesArgs = {
       db: args.db,
       bucket: args.bucket,
@@ -3759,7 +3485,7 @@ async function resolveValidatedPersistedStorageMounts(args: {
       timing: args.timing,
       stats: args.stats,
     };
-    const resolved = await resolvePersistedStorageMounts({
+    const resolved = resolvePersistedStorageMounts({
       db: args.db,
       index: args.storageIndex,
       mounts: args.mounts,
@@ -3775,29 +3501,32 @@ async function resolveValidatedPersistedStorageMounts(args: {
       resolved.artifactInputs.length,
     );
     return { input, branch: args.branch, phaseTimings, resolved };
-  })().finally(() => {
-    phaseTimings.compose.flushResolve();
-    phaseTimings.additional.flushResolve();
-    phaseTimings.artifact.flushResolve();
   });
+  phaseTimings.compose.flushResolve();
+  phaseTimings.additional.flushResolve();
+  phaseTimings.artifact.flushResolve();
+  if ("error" in result) {
+    throw result.error;
+  }
+  return result.ok;
 }
 
-async function resolveSessionWritebackStorageMounts(args: {
+export function resolveSessionWritebackStorageMounts(args: {
   readonly db: Db;
   readonly bucket: string;
   readonly storageIndex: StorageIndex;
   readonly mounts: readonly PersistedStorageMount[];
   readonly timing?: ApiDispatchTimingCollector;
   readonly stats?: StorageManifestBuildStats;
-}): Promise<ResolvedStorageEntries> {
+}): ResolvedStorageEntries {
   assertUniquePersistedMountPaths(args.mounts);
-  return await resolveValidatedPersistedStorageMounts({
+  return resolveValidatedPersistedStorageMounts({
     ...args,
     branch: "session_writeback",
   });
 }
 
-function combinePreparedStorageEntries<
+export function combinePreparedStorageEntries<
   TMount extends StorageMountMetadata,
 >(args: {
   readonly requested: PreparedStorageEntries<TMount>;
@@ -3820,7 +3549,7 @@ function combinePreparedStorageEntries<
   };
 }
 
-async function finalizePreparedStorage<
+export async function finalizePreparedStorage<
   TMount extends StorageMountMetadata,
 >(args: {
   readonly entries: PreparedStorageEntries<TMount>;
@@ -3884,7 +3613,7 @@ interface SessionStorageOverlay {
   readonly remainingArtifacts: readonly ContextArtifact[];
 }
 
-function resolveSessionStorageOverlay(args: {
+export function resolveSessionStorageOverlay(args: {
   readonly artifacts: readonly ContextArtifact[];
   readonly persistedStorageMounts: readonly PersistedStorageMount[] | undefined;
 }): SessionStorageOverlay {
@@ -3928,7 +3657,7 @@ function resolveSessionStorageOverlay(args: {
   return { canonicalWritebackMounts, remainingArtifacts };
 }
 
-function prepareRequestStorageResolution(
+export function prepareRequestStorageResolution(
   args: PrepareAgentRunStorageManifestArgs,
   bucket: string,
   composeVolumes: readonly ResolvedVolume[],
@@ -3971,14 +3700,14 @@ interface CapturedAgentRunStorageArgs {
   readonly stats?: StorageManifestBuildStats;
 }
 
-type AgentRunStorageInput =
+export type AgentRunStorageInput =
   | {
       readonly kind: "requested";
       readonly args: PrepareAgentRunStorageManifestArgs;
     }
   | { readonly kind: "captured"; readonly args: CapturedAgentRunStorageArgs };
 
-type AgentRunStorageSelection =
+export type AgentRunStorageSelection =
   | {
       readonly kind: "requested";
       readonly args: PrepareAgentRunStorageManifestArgs;
@@ -4081,7 +3810,7 @@ function createStorageEntryObjects(
       get(missingArtifacts$),
     ]);
     if (selection.kind === "captured") {
-      return await resolveValidatedPersistedStorageMounts({
+      return resolveValidatedPersistedStorageMounts({
         ...selection.args,
         bucket: selection.bucket,
         storageIndex,
@@ -4119,7 +3848,7 @@ function createStorageEntryObjects(
     ) {
       return undefined;
     }
-    return await resolveSessionWritebackStorageMounts({
+    return resolveSessionWritebackStorageMounts({
       db: selection.args.db,
       bucket: selection.bucket,
       storageIndex,
@@ -4146,106 +3875,6 @@ function createStorageEntryObjects(
     );
   });
   return { storagePlan$, sessionWritebackEntries$ };
-}
-
-interface InitializedStorageRoots {
-  readonly plan: AgentRunStoragePlan;
-  readonly roots: readonly InitializedArtifactRoot[];
-}
-
-function createInitializedStorageObjects(
-  storagePlan$: Computed<Promise<AgentRunStoragePlan>>,
-  internalInitializedRoots$: State<InitializedStorageRoots | null>,
-) {
-  const initializedIndexInput$ = computed(
-    async (get): Promise<StorageIndexInput> => {
-      const plan = await get(storagePlan$);
-      const initialized = get(internalInitializedRoots$);
-      const artifactsByName = new Map(
-        plan.missingArtifacts.map((artifact) => {
-          return [artifact.name, artifact];
-        }),
-      );
-      return {
-        db: plan.requested.input.db,
-        timing: plan.requested.input.timing,
-        requests:
-          initialized?.plan === plan
-            ? initialized.roots.map((root) => {
-                return {
-                  lookup: root.lookup,
-                  version: artifactsByName.get(root.lookup.name)?.version,
-                };
-              })
-            : [],
-      };
-    },
-  );
-  const initializedStorageIndex$ = createStorageIndexObject(
-    initializedIndexInput$,
-  );
-  const requestedEntries$ = computed(
-    async (get): Promise<ResolvedStorageEntries> => {
-      const plan = await get(storagePlan$);
-      if (plan.missingArtifacts.length === 0) {
-        return plan.requested;
-      }
-      const initialized = get(internalInitializedRoots$);
-      if (initialized?.plan !== plan) {
-        throw new Error(
-          "Missing storage roots have not been initialized for this preparation",
-        );
-      }
-      const initializedIndex = await get(initializedStorageIndex$);
-      const input = plan.requested.input;
-      const storageIndex = new Map([
-        ...input.storageIndex,
-        ...initializedIndex,
-      ]);
-      const initializedArtifacts = await Promise.all(
-        plan.missingArtifacts.map((artifact) => {
-          return resolveArtifactStorageInput({
-            db: input.db,
-            index: storageIndex,
-            runtimeOrgId: input.runtimeOrgId,
-            userId: input.userId,
-            artifact,
-            source: "artifact",
-          });
-        }),
-      );
-      const artifactsByName = new Map(
-        [
-          ...plan.requested.resolved.artifactInputs,
-          ...initializedArtifacts,
-        ].map((artifact) => {
-          return [artifact.artifact.name, artifact];
-        }),
-      );
-      input.stats?.recordResolvedEntry(
-        "artifact",
-        "artifact",
-        initializedArtifacts.length,
-      );
-      return {
-        ...plan.requested,
-        input: { ...input, storageIndex },
-        resolved: {
-          ...plan.requested.resolved,
-          artifactInputs: input.artifacts.map((artifact) => {
-            const resolved = artifactsByName.get(artifact.name);
-            if (!resolved) {
-              throw new Error(
-                `Artifact storage "${artifact.name}" was not materialized`,
-              );
-            }
-            return resolved;
-          }),
-        },
-      };
-    },
-  );
-  return { requestedEntries$ };
 }
 
 function createStorageEntryMaterializationCommand(
@@ -4286,30 +3915,17 @@ function createRequestedStorageMaterializationCommand(
   materializeRequestedEntries$: ReturnType<
     typeof createStorageEntryMaterializationCommand
   >,
-  internalInitializedRoots$: State<InitializedStorageRoots | null>,
 ) {
   return command(
     async ({ get, set }, plan: AgentRunStoragePlan, signal: AbortSignal) => {
-      if (plan.requested.branch === "requested") {
-        for (const _artifact of plan.requested.resolved.artifactInputs) {
-          plan.requested.input.stats?.recordArtifactEnsureAlreadyInitialized();
-        }
-      }
       if (plan.missingArtifacts.length > 0) {
-        const input = plan.requested.input;
-        const roots = await set(
-          ensureStorageManifestArtifacts$,
-          {
-            db: input.db,
-            runtimeOrgId: input.runtimeOrgId,
-            userId: input.userId,
-            artifacts: plan.missingArtifacts,
-            timing: input.timing,
-            stats: input.stats,
-          },
-          signal,
+        throw new Error(
+          `Run storage must be initialized before execution: ${plan.missingArtifacts
+            .map((artifact) => {
+              return artifact.name;
+            })
+            .join(", ")}`,
         );
-        set(internalInitializedRoots$, { plan, roots });
       }
       const [requestedPlan, requested] = await Promise.all([
         get(requestedEntries$),
@@ -4324,11 +3940,10 @@ function createRequestedStorageMaterializationCommand(
   );
 }
 
-/** Construct once; only the captured input and actual initialized roots can invalidate reads. */
+/** Read and pin existing storage; run preparation never initializes roots. */
 function createAgentRunStorageObjects(
   input$: Computed<AgentRunStorageInput | Promise<AgentRunStorageInput>>,
 ) {
-  const internalInitializedRoots$ = state<InitializedStorageRoots | null>(null);
   const selection$ = createStorageSelectionObject(input$);
   const indexInput$ = computed(async (get): Promise<StorageIndexInput> => {
     const selection = await get(selection$);
@@ -4343,10 +3958,9 @@ function createAgentRunStorageObjects(
     selection$,
     storageIndex$,
   );
-  const { requestedEntries$ } = createInitializedStorageObjects(
-    storagePlan$,
-    internalInitializedRoots$,
-  );
+  const requestedEntries$ = computed(async (get) => {
+    return (await get(storagePlan$)).requested;
+  });
   const materializeRequestedEntries$ =
     createStorageEntryMaterializationCommand(requestedEntries$);
   const materializeSessionEntries$ = createStorageEntryMaterializationCommand(
@@ -4356,12 +3970,7 @@ function createAgentRunStorageObjects(
     createRequestedStorageMaterializationCommand(
       requestedEntries$,
       materializeRequestedEntries$,
-      internalInitializedRoots$,
     );
-  const resetStorage$ = command(({ set }, signal: AbortSignal) => {
-    signal.throwIfAborted();
-    set(internalInitializedRoots$, null);
-  });
   const materializeAgentRunStorage$ = command(
     async (
       { set },
@@ -4403,7 +4012,7 @@ function createAgentRunStorageObjects(
       };
     },
   );
-  return { storagePlan$, resetStorage$, materializeAgentRunStorage$ };
+  return { storagePlan$, materializeAgentRunStorage$ };
 }
 
 // Execution context, launch preparation and pending atomic commit.
@@ -4417,9 +4026,9 @@ type ArtifactMissingRootPolicy = NonNullable<
 const AUTO_MEMORY_MISSING_ROOT_POLICY: ArtifactMissingRootPolicy =
   "preserveParentVersion";
 
-const ORG_SENTINEL_USER_ID = "__org__";
+export const ORG_SENTINEL_USER_ID = "__org__";
 
-const L = logger("AgentRunCreate");
+export const L: ReturnType<typeof logger> = logger("AgentRunCreate");
 
 const CONNECTOR_SECRET_REF_PREFIX = "$secrets.";
 
@@ -4523,7 +4132,7 @@ function withPendingOkouTokenSecret(body: CreateRunBody): CreateRunBody {
   return { ...body, secrets: pendingOkouTokenSecrets(body.secrets) };
 }
 
-function pendingOkouTokenSecrets(secrets: CreateRunBody["secrets"]) {
+export function pendingOkouTokenSecrets(secrets: CreateRunBody["secrets"]) {
   return {
     ...withoutLegacyAgentRunEnvironmentEntries(secrets),
     OKOU_TOKEN: "__pending_okou_token__",
@@ -4688,7 +4297,7 @@ type TestOnlyDirectRunResolver = (args: {
 
 type ConnectorScopeSource = "explicit" | "stored_agent" | "empty";
 
-interface EffectiveConnectorScope {
+export interface EffectiveConnectorScope {
   readonly allowedConnectorSlugs: readonly ConnectorSlug[];
   readonly allowedCustomConnectorIds: readonly string[];
   readonly customConnectorGrants:
@@ -4697,7 +4306,7 @@ interface EffectiveConnectorScope {
   readonly source: ConnectorScopeSource;
 }
 
-interface ThreadConnectorSelectionIds {
+export interface ThreadConnectorSelectionIds {
   /** Candidates are ordered from run-scoped source to persisted preference. */
   readonly connectorIdCandidatesBySlug: ReadonlyMap<
     ConnectorSlug,
@@ -4709,14 +4318,14 @@ interface ThreadConnectorSelectionIds {
   >;
 }
 
-type RunConnectorCatalogSelection =
+export type RunConnectorCatalogSelection =
   | { readonly kind: "empty" }
   | {
       readonly kind: "scoped";
       readonly selection: ConnectorRuntimeSelection;
     };
 
-function isEmptyRunConnectorScope(scope: {
+export function isEmptyRunConnectorScope(scope: {
   readonly allowedConnectorSlugs: readonly ConnectorSlug[];
   readonly allowedCustomConnectorIds: readonly string[];
 }): boolean {
@@ -4835,7 +4444,7 @@ interface ValidatedThreadSessionSnapshot {
   readonly [validatedThreadSessionTransaction]: DbTransaction;
 }
 
-type AtomicLaunchCommitResult =
+export type AtomicLaunchCommitResult =
   | {
       readonly kind: "pending";
       readonly run: RunRecord;
@@ -4851,7 +4460,7 @@ type AtomicLaunchCommitAttempt =
   | AtomicLaunchCommitResult
   | CreateRunErrorResult;
 
-interface AtomicLaunchCommitCompletion {
+export interface AtomicLaunchCommitCompletion {
   readonly result: AtomicLaunchCommitAttempt;
   readonly transactionReturnedAt: number;
 }
@@ -4884,18 +4493,53 @@ export function isQueueFirstRunClaimLost(
   );
 }
 
-interface CommitPreparedLaunchArgs {
+export type PendingThreadSessionResolution = Pick<
+  ChatThreadSessionResolution,
+  "action" | "resetNativeSession" | "expected"
+>;
+export type PendingRunArguments = Pick<
+  CreateAgentRunArgs,
+  | "userId"
+  | "orgId"
+  | "body"
+  | "apiStartTime"
+  | "chatThreadId"
+  | "agentRunMetadata"
+  | "agentRunModelPin"
+  | "codexServiceTier"
+  | "queueFirstAssociation"
+  | "timingDimensions"
+  | "persistProducerRunBinding"
+> & { readonly threadSessionResolution?: PendingThreadSessionResolution };
+
+export interface CommitPreparedLaunchArgs {
   readonly db: Db;
-  readonly createArgs: CreateAgentRunArgs;
+  readonly createArgs: PendingRunArguments;
   readonly enforceBuiltInCredits: boolean;
-  readonly context: FinalizedPreparedRunContext;
+  readonly context: Pick<
+    FinalizedPreparedRunContext,
+    "body" | "selectedImageModel" | "launchSnapshot" | "officialWorkflowRun"
+  > & {
+    readonly resolved: Pick<
+      ResolvedRunExecution,
+      "agentId" | "continuedFromAgentSessionId"
+    >;
+    readonly modelProvider: Pick<
+      ResolvedModelProviderEnvironment,
+      | "credentialOwner"
+      | "id"
+      | "type"
+      | "selectedModel"
+      | "builtInModelRuntimeRoute"
+    > | null;
+  };
   readonly identity: LaunchRunIdentity;
   readonly callbackRows: readonly AgentRunCallbackInsert[];
   readonly launch: PreparedRunnerLaunch;
   readonly timing: ApiDispatchTimingCollector;
 }
 
-interface ResolvedModelProviderEnvironment {
+export interface ResolvedModelProviderEnvironment {
   readonly credentialOwner: PiModelConfigV4["credentialOwner"];
   readonly authMethod?: string | null;
   readonly piModelConfig?: PiModelConfig;
@@ -4988,7 +4632,7 @@ export type CreateRunRouteResult =
   | ApiErrorResponse<402, "PRO_REQUIRED">
   | ApiErrorResponse<503, "PROVIDER_UNAVAILABLE">;
 
-type CreateRunErrorResult = Exclude<
+export type CreateRunErrorResult = Exclude<
   CreateRunRouteResult,
   { readonly status: 201 }
 >;
@@ -5078,8 +4722,8 @@ export interface CreateAgentRunArgs {
   readonly timingDimensions?: ApiDispatchTimingDimensions;
 }
 
-function timingDimensionsForCreateArgs(
-  args: CreateAgentRunArgs,
+export function timingDimensionsForCreateArgs(
+  args: Pick<CreateAgentRunArgs, "timingDimensions">,
 ): ApiDispatchTimingDimensions {
   return {
     api_start_source: "request",
@@ -5109,13 +4753,13 @@ interface BuiltinConnectorRuntimeContext {
   readonly storedEnvironment: Record<string, string> | undefined;
 }
 
-interface PersistedRunEnvironmentSecret {
+export interface PersistedRunEnvironmentSecret {
   readonly name: string;
   readonly encryptedValue: string;
   readonly userId: string;
 }
 
-interface PersistedRunEnvironmentVariable {
+export interface PersistedRunEnvironmentVariable {
   readonly name: string;
   readonly value: string;
   readonly userId: string;
@@ -5142,11 +4786,11 @@ interface RunEnvironmentReadInput extends RunResourceScope {
   readonly secretNames: readonly string[];
 }
 
-const persistedRunEnvironmentRowKindDecoder = zodEnumDriverValueDecoder(
+export const persistedRunEnvironmentRowKindDecoder = zodEnumDriverValueDecoder(
   z.enum(["variable", "secret"]),
 );
 
-function emptyCustomConnectorRuntimeContext(): CustomConnectorRuntimeContext {
+export function emptyCustomConnectorRuntimeContext(): CustomConnectorRuntimeContext {
   return {
     firewalls: [],
     reservedSecretAliases: undefined,
@@ -5166,7 +4810,10 @@ function forbidden(message: string): ApiErrorResponse<403, "FORBIDDEN"> {
   };
 }
 
-function insufficientCredits(): ApiErrorResponse<402, "INSUFFICIENT_CREDITS"> {
+export function insufficientCredits(): ApiErrorResponse<
+  402,
+  "INSUFFICIENT_CREDITS"
+> {
   return {
     status: 402,
     body: {
@@ -5293,7 +4940,7 @@ function mountedWorkflowRefs(
   });
 }
 
-function officialWorkflowRunCandidates(
+export function officialWorkflowRunCandidates(
   workflows: readonly RunWorkflowRef[],
   skillsRoot: string,
   requiredWorkflowIds: readonly string[],
@@ -5479,13 +5126,13 @@ function resolveFramework(
   return framework;
 }
 
-function modelProviderFramework(
+export function modelProviderFramework(
   modelProvider: ResolvedModelProviderEnvironment,
 ): SupportedFramework {
   return getFrameworkForType(modelProvider.concreteType ?? modelProvider.type);
 }
 
-function frameworkForProviderSelection(
+export function frameworkForProviderSelection(
   providerType: ModelProviderType,
   selectedModel: string | null | undefined,
 ): SupportedFramework | null {
@@ -5581,7 +5228,7 @@ function createRunFrameworkObject(
   });
 }
 
-function frameworkApiKeyEnv(framework: SupportedFramework): string {
+export function frameworkApiKeyEnv(framework: SupportedFramework): string {
   return framework === "codex" ? "OPENAI_API_KEY" : "ANTHROPIC_API_KEY";
 }
 
@@ -6064,7 +5711,7 @@ function assertStoredConnectorEnvironmentReferences(args: {
   }
 }
 
-function hasExplicitFrameworkApiKey(
+export function hasExplicitFrameworkApiKey(
   content: agentRunCreateAgentExecutionConfig,
   framework: SupportedFramework,
 ): boolean {
@@ -6074,7 +5721,7 @@ function hasExplicitFrameworkApiKey(
   );
 }
 
-function isModelProviderType(type: string): type is ModelProviderType {
+export function isModelProviderType(type: string): type is ModelProviderType {
   return Object.hasOwn(MODEL_PROVIDER_TYPES, type);
 }
 
@@ -6559,7 +6206,7 @@ async function builtInModelProviderEnvironment(
   });
 }
 
-interface ResolveModelProviderEnvironmentArgs {
+export interface ResolveModelProviderEnvironmentArgs {
   readonly orgId: string;
   readonly userId: string;
   readonly framework: SupportedFramework;
@@ -7026,7 +6673,7 @@ function createRunEnvironmentObject(
   return createRunEnvironmentSnapshotObject(readInput$);
 }
 
-function runEnvironmentSecretNames(
+export function runEnvironmentSecretNames(
   content: agentRunCreateAgentExecutionConfig,
 ) {
   const environment = firstAgent(content)?.environment;
@@ -7128,7 +6775,7 @@ function createRunEnvironmentSnapshotObject(
   });
 }
 
-function buildMergedVariables(args: {
+export function buildMergedVariables(args: {
   readonly persistedEnvironment: PersistedRunEnvironmentSnapshot;
   readonly runVars: Record<string, string> | undefined;
 }): Record<string, string> | undefined {
@@ -7177,7 +6824,7 @@ async function buildReferencedSecrets(args: {
   return Object.keys(merged).length > 0 ? merged : undefined;
 }
 
-function mergeRecords<T>(
+export function mergeRecords<T>(
   ...records: readonly (Record<string, T> | undefined)[]
 ): Record<string, T> | undefined {
   const merged: Record<string, T> = {};
@@ -7189,7 +6836,7 @@ function mergeRecords<T>(
   return compactRecord(merged);
 }
 
-function withoutLegacyAgentRunEnvironmentEntries<T>(
+export function withoutLegacyAgentRunEnvironmentEntries<T>(
   values: Readonly<Record<string, T>> | undefined,
 ): Record<string, T> | undefined {
   if (!values) {
@@ -7289,16 +6936,16 @@ interface StoredConnectorRuntimeRowCandidate {
   readonly userId: string;
 }
 
-interface StoredConnectorMaterializationSnapshotRow extends StoredConnectorRuntimeRowCandidate {
+export interface StoredConnectorMaterializationSnapshotRow extends StoredConnectorRuntimeRowCandidate {
   readonly secretNames: readonly string[];
   readonly variableValues: Readonly<Record<string, string>>;
 }
 
-const storedConnectorSecretNamesDecoder = zodDriverValueDecoder(
+export const storedConnectorSecretNamesDecoder = zodDriverValueDecoder(
   z.array(z.string()),
 );
 
-const storedConnectorVariableValuesDecoder = zodDriverValueDecoder(
+export const storedConnectorVariableValuesDecoder = zodDriverValueDecoder(
   z.record(z.string(), z.string()),
 );
 
@@ -7325,11 +6972,11 @@ interface StoredConnectorSecretRow {
   readonly name: string;
 }
 
-interface StoredConnectorEncryptedSecretRow extends StoredConnectorSecretRow {
+export interface StoredConnectorEncryptedSecretRow extends StoredConnectorSecretRow {
   readonly encryptedValue: string;
 }
 
-interface StoredConnectorMaterializationSnapshot {
+export interface StoredConnectorMaterializationSnapshot {
   readonly allowedConnectorRows: readonly StoredConnectorRuntimeRow[];
   readonly bindingSets: readonly ConnectorEnvBindingSet[];
   readonly secretRows: readonly StoredConnectorSecretRow[];
@@ -7356,7 +7003,7 @@ function emptyBuiltinConnectorRuntimeContext(): BuiltinConnectorRuntimeContext {
   };
 }
 
-function allowedStoredConnectorRows(
+export function allowedStoredConnectorRows(
   rows: readonly StoredConnectorRuntimeRowCandidate[],
   allowedConnectorSlugs: readonly ConnectorSlug[],
   snapshot: ConnectorRuntimeSelection,
@@ -7481,7 +7128,7 @@ function storedConnectorRequirementsByConnector(
   );
 }
 
-function storedConnectorCredentialReadGroups(args: {
+export function storedConnectorCredentialReadGroups(args: {
   readonly bindingSets: readonly ConnectorEnvBindingSet[];
   readonly kind: "secret" | "variable";
   readonly names?: ReadonlySet<string>;
@@ -7553,7 +7200,7 @@ async function mapWithBoundedConcurrency<TInput, TOutput>(
   });
 }
 
-async function decryptStoredConnectorSecretRows(
+export async function decryptStoredConnectorSecretRows(
   rows: readonly StoredConnectorEncryptedSecretRow[],
   args: {
     readonly featureSwitchContext: FeatureSwitchContext;
@@ -7625,7 +7272,7 @@ function connectorSourceIdsBySlug(
   );
 }
 
-function resolveStoredConnectorSecrets(
+export function resolveStoredConnectorSecrets(
   bindingSets: readonly ConnectorEnvBindingSet[],
   connectorSecrets: Record<string, string>,
 ): Record<string, string> {
@@ -7711,7 +7358,7 @@ function resolveStoredConnectorMetadata(
   };
 }
 
-function storedConnectorContextFromSnapshot(
+export function storedConnectorContextFromSnapshot(
   snapshot: StoredConnectorMaterializationSnapshot | null,
 ): BuiltinConnectorRuntimeContext {
   if (!snapshot) {
@@ -7748,7 +7395,7 @@ function availableStoredConnectorSecretNames(
   );
 }
 
-function storedConnectorExecutionContextFromSnapshot(
+export function storedConnectorExecutionContextFromSnapshot(
   snapshot: StoredConnectorMaterializationSnapshot | null,
 ): BuiltinConnectorRuntimeContext {
   if (!snapshot) {
@@ -7770,7 +7417,7 @@ function storedConnectorExecutionContextFromSnapshot(
   };
 }
 
-function overriddenRuntimeSecretAliases(
+export function overriddenRuntimeSecretAliases(
   records: readonly (Record<string, string> | undefined)[],
 ): ReadonlySet<string> {
   const aliases = new Set<string>();
@@ -7795,7 +7442,7 @@ function referencedEnvironmentSecretAliases(
   );
 }
 
-function eagerStoredConnectorSecretNames(args: {
+export function eagerStoredConnectorSecretNames(args: {
   readonly snapshot: StoredConnectorMaterializationSnapshot;
   readonly storedEnvironment: Record<string, string> | undefined;
   readonly referencedEnvironmentSecretAliases: ReadonlySet<string>;
@@ -7829,7 +7476,7 @@ function eagerStoredConnectorSecretNames(args: {
   return names;
 }
 
-function eagerStoredConnectorSecretInputs(args: {
+export function eagerStoredConnectorSecretInputs(args: {
   readonly content: agentRunCreateAgentExecutionConfig;
   readonly modelProvider: ResolvedModelProviderEnvironment | null;
   readonly connectorContext: BuiltinConnectorRuntimeContext;
@@ -7875,7 +7522,7 @@ function buildStoredConnectorMaterializationPlan(args: {
   };
 }
 
-function materializeStoredConnectorSnapshotRows(
+export function materializeStoredConnectorSnapshotRows(
   args: {
     readonly rows: readonly StoredConnectorMaterializationSnapshotRow[];
     readonly allowedConnectorSlugs: readonly ConnectorSlug[];
@@ -7979,7 +7626,7 @@ function customConnectorRequiredMemberCredentialsAreComplete(
   );
 }
 
-function customConnectorNewRunRowIsAdmissible(
+export function customConnectorNewRunRowIsAdmissible(
   row: CustomConnectorRuntimeDataRows[number],
 ): boolean {
   return (
@@ -7991,7 +7638,7 @@ function customConnectorNewRunRowIsAdmissible(
   );
 }
 
-async function buildNewRunCustomConnectorRuntimeContext(
+export async function buildNewRunCustomConnectorRuntimeContext(
   args: BuildCustomConnectorRuntimeContextArgs,
 ): Promise<CustomConnectorRuntimeContext> {
   const orderedRows = orderedCustomConnectorRuntimeRows(args.rows);
@@ -8548,7 +8195,7 @@ function createRunAdmissionCheckObjects() {
   return { checkAdmission$, checkPlanStatus$ };
 }
 
-interface RunAgentObservation {
+export interface RunAgentObservation {
   readonly agentId: string;
   readonly agentOrgId: string;
   readonly agentOwner: string;
@@ -8822,7 +8469,7 @@ function requireResolvedAgentIdMatch(
   return resolved;
 }
 
-async function resolveAgentExecution(
+export async function resolveAgentExecution(
   db: Db,
   body: CreateRunBody,
   userId: string,
@@ -8935,7 +8582,7 @@ async function resolveAgentExecution(
   );
 }
 
-function enforceCaptureNetworkBodiesGate(
+export function enforceCaptureNetworkBodiesGate(
   orgId: string,
   captureNetworkBodies: boolean | undefined,
 ): CreateRunErrorResult | null {
@@ -8949,7 +8596,7 @@ function enforceCaptureNetworkBodiesGate(
   return null;
 }
 
-function validateCompose(
+export function validateCompose(
   content: agentRunCreateAgentExecutionConfig,
   vars: Record<string, string> | undefined,
   secrets: Record<string, string> | undefined,
@@ -8988,14 +8635,17 @@ function validateCompose(
   return { framework };
 }
 
-function initialRunBody(args: CreateAgentRunArgs): CreateRunBody {
+export function initialRunBody(args: CreateAgentRunArgs): CreateRunBody {
   return args.includeOkouTokenSecret
     ? withPendingOkouTokenSecret(args.body)
     : args.body;
 }
 
 function agentRunModelProviderValues(
-  modelProvider: ResolvedModelProviderEnvironment | null,
+  modelProvider: Pick<
+    ResolvedModelProviderEnvironment,
+    "type" | "id" | "selectedModel"
+  > | null,
 ): Pick<
   RunMetadataValues,
   | "modelProvider"
@@ -9120,11 +8770,21 @@ interface LaunchRunRowsArgs {
     readonly model: string;
   };
   readonly validatedAccountIdentity?: string | null;
-  readonly resolved: ResolvedRunExecution;
+  readonly resolved: Pick<
+    ResolvedRunExecution,
+    "agentId" | "continuedFromAgentSessionId"
+  >;
   readonly body: CreateRunBody;
   readonly runStorageMounts: readonly PersistedStorageMount[] | undefined;
   readonly sessionStorageMounts: readonly PersistedStorageMount[] | undefined;
-  readonly modelProvider: ResolvedModelProviderEnvironment | null;
+  readonly modelProvider: Pick<
+    ResolvedModelProviderEnvironment,
+    | "credentialOwner"
+    | "id"
+    | "type"
+    | "selectedModel"
+    | "builtInModelRuntimeRoute"
+  > | null;
   readonly agentRunModelPin: AgentRunModelPin | undefined;
   readonly selectedImageModel: ImageModel;
   readonly callbackRows: readonly AgentRunCallbackInsert[];
@@ -9203,7 +8863,10 @@ type BuiltInModelLaunchMetadataValues = Pick<
 >;
 
 function builtInModelLaunchMetadataValues(
-  modelProvider: ResolvedModelProviderEnvironment | null,
+  modelProvider: Pick<
+    ResolvedModelProviderEnvironment,
+    "builtInModelRuntimeRoute"
+  > | null,
 ): BuiltInModelLaunchMetadataValues {
   const runtimeRoute = modelProvider?.builtInModelRuntimeRoute;
   if (!runtimeRoute) {
@@ -9404,30 +9067,33 @@ function piLangfuseExecutionEnvironment(args: {
   };
 }
 
-async function buildStoredExecutionContextDraft(args: {
-  readonly runId: string;
-  readonly userId: string;
-  readonly orgId: string;
-  readonly chatThreadId: string | undefined;
-  readonly resolved: ResolvedRunExecution;
-  readonly body: CreateRunBody;
-  readonly framework: SupportedFramework;
-  readonly piSandbox: PiModelConfig | undefined;
-  readonly modelProvider: ResolvedModelProviderEnvironment | null;
-  readonly connectorContext: BuiltinConnectorRuntimeContext;
-  readonly customConnectorContext: CustomConnectorRuntimeContext;
-  readonly permissionManifest: PermissionManifest | undefined;
-  readonly billableFirewalls: readonly string[];
-  readonly modelUsageProvider: SupportedRunModel | undefined;
-  readonly apiStartTime: number;
-  readonly additionalVolumes:
-    | readonly AgentRunCreateAdditionalVolume[]
-    | undefined;
-  readonly platformEnvironment: Record<string, string> | undefined;
-  readonly userTimezone: string | undefined;
-  readonly featureSwitchContext: FeatureSwitchContext;
-  readonly includeOkouTokenSecret: boolean | undefined;
-}): Promise<BuiltStoredExecutionContextDraft> {
+export function buildStoredExecutionContextDraft(
+  args: {
+    readonly runId: string;
+    readonly userId: string;
+    readonly orgId: string;
+    readonly chatThreadId: string | undefined;
+    readonly resolved: ResolvedRunExecution;
+    readonly body: CreateRunBody;
+    readonly framework: SupportedFramework;
+    readonly piSandbox: PiModelConfig | undefined;
+    readonly modelProvider: ResolvedModelProviderEnvironment | null;
+    readonly connectorContext: BuiltinConnectorRuntimeContext;
+    readonly customConnectorContext: CustomConnectorRuntimeContext;
+    readonly permissionManifest: PermissionManifest | undefined;
+    readonly billableFirewalls: readonly string[];
+    readonly modelUsageProvider: SupportedRunModel | undefined;
+    readonly apiStartTime: number;
+    readonly additionalVolumes:
+      | readonly AgentRunCreateAdditionalVolume[]
+      | undefined;
+    readonly platformEnvironment: Record<string, string> | undefined;
+    readonly userTimezone: string | undefined;
+    readonly featureSwitchContext: FeatureSwitchContext;
+    readonly includeOkouTokenSecret: boolean | undefined;
+  },
+  encryptedSecrets: BuiltStoredExecutionContextDraft["context"]["encryptedSecrets"],
+): BuiltStoredExecutionContextDraft {
   const permissions = args.permissionManifest;
   const langfuseEnvironment = piLangfuseExecutionEnvironment(args);
   assertNativeCredentialOverrides(args.modelProvider, args.body.secrets);
@@ -9503,10 +9169,7 @@ async function buildStoredExecutionContextDraft(args: {
       secretValueEnvironmentKeys,
       vars: args.connectorContext.vars ?? null,
       resumeSession: args.resolved.resumeSession ?? null,
-      encryptedSecrets: await encryptPersistentSecretsMap(
-        executionSecrets.secrets ?? null,
-        args.featureSwitchContext,
-      ),
+      encryptedSecrets,
       secretConnectorMap: executionSecrets.secretConnectorMap,
       secretConnectorMetadataMap: executionSecrets.secretConnectorMetadataMap,
       cliAgentType: args.framework,
@@ -9633,7 +9296,7 @@ function recordThreadSessionBindingTelemetry(args: {
   });
 }
 
-function buildStoredExecutionSecrets(args: {
+export function buildStoredExecutionSecrets(args: {
   readonly connectorContext: BuiltinConnectorRuntimeContext;
   readonly modelProvider: ResolvedModelProviderEnvironment | null;
   readonly bodySecrets: Record<string, string> | undefined;
@@ -9706,7 +9369,9 @@ function billableFirewallsForPermissions(args: {
   return [...modelFirewalls, ...connectorFirewalls];
 }
 
-function countBucket(count: number): (typeof COUNT_BUCKET_DIMENSIONS)[number] {
+export function countBucket(
+  count: number,
+): (typeof COUNT_BUCKET_DIMENSIONS)[number] {
   if (count <= 0) {
     return "0";
   }
@@ -9725,7 +9390,7 @@ function countBucket(count: number): (typeof COUNT_BUCKET_DIMENSIONS)[number] {
   return "17_plus";
 }
 
-function storedConnectorTimingDimensions(args: {
+export function storedConnectorTimingDimensions(args: {
   readonly scopeSource: ConnectorScopeSource;
   readonly connectorCount?: number;
 }): ApiDispatchTimingDimensions {
@@ -9760,7 +9425,7 @@ function validateModelUsageProviderInvariant(args: {
   );
 }
 
-function prepareModelUsageContext(args: {
+export function prepareModelUsageContext(args: {
   readonly modelProvider: ResolvedModelProviderEnvironment | null;
   readonly permissionManifest: PermissionManifest | undefined;
 }): ModelUsageContext | CreateRunErrorResult {
@@ -9863,7 +9528,7 @@ interface BuildRunnerJobPayloadInput {
   readonly artifactMissingRootPolicy: ArtifactMissingRootPolicy | undefined;
 }
 
-interface PreparedPiLaunchResources {
+export interface PreparedPiLaunchResources {
   readonly modelConfig: PiModelConfig;
   readonly launchConfig: PiLaunchConfig;
   readonly memoryRecall?: PiMemoryRecallSelection;
@@ -9871,7 +9536,7 @@ interface PreparedPiLaunchResources {
   readonly sessionId: string;
 }
 
-function canonicalPiMemoryMount<
+export function canonicalPiMemoryMount<
   T extends { readonly name: string; readonly mountPath: string },
 >(mounts: readonly T[] | undefined): T | undefined {
   return mounts?.find((mount) => {
@@ -9882,7 +9547,7 @@ function canonicalPiMemoryMount<
   });
 }
 
-function noContentPiMemoryRecall(args: {
+export function noContentPiMemoryRecall(args: {
   readonly memoryStorageId: string;
   readonly storageVersionId: string;
 }): PiMemoryRecallSelection {
@@ -9894,7 +9559,7 @@ interface PriorPiMemoryRecall {
   readonly mismatchReason?: "identity_mismatch" | "invalid_epoch";
 }
 
-function priorPiMemoryRecall(args: {
+export function priorPiMemoryRecall(args: {
   readonly currentMemoryMount: Pick<
     StorageMountMetadata,
     "storageId" | "versionId"
@@ -9987,11 +9652,11 @@ function createPiMemoryRecallObjects(
       return selection.kind === "projection" ? selection.input : undefined;
     },
   );
-  const { projection$, repairProjection$ } =
+  const { projection$ } =
     createMemorySummaryProjectionObjects(projectionInput$);
   const resolvePiMemoryRecall$ = command(
     async (
-      { get, set },
+      { get },
       signal: AbortSignal,
     ): Promise<PiMemoryRecallSelection | undefined> => {
       const selection = await get(selection$);
@@ -10001,7 +9666,7 @@ function createPiMemoryRecallObjects(
       }
       if (selection.kind === "captured") {
         if (selection.mismatchReason) {
-          L.warn("Pi memory recall epoch did not match the pinned mount", {
+          L.error("Pi memory recall epoch did not match the pinned mount", {
             memoryStorageId: selection.recall.memoryStorageId,
             storageVersionId: selection.recall.storageVersionId,
             reason: selection.mismatchReason,
@@ -10009,20 +9674,15 @@ function createPiMemoryRecallObjects(
         }
         return selection.recall;
       }
-      const projection = await settle(get(projection$), signal);
+      const projection = await get(projection$);
       signal.throwIfAborted();
-      if (!projection.ok) {
-        L.warn("Pi memory summary projection read failed", {
+      if (projection?.unavailableReason) {
+        L.error("Pi memory summary projection is not ready", {
           ...selection.identity,
-          errorClass:
-            projection.error instanceof Error
-              ? projection.error.name
-              : "NonErrorThrown",
+          reason: projection.unavailableReason,
         });
-        return noContentPiMemoryRecall(selection.identity);
       }
-      await set(repairProjection$, projection.value, signal);
-      const ready = projection.value?.ready;
+      const ready = projection?.ready;
       return ready
         ? piMemoryRecallSelectionSchema.parse({
             status: "ready",
@@ -10084,7 +9744,7 @@ function storedExecutionContextWithPiResources(
   };
 }
 
-function assemblePiLaunchResources(args: {
+export function assemblePiLaunchResources(args: {
   readonly modelConfig: PiModelConfig;
   readonly piLaunchConfig: CreateAgentRunArgs["piLaunchConfig"];
   readonly memoryRecall: PiMemoryRecallSelection | undefined;
@@ -10105,7 +9765,7 @@ function assemblePiLaunchResources(args: {
   };
 }
 
-interface PreparePiLaunchResourcesArgs {
+export interface PreparePiLaunchResourcesArgs {
   readonly db: Db;
   readonly orgId: string;
   readonly userId: string;
@@ -10330,7 +9990,7 @@ function runnerStorageInput(
       };
 }
 
-function withPaidToolPlatformEnvironment(
+export function withPaidToolPlatformEnvironment(
   owner: Pick<
     BuildRunnerJobPayloadInput,
     "framework" | "modelProvider" | "piSandbox" | "disabledPaidTools"
@@ -10439,7 +10099,7 @@ function runnerCheckpointArtifacts(args: BuildRunnerJobPayloadInput) {
       });
 }
 
-function prepareRunnerStorageInput(input: StorageMaterializationInput) {
+export function prepareRunnerStorageInput(input: StorageMaterializationInput) {
   const { db, args, storageManifestStats } = input;
   const body = preparedRunnerJobBody(args);
   return {
@@ -10502,15 +10162,29 @@ const prepareStoredContextDraft$ = command(
       "api_dispatch_build_stored_execution_context",
       "nested",
       async () => {
-        return await buildStoredExecutionContextDraft({
-          ...args,
-          body,
-          platformEnvironment: withPaidToolPlatformEnvironment(
-            args,
-            platformEnvironment,
-          ),
-          runId: args.run.id,
+        const executionSecrets = buildStoredExecutionSecrets({
+          connectorContext: args.connectorContext,
+          modelProvider: args.modelProvider,
+          bodySecrets: body.secrets,
+          customConnectorContext: args.customConnectorContext,
         });
+        const encryptedSecrets = await encryptPersistentSecretsMap(
+          executionSecrets.secrets ?? null,
+          args.featureSwitchContext,
+        );
+        signal.throwIfAborted();
+        return buildStoredExecutionContextDraft(
+          {
+            ...args,
+            body,
+            platformEnvironment: withPaidToolPlatformEnvironment(
+              args,
+              platformEnvironment,
+            ),
+            runId: args.run.id,
+          },
+          encryptedSecrets,
+        );
       },
     );
     signal.throwIfAborted();
@@ -10592,7 +10266,7 @@ function createStorageMaterializationObjects(
   storage?: ReturnType<typeof createAgentRunStorageObjects>,
 ) {
   const internalStorageInput$ = state<StorageMaterializationInput | null>(null);
-  const { storagePlan$, resetStorage$, materializeAgentRunStorage$ } =
+  const { storagePlan$, materializeAgentRunStorage$ } =
     storage ?? createStoragePreparationObjects(internalStorageInput$);
   const initializeStorageInput$ = command(
     (
@@ -10600,7 +10274,7 @@ function createStorageMaterializationObjects(
       args: Omit<StorageMaterializationInput, "storageManifestStats">,
       signal: AbortSignal,
     ) => {
-      set(resetStorage$, signal);
+      signal.throwIfAborted();
       const input = {
         ...args,
         storageManifestStats: new StorageManifestBuildStats(),
@@ -10617,7 +10291,7 @@ function createStorageMaterializationObjects(
 }
 
 function preparedLaunchRowsArgs(args: {
-  readonly commit: CommitPreparedLaunchArgs;
+  readonly commit: Omit<CommitPreparedLaunchArgs, "db">;
   readonly runnerGroup: string;
 }): LaunchRunRowsArgs {
   return {
@@ -10661,13 +10335,13 @@ interface PreparedAtomicLaunchPersistence {
   >;
 }
 
-interface PreparedCommitPreparedLaunchArgs extends CommitPreparedLaunchArgs {
+export interface PreparedCommitPreparedLaunchArgs extends CommitPreparedLaunchArgs {
   readonly persistence: PreparedAtomicLaunchPersistence;
   readonly admissionTiming: AdmissionAttemptTiming;
 }
 
-function prepareAtomicLaunchPersistence(
-  commit: CommitPreparedLaunchArgs,
+export function prepareAtomicLaunchPersistence(
+  commit: Omit<CommitPreparedLaunchArgs, "db">,
 ): PreparedAtomicLaunchPersistence {
   const payload = runnerJobPayload({
     ...commit.launch.runnerJobPayload,
@@ -10762,7 +10436,7 @@ function launchThreadBindingCte(args: {
   );
 }
 
-function buildAtomicLaunchCteContext(
+export function buildAtomicLaunchCteContext(
   args: PersistAtomicLaunchRowsArgs,
   creditAdmitted: boolean,
 ) {
@@ -10861,7 +10535,7 @@ function atomicThreadSessionBinding(args: {
   };
 }
 
-async function persistPendingAtomicLaunch(
+export async function persistPendingAtomicLaunch(
   args: PersistAtomicLaunchRowsArgs,
   context: AtomicLaunchCteContext,
 ): Promise<PersistedAtomicLaunchRows> {
@@ -10976,7 +10650,7 @@ async function persistAtomicLaunchRows(
 
 async function resolveQueueFirstAdmissionForLaunch(args: {
   readonly tx: DbTransaction;
-  readonly createArgs: CreateAgentRunArgs;
+  readonly createArgs: PendingRunArguments;
   readonly sessionSnapshotState: QueueFirstRunSessionSnapshotState;
   readonly timing: ApiDispatchTimingCollector;
 }): Promise<QueueFirstRunAdmission | undefined> {
@@ -10997,7 +10671,7 @@ async function resolveQueueFirstAdmissionForLaunch(args: {
 async function claimQueueFirstAssociationForLaunch(args: {
   readonly tx: DbTransaction;
   readonly admission: QueueFirstRunAdmission | undefined;
-  readonly createArgs: CreateAgentRunArgs;
+  readonly createArgs: PendingRunArguments;
   readonly identity: LaunchRunIdentity;
   readonly timing: ApiDispatchTimingCollector;
 }): Promise<QueueFirstRunClaimResult | undefined> {
@@ -11048,7 +10722,7 @@ async function activatePreparedLaunchUsageAllowance(args: {
 function threadSessionBindingAction(args: {
   readonly identity: LaunchRunIdentity;
   readonly previousAgentSessionId: string | null;
-  readonly resolution: ChatThreadSessionResolution | undefined;
+  readonly resolution: PendingThreadSessionResolution | undefined;
 }): ThreadSessionBindingAction {
   return (
     args.resolution?.action ??
@@ -11060,12 +10734,12 @@ function threadSessionBindingAction(args: {
   );
 }
 
-async function persistThreadSessionBinding(
+export async function persistThreadSessionBinding(
   tx: DbTransaction,
   args: {
     readonly chatThreadId: string;
     readonly identity: LaunchRunIdentity;
-    readonly resolution: ChatThreadSessionResolution | undefined;
+    readonly resolution: PendingThreadSessionResolution | undefined;
     readonly timing: ApiDispatchTimingCollector;
     readonly validatedThreadSession?: ValidatedThreadSessionSnapshot;
   },
@@ -11125,10 +10799,10 @@ async function persistThreadSessionBinding(
   };
 }
 
-async function validateThreadSessionSnapshot(
+export async function validateThreadSessionSnapshot(
   tx: DbTransaction,
   args: {
-    readonly createArgs: CreateAgentRunArgs;
+    readonly createArgs: PendingRunArguments;
     readonly identity: LaunchRunIdentity;
     readonly timing: ApiDispatchTimingCollector;
   },
@@ -11236,7 +10910,7 @@ async function commitPendingPreparedLaunch(
   };
 }
 
-async function validateCapturedSubscriptionAccount(
+export async function validateCapturedSubscriptionAccount(
   tx: Tx,
   args: PreparedCommitPreparedLaunchArgs,
 ): Promise<
@@ -11479,7 +11153,7 @@ async function commitPreparedLaunch(
   return { result: committed, transactionReturnedAt };
 }
 
-function admissionAttemptOutcome(
+export function admissionAttemptOutcome(
   result: AtomicLaunchCommitResult | CreateRunErrorResult,
 ): AdmissionAttemptOutcome {
   if ("kind" in result) {
@@ -11493,7 +11167,7 @@ function admissionAttemptOutcome(
   return "rejected";
 }
 
-function atomicLaunchPayloadInput(args: {
+export function atomicLaunchPayloadInput(args: {
   readonly capturedStorageMounts?: readonly PersistedStorageMount[];
   readonly deferredPiResources?: PreparedPiLaunchResources;
   readonly createArgs: CreateAgentRunArgs;
@@ -11552,7 +11226,7 @@ function createdRunResponse(
   };
 }
 
-interface PreparedRunContext {
+export interface PreparedRunContext {
   readonly disabledPaidTools: readonly string[];
   readonly body: CreateRunBody;
   readonly resolved: ResolvedRunExecution;
@@ -11602,7 +11276,7 @@ function assertCurrentPiCliArtifact(): void {
   }
 }
 
-async function materializePreparedPiProvider(
+export async function materializePreparedPiProvider(
   createArgs: RunModelProviderArgs,
   provider: ResolvedModelProviderEnvironment | null,
 ): Promise<ResolvedModelProviderEnvironment | null> {
@@ -11684,7 +11358,7 @@ async function materializePreparedPiProvider(
   };
 }
 
-function resolvePreparedPiModelConfig(args: {
+export function resolvePreparedPiModelConfig(args: {
   readonly createArgs: Pick<
     CreateAgentRunArgs,
     "piExecution" | "codexServiceTier" | "agentRunMetadata"
@@ -11754,7 +11428,7 @@ async function resolveRunModelProvider(
   );
 }
 
-async function buildResolvedRunBody(args: {
+export async function buildResolvedRunBody(args: {
   readonly initialBody: CreateRunBody;
   readonly resolved: ResolvedRunExecution;
   readonly persistedEnvironment: PersistedRunEnvironmentSnapshot;
@@ -11788,7 +11462,7 @@ async function buildResolvedRunBody(args: {
 
 type RunBodyEnvironment = Pick<CreateRunBody, "vars" | "secrets">;
 
-async function resolveRunBodyEnvironment(args: {
+export async function resolveRunBodyEnvironment(args: {
   readonly content: agentRunCreateAgentExecutionConfig;
   readonly runVars: CreateRunBody["vars"];
   readonly runSecrets: CreateRunBody["secrets"];
@@ -11849,7 +11523,7 @@ function validateRunEnvironmentReferences(args: {
   return isRouteError(validation) ? validation : null;
 }
 
-async function buildPreparedPermissionManifest(args: {
+export async function buildPreparedPermissionManifest(args: {
   readonly connectorCatalogSelection: RunConnectorCatalogSelection;
   readonly body: Pick<CreateRunBody, "permissionPolicies" | "vars" | "secrets">;
   readonly modelProvider: ResolvedModelProviderEnvironment | null;
@@ -11923,7 +11597,7 @@ function preparedRunAdditionalVolumes(args: {
   });
 }
 
-interface PreparedRunBodyContext {
+export interface PreparedRunBodyContext {
   readonly body: CreateRunBody;
   readonly resolved: ResolvedRunExecution;
   readonly connectorScope: EffectiveConnectorScope;
@@ -11931,7 +11605,7 @@ interface PreparedRunBodyContext {
   readonly featureSwitchContext: FeatureSwitchContext;
 }
 
-interface PreparedRuntimeContext {
+export interface PreparedRuntimeContext {
   readonly framework: SupportedFramework;
   readonly modelProvider: ResolvedModelProviderEnvironment | null;
   readonly connectorContext: BuiltinConnectorRuntimeContext;
@@ -11943,12 +11617,12 @@ interface PreparedRuntimeContext {
   readonly connectorCatalogSelection: RunConnectorCatalogSelection;
 }
 
-interface PreparedConnectorContext {
+export interface PreparedConnectorContext {
   readonly connectorContext: BuiltinConnectorRuntimeContext;
   readonly permissionManifest: PermissionManifest | undefined;
 }
 
-function connectorScopeForRuntimeSnapshot(
+export function connectorScopeForRuntimeSnapshot(
   scope: EffectiveConnectorScope,
   snapshot: ConnectorRuntimeSelection,
 ): EffectiveConnectorScope {
@@ -11968,7 +11642,7 @@ function connectorScopeForRuntimeSnapshot(
   };
 }
 
-function connectorScopeFromCreateArgs(
+export function connectorScopeFromCreateArgs(
   args: CreateAgentRunArgs,
 ): EffectiveConnectorScope {
   const source = isEmptyRunConnectorScope(args.connectorScope)
@@ -11982,7 +11656,7 @@ function connectorScopeFromCreateArgs(
   };
 }
 
-function agentRunResolutionOptions(
+export function agentRunResolutionOptions(
   args: CreateAgentRunArgs,
 ): Pick<
   ResolveAgentExecutionOptions,
@@ -12029,7 +11703,7 @@ function agentRunResolutionOptions(
   };
 }
 
-async function resolvePreparedRunModelProvider(args: {
+export async function resolvePreparedRunModelProvider(args: {
   readonly db: Db;
   readonly createArgs: RunModelProviderArgs;
   readonly timing: ApiDispatchTimingCollector;
@@ -12060,7 +11734,7 @@ async function resolvePreparedRunModelProvider(args: {
   );
 }
 
-function piConfigurationRouteError(
+export function piConfigurationRouteError(
   error: unknown,
 ): ReturnType<typeof badRequestMessage> {
   if (error instanceof PiNativeConfigurationError) {
@@ -12069,7 +11743,7 @@ function piConfigurationRouteError(
   throw error;
 }
 
-interface RunPreparedConnectorInputs {
+export interface RunPreparedConnectorInputs {
   readonly db: Db;
   readonly connectorScope: EffectiveConnectorScope;
   readonly connectorCatalogSelection: RunConnectorCatalogSelection;
@@ -12221,7 +11895,7 @@ function createRunPreparedConnectorObjects(
   return { connectorContext$ };
 }
 
-function prepareRunOutputMetadata(args: {
+export function prepareRunOutputMetadata(args: {
   readonly createArgs: Pick<CreateAgentRunArgs, "injectSkillVolumes">;
   readonly systemSkillStorageResolution: SystemSkillStorageResolution;
   readonly connectorScope: EffectiveConnectorScope;
@@ -12264,7 +11938,7 @@ function prepareRunOutputMetadata(args: {
   };
 }
 
-function skillsRootForRun(
+export function skillsRootForRun(
   framework: SupportedFramework,
   piSandbox: PiModelConfig | undefined,
 ): string {
@@ -12285,7 +11959,7 @@ function isImageRecognitionAvailableForRun(args: {
   );
 }
 
-interface PrepareRunContextInput {
+export interface PrepareRunContextInput {
   readonly db: Db;
   readonly args: CreateAgentRunArgs;
   readonly timing: ApiDispatchTimingCollector;
@@ -12295,13 +11969,13 @@ type RunContextInputObject = Computed<
 >;
 type AsyncRead<T> = Computed<T | Promise<T>>;
 
-interface DisabledPaidToolsSnapshot {
+export interface DisabledPaidToolsSnapshot {
   readonly orgId: string;
   readonly userId: string;
   readonly toolIds: readonly string[];
 }
 
-interface RunMemberSnapshot {
+export interface RunMemberSnapshot {
   readonly orgId: string;
   readonly userId: string;
   readonly member:
@@ -12584,7 +12258,7 @@ async function multiAuthModelProviderEnvironmentFromSnapshot(args: {
   };
 }
 
-function builtInModelProviderEnvironmentFromSnapshot(args: {
+export function builtInModelProviderEnvironmentFromSnapshot(args: {
   readonly route: BuiltInModelRuntimeRoute;
   readonly selectedModel: string;
   readonly featureSwitchContext: FeatureSwitchContext;
@@ -12640,7 +12314,7 @@ function builtInModelProviderEnvironmentFromSnapshot(args: {
   };
 }
 
-async function customGatewayProviderEnvironmentFromSnapshot(
+export async function customGatewayProviderEnvironmentFromSnapshot(
   args: ResolveModelProviderEnvironmentArgs,
   row: NonNullable<
     Awaited<
@@ -12700,7 +12374,7 @@ async function customGatewayProviderEnvironmentFromSnapshot(
   };
 }
 
-async function personalProviderEnvironmentFromSnapshot(
+export async function personalProviderEnvironmentFromSnapshot(
   args: ResolveModelProviderEnvironmentArgs,
   account: PersonalModelProviderAccountRow,
   selectedModel: string | null,
@@ -12782,7 +12456,7 @@ type RunModelProviderArgs = Pick<
   | "queueFirstAssociation"
 >;
 
-interface RunModelProviderReadInput {
+export interface RunModelProviderReadInput {
   readonly db: Db;
   readonly timing: ApiDispatchTimingCollector;
   readonly args: RunModelProviderArgs;
@@ -13033,7 +12707,7 @@ function createPinnedGatewayProviderEnvironment(
   });
 }
 
-function pinnedProviderSecretProjection(
+export function pinnedProviderSecretProjection(
   type: ModelProviderType,
   hasFirewallAuth: boolean,
   piExecution: ResolveModelProviderEnvironmentArgs["piExecution"],
@@ -13139,7 +12813,7 @@ function createPinnedRegularProviderSnapshot(
   });
 }
 
-async function regularProviderEnvironmentFromSnapshot(
+export async function regularProviderEnvironmentFromSnapshot(
   args: ResolveModelProviderEnvironmentArgs,
   snapshot: NonNullable<
     Awaited<
@@ -13345,7 +13019,7 @@ function createRunModelObject(
   return createRunModelProviderObjects(input$, body, identity);
 }
 
-interface RunConnectorSelection {
+export interface RunConnectorSelection {
   readonly connectorCatalogSelection: RunConnectorCatalogSelection;
   readonly threadConnectorSelectionIds: ThreadConnectorSelectionIds | undefined;
   readonly connectorScope: EffectiveConnectorScope;
@@ -13355,7 +13029,7 @@ type RunConnectorScopeObject = Computed<
   EffectiveConnectorScope | Promise<EffectiveConnectorScope>
 >;
 
-interface RunConnectorReadInput {
+export interface RunConnectorReadInput {
   readonly db: Db;
   readonly timing: ApiDispatchTimingCollector;
   readonly args: Pick<
@@ -13368,7 +13042,7 @@ interface RunConnectorReadInput {
   >;
 }
 
-interface RunConnectorContextSnapshot {
+export interface RunConnectorContextSnapshot {
   readonly storedConnectorSnapshot: StoredConnectorMaterializationSnapshot | null;
   readonly storedConnectorMetadataContext: BuiltinConnectorRuntimeContext;
   readonly customConnectorContext: CustomConnectorRuntimeContext;
@@ -13378,7 +13052,7 @@ type RunConnectorSelectionObject = Computed<
   Promise<RunConnectorSelection | CreateRunErrorResult>
 >;
 
-interface RunConnectorPreparation {
+export interface RunConnectorPreparation {
   readonly selection: RunConnectorSelection;
   readonly stored: StoredConnectorMaterializationArgs | null;
   readonly custom: {
@@ -13461,7 +13135,7 @@ interface RunThreadConnectorSelectionRow {
   readonly customConnectorId: string | null;
 }
 
-function runConnectorTargetFromRow(
+export function runConnectorTargetFromRow(
   row: Pick<
     RunThreadConnectorSelectionRow,
     "connectorSlug" | "customConnectorId"
@@ -13479,7 +13153,7 @@ function runConnectorTargetFromRow(
   throw new Error("Expected exactly one thread connector selection target");
 }
 
-function runConnectorTargetIsAuthorized(
+export function runConnectorTargetIsAuthorized(
   scope: EffectiveConnectorScope,
   target: ConnectorAccountTarget,
 ): boolean {
@@ -13490,7 +13164,7 @@ function runConnectorTargetIsAuthorized(
     : scope.allowedCustomConnectorIds.includes(target.customConnectorId);
 }
 
-function runThreadConnectorCandidates(
+export function runThreadConnectorCandidates(
   selections: readonly ConnectorAccountSelection[],
   source: ConnectorAccountSelection | null,
 ): ThreadConnectorSelectionIds {
@@ -13843,7 +13517,7 @@ interface RunConnectorAccountRow {
   readonly isDefault: boolean;
 }
 
-function runConnectorAccountRequests(
+export function runConnectorAccountRequests(
   scope: EffectiveConnectorScope,
   selections: ThreadConnectorSelectionIds | undefined,
 ): readonly RunConnectorAccountRequest[] {
@@ -13871,7 +13545,7 @@ function runConnectorAccountRequests(
   ];
 }
 
-function runConnectorAccountCandidatesFromRows(args: {
+export function runConnectorAccountCandidatesFromRows(args: {
   readonly requests: readonly RunConnectorAccountRequest[];
   readonly rows: readonly RunConnectorAccountRow[];
 }): ReadonlyMap<string, readonly string[]> {
@@ -14201,21 +13875,20 @@ type RunCustomConnectorDefinitionRowsObject = ReturnType<
   typeof createRunCustomConnectorDefinitionRowsObject
 >;
 
-const runCustomConnectorAccessTokenSecret = alias(
+export const runCustomConnectorAccessTokenSecret = alias(
   secretsTable,
   "run_custom_connector_access_token",
 );
 
-const runCustomConnectorRefreshTokenSecret = alias(
+export const runCustomConnectorRefreshTokenSecret = alias(
   secretsTable,
   "run_custom_connector_refresh_token",
 );
 
-const runCustomConnectorStoredValueKindDecoder = zodEnumDriverValueDecoder(
-  z.enum(["secret", "variable"]),
-);
+export const runCustomConnectorStoredValueKindDecoder =
+  zodEnumDriverValueDecoder(z.enum(["secret", "variable"]));
 
-function runCustomConnectorConnectionColumns() {
+export function runCustomConnectorConnectionColumns() {
   return {
     id: sql`${connectors.id}`.mapWith(connectors.id).as("member_connector_id"),
     updatedAt: connectors.updatedAt,
@@ -14450,7 +14123,7 @@ function createRunCustomConnectorStoredRowsObject(
   );
 }
 
-function customConnectorCandidateRuntimeRows(args: {
+export function customConnectorCandidateRuntimeRows(args: {
   readonly connector: CustomConnectorRuntimeDataRows[number]["connector"];
   readonly candidateIds: readonly string[];
   readonly storageRows: readonly CustomConnectorRuntimeStorageRow[];
@@ -14932,7 +14605,7 @@ function createRunMemberSnapshotObject(input$: AsyncRead<RunMemberReadInput>) {
   });
 }
 
-interface RunWorkflowReadInput {
+export interface RunWorkflowReadInput {
   readonly db: Db;
   readonly args: Pick<
     CreateAgentRunArgs,
@@ -14946,7 +14619,7 @@ interface RunWorkflowReadInput {
   >;
 }
 
-type RunWorkflowModelState =
+export type RunWorkflowModelState =
   | {
       readonly requestedFramework: SupportedFramework;
       readonly modelProvider: ResolvedModelProviderEnvironment | null;
@@ -14954,7 +14627,7 @@ type RunWorkflowModelState =
   | CreateRunErrorResult
   | undefined;
 
-type PreparedOfficialWorkflow =
+export type PreparedOfficialWorkflow =
   | OfficialWorkflowRunObservation
   | CreateRunErrorResult
   | undefined;
@@ -15079,7 +14752,7 @@ function createRunDisabledPaidToolsSnapshotObject(
   });
 }
 
-function composePreparedRunContext({
+export function composePreparedRunContext({
   args,
   bodyContext,
   runtimeContext,
@@ -15245,8 +14918,8 @@ function createRunContextObjects(
   return { runContext$ };
 }
 
-function committedAtomicLaunchResponse(args: {
-  readonly createArgs: CreateAgentRunArgs;
+export function committedAtomicLaunchResponse(args: {
+  readonly createArgs: PendingRunArguments;
   readonly committed: CommittedAtomicLaunchResult;
   readonly transactionReturnedAt: number;
   readonly timing: ApiDispatchTimingCollector;
@@ -15313,8 +14986,8 @@ function committedAtomicLaunchResponse(args: {
     : { ...response, pendingActivation };
 }
 
-function flushQueueFirstClaimLostTiming(args: {
-  readonly createArgs: CreateAgentRunArgs;
+export function flushQueueFirstClaimLostTiming(args: {
+  readonly createArgs: PendingRunArguments;
   readonly identity: LaunchRunIdentity;
   readonly launch: PreparedRunnerLaunch;
   readonly timing: ApiDispatchTimingCollector;
@@ -15336,7 +15009,7 @@ function flushQueueFirstClaimLostTiming(args: {
   });
 }
 
-interface AtomicLaunchRunInput {
+export interface AtomicLaunchRunInput {
   readonly db: Db;
   readonly args: CreateAgentRunArgs;
   readonly enforceBuiltInCredits: boolean;
@@ -15345,7 +15018,7 @@ interface AtomicLaunchRunInput {
   readonly phaseTiming: ApiDispatchPhaseCollector;
 }
 
-function bindStableAppendSystemPrompt(
+export function bindStableAppendSystemPrompt(
   prompt: PiStableContextPromptProjection,
   dynamicAppendSystemPrompt: string,
 ): string {
@@ -15561,7 +15234,7 @@ const commitFailedDirectLaunch$ = command(
   },
 );
 
-function finalizedMaterializedLaunch(
+export function finalizedMaterializedLaunch(
   storage: MaterializedRunnerStorage,
   contextDraft: BuiltStoredExecutionContextDraft,
 ): PreparedRunnerLaunch {
@@ -15706,7 +15379,7 @@ interface CompleteAgentRunArgs {
   readonly finalAppendSystemPrompt: CreateRunBody["appendSystemPrompt"];
 }
 
-function finalizePreparedRunContext(
+export function finalizePreparedRunContext(
   prepared: PreparedAgentRun,
   finalAppendSystemPrompt: CreateRunBody["appendSystemPrompt"],
 ): FinalizedPreparedRunContext {
@@ -15971,7 +15644,7 @@ export function createAgentRunExecutionObjects() {
 
 // Selected-agent authorization, bootstrap and canonical session preparation.
 
-type AgentRunCreateBody = z.infer<typeof runCreateBodySchema>;
+export type AgentRunCreateBody = z.infer<typeof runCreateBodySchema>;
 
 // Emitted as the agent_run_origin observability dimension. The values name what
 // started the run, so the fallback is "direct" (not started by an automation)
@@ -15988,7 +15661,7 @@ const DISALLOWED_TOOLS = [
   "Skill(loop *)",
 ] as const;
 
-type AgentRunRecord = AgentRunRequestAgent;
+export type AgentRunRecord = AgentRunRequestAgent;
 
 /**
  * Request-scoped preparation facts from an entry point that already authorized
@@ -16115,7 +15788,7 @@ function assertThreadBoundAgentRunHasQueueAssociation(
   }
 }
 
-function agentRunsCreateForbidden(
+export function agentRunsCreateForbidden(
   message: string,
 ): ApiErrorResponse<403, "FORBIDDEN"> {
   return {
@@ -16324,7 +15997,7 @@ function bootstrapCountBucket(count: number): BootstrapCountBucket {
   return "17_plus";
 }
 
-function bootstrapLoadTimingDimensions(
+export function bootstrapLoadTimingDimensions(
   rows: RunBootstrapSnapshotRows | undefined,
 ): ApiDispatchTimingDimensions | undefined {
   if (!rows) {
@@ -16340,7 +16013,7 @@ function bootstrapLoadTimingDimensions(
   };
 }
 
-function bootstrapMaterializeTimingDimensions(
+export function bootstrapMaterializeTimingDimensions(
   rows: RunBootstrapSnapshotRows,
   context: RunBootstrapContext | undefined,
 ): ApiDispatchTimingDimensions {
@@ -16406,11 +16079,11 @@ function createRunBody(args: {
   };
 }
 
-function selectedAgentRunVariables(agentId: string) {
+export function selectedAgentRunVariables(agentId: string) {
   return { OKOU_AGENT_ID: agentId };
 }
 
-function measureAgentRunPreCreate<T>(
+export function measureAgentRunPreCreate<T>(
   timing: ApiDispatchTimingCollector | undefined,
   actionType: ApiDispatchTimingActionType,
   operation: () => T | Promise<T>,
@@ -16450,7 +16123,7 @@ interface AgentRunAfterBootstrap extends RunBootstrapContext {
   readonly capturedPersonalSubscriptionAccount?: CapturedPersonalSubscriptionAccount;
 }
 
-interface AgentRunAfterPreCreate extends AgentRunAfterBootstrap {
+export interface AgentRunAfterPreCreate extends AgentRunAfterBootstrap {
   readonly runPermissionPolicies: FirewallPolicies | null | undefined;
   readonly connectorCatalogSelection: RunConnectorCatalogSelection;
 }
@@ -16598,7 +16271,7 @@ function buildStableRunPromptContext(args: BuildCreateAgentRunArgsInput): {
   };
 }
 
-function buildCreateAgentRunArgs(
+export function buildCreateAgentRunArgs(
   args: BuildCreateAgentRunArgsInput,
 ): CreateAgentRunArgs {
   const command = args.command;
@@ -16703,7 +16376,7 @@ const bootstrapMetadataRowKindSchema = z.enum([
 
 type BootstrapMetadataRowKind = z.output<typeof bootstrapMetadataRowKindSchema>;
 
-const bootstrapMetadataRowKindDecoder = zodEnumDriverValueDecoder(
+export const bootstrapMetadataRowKindDecoder = zodEnumDriverValueDecoder(
   bootstrapMetadataRowKindSchema,
 );
 
@@ -16719,15 +16392,14 @@ const permissionGrantActionDecoder = zodEnumDriverValueDecoder(
   userPermissionGrantActionSchema,
 );
 
-const nullableTextDecoder = nullableDriverValueDecoder(pgTextDecoder);
+export const nullableTextDecoder = nullableDriverValueDecoder(pgTextDecoder);
 
 const nullableBooleanDecoder = nullableDriverValueDecoder(pgBooleanDecoder);
 
-const nullableBootstrapMetadataSwitchesDecoder = nullableDriverValueDecoder(
-  bootstrapMetadataSwitchesDecoder,
-);
+export const nullableBootstrapMetadataSwitchesDecoder =
+  nullableDriverValueDecoder(bootstrapMetadataSwitchesDecoder);
 
-const nullablePermissionGrantActionDecoder = nullableDriverValueDecoder(
+export const nullablePermissionGrantActionDecoder = nullableDriverValueDecoder(
   permissionGrantActionDecoder,
 );
 
@@ -16742,7 +16414,7 @@ const nullableCustomConnectorStorageVersionDecoder = nullableDriverValueDecoder(
   orgCustomConnectors.storageVersion,
 );
 
-interface BootstrapMetadataQueryRow {
+export interface BootstrapMetadataQueryRow {
   readonly kind: BootstrapMetadataRowKind;
   readonly id: string | null;
   readonly name: string | null;
@@ -16778,7 +16450,7 @@ interface UserInfo {
   readonly agentphoneHandle?: string;
 }
 
-interface RunBootstrapContext extends AgentConnectorScopeSnapshot {
+export interface RunBootstrapContext extends AgentConnectorScopeSnapshot {
   readonly userInfo: UserInfo;
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly workflows: readonly RunWorkflowRef[];
@@ -16794,12 +16466,12 @@ interface RunBootstrapSnapshotArgs {
   readonly checkedAt: Date;
 }
 
-interface RunBootstrapSnapshotRows {
+export interface RunBootstrapSnapshotRows {
   readonly metadataRows: readonly BootstrapMetadataQueryRow[];
   readonly workflowRows: readonly RunWorkflowSourceRow[];
 }
 
-function emptyBootstrapMetadataFields() {
+export function emptyBootstrapMetadataFields() {
   return {
     id: sql`NULL::text`.mapWith(nullableTextDecoder).as("id"),
     name: sql`NULL::text`.mapWith(nullableTextDecoder).as("name"),
@@ -16934,7 +16606,7 @@ function materializeBootstrapFeatureSwitchContext(args: {
   return context;
 }
 
-function materializeRunBootstrapContext(
+export function materializeRunBootstrapContext(
   rows: RunBootstrapSnapshotRows,
   args: {
     readonly userId: string;
@@ -17086,16 +16758,19 @@ export interface SelectedAgentRunGraphSources {
     Pick<CreateAgentRunCommandArgs["body"], "additionalVolumes">
   >;
 }
-type AgentRunIdentityCommand = Omit<AgentRunSelectionInput, "piExecution"> & {
+export type AgentRunIdentityCommand = Omit<
+  AgentRunSelectionInput,
+  "piExecution"
+> & {
   readonly piExecution?: boolean;
 };
-interface AgentRunGraphInput {
+export interface AgentRunGraphInput {
   readonly command: AgentRunIdentityCommand;
   readonly db: Db;
   readonly timing: ApiDispatchTimingCollector;
 }
 
-function matchingAuthorizedRequestObservation(
+export function matchingAuthorizedRequestObservation(
   args: AgentRunIdentityCommand,
   agentId: string,
 ): AuthorizedAgentRunRequestObservation | undefined {
@@ -17507,7 +17182,7 @@ function createPreCreateBootstrap(
   return bootstrap$;
 }
 
-function personalSubscriptionAccountCandidates(args: {
+export function personalSubscriptionAccountCandidates(args: {
   readonly command: AgentRunIdentityCommand;
   readonly providerType: string;
   readonly modelProviderId: string | null;
@@ -17634,14 +17309,16 @@ function createPreCreateSubscriptionAccount(
   return subscriptionAccount$;
 }
 
-function selectedRunPiExecution(command: AgentRunIdentityCommand): boolean {
+export function selectedRunPiExecution(
+  command: AgentRunIdentityCommand,
+): boolean {
   if (command.piExecution === undefined) {
     throw new Error("Selected model execution eligibility is unavailable");
   }
   return command.piExecution;
 }
 
-function selectedRunModelProviderArgs(
+export function selectedRunModelProviderArgs(
   command: AgentRunIdentityCommand,
   agent: AgentRunRecord,
   capturedPersonalSubscriptionAccount:
@@ -18561,7 +18238,7 @@ type RunStorageExecution = Pick<
   | "additionalVolumes"
 >;
 
-function selectedRunStorageExecution(
+export function selectedRunStorageExecution(
   agent: AgentRunRecord,
   session: ChatThreadSessionResolution | undefined,
 ): RunStorageExecution | CreateRunErrorResult {
@@ -18883,9 +18560,6 @@ function createPrepareQueuedAgentRunCommand(
       { get, set },
       signal: AbortSignal,
     ): Promise<PreparedAgentRun | CreateRunErrorResult | null> => {
-      if (earlyStorage) {
-        set(earlyStorage.storage.resetStorage$, signal);
-      }
       if (sources && !(await get(sources.identityInput$))) {
         signal.throwIfAborted();
         return null;

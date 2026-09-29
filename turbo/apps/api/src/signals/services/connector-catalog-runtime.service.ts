@@ -686,13 +686,13 @@ function compareStrings(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 
-function uniqueSortedConnectorSlugs(
+export function uniqueSortedConnectorSlugs(
   connectorSlugs: readonly ConnectorSlug[],
 ): readonly ConnectorSlug[] {
   return [...new Set(connectorSlugs)].sort(compareStrings);
 }
 
-function projectionIdentityKey(
+export function projectionIdentityKey(
   identity: ConnectorCatalogRuntimeProjectionIdentity,
 ): string {
   return [
@@ -719,7 +719,7 @@ function externalCatalogIdentity(
   };
 }
 
-function runtimeSelectionProjectionKey(args: {
+export function runtimeSelectionProjectionKey(args: {
   readonly identity: ConnectorCatalogRuntimeProjectionIdentity;
   readonly runtimeConnectorSlugs: readonly ConnectorSlug[];
   readonly metadataConnectorSlugs: readonly ConnectorSlug[];
@@ -733,7 +733,7 @@ function runtimeSelectionProjectionKey(args: {
   ].join("\0");
 }
 
-function requestedProjectionConnectorSlugs(args: {
+export function requestedProjectionConnectorSlugs(args: {
   readonly runtimeConnectorSlugs: readonly ConnectorSlug[];
   readonly metadataConnectorSlugs: readonly ConnectorSlug[];
 }): readonly ConnectorSlug[] {
@@ -836,7 +836,7 @@ async function loadCompleteRuntimeSelection(args: {
   return runtimeSelectionFromAcceptedSnapshot({ ...args, acceptedSnapshot });
 }
 
-function runtimeSelectionFromAcceptedSnapshot(args: {
+export function runtimeSelectionFromAcceptedSnapshot(args: {
   readonly acceptedSnapshot: AcceptedConnectorCatalogSnapshot;
   readonly timing: ConnectorCatalogLoadTiming;
   readonly runtimeConnectorSlugs: readonly ConnectorSlug[];
@@ -900,7 +900,7 @@ interface RuntimeSelectionLoad {
   readonly fallbackReason?: ConnectorCatalogRuntimeProjectionFallbackReason;
 }
 
-interface RuntimeSelectionBuildResult {
+export interface RuntimeSelectionBuildResult {
   readonly load: RuntimeSelectionLoad;
   readonly cacheOutcome: "hit" | "miss" | "not_applicable";
 }
@@ -914,7 +914,7 @@ interface RuntimeSelectionCache {
     | undefined;
 }
 
-const runtimeSelectionCache = singleton((): RuntimeSelectionCache => {
+export const runtimeSelectionCache = singleton((): RuntimeSelectionCache => {
   return { inFlight: undefined };
 });
 
@@ -946,7 +946,7 @@ function projectedConnectorCacheFor(
   return cache.connectors;
 }
 
-function takeCachedProjectedConnectors(
+export function takeCachedProjectedConnectors(
   identity: ConnectorCatalogRuntimeProjectionIdentity,
   connectorSlugs: readonly ConnectorSlug[],
 ): {
@@ -970,7 +970,7 @@ function takeCachedProjectedConnectors(
   return { cached, uncachedSlugs };
 }
 
-function rememberProjectedConnectors(
+export function rememberProjectedConnectors(
   identity: ConnectorCatalogRuntimeProjectionIdentity,
   fetched: readonly ConnectorCatalogArtifactConnector[],
 ): void {
@@ -1001,7 +1001,7 @@ const runtimeSelectionObservationHistory = singleton(
   },
 );
 
-function observeRuntimeSelection(
+export function observeRuntimeSelection(
   identity: ConnectorCatalogRuntimeProjectionIdentity,
   key: string,
 ): ConnectorRuntimeProjectionCacheObservation {
@@ -1080,7 +1080,7 @@ async function completeRuntimeSelectionBuildFallback(args: {
   };
 }
 
-function materializeProjectedRuntimeSelection(args: {
+export function materializeProjectedRuntimeSelection(args: {
   readonly timing: ConnectorCatalogLoadTiming;
   readonly projection: ConnectorCatalogRuntimeProjectionReadyIdentity;
   readonly connectors: readonly ConnectorCatalogArtifactConnector[];
@@ -1205,7 +1205,7 @@ async function buildProjectedRuntimeSelection(args: {
   };
 }
 
-function clearRuntimeSelectionInFlight(
+export function clearRuntimeSelectionInFlight(
   cache: RuntimeSelectionCache,
   key: string,
   promise: Promise<RuntimeSelectionBuildResult>,

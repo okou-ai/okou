@@ -223,7 +223,7 @@ const STORAGE_MANIFEST_CACHE_ACTION_TYPES = [
 type StorageManifestCacheActionType =
   (typeof STORAGE_MANIFEST_CACHE_ACTION_TYPES)[number];
 
-function storageManifestCacheCountBucket(
+export function storageManifestCacheCountBucket(
   count: number,
 ): StorageManifestCacheCountBucket {
   if (count <= 0) {
@@ -836,7 +836,7 @@ function recordStorageManifestPrefetchDecision(args: {
   );
 }
 
-function storageManifestPresignedUrlCacheLookupPairs(
+export function storageManifestPresignedUrlCacheLookupPairs(
   input: StorageManifestPresignedUrlCachePrefetchInput,
   memoizeByValue: boolean,
 ): {
@@ -984,7 +984,7 @@ interface StorageManifestPresignedUrlCacheReadInput {
   readonly observation?: StorageManifestCacheMixedLookupObservationContext;
 }
 
-function planStorageManifestMixedLookup(
+export function planStorageManifestMixedLookup(
   args: StorageManifestPresignedUrlCacheReadInput,
 ) {
   const requestedCount =
@@ -1525,6 +1525,78 @@ async function signPreparedStoragePresignedUrls(
   return { results: prepared.results, freshValues, timing: prepared.timing };
 }
 
+/** Classify a captured database snapshot and sign misses entirely in memory. */
+export async function signStorageManifestPresignedUrls(args: {
+  readonly input: StorageManifestPresignedUrlCachePrefetchInput;
+  readonly prefetchedRows: StorageManifestPresignedUrlCacheSnapshot;
+  readonly sign: PresignedGetUrlSigner;
+}): Promise<{
+  readonly results: ReadonlyMap<string, StoragePresignedUrlResult>;
+  readonly freshValues: readonly CacheRowValue[];
+}> {
+  const requests = [
+    ...args.input.systemRequests.map((request) => {
+      return {
+        cacheKey: systemStoragePresignedUrlCacheKey(request),
+        request: systemStorageRequest(request),
+        ttlSeconds: SYSTEM_STORAGE_PRESIGNED_URL_TTL_SECONDS,
+      };
+    }),
+    ...args.input.workflowSkillRequests.map((request) => {
+      return {
+        cacheKey: workflowSkillStoragePresignedUrlCacheKey(request),
+        request: workflowSkillStorageRequest(request),
+        ttlSeconds: WORKFLOW_SKILL_STORAGE_PRESIGNED_URL_TTL_SECONDS,
+      };
+    }),
+    ...args.input.readOnlyRequests.map((request) => {
+      return {
+        cacheKey: readOnlyStoragePresignedUrlCacheKey(request),
+        request: readOnlyStorageRequest(request),
+        ttlSeconds: READ_ONLY_STORAGE_PRESIGNED_URL_TTL_SECONDS,
+      };
+    }),
+  ];
+  const unique = new Map(
+    requests.map((entry) => {
+      return [entry.cacheKey, entry];
+    }),
+  );
+  const issuedAt = nowDate();
+  const results = new Map<string, StoragePresignedUrlResult>();
+  const missing = [...unique.values()].filter((entry) => {
+    const row = args.prefetchedRows.rowsByScope
+      .get(entry.request.scope as StorageManifestPresignedUrlCacheScope)
+      ?.get(entry.cacheKey);
+    if (!row || row.expiresAt.getTime() <= issuedAt.getTime()) {
+      return true;
+    }
+    results.set(entry.cacheKey, {
+      cacheKey: entry.cacheKey,
+      url: row.presignedUrl,
+      expiresAt: row.expiresAt,
+      status: "hit",
+    });
+    return false;
+  });
+  const freshValues = await Promise.all(
+    missing.map((entry) => {
+      return signCacheValue({
+        ...entry,
+        sign: args.sign,
+        issuedAt,
+        lastRequestedAt: issuedAt,
+      });
+    }),
+  );
+  appendFreshStoragePresignedUrlResults({
+    results,
+    needsFresh: missing,
+    freshValues,
+  });
+  return { results, freshValues };
+}
+
 async function persistPreparedStoragePresignedUrls(
   db: Db,
   prepared: PreparedStoragePresignedUrls,
@@ -1637,7 +1709,7 @@ function prepareRunStoragePresignedUrls(args: RunStoragePresignedUrlsArgs) {
   }
 }
 
-/** Run materialization owns cache persistence; reading a storage plan never writes. */
+/** Shared run preparation signs from a captured cache snapshot without persisting. */
 export const materializeRunStoragePresignedUrls$ = command(
   async ({ get }, args: RunStoragePresignedUrlsArgs, signal: AbortSignal) => {
     const requests = await prepareRunStoragePresignedUrls(args);
@@ -1658,12 +1730,8 @@ export const materializeRunStoragePresignedUrls$ = command(
       signingRequests,
     );
     signal.throwIfAborted();
-    const results = await persistPreparedStoragePresignedUrls(
-      args.db,
-      prepared,
-    );
-    signal.throwIfAborted();
-    return results;
+    prepared.timing?.flush();
+    return prepared.results;
   },
 );
 

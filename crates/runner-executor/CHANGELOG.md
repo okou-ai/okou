@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.3](https://github.com/okou-ai/okou/compare/runner-executor-v0.2.2...runner-executor-v0.2.3) (2026-09-29)
+
+
+### Refactoring
+
+* remove retired terra and okou model variants ([#37368](https://github.com/okou-ai/okou/issues/37368)) ([e9a6e7a](https://github.com/okou-ai/okou/commit/e9a6e7a92cf3a408831a392afbc882e714037e22))
+
 ## [0.2.2](https://github.com/okou-ai/okou/compare/runner-executor-v0.2.1...runner-executor-v0.2.2) (2026-09-29)
 
 ## [0.2.1](https://github.com/okou-ai/okou/compare/runner-executor-v0.2.0...runner-executor-v0.2.1) (2026-09-29)

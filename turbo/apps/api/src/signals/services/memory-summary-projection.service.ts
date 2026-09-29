@@ -869,37 +869,24 @@ interface MemorySummaryProjectionReadRow {
   readonly tokenCount: number | null;
 }
 
-interface MemorySummaryProjectionReadResult {
+export interface MemorySummaryProjectionReadResult {
   readonly input: MemorySummaryProjectionReadInput;
   readonly ready: ReadyMemorySummaryProjection | null;
-  readonly repair?:
-    | {
-        readonly kind: "enqueue";
-        readonly storage: CanonicalMemoryStorageIdentity;
-      }
-    | { readonly kind: "requeue" };
+  readonly unavailableReason?: "missing" | "invalid";
 }
 
-function memorySummaryProjectionReadResult(
+export function memorySummaryProjectionReadResult(
   input: MemorySummaryProjectionReadInput,
   row: MemorySummaryProjectionReadRow | undefined,
 ): MemorySummaryProjectionReadResult {
   if (!row) {
-    return { input, ready: null };
+    return { input, ready: null, unavailableReason: "missing" };
   }
   if (row.projectionStatus === null) {
     return {
       input,
       ready: null,
-      repair: {
-        kind: "enqueue",
-        storage: {
-          id: row.storageId,
-          orgId: row.storageOrgId,
-          userId: row.storageUserId,
-          name: row.storageName,
-        },
-      },
+      unavailableReason: "missing",
     };
   }
   if (
@@ -909,7 +896,13 @@ function memorySummaryProjectionReadResult(
     row.sourceSize === null ||
     row.tokenCount === null
   ) {
-    return { input, ready: null };
+    return {
+      input,
+      ready: null,
+      ...(row.projectionStatus === "ready"
+        ? { unavailableReason: "invalid" as const }
+        : {}),
+    };
   }
   const ready = {
     content: row.content,
@@ -919,7 +912,7 @@ function memorySummaryProjectionReadResult(
   };
   return readyProjectionIsAuthentic(ready)
     ? { input, ready }
-    : { input, ready: null, repair: { kind: "requeue" } };
+    : { input, ready: null, unavailableReason: "invalid" };
 }
 
 function createMemorySummaryProjectionReadObject(
@@ -980,84 +973,12 @@ function createMemorySummaryProjectionReadObject(
   );
 }
 
-const repairMemorySummaryProjection$ = command(
-  async (
-    _store,
-    observation: MemorySummaryProjectionReadResult | null,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    signal.throwIfAborted();
-    if (!observation?.repair) {
-      return;
-    }
-    const { db, args } = observation.input;
-    if (observation.repair.kind === "enqueue") {
-      const { storage } = observation.repair;
-      const enqueued = await settle(
-        db
-          .insert(memorySummaryProjections)
-          .values({
-            memoryStorageId: storage.id,
-            storageVersionId: args.storageVersionId,
-            orgId: storage.orgId,
-            userId: storage.userId,
-          })
-          .onConflictDoNothing(),
-        signal,
-      );
-      signal.throwIfAborted();
-      if (!enqueued.ok) {
-        log.warn("Memory summary projection read enqueue failed", {
-          ...args,
-          errorClass: retryErrorClass(enqueued.error),
-        });
-      }
-      return;
-    }
-    const requeued = await settle(
-      db
-        .update(memorySummaryProjections)
-        .set({
-          status: "pending",
-          leaseId: null,
-          leaseExpiresAt: null,
-          availableAt: nowDate(),
-          lastErrorClass: "read_integrity_mismatch",
-          content: null,
-          sourceHash: null,
-          sourceSize: null,
-          tokenCount: null,
-          updatedAt: nowDate(),
-        })
-        .where(
-          and(
-            eq(memorySummaryProjections.memoryStorageId, args.memoryStorageId),
-            eq(
-              memorySummaryProjections.storageVersionId,
-              args.storageVersionId,
-            ),
-            eq(memorySummaryProjections.status, "ready"),
-          ),
-        ),
-      signal,
-    );
-    signal.throwIfAborted();
-    log.warn("Memory summary projection failed read integrity", {
-      ...args,
-      errorClass: "read_integrity_mismatch",
-      requeueErrorClass: requeued.ok
-        ? undefined
-        : retryErrorClass(requeued.error),
-    });
-  },
-);
-
-/** Compose one immutable read snapshot with its explicit best-effort repair. */
+/** Read one immutable projection snapshot without scheduling repair. */
 export function createMemorySummaryProjectionObjects(
   input$: Parameters<typeof createMemorySummaryProjectionReadObject>[0],
 ) {
   const projection$ = createMemorySummaryProjectionReadObject(input$);
-  return { projection$, repairProjection$: repairMemorySummaryProjection$ };
+  return { projection$ };
 }
 
 function createReadMemorySummaryProjectionCommand() {
@@ -1067,8 +988,7 @@ function createReadMemorySummaryProjectionCommand() {
   const input$ = computed((get) => {
     return get(internalInput$);
   });
-  const { projection$, repairProjection$ } =
-    createMemorySummaryProjectionObjects(input$);
+  const { projection$ } = createMemorySummaryProjectionObjects(input$);
   return command(
     async (
       { get, set },
@@ -1078,7 +998,12 @@ function createReadMemorySummaryProjectionCommand() {
       set(internalInput$, { db: set(writeDb$), args });
       const observation = await get(projection$);
       signal.throwIfAborted();
-      await set(repairProjection$, observation, signal);
+      if (observation?.unavailableReason) {
+        log.error("Memory summary projection is not ready", {
+          ...args,
+          reason: observation.unavailableReason,
+        });
+      }
       return observation?.ready ?? null;
     },
   );

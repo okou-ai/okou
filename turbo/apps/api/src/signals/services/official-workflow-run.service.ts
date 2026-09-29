@@ -171,7 +171,7 @@ interface AcceptedRunCandidate {
   readonly accepted: OfficialWorkflowAcceptedDefinition;
 }
 
-function acceptedRunCandidates(
+export function acceptedRunCandidates(
   catalog: AcceptedOfficialWorkflowCatalog,
   candidates: readonly OfficialWorkflowRunCandidate[],
 ): readonly AcceptedRunCandidate[] {
@@ -207,7 +207,7 @@ function acceptedRunCandidates(
   });
 }
 
-function assembleRunObservation(
+export function assembleRunObservation(
   catalog: AcceptedOfficialWorkflowCatalog,
   acceptedCandidates: readonly AcceptedRunCandidate[],
   revisions: readonly (OfficialWorkflowAcceptedRevision | null)[],

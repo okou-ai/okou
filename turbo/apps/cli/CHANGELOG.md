@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.373.7](https://github.com/okou-ai/okou/compare/cli-v9.373.6...cli-v9.373.7) (2026-09-29)
+
+
+### Refactoring
+
+* remove retired terra and okou model variants ([#37368](https://github.com/okou-ai/okou/issues/37368)) ([e9a6e7a](https://github.com/okou-ai/okou/commit/e9a6e7a92cf3a408831a392afbc882e714037e22))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.529.1
+    * @okouai/core bumped to 8.722.1
+    * @okouai/pi-agent-runtime bumped to 1.43.1
+
 ## [9.373.6](https://github.com/okou-ai/okou/compare/cli-v9.373.5...cli-v9.373.6) (2026-09-29)
 
 

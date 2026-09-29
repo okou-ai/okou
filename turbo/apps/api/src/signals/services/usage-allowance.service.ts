@@ -159,7 +159,7 @@ function entitlementCoversAt(
   );
 }
 
-function remainingUnits(
+export function remainingUnits(
   window: Pick<UsageAllowanceWindow, "unitLimit" | "consumedUnits">,
 ): number {
   return Math.max(window.unitLimit - window.consumedUnits, 0);
@@ -589,7 +589,7 @@ async function readWindowAvailability(
   return remainingUnits(window);
 }
 
-async function resolveAvailabilityInLockedTransaction(
+export async function resolveAvailabilityInLockedTransaction(
   tx: UsageAllowanceStore,
   orgId: string,
 ): Promise<UsageAllowanceAvailability | null> {

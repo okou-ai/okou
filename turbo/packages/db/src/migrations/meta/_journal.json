@@ -1489,8 +1489,15 @@
     {
       "idx": 1290,
       "version": "7",
-      "when": 1790688121296,
-      "tag": "1290_chat_thread_canonical_session",
+      "when": 1790688102501,
+      "tag": "1290_retire_cloudflare_access_triggers",
+      "breakpoints": true
+    },
+    {
+      "idx": 1291,
+      "version": "7",
+      "when": 1790692736460,
+      "tag": "1291_chat_thread_canonical_session",
       "breakpoints": true
     }
   ]

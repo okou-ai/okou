@@ -353,7 +353,7 @@ function createPresignedGetUrlSigner(client$: Computed<S3Client>) {
 }
 
 const presignedGetUrlSigner$ = createPresignedGetUrlSigner(s3Client$);
-const publicPresignedGetUrlSigner$ =
+export const publicPresignedGetUrlSigner$ =
   createPresignedGetUrlSigner(publicS3Client$);
 const userArtifactsGetUrlSigner$ = createPresignedGetUrlSigner(
   userArtifactsS3Client$,

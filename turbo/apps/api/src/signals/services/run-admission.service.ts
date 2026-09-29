@@ -43,7 +43,7 @@ type RunAdmissionFailure =
 
 type CreditDb = Pick<Db, "$with" | "select" | "with">;
 
-interface OrgCreditAvailability {
+export interface OrgCreditAvailability {
   readonly status: OrgPlanCapabilities["status"];
   readonly supportByok: boolean;
   readonly restrictedBuiltInModels: boolean;

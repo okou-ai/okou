@@ -712,7 +712,7 @@ describe("memory summary projection", () => {
     });
   });
 
-  it("backfills misses as due on the worker clock while reads only enqueue", async () => {
+  it("leaves missing projections unchanged until the background worker backfills them", async () => {
     const content = Buffer.from("lazy projection", "utf8");
     const version = await publishVersion({
       files: [declaredFile("memory_summary.md", content)],
@@ -731,13 +731,18 @@ describe("memory summary projection", () => {
     context.mocks.s3.send.mockClear();
     await expect(read(version)).resolves.toBeNull();
     expect(downloadedObjectKeys()).toStrictEqual([]);
-    await expect(inspect(version)).resolves.toMatchObject({
-      status: "pending",
-      attempt_count: 0,
+    await expect(inspect(version)).resolves.toBeNull();
+    await expect(run(version)).resolves.toMatchObject({
+      backfilled: 1,
+      claimed: 1,
+      ready: 1,
+    });
+    await expect(read(version)).resolves.toMatchObject({
+      content: content.toString("utf8"),
     });
   });
 
-  it("fails owner mismatches and requeues corrupted ready content", async () => {
+  it("rejects owner mismatches and corrupted content without rewriting the projection", async () => {
     const content = Buffer.from("authentic projection", "utf8");
     const version = await publishVersion({
       files: [declaredFile("memory_summary.md", content)],
@@ -760,9 +765,9 @@ describe("memory summary projection", () => {
     });
     await expect(read(version)).resolves.toBeNull();
     await expect(inspect(version)).resolves.toMatchObject({
-      status: "pending",
-      last_error_class: "read_integrity_mismatch",
-      has_content: false,
+      status: "ready",
+      last_error_class: null,
+      has_content: true,
     });
   });
 

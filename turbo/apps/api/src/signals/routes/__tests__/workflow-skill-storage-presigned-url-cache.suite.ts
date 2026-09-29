@@ -8,11 +8,17 @@ import {
   getCustomSkillStorageName,
   VOLUME_ORG_USER_ID,
 } from "@okouai/core/storage-names";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { testContext } from "../../../__tests__/test-context";
 import { readStorageS3PrefixFixture } from "../../../test-fixtures/storage";
+import {
+  rejectPresignedCacheWriteAfterPendingFixture,
+  seedReadOnlyPresignedUrlCacheFixture,
+} from "../../../test-fixtures/storage-presigned-url-cache";
+import { flushWaitUntilForTest } from "../../context/wait-until";
+import { createDeferredPromise } from "../../utils";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import {
@@ -21,6 +27,11 @@ import {
 } from "./helpers/api-bdd-runs";
 import { storageTextFile } from "./helpers/api-bdd-storage-files";
 import { createStoragesBddApi } from "./helpers/api-bdd-storages";
+import {
+  createChatEventsFixture,
+  userMessages,
+} from "./helpers/chat-events-fixture";
+import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { testWorkflowSkillStoragePresignedUrlCacheStateRoutes } from "../test-workflow-skill-storage-presigned-url-cache-state";
 
 const context = testContext();
@@ -145,7 +156,7 @@ async function entitledWorkflowActor(): Promise<{
   api.acceptTelemetryIngest();
   const runnerGroup = api.configureRunnerGroup();
   await api.grantProEntitlement(actor);
-  await api.ensureOrgModelProvider(actor);
+  await api.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
   const agent = await bdd.createAgent(actor, {
     displayName: "Workflow skill storage cache agent",
     visibility: "private",
@@ -209,14 +220,16 @@ async function createRunAndClaimWorkflowSkill(args: {
   readonly archiveUrl: string;
   readonly versionId: string;
 }> {
-  const api = createRunsApi(context);
-  const run = await api.createRun(args.actor, {
+  const { sendChatRun, claimChatRun, cancelChatRun } =
+    createChatEventsFixture(context);
+  const run = await sendChatRun(args.actor, {
     agentId: args.agentId,
     prompt: args.prompt,
-    modelProvider: "anthropic-api-key",
   });
-  await api.heartbeatRunner(args.runnerGroup);
-  const claim = await api.claimRunnerJob(run.runId);
+  const { claim, sandboxHeaders } = await claimChatRun(
+    args.runnerGroup,
+    run.runId,
+  );
   const entry = expectCanonicalStorageManifest(
     claim.storageManifest,
   )?.storageMounts.find((storage) => {
@@ -227,6 +240,7 @@ async function createRunAndClaimWorkflowSkill(args: {
       `Missing workflow skill manifest entry ${args.storageName}`,
     );
   }
+  await cancelChatRun(args.actor, run.runId, sandboxHeaders);
   return {
     runId: run.runId,
     archiveUrl: entry.archiveUrl,
@@ -240,6 +254,165 @@ beforeEach(() => {
 });
 
 describe("workflow skill storage presigned URL cache", () => {
+  it("keeps complete runner URLs when the cache write fails after pending commit", async () => {
+    const fixture = await createWorkflowSkillRunFixture();
+    const api = createRunsApi(context);
+    const { chat, sendChatRun, claimChatRun, cancelChatRun } =
+      createChatEventsFixture(context);
+    await withCacheCleanup(fixture.objectKeyPrefix, async () => {
+      mockUniquePresignedUrls();
+      const warm = await sendChatRun(fixture.actor, {
+        agentId: fixture.agentId,
+        prompt: "establish this workflow's cache identity",
+      });
+      const warmClaim = await claimChatRun(fixture.runnerGroup, warm.runId);
+      const warmMount = expectCanonicalStorageManifest(
+        warmClaim.claim.storageManifest,
+      )?.storageMounts.find((entry) => {
+        return entry.name === fixture.storageName;
+      });
+      if (!warmMount?.archiveUrl) {
+        throw new Error("Expected the owned workflow storage mount");
+      }
+      await cancelChatRun(fixture.actor, warm.runId, warmClaim.sandboxHeaders);
+      const [cached] = await readCacheRowsByObjectKeyPrefix(
+        fixture.objectKeyPrefix,
+      );
+      if (!cached) {
+        throw new Error("Expected the owned workflow cache row");
+      }
+      await cleanupCacheState(fixture.objectKeyPrefix);
+      const thread = await chat.createThread(fixture.actor, {
+        agentId: fixture.agentId,
+        title: "Cache failure after pending commit",
+      });
+      onTestFinished(
+        await rejectPresignedCacheWriteAfterPendingFixture(
+          cached.cache_key,
+          context.signal,
+        ),
+      );
+      const run = await sendChatRun(fixture.actor, {
+        agentId: fixture.agentId,
+        threadId: thread.id,
+        prompt: "Run with a locally signed workflow URL",
+      });
+      const claimed = await claimChatRun(fixture.runnerGroup, run.runId);
+      const mount = expectCanonicalStorageManifest(
+        claimed.claim.storageManifest,
+      )?.storageMounts.find((entry) => {
+        return entry.name === fixture.storageName;
+      });
+      expect(mount).toMatchObject({
+        versionId: warmMount.versionId,
+        archiveUrl: expect.stringContaining("https://r2.example.com/"),
+      });
+      expect(mount?.archiveUrl).not.toBe(warmMount.archiveUrl);
+      await expect(
+        readCacheRowsByObjectKeyPrefix(fixture.objectKeyPrefix),
+      ).resolves.toStrictEqual([]);
+      expect((await api.readRun(fixture.actor, run.runId)).status).toBe(
+        "running",
+      );
+      await cancelChatRun(fixture.actor, run.runId, claimed.sandboxHeaders);
+    });
+  });
+
+  it("overlaps KMS and URL signing while keeping the input unconsumed until encryption completes", async () => {
+    const fixture = await createWorkflowSkillRunFixture();
+    const api = createRunsApi(context);
+    const { chat, claimChatRun, cancelChatRun } =
+      createChatEventsFixture(context);
+    await cleanupCacheState(fixture.objectKeyPrefix);
+    onTestFinished(async () => {
+      await cleanupCacheState(fixture.objectKeyPrefix);
+    });
+    const thread = await chat.createThread(fixture.actor, {
+      agentId: fixture.agentId,
+      title: "Parallel encryption and local signing",
+    });
+    const kmsStarted = createDeferredPromise<void>(context.signal);
+    const signingStarted = createDeferredPromise<void>(context.signal);
+    const releaseKms = createDeferredPromise<void>(context.signal);
+    const releaseSigning = createDeferredPromise<void>(context.signal);
+    onTestFinished(() => {
+      if (!releaseKms.settled()) {
+        releaseKms.resolve(undefined);
+      }
+      if (!releaseSigning.settled()) {
+        releaseSigning.resolve(undefined);
+      }
+    });
+    useSecretKmsProbe(async (request) => {
+      if (!kmsStarted.settled()) {
+        kmsStarted.resolve(undefined);
+      }
+      await releaseKms.promise;
+      return {
+        keyId: request.keyId,
+        plaintext: Buffer.from("0123456789abcdef0123456789abcdef", "utf8"),
+        encryptedDataKey: Buffer.from(
+          `encrypted-data-key:${request.keyId}`,
+          "utf8",
+        ),
+      };
+    });
+    context.mocks.s3.getSignedUrl.mockImplementation(
+      async (_client, command) => {
+        const key = (command as { readonly input: { readonly Key: string } })
+          .input.Key;
+        if (key.startsWith(fixture.objectKeyPrefix)) {
+          if (!signingStarted.settled()) {
+            signingStarted.resolve(undefined);
+          }
+          await releaseSigning.promise;
+        }
+        return `https://r2.example.com/${encodeURIComponent(key)}?parallel=true`;
+      },
+    );
+    const eventId = randomUUID();
+    await chat.requestSendEvent(
+      fixture.actor,
+      {
+        agentId: fixture.agentId,
+        threadId: thread.id,
+        prompt: "Wait for encrypted context before exposing a runner job",
+        clientEventId: eventId,
+      },
+      [201],
+    );
+    await Promise.all([kmsStarted.promise, signingStarted.promise]);
+    releaseSigning.resolve(undefined);
+    const before = await chat.listThreadEvents(fixture.actor, thread.id);
+    expect(userMessages(before.events)).toStrictEqual([
+      expect.objectContaining({ id: eventId, eventType: "input.prompt" }),
+    ]);
+    expect(userMessages(before.events)[0]?.runId).toBeUndefined();
+    expect(
+      (await api.readRunQueue(fixture.actor)).body.concurrency.active,
+    ).toBe(0);
+    await api.heartbeatRunner(fixture.runnerGroup);
+    expect((await api.pollRunner(fixture.runnerGroup)).body.job).toBeNull();
+    releaseKms.resolve(undefined);
+    await flushWaitUntilForTest();
+    const after = await chat.listThreadEvents(fixture.actor, thread.id);
+    const runId = userMessages(after.events).find((event) => {
+      return event.revokesEventId === eventId;
+    })?.runId;
+    if (!runId) {
+      throw new Error("Expected one committed run after KMS completes");
+    }
+    const claimed = await claimChatRun(fixture.runnerGroup, runId);
+    const mount = expectCanonicalStorageManifest(
+      claimed.claim.storageManifest,
+    )?.storageMounts.find((entry) => {
+      return entry.name === fixture.storageName;
+    });
+    expect(mount?.archiveUrl).toContain("parallel=true");
+    expect(claimed.claim.encryptedSecrets).toStrictEqual(expect.any(String));
+    await cancelChatRun(fixture.actor, runId, claimed.sandboxHeaders);
+  });
+
   it("issues and reuses two-day URLs for ordinary read-only Storage mounts", async () => {
     const { actor, runnerGroup } = await entitledWorkflowActor();
     if (!actor.orgId) {
@@ -304,6 +477,23 @@ describe("workflow skill storage presigned URL cache", () => {
         expect(
           new URL(first.archiveUrl).searchParams.get("X-Amz-Expires"),
         ).toBe("172800");
+        const archiveObjectKey = prepared.uploads?.archive.key;
+        if (!archiveObjectKey || !actor.orgId) {
+          throw new Error("Expected an organization storage archive upload");
+        }
+        onTestFinished(
+          await seedReadOnlyPresignedUrlCacheFixture(
+            {
+              bucket: BUCKET,
+              objectKey: archiveObjectKey,
+              storageVersionId: prepared.versionId,
+              resolvedOrgId: actor.orgId,
+              publicEndpoint: true,
+            },
+            first.archiveUrl,
+            context.signal,
+          ),
+        );
         const rows = await readCacheRowsByObjectKeyPrefix(
           objectKeyPrefix,
           "readonly_storage",
@@ -315,8 +505,8 @@ describe("workflow skill storage presigned URL cache", () => {
           ttl_seconds: 2 * 24 * 60 * 60,
           presigned_url: first.archiveUrl,
         });
-        await api.requestCancelRun(actor, first.runId, [200]);
 
+        await api.requestCancelRun(actor, first.runId, [200]);
         const second = await createAndClaim("reuse ordinary readonly DB cache");
         expect(second.archiveUrl).toBe(first.archiveUrl);
         await api.requestCancelRun(actor, second.runId, [200]);
@@ -349,15 +539,11 @@ describe("workflow skill storage presigned URL cache", () => {
         presigned_url: first.archiveUrl,
       });
 
-      const api = createRunsApi(context);
-      await api.requestCancelRun(fixture.actor, first.runId, [200]);
-
       const second = await createRunAndClaimWorkflowSkill({
         ...fixture,
         prompt: "reuse the workflow skill URL cache",
       });
       expect(second.archiveUrl).toBe(first.archiveUrl);
-      await api.requestCancelRun(fixture.actor, second.runId, [200]);
     });
   });
 });

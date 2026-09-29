@@ -72,7 +72,7 @@ type ConnectorCatalogRuntimeProjectionIdentityRead =
 
 type ConnectorCatalogRuntimeProjectionIdentityReadHook = () => Promise<void>;
 
-const projectionIdentityReadHook = testOverride<
+export const projectionIdentityReadHook = testOverride<
   ConnectorCatalogRuntimeProjectionIdentityReadHook | undefined
 >(() => {
   return undefined;
@@ -257,7 +257,7 @@ async function readProjectionIdentity(
   });
 }
 
-function resolveProjectionIdentity({
+export function resolveProjectionIdentity({
   sourceId,
   capabilityDigest,
   validator,
@@ -343,7 +343,7 @@ function resolveProjectionIdentity({
   };
 }
 
-interface CapturedConnectorCatalogIdentity {
+export interface CapturedConnectorCatalogIdentity {
   readonly identity: ExternalCatalogIdentity | undefined;
   readonly projection: ConnectorCatalogRuntimeProjectionIdentityRead;
 }

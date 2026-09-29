@@ -137,7 +137,6 @@ import {
   type ModelFirstPin,
 } from "./model-selection.service";
 import { shouldUsePiExecution } from "./pi-sandbox-config";
-import type { DispatchFailedRunCallbacks } from "./agent-run-contracts";
 import {
   additionalVolumesForRun,
   type PresentationTemplateVolume,
@@ -655,7 +654,6 @@ export function queuedChatRunCallbackInputs(
 export function buildQueuedCreateAgentRunArgs(
   input: CreateQueuedChatRunInput,
   admissionTime: number,
-  dispatchFailedCallbacks?: DispatchFailedRunCallbacks,
 ) {
   return {
     auth: {
@@ -684,7 +682,6 @@ export function buildQueuedCreateAgentRunArgs(
     agentRunPreCreateSource: "chat_callback_auto_send" as const,
     appendSystemPrompt: input.appendSystemPrompt,
     userInfoExtras: input.userInfoExtras,
-    dispatchFailedCallbacks,
     queueFirstAssociation: {
       threadId: input.threadId,
       eventId: input.queuedMessage.id,
@@ -2272,9 +2269,26 @@ export function queuedMessageAdmissionFailure(
   );
 }
 
+/** Captured identity and delivery data needed to report a commit rejection. */
+export type QueuedRunAdmissionFailureInput = Pick<
+  CreateQueuedChatRunInput,
+  | "orgId"
+  | "userId"
+  | "agentId"
+  | "threadId"
+  | "queuedMessage"
+  | "triggerSource"
+  | "slackDelivery"
+  | "feishuDelivery"
+  | "teamsDelivery"
+  | "discordDelivery"
+  | "telegramDelivery"
+  | "agentphoneDelivery"
+>;
+
 /** A queued message whose run creation was rejected for a reason other than capacity. */
 export function rejectedQueuedRunAdmissionFailure(
-  input: CreateQueuedChatRunInput,
+  input: QueuedRunAdmissionFailureInput,
   error: QueuedMessageModelRouteError,
 ): QueuedMessageAdmissionFailure {
   return channelQueuedMessageAdmissionFailure(
@@ -2612,14 +2626,31 @@ function unreachableQueuedAdmissionFailure(failure: never): never {
   throw new Error(`Unsupported queued admission failure: ${String(failure)}`);
 }
 
+/** The committed run's title, usage and typing observations need no read plan. */
+export type QueuedPromptLaunchInput = Pick<
+  CreateQueuedChatRunInput,
+  | "orgId"
+  | "threadId"
+  | "prompt"
+  | "generationTemplateIdentities"
+  | "discordDelivery"
+  | "triggerSource"
+>;
+
 export interface QueuedPromptLaunchContext {
   readonly userId: string;
   readonly timing: ChatCallbackPreCreateTimingCollector;
-  readonly runInput: CreateQueuedChatRunInput;
+  readonly runInput: QueuedPromptLaunchInput;
 }
 
 export const recordQueuedPromptRunLaunch$ = command(
-  ({ set }, args: QueuedPromptLaunchContext, runId: string): void => {
+  (
+    { set },
+    args: QueuedPromptLaunchContext,
+    runId: string,
+    signal: AbortSignal,
+  ): void => {
+    signal.throwIfAborted();
     const db = set(writeDb$);
     const { userId, runInput } = args;
     const threadId = runInput.threadId;
@@ -3322,57 +3353,6 @@ const processTerminalChatCallback$ = command(
     );
   },
 );
-
-async function claimedUserMessageExistsForRun(
-  db: Db,
-  runId: string,
-): Promise<boolean> {
-  const [event] = await db
-    .select({ id: chatEvents.id })
-    .from(chatEvents)
-    .where(
-      and(
-        eq(chatEvents.runId, runId),
-        chatEventTypeIn(["input.prompt"]),
-        isNotNull(chatEvents.revokesEventId),
-      ),
-    )
-    .limit(1);
-  return event !== undefined;
-}
-
-export const dispatchQueuedChatFailedRunCallbacks$: DispatchFailedRunCallbacks =
-  command(async ({ set }, input, signal) => {
-    if (!(await claimedUserMessageExistsForRun(input.db, input.runId))) {
-      return;
-    }
-    signal.throwIfAborted();
-    const callback = input.callbacks.find((item) => {
-      return "internalKind" in item && item.internalKind === "chat";
-    });
-    if (!callback || !("internalKind" in callback)) {
-      throw new Error("Queued chat launch is missing its callback payload");
-    }
-    const parsed = chatCallbackPayloadSchema.safeParse(callback.payload);
-    if (!parsed.success) {
-      throw new Error("Queued chat launch is missing its callback payload");
-    }
-    const payload = parsed.data;
-    await set(
-      processTerminalChatCallback$,
-      {
-        db: input.db,
-        callback: {
-          runId: input.runId,
-          status: "failed",
-          error: input.error,
-          payload,
-        },
-        payload,
-      },
-      signal,
-    );
-  });
 
 const processChatInternalCallback$ = command(
   async (

@@ -1290,22 +1290,6 @@ const EXPECTED_PERMANENT_TRIGGERS = [
     tableName: "usage_event_hourly_rollup",
     triggerName: "mark_hourly_billing_usage_observed",
   },
-  {
-    definition:
-      // eslint-disable-next-line api/no-database-trigger -- Legacy trigger created before 2026-09-29; new database triggers are prohibited.
-      "CREATE TRIGGER ssh_cloudflare_access_binding_guard BEFORE INSERT OR UPDATE OF cloudflare_access_id, org_id, user_id ON public.ssh_connections FOR EACH ROW EXECUTE FUNCTION validate_ssh_cloudflare_access_binding()",
-    schemaName: "public",
-    tableName: "ssh_connections",
-    triggerName: "ssh_cloudflare_access_binding_guard",
-  },
-  {
-    definition:
-      // eslint-disable-next-line api/no-database-trigger -- Legacy trigger created before 2026-09-29; new database triggers are prohibited.
-      "CREATE TRIGGER cloudflare_access_scope_change_guard BEFORE UPDATE OF scope, user_id, org_id ON public.cloudflare_access_configs FOR EACH ROW EXECUTE FUNCTION reject_cloudflare_access_scope_change()",
-    schemaName: "public",
-    tableName: "cloudflare_access_configs",
-    triggerName: "cloudflare_access_scope_change_guard",
-  },
 ] as const satisfies readonly PermanentTrigger[];
 
 const EXPECTED_PERMANENT_FUNCTIONS = [
@@ -1371,20 +1355,6 @@ const EXPECTED_PERMANENT_FUNCTIONS = [
     functionName: "purge_quiescent_provisional_billing_attribution",
     identityArguments:
       "billed_org text, billed_user text, quiescent_run_ids uuid[]",
-    kind: "f",
-    schemaName: "public",
-  },
-  {
-    bodyHash: "78a8128b76b3379792960174c17b9bf1",
-    functionName: "validate_ssh_cloudflare_access_binding",
-    identityArguments: "",
-    kind: "f",
-    schemaName: "public",
-  },
-  {
-    bodyHash: "9a32858723d6facc53fb33925484a8f3",
-    functionName: "reject_cloudflare_access_scope_change",
-    identityArguments: "",
     kind: "f",
     schemaName: "public",
   },

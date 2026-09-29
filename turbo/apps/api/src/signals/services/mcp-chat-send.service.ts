@@ -79,8 +79,9 @@ type McpChatInputReceipt = z.infer<typeof mcpChatInputReceiptSchema>;
  * The MCP `requestId` is the input's client event id, so a retry is settled
  * by the same client event id idempotency as a web or CLI retry. The stored
  * input is then read back as the MCP receipt, which also enforces the MCP
- * contract that a request id names one exact text and is replayable for 24
- * hours; neither check sends anything.
+ * contract that a source-bearing input's request id names one exact text and
+ * can be replayed for 24 hours; neither check sends anything. Pre-cutover
+ * text-only inputs cannot be replayed after #37276.
  */
 export const submitMcpChatInput$ = command(
   async (
@@ -202,7 +203,7 @@ function requestIdConflict(): McpChatMutationResult<never> {
     kind: "error",
     code: "request_id_conflict",
     message:
-      "requestId is already in use for a different submission. Retry with the original thread and exact text.",
+      "requestId is already in use or its original input cannot be replayed as an MCP submission. Check the original conversation, thread and exact text before submitting new work.",
     retryable: false,
   };
 }

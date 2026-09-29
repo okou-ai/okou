@@ -6158,6 +6158,47 @@ After a member binds a promoted row or a reviewed deletion writes
 unsafe; roll forward with compatible readers. The API-before-App release order
 is safe once migration `1222` and those prerequisites are verified.
 
+### Cloudflare Access trigger retirement (#37355, #37369)
+
+The SSH create/update writer validates a referenced config in its transaction:
+it selects only a same-organization shared config or the actor's own Personal
+config with a config-row `FOR SHARE` lock before binding. Inline SSH creation
+inserts its Personal config in the same transaction. Config creation limits
+Organization scope to current admins; name/token update, reviewed delete and
+both conversion writers lock the config `FOR UPDATE` before changing it.
+Organization-to-Personal conversion detaches affected other-owner bindings
+before the scope change. Credential rotation, Runner pin updates and chat access
+updates change other SSH fields; Clerk user/org erasure deletes SSH references
+before their configs. The same-organization FK and scope/destination/rebind
+CHECKs remain independent database constraints.
+
+Personal-to-Organization promotion additionally checks only references to the
+selected locked config for a different owner, rejecting an incompatible
+retained binding before any update. Migration `1290_retire_cloudflare_access_triggers`
+then drops the two legacy Cloudflare Access triggers and their unused functions
+without replacing them. It retains historical migrations and ordinary
+constraints. Privileged direct SQL no longer receives these trigger-specific
+ownership and transition checks; use the supported API writers instead.
+
+**Mixed-version release boundary:** the owner chose one PR for the writer and
+contraction. Migrations run **before** the new API is promoted, and API rollback
+does not reinstall triggers. At the 2026-09-29 12:55 UTC inspection, the
+production Vercel aliases `api.okou.ai` and `api.vm0.ai` both resolved to READY
+API deployment `dpl_3VXLTDFhv46gJcnVPjSc4hs4EXac` at
+`8d7d64c6ca9daac1d35ed50d2e44fe19006998f7` (`api-v1.698.0`). The
+current rollback resolver already rejects APIs before the canonical commit
+`bb7996407cbf06854852966ef1c5fc04a390d4d2` that adds migration 1287.
+At that floor, the Cloudflare/SSH binding and owner-cleanup writer files are
+identical to the pre-PR main: supported old writers already reject another
+user's Personal binding and serialize scope/binding changes through config row
+locks. They lack the new promotion-side defensive check for an already corrupt
+retained binding, but supported writers could not create that state while the
+legacy triggers were enabled. The owner accepted this bounded migration-first
+window, not a general guarantee for external SQL, catalog drift or corrupted
+rows. Recheck the serving aliases and rollback floor before releasing the
+contraction. A PR merge, CI pass or smoke-clone migration does **not** establish
+production migration journal completion; record it only after the real release.
+
 ### Cloudflare Access impact-review presentation (#36988)
 
 The new App requests the admin-only `GET /api/cloudflare-access/configs/:configId/impact-preview`
@@ -7279,7 +7320,7 @@ completion requests return the remaining delay without sending early.
 
 ## Canonical Chat application sessions
 
-Migration `1290_chat_thread_canonical_session` adds a unique index on
+Migration `1291_chat_thread_canonical_session` adds a unique index on
 `chat_threads.agent_session_id`. A thread may have no session before its first
 admitted run, and PostgreSQL continues to allow multiple null bindings. An
 application session may be the current binding of at most one thread. Historical

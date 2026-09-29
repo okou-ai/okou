@@ -1,41 +1,69 @@
 # Chat run pick
 
 `createPickObjects(orgId, threadId?)` in
-`turbo/apps/api/src/signals/services/pick-chat-run.service.ts` constructs the
-S2/S3 graph once and returns only `pick$`. It does not create a Store, query a
-database, or write resources. Request commands and their `waitUntil` work use
-the same request Store and application-lifetime signal. The pre-existing direct
-run and test-fixture adapters use the shared preparation graph; they do not
-provide a second chat-run ingress.
+`turbo/apps/api/src/signals/services/pick-chat-run.service.ts` returns only
+`{ pick$ }`. The parent owns organization capacity, thread selection, the lease,
+overall control flow, the pending transaction, token-bound cleanup and activation.
+`createClaimRunObjects(claim)` in `claim-run-context.ts` returns only
+`{ pickedEvent$, prepareRunContext$, updatePresignedUrlCache$ }`. It owns selection
+of the claimed thread's input, execution identity, pinned model, prompt,
+connectors, storage, complete resource preparation and the deferred URL-cache
+write. These are the two S2/S3 business-object boundaries.
 
-The picker exports no other runtime entry. It owns the claim, queue head,
-selected input identity, captured model policy and chat-specific orchestration.
-`agent-run-execution.service.ts` contains the genuinely shared selected-agent
-and execution signals factories: their typed query nodes are constructed once,
-and preparation, storage materialization and pending commit remain explicit
-commands. Pick, the Pi background entry in `background-agent-run.service.ts`,
-and the test-only adapter in `test-agent-run-fixture.service.ts` compose those
-capabilities with their own lifecycle rules. Connector runtime preparation is
-also shared with runtime synchronization in its own domain module. S1 automation
-enqueue writers and shared contracts have separate boundaries.
+Both factories accept ordinary business identities only. A claim contains
+`orgId`, `chatThreadId` and `claimId`. No factory in this path receives a `State`,
+`Computed`, `Command`, getter, setter, Store, signal or business callback, including
+inside a dependency object. Nodes are defined directly in their owning closure.
+The child exposes only the three signals needed by the parent; private state is not
+forwarded into another factory. Plain conversion and decoding functions and
+transaction-local consistency primitives may remain ordinary functions.
 
-File boundaries follow the platform thread signals pattern:
-`createChatPanelSignals` composes child factories such as
-`createChatThreadPinSignals` and `createChatThreadSharingSignals`. Pick likewise
-composes prompt, connector/catalog, storage and persistence signals objects at
-construction. A child receives the required `Computed`, `State` or `Command`
-references (or immutable identity), using explicit parameters or a narrow
-`Pick<Signals, ...>`. It exposes the nodes and commands the parent needs.
+An organization traversal constructs the outer object once and calls the same
+`pick$` sequentially. Each successful claim constructs one new child object, after
+the lease is acquired. Its complete graph is built once for that claim. Resource
+commands do not construct additional graphs. A subsequent claim receives fresh
+query caches naturally; writes within one claim invalidate only that child's
+relevant snapshots. The factories perform no I/O, create no Store and capture no
+`AbortSignal`. All objects and `waitUntil` work use the one request-owned Store.
 
-Splitting files is supported; a plain asynchronous business-query or preparation
-helper chain is not a shared boundary. Factories construct every node once,
-perform no I/O, create no Store and capture no `AbortSignal`. Commands do not
-construct temporary subgraphs. Business reads belong directly in computed nodes;
-writes and orchestration belong in explicit commands, with the caller's signal
-last. Locked commit-time validation remains inside its transaction. Pure
-conversion and decoding functions can remain ordinary functions. Awaited result
-bags passed between stages do not substitute for signal dependencies. The Pi
-entry composes the same shared capabilities without adding a second chat entry.
+The pre-existing Pi background and test-fixture adapters keep their legitimate
+non-chat entrypoints; they do not provide another chat ingress. Domain
+infrastructure can remain shared, but S2/S3 does not call an asynchronous
+preparation/helper chain or pass injected signals through the old execution
+stages. Business reads belong directly in computed nodes; writes and orchestration
+belong in explicit commands with the caller's signal as the final parameter.
+
+The successful path has this ownership shape (business rejection and telemetry
+are omitted):
+
+```ts
+const claim = await set(claim$, signal);
+signal.throwIfAborted();
+if (!claim) return null;
+
+const claimed = createClaimRunObjects(claim);
+const [hasCapacity, event] = await Promise.all([
+  get(orgHasCapacity$),
+  get(claimed.pickedEvent$),
+]);
+signal.throwIfAborted();
+if (!hasCapacity) {
+  await set(releaseClaim$, claim, signal);
+  return null;
+}
+if (!event) {
+  await set(deleteEmptyQueue$, claim, signal);
+  return null;
+}
+
+const context = await set(claimed.prepareRunContext$, signal);
+signal.throwIfAborted();
+const pending = await set(createRun$, { claim, context }, signal);
+waitUntil(set(claimed.updatePresignedUrlCache$, signal));
+await set(releaseClaim$, claim, signal);
+await set(activatePendingRun$, pending, signal);
+return pending.runId;
+```
 
 After agent authorization,
 member settings, paid-tool settings and persisted environment reads start beside
@@ -49,8 +77,8 @@ infrastructure failures, no settled-result staging and no error fallback.
 
 ## One pick and one organization pass
 
-Each call invalidates organization capacity/candidate reads and clears the
-previous claim. The candidate query and conditional claim update both exclude
+Each call invalidates organization capacity/candidate reads. There is no shared
+`internalClaim$`; the acquired claim is a local immutable value. The candidate query and conditional claim update both exclude
 threads with an active run. That slot also covers cancellation recovery until
 Runner completion or the existing stale-run cleanup releases it. A claim contains
 the organization, thread and a random token, with a fixed 60-second lease. Capacity and the FIFO head are read
@@ -84,44 +112,71 @@ computer host, environment, connectors, workflow metadata and storage planning.
 The chosen model comes from the input event. Member account metadata and the
 canonical session snapshot are shared; ciphertext bundles and pending admission
 retain the necessary current-account validation. Existing multi-row reads remain
-batched. The final context node joins prepared branches and performs pure
-projection/validation.
+batched. The internal `runPlan$` is a thin `Promise.all` of pure read branches.
+The pure `RunPlan` never escapes as a commit-ready context.
+`prepareRunContext$` starts it alongside the pure storage-mount read graph,
+callback preparation and stored-context preparation. Each branch waits only for
+its actual dependencies. Its final `RunContext` contains selected mounts,
+versions and URLs, encrypted callback rows, the final stored execution context
+and the final pending-persistence encoding. Runner payload construction, run
+metadata and diagnostic-payload validation finish before the child returns.
+There is no storage plan, cache request or intermediate context draft in this
+result. It returns ordinary prepared data, not commands or business callbacks,
+and never submits the pending run.
 
 Explicit commands initialize or repair model policy facts when needed, refresh
-an expired usage allowance when required, reconcile an official automation,
-materialize storage, submit the pending transaction, and activate the committed
-run. Official reconciliation invalidates the final automation target read before
+an expired usage allowance when required and reconcile an official automation.
+The parent separately submits
+the pending transaction and activates the committed run. Official reconciliation invalidates the final automation target read before
 launch preparation. Non-official inputs do not reconcile official workflows.
-Missing storage roots and presigned-URL cache writes happen before the pending
-transaction. Existing roots take the read path. Discord access, rejection
+Storage selection and local URL signing perform no database writes. Discord access, rejection
 delivery and typing notifications receive the request dispatcher instead of
 creating a Store inside the pick's work.
 
-Storage planning is part of the read graph. After authorization and admission,
-callback preparation, storage materialization and stored-context encryption start
-from their own required inputs and join with `Promise.all`. The first failure
-propagates without waiting for unrelated branches or selecting a preferred error.
-Already-started branches keep the request's signal and remain owned by the join;
-`Promise.all` itself does not cancel them. No lease cleanup or retry is added.
+Storage plan, request, presigned-cache and mount nodes are constructed with the
+claim factory. A valid cached URL is reused; a miss or expired row is signed in
+memory using local credentials, without an R2 request. Final URLs enter the
+runner payload directly. Fresh cache rows remain private to the child. Only a
+successfully committed pending run schedules `updatePresignedUrlCache$` through
+the existing request's `waitUntil`; rejected inputs and lost commits do not.
+The cache write does not delay activation. Its failure is logged without retry
+or changing the admitted run. This is the one explicit exception to preparation's
+fail-fast rule; the runner never needs the cache write to finish.
 
-Storage plan, request and presigned-cache nodes are constructed with the factory.
-Initializing a missing root records the actual created root in private state;
-downstream storage reads update from that result without reloading the pick or
-selecting another thread. Each new pick clears those initialization results.
-Pi memory summary selection composes a fixed projection-read subgraph after the
-actual memory-root identity is available. A separate repair command enqueues a
-missing projection or requeues a corrupt one. This preserves the existing memory
-domain's best-effort repair and frozen recall behavior, including the flag-off
-and already-captured-epoch paths; it does not turn preparation failures into an
-alternative run or retry.
+Callback KMS encryption starts when callback definitions are ready, and runtime
+secret encryption starts when its resolved secrets are ready. They overlap
+independent reads and storage assembly through `Promise.all`, but both must
+finish before `createRun$`: the runner may claim the queue row immediately after
+commit. Pending run, runner job and encrypted callbacks remain one atomic write
+boundary. There is no pending-only commit followed by a later encrypted payload,
+no compensation and no KMS key caching change. Preparation failures propagate
+without selecting a preferred error; already-started branches retain the request
+signal. No lease cleanup or retry is added.
 
-Admission, model-policy initialization and allowance refresh also expose signals
-objects. Final admission deliberately captures a fresh plan, credit/expiry and
+Run creation does not initialize artifact storage, empty versions, heads or file
+indexes. A missing memory root is a prerequisite error and fails directly.
+Prerequisite [PR #37381](https://github.com/okou-ai/okou/pull/37381) provides idempotent memory initialization per
+`(orgId, userId)` through `onboarding-complete` and Clerk
+`organizationMembership.created`. Its rollout and the existing-membership
+backfill must precede deployment of this behavior. That production backfill has
+not been performed by this PR.
+
+Pi memory summary projection selection is read-only. Missing or corrupt summary
+records log an error and use the existing not-ready state; creation does not
+enqueue or repair a projection. Version writes enqueue summary work, and the existing background worker backfills
+missing projections. A pre-existing `ready` row whose content fails validation is
+not automatically selected by that worker: it remains not ready for run recall
+until a separately authorized repair policy schedules it. This PR does not add
+a background scan or repair policy. Frozen recall, flag-off and captured-epoch
+behavior remain intact.
+
+Admission, model-policy initialization and allowance refresh are explicit
+nodes within the claim object. Final admission deliberately captures a fresh plan, credit/expiry and
 usage-pack snapshot. Their independent read nodes join with `Promise.all`; an
 allowance refresh is requested only when admission needs it. Policy repair and
 allowance refresh commands retain their existing locked transaction semantics.
-The initial queued-model graph supplies its already-read snapshots directly as
-signals, while final admission owns its later snapshot. Commit-time locks and
+Initial model preparation shares the claim object's already-read snapshots,
+while final admission owns its later snapshot. Commit-time locks and
 credit revalidation remain transaction-local.
 
 Configured connector account fallback is selection among different authorized
@@ -145,7 +200,13 @@ compatibility behavior. Catalog publication locks remain unchanged.
 
 ## Pending atomic boundary
 
-The transaction keeps input consumption, the necessary session/run and thread
+The parent's `createRun$` receives `{ claim, context }` after resource preparation
+has completed. It directly owns the database transaction, rather than delegating
+to an asynchronous launch helper. It consumes the child's completed persistence
+encoding; commit timestamps, account validation, credit admission and returned-ID
+bindings remain transaction-local. Producer binding and post-commit bookkeeping
+are ordinary data in the context; their owning parent commands perform the
+writes. The transaction keeps input consumption, the necessary session/run and thread
 binding, the runner job, callbacks, producer binding and accounting together.
 `active_agent_runs` is inserted last. Its uniqueness violation escapes and rolls
 back the transaction. It is never converted to a busy/skipped result.
@@ -169,6 +230,10 @@ old detached sessions remain historical records. See
 [deployment compatibility](deployment-compatibility.md#canonical-chat-application-sessions)
 for the migration preflight and mixed-version boundary.
 
+Removing memory initialization from run creation depends on the separate account
+initialization PR and a completed production backfill. This PR does not authorize
+that backfill, deploy either change or claim the prerequisite is complete.
+
 ## Measurement and verification
 
 `api_dispatch_enqueue_commit_to_consume_start` measures from the request's
@@ -179,11 +244,23 @@ Older queue heads and later cron requests have no receipt and emit no substitute
 measurement. Concurrent preparation spans overlap; their durations must not be added as sequential stages. The context span measures the joined preparation work, and the pre-create/context completion checkpoints no longer imply a serial query pipeline. The existing input-created-to-consume duration remains queue age;
 it overlaps enqueue time and must not be added to S1.
 
-Storage planning finishes before the materialization command. The nested
+Storage planning finishes before the final mount assembly. The nested
 `api_dispatch_prepare_storage_manifest_resolve_plan` span measures the read
-plan, while `api_dispatch_prepare_storage_manifest` now measures materialization
-of that prepared plan. The enclosing launch-preparation span still covers both;
-the nested spans must not be added to that enclosing duration.
+plan, while storage preparation covers version selection, URL-cache reads, local
+signing and assembly. Cache writes occur after pending commit. Compare cache
+read/write cost with direct in-memory signing before claiming this cache improves
+latency. Nested spans must not be added to their enclosing duration.
+
+Storage cache tests distinguish production from cache consumption. Chat tests
+use enqueue/pick and Runner claim to verify cache creation and reuse. A scoped
+PostgreSQL fault rejects only the selected cache write after a pending run and
+job exist; the run must still be claimable with a complete URL. Deferred external
+KMS and signing observations verify that both start before either completes,
+while the input remains unconsumed and no runner job is available until KMS
+finishes. Synthetic non-chat mounts have no equivalent chat input, so their
+existing fixture tests explicitly seed cache entries and retain exact URL reuse,
+52-mount completeness, hard-expiry and owned/primary selection assertions. They
+no longer expect resource preparation to persist a new cache entry.
 
 Route coverage includes FIFO and multi-thread traversal, rejection followed by
 another thread, token/lease recovery, unchanged model pins, stable application
