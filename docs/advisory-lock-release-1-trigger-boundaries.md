@@ -10,13 +10,14 @@ table deletion agrees with `EXPECTED_PERMANENT_TRIGGERS` in
 application triggers**, backed by nine distinct trigger functions. PostgreSQL's
 internal constraint triggers are excluded. This is checked-in schema evidence,
 not a live production catalog query. The test constant's historical name is not
-approval to retain these objects in the terminal schema. Migration
-`1291_retire_cloudflare_scope_change_trigger` removes one redundant trigger
-and its function. With the two unshipped Forms triggers withdrawn, eight
-application triggers remained before the independent canonical mutation-guard
-retirement below. Migration `1292_retire_billing_attribution_mutation_guard`
-removes that redundant trigger and function; seven application triggers remain
-in the proposed R1 schema.
+approval to retain these objects in the terminal schema. Main `3103651`
+contains migration `1290_retire_cloudflare_access_triggers`, removing both
+Cloudflare guards and their functions with independently documented serving and
+rollback evidence. This PR preserves that migration unchanged and withdraws its
+redundant unshipped scope-only retirement. With both unshipped Forms triggers
+withdrawn and migration `1292_retire_billing_attribution_mutation_guard` removing
+the redundant canonical guard, **six billing application triggers remain** in the
+proposed R1 schema. No production migration completion is inferred from main.
 
 ## Existing billing attribution triggers
 
@@ -179,91 +180,32 @@ audit and release gate. Existing user API tests continue to protect amounts,
 retained grouping, cross-owner rejection and compaction; the permanent schema
 inventory verifies that the retired guard/function are absent.
 
-## Existing SSH and Cloudflare triggers
+## SSH and Cloudflare trigger retirement integrated from main
 
-| Table and trigger                                                | Current business guarantee                                                                                                                | Replacement work                                                                                                    |
-| ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `ssh_connections.ssh_cloudflare_access_binding_guard`            | A shared config read rejects a personal Cloudflare config owned by another user. The separate foreign key protects organization identity. | R1 writers implement the predicate; retirement still needs the historical writer gate below.                        |
-| `cloudflare_access_configs.cloudflare_access_scope_change_guard` | Rejects incompatible scope/owner changes while hosts still reference the config.                                                          | All conversion writers already implement this invariant. Migration 1291 retires it while the binding guard remains. |
+Main `3103651` retires `ssh_cloudflare_access_binding_guard` and
+`cloudflare_access_scope_change_guard` in published-history migration 1290.
+The source and observed serving/rollback evidence are recorded in
+[deployment compatibility](./deployment-compatibility.md#cloudflare-access-trigger-retirement-37355-37369).
+That newer evidence supersedes this inventory's earlier foundation-writer
+uncertainty. The serving aliases and rollback floor must still be rechecked
+before release; this PR does not establish actual production journal completion.
 
-Migration 1203 creates both; 1222 updates scope-change behavior. The source audit
-at `29f6115` distinguishes these two boundaries rather than assuming they share
-a release gate. R1 SSH create/update commands directly read the visible config
-`FOR SHARE`; Cloudflare mutation commands now own their finite transactions and
-SQL. The R1 ownership refactor does not itself prove every historical writer is
-safe without the binding trigger.
+Supported SSH writers read the owned/same-org config `FOR SHARE`; conversion
+writers retain the config `FOR UPDATE`. Demotion detaches other-owner hosts
+before changing scope. Promotion now additionally rejects an incompatible
+retained other-owner binding. The integration preserves that defensive predicate
+inside `convertCloudflareAccessToOrganization$`, without reintroducing main's
+ordinary database-taking helper. Same-org FK and ownership/rebind checks remain.
+No replacement trigger, stored coordination state or new release is added.
 
-### Binding guard: concrete historical dependency
-
-The foundation commit
-[`076b125`](https://github.com/okou-ai/okou/blob/076b125ca6e884f9355279ca6f7c4c7f2dba7c61/turbo/apps/api/src/signals/services/ssh-connection.service.ts#L213)
-(#36274, which introduced migration 1203) validates a selected configuration
-through `findCloudflareAccessConfig` without row ownership. The shared config
-read was added in
-[`018ed551`](https://github.com/okou-ai/okou/blob/018ed55169aac0d1321ef50107817237eebb6e11/turbo/apps/api/src/signals/services/cloudflare-access.service.ts#L110)
-(#36396). The inspected outgoing main `0921863` keeps that read for creation and
-replacement, including an unchanged binding during host edits.
-
-Without the trigger, a foundation API request can read a configuration personal
-to A, then pause before inserting its SSH binding. Newer API requests can
-promote A's configuration to organization scope and demote it to personal B.
-The old request's later insert still uses A's earlier validation. The same-org
-foreign key permits this cross-owner reference; the binding trigger currently
-takes `FOR SHARE`, rereads the owner, and rejects it. This is a static
-interleaving, not a reported runtime reproduction.
-
-The [existing activation rules](deployment-compatibility.md#organization-cloudflare-access-foundation-36260)
-exclude rollback to pre-foundation API/Runner versions once shared state is
-written. They do not establish that the foundation API itself is excluded.
-Before dropping the binding trigger and `validate_ssh_cloudflare_access_binding`,
-verify that every serving API, in-flight request, and retained rollback target
-includes the `018ed551` binding protocol or an equivalent fix. No production
-deployment or drain evidence was obtained by this source audit. If that evidence
-is established before R1, this trigger needs no additional preparation release;
-otherwise the existing two-release gate applies. R1/R2 writers themselves share
-the explicit owner/scope check under config row ownership.
-
-### Scope-change guard: independent retirement evidence
-
-Demotion's first implementation
-[`5d1ba8b`](https://github.com/okou-ai/okou/blob/5d1ba8b930cd414c3e3700996e25d79ba99a4ce6/turbo/apps/api/src/signals/services/cloudflare-access.service.ts#L559)
-(#36623) locks the organization config `FOR UPDATE`, locks its referencing
-hosts, detaches every other owner's binding into `needs_rebind`, then changes
-the config to personal ownership by the acting admin. Promotion's first
-implementation
-[`aa20d6a`](https://github.com/okou-ai/okou/blob/aa20d6a8609326008f5da853bd9db75d0ad1d204/turbo/apps/api/src/signals/services/cloudflare-access.service.ts#L616)
-(#36715) locks the acting admin's same-org personal config and only changes it
-to organization scope with a null user owner. Neither moves an organization or
-transfers a personal config directly to another user.
-
-The subsequent modifying versions `b3119bb`, `c639e33`, and `3ca3ea0`, outgoing
-main `0921863`, and R1 `29f6115` preserve this order and these predicates.
-Earlier API versions do not perform scope or owner conversion. The remaining
-current writer inventory is:
-
-- Standalone and inline SSH config creation insert the declared organization
-  scope or the actor's personal ownership; ordinary edits change only name,
-  encrypted credentials, revision, generation, and modification time.
-- Clerk organization/user cleanup deletes SSH references before deleting
-  configs. It never transfers config ownership.
-- SSH credential rotation, host-key pinning/reset, and chat-default writes do
-  not change config scope or the SSH binding owner. Host ownership is not
-  editable through these writers.
-- The retained `013-kms-account-rotation` operator lists only
-  `encrypted_client_id` and `encrypted_client_secret` for this table; it does
-  not write `scope`, `org_id`, or `user_id`.
-
-While the binding trigger remains, an older late attachment still takes its
-trigger-side shared config lock and rechecks ownership after a conversion.
-Thus removing only `cloudflare_access_scope_change_guard` and
-`reject_cloudflare_access_scope_change` does not require the foundation API to
-disappear first. Preserve the same-org foreign key and scope/owner check
-constraint. Migration `1291_retire_cloudflare_scope_change_trigger` retires this redundant
-trigger/function and updates the expected schema inventory. Its metadata was
-generated with Drizzle; migrations 1203/1222 stay unchanged.
-The historical `test-cloudflare-access.ts` migration test applies selected old
-migrations in an isolated schema; its old-schema assertions are not production
-writers or evidence for retaining the final trigger.
+The main-only service test constructed an otherwise unreachable corrupt binding
+in a private database schema and compared SQL rows. This PR omits that fixture
+and its two lint exemptions to follow the authorized user-API test boundary.
+Existing Cloudflare API cases still assert inaccessible personal references,
+retained hosts requiring explicit rebind, conversion and stale-revision behavior.
+Those public cases are not claimed to construct the same corrupt SQL state; the
+new defensive predicate remains implemented and reviewable. Historical migration
+catalog tests remain historical schema checks, not application behavior fixtures.
 
 ## Forms trigger proposal withdrawn
 
@@ -277,9 +219,9 @@ metadata and the two trigger/function inventory entries. The original non-null
 `ON DELETE CASCADE` cursor/watch relationship remains unchanged. Main `c26098d`
 and the observed production deployment tree `c501c3b7` exclude these PR-only
 migrations; #37313 is still open and unmerged. Existing published migration history, including main 1288, is untouched.
-Drizzle generated the remaining purge, Cloudflare scope-change and canonical
-attribution mutation-guard retirements as 1290, 1291 and 1292 respectively after main's VNC migration 1289,
-without a Forms schema change or added table/column.
+Main migrations 1289 and 1290 are preserved. Drizzle generated the two remaining
+PR-only purge and canonical mutation-guard retirements as 1291 and 1292, without
+a Forms schema change or added table/column.
 
 Application SQL still checks active authority, selected source and normal
 uniqueness. Late provider preparation cannot revive a disabled or revoked
@@ -295,7 +237,7 @@ deduplication and explicit disable/restart behavior. No lock waiter, temporary
 test trigger or artificial database gate is a substitute. The migration schema
 inventory must change alongside the eventual retirement migration.
 
-The seven remaining application triggers are explicit acceptance obligations.
-Billing replacements remain unfinished; the SSH binding trigger has the
-specific historical dependency above. Forms introduces no trigger. No trigger
-is a permanent exemption.
+The six remaining billing application triggers are explicit acceptance
+obligations. Their replacement writer/retention audit remains unfinished.
+Cloudflare retirement follows main's documented gate; Forms introduces no trigger.
+No trigger is a permanent exemption.

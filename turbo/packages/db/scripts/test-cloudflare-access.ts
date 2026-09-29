@@ -402,8 +402,82 @@ try {
     "UPDATE cloudflare_access_configs SET scope='personal',user_id='foreign' WHERE id='00000000-0000-4000-8000-000000000011'",
     { code: "23514", constraint: "cloudflare_access_scope_change_guard" },
   );
+  // The trigger-specific rejections above belong to their historical stages.
+  // A catalog mismatch must fail before either trigger can be removed.
+  await client.query("SAVEPOINT mismatched_catalog");
+  await client.query(
+    "ALTER TABLE cloudflare_access_configs DISABLE TRIGGER cloudflare_access_scope_change_guard",
+  );
+  await assert.rejects(migrate("1290_retire_cloudflare_access_triggers"), {
+    message: /Cloudflare Access legacy trigger catalog differs/,
+  });
+  await client.query("ROLLBACK TO SAVEPOINT mismatched_catalog");
+
+  const beforeDrop = await client.query(
+    "SELECT to_jsonb(cloudflare_access_configs) AS value FROM cloudflare_access_configs ORDER BY id",
+  );
+  const bindingsBeforeDrop = await client.query(
+    "SELECT to_jsonb(ssh_connections) AS value FROM ssh_connections ORDER BY id",
+  );
+  await migrate("1290_retire_cloudflare_access_triggers");
+  assert.deepEqual(
+    (
+      await client.query(`
+        SELECT guard.tgname
+        FROM pg_catalog.pg_trigger AS guard
+        JOIN pg_catalog.pg_class AS relation ON relation.oid = guard.tgrelid
+        JOIN pg_catalog.pg_namespace AS ns ON ns.oid = relation.relnamespace
+        WHERE ns.nspname = current_schema()
+          AND guard.tgname IN ('ssh_cloudflare_access_binding_guard', 'cloudflare_access_scope_change_guard')
+      `)
+    ).rows,
+    [],
+  );
+  assert.deepEqual(
+    (
+      await client.query(`
+        SELECT routine.proname
+        FROM pg_catalog.pg_proc AS routine
+        JOIN pg_catalog.pg_namespace AS ns ON ns.oid = routine.pronamespace
+        WHERE ns.nspname = current_schema()
+          AND routine.proname IN ('validate_ssh_cloudflare_access_binding', 'reject_cloudflare_access_scope_change')
+      `)
+    ).rows,
+    [],
+  );
+  assert.deepEqual(
+    (
+      await client.query(
+        "SELECT to_jsonb(cloudflare_access_configs) AS value FROM cloudflare_access_configs ORDER BY id",
+      )
+    ).rows,
+    beforeDrop.rows,
+  );
+  assert.deepEqual(
+    (
+      await client.query(
+        "SELECT to_jsonb(ssh_connections) AS value FROM ssh_connections ORDER BY id",
+      )
+    ).rows,
+    bindingsBeforeDrop.rows,
+  );
+  await rejects(
+    "UPDATE ssh_connections SET cloudflare_access_id='00000000-0000-4000-8000-000000000007',port=443 WHERE id='00000000-0000-4000-8000-000000000010'",
+    { code: "23503", constraint: "ssh_connections_cloudflare_access_org_fk" },
+  );
+  await rejects(
+    "UPDATE cloudflare_access_configs SET scope='personal',user_id=NULL WHERE id='00000000-0000-4000-8000-000000000011'",
+    { code: "23514", constraint: "chk_cloudflare_access_configs_scope_owner" },
+  );
+  await rejects(
+    "DELETE FROM cloudflare_access_configs WHERE id='00000000-0000-4000-8000-000000000011'",
+    {
+      code: /^(23503|23001)$/,
+      constraint: "ssh_connections_cloudflare_access_org_fk",
+    },
+  );
   await client.query("ROLLBACK");
-  console.log("Cloudflare Access migrations and scoped constraints passed");
+  console.log("Cloudflare Access historical and contracted schemas passed");
 } finally {
   await client.end();
 }

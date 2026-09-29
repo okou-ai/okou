@@ -1282,14 +1282,6 @@ const EXPECTED_PERMANENT_TRIGGERS = [
     tableName: "usage_event_hourly_rollup",
     triggerName: "mark_hourly_billing_usage_observed",
   },
-  {
-    definition:
-      // eslint-disable-next-line api/no-database-trigger -- Legacy trigger created before 2026-09-29; new database triggers are prohibited.
-      "CREATE TRIGGER ssh_cloudflare_access_binding_guard BEFORE INSERT OR UPDATE OF cloudflare_access_id, org_id, user_id ON public.ssh_connections FOR EACH ROW EXECUTE FUNCTION validate_ssh_cloudflare_access_binding()",
-    schemaName: "public",
-    tableName: "ssh_connections",
-    triggerName: "ssh_cloudflare_access_binding_guard",
-  },
 ] as const satisfies readonly PermanentTrigger[];
 
 const EXPECTED_PERMANENT_FUNCTIONS = [
@@ -1339,13 +1331,6 @@ const EXPECTED_PERMANENT_FUNCTIONS = [
   {
     bodyHash: "edb73467bdfa0f1f58e388f2df908b89",
     functionName: "mark_billing_usage_observed",
-    identityArguments: "",
-    kind: "f",
-    schemaName: "public",
-  },
-  {
-    bodyHash: "78a8128b76b3379792960174c17b9bf1",
-    functionName: "validate_ssh_cloudflare_access_binding",
     identityArguments: "",
     kind: "f",
     schemaName: "public",

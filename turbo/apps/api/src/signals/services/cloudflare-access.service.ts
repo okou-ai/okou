@@ -636,6 +636,22 @@ export const convertCloudflareAccessToOrganization$ = command(
       ) {
         return cloudflareAccessFailure("exhausted");
       }
+      // Reject retained incompatible bindings before changing scope. Current
+      // writers own this config before attaching, so admission is serialized.
+      const [incompatible] = await tx
+        .select({ id: sshConnections.id })
+        .from(sshConnections)
+        .where(
+          and(
+            eq(sshConnections.cloudflareAccessId, args.configId),
+            eq(sshConnections.orgId, args.owner.orgId),
+            ne(sshConnections.userId, args.owner.userId),
+          ),
+        )
+        .limit(1);
+      if (incompatible) {
+        return cloudflareAccessFailure("inUse");
+      }
       const [converted] = await tx
         .update(cloudflareAccessConfigs)
         .set({

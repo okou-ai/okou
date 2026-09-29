@@ -17,10 +17,10 @@ The initial implementation baseline was main
 `5b458cc9df60ce0c3ffc7e1783ec3d36be9634e1`: 28 production acquisition definitions,
 one catalog fixture acquisition, and one attribution operator acquisition.
 Historical migration SQL is counted separately. The integration branch also
-includes main `d29e72c`, preserving browser preferences, thread-image schema
+includes main `3103651`, preserving browser preferences, thread-image schema
 contraction, retired Agent SSH/VNC grants, current generation identity, the
 Okou Pro/Max retirement and default-policy repair, and the rule prohibiting new
-database triggers. Main's published migration 1289 and X509None VNC profile are preserved; the PR-only retirements follow at 1290–1292. Integration `/model` controls retain main's routed-thread-only
+database triggers. Main's migrations 1289/1290, X509None VNC profile and Cloudflare trigger retirement are preserved; the two PR-only retirements follow at 1291/1292. Integration `/model` controls retain main's routed-thread-only
 behavior and no longer change a member default or recreate a retired session.
 
 Browser and custom account preparation from #37097 was verified against live
@@ -84,18 +84,19 @@ the baseline. A definition can serve multiple runtime callers.
 - The billing-attribution operator retains the compaction compatibility key but
   now takes live Run parents before source rows and rolls back on contention
   without advancing its checkpoint.
-- Migration `1290_retire_provisional_billing_purge` drops the unused current
+- Migration `1291_retire_provisional_billing_purge` drops the unused current
   `purge_quiescent_provisional_billing_attribution` function. Historical
   migrations stay unchanged. The schema snapshot adds no table columns.
 - The unshipped Forms detachment and cursor-trigger migrations are withdrawn.
   The existing non-null cascading cursor/watch relationship is unchanged; repair
   may start from newest and may miss failure-window triggers. Normal dispatch,
   basic deduplication, stop and authority checks remain required.
-- Migration `1291_retire_cloudflare_scope_change_trigger` removes the redundant
-  scope-change trigger and function. Every historical conversion writer already
-  owns the config and detaches incompatible hosts. The SSH binding trigger stays
-  for foundation-era readers without `FOR SHARE`; its separate deployment gate
-  is recorded in the trigger inventory. No schema column changes.
+- Main's migration `1290_retire_cloudflare_access_triggers` removes both
+  Cloudflare triggers and their functions, using its documented supported-writer
+  and rollback evidence. This PR preserves that migration and the new defensive
+  promotion check, and withdraws its duplicate unshipped scope-only retirement.
+  Recheck that evidence before release; main does not prove production migration
+  completion. No schema column changes.
 - Attribution and allowance reader fallbacks remain. A full live data-convergence
   census has not established their removal conditions; tool age and CI references
   are not convergence evidence.
@@ -113,9 +114,9 @@ The zero-trigger terminal constraint from `4fa8844` applies to all application
 triggers, including nine that predate this PR. The
 [trigger retirement inventory](./advisory-lock-release-1-trigger-boundaries.md)
 records the historical eleven-definition proposal. The two unshipped Forms
-triggers are withdrawn, and migration 1291 retires the redundant Cloudflare
-scope-change guard. Seven definitions remain: six billing attribution and one
-SSH binding. Their explicit writer replacements remain an
+triggers are withdrawn, main's migration 1290 retires both Cloudflare guards,
+and migration 1292 retires the canonical mutation guard. Six billing capture and
+observation definitions remain. Their explicit writer replacements remain an
 acceptance requirement; the existing schema-test constant named
 `EXPECTED_PERMANENT_TRIGGERS` does not grant a permanent exception.
 
