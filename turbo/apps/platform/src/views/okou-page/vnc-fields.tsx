@@ -250,6 +250,20 @@ export function VncEndpointFields({
   );
 }
 
+export function VncX509NoneWarning() {
+  const { t } = useTranslation();
+  return (
+    <p
+      role="alert"
+      className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+    >
+      {t(($) => {
+        return $.vnc.security.x509NoneHelp;
+      })}
+    </p>
+  );
+}
+
 export function VncSecurityProfileField({
   profile,
   disabled,
@@ -343,19 +357,11 @@ export function VncSecurityProfileField({
           })}
         </SelectContent>
       </Select>
-      <p
-        role={profile === "x509_none" ? "alert" : undefined}
-        className={
-          profile === "x509_none"
-            ? "rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
-            : "text-sm text-muted-foreground"
-        }
-      >
-        {profile === "x509_none"
-          ? t(($) => {
-              return $.vnc.security.x509NoneHelp;
-            })
-          : profile === "apple_vnc_password"
+      {profile === "x509_none" ? (
+        <VncX509NoneWarning />
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          {profile === "apple_vnc_password"
             ? t(($) => {
                 return $.vnc.security.appleVncPasswordHelp;
               })
@@ -378,7 +384,8 @@ export function VncSecurityProfileField({
                     : t(($) => {
                         return $.vnc.security.x509PlainHelp;
                       })}
-      </p>
+        </p>
+      )}
     </>
   );
 }

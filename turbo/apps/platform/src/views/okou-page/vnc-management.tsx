@@ -16,7 +16,7 @@ import {
 import { sshConnections$ } from "../../signals/ssh.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import { VncCredentialImpact } from "./vnc-fields.tsx";
+import { VncCredentialImpact, VncX509NoneWarning } from "./vnc-fields.tsx";
 import { VncLoadError } from "./vnc-load-error.tsx";
 import { RemoteHostDefaultToggle } from "./remote-access-controls.tsx";
 
@@ -209,16 +209,7 @@ function VncHostCard({
           {connection.credentialName}
         </p>
       )}
-      {connection.security.type === "x509_none" && (
-        <p
-          role="alert"
-          className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
-        >
-          {t(($) => {
-            return $.vnc.security.x509NoneHelp;
-          })}
-        </p>
-      )}
+      {connection.security.type === "x509_none" && <VncX509NoneWarning />}
       <p className="text-sm text-muted-foreground">
         <VncProfileLabel profile={connection.security.type} />
         {" · "}
