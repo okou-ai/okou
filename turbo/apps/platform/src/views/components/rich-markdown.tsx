@@ -14,7 +14,6 @@ import type { ComponentPropsWithoutRef, CSSProperties, ReactNode } from "react";
 import { Fragment, jsx, jsxs } from "react/jsx-runtime";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { r2ImageTransformUrl } from "@okouai/core/r2-image-transform";
 import { cn } from "@okouai/ui";
 
@@ -23,7 +22,6 @@ import {
   parseMarkdownTree,
 } from "../../lib/markdown/pipeline.ts";
 import { parseChatThreadLink } from "../../lib/chat-thread-link.ts";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { openImageLightbox$ } from "../../signals/okou-page/attachment-chips.ts";
 import { openMarkdownArtifact$ } from "../../signals/okou-page/markdown-artifact-preview.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -317,10 +315,8 @@ function MediaLinkRenderer(
   props: { children?: ReactNode } & MarkdownAnchorProps,
 ) {
   const { children, ...rest } = props;
-  const features = useLastResolved(featureSwitch$);
   const node = props.node;
   const chatThreadLink =
-    features?.[FeatureSwitchKey.ChatThreadLinkChips] === true &&
     node !== undefined &&
     node.data?.card === undefined &&
     !containsMarkdownImage(node) &&

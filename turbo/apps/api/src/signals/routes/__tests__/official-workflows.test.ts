@@ -1673,20 +1673,6 @@ async function setOfficialWorkflowsEnabled(
   );
 }
 
-async function setMorningBriefEnabled(
-  actor: ApiTestUser,
-  enabled: boolean,
-): Promise<void> {
-  if (!actor.orgId) {
-    throw new Error("Expected organization-scoped actor");
-  }
-  await updateFeatureSwitchesForUser(
-    context,
-    { orgId: actor.orgId, userId: actor.userId },
-    { [FeatureSwitchKey.MorningBrief]: enabled },
-  );
-}
-
 async function deliverClerkOrganizationCreated(
   actor: ApiTestUser,
   createdAt: Date,
@@ -2105,7 +2091,6 @@ describe("Morning Brief preference", () => {
     await connectBriefSource(actor);
     const headers = authHeaders(actor);
     await setOfficialWorkflowsEnabled(actor, false);
-    await setMorningBriefEnabled(actor, true);
 
     const initial = await accept(
       morningBriefPreferenceClient().get({ headers }),
@@ -2248,46 +2233,8 @@ describe("Morning Brief preference", () => {
     expect(after.body.workflow.id).toBe(identities.workflowId);
   });
 
-  it("preserves an installed Morning Brief when its rollout turns off", async () => {
-    const { actor, headers, identities, morningBrief } =
-      await setupEnabledMorningBrief();
-    await setMorningBriefEnabled(actor, false);
-    const deniedRead = await accept(
-      morningBriefPreferenceClient().get({ headers }),
-      [403],
-    );
-    expect(deniedRead.body.error.code).toBe("FORBIDDEN");
-    const deniedUpdate = await accept(
-      morningBriefPreferenceClient().update({
-        headers,
-        body: { enabled: false },
-      }),
-      [403],
-    );
-    expect(deniedUpdate.body.error.code).toBe("FORBIDDEN");
-
-    const afterRolloutOff = await accept(
-      installationClient().get({
-        headers,
-        params: { workflowId: morningBrief.id },
-      }),
-      [200],
-    );
-    expect(afterRolloutOff.body.workflow).toMatchObject({
-      id: identities.workflowId,
-      automations: [
-        {
-          id: identities.automationId,
-          chatThreadId: identities.chatThreadId,
-          enabled: true,
-        },
-      ],
-    });
-  });
-
   it("preserves enable intent while timezone or default Agent is unavailable", async () => {
     const missingTimezone = await workflowBdd.setupWorkflowOrg();
-    await setMorningBriefEnabled(missingTimezone.actor, true);
     const timezoneHeaders = authHeaders(missingTimezone.actor);
     const unavailableTimezone = await accept(
       morningBriefPreferenceClient().get({ headers: timezoneHeaders }),
@@ -2316,7 +2263,6 @@ describe("Morning Brief preference", () => {
     ]);
     await bdd.updateUserTimezone(missingAgent, "Asia/Shanghai");
     await tickBriefEnrollment(missingAgent);
-    await setMorningBriefEnabled(missingAgent, true);
     const agentHeaders = authHeaders(missingAgent);
     const unavailableAgent = await accept(
       morningBriefPreferenceClient().get({ headers: agentHeaders }),
@@ -2375,7 +2321,6 @@ describe("Morning Brief preference", () => {
       await cleanupCatalog();
     });
     await setOfficialWorkflowsEnabled(actor, true);
-    await setMorningBriefEnabled(actor, false);
     const headers = authHeaders(actor);
     const onDefaultAgent = await installMorningBriefFromCatalog(
       actor,
@@ -2385,14 +2330,6 @@ describe("Morning Brief preference", () => {
       actor,
       alternate.agentId,
     );
-
-    const hiddenRead = await accept(
-      morningBriefPreferenceClient().get({ headers }),
-      [403],
-    );
-    expect(hiddenRead.body.error.code).toBe("FORBIDDEN");
-
-    await setMorningBriefEnabled(actor, true);
 
     const read = await accept(
       morningBriefPreferenceClient().get({ headers }),
@@ -2448,7 +2385,6 @@ describe("Morning Brief preference", () => {
     });
     await connectBriefSource(actor);
     await setOfficialWorkflowsEnabled(actor, false);
-    await setMorningBriefEnabled(actor, true);
     const headers = authHeaders(actor);
 
     await accept(
@@ -2521,7 +2457,6 @@ describe("Morning Brief preference", () => {
     });
     await connectBriefSource(actor);
     await setOfficialWorkflowsEnabled(actor, false);
-    await setMorningBriefEnabled(actor, true);
     const headers = authHeaders(actor);
     await accept(
       morningBriefPreferenceClient().update({
@@ -2596,7 +2531,6 @@ describe("Morning Brief preference", () => {
     });
     await connectBriefSource(actor);
     await setOfficialWorkflowsEnabled(actor, false);
-    await setMorningBriefEnabled(actor, true);
     const headers = authHeaders(actor);
 
     await accept(
@@ -2837,7 +2771,6 @@ async function prepareBriefMember({
   }
   mockBriefMemberships([{ actor, createdAt }]);
   await setOfficialWorkflowsEnabled(actor, false);
-  await setMorningBriefEnabled(actor, true);
   if (bootstrap) {
     await deliverClerkOrganizationCreated(actor, createdAt);
   }
@@ -3264,7 +3197,6 @@ describe("Morning Brief default onboarding", () => {
     const actor = bdd.user({ orgId: owner.actor.orgId, orgRole: "org:member" });
     const createdAt = new Date("2030-01-01T00:00:00.000Z");
     mockBriefMemberships([owner, { actor, createdAt }]);
-    await setMorningBriefEnabled(actor, true);
     await deliverClerkOrganizationMembershipCreated(actor, createdAt);
     await connectBriefSource(actor);
     await initializeBriefMember(actor, "Asia/Shanghai");
@@ -3434,25 +3366,10 @@ describe("Morning Brief default onboarding", () => {
     expect(saved.body.timezone).toBe("Asia/Tokyo");
   });
 
-  it("honors an explicit feature override and never reinstalls a deleted completed enrollment", async () => {
+  it("never reinstalls a deleted completed enrollment", async () => {
     const { actor } = await prepareBriefMember();
     await connectBriefSource(actor);
-    await setMorningBriefEnabled(actor, false);
-    const membershipReads =
-      context.mocks.clerk.organizations.getOrganizationMembershipList;
-    membershipReads.mockClear();
-    const startedAt = now();
     await initializeBriefMember(actor, "Asia/Shanghai");
-    expect(membershipReads).toHaveBeenCalledTimes(1);
-    await tickBriefEnrollment(actor);
-    await tickBriefEnrollment(actor);
-    expect(membershipReads).toHaveBeenCalledTimes(1);
-    await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(0);
-    await setMorningBriefEnabled(actor, true);
-    await withMockNowForTest(startedAt + 120_000, async () => {
-      await tickBriefEnrollment(actor);
-    });
-    expect(membershipReads).toHaveBeenCalledTimes(2);
     const [installed] = await listMorningBriefInstallations(actor);
     if (!installed) {
       throw new Error("Expected installed brief");

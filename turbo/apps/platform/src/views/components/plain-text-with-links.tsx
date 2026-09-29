@@ -1,10 +1,7 @@
-import { useLastResolved } from "ccstate-react";
 import type { ReactNode } from "react";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { parseChatThreadLink } from "../../lib/chat-thread-link.ts";
 import { splitPlainTextUrls } from "../../lib/plain-text-urls.ts";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { ChatThreadLinkChip } from "./chat-thread-link-chip.tsx";
 
 /**
@@ -17,8 +14,8 @@ import { ChatThreadLinkChip } from "./chat-thread-link-chip.tsx";
  *
  * `chatThreadChips` is for surfaces inside the signed-in App: there a link to
  * one of its chat threads becomes a chat chip that opens in place. Public
- * surfaces such as a shared thread leave it off, since their reader has no
- * thread list to name the chat and may not be able to open it.
+ * surfaces such as a shared thread keep ordinary links, since their reader
+ * may not be able to open the linked chat inside the App.
  */
 export function PlainTextWithLinks({
   text,
@@ -27,18 +24,12 @@ export function PlainTextWithLinks({
   text: string;
   chatThreadChips?: boolean;
 }): ReactNode {
-  const features = useLastResolved(featureSwitch$);
-  if (features?.[FeatureSwitchKey.UserMessageLinks] !== true) {
-    return <span>{text}</span>;
-  }
-  const showChatThreadChips =
-    chatThreadChips && features[FeatureSwitchKey.ChatThreadLinkChips] === true;
   return (
     <>
       {splitPlainTextUrls(text).map((segment, index) => {
         const key = `${String(index)}:${segment.value}`;
         const chatThreadLink =
-          showChatThreadChips && segment.type === "url"
+          chatThreadChips && segment.type === "url"
             ? parseChatThreadLink(segment.value, window.location.origin)
             : null;
         if (chatThreadLink !== null) {

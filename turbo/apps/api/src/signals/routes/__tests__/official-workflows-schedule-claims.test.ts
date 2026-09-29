@@ -409,20 +409,6 @@ async function setOfficialWorkflowsEnabled(
   );
 }
 
-async function setMorningBriefEnabled(
-  actor: ApiTestUser,
-  enabled: boolean,
-): Promise<void> {
-  if (!actor.orgId) {
-    throw new Error("Expected organization-scoped actor");
-  }
-  await updateFeatureSwitchesForUser(
-    context,
-    { orgId: actor.orgId, userId: actor.userId },
-    { [FeatureSwitchKey.MorningBrief]: enabled },
-  );
-}
-
 async function deliverClerkOrganizationCreated(
   actor: ApiTestUser,
   createdAt: Date,
@@ -596,7 +582,6 @@ async function prepareBriefMember({
   }
   mockBriefMemberships([{ actor, createdAt }]);
   await setOfficialWorkflowsEnabled(actor, false);
-  await setMorningBriefEnabled(actor, true);
   if (bootstrap) {
     await deliverClerkOrganizationCreated(actor, createdAt);
   }

@@ -103,28 +103,26 @@ export function PreferenceSection() {
         <AccountSection />
       </section>
 
-      {featureSwitches[FeatureSwitchKey.MorningBrief] ? (
-        <section
-          className="flex flex-col gap-3"
-          aria-labelledby="email-subscriptions-heading"
-        >
-          <div id="email-subscriptions-heading">
-            <SettingsSectionHeading
-              title={t(($) => {
-                return $.settings.preferences.emailSubscription.sectionTitle;
-              })}
-            />
-          </div>
-          <div
-            className={surfaceVariants({
-              className: "overflow-hidden",
+      <section
+        className="flex flex-col gap-3"
+        aria-labelledby="email-subscriptions-heading"
+      >
+        <div id="email-subscriptions-heading">
+          <SettingsSectionHeading
+            title={t(($) => {
+              return $.settings.preferences.emailSubscription.sectionTitle;
             })}
-          >
-            <EmailSubscriptionSettings />
-            <MorningBriefSettings />
-          </div>
-        </section>
-      ) : null}
+          />
+        </div>
+        <div
+          className={surfaceVariants({
+            className: "overflow-hidden",
+          })}
+        >
+          <EmailSubscriptionSettings />
+          <MorningBriefSettings />
+        </div>
+      </section>
 
       <section className="flex flex-col gap-3">
         <SettingsSectionHeading

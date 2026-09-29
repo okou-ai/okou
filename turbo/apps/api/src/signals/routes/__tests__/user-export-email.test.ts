@@ -5,7 +5,6 @@ import { authContract } from "@okouai/api-contracts/contracts/auth";
 import { emailSubscriptionContract } from "@okouai/api-contracts/contracts/email-subscription";
 import { testUserExportWorkContract } from "@okouai/api-contracts/contracts/test-user-export-work";
 import { userExportContract } from "@okouai/api-contracts/contracts/user-export";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -22,7 +21,6 @@ import {
   ClerkUserNotFoundTestError,
   mockClerkUsers,
 } from "./helpers/clerk-users";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 import { installDurableUserExportStorage } from "./helpers/durable-user-export-storage";
 
@@ -167,9 +165,6 @@ test.each(["cold", "warm"])(
 
 test("sends a requested export once after completion even when optional emails are disabled", async () => {
   const current = actor();
-  await updateFeatureSwitchesForUser(context, current, {
-    [FeatureSwitchKey.MorningBrief]: true,
-  });
   const subscriptions = setupApp({ context, routes: emailSubscriptionRoutes })(
     emailSubscriptionContract,
   );

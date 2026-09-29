@@ -3,7 +3,6 @@ import {
   type EmailSubscriptionResponse,
 } from "@okouai/api-contracts/contracts/email-subscription";
 import { morningBriefPreferenceContract } from "@okouai/api-contracts/contracts/morning-brief-preference";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
@@ -28,7 +27,6 @@ async function openPreferences() {
         email: "alex@example.test",
       },
     },
-    featureSwitches: { [FeatureSwitchKey.MorningBrief]: true },
   });
   return await screen.findByRole("region", { name: "Email subscriptions" });
 }

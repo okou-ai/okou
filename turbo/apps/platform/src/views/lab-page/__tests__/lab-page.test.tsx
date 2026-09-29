@@ -85,7 +85,7 @@ test("Lab groups active feature switches", async () => {
   expect(featureRows).toHaveLength(Object.values(FeatureSwitchKey).length);
   expect(screen.getAllByRole("switch")).toHaveLength(featureRows.length);
   expect(
-    within(released).getByText(FeatureSwitchKey.MorningBrief),
+    within(released).getByText(FeatureSwitchKey.HostedSiteDelete),
   ).toBeVisible();
   expect(within(alpha).getByText(FeatureSwitchKey.Banking)).toBeVisible();
   expect(

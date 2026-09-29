@@ -1,4 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -27,7 +26,7 @@ const REPLY = [
   `Code stays code: \`${LINKED_URL}\``,
 ].join("\n");
 
-async function openChat(chipsEnabled: boolean): Promise<{
+async function openChat(): Promise<{
   message: HTMLElement;
   reply: HTMLElement;
 }> {
@@ -56,7 +55,6 @@ async function openChat(chipsEnabled: boolean): Promise<{
   await setupPage({
     context,
     path: `/chats/${context.resourceId}`,
-    featureSwitches: { [FeatureSwitchKey.ChatThreadLinkChips]: chipsEnabled },
   });
 
   const message = await waitFor(() => {
@@ -99,7 +97,7 @@ function externalLinkTo(container: HTMLElement, href: string): HTMLElement {
 }
 
 test("Links to App chats read as chat chips in messages and replies", async () => {
-  const { message, reply } = await openChat(true);
+  const { message, reply } = await openChat();
 
   await waitFor(() => {
     expect(chipNamed(message, LINKED_URL)).toHaveLength(1);
@@ -126,23 +124,4 @@ test("Links to App chats read as chat chips in messages and replies", async () =
   expect(externalLinkTo(reply, EXTERNAL_URL)).toHaveTextContent(EXTERNAL_URL);
   expect(reply.querySelector("code")).toHaveTextContent(LINKED_URL);
   expect(linksIn(reply)).toHaveLength(3);
-});
-
-test("Without the switch, links to App chats stay ordinary links", async () => {
-  const { message, reply } = await openChat(false);
-
-  await waitFor(() => {
-    expect(externalLinkTo(message, LINKED_URL)).toHaveTextContent(LINKED_URL);
-  });
-  expect(externalLinkTo(reply, LINKED_URL)).toHaveTextContent(LINKED_URL);
-  expect(externalLinkTo(reply, `/chats/${LINKED_THREAD_ID}`)).toHaveTextContent(
-    "Planning notes",
-  );
-  for (const container of [message, reply]) {
-    expect(
-      linksIn(container).filter((link) => {
-        return link.hasAttribute("aria-label");
-      }),
-    ).toHaveLength(0);
-  }
 });
