@@ -11,6 +11,25 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.984.2](https://github.com/okou-ai/okou/compare/app-v0.984.1...app-v0.984.2) (2026-09-29)
+
+
+### Bug Fixes
+
+* **platform:** preserve sidebar navigation focus rings ([#37303](https://github.com/okou-ai/okou/issues/37303)) ([3a34af8](https://github.com/okou-ai/okou/commit/3a34af81218715b8e65390d0be83dd946697f6cd))
+
+
+### Refactoring
+
+* remove morning brief, chat link, and figma feature switches ([#37309](https://github.com/okou-ai/okou/issues/37309)) ([5b862cc](https://github.com/okou-ai/okou/commit/5b862cc3ec791e4b10dcbdfa6e64b98fd10d7611))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.720.2
+
 ## [0.984.1](https://github.com/okou-ai/okou/compare/app-v0.984.0...app-v0.984.1) (2026-09-29)
 
 

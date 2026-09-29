@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.720.2](https://github.com/okou-ai/okou/compare/core-v8.720.1...core-v8.720.2) (2026-09-29)
+
+
+### Refactoring
+
+* remove morning brief, chat link, and figma feature switches ([#37309](https://github.com/okou-ai/okou/issues/37309)) ([5b862cc](https://github.com/okou-ai/okou/commit/5b862cc3ec791e4b10dcbdfa6e64b98fd10d7611))
+
 ## [8.720.1](https://github.com/okou-ai/okou/compare/core-v8.720.0...core-v8.720.1) (2026-09-29)
 
 
