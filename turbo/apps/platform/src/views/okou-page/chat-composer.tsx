@@ -8696,9 +8696,6 @@ function ComposerModelMenuControls({
 }
 
 function ComposerModelPickerSlot({ signals }: { signals: ComposerSignals }) {
-  const autoModelEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.AutoModel] === true;
-  const modelPolicies = useLastResolved(orgModelPolicies$);
   const modelSelection = useLastLoadable(signals.model.modelSelection$);
   const selectedModelOauthAvailable =
     useLastResolved(signals.model.selectedModelOauthAvailable$) ?? true;
@@ -8709,11 +8706,7 @@ function ComposerModelPickerSlot({ signals }: { signals: ComposerSignals }) {
   const onModelPickerChange = (selection: ModelProviderSelection | null) => {
     detach(setModelSelection(selection, pageSignal), Reason.DomCallback);
   };
-  if (
-    modelPickerLoading ||
-    value === null ||
-    (autoModelEnabled && modelPolicies?.modelMode === "auto")
-  ) {
+  if (modelPickerLoading || value === null) {
     return null;
   }
 

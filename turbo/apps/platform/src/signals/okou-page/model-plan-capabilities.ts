@@ -80,6 +80,9 @@ export function memberModelPolicyAllowedForPlan(
   capabilities: ModelPlanCapabilities,
 ): boolean {
   const route = getMemberModelPolicyRoute(policy);
+  if (policy.subscriptionOptions) {
+    return route.availability !== "plan_restricted";
+  }
   return (
     route.availability !== "plan_restricted" &&
     modelRouteAllowedForPlan(policy.model, route.providerType, capabilities)

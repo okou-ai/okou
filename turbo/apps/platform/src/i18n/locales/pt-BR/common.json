@@ -4903,12 +4903,12 @@
         "upgradeToPro": "Fazer upgrade para o Pro"
       },
       "autoMode": {
-        "active": "Apenas o Okou 1.0 está disponível neste espaço de trabalho. As conexões pessoais são mantidas, mas não são usadas.",
+        "active": "A política da organização é Auto. Assinaturas pessoais conectadas podem adicionar modelos para cada membro.",
         "cancel": "Cancelar",
         "confirm": "Mudar para Auto Model",
-        "confirmDescription": "Todas as políticas de modelos personalizados serão excluídas, restando apenas o Okou 1.0. As configurações de Model Provider, o BYOK dos membros e as assinaturas pessoais serão mantidos, mas não usados no Auto Model. As políticas excluídas não serão restauradas ao voltar para Custom.",
+        "confirmDescription": "Esta ação exclui permanentemente as políticas de modelos da organização, as conexões com provedores e os segredos que não são mais usados. Auto será a única política da organização. As assinaturas pessoais dos membros continuam conectadas e podem adicionar modelos. Voltar para Custom não restaurará as configurações excluídas.",
         "confirmTitle": "Mudar este espaço de trabalho para Auto Model?",
-        "description": "Use apenas o Okou 1.0 ou desative para personalizar modelos.",
+        "description": "Use Auto como política da organização; assinaturas pessoais adicionam modelos para os membros.",
         "failed": "Não foi possível mudar o modo de modelos. Atualize as configurações e tente novamente.",
         "title": "Auto Model"
       },

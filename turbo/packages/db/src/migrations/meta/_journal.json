@@ -1485,6 +1485,13 @@
       "when": 1790679731707,
       "tag": "1289_auto_model_mode",
       "breakpoints": true
+    },
+    {
+      "idx": 1290,
+      "version": "7",
+      "when": 1790686489029,
+      "tag": "1290_subscription_model_catalog",
+      "breakpoints": true
     }
   ]
 }

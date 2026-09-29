@@ -4821,12 +4821,12 @@
         "upgradeToPro": "Pro로 업그레이드"
       },
       "autoMode": {
-        "active": "이 워크스페이스에서는 Okou 1.0만 사용할 수 있습니다. 개인 모델 연결은 저장되지만 사용되지 않습니다.",
+        "active": "조직 정책은 Auto입니다. 연결된 개인 구독에서 각 멤버의 모델을 추가할 수 있습니다.",
         "cancel": "취소",
         "confirm": "Auto Model로 전환",
-        "confirmDescription": "모든 사용자 지정 모델 정책을 삭제하고 Okou 1.0만 남깁니다. Model Provider 설정과 멤버의 BYOK 및 개인 구독은 유지되지만 Auto Model에서는 사용되지 않습니다. Custom으로 돌아가도 삭제된 정책은 복원되지 않습니다.",
+        "confirmDescription": "조직의 모델 정책, Provider Connections 및 더 이상 사용하지 않는 보안 정보를 영구적으로 삭제합니다. 조직 정책은 Auto만 남습니다. 멤버의 개인 구독은 연결된 상태로 유지되며 모델을 추가할 수 있습니다. Custom으로 돌아가도 삭제된 조직 설정은 복원되지 않습니다.",
         "confirmTitle": "워크스페이스를 Auto Model로 전환할까요?",
-        "description": "Okou 1.0만 사용합니다. 끄면 모델을 사용자 지정할 수 있습니다.",
+        "description": "조직 정책으로 Auto를 사용합니다. 개인 구독에서 멤버의 모델을 추가할 수 있습니다.",
         "failed": "모델 모드를 변경하지 못했습니다. 설정을 새로고침하고 다시 시도하세요.",
         "title": "Auto Model"
       },

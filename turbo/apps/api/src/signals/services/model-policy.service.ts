@@ -10,12 +10,13 @@ import {
 import {
   loadMemberModelRouteContext,
   resolveEffectivePolicyRoute,
+  type MemberModelRouteContext,
   type ResolvedModelFirstPolicyRoute,
 } from "./effective-model-route.service";
 import { checkOrgPlanRunAdmission } from "./run-admission.service";
 import { isCloudModelMappingValid } from "@okouai/api-contracts/contracts/cloud-model-mapping";
 import { command } from "ccstate";
-import { and, asc, eq, inArray, notInArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, notExists, notInArray, sql } from "drizzle-orm";
 import {
   DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
   LIMITED_FREE1_DEFAULT_RUN_MODEL,
@@ -53,6 +54,11 @@ import {
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
+import { secrets } from "@okouai/db/schema/secret";
+import {
+  loadMemberSubscriptionModels,
+  type MemberSubscriptionModel,
+} from "./subscription-model-catalog.service";
 import { runModelCatalog } from "@okouai/db/schema/run-model-catalog";
 import {
   conflict,
@@ -547,6 +553,36 @@ async function ensureOrgModelPoliciesLocked(
   const capabilities = modelPolicyCapabilities(orgPlanCapabilities);
   const seedDefaultModel = getSeedDefaultModelForPlan(capabilities);
   const existing = await loadRows(db, orgId);
+  const [org] = await db
+    .select({ mode: orgMetadata.modelMode })
+    .from(orgMetadata)
+    .where(eq(orgMetadata.orgId, orgId))
+    .limit(1);
+  if (org?.mode === "auto") {
+    if (
+      existing.length !== 1 ||
+      existing[0]?.model !== "okou-1.0" ||
+      !existing[0].isDefault ||
+      existing[0].defaultProviderType !== "built-in"
+    ) {
+      await db
+        .delete(orgModelPolicies)
+        .where(eq(orgModelPolicies.orgId, orgId));
+      await db.insert(orgModelPolicies).values({
+        orgId,
+        model: "okou-1.0",
+        isDefault: true,
+        defaultProviderType: "built-in",
+        credentialScope: "org",
+        createdByUserId: userId,
+        updatedByUserId: userId,
+      });
+    }
+    return {
+      orgPlanCapabilities,
+      policies: await loadRows(db, orgId),
+    };
+  }
   if (existing.length > 0) {
     const existingDefault = existing.find((policy) => {
       return policy.isDefault;
@@ -673,8 +709,25 @@ export async function ensureOrgModelPolicyFacts(
     suppliedPlanCapabilities,
   );
   const capabilities = modelPolicyCapabilities(initial.orgPlanCapabilities);
+  const [org] = await db
+    .select({ mode: orgMetadata.modelMode })
+    .from(orgMetadata)
+    .where(eq(orgMetadata.orgId, orgId))
+    .limit(1);
+  const autoPoliciesReady =
+    initial.policies.length === 1 &&
+    initial.policies[0]?.model === "okou-1.0" &&
+    initial.policies[0].isDefault &&
+    initial.policies[0].defaultProviderType === "built-in";
+  if (org?.mode === "auto" && !autoPoliciesReady) {
+    return db.transaction(async (tx) => {
+      await lockPolicyWrites(tx, orgId);
+      return ensureOrgModelPoliciesLocked(tx, orgId, userId);
+    });
+  }
   if (
     initial.policies.length > 0 &&
+    (org?.mode !== "auto" || autoPoliciesReady) &&
     !shouldReplaceExistingDefaultForPlan(
       initial.policies.find((policy) => {
         return policy.isDefault;
@@ -1124,6 +1177,79 @@ function memberRouteAvailability(params: {
     : "available";
 }
 
+function memberSubscriptionPolicy(
+  entry: MemberSubscriptionModel,
+  capabilities: OrgPlanCapabilities | null,
+): OrgModelPolicy {
+  const restricted = checkOrgPlanRunAdmission({
+    capabilities,
+    modelProviderType: entry.providerType,
+    selectedModel: entry.model,
+    autoPersonalSubscription: true,
+  });
+  return {
+    id: entry.id,
+    model: entry.model,
+    modelLabel: entry.displayName,
+    isDefault: false,
+    defaultProviderType: entry.providerType,
+    runtimeProviderType: entry.providerType,
+    credentialScope: "member",
+    modelProviderId: null,
+    modelProviderSurfaceId: null,
+    routeStatus: "valid",
+    routeStatusReason: null,
+    subscriptionOptions: {
+      efforts: [...entry.efforts],
+      serviceTier: entry.serviceTier === "priority" ? "priority" : null,
+    },
+    memberEffective: {
+      providerType: entry.providerType,
+      runtimeProviderType: entry.providerType,
+      credentialScope: "member",
+      availability: entry.needsReconnect
+        ? "reconnect_required"
+        : restricted
+          ? "plan_restricted"
+          : "available",
+      accountSelection: "capture_required",
+    },
+    createdAt: entry.createdAt.toISOString(),
+    updatedAt: entry.updatedAt.toISOString(),
+  };
+}
+
+async function loadAutoMemberPolicies(
+  db: Db,
+  member: MemberModelRouteContext,
+  capabilities: OrgPlanCapabilities | null,
+  policies: readonly OrgModelPolicy[],
+  auto: boolean,
+): Promise<OrgModelPolicy[]> {
+  if (!auto) {
+    return [];
+  }
+  const personalModels = await loadMemberSubscriptionModels(db, member);
+  return personalModels
+    .filter((entry) => {
+      return !policies.some((policy) => {
+        return policy.model === entry.model;
+      });
+    })
+    .map((entry) => {
+      return memberSubscriptionPolicy(entry, capabilities);
+    });
+}
+
+async function loadOrgModelMode(db: Db, orgId: string) {
+  const [org] = await db
+    .select({ modelMode: orgMetadata.modelMode })
+    .from(orgMetadata)
+    .where(eq(orgMetadata.orgId, orgId))
+    .limit(1);
+  return org?.modelMode === "auto" ? "auto" : "custom";
+}
+
 async function listOrgModelPolicies(
   db: Db,
   orgId: string,
@@ -1222,29 +1348,35 @@ async function listOrgModelPolicies(
     }),
   );
   const workspaceDefault = selectWorkspaceDefaultPolicy(policies);
-  const [org] = await db
-    .select({ modelMode: orgMetadata.modelMode })
-    .from(orgMetadata)
-    .where(eq(orgMetadata.orgId, orgId))
-    .limit(1);
-  const okouModelsEnabled = isFeatureEnabled(
-    FeatureSwitchKey.OkouModels,
-    featureSwitchContext,
+  const modelMode = await loadOrgModelMode(db, orgId);
+  const memberPolicies = await loadAutoMemberPolicies(
+    db,
+    member,
+    capabilities,
+    policies,
+    modelMode === "auto",
   );
 
   return {
-    modelMode: org?.modelMode === "auto" ? "auto" : "custom",
-    policies,
+    modelMode,
+    policies: [...policies, ...memberPolicies],
     revision: policyRevision(persistedRows),
     // Permanent since the personal subscription priority rollout completed.
     // Removing the field needs its own client-compatibility window.
     writePreconditionRequired: true,
-    modelsAvailableToAdd: modelsAvailableToAdd(
-      persistedRows,
-      modelsAllowedForNewPolicy,
-    ).filter((model) => {
-      return okouModelsEnabled || !isOkouRunModel(model);
-    }),
+    modelsAvailableToAdd:
+      modelMode === "auto"
+        ? []
+        : modelsAvailableToAdd(persistedRows, modelsAllowedForNewPolicy).filter(
+            (model) => {
+              return (
+                isFeatureEnabled(
+                  FeatureSwitchKey.OkouModels,
+                  featureSwitchContext,
+                ) || !isOkouRunModel(model)
+              );
+            },
+          ),
     workspaceDefaultModel: workspaceDefault?.model ?? null,
     workspaceDefaultPolicyId: workspaceDefault?.id ?? null,
   };
@@ -1414,17 +1546,98 @@ export async function initializeOnboardingOrgModelPolicies(
 export const updateOrgModelMode$ = command(
   async (
     { set },
-    params: { readonly orgId: string; readonly mode: OrgModelMode },
+    params: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly mode: OrgModelMode;
+    },
     signal: AbortSignal,
   ): Promise<OrgModelMode | null> => {
     const db = set(writeDb$);
-    const [row] = await db
-      .update(orgMetadata)
-      .set({ modelMode: params.mode, updatedAt: nowDate() })
-      .where(eq(orgMetadata.orgId, params.orgId))
-      .returning({ modelMode: orgMetadata.modelMode });
+    const mode = await db.transaction(async (tx) => {
+      await lockPolicyWrites(tx, params.orgId);
+      const [org] = await tx
+        .select({ mode: orgMetadata.modelMode })
+        .from(orgMetadata)
+        .where(eq(orgMetadata.orgId, params.orgId))
+        .for("update")
+        .limit(1);
+      if (!org) {
+        return null;
+      }
+      if (params.mode === "auto") {
+        // Reset before deleting gateways: their surfaces can be referenced by policies.
+        await tx
+          .delete(orgModelPolicies)
+          .where(eq(orgModelPolicies.orgId, params.orgId));
+        await tx.insert(orgModelPolicies).values({
+          orgId: params.orgId,
+          model: "okou-1.0",
+          isDefault: true,
+          defaultProviderType: "built-in",
+          credentialScope: "org",
+          createdByUserId: params.userId,
+          updatedByUserId: params.userId,
+        });
+        const deleted = await tx
+          .delete(modelProviderConnections)
+          .where(eq(modelProviderConnections.orgId, params.orgId))
+          .returning({ secretId: modelProviderConnections.secretId });
+        const legacy = await tx
+          .delete(modelProviders)
+          .where(
+            and(
+              eq(modelProviders.orgId, params.orgId),
+              eq(modelProviders.userId, ORG_SENTINEL_USER_ID),
+            ),
+          )
+          .returning({ secretId: modelProviders.secretId });
+        const secretIds = [
+          ...deleted.map((connection) => {
+            return connection.secretId;
+          }),
+          ...legacy.flatMap((provider) => {
+            return provider.secretId ? [provider.secretId] : [];
+          }),
+        ];
+        if (secretIds.length > 0) {
+          await tx
+            .delete(secrets)
+            .where(
+              and(
+                inArray(secrets.id, secretIds),
+                notExists(
+                  tx
+                    .select({ id: modelProviders.id })
+                    .from(modelProviders)
+                    .where(eq(modelProviders.secretId, secrets.id)),
+                ),
+                notExists(
+                  tx
+                    .select({ id: modelProviderConnections.id })
+                    .from(modelProviderConnections)
+                    .where(eq(modelProviderConnections.secretId, secrets.id)),
+                ),
+              ),
+            );
+        }
+        await tx
+          .update(orgMembersMetadata)
+          .set({
+            selectedModel: "okou-1.0",
+            serviceTier: null,
+            updatedAt: nowDate(),
+          })
+          .where(eq(orgMembersMetadata.orgId, params.orgId));
+      }
+      await tx
+        .update(orgMetadata)
+        .set({ modelMode: params.mode, updatedAt: nowDate() })
+        .where(eq(orgMetadata.orgId, params.orgId));
+      return params.mode;
+    });
     signal.throwIfAborted();
-    return row?.modelMode === "auto" ? "auto" : row ? "custom" : null;
+    return mode;
   },
 );
 
@@ -1472,6 +1685,16 @@ export const updateOrgModelPolicies$ = command(
     }
     const written = await db.transaction(async (tx) => {
       await lockPolicyWrites(tx, params.orgId);
+      const [org] = await tx
+        .select({ mode: orgMetadata.modelMode })
+        .from(orgMetadata)
+        .where(eq(orgMetadata.orgId, params.orgId))
+        .limit(1);
+      if (org?.mode === "auto") {
+        return bad<OrgModelPoliciesResponse>(
+          "Model policies are managed automatically in Auto mode",
+        );
+      }
       await lockPolicyParents(tx, params.orgId);
       signal.throwIfAborted();
       const existing = await loadRows(tx, params.orgId, true);

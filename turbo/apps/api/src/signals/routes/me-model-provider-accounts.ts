@@ -9,6 +9,7 @@ import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import { writeDb$ } from "../external/db";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
+import { personalAccountsEnabledForOrg } from "../services/personal-accounts-availability.service";
 import {
   activatePersonalModelProviderAccount,
   deletePersonalModelProviderAccount,
@@ -94,10 +95,14 @@ const activateInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   );
   signal.throwIfAborted();
   if (
-    !isFeatureEnabled(
-      FeatureSwitchKey.PersonalModelProviderAccounts,
-      featureSwitchContext,
-    )
+    !(await personalAccountsEnabledForOrg(
+      set(writeDb$),
+      auth.orgId,
+      isFeatureEnabled(
+        FeatureSwitchKey.PersonalModelProviderAccounts,
+        featureSwitchContext,
+      ),
+    ))
   ) {
     return notFound("Resource not found");
   }
@@ -121,10 +126,14 @@ const deleteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   );
   signal.throwIfAborted();
   if (
-    !isFeatureEnabled(
-      FeatureSwitchKey.PersonalModelProviderAccounts,
-      featureSwitchContext,
-    )
+    !(await personalAccountsEnabledForOrg(
+      set(writeDb$),
+      auth.orgId,
+      isFeatureEnabled(
+        FeatureSwitchKey.PersonalModelProviderAccounts,
+        featureSwitchContext,
+      ),
+    ))
   ) {
     return notFound("Resource not found");
   }
@@ -159,10 +168,14 @@ function resetAccountSubscriptionUsage(
     );
     signal.throwIfAborted();
     if (
-      !isFeatureEnabled(
-        FeatureSwitchKey.PersonalModelProviderAccounts,
-        featureSwitchContext,
-      ) &&
+      !(await personalAccountsEnabledForOrg(
+        set(writeDb$),
+        auth.orgId,
+        isFeatureEnabled(
+          FeatureSwitchKey.PersonalModelProviderAccounts,
+          featureSwitchContext,
+        ),
+      )) &&
       !runId
     ) {
       return notFound("Resource not found");

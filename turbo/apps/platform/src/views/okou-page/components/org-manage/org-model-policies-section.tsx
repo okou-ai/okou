@@ -1805,16 +1805,20 @@ export function OrgModelPoliciesSection() {
     return (
       <section className="flex flex-col gap-4">
         <OrgModelModeControl data={data} />
-        {data.policies.map((policy) => {
-          return (
-            <div
-              key={policy.id}
-              className="rounded-xl border border-surface-border bg-card p-5"
-            >
-              {policy.modelLabel}
-            </div>
-          );
-        })}
+        {data.policies
+          .filter((policy) => {
+            return !policy.subscriptionOptions;
+          })
+          .map((policy) => {
+            return (
+              <div
+                key={policy.id}
+                className="rounded-xl border border-surface-border bg-card p-5"
+              >
+                {policy.modelLabel}
+              </div>
+            );
+          })}
       </section>
     );
   }

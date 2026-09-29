@@ -13,10 +13,7 @@ import {
   DialogTitle,
   Switch,
 } from "@okouai/ui";
-import {
-  updateOrgModelMode$,
-  updateOrgModelPolicies$,
-} from "../../../../signals/external/org-model-policies.ts";
+import { updateOrgModelMode$ } from "../../../../signals/external/org-model-policies.ts";
 import { featureSwitch$ } from "../../../../signals/external/feature-switch.ts";
 import { pageSignal$ } from "../../../../signals/page-signal.ts";
 import {
@@ -32,42 +29,17 @@ export function OrgModelModeControl({
 }) {
   const { t } = useTranslation();
   const available =
-    useLastResolved(featureSwitch$)?.[FeatureSwitchKey.AutoModel] === true;
+    useLastResolved(featureSwitch$)?.[FeatureSwitchKey.OkouDebug] === true;
   const pageSignal = useGet(pageSignal$);
   const confirmationOpen = useGet(autoModelConfirmationOpen$);
   const setConfirmationOpen = useSet(setAutoModelConfirmationOpen$);
   const [modeLoadable, setMode] = useLoadableSet(updateOrgModelMode$);
-  const [policyLoadable, updatePolicies] = useLoadableSet(
-    updateOrgModelPolicies$,
-  );
-  const saving =
-    modeLoadable.state === "loading" || policyLoadable.state === "loading";
+  const saving = modeLoadable.state === "loading";
   const auto = data.modelMode === "auto";
 
   const changeMode = (toAuto: boolean) => {
     detach(
       (async () => {
-        if (toAuto) {
-          // Preserve providers and member credentials; replace only org policies.
-          await updatePolicies(
-            {
-              policies: [
-                {
-                  model: "okou-1.0",
-                  isDefault: true,
-                  defaultProviderType: "built-in",
-                  credentialScope: "org",
-                  modelProviderId: null,
-                  modelProviderSurfaceId: null,
-                },
-              ],
-              revision: data.revision,
-              toast: false,
-            },
-            pageSignal,
-          );
-          pageSignal.throwIfAborted();
-        }
         await setMode(toAuto ? "auto" : "custom", pageSignal);
         pageSignal.throwIfAborted();
         setConfirmationOpen(false);
@@ -108,15 +80,14 @@ export function OrgModelModeControl({
           />
         </div>
       )}
-      {(modeLoadable.state === "hasError" ||
-        policyLoadable.state === "hasError") && (
+      {modeLoadable.state === "hasError" && (
         <p role="alert" className="text-sm text-destructive">
           {t(($) => {
             return $.settings.models.autoMode.failed;
           })}
         </p>
       )}
-      {auto && (
+      {auto && available && (
         <p className="text-sm text-muted-foreground">
           {t(($) => {
             return $.settings.models.autoMode.active;

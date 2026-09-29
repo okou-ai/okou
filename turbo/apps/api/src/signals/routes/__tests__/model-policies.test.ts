@@ -22,6 +22,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { now } from "../../../lib/time";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
+import { seedConnectedPersonalSubscriptionFixture } from "../../../test-fixtures/personal-subscription-model";
 import {
   holdModelPolicyPreferenceFixture,
   stageUnrepairedOrgModelPolicyFixture,
@@ -181,6 +182,12 @@ async function makeLimitedFreeWorkspace(
       "Expected limited-free bootstrap to create a default agent",
     );
   }
+  // This helper exercises the policy configurator for existing Custom orgs.
+  await seedOrgMetadata({
+    orgId: fixture.orgId,
+    tier: "limited-free-1",
+    credits: 0,
+  });
 }
 
 /**
@@ -219,6 +226,29 @@ describe("GET/PUT /api/model-policies", () => {
       [200],
     );
     expect(initial.body.modelMode).toBe("custom");
+    await createOrgProvider(fixture, "anthropic-api-key");
+    const gateways = setupApp({ context, routes: modelProviderGatewayRoutes })(
+      modelProviderConnectionsMainContract,
+    );
+    await accept(
+      gateways.create({
+        headers: authHeaders(),
+        body: {
+          displayName: "Legacy workspace gateway",
+          secret: "test-only-gateway-secret",
+          surfaces: [
+            {
+              protocol: "anthropic-messages",
+              apiBaseUrl: "https://gateway.example.com/anthropic",
+              authHeaderName: "Authorization",
+              authHeaderTemplate: "Bearer {{secret}}",
+              modelMappings: { "claude-sonnet-5": "legacy-sonnet" },
+            },
+          ],
+        },
+      }),
+      [201],
+    );
 
     const unavailable = await client.updateMode({
       headers: authHeaders(),
@@ -226,30 +256,9 @@ describe("GET/PUT /api/model-policies", () => {
     });
     expect(unavailable.status).toBe(403);
     await updateFeatureSwitchesForUser(context, fixture, {
-      [FeatureSwitchKey.AutoModel]: true,
+      [FeatureSwitchKey.OkouDebug]: true,
     });
     useSession(fixture);
-
-    await accept(
-      client.update({
-        headers: authHeaders(),
-        body: {
-          revision: initial.body.revision,
-          policies: [makeBuiltInPolicy("okou-1.0", true)],
-        },
-      }),
-      [200],
-    );
-    const changed = await accept(
-      client.list({ headers: authHeaders() }),
-      [200],
-    );
-    expect(changed.body.modelMode).toBe("custom");
-    expect(
-      changed.body.policies.map((policy) => {
-        return policy.model;
-      }),
-    ).toStrictEqual(["okou-1.0"]);
 
     await accept(
       client.updateMode({
@@ -258,6 +267,27 @@ describe("GET/PUT /api/model-policies", () => {
       }),
       [200],
     );
+    expect(
+      (await accept(gateways.list({ headers: authHeaders() }), [200])).body
+        .connections,
+    ).toStrictEqual([]);
+    const auto = await accept(client.list({ headers: authHeaders() }), [200]);
+    expect(
+      auto.body.policies.map((policy) => {
+        return policy.model;
+      }),
+    ).toStrictEqual(["okou-1.0"]);
+    expect(
+      (
+        await client.update({
+          headers: authHeaders(),
+          body: {
+            revision: auto.body.revision,
+            policies: [makeBuiltInPolicy("gpt-6-luna", true)],
+          },
+        })
+      ).status,
+    ).toBe(400);
     const memberFixture = { ...fixture, userId: `user_${randomUUID()}` };
     useSession(memberFixture, "org:member");
     const member = await accept(client.list({ headers: authHeaders() }), [200]);
@@ -276,6 +306,100 @@ describe("GET/PUT /api/model-policies", () => {
         })
       ).status,
     ).toBe(403);
+  });
+
+  it("projects the six subscription catalog entries only for the connected Auto member and routes them in every model-first entry", async () => {
+    const fixture = seedFixture();
+    await seedOrgMetadata({
+      orgId: fixture.orgId,
+      tier: "limited-free-1",
+      credits: 0,
+      modelMode: "auto",
+    });
+    useSession(fixture);
+    const client = apiClient();
+    const before = await accept(client.list({ headers: authHeaders() }), [200]);
+    expect(
+      before.body.policies.map((policy) => {
+        return policy.model;
+      }),
+    ).toStrictEqual(["okou-1.0"]);
+    await seedConnectedPersonalSubscriptionFixture({
+      ...fixture,
+      type: "claude-code-oauth-token",
+    });
+    await seedConnectedPersonalSubscriptionFixture({
+      ...fixture,
+      type: "codex-oauth-token",
+    });
+    const after = await accept(client.list({ headers: authHeaders() }), [200]);
+    expect(
+      after.body.policies.map((policy) => {
+        return policy.model;
+      }),
+    ).toStrictEqual([
+      "okou-1.0",
+      "claude-sonnet-5-5",
+      "gpt-6-luna",
+      "claude-opus-5-5",
+      "gpt-6-sol",
+      "claude-fable-5-1",
+      "gpt-6-astra",
+    ]);
+    expect(
+      after.body.policies.find((policy) => {
+        return policy.model === "claude-sonnet-5-5";
+      }),
+    ).toMatchObject({
+      modelLabel: "Claude Sonnet 5.5",
+      subscriptionOptions: {
+        efforts: ["low", "medium", "high", "extra", "max", "ultracode"],
+        serviceTier: null,
+      },
+      memberEffective: {
+        providerType: "claude-code-oauth-token",
+        availability: "available",
+      },
+    });
+    expect(
+      after.body.policies.find((policy) => {
+        return policy.model === "gpt-6-astra";
+      })?.subscriptionOptions,
+    ).toMatchObject({
+      efforts: ["low", "medium", "high", "xhigh", "max", "ultra"],
+      serviceTier: "priority",
+    });
+    const preferenceClient = setupApp({
+      context,
+      routes: userModelPreferenceRoutes,
+    })(userModelPreferenceContract);
+    const claudePreference = await accept(
+      preferenceClient.update({
+        headers: authHeaders(),
+        body: { selectedModel: "claude-sonnet-5-5", serviceTier: null },
+      }),
+      [200],
+    );
+    expect(claudePreference.body.selectedModel).toBe("claude-sonnet-5-5");
+    const codexPreference = await accept(
+      preferenceClient.update({
+        headers: authHeaders(),
+        body: { selectedModel: "gpt-6-astra", serviceTier: "priority" },
+      }),
+      [200],
+    );
+    expect(codexPreference.body.serviceTier).toBe("priority");
+    const other = { ...fixture, userId: `user_${randomUUID()}` };
+    useSession(other, "org:member");
+    const otherList = await accept(
+      client.list({ headers: authHeaders() }),
+      [200],
+    );
+    expect(
+      otherList.body.policies.map((policy) => {
+        return policy.model;
+      }),
+    ).toStrictEqual(["okou-1.0"]);
   });
 
   it("filters only the Add Model projection with a personal switch", async () => {
@@ -1658,6 +1782,7 @@ describe("GET/PUT /api/model-policies", () => {
 
   it("preserves an omitted custom gateway surface and clears an explicit null", async () => {
     const fixture = await seedFixture();
+    await seedOrgMetadata({ orgId: fixture.orgId, tier: "pro", credits: 0 });
     useSession(fixture);
     const gatewayClient = setupApp({
       context,

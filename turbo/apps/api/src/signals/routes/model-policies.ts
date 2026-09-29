@@ -94,12 +94,12 @@ const updateModelModeInner$ = command(
       auth.userId,
     );
     signal.throwIfAborted();
-    if (!isFeatureEnabled(FeatureSwitchKey.AutoModel, context)) {
+    if (!isFeatureEnabled(FeatureSwitchKey.OkouDebug, context)) {
       return adminRequired;
     }
     const mode = await set(
       updateOrgModelMode$,
-      { orgId: auth.orgId, mode: body.data.mode },
+      { orgId: auth.orgId, userId: auth.userId, mode: body.data.mode },
       signal,
     );
     signal.throwIfAborted();

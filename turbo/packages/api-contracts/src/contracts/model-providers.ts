@@ -714,6 +714,7 @@ export const MODEL_PROVIDER_TYPES = {
       "claude-fable-5-1",
       "claude-opus-5-5",
       "claude-opus-5",
+      "claude-sonnet-5-5",
       "claude-sonnet-5",
     ] as string[],
     defaultModel: "claude-sonnet-5",
@@ -1105,7 +1106,11 @@ const MODEL_FIRST_PROVIDER_COMPATIBILITY = {
     "azure-foundry",
     "aws-bedrock",
   ],
-  "claude-sonnet-5-5": ["built-in", "anthropic-api-key"],
+  "claude-sonnet-5-5": [
+    "built-in",
+    "anthropic-api-key",
+    "claude-code-oauth-token",
+  ],
   "claude-sonnet-5": [
     "built-in",
     "claude-code-oauth-token",
@@ -1684,6 +1689,24 @@ export const orgModelPolicySchema = z.object({
   routeStatusReason: z.string().nullable(),
   // Caller-specific, response-only routing. Optional across the B/C rollout.
   // A candidate has not captured a concrete subscription account for a run.
+  // Present for member-only models projected from the subscription catalog.
+  subscriptionOptions: z
+    .object({
+      efforts: z.array(
+        z.enum([
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "extra",
+          "max",
+          "ultra",
+          "ultracode",
+        ]),
+      ),
+      serviceTier: z.enum(["priority"]).nullable(),
+    })
+    .optional(),
   memberEffective: z
     .object({
       providerType: modelProviderTypeSchema,

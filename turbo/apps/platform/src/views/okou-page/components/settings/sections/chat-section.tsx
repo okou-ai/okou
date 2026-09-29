@@ -27,8 +27,6 @@ function DefaultModelPreference() {
   const { t } = useTranslation();
   const userPreference = useLastResolved(userModelPreference$);
   const policies = useLastResolved(orgModelPolicies$);
-  const autoModelEnabled =
-    useLastResolved(featureSwitch$)?.[FeatureSwitchKey.AutoModel] === true;
   const [updateLoadable, updatePreference] = useLoadableSet(
     updateDefaultModelPreference$,
   );
@@ -42,10 +40,6 @@ function DefaultModelPreference() {
   const handleChange = (selection: Parameters<typeof updatePreference>[0]) => {
     detach(updatePreference(selection, pageSignal), Reason.DomCallback);
   };
-
-  if (autoModelEnabled && policies?.modelMode === "auto") {
-    return null;
-  }
 
   return (
     <PreferenceCardRow

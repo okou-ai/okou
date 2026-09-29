@@ -86,7 +86,7 @@ async function setupPanel(
   return await screen.findByRole("textbox", { name: "Message" });
 }
 
-test("Auto Model hides the composer picker only for members with its UI switch", async () => {
+test("Auto organizations keep the composer model picker available", async () => {
   installRunChat({ selectedModel: "okou-1.0" });
   configurePolicies(["okou-1.0"]);
   context.mocks.data.orgModelMode("auto");
@@ -95,7 +95,7 @@ test("Auto Model hides the composer picker only for members with its UI switch",
     path: NEW_CHAT_PATH,
     featureSwitches: {
       [FeatureSwitchKey.ChatPreference]: true,
-      [FeatureSwitchKey.AutoModel]: true,
+      [FeatureSwitchKey.ComposerModelPanel]: true,
     },
   });
   await screen.findByRole("textbox", { name: "Message" });
@@ -103,11 +103,11 @@ test("Auto Model hides the composer picker only for members with its UI switch",
     expect(
       queryAllByRoleFast("button").some((button) => {
         return (
-          button.getAttribute("aria-label")?.includes("Okou 1.0") ||
-          button.textContent?.includes("Okou 1.0")
+          button.getAttribute("aria-label")?.includes("Auto") ||
+          button.textContent?.includes("Auto")
         );
       }),
-    ).toBeFalsy();
+    ).toBeTruthy();
   });
 });
 

@@ -4831,12 +4831,12 @@
         "upgradeToPro": "Upgrade to Pro"
       },
       "autoMode": {
-        "active": "Only Okou 1.0 is available to this workspace. Personal model connections are saved but not used.",
+        "active": "The organization policy is Auto. Connected personal subscriptions can add models for each member.",
         "cancel": "Cancel",
         "confirm": "Switch to Auto Model",
-        "confirmDescription": "This deletes all custom model policies and leaves only Okou 1.0. Model Provider configurations and members' BYOK and subscriptions are kept, but are not used in Auto Model. Deleted policies will not return when you switch back to Custom.",
+        "confirmDescription": "This permanently deletes organization model policies, provider connections and their unused secrets. The only organization policy will be Auto. Members' personal subscriptions remain connected and can add models. Switching back to Custom will not restore deleted organization settings.",
         "confirmTitle": "Switch this workspace to Auto Model?",
-        "description": "Use only Okou 1.0, or switch off to customize models.",
+        "description": "Use Auto as the organization policy. Connected personal subscriptions add models for each member.",
         "failed": "Could not change the model mode. Refresh settings and try again.",
         "title": "Auto Model"
       },

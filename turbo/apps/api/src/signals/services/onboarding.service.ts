@@ -4,7 +4,6 @@ import type {
   OnboardingStatusResponse,
   OnboardingSubscriptionProvider,
 } from "@okouai/api-contracts/contracts/onboarding";
-import { FeatureSwitchKey, isFeatureEnabled } from "@okouai/core";
 import { agentAvatarUrlForDefaultAgent } from "@okouai/core/agent-avatar";
 import { agentDisplayName } from "@okouai/core/brand-presentation";
 import { isValidTimeZone } from "@okouai/core/timezone";
@@ -27,7 +26,6 @@ import {
 import type { WorkflowMember } from "./workflow-data.service";
 import { writeOrgMetadataWithDefaultPlanEntitlement } from "./org-plan-entitlements.service";
 import { initializeOnboardingOrgModelPolicies } from "./model-policy.service";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 
 const L = logger("onboarding.service");
 
@@ -87,29 +85,18 @@ async function markOnboardingComplete(
     );
 
     if (rows.length > 0) {
-      if (modelProvider !== undefined) {
+      const [org] = await tx
+        .select({ mode: orgMetadataCanonicalWrites.modelMode })
+        .from(orgMetadataCanonicalWrites)
+        .where(eq(orgMetadataCanonicalWrites.orgId, orgId))
+        .limit(1);
+      if (org?.mode === "auto" || modelProvider !== undefined) {
         await initializeOnboardingOrgModelPolicies(
           tx,
           orgId,
           userId,
-          modelProvider,
+          org?.mode === "auto" ? null : (modelProvider ?? null),
         );
-      } else {
-        const context = await loadUserFeatureSwitchContext(tx, orgId, userId);
-        if (isFeatureEnabled(FeatureSwitchKey.AutoModel, context)) {
-          const initialized = await initializeOnboardingOrgModelPolicies(
-            tx,
-            orgId,
-            userId,
-            null,
-          );
-          if (initialized) {
-            await tx
-              .update(orgMetadataCanonicalWrites)
-              .set({ modelMode: "auto", updatedAt })
-              .where(eq(orgMetadataCanonicalWrites.orgId, orgId));
-          }
-        }
       }
     }
     return rows.length > 0;

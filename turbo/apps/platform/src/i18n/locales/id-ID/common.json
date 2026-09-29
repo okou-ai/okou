@@ -4821,12 +4821,12 @@
         "upgradeToPro": "Upgrade ke Pro"
       },
       "autoMode": {
-        "active": "Hanya Okou 1.0 yang tersedia di ruang kerja ini. Koneksi model pribadi disimpan tetapi tidak digunakan.",
+        "active": "Kebijakan organisasi adalah Auto. Langganan pribadi yang terhubung dapat menambahkan model bagi setiap anggota.",
         "cancel": "Batal",
         "confirm": "Beralih ke Auto Model",
-        "confirmDescription": "Semua kebijakan model kustom akan dihapus dan hanya Okou 1.0 yang tersisa. Konfigurasi Model Provider, BYOK anggota, dan langganan pribadi tetap disimpan tetapi tidak digunakan dalam Auto Model. Kebijakan yang dihapus tidak kembali saat beralih ke Custom.",
+        "confirmDescription": "Tindakan ini menghapus permanen kebijakan model organisasi, koneksi penyedia, dan rahasia yang tidak lagi digunakan. Hanya Auto yang menjadi kebijakan organisasi. Langganan pribadi anggota tetap terhubung dan dapat menambahkan model. Beralih kembali ke Custom tidak memulihkan pengaturan organisasi yang dihapus.",
         "confirmTitle": "Beralih ke Auto Model untuk ruang kerja ini?",
-        "description": "Gunakan hanya Okou 1.0, atau nonaktifkan untuk menyesuaikan model.",
+        "description": "Gunakan Auto sebagai kebijakan organisasi; langganan pribadi menambahkan model untuk anggota.",
         "failed": "Mode model tidak dapat diubah. Segarkan pengaturan dan coba lagi.",
         "title": "Auto Model"
       },

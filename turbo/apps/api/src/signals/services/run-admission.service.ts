@@ -26,6 +26,7 @@ import {
   type OrgPlanCapabilities,
 } from "./org-plan-entitlement-read.service";
 import { getSpendableUsagePackCredits } from "./usage-pack-credit.service";
+import { isAutoPersonalSubscriptionRoute } from "./subscription-model-catalog.service";
 import { resolveUsageAllowanceAvailability } from "./usage-allowance.service";
 
 type RunAdmissionFailure =
@@ -189,8 +190,16 @@ export async function checkResolvedOrgCreditsForRunAdmission(params: {
   readonly selectedModel?: string | null;
   readonly availability: OrgCreditAvailability | null;
 }): Promise<RunAdmissionFailure | undefined> {
+  const autoPersonalSubscription = await isAutoPersonalSubscriptionRoute({
+    db: params.db,
+    orgId: params.orgId,
+    userId: params.userId,
+    model: params.selectedModel,
+    providerType: params.modelProviderType,
+  });
   return await checkResolvedOrgCreditsForRunAdmissionWithAllowance({
     ...params,
+    autoPersonalSubscription,
     resolveAllowance: async () => {
       return await resolveUsageAllowanceAvailability(params.db, params.orgId);
     },
@@ -202,6 +211,7 @@ async function checkResolvedOrgCreditsForRunAdmissionWithAllowance(params: {
   readonly modelProviderType: string | null | undefined;
   readonly selectedModel?: string | null;
   readonly availability: OrgCreditAvailability | null;
+  readonly autoPersonalSubscription: boolean;
   readonly resolveAllowance: () => Promise<{
     readonly remainingUnits: number;
   } | null>;
@@ -217,6 +227,7 @@ async function checkResolvedOrgCreditsForRunAdmissionWithAllowance(params: {
     capabilities: availability,
     modelProviderType: params.modelProviderType,
     selectedModel: params.selectedModel,
+    autoPersonalSubscription: params.autoPersonalSubscription,
   });
   if (planAdmission) {
     return planAdmission;
@@ -240,12 +251,13 @@ export function checkOrgPlanRunAdmission(params: {
   readonly capabilities: OrgPlanRunAdmissionCapabilities | null;
   readonly modelProviderType: string | null | undefined;
   readonly selectedModel: string | null | undefined;
+  readonly autoPersonalSubscription?: boolean;
 }): RunAdmissionFailure | undefined {
   const { capabilities } = params;
   const modelAccess = getRunModelRouteAccess(
     params.selectedModel,
     params.modelProviderType,
-    capabilities?.restrictedBuiltInModels,
+    capabilities?.restrictedBuiltInModels && !params.autoPersonalSubscription,
   );
   if (modelAccess === "retired") {
     return badRequestMessage(RETIRED_RUN_MODEL_MESSAGE);
@@ -260,6 +272,7 @@ export function checkOrgPlanRunAdmission(params: {
     return paidPlanRequired();
   }
   return (!capabilities.supportByok &&
+    !params.autoPersonalSubscription &&
     !isBuiltInModelProviderType(params.modelProviderType)) ||
     modelAccess === "pro_required"
     ? insufficientCredits()

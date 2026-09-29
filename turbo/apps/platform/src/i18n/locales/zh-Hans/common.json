@@ -4821,12 +4821,12 @@
         "upgradeToPro": "升级到Pro"
       },
       "autoMode": {
-        "active": "当前组织只可使用 Okou 1.0。个人模型连接会保留，但不会被使用。",
+        "active": "组织策略为 Auto。成员连接个人订阅后，可使用订阅带入的模型。",
         "cancel": "取消",
         "confirm": "切换至 Auto Model",
-        "confirmDescription": "这将删除组织内所有自定义模型策略，仅保留 Okou 1.0。Model Provider 配置、成员的 BYOK 和个人订阅不会删除，但在 Auto Model 下不会使用。切回 Custom 后，被删除的策略不会自动恢复。",
+        "confirmDescription": "此操作会永久删除组织模型策略、组织 Provider Connections 及不再被引用的密钥，仅保留 Auto 组织策略。成员的个人订阅继续保留，并可带入模型。切回 Custom 不会恢复已删除的组织配置。",
         "confirmTitle": "将此组织切换至 Auto Model？",
-        "description": "仅使用 Okou 1.0；关闭后可自定义模型。",
+        "description": "组织使用 Auto 策略；成员连接个人订阅后可增加可用模型。",
         "failed": "切换模型模式失败。请刷新设置后重试。",
         "title": "Auto Model"
       },

@@ -110,7 +110,11 @@ import {
 } from "../../../test-fixtures/chat-event-search";
 import { createRouteMocks } from "./helpers/route-test";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
-import { setOrgDefaultAgentFixture } from "../../../test-fixtures/org-metadata";
+import {
+  setOrgDefaultAgentFixture,
+  setOrgModelModeFixture,
+} from "../../../test-fixtures/org-metadata";
+import { seedConnectedPersonalSubscriptionFixture } from "../../../test-fixtures/personal-subscription-model";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
@@ -1175,11 +1179,47 @@ describe("MCP chat discovery and creation", () => {
     );
   });
 
+  it("lists connected personal subscription models for the Auto member", async () => {
+    const f = await threadFixture();
+    await seedOrgMetadata({
+      orgId: f.auth.orgId,
+      tier: "limited-free-1",
+      credits: 0,
+      modelMode: "auto",
+    });
+    createRouteMocks(context).clerk.session(f.auth.userId, f.auth.orgId);
+    await accept(
+      setupApp({ context, routes: modelPoliciesRoutes })(
+        modelPoliciesMainContract,
+      ).list({ headers: { authorization: "Bearer clerk-session" } }),
+      [200],
+    );
+    await seedConnectedPersonalSubscriptionFixture({
+      orgId: f.auth.orgId,
+      userId: f.auth.userId,
+      type: "claude-code-oauth-token",
+    });
+    const models = await listModels(f.auth.token());
+    expect(models.models).toContainEqual(
+      expect.objectContaining({
+        id: "claude-sonnet-5-5",
+        name: "Claude Sonnet 5.5",
+        selectable: true,
+        availability: "available",
+      }),
+    );
+    expect(models.defaultModel).toStrictEqual({
+      model: "okou-1.0",
+      source: "org_default",
+    });
+  });
+
   it("projects the owner's DeepSeek alternative routing in model discovery", async () => {
     const f = await threadFixture();
     const runs = createRunsApi(context);
     const model = "deepseek-v4-flash";
     await runs.grantProEntitlement(f.actor);
+    await setOrgModelModeFixture(f.auth.orgId, "custom");
     await seedBuiltInModelCandidateKeys(context, model);
     await runs.updateOrgModelPolicies(f.actor, [
       {

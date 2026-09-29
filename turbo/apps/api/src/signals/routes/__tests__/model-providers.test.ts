@@ -15,6 +15,7 @@ import { server } from "../../../mocks/server";
 import { now, withMockNowForTest } from "../../../lib/time";
 import { generateSandboxToken } from "../../auth/tokens";
 import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
+import { setOrgModelModeFixture } from "../../../test-fixtures/org-metadata";
 import { encryptSecretForTests } from "./helpers/encrypt-secret";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -177,6 +178,7 @@ async function entitledRunActor(): Promise<EntitledRunActor> {
   api.acceptTelemetryIngest();
   api.configureRunnerGroup();
   await api.grantProEntitlement(actor);
+  await setOrgModelModeFixture(actor.orgId, "custom");
   await api.ensureOrgModelProvider(actor);
   const agent = await bdd.createAgent(actor, {
     displayName: "Firewall Auth Test",

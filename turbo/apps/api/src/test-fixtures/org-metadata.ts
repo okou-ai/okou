@@ -28,6 +28,8 @@ export async function upsertOrgMetadataFixture(values: {
   readonly orgId: string;
   readonly tier: string;
   readonly credits: number;
+  /** Test a pre-existing Custom workspace unless a scenario explicitly opts into Auto. */
+  readonly modelMode?: "auto" | "custom";
 }): Promise<void> {
   const tier = orgTierSchema.parse(values.tier);
   await createStore()
@@ -35,12 +37,13 @@ export async function upsertOrgMetadataFixture(values: {
     .transaction(async (tx) => {
       await tx
         .insert(orgMetadataCanonicalWrites)
-        .values(values)
+        .values({ ...values, modelMode: values.modelMode ?? "custom" })
         .onConflictDoUpdate({
           target: orgMetadataCanonicalWrites.orgId,
           set: {
             tier: values.tier,
             credits: values.credits,
+            modelMode: values.modelMode ?? "custom",
             updatedAt: sql`now()`,
           },
         });
@@ -50,6 +53,20 @@ export async function upsertOrgMetadataFixture(values: {
         source: "org_metadata_migration",
       });
     });
+}
+
+export async function setOrgModelModeFixture(
+  orgId: string,
+  modelMode: "auto" | "custom",
+): Promise<void> {
+  const rows = await createStore()
+    .set(writeDb$)
+    .update(orgMetadata)
+    .set({ modelMode, updatedAt: sql`now()` })
+    .where(eq(orgMetadata.orgId, orgId))
+    .returning({ orgId: orgMetadata.orgId });
+  if (rows.length !== 1)
+    throw new Error(`No organization metadata for ${orgId}`);
 }
 
 export async function expireAtomGrantFixture(values: {

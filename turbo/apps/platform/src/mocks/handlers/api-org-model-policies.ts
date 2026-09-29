@@ -118,6 +118,18 @@ export const apiOrgModelPoliciesHandlers = [
 
   mockApi(modelPoliciesMainContract.updateMode, ({ body, respond }) => {
     mockOrgModelMode = body.mode;
+    if (body.mode === "auto") {
+      mockOrgModelPolicies = [
+        applyUpdate({
+          model: "okou-1.0",
+          isDefault: true,
+          defaultProviderType: "built-in",
+          credentialScope: "org",
+          modelProviderId: null,
+          modelProviderSurfaceId: null,
+        }),
+      ];
+    }
     return respond(200, { mode: body.mode });
   }),
 

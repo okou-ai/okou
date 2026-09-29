@@ -4903,12 +4903,12 @@
         "upgradeToPro": "Passa a Pro"
       },
       "autoMode": {
-        "active": "In questa area di lavoro è disponibile solo Okou 1.0. Le connessioni personali restano salvate ma non vengono utilizzate.",
+        "active": "La policy dell’organizzazione è Auto. Gli abbonamenti personali collegati possono aggiungere modelli per ogni membro.",
         "cancel": "Annulla",
         "confirm": "Passa ad Auto Model",
-        "confirmDescription": "Tutte le policy dei modelli personalizzati verranno eliminate; resterà solo Okou 1.0. Le configurazioni Model Provider, il BYOK dei membri e gli abbonamenti personali resteranno salvati, ma non saranno utilizzati in Auto Model. Le policy eliminate non torneranno passando a Custom.",
+        "confirmDescription": "Questa operazione elimina definitivamente le policy dei modelli dell’organizzazione, le connessioni ai provider e i segreti non più utilizzati. Auto resterà l’unica policy dell’organizzazione. Gli abbonamenti personali dei membri restano collegati e possono aggiungere modelli. Tornare a Custom non ripristinerà le impostazioni eliminate.",
         "confirmTitle": "Passare questa area di lavoro ad Auto Model?",
-        "description": "Usa solo Okou 1.0 oppure disattiva per personalizzare i modelli.",
+        "description": "Usa Auto come policy dell’organizzazione; gli abbonamenti personali aggiungono modelli per i membri.",
         "failed": "Impossibile cambiare modalità modello. Aggiorna le impostazioni e riprova.",
         "title": "Auto Model"
       },

@@ -34,6 +34,7 @@ import {
   type PersonalProviderAccountMutation,
 } from "./model-provider-account.service";
 import { userFeatureSwitchContext } from "./feature-switches.service";
+import { personalAccountsEnabledForOrg } from "./personal-accounts-availability.service";
 import {
   upsertOrgMultiAuthModelProvider$,
   upsertUserMultiAuthModelProvider$,
@@ -1132,10 +1133,14 @@ const importClaimedCodexDeviceAuth$ = command(
     signal.throwIfAborted();
     const accountMutation =
       featureSwitchContext &&
-      isFeatureEnabled(
-        FeatureSwitchKey.PersonalModelProviderAccounts,
-        featureSwitchContext,
-      )
+      (await personalAccountsEnabledForOrg(
+        args.writeDb,
+        args.orgId,
+        isFeatureEnabled(
+          FeatureSwitchKey.PersonalModelProviderAccounts,
+          featureSwitchContext,
+        ),
+      ))
         ? personalAccountMutation(args)
         : undefined;
     const imported = await settle(

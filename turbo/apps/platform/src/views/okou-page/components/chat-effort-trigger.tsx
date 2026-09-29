@@ -56,7 +56,9 @@ export function ChatEffortTrigger({
   const fastAvailable =
     policy !== undefined &&
     isMemberModelPolicyConfigurable(policy) &&
-    isCodexFastModeModel(policy.model);
+    (policy.subscriptionOptions
+      ? policy.subscriptionOptions.serviceTier === "priority"
+      : isCodexFastModeModel(policy.model));
   return (
     <Popover>
       {/* A real composer control, not a bare trigger: the shared button owns

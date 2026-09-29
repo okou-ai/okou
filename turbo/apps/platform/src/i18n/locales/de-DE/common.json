@@ -4839,12 +4839,12 @@
         "upgradeToPro": "Upgrade auf Pro"
       },
       "autoMode": {
-        "active": "In diesem Workspace ist nur Okou 1.0 verfügbar. Persönliche Modellverbindungen bleiben gespeichert, werden aber nicht verwendet.",
+        "active": "Die Organisationsrichtlinie ist Auto. Verbundene persönliche Abonnements können Mitgliedern weitere Modelle bereitstellen.",
         "cancel": "Abbrechen",
         "confirm": "Zu Auto Model wechseln",
-        "confirmDescription": "Alle benutzerdefinierten Modellrichtlinien werden gelöscht; nur Okou 1.0 bleibt. Model-Provider-Konfigurationen, BYOK der Mitglieder und persönliche Abonnements bleiben erhalten, werden in Auto Model aber nicht verwendet. Gelöschte Richtlinien kehren beim Wechsel zu Custom nicht zurück.",
+        "confirmDescription": "Dadurch werden Organisationsrichtlinien, Provider-Verbindungen und nicht mehr benötigte Zugangsdaten dauerhaft gelöscht. Als Organisationsrichtlinie bleibt nur Auto. Persönliche Abonnements der Mitglieder bleiben verbunden und können Modelle bereitstellen. Beim Wechsel zurück zu Custom werden die gelöschten Organisationseinstellungen nicht wiederhergestellt.",
         "confirmTitle": "Diesen Workspace auf Auto Model umstellen?",
-        "description": "Nur Okou 1.0 verwenden; zum Anpassen der Modelle deaktivieren.",
+        "description": "Auto als Organisationsrichtlinie nutzen; persönliche Abonnements ergänzen Modelle für Mitglieder.",
         "failed": "Der Modellmodus konnte nicht geändert werden. Einstellungen aktualisieren und erneut versuchen.",
         "title": "Auto Model"
       },
