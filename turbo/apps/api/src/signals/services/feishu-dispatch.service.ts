@@ -43,12 +43,11 @@ import {
   feishuRouteThreadId,
   findFeishuRoutedChatThreadId$,
 } from "./feishu-chat-ingress.service";
-import { updateIntegrationChatThreadModel$ } from "./integration-chat-thread-model.service";
-import { listOrgModelPolicies$ } from "./model-policy.service";
 import {
-  updateUserModelPreference$,
-  userModelPreference,
-} from "./user-data.service";
+  readIntegrationChatThreadModel$,
+  updateIntegrationChatThreadModel$,
+} from "./integration-chat-thread-model.service";
+import { listOrgModelPolicies$ } from "./model-policy.service";
 
 const L = logger("FeishuDispatch");
 const FEISHU_THINKING_EMOJI = "Typing";
@@ -618,19 +617,21 @@ export async function markFeishuMessageReceived(
 
 const feishuModelPickerState$ = command(
   async (
-    { get, set },
+    { set },
     orgId: string,
     userId: string,
+    currentSelectedModel: string,
     signal: AbortSignal,
   ): Promise<{
     readonly options: readonly FeishuModelOption[];
     readonly currentSelectedModel: string | null;
   }> => {
     const visibleModels = new Set(getBuiltInVisibleModels());
-    const [policies, preference] = await Promise.all([
-      set(listOrgModelPolicies$, { orgId, userId }, signal),
-      get(userModelPreference({ orgId, userId })),
-    ]);
+    const policies = await set(
+      listOrgModelPolicies$,
+      { orgId, userId },
+      signal,
+    );
     signal.throwIfAborted();
     return {
       options: policies.policies
@@ -649,7 +650,7 @@ const feishuModelPickerState$ = command(
           };
         })
         .slice(0, FEISHU_MODEL_PICKER_MAX_OPTIONS),
-      currentSelectedModel: preference.selectedModel,
+      currentSelectedModel,
     };
   },
 );
@@ -731,16 +732,74 @@ async function replyModelUnavailable(
   );
 }
 
+function feishuModelCommandOptions(
+  options: readonly FeishuModelOption[],
+  currentSelectedModel: string | null,
+) {
+  return options.map((option) => ({
+    commandValue: option.model,
+    label: `${option.label}${option.isDefault ? " (workspace default)" : ""}`,
+    current: currentSelectedModel === option.model,
+  }));
+}
+
+function findFeishuModelOption(
+  options: readonly FeishuModelOption[],
+  input: string,
+) {
+  const normalized = input.toLowerCase();
+  return options.find(
+    (option) =>
+      option.model.toLowerCase() === normalized ||
+      option.label.toLowerCase() === normalized,
+  );
+}
+
 const handleModelCommand$ = command(
   async (
     { set },
     args: ConnectedCommandArgs,
     signal: AbortSignal,
   ): Promise<void> => {
+    const chatThreadId = await set(
+      findFeishuRoutedChatThreadId$,
+      {
+        connectionId: args.connection.id,
+        chatId: args.message.chatId,
+        threadId: feishuRouteThreadId(args.message),
+        userId: args.connection.userId,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    const currentSelectedModel = await set(
+      readIntegrationChatThreadModel$,
+      {
+        orgId: args.installation.orgId,
+        userId: args.connection.userId,
+        chatThreadId,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!currentSelectedModel) {
+      await replyNotice(
+        {
+          db: args.db,
+          message: args.message,
+          title: "No conversation",
+          text: "Start or enter an existing Okou conversation before using /model.",
+          kind: "error",
+        },
+        signal,
+      );
+      return;
+    }
     const picker = await set(
       feishuModelPickerState$,
       args.installation.orgId,
       args.connection.userId,
+      currentSelectedModel,
       signal,
     );
     signal.throwIfAborted();
@@ -764,45 +823,26 @@ const handleModelCommand$ = command(
           message: args.message,
           title: "Choose a model",
           text: commandOptionsText({
-            intro: `Send one of these commands to choose the model for your own ${FEISHU_PLATFORMS[args.message.platform ?? "feishu"].name} runs.`,
+            intro: `Send one of these commands to choose the model for this ${FEISHU_PLATFORMS[args.message.platform ?? "feishu"].name} conversation.`,
             command: "model",
-            options: picker.options.map((option) => {
-              return {
-                commandValue: option.model,
-                label: `${option.label}${option.isDefault ? " (workspace default)" : ""}`,
-                current:
-                  picker.currentSelectedModel === option.model ||
-                  (!picker.currentSelectedModel && option.isDefault),
-              };
-            }),
+            options: feishuModelCommandOptions(
+              picker.options,
+              picker.currentSelectedModel,
+            ),
           }),
         },
         signal,
       );
       return;
     }
-    const normalized = args.command.argument.toLowerCase();
-    const selected = picker.options.find((option) => {
-      return (
-        option.model.toLowerCase() === normalized ||
-        option.label.toLowerCase() === normalized
-      );
-    });
+    const selected = findFeishuModelOption(
+      picker.options,
+      args.command.argument,
+    );
     if (!selected) {
       await replyModelUnavailable(args, signal);
       return;
     }
-    const chatThreadId = await set(
-      findFeishuRoutedChatThreadId$,
-      {
-        connectionId: args.connection.id,
-        chatId: args.message.chatId,
-        threadId: feishuRouteThreadId(args.message),
-        userId: args.connection.userId,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
     const threadModel = await set(
       updateIntegrationChatThreadModel$,
       {
@@ -813,19 +853,23 @@ const handleModelCommand$ = command(
       },
       signal,
     );
-    if (threadModel.kind === "rejected") {
+    if (threadModel.kind !== "updated") {
+      if (threadModel.kind === "no_thread") {
+        await replyNotice(
+          {
+            db: args.db,
+            message: args.message,
+            title: "No conversation",
+            text: "Start or enter an existing Okou conversation before using /model.",
+            kind: "error",
+          },
+          signal,
+        );
+        return;
+      }
       await replyModelUnavailable(args, signal);
       return;
     }
-    await set(
-      updateUserModelPreference$,
-      {
-        orgId: args.installation.orgId,
-        userId: args.connection.userId,
-        preference: { selectedModel: selected.model, serviceTier: null },
-      },
-      signal,
-    );
     signal.throwIfAborted();
     await replyNotice(
       {

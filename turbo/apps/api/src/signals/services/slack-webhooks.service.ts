@@ -48,12 +48,11 @@ import {
 import { writeDb$, type Db } from "../external/db";
 import { userFeatureSwitchOverrides } from "./feature-switches.service";
 import { decryptPersistentSecretValue } from "./crypto.utils";
-import { updateIntegrationChatThreadModel$ } from "./integration-chat-thread-model.service";
-import { listOrgModelPolicies$ } from "./model-policy.service";
 import {
-  updateUserModelPreference$,
-  userModelPreference,
-} from "./user-data.service";
+  readIntegrationChatThreadModel$,
+  updateIntegrationChatThreadModel$,
+} from "./integration-chat-thread-model.service";
+import { listOrgModelPolicies$ } from "./model-policy.service";
 import { publishSlackAdminSignal$ } from "./slack-connect.service";
 import {
   admitCanonicalSlackChatEvent,
@@ -845,9 +844,10 @@ const cleanupWorkspaceInstallation$ = command(
 
 const slackModelPickerState$ = command(
   async (
-    { get, set },
+    { set },
     orgId: string,
     userId: string,
+    currentSelectedModel: string,
     signal: AbortSignal,
   ): Promise<{
     readonly enabled: boolean;
@@ -859,10 +859,11 @@ const slackModelPickerState$ = command(
     readonly currentSelectedModel: string | null;
   }> => {
     const visibleModels = new Set(getBuiltInVisibleModels());
-    const [policies, preference] = await Promise.all([
-      set(listOrgModelPolicies$, { orgId, userId }, signal),
-      get(userModelPreference({ orgId, userId })),
-    ]);
+    const policies = await set(
+      listOrgModelPolicies$,
+      { orgId, userId },
+      signal,
+    );
     signal.throwIfAborted();
     return {
       enabled: true,
@@ -880,7 +881,7 @@ const slackModelPickerState$ = command(
           isDefault: policy.isDefault,
         };
       }),
-      currentSelectedModel: preference.selectedModel,
+      currentSelectedModel,
     };
   },
 );
@@ -895,13 +896,18 @@ const isModelCommandAvailable$ = command(
     if (!installation?.orgId || !connection) {
       return false;
     }
-    const picker = await set(
-      slackModelPickerState$,
-      installation.orgId,
-      connection.userId,
+    const policies = await set(
+      listOrgModelPolicies$,
+      { orgId: installation.orgId, userId: connection.userId },
       signal,
     );
-    return picker.enabled && picker.options.length > 0;
+    return policies.policies.some((policy) => {
+      return (
+        isSupportedRunModel(policy.model) &&
+        getBuiltInVisibleModels().includes(policy.model) &&
+        policy.routeStatus === "valid"
+      );
+    });
   },
 );
 
@@ -989,10 +995,38 @@ const commandModelResponse$ = command(
         ),
       );
     }
+    const chatThreadId = await set(
+      findSlackDirectMessageChatThreadId$,
+      {
+        connectionId: args.connection.id,
+        channelId: args.payload.channel_id,
+        userId: args.connection.userId,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    const currentModel = await set(
+      readIntegrationChatThreadModel$,
+      {
+        orgId: args.installation.orgId,
+        userId: args.connection.userId,
+        chatThreadId,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!chatThreadId || !currentModel) {
+      return ephemeral(
+        buildErrorMessage(
+          "Use /okou model in an existing Okou Slack main DM conversation.",
+        ),
+      );
+    }
     const picker = await set(
       slackModelPickerState$,
       args.installation.orgId,
       args.connection.userId,
+      currentModel,
       signal,
     );
     if (!picker.enabled) {
@@ -1024,6 +1058,7 @@ const commandModelResponse$ = command(
           currentSelectedModel: picker.currentSelectedModel,
           privateMetadata: JSON.stringify({
             channelId: args.payload.channel_id,
+            chatThreadId,
           }),
         }),
       ),
@@ -1549,19 +1584,24 @@ export const handleSlackEvents$ = command(
   },
 );
 
-function parseViewChannelId(
+function parseModelViewRoute(
   privateMetadata: string | undefined,
-): string | undefined {
+): { channelId: string; chatThreadId: string } | undefined {
   if (!privateMetadata) {
     return undefined;
   }
   const metadata = safeJsonParse(privateMetadata);
-  const channelId =
-    typeof metadata === "object" && metadata !== null && "channelId" in metadata
-      ? metadata.channelId
-      : undefined;
-  return typeof channelId === "string" && channelId.length > 0
-    ? channelId
+  if (typeof metadata !== "object" || metadata === null) {
+    return undefined;
+  }
+  const channelId = "channelId" in metadata ? metadata.channelId : undefined;
+  const chatThreadId =
+    "chatThreadId" in metadata ? metadata.chatThreadId : undefined;
+  return typeof channelId === "string" &&
+    channelId.length > 0 &&
+    typeof chatThreadId === "string" &&
+    chatThreadId.length > 0
+    ? { channelId, chatThreadId }
     : undefined;
 }
 
@@ -1607,10 +1647,51 @@ const handleModelPickerSubmit$ = command(
     if (!ctx) {
       return emptyResponse();
     }
+    const route = parseModelViewRoute(payload.view?.private_metadata);
+    const chatThreadId = route
+      ? await set(
+          findSlackDirectMessageChatThreadId$,
+          {
+            connectionId: ctx.connection.id,
+            channelId: route.channelId,
+            userId: ctx.connection.userId,
+          },
+          signal,
+        )
+      : undefined;
+    signal.throwIfAborted();
+    if (!chatThreadId || chatThreadId !== route?.chatThreadId) {
+      return jsonResponse({
+        response_action: "errors",
+        errors: {
+          [MODEL_PICKER_BLOCK_ID]:
+            "This model picker is out of date. Use /okou model in your main DM again.",
+        },
+      });
+    }
+    const currentModel = await set(
+      readIntegrationChatThreadModel$,
+      {
+        orgId: ctx.orgId,
+        userId: ctx.connection.userId,
+        chatThreadId,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!currentModel) {
+      return jsonResponse({
+        response_action: "errors",
+        errors: {
+          [MODEL_PICKER_BLOCK_ID]: "This model picker is out of date.",
+        },
+      });
+    }
     const picker = await set(
       slackModelPickerState$,
       ctx.orgId,
       ctx.connection.userId,
+      currentModel,
       signal,
     );
     const option = picker.options.find((candidate) => {
@@ -1624,18 +1705,6 @@ const handleModelPickerSubmit$ = command(
         },
       });
     }
-    const channelId = parseViewChannelId(payload.view?.private_metadata);
-    const chatThreadId = channelId
-      ? await set(
-          findSlackDirectMessageChatThreadId$,
-          {
-            connectionId: ctx.connection.id,
-            channelId,
-            userId: ctx.connection.userId,
-          },
-          signal,
-        )
-      : undefined;
     signal.throwIfAborted();
     const threadModel = await set(
       updateIntegrationChatThreadModel$,
@@ -1647,24 +1716,18 @@ const handleModelPickerSubmit$ = command(
       },
       signal,
     );
-    if (threadModel.kind === "rejected") {
+    if (threadModel.kind !== "updated") {
       return jsonResponse({
         response_action: "errors",
         errors: {
-          [MODEL_PICKER_BLOCK_ID]: "You don't have access to that model.",
+          [MODEL_PICKER_BLOCK_ID]:
+            threadModel.kind === "no_thread"
+              ? "This model picker is out of date."
+              : "You don't have access to that model.",
         },
       });
     }
-    await set(
-      updateUserModelPreference$,
-      {
-        orgId: ctx.orgId,
-        userId: ctx.connection.userId,
-        preference: { selectedModel: option.model, serviceTier: null },
-      },
-      signal,
-    );
-    if (channelId) {
+    if (route) {
       await postEphemeralMessage({
         botToken: await get(
           decryptSlackBotToken({
@@ -1672,12 +1735,9 @@ const handleModelPickerSubmit$ = command(
             userId: ctx.connection.userId,
           }),
         ),
-        channel: channelId,
+        channel: route.channelId,
         slackUserId: payload.user.id,
-        text:
-          threadModel.kind === "updated"
-            ? `Switched to *${option.label}* for this conversation and new Slack threads.`
-            : `Switched to *${option.label}* for new Slack threads.`,
+        text: `Switched to *${option.label}* for this conversation.`,
       });
     }
     return emptyResponse();

@@ -1,4 +1,5 @@
 import { command } from "ccstate";
+import { createHash } from "node:crypto";
 import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
 import { and, eq } from "drizzle-orm";
 import {
@@ -9,7 +10,6 @@ import {
 import {
   getBuiltInVisibleModels,
   isSupportedRunModel,
-  type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { delay } from "signal-timers";
 
@@ -50,10 +50,11 @@ import {
 import type { DiscordCommandName } from "../../lib/discord-command-definition";
 import { requireDiscordConversationAccess$ } from "./discord-access.service";
 import { findDiscordInteractionChatThreadId } from "./discord-chat-ingress.service";
-import { updateIntegrationChatThreadModel$ } from "./integration-chat-thread-model.service";
-import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
+import {
+  readIntegrationChatThreadModel$,
+  updateIntegrationChatThreadModel$,
+} from "./integration-chat-thread-model.service";
 import { listOrgModelPolicies$ } from "./model-policy.service";
-import { updateUserModelPreferenceInDb } from "./user-data.service";
 import { writeDb$ } from "../external/db";
 import {
   safeJsonParse,
@@ -70,13 +71,15 @@ const UNCONFIRMED_REQUEST =
 const DISCORD_RESPONSE_WINDOW_MS = 3500;
 const STALE_CONTROL =
   "This control has expired or your access has changed. Run the command again.";
+const NO_MODEL_CONVERSATION =
+  "Start or enter an existing Okou conversation before using `/okou model`.";
 const HELP = [
   "**Okou in Discord**",
   "Mention Okou in a server channel to start a conversation, or message the bot directly.",
   "`/okou connect` — connection status and setup guidance",
   "`/okou disconnect` — disconnect your account from this workspace",
   "`/okou switch` — show the workspace default agent used in Discord",
-  "`/okou model` — choose an allowed model for this conversation and new ones",
+  "`/okou model` — choose an allowed model for this conversation",
   "`/okou org` — choose the workspace for bot DMs",
   "Existing server threads keep their agent and model unless you run `/okou model` inside them. Long task replies arrive from the bot.",
 ].join("\n");
@@ -179,7 +182,7 @@ const discordOrgPicker$ = command(
       );
       return discordAccountMessage(
         saved
-          ? "Workspace selected for bot DMs. Use `/okou model` to change your model preference."
+          ? "Workspace selected for bot DMs. Use `/okou model` in an existing conversation to change its model."
           : STALE_CONTROL,
       );
     }
@@ -226,64 +229,59 @@ const discordAgentStatus$ = command(
   },
 );
 
-const saveDiscordModelPreference$ = command(
+const discordModelSelectionAllowed$ = command(
   async (
     { set },
-    args: {
-      readonly binding: DiscordVerifiedBinding;
-      readonly model: SupportedRunModel;
-    },
+    binding: DiscordVerifiedBinding,
     signal: AbortSignal,
   ): Promise<boolean> => {
-    const saved = await set(writeDb$).transaction(async (tx) => {
+    const allowed = await set(writeDb$).transaction(async (tx) => {
       const [connection] = await tx
         .select({ id: discordOrgConnections.id })
         .from(discordOrgConnections)
         .where(
           and(
-            eq(discordOrgConnections.id, args.binding.connectionId),
-            eq(discordOrgConnections.discordUserId, args.binding.discordUserId),
-            eq(discordOrgConnections.userId, args.binding.userId),
-            eq(discordOrgConnections.guildId, args.binding.guildId),
+            eq(discordOrgConnections.id, binding.connectionId),
+            eq(discordOrgConnections.discordUserId, binding.discordUserId),
+            eq(discordOrgConnections.userId, binding.userId),
+            eq(discordOrgConnections.guildId, binding.guildId),
           ),
         )
         .for("share");
-      if (
-        !connection ||
-        !(await discordIntegrationEnabledForOwnerInDb(
+      return (
+        Boolean(connection) &&
+        (await discordIntegrationEnabledForOwnerInDb(
           tx,
-          args.binding.orgId,
-          args.binding.userId,
+          binding.orgId,
+          binding.userId,
         ))
-      ) {
-        return false;
-      }
-      await updateUserModelPreferenceInDb(
-        tx,
-        {
-          orgId: args.binding.orgId,
-          userId: args.binding.userId,
-          preference: { selectedModel: args.model, serviceTier: null },
-        },
-        signal,
       );
-      return true;
     });
     signal.throwIfAborted();
-    return saved;
+    return allowed;
   },
 );
+
+function discordModelThreadTag(chatThreadId: string): string {
+  return createHash("sha256")
+    .update(chatThreadId)
+    .digest("base64url")
+    .slice(0, 11);
+}
+
+interface DiscordModelPickerArgs {
+  readonly actor: DiscordInteractionActor;
+  readonly botToken: string;
+  readonly binding: DiscordVerifiedBinding;
+  readonly page?: number;
+  readonly selection?: string;
+  readonly modelThreadTag?: string;
+}
 
 const discordModelPicker$ = command(
   async (
     { set },
-    args: {
-      readonly actor: DiscordInteractionActor;
-      readonly botToken: string;
-      readonly binding: DiscordVerifiedBinding;
-      readonly page?: number;
-      readonly selection?: string;
-    },
+    args: DiscordModelPickerArgs,
     signal: AbortSignal,
   ): Promise<DiscordAccountMessage> => {
     if (args.selection !== undefined) {
@@ -306,7 +304,37 @@ const discordModelPicker$ = command(
         return discordAccountMessage(STALE_CONTROL);
       }
     }
+    const chatThreadId = await findDiscordInteractionChatThreadId(
+      set(writeDb$),
+      {
+        connectionId: args.binding.connectionId,
+        userId: args.binding.userId,
+        channelId: args.actor.channelId,
+        isDm: args.actor.guildId === null,
+      },
+    );
+    signal.throwIfAborted();
+    const currentModel = await set(
+      readIntegrationChatThreadModel$,
+      {
+        orgId: args.binding.orgId,
+        userId: args.binding.userId,
+        chatThreadId,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!chatThreadId || !currentModel) {
+      return discordAccountMessage(NO_MODEL_CONVERSATION);
+    }
+    if (
+      args.page !== undefined &&
+      args.modelThreadTag !== discordModelThreadTag(chatThreadId)
+    ) {
+      return discordAccountMessage(STALE_CONTROL);
+    }
     const policies = await set(listOrgModelPolicies$, args.binding, signal);
+    signal.throwIfAborted();
     const visible = new Set(getBuiltInVisibleModels());
     const options = policies.policies.flatMap((policy) => {
       if (
@@ -327,17 +355,8 @@ const discordModelPicker$ = command(
           "You no longer have access to that model. Run `/okou model` again.",
         );
       }
-      const saved = await set(
-        saveDiscordModelPreference$,
-        { binding: args.binding, model: option.value },
-        signal,
-      );
-      if (!saved) {
-        return discordAccountMessage(STALE_CONTROL);
-      }
-      // Only after the connection re-check above does the choice also apply
-      // to the conversation this interaction came from.
-      const chatThreadId = await findDiscordInteractionChatThreadId(
+      // Revalidate after the policy lookup before writing to the original route.
+      const currentThreadId = await findDiscordInteractionChatThreadId(
         set(writeDb$),
         {
           connectionId: args.binding.connectionId,
@@ -347,6 +366,18 @@ const discordModelPicker$ = command(
         },
       );
       signal.throwIfAborted();
+      if (currentThreadId !== chatThreadId) {
+        return discordAccountMessage(STALE_CONTROL);
+      }
+      const allowed = await set(
+        discordModelSelectionAllowed$,
+        args.binding,
+        signal,
+      );
+      signal.throwIfAborted();
+      if (!allowed) {
+        return discordAccountMessage(STALE_CONTROL);
+      }
       const threadModel = await set(
         updateIntegrationChatThreadModel$,
         {
@@ -359,25 +390,20 @@ const discordModelPicker$ = command(
       );
       return discordAccountMessage(
         threadModel.kind === "updated"
-          ? `Model selected for this conversation and new conversations: ${option.label}.`
-          : `Model selected for new conversations: ${option.label}. Existing server threads keep their model.`,
+          ? `Model selected for this conversation: ${option.label}.`
+          : threadModel.kind === "no_thread"
+            ? STALE_CONTROL
+            : "You no longer have access to that model. Run `/okou model` again.",
       );
     }
-    // Preselect the model a new Discord conversation would actually run.
-    const route = await set(
-      resolveDefaultModelFirstPin$,
-      { orgId: args.binding.orgId, userId: args.binding.userId },
-      signal,
-    );
-    signal.throwIfAborted();
     return discordAccountPicker({
       ...args,
       connectionId: args.binding.connectionId,
+      modelThreadTag: discordModelThreadTag(chatThreadId),
       action: "model",
       options,
-      ...(route.selectedModel ? { selected: route.selectedModel } : {}),
-      content:
-        "Choose an allowed model for this conversation and new conversations. This is your shared workspace model preference.",
+      selected: currentModel,
+      content: "Choose an allowed model for this conversation.",
     });
   },
 );
@@ -395,6 +421,7 @@ const discordBoundAccountAction$ = command(
       readonly botToken: string;
       readonly page?: number;
       readonly selection?: string;
+      readonly modelThreadTag?: string;
     },
     signal: AbortSignal,
   ): Promise<DiscordAccountMessage> => {
@@ -429,6 +456,7 @@ const discordBoundAccountAction$ = command(
       binding: args.binding,
       page: args.page,
       selection: args.selection,
+      modelThreadTag: args.modelThreadTag,
     };
     if (args.action === "switch" || args.action === "agent") {
       return set(discordAgentStatus$, args.binding, signal);
@@ -507,6 +535,7 @@ const discordAccountAction$ = command(
         botToken,
         page: control?.page,
         selection,
+        modelThreadTag: control?.modelThreadTag,
       },
       signal,
     );

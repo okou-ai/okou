@@ -15,17 +15,13 @@ import {
   type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { agents } from "@okouai/db/schema/agent";
-import { agentphoneChatThreadRoutes } from "@okouai/db/schema/agentphone-chat-thread-route";
 import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
 import { GET_STARTED_REWARDS_CHANGED_EVENT } from "@okouai/api-contracts/contracts/get-started";
-import { and, desc, eq, like, or } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { env } from "../../lib/env";
 import { inferMimetype } from "../../lib/mimetype";
-import {
-  INTEGRATION_DM_SESSION_PREFIX,
-  INTEGRATION_DM_SESSION_KEY,
-} from "../../lib/integration-dm-session";
+import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
 import { now } from "../../lib/time";
 import {
   publishChatThreadMessageCreatedSafely,
@@ -55,7 +51,10 @@ import {
   ensureAgentPhoneChatThreadRoute$,
   findAgentPhoneRoutedChatThreadId$,
 } from "./agentphone-chat-ingress.service";
-import { updateIntegrationChatThreadModel$ } from "./integration-chat-thread-model.service";
+import {
+  readIntegrationChatThreadModel$,
+  updateIntegrationChatThreadModel$,
+} from "./integration-chat-thread-model.service";
 import { createChatEventSourcePart } from "./chat-event-annotation.service";
 import { scheduleEnqueuedChatThreadPick$ } from "./chat-thread-queue-drain.service";
 import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
@@ -69,10 +68,6 @@ import {
   readyIntegrationInputAsset,
   type IntegrationInputFile,
 } from "./integration-input-assets.service";
-import {
-  updateUserModelPreference$,
-  userModelPreference,
-} from "./user-data.service";
 
 const MAX_CONNECT_AGE_SECONDS = 600;
 const MAX_WEBHOOK_AGE_SECONDS = 300;
@@ -175,7 +170,6 @@ function isAgentPhoneGroupAccountCommand(
     isAgentPhoneGroupEvent(event) &&
     (commandName === "connect" ||
       commandName === "disconnect" ||
-      commandName === "new_session" ||
       commandName === "model")
   );
 }
@@ -821,7 +815,6 @@ function formatHelpMessage(): string {
     `${brandName} text message commands`,
     "",
     `/connect - Connect this phone number to ${brandName}`,
-    "/new_session - Start a new conversation",
     "/model - Choose your model",
     `/disconnect - Disconnect this phone number from ${brandName}`,
     "/help - Show these commands",
@@ -934,46 +927,6 @@ async function handleDisconnectCommand(
   );
 }
 
-async function handleNewSessionCommand(
-  args: {
-    readonly db: Db;
-    readonly event: AgentPhoneMessageEvent;
-    readonly userLink: AgentPhoneUserLink | null;
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  if (!args.userLink) {
-    await sendConnectPrompt(args.event, { slashCommand: true }, signal);
-    return;
-  }
-
-  const rootMessageId = agentPhoneThreadRootMessageId(args.event);
-  const userLinkId = args.userLink.id;
-  await args.db
-    .delete(agentphoneChatThreadRoutes)
-    .where(
-      and(
-        eq(agentphoneChatThreadRoutes.agentphoneUserLinkId, userLinkId),
-        isAgentPhoneGroupEvent(args.event)
-          ? eq(agentphoneChatThreadRoutes.rootMessageId, rootMessageId)
-          : or(
-              eq(agentphoneChatThreadRoutes.rootMessageId, "dm"),
-              like(
-                agentphoneChatThreadRoutes.rootMessageId,
-                `${INTEGRATION_DM_SESSION_PREFIX}%`,
-              ),
-            ),
-      ),
-    );
-  signal.throwIfAborted();
-
-  await sendAgentPhoneSlashCommandText(
-    args.event,
-    "New session started.",
-    signal,
-  );
-}
-
 function commandArgument(text: string): string {
   const trimmed = text.trim();
   if (!trimmed) {
@@ -1064,7 +1017,7 @@ function formatAgentPhoneModelOptionsMessage(
 
 const handleModelCommand$ = command(
   async (
-    { get, set },
+    { set },
     args: {
       readonly db: Db;
       readonly event: AgentPhoneMessageEvent;
@@ -1075,14 +1028,38 @@ const handleModelCommand$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     const visibleModels = new Set(getBuiltInVisibleModels());
-    const [policies, preference] = await Promise.all([
-      set(
-        listOrgModelPolicies$,
-        { orgId: args.orgId, userId: args.userId },
+    const chatThreadId = await set(
+      findAgentPhoneRoutedChatThreadId$,
+      {
+        agentphoneUserLinkId: args.userLinkId,
+        rootMessageId: agentPhoneChatRouteRootMessageId(args.event),
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    const currentSelectedModel = await set(
+      readIntegrationChatThreadModel$,
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+        chatThreadId,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!currentSelectedModel) {
+      await sendAgentPhoneSlashCommandText(
+        args.event,
+        "Error: Start or enter an existing Okou conversation before using /model.",
         signal,
-      ),
-      get(userModelPreference({ orgId: args.orgId, userId: args.userId })),
-    ]);
+      );
+      return;
+    }
+    const policies = await set(
+      listOrgModelPolicies$,
+      { orgId: args.orgId, userId: args.userId },
+      signal,
+    );
     signal.throwIfAborted();
 
     const options = policies.policies.flatMap((policy) => {
@@ -1113,7 +1090,7 @@ const handleModelCommand$ = command(
     if (!input) {
       await sendAgentPhoneSlashCommandText(
         args.event,
-        formatAgentPhoneModelOptionsMessage(options, preference.selectedModel),
+        formatAgentPhoneModelOptionsMessage(options, currentSelectedModel),
         signal,
       );
       return;
@@ -1126,25 +1103,13 @@ const handleModelCommand$ = command(
         [
           `Error: Unknown model "${input}".`,
           "",
-          formatAgentPhoneModelOptionsMessage(
-            options,
-            preference.selectedModel,
-          ),
+          formatAgentPhoneModelOptionsMessage(options, currentSelectedModel),
         ].join("\n"),
         signal,
       );
       return;
     }
 
-    const chatThreadId = await set(
-      findAgentPhoneRoutedChatThreadId$,
-      {
-        agentphoneUserLinkId: args.userLinkId,
-        rootMessageId: agentPhoneChatRouteRootMessageId(args.event),
-      },
-      signal,
-    );
-    signal.throwIfAborted();
     const threadModel = await set(
       updateIntegrationChatThreadModel$,
       {
@@ -1155,23 +1120,16 @@ const handleModelCommand$ = command(
       },
       signal,
     );
-    if (threadModel.kind === "rejected") {
+    if (threadModel.kind !== "updated") {
       await sendAgentPhoneSlashCommandText(
         args.event,
-        "Error: You don't have access to that model.",
+        threadModel.kind === "no_thread"
+          ? "Error: Start or enter an existing Okou conversation before using /model."
+          : "Error: You don't have access to that model.",
         signal,
       );
       return;
     }
-    await set(
-      updateUserModelPreference$,
-      {
-        orgId: args.orgId,
-        userId: args.userId,
-        preference: { selectedModel: option.model, serviceTier: null },
-      },
-      signal,
-    );
     signal.throwIfAborted();
     await sendAgentPhoneSlashCommandText(
       args.event,
@@ -1205,17 +1163,6 @@ const dispatchAgentPhoneCommand$ = command(
       }
       case "disconnect": {
         await handleDisconnectCommand(
-          {
-            db: args.db,
-            event: args.event,
-            userLink: args.userLink,
-          },
-          signal,
-        );
-        return true;
-      }
-      case "new_session": {
-        await handleNewSessionCommand(
           {
             db: args.db,
             event: args.event,
