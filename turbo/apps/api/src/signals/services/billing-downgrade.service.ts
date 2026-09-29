@@ -75,7 +75,8 @@ type DowngradeResult =
 interface DowngradeArgs {
   readonly orgId: string;
   readonly targetTier: DowngradeTargetTier;
-  readonly returnUrl: string;
+  readonly returnUrl?: string;
+  readonly requirePaymentMethod?: boolean;
 }
 
 interface DowngradeSubscriptionForOrgArgs {

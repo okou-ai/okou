@@ -45,13 +45,13 @@ import {
   subscriptionScheduleCancellationEnd,
   subscriptionScheduleId,
 } from "./stripe-subscription-schedules.service";
-import { downgradeSubscriptionForOrg } from "./billing-downgrade.service";
+import { downgradeSubscription$ } from "./billing-downgrade.service";
 import {
   BILLING_DOWNGRADE_PURPOSE,
   BILLING_PURCHASE_PURPOSE,
   BILLING_RESTORE_PURPOSE,
 } from "./billing-payment-method.service";
-import { restoreSubscriptionForOrg } from "./billing-restore.service";
+import { restoreSubscription$ } from "./billing-restore.service";
 import { publishBillingChangedForOrg } from "./billing-realtime.service";
 import { pickOrgQueuedChatThreads$ } from "./chat-thread-queue-drain.service";
 import {
@@ -216,11 +216,6 @@ interface SubscriptionScheduleInput {
 interface CheckoutSubscriptionContext {
   readonly customerId: string;
   readonly subscriptionId: string;
-}
-
-interface BillingRestoreCheckoutOutcome {
-  readonly handled: boolean;
-  readonly orgId: string | null;
 }
 
 interface CheckoutCompletedOutcome {
@@ -2327,234 +2322,215 @@ function billingDowngradeCheckoutMetadata(session: CheckoutSessionInput): {
   return { orgId, subscriptionId, targetTier };
 }
 
-async function billingSetupSubscriptionState(
-  db: Db,
-  metadata: { readonly orgId: string; readonly subscriptionId: string },
-  subscriptionScope: "plan" | "purchase",
-): Promise<{
-  readonly org:
-    | {
-        readonly stripeCustomerId: string | null;
-        readonly stripeSubscriptionId: string | null;
-      }
-    | undefined;
-  readonly subscriptionMatches: boolean;
-  readonly expectedCustomerId: string | null;
-}> {
-  const [org] = await db
-    .select({
-      stripeCustomerId: orgMetadata.stripeCustomerId,
-      stripeSubscriptionId: orgMetadata.stripeSubscriptionId,
-    })
-    .from(orgMetadata)
-    .where(eq(orgMetadata.orgId, metadata.orgId))
-    .limit(1);
-  if (subscriptionScope === "plan") {
-    return {
-      org,
-      subscriptionMatches:
-        org?.stripeSubscriptionId === metadata.subscriptionId,
-      expectedCustomerId: org?.stripeCustomerId ?? null,
-    };
-  }
-
-  const [usagePackSubscriptionsRows, concurrencySubscriptionsRows] =
-    await Promise.all([
-      db
-        .select({ stripeCustomerId: usagePackSubscriptions.stripeCustomerId })
-        .from(usagePackSubscriptions)
-        .where(
-          and(
-            eq(usagePackSubscriptions.orgId, metadata.orgId),
-            eq(
-              usagePackSubscriptions.stripeSubscriptionId,
-              metadata.subscriptionId,
+const billingSetupSubscriptionState$ = command(
+  async (
+    { set },
+    args: {
+      readonly metadata: {
+        readonly orgId: string;
+        readonly subscriptionId: string;
+      };
+      readonly subscriptionScope: "plan" | "purchase";
+    },
+    signal: AbortSignal,
+  ) => {
+    const { metadata, subscriptionScope } = args;
+    const db = set(writeDb$);
+    const [org] = await db
+      .select({
+        stripeCustomerId: orgMetadata.stripeCustomerId,
+        stripeSubscriptionId: orgMetadata.stripeSubscriptionId,
+      })
+      .from(orgMetadata)
+      .where(eq(orgMetadata.orgId, metadata.orgId))
+      .limit(1);
+    signal.throwIfAborted();
+    let subscriptionMatches =
+      org?.stripeSubscriptionId === metadata.subscriptionId;
+    let expectedCustomerId = org?.stripeCustomerId ?? null;
+    if (subscriptionScope === "purchase") {
+      const [usagePackRows, concurrencyRows] = await Promise.all([
+        db
+          .select({ stripeCustomerId: usagePackSubscriptions.stripeCustomerId })
+          .from(usagePackSubscriptions)
+          .where(
+            and(
+              eq(usagePackSubscriptions.orgId, metadata.orgId),
+              eq(
+                usagePackSubscriptions.stripeSubscriptionId,
+                metadata.subscriptionId,
+              ),
             ),
-          ),
-        )
-        .limit(1),
-      db
-        .select({
-          stripeSubscriptionId:
-            orgConcurrencySubscriptions.stripeSubscriptionId,
-        })
-        .from(orgConcurrencySubscriptions)
-        .where(
-          and(
-            eq(orgConcurrencySubscriptions.orgId, metadata.orgId),
-            eq(
+          )
+          .limit(1),
+        db
+          .select({
+            stripeSubscriptionId:
               orgConcurrencySubscriptions.stripeSubscriptionId,
-              metadata.subscriptionId,
+          })
+          .from(orgConcurrencySubscriptions)
+          .where(
+            and(
+              eq(orgConcurrencySubscriptions.orgId, metadata.orgId),
+              eq(
+                orgConcurrencySubscriptions.stripeSubscriptionId,
+                metadata.subscriptionId,
+              ),
             ),
-          ),
-        )
-        .limit(1),
-    ]);
-  const usagePackSubscription = usagePackSubscriptionsRows[0];
-  const concurrencySubscription = concurrencySubscriptionsRows[0];
-  return {
-    org,
-    subscriptionMatches:
-      org?.stripeSubscriptionId === metadata.subscriptionId ||
-      usagePackSubscription !== undefined ||
-      concurrencySubscription !== undefined,
-    expectedCustomerId:
-      org?.stripeCustomerId ?? usagePackSubscription?.stripeCustomerId ?? null,
-  };
-}
+          )
+          .limit(1),
+      ]);
+      signal.throwIfAborted();
+      subscriptionMatches ||=
+        usagePackRows.length > 0 || concurrencyRows.length > 0;
+      expectedCustomerId ??= usagePackRows[0]?.stripeCustomerId ?? null;
+    }
+    return { org, subscriptionMatches, expectedCustomerId };
+  },
+);
 
-async function applyBillingSetupPaymentMethod(
-  db: Db,
-  session: CheckoutSessionInput,
-  metadata: { readonly orgId: string; readonly subscriptionId: string },
-  logContext: string,
-  subscriptionScope: "plan" | "purchase" = "plan",
-): Promise<boolean> {
-  if (session.mode !== "setup") {
-    L.warn(`billing ${logContext} checkout completed with unexpected mode`, {
-      sessionId: session.id,
-      mode: session.mode ?? null,
-    });
-    return false;
-  }
-
-  const customerId = checkoutCustomerId(session);
-  if (!customerId) {
-    L.warn(`billing ${logContext} checkout completed without customer`, {
-      sessionId: session.id,
-      orgId: metadata.orgId,
-    });
-    return false;
-  }
-
-  const { org, subscriptionMatches, expectedCustomerId } =
-    await billingSetupSubscriptionState(db, metadata, subscriptionScope);
-
-  if (
-    !org ||
-    !subscriptionMatches ||
-    (expectedCustomerId !== null && expectedCustomerId !== customerId)
-  ) {
-    L.warn(
-      `billing ${logContext} checkout no longer matches org billing state`,
-      {
+const applyBillingSetupPaymentMethod$ = command(
+  async (
+    { set },
+    args: {
+      readonly session: CheckoutSessionInput;
+      readonly metadata: {
+        readonly orgId: string;
+        readonly subscriptionId: string;
+      };
+      readonly purpose: "restore" | "downgrade" | "purchase";
+    },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const { session, metadata, purpose } = args;
+    if (session.mode !== "setup") {
+      L.warn(`billing ${purpose} checkout completed with unexpected mode`, {
+        sessionId: session.id,
+        mode: session.mode ?? null,
+      });
+      return false;
+    }
+    const customerId = checkoutCustomerId(session);
+    if (!customerId) {
+      L.warn(`billing ${purpose} checkout completed without customer`, {
         sessionId: session.id,
         orgId: metadata.orgId,
-        customerId,
-        metadataSubscriptionId: metadata.subscriptionId,
-        orgStripeCustomerId: org?.stripeCustomerId ?? null,
-        orgStripeSubscriptionId: org?.stripeSubscriptionId ?? null,
-        subscriptionScope,
+      });
+      return false;
+    }
+
+    const { org, subscriptionMatches, expectedCustomerId } = await set(
+      billingSetupSubscriptionState$,
+      {
+        metadata,
+        subscriptionScope: purpose === "purchase" ? "purchase" : "plan",
       },
+      signal,
     );
-    return false;
-  }
-
-  const stripe = getStripeClient();
-  const paymentMethodId = await checkoutSetupPaymentMethodId(stripe, session);
-  if (!paymentMethodId) {
-    L.warn(`billing ${logContext} checkout has no setup payment method`, {
-      sessionId: session.id,
-      orgId: metadata.orgId,
+    if (
+      !org ||
+      !subscriptionMatches ||
+      (expectedCustomerId !== null && expectedCustomerId !== customerId)
+    ) {
+      L.warn(
+        `billing ${purpose} checkout no longer matches org billing state`,
+        {
+          sessionId: session.id,
+          orgId: metadata.orgId,
+          customerId,
+          metadataSubscriptionId: metadata.subscriptionId,
+          orgStripeCustomerId: org?.stripeCustomerId ?? null,
+          orgStripeSubscriptionId: org?.stripeSubscriptionId ?? null,
+          subscriptionScope: purpose === "purchase" ? "purchase" : "plan",
+        },
+      );
+      return false;
+    }
+    const stripe = getStripeClient();
+    const paymentMethodId = await checkoutSetupPaymentMethodId(stripe, session);
+    signal.throwIfAborted();
+    if (!paymentMethodId) {
+      L.warn(`billing ${purpose} checkout has no setup payment method`, {
+        sessionId: session.id,
+        orgId: metadata.orgId,
+      });
+      return false;
+    }
+    await stripe.customers.update(customerId, {
+      invoice_settings: { default_payment_method: paymentMethodId },
     });
-    return false;
-  }
+    signal.throwIfAborted();
+    return true;
+  },
+);
 
-  await stripe.customers.update(customerId, {
-    invoice_settings: { default_payment_method: paymentMethodId },
-  });
-  return true;
-}
-
-async function handleBillingRestoreCheckoutCompleted(
-  db: Db,
-  session: CheckoutSessionInput,
-): Promise<BillingRestoreCheckoutOutcome> {
-  const metadata = billingRestoreCheckoutMetadata(session);
-  if (!metadata) {
-    return { handled: false, orgId: null };
-  }
-  const paymentMethodSet = await applyBillingSetupPaymentMethod(
-    db,
-    session,
-    metadata,
-    "restore",
-  );
-  if (!paymentMethodSet) {
-    return { handled: true, orgId: null };
-  }
-
-  const restoreResult = await restoreSubscriptionForOrg(db, {
-    orgId: metadata.orgId,
-    requirePaymentMethod: false,
-  });
-  if (!restoreResult.ok) {
-    L.warn("billing restore checkout could not restore subscription", {
-      sessionId: session.id,
-      orgId: metadata.orgId,
-      reason: restoreResult.reason,
-    });
-    return { handled: true, orgId: null };
-  }
-
-  return { handled: true, orgId: metadata.orgId };
-}
-
-async function handleBillingPurchaseCheckoutCompleted(
-  db: Db,
-  session: CheckoutSessionInput,
-): Promise<BillingRestoreCheckoutOutcome> {
-  const metadata = billingPurchaseCheckoutMetadata(session);
-  if (!metadata) {
-    return { handled: false, orgId: null };
-  }
-  const paymentMethodSet = await applyBillingSetupPaymentMethod(
-    db,
-    session,
-    metadata,
-    "purchase",
-    "purchase",
-  );
-  return {
-    handled: true,
-    orgId: paymentMethodSet ? metadata.orgId : null,
-  };
-}
-
-async function handleBillingDowngradeCheckoutCompleted(
-  db: Db,
-  session: CheckoutSessionInput,
-): Promise<BillingRestoreCheckoutOutcome> {
-  const metadata = billingDowngradeCheckoutMetadata(session);
-  if (!metadata) {
-    return { handled: false, orgId: null };
-  }
-  const paymentMethodSet = await applyBillingSetupPaymentMethod(
-    db,
-    session,
-    metadata,
-    "downgrade",
-  );
-  if (!paymentMethodSet) {
-    return { handled: true, orgId: null };
-  }
-
-  const downgradeResult = await downgradeSubscriptionForOrg(db, {
-    orgId: metadata.orgId,
-    targetTier: metadata.targetTier,
-    requirePaymentMethod: false,
-  });
-  if (!downgradeResult.ok) {
-    L.warn("billing downgrade checkout could not downgrade subscription", {
-      sessionId: session.id,
-      orgId: metadata.orgId,
-      reason: downgradeResult.reason,
-    });
-    return { handled: true, orgId: null };
-  }
-
-  return { handled: true, orgId: metadata.orgId };
-}
+const handleBillingSetupCheckoutCompleted$ = command(
+  async (
+    { set },
+    session: CheckoutSessionInput,
+    signal: AbortSignal,
+  ): Promise<CheckoutCompletedOutcome | null> => {
+    const restore = billingRestoreCheckoutMetadata(session);
+    const downgrade = billingDowngradeCheckoutMetadata(session);
+    const purchase = billingPurchaseCheckoutMetadata(session);
+    const metadata = restore ?? downgrade ?? purchase;
+    if (!metadata) {
+      return null;
+    }
+    const purpose = restore ? "restore" : downgrade ? "downgrade" : "purchase";
+    const ignored = { drainOrgId: null, orgIds: [] };
+    const paymentMethodSet = await set(
+      applyBillingSetupPaymentMethod$,
+      {
+        session,
+        metadata,
+        purpose,
+      },
+      signal,
+    );
+    if (!paymentMethodSet) {
+      return ignored;
+    }
+    if (restore) {
+      const result = await set(
+        restoreSubscription$,
+        {
+          orgId: restore.orgId,
+          requirePaymentMethod: false,
+        },
+        signal,
+      );
+      if (!result.ok) {
+        L.warn("billing restore checkout could not restore subscription", {
+          sessionId: session.id,
+          orgId: restore.orgId,
+          reason: result.reason,
+        });
+        return ignored;
+      }
+    } else if (downgrade) {
+      const result = await set(
+        downgradeSubscription$,
+        {
+          orgId: downgrade.orgId,
+          targetTier: downgrade.targetTier,
+          requirePaymentMethod: false,
+        },
+        signal,
+      );
+      if (!result.ok) {
+        L.warn("billing downgrade checkout could not downgrade subscription", {
+          sessionId: session.id,
+          orgId: downgrade.orgId,
+          reason: result.reason,
+        });
+        return ignored;
+      }
+    }
+    signal.throwIfAborted();
+    return { drainOrgId: null, orgIds: [metadata.orgId] };
+  },
+);
 
 async function shouldSkipSubscriptionBinding(
   db: Db,
@@ -3833,42 +3809,6 @@ async function processSubscriptionInvoicePaid(
   return true;
 }
 
-function billingSetupCheckoutOutcome(
-  result: BillingRestoreCheckoutOutcome,
-): CheckoutCompletedOutcome {
-  return {
-    drainOrgId: null,
-    orgIds: result.orgId === null ? [] : [result.orgId],
-  };
-}
-
-async function handleBillingSetupCheckoutCompleted(
-  db: Db,
-  session: CheckoutSessionInput,
-): Promise<CheckoutCompletedOutcome | null> {
-  const restoreResult = await handleBillingRestoreCheckoutCompleted(
-    db,
-    session,
-  );
-  if (restoreResult.handled) {
-    return billingSetupCheckoutOutcome(restoreResult);
-  }
-  const downgradeResult = await handleBillingDowngradeCheckoutCompleted(
-    db,
-    session,
-  );
-  if (downgradeResult.handled) {
-    return billingSetupCheckoutOutcome(downgradeResult);
-  }
-  const purchaseResult = await handleBillingPurchaseCheckoutCompleted(
-    db,
-    session,
-  );
-  return purchaseResult.handled
-    ? billingSetupCheckoutOutcome(purchaseResult)
-    : null;
-}
-
 async function handleCheckoutCompleted(
   db: Db,
   getClerk: ClerkClientProvider,
@@ -3888,14 +3828,6 @@ async function handleCheckoutCompleted(
       drainOrgId: null,
       orgIds: usagePackInvitation.orgId ? [usagePackInvitation.orgId] : [],
     };
-  }
-
-  const billingSetupResult = await handleBillingSetupCheckoutCompleted(
-    db,
-    session,
-  );
-  if (billingSetupResult) {
-    return billingSetupResult;
   }
 
   if (session.metadata?.purpose === "credit_purchase") {
@@ -5162,13 +5094,20 @@ export const reconcilePaidStripeCheckoutSession$ = command(
     const getClerk = (): ClerkClient => {
       return get(clerk$);
     };
-    const result = await handleCheckoutCompleted(
-      db,
-      getClerk,
+    const setupResult = await set(
+      handleBillingSetupCheckoutCompleted$,
       input.session,
-      input.paidAt,
       signal,
     );
+    const result =
+      setupResult ??
+      (await handleCheckoutCompleted(
+        db,
+        getClerk,
+        input.session,
+        input.paidAt,
+        signal,
+      ));
     signal.throwIfAborted();
 
     const orgIds = new Set(result.orgIds);
@@ -5254,13 +5193,20 @@ export const handleStripeWebhookEvent$ = command(
         break;
       }
       case "checkout.session.paid": {
-        const result = await handleCheckoutCompleted(
-          db,
-          getClerk,
+        const setupResult = await set(
+          handleBillingSetupCheckoutCompleted$,
           event.object,
-          new Date(event.created * 1000),
           signal,
         );
+        const result =
+          setupResult ??
+          (await handleCheckoutCompleted(
+            db,
+            getClerk,
+            event.object,
+            new Date(event.created * 1000),
+            signal,
+          ));
         signal.throwIfAborted();
         drainOrgId = result.drainOrgId;
         addBillingChangedOrgIds(billingChangedOrgIds, result.orgIds);

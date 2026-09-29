@@ -55,6 +55,24 @@ paid subscription appears. These predicates fix admission and recovery cases;
 they do not replace the common arbitration still required for provider creates
 whose outcome is not yet observable.
 
+### Restoration publication and setup callbacks
+
+Direct restoration and the payment-method setup callback now call the same
+business-argument command. It obtains its own database, prepares Stripe work
+outside a transaction, and directly commits the metadata update and matching
+scheduled-allocation cleanup in one local transaction. The metadata publication
+compares the original PostgreSQL row and its transient `xmin` snapshot. If that
+snapshot changed, the command leaves both the newer metadata and its allocation
+state alone; the direct API returns a conflict. No database or transaction is
+passed to the former restoration or allocation-cleanup helpers.
+
+Setup Checkout validation and dispatch are also commands with business data.
+The validation command reads its own database; provider payment-method updates
+and follow-up commands receive no database handle. The separate downgrade
+implementation still propagates a database internally and remains unfinished.
+These changes prevent stale local publication. They do not establish ordering
+between remote cancellation, restoration and schedule writers.
+
 ### Invitation purchase transitions
 
 The invitation-creation, refund, and acceptance-activation claims use conditional
@@ -131,6 +149,12 @@ This is a call-chain inventory, not a count of matching type signatures:
   preparation still pass writable databases or transactions to services and
   remain unfinished ownership work. See
   [the projection protocol and removal gate](advisory-lock-release-1-concurrency-projection.md).
+- **Restoration and setup callbacks:** the `restoreSubscriptionForOrg(db, ...)`
+  interface is removed. Restoration owns its direct metadata CAS and scheduled
+  allocation update. The former `billingSetupSubscriptionState(db, ...)`,
+  `applyBillingSetupPaymentMethod(db, ...)` and setup-dispatch database arguments
+  are removed; owning commands read the finite local state and call provider
+  operations outside transactions. Downgrade internals remain separate work.
 - **Allocation and plan changes:** preview/claim/finalization, migration, pending
   snapshot, credit-grant and schedule helpers still accept transactions. Their
   Stripe calls, pagination and callback ownership must be separated from the
