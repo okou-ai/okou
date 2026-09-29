@@ -36,7 +36,15 @@ import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { now, nowDate } from "../../lib/time";
 import { safeJsonParse, safeUrlParse, settle, tapError } from "../utils";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
-import { loadConnectorRuntimeSnapshot } from "./connector-catalog-runtime.service";
+import {
+  loadConnectorRuntimeSnapshot,
+  loadConnectorRuntimeSnapshot$,
+} from "./connector-catalog-runtime.service";
+import {
+  loadBuiltinConnectorCredentialConnection$,
+  loadBuiltinConnectorCredentialValues$,
+  refreshBuiltinConnectorCredentialAccess$,
+} from "./builtin-connector-credential-command.service";
 import {
   builtinConnectorCredentialRuntimeValueRef,
   loadBuiltinConnectorCredentialConnection,
@@ -566,6 +574,108 @@ async function resolveNotionAccess(
   };
 }
 
+const resolvePreparedNotionAccess$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly connectorId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<NotionAccessResult> => {
+    const currentTime = nowDate();
+    const snapshot = await set(loadConnectorRuntimeSnapshot$, signal);
+    signal.throwIfAborted();
+    const loaded = await set(loadBuiltinConnectorCredentialConnection$, {
+      snapshot,
+      orgId: args.orgId,
+      userId: args.userId,
+      connectorSlug: "notion",
+      connectorId: args.connectorId,
+    });
+    signal.throwIfAborted();
+    if (loaded.kind === "missing") {
+      return {
+        kind: "bad_request",
+        message: "Connect Notion before adding a Notion event automation",
+      };
+    }
+    if (loaded.kind === "unavailable" || loaded.connection.needsReconnect) {
+      return {
+        kind: "bad_request",
+        message: "Reconnect Notion before using Notion event automations",
+      };
+    }
+    const connection = loaded.connection;
+    const accessTokenValueRef = builtinConnectorCredentialRuntimeValueRef(
+      connection,
+      NOTION_ACCESS_TOKEN_ENVIRONMENT_NAME,
+    );
+    if (accessTokenValueRef === null) {
+      return {
+        kind: "bad_request",
+        message: "Reconnect Notion before using Notion event automations",
+      };
+    }
+    const values = await set(
+      loadBuiltinConnectorCredentialValues$,
+      {
+        connection,
+        valueRefs: [accessTokenValueRef],
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    const accessToken = values.get(accessTokenValueRef);
+    if (!accessToken) {
+      return {
+        kind: "bad_request",
+        message: "Reconnect Notion before using Notion event automations",
+      };
+    }
+    if (!tokenNeedsRefresh(connection.tokenExpiresAt, currentTime)) {
+      return {
+        kind: "ok",
+        access: {
+          connectorId: connection.connectorId,
+          accessToken,
+        },
+      };
+    }
+    const refreshed = await set(
+      refreshBuiltinConnectorCredentialAccess$,
+      {
+        connection,
+        orgId: args.orgId,
+        userId: args.userId,
+        runtimeEnvironmentName: NOTION_ACCESS_TOKEN_ENVIRONMENT_NAME,
+        persist: { markNeedsReconnectOnFailure: true },
+      },
+      signal,
+    );
+    if (refreshed.kind === "configuration-unavailable") {
+      return {
+        kind: "bad_request",
+        message: "Notion OAuth client env vars are not configured",
+      };
+    }
+    if (refreshed.kind !== "ok") {
+      return {
+        kind: "bad_request",
+        message: "Reconnect Notion before using Notion event automations",
+      };
+    }
+    return {
+      kind: "ok",
+      access: {
+        connectorId: connection.connectorId,
+        accessToken: refreshed.accessToken,
+      },
+    };
+  },
+);
+
 async function notionFetchJson<T>(
   schema: z.ZodType<T>,
   accessToken: string,
@@ -671,146 +781,190 @@ async function retrieveNotionDatabase(
   );
 }
 
-export async function prepareNotionChildPageEventConfigForPersist(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly connectorId: string;
-    readonly eventConfig: NotionChildPageCreatedEventCreateConfig;
-  },
-  signal: AbortSignal,
-): Promise<
-  | {
-      readonly kind: "ok";
-      readonly eventConfig: NotionChildPageCreatedEventConfig;
-    }
-  | { readonly kind: "bad-request"; readonly message: string }
-> {
-  const parentPageId = parseStandardNotionPageUrl(
-    args.eventConfig.parentPageUrl,
-  );
-  if (!parentPageId) {
-    return {
-      kind: "bad-request",
-      message: "Enter a standard notion.so page URL",
-    };
-  }
-
-  const accessResult = await resolveNotionAccess(
-    {
-      db,
-      orgId: args.orgId,
-      userId: args.userId,
-      connectorId: args.connectorId,
+export const prepareNotionChildPageEventConfigForPersist$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly connectorId: string;
+      readonly eventConfig: NotionChildPageCreatedEventCreateConfig;
     },
-    signal,
-  );
-  signal.throwIfAborted();
-  if (accessResult.kind !== "ok") {
-    return { kind: "bad-request", message: accessResult.message };
-  }
-
-  const pageResult = await retrieveNotionPage(
-    {
-      accessToken: accessResult.access.accessToken,
-      pageId: parentPageId,
-    },
-    signal,
-  );
-  signal.throwIfAborted();
-  if (pageResult.kind === "not_found" || pageResult.kind === "unauthorized") {
-    return {
-      kind: "bad-request",
-      message: `${BRAND_PRESENTATION.assistantName} cannot access this Notion page`,
-    };
-  }
-  if (pageResult.kind !== "ok") {
-    return {
-      kind: "bad-request",
-      message: "Failed to validate Notion page URL",
-    };
-  }
-  if (!pageIsUsable(pageResult.value)) {
-    return {
-      kind: "bad-request",
-      message: "Notion page is archived or in trash",
-    };
-  }
-
-  return {
-    kind: "ok",
-    eventConfig: {
-      provider: "notion",
-      event: "child_page_created",
-      connectorId: accessResult.access.connectorId,
-      parentPage: notionPageReference(
-        pageResult.value,
-        args.eventConfig.parentPageUrl,
-      ),
-    },
-  };
-}
-
-export async function prepareNotionDatabaseItemEventConfigForPersist(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly connectorId: string;
-    readonly eventConfig: NotionDatabaseItemCreatedEventCreateConfig;
-  },
-  signal: AbortSignal,
-): Promise<
-  | {
-      readonly kind: "ok";
-      readonly eventConfig: NotionDatabaseItemCreatedEventConfig;
-    }
-  | { readonly kind: "bad-request"; readonly message: string }
-> {
-  const notionId = parseStandardNotionUrlId(args.eventConfig.databaseUrl);
-  if (!notionId) {
-    return {
-      kind: "bad-request",
-      message: "Enter a standard notion.so database URL",
-    };
-  }
-
-  const accessResult = await resolveNotionAccess(
-    {
-      db,
-      orgId: args.orgId,
-      userId: args.userId,
-      connectorId: args.connectorId,
-    },
-    signal,
-  );
-  signal.throwIfAborted();
-  if (accessResult.kind !== "ok") {
-    return { kind: "bad-request", message: accessResult.message };
-  }
-  const accessToken = accessResult.access.accessToken;
-  const retrieveDataSource = (dataSourceId: string) => {
-    return retrieveNotionDataSource({ accessToken, dataSourceId }, signal);
-  };
-
-  const databaseResult = await retrieveNotionDatabase(
-    {
-      accessToken,
-      databaseId: notionId,
-    },
-    signal,
-  );
-  signal.throwIfAborted();
-  if (databaseResult.kind === "ok") {
-    const [firstDataSource] = databaseResult.value.data_sources;
-    if (!firstDataSource) {
+    signal: AbortSignal,
+  ): Promise<
+    | {
+        readonly kind: "ok";
+        readonly eventConfig: NotionChildPageCreatedEventConfig;
+      }
+    | { readonly kind: "bad-request"; readonly message: string }
+  > => {
+    const parentPageId = parseStandardNotionPageUrl(
+      args.eventConfig.parentPageUrl,
+    );
+    if (!parentPageId) {
       return {
         kind: "bad-request",
-        message: "Notion database does not expose a data source",
+        message: "Enter a standard notion.so page URL",
       };
     }
-    const dataSourceResult = await retrieveDataSource(firstDataSource.id);
+
+    const accessResult = await set(
+      resolvePreparedNotionAccess$,
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+        connectorId: args.connectorId,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (accessResult.kind !== "ok") {
+      return { kind: "bad-request", message: accessResult.message };
+    }
+
+    const pageResult = await retrieveNotionPage(
+      {
+        accessToken: accessResult.access.accessToken,
+        pageId: parentPageId,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (pageResult.kind === "not_found" || pageResult.kind === "unauthorized") {
+      return {
+        kind: "bad-request",
+        message: `${BRAND_PRESENTATION.assistantName} cannot access this Notion page`,
+      };
+    }
+    if (pageResult.kind !== "ok") {
+      return {
+        kind: "bad-request",
+        message: "Failed to validate Notion page URL",
+      };
+    }
+    if (!pageIsUsable(pageResult.value)) {
+      return {
+        kind: "bad-request",
+        message: "Notion page is archived or in trash",
+      };
+    }
+
+    return {
+      kind: "ok",
+      eventConfig: {
+        provider: "notion",
+        event: "child_page_created",
+        connectorId: accessResult.access.connectorId,
+        parentPage: notionPageReference(
+          pageResult.value,
+          args.eventConfig.parentPageUrl,
+        ),
+      },
+    };
+  },
+);
+
+export const prepareNotionDatabaseItemEventConfigForPersist$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly connectorId: string;
+      readonly eventConfig: NotionDatabaseItemCreatedEventCreateConfig;
+    },
+    signal: AbortSignal,
+  ): Promise<
+    | {
+        readonly kind: "ok";
+        readonly eventConfig: NotionDatabaseItemCreatedEventConfig;
+      }
+    | { readonly kind: "bad-request"; readonly message: string }
+  > => {
+    const notionId = parseStandardNotionUrlId(args.eventConfig.databaseUrl);
+    if (!notionId) {
+      return {
+        kind: "bad-request",
+        message: "Enter a standard notion.so database URL",
+      };
+    }
+
+    const accessResult = await set(
+      resolvePreparedNotionAccess$,
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+        connectorId: args.connectorId,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (accessResult.kind !== "ok") {
+      return { kind: "bad-request", message: accessResult.message };
+    }
+    const accessToken = accessResult.access.accessToken;
+    const retrieveDataSource = (dataSourceId: string) => {
+      return retrieveNotionDataSource({ accessToken, dataSourceId }, signal);
+    };
+
+    const databaseResult = await retrieveNotionDatabase(
+      {
+        accessToken,
+        databaseId: notionId,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (databaseResult.kind === "ok") {
+      const [firstDataSource] = databaseResult.value.data_sources;
+      if (!firstDataSource) {
+        return {
+          kind: "bad-request",
+          message: "Notion database does not expose a data source",
+        };
+      }
+      const dataSourceResult = await retrieveDataSource(firstDataSource.id);
+      signal.throwIfAborted();
+      if (
+        dataSourceResult.kind === "not_found" ||
+        dataSourceResult.kind === "unauthorized"
+      ) {
+        return {
+          kind: "bad-request",
+          message: `${BRAND_PRESENTATION.assistantName} cannot access this Notion database`,
+        };
+      }
+      if (dataSourceResult.kind !== "ok") {
+        return {
+          kind: "bad-request",
+          message: "Failed to validate Notion database URL",
+        };
+      }
+      return {
+        kind: "ok",
+        eventConfig: {
+          provider: "notion",
+          event: "database_item_created",
+          connectorId: accessResult.access.connectorId,
+          dataSource: notionDataSourceReference({
+            dataSource: dataSourceResult.value,
+            title:
+              firstDataSource.name ??
+              dataSourceResult.value.name ??
+              notionDatabaseTitle(databaseResult.value),
+            rawUrl: args.eventConfig.databaseUrl,
+          }),
+        },
+      };
+    }
+    if (databaseResult.kind === "transient_error") {
+      return {
+        kind: "bad-request",
+        message: "Failed to validate Notion database URL",
+      };
+    }
+
+    const dataSourceResult = await retrieveDataSource(notionId);
     signal.throwIfAborted();
     if (
       dataSourceResult.kind === "not_found" ||
@@ -827,6 +981,7 @@ export async function prepareNotionDatabaseItemEventConfigForPersist(
         message: "Failed to validate Notion database URL",
       };
     }
+
     return {
       kind: "ok",
       eventConfig: {
@@ -835,250 +990,213 @@ export async function prepareNotionDatabaseItemEventConfigForPersist(
         connectorId: accessResult.access.connectorId,
         dataSource: notionDataSourceReference({
           dataSource: dataSourceResult.value,
-          title:
-            firstDataSource.name ??
-            dataSourceResult.value.name ??
-            notionDatabaseTitle(databaseResult.value),
+          title: dataSourceResult.value.name ?? null,
           rawUrl: args.eventConfig.databaseUrl,
         }),
       },
     };
-  }
-  if (databaseResult.kind === "transient_error") {
-    return {
-      kind: "bad-request",
-      message: "Failed to validate Notion database URL",
-    };
-  }
-
-  const dataSourceResult = await retrieveDataSource(notionId);
-  signal.throwIfAborted();
-  if (
-    dataSourceResult.kind === "not_found" ||
-    dataSourceResult.kind === "unauthorized"
-  ) {
-    return {
-      kind: "bad-request",
-      message: `${BRAND_PRESENTATION.assistantName} cannot access this Notion database`,
-    };
-  }
-  if (dataSourceResult.kind !== "ok") {
-    return {
-      kind: "bad-request",
-      message: "Failed to validate Notion database URL",
-    };
-  }
-
-  return {
-    kind: "ok",
-    eventConfig: {
-      provider: "notion",
-      event: "database_item_created",
-      connectorId: accessResult.access.connectorId,
-      dataSource: notionDataSourceReference({
-        dataSource: dataSourceResult.value,
-        title: dataSourceResult.value.name ?? null,
-        rawUrl: args.eventConfig.databaseUrl,
-      }),
-    },
-  };
-}
-
-export async function prepareNotionPageContentUpdatedEventConfigForPersist(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly connectorId: string;
-    readonly eventConfig: NotionPageContentUpdatedEventCreateConfig;
   },
-  signal: AbortSignal,
-): Promise<
-  | {
-      readonly kind: "ok";
-      readonly eventConfig: NotionPageContentUpdatedEventConfig;
+);
+
+export const prepareNotionPageContentUpdatedEventConfigForPersist$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly connectorId: string;
+      readonly eventConfig: NotionPageContentUpdatedEventCreateConfig;
+    },
+    signal: AbortSignal,
+  ): Promise<
+    | {
+        readonly kind: "ok";
+        readonly eventConfig: NotionPageContentUpdatedEventConfig;
+      }
+    | { readonly kind: "bad-request"; readonly message: string }
+  > => {
+    if (args.eventConfig.pageUrl !== undefined) {
+      const pageResult = await set(
+        prepareNotionChildPageEventConfigForPersist$,
+        {
+          orgId: args.orgId,
+          userId: args.userId,
+          connectorId: args.connectorId,
+          eventConfig: {
+            provider: "notion",
+            event: "child_page_created",
+            parentPageUrl: args.eventConfig.pageUrl,
+          },
+        },
+        signal,
+      );
+      signal.throwIfAborted();
+      if (pageResult.kind !== "ok") {
+        return pageResult;
+      }
+      return {
+        kind: "ok",
+        eventConfig: {
+          provider: "notion",
+          event: "page_content_updated",
+          connectorId: pageResult.eventConfig.connectorId,
+          scope: {
+            type: "page",
+            page: pageResult.eventConfig.parentPage,
+          },
+        },
+      };
     }
-  | { readonly kind: "bad-request"; readonly message: string }
-> {
-  if (args.eventConfig.pageUrl !== undefined) {
-    const pageResult = await prepareNotionChildPageEventConfigForPersist(
-      db,
+
+    if (args.eventConfig.databaseUrl === undefined) {
+      return {
+        kind: "bad-request",
+        message: "Provide exactly one of pageUrl or databaseUrl",
+      };
+    }
+    const dataSourceResult = await set(
+      prepareNotionDatabaseItemEventConfigForPersist$,
       {
         orgId: args.orgId,
         userId: args.userId,
         connectorId: args.connectorId,
         eventConfig: {
           provider: "notion",
-          event: "child_page_created",
-          parentPageUrl: args.eventConfig.pageUrl,
+          event: "database_item_created",
+          databaseUrl: args.eventConfig.databaseUrl,
         },
       },
       signal,
     );
     signal.throwIfAborted();
-    if (pageResult.kind !== "ok") {
-      return pageResult;
+    if (dataSourceResult.kind !== "ok") {
+      return dataSourceResult;
     }
     return {
       kind: "ok",
       eventConfig: {
         provider: "notion",
         event: "page_content_updated",
-        connectorId: pageResult.eventConfig.connectorId,
+        connectorId: dataSourceResult.eventConfig.connectorId,
         scope: {
-          type: "page",
-          page: pageResult.eventConfig.parentPage,
+          type: "data_source",
+          dataSource: dataSourceResult.eventConfig.dataSource,
         },
       },
     };
-  }
+  },
+);
 
-  if (args.eventConfig.databaseUrl === undefined) {
+export const validateNotionEventConfigForConnector$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly connectorId: string;
+      readonly eventType: NotionAutomationEventType;
+      readonly eventConfig: unknown;
+    },
+    signal: AbortSignal,
+  ): Promise<
+    | { readonly kind: "ok" }
+    | { readonly kind: "bad-request"; readonly message: string }
+  > => {
+    const accessResult = await set(
+      resolvePreparedNotionAccess$,
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+        connectorId: args.connectorId,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (accessResult.kind !== "ok") {
+      return { kind: "bad-request", message: accessResult.message };
+    }
+
+    let resourceResult: NotionFetchResult<
+      NotionPageResponse | NotionDataSourceResponse
+    >;
+    if (args.eventType === "notion-child-page-created") {
+      const config = notionChildPageCreatedEventConfigSchema.safeParse(
+        args.eventConfig,
+      );
+      if (!config.success || config.data.connectorId !== args.connectorId) {
+        return {
+          kind: "bad-request",
+          message: "Notion automation account projection is out of date",
+        };
+      }
+      resourceResult = await retrieveNotionPage(
+        {
+          accessToken: accessResult.access.accessToken,
+          pageId: config.data.parentPage.id,
+        },
+        signal,
+      );
+    } else if (args.eventType === "notion-database-item-created") {
+      const config = notionDatabaseItemCreatedEventConfigSchema.safeParse(
+        args.eventConfig,
+      );
+      if (!config.success || config.data.connectorId !== args.connectorId) {
+        return {
+          kind: "bad-request",
+          message: "Notion automation account projection is out of date",
+        };
+      }
+      resourceResult = await retrieveNotionDataSource(
+        {
+          accessToken: accessResult.access.accessToken,
+          dataSourceId: config.data.dataSource.id,
+        },
+        signal,
+      );
+    } else {
+      const config = notionPageContentUpdatedEventConfigSchema.safeParse(
+        args.eventConfig,
+      );
+      if (!config.success || config.data.connectorId !== args.connectorId) {
+        return {
+          kind: "bad-request",
+          message: "Notion automation account projection is out of date",
+        };
+      }
+      resourceResult =
+        config.data.scope.type === "page"
+          ? await retrieveNotionPage(
+              {
+                accessToken: accessResult.access.accessToken,
+                pageId: config.data.scope.page.id,
+              },
+              signal,
+            )
+          : await retrieveNotionDataSource(
+              {
+                accessToken: accessResult.access.accessToken,
+                dataSourceId: config.data.scope.dataSource.id,
+              },
+              signal,
+            );
+    }
+    signal.throwIfAborted();
+    if (
+      resourceResult.kind === "ok" &&
+      (resourceResult.value.object !== "page" ||
+        pageIsUsable(resourceResult.value))
+    ) {
+      return { kind: "ok" };
+    }
     return {
       kind: "bad-request",
-      message: "Provide exactly one of pageUrl or databaseUrl",
+      message:
+        resourceResult.kind === "transient_error"
+          ? "Failed to validate the Notion automation resource"
+          : "The selected Notion account cannot access the automation resource",
     };
-  }
-  const dataSourceResult = await prepareNotionDatabaseItemEventConfigForPersist(
-    db,
-    {
-      orgId: args.orgId,
-      userId: args.userId,
-      connectorId: args.connectorId,
-      eventConfig: {
-        provider: "notion",
-        event: "database_item_created",
-        databaseUrl: args.eventConfig.databaseUrl,
-      },
-    },
-    signal,
-  );
-  signal.throwIfAborted();
-  if (dataSourceResult.kind !== "ok") {
-    return dataSourceResult;
-  }
-  return {
-    kind: "ok",
-    eventConfig: {
-      provider: "notion",
-      event: "page_content_updated",
-      connectorId: dataSourceResult.eventConfig.connectorId,
-      scope: {
-        type: "data_source",
-        dataSource: dataSourceResult.eventConfig.dataSource,
-      },
-    },
-  };
-}
-
-export async function validateNotionEventConfigForConnector(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly connectorId: string;
-    readonly eventType: NotionAutomationEventType;
-    readonly eventConfig: unknown;
   },
-  signal: AbortSignal,
-): Promise<
-  | { readonly kind: "ok" }
-  | { readonly kind: "bad-request"; readonly message: string }
-> {
-  const accessResult = await resolveNotionAccess(
-    {
-      db,
-      orgId: args.orgId,
-      userId: args.userId,
-      connectorId: args.connectorId,
-    },
-    signal,
-  );
-  signal.throwIfAborted();
-  if (accessResult.kind !== "ok") {
-    return { kind: "bad-request", message: accessResult.message };
-  }
-
-  let resourceResult: NotionFetchResult<
-    NotionPageResponse | NotionDataSourceResponse
-  >;
-  if (args.eventType === "notion-child-page-created") {
-    const config = notionChildPageCreatedEventConfigSchema.safeParse(
-      args.eventConfig,
-    );
-    if (!config.success || config.data.connectorId !== args.connectorId) {
-      return {
-        kind: "bad-request",
-        message: "Notion automation account projection is out of date",
-      };
-    }
-    resourceResult = await retrieveNotionPage(
-      {
-        accessToken: accessResult.access.accessToken,
-        pageId: config.data.parentPage.id,
-      },
-      signal,
-    );
-  } else if (args.eventType === "notion-database-item-created") {
-    const config = notionDatabaseItemCreatedEventConfigSchema.safeParse(
-      args.eventConfig,
-    );
-    if (!config.success || config.data.connectorId !== args.connectorId) {
-      return {
-        kind: "bad-request",
-        message: "Notion automation account projection is out of date",
-      };
-    }
-    resourceResult = await retrieveNotionDataSource(
-      {
-        accessToken: accessResult.access.accessToken,
-        dataSourceId: config.data.dataSource.id,
-      },
-      signal,
-    );
-  } else {
-    const config = notionPageContentUpdatedEventConfigSchema.safeParse(
-      args.eventConfig,
-    );
-    if (!config.success || config.data.connectorId !== args.connectorId) {
-      return {
-        kind: "bad-request",
-        message: "Notion automation account projection is out of date",
-      };
-    }
-    resourceResult =
-      config.data.scope.type === "page"
-        ? await retrieveNotionPage(
-            {
-              accessToken: accessResult.access.accessToken,
-              pageId: config.data.scope.page.id,
-            },
-            signal,
-          )
-        : await retrieveNotionDataSource(
-            {
-              accessToken: accessResult.access.accessToken,
-              dataSourceId: config.data.scope.dataSource.id,
-            },
-            signal,
-          );
-  }
-  signal.throwIfAborted();
-  if (
-    resourceResult.kind === "ok" &&
-    (resourceResult.value.object !== "page" ||
-      pageIsUsable(resourceResult.value))
-  ) {
-    return { kind: "ok" };
-  }
-  return {
-    kind: "bad-request",
-    message:
-      resourceResult.kind === "transient_error"
-        ? "Failed to validate the Notion automation resource"
-        : "The selected Notion account cannot access the automation resource",
-  };
-}
+);
 
 async function storeVerificationToken(
   args: {
