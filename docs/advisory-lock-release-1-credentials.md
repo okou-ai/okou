@@ -289,7 +289,10 @@ Credential/account coordination has its own separate writer gates.
 **Still unfinished:** legacy Gmail event dispatch/queue SQL helpers still forward
 handles, as do shared credential and account deletion paths. Gmail label
 preparation, ordinary/official configuration and dispatch credential access now
-use owning commands; the legacy Gmail credential resolver has been deleted. Those paths are implementation work, not covered by the outgoing-stop
+use owning commands; the legacy Gmail credential resolver has been deleted.
+Ordinary Gmail configuration publication also owns its short transaction, executes
+the selected-account predicate and UPDATE directly, and reads its summary after
+commit without forwarding a handle. Those paths are implementation work, not covered by the outgoing-stop
 gate. This change does not claim the entire credential or event-source graph is
 R1 ready. API coverage retains shared-mailbox consumption, local disable and
 reenable, authorized sources, deduplication and watch-error compensation; the

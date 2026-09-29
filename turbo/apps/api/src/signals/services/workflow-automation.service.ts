@@ -78,7 +78,10 @@ import {
   safeSync,
   settle,
 } from "../utils";
-import { lockConnectorAccountTarget } from "./auth-state-lock.service";
+import {
+  builtinConnectorStateLockStatement,
+  lockConnectorAccountTarget,
+} from "./auth-state-lock.service";
 import { reconcileAutomationEventWatches$ } from "./automation-event-watch-lifecycle.service";
 import {
   insertWorkflowAutomation,
@@ -88,6 +91,7 @@ import { prepareGithubWebhookEventConfigForPersist } from "./github-webhook-auto
 import { prepareGithubWorkflowRunEventConfigForPersist } from "./github-workflow-run-event.service";
 import {
   readGmailAutomationConnectorId$,
+  gmailSelectedAccountCondition,
   resolveGmailAutomationConnectorId,
 } from "./gmail-automation-account.service";
 import {
@@ -4327,6 +4331,63 @@ async function prepareGithubAutomationEventConfig(
     eventConfig,
   });
 }
+const persistGmailEventConfiguration$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly workflowId: string;
+      readonly automationId: string;
+      readonly connectorId: string;
+      readonly eventConfig: GmailAutomationEventConfig;
+    },
+    signal: AbortSignal,
+  ): Promise<WorkflowAutomationSummary | null> => {
+    const db = set(writeDb$);
+    const row = await db.transaction(async (tx) => {
+      await tx.execute(
+        builtinConnectorStateLockStatement({ ...args, connectorSlug: "gmail" }),
+      );
+      const [updated] = await tx
+        .update(workflowAutomations)
+        .set({
+          eventConfig: args.eventConfig,
+          eventConnectorId: args.connectorId,
+          updatedAt: nowDate(),
+        })
+        .where(
+          and(
+            eq(workflowAutomations.id, args.automationId),
+            eq(workflowAutomations.orgId, args.orgId),
+            eq(workflowAutomations.ownerUserId, args.userId),
+            gmailSelectedAccountCondition(args),
+          ),
+        )
+        .returning(workflowAutomationColumns());
+      signal.throwIfAborted();
+      return updated ?? null;
+    });
+    signal.throwIfAborted();
+    if (!row) {
+      return null;
+    }
+    const [binding] = await db
+      .select({ chatThreadId: workflowUserAutomationThreads.chatThreadId })
+      .from(workflowUserAutomationThreads)
+      .where(
+        and(
+          eq(workflowUserAutomationThreads.orgId, args.orgId),
+          eq(workflowUserAutomationThreads.userId, args.userId),
+          eq(workflowUserAutomationThreads.workflowId, args.workflowId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return eventRowToSummary(row, binding?.chatThreadId ?? null);
+  },
+);
+
 const updateGmailEventAutomationForWorkflow$ = command(
   async (
     { set },
@@ -4343,7 +4404,6 @@ const updateGmailEventAutomationForWorkflow$ = command(
     },
     signal: AbortSignal,
   ): Promise<AutomationResult> => {
-    const db = set(writeDb$);
     const parsedConfig =
       args.automation.eventType === "gmail-label-applied"
         ? gmailLabelAppliedEventConfigSchema.safeParse(args.eventConfig)
@@ -4385,31 +4445,18 @@ const updateGmailEventAutomationForWorkflow$ = command(
     if (preparedConfig.kind !== "ok") {
       return preparedConfig;
     }
-    // eslint-disable-next-line api/signal-check-await -- Complete the committed automation handoff and its watch compensation before propagating cancellation.
-    const summary = await db.transaction(async (tx) => {
-      await lockConnectorAccountTarget(tx, {
-        orgId: args.orgId,
-        userId: args.member.userId,
-        target: { kind: "builtin", connectorSlug: "gmail" },
-      });
-      const persistedConnectorId = await resolveGmailAutomationConnectorId(tx, {
+    const summary = await set(
+      persistGmailEventConfiguration$,
+      {
         orgId: args.orgId,
         userId: args.member.userId,
         workflowId: args.automation.workflowId,
-      });
-      if (persistedConnectorId !== eventConnectorId) {
-        return null;
-      }
-      return await updateAutomationEventConfig(
-        tx,
-        {
-          automationId: args.automation.id,
-          eventConfig: preparedConfig.eventConfig,
-          eventConnectorId: persistedConnectorId,
-        },
-        signal,
-      );
-    });
+        automationId: args.automation.id,
+        connectorId: eventConnectorId,
+        eventConfig: preparedConfig.eventConfig,
+      },
+      signal,
+    );
     if (summary === null) {
       return {
         kind: "bad-request",
