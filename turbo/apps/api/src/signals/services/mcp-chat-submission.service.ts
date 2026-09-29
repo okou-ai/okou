@@ -13,7 +13,6 @@ export const MCP_SUBMISSION_RETRY_MS = 24 * 60 * 60 * 1000;
 export interface McpSubmissionIdentity {
   readonly requestId: string;
   readonly text: string;
-  readonly clientId: string;
 }
 
 interface McpSubmissionOwner {
@@ -35,8 +34,7 @@ function matchesMcpSubmissionMessage(
     text?.type === "text" &&
     text.text === identity.text &&
     source?.type === "source" &&
-    source.kind === "mcp" &&
-    source.clientId === identity.clientId;
+    source.kind === "mcp";
   // A text-only MCP input accepted by the old writer remains replayable for
   // its existing 24-hour window. It has no client identity to reconstruct;
   // never add a source to it on a retry. Remove after the last old-writer

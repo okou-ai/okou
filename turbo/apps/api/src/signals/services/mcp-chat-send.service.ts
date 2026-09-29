@@ -143,11 +143,7 @@ export const submitMcpChatInput$ = command(
     }
     const resolved = await resolveMcpSubmission(
       db,
-      {
-        requestId: args.inputId,
-        text: args.text,
-        clientId: principal.clientId,
-      },
+      { requestId: args.inputId, text: args.text },
       {
         userId: principal.userId,
         orgId: principal.orgId,

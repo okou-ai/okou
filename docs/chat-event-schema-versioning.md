@@ -37,8 +37,10 @@ using only the verified OAuth client ID. A bounded, optional name is snapshotted
 from a matching HTTPS CIMD document; the document is self-asserted display
 metadata, not proof of which software is running. Invalid or unavailable
 metadata leaves the name absent and the authorized send succeeds. Replays
-preserve the original name and source; pre-cutover text-only input replays
-remain text-only for their 24-hour retry window (remove the temporary retry
+preserve the original name and source, even when another authorized OAuth
+client retries the same request ID and text; retry identity does not require
+the original client ID. Pre-cutover text-only input replays remain text-only
+for their 24-hour retry window (remove the temporary retry
 branch after the last old-writer acceptance plus drain; #37276). Existing
 messages are never inferred or retroactively labeled.
 

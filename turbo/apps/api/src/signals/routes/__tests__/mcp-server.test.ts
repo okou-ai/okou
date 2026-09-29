@@ -1616,11 +1616,11 @@ describe("MCP chat discovery and creation", () => {
       client_id: "different_combined_client",
       scope: defaultScopes,
     });
-    expect(
-      structuredToolError(
-        await callTool(differentClient, "create_chat_thread", args),
-      ),
-    ).toMatchObject({ code: "request_id_conflict", retryable: false });
+    await expect(createThread(differentClient, args)).resolves.toMatchObject({
+      threadId: args.requestId,
+      replayed: true,
+      input: { inputRef: combined.input.inputRef },
+    });
     const unchanged = (
       await f.chat.listThreadEvents(f.actor, args.requestId)
     ).events.find((event) => {
@@ -3280,7 +3280,7 @@ describe("MCP chat status", () => {
 });
 
 describe("MCP chat mutations", () => {
-  it("stores the signed client ID and matching CIMD name once, without leaking the token or letting another client replay it", async () => {
+  it("keeps the first signed client source on a cross-client retry without leaking the token", async () => {
     const f = await messageFixture();
     const archived: RecordedChatEventPut[] = [];
     installFakeChatEventR2(context, archived);
@@ -3354,9 +3354,16 @@ describe("MCP chat mutations", () => {
       client_id: "another_signed_client",
       scope: defaultScopes,
     });
+    await expect(sendMessage(differentClient, args)).resolves.toMatchObject({
+      inputRef: receipt.inputRef,
+      replayed: true,
+    });
     expect(
       structuredToolError(
-        await callTool(differentClient, "send_chat_message", args),
+        await callTool(differentClient, "send_chat_message", {
+          ...args,
+          text: "A different message must still conflict",
+        }),
       ),
     ).toMatchObject({ code: "request_id_conflict", retryable: false });
     const after = (
