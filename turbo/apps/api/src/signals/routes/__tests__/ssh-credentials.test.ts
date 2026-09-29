@@ -146,6 +146,82 @@ describe("reusable SSH credential owner routes", () => {
     ).toStrictEqual([]);
   });
 
+  it("keeps every host on the current credential when attachment races rotation", async () => {
+    useSecretKmsProbe();
+    owner();
+    const created = await accept(
+      credentials().create({
+        headers,
+        body: { id: randomUUID(), ...passwordBody },
+      }),
+      [201],
+    );
+    const first = await accept(
+      connections().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          displayName: "Existing host",
+          host: "first.example.com",
+          credential: { id: created.body.id },
+        },
+      }),
+      [201],
+    );
+    const [attached] = await Promise.all([
+      accept(
+        connections().create({
+          headers,
+          body: {
+            id: randomUUID(),
+            displayName: "New host",
+            host: "second.example.com",
+            credential: { id: created.body.id },
+          },
+        }),
+        [201],
+      ),
+      accept(
+        credentials().update({
+          headers,
+          params: { credentialId: created.body.id },
+          body: { expectedRevision: 1, username: "rotated-user" },
+        }),
+        [200],
+      ),
+    ]);
+    const listed = await accept(connections().list({ headers }), [200]);
+    expect(listed.body.connections).toHaveLength(2);
+    expect(listed.body.connections).toStrictEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: first.body.id,
+          username: "rotated-user",
+          generation: 2,
+          credentialId: created.body.id,
+        }),
+        expect.objectContaining({
+          id: attached.body.id,
+          username: "rotated-user",
+          generation: attached.body.username === "deploy" ? 2 : 1,
+          credentialId: created.body.id,
+        }),
+      ]),
+    );
+    const current = await accept(credentials().list({ headers }), [200]);
+    expect(current.body.credentials).toStrictEqual([
+      expect.objectContaining({
+        id: created.body.id,
+        revision: 2,
+        username: "rotated-user",
+        hosts: expect.arrayContaining([
+          { id: first.body.id, displayName: "Existing host" },
+          { id: attached.body.id, displayName: "New host" },
+        ]),
+      }),
+    ]);
+  });
+
   it("hides other users and organizations before KMS work or binding", async () => {
     const kms = useSecretKmsProbe();
     const first = owner();

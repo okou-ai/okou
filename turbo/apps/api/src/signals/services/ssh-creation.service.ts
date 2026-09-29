@@ -13,7 +13,7 @@ type CreationTable =
   | typeof sshCredentials
   | typeof cloudflareAccessConfigs;
 
-function resourceIdConflict() {
+export function resourceIdConflict() {
   return {
     ok: false as const,
     kind: "conflict" as const,
@@ -67,4 +67,15 @@ export async function resolveSshCreationConflict(
     return { ok: true as const, value: undefined };
   }
   return resourceIdConflict();
+}
+
+/** Shared interpretation only; callers own the reads and transaction. */
+export function sshCreationResult(owner: Owner, existing: Owner | undefined) {
+  if (
+    existing &&
+    (existing.orgId !== owner.orgId || existing.userId !== owner.userId)
+  ) {
+    return resourceIdConflict();
+  }
+  return { ok: true as const, value: existing === undefined };
 }
