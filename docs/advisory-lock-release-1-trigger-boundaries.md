@@ -278,7 +278,7 @@ metadata and the two trigger/function inventory entries. The original non-null
 and the observed production deployment tree `c501c3b7` exclude these PR-only
 migrations; #37313 is still open and unmerged. Existing published migration history, including main 1288, is untouched.
 Drizzle generated the remaining purge, Cloudflare scope-change and canonical
-attribution mutation-guard retirements as 1289, 1290 and 1291 respectively,
+attribution mutation-guard retirements as 1290, 1291 and 1292 respectively after main's VNC migration 1289,
 without a Forms schema change or added table/column.
 
 Application SQL still checks active authority, selected source and normal

@@ -12,7 +12,6 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { setResHeader$ } from "../context/hono";
 import { bodyResultOf, pathParamsOf } from "../context/request";
-import { writeDb$ } from "../external/db";
 import { clerk$ } from "../external/clerk";
 import type { RouteEntry } from "../route-entry";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
@@ -23,14 +22,14 @@ import {
 import {
   createVncCredential$,
   deleteVncCredential$,
-  listVncCredentials,
+  listVncCredentials$,
   updateVncCredential$,
 } from "../services/vnc-credential.service";
 import {
   createVncConnection$,
   deleteVncConnection$,
-  listVncConnections,
-  summarizeVncConnections,
+  listVncConnections$,
+  summarizeVncConnections$,
   updateVncConnection$,
 } from "../services/vnc-connection.service";
 
@@ -65,7 +64,6 @@ const vncContext$ = command(async ({ get, set }, signal: AbortSignal) => {
     return null;
   }
   return {
-    db: set(writeDb$),
     featureContext,
     owner: { orgId: auth.orgId, userId: auth.userId },
   };
@@ -114,7 +112,7 @@ const listCredentials$ = command(async ({ set }, signal: AbortSignal) => {
   if (!context) {
     return unavailable;
   }
-  const credentials = await listVncCredentials(context.db, context.owner);
+  const credentials = await set(listVncCredentials$, context.owner, signal);
   signal.throwIfAborted();
   return { status: 200 as const, body: { credentials } };
 });
@@ -208,7 +206,7 @@ const listConnections$ = command(async ({ set }, signal: AbortSignal) => {
   if (!context) {
     return unavailable;
   }
-  const connections = await listVncConnections(context.db, context.owner);
+  const connections = await set(listVncConnections$, context.owner, signal);
   signal.throwIfAborted();
   return { status: 200 as const, body: { connections } };
 });
@@ -218,7 +216,7 @@ const summary$ = command(async ({ set }, signal: AbortSignal) => {
   if (!context) {
     return unavailable;
   }
-  const summary = await summarizeVncConnections(context.db, context.owner);
+  const summary = await set(summarizeVncConnections$, context.owner, signal);
   signal.throwIfAborted();
   return { status: 200 as const, body: summary };
 });

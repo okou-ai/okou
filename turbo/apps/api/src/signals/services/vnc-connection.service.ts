@@ -12,7 +12,7 @@ import { and, asc, count, eq } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
 import { command } from "ccstate";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
-import { writeDb$, type ReadonlyDb } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import {
   canonicalizeVncHost,
@@ -24,13 +24,10 @@ import {
   type VncResult,
 } from "./vnc-configuration.utils";
 import {
-  inspectVncCreationId,
-  resolveVncCreationConflict,
+  inspectVncCreationId$,
+  resolveVncCreationConflict$,
 } from "./vnc-creation.service";
-import {
-  findVncCredential,
-  prepareVncCredentialSelection,
-} from "./vnc-credential.service";
+import { prepareVncCredentialSelection } from "./vnc-credential.service";
 import {
   vncMemberIdentityWhere,
   type VncOwner,
@@ -64,8 +61,9 @@ const metadata = Object.freeze({
   updatedAt: vncConnections.updatedAt,
 });
 type Metadata = Pick<typeof vncConnections.$inferSelect, keyof typeof metadata>;
-type CredentialMetadata = NonNullable<
-  Awaited<ReturnType<typeof findVncCredential>>
+type CredentialMetadata = Pick<
+  typeof vncCredentials.$inferSelect,
+  keyof typeof vncCredentialMetadata
 >;
 
 function ownedConnections(owner: VncOwner) {
@@ -163,44 +161,54 @@ function response(
   });
 }
 
-export async function listVncConnections(
-  db: ReadonlyDb,
-  owner: VncOwner,
-): Promise<VncConnectionResponse[]> {
-  const rows = await db
-    .select({
-      connection: metadata,
-      credential: { name: vncCredentials.name },
-    })
-    .from(vncConnections)
-    .leftJoin(
-      vncCredentials,
-      and(
-        eq(vncCredentials.id, vncConnections.credentialId),
-        eq(vncCredentials.orgId, vncConnections.orgId),
-        eq(vncCredentials.userId, vncConnections.userId),
-      ),
-    )
-    .where(ownedConnections(owner))
-    .orderBy(asc(vncConnections.createdAt), asc(vncConnections.id));
-  return rows.map(({ connection, credential }) => {
-    return response(connection, credential);
-  });
-}
+export const listVncConnections$ = command(
+  async (
+    { set },
+    owner: VncOwner,
+    signal: AbortSignal,
+  ): Promise<VncConnectionResponse[]> => {
+    const db = set(writeDb$);
+    const rows = await db
+      .select({
+        connection: metadata,
+        credential: { name: vncCredentials.name },
+      })
+      .from(vncConnections)
+      .leftJoin(
+        vncCredentials,
+        and(
+          eq(vncCredentials.id, vncConnections.credentialId),
+          eq(vncCredentials.orgId, vncConnections.orgId),
+          eq(vncCredentials.userId, vncConnections.userId),
+        ),
+      )
+      .where(ownedConnections(owner))
+      .orderBy(asc(vncConnections.createdAt), asc(vncConnections.id));
+    signal.throwIfAborted();
+    return rows.map(({ connection, credential }) => {
+      return response(connection, credential);
+    });
+  },
+);
 
-export async function summarizeVncConnections(
-  db: ReadonlyDb,
-  owner: VncOwner,
-): Promise<{ readonly configuredCount: number }> {
-  const [row] = await db
-    .select({ configuredCount: count() })
-    .from(vncConnections)
-    .where(ownedConnections(owner));
-  if (!row) {
-    throw new Error("VNC connection count query returned no row");
-  }
-  return row;
-}
+export const summarizeVncConnections$ = command(
+  async (
+    { set },
+    owner: VncOwner,
+    signal: AbortSignal,
+  ): Promise<{ readonly configuredCount: number }> => {
+    const db = set(writeDb$);
+    const [row] = await db
+      .select({ configuredCount: count() })
+      .from(vncConnections)
+      .where(ownedConnections(owner));
+    signal.throwIfAborted();
+    if (!row) {
+      throw new Error("VNC connection count query returned no row");
+    }
+    return row;
+  },
+);
 
 function validCreateCredentialProfile(
   credential: CreateVncConnectionRequest["credential"],
@@ -236,12 +244,12 @@ interface CreateVncConnectionArgs {
 
 const prepareCreateVncConnection$ = command(
   async ({ set }, args: CreateVncConnectionArgs, signal: AbortSignal) => {
-    const db = set(writeDb$);
-    const preflight = await inspectVncCreationId(
-      db,
+    const preflight = await set(
+      inspectVncCreationId$,
       args.owner,
-      vncConnections,
+      "connection",
       args.body.id,
+      signal,
     );
     signal.throwIfAborted();
     if (!preflight.ok) {
@@ -399,12 +407,13 @@ export const createVncConnection$ = command(
     );
     signal.throwIfAborted();
     if (!transaction.ok) {
-      return resolveVncCreationConflict(
-        db,
+      return set(
+        resolveVncCreationConflict$,
         args.owner,
-        vncConnections,
+        "connection",
         args.body.id,
         transaction.error,
+        signal,
       );
     }
     return transaction.value;

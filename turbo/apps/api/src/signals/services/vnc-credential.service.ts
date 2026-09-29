@@ -12,7 +12,7 @@ import { and, asc, eq, sql } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
 import { command } from "ccstate";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
-import { writeDb$, type ReadonlyDb } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import { encryptStoredSecretValue } from "./crypto.utils";
 import {
@@ -21,8 +21,8 @@ import {
   type VncResult,
 } from "./vnc-configuration.utils";
 import {
-  inspectVncCreationId,
-  resolveVncCreationConflict,
+  inspectVncCreationId$,
+  resolveVncCreationConflict$,
 } from "./vnc-creation.service";
 import {
   vncMemberIdentityWhere,
@@ -59,18 +59,6 @@ function referencingConnections(owner: VncOwner, credentialId: string) {
   );
 }
 
-export async function findVncCredential(
-  db: Pick<ReadonlyDb, "select">,
-  owner: VncOwner,
-  id: string,
-): Promise<Metadata | undefined> {
-  const [row] = await db
-    .select(vncCredentialMetadata)
-    .from(vncCredentials)
-    .where(ownedCredential(owner, id));
-  return row;
-}
-
 function response(
   row: Metadata,
   hosts: VncCredentialResponse["hosts"],
@@ -100,48 +88,56 @@ function response(
   return { ...common, authMethod: row.authMethod };
 }
 
-export async function listVncCredentials(
-  db: ReadonlyDb,
-  owner: VncOwner,
-): Promise<VncCredentialResponse[]> {
-  const rows = await db
-    .select({
-      credential: vncCredentialMetadata,
-      host: { id: vncConnections.id, displayName: vncConnections.displayName },
-    })
-    .from(vncCredentials)
-    .leftJoin(
-      vncConnections,
-      and(
-        eq(vncConnections.credentialId, vncCredentials.id),
-        eq(vncConnections.orgId, vncCredentials.orgId),
-        eq(vncConnections.userId, vncCredentials.userId),
-      ),
-    )
-    .where(
-      and(
-        eq(vncCredentials.orgId, owner.orgId),
-        eq(vncCredentials.userId, owner.userId),
-      ),
-    )
-    .orderBy(
-      asc(vncCredentials.createdAt),
-      asc(vncCredentials.id),
-      asc(vncConnections.id),
-    );
-  const values = new Map<string, VncCredentialResponse>();
-  for (const row of rows) {
-    let value = values.get(row.credential.id);
-    if (!value) {
-      value = response(row.credential, []);
-      values.set(value.id, value);
+export const listVncCredentials$ = command(
+  async (
+    { set },
+    owner: VncOwner,
+    signal: AbortSignal,
+  ): Promise<VncCredentialResponse[]> => {
+    const db = set(writeDb$);
+    const rows = await db
+      .select({
+        credential: vncCredentialMetadata,
+        host: {
+          id: vncConnections.id,
+          displayName: vncConnections.displayName,
+        },
+      })
+      .from(vncCredentials)
+      .leftJoin(
+        vncConnections,
+        and(
+          eq(vncConnections.credentialId, vncCredentials.id),
+          eq(vncConnections.orgId, vncCredentials.orgId),
+          eq(vncConnections.userId, vncCredentials.userId),
+        ),
+      )
+      .where(
+        and(
+          eq(vncCredentials.orgId, owner.orgId),
+          eq(vncCredentials.userId, owner.userId),
+        ),
+      )
+      .orderBy(
+        asc(vncCredentials.createdAt),
+        asc(vncCredentials.id),
+        asc(vncConnections.id),
+      );
+    signal.throwIfAborted();
+    const values = new Map<string, VncCredentialResponse>();
+    for (const row of rows) {
+      let value = values.get(row.credential.id);
+      if (!value) {
+        value = response(row.credential, []);
+        values.set(value.id, value);
+      }
+      if (row.host) {
+        value.hosts.push(row.host);
+      }
     }
-    if (row.host) {
-      value.hosts.push(row.host);
-    }
-  }
-  return [...values.values()];
-}
+    return [...values.values()];
+  },
+);
 
 async function encryptAuthentication(
   authentication: VncAuthentication,
@@ -195,11 +191,12 @@ export const createVncCredential$ = command(
     signal: AbortSignal,
   ): Promise<VncResult<VncCredentialResponse | undefined>> => {
     const db = set(writeDb$);
-    const preflight = await inspectVncCreationId(
-      db,
+    const preflight = await set(
+      inspectVncCreationId$,
       args.owner,
-      vncCredentials,
+      "credential",
       args.id,
+      signal,
     );
     signal.throwIfAborted();
     if (!preflight.ok) {
@@ -247,12 +244,13 @@ export const createVncCredential$ = command(
     );
     signal.throwIfAborted();
     if (!transaction.ok) {
-      return resolveVncCreationConflict(
-        db,
+      return set(
+        resolveVncCreationConflict$,
         args.owner,
-        vncCredentials,
+        "credential",
         args.id,
         transaction.error,
+        signal,
       );
     }
     return transaction.value;
@@ -272,7 +270,10 @@ export const updateVncCredential$ = command(
     signal: AbortSignal,
   ): Promise<VncResult<VncCredentialResponse>> => {
     const db = set(writeDb$);
-    const initial = await findVncCredential(db, args.owner, args.credentialId);
+    const [initial] = await db
+      .select(vncCredentialMetadata)
+      .from(vncCredentials)
+      .where(ownedCredential(args.owner, args.credentialId));
     signal.throwIfAborted();
     if (!initial) {
       return vncFailure("credentialNotFound");
