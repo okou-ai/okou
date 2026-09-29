@@ -39,18 +39,88 @@ scan or the age of the old migrations cannot establish that gate.
 
 ## Existing SSH and Cloudflare triggers
 
-| Table and trigger                                                | Current business guarantee                                                                                                                | Replacement work                                                                                                |
-| ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `ssh_connections.ssh_cloudflare_access_binding_guard`            | A shared config read rejects a personal Cloudflare config owned by another user. The separate foreign key protects organization identity. | All attachment/replacement writers must preserve the config owner/scope predicate under the common row order.   |
-| `cloudflare_access_configs.cloudflare_access_scope_change_guard` | Rejects incompatible scope/owner changes while hosts still reference the config.                                                          | Promotion, demotion and owner changes must validate or detach incompatible host bindings in the owning command. |
+| Table and trigger                                                | Current business guarantee                                                                                                                | Replacement work                                                                                                          |
+| ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `ssh_connections.ssh_cloudflare_access_binding_guard`            | A shared config read rejects a personal Cloudflare config owned by another user. The separate foreign key protects organization identity. | R1 writers implement the predicate; retirement still needs the historical writer gate below.                              |
+| `cloudflare_access_configs.cloudflare_access_scope_change_guard` | Rejects incompatible scope/owner changes while hosts still reference the config.                                                          | All conversion writers already implement this invariant. It can be retired independently while the binding guard remains. |
 
-Migration 1203 creates both; 1222 updates scope-change behavior. SSH attachment
-already takes the visible config's shared row ownership and checks the owner.
-Cloudflare promotion/demotion owns the config and then its referencing hosts,
-detaching other owners when required. This is partial preparation, not a full
-all-writer proof: `cloudflare-access.service.ts` still has helper-owned
-transactions and propagated handles. Finish that graph and its supported
-writers before classifying either trigger as outgoing-only compatibility.
+Migration 1203 creates both; 1222 updates scope-change behavior. The source audit
+at `29f6115` distinguishes these two boundaries rather than assuming they share
+a release gate. R1 SSH create/update commands directly read the visible config
+`FOR SHARE`; Cloudflare mutation commands now own their finite transactions and
+SQL. The R1 ownership refactor does not itself prove every historical writer is
+safe without the binding trigger.
+
+### Binding guard: concrete historical dependency
+
+The foundation commit
+[`076b125`](https://github.com/okou-ai/okou/blob/076b125ca6e884f9355279ca6f7c4c7f2dba7c61/turbo/apps/api/src/signals/services/ssh-connection.service.ts#L213)
+(#36274, which introduced migration 1203) validates a selected configuration
+through `findCloudflareAccessConfig` without row ownership. The shared config
+read was added in
+[`018ed551`](https://github.com/okou-ai/okou/blob/018ed55169aac0d1321ef50107817237eebb6e11/turbo/apps/api/src/signals/services/cloudflare-access.service.ts#L110)
+(#36396). The inspected outgoing main `0921863` keeps that read for creation and
+replacement, including an unchanged binding during host edits.
+
+Without the trigger, a foundation API request can read a configuration personal
+to A, then pause before inserting its SSH binding. Newer API requests can
+promote A's configuration to organization scope and demote it to personal B.
+The old request's later insert still uses A's earlier validation. The same-org
+foreign key permits this cross-owner reference; the binding trigger currently
+takes `FOR SHARE`, rereads the owner, and rejects it. This is a static
+interleaving, not a reported runtime reproduction.
+
+The [existing activation rules](deployment-compatibility.md#organization-cloudflare-access-foundation-36260)
+exclude rollback to pre-foundation API/Runner versions once shared state is
+written. They do not establish that the foundation API itself is excluded.
+Before dropping the binding trigger and `validate_ssh_cloudflare_access_binding`,
+verify that every serving API, in-flight request, and retained rollback target
+includes the `018ed551` binding protocol or an equivalent fix. No production
+deployment or drain evidence was obtained by this source audit. If that evidence
+is established before R1, this trigger needs no additional preparation release;
+otherwise the existing two-release gate applies. R1/R2 writers themselves share
+the explicit owner/scope check under config row ownership.
+
+### Scope-change guard: independent retirement evidence
+
+Demotion's first implementation
+[`5d1ba8b`](https://github.com/okou-ai/okou/blob/5d1ba8b930cd414c3e3700996e25d79ba99a4ce6/turbo/apps/api/src/signals/services/cloudflare-access.service.ts#L559)
+(#36623) locks the organization config `FOR UPDATE`, locks its referencing
+hosts, detaches every other owner's binding into `needs_rebind`, then changes
+the config to personal ownership by the acting admin. Promotion's first
+implementation
+[`aa20d6a`](https://github.com/okou-ai/okou/blob/aa20d6a8609326008f5da853bd9db75d0ad1d204/turbo/apps/api/src/signals/services/cloudflare-access.service.ts#L616)
+(#36715) locks the acting admin's same-org personal config and only changes it
+to organization scope with a null user owner. Neither moves an organization or
+transfers a personal config directly to another user.
+
+The subsequent modifying versions `b3119bb`, `c639e33`, and `3ca3ea0`, outgoing
+main `0921863`, and R1 `29f6115` preserve this order and these predicates.
+Earlier API versions do not perform scope or owner conversion. The remaining
+current writer inventory is:
+
+- Standalone and inline SSH config creation insert the declared organization
+  scope or the actor's personal ownership; ordinary edits change only name,
+  encrypted credentials, revision, generation, and modification time.
+- Clerk organization/user cleanup deletes SSH references before deleting
+  configs. It never transfers config ownership.
+- SSH credential rotation, host-key pinning/reset, and chat-default writes do
+  not change config scope or the SSH binding owner. Host ownership is not
+  editable through these writers.
+- The retained `013-kms-account-rotation` operator lists only
+  `encrypted_client_id` and `encrypted_client_secret` for this table; it does
+  not write `scope`, `org_id`, or `user_id`.
+
+While the binding trigger remains, an older late attachment still takes its
+trigger-side shared config lock and rechecks ownership after a conversion.
+Thus removing only `cloudflare_access_scope_change_guard` and
+`reject_cloudflare_access_scope_change` does not require the foundation API to
+disappear first. Preserve the same-org foreign key and scope/owner check
+constraint. Retire this redundant trigger/function in a new R1 migration and
+update the expected schema inventory; do not rewrite migrations 1203/1222.
+The historical `test-cloudflare-access.ts` migration test applies selected old
+migrations in an isolated schema; its old-schema assertions are not production
+writers or evidence for retaining the final trigger.
 
 ## Forms compatibility triggers
 
