@@ -608,10 +608,6 @@ const commitSshConnectionUpdate$ = command(
           if (args.preparedAccess !== undefined && !createdAccess) {
             throw new Error("Cloudflare Access insert returned no row");
           }
-          const selectedAccess = {
-            id: createdAccess?.id ?? accessId,
-            created: createdAccess !== undefined,
-          };
           const [updated] = await tx
             .update(sshConnections)
             .set(
@@ -620,7 +616,7 @@ const commitSshConnectionUpdate$ = command(
                 host,
                 port,
                 credentialId: credential.id,
-                accessId: selectedAccess.id,
+                accessId: createdAccess?.id ?? accessId,
               }),
             )
             .where(eq(sshConnections.id, current.id))
@@ -631,7 +627,7 @@ const commitSshConnectionUpdate$ = command(
           return {
             ok: true,
             value: toSshConnectionResponse(updated, credential),
-            createdAccess: selectedAccess.created,
+            createdAccess: createdAccess !== undefined,
           };
         },
       ),
