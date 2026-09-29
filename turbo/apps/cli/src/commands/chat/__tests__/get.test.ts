@@ -63,7 +63,7 @@ describe("okou chat get command", () => {
     expect(output).toContain("Chat thread loaded");
     expect(output).toContain(`Thread: ${THREAD_ID}`);
     expect(output).toContain(
-      `URL:    http://localhost:3000/chats/${THREAD_ID}`,
+      `URL:    [Open chat](http://localhost:3000/chats/${THREAD_ID})`,
     );
     expect(output).toContain(`Agent:  ${AGENT_ID}`);
     expect(output).toContain("Title:  Launch plan");
@@ -158,7 +158,7 @@ describe("okou chat get command", () => {
     const output = mockConsoleLog.mock.calls.flat().join("\n");
     expect(output).toContain(`Thread: ${OTHER_THREAD_ID}`);
     expect(output).toContain(
-      `URL:    https://chat.example.com/chats/${OTHER_THREAD_ID}`,
+      `URL:    [Open chat](https://chat.example.com/chats/${OTHER_THREAD_ID})`,
     );
     expect(output).toContain("Title:  Delegation source");
   });

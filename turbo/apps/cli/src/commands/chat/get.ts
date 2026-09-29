@@ -29,7 +29,7 @@ Examples:
 
 Notes:
   - Defaults --thread-id to OKOU_CHAT_THREAD_ID from the current web chat thread
-  - Prints thread metadata and its web URL; okou chat messages prints the messages
+  - Prints thread metadata and a Markdown link; okou chat messages prints the messages
   - Authenticates via OKOU_TOKEN (requires chat-thread:read capability)`,
   )
   .action(
@@ -48,7 +48,7 @@ Notes:
 
       console.log(chalk.green("✓ Chat thread loaded"));
       console.log(chalk.dim(`  Thread: ${thread.id}`));
-      console.log(chalk.cyan(`  URL:    ${url}`));
+      console.log(chalk.cyan(`  URL:    [Open chat](${url})`));
       if (thread.agentId) {
         console.log(chalk.dim(`  Agent:  ${thread.agentId}`));
       }
