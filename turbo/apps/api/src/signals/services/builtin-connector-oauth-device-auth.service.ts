@@ -52,7 +52,7 @@ import {
   builtinConnectorById,
   connectorConnectionWriteRejection,
   commitBuiltinConnectorTokenConnection,
-  finalizeBuiltinConnectorTokenConnection,
+  finalizeBuiltinConnectorTokenConnection$,
   prepareBuiltinConnectorTokenConnection$,
   resolveBuiltinConnectorTokenConnectionMutation,
 } from "./connector-data.service";
@@ -125,10 +125,11 @@ function deviceRequestedOauthScopes(
     connectorGrantScopes(resolvedMethod.method.grant),
   );
 }
-
 type PendingPollBody = Extract<
   BuiltinConnectorOauthDeviceAuthSessionPollResponse,
-  { status: "pending" }
+  {
+    status: "pending";
+  }
 >;
 
 type PendingSuccess = {
@@ -220,9 +221,13 @@ function connectorOauthDeviceAuthUnavailable(connectorSlug: ConnectorSlug) {
     },
   };
 }
-
 function deviceAuthResolutionError(
-  resolution: Exclude<ConnectorActionMethodResolution, { readonly ok: true }>,
+  resolution: Exclude<
+    ConnectorActionMethodResolution,
+    {
+      readonly ok: true;
+    }
+  >,
   args: {
     readonly connectorSlug: ConnectorSlug;
     readonly authMethodId: ConnectorAuthMethodId;
@@ -780,7 +785,6 @@ async function markClaimComplete(
     throw new Error("Retained OAuth device authorization claim disappeared");
   }
 }
-
 const completeClaimedSession$ = command(
   async (
     { set },
@@ -831,7 +835,6 @@ const completeClaimedSession$ = command(
           signal,
         );
       }
-
       const connectionResult = await commitBuiltinConnectorTokenConnection(
         { ...write, resolution },
         signal,
@@ -872,8 +875,9 @@ const completeClaimedSession$ = command(
       signal.throwIfAborted();
       return result;
     }
-    const connected = await finalizeBuiltinConnectorTokenConnection(
-      { db: args.writeDb, prepared, connectionResult: result, postCommitAbort },
+    const connected = await set(
+      finalizeBuiltinConnectorTokenConnection$,
+      { prepared, connectionResult: result, postCommitAbort },
       signal,
     );
     return {

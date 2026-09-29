@@ -31,7 +31,7 @@ import {
 import { deleteCustomConnectorAccount$ } from "../services/custom-connector.service";
 import { reconcileGmailWatchesForUser } from "../services/gmail-automation-event.service";
 import { reconcileGoogleCalendarWatchesForUser } from "../services/google-calendar-automation-event.service";
-import { reconcileGoogleFormsWatchesForUser } from "../services/google-forms-automation-event.service";
+import { reconcileGoogleFormsWatchesForUser$ } from "../services/google-forms-automation-event.service";
 import { reconcileGoogleMeetSubscriptionsForUser } from "../services/google-meet-automation-event.service";
 
 function targetFromQuery(
@@ -222,7 +222,6 @@ const renameInner$ = command(
     };
   },
 );
-
 const setDefaultInner$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<unknown> => {
     const auth = get(organizationAuthContext$);
@@ -279,8 +278,9 @@ const setDefaultInner$ = command(
                 signal,
               )
             : body.data.target.connectorSlug === "google-forms"
-              ? reconcileGoogleFormsWatchesForUser(
-                  { db: writeDb, orgId: auth.orgId, userId: auth.userId },
+              ? set(
+                  reconcileGoogleFormsWatchesForUser$,
+                  { orgId: auth.orgId, userId: auth.userId },
                   signal,
                 )
               : reconcileGoogleMeetSubscriptionsForUser(

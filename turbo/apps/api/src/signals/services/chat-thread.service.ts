@@ -73,7 +73,7 @@ import { chatThreadOrganizationCondition } from "./chat-thread-organization.serv
 import { cancelRun$, type CancelRunResult } from "./run-cancel.service";
 import { runOwnedChatEventForRunCondition } from "./chat-event-type.service";
 import { cancellationRecoveryPendingForThread } from "./chat-active-run.service";
-import { reconcileAutomationEventWatches } from "./automation-event-watch-lifecycle.service";
+import { reconcileAutomationEventWatches$ } from "./automation-event-watch-lifecycle.service";
 import { disableThreadBoundWorkflowAutomations } from "./workflow-user-automation-thread.service";
 import {
   insertInitialChatThreadConnectorSelections,
@@ -310,8 +310,10 @@ export function chatThreadDetail(args: {
     };
   });
 }
-
-type IndicatorOwner = { readonly userId: string; readonly orgId: string };
+type IndicatorOwner = {
+  readonly userId: string;
+  readonly orgId: string;
+};
 type IndicatorThreadRow = {
   readonly threadId: string;
   readonly agentId: string | null;
@@ -536,10 +538,12 @@ export function chatThreadDraftIds(args: {
     });
   });
 }
-
 function loadChatThreadArtifactRows(
   db: ReadonlyDb,
-  args: { readonly threadId: string; readonly userId: string },
+  args: {
+    readonly threadId: string;
+    readonly userId: string;
+  },
 ) {
   return db
     .select({
@@ -686,7 +690,6 @@ export interface ExistingChatThread {
   readonly selectedModel: string | null;
   readonly codexServiceTier: CodexServiceTier | null;
 }
-
 /**
  * The thread a repeated create request already owns, read inside the same
  * transaction that lost the insert conflict. Ownership stays scoped to the
@@ -700,7 +703,12 @@ async function resolveExistingClientThread(
     readonly userId: string;
     readonly agentId: string;
   },
-): Promise<ExistingChatThread | { readonly kind: "client_thread_conflict" }> {
+): Promise<
+  | ExistingChatThread
+  | {
+      readonly kind: "client_thread_conflict";
+    }
+> {
   const [existingThread] = await tx
     .select({
       id: chatThreads.id,
@@ -1053,7 +1061,6 @@ export async function deleteChatThreadContent(
   signal.throwIfAborted();
   return result;
 }
-
 /**
  * Delete a chat thread after winding down everything attached to it. Deleting a
  * thread on its own leaves the linked automations firing and any in-flight runs
@@ -1082,18 +1089,15 @@ export const deleteChatThread$ = command(
     readonly cancelledRuns: readonly CancelRunResult[];
   }> => {
     const writeDb = set(writeDb$);
-
     const deletion = await deleteChatThreadContent(writeDb, args, signal);
     signal.throwIfAborted();
     if (!deletion.deleted) {
       return { deleted: false, cancelledRuns: [] };
     }
-
     // `chat_thread_drafts` has no foreign key to the thread, so remove its row
     // here with one statement after the deletion commits.
     await deleteChatThreadDraft(writeDb, args.threadId);
     signal.throwIfAborted();
-
     const cancelledRuns: CancelRunResult[] = [];
     for (const run of deletion.activeRuns) {
       const result = await set(
@@ -1114,13 +1118,12 @@ export const deleteChatThread$ = command(
         cancelledRuns.push(result);
       }
     }
-
-    await reconcileAutomationEventWatches(
-      { db: writeDb, automations: deletion.disabledAutomations },
+    await set(
+      reconcileAutomationEventWatches$,
+      { automations: deletion.disabledAutomations },
       signal,
     );
     signal.throwIfAborted();
-
     return { deleted: true, cancelledRuns };
   },
 );

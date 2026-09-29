@@ -88,7 +88,7 @@ import {
   workflowAutomationAccountConnectorSlug,
   type WorkflowAutomationAccountConnectorSlug,
 } from "../services/workflow-automation-account-classification.service";
-import { reconcileGoogleFormsWatchesForUser } from "../services/google-forms-automation-event.service";
+import { reconcileGoogleFormsWatchesForUser$ } from "../services/google-forms-automation-event.service";
 import { reconcileGoogleMeetSubscriptionsForUser } from "../services/google-meet-automation-event.service";
 import {
   loadVisibleWorkflowById,
@@ -187,9 +187,11 @@ async function loadAgentForConfiguration(
 
   return agent ?? null;
 }
-
 function requireAgentWritePermission(
-  agent: { readonly owner: string; readonly visibility: "public" | "private" },
+  agent: {
+    readonly owner: string;
+    readonly visibility: "public" | "private";
+  },
   member: WorkflowMember,
   action: string,
 ) {
@@ -197,15 +199,16 @@ function requireAgentWritePermission(
     visibility: agent.visibility,
   });
 }
-
 function requireVisibleAgentForPrivateWorkflowCreate(
-  agent: { readonly owner: string; readonly visibility: "public" | "private" },
+  agent: {
+    readonly owner: string;
+    readonly visibility: "public" | "private";
+  },
   member: WorkflowMember,
 ) {
   if (agent.visibility === "public" || agent.owner === member.userId) {
     return null;
   }
-
   return forbidden(
     "Only the private agent owner can create private workflows on this agent",
   );
@@ -444,7 +447,6 @@ async function validateWorkflowCreation(
   signal.throwIfAborted();
   return slugError;
 }
-
 async function createPreparedWorkflow(
   db: Db,
   args: WorkflowCreationInput & {
@@ -458,7 +460,6 @@ async function createPreparedWorkflow(
     if (error) {
       return { kind: "error" as const, response: error };
     }
-
     // Cleanup takes this same lock before checking Workflow absence, so even
     // an uncertain COMMIT cannot let cleanup race a late publication.
     const [storage] = await tx
@@ -472,7 +473,6 @@ async function createPreparedWorkflow(
         `Prepared workflow storage not found: ${args.workflowId}`,
       );
     }
-
     const { body, member, visibility } = args;
     const currentTime = nowDate();
     const [workflow] = await tx
@@ -502,7 +502,6 @@ async function createPreparedWorkflow(
         response: workflowSlugConflict(visibility, body.name),
       };
     }
-
     const chatThreadId = body.chatThreadId
       ? await loadMatchingWorkflowCreationThreadId(tx, {
           userId: member.userId,
@@ -534,11 +533,13 @@ async function createPreparedWorkflow(
     return { kind: "created" as const, workflow, chatThreadId };
   });
 }
-
 const cleanupUnpublishedWorkflow$ = command(
   async (
     { set },
-    args: { readonly orgId: string; readonly workflowId: string },
+    args: {
+      readonly orgId: string;
+      readonly workflowId: string;
+    },
   ): Promise<void> => {
     // Cleanup gets its own bounded lifetime, including when create was aborted.
     // Its failure (including timeout) must never replace the creation error.
@@ -602,22 +603,26 @@ const prepareAndCreateWorkflow$ = command(
     return result;
   },
 );
-
 /** Agent visibility, agent existence, and slug conflicts, in that order. */
 export interface WorkflowCreationFailure {
   readonly status: 403 | 404 | 409;
   readonly body: {
-    readonly error: { readonly message: string; readonly code: string };
+    readonly error: {
+      readonly message: string;
+      readonly code: string;
+    };
   };
 }
-
 type WorkflowCreationOutcome =
   | {
       readonly kind: "created";
       readonly workflowId: string;
       readonly chatThreadId: string | null;
     }
-  | { readonly kind: "error"; readonly response: WorkflowCreationFailure };
+  | {
+      readonly kind: "error";
+      readonly response: WorkflowCreationFailure;
+    };
 
 /**
  * Shared creation path for a validated workflow body: the built-in name guard,
@@ -951,13 +956,15 @@ interface OfficialCopyMaterialization {
     readonly content: string;
   }[];
 }
-
 type OfficialCopyResolution =
   | {
       readonly kind: "ok";
       readonly materialization: OfficialCopyMaterialization;
     }
-  | { readonly kind: "conflict"; readonly message: string };
+  | {
+      readonly kind: "conflict";
+      readonly message: string;
+    };
 
 const OFFICIAL_COPY_RECONFIGURE_MESSAGE =
   "Official Workflow cannot be copied from mixed or stale state; Reconfigure it and retry";
@@ -1067,11 +1074,15 @@ async function resolveOfficialCopyMaterialization(
     },
   };
 }
-
 async function insertCopiedWorkflowRow(
   tx: WorkflowCopyTransaction,
   args: CopyWorkflowRuntimeArgs,
-): Promise<{ readonly id: string } | undefined> {
+): Promise<
+  | {
+      readonly id: string;
+    }
+  | undefined
+> {
   const [workflow] = await tx
     .insert(workflows)
     .values({
@@ -1097,9 +1108,11 @@ type PreparedCopiedWebhook = Pick<
   typeof workflowWebhookAutomations.$inferInsert,
   "tokenHash" | "encryptedToken" | "encryptedSecret" | "secretLastFour"
 >;
-
 async function prepareCopiedWebhooks(
-  args: { readonly orgId: string; readonly userId: string },
+  args: {
+    readonly orgId: string;
+    readonly userId: string;
+  },
   source: WorkflowCopySource,
   signal: AbortSignal,
 ): Promise<ReadonlyMap<string, PreparedCopiedWebhook>> {
@@ -1205,13 +1218,14 @@ async function copyWorkflowUserAutomations(
   }
   return { accountConnectorSlugs };
 }
-
 async function copyWorkflowRuntimeConfiguration(
   tx: WorkflowCopyTransaction,
   args: CopyWorkflowRuntimeArgs,
 ): Promise<
   | {
-      readonly workflow: { readonly id: string };
+      readonly workflow: {
+        readonly id: string;
+      };
       readonly accountConnectorSlugs: readonly WorkflowAutomationAccountConnectorSlug[];
     }
   | undefined
@@ -1220,7 +1234,6 @@ async function copyWorkflowRuntimeConfiguration(
   if (!workflow) {
     return undefined;
   }
-
   const scopedRowsArgs = {
     orgId: args.orgId,
     userId: args.userId,
@@ -1237,7 +1250,6 @@ async function copyWorkflowRuntimeConfiguration(
   });
   return { workflow, ...automationProviders };
 }
-
 interface WorkflowCopySource {
   readonly revision: string | null;
   readonly sourceWorkflow: WorkflowRow;
@@ -1248,7 +1260,10 @@ interface WorkflowCopySource {
     readonly secretLastFour: string;
   }[];
   readonly files:
-    | readonly { readonly path: string; readonly content: string }[]
+    | readonly {
+        readonly path: string;
+        readonly content: string;
+      }[]
     | null;
   readonly storage: {
     readonly id: string;
@@ -1268,10 +1283,12 @@ interface WorkflowCopyInput {
 
 const WORKFLOW_COPY_CHANGED_MESSAGE =
   "Workflow copy source or target changed during preparation; retry the copy";
-
 async function loadWorkflowCopyStorage(
   db: Db,
-  args: { readonly orgId: string; readonly sourceWorkflow: WorkflowRow },
+  args: {
+    readonly orgId: string;
+    readonly sourceWorkflow: WorkflowRow;
+  },
   lock: boolean,
 ): Promise<WorkflowCopySource["storage"]> {
   const query = db
@@ -1365,14 +1382,19 @@ async function readWorkflowCopyWebhooks(
     .orderBy(asc(workflowWebhookAutomations.automationId))
     .for("share");
 }
-
 async function readWorkflowCopySource(
   tx: WorkflowCopyTransaction,
   args: WorkflowCopyInput,
   prepared?: WorkflowCopySource,
 ): Promise<
-  | { readonly kind: "ok"; readonly source: WorkflowCopySource }
-  | { readonly kind: "conflict"; readonly message: string }
+  | {
+      readonly kind: "ok";
+      readonly source: WorkflowCopySource;
+    }
+  | {
+      readonly kind: "conflict";
+      readonly message: string;
+    }
 > {
   if (!(await lockWorkflowCopyInputs(tx, args, prepared))) {
     return { kind: "conflict", message: WORKFLOW_COPY_CHANGED_MESSAGE };
@@ -1458,12 +1480,16 @@ function workflowCopyConnectorSlugs(
     ),
   ].sort();
 }
-
 type CopyWorkflowDatabaseResult =
-  | { readonly kind: "conflict"; readonly message: string }
+  | {
+      readonly kind: "conflict";
+      readonly message: string;
+    }
   | {
       readonly kind: "ok";
-      readonly inserted: { readonly id: string };
+      readonly inserted: {
+        readonly id: string;
+      };
       readonly accountConnectorSlugs: readonly WorkflowAutomationAccountConnectorSlug[];
     };
 
@@ -1579,11 +1605,13 @@ async function copyWorkflowDatabaseRows(
     };
   });
 }
-
 function copiedWorkflowVolumeFiles(
   sourceWorkflow: Pick<WorkflowRow, "name" | "description" | "instruction">,
   sourceFiles:
-    | readonly { readonly path: string; readonly content: string }[]
+    | readonly {
+        readonly path: string;
+        readonly content: string;
+      }[]
     | null,
 ) {
   const skillMd = synthesizeWorkflowSkillMd({
@@ -1600,37 +1628,53 @@ function copiedWorkflowVolumeFiles(
     });
   return [{ path: "SKILL.md", content: skillMd }, ...attachedFiles];
 }
-
-async function reconcileCopiedWorkflowAutomationWatches(
-  args: {
-    readonly db: Db;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly copied: Extract<CopyWorkflowDatabaseResult, { kind: "ok" }>;
+const reconcileCopiedWorkflowAutomationWatches$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly copied: Extract<
+        CopyWorkflowDatabaseResult,
+        {
+          kind: "ok";
+        }
+      >;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    const owner = { db: db, orgId: args.orgId, userId: args.userId };
+    if (args.copied.accountConnectorSlugs.includes("gmail")) {
+      await bestEffort(reconcileGmailWatchesForUser(owner, signal), signal);
+    }
+    if (args.copied.accountConnectorSlugs.includes("google-calendar")) {
+      await bestEffort(
+        reconcileGoogleCalendarWatchesForUser(owner, signal),
+        signal,
+      );
+    }
+    if (args.copied.accountConnectorSlugs.includes("google-forms")) {
+      await bestEffort(
+        set(
+          reconcileGoogleFormsWatchesForUser$,
+          {
+            orgId: owner.orgId,
+            userId: owner.userId,
+          },
+          signal,
+        ),
+        signal,
+      );
+    }
+    if (args.copied.accountConnectorSlugs.includes("google-meet")) {
+      await bestEffort(
+        reconcileGoogleMeetSubscriptionsForUser(owner, signal),
+        signal,
+      );
+    }
   },
-  signal: AbortSignal,
-): Promise<void> {
-  const owner = { db: args.db, orgId: args.orgId, userId: args.userId };
-  if (args.copied.accountConnectorSlugs.includes("gmail")) {
-    await bestEffort(reconcileGmailWatchesForUser(owner, signal), signal);
-  }
-  if (args.copied.accountConnectorSlugs.includes("google-calendar")) {
-    await bestEffort(
-      reconcileGoogleCalendarWatchesForUser(owner, signal),
-      signal,
-    );
-  }
-  if (args.copied.accountConnectorSlugs.includes("google-forms")) {
-    await bestEffort(reconcileGoogleFormsWatchesForUser(owner, signal), signal);
-  }
-  if (args.copied.accountConnectorSlugs.includes("google-meet")) {
-    await bestEffort(
-      reconcileGoogleMeetSubscriptionsForUser(owner, signal),
-      signal,
-    );
-  }
-}
-
+);
 const publishCopiedWorkflow$ = command(
   async (
     { set },
@@ -1641,7 +1685,10 @@ const publishCopiedWorkflow$ = command(
       readonly member: WorkflowMember;
       readonly sourceWorkflow: WorkflowRow;
       readonly sourceFiles:
-        | readonly { readonly path: string; readonly content: string }[]
+        | readonly {
+            readonly path: string;
+            readonly content: string;
+          }[]
         | null;
       readonly sourceStorage: WorkflowCopySource["storage"];
       readonly targetAgentId: string;
@@ -1682,7 +1729,6 @@ const publishCopiedWorkflow$ = command(
           signal,
         );
         signal.throwIfAborted();
-
         const publication = await settle(
           copyWorkflowDatabaseRows(
             args.db,
@@ -1727,16 +1773,15 @@ const publishCopiedWorkflow$ = command(
           await set(cleanupUnpublishedWorkflow$, cleanup);
           return conflict(copied.message);
         }
-        await reconcileCopiedWorkflowAutomationWatches(
+        await set(
+          reconcileCopiedWorkflowAutomationWatches$,
           {
-            db: args.db,
             orgId: args.orgId,
             userId: args.userId,
             copied,
           },
           signal,
         );
-
         const visible = await loadVisibleWorkflowById(args.db, {
           orgId: args.orgId,
           member: args.member,
@@ -1761,7 +1806,6 @@ const publishCopiedWorkflow$ = command(
     );
   },
 );
-
 const copyWorkflowInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
@@ -1772,7 +1816,6 @@ const copyWorkflowInner$ = command(
     if (!bodyResult.ok) {
       return bodyResult.response;
     }
-
     const writeDb = set(writeDb$);
     let inheritedAutonomyBudget: number | undefined;
     if (auth.tokenType === "agent") {
@@ -1808,7 +1851,6 @@ const copyWorkflowInner$ = command(
     if (!targetAgent) {
       return notFound(`Agent not found: ${bodyResult.data.toAgentId}`);
     }
-
     const permissionError = requireAgentWritePermission(
       targetAgent,
       member,
@@ -1817,7 +1859,6 @@ const copyWorkflowInner$ = command(
     if (permissionError) {
       return permissionError;
     }
-
     const slugError = await requirePrivateWorkflowSlugAvailable(writeDb, {
       orgId: auth.orgId,
       agentId: targetAgent.id,
@@ -1828,7 +1869,6 @@ const copyWorkflowInner$ = command(
     if (slugError) {
       return slugError;
     }
-
     const sourceStorage =
       source.workflow.officialDefinitionName === null
         ? await loadWorkflowCopyStorage(
@@ -1850,7 +1890,6 @@ const copyWorkflowInner$ = command(
         )
       : null;
     signal.throwIfAborted();
-
     // A copy is a fork owned by the caller: a new private workflow under the
     // target agent. User-scoped runtime configuration is cloned only for the
     // caller so copies do not leak another user's automations.

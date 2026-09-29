@@ -99,7 +99,7 @@ import {
 } from "./google-calendar-automation-event.service";
 import {
   prepareGoogleFormsWatchStopForConnector,
-  reconcileGoogleFormsWatchesForUser,
+  reconcileGoogleFormsWatchesForUser$,
   stopPreparedGoogleFormsWatches,
   type PendingGoogleFormsWatchStop,
 } from "./google-forms-automation-event.service";
@@ -151,17 +151,24 @@ interface PreparedManualGrantConnect {
   readonly configuredSecretNames: readonly string[];
   readonly configuredVariableNames: readonly string[];
 }
-
 type PreparedManualGrantConnectResult =
-  | { readonly ok: true; readonly prepared: PreparedManualGrantConnect }
-  | { readonly ok: false; readonly message: string };
-
+  | {
+      readonly ok: true;
+      readonly prepared: PreparedManualGrantConnect;
+    }
+  | {
+      readonly ok: false;
+      readonly message: string;
+    };
 type ConnectManualGrantConnectorResult =
   | {
       readonly status: "connected";
       readonly connector: BuiltinConnectorResponse;
     }
-  | { readonly status: "invalid"; readonly message: string }
+  | {
+      readonly status: "invalid";
+      readonly message: string;
+    }
   | ConnectorConnectionMutationFailure;
 
 type ConnectNoAuthConnectorResult =
@@ -170,11 +177,16 @@ type ConnectNoAuthConnectorResult =
       readonly connector: BuiltinConnectorResponse;
     }
   | ConnectorConnectionMutationFailure;
-
 type ConnectorConnectionMutationFailure =
-  | { readonly status: "accountNotFound" }
-  | { readonly status: "accountAmbiguous" }
-  | { readonly status: "siblingDisabled" };
+  | {
+      readonly status: "accountNotFound";
+    }
+  | {
+      readonly status: "accountAmbiguous";
+    }
+  | {
+      readonly status: "siblingDisabled";
+    };
 
 type ConnectorConnectionWriteFailureStatus =
   | ConnectorConnectionMutationFailure["status"]
@@ -198,17 +210,20 @@ export function connectorConnectionWriteFailureMessage(
     }
   }
 }
-
 export function connectorConnectionWriteRejection(
   status: ConnectorConnectionWriteFailureStatus,
-): { readonly ok: false; readonly message: string } {
+): {
+  readonly ok: false;
+  readonly message: string;
+} {
   return { ok: false, message: connectorConnectionWriteFailureMessage(status) };
 }
-
 function connectorConnectionMutationFailure(
   resolution: Exclude<
     ConnectorConnectionMutationResolution,
-    { readonly kind: "ready" }
+    {
+      readonly kind: "ready";
+    }
   >,
 ): ConnectorConnectionMutationFailure {
   switch (resolution.kind) {
@@ -480,7 +495,6 @@ async function finalizeConnectorStateChangeAfterCommit(
     signal,
   );
 }
-
 function prepareManualGrantConnect(
   runtimeMethod: ConnectorRuntimeMethod,
   values: Readonly<Record<string, string>>,
@@ -497,7 +511,6 @@ function prepareManualGrantConnect(
       message: normalizedValuesResult.message,
     };
   }
-
   const fields = manualGrantFieldsForAuthMethod(runtimeMethod.method);
   if (!fields) {
     return {
@@ -505,18 +518,15 @@ function prepareManualGrantConnect(
       message: `${runtimeMethod.connectorSlug} ${runtimeMethod.authMethodId} auth method does not use a manual grant`,
     };
   }
-
   const sanitizedValues = new Map<string, string>();
   for (const [name, value] of Object.entries(normalizedValuesResult.values)) {
     sanitizedValues.set(name, sanitizeManualGrantValue(value));
   }
-
   const secretValues: PreparedManualGrantField[] = [];
   const variableValues: PreparedManualGrantField[] = [];
   const configuredSecretNames: string[] = [];
   const configuredVariableNames: string[] = [];
   const missingRequiredNames: string[] = [];
-
   for (const [name, config] of Object.entries(fields)) {
     const storage = config.storage ?? "secret";
     if (storage === "variable") {
@@ -524,7 +534,6 @@ function prepareManualGrantConnect(
     } else {
       configuredSecretNames.push(name);
     }
-
     const sanitized = sanitizedValues.get(name) ?? "";
     const value =
       sanitized && config.normalize === "host"
@@ -536,20 +545,15 @@ function prepareManualGrantConnect(
       }
       continue;
     }
-
     const target = storage === "variable" ? variableValues : secretValues;
     target.push({ name, value });
   }
-
   if (missingRequiredNames.length > 0) {
     return {
       ok: false,
-      message: `Missing required manual grant field(s): ${formatManualGrantFieldList(
-        missingRequiredNames,
-      )}`,
+      message: `Missing required manual grant field(s): ${formatManualGrantFieldList(missingRequiredNames)}`,
     };
   }
-
   return {
     ok: true,
     prepared: {
@@ -586,7 +590,6 @@ interface BuiltinConnectorListState {
   readonly response: BuiltinConnectorListResponse;
   readonly catalogConnections: readonly ConnectorCatalogConnection[];
 }
-
 function builtinConnectorListState(args: {
   readonly orgId: string;
   readonly userId: string;
@@ -650,7 +653,6 @@ function builtinConnectorListState(args: {
             storedConnectors,
             snapshot,
           );
-
     return {
       response: {
         connectors: storedConnectors.map((connector) => {
@@ -736,10 +738,14 @@ function builtinConnectorProvidedBindingsForStoredConnectors(
   }
   return provided;
 }
-
 type StoredBuiltinConnectorSelection =
-  | { readonly kind: "default" }
-  | { readonly kind: "exact"; readonly connectorId: string };
+  | {
+      readonly kind: "default";
+    }
+  | {
+      readonly kind: "exact";
+      readonly connectorId: string;
+    };
 
 function storedBuiltinConnector(args: {
   readonly orgId: string;
@@ -938,41 +944,44 @@ async function revokePendingConnectorToken(
     ),
   );
 }
-
-async function reconcileAccountBoundAutomationWatches(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly connectorSlug: string;
+const reconcileAccountBoundAutomationWatches$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly connectorSlug: string;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    if (args.connectorSlug === "gmail") {
+      await bestEffort(
+        reconcileGmailWatchesForUser({ db, ...args }, signal),
+        signal,
+      );
+    } else if (args.connectorSlug === "google-calendar") {
+      await bestEffort(
+        reconcileGoogleCalendarWatchesForUser({ db, ...args }, signal),
+        signal,
+      );
+    } else if (args.connectorSlug === "google-forms") {
+      await bestEffort(
+        set(reconcileGoogleFormsWatchesForUser$, { ...args }, signal),
+        signal,
+      );
+    } else if (args.connectorSlug === "google-meet") {
+      await bestEffort(
+        reconcileGoogleMeetSubscriptionsForUser({ db, ...args }, signal),
+        signal,
+      );
+    }
   },
-  signal: AbortSignal,
-): Promise<void> {
-  if (args.connectorSlug === "gmail") {
-    await bestEffort(
-      reconcileGmailWatchesForUser({ db, ...args }, signal),
-      signal,
-    );
-  } else if (args.connectorSlug === "google-calendar") {
-    await bestEffort(
-      reconcileGoogleCalendarWatchesForUser({ db, ...args }, signal),
-      signal,
-    );
-  } else if (args.connectorSlug === "google-forms") {
-    await bestEffort(
-      reconcileGoogleFormsWatchesForUser({ db, ...args }, signal),
-      signal,
-    );
-  } else if (args.connectorSlug === "google-meet") {
-    await bestEffort(
-      reconcileGoogleMeetSubscriptionsForUser({ db, ...args }, signal),
-      signal,
-    );
-  }
-}
-
+);
 type BuiltinConnectorAccountForDeletion =
-  | { readonly kind: "missing" }
+  | {
+      readonly kind: "missing";
+    }
   | {
       readonly kind: "resolved";
       readonly connector: {
@@ -1286,7 +1295,6 @@ async function stopPendingGoogleCalendarAutomationCleanup(
   }
   return stopped.ok ? null : stopped.error;
 }
-
 export const deleteBuiltinConnectorLocalState$ = command(
   async (
     { get, set },
@@ -1311,7 +1319,6 @@ export const deleteBuiltinConnectorLocalState$ = command(
             userId: args.userId,
             overrides: featureSwitchOverrides,
           } satisfies FeatureSwitchContext);
-
     let postCommitAbort: unknown = null;
     const deleteResult = await writeDb.transaction(async (tx) => {
       return await deleteBuiltinConnectorAccountLocalState(
@@ -1325,12 +1332,10 @@ export const deleteBuiltinConnectorLocalState$ = command(
     if (signal.aborted) {
       postCommitAbort ??= signal.reason;
     }
-
     if (deleteResult.kind !== "deleted") {
       throwCapturedAbort(postCommitAbort);
       return deleteResult.kind;
     }
-
     const automationCleanupAbort = await stopPendingConnectorAutomationCleanup(
       writeDb,
       deleteResult,
@@ -1366,8 +1371,9 @@ export const deleteBuiltinConnectorLocalState$ = command(
     }
     if (args.connectorSlug === "google-forms") {
       await bestEffort(
-        reconcileGoogleFormsWatchesForUser(
-          { db: writeDb, orgId: args.orgId, userId: args.userId },
+        set(
+          reconcileGoogleFormsWatchesForUser$,
+          { orgId: args.orgId, userId: args.userId },
           signal,
         ),
         signal,
@@ -1383,7 +1389,6 @@ export const deleteBuiltinConnectorLocalState$ = command(
       );
     }
     signal.throwIfAborted();
-
     return {
       kind: "deleted",
       resolvedSelectionCount: deleteResult.deletion.resolvedSelectionCount,
@@ -1949,7 +1954,6 @@ function requiredConnectorTokenOutputRequirements(args: {
 function connectorOutputTargetKey(target: ConnectorOutputTarget): string {
   return `${target.kind}:${target.name}`;
 }
-
 function validateConnectorTokenOutputRequirements(args: {
   readonly connectorSlug: string;
   readonly outputs: BuiltinConnectorTokenOutputValues;
@@ -1962,12 +1966,9 @@ function validateConnectorTokenOutputRequirements(args: {
   });
   if (missingOutputNames.length > 0) {
     throw new Error(
-      `${args.connectorSlug} connector provider did not return required token output(s): ${formatManualGrantFieldList(
-        missingOutputNames,
-      )}`,
+      `${args.connectorSlug} connector provider did not return required token output(s): ${formatManualGrantFieldList(missingOutputNames)}`,
     );
   }
-
   const extraSecretValues = new Map(args.extraSecrets);
   const missingExtraSecretNames = args.requiredExtraSecretNames.filter(
     (secretName) => {
@@ -1976,9 +1977,7 @@ function validateConnectorTokenOutputRequirements(args: {
   );
   if (missingExtraSecretNames.length > 0) {
     throw new Error(
-      `${args.connectorSlug} connector provider did not return required connector secret(s): ${formatManualGrantFieldList(
-        missingExtraSecretNames,
-      )}`,
+      `${args.connectorSlug} connector provider did not return required connector secret(s): ${formatManualGrantFieldList(missingExtraSecretNames)}`,
     );
   }
 }
@@ -1995,7 +1994,6 @@ function isPrimaryConnectorTokenSecret(args: {
 }): boolean {
   return args.primaryOutputSecretNames.has(args.name);
 }
-
 function validateExtraConnectorTokenSecrets(args: {
   readonly connectorSlug: string;
   readonly method: ConnectorAuthMethodRuntimeConfig;
@@ -2006,7 +2004,6 @@ function validateExtraConnectorTokenSecrets(args: {
   if (extraSecrets.length === 0) {
     return [];
   }
-
   const allowedSecretNames = allowedConnectorTokenSecretNames(args.method);
   const primaryOutputSecretNames = connectorOutputSecretNames(
     args.outputTargets,
@@ -2028,7 +2025,6 @@ function validateExtraConnectorTokenSecrets(args: {
       );
     }
   }
-
   return extraSecrets;
 }
 
@@ -2066,7 +2062,6 @@ async function encryptExtraConnectorTokenSecrets(
   }
   return encryptedSecrets;
 }
-
 async function prepareConnectorTokenState(
   args: {
     readonly connectorSlug: string;
@@ -2086,7 +2081,6 @@ async function prepareConnectorTokenState(
     extraSecrets: args.extraSecrets,
     requiredExtraSecretNames: args.requiredExtraSecretNames,
   });
-
   const encryptedConnectorTokenSecrets: EncryptedBuiltinConnectorTokenSecret[] =
     [];
   const connectorTokenVariables: PreparedBuiltinConnectorTokenVariable[] = [];
@@ -2114,7 +2108,6 @@ async function prepareConnectorTokenState(
     }
     signal.throwIfAborted();
   }
-
   encryptedConnectorTokenSecrets.push(
     ...(await encryptExtraConnectorTokenSecrets(
       {
@@ -2440,7 +2433,6 @@ export async function resolveBuiltinConnectorTokenConnectionMutation(
   signal.throwIfAborted();
   return resolution;
 }
-
 export async function commitBuiltinConnectorTokenConnection(
   args: CommitBuiltinConnectorTokenConnectionArgs & {
     readonly resolution: ConnectorConnectionMutationResolution;
@@ -2449,14 +2441,15 @@ export async function commitBuiltinConnectorTokenConnection(
 ): Promise<
   | CommittedBuiltinConnectorTokenConnection
   | ConnectorConnectionMutationFailure
-  | { readonly status: "identityMismatch" }
+  | {
+      readonly status: "identityMismatch";
+    }
 > {
   const resolution = args.resolution;
   signal.throwIfAborted();
   if (resolution.kind !== "ready") {
     return connectorConnectionMutationFailure(resolution);
   }
-
   const existingConnector =
     resolution.mutation.kind === "update" ? resolution.mutation.existing : null;
   if (
@@ -2474,7 +2467,6 @@ export async function commitBuiltinConnectorTokenConnection(
       existingConnector,
       signal,
     );
-
   if (existingConnector !== null) {
     await reconcileConnectorAccountState(
       args.db,
@@ -2538,7 +2530,6 @@ export async function commitBuiltinConnectorTokenConnection(
     { ...args, connectorSlug: args.runtimeMethod.connectorSlug },
     signal,
   );
-
   return {
     status: "connected",
     connectorRow,
@@ -2547,7 +2538,6 @@ export async function commitBuiltinConnectorTokenConnection(
     pendingGoogleCalendarWatchStop,
   };
 }
-
 export const prepareBuiltinConnectorTokenConnection$ = command(
   async (
     { get },
@@ -2576,7 +2566,6 @@ export const prepareBuiltinConnectorTokenConnection$ = command(
       userFeatureSwitchContext(args.orgId, args.userId),
     );
     signal.throwIfAborted();
-
     const connectorTokenState = await prepareConnectorTokenState(
       {
         connectorSlug: args.runtimeMethod.connectorSlug,
@@ -2590,7 +2579,6 @@ export const prepareBuiltinConnectorTokenConnection$ = command(
       signal,
     );
     signal.throwIfAborted();
-
     return {
       orgId: args.orgId,
       userId: args.userId,
@@ -2608,60 +2596,58 @@ export const prepareBuiltinConnectorTokenConnection$ = command(
     };
   },
 );
-
-export async function finalizeBuiltinConnectorTokenConnection(
-  args: {
-    readonly db: Db;
-    readonly prepared: PreparedBuiltinConnectorTokenConnection;
-    readonly connectionResult: CommittedBuiltinConnectorTokenConnection;
-    readonly postCommitAbort: unknown;
-  },
-  signal: AbortSignal,
-): Promise<{
-  readonly status: "connected";
-  readonly connector: BuiltinConnectorResponse;
-  readonly created: boolean;
-}> {
-  const { prepared, connectionResult } = args;
-  let postCommitAbort = args.postCommitAbort;
-  const automationCleanupAbort =
-    await stopPendingGoogleCalendarAutomationCleanup(
-      connectionResult.pendingGoogleCalendarWatchStop,
+export const finalizeBuiltinConnectorTokenConnection$ = command(
+  async (
+    { set },
+    args: {
+      readonly prepared: PreparedBuiltinConnectorTokenConnection;
+      readonly connectionResult: CommittedBuiltinConnectorTokenConnection;
+      readonly postCommitAbort: unknown;
+    },
+    signal: AbortSignal,
+  ): Promise<{
+    readonly status: "connected";
+    readonly connector: BuiltinConnectorResponse;
+    readonly created: boolean;
+  }> => {
+    const { prepared, connectionResult } = args;
+    let postCommitAbort = args.postCommitAbort;
+    const automationCleanupAbort =
+      await stopPendingGoogleCalendarAutomationCleanup(
+        connectionResult.pendingGoogleCalendarWatchStop,
+        signal,
+      );
+    postCommitAbort ??= automationCleanupAbort;
+    await finalizeConnectorStateChangeAfterCommit(
+      {
+        userId: prepared.userId,
+        connectorSlug: prepared.runtimeMethod.connectorSlug,
+        pendingTokenRevoke: connectionResult.pendingTokenRevoke,
+        postCommitAbort,
+      },
       signal,
     );
-  postCommitAbort ??= automationCleanupAbort;
-
-  await finalizeConnectorStateChangeAfterCommit(
-    {
-      userId: prepared.userId,
-      connectorSlug: prepared.runtimeMethod.connectorSlug,
-      pendingTokenRevoke: connectionResult.pendingTokenRevoke,
-      postCommitAbort,
-    },
-    signal,
-  );
-  await reconcileAccountBoundAutomationWatches(
-    args.db,
-    {
-      orgId: prepared.orgId,
-      userId: prepared.userId,
-      connectorSlug: prepared.runtimeMethod.connectorSlug,
-    },
-    signal,
-  );
-  signal.throwIfAborted();
-
-  return {
-    status: "connected",
-    connector: storedBuiltinConnectorRowToResponse(
-      connectionResult.connectorRow,
-      prepared.runtimeMethod,
-      nowDate(),
-    ),
-    created: connectionResult.created,
-  };
-}
-
+    await set(
+      reconcileAccountBoundAutomationWatches$,
+      {
+        orgId: prepared.orgId,
+        userId: prepared.userId,
+        connectorSlug: prepared.runtimeMethod.connectorSlug,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    return {
+      status: "connected",
+      connector: storedBuiltinConnectorRowToResponse(
+        connectionResult.connectorRow,
+        prepared.runtimeMethod,
+        nowDate(),
+      ),
+      created: connectionResult.created,
+    };
+  },
+);
 export const upsertBuiltinConnectorTokenConnection$ = command(
   async (
     { set },
@@ -2693,8 +2679,9 @@ export const upsertBuiltinConnectorTokenConnection$ = command(
       throwCapturedAbort(postCommitAbort);
       return connectionResult;
     }
-    return await finalizeBuiltinConnectorTokenConnection(
-      { db: writeDb, prepared, connectionResult, postCommitAbort },
+    return await set(
+      finalizeBuiltinConnectorTokenConnection$,
+      { prepared, connectionResult, postCommitAbort },
       signal,
     );
   },

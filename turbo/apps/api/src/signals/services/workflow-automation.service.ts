@@ -79,7 +79,7 @@ import {
   settle,
 } from "../utils";
 import { lockConnectorAccountTarget } from "./auth-state-lock.service";
-import { reconcileAutomationEventWatches } from "./automation-event-watch-lifecycle.service";
+import { reconcileAutomationEventWatches$ } from "./automation-event-watch-lifecycle.service";
 import {
   insertWorkflowAutomation,
   workflowAutomationColumns,
@@ -106,7 +106,7 @@ import {
 } from "./google-calendar-automation-event.service";
 import { resolveGoogleFormsAutomationConnectorId } from "./google-forms-automation-account.service";
 import {
-  ensureGoogleFormsWatchForUser,
+  ensureGoogleFormsWatchForUser$,
   hasEnabledGoogleFormsConsumer,
   prepareGoogleFormsResponseEventConfigForPersist,
 } from "./google-forms-automation-event.service";
@@ -229,18 +229,36 @@ type StripeInvoicePaidAutomationEventType = Extract<
   WorkflowAutomationEventType,
   "stripe-invoice-paid"
 >;
-
 /**
  * Outcome of an automation mutation, mapped to an HTTP response by the route layer.
  */
 export type AutomationResult =
-  | { readonly kind: "ok"; readonly summary: WorkflowAutomationSummary }
-  | { readonly kind: "deleted" }
-  | { readonly kind: "not-found" }
-  | { readonly kind: "forbidden"; readonly message: string }
-  | { readonly kind: "conflict"; readonly message: string }
-  | { readonly kind: "team-required"; readonly message: string }
-  | { readonly kind: "bad-request"; readonly message: string };
+  | {
+      readonly kind: "ok";
+      readonly summary: WorkflowAutomationSummary;
+    }
+  | {
+      readonly kind: "deleted";
+    }
+  | {
+      readonly kind: "not-found";
+    }
+  | {
+      readonly kind: "forbidden";
+      readonly message: string;
+    }
+  | {
+      readonly kind: "conflict";
+      readonly message: string;
+    }
+  | {
+      readonly kind: "team-required";
+      readonly message: string;
+    }
+  | {
+      readonly kind: "bad-request";
+      readonly message: string;
+    };
 
 function workflowWebhookTeamRequiredResult(): {
   readonly kind: "team-required";
@@ -261,10 +279,14 @@ function stripeInvoicePaidWorkflowAutomationsDisabledResult(): {
     message: "Stripe invoice-paid workflow automations are not enabled",
   };
 }
-
 type AutomationActionFailure = Exclude<
   AutomationResult,
-  { readonly kind: "ok" } | { readonly kind: "deleted" }
+  | {
+      readonly kind: "ok";
+    }
+  | {
+      readonly kind: "deleted";
+    }
 >;
 type WorkflowAutomationRunNowResult =
   | {
@@ -288,9 +310,13 @@ interface ScheduleColumns {
   readonly atTime: Date | null;
   readonly timezone: string;
 }
-
 function parseOnceAtTime(
-  schedule: Extract<WorkflowSchedule, { type: "once" }>,
+  schedule: Extract<
+    WorkflowSchedule,
+    {
+      type: "once";
+    }
+  >,
 ): Date {
   const result = parseScheduledAtTime(schedule.atTime, schedule.timezone);
   if (!result.ok) {
@@ -990,11 +1016,12 @@ async function rowToSummary(
     scheduleSummary: summarizeSchedule(schedule),
   };
 }
-
 async function rowToPublicSummary(
   db: ReadonlyDb,
   row: AutomationRow,
-  options: { readonly chatThreadId?: string | null } = {},
+  options: {
+    readonly chatThreadId?: string | null;
+  } = {},
 ): Promise<WorkflowAutomationSummary | null> {
   if (row.kind === "event" && !supportedAutomationEventType(row.eventType)) {
     return null;
@@ -1007,10 +1034,12 @@ interface UsableAgent {
   readonly owner: string;
   readonly visibility: "public" | "private";
 }
-
 async function loadAgent(
   db: ReadonlyDb,
-  args: { readonly orgId: string; readonly agentId: string },
+  args: {
+    readonly orgId: string;
+    readonly agentId: string;
+  },
 ): Promise<UsableAgent | null> {
   const [agent] = await db
     .select({
@@ -1032,14 +1061,16 @@ async function loadAgent(
 function canUseAgent(agent: UsableAgent, member: WorkflowMember): boolean {
   return agent.visibility === "public" || agent.owner === member.userId;
 }
-
 /**
  * Resolve the workflow's single owning agent for an automation. Under 1:N the agent
  * is derived from `workflows.agent_id`, not from the automation row.
  */
 async function loadAutomationWorkflowAgentId(
   db: ReadonlyDb,
-  args: { readonly orgId: string; readonly workflowId: string },
+  args: {
+    readonly orgId: string;
+    readonly workflowId: string;
+  },
 ): Promise<string | null> {
   const [workflow] = await db
     .select({ agentId: workflows.agentId })
@@ -1050,10 +1081,12 @@ async function loadAutomationWorkflowAgentId(
     .limit(1);
   return workflow?.agentId ?? null;
 }
-
 async function loadAutomationWorkflowRunTarget(
   db: ReadonlyDb,
-  args: { readonly orgId: string; readonly workflowId: string },
+  args: {
+    readonly orgId: string;
+    readonly workflowId: string;
+  },
 ): Promise<{
   readonly agentId: string;
   readonly workflowName: string;
@@ -1079,10 +1112,12 @@ async function loadAutomationWorkflowRunTarget(
     workflowTitle: workflow.workflowDisplayName ?? workflow.workflowName,
   };
 }
-
 async function loadAutomationRow(
   db: ReadonlyDb,
-  args: { readonly orgId: string; readonly automationId: string },
+  args: {
+    readonly orgId: string;
+    readonly automationId: string;
+  },
 ): Promise<AutomationRow | null> {
   const [row] = await db
     .select(workflowAutomationColumns())
@@ -1422,42 +1457,54 @@ type CreateGithubEventAutomationInput =
       readonly eventType: "github-pull-request";
       readonly eventConfig: Extract<
         GithubAutomationEventConfig,
-        { readonly event: "pull_request" }
+        {
+          readonly event: "pull_request";
+        }
       >;
     })
   | (CreateGithubEventAutomationInputBase & {
       readonly eventType: "github-workflow-run-completed";
       readonly eventConfig: Extract<
         GithubAutomationEventConfig,
-        { readonly event: "workflow_run_completed" }
+        {
+          readonly event: "workflow_run_completed";
+        }
       >;
     })
   | (CreateGithubEventAutomationInputBase & {
       readonly eventType: "github-workflow-job-completed";
       readonly eventConfig: Extract<
         GithubAutomationEventConfig,
-        { readonly event: "workflow_job_completed" }
+        {
+          readonly event: "workflow_job_completed";
+        }
       >;
     })
   | (CreateGithubEventAutomationInputBase & {
       readonly eventType: "github-pull-request-review-submitted";
       readonly eventConfig: Extract<
         GithubAutomationEventConfig,
-        { readonly event: "pull_request_review_submitted" }
+        {
+          readonly event: "pull_request_review_submitted";
+        }
       >;
     })
   | (CreateGithubEventAutomationInputBase & {
       readonly eventType: "github-deployment-status-created";
       readonly eventConfig: Extract<
         GithubAutomationEventConfig,
-        { readonly event: "deployment_status_created" }
+        {
+          readonly event: "deployment_status_created";
+        }
       >;
     })
   | (CreateGithubEventAutomationInputBase & {
       readonly eventType: "github-issue-comment-created";
       readonly eventConfig: Extract<
         GithubAutomationEventConfig,
-        { readonly event: "issue_comment_created" }
+        {
+          readonly event: "issue_comment_created";
+        }
       >;
     });
 
@@ -1588,12 +1635,13 @@ function automationCreateInputIsGmail(
 ): args is CreateGmailEventAutomationInput {
   return supportedGmailEventType(args.eventType);
 }
-
 function automationCreateInputIsGithubWebhook(
   args: CreateEventAutomationInput,
 ): args is Extract<
   CreateGithubEventAutomationInput,
-  { readonly eventType: GithubWebhookAutomationEventType }
+  {
+    readonly eventType: GithubWebhookAutomationEventType;
+  }
 > {
   return supportedGithubWebhookEventType(args.eventType);
 }
@@ -1656,7 +1704,6 @@ type InsertEventAutomationArgs = {
   readonly automationId?: string;
   readonly currentTime: Date;
 };
-
 async function insertEventAutomation(
   db: Db,
   args: InsertEventAutomationArgs & {
@@ -1762,9 +1809,11 @@ type PreparedWebhookCredentials = Pick<
   typeof workflowWebhookAutomations.$inferInsert,
   "tokenHash" | "encryptedToken" | "encryptedSecret" | "secretLastFour"
 >;
-
 async function prepareWebhookCredentials(
-  args: { readonly orgId: string; readonly userId: string },
+  args: {
+    readonly orgId: string;
+    readonly userId: string;
+  },
   signal: AbortSignal,
 ): Promise<{
   readonly token: string;
@@ -1880,7 +1929,6 @@ async function insertWebhookEventAutomation(
     };
   });
 }
-
 async function lockWebhookAutomationCreationAccess(
   tx: Tx,
   args: {
@@ -1889,7 +1937,10 @@ async function lockWebhookAutomationCreationAccess(
     readonly agentId: string;
   },
 ): Promise<
-  | { readonly kind: "ok"; readonly workflow: WorkflowRow }
+  | {
+      readonly kind: "ok";
+      readonly workflow: WorkflowRow;
+    }
   | AutomationActionFailure
 > {
   // Freeze the source permissions in agent -> workflow order. Access may have
@@ -1952,7 +2003,6 @@ async function lockWebhookAutomationCreationAccess(
   }
   return { kind: "ok", workflow: visible.workflow };
 }
-
 async function prepareGmailEventConfigForPersist(
   db: Db,
   args: {
@@ -1964,8 +2014,14 @@ async function prepareGmailEventConfigForPersist(
   },
   signal: AbortSignal,
 ): Promise<
-  | { readonly kind: "ok"; readonly eventConfig: GmailAutomationEventConfig }
-  | { readonly kind: "bad-request"; readonly message: string }
+  | {
+      readonly kind: "ok";
+      readonly eventConfig: GmailAutomationEventConfig;
+    }
+  | {
+      readonly kind: "bad-request";
+      readonly message: string;
+    }
 > {
   if (args.eventType === "gmail-new-message") {
     if (args.eventConfig.event !== "new_message") {
@@ -1976,14 +2032,12 @@ async function prepareGmailEventConfigForPersist(
     }
     return { kind: "ok", eventConfig: args.eventConfig };
   }
-
   if (args.eventConfig.event !== "label_applied") {
     return {
       kind: "bad-request",
       message: "eventConfig must be a Gmail label applied config",
     };
   }
-
   const label = await resolveGmailLabelForUser(
     {
       db,
@@ -1998,7 +2052,6 @@ async function prepareGmailEventConfigForPersist(
   if (label.kind !== "ok") {
     return { kind: "bad-request", message: label.message };
   }
-
   return {
     kind: "ok",
     eventConfig: {
@@ -2008,181 +2061,190 @@ async function prepareGmailEventConfigForPersist(
     },
   };
 }
-
-async function validateCreatedGmailAutomationAccount(
-  args: {
-    readonly db: Db;
-    readonly automationId: string;
-    readonly input: CreateGmailEventAutomationInput;
-    readonly eventConfig: GmailAutomationEventConfig;
-    readonly expectedConnectorId: string;
+const validateCreatedGmailAutomationAccount$ = command(
+  async (
+    { set },
+    args: {
+      readonly automationId: string;
+      readonly input: CreateGmailEventAutomationInput;
+      readonly eventConfig: GmailAutomationEventConfig;
+      readonly expectedConnectorId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<
+    | {
+        readonly kind: "ok";
+        readonly connectorId: string;
+      }
+    | {
+        readonly kind: "bad-request";
+        readonly message: string;
+      }
+  > => {
+    const db = set(writeDb$);
+    const [persistedAccount] = await db
+      .select({ connectorId: workflowAutomations.eventConnectorId })
+      .from(workflowAutomations)
+      .where(eq(workflowAutomations.id, args.automationId))
+      .limit(1);
+    signal.throwIfAborted();
+    const connectorId = persistedAccount?.connectorId ?? null;
+    if (connectorId === args.expectedConnectorId) {
+      return { kind: "ok", connectorId };
+    }
+    // eslint-disable-next-line api/signal-check-await -- Finish the paired watch cleanup after deleting the local automation.
+    await db
+      .delete(workflowAutomations)
+      .where(eq(workflowAutomations.id, args.automationId));
+    await bestEffort(
+      set(
+        reconcileAutomationEventWatches$,
+        {
+          automations: [
+            {
+              orgId: args.input.orgId,
+              ownerUserId: args.input.member.userId,
+              eventType: args.input.eventType,
+              eventConfig: args.eventConfig,
+              eventConnectorId: connectorId,
+            },
+          ],
+        },
+        signal,
+      ),
+      signal,
+    );
+    return connectorId === null
+      ? {
+          kind: "bad-request",
+          message: "Connect Gmail before adding a Gmail event automation",
+        }
+      : {
+          kind: "bad-request",
+          message:
+            "Gmail account selection changed; retry adding the automation",
+        };
   },
-  signal: AbortSignal,
-): Promise<
-  | { readonly kind: "ok"; readonly connectorId: string }
-  | { readonly kind: "bad-request"; readonly message: string }
-> {
-  const [persistedAccount] = await args.db
-    .select({ connectorId: workflowAutomations.eventConnectorId })
-    .from(workflowAutomations)
-    .where(eq(workflowAutomations.id, args.automationId))
-    .limit(1);
-  const connectorId = persistedAccount?.connectorId ?? null;
-  if (connectorId === args.expectedConnectorId) {
-    return { kind: "ok", connectorId };
-  }
-
-  await args.db
-    .delete(workflowAutomations)
-    .where(eq(workflowAutomations.id, args.automationId));
-  await bestEffort(
-    reconcileAutomationEventWatches(
+);
+const createGmailEventAutomationForWorkflow$ = command(
+  async (
+    { set },
+    args: {
+      readonly context: Omit<CreateEventAutomationWorkflowContext, "db">;
+      readonly input: CreateGmailEventAutomationInput;
+    },
+    signal: AbortSignal,
+  ): Promise<AutomationResult> => {
+    const db = set(writeDb$);
+    const eventConnectorId = await resolveGmailAutomationConnectorId(db, {
+      orgId: args.input.orgId,
+      userId: args.input.member.userId,
+      workflowId: args.context.workflowId,
+    });
+    signal.throwIfAborted();
+    if (eventConnectorId === null) {
+      return {
+        kind: "bad-request",
+        message: "Connect Gmail before adding a Gmail event automation",
+      };
+    }
+    const preparedConfig = await prepareGmailEventConfigForPersist(
+      db,
       {
-        db: args.db,
+        orgId: args.input.orgId,
+        userId: args.input.member.userId,
+        connectorId: eventConnectorId,
+        eventType: args.input.eventType,
+        eventConfig: args.input.eventConfig,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (preparedConfig.kind !== "ok") {
+      return preparedConfig;
+    }
+    const hadConsumer = args.input.enabled
+      ? await hasEnabledGmailConsumer(
+          {
+            db: db,
+            orgId: args.input.orgId,
+            userId: args.input.member.userId,
+            connectorId: eventConnectorId,
+          },
+          signal,
+        )
+      : false;
+    // eslint-disable-next-line api/signal-check-await -- Complete the committed automation handoff and its watch compensation before propagating cancellation.
+    const summary = await insertEventAutomation(db, {
+      input: { ...args.input, eventConfig: preparedConfig.eventConfig },
+      workflowId: args.context.workflowId,
+      agentId: args.context.agentId,
+      workflowTitle: args.context.workflowTitle,
+      automationId: args.context.automationId,
+      currentTime: nowDate(),
+    });
+    const persistedAccount = await set(
+      validateCreatedGmailAutomationAccount$,
+      {
+        automationId: summary.id,
+        input: args.input,
+        eventConfig: preparedConfig.eventConfig,
+        expectedConnectorId: eventConnectorId,
+      },
+      signal,
+    );
+    if (persistedAccount.kind !== "ok") {
+      return persistedAccount;
+    }
+    const persistedConnectorId = persistedAccount.connectorId;
+    if (!args.input.enabled) {
+      signal.throwIfAborted();
+      return { kind: "ok", summary };
+    }
+    signal.throwIfAborted();
+    const watchResult = await onRejection(
+      ensureGmailWatchForUser(
+        {
+          db: db,
+          orgId: args.input.orgId,
+          userId: args.input.member.userId,
+          connectorId: persistedConnectorId,
+          forceRefresh: !hadConsumer,
+        },
+        signal,
+      ),
+      async () => {
+        await db
+          .delete(workflowAutomations)
+          .where(eq(workflowAutomations.id, summary.id));
+      },
+    );
+    signal.throwIfAborted();
+    if (watchResult.kind === "ok") {
+      return { kind: "ok", summary };
+    }
+    // eslint-disable-next-line api/signal-check-await -- Finish the paired watch cleanup after deleting the local automation.
+    await db
+      .delete(workflowAutomations)
+      .where(eq(workflowAutomations.id, summary.id));
+    await set(
+      reconcileAutomationEventWatches$,
+      {
         automations: [
           {
             orgId: args.input.orgId,
             ownerUserId: args.input.member.userId,
             eventType: args.input.eventType,
-            eventConfig: args.eventConfig,
-            eventConnectorId: connectorId,
+            eventConfig: preparedConfig.eventConfig,
+            eventConnectorId: persistedConnectorId,
           },
         ],
       },
       signal,
-    ),
-    signal,
-  );
-  return connectorId === null
-    ? {
-        kind: "bad-request",
-        message: "Connect Gmail before adding a Gmail event automation",
-      }
-    : {
-        kind: "bad-request",
-        message: "Gmail account selection changed; retry adding the automation",
-      };
-}
-
-async function createGmailEventAutomationForWorkflow(
-  args: {
-    readonly context: CreateEventAutomationWorkflowContext;
-    readonly input: CreateGmailEventAutomationInput;
+    );
+    return { kind: "bad-request", message: watchResult.message };
   },
-  signal: AbortSignal,
-): Promise<AutomationResult> {
-  const eventConnectorId = await resolveGmailAutomationConnectorId(
-    args.context.db,
-    {
-      orgId: args.input.orgId,
-      userId: args.input.member.userId,
-      workflowId: args.context.workflowId,
-    },
-  );
-  signal.throwIfAborted();
-  if (eventConnectorId === null) {
-    return {
-      kind: "bad-request",
-      message: "Connect Gmail before adding a Gmail event automation",
-    };
-  }
-  const preparedConfig = await prepareGmailEventConfigForPersist(
-    args.context.db,
-    {
-      orgId: args.input.orgId,
-      userId: args.input.member.userId,
-      connectorId: eventConnectorId,
-      eventType: args.input.eventType,
-      eventConfig: args.input.eventConfig,
-    },
-    signal,
-  );
-  signal.throwIfAborted();
-  if (preparedConfig.kind !== "ok") {
-    return preparedConfig;
-  }
-
-  const hadConsumer = args.input.enabled
-    ? await hasEnabledGmailConsumer(
-        {
-          db: args.context.db,
-          orgId: args.input.orgId,
-          userId: args.input.member.userId,
-          connectorId: eventConnectorId,
-        },
-        signal,
-      )
-    : false;
-  const summary = await insertEventAutomation(args.context.db, {
-    input: { ...args.input, eventConfig: preparedConfig.eventConfig },
-    workflowId: args.context.workflowId,
-    agentId: args.context.agentId,
-    workflowTitle: args.context.workflowTitle,
-    automationId: args.context.automationId,
-    currentTime: nowDate(),
-  });
-  const persistedAccount = await validateCreatedGmailAutomationAccount(
-    {
-      db: args.context.db,
-      automationId: summary.id,
-      input: args.input,
-      eventConfig: preparedConfig.eventConfig,
-      expectedConnectorId: eventConnectorId,
-    },
-    signal,
-  );
-  if (persistedAccount.kind !== "ok") {
-    return persistedAccount;
-  }
-  const persistedConnectorId = persistedAccount.connectorId;
-  if (!args.input.enabled) {
-    signal.throwIfAborted();
-    return { kind: "ok", summary };
-  }
-
-  signal.throwIfAborted();
-  const watchResult = await onRejection(
-    ensureGmailWatchForUser(
-      {
-        db: args.context.db,
-        orgId: args.input.orgId,
-        userId: args.input.member.userId,
-        connectorId: persistedConnectorId,
-        forceRefresh: !hadConsumer,
-      },
-      signal,
-    ),
-    async () => {
-      await args.context.db
-        .delete(workflowAutomations)
-        .where(eq(workflowAutomations.id, summary.id));
-    },
-  );
-  signal.throwIfAborted();
-  if (watchResult.kind === "ok") {
-    return { kind: "ok", summary };
-  }
-
-  await args.context.db
-    .delete(workflowAutomations)
-    .where(eq(workflowAutomations.id, summary.id));
-  await reconcileAutomationEventWatches(
-    {
-      db: args.context.db,
-      automations: [
-        {
-          orgId: args.input.orgId,
-          ownerUserId: args.input.member.userId,
-          eventType: args.input.eventType,
-          eventConfig: preparedConfig.eventConfig,
-          eventConnectorId: persistedConnectorId,
-        },
-      ],
-    },
-    signal,
-  );
-  return { kind: "bad-request", message: watchResult.message };
-}
+);
 
 async function insertScheduleAutomation(
   db: Db,
@@ -2358,123 +2420,126 @@ function safeParseGoogleCalendarEventConfig(
         : googleCalendarEventCancelledEventConfigSchema.safeParse(eventConfig);
   return result.success ? result.data : null;
 }
-
-async function createGoogleCalendarEventAutomationForWorkflow(
-  args: {
-    readonly context: CreateEventAutomationWorkflowContext;
-    readonly input: CreateGoogleCalendarEventAutomationInput;
-  },
-  signal: AbortSignal,
-): Promise<AutomationResult> {
-  const eventConnectorId = await resolveGoogleCalendarAutomationConnectorId(
-    args.context.db,
-    {
-      orgId: args.input.orgId,
-      userId: args.input.member.userId,
+const createGoogleCalendarEventAutomationForWorkflow$ = command(
+  async (
+    { set },
+    args: {
+      readonly context: Omit<CreateEventAutomationWorkflowContext, "db">;
+      readonly input: CreateGoogleCalendarEventAutomationInput;
+    },
+    signal: AbortSignal,
+  ): Promise<AutomationResult> => {
+    const db = set(writeDb$);
+    const eventConnectorId = await resolveGoogleCalendarAutomationConnectorId(
+      db,
+      {
+        orgId: args.input.orgId,
+        userId: args.input.member.userId,
+        workflowId: args.context.workflowId,
+      },
+    );
+    signal.throwIfAborted();
+    if (eventConnectorId === null) {
+      return {
+        kind: "bad-request",
+        message:
+          "Connect Google Calendar before adding a Google Calendar event automation",
+      };
+    }
+    const parsedConfig = parseGoogleCalendarEventConfig(
+      args.input.eventType,
+      args.input.eventConfig,
+    );
+    const calendarId = await normalizeGoogleCalendarIdForConnector(
+      db,
+      {
+        orgId: args.input.orgId,
+        userId: args.input.member.userId,
+        connectorId: eventConnectorId,
+        calendarId: parsedConfig.calendarId,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    const preparedConfig = { ...parsedConfig, calendarId };
+    const hadConsumer = args.input.enabled
+      ? await hasEnabledGoogleCalendarConsumer(
+          {
+            db: db,
+            orgId: args.input.orgId,
+            userId: args.input.member.userId,
+            connectorId: eventConnectorId,
+            calendarId: preparedConfig.calendarId,
+          },
+          signal,
+        )
+      : false;
+    // eslint-disable-next-line api/signal-check-await -- Complete the committed automation handoff and its watch compensation before propagating cancellation.
+    const summary = await insertEventAutomation(db, {
+      input: { ...args.input, eventConfig: preparedConfig },
       workflowId: args.context.workflowId,
-    },
-  );
-  signal.throwIfAborted();
-  if (eventConnectorId === null) {
-    return {
-      kind: "bad-request",
-      message:
-        "Connect Google Calendar before adding a Google Calendar event automation",
-    };
-  }
-  const parsedConfig = parseGoogleCalendarEventConfig(
-    args.input.eventType,
-    args.input.eventConfig,
-  );
-  const calendarId = await normalizeGoogleCalendarIdForConnector(
-    args.context.db,
-    {
-      orgId: args.input.orgId,
-      userId: args.input.member.userId,
-      connectorId: eventConnectorId,
-      calendarId: parsedConfig.calendarId,
-    },
-    signal,
-  );
-  signal.throwIfAborted();
-  const preparedConfig = { ...parsedConfig, calendarId };
-  const hadConsumer = args.input.enabled
-    ? await hasEnabledGoogleCalendarConsumer(
+      agentId: args.context.agentId,
+      workflowTitle: args.context.workflowTitle,
+      automationId: args.context.automationId,
+      currentTime: nowDate(),
+      expectedEventConnectorId: eventConnectorId,
+    });
+    if (summary === null) {
+      return {
+        kind: "bad-request",
+        message:
+          "Google Calendar account selection changed; retry adding the automation",
+      };
+    }
+    if (!args.input.enabled) {
+      signal.throwIfAborted();
+      return { kind: "ok", summary };
+    }
+    signal.throwIfAborted();
+    const watchResult = await onRejection(
+      ensureGoogleCalendarWatchForUser(
         {
-          db: args.context.db,
+          db: db,
           orgId: args.input.orgId,
           userId: args.input.member.userId,
           connectorId: eventConnectorId,
           calendarId: preparedConfig.calendarId,
+          forceRefresh: !hadConsumer,
         },
         signal,
-      )
-    : false;
-
-  const summary = await insertEventAutomation(args.context.db, {
-    input: { ...args.input, eventConfig: preparedConfig },
-    workflowId: args.context.workflowId,
-    agentId: args.context.agentId,
-    workflowTitle: args.context.workflowTitle,
-    automationId: args.context.automationId,
-    currentTime: nowDate(),
-    expectedEventConnectorId: eventConnectorId,
-  });
-  if (summary === null) {
-    return {
-      kind: "bad-request",
-      message:
-        "Google Calendar account selection changed; retry adding the automation",
-    };
-  }
-  if (!args.input.enabled) {
-    signal.throwIfAborted();
-    return { kind: "ok", summary };
-  }
-
-  signal.throwIfAborted();
-  const watchResult = await onRejection(
-    ensureGoogleCalendarWatchForUser(
-      {
-        db: args.context.db,
-        orgId: args.input.orgId,
-        userId: args.input.member.userId,
-        connectorId: eventConnectorId,
-        calendarId: preparedConfig.calendarId,
-        forceRefresh: !hadConsumer,
+      ),
+      async () => {
+        await db
+          .delete(workflowAutomations)
+          .where(eq(workflowAutomations.id, summary.id));
       },
-      signal,
-    ),
-    async () => {
-      await args.context.db
+    );
+    signal.throwIfAborted();
+    if (watchResult.kind !== "ok") {
+      // eslint-disable-next-line api/signal-check-await -- Finish the paired watch cleanup after deleting the local automation.
+      await db
         .delete(workflowAutomations)
         .where(eq(workflowAutomations.id, summary.id));
-    },
-  );
-  signal.throwIfAborted();
-  if (watchResult.kind !== "ok") {
-    await args.context.db
-      .delete(workflowAutomations)
-      .where(eq(workflowAutomations.id, summary.id));
-    await reconcileAutomationEventWatches(
-      {
-        db: args.context.db,
-        automations: [
-          {
-            orgId: args.input.orgId,
-            ownerUserId: args.input.member.userId,
-            eventType: args.input.eventType,
-            eventConfig: preparedConfig,
-            eventConnectorId,
-          },
-        ],
-      },
-      signal,
-    );
-    return { kind: "bad-request", message: watchResult.message };
-  }
-  return { kind: "ok", summary };
-}
+      await set(
+        reconcileAutomationEventWatches$,
+        {
+          automations: [
+            {
+              orgId: args.input.orgId,
+              ownerUserId: args.input.member.userId,
+              eventType: args.input.eventType,
+              eventConfig: preparedConfig,
+              eventConnectorId,
+            },
+          ],
+        },
+        signal,
+      );
+      return { kind: "bad-request", message: watchResult.message };
+    }
+    return { kind: "ok", summary };
+  },
+);
 
 function googleFormsSummaryWithWarning(
   summary: WorkflowAutomationSummary,
@@ -2488,231 +2553,238 @@ function googleFormsSummaryWithWarning(
   }
   return warning === undefined ? summary : { ...summary, warning };
 }
-
-async function createGoogleFormsEventAutomationForWorkflow(
-  args: {
-    readonly context: CreateEventAutomationWorkflowContext;
-    readonly input: CreateGoogleFormsEventAutomationInput;
-  },
-  signal: AbortSignal,
-): Promise<AutomationResult> {
-  if (!("formUrl" in args.input.eventConfig)) {
-    return {
-      kind: "bad-request",
-      message: "formUrl is required for Google Forms response automations",
-    };
-  }
-  const connectorId = await resolveGoogleFormsAutomationConnectorId(
-    args.context.db,
-    {
+const createGoogleFormsEventAutomationForWorkflow$ = command(
+  async (
+    { set },
+    args: {
+      readonly context: Omit<CreateEventAutomationWorkflowContext, "db">;
+      readonly input: CreateGoogleFormsEventAutomationInput;
+    },
+    signal: AbortSignal,
+  ): Promise<AutomationResult> => {
+    const db = set(writeDb$);
+    if (!("formUrl" in args.input.eventConfig)) {
+      return {
+        kind: "bad-request",
+        message: "formUrl is required for Google Forms response automations",
+      };
+    }
+    const connectorId = await resolveGoogleFormsAutomationConnectorId(db, {
       orgId: args.input.orgId,
       userId: args.input.member.userId,
       workflowId: args.context.workflowId,
-    },
-  );
-  signal.throwIfAborted();
-  if (connectorId === null) {
-    return {
-      kind: "bad-request",
-      message:
-        "Connect Google Forms before adding a Google Forms response automation",
-    };
-  }
-  const prepared = await prepareGoogleFormsResponseEventConfigForPersist(
-    args.context.db,
-    {
-      orgId: args.input.orgId,
-      userId: args.input.member.userId,
-      connectorId,
-      eventConfig: args.input.eventConfig,
-    },
-    signal,
-  );
-  signal.throwIfAborted();
-  if (prepared.kind !== "ok") {
-    return prepared;
-  }
-  const hadConsumer = args.input.enabled
-    ? await hasEnabledGoogleFormsConsumer(
+    });
+    signal.throwIfAborted();
+    if (connectorId === null) {
+      return {
+        kind: "bad-request",
+        message:
+          "Connect Google Forms before adding a Google Forms response automation",
+      };
+    }
+    const prepared = await prepareGoogleFormsResponseEventConfigForPersist(
+      db,
+      {
+        orgId: args.input.orgId,
+        userId: args.input.member.userId,
+        connectorId,
+        eventConfig: args.input.eventConfig,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (prepared.kind !== "ok") {
+      return prepared;
+    }
+    const hadConsumer = args.input.enabled
+      ? await hasEnabledGoogleFormsConsumer(
+          {
+            db: db,
+            orgId: args.input.orgId,
+            userId: args.input.member.userId,
+            connectorId: prepared.eventConfig.connectorId,
+            formId: prepared.eventConfig.form.id,
+          },
+          signal,
+        )
+      : false;
+    const inserted = await settle(
+      insertEventAutomation(db, {
+        input: { ...args.input, eventConfig: prepared.eventConfig },
+        workflowId: args.context.workflowId,
+        agentId: args.context.agentId,
+        workflowTitle: args.context.workflowTitle,
+        automationId: args.context.automationId,
+        currentTime: nowDate(),
+      }),
+      signal,
+    );
+    if (!inserted.ok) {
+      if (inserted.error instanceof GoogleFormsAccountSelectionChangedError) {
+        return {
+          kind: "bad-request",
+          message: "Google Forms account selection changed; retry the request",
+        };
+      }
+      throw inserted.error;
+    }
+    const summary = inserted.value;
+    const resultSummary = googleFormsSummaryWithWarning(
+      summary,
+      prepared.warning,
+    );
+    if (!args.input.enabled) {
+      return { kind: "ok", summary: resultSummary };
+    }
+    const watchResult = await onRejection(
+      set(
+        ensureGoogleFormsWatchForUser$,
         {
-          db: args.context.db,
           orgId: args.input.orgId,
           userId: args.input.member.userId,
-          connectorId: prepared.eventConfig.connectorId,
           formId: prepared.eventConfig.form.id,
+          connectorId: prepared.eventConfig.connectorId,
+          resetAutomationId: summary.id,
+          seedCursor: prepared.seedCursor,
         },
         signal,
-      )
-    : false;
-  const inserted = await settle(
-    insertEventAutomation(args.context.db, {
-      input: { ...args.input, eventConfig: prepared.eventConfig },
+      ),
+      async () => {
+        await db
+          .delete(workflowAutomations)
+          .where(eq(workflowAutomations.id, summary.id));
+      },
+    );
+    signal.throwIfAborted();
+    if (watchResult.kind === "ok") {
+      return { kind: "ok", summary: resultSummary };
+    }
+    // eslint-disable-next-line api/signal-check-await -- Finish the paired watch cleanup after deleting the local automation.
+    await db
+      .delete(workflowAutomations)
+      .where(eq(workflowAutomations.id, summary.id));
+    if (!hadConsumer) {
+      await set(
+        reconcileAutomationEventWatches$,
+        {
+          automations: [
+            {
+              orgId: args.input.orgId,
+              ownerUserId: args.input.member.userId,
+              eventType: args.input.eventType,
+              eventConfig: prepared.eventConfig,
+              eventConnectorId: prepared.eventConfig.connectorId,
+            },
+          ],
+        },
+        signal,
+      );
+    }
+    return { kind: "bad-request", message: watchResult.message };
+  },
+);
+const createGoogleMeetEventAutomationForWorkflow$ = command(
+  async (
+    { set },
+    args: {
+      readonly context: Omit<CreateEventAutomationWorkflowContext, "db">;
+      readonly input: CreateGoogleMeetEventAutomationInput;
+    },
+    signal: AbortSignal,
+  ): Promise<AutomationResult> => {
+    const db = set(writeDb$);
+    const preparedConfig = googleMeetTranscriptGeneratedEventConfigSchema.parse(
+      args.input.eventConfig,
+    );
+    const connectorId = await resolveGoogleMeetAutomationConnectorId(db, {
+      orgId: args.input.orgId,
+      userId: args.input.member.userId,
+      workflowId: args.context.workflowId,
+    });
+    signal.throwIfAborted();
+    if (args.input.enabled && connectorId === null) {
+      return {
+        kind: "bad-request",
+        message:
+          "Connect Google Meet before adding a Google Meet event automation",
+      };
+    }
+    // eslint-disable-next-line api/signal-check-await -- Complete the committed automation handoff and its watch compensation before propagating cancellation.
+    const summary = await insertEventAutomation(db, {
+      input: { ...args.input, eventConfig: preparedConfig },
       workflowId: args.context.workflowId,
       agentId: args.context.agentId,
       workflowTitle: args.context.workflowTitle,
       automationId: args.context.automationId,
       currentTime: nowDate(),
-    }),
-    signal,
-  );
-  if (!inserted.ok) {
-    if (inserted.error instanceof GoogleFormsAccountSelectionChangedError) {
+      ...(args.input.enabled && connectorId !== null
+        ? { expectedEventConnectorId: connectorId }
+        : {}),
+    });
+    if (summary === null) {
       return {
         kind: "bad-request",
-        message: "Google Forms account selection changed; retry the request",
+        message: "Google Meet account selection changed; retry the request",
       };
     }
-    throw inserted.error;
-  }
-  const summary = inserted.value;
-  const resultSummary = googleFormsSummaryWithWarning(
-    summary,
-    prepared.warning,
-  );
-  if (!args.input.enabled) {
-    return { kind: "ok", summary: resultSummary };
-  }
-  const watchResult = await onRejection(
-    ensureGoogleFormsWatchForUser(
-      {
-        db: args.context.db,
-        orgId: args.input.orgId,
-        userId: args.input.member.userId,
-        formId: prepared.eventConfig.form.id,
-        connectorId: prepared.eventConfig.connectorId,
-        resetAutomationId: summary.id,
-        seedCursor: prepared.seedCursor,
-      },
-      signal,
-    ),
-    async () => {
-      await args.context.db
+    if (!args.input.enabled) {
+      return { kind: "ok", summary };
+    }
+    if (connectorId === null) {
+      throw new Error("Enabled Google Meet automation lost account projection");
+    }
+    const rollback = async (): Promise<void> => {
+      const cleanupSignal = new AbortController().signal;
+      await db
         .delete(workflowAutomations)
         .where(eq(workflowAutomations.id, summary.id));
-    },
-  );
-  signal.throwIfAborted();
-  if (watchResult.kind === "ok") {
-    return { kind: "ok", summary: resultSummary };
-  }
-  await args.context.db
-    .delete(workflowAutomations)
-    .where(eq(workflowAutomations.id, summary.id));
-  if (!hadConsumer) {
-    await reconcileAutomationEventWatches(
-      {
-        db: args.context.db,
-        automations: [
-          {
-            orgId: args.input.orgId,
-            ownerUserId: args.input.member.userId,
-            eventType: args.input.eventType,
-            eventConfig: prepared.eventConfig,
-            eventConnectorId: prepared.eventConfig.connectorId,
-          },
-        ],
-      },
-      signal,
-    );
-  }
-  return { kind: "bad-request", message: watchResult.message };
-}
-
-async function createGoogleMeetEventAutomationForWorkflow(
-  args: {
-    readonly context: CreateEventAutomationWorkflowContext;
-    readonly input: CreateGoogleMeetEventAutomationInput;
-  },
-  signal: AbortSignal,
-): Promise<AutomationResult> {
-  const preparedConfig = googleMeetTranscriptGeneratedEventConfigSchema.parse(
-    args.input.eventConfig,
-  );
-  const connectorId = await resolveGoogleMeetAutomationConnectorId(
-    args.context.db,
-    {
-      orgId: args.input.orgId,
-      userId: args.input.member.userId,
-      workflowId: args.context.workflowId,
-    },
-  );
-  signal.throwIfAborted();
-  if (args.input.enabled && connectorId === null) {
-    return {
-      kind: "bad-request",
-      message:
-        "Connect Google Meet before adding a Google Meet event automation",
+      await set(
+        reconcileAutomationEventWatches$,
+        {
+          automations: [
+            {
+              orgId: args.input.orgId,
+              ownerUserId: args.input.member.userId,
+              eventType: args.input.eventType,
+              eventConfig: preparedConfig,
+              eventConnectorId: connectorId,
+            },
+          ],
+        },
+        cleanupSignal,
+      );
     };
-  }
-  const summary = await insertEventAutomation(args.context.db, {
-    input: { ...args.input, eventConfig: preparedConfig },
-    workflowId: args.context.workflowId,
-    agentId: args.context.agentId,
-    workflowTitle: args.context.workflowTitle,
-    automationId: args.context.automationId,
-    currentTime: nowDate(),
-    ...(args.input.enabled && connectorId !== null
-      ? { expectedEventConnectorId: connectorId }
-      : {}),
-  });
-  if (summary === null) {
-    return {
-      kind: "bad-request",
-      message: "Google Meet account selection changed; retry the request",
-    };
-  }
-  if (!args.input.enabled) {
-    return { kind: "ok", summary };
-  }
-  if (connectorId === null) {
-    throw new Error("Enabled Google Meet automation lost account projection");
-  }
-
-  const rollback = async (): Promise<void> => {
-    const cleanupSignal = new AbortController().signal;
-    await args.context.db
-      .delete(workflowAutomations)
-      .where(eq(workflowAutomations.id, summary.id));
-    await reconcileAutomationEventWatches(
-      {
-        db: args.context.db,
-        automations: [
-          {
-            orgId: args.input.orgId,
-            ownerUserId: args.input.member.userId,
-            eventType: args.input.eventType,
-            eventConfig: preparedConfig,
-            eventConnectorId: connectorId,
-          },
-        ],
-      },
-      cleanupSignal,
+    // eslint-disable-next-line api/signal-check-await -- Observe provider failure and finish the owned rollback before propagating cancellation.
+    const subscriptionResult = await onRejection(
+      ensureGoogleMeetTranscriptGeneratedSubscriptionForUser(
+        {
+          db: db,
+          orgId: args.input.orgId,
+          userId: args.input.member.userId,
+          connectorId,
+        },
+        signal,
+      ),
+      rollback,
     );
-  };
-  const subscriptionResult = await onRejection(
-    ensureGoogleMeetTranscriptGeneratedSubscriptionForUser(
-      {
-        db: args.context.db,
-        orgId: args.input.orgId,
-        userId: args.input.member.userId,
-        connectorId,
-      },
-      signal,
-    ),
-    rollback,
-  );
-  if (subscriptionResult.kind !== "ok") {
-    await rollback();
+    if (subscriptionResult.kind !== "ok") {
+      await rollback();
+      signal.throwIfAborted();
+      return { kind: "bad-request", message: subscriptionResult.message };
+    }
     signal.throwIfAborted();
-    return { kind: "bad-request", message: subscriptionResult.message };
-  }
-  signal.throwIfAborted();
-  return { kind: "ok", summary };
-}
-
+    return { kind: "ok", summary };
+  },
+);
 type NotionEventConfigPreparationResult =
-  | { readonly kind: "ok"; readonly eventConfig: NotionAutomationEventConfig }
-  | { readonly kind: "bad-request"; readonly message: string };
+  | {
+      readonly kind: "ok";
+      readonly eventConfig: NotionAutomationEventConfig;
+    }
+  | {
+      readonly kind: "bad-request";
+      readonly message: string;
+    };
 
 async function createNotionEventAutomationForWorkflow(
   args: {
@@ -2837,7 +2909,6 @@ async function createNotionEventAutomationForWorkflow(
     signal,
   );
 }
-
 async function resolveNotionAutomationAccountForCreation(
   db: Db,
   args: {
@@ -2847,7 +2918,10 @@ async function resolveNotionAutomationAccountForCreation(
   },
   signal: AbortSignal,
 ): Promise<
-  | { readonly kind: "ok"; readonly connectorId: string }
+  | {
+      readonly kind: "ok";
+      readonly connectorId: string;
+    }
   | AutomationActionFailure
 > {
   const connectorId = await resolveNotionAutomationConnectorId(db, args);
@@ -2988,7 +3062,6 @@ const createStripeInvoicePaidEventAutomation$ = command(
     );
   },
 );
-
 async function createChatRunFinishedEventAutomationForWorkflow(
   args: {
     readonly context: {
@@ -3017,7 +3090,6 @@ async function createChatRunFinishedEventAutomationForWorkflow(
       message: `Chat thread not found: ${args.input.eventConfig.chatThreadId}`,
     };
   }
-
   const automationThreadId = await loadWorkflowUserAutomationThreadId(
     args.context.db,
     {
@@ -3034,7 +3106,6 @@ async function createChatRunFinishedEventAutomationForWorkflow(
         "A workflow cannot watch run-finished events from its own chat thread",
     };
   }
-
   const summary = await insertEventAutomation(args.context.db, {
     input: args.input,
     workflowId: args.context.workflowId,
@@ -3046,7 +3117,6 @@ async function createChatRunFinishedEventAutomationForWorkflow(
   signal.throwIfAborted();
   return { kind: "ok", summary };
 }
-
 const createEventAutomationForWorkflow$ = command(
   async (
     { set },
@@ -3070,12 +3140,10 @@ const createEventAutomationForWorkflow$ = command(
         signal,
       );
     }
-
     if (input.eventType === "webhook-received") {
       const createArgs = { context: args, input };
       return await createWebhookEventAutomationForWorkflow(createArgs, signal);
     }
-
     if (input.eventType === "github-workflow-run-completed") {
       const createArgs = { context: args, input };
       return await createGithubWorkflowRunEventAutomationForWorkflow(
@@ -3083,7 +3151,6 @@ const createEventAutomationForWorkflow$ = command(
         signal,
       );
     }
-
     if (automationCreateInputIsGithubWebhook(input)) {
       return await createGithubWebhookEventAutomationForWorkflow(
         {
@@ -3093,33 +3160,53 @@ const createEventAutomationForWorkflow$ = command(
         signal,
       );
     }
-
     if (automationCreateInputIsGoogleCalendar(input)) {
       const createArgs = { context: args, input };
-      return await createGoogleCalendarEventAutomationForWorkflow(
-        createArgs,
+      return await set(
+        createGoogleCalendarEventAutomationForWorkflow$,
+        {
+          context: {
+            workflowId: createArgs.context.workflowId,
+            agentId: createArgs.context.agentId,
+            workflowTitle: createArgs.context.workflowTitle,
+            automationId: createArgs.context.automationId,
+          },
+          input: createArgs.input,
+        },
         signal,
       );
     }
-
     if (automationCreateInputIsGoogleForms(input)) {
-      return await createGoogleFormsEventAutomationForWorkflow(
+      return await set(
+        createGoogleFormsEventAutomationForWorkflow$,
         {
-          context: args,
+          context: {
+            workflowId: args.workflowId,
+            agentId: args.agentId,
+            workflowTitle: args.workflowTitle,
+            automationId: args.automationId,
+          },
           input,
         },
         signal,
       );
     }
-
     if (automationCreateInputIsGoogleMeet(input)) {
       const createArgs = { context: args, input };
-      return await createGoogleMeetEventAutomationForWorkflow(
-        createArgs,
+      return await set(
+        createGoogleMeetEventAutomationForWorkflow$,
+        {
+          context: {
+            workflowId: createArgs.context.workflowId,
+            agentId: createArgs.context.agentId,
+            workflowTitle: createArgs.context.workflowTitle,
+            automationId: createArgs.context.automationId,
+          },
+          input: createArgs.input,
+        },
         signal,
       );
     }
-
     if (automationCreateInputIsNotion(input)) {
       return await createNotionEventAutomationForWorkflow(
         {
@@ -3129,7 +3216,6 @@ const createEventAutomationForWorkflow$ = command(
         signal,
       );
     }
-
     if (automationCreateInputIsStripeInvoicePaid(input)) {
       const result = await set(
         createStripeInvoicePaidEventAutomation$,
@@ -3139,11 +3225,16 @@ const createEventAutomationForWorkflow$ = command(
       signal.throwIfAborted();
       return result;
     }
-
     if (automationCreateInputIsGmail(input)) {
-      return await createGmailEventAutomationForWorkflow(
+      return await set(
+        createGmailEventAutomationForWorkflow$,
         {
-          context: args,
+          context: {
+            workflowId: args.workflowId,
+            agentId: args.agentId,
+            workflowTitle: args.workflowTitle,
+            automationId: args.automationId,
+          },
           input,
         },
         signal,
@@ -3372,7 +3463,6 @@ async function attachOfficialAutomationMetadata(
     }),
   };
 }
-
 export const createWorkflowAutomation$ = command(
   async (
     { set },
@@ -3410,7 +3500,6 @@ export const createWorkflowAutomation$ = command(
         message: OFFICIAL_WORKFLOW_AUTOMATION_READ_ONLY_MESSAGE,
       };
     }
-
     // The owning agent is derived from the workflow row (hard 1:N). The automation
     // owner must be able to run that agent for the scheduled run to fire.
     const agent = await loadAgent(writeDb, {
@@ -3431,7 +3520,6 @@ export const createWorkflowAutomation$ = command(
       };
     }
     const workflowTitle = workflow.displayName ?? workflow.name;
-
     if (!automationCreateInputIsSchedule(args)) {
       const created = await set(
         createEventAutomationForWorkflow$,
@@ -3461,16 +3549,13 @@ export const createWorkflowAutomation$ = command(
       }
       return result;
     }
-
     const now = nowDate();
     const scheduleError = validateSchedule(args.schedule, now);
     if (scheduleError) {
       return { kind: "bad-request", message: scheduleError };
     }
-
     const cols = scheduleToColumns(args.schedule);
     const nextRunAt = resolveNextRunAt(args.schedule, args.enabled, now);
-
     const summary = await insertScheduleAutomation(writeDb, {
       input: args,
       workflowId: workflow.id,
@@ -4204,117 +4289,128 @@ async function prepareGithubAutomationEventConfig(
     eventConfig,
   });
 }
-
-async function updateGmailEventAutomationForWorkflow(
-  args: {
-    readonly db: Db;
-    readonly orgId: string;
-    readonly member: WorkflowMember;
-    readonly automation: AutomationRow & {
-      readonly eventType: GmailAutomationEventType;
-    };
-    readonly eventConfig:
-      | GmailAutomationEventConfig
-      | GithubAutomationEventConfig
-      | GoogleCalendarAutomationEventConfig;
-  },
-  signal: AbortSignal,
-): Promise<AutomationResult> {
-  const parsedConfig =
-    args.automation.eventType === "gmail-label-applied"
-      ? gmailLabelAppliedEventConfigSchema.safeParse(args.eventConfig)
-      : gmailNewMessageEventConfigSchema.safeParse(args.eventConfig);
-  if (!parsedConfig.success) {
-    return {
-      kind: "bad-request",
-      message: "eventConfig must be a Gmail event config",
-    };
-  }
-  const eventConnectorId = await resolveGmailAutomationConnectorId(args.db, {
-    orgId: args.orgId,
-    userId: args.member.userId,
-    workflowId: args.automation.workflowId,
-  });
-  signal.throwIfAborted();
-  if (eventConnectorId === null) {
-    return {
-      kind: "bad-request",
-      message: "Connect Gmail before using Gmail event automations",
-    };
-  }
-  const preparedConfig = await prepareGmailEventConfigForPersist(
-    args.db,
-    {
-      orgId: args.orgId,
-      userId: args.member.userId,
-      connectorId: eventConnectorId,
-      eventType: args.automation.eventType,
-      eventConfig: parsedConfig.data,
+const updateGmailEventAutomationForWorkflow$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly member: WorkflowMember;
+      readonly automation: AutomationRow & {
+        readonly eventType: GmailAutomationEventType;
+      };
+      readonly eventConfig:
+        | GmailAutomationEventConfig
+        | GithubAutomationEventConfig
+        | GoogleCalendarAutomationEventConfig;
     },
-    signal,
-  );
-  signal.throwIfAborted();
-  if (preparedConfig.kind !== "ok") {
-    return preparedConfig;
-  }
-  const summary = await args.db.transaction(async (tx) => {
-    await lockConnectorAccountTarget(tx, {
-      orgId: args.orgId,
-      userId: args.member.userId,
-      target: { kind: "builtin", connectorSlug: "gmail" },
-    });
-    const persistedConnectorId = await resolveGmailAutomationConnectorId(tx, {
+    signal: AbortSignal,
+  ): Promise<AutomationResult> => {
+    const db = set(writeDb$);
+    const parsedConfig =
+      args.automation.eventType === "gmail-label-applied"
+        ? gmailLabelAppliedEventConfigSchema.safeParse(args.eventConfig)
+        : gmailNewMessageEventConfigSchema.safeParse(args.eventConfig);
+    if (!parsedConfig.success) {
+      return {
+        kind: "bad-request",
+        message: "eventConfig must be a Gmail event config",
+      };
+    }
+    const eventConnectorId = await resolveGmailAutomationConnectorId(db, {
       orgId: args.orgId,
       userId: args.member.userId,
       workflowId: args.automation.workflowId,
     });
-    if (persistedConnectorId !== eventConnectorId) {
-      return null;
+    signal.throwIfAborted();
+    if (eventConnectorId === null) {
+      return {
+        kind: "bad-request",
+        message: "Connect Gmail before using Gmail event automations",
+      };
     }
-    return await updateAutomationEventConfig(
-      tx,
+    const preparedConfig = await prepareGmailEventConfigForPersist(
+      db,
       {
-        automationId: args.automation.id,
-        eventConfig: preparedConfig.eventConfig,
-        eventConnectorId: persistedConnectorId,
+        orgId: args.orgId,
+        userId: args.member.userId,
+        connectorId: eventConnectorId,
+        eventType: args.automation.eventType,
+        eventConfig: parsedConfig.data,
       },
       signal,
     );
-  });
-  if (summary === null) {
-    return {
-      kind: "bad-request",
-      message: "Gmail account selection changed; retry the update",
-    };
-  }
-  if (args.automation.enabled) {
-    await bestEffort(
-      reconcileAutomationEventWatches(
+    signal.throwIfAborted();
+    if (preparedConfig.kind !== "ok") {
+      return preparedConfig;
+    }
+    // eslint-disable-next-line api/signal-check-await -- Complete the committed automation handoff and its watch compensation before propagating cancellation.
+    const summary = await db.transaction(async (tx) => {
+      await lockConnectorAccountTarget(tx, {
+        orgId: args.orgId,
+        userId: args.member.userId,
+        target: { kind: "builtin", connectorSlug: "gmail" },
+      });
+      const persistedConnectorId = await resolveGmailAutomationConnectorId(tx, {
+        orgId: args.orgId,
+        userId: args.member.userId,
+        workflowId: args.automation.workflowId,
+      });
+      if (persistedConnectorId !== eventConnectorId) {
+        return null;
+      }
+      return await updateAutomationEventConfig(
+        tx,
         {
-          db: args.db,
-          automations: [
-            {
-              orgId: args.orgId,
-              ownerUserId: args.member.userId,
-              eventType: args.automation.eventType,
-              eventConfig: preparedConfig.eventConfig,
-              eventConnectorId,
-            },
-          ],
+          automationId: args.automation.id,
+          eventConfig: preparedConfig.eventConfig,
+          eventConnectorId: persistedConnectorId,
         },
         signal,
-      ),
-      signal,
-    );
-  }
-  return { kind: "ok", summary };
-}
-
+      );
+    });
+    if (summary === null) {
+      return {
+        kind: "bad-request",
+        message: "Gmail account selection changed; retry the update",
+      };
+    }
+    if (args.automation.enabled) {
+      await bestEffort(
+        set(
+          reconcileAutomationEventWatches$,
+          {
+            automations: [
+              {
+                orgId: args.orgId,
+                ownerUserId: args.member.userId,
+                eventType: args.automation.eventType,
+                eventConfig: preparedConfig.eventConfig,
+                eventConnectorId,
+              },
+            ],
+          },
+          signal,
+        ),
+        signal,
+      );
+    }
+    return { kind: "ok", summary };
+  },
+);
 type GoogleCalendarReconfigurationPersistenceResult =
-  | { readonly kind: "ok"; readonly summary: WorkflowAutomationSummary }
-  | { readonly kind: "account-changed" }
-  | { readonly kind: "watch-changed" }
-  | { readonly kind: "automation-changed" };
+  | {
+      readonly kind: "ok";
+      readonly summary: WorkflowAutomationSummary;
+    }
+  | {
+      readonly kind: "account-changed";
+    }
+  | {
+      readonly kind: "watch-changed";
+    }
+  | {
+      readonly kind: "automation-changed";
+    };
 
 type GoogleCalendarAutomationUpdateEventConfig =
   | GmailAutomationEventConfig
@@ -4330,7 +4426,6 @@ interface GoogleCalendarAutomationUpdateArgs {
   };
   readonly eventConfig: GoogleCalendarAutomationUpdateEventConfig;
 }
-
 type GoogleCalendarReconfigurationPreparationResult =
   | {
       readonly kind: "ok";
@@ -4340,7 +4435,10 @@ type GoogleCalendarReconfigurationPreparationResult =
       readonly previousTarget: StagedGoogleCalendarWatchTarget | null;
       readonly targetChanged: boolean;
     }
-  | { readonly kind: "bad-request"; readonly message: string };
+  | {
+      readonly kind: "bad-request";
+      readonly message: string;
+    };
 
 function googleCalendarAutomationMatchesReconfigurationSource(
   current: AutomationRow,
@@ -4626,10 +4724,9 @@ async function updateGoogleCalendarEventAutomationForWorkflow(
   }
   return { kind: "ok", summary: persisted.summary };
 }
-
 const updateEventAutomationForWorkflow$ = command(
   async (
-    _,
+    { set },
     args: {
       readonly db: Db;
       readonly orgId: string;
@@ -4711,7 +4808,8 @@ const updateEventAutomationForWorkflow$ = command(
     if (!supportedGmailEventType(args.automation.eventType)) {
       return { kind: "not-found" };
     }
-    return await updateGmailEventAutomationForWorkflow(
+    return await set(
+      updateGmailEventAutomationForWorkflow$,
       {
         ...args,
         automation: {
@@ -4935,7 +5033,6 @@ export const runOwnedWorkflowAutomationNow$ = command(
     return { kind: "enqueued", chatThreadId };
   },
 );
-
 export const deleteWorkflowAutomation$ = command(
   async (
     { set },
@@ -4965,9 +5062,9 @@ export const deleteWorkflowAutomation$ = command(
       .delete(workflowAutomations)
       .where(eq(workflowAutomations.id, owned.automation.id));
     signal.throwIfAborted();
-    await reconcileAutomationEventWatches(
+    await set(
+      reconcileAutomationEventWatches$,
       {
-        db: writeDb,
         automations: [owned.automation],
       },
       signal,
@@ -5078,28 +5175,99 @@ async function enabledWatchHadConsumer(
     signal,
   );
 }
-
-async function ensureEnabledAutomationEventWatch(
-  args: {
-    readonly db: Db;
-    readonly automation: AutomationRow;
-    readonly hadConsumer: boolean;
-  },
-  signal: AbortSignal,
-): Promise<AutomationActionFailure | null> {
-  if (supportedGmailEventType(args.automation.eventType)) {
+const ensureEnabledAutomationEventWatch$ = command(
+  async (
+    { set },
+    args: {
+      readonly automation: AutomationRow;
+      readonly hadConsumer: boolean;
+    },
+    signal: AbortSignal,
+  ): Promise<AutomationActionFailure | null> => {
+    const db = set(writeDb$);
+    if (supportedGmailEventType(args.automation.eventType)) {
+      if (args.automation.eventConnectorId === null) {
+        return {
+          kind: "bad-request",
+          message: "Connect Gmail before using Gmail event automations",
+        };
+      }
+      const result = await ensureGmailWatchForUser(
+        {
+          db: db,
+          orgId: args.automation.orgId,
+          userId: args.automation.ownerUserId,
+          connectorId: args.automation.eventConnectorId,
+          forceRefresh: !args.hadConsumer,
+        },
+        signal,
+      );
+      return result.kind === "ok"
+        ? null
+        : { kind: "bad-request", message: result.message };
+    }
+    if (supportedGoogleMeetEventType(args.automation.eventType)) {
+      if (args.automation.eventConnectorId === null) {
+        return {
+          kind: "bad-request",
+          message:
+            "Connect Google Meet before using Google Meet event automations",
+        };
+      }
+      const result =
+        await ensureGoogleMeetTranscriptGeneratedSubscriptionForUser(
+          {
+            db: db,
+            orgId: args.automation.orgId,
+            userId: args.automation.ownerUserId,
+            connectorId: args.automation.eventConnectorId,
+          },
+          signal,
+        );
+      return result.kind === "ok"
+        ? null
+        : { kind: "bad-request", message: result.message };
+    }
+    if (supportedGoogleFormsEventType(args.automation.eventType)) {
+      const config = googleFormsResponseSubmittedEventConfigSchema.parse(
+        args.automation.eventConfig,
+      );
+      const result = await set(
+        ensureGoogleFormsWatchForUser$,
+        {
+          orgId: args.automation.orgId,
+          userId: args.automation.ownerUserId,
+          formId: config.form.id,
+          connectorId: config.connectorId,
+          resetAutomationId: args.automation.id,
+        },
+        signal,
+      );
+      return result.kind === "ok"
+        ? null
+        : { kind: "bad-request", message: result.message };
+    }
+    if (!supportedGoogleCalendarEventType(args.automation.eventType)) {
+      return null;
+    }
     if (args.automation.eventConnectorId === null) {
       return {
         kind: "bad-request",
-        message: "Connect Gmail before using Gmail event automations",
+        message:
+          "Connect Google Calendar before using Google Calendar event automations",
       };
     }
-    const result = await ensureGmailWatchForUser(
+    const config = parseGoogleCalendarEventConfig(
+      args.automation.eventType,
+      args.automation.eventConfig,
+    );
+    const result = await ensureGoogleCalendarWatchForUser(
       {
-        db: args.db,
+        db: db,
         orgId: args.automation.orgId,
         userId: args.automation.ownerUserId,
         connectorId: args.automation.eventConnectorId,
+        calendarId: config.calendarId,
         forceRefresh: !args.hadConsumer,
       },
       signal,
@@ -5107,76 +5275,8 @@ async function ensureEnabledAutomationEventWatch(
     return result.kind === "ok"
       ? null
       : { kind: "bad-request", message: result.message };
-  }
-  if (supportedGoogleMeetEventType(args.automation.eventType)) {
-    if (args.automation.eventConnectorId === null) {
-      return {
-        kind: "bad-request",
-        message:
-          "Connect Google Meet before using Google Meet event automations",
-      };
-    }
-    const result = await ensureGoogleMeetTranscriptGeneratedSubscriptionForUser(
-      {
-        db: args.db,
-        orgId: args.automation.orgId,
-        userId: args.automation.ownerUserId,
-        connectorId: args.automation.eventConnectorId,
-      },
-      signal,
-    );
-    return result.kind === "ok"
-      ? null
-      : { kind: "bad-request", message: result.message };
-  }
-  if (supportedGoogleFormsEventType(args.automation.eventType)) {
-    const config = googleFormsResponseSubmittedEventConfigSchema.parse(
-      args.automation.eventConfig,
-    );
-    const result = await ensureGoogleFormsWatchForUser(
-      {
-        db: args.db,
-        orgId: args.automation.orgId,
-        userId: args.automation.ownerUserId,
-        formId: config.form.id,
-        connectorId: config.connectorId,
-        resetAutomationId: args.automation.id,
-      },
-      signal,
-    );
-    return result.kind === "ok"
-      ? null
-      : { kind: "bad-request", message: result.message };
-  }
-  if (!supportedGoogleCalendarEventType(args.automation.eventType)) {
-    return null;
-  }
-  if (args.automation.eventConnectorId === null) {
-    return {
-      kind: "bad-request",
-      message:
-        "Connect Google Calendar before using Google Calendar event automations",
-    };
-  }
-  const config = parseGoogleCalendarEventConfig(
-    args.automation.eventType,
-    args.automation.eventConfig,
-  );
-  const result = await ensureGoogleCalendarWatchForUser(
-    {
-      db: args.db,
-      orgId: args.automation.orgId,
-      userId: args.automation.ownerUserId,
-      connectorId: args.automation.eventConnectorId,
-      calendarId: config.calendarId,
-      forceRefresh: !args.hadConsumer,
-    },
-    signal,
-  );
-  return result.kind === "ok"
-    ? null
-    : { kind: "bad-request", message: result.message };
-}
+  },
+);
 
 function sameOptionalAutomationDate(
   left: Date | null,
@@ -5320,81 +5420,100 @@ async function finalizeEnabledOfficialAutomation(
   }
   return finalized;
 }
-
-async function ensureEnabledAutomationEventWatchWithRollback(
-  args: {
-    readonly db: Db;
-    readonly previousAutomation: AutomationRow;
-    readonly enabledAutomation: AutomationRow;
-    readonly hadConsumer: boolean;
-  },
-  signal: AbortSignal,
-): Promise<AutomationActionFailure | null> {
-  const rollback = async (): Promise<void> => {
-    const cleanupSignal = new AbortController().signal;
-    await onRejection(
-      (async () => {
-        await restoreDisabledWorkflowAutomation(
-          args.db,
-          args.previousAutomation,
-          args.enabledAutomation,
-        );
-        await reconcileAutomationEventWatches(
-          {
-            db: args.db,
-            automations: [args.enabledAutomation],
-          },
-          cleanupSignal,
-        );
-      })(),
-      async () => {
-        if (args.previousAutomation.officialBlueprintKey === null) {
-          return;
-        }
-        await args.db
-          .update(workflowAutomations)
-          .set({
-            officialReconciliationStatus: "failed",
-            updatedAt: nowDate(),
-          })
-          .where(
-            and(
-              eq(workflowAutomations.id, args.previousAutomation.id),
-              isNotNull(workflowAutomations.officialBlueprintKey),
-            ),
+const ensureEnabledAutomationEventWatchWithRollback$ = command(
+  async (
+    { set },
+    args: {
+      readonly previousAutomation: AutomationRow;
+      readonly enabledAutomation: AutomationRow;
+      readonly hadConsumer: boolean;
+    },
+    signal: AbortSignal,
+  ): Promise<AutomationActionFailure | null> => {
+    const db = set(writeDb$);
+    const rollback = async (): Promise<void> => {
+      const cleanupSignal = new AbortController().signal;
+      await onRejection(
+        (async () => {
+          await restoreDisabledWorkflowAutomation(
+            db,
+            args.previousAutomation,
+            args.enabledAutomation,
           );
-      },
-    );
-  };
-  return await onRejection(
-    (async () => {
-      const failure = await ensureEnabledAutomationEventWatch(
-        {
-          db: args.db,
-          automation: args.enabledAutomation,
-          hadConsumer: args.hadConsumer,
+          await set(
+            reconcileAutomationEventWatches$,
+            {
+              automations: [args.enabledAutomation],
+            },
+            cleanupSignal,
+          );
+        })(),
+        async () => {
+          if (args.previousAutomation.officialBlueprintKey === null) {
+            return;
+          }
+          await db
+            .update(workflowAutomations)
+            .set({
+              officialReconciliationStatus: "failed",
+              updatedAt: nowDate(),
+            })
+            .where(
+              and(
+                eq(workflowAutomations.id, args.previousAutomation.id),
+                isNotNull(workflowAutomations.officialBlueprintKey),
+              ),
+            );
         },
-        signal,
       );
-      if (failure) {
-        await rollback();
-      }
-      signal.throwIfAborted();
-      return failure;
-    })(),
-    rollback,
-  );
-}
-
+    };
+    return await onRejection(
+      (async () => {
+        const failure = await set(
+          ensureEnabledAutomationEventWatch$,
+          {
+            automation: args.enabledAutomation,
+            hadConsumer: args.hadConsumer,
+          },
+          signal,
+        );
+        if (failure) {
+          await rollback();
+        }
+        signal.throwIfAborted();
+        return failure;
+      })(),
+      rollback,
+    );
+  },
+);
 type EnabledAutomationAccountProjection =
-  | { readonly status: "gmail-unavailable" }
-  | { readonly status: "google-calendar-unavailable" }
-  | { readonly status: "google-forms-unavailable" }
-  | { readonly status: "google-meet-unavailable" }
-  | { readonly status: "notion-unavailable" }
-  | { readonly status: "notion-account-changed" }
-  | { readonly status: "stripe-unavailable"; readonly message: string }
-  | { readonly status: "ok"; readonly required: false }
+  | {
+      readonly status: "gmail-unavailable";
+    }
+  | {
+      readonly status: "google-calendar-unavailable";
+    }
+  | {
+      readonly status: "google-forms-unavailable";
+    }
+  | {
+      readonly status: "google-meet-unavailable";
+    }
+  | {
+      readonly status: "notion-unavailable";
+    }
+  | {
+      readonly status: "notion-account-changed";
+    }
+  | {
+      readonly status: "stripe-unavailable";
+      readonly message: string;
+    }
+  | {
+      readonly status: "ok";
+      readonly required: false;
+    }
   | {
       readonly status: "ok";
       readonly required: true;
@@ -5596,7 +5715,6 @@ async function lockEnabledAutomationAccountProjection(
     eventConfig,
   };
 }
-
 async function persistEnabledWorkflowAutomation(
   db: Db,
   args: {
@@ -5608,16 +5726,38 @@ async function persistEnabledWorkflowAutomation(
   },
   signal: AbortSignal,
 ): Promise<
-  | { readonly status: "team-required" }
-  | { readonly status: "conflict" }
-  | { readonly status: "gmail-unavailable" }
-  | { readonly status: "google-calendar-unavailable" }
-  | { readonly status: "notion-unavailable" }
-  | { readonly status: "notion-account-changed" }
-  | { readonly status: "stripe-unavailable"; readonly message: string }
-  | { readonly status: "google-forms-unavailable" }
-  | { readonly status: "google-meet-unavailable" }
-  | { readonly status: "ok"; readonly row: AutomationRow | undefined }
+  | {
+      readonly status: "team-required";
+    }
+  | {
+      readonly status: "conflict";
+    }
+  | {
+      readonly status: "gmail-unavailable";
+    }
+  | {
+      readonly status: "google-calendar-unavailable";
+    }
+  | {
+      readonly status: "notion-unavailable";
+    }
+  | {
+      readonly status: "notion-account-changed";
+    }
+  | {
+      readonly status: "stripe-unavailable";
+      readonly message: string;
+    }
+  | {
+      readonly status: "google-forms-unavailable";
+    }
+  | {
+      readonly status: "google-meet-unavailable";
+    }
+  | {
+      readonly status: "ok";
+      readonly row: AutomationRow | undefined;
+    }
 > {
   return await db.transaction(async (tx) => {
     const accountProjection = await lockEnabledAutomationAccountProjection(
@@ -5644,7 +5784,6 @@ async function persistEnabledWorkflowAutomation(
         return { status: "team-required" };
       }
     }
-
     const [enabledRow] = await tx
       .update(workflowAutomations)
       .set({
@@ -5686,13 +5825,15 @@ async function persistEnabledWorkflowAutomation(
       : { status: "ok", row: enabledRow };
   });
 }
-
 async function prepareEnabledAutomationAccountProjection(
   db: Db,
   automation: AutomationRow,
   signal: AbortSignal,
 ): Promise<
-  | { readonly kind: "ok"; readonly eventConnectorId: string | null }
+  | {
+      readonly kind: "ok";
+      readonly eventConnectorId: string | null;
+    }
   | AutomationActionFailure
 > {
   const provider = workflowAutomationAccountConnectorSlug(automation.eventType);
@@ -5796,131 +5937,134 @@ async function finalizeAndPublishEnabledWorkflowAutomation(
   signal.throwIfAborted();
   return { kind: "ok", summary };
 }
-
-async function persistAndReconcileEnabledWorkflowAutomation(
-  db: Db,
-  args: {
-    readonly automation: AutomationRow;
-    readonly orgId: string;
-    readonly memberUserId: string;
-    readonly nextRunAt: Date | null;
-    readonly now: Date;
-    readonly inheritedAutonomyBudget?: number;
-  },
-  signal: AbortSignal,
-): Promise<AutomationResult> {
-  const accountProjection = await prepareEnabledAutomationAccountProjection(
-    db,
-    args.automation,
-    signal,
-  );
-  if (accountProjection.kind !== "ok") {
-    return accountProjection;
-  }
-  const automation = enabledAutomationWithAccountProjection(
-    args.automation,
-    accountProjection.eventConnectorId,
-  );
-  const watchHadConsumer = await enabledWatchHadConsumer(
-    { db, automation },
-    signal,
-  );
-  const enabled = await persistEnabledWorkflowAutomation(
-    db,
-    {
-      automation,
-      orgId: args.orgId,
-      nextRunAt: args.nextRunAt,
-      now: args.now,
-      inheritedAutonomyBudget: args.inheritedAutonomyBudget,
+const persistAndReconcileEnabledWorkflowAutomation$ = command(
+  async (
+    { set },
+    args: {
+      readonly automation: AutomationRow;
+      readonly orgId: string;
+      readonly memberUserId: string;
+      readonly nextRunAt: Date | null;
+      readonly now: Date;
+      readonly inheritedAutonomyBudget?: number;
     },
-    signal,
-  );
-  if (enabled.status === "team-required") {
-    signal.throwIfAborted();
-    return workflowWebhookTeamRequiredResult();
-  }
-  if (enabled.status === "conflict") {
-    signal.throwIfAborted();
-    return {
-      kind: "conflict",
-      message: OFFICIAL_WORKFLOW_RECONFIGURATION_IN_PROGRESS_MESSAGE,
-    };
-  }
-  if (enabled.status === "gmail-unavailable") {
-    signal.throwIfAborted();
-    return {
-      kind: "bad-request",
-      message: "Connect Gmail before using Gmail event automations",
-    };
-  }
-  if (enabled.status === "google-calendar-unavailable") {
-    signal.throwIfAborted();
-    return {
-      kind: "bad-request",
-      message:
-        "Connect Google Calendar before using Google Calendar event automations",
-    };
-  }
-  if (enabled.status === "notion-unavailable") {
-    signal.throwIfAborted();
-    return {
-      kind: "bad-request",
-      message: "Connect Notion before using Notion event automations",
-    };
-  }
-  if (enabled.status === "notion-account-changed") {
-    signal.throwIfAborted();
-    return {
-      kind: "bad-request",
-      message:
-        "Notion account selection changed; retry enabling the automation",
-    };
-  }
-  if (enabled.status === "stripe-unavailable") {
-    signal.throwIfAborted();
-    return { kind: "bad-request", message: enabled.message };
-  }
-  if (enabled.status === "google-forms-unavailable") {
-    signal.throwIfAborted();
-    return {
-      kind: "bad-request",
-      message:
-        "Connect Google Forms before using Google Forms response automations",
-    };
-  }
-  if (enabled.status === "google-meet-unavailable") {
-    signal.throwIfAborted();
-    return {
-      kind: "bad-request",
-      message: "Connect Google Meet before using Google Meet event automations",
-    };
-  }
-  if (!enabled.row) {
-    throw new Error("Failed to enable workflow automation");
-  }
-  const watchFailure = await ensureEnabledAutomationEventWatchWithRollback(
-    {
+    signal: AbortSignal,
+  ): Promise<AutomationResult> => {
+    const db = set(writeDb$);
+    const accountProjection = await prepareEnabledAutomationAccountProjection(
       db,
-      previousAutomation: args.automation,
-      enabledAutomation: enabled.row,
-      hadConsumer: watchHadConsumer,
-    },
-    signal,
-  );
-  if (watchFailure) {
-    return watchFailure;
-  }
-  return await finalizeAndPublishEnabledWorkflowAutomation(
-    db,
-    {
-      previousAutomation: args.automation,
-      enabledAutomation: enabled.row,
-      memberUserId: args.memberUserId,
-    },
-    signal,
-  );
-}
+      args.automation,
+      signal,
+    );
+    if (accountProjection.kind !== "ok") {
+      return accountProjection;
+    }
+    const automation = enabledAutomationWithAccountProjection(
+      args.automation,
+      accountProjection.eventConnectorId,
+    );
+    const watchHadConsumer = await enabledWatchHadConsumer(
+      { db, automation },
+      signal,
+    );
+    const enabled = await persistEnabledWorkflowAutomation(
+      db,
+      {
+        automation,
+        orgId: args.orgId,
+        nextRunAt: args.nextRunAt,
+        now: args.now,
+        inheritedAutonomyBudget: args.inheritedAutonomyBudget,
+      },
+      signal,
+    );
+    if (enabled.status === "team-required") {
+      signal.throwIfAborted();
+      return workflowWebhookTeamRequiredResult();
+    }
+    if (enabled.status === "conflict") {
+      signal.throwIfAborted();
+      return {
+        kind: "conflict",
+        message: OFFICIAL_WORKFLOW_RECONFIGURATION_IN_PROGRESS_MESSAGE,
+      };
+    }
+    if (enabled.status === "gmail-unavailable") {
+      signal.throwIfAborted();
+      return {
+        kind: "bad-request",
+        message: "Connect Gmail before using Gmail event automations",
+      };
+    }
+    if (enabled.status === "google-calendar-unavailable") {
+      signal.throwIfAborted();
+      return {
+        kind: "bad-request",
+        message:
+          "Connect Google Calendar before using Google Calendar event automations",
+      };
+    }
+    if (enabled.status === "notion-unavailable") {
+      signal.throwIfAborted();
+      return {
+        kind: "bad-request",
+        message: "Connect Notion before using Notion event automations",
+      };
+    }
+    if (enabled.status === "notion-account-changed") {
+      signal.throwIfAborted();
+      return {
+        kind: "bad-request",
+        message:
+          "Notion account selection changed; retry enabling the automation",
+      };
+    }
+    if (enabled.status === "stripe-unavailable") {
+      signal.throwIfAborted();
+      return { kind: "bad-request", message: enabled.message };
+    }
+    if (enabled.status === "google-forms-unavailable") {
+      signal.throwIfAborted();
+      return {
+        kind: "bad-request",
+        message:
+          "Connect Google Forms before using Google Forms response automations",
+      };
+    }
+    if (enabled.status === "google-meet-unavailable") {
+      signal.throwIfAborted();
+      return {
+        kind: "bad-request",
+        message:
+          "Connect Google Meet before using Google Meet event automations",
+      };
+    }
+    if (!enabled.row) {
+      throw new Error("Failed to enable workflow automation");
+    }
+    const watchFailure = await set(
+      ensureEnabledAutomationEventWatchWithRollback$,
+      {
+        previousAutomation: args.automation,
+        enabledAutomation: enabled.row,
+        hadConsumer: watchHadConsumer,
+      },
+      signal,
+    );
+    if (watchFailure) {
+      return watchFailure;
+    }
+    return await finalizeAndPublishEnabledWorkflowAutomation(
+      db,
+      {
+        previousAutomation: args.automation,
+        enabledAutomation: enabled.row,
+        memberUserId: args.memberUserId,
+      },
+      signal,
+    );
+  },
+);
 
 const validateStripeFeature$ = command(
   async (
@@ -6033,7 +6177,6 @@ async function persistMorningBriefAutomationToggle(
     return row;
   });
 }
-
 export const enableWorkflowAutomation$ = command(
   async (
     { set },
@@ -6090,7 +6233,6 @@ export const enableWorkflowAutomation$ = command(
         message: "You do not have access to the workflow's agent",
       };
     }
-
     const now = nowDate();
     const nextRunAt =
       automation.kind === "schedule"
@@ -6137,8 +6279,8 @@ export const enableWorkflowAutomation$ = command(
         signal,
       );
     }
-    return await persistAndReconcileEnabledWorkflowAutomation(
-      writeDb,
+    return await set(
+      persistAndReconcileEnabledWorkflowAutomation$,
       {
         automation,
         orgId: args.orgId,
@@ -6151,7 +6293,6 @@ export const enableWorkflowAutomation$ = command(
     );
   },
 );
-
 export const disableWorkflowAutomation$ = command(
   async (
     { set },
@@ -6210,9 +6351,9 @@ export const disableWorkflowAutomation$ = command(
       await invalidateNotionPendingEventsForAutomation(writeDb, row.id);
       signal.throwIfAborted();
     }
-    await reconcileAutomationEventWatches(
+    await set(
+      reconcileAutomationEventWatches$,
       {
-        db: writeDb,
         automations: [owned.automation],
       },
       signal,

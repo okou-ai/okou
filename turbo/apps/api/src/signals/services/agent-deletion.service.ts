@@ -23,7 +23,7 @@ import {
   lockAgentInstructionsStoragesInTransaction,
   removeLockedAgentInstructionsStoragesInTransaction,
 } from "./agent-instructions-storage-transaction.service";
-import { reconcileAutomationEventWatches } from "./automation-event-watch-lifecycle.service";
+import { reconcileAutomationEventWatches$ } from "./automation-event-watch-lifecycle.service";
 import { purgeDeletedStoragePrefix$ } from "./storage-prefix-purge.service";
 import {
   deleteRunConversations,
@@ -59,11 +59,13 @@ export function agentExistsInOrg(args: {
 }
 
 const DELETE_AGENT_LOCK_TIMEOUT = "100ms";
-
 interface DeleteAgentArgs {
   readonly agentId: string;
   readonly orgId: string;
-  readonly member: { readonly userId: string; readonly role: string };
+  readonly member: {
+    readonly userId: string;
+    readonly role: string;
+  };
 }
 
 async function lockAgentLifecycleForDeletion(tx: Tx, args: DeleteAgentArgs) {
@@ -201,7 +203,6 @@ async function preflightAgentDeletion(tx: Tx, args: DeleteAgentArgs) {
       }
     : { kind: "ready" as const };
 }
-
 export async function deleteAgentInTransaction(tx: Tx, args: DeleteAgentArgs) {
   await tx.execute(
     sql`SELECT set_config('lock_timeout', ${DELETE_AGENT_LOCK_TIMEOUT}, true)`,
@@ -209,7 +210,6 @@ export async function deleteAgentInTransaction(tx: Tx, args: DeleteAgentArgs) {
   // Maintenance can retain ledger rows before locking Runs. Join admission
   // before parent locks so our Run-delete FK cannot reverse that order.
   await lockUsageEventCompaction(tx, "shared");
-
   // Read authorization without a row lock, then fence every native owner before
   // taking the Agent lifecycle lock. The lifecycle reader below revalidates the
   // same permission and identity under lock before any deletion commits.
@@ -221,7 +221,6 @@ export async function deleteAgentInTransaction(tx: Tx, args: DeleteAgentArgs) {
     orgId: args.orgId,
     agentId: args.agentId,
   });
-
   const lifecycle = await lockAgentLifecycleForDeletion(tx, args);
   if (lifecycle.kind !== "ready") {
     return lifecycle;
@@ -245,7 +244,6 @@ export async function deleteAgentInTransaction(tx: Tx, args: DeleteAgentArgs) {
       revokedAt,
     );
   }
-
   const automations = await tx
     .select({
       orgId: workflowAutomations.orgId,
@@ -259,7 +257,6 @@ export async function deleteAgentInTransaction(tx: Tx, args: DeleteAgentArgs) {
     .where(
       and(eq(workflows.orgId, args.orgId), eq(workflows.agentId, args.agentId)),
     );
-
   const removed = await deleteRunConversations(tx, lifecycle.runIds);
   // Storage parents precede stable artifacts/edges in the publisher and GC
   // lock order. Prelock before lifecycle cleanup, not after Agent deletion.
@@ -267,7 +264,6 @@ export async function deleteAgentInTransaction(tx: Tx, args: DeleteAgentArgs) {
     await lockAgentInstructionsStoragesInTransaction(tx, [
       { orgId: args.orgId, agentName: lifecycle.agentName },
     ]);
-
   // Remove current non-FK lifecycle rows before the Agent cascade.
   await deleteAgentStableContextLifecycleData(tx, args.agentId);
   // Revoke unsent native Morning Brief mail before the Agent cascade.
@@ -275,7 +271,6 @@ export async function deleteAgentInTransaction(tx: Tx, args: DeleteAgentArgs) {
     kind: "agent",
     agentId: args.agentId,
   });
-
   await deleteArtifactCatalogForRunIds(tx, lifecycle.runIds);
   await tx
     .delete(agents)
@@ -284,13 +279,11 @@ export async function deleteAgentInTransaction(tx: Tx, args: DeleteAgentArgs) {
   // Sweep again afterward so any generation/publication they initialized
   // after the first scan cannot outlive the deleted Agent.
   await deleteAgentStableContextLifecycleData(tx, args.agentId);
-
   await removeLockedAgentInstructionsStoragesInTransaction(
     tx,
     lockedInstructionsStorages,
   );
   const s3Prefix = lockedInstructionsStorages[0]?.s3Prefix ?? null;
-
   return {
     kind: "deleted" as const,
     s3Prefix,
@@ -301,13 +294,22 @@ export async function deleteAgentInTransaction(tx: Tx, args: DeleteAgentArgs) {
     ),
   };
 }
-
 async function readAgentThreadEventOwners(
   db: Pick<Db, "select">,
   agentId: string,
   orgId: string,
-): Promise<readonly { id: string; userId: string; orgId: string }[]> {
-  const owners: { id: string; userId: string; orgId: string }[] = [];
+): Promise<
+  readonly {
+    id: string;
+    userId: string;
+    orgId: string;
+  }[]
+> {
+  const owners: {
+    id: string;
+    userId: string;
+    orgId: string;
+  }[] = [];
   let afterId: string | null = null;
   for (;;) {
     const page = await db
@@ -334,12 +336,15 @@ async function readAgentThreadEventOwners(
   }
   return owners;
 }
-
 /** Best-effort lifecycle notifications, never part of the Agent's deletion transaction. */
 async function appendDeletedAgentThreadEvents(
   db: Db,
   agentId: string,
-  owners: readonly { id: string; userId: string; orgId: string }[],
+  owners: readonly {
+    id: string;
+    userId: string;
+    orgId: string;
+  }[],
 ): Promise<void> {
   for (
     let offset = 0;
@@ -374,7 +379,6 @@ async function appendDeletedAgentThreadEvents(
     }
   }
 }
-
 export const deleteAgentById$ = command(
   async ({ set }, args: DeleteAgentArgs, signal: AbortSignal) => {
     const writeDb = set(writeDb$);
@@ -386,7 +390,6 @@ export const deleteAgentById$ = command(
       args.orgId,
     );
     signal.throwIfAborted();
-
     const transaction = await settle(
       writeDb.transaction(async (tx) => {
         return await deleteAgentInTransaction(tx, args);
@@ -411,34 +414,28 @@ export const deleteAgentById$ = command(
       );
     }
     signal.throwIfAborted();
-
     if (result.kind === "ownership-conflict") {
       return conflict(
         "Cannot delete agent because its lifecycle ownership is inconsistent",
       );
     }
-
     if (result.kind === "active-run") {
       return conflict("Cannot delete agent: agent is currently running");
     }
-
     if (result.kind === "forbidden") {
       return result.response;
     }
-
     if (result.kind === "missing") {
       return undefined;
     }
-
-    await reconcileAutomationEventWatches(
+    await set(
+      reconcileAutomationEventWatches$,
       {
-        db: writeDb,
         automations: result.automations,
       },
       signal,
     );
     signal.throwIfAborted();
-
     if (result.s3Prefix) {
       await set(
         purgeDeletedStoragePrefix$,
@@ -449,7 +446,6 @@ export const deleteAgentById$ = command(
         signal,
       );
     }
-
     return undefined;
   },
 );
