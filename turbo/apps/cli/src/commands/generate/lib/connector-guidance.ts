@@ -1,30 +1,9 @@
 import { listConnectorCatalog } from "../../../lib/api/domains/connectors";
 import type { ConnectorCatalogItem } from "../../../lib/api/domains/connectors";
-import type { GenerationType } from "./lister";
-
-function toConnectorGenerationType(
-  generationType: GenerationType,
-): string | null {
-  switch (generationType) {
-    case "music":
-      return "audio";
-    case "dashboard-design":
-    case "docs-design":
-    case "mobile-app-design":
-    case "poster":
-    case "presentation":
-    case "report":
-    case "sprite":
-    case "website":
-      return null;
-    case "audio":
-    case "code":
-    case "document":
-    case "image":
-    case "text":
-      return generationType;
-  }
-}
+import {
+  getConnectorGenerationType,
+  type GenerationType,
+} from "./generation-type";
 
 function findConnector(
   connectors: readonly ConnectorCatalogItem[],
@@ -57,7 +36,7 @@ async function resolveConnector(
   const connector = findConnector(catalog.connectors, provider);
   if (!connector) return null;
 
-  const connectorGenerationType = toConnectorGenerationType(generationType);
+  const connectorGenerationType = getConnectorGenerationType(generationType);
   const supports =
     connectorGenerationType !== null &&
     connector.generation.some((entry) => {

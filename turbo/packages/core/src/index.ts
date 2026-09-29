@@ -17,11 +17,7 @@ export {
   type PresentationTemplateItem,
 } from "./presentation-template-items";
 export {
-  ILLUSTRATION_ASSET_BASE,
-  illustrationAssetUrl,
-  ILLUSTRATION_STYLES,
   ILLUSTRATION_TEMPLATE_ITEMS,
-  type IllustrationStyle,
   type IllustrationTemplateItem,
 } from "./illustration-template-items";
 export {

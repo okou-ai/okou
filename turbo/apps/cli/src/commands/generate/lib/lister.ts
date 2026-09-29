@@ -24,22 +24,13 @@ import {
   DEFAULT_IMAGE_MODEL,
   IMAGE_MODEL_CONFIGS,
 } from "@okouai/core/image-model-catalog";
+import {
+  getConnectorGenerationType,
+  type ConnectorGenerationType,
+  type GenerationType,
+} from "./generation-type";
+
 const IMAGE_MODEL_SETTING_SUMMARY = `the image model selected in Settings › Built-in tools (default ${IMAGE_MODEL_CONFIGS[DEFAULT_IMAGE_MODEL].alias})`;
-
-type ConnectorGenerationType = "audio" | "code" | "document" | "image" | "text";
-
-type BuiltInGenerationType =
-  | "dashboard-design"
-  | "docs-design"
-  | "image"
-  | "mobile-app-design"
-  | "music"
-  | "poster"
-  | "presentation"
-  | "report"
-  | "sprite"
-  | "website";
-export type GenerationType = ConnectorGenerationType | BuiltInGenerationType;
 
 interface BuiltInGenerationCommand {
   label: string;
@@ -148,30 +139,6 @@ interface GenerationCandidate {
   authMethod?: string;
   actionLabel?: string;
   actionUrl?: string;
-}
-
-function getConnectorGenerationType(
-  generationType: GenerationType,
-): ConnectorGenerationType | null {
-  switch (generationType) {
-    case "music":
-      return "audio";
-    case "dashboard-design":
-    case "docs-design":
-    case "mobile-app-design":
-    case "poster":
-    case "presentation":
-    case "report":
-    case "sprite":
-    case "website":
-      return null;
-    case "audio":
-    case "code":
-    case "document":
-    case "image":
-    case "text":
-      return generationType;
-  }
 }
 
 function getBuiltInCommand(

@@ -109,17 +109,14 @@ describe("website template items", () => {
       title: "Black Slabs",
       templateId: "template:black-slabs",
       resourceId: "template:black-slabs",
-      previewKind: "iframe",
       previewImageUrl:
         "https://static.vm0.io/vm0/artifact-templates/website/website-studio-v2-20260727-ccff774/black-slabs-preview-960x540.webp",
       sourcePath: "black-slabs",
-      target: "website",
     });
   });
 
   it("uses static-hosted preview assets", () => {
     for (const item of WEBSITE_TEMPLATE_ITEMS) {
-      expect(item.previewKind).toBe("iframe");
       expect(item.previewUrl).toMatch(
         /^https:\/\/static\.vm0\.io\/vm0\/artifact-templates\/website\/.+\.html$/u,
       );

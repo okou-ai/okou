@@ -16,7 +16,7 @@ import {
   type HtmlArtifactKind,
 } from "./html-artifact-authoring";
 import { dispatchGenerate } from "../generate/lib/dispatch";
-import type { GenerationType } from "../generate/lib/lister";
+import type { GenerationType } from "../generate/lib/generation-type";
 import {
   createArtifactVisibilityOption,
   type ArtifactVisibility,

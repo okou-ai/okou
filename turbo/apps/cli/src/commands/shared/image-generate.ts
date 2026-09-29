@@ -21,7 +21,7 @@ import {
 } from "@okouai/core/image-model-catalog";
 import { formatRegistryListing } from "./resource-listing";
 import { dispatchGenerate } from "../generate/lib/dispatch";
-import type { GenerationType } from "../generate/lib/lister";
+import type { GenerationType } from "../generate/lib/generation-type";
 
 interface ImageOptions {
   prompt?: string;

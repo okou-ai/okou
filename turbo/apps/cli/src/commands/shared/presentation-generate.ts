@@ -1,7 +1,7 @@
 import { Command, InvalidArgumentError } from "commander";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { dispatchGenerate } from "../generate/lib/dispatch";
-import type { GenerationType } from "../generate/lib/lister";
+import type { GenerationType } from "../generate/lib/generation-type";
 import {
   buildPresentationRunbookInstructionLines,
   findPresentationRunbookPackage,
