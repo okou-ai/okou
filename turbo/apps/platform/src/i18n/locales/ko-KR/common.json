@@ -1854,6 +1854,15 @@
       "title": "커넥터",
       "useDefault": "기본값 사용"
     },
+    "controlDelivery": {
+      "accepted": "{{action}} 요청이 접수되었습니다. 서버 이벤트를 확인한 뒤 대화를 업데이트합니다.",
+      "pending": "{{action}} 요청 중… 서버 확인을 기다리고 있습니다.",
+      "refresh": "대화 새로고침",
+      "rejected": "{{action}} 요청이 거부되었습니다. 이 요청으로 대화는 변경되지 않았습니다. 다시 실행하기 전에 새로고침하여 상태를 확인하세요.",
+      "remove": "대기 항목 제거",
+      "stop": "실행 중지",
+      "uncertain": "{{action}} 결과를 확인할 수 없습니다. 이미 적용되었을 수 있습니다. 서버 상태를 새로고침하여 확인할 때까지 반복하지 마세요."
+    },
     "documentTitle": "채팅",
     "errors": {
       "genericTitle": "이 실행을 완료하지 못했습니다",

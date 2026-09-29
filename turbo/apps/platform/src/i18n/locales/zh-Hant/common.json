@@ -1854,6 +1854,15 @@
       "title": "連接器",
       "useDefault": "使用預設"
     },
+    "controlDelivery": {
+      "accepted": "{{action}}請求已受理；等待伺服器事件確認後更新對話。",
+      "pending": "正在請求{{action}}……等待伺服器確認。",
+      "refresh": "重新整理對話",
+      "rejected": "{{action}}請求遭拒，本次請求未變更對話。再次操作前請重新整理並確認目前狀態。",
+      "remove": "移除佇列項目",
+      "stop": "停止執行",
+      "uncertain": "無法確認{{action}}是否成功，操作可能已生效。請重新整理並確認伺服器狀態，確認前請勿重複操作。"
+    },
     "documentTitle": "聊天",
     "errors": {
       "genericTitle": "這次執行沒能完成",

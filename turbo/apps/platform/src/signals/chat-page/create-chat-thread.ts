@@ -3712,6 +3712,7 @@ function createChatThreadComposerSignals(
     setCloudBrowserEnabled$: computerUseHostSelection.setCloudBrowserEnabled$,
     submitMessage$: createThreadSubmitMessageSignal(options),
     cancelRun$: messageActions.cancelRun$,
+    controls: options.chatEvents.controls,
     cancellationRecoveryPending$: options.cancellationRecoveryPending$,
     ...createThreadPendingActionSignals(options),
   });

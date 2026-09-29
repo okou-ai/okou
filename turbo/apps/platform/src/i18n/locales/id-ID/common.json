@@ -1854,6 +1854,15 @@
       "title": "Konektor",
       "useDefault": "Gunakan default"
     },
+    "controlDelivery": {
+      "accepted": "{{action}} diterima. Percakapan akan diperbarui setelah peristiwa server dikonfirmasi.",
+      "pending": "Meminta {{action}}… Menunggu konfirmasi server.",
+      "refresh": "Muat ulang percakapan",
+      "rejected": "{{action}} ditolak. Permintaan ini tidak mengubah percakapan. Muat ulang dan periksa status sebelum mencoba lagi.",
+      "remove": "Hapus item antrean",
+      "stop": "Hentikan proses",
+      "uncertain": "{{action}} tidak dapat dikonfirmasi. Tindakan mungkin sudah terjadi. Muat ulang status server dan jangan ulangi sebelum ada konfirmasi."
+    },
     "documentTitle": "Chat",
     "errors": {
       "genericTitle": "Proses ini tidak dapat diselesaikan",
