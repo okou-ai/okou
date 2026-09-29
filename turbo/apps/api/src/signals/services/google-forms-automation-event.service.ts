@@ -1248,7 +1248,7 @@ function googleFormsWatchIdentityCondition(args: GoogleFormsWatchPublication) {
   );
 }
 
-function googleFormsActivationAccountCondition(args: {
+export function googleFormsSelectedAccountCondition(args: {
   readonly orgId: string;
   readonly userId: string;
   readonly workflowId: string;
@@ -1288,7 +1288,7 @@ export const readGoogleFormsActivationAccount$ = command(
     const [account] = await db
       .select({ id: connectors.id })
       .from(connectors)
-      .where(googleFormsActivationAccountCondition(args))
+      .where(googleFormsSelectedAccountCondition(args))
       .limit(1);
     signal.throwIfAborted();
     return account?.id ?? null;
@@ -1364,7 +1364,7 @@ const publishGoogleFormsAutomationInterval$ = command(
         .select({ id: connectors.id })
         .from(connectors)
         .where(
-          googleFormsActivationAccountCondition({
+          googleFormsSelectedAccountCondition({
             ...args,
             workflowId: interval.workflowId,
           }),

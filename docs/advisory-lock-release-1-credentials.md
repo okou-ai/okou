@@ -38,7 +38,7 @@ Migration 1290 temporarily protects outgoing writers with two triggers:
 1. `google_forms_cursor_rebind_preserves_progress` runs before updates that write `watch_state_id`. It preserves the existing `last_seen_submitted_time`, including same-watch upserts. Outgoing and R1 repair can attach the cursor to a replacement resource but cannot advance undelivered progress. The normal response-admission SQL updates only `last_seen_submitted_time` and `updated_at`, so actual delivery can still advance it.
 2. `google_forms_cursor_source_lifecycle` invalidates the cursor when the automation's organization, owner, workflow, event kind/type, selected connector, configured connector or form changes. It also invalidates explicit disable: ordinary `enabled=false`, or official `official_intended_enabled=false`. An official temporary reconciliation pause keeps its cursor because its existing intended-enabled field remains true. Subsequent explicit enable creates a new cursor instead of rebinding the old one. Existing explicitly disabled cursors are cleaned during migration.
 
-The functions `preserve_google_forms_cursor_on_rebind` and `invalidate_google_forms_cursor_for_source_change` contain no advisory acquisition, external effect or new stored coordination state. Automation deletion still cascades; connector deletion invalidates the source through its existing SET NULL relationship. The new owning invalidation/admission commands and source trigger take the automation before its cursor; the cursor rebind trigger performs no additional reads. This is not an all-writer ordering claim: the legacy account-projection helper still deletes a cursor before updating its automation, opposite to watch publication. That remaining graph needs an explicit common order as part of R1 implementation, not merely outgoing-writer drain.
+The functions `preserve_google_forms_cursor_on_rebind` and `invalidate_google_forms_cursor_for_source_change` contain no advisory acquisition, external effect or new stored coordination state. Automation deletion still cascades; connector deletion invalidates the source through its existing SET NULL relationship. The new owning invalidation/admission commands and source trigger take the automation before its cursor; the cursor rebind trigger performs no additional reads. The current account-projection writer now locks affected automation rows in ID order before deleting cursors, matching publication. Its outer account/credential caller graph still passes handles and needs command ownership work; consistent row order alone does not complete that graph.
 
 The terminal schema has no application-defined triggers. These two triggers
 must be retired by a follow-up DROP migration after the replacement protocol
@@ -270,3 +270,40 @@ also exercise the shared interval publisher. Focused ESLint, plain Oxlint,
 Prettier and whitespace checks pass. The root owner runs combined types and the
 PR pipeline. This does not complete the shared credential resolver or official,
 Morning Brief and other providers' legacy finalization paths.
+
+### Official Forms configuration publication
+
+Forms-to-Forms official reconfiguration now prepares provider work while the old
+configuration remains authoritative. `reconcileOfficialGoogleFormsConfiguration$`
+validates the accepted catalog and immutable revision through business-only reader
+commands. Its publication command obtains `writeDb$`, locks the same accepted
+catalog pointer, rechecks installed workflow ownership, the selected account and
+the exact observed automation, then commits the new configuration, cursor,
+existing official identity and workflow timestamp together. All SQL is direct in
+that one command transaction; provider calls and inventory reconciliation happen
+outside it. Helpers accept only ordinary rows or construct SQL predicates.
+
+A changed form/account replaces the cursor using the already prepared baseline.
+A same-source configuration refresh or temporary reconciliation pause keeps
+existing progress, using a binding-only cursor conflict update. Failed provider
+preparation has not mutated the automation and needs no compensating rollback;
+a superseded publication returns retry without restoring stale configuration.
+There is no added field, JSON coordination state, table, trigger or advisory key.
+The existing account compatibility key excludes outgoing account writers during
+publication; this command does not wait for the Forms lifecycle key while holding
+it. The watch row is protected locally with KEY SHARE. A concurrent remote stop
+can still create the accepted temporary remote gap, with the committed cursor
+available for catch-up.
+
+The official API scenario now covers both a same-source refresh and a different
+form. At the real new-watch HTTP boundary it reads the installation API and
+requires the previous form to remain authoritative; after reconciliation it
+requires the new form and current fingerprint. Exact watch-call counts were
+removed. The provider fixture now models watch inventory so post-commit repair
+uses a real provider boundary. Focused lint/format checks pass; combined types and
+behavior remain the root owner's verification step.
+
+Cross-kind official transitions, Morning Brief's specialized lifecycle, initial
+materialization and the shared event/credential preparation helpers still need
+command-boundary migration. This scoped publication path does not relabel those
+remaining implementations as outgoing-writer drain.

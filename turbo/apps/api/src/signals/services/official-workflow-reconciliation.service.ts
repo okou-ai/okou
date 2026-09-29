@@ -40,6 +40,7 @@ import {
   googleFormsCursorPublicationStatement,
 } from "./google-forms-cursor-lifecycle";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
+import { reconcileOfficialGoogleFormsConfiguration$ } from "./official-google-forms-reconfiguration.service";
 import { observedWorkflowAutomationCondition } from "./workflow-automation-snapshot";
 import { notionConfigWithConnectorId } from "./notion-automation-account.service";
 import {
@@ -1885,6 +1886,40 @@ const reconcileAutomationStructureTransition$ = command(
     };
   },
 );
+function formsReconfigurationInput(
+  args: ExistingAutomationReconciliationArgs,
+  prepared: Extract<
+    PreparedExistingAutomationReconfiguration,
+    { readonly kind: "ready" }
+  >,
+) {
+  if (
+    args.automation.eventType !== "google-forms-response-submitted" ||
+    prepared.patch.eventType !== "google-forms-response-submitted" ||
+    isMorningBriefReconciliation({
+      definitionName: args.definitionName,
+      blueprintKey: args.blueprint.key,
+    })
+  ) {
+    return null;
+  }
+  const seedCursor = prepared.preparation?.googleFormsSeedCursor;
+  if (seedCursor === undefined) {
+    throw new Error(
+      "Official Forms reconfiguration requires its prepared baseline",
+    );
+  }
+  return {
+    orgId: args.orgId,
+    userId: args.member.userId,
+    definitionName: args.definitionName,
+    blueprint: args.blueprint,
+    activeDefinitionOnly: args.activeDefinitionOnly,
+    expected: args.automation,
+    patch: prepared.patch,
+    seedCursor,
+  };
+}
 const reconcileExistingAutomation$ = command(
   async (
     { set },
@@ -1899,6 +1934,14 @@ const reconcileExistingAutomation$ = command(
     );
     if (prepared.kind === "result") {
       return prepared.result;
+    }
+    const formsInput = formsReconfigurationInput(args, prepared);
+    if (formsInput !== null) {
+      return await set(
+        reconcileOfficialGoogleFormsConfiguration$,
+        formsInput,
+        signal,
+      );
     }
     if (
       automationStructureChanged(args.automation, prepared.patch) ||

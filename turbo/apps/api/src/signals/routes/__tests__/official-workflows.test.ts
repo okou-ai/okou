@@ -319,6 +319,7 @@ function gmailLabelBlueprint(): OfficialWorkflowBlueprint {
 
 function googleFormsBlueprint(
   autonomyBudget: number,
+  formUrl = GOOGLE_FORM_URL,
 ): OfficialWorkflowBlueprint {
   return {
     key: "google-forms-trigger",
@@ -329,7 +330,7 @@ function googleFormsBlueprint(
       eventConfig: {
         provider: "google-forms",
         event: "response_submitted",
-        formUrl: GOOGLE_FORM_URL,
+        formUrl,
       },
       autonomyBudget,
     },
@@ -389,8 +390,14 @@ function structureTransitionGoogleMeetBlueprint(): OfficialWorkflowBlueprint {
   };
 }
 
-function configureOfficialGoogleFormsMock() {
-  const recorder = { watchCalls: 0 };
+function configureOfficialGoogleFormsMock(args: {
+  readonly formIds: readonly string[];
+  readonly creatingWatch: (formId: string) => Promise<void>;
+}): void {
+  const watches = new Map<
+    string,
+    { readonly id: string; readonly expireTime: string }
+  >();
   mockOptionalEnv("GOOGLE_FORMS_PUBSUB_TOPIC_NAME", GOOGLE_FORMS_TOPIC_NAME);
   mockOptionalEnv(
     "GOOGLE_FORMS_PUBSUB_PUSH_AUDIENCE",
@@ -402,22 +409,19 @@ function configureOfficialGoogleFormsMock() {
   );
   server.use(
     http.get("https://forms.googleapis.com/v1/forms/:formId", ({ params }) => {
-      expect(params.formId).toBe(GOOGLE_FORM_ID);
+      expect(args.formIds).toContain(params.formId);
       return HttpResponse.json({
-        formId: GOOGLE_FORM_ID,
+        formId: params.formId,
         info: { title: "Official workflow survey" },
         publishSettings: {
-          publishState: {
-            isPublished: true,
-            isAcceptingResponses: true,
-          },
+          publishState: { isPublished: true, isAcceptingResponses: true },
         },
       });
     }),
     http.get(
       "https://forms.googleapis.com/v1/forms/:formId/responses",
       ({ request, params }) => {
-        expect(params.formId).toBe(GOOGLE_FORM_ID);
+        expect(args.formIds).toContain(params.formId);
         expect(new URL(request.url).searchParams.get("pageSize")).toBeNull();
         return HttpResponse.json({
           responses: [
@@ -430,29 +434,55 @@ function configureOfficialGoogleFormsMock() {
         });
       },
     ),
-    http.post(
+    http.get(
       "https://forms.googleapis.com/v1/forms/:formId/watches",
       ({ params }) => {
-        expect(params.formId).toBe(GOOGLE_FORM_ID);
-        recorder.watchCalls += 1;
+        const watch = watches.get(String(params.formId));
         return HttpResponse.json({
+          watches: watch
+            ? [
+                {
+                  ...watch,
+                  target: { topic: { topicName: GOOGLE_FORMS_TOPIC_NAME } },
+                  eventType: "RESPONSES",
+                  state: "ACTIVE",
+                },
+              ]
+            : [],
+        });
+      },
+    ),
+    http.post(
+      "https://forms.googleapis.com/v1/forms/:formId/watches",
+      async ({ params }) => {
+        const formId = String(params.formId);
+        expect(args.formIds).toContain(formId);
+        await args.creatingWatch(formId);
+        const watch = {
           id: `official-google-forms-watch-${randomUUID()}`,
+          expireTime: new Date(now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        };
+        watches.set(formId, watch);
+        return HttpResponse.json({
+          ...watch,
           target: { topic: { topicName: GOOGLE_FORMS_TOPIC_NAME } },
           eventType: "RESPONSES",
-          createTime: "2026-09-01T08:00:00Z",
-          expireTime: "2026-09-08T08:00:00Z",
+          createTime: new Date(now()).toISOString(),
           state: "ACTIVE",
         });
       },
     ),
     http.delete(
       "https://forms.googleapis.com/v1/forms/:formId/watches/:watchId",
-      () => {
+      ({ params }) => {
+        const formId = String(params.formId);
+        if (watches.get(formId)?.id === params.watchId) {
+          watches.delete(formId);
+        }
         return HttpResponse.json({});
       },
     ),
   );
-  return recorder;
 }
 
 function configureOfficialNotionPageMock(): void {
@@ -5520,87 +5550,129 @@ describe("Official Workflow installations", () => {
     },
   );
 
-  it("preserves the Google Forms account projection across same-target reconfiguration", async () => {
-    installCatalogStorageFixture();
-    const suffix = randomUUID().replaceAll("-", "").slice(0, 10);
-    const definitionName = `api-test-google-forms-${suffix}`;
-    await syncCatalog(
-      catalog([activeDefinition(definitionName, [googleFormsBlueprint(4)])]),
-    );
-
-    const { actor } = await workflowBdd.setupWorkflowOrg({
-      timezone: "Asia/Shanghai",
-    });
-    if (!actor.orgId) {
-      throw new Error("Expected organization-scoped actor");
-    }
-    const { agentId } = await workflowBdd.createAgent(actor);
-    onTestFinished(async () => {
+  it.each(["same source", "different form"])(
+    "publishes the Official Forms %s with its watch interval",
+    async (change) => {
       installCatalogStorageFixture();
-      await bdd.deleteAgent(actor, agentId);
-      await cleanupCatalog();
-    });
-    mockGoogleFormsConnectorOAuth();
-    await workflowBdd.connectConnector(actor, "google-forms");
-    const forms = configureOfficialGoogleFormsMock();
-    await updateFeatureSwitchesForUser(
-      context,
-      { orgId: actor.orgId, userId: actor.userId },
-      {
-        [FeatureSwitchKey.OfficialWorkflows]: true,
-      },
-    );
-    const headers = authHeaders(actor);
-    const installed = await accept(
-      officialClient().install({
-        headers,
-        params: { definitionName },
-        body: {
-          agentId,
-          blueprints: [{ blueprintKey: "google-forms-trigger", bindings: [] }],
+      const suffix = randomUUID().replaceAll("-", "").slice(0, 10);
+      const definitionName = `api-test-google-forms-${suffix}`;
+      await syncCatalog(
+        catalog([activeDefinition(definitionName, [googleFormsBlueprint(4)])]),
+      );
+
+      const { actor } = await workflowBdd.setupWorkflowOrg({
+        timezone: "Asia/Shanghai",
+      });
+      if (!actor.orgId) {
+        throw new Error("Expected organization-scoped actor");
+      }
+      const { agentId } = await workflowBdd.createAgent(actor);
+      onTestFinished(async () => {
+        installCatalogStorageFixture();
+        await bdd.deleteAgent(actor, agentId);
+        await cleanupCatalog();
+      });
+      mockGoogleFormsConnectorOAuth();
+      await workflowBdd.connectConnector(actor, "google-forms");
+      const nextFormId =
+        change === "same source"
+          ? GOOGLE_FORM_ID
+          : `${GOOGLE_FORM_ID}${suffix}`;
+      let installedWorkflowId: string | null = null;
+      configureOfficialGoogleFormsMock({
+        formIds: [GOOGLE_FORM_ID, nextFormId],
+        creatingWatch: async (formId) => {
+          if (formId === GOOGLE_FORM_ID || installedWorkflowId === null) {
+            return;
+          }
+          const preparing = await accept(
+            installationClient().get({
+              headers: authHeaders(actor),
+              params: { workflowId: installedWorkflowId },
+            }),
+            [200],
+          );
+          expect(preparing.body.workflow.automations).toContainEqual(
+            expect.objectContaining({
+              eventType: "google-forms-response-submitted",
+              eventConfig: expect.objectContaining({
+                form: expect.objectContaining({ id: GOOGLE_FORM_ID }),
+              }),
+            }),
+          );
         },
-      }),
-      [201],
-    );
-    const initial = installed.body.workflow.automations.find((automation) => {
-      return automation.official?.blueprintKey === "google-forms-trigger";
-    });
-    if (
-      !initial ||
-      initial.kind !== "event" ||
-      initial.eventType !== "google-forms-response-submitted" ||
-      !initial.official
-    ) {
-      throw new Error("Expected an Official Google Forms automation");
-    }
-    const connectorId = initial.eventConfig.connectorId;
-    const initialFingerprint = initial.official.appliedFingerprint;
-    expect(forms.watchCalls).toBe(1);
+      });
+      await updateFeatureSwitchesForUser(
+        context,
+        { orgId: actor.orgId, userId: actor.userId },
+        {
+          [FeatureSwitchKey.OfficialWorkflows]: true,
+        },
+      );
+      const headers = authHeaders(actor);
+      const installed = await accept(
+        officialClient().install({
+          headers,
+          params: { definitionName },
+          body: {
+            agentId,
+            blueprints: [
+              { blueprintKey: "google-forms-trigger", bindings: [] },
+            ],
+          },
+        }),
+        [201],
+      );
+      installedWorkflowId = installed.body.workflow.id;
+      const initial = installed.body.workflow.automations.find((automation) => {
+        return automation.official?.blueprintKey === "google-forms-trigger";
+      });
+      if (
+        !initial ||
+        initial.kind !== "event" ||
+        initial.eventType !== "google-forms-response-submitted" ||
+        !initial.official
+      ) {
+        throw new Error("Expected an Official Google Forms automation");
+      }
+      const connectorId = initial.eventConfig.connectorId;
+      const initialFingerprint = initial.official.appliedFingerprint;
 
-    await syncCatalog(
-      catalog([activeDefinition(definitionName, [googleFormsBlueprint(7)])]),
-    );
-    await expect(
-      runOfficialWorkflowReconciliationWorker(),
-    ).resolves.toMatchObject({ completed: 1, installations: 1, retried: 0 });
+      await syncCatalog(
+        catalog([
+          activeDefinition(definitionName, [
+            googleFormsBlueprint(
+              7,
+              `https://docs.google.com/forms/d/${nextFormId}/edit`,
+            ),
+          ]),
+        ]),
+      );
+      await expect(
+        runOfficialWorkflowReconciliationWorker(),
+      ).resolves.toMatchObject({ completed: 1, installations: 1, retried: 0 });
 
-    const reconciled = await accept(
-      installationClient().get({
-        headers,
-        params: { workflowId: installed.body.workflow.id },
-      }),
-      [200],
-    );
-    const current = reconciled.body.workflow.automations.find((automation) => {
-      return automation.id === initial.id;
-    });
-    expect(current).toMatchObject({
-      eventConfig: { connectorId },
-      official: { reconciliationStatus: "current" },
-    });
-    expect(current?.official?.appliedFingerprint).not.toBe(initialFingerprint);
-    expect(forms.watchCalls).toBe(1);
-  });
+      const reconciled = await accept(
+        installationClient().get({
+          headers,
+          params: { workflowId: installed.body.workflow.id },
+        }),
+        [200],
+      );
+      const current = reconciled.body.workflow.automations.find(
+        (automation) => {
+          return automation.id === initial.id;
+        },
+      );
+      expect(current).toMatchObject({
+        eventConfig: { connectorId, form: { id: nextFormId } },
+        official: { reconciliationStatus: "current" },
+      });
+      expect(current?.official?.appliedFingerprint).not.toBe(
+        initialFingerprint,
+      );
+    },
+  );
 
   it("reconfigures an Official Notion automation without a feature override", async () => {
     installCatalogStorageFixture();
