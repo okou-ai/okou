@@ -32,17 +32,17 @@ export const phase2ApiKeyRoutes = [
   {
     type: "openai-api-key",
     url: "https://api.openai.com/v1/responses",
-    model: "gpt-6-luna",
+    model: "gpt-5.6-luna",
   },
   {
     type: "openrouter-codex",
     url: "https://openrouter.ai/api/v1/responses",
-    model: "openai/gpt-6-luna",
+    model: "openai/gpt-5.6-luna",
   },
   {
     type: "vercel-ai-gateway-codex",
     url: "https://ai-gateway.vercel.sh/v1/responses",
-    model: "openai/gpt-6-luna",
+    model: "openai/gpt-5.6-luna",
   },
 ] as const;
 export type Phase2ProviderType =
@@ -53,7 +53,7 @@ export type Phase2ProviderType =
 async function createPhase2CustomProvider(
   context: TestContext,
   owner: { orgId: string; userId: string },
-  mapsLuna: boolean,
+  mapsSelectedModel: boolean,
 ) {
   const key = `phase2-key-${randomUUID()}`;
   createRouteMocks(context).clerk.session(
@@ -75,9 +75,9 @@ async function createPhase2CustomProvider(
             apiBaseUrl: "https://phase2-gateway.example/v1",
             authHeaderName: "x-source-key",
             authHeaderTemplate: "Key {{secret}}",
-            modelMappings: mapsLuna
-              ? { "gpt-6-luna": "mapped-luna" }
-              : { "gpt-5.6-luna": "mapped-luna" },
+            modelMappings: mapsSelectedModel
+              ? { "gpt-5.6-luna": "mapped-luna" }
+              : { "gpt-6-luna": "mapped-luna" },
           },
         ],
       },
@@ -121,10 +121,10 @@ export async function createPhase2Provider(
   type: Phase2ProviderType,
   scope: "org" | "member" = "org",
   {
-    mapsLuna = true,
+    mapsSelectedModel = true,
     subscription,
   }: {
-    mapsLuna?: boolean;
+    mapsSelectedModel?: boolean;
     subscription?: { accountId: string; expired: boolean };
   } = {},
 ) {
@@ -132,7 +132,7 @@ export async function createPhase2Provider(
   const misc = createMiscRoutesApi(context);
   const key = `phase2-key-${randomUUID()}`;
   if (type === "custom-openai-responses") {
-    return await createPhase2CustomProvider(context, owner, mapsLuna);
+    return await createPhase2CustomProvider(context, owner, mapsSelectedModel);
   }
   if (type === "codex-oauth-token") {
     await updateFeatureSwitchesForUser(context, owner, {

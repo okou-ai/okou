@@ -459,7 +459,7 @@ describe("Pi memory Phase 2 proxy billing", () => {
       type: "codex-oauth-token" as const,
       scope: "member" as const,
       url: "https://chatgpt.com/backend-api/codex/responses",
-      model: "gpt-6-luna",
+      model: "gpt-5.6-luna",
     },
     {
       type: "custom-openai-responses" as const,
@@ -471,14 +471,14 @@ describe("Pi memory Phase 2 proxy billing", () => {
     "executes exact $type/$scope HTTP and drops replayed model usage",
     async ({ type, scope, url, model }) => {
       await withBuiltInModelRuntimeRouteUnavailableForTest(
-        "gpt-6-luna",
+        "gpt-5.6-luna",
         async () => {
           const run = await launchMaintenance(type, scope);
           expect(run.run).toMatchObject({
             modelProvider: type,
             modelProviderId: run.provider?.binding.modelProviderId,
             modelProviderCredentialScope: scope,
-            selectedModel: "gpt-6-luna",
+            selectedModel: "gpt-5.6-luna",
             chatThreadId: null,
             creditAdmitted: false,
           });

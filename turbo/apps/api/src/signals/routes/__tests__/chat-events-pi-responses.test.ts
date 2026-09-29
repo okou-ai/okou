@@ -714,8 +714,8 @@ describe("CHAT-02: model-first provider policies", () => {
     },
     "vercel-ai-gateway-codex": {
       standard: "gpt-5.6-luna",
-      failed: "gpt-6-luna",
-      cancelled: "gpt-5.6-sol",
+      failed: "gpt-5.6-sol",
+      cancelled: "gpt-5.6-luna",
     },
   } as const;
 

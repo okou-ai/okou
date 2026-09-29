@@ -1079,7 +1079,7 @@ describe("Phase 2 current credential admission", () => {
         {
           type: "openai-api-key",
           id: provider.binding.modelProviderId,
-          model: "gpt-6-luna",
+          model: "gpt-5.6-luna",
         },
       ]);
       const [callback] = await db()
@@ -1204,7 +1204,7 @@ describe("Phase 2 current credential admission", () => {
       job.scope,
       "custom-openai-responses",
       "org",
-      { mapsLuna: false },
+      { mapsSelectedModel: false },
     );
     await insertPhase2Candidates(
       job.scope,
@@ -1253,7 +1253,7 @@ describe("Phase 2 current credential admission", () => {
           } else if (fault === "surface") {
             await db()
               .update(modelProviderSurfaces)
-              .set({ modelMappings: { "gpt-6-luna": "replacement-alias" } })
+              .set({ modelMappings: { "gpt-5.6-luna": "replacement-alias" } })
               .where(
                 eq(modelProviderSurfaces.id, provider.binding.modelProviderId),
               );

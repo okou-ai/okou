@@ -22,6 +22,7 @@ import { modelProviderConnectionsMainContract } from "@okouai/api-contracts/cont
 import { modelProvidersMainContract } from "@okouai/api-contracts/contracts/model-provider-routes";
 import {
   getModelProviderFirewall,
+  getProvidersForModel,
   type UpsertModelProviderRequest,
   type ModelProviderType,
   type SupportedRunModel,
@@ -120,39 +121,43 @@ const GPT_PI_USAGE_MODELS = [...GPT_PI_BDD_MODELS, "gpt-6-sol"] as const;
 
 export const GPT_API_KEY_BDD_ROUTES = GPT_PI_BDD_MODELS.flatMap(
   (selectedModel) => {
-    return [
-      {
-        name: `OpenAI ${selectedModel}`,
-        selectedModel,
-        type: "openai-api-key",
-        endpoint: "https://api.openai.com/v1/responses",
-        baseUrl: "https://api.openai.com/v1",
-        secretName: "OPENAI_API_KEY",
-        piProvider: "openai",
-        runtimeModel: selectedModel,
-      },
-      {
-        name: `OpenRouter ${selectedModel}`,
-        selectedModel,
-        type: "openrouter-codex",
-        endpoint: "https://openrouter.ai/api/v1/responses",
-        baseUrl: "https://openrouter.ai/api/v1",
-        secretName: "OPENROUTER_API_KEY",
-        piProvider: "openrouter",
-        runtimeModel: `openai/${selectedModel}`,
-      },
-      {
-        name: `Vercel AI Gateway ${selectedModel}`,
-        selectedModel,
-        type: "vercel-ai-gateway-codex",
-        endpoint: "https://ai-gateway.vercel.sh/v1/responses",
-        baseUrl: "https://ai-gateway.vercel.sh/v1",
-        secretName: "VERCEL_AI_GATEWAY_API_KEY",
-        piProvider: "openai",
-        catalogModel: selectedModel,
-        runtimeModel: `openai/${selectedModel}`,
-      },
-    ] as const;
+    return (
+      [
+        {
+          name: `OpenAI ${selectedModel}`,
+          selectedModel,
+          type: "openai-api-key",
+          endpoint: "https://api.openai.com/v1/responses",
+          baseUrl: "https://api.openai.com/v1",
+          secretName: "OPENAI_API_KEY",
+          piProvider: "openai",
+          runtimeModel: selectedModel,
+        },
+        {
+          name: `OpenRouter ${selectedModel}`,
+          selectedModel,
+          type: "openrouter-codex",
+          endpoint: "https://openrouter.ai/api/v1/responses",
+          baseUrl: "https://openrouter.ai/api/v1",
+          secretName: "OPENROUTER_API_KEY",
+          piProvider: "openrouter",
+          runtimeModel: `openai/${selectedModel}`,
+        },
+        {
+          name: `Vercel AI Gateway ${selectedModel}`,
+          selectedModel,
+          type: "vercel-ai-gateway-codex",
+          endpoint: "https://ai-gateway.vercel.sh/v1/responses",
+          baseUrl: "https://ai-gateway.vercel.sh/v1",
+          secretName: "VERCEL_AI_GATEWAY_API_KEY",
+          piProvider: "openai",
+          catalogModel: selectedModel,
+          runtimeModel: `openai/${selectedModel}`,
+        },
+      ] as const
+    ).filter((route) => {
+      return getProvidersForModel(selectedModel).includes(route.type);
+    });
   },
 );
 
