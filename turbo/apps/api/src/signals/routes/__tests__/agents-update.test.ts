@@ -19,6 +19,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { now } from "../../../lib/time";
 import { signSandboxJwtForTests } from "../../auth/tokens";
+import { installDurableUserExportStorage } from "./helpers/durable-user-export-storage";
 import { createRouteMocks } from "./helpers/route-test";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { cliAuthRoutes } from "../cli-auth";
@@ -769,6 +770,46 @@ describe("PUT /api/agents/:id/instructions", () => {
       return file.path;
     });
     expect(paths).toStrictEqual(["CLAUDE.md", "AGENTS.md"]);
+  });
+
+  it("publishes one complete prepared archive for concurrent instruction updates", async () => {
+    const user = newOrgUser();
+    const agent = await createAgentAs(user, {
+      displayName: "Concurrent Instructions",
+    });
+    installDurableUserExportStorage(context, { prefixes: [""] });
+    const contents = [
+      "First complete operating notes.",
+      "Second complete operating notes.",
+    ];
+    const updates = await Promise.all(
+      contents.map((content) => {
+        return accept(
+          instructionsClient().update({
+            params: { id: agent.agentId },
+            headers: authHeaders(),
+            body: { content },
+          }),
+          [200],
+        );
+      }),
+    );
+    for (const update of updates) {
+      expect(update.body).toMatchObject({
+        agentId: agent.agentId,
+        ownerId: user.userId,
+        displayName: "Concurrent Instructions",
+      });
+    }
+    const current = await accept(
+      instructionsClient().get({
+        params: { id: agent.agentId },
+        headers: authHeaders(),
+      }),
+      [200],
+    );
+    expect(contents).toContain(current.body.content);
+    expect(current.body.filename).toBe("CLAUDE.md");
   });
 
   it("allows an owner CLI token to update instructions", async () => {

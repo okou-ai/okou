@@ -209,7 +209,7 @@ export async function enqueuePiResourceVersionIndexes(
   signal?.throwIfAborted();
 }
 
-function projectionValues(
+export function piResourceProjectionValues(
   projection: PiResourceVersionIndex | undefined,
   archiveSize: number,
 ) {
@@ -239,7 +239,7 @@ export async function publishPiResourceVersionIndex(
   signal?: AbortSignal,
 ): Promise<void> {
   const { db, versionId, projection, archiveSize, source } = args;
-  const values = projectionValues(projection, archiveSize);
+  const values = piResourceProjectionValues(projection, archiveSize);
   await db
     .insert(piResourceVersionIndexes)
     .values({
@@ -499,7 +499,7 @@ export const executePiResourceIndexWork$ = command(
             }
           }
         }
-        const values = projectionValues(projection, item.archiveSize);
+        const values = piResourceProjectionValues(projection, item.archiveSize);
         const updated = await db
           .update(piResourceVersionIndexes)
           .set(values)

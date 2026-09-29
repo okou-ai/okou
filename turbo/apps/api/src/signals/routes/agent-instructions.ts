@@ -14,9 +14,12 @@ import { nowDate } from "../../lib/time";
 import { agentResponse } from "../services/agent-data.service";
 import {
   beginPiStableContextPublication,
+  completePiStableContextPublication,
+  refreshPiStableContextStorageDemands,
   PI_STABLE_CONTEXT_AGENT_INSTRUCTIONS_PUBLICATION_KEY,
 } from "../services/pi-stable-context-generation.service";
-import { writeAgentInstructionsStorageInTransaction$ } from "../services/agent-instructions-storage.service";
+import { prepareAgentInstructionsStorage$ } from "../services/agent-instructions-storage.service";
+import { commitPreparedVolumeServerSide } from "../services/storage-volume-publication.service";
 import { agentInstructions } from "../services/agent-instructions.service";
 import type { RouteEntry } from "../route-entry";
 
@@ -52,6 +55,57 @@ const updateAgentInstructionsBody$ = bodyResultOf(
   agentInstructionsContract.update,
 );
 
+const prepareAgentInstructionsUpdate$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly agentId: string;
+      readonly member: { readonly userId: string; readonly role: string };
+      readonly content: string;
+    },
+    signal: AbortSignal,
+  ) => {
+    const db = set(writeDb$);
+    // Authorization is rechecked under the Agent row below. Preparation must
+    // not retain that row (or a transaction) across archive and R2 operations.
+    const [preflight] = await db
+      .select({
+        id: agents.id,
+        name: agents.name,
+        owner: agents.owner,
+        visibility: agents.visibility,
+      })
+      .from(agents)
+      .where(and(eq(agents.orgId, args.orgId), eq(agents.id, args.agentId)))
+      .limit(1);
+    signal.throwIfAborted();
+    if (!preflight) {
+      return { kind: "missing" as const };
+    }
+    const preflightPermission = requireAgentPermission(
+      preflight.owner,
+      args.member,
+      "update agent instructions",
+      { visibility: preflight.visibility },
+    );
+    if (preflightPermission) {
+      return { kind: "forbidden" as const, response: preflightPermission };
+    }
+    const volume = await set(
+      prepareAgentInstructionsStorage$,
+      {
+        orgId: args.orgId,
+        agentName: preflight.name,
+        instructions: args.content,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    return { kind: "prepared" as const, preflight, volume };
+  },
+);
+
 const updateAgentInstructionsInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
@@ -64,6 +118,23 @@ const updateAgentInstructionsInner$ = command(
     }
 
     const writeDb = set(writeDb$);
+    const prepared = await set(
+      prepareAgentInstructionsUpdate$,
+      {
+        orgId: auth.orgId,
+        agentId: params.id,
+        member,
+        content: body.data.content,
+      },
+      signal,
+    );
+    if (prepared.kind === "missing") {
+      return notFound(`Agent not found: ${params.id}`);
+    }
+    if (prepared.kind === "forbidden") {
+      return prepared.response;
+    }
+    const { preflight, volume } = prepared;
     const result = await writeDb.transaction(async (tx) => {
       const [current] = await tx
         .select({
@@ -99,17 +170,26 @@ const updateAgentInstructionsInner$ = command(
         PI_STABLE_CONTEXT_AGENT_INSTRUCTIONS_PUBLICATION_KEY,
       );
 
-      await set(
-        writeAgentInstructionsStorageInTransaction$,
-        {
+      if (current.name !== preflight.name) {
+        throw new Error("Agent name changed during instructions preparation");
+      }
+      await commitPreparedVolumeServerSide({ db: tx, volume }, signal);
+      await refreshPiStableContextStorageDemands(tx, stableContextPublication, {
+        storageId: volume.version.storageId,
+        versionId: volume.version.versionId,
+        archiveSize: volume.version.archiveSize,
+        fileCount: volume.version.fileCount,
+      });
+      if (
+        !(await completePiStableContextPublication(
           tx,
-          orgId: auth.orgId,
-          agentName: current.name,
-          instructions: body.data.content,
           stableContextPublication,
-        },
-        signal,
-      );
+        ))
+      ) {
+        throw new Error(
+          "Stable-context publication fence changed while locked",
+        );
+      }
       signal.throwIfAborted();
 
       await tx
