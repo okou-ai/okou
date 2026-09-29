@@ -162,7 +162,11 @@ const reconcilePersistedDeliveryIntents$ = command(
   ) => {
     const identity = await get(authenticatedIdentity$);
     signal.throwIfAborted();
-    const delivered = new Set(events.map((event) => {return event.id}));
+    const delivered = new Set(
+      events.map((event) => {
+        return event.id;
+      }),
+    );
     for (const intent of listDeliveryIntents(identity)) {
       if (intent.threadId === threadId && delivered.has(intent.clientEventId)) {
         removeDeliveryIntent(identity, intent.clientEventId);
@@ -335,7 +339,9 @@ export function createChatEventStorageSignals({
       );
       signal.throwIfAborted();
       await set(mergePersistentEvents$, rows.map(chatEventFromRow), signal);
-      return rows.some((row) => {return row.id === eventId});
+      return rows.some((row) => {
+        return row.id === eventId;
+      });
     },
   );
   const initializeIndexedDbEvents$ = command(

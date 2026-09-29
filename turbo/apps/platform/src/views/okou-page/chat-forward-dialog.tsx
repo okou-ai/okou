@@ -17,6 +17,7 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  Button,
 } from "@okouai/ui";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import type {
@@ -42,6 +43,11 @@ import { ChatComposer } from "./chat-composer.tsx";
 import { assistantName$ } from "../../signals/branding.ts";
 import { AgentAvatarImg } from "./sidebar-shared.tsx";
 import { IconTooltipButton } from "../components/icon-tooltip.tsx";
+import {
+  deliveryIntents$,
+  type ExistingThreadDeliveryIntent,
+} from "../../signals/chat-page/chat-delivery-intents.ts";
+import { checkAndRetryPromptDelivery$ } from "../../signals/chat-page/chat-event-signals.ts";
 
 function ForwardContent({ text }: { readonly text: string }) {
   const { t } = useTranslation();
@@ -225,6 +231,88 @@ function ForwardComposerSurface({
   );
 }
 
+function ForwardDeliveryNotice({
+  target,
+  selection,
+  onDismiss,
+}: {
+  readonly target: ChatForwardTarget;
+  readonly selection: ChatForwardSelection;
+  readonly onDismiss: () => void;
+}) {
+  const intents = useLastResolved(deliveryIntents$);
+  const [checking, checkAndRetry] = useLoadableSet(
+    checkAndRetryPromptDelivery$,
+  );
+  const signal = useGet(pageSignal$);
+  if (target.kind !== "thread") {
+    return null;
+  }
+  const pending = intents
+    ?.filter((item): item is ExistingThreadDeliveryIntent => {
+      return (
+        item.kind === "existing-thread" &&
+        item.threadId === target.id &&
+        item.body.sourceRunId === selection.runId &&
+        item.status !== "accepted"
+      );
+    })
+    .sort((left, right) => {
+      return left.createdAt.localeCompare(right.createdAt);
+    })
+    .at(-1);
+  if (!pending) {
+    return null;
+  }
+  const message =
+    pending.status === "rejected"
+      ? pending.rejection === "authentication"
+        ? "Forward not sent. Sign in again before checking delivery. Your message is saved in this browser."
+        : "Forward not sent. Your message is saved in this browser."
+      : pending.status === "uncertain"
+        ? "Forward delivery unconfirmed. Check the server before retrying."
+        : "Sending forwarded message…";
+  return (
+    <div
+      role={pending.status === "rejected" ? "alert" : "status"}
+      className="mx-5 mb-3 rounded-lg border border-border bg-muted px-3 py-2 text-sm text-foreground"
+    >
+      <p>{message}</p>
+      {pending.status !== "prepared" ? (
+        <Button
+          type="button"
+          size="sm"
+          variant="neutral"
+          className="mt-2"
+          disabled={checking.state === "loading" || !navigator.locks}
+          onClick={() => {
+            detach(
+              (async () => {
+                const accepted = await checkAndRetry(
+                  { threadId: target.id, clientEventId: pending.clientEventId },
+                  signal,
+                );
+                if (accepted) {
+                  onDismiss();
+                  toast.success("Forward confirmed.");
+                }
+              })(),
+              Reason.DomCallback,
+            );
+          }}
+        >
+          {checking.state === "loading" ? "Checking…" : "Check and retry"}
+        </Button>
+      ) : null}
+      {!navigator.locks ? (
+        <p className="mt-1 text-xs text-muted-foreground">
+          Safe retry requires a browser with Web Locks support.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 export function ChatForwardDialog({
   selection,
   feedback,
@@ -317,7 +405,14 @@ export function ChatForwardDialog({
             <Loader2 size={16} className="animate-spin" aria-hidden />
           </div>
         ) : target && prepared.state === "hasData" ? (
-          <ForwardComposerSurface composer={prepared.data.composer} />
+          <>
+            <ForwardDeliveryNotice
+              target={target}
+              selection={selection}
+              onDismiss={onDismiss}
+            />
+            <ForwardComposerSurface composer={prepared.data.composer} />
+          </>
         ) : (
           <ForwardTargetPicker onSelect={handleTargetSelect} />
         )}
