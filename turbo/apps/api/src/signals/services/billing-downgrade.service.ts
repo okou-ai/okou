@@ -72,7 +72,11 @@ type DowngradeResult =
     }
   | {
       readonly ok: false;
-      readonly reason: "no_subscription" | "billing_changed";
+      readonly reason: "no_subscription";
+    }
+  | {
+      readonly ok: false;
+      readonly reason: "billing_changed";
     }
   | {
       readonly ok: false;
