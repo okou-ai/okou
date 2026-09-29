@@ -142,6 +142,35 @@ other callers outside this migrated graph. New model-policy and selection paths
 use their command-owned variants. Their remaining consumers belong to the full
 API transaction-ownership inventory.
 
+## Remaining caller chains verified after integration
+
+These are implementation obligations, independently of the retained Model Policy
+compatibility key:
+
+- Atomic event/webhook/Stripe automation creation and workflow copying still call
+  `ensureWorkflowUserAutomationThread(Db)` → `createAutomationChatThread(Db)` →
+  `insertChatThread` / `appendChatThreadCreatedEvent`. The owned lazy-creation
+  command does not replace those multi-write callers.
+- Thread deletion still calls `disableThreadBoundWorkflowAutomations(tx)`;
+  workflow read/delete/disable/finalization and Morning Brief migration/expiry
+  still call `loadWorkflowUserAutomationThreadId` and its database-aware binding
+  reader.
+- `executeDueWorkflowAutomationsImpl$` still forwards its database through due-row
+  reads, expiry/classification and claim helpers. `launchClaimedDueRow$` passes it
+  to `journaledScheduleExecution`, whose failure callback retains the handle.
+- Slack's `admitCanonicalSlackChatEvent` and Feishu's `admitFeishuChatEvent` still
+  open transactions in ordinary database-accepting functions.
+- Telegram reply-chain and callback delivery still pass handles through
+  `persistTelegramReplyChainRoute`, route/context/owner reads, footer preparation
+  and `storeTelegramBotMessage`.
+- Discord discovery, interaction lookup, destination refresh and gateway receipt
+  lookup still use database-aware adapters. The new route and receipt publication
+  commands execute their own SQL and do not call these adapters internally.
+- Shared `insertChatThread` still forwards its transaction to default preparation.
+  The legacy `resolveBuiltInModelRuntimeRoute` remains in Agent Run and Pi
+  credential paths, and `loadOrgPlanCapabilities` remains in billing, admission,
+  Run, voice and workflow helpers. Their callers must migrate explicitly.
+
 ## Verification
 
 The replacement preserves the existing API tests for concurrent initialization
@@ -152,9 +181,10 @@ controlled internal row locks or compared artificially unrepaired database
 snapshots are not restored.
 
 Focused formatting, plain Oxlint and ESLint cover the changed commands and
-callers. A scoped API core typecheck identified only the parallel owners' pending
-callsite/export integration at the intermediate branch, which is not a combined
-HEAD pass. The main PR owns final types and behavioral pipeline verification.
+callers. The full local API typecheck passes on the combined implementation
+through Discord receipt publication. The `556c316` pipeline passed all eight API
+shards but preceded Slack/Discord publication and later test cleanup; the main
+PR must verify those changes on its subsequent combined HEAD.
 No local Vitest suite or development server was run for this change.
 
 ## MCP discovery ownership
