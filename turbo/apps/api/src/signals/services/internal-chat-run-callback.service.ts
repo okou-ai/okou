@@ -180,7 +180,7 @@ import {
   type GenerationTemplateIdentity,
 } from "@okouai/core/generation-template-identity";
 import { resolveChatThreadSession } from "./chat-session-continuity.service";
-import { loadComputerUseHostGrantForAutoSend } from "./chat-computer-use-host.service";
+import { loadComputerUseHostGrantForAutoSend$ } from "./chat-computer-use-host.service";
 import { resolveRunChatThreadModelContext$ } from "./chat-run-event.service";
 import { releaseThreadBrowsersForRun$ } from "./browser.service";
 import {
@@ -3080,22 +3080,52 @@ function queuedIntegrationLaunchFields(
   };
 }
 
-function resolveQueuedMessageComputerUseHostGrant(
-  args: CreateQueuedChatRunInputArgs,
-) {
-  return measureChatCallbackPreCreateTiming(
-    args.timing,
-    "api_dispatch_pre_create_agent_chat_callback_auto_send_resolve_computer_use_host",
-    "nested",
-    () => {
-      return loadComputerUseHostGrantForAutoSend({
-        db: args.db,
-        threadId: args.threadId,
-        orgId: args.agent.orgId,
-        userId: args.userId,
-      });
+const resolveQueuedMessageComputerUseHostGrant$ = command(
+  async (
+    { set },
+    args: {
+      readonly threadId: string;
+      readonly orgId: string;
+      readonly userId: string;
+      readonly timing: CreateQueuedChatRunInputArgs["timing"];
     },
-  );
+    signal: AbortSignal,
+  ) => {
+    return await measureChatCallbackPreCreateTiming(
+      args.timing,
+      "api_dispatch_pre_create_agent_chat_callback_auto_send_resolve_computer_use_host",
+      "nested",
+      () => {
+        return set(
+          loadComputerUseHostGrantForAutoSend$,
+          {
+            threadId: args.threadId,
+            orgId: args.orgId,
+            userId: args.userId,
+          },
+          signal,
+        );
+      },
+    );
+  },
+);
+
+function queuedAutonomyBudgetFailure(
+  budget: Exclude<
+    CreateQueuedChatRunInputArgs["queuedMessage"]["autonomyBudget"],
+    { readonly kind: "ok" }
+  >,
+) {
+  return {
+    code:
+      budget.kind === "exhausted"
+        ? "AUTONOMY_BUDGET_EXHAUSTED"
+        : "AUTONOMY_SOURCE_UNAVAILABLE",
+    message:
+      budget.kind === "exhausted"
+        ? AUTONOMY_BUDGET_EXHAUSTED_MESSAGE
+        : budget.message,
+  };
 }
 
 const buildCreateQueuedChatRunInput$ = command(
@@ -3111,16 +3141,11 @@ const buildCreateQueuedChatRunInput$ = command(
       launchMaterial,
     } = await set(loadQueuedChatRunContext$, args, signal);
     if (args.queuedMessage.autonomyBudget.kind !== "ok") {
-      return queuedMessageAdmissionFailure(args, launchMaterial, {
-        code:
-          args.queuedMessage.autonomyBudget.kind === "exhausted"
-            ? "AUTONOMY_BUDGET_EXHAUSTED"
-            : "AUTONOMY_SOURCE_UNAVAILABLE",
-        message:
-          args.queuedMessage.autonomyBudget.kind === "exhausted"
-            ? AUTONOMY_BUDGET_EXHAUSTED_MESSAGE
-            : args.queuedMessage.autonomyBudget.message,
-      });
+      return queuedMessageAdmissionFailure(
+        args,
+        launchMaterial,
+        queuedAutonomyBudgetFailure(args.queuedMessage.autonomyBudget),
+      );
     }
     if ("error" in modelRouteResolution) {
       return queuedMessageAdmissionFailure(
@@ -3173,8 +3198,16 @@ const buildCreateQueuedChatRunInput$ = command(
       generationTemplateIdentities,
       presentationTemplateVolumes,
     } = templateContext;
-    const computerUseHostGrant =
-      await resolveQueuedMessageComputerUseHostGrant(args);
+    const computerUseHostGrant = await set(
+      resolveQueuedMessageComputerUseHostGrant$,
+      {
+        threadId: args.threadId,
+        orgId: args.agent.orgId,
+        userId: args.userId,
+        timing: args.timing,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     const prompt = queuedMessagePrompt({
       launchMaterial,

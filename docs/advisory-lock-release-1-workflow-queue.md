@@ -66,6 +66,20 @@ transaction handles to another function.
   loading the complete thread queue. The scheduling lanes and retry loops run
   outside these local transactions.
 
+- Queued workflow context, target and source-autonomy reads now belong to
+  commands. `assembleWorkflowAutomationRun$` receives plain launch inputs and
+  invokes owned model/Computer Use host preparation before Run creation. The
+  host read preserves thread ownership, host owner/org and revocation checks;
+  its queued-chat caller also passes only business values.
+- `recordQueuedWorkflowReward$` owns the existing workflow provenance claim's
+  finite transaction. It preserves the creator beneficiary, actor/source unique
+  key, existing-grant exclusion and reward amount; this does not change later
+  grant/redemption behavior. No transaction enters reward helpers.
+- Workflow occurrence-to-Run binding is now represented by an in-memory queue
+  event ID. Pending and failed Run persistence apply the same conditional journal
+  UPDATE before callbacks can observe the Run, without a workflow-supplied
+  transaction callback.
+
 ## Implementation still required
 
 These are implementation tasks, not conditions satisfied by draining old API
@@ -81,10 +95,12 @@ requests:
   first materialization can otherwise race an ordinary/selected classification.
   Preparing its terminal protocol is still implementation work, not merely an
   outgoing-request drain gate.
-- Producer Run binding still carries `persistProducerRunBinding(tx, run)` into
-  the shared Run creation transaction.
-- Workflow launch still forwards a database handle through compute-unit grant
-  preparation and shared launch/target helpers.
+- Shared Run persistence still owns inherited transaction-aware helpers.
+  Workflow schedule binding now crosses that boundary as a plain queue-event ID;
+  the two Run persistence paths directly update its exact unbound journal row.
+  The separate `persistProducerRunBinding(tx, run)` graph remains for integration
+  thread reassignment and Pi memory Stage 1/2 admission. Removing the workflow
+  callback does not complete those independent producer or Run boundaries.
 - Stripe workflow ingress fan-out, delivery claim/finalization and missing-source
   projection repair still have inherited database/transaction helper chains.
   Removing its queue-publication callback does not finish those paths.

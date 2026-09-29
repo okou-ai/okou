@@ -204,6 +204,7 @@ interface CreateAgentRunCommandArgs {
   readonly agentRunMetadata?: AgentRunMetadata;
   readonly requiredOfficialWorkflowIds?: readonly string[];
   readonly dispatchFailedCallbacks?: DispatchFailedRunCallbacks;
+  readonly workflowScheduleQueueEventId?: string;
   readonly persistProducerRunBinding?: PersistProducerRunBinding;
   readonly agentRunModelPin?: AgentRunModelPin;
   /** Immutable Pi eligibility captured by the caller's admission snapshot. */
@@ -1097,6 +1098,7 @@ function buildCreateAgentRunArgs(
       reasoningEffort: command.reasoningEffort,
     },
     dispatchFailedCallbacks: command.dispatchFailedCallbacks,
+    workflowScheduleQueueEventId: command.workflowScheduleQueueEventId,
     persistProducerRunBinding: async (tx, run) => {
       await command.persistProducerRunBinding?.(tx, run);
       // Pi memory Stage 1 is owned by chat-thread launches, not the run core.

@@ -1,3 +1,4 @@
+import { morningBriefScheduleClaims } from "@okouai/db/schema/morning-brief-schedule-claim";
 import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
 import { billingRunAttributionWrite } from "./managed-usage-attribution";
 import {
@@ -1125,6 +1126,8 @@ export interface CreateAgentRunArgs {
   readonly enforceBuiltInCredits?: boolean;
   readonly dispatchFailedCallbacks?: DispatchFailedRunCallbacks;
   readonly queueFirstAssociation?: QueueFirstRunAssociation;
+  /** Plain in-memory identity; the Run write owns the journal binding SQL. */
+  readonly workflowScheduleQueueEventId?: string;
   readonly persistProducerRunBinding?: PersistProducerRunBinding;
   readonly agentRunModelPin?: AgentRunModelPin;
   /** Immutable Pi eligibility captured by the caller's admission snapshot. */
@@ -8268,6 +8271,24 @@ async function persistAtomicLaunchRows(
   if (!attribution) {
     throw new Error("New Run billing attribution conflicts with history");
   }
+  if (args.commit.createArgs.workflowScheduleQueueEventId) {
+    await args.tx
+      .update(morningBriefScheduleClaims)
+      .set({
+        runId: persisted.run.id,
+        queueDisposition: "claimed",
+        updatedAt: nowDate(),
+      })
+      .where(
+        and(
+          eq(
+            morningBriefScheduleClaims.queueEventId,
+            args.commit.createArgs.workflowScheduleQueueEventId,
+          ),
+          isNull(morningBriefScheduleClaims.runId),
+        ),
+      );
+  }
   await args.commit.createArgs.persistProducerRunBinding?.(args.tx, {
     runId: persisted.run.id,
     status: "pending",
@@ -8409,6 +8430,24 @@ async function persistFailedLaunch(
     error: message,
     creditAdmitted: false,
   });
+  if (args.createArgs.workflowScheduleQueueEventId) {
+    await tx
+      .update(morningBriefScheduleClaims)
+      .set({
+        runId: args.identity.runId,
+        queueDisposition: "claimed",
+        updatedAt: nowDate(),
+      })
+      .where(
+        and(
+          eq(
+            morningBriefScheduleClaims.queueEventId,
+            args.createArgs.workflowScheduleQueueEventId,
+          ),
+          isNull(morningBriefScheduleClaims.runId),
+        ),
+      );
+  }
   await args.createArgs.persistProducerRunBinding?.(tx, {
     runId: args.identity.runId,
     status: "failed",

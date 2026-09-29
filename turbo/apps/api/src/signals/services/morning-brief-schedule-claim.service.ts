@@ -164,31 +164,6 @@ export const isCanonicalMorningBriefAutomation$ = command(
   },
 );
 
-/**
- * Bind the Run to the occurrence its queue event was admitted for. The
- * automation runs this inside the launch transaction that claimed that exact
- * event and inserts the Run, so a lost claim or a rolled-back launch leaves no
- * binding and no Run callback can observe the Run without it.
- */
-export async function bindMorningBriefScheduleClaimRun(
-  db: Db | Tx,
-  args: { readonly queueEventId: string; readonly runId: string },
-): Promise<void> {
-  await db
-    .update(morningBriefScheduleClaims)
-    .set({
-      runId: args.runId,
-      queueDisposition: "claimed",
-      updatedAt: nowDate(),
-    })
-    .where(
-      and(
-        eq(morningBriefScheduleClaims.queueEventId, args.queueEventId),
-        isNull(morningBriefScheduleClaims.runId),
-      ),
-    );
-}
-
 type MorningBriefScheduleRevocationScope =
   | {
       readonly kind: "membership";
