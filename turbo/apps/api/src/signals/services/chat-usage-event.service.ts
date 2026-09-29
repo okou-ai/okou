@@ -206,7 +206,7 @@ const prepareRunUsageArchive$ = command(
     // taking the writer's SQL transaction or its outgoing-writer compatibility key.
     const history = hot
       ? undefined
-      : await set(runEventHistory$, db, run.chatThreadId, runId, signal);
+      : await set(runEventHistory$, run.chatThreadId, runId, signal);
     signal.throwIfAborted();
     const archived = history
       ? [...history].reverse().find((event) => {

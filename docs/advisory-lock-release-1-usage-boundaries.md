@@ -8,7 +8,7 @@ This note records the implemented boundary changes and the remaining implementat
 
 Archive downloads finish before this transaction starts. The transaction checks the captured archive pointer when no hot event exists. A changed pointer or a hot event moved by retention causes a fresh attempt; stale absence cannot create a second initial event alongside an outgoing writer's random identity. Realtime publication remains after commit.
 
-The retained `chat_usage_message` key still coordinates outgoing random-ID/no-retry writers. Remove it only when pre-Release-1 APIs are no longer serving, their in-flight requests have drained, and the rollback target has the deterministic append protocol. The archive reader still receives a normal read-only database capability outside this transaction; the wider read-service interface cleanup is not represented as complete.
+The retained `chat_usage_message` key still coordinates outgoing random-ID/no-retry writers. Remove it only when pre-Release-1 APIs are no longer serving, their in-flight requests have drained, and the rollback target has the deterministic append protocol. Usage archive preparation now owns its database queries through business-input commands. The immutable R2 reader receives only the published object metadata and bucket; no database is forwarded. The command validates the pointer across the object read and bounded latest-usage lookup. Other shared-thread/history read adapters still forward database capabilities and remain part of the wider interface cleanup.
 
 ## Financial settlement
 
