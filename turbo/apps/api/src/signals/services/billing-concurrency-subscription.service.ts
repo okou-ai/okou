@@ -37,7 +37,7 @@ import {
   type StripeSubscriptionUpdateItemParam,
 } from "../external/stripe-client";
 import { nowDate } from "../../lib/time";
-import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
+import { db$, writeDb$, type ReadonlyDb } from "../external/db";
 import { settle } from "../utils";
 import {
   activeConcurrencySubscriptions,
@@ -185,33 +185,6 @@ async function sharedBillingSubscriptionKind(
     )
     .limit(1);
   return allowance ? "allowance" : null;
-}
-
-async function writeScheduledConcurrencyChange(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly subscriptionId: string;
-    readonly quantity: number | null;
-    readonly effectiveAt: string | null;
-  },
-): Promise<void> {
-  await db
-    .update(orgConcurrencySubscriptions)
-    .set({
-      scheduledSlots: args.quantity,
-      scheduledChangeAt: args.effectiveAt ? new Date(args.effectiveAt) : null,
-      updatedAt: concurrencySubscriptionUpdatedAt(nowDate()),
-    })
-    .where(
-      and(
-        eq(orgConcurrencySubscriptions.orgId, args.orgId),
-        eq(
-          orgConcurrencySubscriptions.stripeSubscriptionId,
-          args.subscriptionId,
-        ),
-      ),
-    );
 }
 
 function concurrencySubscriptionItem(
@@ -2197,12 +2170,26 @@ export const changeConcurrencySubscription$ = command(
       const scheduled =
         args.quantity < subscription.quantity &&
         result.response.effectiveAt !== undefined;
-      await writeScheduledConcurrencyChange(set(writeDb$), {
-        orgId: args.orgId,
-        subscriptionId: args.subscriptionId,
-        quantity: scheduled ? args.quantity : null,
-        effectiveAt: scheduled ? (result.response.effectiveAt ?? null) : null,
-      });
+      const db = set(writeDb$);
+      await db
+        .update(orgConcurrencySubscriptions)
+        .set({
+          scheduledSlots: scheduled ? args.quantity : null,
+          scheduledChangeAt:
+            scheduled && result.response.effectiveAt
+              ? new Date(result.response.effectiveAt)
+              : null,
+          updatedAt: concurrencySubscriptionUpdatedAt(nowDate()),
+        })
+        .where(
+          and(
+            eq(orgConcurrencySubscriptions.orgId, args.orgId),
+            eq(
+              orgConcurrencySubscriptions.stripeSubscriptionId,
+              args.subscriptionId,
+            ),
+          ),
+        );
       signal.throwIfAborted();
     }
     return result;

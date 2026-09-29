@@ -46,7 +46,11 @@ identities remain unchanged.
 The propagated `upsertConcurrencySubscriptionState(tx, ...)` interface is
 removed. Its insert/update SQL and the associated immutable entitlement
 inserts are owned by the reconciliation transaction. The reused timestamp
-builder is pure SQL construction and receives only a `Date`.
+builder is pure SQL construction and receives only a `Date`. The scheduled
+change write is also inlined in `changeConcurrencySubscription$`; it no longer
+passes the writable database into a write helper. Remaining ordinary database
+service arguments are inventoried as unfinished ownership work, not terminal
+command-local SQL.
 
 The one historical advisory acquisition definition and its two callers remain
 in Release 1. Outgoing webhook writers publish by subscription ID without
