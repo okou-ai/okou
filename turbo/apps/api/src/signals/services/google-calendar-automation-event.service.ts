@@ -386,7 +386,6 @@ async function loadGoogleCalendarCredentialObservation(args: {
         and(
           currentState,
           builtinConnectorCredentialSecretReadCondition({
-            db: args.db,
             groups: [{ access: connection.access, names: [name] }],
           }),
         ),
@@ -404,7 +403,6 @@ async function loadGoogleCalendarCredentialObservation(args: {
         and(
           currentState,
           builtinConnectorCredentialVariableReadCondition({
-            db: args.db,
             groups: [{ access: connection.access, names: [name] }],
           }),
         ),

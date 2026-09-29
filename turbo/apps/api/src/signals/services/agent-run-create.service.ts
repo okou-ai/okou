@@ -3784,7 +3784,6 @@ async function loadStoredConnectorEncryptedSecretRows(
     .from(secretsTable)
     .where(
       builtinConnectorCredentialSecretReadCondition({
-        db,
         groups,
       }),
     );

@@ -251,7 +251,6 @@ async function loadBuiltinConnectorStoredValues(args: {
     .from(secrets)
     .where(
       builtinConnectorCredentialSecretReadCondition({
-        db: args.db,
         groups: [
           {
             access: args.connection.access,
@@ -269,7 +268,6 @@ async function loadBuiltinConnectorStoredValues(args: {
     .from(variables)
     .where(
       builtinConnectorCredentialVariableReadCondition({
-        db: args.db,
         groups: [
           {
             access: args.connection.access,
@@ -389,13 +387,11 @@ async function prepareConnectorRefreshOutputs(
 function connectorRefreshInputConditions(args: {
   readonly access: BuiltinConnectorRefreshTokenAccess;
   readonly connection: BuiltinConnectorCredentialConnection;
-  readonly db: ReadonlyDb;
 }) {
   const inputRefs = Object.values(args.access.inputs).map(
     builtinConnectorStoredValueRef,
   );
   const secretCondition = builtinConnectorCredentialSecretReadCondition({
-    db: args.db,
     groups: [
       {
         access: args.connection.access,
@@ -410,7 +406,6 @@ function connectorRefreshInputConditions(args: {
     ],
   });
   const variableCondition = builtinConnectorCredentialVariableReadCondition({
-    db: args.db,
     groups: [
       {
         access: args.connection.access,
@@ -503,7 +498,6 @@ async function persistConnectorRefresh(
     connectorRefreshInputConditions({
       access,
       connection: args.connection,
-      db: args.db,
     });
   return await commitConnectorRefresh(
     {

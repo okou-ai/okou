@@ -878,7 +878,6 @@ async function loadPendingConnectorTokenRevoke(
     .from(secrets)
     .where(
       builtinConnectorCredentialSecretReadCondition({
-        db: args.db,
         groups: [{ access: args.access, names: secretNames }],
       }),
     );

@@ -12,6 +12,8 @@ The six advisory acquisition definitions remain. This work prepares selected wri
 - Ordinary builtin credential refresh captures exact stored inputs before provider I/O. Local publication validates owner, principal, method, storage and credential bytes. A lost refresh publication is rejected as connection-changed, including after a stale terminal failure. An updated token bundle cannot prove that the change came from another refresh rather than a replacement authorization. The stale request therefore cannot reuse the replacement token, mutate the new connection or return unpublished provider output.
 - Calendar baseline pagination and credential preparation move before the local decision transaction. Existing credential bytes and state snapshots fence publication. Cleanup after uncertain finalization rereads authoritative ownership and preserves a currently owned channel. Healthy existing watches remain usable while previous-channel cleanup is pending.
 
+- Credential secret/variable authorization predicates are pure SQL builders. Their complete account, owner, auth-method, storage-version and optional revision checks no longer receive a database or transaction from any caller.
+
 ### Remaining implementation work
 
 - Builtin OAuth callback, Automatic OAuth refresh/retirement, ordinary refresh's legacy helper-owned commit path and its nine resolver chains still propagate root database or transaction values.

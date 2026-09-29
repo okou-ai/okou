@@ -15,10 +15,9 @@ import {
   sql,
   type SQL,
 } from "drizzle-orm";
-import { alias } from "drizzle-orm/pg-core";
+import { alias, QueryBuilder } from "drizzle-orm/pg-core";
 
 import { logger } from "../../lib/log";
-import type { ReadonlyDb } from "../external/db";
 import {
   getConnectorRuntimeConnector,
   getConnectorRuntimeMethod,
@@ -179,12 +178,11 @@ function assertDeclaredNames(args: {
 }
 
 function connectorIdentityExists(
-  db: ReadonlyDb,
   access: BuiltinConnectorCredentialAccess,
   connectorStateRevision: bigint | undefined,
 ): SQL {
   return exists(
-    db
+    new QueryBuilder()
       .select({ connectorId: builtinCredentialAccessConnector.id })
       .from(builtinCredentialAccessConnector)
       .where(
@@ -216,7 +214,6 @@ function connectorIdentityExists(
 }
 
 export function builtinConnectorCredentialSecretReadCondition(args: {
-  readonly db: ReadonlyDb;
   readonly groups: readonly BuiltinConnectorCredentialReadGroup[];
 }): SQL | undefined {
   const conditions = args.groups.flatMap((group) => {
@@ -236,11 +233,7 @@ export function builtinConnectorCredentialSecretReadCondition(args: {
         eq(secrets.type, "connector"),
         inArray(secrets.name, names),
         eq(secrets.connectorId, group.access.connectorId),
-        connectorIdentityExists(
-          args.db,
-          group.access,
-          group.connectorStateRevision,
-        ),
+        connectorIdentityExists(group.access, group.connectorStateRevision),
       ),
     ];
   });
@@ -248,7 +241,6 @@ export function builtinConnectorCredentialSecretReadCondition(args: {
 }
 
 export function builtinConnectorCredentialVariableReadCondition(args: {
-  readonly db: ReadonlyDb;
   readonly groups: readonly BuiltinConnectorCredentialReadGroup[];
 }): SQL | undefined {
   const conditions = args.groups.flatMap((group) => {
@@ -268,11 +260,7 @@ export function builtinConnectorCredentialVariableReadCondition(args: {
         eq(variables.type, "connector"),
         inArray(variables.name, names),
         eq(variables.connectorId, group.access.connectorId),
-        connectorIdentityExists(
-          args.db,
-          group.access,
-          group.connectorStateRevision,
-        ),
+        connectorIdentityExists(group.access, group.connectorStateRevision),
       ),
     ];
   });

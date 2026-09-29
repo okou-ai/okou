@@ -1096,7 +1096,6 @@ async function getBuiltinConnectorSecretValues(args: {
     .from(secretsTable)
     .where(
       builtinConnectorCredentialSecretReadCondition({
-        db: args.db,
         groups: [{ access: args.access, names: args.names }],
       }),
     );
@@ -1200,7 +1199,6 @@ async function getVariableValue(args: {
     .from(variablesTable)
     .where(
       builtinConnectorCredentialVariableReadCondition({
-        db: args.db,
         groups: [
           {
             access: args.connectorAccess,
@@ -3448,7 +3446,6 @@ async function syncStoredConnectorRuntimeSecrets(args: {
     .from(secretsTable)
     .where(
       builtinConnectorCredentialSecretReadCondition({
-        db: args.db,
         groups: [...namesByConnectorId.values()].map((group) => {
           return { access: group.access, names: [...group.names] };
         }),
@@ -4639,7 +4636,6 @@ async function resolveMatchedBuiltinConnectorVariables(
           .from(variablesTable)
           .where(
             builtinConnectorCredentialVariableReadCondition({
-              db,
               groups: [
                 {
                   access: connectorAccess.access,
