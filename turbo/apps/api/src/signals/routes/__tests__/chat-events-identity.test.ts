@@ -233,6 +233,7 @@ describe("CHAT-02: run-scoped agent-token chat launches", () => {
     }
     expect(immediateSend.body.runId).toBeNull();
     // The idle thread's background pick launches the handoff.
+    await flushWaitUntilForTest();
     const launchedMessages = await waitForThreadMessages(
       actor,
       createdThread.body.id,
@@ -302,6 +303,7 @@ describe("CHAT-02: run-scoped agent-token chat launches", () => {
     expect(queued.body.runId).toBeNull();
 
     await cancelChatRun(actor, immediateRunId);
+    await flushWaitUntilForTest();
     const promotedMessages = await waitForThreadMessages(
       actor,
       createdThread.body.id,
