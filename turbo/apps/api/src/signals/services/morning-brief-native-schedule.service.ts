@@ -116,7 +116,6 @@ export async function lockMorningBriefNativeSchedule(
  * row in the documented order, and is taken only while the row is absent, so a
  * materialized owner keeps its existing row-lock fence and pays nothing.
  */
-/** The outgoing absent-owner writer does not yet use a common row owner. */
 export function morningBriefNativeOwnerCompatibilitySql(
   owner: MorningBriefMemberIdentity,
 ) {
@@ -786,7 +785,6 @@ export async function settleSelectedLegacyMorningBriefObligation(
  *   obligation or an admitted occurrence that owes its settlement. It is never
  *   left wedged at `next_run_at = NULL` with no owner.
  */
-/** Pure choice calculation shared by local transaction owners. */
 export function morningBriefLogicalChoicePlan(
   current: MorningBriefNativeScheduleRow,
   patch: MorningBriefLogicalChoicePatch,

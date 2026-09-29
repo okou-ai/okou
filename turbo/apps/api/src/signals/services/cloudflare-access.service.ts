@@ -115,18 +115,7 @@ function organizationConfig(owner: Owner, id: string) {
     eq(cloudflareAccessConfigs.scope, "organization"),
   );
 }
-export async function lockCloudflareAccessConfigForBinding(
-  tx: Transaction,
-  owner: Owner,
-  id: string,
-) {
-  const [row] = await tx
-    .select(metadata)
-    .from(cloudflareAccessConfigs)
-    .where(visibleConfig(owner, id))
-    .for("share");
-  return row;
-}
+
 function response(
   row: Metadata,
   sshHosts: CloudflareAccessConfig["sshHosts"],
