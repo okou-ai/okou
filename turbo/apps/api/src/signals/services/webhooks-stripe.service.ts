@@ -4215,11 +4215,14 @@ function acceptsAllowanceSubscription(args: {
     | undefined;
 }): boolean {
   const { entitlement, subscription, wallet } = args;
-  if (!entitlement || !wallet) {
+  if (!entitlement) {
     return false;
   }
   if (args.bound) {
     return entitlement.stripeSubscriptionId === subscription.id;
+  }
+  if (!wallet) {
+    return false;
   }
   const planItem = knownBillingPlanPriceItem(subscription.items.data);
   const establishesCustom =
