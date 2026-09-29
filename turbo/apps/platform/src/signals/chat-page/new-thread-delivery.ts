@@ -173,6 +173,7 @@ export const reconcileNewThreadDeliveries$ = command(
 
 /** User-initiated retry: hold the create lock, check ownership, replay its fixed ID, then use the shared prompt retry. */
 export const retryNewThreadDelivery$ = command(
+  // oxlint-disable-next-line max-lines-per-function -- Keep both guarded phases and same-ID transitions in one retry operation.
   async (
     { get, set },
     threadId: string,

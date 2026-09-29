@@ -184,8 +184,8 @@ test("A rejected thread creation keeps the first message available without posti
     screen.getAllByText("Do not lose the first message").some((element) => {
       return !element.closest("[data-new-thread-delivery-id]");
     }),
-  ).toBe(true);
-  expect(sentPrompt).toBe(false);
+  ).toBeTruthy();
+  expect(sentPrompt).toBeFalsy();
 });
 
 test("A rejected first prompt is distinct from a successful thread creation", async () => {
@@ -222,7 +222,7 @@ test("A rejected first prompt is distinct from a successful thread creation", as
     screen.getAllByText("Recover the first prompt").some((element) => {
       return !element.closest("[data-new-thread-delivery-id]");
     }),
-  ).toBe(true);
+  ).toBeTruthy();
 });
 
 test("A remote draft-clear error cannot strand the prompt after thread creation", async () => {
@@ -445,10 +445,10 @@ test("A create rejection retries the saved thread/event IDs, not a second chat",
 
   expect(
     listDeliveryIntents({ userId: "test-user-123", orgId: "another-org" }),
-  ).toEqual([]);
+  ).toStrictEqual([]);
   expect(
     listDeliveryIntents({ userId: "another-user", orgId: "org_default" }),
-  ).toEqual([]);
+  ).toStrictEqual([]);
 
   context.mocks.api(chatThreadsContract.create, ({ body, respond }) => {
     createIds.push(body.clientThreadId ?? "");
@@ -462,9 +462,9 @@ test("A create rejection retries the saved thread/event IDs, not a second chat",
   });
   clickFirstMessageRetry();
   await waitFor(() => {
-    expect(promptIds).toEqual([saved.clientEventId]);
+    expect(promptIds).toStrictEqual([saved.clientEventId]);
   });
-  expect(createIds).toEqual([saved.threadId, saved.threadId]);
+  expect(createIds).toStrictEqual([saved.threadId, saved.threadId]);
   expect(savedFirstMessage().phase).toBe("prompt");
 });
 
@@ -505,10 +505,10 @@ test("An ambiguous create response reconciles an existing server thread before p
   // Refresh is read-only even when the create response was lost.
   await context.store.set(reconcileNewThreadDeliveries$, context.signal);
   expect(savedFirstMessage().phase).toBe("prompt");
-  expect(promptIds).toEqual([]);
+  expect(promptIds).toStrictEqual([]);
   clickFirstMessageRetry();
   await waitFor(() => {
-    expect(promptIds).toEqual([saved.clientEventId]);
+    expect(promptIds).toStrictEqual([saved.clientEventId]);
   });
   expect(createCount).toBe(1);
   expect(savedFirstMessage().createEventId).toBe(saved.createEventId);
@@ -600,10 +600,10 @@ test("A lost prompt response retries the original event ID after checking the se
       }
     },
   });
-  expect(retryIds).toEqual([]);
+  expect(retryIds).toStrictEqual([]);
   clickFirstMessageRetry();
   await waitFor(() => {
-    expect(retryIds).toEqual([saved.clientEventId]);
+    expect(retryIds).toStrictEqual([saved.clientEventId]);
   });
   expect(createCount).toBe(1);
 });
@@ -677,7 +677,7 @@ test("Checking a committed prompt never creates a duplicate run", async () => {
   await waitFor(() => {
     expect(
       listDeliveryIntents({ userId: "test-user-123", orgId: "org_default" }),
-    ).toEqual([]);
+    ).toStrictEqual([]);
   });
   expect(createCount).toBe(1);
   expect(sendCount).toBe(1);
