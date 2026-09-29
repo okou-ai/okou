@@ -9,12 +9,119 @@ import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import { getStripeClient } from "../external/stripe-client";
+import { settle } from "../utils";
 import { orgPlanEntitlementValues } from "./org-plan-entitlements.service";
 import { stripePreviewMetadata } from "./stripe-preview-metadata.service";
 
 interface GetOrCreateStripeCustomerArgs {
   readonly orgId: string;
 }
+
+const publishStripeCustomer$ = command(
+  async (
+    { set },
+    args: GetOrCreateStripeCustomerArgs,
+    customerId: string,
+    signal: AbortSignal,
+  ): Promise<string> => {
+    const db = set(writeDb$);
+    const publication = await settle(
+      db.transaction(async (tx) => {
+        // Outgoing writers read and unconditionally publish under this lock.
+        // Recheck after acquiring it: an outgoing winner owns its binding, while
+        // an outgoing waiter will observe our committed binding before creating.
+        // Release 2 removes only this compatibility acquisition after their drain.
+        await tx.execute(
+          // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
+          sql`SELECT pg_advisory_xact_lock(hashtext('stripe_customer_' || ${args.orgId}))`,
+        );
+        signal.throwIfAborted();
+
+        const [row] = await tx
+          .select({ stripeCustomerId: orgMetadata.stripeCustomerId })
+          .from(orgMetadata)
+          .where(eq(orgMetadata.orgId, args.orgId))
+          .limit(1);
+        signal.throwIfAborted();
+        if (row?.stripeCustomerId) {
+          return row.stripeCustomerId;
+        }
+
+        const [inserted] = await tx
+          .insert(orgMetadataCanonicalWrites)
+          .values({
+            orgId: args.orgId,
+            stripeCustomerId: customerId,
+            credits: 0,
+          })
+          .onConflictDoNothing({ target: orgMetadataCanonicalWrites.orgId })
+          .returning({ orgId: orgMetadata.orgId, tier: orgMetadata.tier });
+        if (inserted) {
+          const tier = orgTierSchema.safeParse(inserted.tier);
+          if (tier.success) {
+            await tx
+              .insert(orgPlanEntitlements)
+              .values(
+                orgPlanEntitlementValues(
+                  {
+                    orgId: inserted.orgId,
+                    tier: tier.data,
+                    source: "org_metadata_migration",
+                  },
+                  { stripeSubscriptionId: null, sourceMetadata: {} },
+                ),
+              )
+              .onConflictDoNothing({ target: orgPlanEntitlements.orgId });
+          }
+          signal.throwIfAborted();
+          return customerId;
+        }
+
+        const [bound] = await tx
+          .update(orgMetadata)
+          .set({ stripeCustomerId: customerId, updatedAt: nowDate() })
+          .where(
+            and(
+              eq(orgMetadata.orgId, args.orgId),
+              isNull(orgMetadata.stripeCustomerId),
+            ),
+          )
+          .returning({ stripeCustomerId: orgMetadata.stripeCustomerId });
+        signal.throwIfAborted();
+        if (bound?.stripeCustomerId) {
+          return bound.stripeCustomerId;
+        }
+
+        const [winner] = await tx
+          .select({ stripeCustomerId: orgMetadata.stripeCustomerId })
+          .from(orgMetadata)
+          .where(eq(orgMetadata.orgId, args.orgId))
+          .limit(1);
+        signal.throwIfAborted();
+        if (!winner?.stripeCustomerId) {
+          throw new Error("Stripe customer publication lost its organization");
+        }
+        return winner.stripeCustomerId;
+      }),
+      signal,
+    );
+    if (publication.ok) {
+      return publication.value;
+    }
+    // A failed COMMIT response does not prove rollback. Read the authoritative
+    // binding before propagating the error, and never delete a possible winner.
+    const [published] = await db
+      .select({ stripeCustomerId: orgMetadata.stripeCustomerId })
+      .from(orgMetadata)
+      .where(eq(orgMetadata.orgId, args.orgId))
+      .limit(1);
+    signal.throwIfAborted();
+    if (published?.stripeCustomerId) {
+      return published.stripeCustomerId;
+    }
+    throw publication.error;
+  },
+);
 
 /** Publish one authoritative Stripe customer without replacing an existing one. */
 export const getOrCreateStripeCustomer$ = command(
@@ -23,33 +130,22 @@ export const getOrCreateStripeCustomer$ = command(
     args: GetOrCreateStripeCustomerArgs,
     signal: AbortSignal,
   ): Promise<string> => {
-    const writeDb = set(writeDb$);
-    return await writeDb.transaction(async (tx) => {
-      // API rollout: outgoing writers create without an idempotency key and
-      // overwrite the binding. Keep their coordination until they have drained
-      // and all retained rollback targets contain this conditional writer.
-      // Release 2 then moves Stripe preparation outside this local transaction.
-      await tx.execute(
-        // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-        sql`SELECT pg_advisory_xact_lock(hashtext('stripe_customer_' || ${args.orgId}))`,
-      );
-      signal.throwIfAborted();
-
-      const [row] = await tx
-        .select({ stripeCustomerId: orgMetadata.stripeCustomerId })
-        .from(orgMetadata)
-        .where(eq(orgMetadata.orgId, args.orgId))
-        .limit(1);
-      signal.throwIfAborted();
-      if (row?.stripeCustomerId) {
-        return row.stripeCustomerId;
-      }
-
-      const metadata: Record<string, string> = {
-        orgId: args.orgId,
-        ...stripePreviewMetadata(),
-      };
-      const customer = await getStripeClient().customers.create(
+    const db = set(writeDb$);
+    const [published] = await db
+      .select({ stripeCustomerId: orgMetadata.stripeCustomerId })
+      .from(orgMetadata)
+      .where(eq(orgMetadata.orgId, args.orgId))
+      .limit(1);
+    signal.throwIfAborted();
+    if (published?.stripeCustomerId) {
+      return published.stripeCustomerId;
+    }
+    const metadata: Record<string, string> = {
+      orgId: args.orgId,
+      ...stripePreviewMetadata(),
+    };
+    const prepared = await settle(
+      getStripeClient().customers.create(
         { metadata },
         {
           // Preview routing participates in the identity because Stripe rejects
@@ -57,64 +153,24 @@ export const getOrCreateStripeCustomer$ = command(
           // the same identity; Stripe's finite retention is not a durable log.
           idempotencyKey: `stripe-customer:${env("ENV")}:${metadata.job_ref ?? ""}:${args.orgId}`,
         },
-      );
-      signal.throwIfAborted();
-
-      const [inserted] = await tx
-        .insert(orgMetadataCanonicalWrites)
-        .values({
-          orgId: args.orgId,
-          stripeCustomerId: customer.id,
-          credits: 0,
-        })
-        .onConflictDoNothing({ target: orgMetadataCanonicalWrites.orgId })
-        .returning({ orgId: orgMetadata.orgId, tier: orgMetadata.tier });
-      if (inserted) {
-        const tier = orgTierSchema.safeParse(inserted.tier);
-        if (tier.success) {
-          await tx
-            .insert(orgPlanEntitlements)
-            .values(
-              orgPlanEntitlementValues(
-                {
-                  orgId: inserted.orgId,
-                  tier: tier.data,
-                  source: "org_metadata_migration",
-                },
-                { stripeSubscriptionId: null, sourceMetadata: {} },
-              ),
-            )
-            .onConflictDoNothing({ target: orgPlanEntitlements.orgId });
-        }
-        signal.throwIfAborted();
-        return customer.id;
-      }
-
-      const [bound] = await tx
-        .update(orgMetadata)
-        .set({ stripeCustomerId: customer.id, updatedAt: nowDate() })
-        .where(
-          and(
-            eq(orgMetadata.orgId, args.orgId),
-            isNull(orgMetadata.stripeCustomerId),
-          ),
-        )
-        .returning({ stripeCustomerId: orgMetadata.stripeCustomerId });
-      signal.throwIfAborted();
-      if (bound?.stripeCustomerId) {
-        return bound.stripeCustomerId;
-      }
-
-      const [winner] = await tx
-        .select({ stripeCustomerId: orgMetadata.stripeCustomerId })
-        .from(orgMetadata)
-        .where(eq(orgMetadata.orgId, args.orgId))
-        .limit(1);
-      signal.throwIfAborted();
-      if (!winner?.stripeCustomerId) {
-        throw new Error("Stripe customer publication lost its organization");
-      }
+      ),
+      signal,
+    );
+    signal.throwIfAborted();
+    if (prepared.ok) {
+      return await set(publishStripeCustomer$, args, prepared.value.id, signal);
+    }
+    // Another request may have published the same remote success while this
+    // request lost its provider response. Only use that committed binding.
+    const [winner] = await db
+      .select({ stripeCustomerId: orgMetadata.stripeCustomerId })
+      .from(orgMetadata)
+      .where(eq(orgMetadata.orgId, args.orgId))
+      .limit(1);
+    signal.throwIfAborted();
+    if (winner?.stripeCustomerId) {
       return winner.stripeCustomerId;
-    });
+    }
+    throw prepared.error;
   },
 );

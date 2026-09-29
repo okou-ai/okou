@@ -1160,47 +1160,72 @@ describe("POST /api/billing/checkout", () => {
     });
   });
 
-  it("shares one published customer across concurrent checkouts", async () => {
-    const fixture = createOrgFixture();
-    authenticateOrg(fixture);
-    context.mocks.stripe.customers.create
-      .mockResolvedValueOnce({ id: `cus_${randomUUID()}` })
-      .mockResolvedValueOnce({ id: `cus_${randomUUID()}` });
-    context.mocks.stripe.checkout.sessions.create.mockImplementation(
-      (params) => {
-        const { customer } = z.object({ customer: z.string() }).parse(params);
-        return Promise.resolve({
-          url: `https://checkout.stripe.com/session/${customer}`,
-        });
-      },
-    );
-    const client = setupApp({ context, routes: billingCheckoutRoutes })(
-      billingCheckoutContract,
-    );
-    const request = {
-      headers: { authorization: "Bearer clerk-session" },
-      body: {
-        tier: "pro" as const,
-        successUrl: `${APP_ORIGIN}/billing?billing=success`,
-        cancelUrl: `${APP_ORIGIN}/billing?billing=canceled`,
-      },
-    };
-    const responses = await Promise.all([
-      accept(client.create(request), [200]),
-      accept(client.create(request), [200]),
-    ]);
-    expect(responses[0]?.body).toStrictEqual(responses[1]?.body);
-    await expect(readBillingStatus(fixture)).resolves.toMatchObject({
-      tier: "limited-free-1",
-      hasSubscription: false,
-    });
+  it.each(["success", "lost_response"] as const)(
+    "shares a published customer while another candidate returns %s",
+    async (firstOutcome) => {
+      const fixture = createOrgFixture();
+      authenticateOrg(fixture);
+      const firstStarted = createDeferredPromise<void>(context.signal);
+      const firstResponse = createDeferredPromise<{ readonly id: string }>(
+        context.signal,
+      );
+      const candidate = { id: `cus_${randomUUID()}` };
+      context.mocks.stripe.customers.create
+        .mockImplementationOnce(() => {
+          firstStarted.resolve();
+          return firstResponse.promise;
+        })
+        .mockResolvedValueOnce({ id: `cus_${randomUUID()}` });
+      context.mocks.stripe.checkout.sessions.create.mockImplementation(
+        (params) => {
+          const { customer } = z.object({ customer: z.string() }).parse(params);
+          return Promise.resolve({
+            url: `https://checkout.stripe.com/session/${customer}`,
+          });
+        },
+      );
+      const client = setupApp({ context, routes: billingCheckoutRoutes })(
+        billingCheckoutContract,
+      );
+      const request = {
+        headers: { authorization: "Bearer clerk-session" },
+        body: {
+          tier: "pro" as const,
+          successUrl: `${APP_ORIGIN}/billing?billing=success`,
+          cancelUrl: `${APP_ORIGIN}/billing?billing=canceled`,
+        },
+      };
+      const first = accept(client.create(request), [200]);
+      onTestFinished(async () => {
+        if (!firstResponse.settled()) {
+          firstResponse.resolve(candidate);
+        }
+        if (!firstStarted.settled()) {
+          firstStarted.resolve();
+        }
+        await Promise.allSettled([first]);
+      });
+      await firstStarted.promise;
+      const second = await accept(client.create(request), [200]);
+      if (firstOutcome === "lost_response") {
+        firstResponse.reject(new Error("Stripe customer response lost"));
+      } else {
+        firstResponse.resolve(candidate);
+      }
+      const recovered = await first;
+      expect(recovered.body).toStrictEqual(second.body);
+      await expect(readBillingStatus(fixture)).resolves.toMatchObject({
+        tier: "limited-free-1",
+        hasSubscription: false,
+      });
 
-    context.mocks.stripe.customers.create.mockRejectedValue(
-      new Error("An existing customer must remain usable"),
-    );
-    const repeated = await accept(client.create(request), [200]);
-    expect(repeated.body).toStrictEqual(responses[0]?.body);
-  });
+      context.mocks.stripe.customers.create.mockRejectedValue(
+        new Error("An existing customer must remain usable"),
+      );
+      const repeated = await accept(client.create(request), [200]);
+      expect(repeated.body).toStrictEqual(second.body);
+    },
+  );
 
   it("recovers a customer after Stripe created it but its response was lost", async () => {
     const fixture = createOrgFixture();

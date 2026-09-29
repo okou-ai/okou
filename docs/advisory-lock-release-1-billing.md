@@ -18,18 +18,28 @@ publication reads and returns the authoritative binding. Checkout never uses an
 unpublished candidate ID. Existing entitlement rows and paid tiers are not
 replaced by the default initialization.
 
-The old customer advisory acquisition remains around the Stripe call for the
-Release 1 API overlap: an outgoing writer has neither the provider idempotency
-key nor the conditional database publication. Moving the remote call outside
-this boundary while that writer can run would allow it to create another
-customer and overwrite the winning binding.
+Stripe candidate creation now runs **outside** the database transaction. Only
+the finite publication transaction retains the old customer advisory acquisition.
+An outgoing writer reads the binding under that same acquisition before creating
+and unconditionally publishing its customer. If it wins first, the new command
+rechecks after acquiring the lock and returns the outgoing binding. If the new
+command wins first, the outgoing writer observes the committed binding before
+its creation step. Independent candidate preparation can leave an unreferenced
+Stripe customer; a Checkout always uses the authoritative published customer.
+Provider-response and publication failures reread the committed binding before
+propagating an uncertain result. No failed caller deletes a candidate that may
+already be referenced. The concurrent Checkout API cases delay one customer
+response until the other request has published, then cover both its successful
+candidate response and its lost provider response. Both requests and a later
+retry must use the same published customer while the billing API remains unpaid.
 
 After incompatible APIs have stopped serving, their requests have drained, and
-all rollback targets contain this protocol, Release 2 can move customer
-preparation outside the local database transaction and remove this advisory
-call. No App or Runner contract changes. Stripe's finite idempotency retention
-is not presented as a permanent remote operation log; a remote success followed
-by a lost response beyond that retention remains the existing recovery window.
+all rollback targets contain the conditional publication, Release 2 removes the
+customer advisory acquisition. No provider-I/O transaction remains to move for
+this command. No App or Runner contract changes. Stripe's finite idempotency
+retention is not presented as a permanent remote operation log; a remote success
+followed by a lost response beyond that retention remains the existing recovery
+window.
 
 ### Checkout completion publication
 
