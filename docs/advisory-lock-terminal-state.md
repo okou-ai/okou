@@ -129,9 +129,11 @@ An existing database transaction cannot roll back a remote API effect. Remote
 success followed by a lost response or failed local commit is an existing
 failure window, not a reason to retain advisory locks.
 
-Preserve existing recovery, retry, and reconnect behavior. Use existing stable
-operation identities and provider idempotency where available. Do not make a
-new generic uncertainty/compensation system a prerequisite for this cleanup.
+Preserve recovery, retry, and reconnect behavior needed by the accepted product
+contract below. Use existing stable operation identities and provider idempotency
+where available. Do not preserve stronger delivery or cleanup guarantees that
+the product has explicitly dropped, or make a new generic
+uncertainty/compensation system a prerequisite for this cleanup.
 
 At the same time, removing a lock must not introduce duplicate financial
 effects, stale credential publication, or permission resurrection. Identify
@@ -139,17 +141,82 @@ which existing state, constraint, conditional statement, or local atomic
 operation preserves each actual guarantee. A final database CAS cannot undo a
 remote request that has already taken effect.
 
-Where the product accepts temporary inconsistency, use the existing repair
-path. Google Forms may miss triggers during a watch failure, replacement or
-repair window. Reconciliation must restore a usable watch, including discovering
-remote deletion while local expiry appears healthy; it may start from the newest
-response as a fresh baseline. Continuous cursor retention and replay of responses
-from that failure window are not acceptance requirements. Do not add detachment,
-catch-up, compensation or database-trigger protocols solely to prevent that loss.
-Normal notifications, basic deduplication, explicit disable, source/account and
-permission checks remain required. Late preparation must not revive a disabled
-or revoked automation. This tradeoff does not apply to Gmail, billing or
-credential rotation.
+### Accepted product tradeoffs — 2026-09-29
+
+Ethan explicitly accepted the following behavior. These decisions supersede the
+earlier Forms cursor-continuity requirement and inventory notes that describe
+the Gmail, Calendar, usage-display or shared-prefix choices as pending. They
+define the target; recording them does not mean their implementation has shipped.
+
+**Google Forms: recovery may skip the outage interval.** Forms is a best-effort
+automation trigger. A broken, missing or replaced watch may lose triggers during
+the failure/recovery interval. Repair may establish a fresh baseline from the
+latest response instead of preserving the old cursor and replaying every
+readable response. Normal trigger delivery and recovery to a working watch
+remain required. Do not retain cursor-detachment machinery, the two Forms
+cursor/source triggers, compensation protocols or lock ordering solely to
+guarantee uninterrupted cursor continuity. An outgoing repair resetting the
+cursor is not, by itself, a compatibility blocker under this accepted behavior.
+
+**Gmail: local stop is immediate; remote notification expiry may be delayed.**
+Disabling an automation stops its local consumption. When no relevant consumer
+remains, stop renewing the watch and let the remote subscription expire instead
+of requiring an account-wide `users.stop` call. Notifications may continue to
+arrive until expiry and are ignored for inactive consumers. Other enabled
+consumers must remain functional. Temporary unused provider resources and
+notification traffic are accepted; precise synchronous remote teardown is not
+required. This removes the need to globally order ordinary local stop against
+every new remote watch merely to avoid a late `users.stop` stopping that watch.
+
+**Google Calendar: channel replacement and recovery may have notification gaps.**
+Create or renew remote channels outside database transactions and conditionally
+publish the current channel. Stop superseded or unpublished candidates on a
+best-effort basis; failed cleanup may leave an unused channel until expiry.
+Replacement or repair may miss notifications. Do not preserve pending/previous
+channel recovery state solely to guarantee gap-free handover or perfect remote
+cleanup, and do not block usable new subscriptions on obsolete-channel cleanup.
+Authenticate notifications and accept only the current authorized channel and
+source. Event update/cancellation semantics still apply to events actually
+consumed.
+
+For all three watch integrations, retain current account/source authorization,
+explicit enabled state and basic deduplication through existing identities and
+unique constraints. Delayed preparation must not recreate revoked authority or
+re-enable an automation the user disabled. Provider requests and local writes
+do not need to form one atomic operation. Forms and Calendar do not promise
+exactly-once delivery or mandatory replay across the accepted outage windows;
+the Gmail decision concerns delayed remote teardown, not interruption of
+remaining enabled consumers. Necessary local transactions still follow the
+command-owned shape above. Any remaining mixed-version boundary must protect a
+guarantee that is still required, rather than an abandoned delivery guarantee.
+
+**Chat usage display may lag behind settlement.** The settled billing data is
+the authority for amounts; the display read path should obtain current totals
+from that data. Chat/realtime events can act as refresh hints, without a strict
+one-notification-per-update guarantee. Adapt API and App readers together so
+display accuracy does not depend on a perfectly synchronized chain of chat-event
+replacements and archive lookups. Delayed display or redundant refresh hints are
+accepted. Lost or duplicate charges, permanently missing settled amounts, and
+weaker access checks are not. This decision concerns chat usage presentation;
+subscription projections that determine actual entitlements are not merely
+display caches.
+
+**Custom connectors may share a service URL prefix.** Remove the rule that
+every prefix must be exclusive within an organization. Keep connector identity
+uniqueness, including the existing organization/slug constraint. Requests must
+resolve to the intended authorized connector; when several connectors match,
+require an explicit valid connector selection and reject unresolved ambiguity.
+Never choose the first matching connector or inject an arbitrary account's
+credentials. Verify this behavior across API/server and Runner entrypoints
+before removing prefix-exclusivity locks, organization-wide scans and rejection
+paths. Existing connector identity/intent is the selection mechanism; this
+decision does not authorize new persisted coordination fields.
+
+Financial amounts, grants, refunds, permission revocation and credential
+ownership retain their correctness requirements. The accepted watch gaps and
+display delays do not approve duplicate payments, stale credential publication
+or changes to one-time provider token-rotation semantics. Other simplification
+proposals remain separate from these explicit product decisions.
 
 ## Bootstrap reference design
 
@@ -191,16 +258,16 @@ baseline. Counts are SQL acquisition definitions, not caller counts or distinct
 keys. They are planning packages, not a mandatory merge order or a promise of
 exactly seven deployments.
 
-| Package   | Scope                                                                                                                                    | Definitions | Required result                                                                                                                       |
-| --------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ----------: | ------------------------------------------------------------------------------------------------------------------------------------- |
-| 1         | Org Bootstrap                                                                                                                            |           1 | Independent preparation, local credit transaction, conditional default publication, exact candidate cleanup                           |
-| 2         | Browser; Custom account target; Custom prefix; Model policy                                                                              |           4 | Existing identity/constraint arbitration and conditional writes; necessary cross-table changes owned by one command                   |
-| 3         | Builtin credentials; Model provider credentials; Automatic OAuth/DCR; Gmail, Calendar, and Forms watches                                 |           6 | External I/O outside transactions; complete credential writes and exact resource publication/cleanup using existing data              |
-| 4         | Morning Brief preference and native schedule                                                                                             |           2 | Respect the latest user choice; independent preparation; local conditional publication; remove the outer transaction and lock polling |
-| 5         | Stripe customer, organization purchase, subscription synchronization, allocation, plan change, invitation purchase, and invitation email |           7 | Existing idempotency and conditional business transitions; external Stripe work; local atomic financial writes                        |
-| 6         | Usage display, credits/allowance, compaction shared and exclusive acquisition                                                            |           4 | Conditional settlement and amount conservation; bounded local compaction/deletion; no global advisory barrier                         |
-| 7         | SSH owner and the three VNC acquisition definitions                                                                                      |           4 | Existing credential/host identity checks; conditional resource updates; deletion cannot revive revoked authority                      |
-| **Total** |                                                                                                                                          |      **28** | **Zero production acquisition definitions**                                                                                           |
+| Package   | Scope                                                                                                                                    | Definitions | Required result                                                                                                                        |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ----------: | -------------------------------------------------------------------------------------------------------------------------------------- |
+| 1         | Org Bootstrap                                                                                                                            |           1 | Independent preparation, local credit transaction, conditional default publication, exact candidate cleanup                            |
+| 2         | Browser; Custom account target; Custom prefix; Model policy                                                                              |           4 | Identity/constraint arbitration; shared prefixes with explicit authorized selection; command-owned necessary cross-table writes        |
+| 3         | Builtin credentials; Model provider credentials; Automatic OAuth/DCR; Gmail, Calendar, and Forms watches                                 |           6 | External I/O outside transactions; complete credential writes; authorized watch publication with the accepted gaps and delayed cleanup |
+| 4         | Morning Brief preference and native schedule                                                                                             |           2 | Respect the latest user choice; independent preparation; local conditional publication; remove the outer transaction and lock polling  |
+| 5         | Stripe customer, organization purchase, subscription synchronization, allocation, plan change, invitation purchase, and invitation email |           7 | Existing idempotency and conditional business transitions; external Stripe work; local atomic financial writes                         |
+| 6         | Usage display, credits/allowance, compaction shared and exclusive acquisition                                                            |           4 | Accurate settlement and amount conservation; display may lag; bounded local compaction/deletion without a global advisory barrier      |
+| 7         | SSH owner and the three VNC acquisition definitions                                                                                      |           4 | Existing credential/host identity checks; conditional resource updates; deletion cannot revive revoked authority                       |
+| **Total** |                                                                                                                                          |      **28** | **Zero production acquisition definitions**                                                                                            |
 
 Release 1 has one integration owner and one PR,
 [#37313](https://github.com/okou-ai/okou/pull/37313). Independent work may proceed
@@ -306,6 +373,15 @@ retained execution paths must meet the target.
 Tests construct state and assert outcomes through user-accessible APIs. Do not
 hold production advisory locks, install temporary triggers, inspect lock
 waiters, or introduce artificial gates to assert a particular implementation.
+Apply the accepted product tradeoffs to test expectations: retain normal
+trigger delivery, recovery to a working subscription, local disable, authorized
+source selection, basic deduplication and correct settled amounts. Do not assert
+uninterrupted Forms/Calendar delivery, exhaustive replay of their accepted
+outage windows, immediate removal of every remote candidate, exact realtime
+call counts or prefix exclusivity.
+Shared-prefix tests must cover explicit selection and rejection of ambiguity
+without credential disclosure. Usage display checks must allow delayed refresh
+while obtaining accurate settled amounts from the authoritative read path.
 
 Track advisory definitions, transaction propagation, and transaction-held
 external I/O separately in each package. Record constraints that are not yet
