@@ -40,7 +40,7 @@ function jsonHttpException(status: 409 | 422, message: string) {
 }
 
 describe("CHAT-02: model-first provider policies", () => {
-  it("overlaps independent context branches and skips deferred cache identity", async () => {
+  it("overlaps provider and catalog preparation and skips deferred cache identity", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const orgId = requireOrgId(actor);
     await api.heartbeatRunner(runnerGroup);
@@ -54,6 +54,9 @@ describe("CHAT-02: model-first provider policies", () => {
       orgId,
       signal: context.signal,
     });
+    preparation.release("user-timezone");
+    preparation.release("image-model");
+    preparation.release("official-workflow");
     const countedRun = withStableAgentPromptBuildCountFixture(async () => {
       return await sendChatRun(
         actor,
@@ -70,24 +73,14 @@ describe("CHAT-02: model-first provider policies", () => {
     await Promise.all([
       preparation.arrival("post-authorization-context"),
       preparation.arrival("thread-session"),
+      preparation.arrival("model-provider"),
     ]);
     expect(preparation.hasArrived("subscription-account")).toBeFalsy();
-    expect(preparation.hasArrived("model-provider")).toBeFalsy();
-    expect(preparation.hasArrived("connector-contexts")).toBeFalsy();
     preparation.release("post-authorization-context");
     preparation.release("thread-session");
 
-    await Promise.all([
-      preparation.arrival("model-provider"),
-      preparation.arrival("connector-contexts"),
-      preparation.arrival("user-timezone"),
-      preparation.arrival("image-model"),
-    ]);
-    expect(preparation.hasArrived("official-workflow")).toBeFalsy();
-    preparation.release("model-provider");
-    // Official workflow preparation depends on the chosen model, while
-    // connector and member reads can still be in progress.
-    await preparation.arrival("official-workflow");
+    // Connector preparation reaches its boundary while the provider is held.
+    await preparation.arrival("connector-contexts");
     preparation.releaseAll();
 
     const {
@@ -148,8 +141,8 @@ describe("CHAT-02: model-first provider policies", () => {
     );
     preparation.reject("post-authorization-context", authorizationError);
     await preparation.departure("post-authorization-context");
-    await expect(clearAllDetached()).rejects.toBe(authorizationError);
     preparation.releaseAll();
+    await expect(clearAllDetached()).rejects.toBe(authorizationError);
     const events = await chat.listThreadEvents(actor, thread.id);
     // An infrastructure failure keeps the original input pending.
     expect(events.events).toStrictEqual([

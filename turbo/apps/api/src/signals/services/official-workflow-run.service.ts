@@ -251,11 +251,15 @@ interface OfficialWorkflowRunReadInput {
   readonly hasOfficialWorkflows: boolean;
 }
 
+type OfficialWorkflowRunReadInputObject = Computed<
+  OfficialWorkflowRunReadInput | Promise<OfficialWorkflowRunReadInput>
+>;
+
 function createAcceptedRunCatalogObject(
-  input$: Computed<OfficialWorkflowRunReadInput>,
+  input$: OfficialWorkflowRunReadInputObject,
 ) {
   return computed(async (get) => {
-    const { db, hasOfficialWorkflows } = get(input$);
+    const { db, hasOfficialWorkflows } = await get(input$);
     if (!hasOfficialWorkflows) {
       return null;
     }
@@ -288,11 +292,11 @@ function createAcceptedRunCatalogObject(
 }
 
 function createAcceptedRunRevisionsObject(
-  input$: Computed<OfficialWorkflowRunReadInput>,
+  input$: OfficialWorkflowRunReadInputObject,
   acceptedCandidates$: Computed<Promise<readonly AcceptedRunCandidate[]>>,
 ) {
   return computed(async (get) => {
-    const { db } = get(input$);
+    const { db } = await get(input$);
     const candidates = await get(acceptedCandidates$);
     if (candidates.length === 0) {
       return [];
@@ -371,7 +375,7 @@ export function createOfficialWorkflowRunObjects({
   input$,
   candidates$,
 }: {
-  readonly input$: Computed<OfficialWorkflowRunReadInput>;
+  readonly input$: OfficialWorkflowRunReadInputObject;
   readonly candidates$: Computed<
     Promise<readonly OfficialWorkflowRunCandidate[]>
   >;

@@ -1489,6 +1489,8 @@ describe("MCP chat discovery and creation", () => {
 
   it("atomically creates a conversation with its first message and resolves defaults", async () => {
     const f = await creationFixture({ withDefaultAgent: true });
+    f.runs.configureRunnerGroup();
+    f.runs.acceptStorageDownloads();
     const token = f.auth.token({ scope: defaultScopes });
     const args = {
       requestId: randomUUID(),
@@ -6221,10 +6223,6 @@ describe("MCP message search", () => {
       agentId: f.agent.agentId,
       prompt: "Active unrelated task",
     });
-    onTestFinished(async () => {
-      await f.runs.requestCancelRun(f.actor, runId, [200]);
-      await flushWaitUntilForTest();
-    });
     for (const prompt of [
       "staleneedle recall",
       "staleneedle replace",
@@ -6280,6 +6278,11 @@ describe("MCP message search", () => {
     const current = await searchMessages(token, { query: "replacementneedle" });
     expect(current.matches).toHaveLength(1);
     expect(current.matches[0]?.ref.eventId).not.toBe(replaced.ref.eventId);
+
+    // Releasing this run can pick the remaining input. Settle that work
+    // before test teardown clears its Runner and storage configuration.
+    await f.runs.requestCancelRun(f.actor, runId, [200]);
+    await flushWaitUntilForTest();
   });
 
   it("finds retained source messages with valid context references and fails explicitly on a missing archive", async () => {

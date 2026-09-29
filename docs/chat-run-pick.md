@@ -22,10 +22,14 @@ enqueue writers and shared contracts have separate boundaries.
 The same-service rule keeps queue-specific reads and orchestration visible in
 Pick. It does not require duplicating execution capabilities used by non-chat
 production callers. Shared factories expose the read nodes and commands; they
-do not wrap the former asynchronous S3 helper chain. The graph still has an
-intentional authorization and selected-agent bootstrap boundary before generic
-execution context preparation. Independent reads start together when their real
-inputs are available, not all immediately after a claim.
+do not wrap the former asynchronous S3 helper chain. After agent authorization,
+member settings, paid-tool settings and persisted environment reads start beside
+bootstrap preparation. Provider preparation and connector account/credential
+reads depend on the metadata they consume, without waiting for unrelated
+workflow or session results. Captured results and failures are passed to the
+final execution graph without repeating those queries. Error priority is applied
+at the final join, so speculative provider failure cannot hide a thread-selection
+failure.
 
 ## One pick and one organization pass
 
@@ -76,6 +80,13 @@ Missing storage roots and presigned-URL cache writes happen before the pending
 transaction. Existing roots take the read path. Discord access, rejection
 delivery and typing notifications receive the request dispatcher instead of
 creating a Store inside the pick's work.
+
+Storage planning precedes its materialization command; KMS context encryption
+runs alongside that plan and materialization. Both branches are joined even if
+one fails, preserving storage-error priority without an unowned rejected Promise.
+Pi memory summary resolution stays in the resource command because it can enqueue
+or requeue a missing/invalid projection, and a missing memory root's final identity
+is available only after initialization.
 
 Configured connector account fallback is selection among different authorized
 accounts; it does not retry failed queries. Runtime catalog selection captures

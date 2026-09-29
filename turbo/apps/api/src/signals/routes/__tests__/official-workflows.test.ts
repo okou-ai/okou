@@ -3526,6 +3526,8 @@ describe("Official Workflow installations", () => {
       throw new Error("Expected the Morning Brief Automation");
     }
 
+    runs.configureRunnerGroup();
+    runs.acceptStorageDownloads();
     const started = await accept(
       automationClient().run({
         headers,

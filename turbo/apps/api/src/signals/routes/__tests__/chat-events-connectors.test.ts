@@ -21,7 +21,7 @@ import {
   setApiTestConnectorCatalogRuntimeProjectionIdentityReadHook,
 } from "../../../test-fixtures/connector-catalog";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { clearAllDetached, createDeferredPromise } from "../../utils";
+import { clearAllDetached, createDeferredPromise, settle } from "../../utils";
 import { chatThreadRoutes } from "../chat-threads";
 import { connectorAccountRoutes } from "../connector-accounts";
 import type { ApiTestUser } from "./helpers/api-bdd";
@@ -45,7 +45,6 @@ const {
   entitledChatActor: createEntitledChatActor,
   sendChatRun,
   claimChatRun,
-  waitForThreadMessages,
   completeChatRunOk,
   cancelChatRun,
   modelProviderConnectionsClient,
@@ -318,9 +317,9 @@ describe("CHAT-02: thread connector account selection", () => {
         expect.objectContaining({
           eventType: "input.prompt",
           id: clientEventId,
-          runId: null,
         }),
       ]);
+      expect(messages.events[0]?.runId).toBeUndefined();
     },
   );
 
@@ -658,19 +657,21 @@ describe("CHAT-02: thread connector account selection", () => {
     for (const response of responses) {
       expect(response.body).toMatchObject({ runId: null, threadId: thread.id });
     }
-    // The pick launches the thread head; the other send stays queued.
+    // Enqueue can replace the first lease while both requests prepare the same
+    // head. A losing snapshot fails once; it must not retry the second input.
+    const picks = await settle(clearAllDetached());
+    if (!picks.ok) {
+      expect(picks.error).toMatchObject({
+        message: "Chat thread session changed during run preparation",
+      });
+    }
+    // The winning pick launches the head; the other send stays queued.
     const replacesSend = (revokesEventId: string | undefined): boolean => {
       return clientEventIds.some((clientEventId) => {
         return clientEventId === revokesEventId;
       });
     };
-    const messages = await waitForThreadMessages(actor, thread.id, (items) => {
-      return userMessages(items).some((message) => {
-        return (
-          replacesSend(message.revokesEventId) && message.runId !== undefined
-        );
-      });
-    });
+    const messages = await chat.listThreadEvents(actor, thread.id);
     const replacements = userMessages(messages.events).filter((message) => {
       return replacesSend(message.revokesEventId);
     });
@@ -685,6 +686,16 @@ describe("CHAT-02: thread connector account selection", () => {
     if (!queuedEventId) {
       throw new Error("Expected one concurrent send to remain queued");
     }
+    const queued = messages.events.find((message) => {
+      return message.id === queuedEventId;
+    });
+    expect(queued).toMatchObject({ eventType: "input.prompt" });
+    expect(queued?.runId).toBeUndefined();
+    expect(
+      messages.events.filter((message) => {
+        return message.eventType === "input.rejected";
+      }),
+    ).toStrictEqual([]);
 
     const claimed = await claimChatRun(runnerGroup, activeRunId);
     expect(
