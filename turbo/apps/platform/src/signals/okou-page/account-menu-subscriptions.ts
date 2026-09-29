@@ -3,6 +3,7 @@ import type {
   ModelProviderResponse,
   ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
+import { subscriptionUsageWindows } from "../../lib/subscription-usage-windows.ts";
 import { refreshPersonalModelProvidersIfStale$ } from "../external/personal-model-providers.ts";
 import { personalConfiguredProviders$ } from "./settings/personal-model-providers.ts";
 
@@ -94,7 +95,7 @@ function accountMenuSubscriptionUsageRows(
       return [];
     }
     const usage = fallbackSubscriptionUsage(provider);
-    if (!usage || accountMenuSubscriptionUsageWindows(usage).length === 0) {
+    if (!usage || subscriptionUsageWindows(usage).length === 0) {
       return [];
     }
     return [
@@ -116,33 +117,10 @@ function accountMenuSubscriptionUsageRows(
   });
 }
 
-export function accountMenuSubscriptionUsageWindows(
-  usage: AccountMenuSubscriptionUsage | null | undefined,
-): readonly {
-  readonly kind: "fiveHour" | "week";
-  readonly window: AccountMenuSubscriptionUsageWindow;
-}[] {
-  return [
-    { kind: "fiveHour" as const, window: usage?.fiveHour ?? null },
-    { kind: "week" as const, window: usage?.weekly ?? null },
-  ].filter(
-    (
-      item,
-    ): item is {
-      kind: "fiveHour" | "week";
-      window: AccountMenuSubscriptionUsageWindow;
-    } => {
-      return hasUsageWindow(item.window);
-    },
-  );
-}
-
 function fallbackSubscriptionUsage(
   provider: ModelProviderResponse,
 ): AccountMenuSubscriptionUsage | null {
-  if (
-    accountMenuSubscriptionUsageWindows(provider.subscriptionUsage).length > 0
-  ) {
+  if (subscriptionUsageWindows(provider.subscriptionUsage).length > 0) {
     return provider.subscriptionUsage ?? null;
   }
 
@@ -162,15 +140,4 @@ function fallbackSubscriptionUsage(
   return resetPeriod?.includes("5")
     ? { fiveHour: window, weekly: null }
     : { fiveHour: null, weekly: window };
-}
-
-function hasUsageWindow(
-  window: AccountMenuSubscriptionUsage["fiveHour"],
-): window is AccountMenuSubscriptionUsageWindow {
-  return (
-    window !== null &&
-    (window.remainingPercent !== null ||
-      window.usedPercent !== null ||
-      window.resetAt !== null)
-  );
 }
