@@ -228,3 +228,11 @@ database, forwards no transaction and performs no provider I/O inside the commit
 This member-only grant does not trigger shared-wallet expiration. The separate
 Atom plan replacement and its bundled member grant remain in the unfinished
 plan publication/cancellation graph.
+
+### Usage-pack plan activation ownership
+
+Plan-change invoice activation now dispatches `activateUsagePackPlanFromSubscription$` and its owning publication command with ordinary Stripe and local snapshot values. Neither command accepts or forwards a database handle. Preparation resolves the existing binding and reads the finite allocation candidates outside the transaction. Publication directly executes the subscription, organization plan, entitlement, and pending-count SQL in one local transaction, with no provider calls. It rereads the current bound subscription and the prepared allocation IDs, rejects a terminal or moved subscription, validates the current quantities, and rejects newly active allocations omitted by preparation before publishing anything.
+
+The R1 publication still takes the existing billing compatibility keys and locks organization subscription roots before the pending guard. This order remains necessary while outgoing lifecycle writers lock a subscription and then enter their pending-count trigger. Removing those compatibility boundaries requires the complete common pending-snapshot writer protocol and the documented outgoing-writer/drain/rollback evidence; changing this activation command alone is not that evidence. Stripe quantity/schedule ordering, the remaining allocation/plan-change helpers, and legacy Atom/plan replacement cancellation are still separate implementation gaps.
+
+Focused Prettier, Oxlint, ESLint, and diff checks cover this change. Existing user-API plan-change and paid-invoice behavior tests must run against the integrated PR head; no local Vitest or development server was run.

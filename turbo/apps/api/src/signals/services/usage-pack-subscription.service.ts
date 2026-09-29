@@ -1,4 +1,15 @@
 import {
+  activationAllocationWhere,
+  activationEntitlementValues,
+  activationPendingCounts,
+  activationUnchangedAllocationsWhere,
+  activationOrgValues,
+  activationRoot,
+  activationRootsWhere,
+  activationSubscriptionValues,
+  type UsagePackPlanActivation,
+} from "./usage-pack-plan-activation";
+import {
   firstPaidUpgradeDebtWhere,
   fulfillmentAllocationWhere,
   fulfillmentPreparedWrites,
@@ -3076,130 +3087,185 @@ async function usagePackInvoiceAlreadyFulfilled(
   return true;
 }
 
-async function persistUsagePackPlanState(
-  tx: WriteTx,
-  subscription: UsagePackSubscriptionRow,
-  args: {
-    readonly stripeSubscription: UsagePackSubscriptionInput;
-    readonly shape: ValidatedSubscriptionShape;
-    readonly periodStart: Date | null;
-    readonly periodEnd: Date;
-    readonly updatedAt: Date;
-  },
-): Promise<void> {
-  await tx
-    .update(usagePackSubscriptions)
-    .set({
-      tier: args.shape.tier,
-      stripePlanPriceId: args.shape.planPriceId,
-      stripeSubscriptionId: args.stripeSubscription.id,
-      subscriptionStatus: args.stripeSubscription.status,
-      currentPeriodStart: args.periodStart,
-      currentPeriodEnd: args.periodEnd,
-      cancelAtPeriodEnd: usagePackSubscriptionWillCancel(
-        args.stripeSubscription,
-      ),
-      updatedAt: args.updatedAt,
-    })
-    .where(eq(usagePackSubscriptions.id, subscription.id));
-
-  if (!args.shape.projectsOrgPlan) {
-    return;
-  }
-
-  const orgRows = await tx
-    .update(orgMetadata)
-    .set({
-      tier: args.shape.tier,
-      stripeSubscriptionId: args.stripeSubscription.id,
-      subscriptionStatus: args.stripeSubscription.status,
-      currentPeriodEnd: args.periodEnd,
-      cancelAtPeriodEnd: usagePackSubscriptionWillCancel(
-        args.stripeSubscription,
-      ),
-      updatedAt: args.updatedAt,
-    })
-    .where(
-      and(
-        eq(orgMetadata.orgId, subscription.orgId),
-        eq(orgMetadata.stripeCustomerId, subscription.stripeCustomerId),
-      ),
-    )
-    .returning({ orgId: orgMetadata.orgId });
-  if (orgRows.length !== 1) {
-    throw new Error(
-      `Usage pack subscription ${subscription.id} has no matching organization billing record`,
-    );
-  }
-
-  const cancelAt =
-    unixDate(args.stripeSubscription.cancel_at) ??
-    (args.stripeSubscription.cancel_at_period_end ? args.periodEnd : null);
-  await upsertOrgPlanEntitlement(tx, {
-    orgId: subscription.orgId,
-    tier: args.shape.tier,
-    source: "stripe_subscription",
-    status: args.stripeSubscription.status,
-    stripeSubscriptionId: args.stripeSubscription.id,
-    stripePriceId: args.shape.planPriceId,
-    currentPeriodStart: args.periodStart,
-    currentPeriodEnd: args.periodEnd,
-    cancelAt,
-    expiresAt: cancelAt,
-    showUsagePack: true,
-  });
-}
-
-async function activateUsagePackPlanFromSubscription(
-  db: Db,
-  subscription: UsagePackSubscriptionInput,
-): Promise<UsagePackLifecycleOutcome> {
-  const usagePackSubscriptionId = await resolveUsagePackSubscriptionId(db, {
-    stripeSubscriptionId: subscription.id,
-    metadata: [subscription.metadata],
-  });
-  if (!usagePackSubscriptionId) {
-    return { handled: false, orgId: null };
-  }
-  const context = await loadUsagePackContext(db, usagePackSubscriptionId);
-  validateUsagePackSubscriptionCorrelation(
-    context,
-    subscription,
-    usagePackSubscriptionId,
-  );
-  const shape = requireUsagePackSubscriptionShape(context, subscription);
-  if (!shape.periodStart) {
-    throw new Error(
-      `Usage pack subscription ${subscription.id} has no current period start`,
-    );
-  }
-  await writeUsagePackPendingSnapshots(
-    db,
-    [context.subscription.orgId],
-    async (tx) => {
-      const [lockedSubscription] = await tx
+const commitUsagePackPlanActivation$ = command(
+  async (
+    { set },
+    args: UsagePackPlanActivation,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    const orgId = args.context.subscription.orgId;
+    await db.transaction(async (tx) => {
+      await tx.execute(usagePackBillingCompatibilityLockSql(orgId));
+      await tx.execute(billingPurchaseCompatibilityLockSql(orgId));
+      const roots = await tx
         .select()
         .from(usagePackSubscriptions)
-        .where(eq(usagePackSubscriptions.id, usagePackSubscriptionId))
-        .for("update")
-        .limit(1);
-      if (!lockedSubscription) {
+        .where(activationRootsWhere(args))
+        .orderBy(asc(usagePackSubscriptions.id))
+        .for("update");
+      const subscription = activationRoot(args, roots);
+      await tx
+        .insert(usagePackPendingSnapshotGuards)
+        .values({ orgId, pendingSnapshotCount: 0 })
+        .onConflictDoNothing();
+      const [guard] = await tx
+        .select()
+        .from(usagePackPendingSnapshotGuards)
+        .where(eq(usagePackPendingSnapshotGuards.orgId, orgId))
+        .for("update");
+      const counts = activationPendingCounts(args, roots);
+      if (!guard || guard.pendingSnapshotCount !== counts.before) {
+        throw new Error("Usage pack pending snapshot guard requires repair");
+      }
+      const allocations = await tx
+        .select()
+        .from(usagePackAllocations)
+        .where(activationAllocationWhere(args))
+        .orderBy(asc(usagePackAllocations.id))
+        .for("update");
+      const context = { subscription, allocations };
+      validateUsagePackSubscriptionCorrelation(
+        context,
+        args.subscription,
+        subscription.id,
+      );
+      const shape = requireUsagePackSubscriptionShape(
+        context,
+        args.subscription,
+      );
+      if (!shape.periodStart) {
         throw new Error(
-          `Usage pack subscription ${usagePackSubscriptionId} disappeared during plan activation`,
+          `Usage pack subscription ${args.subscription.id} has no current period start`,
         );
       }
-      await persistUsagePackPlanState(tx, lockedSubscription, {
-        stripeSubscription: subscription,
+      const values = activationSubscriptionValues(
+        args.subscription,
         shape,
-        periodStart: shape.periodStart,
-        periodEnd: shape.periodEnd,
-        updatedAt: nowDate(),
-      });
-    },
-    [usagePackSubscriptionId],
-  );
-  return { handled: true, orgId: context.subscription.orgId, subscription };
-}
+        nowDate(),
+      );
+      const updated = await tx
+        .update(usagePackSubscriptions)
+        .set(values)
+        .where(activationUnchangedAllocationsWhere(args))
+        .returning({ id: usagePackSubscriptions.id });
+      if (updated.length !== 1) {
+        throw new Error(
+          "Usage pack allocations changed during plan activation",
+        );
+      }
+      if (shape.projectsOrgPlan) {
+        const orgRows = await tx
+          .update(orgMetadata)
+          .set(activationOrgValues(args.subscription, shape, values.updatedAt))
+          .where(
+            and(
+              eq(orgMetadata.orgId, orgId),
+              eq(orgMetadata.stripeCustomerId, subscription.stripeCustomerId),
+            ),
+          )
+          .returning({ orgId: orgMetadata.orgId });
+        if (orgRows.length !== 1) {
+          throw new Error(
+            `Usage pack subscription ${subscription.id} has no matching organization billing record`,
+          );
+        }
+        const [owner] = await tx
+          .select({ orgId: orgPlanEntitlements.orgId })
+          .from(orgPlanEntitlements)
+          .where(
+            eq(orgPlanEntitlements.stripeSubscriptionId, args.subscription.id),
+          )
+          .limit(1);
+        const entitlement = activationEntitlementValues(
+          args,
+          shape,
+          owner?.orgId,
+        );
+        await tx
+          .insert(orgPlanEntitlements)
+          .values(entitlement)
+          .onConflictDoUpdate({
+            target: orgPlanEntitlements.orgId,
+            set: entitlement,
+          });
+      }
+      await tx
+        .update(usagePackPendingSnapshotGuards)
+        .set({ pendingSnapshotCount: counts.after })
+        .where(eq(usagePackPendingSnapshotGuards.orgId, orgId));
+      signal.throwIfAborted();
+    });
+    signal.throwIfAborted();
+  },
+);
+
+const activateUsagePackPlanFromSubscription$ = command(
+  async (
+    { set },
+    subscription: UsagePackSubscriptionInput,
+    signal: AbortSignal,
+  ): Promise<UsagePackLifecycleOutcome> => {
+    const db = set(writeDb$);
+    let [local] = await db
+      .select()
+      .from(usagePackSubscriptions)
+      .where(
+        and(
+          eq(usagePackSubscriptions.stripeSubscriptionId, subscription.id),
+          notInArray(usagePackSubscriptions.subscriptionStatus, [
+            ...TERMINAL_USAGE_PACK_SUBSCRIPTION_STATUSES,
+          ]),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!local) {
+      const metadataId = oneUsagePackSubscriptionId(subscription.metadata);
+      if (!metadataId) {
+        return { handled: false, orgId: null };
+      }
+      [local] = await db
+        .select()
+        .from(usagePackSubscriptions)
+        .where(
+          and(
+            eq(usagePackSubscriptions.id, metadataId),
+            notInArray(usagePackSubscriptions.subscriptionStatus, [
+              ...TERMINAL_USAGE_PACK_SUBSCRIPTION_STATUSES,
+            ]),
+          ),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+    }
+    if (!local) {
+      return { handled: false, orgId: null };
+    }
+    const allocations = await db
+      .select()
+      .from(usagePackAllocations)
+      .where(
+        and(
+          eq(usagePackAllocations.usagePackSubscriptionId, local.id),
+          inArray(usagePackAllocations.status, [
+            ...MANAGED_USAGE_PACK_ALLOCATION_STATUSES,
+          ]),
+        ),
+      );
+    signal.throwIfAborted();
+    await set(
+      commitUsagePackPlanActivation$,
+      {
+        context: { subscription: local, allocations },
+        subscription,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    return { handled: true, orgId: local.orgId, subscription };
+  },
+);
 
 const commitUsagePackFulfillment$ = command(
   async (
@@ -3352,9 +3418,10 @@ export const handleUsagePackInvoicePaid$ = command(
       await handleUsagePackSubscriptionChangeInvoicePaid(db, invoice);
     signal.throwIfAborted();
     if (subscriptionChangeOutcome.handled) {
-      await activateUsagePackPlanFromSubscription(
-        db,
+      await set(
+        activateUsagePackPlanFromSubscription$,
         subscriptionChangeOutcome.subscription,
+        signal,
       );
       signal.throwIfAborted();
       return {
@@ -3413,7 +3480,7 @@ export const handleUsagePackInvoicePaid$ = command(
         reconciledContext,
         subscription,
       );
-      await activateUsagePackPlanFromSubscription(db, subscription);
+      await set(activateUsagePackPlanFromSubscription$, subscription, signal);
       signal.throwIfAborted();
       await db
         .insert(usagePackInvoiceFulfillments)
