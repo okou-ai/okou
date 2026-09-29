@@ -184,19 +184,9 @@ describe("CHAT-02: queueing and recalling messages", () => {
       { outcome: "steered" },
       { outcome: "steered" },
     ]);
-    expect(
-      context.mocks.ably.publish.mock.calls.filter(([topic]) => {
-        return topic === `chatThreadMessageCreated:${active.threadId}`;
-      }),
-    ).toHaveLength(1);
     expect(context.mocks.ably.publish).toHaveBeenCalledWith("active-input", {
       runId: active.runId,
     });
-    expect(
-      context.mocks.ably.publish.mock.calls.filter(([topic]) => {
-        return topic === "active-input";
-      }),
-    ).toHaveLength(1);
     await expect(
       api.declareSteeredInput(
         claimed.claim.sandboxToken,
@@ -204,11 +194,22 @@ describe("CHAT-02: queueing and recalling messages", () => {
         firstEventId,
       ),
     ).resolves.toStrictEqual({ outcome: "steered" });
-    expect(
-      context.mocks.ably.publish.mock.calls.filter(([topic]) => {
-        return topic === `chatThreadMessageCreated:${active.threadId}`;
-      }),
-    ).toHaveLength(1);
+    // Realtime hints may repeat; the public event stream must contain only
+    // one replacement after concurrent declarations and a response retry.
+    const afterRepeatedDeclaration = await chat.listThreadEvents(
+      actor,
+      active.threadId,
+    );
+    const firstReplacements = afterRepeatedDeclaration.events.filter(
+      (event) => {
+        return event.revokesEventId === firstEventId;
+      },
+    );
+    expect(firstReplacements).toHaveLength(1);
+    expect(firstReplacements[0]).toMatchObject({
+      eventType: "input.prompt",
+      runId: active.runId,
+    });
 
     await expect(
       api.nextSteerableInput(claimed.claim.sandboxToken, active.runId),
@@ -229,27 +230,36 @@ describe("CHAT-02: queueing and recalling messages", () => {
         secondEventId,
       ),
     ).resolves.toStrictEqual({ outcome: "steered" });
-    expect(
-      context.mocks.ably.publish.mock.calls.filter(([topic]) => {
-        return topic === `chatThreadMessageCreated:${active.threadId}`;
-      }),
-    ).toHaveLength(2);
     await expect(
       api.nextSteerableInput(claimed.claim.sandboxToken, active.runId),
     ).resolves.toStrictEqual({ input: null });
     const events = await chat.listThreadEvents(actor, active.threadId);
     const replacements = events.events.filter((event) => {
       return (
-        event.runId === active.runId &&
-        (event.revokesEventId === firstEventId ||
-          event.revokesEventId === secondEventId)
+        event.revokesEventId === firstEventId ||
+        event.revokesEventId === secondEventId
       );
     });
     expect(
       replacements.map((event) => {
-        return event.revokesEventId;
+        return {
+          eventType: event.eventType,
+          runId: event.runId,
+          revokesEventId: event.revokesEventId,
+        };
       }),
-    ).toStrictEqual([firstEventId, secondEventId]);
+    ).toStrictEqual([
+      {
+        eventType: "input.prompt",
+        runId: active.runId,
+        revokesEventId: firstEventId,
+      },
+      {
+        eventType: "input.prompt",
+        runId: active.runId,
+        revokesEventId: secondEventId,
+      },
+    ]);
     await cancelChatRun(actor, active.runId);
   }, 90_000);
 
