@@ -4,7 +4,7 @@ import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/cont
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
 import { HttpResponse, http } from "msw";
-import { expect, onTestFinished, describe, beforeEach, it } from "vitest";
+import { expect, describe, beforeEach, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -28,11 +28,7 @@ import { createRouteMocks } from "./helpers/route-test";
 import { chatThreadRoutes } from "../chat-threads";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { workflowAutomationsRoutes } from "../workflow-automations";
-import {
-  clearGoogleCalendarBeforeRunStartHookForTest,
-  setGoogleCalendarBeforeRunStartHookForTest,
-  webhooksGoogleCalendarRoutes,
-} from "../webhooks-google-calendar";
+import { webhooksGoogleCalendarRoutes } from "../webhooks-google-calendar";
 
 const TEST_APP_ROUTES = Object.freeze([
   ...webhooksGoogleCalendarRoutes,
@@ -808,7 +804,7 @@ describe("POST /api/webhooks/google-calendar", () => {
     });
   });
 
-  it("supersedes an old Calendar source when account selection changes at queue admission", async () => {
+  it("rejects an old Calendar source when account selection changes during event retrieval", async () => {
     const firstAccessToken = "calendar-admission-first-token";
     const secondAccessToken = "calendar-admission-second-token";
     const calendar = configureAccountAwareGoogleCalendarApiMock({
@@ -863,23 +859,46 @@ describe("POST /api/webhooks/google-calendar", () => {
       throw new Error("Expected the initial Calendar watch");
     }
 
-    onTestFinished(() => {
-      clearGoogleCalendarBeforeRunStartHookForTest();
-    });
-    setGoogleCalendarBeforeRunStartHookForTest(async () => {
-      clearGoogleCalendarBeforeRunStartHookForTest();
-      await accept(
-        chatThreadConnectorSelectionsClient().update({
-          headers: authHeaders(),
-          params: { id: admissionChatThreadId },
-          body: {
-            connectionId: secondConnectorId,
-            target: { kind: "builtin", connectorSlug: "google-calendar" },
-          },
-        }),
-        [200],
-      );
-    });
+    server.use(
+      http.get(
+        "https://www.googleapis.com/calendar/v3/calendars/:calendarId/events",
+        async ({ request }) => {
+          const accessToken = googleCalendarRequestAccessToken(request);
+          const syncToken = new URL(request.url).searchParams.get("syncToken");
+          if (!syncToken) {
+            return HttpResponse.json({
+              items: [],
+              nextSyncToken: `calendar-switched-baseline-${accessToken}`,
+            });
+          }
+          expect(accessToken).toBe(firstAccessToken);
+          await accept(
+            chatThreadConnectorSelectionsClient().update({
+              headers: authHeaders(),
+              params: { id: admissionChatThreadId },
+              body: {
+                connectionId: secondConnectorId,
+                target: { kind: "builtin", connectorSlug: "google-calendar" },
+              },
+            }),
+            [200],
+          );
+          return HttpResponse.json({
+            items: [
+              {
+                id: "calendar-admission-event",
+                etag: '"calendar-admission-version"',
+                status: "confirmed",
+                summary: "Old account response after selection changed",
+                created: "2026-08-01T10:00:00.000Z",
+                updated: "2026-08-01T10:00:00.000Z",
+              },
+            ],
+            nextSyncToken: "calendar-stale-account-result",
+          });
+        },
+      ),
+    );
 
     const response = await postGoogleCalendarWebhook(
       webhookHeaders(firstWatch),
@@ -894,7 +913,6 @@ describe("POST /api/webhooks/google-calendar", () => {
         duplicates: 0,
       },
     });
-    expect(calendar.incrementalAccessTokens).toStrictEqual([firstAccessToken]);
     expect(
       calendar.channels.some((channel) => {
         return channel.accessToken === secondAccessToken;

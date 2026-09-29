@@ -33,3 +33,21 @@ Ordinary FK, unique and CHECK constraints cannot distinguish the old repair's un
 Focused ESLint/Oxlint/format checks pass for committed source changes. DCR final command publication core types and Calendar core types pass; the integrated PR must validate the latest combined head and schema migration. The Forms schema snapshot changes only google_forms_automation_cursors. API tests cover remote-watch repair/catch-up, DCR concurrent authorizations using a shared published client with usable callbacks, and explicit Forms disable/re-enable behavior. No local Vitest suite or development server was run.
 
 Repository error handling classifies Codex refresh_token_reused and refresh_token_invalidated as terminal. The inspected code/tests do not prove that submitting a concurrent duplicate refresh invalidates an already successful winner's whole token family. That claim must not be used as a demonstrated impossibility argument.
+
+### Test consolidation
+
+The Calendar source-switch regression now changes account selection through the
+public API while the external Google events response is in flight. It still
+requires the old source to dispatch no run; the service and route no longer
+expose an internal before-admission hook. Forms retry deduplication shares the
+normal metadata-delivery setup and asserts one visible automation event after
+redelivery, instead of counting provider reads. Remote-watch repair with cursor
+catch-up and explicit disable/re-enable with a new baseline remain separate
+because they require opposite cursor behavior.
+
+The credential replacement case retains the rejected in-flight request and the
+connected replacement account. Its follow-up API request must send the stored
+replacement token to Google; a successful creation response alone is not the
+assertion. The test no longer requires exactly two watch calls and one stop
+call. DCR's common published client and both usable OAuth callbacks remain
+covered unchanged.

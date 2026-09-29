@@ -35,7 +35,6 @@ import { apiBackendUrl } from "../../lib/api-backend-url";
 import type { Tx } from "../../lib/db-types";
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import { logger } from "../../lib/log";
-import { testOverride } from "../../lib/singleton";
 import { webUrl } from "../../lib/web-url";
 import { writeDb$, type Db } from "../external/db";
 import { onRejection, settle, tapError } from "../utils";
@@ -283,35 +282,6 @@ type GoogleCalendarRunStarter = (args: {
   readonly eventChangeKey: string;
   readonly timing: AutomationEventRunTiming;
 }) => Promise<"ok" | "error" | "superseded">;
-
-interface GoogleCalendarWorkflowRunStartTestInput {
-  readonly automationId: string;
-  readonly workflowName: string;
-  readonly changeType: GoogleCalendarChangeType;
-  readonly calendarId: string;
-  readonly eventId: string;
-  readonly summary: string | null;
-}
-
-type GoogleCalendarBeforeRunStartTestHook = (
-  args: GoogleCalendarWorkflowRunStartTestInput,
-) => Promise<void>;
-
-const googleCalendarBeforeRunStartHook = testOverride<
-  GoogleCalendarBeforeRunStartTestHook | undefined
->(() => {
-  return undefined;
-});
-
-export function setGoogleCalendarBeforeRunStartHookForTest(
-  hook: GoogleCalendarBeforeRunStartTestHook,
-): void {
-  googleCalendarBeforeRunStartHook.set(hook);
-}
-
-export function clearGoogleCalendarBeforeRunStartHookForTest(): void {
-  googleCalendarBeforeRunStartHook.clear();
-}
 
 class GoogleCalendarAutomationSourceChangedError extends Error {
   constructor() {
@@ -4490,18 +4460,6 @@ export const dispatchGoogleCalendarWebhook$ = command(
       eventChangeKey,
       timing,
     }) => {
-      const beforeRunStart = googleCalendarBeforeRunStartHook.get();
-      if (beforeRunStart) {
-        await beforeRunStart({
-          automationId: automation.automation.id,
-          workflowName: automation.workflowName,
-          changeType: event.changeType,
-          calendarId: state.calendarId,
-          eventId: event.eventId,
-          summary: event.summary,
-        });
-        signal.throwIfAborted();
-      }
       return await set(
         startGoogleCalendarAutomationRun$,
         {

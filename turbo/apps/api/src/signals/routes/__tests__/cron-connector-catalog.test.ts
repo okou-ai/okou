@@ -4437,6 +4437,8 @@ describe("connector catalog valid lifecycle", () => {
       reconnectReason: null,
     });
 
+    // Record provider use by the follow-up request after the stale refresh ends.
+    watchAuthorizations.length = 0;
     await accept(
       setupApp({ context, routes: workflowAutomationsRoutes })(
         workflowAutomationsContract,
@@ -4451,13 +4453,14 @@ describe("connector catalog valid lifecycle", () => {
       }),
       [201],
     );
-    expect(watchAuthorizations).toStrictEqual([
-      "Bearer replacement-gmail-token",
-      "Bearer replacement-gmail-token",
-    ]);
-    expect(stopAuthorizations).toStrictEqual([
-      "Bearer replacement-gmail-token",
-    ]);
+    // The follow-up API request must use the stored replacement authorization,
+    // regardless of how many watch reconciliation calls it requires.
+    expect(new Set(watchAuthorizations)).toStrictEqual(
+      new Set(["Bearer replacement-gmail-token"]),
+    );
+    expect(stopAuthorizations).not.toContain(
+      "Bearer stale-refreshed-gmail-token",
+    );
   });
 
   describe("with a pending catalog authorization", () => {

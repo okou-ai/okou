@@ -530,7 +530,7 @@ describe("Google Forms Pub/Sub webhook", () => {
     ]);
   });
 
-  it("delivers metadata without response data", async () => {
+  it("delivers metadata without response data and de-duplicates a retry", async () => {
     const { automationId, chatThreadId, formsApi } =
       await setupGoogleFormsAutomation();
     const watchId = formsApi.watchIds[0];
@@ -591,21 +591,6 @@ describe("Google Forms Pub/Sub webhook", () => {
     expect(eventContext).not.toHaveProperty("answers");
     expect(claim.appendSystemPrompt).toContain("# Agent Identity");
     expect(claim.appendSystemPrompt).not.toContain("# Current context");
-    await flushWaitUntilForTest();
-  });
-
-  it("de-duplicates a retry", async () => {
-    const { formsApi } = await setupGoogleFormsAutomation();
-    const watchId = formsApi.watchIds[0];
-    if (!watchId) {
-      throw new Error("Expected a Google Forms watch id");
-    }
-    const push = formsPushBody("pubsub-forms-retry", watchId);
-    const first = await postWebhook(push);
-    expect(first).toMatchObject({
-      status: 200,
-      body: { watchStates: 1, dispatched: 1, duplicates: 0 },
-    });
     const retry = await postWebhook(push);
     expect(retry).toStrictEqual({
       status: 200,
@@ -616,8 +601,13 @@ describe("Google Forms Pub/Sub webhook", () => {
         duplicates: 1,
       },
     });
-    expect(formsApi.responseFilters).toHaveLength(2);
     await flushWaitUntilForTest();
+    const retriedEvents = await workflows.readThreadEvents(chatThreadId);
+    expect(
+      retriedEvents.filter((event) => {
+        return event.eventType === "input.automation";
+      }),
+    ).toHaveLength(1);
   });
 
   it("acknowledges events without dispatching after Forms access becomes unavailable", async () => {
