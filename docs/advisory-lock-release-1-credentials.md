@@ -6,7 +6,7 @@ Forms and Calendar lifecycle acquisitions are removed. Other credential/watch co
 
 - Forms remote watch preparation, renewal, inventory and response pagination run outside local publication transactions. Publication uses existing watch identity and exact state observations. Reconciliation discovers remotely missing watches and restores delivery; missed triggers during failure and repair are accepted.
 - If an outgoing stop deletes a watch after preparation observed it, Forms publication returns conflict. A fresh request or reconciliation may prepare a new watch and newest-response baseline; it does not report successful setup without a usable local watch.
-- Forms watch publication, state renewal/removal and account reprojection commands execute their own SQL. New consumer reads and retry writes are commands with no database argument. Advisory statement builders accept only ordinary values. Shared workflow creation, enable and official reconfiguration ownership remains listed below as implementation work.
+- Forms watch publication, state renewal/removal and account reprojection commands execute their own SQL. New consumer reads and retry writes are commands with no database argument. Advisory statement builders accept only ordinary values. Generic event creation and missing-thread initialization now use owning commands. Webhook/Stripe-specific creation, enable publication and official reconfiguration retain the separate implementation work listed below.
 - Forms queue admission receives an ordinary source observation and prepared input. `enqueueGoogleFormsWorkflowInput$` owns the local transaction and directly inserts the context, appends through the canonical pure SQL builder, validates source identity, records deduplication, advances the cursor and marks the thread queued. It passes no database or transaction to a helper, callback or another command. Its append-before-source-lock order matches outgoing writers, and source rejection rolls back the entire input. Model selection and message preparation now occur before queue transactions.
 - Forms keeps the existing non-null cursor/watch foreign key with `ON DELETE CASCADE`. Physical watch deletion may discard the cursor. The unpublished detachment and two cursor-trigger migrations are withdrawn; no Forms schema change or new stored coordination state remains.
 - DCR registrations are prepared remotely and encrypted before publication. Custom and builtin publication commands own finite SQL, compare the observed registration and return a compatible current winner. New preparation reads own database access. Builtin publication also locks and checks the existing accepted catalog identity, so catalog changes during remote preparation reject stale publication.
@@ -42,10 +42,10 @@ Forms and Calendar lifecycle acquisitions are removed. Other credential/watch co
 ### Remaining implementation work
 
 - Builtin OAuth callback, Automatic OAuth refresh and its legacy retirement store, ordinary refresh's legacy helper-owned commit path and its remaining resolver chains still propagate root database or transaction values. Automatic callback including state claim, catalog preparation and post-commit wakeup has a command-owned boundary. Other builtin/custom callback routes still use the legacy state helper; it remains only for those actual callers.
-- Model-provider firewall refresh has not been migrated to the complete final command-owned conditional protocol; it still executes provider/KMS work through the locked helper graph. Personal account activation/upsert and ordinary multi-auth/single-secret settings now own their SQL. Retained-account cleanup still propagates database handles. They remain implementation work rather than an outgoing-writer gate.
-- Gmail now has explicit approval for local disable, stopping renewal and remote natural expiry without account-global `users.stop`. Its remote-stop code is removed. Ensure, renewal and watch reconciliation now use owning commands; missing-thread initialization and shared credential callers remain. Gmail queue source admission now has an owning command, described below. Calendar also has explicit approval for a remote gap and best-effort candidate cleanup; authority and basic deduplication remain required.
-- Calendar ordinary lifecycle, activation/reconfiguration, reconciliation, credentials, dispatch reads and queue admission now use business-input commands. Its missing workflow-thread initialization and shared create/official/account projection graphs still forward handles, and are unfinished implementation. The separate builtin credential key remains for the shared account protocol, not for gap-free Calendar delivery. Calendar remote-stop preparation for account deletion and principal replacement is now outside the caller transaction; unrelated credential revocation preparation in the shared graph remains unfinished.
-- Forms workflow-thread creation still accepts a transaction. Shared create/official authority preparation and queue model preparation retain legacy database interfaces. Forms account-deletion watch preparation now has its own command outside deletion transactions. The regular Forms watch/configuration/dispatch credential path now uses owning commands. Other event sources still use the legacy workflow queue source callback; this does not claim to migrate those sources.
+- Model-provider firewall refresh has not been migrated to the complete final command-owned conditional protocol; it still executes provider/KMS work through the locked helper graph. Personal account activation/upsert and ordinary multi-auth/single-secret settings now own their SQL. Retained-account cleanup now uses a pure finite SQL builder; the terminal Run owner still has inherited transaction-aware callers. These remaining outer graphs are implementation work rather than an outgoing-writer gate.
+- Gmail now has explicit approval for local disable, stopping renewal and remote natural expiry without account-global `users.stop`. Its remote-stop code is removed. Ensure, renewal, watch reconciliation and missing-thread initialization now use owning commands; shared credential callers remain. Gmail queue source admission now has an owning command, described below. Calendar also has explicit approval for a remote gap and best-effort candidate cleanup; authority and basic deduplication remain required.
+- Calendar ordinary lifecycle, activation/reconfiguration, reconciliation, credentials, dispatch reads and queue admission now use business-input commands. Its missing workflow-thread initialization and generic event creation are command-owned. Official publication, shared account projection and the remaining specialized creation graphs still forward handles and are unfinished implementation. The separate builtin credential key remains for the shared account protocol, not for gap-free Calendar delivery. Calendar remote-stop preparation for account deletion and principal replacement is now outside the caller transaction; unrelated credential revocation preparation in the shared graph remains unfinished.
+- Forms missing-thread creation, generic event insertion and queue model preparation now use owning commands. Shared official publication, enable publication and specialized creation retain separate inherited transaction work. Forms account-deletion watch preparation has its own command outside deletion transactions. The regular Forms watch/configuration/dispatch credential path uses owning commands. Forms, Calendar, Gmail, Meet, Notion and Stripe queue sources now use explicit business-value admission commands rather than transaction callbacks; their broader account and credential lifecycles remain separately scoped.
 
 ### Validation
 
@@ -202,11 +202,11 @@ matches main exactly; only their generated identity chain differs. The final
 zero-trigger and no-new-field requirements remain in force, and Forms no longer introduces a trigger removal
 gate based on outgoing newest-response repair.
 
-The Forms service has no Db parameter interface. Remaining R1 implementation is
-explicit: its missing-thread branch still hands tx to the shared thread initializer,
-and shared Forms creation still propagates handles; generic
-account deletion, selection and credential callers retain their legacy outer
-transaction graphs. Cross-kind official transitions, initial materialization and
+The Forms service has no Db parameter interface. Its missing-thread branch now
+calls `ensureWorkflowUserAutomationThread$`, and generic event creation uses the
+owning insertion command. Remaining R1 implementation includes generic account
+deletion, selection and credential callers with their legacy outer transaction
+graphs. Cross-kind official transitions, initial materialization and
 other providers' finalization paths still need command ownership migration.
 These are implementation gaps, not outgoing-writer drain conditions. The Forms lifecycle advisory key is removed in R1: outgoing stop/reseed can
 produce only the now-accepted temporary watch/baseline gap, and neither operation
@@ -239,8 +239,8 @@ Forms watch lookup, event history and duplicate reads own their SQL. Dispatch
 uses commands with plain source observations instead of passing a database and a
 store-capturing run callback through helpers. Fire permission reads retain the
 membership, workflow visibility, installed official workflow and agent visibility
-checks. Missing-thread initialization still calls the legacy thread transaction
-helper, so that specific graph remains unfinished.
+checks. Missing-thread initialization calls `ensureWorkflowUserAutomationThread$`
+with prepared business values and no inherited transaction.
 
 Account-deletion watch preparation now uses `prepareGoogleFormsWatchStopForConnector$`
 with ordinary owner/account inputs before the deletion transaction. It reads
@@ -322,11 +322,11 @@ the transaction-aware `persistCurrentGmailAutomationSource` callback is removed.
 It verifies the current account, watch and enabled automation before committing
 the queued input. This is independent of the outgoing-stop compatibility gate.
 
-**Still unfinished:** the Gmail missing-thread branch calls
-`ensureWorkflowUserAutomationThread(tx, ...)`. Shared credential rotation,
-generic account deletion and shared creation also retain their separate legacy
-graphs. These are implementation work; they are not covered by the outgoing-stop
-gate.
+Gmail's missing-thread branch now calls `ensureWorkflowUserAutomationThread$`;
+its model preparation happens before the owned thread transaction. **Still
+unfinished:** shared credential rotation, generic account deletion and specialized
+creation retain separate legacy graphs. These are implementation work; they are
+not covered by the outgoing-stop gate.
 The migrated watch/configuration/dispatch SQL is complete within its stated
 scope. API coverage retains shared-mailbox consumption, local disable and
 reenable, authorized sources, deduplication and watch-error compensation; old
@@ -531,8 +531,9 @@ the canonical event, rechecks mailbox/watch/account identity and the enabled
 automation configuration, and publishes queue readiness. A changed source rolls
 back the event. The command directly executes SQL; the former transaction-bearing
 source callback is removed. Its existing builtin credential key and append-before-
-source ordering still match outgoing queue writers. Thread creation and the
-shared model-preparation graph are distinct unfinished boundaries.
+source ordering still match outgoing queue writers. Missing-thread creation and
+model preparation now use owning commands; this does not migrate unrelated
+credential-account lifecycle or specialized workflow creation writers.
 
 The usage-hint thread-deletion race was traced through both callers: their
 existing `tapError` boundary isolates a missing-thread append after financial
@@ -569,3 +570,48 @@ The existing public API regression now supplies two real message identities in
 one provider history response. It requires two visible workflow inputs and the
 new label identity from the automation API. This preserves normal delivery and
 does not impose gap-free watch recovery or provider invocation counts.
+
+### Notion event and credential-consumer ownership
+
+Notion configuration preparation, Official reconfiguration preparation and
+re-enable resource validation now invoke business-input commands. Selected
+account reads preserve an explicit null selection instead of silently falling
+back to the default. The shared scalar selection builder accepts only ordinary
+owner, workflow and connector values and executes no SQL itself.
+
+`notion-automation-event.service.ts` now has no database- or transaction-bearing
+parameter, persistence callback or Run-starter callback. The actual webhook,
+configuration and due-event entry commands reach owned catalog/credential reads,
+credential refresh, provider reads, receipt deduplication, source repair, pending
+publication and workflow launch. Provider HTTP and KMS finish outside SQL. The
+existing batch admits at most 25 due events; each claim/retry/skip writes its
+specific existing receipt. Source, enabled-state, scope and account checks remain,
+as does the final queue command's check against the current running receipt.
+
+Three local transactions remain in this service. Verification-token encryption
+precedes its deactivation/insertion transaction. Lazy projection discovery and
+owner iteration run outside SQL; each repair transaction handles one automation,
+its current selected/default account and its affected pending receipts. Pending
+publication directly validates one current automation and inserts or refreshes
+its event; three transaction-accepting callbacks are removed. The existing
+builtin credential key remains on repair and publication, with the same
+key-before-automation order as the outgoing writer. No trigger, field or new
+advisory acquisition is added.
+
+This does not complete the shared account writers. In
+`notion-automation-account.service.ts`, `reprojectNotionAutomationsForOwner`
+remains called by `reprojectWorkflowAutomationsForOwner`; its outer account
+selection/default/deletion protocol still needs command ownership. Pending
+invalidation is still forwarded by `reconcileConnectorAccountState`, account
+deletion preparation and workflow disable. Those actual callers are separate
+implementation gaps. The builtin key cannot yet be described as needing only
+outgoing-request drain: future account/refresh writers must first share the final
+conditional publication and revocation protocol. After that implementation is
+complete, removal also needs serving, in-flight and rollback compatibility
+proof under the existing two-release plan.
+
+Existing user API tests retain normal child/database/content-update delivery,
+deduplication, account switching during a provider read, permission failure,
+reconnect and deletion/re-add behavior. Scoped ESLint, Oxlint, formatting and
+diff checks pass; runtime behavior and combined types remain the root owner's
+same-HEAD pipeline responsibility. No local Vitest or dev server is used.
