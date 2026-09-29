@@ -317,27 +317,6 @@ describe("isFeatureEnabled", () => {
     expect(isFeatureEnabled(FeatureSwitchKey.Lab, {})).toBe(false);
   });
 
-  it("should link user message urls for every reader and accept an opt-out", () => {
-    expect(FeatureSwitchKey.UserMessageLinks).toBe("userMessageLinks");
-    // A share link is read without a session, so the signed-out visitor's
-    // empty context has to carry the feature too.
-    for (const context of [{}, { orgId: "org_nonexistent" }]) {
-      expect(isFeatureEnabled(FeatureSwitchKey.UserMessageLinks, context)).toBe(
-        true,
-      );
-    }
-    expect(
-      isFeatureEnabled(FeatureSwitchKey.UserMessageLinks, {
-        orgId: "org_nonexistent",
-        overrides: { [FeatureSwitchKey.UserMessageLinks]: false },
-      }),
-    ).toBe(false);
-    expect(
-      getFeatureSwitchMetadata()[FeatureSwitchKey.UserMessageLinks]
-        .rolloutStage,
-    ).toBe("released");
-  });
-
   it("should default Langfuse tracing off for every org and accept user overrides", () => {
     expect(
       isFeatureEnabled(FeatureSwitchKey.LangfuseTrace, {
@@ -377,34 +356,6 @@ describe("isFeatureEnabled", () => {
         overrides: { [FeatureSwitchKey.OfficialWorkflows]: true },
       }),
     ).toBe(true);
-  });
-
-  it("should release Morning Brief independently and preserve false overrides", () => {
-    const ordinaryOrgId = "org_nonexistent";
-    expect(FeatureSwitchKey.MorningBrief).toBe("morningBrief");
-    expect(isFeatureEnabled(FeatureSwitchKey.MorningBrief, {})).toBe(true);
-    expect(
-      isFeatureEnabled(FeatureSwitchKey.MorningBrief, {
-        orgId: ordinaryOrgId,
-      }),
-    ).toBe(true);
-    expect(
-      isFeatureEnabled(FeatureSwitchKey.MorningBrief, {
-        orgId: ordinaryOrgId,
-        overrides: { [FeatureSwitchKey.MorningBrief]: false },
-      }),
-    ).toBe(false);
-    expect(
-      isFeatureEnabled(FeatureSwitchKey.OfficialWorkflows, {
-        orgId: ordinaryOrgId,
-      }),
-    ).toBe(false);
-    expect(getFeatureSwitchMetadata()[FeatureSwitchKey.MorningBrief]).toEqual({
-      maintainer: "lancy@okou.ai",
-      description:
-        "Enable Morning Brief and email subscription management in Preferences.",
-      rolloutStage: "released",
-    });
   });
 
   it("should return true when orgId matches even if userId does not", () => {
@@ -458,18 +409,15 @@ describe("getAllFeatureStates", () => {
       true,
     );
     expect(staffOrgStates[FeatureSwitchKey.OfficialWorkflows]).toBe(true);
-    expect(staffOrgStates[FeatureSwitchKey.MorningBrief]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.ChatThreadHeaderActions]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.ChatThreadArchiving]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.CustomTemplates]).toBe(true);
-    expect(staffOrgStates[FeatureSwitchKey.UserMessageLinks]).toBe(true);
 
     const otherOrgStates = getAllFeatureStates({
       orgId: "org_nonexistent",
     });
     expect(otherOrgStates[FeatureSwitchKey.Lab]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.SocialDataJobs]).toBe(false);
-    expect(otherOrgStates[FeatureSwitchKey.UserMessageLinks]).toBe(true);
     expect(otherOrgStates[FeatureSwitchKey.OkouDebug]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.Banking]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.PiMemory]).toBe(false);
@@ -479,7 +427,6 @@ describe("getAllFeatureStates", () => {
       false,
     );
     expect(otherOrgStates[FeatureSwitchKey.OfficialWorkflows]).toBe(false);
-    expect(otherOrgStates[FeatureSwitchKey.MorningBrief]).toBe(true);
     expect(otherOrgStates[FeatureSwitchKey.ChatThreadHeaderActions]).toBe(
       false,
     );
@@ -608,7 +555,7 @@ describe("getFeatureSwitchMetadata", () => {
   it("should classify non-internal switches by rollout audience", () => {
     const metadata = getFeatureSwitchMetadata();
 
-    expect(metadata[FeatureSwitchKey.MorningBrief].rolloutStage).toBe(
+    expect(metadata[FeatureSwitchKey.HostedSiteDelete].rolloutStage).toBe(
       "released",
     );
     expect(metadata[FeatureSwitchKey.Banking].rolloutStage).toBe("alpha");

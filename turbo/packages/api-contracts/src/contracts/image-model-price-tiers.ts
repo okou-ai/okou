@@ -1,10 +1,10 @@
 /**
  * Built-in credit price tiers for the image generation catalog.
  *
- * Each tier ranks what one generation costs against the rest of the
- * catalog, read off the `usage_pricing` rows the generation services bill
- * against. Image models are compared on a 1024x1024 output at the default
- * quality. Revisit a tier when its pricing row moves.
+ * Each tier ranks what one generation costs against the rest of the catalog,
+ * read off the `usage_pricing` rows the generation service bills against.
+ * Image models are compared on a 1024x1024 output at the default quality.
+ * Revisit a tier when its pricing row moves.
  */
 import type { ImageModelId } from "./image-models";
 import type { ModelPriceTier } from "./model-price-tiers";

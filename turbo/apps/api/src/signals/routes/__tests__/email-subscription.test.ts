@@ -3,7 +3,6 @@ import { createHmac, randomUUID } from "node:crypto";
 
 import { emailSubscriptionContract } from "@okouai/api-contracts/contracts/email-subscription";
 import { emailUnsubscribeContract } from "@okouai/api-contracts/contracts/email-unsubscribe";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -14,7 +13,6 @@ import { now } from "../../../lib/time";
 import { emailSubscriptionRoutes } from "../email-subscription";
 import { emailUnsubscribeRoutes } from "../email-unsubscribe";
 import { createRouteMocks } from "./helpers/route-test";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { ClerkTransportTestError } from "./helpers/clerk-transport-error";
 
@@ -28,7 +26,7 @@ function client() {
   );
 }
 
-async function actor(enabled = true) {
+function actor() {
   const userId = `user_${randomUUID()}`;
   const orgId = `org_${randomUUID()}`;
   const email = `${userId}@example.test`;
@@ -40,17 +38,13 @@ async function actor(enabled = true) {
     emailAddresses: [{ id: "primary", emailAddress: email }],
     imageUrl: null,
   });
-  await updateFeatureSwitchesForUser(
-    context,
-    { userId, orgId },
-    { [FeatureSwitchKey.MorningBrief]: enabled },
-  );
+  mocks.clerk.session(userId, orgId);
   return { userId, orgId, email };
 }
 
 describe("email subscription preferences", () => {
   it("persists the current user's preference across workspaces and isolates other users", async () => {
-    const owner = await actor();
+    const owner = actor();
     const initial = await accept(client().get({ headers }), [200]);
     expect(initial.body).toStrictEqual({
       subscribed: true,
@@ -63,16 +57,12 @@ describe("email subscription preferences", () => {
       [200],
     );
     const otherOrg = `org_${randomUUID()}`;
-    await updateFeatureSwitchesForUser(
-      context,
-      { userId: owner.userId, orgId: otherOrg },
-      { [FeatureSwitchKey.MorningBrief]: true },
-    );
+    mocks.clerk.session(owner.userId, otherOrg);
     expect(
       (await accept(client().get({ headers }), [200])).body.subscribed,
     ).toBeFalsy();
 
-    const other = await actor();
+    const other = actor();
     expect((await accept(client().get({ headers }), [200])).body).toMatchObject(
       { subscribed: true, email: other.email },
     );
@@ -87,7 +77,7 @@ describe("email subscription preferences", () => {
   });
 
   it("reads one-click opt-outs and allows explicit resubscription", async () => {
-    const owner = await actor();
+    const owner = actor();
     const signature = createHmac("sha256", env("SECRETS_ENCRYPTION_KEY"))
       .update(`unsubscribe:${owner.userId}`)
       .digest("hex")
@@ -116,7 +106,7 @@ describe("email subscription preferences", () => {
   it.each(["email.bounced", "email.complained"])(
     "keeps %s suppression after resubscribing",
     async (type) => {
-      const owner = await actor();
+      const owner = actor();
       const webhooks = createWebhookCallbackApi(context);
       const event = {
         type,
@@ -138,7 +128,7 @@ describe("email subscription preferences", () => {
   );
 
   it("reports a missing recipient without inventing an email address", async () => {
-    await actor();
+    actor();
     context.mocks.clerk.users.getUser.mockRejectedValue(
       new ClerkUserNotFoundTestError(),
     );
@@ -150,7 +140,7 @@ describe("email subscription preferences", () => {
   });
 
   it("retains the first email when the primary address no longer resolves", async () => {
-    const owner = await actor();
+    const owner = actor();
     context.mocks.clerk.users.getUser.mockResolvedValue({
       id: owner.userId,
       primaryEmailAddressId: "deleted-primary",
@@ -169,18 +159,8 @@ describe("email subscription preferences", () => {
     expect(context.mocks.clerk.users.getUserList).not.toHaveBeenCalled();
   });
 
-  it("contains both endpoints under the Morning Brief switch", async () => {
-    await actor(false);
-    const response = await accept(client().get({ headers }), [403]);
-    expect(response.body.error.code).toBe("FORBIDDEN");
-    await accept(
-      client().update({ headers, body: { subscribed: false } }),
-      [403],
-    );
-  });
-
   it("rejects invalid writes without changing the saved preference", async () => {
-    await actor();
+    actor();
     const request = setupRawAppRequest({
       context,
       routes: emailSubscriptionRoutes,
@@ -208,7 +188,7 @@ describe("email subscription preferences", () => {
   ])(
     "does not disguise %s as an unavailable recipient",
     async (_name, error) => {
-      await actor();
+      actor();
       context.mocks.signalTimers.delay.mockResolvedValue(undefined);
       context.mocks.clerk.users.getUser.mockRejectedValue(error);
       const response = await accept(client().get({ headers }), [500]);
@@ -217,8 +197,8 @@ describe("email subscription preferences", () => {
     },
   );
 
-  it("requires an active workspace for rollout evaluation", async () => {
-    const owner = await actor();
+  it("requires an active workspace", async () => {
+    const owner = actor();
     mocks.clerk.session(owner.userId, null);
     const response = await accept(client().get({ headers }), [401]);
     expect(response.body.error.code).toBe("UNAUTHORIZED");
@@ -234,7 +214,7 @@ describe("email subscription preferences", () => {
       client().update({ headers: {}, body: { subscribed: false } }),
       [401],
     );
-    const owner = await actor();
+    const owner = actor();
     const timestamp = Math.floor(now() / 1000);
     const token = signSandboxJwtForTests({
       scope: "okou",

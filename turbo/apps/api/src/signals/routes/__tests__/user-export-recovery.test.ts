@@ -9,7 +9,6 @@ import {
 } from "@aws-sdk/client-s3";
 import { emailSubscriptionContract } from "@okouai/api-contracts/contracts/email-subscription";
 import { testUserExportWorkContract } from "@okouai/api-contracts/contracts/test-user-export-work";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import AdmZip from "adm-zip";
 import { onTestFinished } from "vitest";
 
@@ -29,9 +28,9 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 import { installDurableUserExportStorage } from "./helpers/durable-user-export-storage";
 import { createEmailOutboxStateApi } from "./helpers/email-outbox-state";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { commitMemoryVersion } from "./helpers/memory";
 import { readExportText } from "./helpers/user-export-storage";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 const readySubject = "Your data export is ready";
@@ -260,9 +259,11 @@ test("continues the same export across bounded requests after a staged write los
 
 test("recovers the completion email without repeating the export or requiring an optional-email subscription", async () => {
   const user = actor();
-  await updateFeatureSwitchesForUser(context, user, {
-    [FeatureSwitchKey.MorningBrief]: true,
-  });
+  createRouteMocks(context).clerk.session(
+    user.userId,
+    user.orgId,
+    user.orgRole,
+  );
   const subscriptions = setupApp({ context, routes: emailSubscriptionRoutes })(
     emailSubscriptionContract,
   );

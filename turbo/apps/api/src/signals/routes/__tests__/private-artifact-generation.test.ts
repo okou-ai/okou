@@ -99,13 +99,6 @@ async function createFixture(privateArtifacts: boolean) {
         unitPrice: 1250,
         unitSize: 1_000_000,
       },
-      {
-        kind: "audio",
-        provider: "gpt-4o-mini-tts",
-        category: "output_audio_seconds",
-        unitPrice: 5,
-        unitSize: 1,
-      },
     ],
   });
   onTestFinished(async () => {

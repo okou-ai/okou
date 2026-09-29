@@ -1,6 +1,6 @@
 {
   "name": "@okouai/pi-agent-runtime",
-  "version": "1.41.4",
+  "version": "1.41.5",
   "private": true,
   "type": "module",
   "exports": {
@@ -37,7 +37,7 @@
     "gpt-tokenizer": "^3.4.0",
     "http-proxy-agent": "7.0.2",
     "https-proxy-agent": "7.0.6",
-    "undici": "7.29.0",
+    "undici": "7.29.1",
     "yaml": "^2.9.0"
   },
   "devDependencies": {

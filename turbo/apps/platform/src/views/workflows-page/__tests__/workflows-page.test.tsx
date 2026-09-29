@@ -1655,7 +1655,6 @@ test("Hide Official Workflow discovery when it is unavailable", async () => {
     context,
     path: "/workflows",
     featureSwitches: {
-      [FeatureSwitchKey.MorningBrief]: true,
       [FeatureSwitchKey.OfficialWorkflows]: false,
     },
   });
@@ -1676,7 +1675,6 @@ test("Redirect a cold Morning Brief detail to its preference", async () => {
   await setupWorkflowDetailPage(
     `/workflows/${MORNING_BRIEF_WORKFLOW_ID}/automations`,
     {
-      [FeatureSwitchKey.MorningBrief]: true,
       [FeatureSwitchKey.OfficialWorkflows]: false,
     },
   );
@@ -1691,13 +1689,12 @@ test("Redirect a cold Morning Brief detail to its preference", async () => {
   expect(screen.queryByText("Instructions")).not.toBeInTheDocument();
 });
 
-test("Show Official Workflow discovery without requiring Morning Brief", async () => {
+test("Show Official Workflow discovery when it is available", async () => {
   mockWorkflowApis([officialSalesResearch()]);
   await setupPage({
     context,
     path: "/workflows",
     featureSwitches: {
-      [FeatureSwitchKey.MorningBrief]: false,
       [FeatureSwitchKey.OfficialWorkflows]: true,
     },
   });

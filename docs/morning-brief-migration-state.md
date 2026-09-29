@@ -316,11 +316,10 @@ mutation, exactly as the preference surface does today.
   `simpleMorningBrief` for mixed-version compatibility) selects the
   implementation. During retirement stage 1 it has no enabled cohort, including
   staff; a data migration resets stored `true` overrides and the API refuses
-  new ones. The key remains registered while the rollback drains. It is
-  independent of `MorningBrief`, which remains the user-facing availability
-  switch: turning the implementation switch on must never change whether a user
-  has Morning Brief, and turning it off must not discard choices the user made
-  while it was on.
+  new ones. The key remains registered while the rollback drains. Morning Brief
+  and email-subscription settings are now always available; the saved user
+  preferences still govern enrollment and delivery. Changing implementations
+  must not discard those choices.
 
 ## The installed preference projection
 

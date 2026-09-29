@@ -93,11 +93,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.UserMessageLinks]: {
-    maintainer: "bingjie@okou.ai",
-    description: "Make plain http(s) URLs clickable in a user's own messages",
-    enabled: true,
-  },
   [FeatureSwitchKey.BrowserNativeInput]: {
     maintainer: "liangyou@okou.ai",
     description:
@@ -161,11 +156,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "yuma@okou.ai",
     description: "Enable the DocuSign e-signature connector",
     enabled: false,
-  },
-  [FeatureSwitchKey.FigmaConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Figma design connector",
-    enabled: true,
   },
   [FeatureSwitchKey.ExpensifyConnector]: {
     maintainer: "yuma@okou.ai",
@@ -263,12 +253,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Enable Official Workflow catalog discovery and new installations.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.MorningBrief]: {
-    maintainer: "lancy@okou.ai",
-    description:
-      "Enable Morning Brief and email subscription management in Preferences.",
-    enabled: true,
   },
   [FeatureSwitchKey.TestOauthConnector]: {
     maintainer: "liangyou@okou.ai",
@@ -405,12 +389,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Require a responsibility when creating an Agent, then pin it and open a setup thread asking it to adopt that responsibility.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.ChatThreadLinkChips]: {
-    maintainer: "ethan@okou.ai",
-    description:
-      "Render links to internal chat threads in chat messages as chat chips",
-    enabled: true,
   },
   [FeatureSwitchKey.HostedSiteDelete]: {
     maintainer: "linghan@okou.ai",

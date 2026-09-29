@@ -722,7 +722,6 @@ test("Open personal Settings and manage account security", async () => {
       },
     },
     featureSwitches: {
-      [FeatureSwitchKey.MorningBrief]: true,
       [FeatureSwitchKey.OkouDebug]: true,
     },
   });

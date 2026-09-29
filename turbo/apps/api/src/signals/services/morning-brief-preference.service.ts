@@ -4,8 +4,6 @@ import {
   type MorningBriefPreferenceErrorCode,
   type MorningBriefPreferenceResponse,
 } from "@okouai/api-contracts/contracts/morning-brief-preference";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isValidTimeZone } from "@okouai/core/timezone";
 import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
@@ -50,7 +48,6 @@ import {
   installOfficialWorkflow$,
   loadOfficialWorkflowUserTimezone,
 } from "./official-workflow-installation.service";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import { reconcileOfficialWorkflowInstallation$ } from "./official-workflow-reconciliation.service";
 import {
   disableWorkflowAutomation$,
@@ -98,7 +95,6 @@ export type EnsureMorningBriefDefaultEnabledResult =
       readonly outcome: "skipped";
       readonly reason:
         | "not-eligible"
-        | "feature-disabled"
         | "missing-timezone"
         | "missing-default-agent"
         | "user-disabled"
@@ -467,18 +463,6 @@ const preflightMorningBriefEnrollment$ = command(
   > => {
     const db = set(writeDb$);
     const identity = morningBriefOwner(args);
-    const featureSwitchContext = await loadUserFeatureSwitchContext(
-      db,
-      args.orgId,
-      args.member.userId,
-    );
-    signal.throwIfAborted();
-    if (
-      !isFeatureEnabled(FeatureSwitchKey.MorningBrief, featureSwitchContext)
-    ) {
-      return { outcome: "skipped", reason: "feature-disabled" };
-    }
-
     const unavailableReason = await loadUnavailableReason(
       db,
       args,

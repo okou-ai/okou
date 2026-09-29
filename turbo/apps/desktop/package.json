@@ -52,7 +52,7 @@
     "happy-dom": "^20.11.6",
     "msw": "^2.13.2",
     "oxlint": "^1.75.0",
-    "sharp": "0.35.4",
+    "sharp": "0.35.5",
     "tsup": "^8.5.1",
     "@typescript/native": "npm:typescript@7.0.2",
     "typescript": "npm:@typescript/typescript6@6.0.2",

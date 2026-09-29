@@ -506,6 +506,33 @@ export interface ClerkSessionIdentity {
   readonly orgRole: string | null;
 }
 
+export interface ClerkSessionAuthentication {
+  readonly identity: ClerkSessionIdentity | null;
+  readonly failureReason: string | null;
+}
+
+// Temporary #36177 diagnostics: allowlist SDK codes, never its free-form
+// message or the request state, which can contain credentials.
+const clerkSessionFailureReasons: readonly string[] = Object.freeze([
+  ...Object.values(TokenVerificationErrorReason),
+  "client-uat-but-no-session-token",
+  "dev-browser-missing",
+  "dev-browser-sync",
+  "primary-responds-to-syncing",
+  "primary-domain-cross-origin-sync",
+  "satellite-needs-syncing",
+  "session-token-and-uat-missing",
+  "session-token-missing",
+  "session-token-expired",
+  "session-token-iat-before-client-uat",
+  "session-token-nbf",
+  "session-token-iat-in-the-future",
+  "session-token-but-no-client-uat",
+  "active-organization-mismatch",
+  "token-type-mismatch",
+  "unexpected-error",
+]);
+
 /** The only two fields the Clerk webhook route reads off an event. */
 export interface ClerkWebhookEvent {
   readonly type: string;
@@ -698,33 +725,41 @@ export const clerk$: Computed<ClerkClient> = computed((): ClerkClient => {
 /**
  * Clerk's `RequestState` is a wide union whose members disagree about what
  * `toAuth()` returns, so it is collapsed here rather than mirrored: callers
- * only need the signed-in identity, or nothing.
+ * keep the signed-in identity and an allowlisted rejection code.
  */
 export async function authenticateClerkSession(
   request: Request,
-): Promise<ClerkSessionIdentity | null> {
+): Promise<ClerkSessionAuthentication> {
   const requestState = await clerkSdk().authenticateRequest(request, {
     acceptsToken: "session_token",
   });
 
   if (!requestState.isAuthenticated) {
-    return null;
+    return {
+      identity: null,
+      failureReason: clerkSessionFailureReasons.includes(requestState.reason)
+        ? requestState.reason
+        : "unknown",
+    };
   }
 
   const auth = requestState.toAuth();
   const userId: unknown = auth.userId;
   if (typeof userId !== "string" || userId.length === 0) {
-    return null;
+    return { identity: null, failureReason: null };
   }
 
   return {
-    userId,
-    sessionId:
-      typeof auth.sessionId === "string" && auth.sessionId.length > 0
-        ? auth.sessionId
-        : null,
-    orgId: auth.orgId ?? null,
-    orgRole: auth.orgRole ?? null,
+    identity: {
+      userId,
+      sessionId:
+        typeof auth.sessionId === "string" && auth.sessionId.length > 0
+          ? auth.sessionId
+          : null,
+      orgId: auth.orgId ?? null,
+      orgRole: auth.orgRole ?? null,
+    },
+    failureReason: null,
   };
 }
 

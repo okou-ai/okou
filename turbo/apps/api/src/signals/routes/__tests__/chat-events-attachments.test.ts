@@ -599,6 +599,13 @@ describe("CHAT-02: generation templates and attachments", () => {
             selection: { illustrationStyleId: style.illustrationStyleId },
           },
         },
+        { type: "text", text: " and describe " },
+        {
+          type: "template",
+          titleSnapshot: "Intro video",
+          template: { type: "intro-video", selection: {} },
+        },
+        { type: "text", text: "\n\nThen caption" },
       ],
     };
 
@@ -609,45 +616,12 @@ describe("CHAT-02: generation templates and attachments", () => {
     });
     const run = await api.readRun(actor, sent.runId);
     expect(run.prompt).toContain(
-      `Animate  and introduce  then draw with [Template #1: ${style.title} (illustration)]`,
+      `Animate and introduce then draw with [Template #1: ${style.title} (illustration)] and describe \n\nThen caption`,
     );
-    expect(run.prompt).not.toContain("(video)");
 
     const systemPrompt = run.appendSystemPrompt ?? "";
     expect(systemPrompt).toContain("## Template #1 (illustration)");
-    expect(systemPrompt).not.toContain("## Template #2");
-    expect(systemPrompt).not.toContain("(video)");
     expect(systemPrompt).toContain(style.illustrationStyleId);
-
-    await cancelChatRun(actor, sent.runId);
-  });
-
-  it("runs a message whose only template is retired without template guidance", async () => {
-    const { actor, agentId } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-
-    const sent = await sendChatRun(actor, {
-      agentId,
-      prompt: "legacy fallback",
-      userMessage: {
-        version: 1,
-        parts: [
-          { type: "text", text: "Make a talking avatar " },
-          {
-            type: "template",
-            titleSnapshot: "Avatar",
-            template: {
-              type: "video",
-              selection: { stylePresetId: "avatar-template:81" },
-            },
-          },
-        ],
-      },
-    });
-    const run = await api.readRun(actor, sent.runId);
-    expect(run.prompt).toContain("Make a talking avatar");
-    expect(run.prompt).not.toContain("[Template #");
-    expect(run.appendSystemPrompt ?? "").not.toContain("# Inline Templates");
 
     await cancelChatRun(actor, sent.runId);
   });

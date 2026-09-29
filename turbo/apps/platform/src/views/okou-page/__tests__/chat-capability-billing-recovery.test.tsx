@@ -190,7 +190,7 @@ test("Let a workspace admin recover from a free-plan billing limit", async () =>
   await expectProCheckout();
 });
 
-test("Let a limited-free workspace admin unlock a Pro-only video capability", async () => {
+test("Let a limited-free workspace admin unlock a Pro-only capability", async () => {
   installBillingState({
     tier: "limited-free-1",
     role: "admin",

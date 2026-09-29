@@ -77,7 +77,7 @@ describe("/api/feature-switches", () => {
     ).toBeFalsy();
   });
 
-  it("rejects the retired persisted override without changing Morning Brief", async () => {
+  it("rejects the retired native override without applying other changes", async () => {
     const clerk = createRouteMocks(context).clerk;
     const headers = { authorization: "Bearer clerk-session" };
     const userId = `user_${randomUUID()}`;
@@ -85,9 +85,6 @@ describe("/api/feature-switches", () => {
 
     const initial = await accept(client().get({ headers }), [200]);
     expect(initial.body.switches).toStrictEqual({});
-    expect(
-      initial.body.effectiveSwitches[FeatureSwitchKey.MorningBrief],
-    ).toBeTruthy();
 
     const refused = await accept(
       client().update({
@@ -114,9 +111,6 @@ describe("/api/feature-switches", () => {
     );
     // Retired values are not exposed through the registered-key response.
     expect(optedOut.body.switches).toStrictEqual({});
-    expect(
-      optedOut.body.effectiveSwitches[FeatureSwitchKey.MorningBrief],
-    ).toBeTruthy();
   });
 
   it.each([true, false])(

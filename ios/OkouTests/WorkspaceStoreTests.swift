@@ -182,7 +182,7 @@ final class WorkspaceStoreTests: XCTestCase {
       case "/api/user-model-preference":
         return ChatHTTPResponse(
           body: """
-            {"selectedModel":null,"serviceTier":null,"modelSettings":{},"selectedVideoModel":null,"selectedImageModel":null,"updatedAt":null}
+            {"selectedModel":null,"serviceTier":null,"modelSettings":{},"selectedImageModel":null,"updatedAt":null}
             """)
       case "/api/model-policies":
         return ChatHTTPResponse(
@@ -495,6 +495,6 @@ private func storeEventID(_ sequence: Int) -> String {
 private func threadSnapshot(title: String) -> ChatHTTPResponse {
   ChatHTTPResponse(
     body: """
-      {"chatThreads":[{"id":"\(storeThreadID)","agentId":"\(storeAgentID)","title":"\(title)","sortAt":"\(storeDate)","createdAt":"\(storeDate)","updatedAt":"\(storeDate)","pinnedAt":null,"renamedAt":null,"selectedModel":"gpt-5.6-sol","serviceTier":null,"computerUseHostId":null,"cloudBrowserEnabled":false,"selectedVideoModel":null}],"latestEventId":null,"latestSeqId":null}
+      {"chatThreads":[{"id":"\(storeThreadID)","agentId":"\(storeAgentID)","title":"\(title)","sortAt":"\(storeDate)","createdAt":"\(storeDate)","updatedAt":"\(storeDate)","pinnedAt":null,"renamedAt":null,"selectedModel":"gpt-5.6-sol","serviceTier":null,"computerUseHostId":null,"cloudBrowserEnabled":false}],"latestEventId":null,"latestSeqId":null}
       """)
 }

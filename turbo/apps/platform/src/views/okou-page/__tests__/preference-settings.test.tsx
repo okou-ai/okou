@@ -61,25 +61,6 @@ describe("unified preference settings", () => {
     expect(new URLSearchParams(search()).get("settings")).toBe("debug");
   });
 
-  it("hides email subscriptions and Morning Brief when only Official Workflows is available", async () => {
-    await setupPage({
-      context,
-      path: "/agents?settings=preference",
-      featureSwitches: {
-        [FeatureSwitchKey.MorningBrief]: false,
-        [FeatureSwitchKey.OfficialWorkflows]: true,
-      },
-    });
-
-    const dialog = await screen.findByRole("dialog", { name: "Settings" });
-    expect(
-      within(dialog).queryByTestId("morning-brief-preference"),
-    ).not.toBeInTheDocument();
-    expect(
-      within(dialog).queryByRole("region", { name: "Email subscriptions" }),
-    ).not.toBeInTheDocument();
-  });
-
   it("shows Morning Brief without requiring Official Workflows", async () => {
     context.mocks.api(morningBriefPreferenceContract.get, ({ respond }) => {
       return respond(200, {
@@ -93,7 +74,6 @@ describe("unified preference settings", () => {
       context,
       path: "/agents?settings=preference",
       featureSwitches: {
-        [FeatureSwitchKey.MorningBrief]: true,
         [FeatureSwitchKey.OfficialWorkflows]: false,
       },
     });
@@ -149,7 +129,6 @@ describe("unified preference settings", () => {
       context,
       path: "/agents?settings=preference",
       featureSwitches: {
-        [FeatureSwitchKey.MorningBrief]: true,
         [FeatureSwitchKey.OfficialWorkflows]: false,
       },
     });

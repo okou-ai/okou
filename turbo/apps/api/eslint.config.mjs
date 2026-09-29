@@ -275,6 +275,17 @@ export default [
     },
   },
   {
+    files: ["src/signals/auth/temporary-auth-diagnostics.ts"],
+    rules: {
+      // #36177 diagnostics stop on 2026-10-29. Axiom drops debug; an expected
+      // 401 must not create warning noise. Remove with the temporary emitter.
+      "api/no-logger-info": [
+        "error",
+        { allowedMessages: ["temporary auth failure"] },
+      ],
+    },
+  },
+  {
     files: ["src/signals/services/agent-webhook-firewall-auth.service.ts"],
     rules: {
       // One safe receipt after a bounded Gmail retry succeeds. Debug is dropped
