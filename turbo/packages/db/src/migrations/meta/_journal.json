@@ -1485,6 +1485,13 @@
       "when": 1790677953790,
       "tag": "1289_thick_bruce_banner",
       "breakpoints": true
+    },
+    {
+      "idx": 1290,
+      "version": "7",
+      "when": 1790688102501,
+      "tag": "1290_retire_cloudflare_access_triggers",
+      "breakpoints": true
     }
   ]
 }
