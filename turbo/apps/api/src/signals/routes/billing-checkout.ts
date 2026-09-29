@@ -66,8 +66,8 @@ import {
   previewUsagePackSubscriptionChange,
 } from "../services/usage-pack-plan-change.service";
 import {
-  confirmUsagePackSubscriptionMigration,
-  confirmUsagePackSubscriptionMigrationRevision,
+  confirmUsagePackSubscriptionMigration$,
+  confirmUsagePackSubscriptionMigrationRevision$,
   getUsagePackMigrationState,
   previewUsagePackSubscriptionMigration,
   previewUsagePackSubscriptionMigrationRevision,
@@ -1088,7 +1088,6 @@ const usagePackMigrationConfirmAuthed$ = command(
     const { migrationId } = get(
       pathParamsOf(billingUsagePackMigrationContract.confirm),
     );
-    const db = set(writeDb$);
     const clerk = get(clerk$);
     const readSignal = AbortSignal.any([signal, get(requestSignal$)]);
     const { memberships, invitations } = await loadBillingOrganizationDirectory(
@@ -1104,8 +1103,8 @@ const usagePackMigrationConfirmAuthed$ = command(
     ).map((owner) => {
       return "userId" in owner ? owner.userId : owner.invitationId;
     });
-    const result = await confirmUsagePackSubscriptionMigration(
-      db,
+    const result = await set(
+      confirmUsagePackSubscriptionMigration$,
       {
         orgId: access.auth.orgId,
         migrationId,
@@ -1205,7 +1204,6 @@ const usagePackMigrationRevisionConfirmAuthed$ = command(
     const { migrationId } = get(
       pathParamsOf(billingUsagePackMigrationContract.confirmRevision),
     );
-    const db = set(writeDb$);
     const clerk = get(clerk$);
     const readSignal = AbortSignal.any([signal, get(requestSignal$)]);
     const { memberships, invitations } = await loadBillingOrganizationDirectory(
@@ -1214,8 +1212,8 @@ const usagePackMigrationRevisionConfirmAuthed$ = command(
       readSignal,
     );
     signal.throwIfAborted();
-    const result = await confirmUsagePackSubscriptionMigrationRevision(
-      db,
+    const result = await set(
+      confirmUsagePackSubscriptionMigrationRevision$,
       {
         orgId: access.auth.orgId,
         migrationId,

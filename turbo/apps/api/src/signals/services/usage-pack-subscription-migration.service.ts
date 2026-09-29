@@ -23,7 +23,8 @@ import { z } from "zod";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import type { Db } from "../external/db";
+import { writeDb$, type Db } from "../external/db";
+import { command } from "ccstate";
 import {
   getStripeClient,
   type StripeClient,
@@ -41,7 +42,7 @@ import { lockUsagePackBillingOrg } from "./usage-pack-allocation-change.service"
 import { writeUsagePackPendingSnapshots } from "./usage-pack-pending-snapshot.service";
 import type { BillingReconciliationScope } from "./billing-reconciliation-scope";
 import {
-  handleUsagePackInvoicePaid,
+  handleUsagePackInvoicePaid$,
   handleUsagePackSubscriptionUpdated,
   loadUsagePackCatalog,
   usagePackSubscriptionIdFromMetadata,
@@ -1372,97 +1373,108 @@ async function persistMigrationRevisionIntent(
   });
 }
 
-export async function confirmUsagePackSubscriptionMigrationRevision(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly migrationId: string;
-    readonly targetTier: SubscriptionCheckoutTier;
-    readonly memberUsagePacks: readonly MemberUsagePack[];
-    readonly owners: readonly UsagePackMigrationOwner[];
-    readonly previewToken: string;
-  },
-  signal: AbortSignal,
-): Promise<MigrationRevisionConfirmResult> {
-  const token = parseRevisionPreviewToken(args.previewToken);
-  const requestHash = revisionRequestHash(args);
-  if (
-    !token ||
-    token.orgId !== args.orgId ||
-    token.migrationId !== args.migrationId ||
-    token.requestHash !== requestHash ||
-    new Date(token.expiresAt) <= nowDate()
-  ) {
-    return { status: "invalid_preview" };
-  }
-
-  const stored = await loadMigrationForRevision(
-    db,
-    args.orgId,
-    args.migrationId,
-  );
-  signal.throwIfAborted();
-  if (!stored) {
-    return { status: "not_found" };
-  }
-  const currentConfigurationHash = storedMigrationConfigurationHash(
-    stored.migration,
-    stored.selections,
-  );
-  if (currentConfigurationHash === token.desiredConfigurationHash) {
-    if (stored.migration.status === "scheduled") {
-      return {
-        status: "confirmed",
-        response: scheduledMigrationResponse(stored.migration),
-      };
+export const confirmUsagePackSubscriptionMigrationRevision$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly migrationId: string;
+      readonly targetTier: SubscriptionCheckoutTier;
+      readonly memberUsagePacks: readonly MemberUsagePack[];
+      readonly owners: readonly UsagePackMigrationOwner[];
+      readonly previewToken: string;
+    },
+    signal: AbortSignal,
+  ): Promise<MigrationRevisionConfirmResult> => {
+    const db = set(writeDb$);
+    const token = parseRevisionPreviewToken(args.previewToken);
+    const requestHash = revisionRequestHash(args);
+    if (
+      !token ||
+      token.orgId !== args.orgId ||
+      token.migrationId !== args.migrationId ||
+      token.requestHash !== requestHash ||
+      new Date(token.expiresAt) <= nowDate()
+    ) {
+      return { status: "invalid_preview" };
     }
-    if (stored.migration.status !== "revising") {
+
+    const stored = await loadMigrationForRevision(
+      db,
+      args.orgId,
+      args.migrationId,
+    );
+    signal.throwIfAborted();
+    if (!stored) {
+      return { status: "not_found" };
+    }
+    const currentConfigurationHash = storedMigrationConfigurationHash(
+      stored.migration,
+      stored.selections,
+    );
+    if (currentConfigurationHash === token.desiredConfigurationHash) {
+      if (stored.migration.status === "scheduled") {
+        return {
+          status: "confirmed",
+          response: scheduledMigrationResponse(stored.migration),
+        };
+      }
+      if (stored.migration.status !== "revising") {
+        return { status: "conflict" };
+      }
+      const reconciled = await set(
+        reconcileMigration$,
+        { migration: stored.migration },
+        signal,
+      );
+      return reconciled.status === "failed"
+        ? { status: "conflict" }
+        : { status: "confirmed", response: reconciled.response };
+    }
+    if (currentConfigurationHash !== token.baseConfigurationHash) {
       return { status: "conflict" };
     }
-    const reconciled = await reconcileMigration(db, stored.migration, signal);
+
+    const preparedResult = await prepareMigrationRevision(db, args, signal);
+    if (preparedResult.status === "not_found") {
+      return preparedResult;
+    }
+    if (preparedResult.status === "owners_changed") {
+      return preparedResult;
+    }
+    if (preparedResult.status !== "ready") {
+      return { status: "conflict" };
+    }
+    if (
+      preparedResult.prepared.baseConfigurationHash !==
+        token.baseConfigurationHash ||
+      preparedResult.prepared.desiredConfigurationHash !==
+        token.desiredConfigurationHash ||
+      preparedResult.prepared.requestHash !== token.requestHash
+    ) {
+      return { status: "invalid_preview" };
+    }
+    const persisted = await persistMigrationRevisionIntent(db, {
+      orgId: args.orgId,
+      migrationId: args.migrationId,
+      baseConfigurationHash: token.baseConfigurationHash,
+      desiredConfigurationHash: token.desiredConfigurationHash,
+      prepared: preparedResult.prepared,
+    });
+    signal.throwIfAborted();
+    if (persisted.status !== "ready") {
+      return persisted;
+    }
+    const reconciled = await set(
+      reconcileMigration$,
+      { migration: persisted.migration },
+      signal,
+    );
     return reconciled.status === "failed"
       ? { status: "conflict" }
       : { status: "confirmed", response: reconciled.response };
-  }
-  if (currentConfigurationHash !== token.baseConfigurationHash) {
-    return { status: "conflict" };
-  }
-
-  const preparedResult = await prepareMigrationRevision(db, args, signal);
-  if (preparedResult.status === "not_found") {
-    return preparedResult;
-  }
-  if (preparedResult.status === "owners_changed") {
-    return preparedResult;
-  }
-  if (preparedResult.status !== "ready") {
-    return { status: "conflict" };
-  }
-  if (
-    preparedResult.prepared.baseConfigurationHash !==
-      token.baseConfigurationHash ||
-    preparedResult.prepared.desiredConfigurationHash !==
-      token.desiredConfigurationHash ||
-    preparedResult.prepared.requestHash !== token.requestHash
-  ) {
-    return { status: "invalid_preview" };
-  }
-  const persisted = await persistMigrationRevisionIntent(db, {
-    orgId: args.orgId,
-    migrationId: args.migrationId,
-    baseConfigurationHash: token.baseConfigurationHash,
-    desiredConfigurationHash: token.desiredConfigurationHash,
-    prepared: preparedResult.prepared,
-  });
-  signal.throwIfAborted();
-  if (persisted.status !== "ready") {
-    return persisted;
-  }
-  const reconciled = await reconcileMigration(db, persisted.migration, signal);
-  return reconciled.status === "failed"
-    ? { status: "conflict" }
-    : { status: "confirmed", response: reconciled.response };
-}
+  },
+);
 
 function packageQuantities(
   selections: readonly { readonly stripePriceId: string }[],
@@ -2048,69 +2060,81 @@ function correlatedMigrationInvoice(
   } as UsagePackInvoiceInput;
 }
 
-async function finalizeAppliedMigration(
-  db: Db,
-  migration: MigrationRow,
-  selections: readonly MigrationSelectionRow[],
-  subscription: StripeSubscription,
-  invoice: StripeInvoice,
-): Promise<AppliedMigrationResult> {
-  if (invoice.status !== "paid") {
+const finalizeAppliedMigration$ = command(
+  async (
+    { set },
+    args: {
+      readonly migration: MigrationRow;
+      readonly selections: readonly MigrationSelectionRow[];
+      readonly subscription: StripeSubscription;
+      readonly invoice: StripeInvoice;
+    },
+    signal: AbortSignal,
+  ): Promise<AppliedMigrationResult> => {
+    const db = set(writeDb$);
+    const { migration, selections, subscription, invoice } = args;
+    if (invoice.status !== "paid") {
+      return {
+        status: "active",
+        orgId: migration.orgId,
+        response: {
+          status: "scheduled",
+          effectiveAt: migration.effectiveAt.toISOString(),
+          hostedInvoiceUrl: invoice.hosted_invoice_url ?? null,
+        },
+      };
+    }
+    await materializeUsagePackSnapshot(db, migration, selections, subscription);
+    signal.throwIfAborted();
+    const metadata = usagePackSubscriptionMetadata({
+      orgId: migration.orgId,
+      tier: migration.targetTier,
+      planPriceId: migration.stripePlanPriceId,
+      usagePackSubscriptionId: migration.id,
+    });
+    const tagged = await getStripeClient().subscriptions.update(
+      migration.stripeSubscriptionId,
+      { metadata },
+      { idempotencyKey: `usage-pack-migration:${migration.id}:metadata` },
+    );
+    signal.throwIfAborted();
+    const subscriptionOutcome = await handleUsagePackSubscriptionUpdated(
+      db,
+      tagged as UsagePackSubscriptionInput,
+    );
+    signal.throwIfAborted();
+    if (!subscriptionOutcome.handled) {
+      throw new Error(`Usage pack migration ${migration.id} lost correlation`);
+    }
+    const invoiceOutcome = await set(
+      handleUsagePackInvoicePaid$,
+      correlatedMigrationInvoice(invoice, migration),
+      signal,
+    );
+    if (!invoiceOutcome.handled) {
+      throw new Error(
+        `Usage pack migration invoice ${invoice.id} was not handled`,
+      );
+    }
+    await completeMigrationInvitations(db, migration, invoice);
+    signal.throwIfAborted();
+    L.debug("usage pack subscription migration completed", {
+      migrationId: migration.id,
+      orgId: migration.orgId,
+      stripeSubscriptionId: migration.stripeSubscriptionId,
+      invoiceId: invoice.id,
+    });
     return {
       status: "active",
       orgId: migration.orgId,
       response: {
-        status: "scheduled",
+        status: "completed",
         effectiveAt: migration.effectiveAt.toISOString(),
         hostedInvoiceUrl: invoice.hosted_invoice_url ?? null,
       },
     };
-  }
-  await materializeUsagePackSnapshot(db, migration, selections, subscription);
-  const metadata = usagePackSubscriptionMetadata({
-    orgId: migration.orgId,
-    tier: migration.targetTier,
-    planPriceId: migration.stripePlanPriceId,
-    usagePackSubscriptionId: migration.id,
-  });
-  const tagged = await getStripeClient().subscriptions.update(
-    migration.stripeSubscriptionId,
-    { metadata },
-    { idempotencyKey: `usage-pack-migration:${migration.id}:metadata` },
-  );
-  const subscriptionOutcome = await handleUsagePackSubscriptionUpdated(
-    db,
-    tagged as UsagePackSubscriptionInput,
-  );
-  if (!subscriptionOutcome.handled) {
-    throw new Error(`Usage pack migration ${migration.id} lost correlation`);
-  }
-  const invoiceOutcome = await handleUsagePackInvoicePaid(
-    db,
-    correlatedMigrationInvoice(invoice, migration),
-  );
-  if (!invoiceOutcome.handled) {
-    throw new Error(
-      `Usage pack migration invoice ${invoice.id} was not handled`,
-    );
-  }
-  await completeMigrationInvitations(db, migration, invoice);
-  L.debug("usage pack subscription migration completed", {
-    migrationId: migration.id,
-    orgId: migration.orgId,
-    stripeSubscriptionId: migration.stripeSubscriptionId,
-    invoiceId: invoice.id,
-  });
-  return {
-    status: "active",
-    orgId: migration.orgId,
-    response: {
-      status: "completed",
-      effectiveAt: migration.effectiveAt.toISOString(),
-      hostedInvoiceUrl: invoice.hosted_invoice_url ?? null,
-    },
-  };
-}
+  },
+);
 
 async function failChangedMigration(
   db: Db,
@@ -2323,78 +2347,84 @@ async function scheduleMigration(
   };
 }
 
-async function reconcileMigration(
-  db: Db,
-  migration: MigrationRow,
-  signal?: AbortSignal,
-  eventInvoice?: StripeInvoice,
-): Promise<AppliedMigrationResult> {
-  const selections = await loadMigrationSelections(db, migration.id);
-  const subscription = await getStripeClient().subscriptions.retrieve(
-    migration.stripeSubscriptionId,
-  );
-  signal?.throwIfAborted();
-  if (subscription.id !== migration.stripeSubscriptionId) {
-    throw new Error(
-      `Stripe returned subscription ${subscription.id} for migration subscription ${migration.stripeSubscriptionId}`,
+const reconcileMigration$ = command(
+  async (
+    { set },
+    args: {
+      readonly migration: MigrationRow;
+      readonly eventInvoice?: StripeInvoice;
+    },
+    signal: AbortSignal,
+  ): Promise<AppliedMigrationResult> => {
+    const db = set(writeDb$);
+    const { migration, eventInvoice } = args;
+    const selections = await loadMigrationSelections(db, migration.id);
+    signal.throwIfAborted();
+    const subscription = await getStripeClient().subscriptions.retrieve(
+      migration.stripeSubscriptionId,
     );
-  }
-  if (desiredMigrationShape(migration, selections, subscription)) {
-    const persisted = await persistMigrationInvoiceState(
-      db,
-      migration,
-      selections,
-      subscription,
-    );
-    const invoiceId = eventInvoice?.id ?? persisted.stripeInvoiceId;
-    const invoice = invoiceId
-      ? await retrieveMigrationInvoice(invoiceId)
-      : null;
-    signal?.throwIfAborted();
-    if (
-      invoice &&
-      migrationInvoiceMatchesSelections(invoice, persisted, selections)
-    ) {
-      return await finalizeAppliedMigration(
-        db,
-        persisted,
-        selections,
-        subscription,
-        invoice,
+    signal.throwIfAborted();
+    if (subscription.id !== migration.stripeSubscriptionId) {
+      throw new Error(
+        `Stripe returned subscription ${subscription.id} for migration subscription ${migration.stripeSubscriptionId}`,
       );
     }
-    return {
-      status: "active",
-      orgId: migration.orgId,
-      response: scheduledMigrationResponse(persisted),
-    };
-  }
-  if (!legacyMigrationShape(migration, subscription)) {
-    if (await failChangedMigration(db, migration)) {
+    if (desiredMigrationShape(migration, selections, subscription)) {
+      const persisted = await persistMigrationInvoiceState(
+        db,
+        migration,
+        selections,
+        subscription,
+      );
+      signal.throwIfAborted();
+      const invoiceId = eventInvoice?.id ?? persisted.stripeInvoiceId;
+      const invoice = invoiceId
+        ? await retrieveMigrationInvoice(invoiceId)
+        : null;
+      signal.throwIfAborted();
+      if (
+        invoice &&
+        migrationInvoiceMatchesSelections(invoice, persisted, selections)
+      ) {
+        return await set(
+          finalizeAppliedMigration$,
+          { migration: persisted, selections, subscription, invoice },
+          signal,
+        );
+      }
+      return {
+        status: "active",
+        orgId: migration.orgId,
+        response: scheduledMigrationResponse(persisted),
+      };
+    }
+    if (!legacyMigrationShape(migration, subscription)) {
+      if (await failChangedMigration(db, migration)) {
+        return { status: "failed", orgId: migration.orgId };
+      }
       return { status: "failed", orgId: migration.orgId };
     }
-    return { status: "failed", orgId: migration.orgId };
-  }
-  if (migration.status === "applying" || migration.status === "revising") {
-    const scheduled = await scheduleMigration(
-      db,
-      migration,
-      selections,
-      subscription,
-      signal,
-    );
+    if (migration.status === "applying" || migration.status === "revising") {
+      const scheduled = await scheduleMigration(
+        db,
+        migration,
+        selections,
+        subscription,
+        signal,
+      );
+      return {
+        status: "active",
+        orgId: migration.orgId,
+        response: scheduledMigrationResponse(scheduled),
+      };
+    }
     return {
       status: "active",
       orgId: migration.orgId,
-      response: scheduledMigrationResponse(scheduled),
+      response: scheduledMigrationResponse(migration),
     };
-  }
-  return {
-    status: "active",
-    orgId: migration.orgId,
-    response: scheduledMigrationResponse(migration),
-  };
-}
+  },
+);
 
 async function claimMigrationConfirmation(
   db: Db,
@@ -2476,26 +2506,34 @@ async function claimMigrationConfirmation(
   });
 }
 
-export async function confirmUsagePackSubscriptionMigration(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly migrationId: string;
-    readonly ownerIds: readonly string[];
+export const confirmUsagePackSubscriptionMigration$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly migrationId: string;
+      readonly ownerIds: readonly string[];
+    },
+    signal: AbortSignal,
+  ): Promise<MigrationConfirmResult> => {
+    const db = set(writeDb$);
+    const claimed = await claimMigrationConfirmation(db, args);
+    signal.throwIfAborted();
+    if (claimed.status !== "ready") {
+      return claimed;
+    }
+    signal.throwIfAborted();
+    const result = await set(
+      reconcileMigration$,
+      { migration: claimed.migration },
+      signal,
+    );
+    if (result.status === "failed") {
+      return { status: "conflict" };
+    }
+    return { status: "confirmed", response: result.response };
   },
-  signal: AbortSignal,
-): Promise<MigrationConfirmResult> {
-  const claimed = await claimMigrationConfirmation(db, args);
-  if (claimed.status !== "ready") {
-    return claimed;
-  }
-  signal.throwIfAborted();
-  const result = await reconcileMigration(db, claimed.migration, signal);
-  if (result.status === "failed") {
-    return { status: "conflict" };
-  }
-  return { status: "confirmed", response: result.response };
-}
+);
 
 async function migrationForInvoice(
   db: Pick<Db, "select">,
@@ -2528,167 +2566,189 @@ async function migrationForInvoice(
   return migration ?? null;
 }
 
-export async function handleUsagePackMigrationInvoicePaid(
-  db: Db,
-  invoice: UsagePackInvoiceInput,
-): Promise<UsagePackMigrationLifecycleOutcome> {
-  const migration = await migrationForInvoice(db, invoice);
-  if (!migration) {
-    return { handled: false, orgId: null };
-  }
-  const currentInvoice = await retrieveMigrationInvoice(invoice.id);
-  if (migration.stripeInvoiceId !== currentInvoice.id) {
-    const selections = await loadMigrationSelections(db, migration.id);
-    if (
-      !migrationInvoiceMatchesSelections(currentInvoice, migration, selections)
-    ) {
+export const handleUsagePackMigrationInvoicePaid$ = command(
+  async (
+    { set },
+    invoice: UsagePackInvoiceInput,
+    signal: AbortSignal,
+  ): Promise<UsagePackMigrationLifecycleOutcome> => {
+    const db = set(writeDb$);
+    const migration = await migrationForInvoice(db, invoice);
+    signal.throwIfAborted();
+    if (!migration) {
       return { handled: false, orgId: null };
     }
-  }
-  if (migration.status === "completed") {
-    const outcome = await handleUsagePackInvoicePaid(
-      db,
-      correlatedMigrationInvoice(currentInvoice, migration),
-    );
-    return { handled: outcome.handled, orgId: migration.orgId };
-  }
-  const [updated] = await db
-    .update(usagePackSubscriptionMigrations)
-    .set({
-      stripeInvoiceId: currentInvoice.id,
-      stripePaymentIntentId:
-        invoicePaymentIntentId(currentInvoice) ??
-        migration.stripePaymentIntentId,
-      hostedInvoiceUrl: currentInvoice.hosted_invoice_url,
-      updatedAt: nowDate(),
-    })
-    .where(eq(usagePackSubscriptionMigrations.id, migration.id))
-    .returning();
-  const result = await reconcileMigration(
-    db,
-    updated ?? migration,
-    undefined,
-    currentInvoice,
-  );
-  return { handled: true, orgId: result.orgId };
-}
-
-export async function handleUsagePackMigrationSubscriptionUpdated(
-  db: Db,
-  subscription: UsagePackSubscriptionInput,
-): Promise<UsagePackMigrationLifecycleOutcome> {
-  const usagePackSubscriptionId = usagePackSubscriptionIdFromMetadata(
-    subscription.metadata,
-  );
-  const [migration] = await db
-    .select()
-    .from(usagePackSubscriptionMigrations)
-    .where(
-      and(
-        eq(
-          usagePackSubscriptionMigrations.stripeSubscriptionId,
-          subscription.id,
-        ),
-        inArray(usagePackSubscriptionMigrations.status, [
-          ...RECONCILING_MIGRATION_STATUSES,
-          ...(usagePackSubscriptionId ? [] : (["completed"] as const)),
-        ]),
-      ),
-    )
-    .orderBy(desc(usagePackSubscriptionMigrations.createdAt))
-    .limit(1);
-  if (!migration) {
-    return { handled: false, orgId: null };
-  }
-  if (migration.status === "completed") {
-    const current = await getStripeClient().subscriptions.retrieve(
-      migration.stripeSubscriptionId,
-    );
-    const outcome = await handleUsagePackSubscriptionUpdated(
-      db,
-      current as UsagePackSubscriptionInput,
-    );
-    if (!outcome.handled) {
-      throw new Error(
-        `Completed usage pack migration ${migration.id} lost correlation`,
-      );
+    const currentInvoice = await retrieveMigrationInvoice(invoice.id);
+    signal.throwIfAborted();
+    if (migration.stripeInvoiceId !== currentInvoice.id) {
+      const selections = await loadMigrationSelections(db, migration.id);
+      signal.throwIfAborted();
+      if (
+        !migrationInvoiceMatchesSelections(
+          currentInvoice,
+          migration,
+          selections,
+        )
+      ) {
+        return { handled: false, orgId: null };
+      }
     }
-    return { handled: true, orgId: migration.orgId };
-  }
-  const result = await reconcileMigration(db, migration);
-  return { handled: result.status !== "failed", orgId: result.orgId };
-}
-
-export async function reconcileUsagePackSubscriptionMigrations(
-  db: Db,
-  scope: BillingReconciliationScope | undefined,
-  signal: AbortSignal,
-): Promise<{
-  readonly reconciled: number;
-  readonly orgIds: readonly string[];
-}> {
-  const at = nowDate();
-  await db
-    .update(usagePackSubscriptionMigrations)
-    .set({
-      status: "failed",
-      failureReason: "preview_expired",
-      completedAt: at,
-      updatedAt: at,
-    })
-    .where(
-      and(
-        scope
-          ? inArray(usagePackSubscriptionMigrations.orgId, [...scope.orgIds])
-          : undefined,
-        eq(usagePackSubscriptionMigrations.status, "previewed"),
-        lte(usagePackSubscriptionMigrations.previewExpiresAt, at),
-      ),
-    );
-  signal.throwIfAborted();
-  const staleBefore = new Date(at.getTime() - RECONCILIATION_DELAY_MS);
-  const candidates = await db
-    .select()
-    .from(usagePackSubscriptionMigrations)
-    .where(
-      and(
-        scope
-          ? inArray(usagePackSubscriptionMigrations.orgId, [...scope.orgIds])
-          : undefined,
-        or(
-          and(
-            inArray(usagePackSubscriptionMigrations.status, [
-              "applying",
-              "revising",
-            ]),
-            lte(usagePackSubscriptionMigrations.updatedAt, staleBefore),
-          ),
-          and(
-            eq(usagePackSubscriptionMigrations.status, "scheduled"),
-            lte(usagePackSubscriptionMigrations.effectiveAt, at),
-          ),
-        ),
-      ),
-    )
-    .limit(100);
-  signal.throwIfAborted();
-  const orgIds = new Set<string>();
-  let reconciled = 0;
-  for (const candidate of candidates) {
-    const result = await settle(
-      reconcileMigration(db, candidate, signal),
+    if (migration.status === "completed") {
+      const outcome = await set(
+        handleUsagePackInvoicePaid$,
+        correlatedMigrationInvoice(currentInvoice, migration),
+        signal,
+      );
+      return { handled: outcome.handled, orgId: migration.orgId };
+    }
+    const [updated] = await db
+      .update(usagePackSubscriptionMigrations)
+      .set({
+        stripeInvoiceId: currentInvoice.id,
+        stripePaymentIntentId:
+          invoicePaymentIntentId(currentInvoice) ??
+          migration.stripePaymentIntentId,
+        hostedInvoiceUrl: currentInvoice.hosted_invoice_url,
+        updatedAt: nowDate(),
+      })
+      .where(eq(usagePackSubscriptionMigrations.id, migration.id))
+      .returning();
+    signal.throwIfAborted();
+    const result = await set(
+      reconcileMigration$,
+      { migration: updated ?? migration, eventInvoice: currentInvoice },
       signal,
     );
-    if (!result.ok) {
-      L.warn("usage pack subscription migration reconciliation failed", {
-        migrationId: candidate.id,
-        orgId: candidate.orgId,
-        error: result.error,
-      });
-      continue;
+    return { handled: true, orgId: result.orgId };
+  },
+);
+
+export const handleUsagePackMigrationSubscriptionUpdated$ = command(
+  async (
+    { set },
+    subscription: UsagePackSubscriptionInput,
+    signal: AbortSignal,
+  ): Promise<UsagePackMigrationLifecycleOutcome> => {
+    const db = set(writeDb$);
+    const usagePackSubscriptionId = usagePackSubscriptionIdFromMetadata(
+      subscription.metadata,
+    );
+    const [migration] = await db
+      .select()
+      .from(usagePackSubscriptionMigrations)
+      .where(
+        and(
+          eq(
+            usagePackSubscriptionMigrations.stripeSubscriptionId,
+            subscription.id,
+          ),
+          inArray(usagePackSubscriptionMigrations.status, [
+            ...RECONCILING_MIGRATION_STATUSES,
+            ...(usagePackSubscriptionId ? [] : (["completed"] as const)),
+          ]),
+        ),
+      )
+      .orderBy(desc(usagePackSubscriptionMigrations.createdAt))
+      .limit(1);
+    signal.throwIfAborted();
+    if (!migration) {
+      return { handled: false, orgId: null };
     }
-    orgIds.add(result.value.orgId);
-    reconciled += 1;
-  }
-  return { reconciled, orgIds: [...orgIds] };
-}
+    if (migration.status === "completed") {
+      const current = await getStripeClient().subscriptions.retrieve(
+        migration.stripeSubscriptionId,
+      );
+      signal.throwIfAborted();
+      const outcome = await handleUsagePackSubscriptionUpdated(
+        db,
+        current as UsagePackSubscriptionInput,
+      );
+      signal.throwIfAborted();
+      if (!outcome.handled) {
+        throw new Error(
+          `Completed usage pack migration ${migration.id} lost correlation`,
+        );
+      }
+      return { handled: true, orgId: migration.orgId };
+    }
+    const result = await set(reconcileMigration$, { migration }, signal);
+    return { handled: result.status !== "failed", orgId: result.orgId };
+  },
+);
+
+export const reconcileUsagePackSubscriptionMigrations$ = command(
+  async (
+    { set },
+    scope: BillingReconciliationScope | undefined,
+    signal: AbortSignal,
+  ): Promise<{
+    readonly reconciled: number;
+    readonly orgIds: readonly string[];
+  }> => {
+    const db = set(writeDb$);
+    const at = nowDate();
+    await db
+      .update(usagePackSubscriptionMigrations)
+      .set({
+        status: "failed",
+        failureReason: "preview_expired",
+        completedAt: at,
+        updatedAt: at,
+      })
+      .where(
+        and(
+          scope
+            ? inArray(usagePackSubscriptionMigrations.orgId, [...scope.orgIds])
+            : undefined,
+          eq(usagePackSubscriptionMigrations.status, "previewed"),
+          lte(usagePackSubscriptionMigrations.previewExpiresAt, at),
+        ),
+      );
+    signal.throwIfAborted();
+    const staleBefore = new Date(at.getTime() - RECONCILIATION_DELAY_MS);
+    const candidates = await db
+      .select()
+      .from(usagePackSubscriptionMigrations)
+      .where(
+        and(
+          scope
+            ? inArray(usagePackSubscriptionMigrations.orgId, [...scope.orgIds])
+            : undefined,
+          or(
+            and(
+              inArray(usagePackSubscriptionMigrations.status, [
+                "applying",
+                "revising",
+              ]),
+              lte(usagePackSubscriptionMigrations.updatedAt, staleBefore),
+            ),
+            and(
+              eq(usagePackSubscriptionMigrations.status, "scheduled"),
+              lte(usagePackSubscriptionMigrations.effectiveAt, at),
+            ),
+          ),
+        ),
+      )
+      .limit(100);
+    signal.throwIfAborted();
+    const orgIds = new Set<string>();
+    let reconciled = 0;
+    for (const candidate of candidates) {
+      const result = await settle(
+        set(reconcileMigration$, { migration: candidate }, signal),
+        signal,
+      );
+      if (!result.ok) {
+        L.warn("usage pack subscription migration reconciliation failed", {
+          migrationId: candidate.id,
+          orgId: candidate.orgId,
+          error: result.error,
+        });
+        continue;
+      }
+      orgIds.add(result.value.orgId);
+      reconciled += 1;
+    }
+    return { reconciled, orgIds: [...orgIds] };
+  },
+);

@@ -74,7 +74,7 @@ import {
 import type { Tx } from "../../lib/db-types";
 import {
   handleUsagePackCheckoutCompleted$,
-  handleUsagePackInvoicePaid,
+  handleUsagePackInvoicePaid$,
   handleUsagePackSubscriptionCreated,
   handleUsagePackSubscriptionDeleted,
   handleUsagePackSubscriptionUpdated,
@@ -89,8 +89,8 @@ import {
   handleUsagePackInvitationPaymentIntentSucceeded,
 } from "./usage-pack-invitation-purchase.service";
 import {
-  handleUsagePackMigrationInvoicePaid,
-  handleUsagePackMigrationSubscriptionUpdated,
+  handleUsagePackMigrationInvoicePaid$,
+  handleUsagePackMigrationSubscriptionUpdated$,
 } from "./usage-pack-subscription-migration.service";
 
 import { concurrencySubscriptionUpdatedAt } from "./concurrency-subscription-write";
@@ -3902,9 +3902,10 @@ const handleInvoicePaid$ = command(
     const getClerk = (): ClerkClient => {
       return get(clerk$);
     };
-    const migrationResult = await handleUsagePackMigrationInvoicePaid(
-      db,
+    const migrationResult = await set(
+      handleUsagePackMigrationInvoicePaid$,
       invoice,
+      signal,
     );
     signal.throwIfAborted();
     if (migrationResult.handled) {
@@ -3922,7 +3923,11 @@ const handleInvoicePaid$ = command(
       return invitationResult.orgId;
     }
 
-    const usagePackResult = await handleUsagePackInvoicePaid(db, invoice);
+    const usagePackResult = await set(
+      handleUsagePackInvoicePaid$,
+      invoice,
+      signal,
+    );
     signal.throwIfAborted();
     const invoiceLines = invoice.lines?.data ?? [];
     const hasCustomPlanInvoiceLine = invoiceLines.some((line) => {
@@ -4558,11 +4563,13 @@ const handleSubscriptionUpdated$ = command(
     { set },
     subscription: SubscriptionInput,
     previousAttributes: SubscriptionPreviousAttributes | undefined,
+    signal: AbortSignal,
   ): Promise<readonly string[]> => {
     const db = set(writeDb$);
-    const migrationOutcome = await handleUsagePackMigrationSubscriptionUpdated(
-      db,
+    const migrationOutcome = await set(
+      handleUsagePackMigrationSubscriptionUpdated$,
       subscription,
+      signal,
     );
     if (migrationOutcome.handled) {
       return migrationOutcome.orgId ? [migrationOutcome.orgId] : [];
@@ -4571,11 +4578,13 @@ const handleSubscriptionUpdated$ = command(
       db,
       subscription,
     );
+    signal.throwIfAborted();
     const orgIds = await set(
       handleSubscriptionUpdatedLegacy$,
       usagePackOutcome.subscription ?? subscription,
       previousAttributes,
     );
+    signal.throwIfAborted();
     return [
       ...new Set([
         ...orgIds,
@@ -4909,6 +4918,7 @@ export const reconcileStripeSubscriptionSnapshot$ = command(
       handleSubscriptionUpdated$,
       subscription,
       reconciliationPreviousAttributes(subscription),
+      signal,
     )) {
       orgIds.add(orgId);
     }
@@ -5132,6 +5142,7 @@ export const handleStripeWebhookEvent$ = command(
           handleSubscriptionUpdated$,
           event.object,
           event.previousAttributes,
+          signal,
         );
         signal.throwIfAborted();
         addBillingChangedOrgIds(billingChangedOrgIds, orgIds);

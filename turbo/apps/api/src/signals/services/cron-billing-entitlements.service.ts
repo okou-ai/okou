@@ -57,7 +57,7 @@ import {
 } from "./usage-pack-subscription.service";
 import { reconcileUsagePackCreditRefunds } from "./usage-pack-credit-refund.service";
 import { reconcileUsagePackInvitationPurchases } from "./usage-pack-invitation-purchase.service";
-import { reconcileUsagePackSubscriptionMigrations } from "./usage-pack-subscription-migration.service";
+import { reconcileUsagePackSubscriptionMigrations$ } from "./usage-pack-subscription-migration.service";
 import { disableIneligibleWorkflowWebhookAutomationsForOrg } from "./workflow-webhook-automation-entitlement.service";
 import { isCurrentStripePreviewMetadata } from "./stripe-preview-metadata.service";
 import {
@@ -1752,8 +1752,11 @@ const reconcileBillingEntitlementsForScope$ = command(
     }
     signal.throwIfAborted();
 
-    const usagePackMigrationReconciliation =
-      await reconcileUsagePackSubscriptionMigrations(db, scope, signal);
+    const usagePackMigrationReconciliation = await set(
+      reconcileUsagePackSubscriptionMigrations$,
+      scope,
+      signal,
+    );
     signal.throwIfAborted();
     const usagePackReconciliation = await set(
       reconcileUsagePackSubscriptions$,

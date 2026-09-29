@@ -115,7 +115,7 @@ adders have no expired-remainder predicate and could otherwise add credits betwe
 two clamps. Release 2 may bound this command only once the complete R1 writer
 graph is prepared and incompatible serving/in-flight/rollback writers are gone.
 
-This monetary preparation does **not** complete the ownership graph: subscription/Atom-plan grants and first-paid fulfillment still forward transaction handles through metadata, member-grant and pending-snapshot helpers. Those boundaries remain implementation work, not a drain gate.
+This monetary preparation does **not** complete the ownership graph: subscription/Atom-plan grants and migration/plan activation still forward transaction handles through metadata and pending-snapshot helpers. The ordinary paid usage-pack fulfillment commit is now owned as described below. The remaining boundaries are implementation work, not a drain gate.
 
 Slack is the only organization-scoped get-started reward. All three production
 entry points now commit through business-only commands: direct installation,
@@ -179,3 +179,43 @@ active grant. After one more credit is consumed, invoice replay must leave 149.
 No internal row edit, advisory lock, trigger or transaction gate constructs this
 state. Focused formatting and lint passed; behavior verification belongs to the
 final integrated PR pipeline.
+
+## Paid usage-pack fulfillment ownership
+
+`commitUsagePackFulfillment$` now owns the complete paid-invoice SQL commit. Its
+parameters are ordinary prepared invoice/subscription/allocation values and the
+caller signal; it obtains `writeDb$` and forwards no database or transaction. The
+commit directly owns the existing subscription roots, pending-snapshot guard,
+allocation rows and wallet, then commits first-paid negative-balance clearing,
+member purchased/bonus grants, exact refund provenance, allocation/plan projection
+and the invoice receipt together. Existing processed receipts return without
+re-granting or clearing debt. Stripe subscription/catalog preparation remains
+outside the commit.
+
+Grant/refund statement builders take ordinary values only. A conflict returns a
+row only when the original organization, member, kind, amount, expiry and payment
+source match; it retains remaining credits and refund lifecycle fields. A mismatch
+rolls back the entire financial transaction. Current allocation ownership and
+price identities are revalidated before publishing a prepared grant. An expired
+shared remainder is finished atomically only if this is an eligible first-paid
+debt-clear operation; member grants that do not clear debt still leave shared
+expiration untouched.
+
+The R1 commit retains the existing `usage_pack_billing` and `billing_purchase`
+compatibility acquisitions and roots-before-guard order. Outgoing allocation and
+purchase writers still use those keys, and the outgoing pending-count trigger
+owns the subscription before the guard. The command checks the authoritative
+starting count and assigns the exact final count, avoiding a second trigger
+increment. These boundaries require the documented compatible serving, in-flight
+and rollback writer evidence before R2 removal; they are not new locks or schema.
+The full organization root read remains for that outgoing trigger order, so this
+change does not claim the terminal transaction footprint is already reached.
+
+The caller chain now dispatches invoice fulfillment as a command from signed
+Stripe events, reconciliation, migration finalization/replay and both migration
+confirmation APIs, preserving each caller's final `AbortSignal`. Migration remote
+scheduling, snapshot materialization and invitation completion still use their
+legacy helper ownership; converting orchestration callers does not certify those
+separate write protocols. Plan/Atom cancellation replay and plan activation remain
+implementation work. Focused Prettier, Oxlint and ESLint passed; combined types and
+behavior checks must use the integrated PR HEAD.
