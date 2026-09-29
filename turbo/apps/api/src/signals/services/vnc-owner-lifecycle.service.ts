@@ -2,11 +2,17 @@ import { vncConnections } from "@okouai/db/schema/vnc-connection";
 import { vncCredentials } from "@okouai/db/schema/vnc-credential";
 import { agentVncAccess } from "@okouai/db/schema/agent-vnc-access";
 import { agents } from "@okouai/db/schema/agent";
-import { and, asc, eq, inArray, sql, type SQL } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 
-import type { Tx } from "../../lib/db-types";
-import { isClerkResourceNotFound, type ClerkClient } from "../external/clerk";
-import type { Db } from "../external/db";
+import { command } from "ccstate";
+import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
+import { pgTextDecoder } from "../../lib/db-structured-result";
+import {
+  clerk$,
+  isClerkResourceNotFound,
+  type ClerkClient,
+} from "../external/clerk";
+import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import { loadCurrentMembershipId } from "./morning-brief-membership.service";
 
@@ -39,162 +45,140 @@ type VncCleanupScope =
   | { readonly kind: "organization"; readonly orgId: string }
   | (VncOwner & { readonly kind: "owner" });
 
-function scopeKey(scope: VncCleanupScope): string {
-  const identity =
-    scope.kind === "user"
-      ? [scope.kind, scope.userId]
-      : scope.kind === "organization"
-        ? [scope.kind, scope.orgId]
-        : [scope.kind, scope.orgId, scope.userId];
-  return JSON.stringify(identity);
-}
+/** Capture a real member row before the live Clerk lookup. Cleanup removes it. */
+export const admitVncOwner$ = command(
+  async (
+    { get, set },
+    owner: VncOwner,
+    signal: AbortSignal,
+  ): Promise<{
+    readonly owner: VncOwner;
+    readonly memberCreatedAt: string;
+  } | null> => {
+    const db = set(writeDb$);
+    await db.insert(orgMembersMetadata).values(owner).onConflictDoNothing();
+    signal.throwIfAborted();
+    const [member] = await db
+      .select({
+        createdAt: sql`${orgMembersMetadata.createdAt}::text`.mapWith(
+          pgTextDecoder,
+        ),
+      })
+      .from(orgMembersMetadata)
+      .where(
+        and(
+          eq(orgMembersMetadata.orgId, owner.orgId),
+          eq(orgMembersMetadata.userId, owner.userId),
+        ),
+      );
+    signal.throwIfAborted();
+    if (
+      !member ||
+      !(await hasCurrentVncMembership(get(clerk$), owner, signal))
+    ) {
+      return null;
+    }
+    return { owner, memberCreatedAt: member.createdAt };
+  },
+);
 
-function ownerScopeKeys(owner: VncOwner): readonly string[] {
-  return [
-    scopeKey({ kind: "user", userId: owner.userId }),
-    scopeKey({ kind: "organization", orgId: owner.orgId }),
-    scopeKey({ kind: "owner", ...owner }),
-  ].sort();
-}
-
-async function lockScope(
-  tx: Tx,
-  key: string,
-  mode: "shared" | "exclusive",
-): Promise<void> {
-  const lockKey = `vnc-cleanup:${key}`;
-  await tx.execute(
-    mode === "shared"
-      ? // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-        sql`SELECT pg_advisory_xact_lock_shared(hashtextextended(${lockKey}, 0))`
-      : // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-        sql`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`,
+export function vncMemberIdentityWhere(args: {
+  readonly owner: VncOwner;
+  readonly memberCreatedAt: string;
+}) {
+  return and(
+    eq(orgMembersMetadata.orgId, args.owner.orgId),
+    eq(orgMembersMetadata.userId, args.owner.userId),
+    eq(sql`${orgMembersMetadata.createdAt}::text`, args.memberCreatedAt),
   );
 }
 
-async function deleteVncRows(
-  tx: Tx,
-  connectionCondition: SQL | undefined,
-  credentialCondition: SQL | undefined,
-  grantCondition: SQL | undefined,
-): Promise<void> {
-  if (!connectionCondition || !credentialCondition || !grantCondition) {
-    throw new Error("VNC cleanup requires an exact owner scope");
-  }
-  // Membership cleanup later locks Runs. Hold their grant parents first so
-  // Agent deletion cannot hold a Run while waiting on our grant deletion.
-  await tx
-    .select({ id: agents.id })
-    .from(agents)
-    .where(
-      inArray(
-        agents.id,
-        tx
-          .select({ id: agentVncAccess.agentId })
-          .from(agentVncAccess)
-          .where(grantCondition),
-      ),
-    )
-    .orderBy(asc(agents.id))
-    .for("share");
-  // Overlapping user/organization cleanup locks rows in the same global order.
-  await tx
-    .select({ id: vncConnections.id })
-    .from(vncConnections)
-    .where(connectionCondition)
-    .orderBy(asc(vncConnections.id))
-    .for("update");
-  await tx
-    .select({ id: vncCredentials.id })
-    .from(vncCredentials)
-    .where(credentialCondition)
-    .orderBy(asc(vncCredentials.id))
-    .for("update");
-  await tx
-    .select({ agentId: agentVncAccess.agentId })
-    .from(agentVncAccess)
-    .where(grantCondition)
-    .orderBy(
-      asc(agentVncAccess.orgId),
-      asc(agentVncAccess.userId),
-      asc(agentVncAccess.agentId),
-    )
-    .for("update");
-  await tx.delete(vncConnections).where(connectionCondition);
-  await tx.delete(vncCredentials).where(credentialCondition);
-  // Grants may exist with no connections.
-  await tx.delete(agentVncAccess).where(grantCondition);
-}
-
-/** Protect writes against user, organization, and membership cleanup. */
-export async function shareVncCleanupScopes(
-  tx: Tx,
-  owner: VncOwner,
-): Promise<void> {
-  const keys = ownerScopeKeys(owner);
-  for (const key of keys) {
-    await lockScope(tx, key, "shared");
-  }
-}
-
-/** Shared cleanup scopes -> exclusive owner -> business rows. */
-export async function enterVncWrite(tx: Tx, owner: VncOwner): Promise<void> {
-  await shareVncCleanupScopes(tx, owner);
-  const ownerLock = `vnc-owner:${scopeKey({ kind: "owner", ...owner })}`;
-  await tx.execute(
-    // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-    sql`SELECT pg_advisory_xact_lock(hashtextextended(${ownerLock}, 0))`,
-  );
-}
-
-/** Call before any other business-row lock in an enclosing cleanup transaction. */
-export async function eraseVncOwner(
-  tx: Tx,
-  scope: VncCleanupScope,
-): Promise<void> {
-  const key = scopeKey(scope);
-  await lockScope(tx, key, "exclusive");
-  if (scope.kind === "user") {
-    await deleteVncRows(
-      tx,
-      eq(vncConnections.userId, scope.userId),
-      eq(vncCredentials.userId, scope.userId),
-      eq(agentVncAccess.userId, scope.userId),
-    );
-    return;
-  }
-  if (scope.kind === "organization") {
-    await deleteVncRows(
-      tx,
-      eq(vncConnections.orgId, scope.orgId),
-      eq(vncCredentials.orgId, scope.orgId),
-      eq(agentVncAccess.orgId, scope.orgId),
-    );
-    return;
-  }
-
-  await deleteVncRows(
-    tx,
-    and(
-      eq(vncConnections.orgId, scope.orgId),
-      eq(vncConnections.userId, scope.userId),
-    ),
-    and(
-      eq(vncCredentials.orgId, scope.orgId),
-      eq(vncCredentials.userId, scope.userId),
-    ),
-    and(
-      eq(agentVncAccess.orgId, scope.orgId),
-      eq(agentVncAccess.userId, scope.userId),
-    ),
-  );
-}
-
-export async function eraseVncOwnerData(
-  db: Db,
-  scope: VncCleanupScope,
-): Promise<void> {
-  await db.transaction(async (tx) => {
-    await eraseVncOwner(tx, scope);
-  });
-}
+/** Erasure and the existing member identity disappear in one local commit. */
+export const eraseVncOwnerData$ = command(
+  async (
+    { set },
+    scope: VncCleanupScope,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    const memberCondition =
+      scope.kind === "user"
+        ? eq(orgMembersMetadata.userId, scope.userId)
+        : scope.kind === "organization"
+          ? eq(orgMembersMetadata.orgId, scope.orgId)
+          : and(
+              eq(orgMembersMetadata.orgId, scope.orgId),
+              eq(orgMembersMetadata.userId, scope.userId),
+            );
+    const connectionCondition =
+      scope.kind === "user"
+        ? eq(vncConnections.userId, scope.userId)
+        : scope.kind === "organization"
+          ? eq(vncConnections.orgId, scope.orgId)
+          : and(
+              eq(vncConnections.orgId, scope.orgId),
+              eq(vncConnections.userId, scope.userId),
+            );
+    const credentialCondition =
+      scope.kind === "user"
+        ? eq(vncCredentials.userId, scope.userId)
+        : scope.kind === "organization"
+          ? eq(vncCredentials.orgId, scope.orgId)
+          : and(
+              eq(vncCredentials.orgId, scope.orgId),
+              eq(vncCredentials.userId, scope.userId),
+            );
+    const grantCondition =
+      scope.kind === "user"
+        ? eq(agentVncAccess.userId, scope.userId)
+        : scope.kind === "organization"
+          ? eq(agentVncAccess.orgId, scope.orgId)
+          : and(
+              eq(agentVncAccess.orgId, scope.orgId),
+              eq(agentVncAccess.userId, scope.userId),
+            );
+    await db.transaction(async (tx) => {
+      // Preserve existing obsolete-grant cleanup until its separate contraction.
+      await tx
+        .select({ id: agents.id })
+        .from(agents)
+        .where(
+          inArray(
+            agents.id,
+            tx
+              .select({ id: agentVncAccess.agentId })
+              .from(agentVncAccess)
+              .where(grantCondition),
+          ),
+        )
+        .orderBy(asc(agents.id))
+        .for("share");
+      await tx
+        .select({ orgId: orgMembersMetadata.orgId })
+        .from(orgMembersMetadata)
+        .where(memberCondition)
+        .orderBy(asc(orgMembersMetadata.orgId), asc(orgMembersMetadata.userId))
+        .for("update");
+      await tx
+        .select({ id: vncConnections.id })
+        .from(vncConnections)
+        .where(connectionCondition)
+        .orderBy(asc(vncConnections.id))
+        .for("update");
+      await tx
+        .select({ id: vncCredentials.id })
+        .from(vncCredentials)
+        .where(credentialCondition)
+        .orderBy(asc(vncCredentials.id))
+        .for("update");
+      await tx.delete(vncConnections).where(connectionCondition);
+      await tx.delete(vncCredentials).where(credentialCondition);
+      await tx.delete(agentVncAccess).where(grantCondition);
+      // This is the existing preference-row lifecycle, not a new authority flag.
+      // A late admission must match the captured exact database timestamp; it
+      // cannot create this parent after its external membership lookup.
+      await tx.delete(orgMembersMetadata).where(memberCondition);
+      signal.throwIfAborted();
+    });
+  },
+);

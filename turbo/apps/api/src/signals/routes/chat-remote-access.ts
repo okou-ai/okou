@@ -12,10 +12,10 @@ import { clerk$ } from "../external/clerk";
 import { db$, writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import {
-  clearThreadRemoteAccessOverride,
+  clearThreadRemoteAccessOverride$,
   listRemoteHostDefaults,
   listThreadRemoteAccess,
-  setThreadRemoteAccessOverride,
+  setThreadRemoteAccessOverride$,
   updateRemoteHostDefault,
 } from "../services/chat-remote-access.service";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
@@ -125,8 +125,8 @@ const setThreadOverride$ = command(
     if (!body.ok) {
       return body.response;
     }
-    const result = await setThreadRemoteAccessOverride(
-      set(writeDb$),
+    const result = await set(
+      setThreadRemoteAccessOverride$,
       {
         ...context.owner,
         chatThreadId: params.threadId,
@@ -134,6 +134,7 @@ const setThreadOverride$ = command(
       },
       params.protocol,
       body.data.enabled,
+      signal,
     );
     signal.throwIfAborted();
     return result ? { status: 200 as const, body: result } : missingHost;
@@ -153,14 +154,15 @@ const clearThreadOverride$ = command(
     ) {
       return unavailable;
     }
-    const result = await clearThreadRemoteAccessOverride(
-      set(writeDb$),
+    const result = await set(
+      clearThreadRemoteAccessOverride$,
       {
         ...context.owner,
         chatThreadId: params.threadId,
         connectionId: params.connectionId,
       },
       params.protocol,
+      signal,
     );
     signal.throwIfAborted();
     return result ? { status: 200 as const, body: result } : missingHost;

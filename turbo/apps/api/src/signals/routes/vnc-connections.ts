@@ -12,23 +12,26 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { setResHeader$ } from "../context/hono";
 import { bodyResultOf, pathParamsOf } from "../context/request";
-import { clerk$ } from "../external/clerk";
 import { writeDb$ } from "../external/db";
+import { clerk$ } from "../external/clerk";
 import type { RouteEntry } from "../route-entry";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
-import { hasCurrentVncMembership } from "../services/vnc-owner-lifecycle.service";
 import {
-  createVncCredential,
-  deleteVncCredential,
+  admitVncOwner$,
+  hasCurrentVncMembership,
+} from "../services/vnc-owner-lifecycle.service";
+import {
+  createVncCredential$,
+  deleteVncCredential$,
   listVncCredentials,
-  updateVncCredential,
+  updateVncCredential$,
 } from "../services/vnc-credential.service";
 import {
-  createVncConnection,
-  deleteVncConnection,
+  createVncConnection$,
+  deleteVncConnection$,
   listVncConnections,
   summarizeVncConnections,
-  updateVncConnection,
+  updateVncConnection$,
 } from "../services/vnc-connection.service";
 
 const unavailable = Object.freeze(
@@ -51,7 +54,7 @@ const ownerAuth = {
   accept: ["session"],
 } as const;
 
-const vncAdmission$ = command(async ({ get, set }, signal: AbortSignal) => {
+const vncContext$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "no-store");
   const auth = get(organizationAuthContext$);
   const featureContext = await get(
@@ -61,15 +64,31 @@ const vncAdmission$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!isFeatureEnabled(FeatureSwitchKey.VncAccess, featureContext)) {
     return null;
   }
-  const isMember = await hasCurrentVncMembership(get(clerk$), auth, signal);
-  if (!isMember) {
-    return null;
-  }
   return {
     db: set(writeDb$),
     featureContext,
     owner: { orgId: auth.orgId, userId: auth.userId },
   };
+});
+
+const vncAdmission$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const context = await set(vncContext$, signal);
+  if (
+    !context ||
+    !(await hasCurrentVncMembership(get(clerk$), context.owner, signal))
+  ) {
+    return null;
+  }
+  return context;
+});
+
+const vncWriteAdmission$ = command(async ({ set }, signal: AbortSignal) => {
+  const context = await set(vncContext$, signal);
+  if (!context) {
+    return null;
+  }
+  const membership = await set(admitVncOwner$, context.owner, signal);
+  return membership ? { ...context, ...membership } : null;
 });
 
 function mapFailure(result: {
@@ -101,7 +120,7 @@ const listCredentials$ = command(async ({ set }, signal: AbortSignal) => {
 });
 
 const createCredential$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const context = await set(vncAdmission$, signal);
+  const context = await set(vncWriteAdmission$, signal);
   if (!context) {
     return unavailable;
   }
@@ -110,11 +129,15 @@ const createCredential$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!body.ok) {
     return invalidInput;
   }
-  const result = await createVncCredential({
-    ...context,
-    body: body.data,
-    id: body.data.id,
-  });
+  const result = await set(
+    createVncCredential$,
+    {
+      ...context,
+      body: body.data,
+      id: body.data.id,
+    },
+    signal,
+  );
   signal.throwIfAborted();
   if (!result.ok) {
     return mapFailure(result);
@@ -125,7 +148,7 @@ const createCredential$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 
 const updateCredential$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const context = await set(vncAdmission$, signal);
+  const context = await set(vncWriteAdmission$, signal);
   if (!context) {
     return unavailable;
   }
@@ -137,11 +160,15 @@ const updateCredential$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!body.ok) {
     return invalidInput;
   }
-  const result = await updateVncCredential({
-    ...context,
-    credentialId: params.credentialId,
-    body: body.data,
-  });
+  const result = await set(
+    updateVncCredential$,
+    {
+      ...context,
+      credentialId: params.credentialId,
+      body: body.data,
+    },
+    signal,
+  );
   signal.throwIfAborted();
   return result.ok
     ? { status: 200 as const, body: result.value }
@@ -149,7 +176,7 @@ const updateCredential$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 
 const deleteCredential$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const context = await set(vncAdmission$, signal);
+  const context = await set(vncWriteAdmission$, signal);
   if (!context) {
     return unavailable;
   }
@@ -161,11 +188,15 @@ const deleteCredential$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!body.ok) {
     return invalidInput;
   }
-  const result = await deleteVncCredential({
-    ...context,
-    credentialId: params.credentialId,
-    expectedRevision: body.data.expectedRevision,
-  });
+  const result = await set(
+    deleteVncCredential$,
+    {
+      ...context,
+      credentialId: params.credentialId,
+      expectedRevision: body.data.expectedRevision,
+    },
+    signal,
+  );
   signal.throwIfAborted();
   return result.ok
     ? { status: 204 as const, body: undefined }
@@ -193,7 +224,7 @@ const summary$ = command(async ({ set }, signal: AbortSignal) => {
 });
 
 const createConnection$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const context = await set(vncAdmission$, signal);
+  const context = await set(vncWriteAdmission$, signal);
   if (!context) {
     return unavailable;
   }
@@ -202,7 +233,11 @@ const createConnection$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!body.ok) {
     return invalidInput;
   }
-  const result = await createVncConnection({ ...context, body: body.data });
+  const result = await set(
+    createVncConnection$,
+    { ...context, body: body.data },
+    signal,
+  );
   signal.throwIfAborted();
   if (!result.ok) {
     return mapFailure(result);
@@ -213,7 +248,7 @@ const createConnection$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 
 const updateConnection$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const context = await set(vncAdmission$, signal);
+  const context = await set(vncWriteAdmission$, signal);
   if (!context) {
     return unavailable;
   }
@@ -225,11 +260,15 @@ const updateConnection$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!body.ok) {
     return invalidInput;
   }
-  const result = await updateVncConnection({
-    ...context,
-    connectionId: params.connectionId,
-    body: body.data,
-  });
+  const result = await set(
+    updateVncConnection$,
+    {
+      ...context,
+      connectionId: params.connectionId,
+      body: body.data,
+    },
+    signal,
+  );
   signal.throwIfAborted();
   return result.ok
     ? { status: 200 as const, body: result.value }
@@ -237,7 +276,7 @@ const updateConnection$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 
 const deleteConnection$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const context = await set(vncAdmission$, signal);
+  const context = await set(vncWriteAdmission$, signal);
   if (!context) {
     return unavailable;
   }
@@ -249,11 +288,15 @@ const deleteConnection$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!body.ok) {
     return invalidInput;
   }
-  const result = await deleteVncConnection({
-    ...context,
-    connectionId: params.connectionId,
-    expectedGeneration: body.data.expectedGeneration,
-  });
+  const result = await set(
+    deleteVncConnection$,
+    {
+      ...context,
+      connectionId: params.connectionId,
+      expectedGeneration: body.data.expectedGeneration,
+    },
+    signal,
+  );
   signal.throwIfAborted();
   return result.ok
     ? { status: 204 as const, body: undefined }

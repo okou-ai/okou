@@ -23,156 +23,168 @@ import { revokeMorningBriefNativeAuthority } from "./morning-brief-native-schedu
 import { revokeMorningBriefCollectionOwnership } from "./morning-brief-collection-occurrence.service";
 import { revokeMorningBriefDeliveryOwnership } from "./morning-brief-delivery.service";
 import { revokeMorningBriefScheduleOwnership } from "./morning-brief-schedule-claim.service";
-import { eraseVncOwner } from "./vnc-owner-lifecycle.service";
+import { eraseVncOwnerData$ } from "./vnc-owner-lifecycle.service";
 import { deleteDiscordOrgMemberData } from "./discord-owner-cleanup.service";
 
-import type { Db } from "../external/db";
+import { command } from "ccstate";
+import { writeDb$, type Db } from "../external/db";
 
 /** `onSlotsReleased` receives the slots the revoked runs released as soon as
  * the revocation commits, before any other effect of this cleanup. */
-export async function cleanupOrgMemberResources(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly membershipId?: string;
-  },
-  onSlotsReleased: (slots: readonly ReleasedRunSlot[]) => void,
-  signal: AbortSignal,
-): Promise<void> {
-  await revokeOrgMemberRunAuthority(db, args, onSlotsReleased, signal);
-  signal.throwIfAborted();
-  await deleteDiscordOrgMemberData(db, args);
-  signal.throwIfAborted();
-  const currentTime = nowDate();
-  // Automations execute as their owner. Only the schedule poller gates on
-  // membership, and it does so lazily, at an automation's next due time; event
-  // dispatchers select on `enabled`, `kind` and their own event match, so
-  // nothing disarms those at all. Departure is the authoritative moment, so
-  // both kinds lose their arming here. Disabling rather than deleting keeps
-  // the configuration for a deliberate re-enable or reassignment, and an
-  // explicit enable recomputes the schedule, so the `next_run_at` left behind
-  // cannot fire on its own.
-  //
-  // An official installation is excluded because it does not own its enabled
-  // bit: official reconciliation drives it from `official_intended_enabled`,
-  // and this same cleanup already ends the installation's authority above by
-  // marking the Morning Brief enrollment `departed` and revoking its native
-  // schedule, collection and delivery ownership. Disabling the row here would
-  // both contend with that reconciler and silently pause the brief of a member
-  // who rejoins.
-  await db
-    .update(workflowAutomations)
-    .set({ enabled: false, updatedAt: currentTime })
-    .where(
-      and(
-        eq(workflowAutomations.orgId, args.orgId),
-        eq(workflowAutomations.ownerUserId, args.userId),
-        eq(workflowAutomations.enabled, true),
-        isNull(workflowAutomations.officialBlueprintKey),
-      ),
+export const cleanupOrgMemberResources$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly membershipId?: string;
+    },
+    onSlotsReleased: (slots: readonly ReleasedRunSlot[]) => void,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    await set(
+      eraseVncOwnerData$,
+      { kind: "owner", orgId: args.orgId, userId: args.userId },
+      signal,
     );
-  signal.throwIfAborted();
-  await db
-    .insert(morningBriefEnrollments)
-    .values({
-      orgId: args.orgId,
-      userId: args.userId,
-      state: "departed",
-      membershipId: args.membershipId,
-      availableAt: currentTime,
-      createdAt: currentTime,
-      updatedAt: currentTime,
-    })
-    .onConflictDoUpdate({
-      target: [morningBriefEnrollments.orgId, morningBriefEnrollments.userId],
-      set: {
-        state: "departed",
-        // Deletion can arrive before enrollment or after a missing live lookup.
-        // Retain its generation so a late created event cannot revive intent.
-        membershipId: args.membershipId ?? morningBriefEnrollments.membershipId,
-        updatedAt: currentTime,
-      },
-      setWhere: and(
-        args.membershipId
-          ? or(
-              isNull(morningBriefEnrollments.membershipId),
-              eq(morningBriefEnrollments.membershipId, args.membershipId),
-            )
-          : undefined,
-        inArray(morningBriefEnrollments.state, [
-          "checking",
-          "pending",
-          "ineligible",
-          "departed",
-        ]),
-      ),
-    });
-  const [installation] = await db
-    .select({ slackWorkspaceId: slackOrgInstallations.slackWorkspaceId })
-    .from(slackOrgInstallations)
-    .where(eq(slackOrgInstallations.orgId, args.orgId))
-    .limit(1);
-  signal.throwIfAborted();
-
-  if (installation) {
-    const connections = await db
-      .select({ id: slackOrgConnections.id })
-      .from(slackOrgConnections)
+    signal.throwIfAborted();
+    await revokeOrgMemberRunAuthority(db, args, onSlotsReleased, signal);
+    signal.throwIfAborted();
+    await deleteDiscordOrgMemberData(db, args);
+    signal.throwIfAborted();
+    const currentTime = nowDate();
+    // Automations execute as their owner. Only the schedule poller gates on
+    // membership, and it does so lazily, at an automation's next due time; event
+    // dispatchers select on `enabled`, `kind` and their own event match, so
+    // nothing disarms those at all. Departure is the authoritative moment, so
+    // both kinds lose their arming here. Disabling rather than deleting keeps
+    // the configuration for a deliberate re-enable or reassignment, and an
+    // explicit enable recomputes the schedule, so the `next_run_at` left behind
+    // cannot fire on its own.
+    //
+    // An official installation is excluded because it does not own its enabled
+    // bit: official reconciliation drives it from `official_intended_enabled`,
+    // and this same cleanup already ends the installation's authority above by
+    // marking the Morning Brief enrollment `departed` and revoking its native
+    // schedule, collection and delivery ownership. Disabling the row here would
+    // both contend with that reconciler and silently pause the brief of a member
+    // who rejoins.
+    await db
+      .update(workflowAutomations)
+      .set({ enabled: false, updatedAt: currentTime })
       .where(
         and(
-          eq(slackOrgConnections.userId, args.userId),
-          eq(
-            slackOrgConnections.slackWorkspaceId,
-            installation.slackWorkspaceId,
+          eq(workflowAutomations.orgId, args.orgId),
+          eq(workflowAutomations.ownerUserId, args.userId),
+          eq(workflowAutomations.enabled, true),
+          isNull(workflowAutomations.officialBlueprintKey),
+        ),
+      );
+    signal.throwIfAborted();
+    await db
+      .insert(morningBriefEnrollments)
+      .values({
+        orgId: args.orgId,
+        userId: args.userId,
+        state: "departed",
+        membershipId: args.membershipId,
+        availableAt: currentTime,
+        createdAt: currentTime,
+        updatedAt: currentTime,
+      })
+      .onConflictDoUpdate({
+        target: [morningBriefEnrollments.orgId, morningBriefEnrollments.userId],
+        set: {
+          state: "departed",
+          // Deletion can arrive before enrollment or after a missing live lookup.
+          // Retain its generation so a late created event cannot revive intent.
+          membershipId:
+            args.membershipId ?? morningBriefEnrollments.membershipId,
+          updatedAt: currentTime,
+        },
+        setWhere: and(
+          args.membershipId
+            ? or(
+                isNull(morningBriefEnrollments.membershipId),
+                eq(morningBriefEnrollments.membershipId, args.membershipId),
+              )
+            : undefined,
+          inArray(morningBriefEnrollments.state, [
+            "checking",
+            "pending",
+            "ineligible",
+            "departed",
+          ]),
+        ),
+      });
+    signal.throwIfAborted();
+    const [installation] = await db
+      .select({ slackWorkspaceId: slackOrgInstallations.slackWorkspaceId })
+      .from(slackOrgInstallations)
+      .where(eq(slackOrgInstallations.orgId, args.orgId))
+      .limit(1);
+    signal.throwIfAborted();
+
+    if (installation) {
+      const connections = await db
+        .select({ id: slackOrgConnections.id })
+        .from(slackOrgConnections)
+        .where(
+          and(
+            eq(slackOrgConnections.userId, args.userId),
+            eq(
+              slackOrgConnections.slackWorkspaceId,
+              installation.slackWorkspaceId,
+            ),
           ),
+        );
+      signal.throwIfAborted();
+
+      if (connections.length > 0) {
+        await db.delete(slackOrgConnections).where(
+          inArray(
+            slackOrgConnections.id,
+            connections.map((connection) => {
+              return connection.id;
+            }),
+          ),
+        );
+        signal.throwIfAborted();
+      }
+    }
+
+    await db
+      .delete(orgMembersCache)
+      .where(
+        and(
+          eq(orgMembersCache.userId, args.userId),
+          eq(orgMembersCache.orgId, args.orgId),
         ),
       );
     signal.throwIfAborted();
 
-    if (connections.length > 0) {
-      await db.delete(slackOrgConnections).where(
-        inArray(
-          slackOrgConnections.id,
-          connections.map((connection) => {
-            return connection.id;
-          }),
+    await db
+      .delete(orgMembersMetadata)
+      .where(
+        and(
+          eq(orgMembersMetadata.userId, args.userId),
+          eq(orgMembersMetadata.orgId, args.orgId),
         ),
       );
-      signal.throwIfAborted();
-    }
-  }
+    signal.throwIfAborted();
 
-  await db
-    .delete(orgMembersCache)
-    .where(
-      and(
-        eq(orgMembersCache.userId, args.userId),
-        eq(orgMembersCache.orgId, args.orgId),
-      ),
-    );
-  signal.throwIfAborted();
-
-  await db
-    .delete(orgMembersMetadata)
-    .where(
-      and(
-        eq(orgMembersMetadata.userId, args.userId),
-        eq(orgMembersMetadata.orgId, args.orgId),
-      ),
-    );
-  signal.throwIfAborted();
-
-  await db
-    .delete(userDisabledPaidTools)
-    .where(
-      and(
-        eq(userDisabledPaidTools.userId, args.userId),
-        eq(userDisabledPaidTools.orgId, args.orgId),
-      ),
-    );
-  signal.throwIfAborted();
-}
+    await db
+      .delete(userDisabledPaidTools)
+      .where(
+        and(
+          eq(userDisabledPaidTools.userId, args.userId),
+          eq(userDisabledPaidTools.orgId, args.orgId),
+        ),
+      );
+    signal.throwIfAborted();
+  },
+);
 
 async function revokeOrgMemberRunAuthority(
   db: Db,
@@ -185,12 +197,6 @@ async function revokeOrgMemberRunAuthority(
   // best-effort runner notification or the remaining member resource cleanup.
   const revokedAt = nowDate();
   const { cancelled, releasedSlots } = await db.transaction(async (tx) => {
-    // Cleanup scope ownership precedes Run and all other business-row locks.
-    await eraseVncOwner(tx, {
-      kind: "owner",
-      orgId: args.orgId,
-      userId: args.userId,
-    });
     // Native schedule authority is the first Morning Brief business lock. The
     // same order is used by admission, delivery, thread/Agent deletion and the
     // remaining cleanup writers below.
