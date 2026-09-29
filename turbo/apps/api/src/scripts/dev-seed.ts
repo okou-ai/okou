@@ -143,13 +143,6 @@ const GPT_5_6_SOL_PRICING: readonly UsagePricingRow[] = [
   ["tokens.output", usd(30), 1_000_000],
 ];
 
-const GPT_5_6_TERRA_PRICING: readonly UsagePricingRow[] = [
-  ["tokens.input", usd(2), 1_000_000],
-  ["tokens.cache_read", usd(0.2), 1_000_000],
-  ["tokens.cache_creation", usd(2.5), 1_000_000],
-  ["tokens.output", usd(12), 1_000_000],
-];
-
 const GPT_5_6_LUNA_PRICING: readonly UsagePricingRow[] = [
   ["tokens.input", usd(0.2), 1_000_000],
   ["tokens.cache_read", usd(0.02), 1_000_000],
@@ -492,17 +485,10 @@ export const USAGE_PRICING: readonly (typeof usagePricing.$inferInsert)[] = [
   // OpenAI API pricing retrieved 2026-07-31 from:
   // https://developers.openai.com/api/docs/pricing
   ...usageGroup("model", "gpt-5.6-sol", GPT_5_6_SOL_USAGE_PRICING),
-  ...usageGroup(
-    "model",
-    "gpt-5.6-terra",
-    withFastPricing(withLongContextPricing(GPT_5_6_TERRA_PRICING, 2, 1.5)),
-  ),
   ...usageGroup("model", "gpt-5.6-luna", GPT_5_6_LUNA_USAGE_PRICING),
   // Development pricing is intentionally local seed data. Production pricing
   // is copied from the target database's current GPT rows by migration 1194.
   ...usageGroup("model", "okou-1.0", GPT_5_6_LUNA_USAGE_PRICING),
-  ...usageGroup("model", "okou-1.0-pro", GPT_5_6_SOL_USAGE_PRICING),
-  ...usageGroup("model", "okou-1.0-max", GPT_5_6_SOL_USAGE_PRICING),
   ...usageGroup(
     "model",
     "gpt-5.5",

@@ -75,7 +75,7 @@ fn pi_model_config_v2_for_test(dialect: &str) -> serde_json::Value {
             "transport": "sse",
             "provider": "openai-codex",
             "baseUrl": "https://chatgpt.com/backend-api",
-            "model": "gpt-5.6-terra",
+            "model": "gpt-6-luna",
             "thinkingLevel": "low",
             "credentialBindings": [
                 {
@@ -97,7 +97,7 @@ fn pi_model_config_v2_for_test(dialect: &str) -> serde_json::Value {
         "transport": "sse",
         "provider": "openai",
         "baseUrl": "https://api.openai.com/v1",
-        "model": "gpt-5.6-terra",
+        "model": "gpt-6-luna",
         "thinkingLevel": "low",
         "credentialBindings": [{
             "kind": "api-key",

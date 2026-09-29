@@ -150,6 +150,25 @@ async function fixture(
 
 type Fixture = Awaited<ReturnType<typeof fixture>>;
 
+async function routedModelFixture(owner = actor()): Promise<Fixture> {
+  mockDiscordMemberships(context, [owner]);
+  await configureModelPreferences({ owner });
+  const agent = await accountApi.createAgent(owner, {
+    displayName: "Model picker thread agent",
+  });
+  const thread = await createChatFilesBddApi(context).createThread(owner, {
+    agentId: agent.agentId,
+    model: "claude-fable-5-1",
+  });
+  const channelId = uniqueDiscordSnowflake();
+  return await fixture(owner, uniqueDiscordSnowflake(), {
+    chatThreadId: thread.id,
+    channelId,
+    messageId: channelId,
+    messageText: "Start the routed model picker thread",
+  });
+}
+
 function guildSender(scope: Fixture): DiscordSender {
   return {
     discordUserId: scope.binding.discordUserId,
@@ -585,13 +604,8 @@ describe("Discord account preferences through private controls", () => {
     ).toStrictEqual([first.binding.connectionId]);
 
     const models = await discord.send(commandPayload(sender, "model"));
-    expect(preselected(models)).toStrictEqual(["claude-fable-5-1"]);
-    await discord.send(
-      selectPayload(sender, selectMenu(models).custom_id, "gpt-6-astra"),
-    );
-    expect(
-      preselected(await discord.send(commandPayload(sender, "model"))),
-    ).toStrictEqual(["gpt-6-astra"]);
+    expect(models.content).toContain("existing Okou conversation");
+    expect(models.components).toStrictEqual([]);
   });
 
   it("switches the routed server thread the model picker runs in", async () => {
@@ -624,11 +638,9 @@ describe("Discord account preferences through private controls", () => {
       selectPayload(sender, menu.custom_id, "gpt-6-astra"),
     );
 
-    expect(selected.content).toContain(
-      "Model selected for this conversation and new conversations",
-    );
+    expect(selected.content).toContain("Model selected for this conversation");
     const after = await accept(preference.get({ headers }), [200]);
-    expect(after.body.selectedModel).toBe("gpt-6-astra");
+    expect(after.body.selectedModel).toBeNull();
     expect(
       (await chat.readThreadMetadata(owner, thread.id)).selectedModel,
     ).toBe("gpt-6-astra");
@@ -645,8 +657,8 @@ describe("Discord account preferences through private controls", () => {
     );
   });
 
-  it("rechecks model policy after a picker is issued and preserves the current allowed preference", async () => {
-    const scope = await fixture();
+  it("rechecks model policy after a picker is issued without changing the member preference", async () => {
+    const scope = await routedModelFixture();
     const { headers, policies, preference, defaultPolicy } =
       await configureModelPreferences(scope);
     const discord = discordHttp([scope]);
@@ -662,9 +674,9 @@ describe("Discord account preferences through private controls", () => {
     const selected = await discord.send(
       selectPayload(sender, menu.custom_id, "gpt-6-astra"),
     );
-    expect(selected.content).toContain("Model selected for new conversations");
+    expect(selected.content).toContain("Model selected for this conversation");
     const before = await accept(preference.get({ headers }), [200]);
-    expect(before.body.selectedModel).toBe("gpt-6-astra");
+    expect(before.body.selectedModel).toBeNull();
     const current = await accept(policies.list({ headers }), [200]);
     await accept(
       policies.update({
@@ -679,13 +691,16 @@ describe("Discord account preferences through private controls", () => {
     );
 
     expect(rejected.content).toContain("no longer have access to that model");
+    expect(
+      preselected(await discord.send(commandPayload(sender, "model"))),
+    ).toStrictEqual(["claude-fable-5-1"]);
     const after = await accept(preference.get({ headers }), [200]);
-    expect(after.body.selectedModel).toBe("claude-fable-5-1");
+    expect(after.body.selectedModel).toBeNull();
   });
   it.each(["sender", "channel", "expired"] as const)(
     "rejects a signed control with changed %s context",
     async (changed) => {
-      const scope = await fixture();
+      const scope = await routedModelFixture();
       const { headers, preference } = await configureModelPreferences(scope);
       const discord = discordHttp([scope]);
       const sender = guildSender(scope);
@@ -714,12 +729,12 @@ describe("Discord account preferences through private controls", () => {
 
       expect(rejected.content).toContain("expired or your access has changed");
       const after = await accept(preference.get({ headers }), [200]);
-      expect(after.body.selectedModel).toBe("claude-fable-5-1");
+      expect(after.body.selectedModel).toBeNull();
     },
   );
 
   it("applies no selection when Discord's acknowledgement is uncertain", async () => {
-    const scope = await fixture();
+    const scope = await routedModelFixture();
     await configureModelPreferences(scope);
     const discord = discordHttp([scope]);
     const sender = guildSender(scope);
@@ -762,7 +777,7 @@ describe("Discord account preferences through private controls", () => {
   ] as const)(
     "rejects a model selection revoked by %s during access revalidation",
     async (revocation) => {
-      const scope = await fixture();
+      const scope = await routedModelFixture();
       const { headers, policies, preference, defaultPolicy } =
         await configureModelPreferences(scope);
       const discord = discordHttp([scope]);
@@ -839,11 +854,11 @@ describe("Discord account preferences through private controls", () => {
       );
       expect(revoked).toBeTruthy();
       expect(rejected.content).not.toContain(
-        "Model selected for new conversations",
+        "Model selected for this conversation",
       );
       expect(rejected.components).toStrictEqual([]);
       const after = await accept(preference.get({ headers }), [200]);
-      expect(after.body.selectedModel).toBe("claude-fable-5-1");
+      expect(after.body.selectedModel).toBeNull();
     },
   );
 });

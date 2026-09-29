@@ -415,7 +415,7 @@ export async function insertPhase2CandidatesWithSources(
         triggerSource: "web",
         autonomyBudget: 0,
         prompt: "Historical interactive source",
-        selectedModel: "gpt-5.6-terra",
+        selectedModel: "gpt-6-luna",
         ...binding,
       });
     onTestFinished(async () => {

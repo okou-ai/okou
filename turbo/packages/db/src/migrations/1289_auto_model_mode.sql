@@ -1,2 +1,0 @@
-ALTER TABLE "org_metadata" ADD COLUMN "model_mode" varchar(6) DEFAULT 'custom' NOT NULL;--> statement-breakpoint
-ALTER TABLE "org_metadata" ADD CONSTRAINT "chk_org_metadata_model_mode" CHECK ("org_metadata"."model_mode" IN ('auto', 'custom'));

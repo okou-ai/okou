@@ -37,6 +37,13 @@ export const vncTrustSchema = z.discriminatedUnion("mode", [
     .strict(),
 ]);
 
+const vncX509NoneSecurityVariantSchema = z
+  .object({
+    type: z.literal("x509_none"),
+    trust: vncTrustSchema,
+    serverName: hostSchema.optional(),
+  })
+  .strict();
 const vncX509VncSecurityVariantSchema = z
   .object({
     type: z.literal("x509_vnc"),
@@ -71,7 +78,16 @@ export const vncX509VncSecuritySchema = z.discriminatedUnion("type", [
 export const vncX509PlainSecuritySchema = z.discriminatedUnion("type", [
   vncX509PlainSecurityVariantSchema,
 ]);
+const vncCredentialSecuritySchema = z.discriminatedUnion("type", [
+  vncX509VncSecurityVariantSchema,
+  vncX509PlainSecurityVariantSchema,
+  vncAppleVncPasswordSecurityVariantSchema,
+  vncAppleDhSecurityVariantSchema,
+  vncAppleSrpSecurityVariantSchema,
+  vncAppleRsaSrpSecurityVariantSchema,
+]);
 export const vncSecuritySchema = z.discriminatedUnion("type", [
+  vncX509NoneSecurityVariantSchema,
   vncX509VncSecurityVariantSchema,
   vncX509PlainSecurityVariantSchema,
   vncAppleVncPasswordSecurityVariantSchema,
@@ -80,13 +96,18 @@ export const vncSecuritySchema = z.discriminatedUnion("type", [
   vncAppleRsaSrpSecurityVariantSchema,
 ]);
 
+export const vncConnectionCredentialSchema = z.union([
+  vncCredentialSelectionSchema,
+  z.object({ type: z.literal("none") }).strict(),
+]);
+
 export const createVncConnectionRequestSchema = z
   .object({
     id: z.uuid(),
     displayName: displayNameSchema,
     host: hostSchema,
     port: portSchema.default(5900),
-    credential: vncCredentialSelectionSchema,
+    credential: vncConnectionCredentialSchema,
     security: vncSecuritySchema,
     transport: vncTransportSchema.optional(),
   })
@@ -98,7 +119,7 @@ export const updateVncConnectionRequestSchema = z
     displayName: displayNameSchema.optional(),
     host: hostSchema.optional(),
     port: portSchema.optional(),
-    credential: vncCredentialSelectionSchema.optional(),
+    credential: vncConnectionCredentialSchema.optional(),
     security: vncSecuritySchema.optional(),
     transport: vncTransportSchema.optional(),
   })
@@ -129,16 +150,24 @@ export const vncConnectionMetadataSchema = z
     port: portSchema,
     credentialId: z.uuid(),
     credentialName: z.string(),
-    security: vncSecuritySchema,
+    security: vncCredentialSecuritySchema,
     generation: generationSchema,
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
   })
   .strict();
 
+const vncCredentiallessMetadataSchema = vncConnectionMetadataSchema
+  .omit({ credentialId: true, credentialName: true, security: true })
+  .extend({
+    credential: z.object({ type: z.literal("none") }).strict(),
+    security: vncX509NoneSecurityVariantSchema,
+  });
 export const vncConnectionResponseSchema = z.union([
   vncConnectionMetadataSchema,
   vncConnectionMetadataSchema.extend({ transport: sshTransportSchema }),
+  vncCredentiallessMetadataSchema,
+  vncCredentiallessMetadataSchema.extend({ transport: sshTransportSchema }),
 ]);
 
 export const vncConnectionsListResponseSchema = z

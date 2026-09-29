@@ -1,6 +1,9 @@
 import { command } from "ccstate";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
+import { and, eq } from "drizzle-orm";
 
-import { writeDb$ } from "../external/db";
+import { writeDb$, type Db } from "../external/db";
+import { resolveEnqueuedChatInputModel } from "./chat-input-model.service";
 import { publishThreadListChanged } from "../external/realtime";
 import { updateChatThreadMetadata } from "./chat-thread-metadata-update.service";
 
@@ -11,9 +14,42 @@ type IntegrationChatThreadModelResult =
 
 /**
  * Apply an integration `/model` choice to the conversation's existing chat
- * thread through the same metadata path as the web thread model picker. A
- * conversation without a routed thread keeps only the member default.
+ * thread through the same metadata path as the web thread model picker.
+ * A conversation without a routed thread has no model selection to update.
  */
+export async function readIntegrationChatThreadModel(
+  db: Db,
+  args: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly chatThreadId: string | undefined;
+  },
+): Promise<string | null> {
+  if (!args.chatThreadId) {
+    return null;
+  }
+  const [thread] = await db
+    .select({ id: chatThreads.id })
+    .from(chatThreads)
+    .where(
+      and(
+        eq(chatThreads.id, args.chatThreadId),
+        eq(chatThreads.userId, args.userId),
+      ),
+    )
+    .limit(1);
+  if (!thread) {
+    return null;
+  }
+  return (
+    await resolveEnqueuedChatInputModel(db, {
+      threadId: thread.id,
+      orgId: args.orgId,
+      userId: args.userId,
+    })
+  ).selectedModel;
+}
+
 export const updateIntegrationChatThreadModel$ = command(
   async (
     { set },

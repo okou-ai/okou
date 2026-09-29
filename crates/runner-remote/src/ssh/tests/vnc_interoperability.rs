@@ -29,6 +29,7 @@ const TIGERVNC_PACKAGE_VERSION: &str = "1.13.1+dfsg-2build2";
 
 #[derive(Clone, Copy)]
 enum Security {
+    None,
     Vnc,
     Plain,
 }
@@ -36,6 +37,7 @@ enum Security {
 impl Security {
     const fn fixture_name(self) -> &'static str {
         match self {
+            Self::None => "X509None",
             Self::Vnc => "X509Vnc",
             Self::Plain => "X509Plain",
         }
@@ -43,8 +45,17 @@ impl Security {
 
     const fn api_name(self) -> &'static str {
         match self {
+            Self::None => "x509_none",
             Self::Vnc => "x509_vnc",
             Self::Plain => "x509_plain",
+        }
+    }
+
+    const fn subtype(self) -> u32 {
+        match self {
+            Self::None => 260,
+            Self::Vnc => 261,
+            Self::Plain => 262,
         }
     }
 }
@@ -101,6 +112,24 @@ impl TigerVnc {
                 .unwrap();
         assert!(length > 0, "TigerVNC fixture exited before replying");
         serde_json::from_str(&line).unwrap()
+    }
+
+    async fn selected_subtype(&mut self, security: Security) {
+        self.input
+            .write_all(b"{\"command\":\"closed\"}\n")
+            .await
+            .unwrap();
+        self.input.flush().await.unwrap();
+        let log = self.read().await;
+        let expected = format!(
+            "Client requests security type {} ({})",
+            security.fixture_name(),
+            security.subtype()
+        );
+        assert!(
+            log["log"].as_str().unwrap().contains(&expected),
+            "TigerVNC did not observe {expected}: {log}"
+        );
     }
 
     async fn stop(mut self) {
@@ -188,7 +217,7 @@ async fn installed_openssh_tigervnc_vnc_transport_acceptance() {
     eprintln!("openssh_server_version={}", required("VNC_OPENSSH_VERSION"));
     tokio::time::timeout(Duration::from_secs(240), async {
         for password in [true, false] {
-            for security in [Security::Vnc, Security::Plain] {
+            for security in [Security::None, Security::Vnc, Security::Plain] {
                 eprintln!(
                     "matrix_case_start: ssh={} vnc={}",
                     if password { "password" } else { "public-key" },
@@ -208,7 +237,7 @@ async fn installed_openssh_tigervnc_vnc_transport_acceptance() {
 }
 
 async fn run_case(password: bool, security: Security) {
-    let fixture = TigerVnc::start(security).await;
+    let mut fixture = TigerVnc::start(security).await;
     let ssh_port = required("VNC_OPENSSH_PORT").parse::<u16>().unwrap();
     let mut harness = Harness::new(Reply::default()).await;
     *harness.network.target.lock().unwrap() =
@@ -232,6 +261,7 @@ async fn run_case(password: bool, security: Security) {
 
     let ssh_resolve = harness.resolve(ssh_credential(password)).await;
     let authentication = match security {
+        Security::None => json!({"method":"none"}),
         Security::Vnc => json!({"method":"vnc_password","password":"testpass"}),
         Security::Plain => json!({
             "method":"username_password",
@@ -262,8 +292,10 @@ async fn run_case(password: bool, security: Security) {
                         "heartbeatGeneration":27
                     },
                     "supportedProfiles":[
+                        {"authMethod":"none","securityType":"x509_none","transportType":"direct"},
                         {"authMethod":"vnc_password","securityType":"x509_vnc","transportType":"direct"},
                         {"authMethod":"username_password","securityType":"x509_plain","transportType":"direct"},
+                        {"authMethod":"none","securityType":"x509_none","transportType":"ssh"},
                         {"authMethod":"vnc_password","securityType":"x509_vnc","transportType":"ssh"},
                         {"authMethod":"username_password","securityType":"x509_plain","transportType":"ssh"},
                         {"authMethod":"vnc_password","securityType":"apple_vnc_password","transportType":"ssh"},
@@ -355,5 +387,6 @@ async fn run_case(password: bool, security: Security) {
     vnc_resolve.assert_calls_async(1).await;
     assert!(vnc_check.calls_async().await >= 3);
     harness.shutdown().await;
+    fixture.selected_subtype(security).await;
     fixture.stop().await;
 }

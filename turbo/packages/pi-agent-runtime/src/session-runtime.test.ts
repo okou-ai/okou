@@ -18,13 +18,13 @@ import type { PiPreparationObservation } from "./preparation-timing";
 import type { PiAgentModelConfig, PiAgentRequestHeaders } from "./types";
 import { materializePiAgentModelConfig } from "./credential";
 
-const GPT_MODELS = ["gpt-5.6-terra", "gpt-5.6-sol", "gpt-5.6-luna"] as const;
+const GPT_MODELS = ["gpt-6-luna", "gpt-5.6-sol", "gpt-5.6-luna"] as const;
 
-const TERRA_MODEL = {
+const LUNA_MODEL = {
   provider: "openai" as const,
   baseUrl: "https://api.openai.com/v1",
   apiKey: "test-key",
-  model: "gpt-5.6-terra",
+  model: "gpt-6-luna",
   dialect: "openai-responses" as const,
   transport: "sse" as const,
   thinkingLevel: "max" as const,
@@ -180,7 +180,7 @@ async function registeredToolSchemas(
     cwd: "/home/user/workspace",
     agentDir: "/home/user/.pi/agent",
     sessionManager,
-    model: TERRA_MODEL,
+    model: LUNA_MODEL,
     appendSystemPrompt: null,
     resourceSnapshot,
   });
@@ -230,8 +230,8 @@ const CUSTOM_GATEWAY_CREDENTIAL_CASES: ReadonlyArray<{
 ];
 
 function responsesTextSse(response: ServerResponse, text: string): void {
-  const responseId = "resp_terra_sandbox";
-  const messageId = "msg_terra_sandbox";
+  const responseId = "resp_luna_sandbox";
+  const messageId = "msg_luna_sandbox";
   const events = [
     {
       type: "response.created",
@@ -308,8 +308,8 @@ function responsesToolSse(
     readonly arguments: Record<string, unknown>;
   },
 ): void {
-  const responseId = "resp_terra_sandbox_tool";
-  const itemId = "fc_terra_sandbox_tool";
+  const responseId = "resp_luna_sandbox_tool";
+  const itemId = "fc_luna_sandbox_tool";
   const functionArguments = JSON.stringify(args.arguments);
   const item = {
     type: "function_call",
@@ -476,7 +476,7 @@ describe("official Pi AgentSession runtime", () => {
       ],
       api: "openai-completions",
       provider: "openrouter",
-      model: "openai/gpt-5.6-terra",
+      model: "openai/gpt-6-luna",
       usage: {
         input: 4,
         output: 3,
@@ -507,7 +507,7 @@ describe("official Pi AgentSession runtime", () => {
       content: [{ type: "text", text: "legacy tool conclusion" }],
       api: "openai-completions",
       provider: "openrouter",
-      model: "openai/gpt-5.6-terra",
+      model: "openai/gpt-6-luna",
       usage: {
         input: 2,
         output: 2,
@@ -535,7 +535,7 @@ describe("official Pi AgentSession runtime", () => {
         provider: "openrouter",
         baseUrl: provider.baseUrl,
         apiKey: "test-key",
-        model: "openai/gpt-5.6-terra",
+        model: "openai/gpt-6-luna",
         dialect: "openai-responses",
         transport: "sse",
         thinkingLevel: "low",
@@ -569,7 +569,7 @@ describe("official Pi AgentSession runtime", () => {
       });
       const sessionJsonl = await readFile(sessionFile, "utf8");
       expect(inspectPiSessionJsonl(sessionJsonl)).toMatchObject({
-        messageCount: 6,
+        messageCount: 7,
         hasPendingToolCalls: false,
         isSettledCheckpoint: true,
       });
@@ -606,7 +606,7 @@ describe("official Pi AgentSession runtime", () => {
         sessionManager: SessionManager.inMemory(join(root, "workspace"), {
           id: randomUUID(),
         }),
-        model: TERRA_MODEL,
+        model: LUNA_MODEL,
         appendSystemPrompt: mode === "preheated" ? callerPrompt : null,
         resourceSnapshot:
           mode === "preheated" ? EMPTY_RESOURCE_SNAPSHOT : undefined,
@@ -684,8 +684,8 @@ describe("official Pi AgentSession runtime", () => {
       onTestFinished(async () => {
         await rm(cwd, { recursive: true, force: true });
       });
-      const toolFile = join(cwd, "terra.txt");
-      await writeFile(toolFile, "Terra tool result", "utf8");
+      const toolFile = join(cwd, "luna.txt");
+      await writeFile(toolFile, "Luna tool result", "utf8");
       const provider = await startResponsesProvider(
         (response, requestNumber) => {
           if (requestNumber === 1) {
@@ -789,10 +789,10 @@ describe("official Pi AgentSession runtime", () => {
           expect(request.body).not.toHaveProperty("previous_response_id");
         }
         expect(JSON.stringify(provider.requests[0]?.body)).not.toContain(
-          "Terra tool result",
+          "Luna tool result",
         );
         for (const request of provider.requests.slice(1)) {
-          expect(JSON.stringify(request.body)).toContain("Terra tool result");
+          expect(JSON.stringify(request.body)).toContain("Luna tool result");
         }
         expect(
           created.session.messages.filter((message) => {
@@ -802,7 +802,7 @@ describe("official Pi AgentSession runtime", () => {
           {
             toolName: "read",
             isError: false,
-            content: [{ type: "text", text: "Terra tool result" }],
+            content: [{ type: "text", text: "Luna tool result" }],
           },
         ]);
         expect(created.session.messages.at(-1)).toMatchObject({
@@ -1125,7 +1125,7 @@ describe("official Pi AgentSession runtime", () => {
       cwd: root,
       agentDir: join(root, ".pi"),
       sessionManager,
-      model: { ...TERRA_MODEL, baseUrl: provider.baseUrl },
+      model: { ...LUNA_MODEL, baseUrl: provider.baseUrl },
       appendSystemPrompt: null,
       memoryRoot: root,
       memoryRecall: {
@@ -1182,7 +1182,7 @@ describe("official Pi AgentSession runtime", () => {
       cwd: "/home/user/workspace",
       agentDir: "/home/user/.pi/agent",
       sessionManager: absentSessionManager,
-      model: TERRA_MODEL,
+      model: LUNA_MODEL,
       appendSystemPrompt: null,
     });
     try {
@@ -1202,7 +1202,7 @@ describe("official Pi AgentSession runtime", () => {
       cwd: "/home/user/workspace",
       agentDir: "/home/user/.pi/agent",
       sessionManager,
-      model: TERRA_MODEL,
+      model: LUNA_MODEL,
       appendSystemPrompt: null,
       memoryRoot: join(tmpdir(), `missing-pi-memory-${randomUUID()}`),
       memoryRecall: {
@@ -1243,7 +1243,7 @@ describe("official Pi AgentSession runtime", () => {
       cwd: "/home/user/workspace",
       agentDir: "/home/user/.pi/agent",
       sessionManager,
-      model: TERRA_MODEL,
+      model: LUNA_MODEL,
       appendSystemPrompt: null,
       memoryRoot: root,
       memoryRecall: {
@@ -1309,12 +1309,12 @@ describe("official Pi AgentSession runtime", () => {
             baseUrl: provider.baseUrl,
             apiKeyEnv: "OPENAI_API_KEY",
             credentialSecretName: "OPENAI_API_KEY",
-            thinkingLevel: TERRA_MODEL.thinkingLevel,
+            thinkingLevel: LUNA_MODEL.thinkingLevel,
             ...(serviceTier === undefined ? {} : { serviceTier }),
           }),
           target: "sandbox-firewall",
           resolveCredential: () => {
-            return TERRA_MODEL.apiKey;
+            return LUNA_MODEL.apiKey;
           },
         }),
         appendSystemPrompt: null,
@@ -1450,7 +1450,7 @@ describe("official Pi AgentSession runtime", () => {
       cwd: "/home/user/workspace",
       agentDir: "/home/user/.pi/agent",
       sessionManager,
-      model: TERRA_MODEL,
+      model: LUNA_MODEL,
       appendSystemPrompt: "Caller instructions stay authoritative.",
       resourceSnapshot: {
         schemaVersion: 2,
@@ -1505,7 +1505,7 @@ describe("official Pi AgentSession runtime", () => {
       cwd: "/home/user/workspace",
       agentDir: "/home/user/.pi/agent",
       sessionManager,
-      model: TERRA_MODEL,
+      model: LUNA_MODEL,
       appendSystemPrompt: "Caller instructions stay authoritative.",
       memoryRoot,
       memoryRecall: {
@@ -1545,7 +1545,7 @@ describe("official Pi AgentSession runtime", () => {
     }
   });
 
-  it("uses Terra max thinking for a fresh session", async () => {
+  it("uses Luna max thinking for a fresh session", async () => {
     const sessionManager = SessionManager.inMemory("/home/user/workspace", {
       id: "00000000-0000-4000-8000-000000000124",
     });
@@ -1553,7 +1553,7 @@ describe("official Pi AgentSession runtime", () => {
       cwd: "/home/user/workspace",
       agentDir: "/home/user/.pi/agent",
       sessionManager,
-      model: TERRA_MODEL,
+      model: LUNA_MODEL,
       appendSystemPrompt: null,
       resourceSnapshot: EMPTY_RESOURCE_SNAPSHOT,
     });
@@ -1587,7 +1587,7 @@ describe("official Pi AgentSession runtime", () => {
       cwd: "/home/user/workspace",
       agentDir: "/home/user/.pi/agent",
       sessionManager,
-      model: TERRA_MODEL,
+      model: LUNA_MODEL,
       appendSystemPrompt: null,
       resourceSnapshot: EMPTY_RESOURCE_SNAPSHOT,
     });
@@ -1612,13 +1612,13 @@ describe("Pi session credential storage", () => {
   it.each([
     {
       name: "API snapshot",
-      model: TERRA_MODEL,
+      model: LUNA_MODEL,
       snapshot: EMPTY_RESOURCE_SNAPSHOT,
       defaultStore: false,
     },
     {
       name: "ordinary Sandbox",
-      model: TERRA_MODEL,
+      model: LUNA_MODEL,
       snapshot: undefined,
       defaultStore: true,
     },
@@ -1698,7 +1698,7 @@ describe("Okou Harness base system prompt", () => {
       cwd,
       agentDir: root,
       sessionManager: SessionManager.inMemory(cwd, { id: randomUUID() }),
-      model: TERRA_MODEL,
+      model: LUNA_MODEL,
       appendSystemPrompt: "Caller instructions stay appended.",
       ...(snapshot === undefined ? {} : { resourceSnapshot: snapshot }),
     });
@@ -1755,7 +1755,7 @@ describe("Okou Harness base system prompt", () => {
       cwd,
       agentDir: root,
       sessionManager: SessionManager.inMemory(cwd, { id: randomUUID() }),
-      model: TERRA_MODEL,
+      model: LUNA_MODEL,
       appendSystemPrompt: null,
       resourceSnapshot: EMPTY_RESOURCE_SNAPSHOT,
     });
@@ -1791,7 +1791,7 @@ describe("Pi 0.86.1 prompt cache warming", () => {
         cwd,
         agentDir: root,
         sessionManager: SessionManager.inMemory(cwd, { id: randomUUID() }),
-        model: TERRA_MODEL,
+        model: LUNA_MODEL,
         appendSystemPrompt: null,
         ...(withSnapshot
           ? { resourceSnapshot: readyMemorySnapshot("# Memory\n") }
@@ -1832,7 +1832,7 @@ describe("Pi session preparation observability", () => {
         sessionManager: SessionManager.inMemory(join(root, "workspace"), {
           id: randomUUID(),
         }),
-        model: TERRA_MODEL,
+        model: LUNA_MODEL,
         appendSystemPrompt: null,
         onPreparationTiming(observation: PiPreparationObservation) {
           observed.push(observation.phase);
@@ -1877,7 +1877,7 @@ describe("Pi session preparation observability", () => {
         sessionManager: SessionManager.inMemory(join(root, "workspace"), {
           id: randomUUID(),
         }),
-        model: TERRA_MODEL,
+        model: LUNA_MODEL,
         appendSystemPrompt: null,
         onPreparationTiming(observation) {
           observed.push(observation);

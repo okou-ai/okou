@@ -21,7 +21,6 @@ export const MODEL_PRODUCT_LINES = [
   "sonnet",
   "astra",
   "sol",
-  "terra",
   "luna",
   "flash",
   "pro",

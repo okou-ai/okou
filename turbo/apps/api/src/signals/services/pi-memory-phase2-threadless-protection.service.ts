@@ -1,7 +1,7 @@
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { piMemoryPhase2Jobs } from "@okouai/db/schema/pi-memory-phase2-job";
-import { and, eq, gt, inArray, notExists, sql } from "drizzle-orm";
+import { and, eq, gt, notExists, sql } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
 import {
   activePiMemoryPhase2MaintenanceRunCondition,
@@ -11,7 +11,6 @@ import {
   loadPiMemoryPhase2UsageBinding,
   piMemoryPhase2ProviderCondition,
   PI_MEMORY_PHASE2_USAGE_DRAIN_MS,
-  PI_MEMORY_PHASE2_MODELS,
 } from "./pi-memory-phase2-usage.service";
 import type { ThreadlessRunProtection } from "./threadless-run-protection.service";
 
@@ -60,7 +59,6 @@ export const piMemoryPhase2ThreadlessRunProtection: Readonly<ThreadlessRunProtec
                 ),
                 eq(agentRuns.triggerSource, "agent"),
                 piMemoryPhase2ProviderCondition(),
-                inArray(agentRuns.selectedModel, [...PI_MEMORY_PHASE2_MODELS]),
                 eq(sql`${agentRuns.launchSnapshot}->>'framework'`, "pi"),
                 gt(agentRuns.completedAt, usageQuietBefore),
               ),

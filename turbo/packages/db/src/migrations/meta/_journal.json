@@ -1482,15 +1482,15 @@
     {
       "idx": 1289,
       "version": "7",
-      "when": 1790679731707,
-      "tag": "1289_auto_model_mode",
+      "when": 1790677953790,
+      "tag": "1289_thick_bruce_banner",
       "breakpoints": true
     },
     {
       "idx": 1290,
       "version": "7",
-      "when": 1790686489029,
-      "tag": "1290_subscription_model_catalog",
+      "when": 1790688132634,
+      "tag": "1290_auto_subscription_catalog",
       "breakpoints": true
     }
   ]

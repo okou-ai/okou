@@ -36,7 +36,7 @@ const {
 } = createChatEventsFixture(context);
 
 describe("CHAT-02: model-first provider policies", () => {
-  it("preserves one Pi session while selecting Terra, Sol, Luna, and Terra again", async () => {
+  it("preserves one Pi session while selecting Luna, Sol, Luna, and Luna again", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     for (const model of GPT_PI_BDD_MODELS) {
       await seedBuiltInModelKey(model);
@@ -46,7 +46,7 @@ describe("CHAT-02: model-first provider policies", () => {
       GPT_PI_BDD_MODELS.map((model) => {
         return {
           model,
-          isDefault: model === "gpt-5.6-terra",
+          isDefault: model === "gpt-6-luna",
           defaultProviderType: "built-in",
           credentialScope: "org",
           modelProviderId: null,
@@ -59,7 +59,7 @@ describe("CHAT-02: model-first provider policies", () => {
     const checkpointObjects = mockPiCheckpointObjectStore();
     let threadId: string | undefined;
     let sessionId: string | null | undefined;
-    const models = [...GPT_PI_BDD_MODELS, "gpt-5.6-terra"] as const;
+    const models = [...GPT_PI_BDD_MODELS, "gpt-6-luna"] as const;
     for (const [index, model] of models.entries()) {
       const run = await sendChatRun(
         actor,
@@ -97,13 +97,13 @@ describe("CHAT-02: model-first provider policies", () => {
     }
   }, 90_000);
 
-  it("preserves generations across Terra Pi and fast Astra Codex boundaries", async () => {
+  it("preserves generations across Luna Pi and fast Astra Codex boundaries", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const orgId = actor.orgId;
     if (!orgId) {
       throw new Error("Expected entitled chat actor to have an org");
     }
-    const piModel = "gpt-5.6-terra";
+    const piModel = "gpt-6-luna";
     await seedBuiltInModelKey(piModel);
     await seedBuiltInModelKey("gpt-6-astra");
     await api.updateOrgModelPolicies(actor, [

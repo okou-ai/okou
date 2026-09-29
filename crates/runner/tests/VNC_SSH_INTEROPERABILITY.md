@@ -9,8 +9,10 @@ It covers this matrix:
 
 | Outer SSH authentication | Inner VNC profile |
 | ------------------------ | ----------------- |
+| Password                 | X509None          |
 | Password                 | X509Vnc           |
 | Password                 | X509Plain         |
+| Public key               | X509None          |
 | Public key               | X509Vnc           |
 | Public key               | X509Plain         |
 
@@ -37,7 +39,10 @@ VNC desktop, user, key, password, port or service configuration.
 OpenSSH protects the Runner-to-SSH-server hop. The `127.0.0.1:<ephemeral>` RFB
 destination is opened by that SSH server. TigerVNC independently presents a
 certificate for `localhost`; the Runner verifies that identity with the
-fixture-generated CA. No route substitution or raw-TCP fallback is permitted.
+fixture-generated CA. For X509None, TLS protects this Runner session but does
+not authenticate the VNC client or protect TigerVNC from other reachable
+clients. The test asserts TigerVNC selected the named subtype (260 for
+X509None). No route substitution or raw-TCP fallback is permitted.
 
 ## Prerequisites
 
@@ -279,8 +284,8 @@ Record all of the following against the exact PR head:
 
 - commit and test-binary SHA-256;
 - `dpkg-query` versions for both installed OpenSSH packages and pinned TigerVNC;
-- the four matrix cases and their start/status/capture/close result, including
-  each `matrix_case_destination` RFB port;
+- the six matrix cases and their start/status/capture/close result, selected
+  TigerVNC subtype and each `matrix_case_destination` RFB port;
 - the pinned host-key algorithm/fingerprint and non-secret loopback topology;
 - certificate identity `localhost` and exact forwarded RFB port;
 - test exit status;

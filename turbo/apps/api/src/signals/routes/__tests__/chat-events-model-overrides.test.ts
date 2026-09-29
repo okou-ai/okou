@@ -282,7 +282,7 @@ describe("CHAT-02: run-level model overrides", () => {
     ).flatMap((scenario) => {
       return GPT_PI_BDD_MODELS.flatMap((selectedModel) => {
         const routes =
-          selectedModel === "gpt-5.6-terra" && scenario.outcome === "completed"
+          selectedModel === "gpt-6-luna" && scenario.outcome === "completed"
             ? [false, true]
             : [false];
         return routes
@@ -296,7 +296,7 @@ describe("CHAT-02: run-level model overrides", () => {
           .filter(({ tier, outcome, organizationApi }) => {
             return (
               (tier === "fast" && outcome === "completed") ||
-              (selectedModel === "gpt-5.6-terra" &&
+              (selectedModel === "gpt-6-luna" &&
                 tier === undefined &&
                 !organizationApi) ||
               (selectedModel === "gpt-5.6-sol" && outcome === "failed") ||
@@ -342,7 +342,7 @@ describe("CHAT-02: run-level model overrides", () => {
       mockPiResourceArchiveDownloads();
       const checkpointObjects = mockPiCheckpointObjectStore();
 
-      const prompt = "use the Okou CLI through native subscription Terra";
+      const prompt = "use the Okou CLI through native subscription Luna";
       const run = await sendChatRun(actor, {
         agentId,
         prompt,

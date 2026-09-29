@@ -23,6 +23,7 @@ import { vncConnectionsRoutes } from "../../vnc-connections";
 import { updateFeatureSwitchesForUser } from "./feature-switches";
 import { createRouteMocks } from "./route-test";
 import { useSecretKmsProbe } from "./secret-kms-probe";
+import { requireVncCredentialId } from "./vnc-response";
 
 export const vncSessionHeaders = Object.freeze({
   authorization: "Bearer clerk-session",
@@ -225,7 +226,7 @@ export function createVncRuntimeApi(context: TestContext) {
       ...owner,
       ...running,
       connectionId: connection.body.id,
-      credentialId: connection.body.credentialId,
+      credentialId: requireVncCredentialId(connection.body),
     };
     return result;
   }

@@ -1,11 +1,7 @@
 // Codex 0.156.1 catalog snapshot for the exact GPT-6 backing models.
 import OKOU_CODEX_MODEL_MESSAGES from "./okou-codex-model-messages.json" with { type: "json" };
 
-export const OKOU_RUN_MODELS = [
-  "okou-1.0",
-  "okou-1.0-pro",
-  "okou-1.0-max",
-] as const;
+export const OKOU_RUN_MODELS = ["okou-1.0"] as const;
 
 export type OkouRunModel = (typeof OKOU_RUN_MODELS)[number];
 
@@ -107,20 +103,6 @@ export const OKOU_MODEL_METADATA = {
     presetModel: "@preset/okou-1-0",
     reasoningEffort: "max",
     codexPriority: 3,
-  }),
-  "okou-1.0-pro": defineOkouModel({
-    displayName: "Okou 1.0 Pro",
-    backingModel: "gpt-6-sol",
-    presetModel: "@preset/okou-1-0-pro",
-    reasoningEffort: "low",
-    codexPriority: 2,
-  }),
-  "okou-1.0-max": defineOkouModel({
-    displayName: "Okou 1.0 Max",
-    backingModel: "gpt-6-sol",
-    presetModel: "@preset/okou-1-0-max",
-    reasoningEffort: "high",
-    codexPriority: 2,
   }),
 } as const satisfies Record<OkouRunModel, OkouModelMetadata>;
 

@@ -238,69 +238,12 @@ function expectSlackEphemeral(
   }
 }
 
-interface SlackModalSelectState {
-  readonly triggerId: string | null;
-  readonly callbackId: string | null;
-  readonly privateMetadata: string | null;
-  readonly optionValues: readonly string[];
-  readonly optionLabels: readonly string[];
-  readonly initialOptionValue: string | null;
-}
-
 function readStringField(
   record: Record<string, unknown>,
   key: string,
 ): string | null {
   const value = record[key];
   return typeof value === "string" ? value : null;
-}
-
-function latestSlackModal(): SlackModalSelectState {
-  const call: unknown = context.mocks.slack.views.open.mock.calls.at(-1)?.[0];
-  if (!isRecord(call)) {
-    throw new Error("Expected Slack views.open to be called with a modal");
-  }
-  const view = isRecord(call.view) ? call.view : {};
-  const blocks = Array.isArray(view.blocks) ? view.blocks : [];
-  const optionValues: string[] = [];
-  const optionLabels: string[] = [];
-  let initialOptionValue: string | null = null;
-  for (const block of blocks) {
-    if (!isRecord(block) || !isRecord(block.element)) {
-      continue;
-    }
-    const element = block.element;
-    if (isRecord(element.initial_option)) {
-      initialOptionValue =
-        readStringField(element.initial_option, "value") ?? initialOptionValue;
-    }
-    if (!Array.isArray(element.options)) {
-      continue;
-    }
-    for (const option of element.options) {
-      if (!isRecord(option)) {
-        continue;
-      }
-      const value = readStringField(option, "value");
-      if (value !== null) {
-        optionValues.push(value);
-      }
-      const label = isRecord(option.text)
-        ? readStringField(option.text, "text")
-        : null;
-      if (label !== null) {
-        optionLabels.push(label);
-      }
-    }
-  }
-  return {
-    triggerId: readStringField(call, "trigger_id"),
-    callbackId: readStringField(view, "callback_id"),
-    privateMetadata: readStringField(view, "private_metadata"),
-    optionValues,
-    optionLabels,
-    initialOptionValue,
-  };
 }
 
 function uniqueSlackUserId(): string {
@@ -654,7 +597,7 @@ function mockPiResourceArchiveDownloads(
   );
 }
 
-type SlackPiModel = "gpt-5.6-terra" | "gpt-5.6-sol" | "gpt-5.6-luna";
+type SlackPiModel = "gpt-6-luna" | "gpt-5.6-sol" | "gpt-5.6-luna";
 
 interface SlackPiActorSetup {
   readonly selectedModel: SlackPiModel;
@@ -682,7 +625,7 @@ async function configureCanonicalSlackPiActor(
     actor,
     {
       type: "openai-api-key",
-      secret: "bdd-slack-terra-api-key",
+      secret: "bdd-slack-luna-api-key",
     },
   );
   await runs.updateOrgModelPolicies(actor, [
@@ -3170,7 +3113,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     });
   });
 
-  it.each(["gpt-5.6-terra", "gpt-5.6-sol", "gpt-5.6-luna"] as const)(
+  it.each(["gpt-6-luna", "gpt-5.6-sol", "gpt-5.6-luna"] as const)(
     "admits canonical Slack %s turns into one Pi session without duplicate ownership",
     async (selectedModel) => {
       const scenario = await establishCanonicalSlackHistory(
@@ -3631,6 +3574,22 @@ describe("INT-01: Slack app deep webhook flows", () => {
       if (!chatThreadId) {
         throw new Error("Expected the main Slack DM thread");
       }
+      const modelCommand = await integrations.postSlackCommand({
+        teamId,
+        userId: slackUserId,
+        channelId,
+        text: "model",
+        triggerId: "trigger-main-dm-model",
+      });
+      expect(modelCommand).toBe("");
+      expect(context.mocks.slack.views.open).toHaveBeenCalledWith(
+        expect.objectContaining({
+          trigger_id: "trigger-main-dm-model",
+          view: expect.objectContaining({
+            private_metadata: JSON.stringify({ channelId, chatThreadId }),
+          }),
+        }),
+      );
 
       const selectModel = await integrations.postSlackInteractive(
         integrations.modelPickerSubmission({
@@ -3638,6 +3597,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
           slackUserId,
           selectedValue: "gpt-6-astra",
           channelId,
+          chatThreadId,
         }),
       );
       expect(selectModel).toBe("");
@@ -3645,12 +3605,12 @@ describe("INT-01: Slack app deep webhook flows", () => {
         expect.objectContaining({
           channel: channelId,
           user: slackUserId,
-          text: "Switched to *GPT 6 Astra* for this conversation and new Slack threads.",
+          text: "Switched to *GPT 6 Astra* for this conversation.",
         }),
       );
       await expect(
         integrations.readUserModelPreference(actor),
-      ).resolves.toMatchObject({ selectedModel: "gpt-6-astra" });
+      ).resolves.toMatchObject({ selectedModel: null });
       expect(
         (await chat.readThreadMetadata(actor, chatThreadId)).selectedModel,
       ).toBe("gpt-6-astra");
@@ -4662,17 +4622,10 @@ describe("INT-01: Slack app deep webhook flows", () => {
       text: "model",
       triggerId: "trigger-bdd-model",
     });
-    expect(modelResponse).toBe("");
-    const modelModal = latestSlackModal();
-    expect(modelModal.triggerId).toBe("trigger-bdd-model");
-    expect(modelModal.callbackId).toBe("model_preference_modal");
-    expect(modelModal.privateMetadata).toBe(
-      JSON.stringify({ channelId: "C_BDD_CMD" }),
+    expect(JSON.stringify(modelResponse)).toContain(
+      "existing Okou Slack main DM conversation",
     );
-    expect(modelModal.optionLabels).toContainEqual(
-      expect.stringContaining("(workspace default)"),
-    );
-    expect(modelModal.initialOptionValue).toBe("gpt-6-luna");
+    expect(context.mocks.slack.views.open).not.toHaveBeenCalled();
 
     const disconnected = await integrations.postSlackCommand({
       teamId,
@@ -4766,7 +4719,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     expect(context.mocks.slack.views.open).not.toHaveBeenCalled();
   });
 
-  it("persists Slack model picker selections through interactive submissions", async () => {
+  it("rejects stale Slack picker submissions without a routed main DM", async () => {
     const actor = bdd.user();
     bdd.acceptAgentStorageWrites();
     integrations.configureSlackAppMocks();
@@ -4789,18 +4742,17 @@ describe("INT-01: Slack app deep webhook flows", () => {
         channelId: "C_BDD_PICK",
       }),
     );
-    expect(selectModel).toBe("");
-    expect(context.mocks.slack.chat.postEphemeral).toHaveBeenCalledWith(
-      expect.objectContaining({
-        channel: "C_BDD_PICK",
-        user: slackUserId,
-        text: "Switched to *GPT 6 Astra* for new Slack threads.",
-      }),
-    );
+    expect(selectModel).toMatchObject({
+      response_action: "errors",
+      errors: {
+        model_select_block: expect.stringContaining("out of date"),
+      },
+    });
+    expect(context.mocks.slack.chat.postEphemeral).not.toHaveBeenCalled();
     await expect(
       integrations.readUserModelPreference(actor),
     ).resolves.toMatchObject({
-      selectedModel: "gpt-6-astra",
+      selectedModel: null,
     });
 
     const replaceModel = await integrations.postSlackInteractive(
@@ -4811,11 +4763,11 @@ describe("INT-01: Slack app deep webhook flows", () => {
         channelId: "C_BDD_PICK",
       }),
     );
-    expect(replaceModel).toBe("");
+    expect(replaceModel).toMatchObject({ response_action: "errors" });
     await expect(
       integrations.readUserModelPreference(actor),
     ).resolves.toMatchObject({
-      selectedModel: "gpt-6-luna",
+      selectedModel: null,
     });
 
     const rejectedModel = await integrations.postSlackInteractive(
@@ -4826,14 +4778,11 @@ describe("INT-01: Slack app deep webhook flows", () => {
         channelId: "C_BDD_PICK",
       }),
     );
-    expect(rejectedModel).toStrictEqual({
-      response_action: "errors",
-      errors: { model_select_block: "You don't have access to that model." },
-    });
+    expect(rejectedModel).toMatchObject({ response_action: "errors" });
     await expect(
       integrations.readUserModelPreference(actor),
     ).resolves.toMatchObject({
-      selectedModel: "gpt-6-luna",
+      selectedModel: null,
     });
   });
 

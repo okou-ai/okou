@@ -101,8 +101,10 @@ async fn mac_classic_password_starts_only_over_verified_ssh_loopback() {
                         "heartbeatGeneration": 27
                     },
                     "supportedProfiles": [
+                        {"authMethod":"none","securityType":"x509_none","transportType":"direct"},
                         {"authMethod":"vnc_password","securityType":"x509_vnc","transportType":"direct"},
                         {"authMethod":"username_password","securityType":"x509_plain","transportType":"direct"},
+                        {"authMethod":"none","securityType":"x509_none","transportType":"ssh"},
                         {"authMethod":"vnc_password","securityType":"x509_vnc","transportType":"ssh"},
                         {"authMethod":"username_password","securityType":"x509_plain","transportType":"ssh"},
                         {"authMethod":"vnc_password","securityType":"apple_vnc_password","transportType":"ssh"},

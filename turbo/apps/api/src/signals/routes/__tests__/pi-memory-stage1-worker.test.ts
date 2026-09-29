@@ -331,7 +331,7 @@ function assistantMessage(text: string, timestamp: number) {
     content: [{ type: "text" as const, text }],
     api: "openai-responses" as const,
     provider: "openai" as const,
-    model: "gpt-5.6-terra",
+    model: "gpt-6-luna",
     usage: {
       input: 1,
       output: 1,

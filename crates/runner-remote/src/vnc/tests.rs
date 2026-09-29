@@ -193,6 +193,16 @@ async fn invalid_and_duplicate_fields_are_rejected_before_api_or_network() {
 async fn malformed_or_cross_paired_credentials_fail_before_dns_or_connect() {
     for (authentication, security, reason) in [
         (
+            json!({"method":"none"}),
+            json!({"type":"x509_vnc","trust":{"mode":"system"}}),
+            "authority_failure",
+        ),
+        (
+            json!({"method":"vnc_password","password":"secret"}),
+            json!({"type":"x509_none","trust":{"mode":"system"}}),
+            "authority_failure",
+        ),
+        (
             json!({"method":"username_password","username":"operator","password":"secret"}),
             json!({"type":"x509_vnc","trust":{"mode":"system"}}),
             "authority_failure",

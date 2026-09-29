@@ -366,7 +366,7 @@ describe("CHAT-02: model-first provider policies", () => {
       ).filter(({ tier, outcome }) => {
         return (
           (tier === "fast" && outcome === "completed") ||
-          (selectedModel === "gpt-5.6-terra" && tier === undefined) ||
+          (selectedModel === "gpt-6-luna" && tier === undefined) ||
           (selectedModel === "gpt-5.6-sol" && outcome === "failed") ||
           (selectedModel === "gpt-5.6-luna" && outcome === "cancelled")
         );
@@ -601,8 +601,8 @@ describe("CHAT-02: model-first provider policies", () => {
   );
 
   it.each([
-    { selectedModel: "gpt-5.6-terra", removed: "mapping" },
-    { selectedModel: "gpt-5.6-terra", removed: "connection" },
+    { selectedModel: "gpt-6-luna", removed: "mapping" },
+    { selectedModel: "gpt-6-luna", removed: "connection" },
     { selectedModel: "gpt-5.6-sol", removed: "mapping" },
     { selectedModel: "gpt-5.6-luna", removed: "connection" },
     { selectedModel: "deepseek-v4.1-flash", removed: "mapping" },
@@ -706,7 +706,7 @@ describe("CHAT-02: model-first provider policies", () => {
     90_000,
   );
 
-  it.each(["gpt-5.6-terra", "deepseek-v4.1-flash"] as const)(
+  it.each(["gpt-6-luna", "deepseek-v4.1-flash"] as const)(
     "preserves captured custom %s credentials after gateway removal without substitution",
     async (selectedModel) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
@@ -782,7 +782,7 @@ describe("CHAT-02: model-first provider policies", () => {
     90_000,
   );
 
-  it.each(["gpt-5.6-terra"] as const)(
+  it.each(["gpt-6-luna"] as const)(
     "promotes queued custom %s Fast with the admitted tier and switch snapshot",
     async (selectedModel) => {
       const { actor, agentId, runnerGroup, providerId } =

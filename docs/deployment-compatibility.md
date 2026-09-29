@@ -1,26 +1,32 @@
 # Deployment Compatibility
 
-## Okou 1.0 Pro and Max retirement
+## Integration model commands are thread-scoped (2026-09-29)
 
-The operator closes new organization-policy admission for `okou-1.0-pro`
-and `okou-1.0-max` in `run_model_catalog` before this code is deployed. This
-change adds no migration and leaves the existing policy rows as non-selectable
-tombstones, preserving policy revisions and historical run/billing records.
-`okou-1.0` remains the same runtime route, now displayed as Auto; organization
-defaults are unchanged.
+The integration `/model` command now reads the effective model of an existing
+routed chat thread (using the organization default when the thread's stored
+choice is unavailable) and updates only that thread through the existing
+metadata path. It no longer writes the member's shared model preference; new
+threads continue to initialize from the member preference and then the
+organization default. A command without an existing route does not create a
+thread or change a preference. Slack slash commands identify only the main DM
+route; other Slack contexts need a main DM conversation first. Slack, Teams,
+and Discord model pickers bind to the original chat thread and reject stale
+submissions if that route changes. Telegram and AgentPhone no longer recognize
+the session-reset command: unrecognized slash inputs use their ordinary message
+paths, including agent admission when addressed and connected.
 
-- New API, old client: old model IDs remain parseable, but explicit policy,
-  preference, thread and run selections are rejected as retired. A stale stored
-  member selection inherits the workspace default; a stored thread selection
-  uses the valid workspace route when a new input is captured. Already-queued
-  inputs with retired IDs fail at dispatch, rather than silently changing the
-  model chosen at enqueue time. In-progress runs may finish.
-- New client, old API: the picker filters retired IDs even if an older policy
-  projection still returns the rows. Auto still submits `okou-1.0`.
-- New API and client: policy projections and the picker omit both retired IDs.
-  Historical names, pricing identities and runtime metadata remain readable.
-  Physical cleanup needs a separate compatibility decision after old clients
-  and in-progress runs drain.
+This is an API-only behavior change with no schema, event, queue payload, App,
+CLI, or Runner contract change. Existing queued inputs retain their captured
+model. During an API rollout an older instance can still accept a model command
+and write the member preference as well as a routed thread; after promotion,
+new instances read and update only the thread. Old Slack modals and Teams cards
+lack the original chat-thread binding and must be reopened; old Discord model
+controls lack the signed thread tag and expire rather than changing another
+conversation. No retained compatibility reader or rollback floor is needed;
+rolling back the API temporarily restores the previous command behavior.
+
+The release-7 section below records the behavior at that historical release,
+not the new command contract.
 
 ## Image model thread columns and `image_model_updated` dropped
 
@@ -6329,6 +6335,43 @@ change or feature-switch activation. Existing saved rows keep their exact
 discriminators. Roll back the Runner before the API; once a Runner can advertise
 X509Plain, retain the widened API request/response contract for the lifetime of
 that process.
+
+## VNC X509None owner-selected rollout (default off)
+
+Migration `1289_thick_bruce_banner` follows the separate 1288 retired-grant
+contraction. It makes `vnc_connections.credential_id` nullable only for the
+exact `none` / `x509_none` profile; existing credential-backed rows and the
+retained direct-route default keep their meaning. Apply it before promoting an
+API that can write credentialless rows. Its ordering does not waive the
+separate pre-deployment gate for the 1288 grant-table drop above.
+
+- Old App with new API: existing credential-backed responses retain their shape.
+  An App predating this profile cannot be relied upon to read or edit new
+  credentialless metadata. Do not admit X509None rows while such clients need
+  to manage the owner's VNC hosts; a cached old App needs a refresh after the
+  compatible App is available.
+- New App with old API: the default-off switch keeps this owner flow hidden.
+  If staff enable it across a mixed deployment, the old API rejects X509None
+  selections and cannot return the new response shape; there is no fallback to
+  a credential-backed profile.
+- Old Runner with new API: its advertised profile list lacks the exact
+  `none` / `x509_none` tuple, so resolving such a saved row returns
+  `unsupported_profile` before KMS or a session. Existing profiles retain their
+  existing behavior.
+- New Runner with old API: it advertises the added direct and SSH tuples even
+  when resolving an older connection. The old strict `supportedProfiles`
+  request schema rejects that list, so **all** VNC resolves on that pairing
+  fail closed. Promote the compatible API before the new Runner; do not retry
+  with an old profile list or infer a downgrade.
+
+Before any X509None row is admitted, every serving API reader and intended API
+rollback target must understand the nullable credential and the new response
+variant; deploy the compatible App for owners who may encounter that row. An
+older API's credential inner join omits such rows, so rolling back below that
+reader after an X509None row exists is unsafe even if `VncAccess` is disabled
+again. A later rollback below the reader floor needs a separate verified data
+and drain decision. No merge, migration, CI result or this compatibility
+assessment activates `VncAccess` or certifies an Agent/server acceptance run.
 
 ## Testing Expectations
 

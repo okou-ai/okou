@@ -1079,7 +1079,7 @@ describe("Phase 2 current credential admission", () => {
         {
           type: "openai-api-key",
           id: provider.binding.modelProviderId,
-          model: "gpt-5.6-terra",
+          model: "gpt-5.6-luna",
         },
       ]);
       const [callback] = await db()
@@ -1197,14 +1197,14 @@ describe("Phase 2 current credential admission", () => {
     ]);
   });
 
-  it("uses built-in when a custom surface cannot serve Terra", async () => {
+  it("uses built-in when a custom surface cannot serve Luna", async () => {
     const job = await createPhase2WorkerFixture("luna-only");
     const provider = await createPhase2Provider(
       testContext(),
       job.scope,
       "custom-openai-responses",
       "org",
-      { mapsTerra: false },
+      { mapsSelectedModel: false },
     );
     await insertPhase2Candidates(
       job.scope,
@@ -1253,7 +1253,7 @@ describe("Phase 2 current credential admission", () => {
           } else if (fault === "surface") {
             await db()
               .update(modelProviderSurfaces)
-              .set({ modelMappings: { "gpt-5.6-terra": "replacement-alias" } })
+              .set({ modelMappings: { "gpt-5.6-luna": "replacement-alias" } })
               .where(
                 eq(modelProviderSurfaces.id, provider.binding.modelProviderId),
               );
@@ -1957,7 +1957,7 @@ test.each([
   {
     type: "custom-openai-responses" as const,
     url: "https://phase2-gateway.example/v1/responses",
-    model: "mapped-terra",
+    model: "mapped-luna",
   },
 ])(
   "admits $type with unknown vendor quota independently of an empty wallet",

@@ -22,6 +22,7 @@ import { modelProviderConnectionsMainContract } from "@okouai/api-contracts/cont
 import { modelProvidersMainContract } from "@okouai/api-contracts/contracts/model-provider-routes";
 import {
   getModelProviderFirewall,
+  getProvidersForModel,
   type UpsertModelProviderRequest,
   type ModelProviderType,
   type SupportedRunModel,
@@ -109,54 +110,54 @@ const PI_BASE_USAGE_CATEGORIES = [
 ] as const;
 
 export const GPT_PI_BDD_MODELS = [
-  "gpt-5.6-terra",
+  "gpt-6-luna",
   "gpt-5.6-sol",
   "gpt-5.6-luna",
 ] as const;
 
 export type PiGptBddModel = (typeof GPT_PI_BDD_MODELS)[number];
 
-const GPT_PI_USAGE_MODELS = [
-  ...GPT_PI_BDD_MODELS,
-  "gpt-6-sol",
-  "gpt-6-luna",
-] as const;
+const GPT_PI_USAGE_MODELS = [...GPT_PI_BDD_MODELS, "gpt-6-sol"] as const;
 
 export const GPT_API_KEY_BDD_ROUTES = GPT_PI_BDD_MODELS.flatMap(
   (selectedModel) => {
-    return [
-      {
-        name: `OpenAI ${selectedModel}`,
-        selectedModel,
-        type: "openai-api-key",
-        endpoint: "https://api.openai.com/v1/responses",
-        baseUrl: "https://api.openai.com/v1",
-        secretName: "OPENAI_API_KEY",
-        piProvider: "openai",
-        runtimeModel: selectedModel,
-      },
-      {
-        name: `OpenRouter ${selectedModel}`,
-        selectedModel,
-        type: "openrouter-codex",
-        endpoint: "https://openrouter.ai/api/v1/responses",
-        baseUrl: "https://openrouter.ai/api/v1",
-        secretName: "OPENROUTER_API_KEY",
-        piProvider: "openrouter",
-        runtimeModel: `openai/${selectedModel}`,
-      },
-      {
-        name: `Vercel AI Gateway ${selectedModel}`,
-        selectedModel,
-        type: "vercel-ai-gateway-codex",
-        endpoint: "https://ai-gateway.vercel.sh/v1/responses",
-        baseUrl: "https://ai-gateway.vercel.sh/v1",
-        secretName: "VERCEL_AI_GATEWAY_API_KEY",
-        piProvider: "openai",
-        catalogModel: selectedModel,
-        runtimeModel: `openai/${selectedModel}`,
-      },
-    ] as const;
+    return (
+      [
+        {
+          name: `OpenAI ${selectedModel}`,
+          selectedModel,
+          type: "openai-api-key",
+          endpoint: "https://api.openai.com/v1/responses",
+          baseUrl: "https://api.openai.com/v1",
+          secretName: "OPENAI_API_KEY",
+          piProvider: "openai",
+          runtimeModel: selectedModel,
+        },
+        {
+          name: `OpenRouter ${selectedModel}`,
+          selectedModel,
+          type: "openrouter-codex",
+          endpoint: "https://openrouter.ai/api/v1/responses",
+          baseUrl: "https://openrouter.ai/api/v1",
+          secretName: "OPENROUTER_API_KEY",
+          piProvider: "openrouter",
+          runtimeModel: `openai/${selectedModel}`,
+        },
+        {
+          name: `Vercel AI Gateway ${selectedModel}`,
+          selectedModel,
+          type: "vercel-ai-gateway-codex",
+          endpoint: "https://ai-gateway.vercel.sh/v1/responses",
+          baseUrl: "https://ai-gateway.vercel.sh/v1",
+          secretName: "VERCEL_AI_GATEWAY_API_KEY",
+          piProvider: "openai",
+          catalogModel: selectedModel,
+          runtimeModel: `openai/${selectedModel}`,
+        },
+      ] as const
+    ).filter((route) => {
+      return getProvidersForModel(selectedModel).includes(route.type);
+    });
   },
 );
 
@@ -210,8 +211,6 @@ export type PiUsageProvider =
   | "deepseek-v4-flash"
   | "deepseek-v4.1-flash"
   | "okou-1.0"
-  | "okou-1.0-pro"
-  | "okou-1.0-max"
   | (typeof GPT_PI_USAGE_MODELS)[number];
 
 type UserMessage = Extract<
@@ -716,7 +715,7 @@ export function createChatEventsFixture(context: TestContext) {
     });
     await chatCallbacks.updateOrgModelPolicies(actor, [
       {
-        model: "gpt-5.6-terra",
+        model: "gpt-6-luna",
         isDefault: true,
         defaultProviderType: "openai-api-key",
         credentialScope: "org",
@@ -728,7 +727,7 @@ export function createChatEventsFixture(context: TestContext) {
   async function configureSubscriptionPiModel(
     actor: ApiTestUser,
     options: Parameters<typeof mockCodexDeviceAuthProvider>[0] = {},
-    selectedModel: PiGptBddModel = "gpt-5.6-terra",
+    selectedModel: PiGptBddModel = "gpt-6-luna",
   ) {
     await authDeviceSupport.updateFeatureSwitches(actor, {
       [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
@@ -1638,7 +1637,7 @@ export function createChatEventsFixture(context: TestContext) {
       provider: args.nativeModel
         ? "anthropic"
         : (args.responsesModel?.provider ?? "openai"),
-      model: args.nativeModel ?? args.responsesModel?.model ?? "gpt-5.6-terra",
+      model: args.nativeModel ?? args.responsesModel?.model ?? "gpt-6-luna",
       usage: {
         input: 0,
         output: args.outputTokens ?? 0,
@@ -1755,7 +1754,7 @@ export function createChatEventsFixture(context: TestContext) {
       );
     }
     const anchorClaim = await claimChatRun(args.runnerGroup, anchor.runId);
-    const selectedModel = args.selectedModel ?? "gpt-5.6-terra";
+    const selectedModel = args.selectedModel ?? "gpt-6-luna";
     let withModelRoute = async <T>(work: () => Promise<T>): Promise<T> => {
       return await work();
     };

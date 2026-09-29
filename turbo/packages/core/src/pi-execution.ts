@@ -75,7 +75,6 @@ export const PI_MODEL_POLICY = {
   "gpt-6-sol": { pi: true, route: "gpt-codex" },
   "gpt-6-luna": { pi: true, route: "gpt-codex" },
   "gpt-5.6-sol": { pi: true, route: "gpt-codex" },
-  "gpt-5.6-terra": { pi: true, route: "gpt-codex" },
   "gpt-5.6-luna": { pi: true, route: "gpt-codex" },
   "deepseek-v4.1-flash": { pi: true, route: "deepseek" },
   "deepseek-v4-flash": { pi: true, route: "deepseek" },

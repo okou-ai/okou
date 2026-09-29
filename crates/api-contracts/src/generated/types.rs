@@ -1922,6 +1922,9 @@ pub mod runners {
         /// Authentication method advertised by this Runner.
         #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
         pub enum ResolveRequestSupportedProfileAuthMethod {
+            /// No inner RFB client authentication; require explicit saved X509None.
+            #[serde(rename = "none")]
+            None,
             /// Classic VNC password authentication.
             #[serde(rename = "vnc_password")]
             VncPassword,
@@ -1942,6 +1945,9 @@ pub mod runners {
         /// Security profile advertised by this Runner.
         #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
         pub enum ResolveRequestSupportedProfileSecurityType {
+            /// VeNCrypt X509None; no inner client authentication.
+            #[serde(rename = "x509_none")]
+            X509None,
             /// VeNCrypt X509Vnc.
             #[serde(rename = "x509_vnc")]
             X509Vnc,
@@ -2127,6 +2133,8 @@ pub mod runners {
                 /// Bounded zeroizing password, preserving exact UTF-8 bytes and spaces.
                 password: crate::SecretUtf8Text<1023>,
             },
+            /// No inner client authentication or secret.
+            None,
         }
 
         impl<'de> serde::Deserialize<'de> for ResolveResponseResolvedTransportAuthentication {
@@ -2144,6 +2152,8 @@ pub mod runners {
                     AppleSrpUsernamePassword,
                     #[serde(rename = "apple_rsa_srp_username_password")]
                     AppleRsaSrpUsernamePassword,
+                    #[serde(rename = "none")]
+                    None,
                 }
                 #[derive(serde::Deserialize)]
                 #[serde(field_identifier)]
@@ -2205,6 +2215,7 @@ pub mod runners {
                             (Some(Kind::AppleDhUsernamePassword), Some(password), Some(username)) => Ok(ResolveResponseResolvedTransportAuthentication::AppleDhUsernamePassword { username, password }),
                             (Some(Kind::AppleSrpUsernamePassword), Some(password), Some(username)) => Ok(ResolveResponseResolvedTransportAuthentication::AppleSrpUsernamePassword { username, password }),
                             (Some(Kind::AppleRsaSrpUsernamePassword), Some(password), Some(username)) => Ok(ResolveResponseResolvedTransportAuthentication::AppleRsaSrpUsernamePassword { username, password }),
+                            (Some(Kind::None), None, None) => Ok(ResolveResponseResolvedTransportAuthentication::None),
                             _ => Err(serde::de::Error::custom("invalid authority outcome fields")),
                         }
                     }
@@ -2306,6 +2317,11 @@ pub mod runners {
                 /// Required verified TLS trust policy.
                 trust: ResolveResponseResolvedTransportSecurityX509VncTrust,
             },
+            /// Verified TLS without inner RFB client authentication.
+            X509None {
+                /// Required verified TLS trust policy.
+                trust: ResolveResponseResolvedTransportSecurityX509VncTrust,
+            },
             /// Apple bare type 2; only the separately verified SSH channel protects the RFB session.
             AppleVncPassword,
             /// Apple DH type 30; only the separately verified SSH channel protects the RFB session.
@@ -2325,6 +2341,8 @@ pub mod runners {
                     X509Vnc,
                     #[serde(rename = "x509_plain")]
                     X509Plain,
+                    #[serde(rename = "x509_none")]
+                    X509None,
                     #[serde(rename = "apple_vnc_password")]
                     AppleVncPassword,
                     #[serde(rename = "apple_dh")]
@@ -2385,6 +2403,9 @@ pub mod runners {
                             (Some(Kind::X509Plain), Some(trust)) => {
                                 Ok(ResolveResponseResolvedTransportSecurity::X509Plain { trust })
                             }
+                            (Some(Kind::X509None), Some(trust)) => {
+                                Ok(ResolveResponseResolvedTransportSecurity::X509None { trust })
+                            }
                             (Some(Kind::AppleVncPassword), None) => {
                                 Ok(ResolveResponseResolvedTransportSecurity::AppleVncPassword)
                             }
@@ -2423,7 +2444,7 @@ pub mod runners {
                 server_name: String,
                 /// Explicit direct or generation-bound SSH transport snapshot.
                 transport: ResolveResponseResolvedTransportTransport,
-                /// Credential for the explicitly saved method.
+                /// Exact saved method, with no credential for X509None.
                 authentication: ResolveResponseResolvedTransportAuthentication,
                 /// Explicit saved transport and trust policy; never downgrade.
                 security: ResolveResponseResolvedTransportSecurity,
@@ -2438,7 +2459,7 @@ pub mod runners {
                 generation: i64,
                 /// Explicit direct or generation-bound SSH transport snapshot.
                 transport: ResolveResponseResolvedTransportTransport,
-                /// Credential for the explicitly saved method.
+                /// Exact saved method, with no credential for X509None.
                 authentication: ResolveResponseResolvedTransportAuthentication,
                 /// Explicit saved transport and trust policy; never downgrade.
                 security: ResolveResponseResolvedTransportSecurity,
@@ -2453,7 +2474,7 @@ pub mod runners {
                 generation: i64,
                 /// Explicit direct or generation-bound SSH transport snapshot.
                 transport: ResolveResponseResolvedTransportTransport,
-                /// Credential for the explicitly saved method.
+                /// Exact saved method, with no credential for X509None.
                 authentication: ResolveResponseResolvedTransportAuthentication,
                 /// Explicit saved transport and trust policy; never downgrade.
                 security: ResolveResponseResolvedTransportSecurity,
@@ -2468,7 +2489,7 @@ pub mod runners {
                 generation: i64,
                 /// Explicit direct or generation-bound SSH transport snapshot.
                 transport: ResolveResponseResolvedTransportTransport,
-                /// Credential for the explicitly saved method.
+                /// Exact saved method, with no credential for X509None.
                 authentication: ResolveResponseResolvedTransportAuthentication,
                 /// Explicit saved transport and trust policy; never downgrade.
                 security: ResolveResponseResolvedTransportSecurity,
@@ -2483,7 +2504,7 @@ pub mod runners {
                 generation: i64,
                 /// Explicit direct or generation-bound SSH transport snapshot.
                 transport: ResolveResponseResolvedTransportTransport,
-                /// Credential for the explicitly saved method.
+                /// Exact saved method, with no credential for X509None.
                 authentication: ResolveResponseResolvedTransportAuthentication,
                 /// Explicit saved transport and trust policy; never downgrade.
                 security: ResolveResponseResolvedTransportSecurity,
