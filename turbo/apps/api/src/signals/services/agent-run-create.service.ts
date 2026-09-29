@@ -206,6 +206,7 @@ import {
   eq,
   inArray,
   isNotNull,
+  isNull,
   or,
   sql,
   type SQL,
