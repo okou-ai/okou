@@ -1,3 +1,7 @@
+import type { NotionQueueSource } from "./workflow-notion-queue.service";
+import type { GoogleMeetQueueSource } from "./workflow-google-meet-queue.service";
+import { command } from "ccstate";
+import type { WorkflowQueueReceipt } from "./workflow-input-queue.service";
 import type { GmailQueueSource } from "./workflow-gmail-queue.service";
 import type { GoogleCalendarQueueSource } from "./workflow-google-calendar-queue.service";
 import { recordGetStartedWorkflow } from "./get-started-workflow.service";
@@ -19,7 +23,7 @@ import type { GoogleFormsQueueSource } from "./workflow-google-forms-queue.servi
 import type { InternalRunCallbackKind } from "./internal-run-callback";
 import {
   finalizeClaimedRunUserMessage,
-  resolveRunChatThreadModelContext,
+  resolveRunChatThreadModelContext$,
 } from "./chat-run-event.service";
 import {
   modelProviderWriteTypeForLaunch,
@@ -42,7 +46,7 @@ import { resolveReasoningEffortForDispatch } from "./chat-reasoning-effort.servi
 import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
 import type { ChatAgentRunSourceAnnotation } from "./chat-user-message.service";
 import {
-  resolveBuiltInModelRuntimeRoute,
+  resolveBuiltInModelRuntimeRoute$,
   type BuiltInModelRuntimeRoute,
 } from "./built-in-model-runtime-route.service";
 
@@ -90,7 +94,7 @@ function workflowModelProviderBody(modelProvider: string | null | undefined) {
     : {};
 }
 
-type ModelContext =
+export type WorkflowModelContext =
   | {
       readonly ok: true;
       readonly modelPin: ModelFirstPin;
@@ -126,10 +130,13 @@ export interface RunWorkflowAutomationNowArgs {
    * This callback is never serialized into the durable queue payload.
    */
   readonly persistSourceTransition?: PersistWorkflowQueueSourceTransition;
+  readonly queueReceipt?: WorkflowQueueReceipt;
   /** Forms input and cursor admission are owned by one finite SQL command. */
   readonly googleFormsSource?: GoogleFormsQueueSource;
   readonly googleCalendarSource?: GoogleCalendarQueueSource;
   readonly gmailSource?: GmailQueueSource;
+  readonly googleMeetSource?: GoogleMeetQueueSource;
+  readonly notionSource?: NotionQueueSource;
   /**
    * Consumes the due schedule occurrence in the same transaction as the queue
    * event. Only journaled legacy Morning Brief ticks pass one.
@@ -157,6 +164,7 @@ interface WorkflowAutomationLaunchArgs {
 
 interface AssembleWorkflowAutomationRunArgs extends WorkflowAutomationLaunchArgs {
   readonly queueEventId: string;
+  readonly modelContext: WorkflowModelContext;
 }
 
 interface AssembledWorkflowAutomationRun {
@@ -298,107 +306,113 @@ function appendComputerUseSystemPrompt(
   ].join("\n\n");
 }
 
-async function resolveModelContext(
-  args: {
-    readonly db: Db;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly chatThreadId: string;
-    readonly eventId: string;
-  },
-  signal: AbortSignal,
-): Promise<ModelContext> {
-  const threadModelContext = await resolveRunChatThreadModelContext({
-    db: args.db,
-    orgId: args.orgId,
-    userId: args.userId,
-    threadId: args.chatThreadId,
-    eventId: args.eventId,
-  });
-  signal.throwIfAborted();
-  if ("status" in threadModelContext) {
-    return {
-      ok: false,
-      failure: {
-        kind: "run_error",
-        response: {
-          status: threadModelContext.status,
-          body: threadModelContext.body,
-        },
+export const resolveWorkflowAutomationModelContext$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly chatThreadId: string;
+      readonly eventId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<WorkflowModelContext> => {
+    const threadModelContext = await set(
+      resolveRunChatThreadModelContext$,
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+        threadId: args.chatThreadId,
+        eventId: args.eventId,
       },
-    };
-  }
+      signal,
+    );
+    signal.throwIfAborted();
+    if ("status" in threadModelContext) {
+      return {
+        ok: false,
+        failure: {
+          kind: "run_error",
+          response: {
+            status: threadModelContext.status,
+            body: threadModelContext.body,
+          },
+        },
+      };
+    }
 
-  const { pin, providerAdmission, runCodexServiceTier } = threadModelContext;
-  signal.throwIfAborted();
-  if (providerAdmission.error) {
-    return {
-      ok: false,
-      failure: { kind: "run_error", response: providerAdmission.error },
-    };
-  }
+    const { pin, providerAdmission, runCodexServiceTier } = threadModelContext;
+    signal.throwIfAborted();
+    if (providerAdmission.error) {
+      return {
+        ok: false,
+        failure: { kind: "run_error", response: providerAdmission.error },
+      };
+    }
 
-  const effectiveModelProvider = providerAdmission.effectiveModelProvider;
-  const selectedModel = pin.selectedModel;
-  const builtInModelRuntimeRoute =
-    isBuiltInModelProviderType(effectiveModelProvider) && selectedModel
-      ? await resolveBuiltInModelRuntimeRoute(
-          args.db,
-          selectedModel,
-          threadModelContext.featureSwitchContext,
-        )
-      : undefined;
-  signal.throwIfAborted();
-  if (
-    isBuiltInModelProviderType(effectiveModelProvider) &&
-    !builtInModelRuntimeRoute
-  ) {
-    return {
-      ok: false,
-      failure: {
-        kind: "run_error",
-        response: {
-          status: 503,
-          body: {
-            error: {
-              code: "MODEL_PROVIDER_UNAVAILABLE",
-              message:
-                "Every built-in model route for this model is temporarily unavailable",
+    const effectiveModelProvider = providerAdmission.effectiveModelProvider;
+    const selectedModel = pin.selectedModel;
+    const builtInModelRuntimeRoute =
+      isBuiltInModelProviderType(effectiveModelProvider) && selectedModel
+        ? await set(
+            resolveBuiltInModelRuntimeRoute$,
+            selectedModel,
+            threadModelContext.featureSwitchContext,
+            signal,
+          )
+        : undefined;
+    signal.throwIfAborted();
+    if (
+      isBuiltInModelProviderType(effectiveModelProvider) &&
+      !builtInModelRuntimeRoute
+    ) {
+      return {
+        ok: false,
+        failure: {
+          kind: "run_error",
+          response: {
+            status: 503,
+            body: {
+              error: {
+                code: "MODEL_PROVIDER_UNAVAILABLE",
+                message:
+                  "Every built-in model route for this model is temporarily unavailable",
+              },
             },
           },
         },
-      },
-    };
-  }
+      };
+    }
 
-  const piExecution = shouldUsePiExecution({
-    chatThreadId: args.chatThreadId,
-    modelProviderType: effectiveModelProvider,
-    selectedModel,
-    codexServiceTier: runCodexServiceTier,
-    builtInModelRuntimeRoute: builtInModelRuntimeRoute ?? undefined,
-  });
-  return {
-    ok: true,
-    modelPin: pin,
-    effectiveModelProvider,
-    builtInModelRuntimeRoute: builtInModelRuntimeRoute ?? undefined,
-    cliAgentType: piExecution ? "pi" : providerAdmission.cliAgentType,
-    codexServiceTier: runCodexServiceTier,
-    reasoningEffort:
-      resolveReasoningEffortForDispatch({
-        selectedModel,
-        effort: threadModelContext.reasoningEffort,
-        runtimeProviderType:
-          builtInModelRuntimeRoute?.providerType ?? effectiveModelProvider,
-        piExecution,
-      }) ?? null,
-    piExecution,
-  };
-}
+    const piExecution = shouldUsePiExecution({
+      chatThreadId: args.chatThreadId,
+      modelProviderType: effectiveModelProvider,
+      selectedModel,
+      codexServiceTier: runCodexServiceTier,
+      builtInModelRuntimeRoute: builtInModelRuntimeRoute ?? undefined,
+    });
+    return {
+      ok: true,
+      modelPin: pin,
+      effectiveModelProvider,
+      builtInModelRuntimeRoute: builtInModelRuntimeRoute ?? undefined,
+      cliAgentType: piExecution ? "pi" : providerAdmission.cliAgentType,
+      codexServiceTier: runCodexServiceTier,
+      reasoningEffort:
+        resolveReasoningEffortForDispatch({
+          selectedModel,
+          effort: threadModelContext.reasoningEffort,
+          runtimeProviderType:
+            builtInModelRuntimeRoute?.providerType ?? effectiveModelProvider,
+          piExecution,
+        }) ?? null,
+      piExecution,
+    };
+  },
+);
 
 function workflowThreadSessionRoute(
-  modelContext: Extract<ModelContext, { readonly ok: true }>,
+  modelContext: Extract<WorkflowModelContext, { readonly ok: true }>,
 ) {
   return {
     selectedModel: modelContext.modelPin.selectedModel,
@@ -489,35 +503,6 @@ async function checkWorkflowAutomationTargetReadable(
         };
       }
       return undefined;
-    },
-  );
-}
-
-async function resolveTimedWorkflowModelContext(
-  args: {
-    readonly db: Db;
-    readonly automation: AutomationRow;
-    readonly chatThreadId: string;
-    readonly eventId: string;
-    readonly timing: ApiDispatchTimingCollector;
-  },
-  signal: AbortSignal,
-): Promise<ModelContext> {
-  return await measureApiDispatchTiming(
-    args.timing,
-    "api_dispatch_pre_create_agent_workflow_automation_resolve_model_context",
-    "nested",
-    async () => {
-      return await resolveModelContext(
-        {
-          db: args.db,
-          orgId: args.automation.orgId,
-          userId: args.automation.ownerUserId,
-          chatThreadId: args.chatThreadId,
-          eventId: args.eventId,
-        },
-        signal,
-      );
     },
   );
 }
@@ -720,16 +705,7 @@ export async function assembleWorkflowAutomationRun(
   if (readinessFailure) {
     return readinessFailure;
   }
-  const modelContext = await resolveTimedWorkflowModelContext(
-    {
-      db,
-      eventId: args.queueEventId,
-      automation,
-      chatThreadId,
-      timing,
-    },
-    signal,
-  );
+  const modelContext = args.modelContext;
   if (!modelContext.ok) {
     return modelContext.failure;
   }

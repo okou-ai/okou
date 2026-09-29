@@ -1,4 +1,5 @@
-import { resolveEnqueuedChatInputModel } from "./chat-input-model.service";
+import { enqueueIntegrationChatInput$ } from "./integration-chat-queue.service";
+import { resolveEnqueuedChatInputModel$ } from "./chat-input-model.service";
 import { touchNativeChatThread } from "./native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 import { command } from "ccstate";
@@ -38,10 +39,7 @@ import {
   canonicalSlackThreadStatusTargetForIngress,
   clearCanonicalSlackThreadStatusIfIdle,
 } from "./canonical-slack-thread-status.service";
-import {
-  enqueueChatInput,
-  scheduleEnqueuedChatThreadPick$,
-} from "./chat-thread-queue-drain.service";
+import { scheduleEnqueuedChatThreadPick$ } from "./chat-thread-queue-drain.service";
 import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
 import type { ChatQueueWaitReason } from "./chat-queue-wait-reason";
 import { decryptPersistentSecretValue } from "./crypto.utils";
@@ -548,73 +546,64 @@ function canonicalSlackLaunchContext(args: {
  * The entry writes its Slack context row, then enqueues the input and marks
  * the ingress processed in one transaction.
  */
-async function enqueueCanonicalSlackMessage(
-  db: Db,
-  args: {
-    readonly ingress: ClaimedCanonicalSlackIngress;
-    readonly orgId: string;
-    readonly chatThreadId: string;
-    readonly displayContent: string;
-    readonly slackContext: CanonicalSlackLaunchContext;
-    readonly messagePermalink: string | null;
-    readonly canonicalAssets: readonly CanonicalSlackInputAsset[];
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  const values = {
-    id: args.ingress.ingressId,
-    chatThreadId: args.chatThreadId,
-    eventType: "input.prompt",
-    modelSelection: await resolveEnqueuedChatInputModel(db, {
-      threadId: args.chatThreadId,
-      orgId: args.orgId,
-      userId: args.ingress.userId,
-    }),
-    userMessage: createUserMessageDocument({
-      text: args.displayContent,
-      files: canonicalInputMessageFiles(args.canonicalAssets),
-      nonContentPart: createChatEventSourcePart({
-        kind: "slack",
-        messagePermalink: args.messagePermalink,
-      }),
-    }),
-    runId: null,
-    slackContext: args.slackContext,
-    createdAt: args.ingress.createdAt,
-  } as const;
-  await enqueueChatInput(db, {
-    chatThreadId: args.chatThreadId,
-    orgId: args.orgId,
-    appendInput: async (tx) => {
-      // The entry's context row commits with the input it describes.
-      await insertChatEventContext(tx, values);
-      const inserted = await insertChatEvent(tx, values, "id");
-      await tx
-        .update(slackChatIngress)
-        .set({
-          status: "processed",
-          retryAt: null,
-          lastErrorClass: null,
-          lastError: null,
-          updatedAt: nowDate(),
-        })
-        .where(
-          and(
-            eq(slackChatIngress.id, args.ingress.ingressId),
-            eq(slackChatIngress.status, "processing"),
-          ),
-        );
-      return inserted?.id ?? null;
+const enqueueCanonicalSlackMessage$ = command(
+  async (
+    { set },
+    args: {
+      readonly ingress: ClaimedCanonicalSlackIngress;
+      readonly orgId: string;
+      readonly chatThreadId: string;
+      readonly displayContent: string;
+      readonly slackContext: CanonicalSlackLaunchContext;
+      readonly messagePermalink: string | null;
+      readonly canonicalAssets: readonly CanonicalSlackInputAsset[];
     },
-  });
-  signal.throwIfAborted();
-  await touchNativeChatThread(db, {
-    chatThreadId: args.chatThreadId,
-    createdAt: args.ingress.createdAt,
-    eventId: args.ingress.ingressId,
-  });
-  signal.throwIfAborted();
-}
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    const values = {
+      id: args.ingress.ingressId,
+      chatThreadId: args.chatThreadId,
+      eventType: "input.prompt",
+      modelSelection: await set(
+        resolveEnqueuedChatInputModel$,
+        {
+          threadId: args.chatThreadId,
+          orgId: args.orgId,
+          userId: args.ingress.userId,
+        },
+        signal,
+      ),
+      userMessage: createUserMessageDocument({
+        text: args.displayContent,
+        files: canonicalInputMessageFiles(args.canonicalAssets),
+        nonContentPart: createChatEventSourcePart({
+          kind: "slack",
+          messagePermalink: args.messagePermalink,
+        }),
+      }),
+      runId: null,
+      slackContext: args.slackContext,
+      createdAt: args.ingress.createdAt,
+    } as const;
+    await set(
+      enqueueIntegrationChatInput$,
+      {
+        orgId: args.orgId,
+        input: values,
+        ingress: { kind: "slack", ingressId: args.ingress.ingressId },
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    await touchNativeChatThread(db, {
+      chatThreadId: args.chatThreadId,
+      createdAt: args.ingress.createdAt,
+      eventId: args.ingress.ingressId,
+    });
+    signal.throwIfAborted();
+  },
+);
 
 async function fetchCanonicalConversationContext(args: {
   readonly client: SlackClient;
@@ -781,8 +770,8 @@ const persistClaimedCanonicalSlackIngress$ = command(
         error: permalinkResult.error,
       });
     }
-    await enqueueCanonicalSlackMessage(
-      db,
+    await set(
+      enqueueCanonicalSlackMessage$,
       {
         ingress,
         orgId,

@@ -1,3 +1,4 @@
+import { ChatRunFinishedAutomationAlreadyAdmittedError } from "./workflow-input-queue.service";
 import { command } from "ccstate";
 import { z } from "zod";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
@@ -11,8 +12,7 @@ import {
   workflowAutomations,
   workflows,
 } from "@okouai/db/schema/workflow";
-import { and, eq, not, sql } from "drizzle-orm";
-import type { Tx } from "../../lib/db-types";
+import { and, eq, sql } from "drizzle-orm";
 import { zodDriverValueDecoder } from "../../lib/db-structured-result";
 import { settle } from "../utils";
 
@@ -151,8 +151,6 @@ function chatRunFinishedTriggerContext(args: {
   };
 }
 
-class ChatRunFinishedAutomationAlreadyAdmittedError extends Error {}
-
 // Chat callback writers do not seed this receipt key; the first admission
 // creates it. An absent key therefore means no automation has been admitted
 // for this source callback yet.
@@ -180,49 +178,6 @@ async function loadAdmittedChatRunFinishedAutomations(
     throw new Error("Chat run finished event is missing its source callback");
   }
   return new Set(source.automationIds);
-}
-
-async function recordChatRunFinishedAutomationAdmission(
-  tx: Tx,
-  sourceCallbackId: string,
-  runId: string,
-  automationId: string,
-): Promise<void> {
-  const receipts = sql`coalesce(${agentRunCallbacks.payload}->'chatRunFinishedAutomationIds', '[]'::jsonb)`;
-  const [recorded] = await tx
-    .update(agentRunCallbacks)
-    .set({
-      payload: sql`jsonb_set(${agentRunCallbacks.payload}, '{chatRunFinishedAutomationIds}', ${receipts} || to_jsonb(${automationId}::text))`,
-    })
-    .where(
-      and(
-        eq(agentRunCallbacks.id, sourceCallbackId),
-        eq(agentRunCallbacks.runId, runId),
-        eq(agentRunCallbacks.internalKind, "chat"),
-        not(sql`${receipts} @> to_jsonb(ARRAY[${automationId}::text])`),
-      ),
-    )
-    .returning({ id: agentRunCallbacks.id });
-  if (!recorded) {
-    const [admitted] = await tx
-      .select({ id: agentRunCallbacks.id })
-      .from(agentRunCallbacks)
-      .where(
-        and(
-          eq(agentRunCallbacks.id, sourceCallbackId),
-          eq(agentRunCallbacks.runId, runId),
-          eq(agentRunCallbacks.internalKind, "chat"),
-          sql`${receipts} @> to_jsonb(ARRAY[${automationId}::text])`,
-        ),
-      )
-      .limit(1);
-    if (!admitted) {
-      throw new Error("Chat run finished admission lost its source callback");
-    }
-    // A competing callback already committed this automation's queue input.
-    // Roll back this admission, including its event, before returning success.
-    throw new ChatRunFinishedAutomationAlreadyAdmittedError();
-  }
 }
 
 const admitChatRunFinishedAutomation$ = command(
@@ -257,13 +212,10 @@ const admitChatRunFinishedAutomation$ = command(
             `${automation.id}:${event.runId}`,
             CHAT_RUN_FINISHED_QUEUE_EVENT_NAMESPACE,
           ),
-          persistSourceTransition: (tx) => {
-            return recordChatRunFinishedAutomationAdmission(
-              tx,
-              event.sourceCallbackId,
-              event.runId,
-              automation.id,
-            );
+          queueReceipt: {
+            kind: "chat-run-finished",
+            sourceCallbackId: event.sourceCallbackId,
+            runId: event.runId,
           },
           apiStartTime: now(),
           agentRunSource: {

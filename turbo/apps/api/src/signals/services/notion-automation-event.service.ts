@@ -1,3 +1,4 @@
+import { NotionAutomationSourceChangedError } from "./workflow-notion-queue.service";
 import { Buffer } from "node:buffer";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import {
@@ -52,7 +53,6 @@ import type {
   RunWorkflowAutomationResult,
   AutomationRow,
 } from "./workflow-automation-launch.service";
-import type { WorkflowQueueAdmissionTransaction } from "./workflow-chat-event-queue.service";
 import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
 import { lockConnectorAccountTarget } from "./auth-state-lock.service";
 import {
@@ -2187,155 +2187,6 @@ async function retryPendingEvent(
   signal.throwIfAborted();
 }
 
-async function markPendingEventProcessed(
-  args: {
-    readonly db: Db;
-    readonly pendingId: string;
-    readonly page: NotionPageResponse;
-    readonly parent: {
-      readonly title: string | null;
-      readonly url: string;
-    };
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  await args.db
-    .update(notionWorkflowPendingEvents)
-    .set({
-      status: "processed",
-      pageTitle: notionTitleFromProperties(args.page.properties),
-      pageUrl: args.page.url ?? null,
-      parentTitle: args.parent.title,
-      parentUrl: args.parent.url,
-      processedAt: nowDate(),
-      updatedAt: nowDate(),
-    })
-    .where(eq(notionWorkflowPendingEvents.id, args.pendingId));
-  signal.throwIfAborted();
-}
-
-class NotionAutomationSourceChangedError extends Error {
-  constructor() {
-    super("Notion automation source changed before durable queue admission");
-    this.name = "NotionAutomationSourceChangedError";
-  }
-}
-
-function notionConfigMatchesPendingEvent(
-  eventType: string | null,
-  eventConfig: unknown,
-  pending: NotionPendingRow,
-): boolean {
-  if (eventType === "notion-child-page-created") {
-    const config =
-      notionChildPageCreatedEventConfigSchema.safeParse(eventConfig);
-    return (
-      config.success &&
-      pending.eventFamily === "new_child_page" &&
-      pending.scopeType === "page" &&
-      config.data.connectorId === pending.connectorId &&
-      config.data.parentPage.id === pending.scopeId
-    );
-  }
-  if (eventType === "notion-database-item-created") {
-    const config =
-      notionDatabaseItemCreatedEventConfigSchema.safeParse(eventConfig);
-    return (
-      config.success &&
-      pending.eventFamily === "new_database_item" &&
-      pending.scopeType === "data_source" &&
-      config.data.connectorId === pending.connectorId &&
-      config.data.dataSource.id === pending.scopeId
-    );
-  }
-  if (eventType === "notion-page-content-updated") {
-    const config =
-      notionPageContentUpdatedEventConfigSchema.safeParse(eventConfig);
-    return (
-      config.success &&
-      pending.eventFamily === "page_content_updated" &&
-      pageContentUpdatedScopeType(config.data.scope) === pending.scopeType &&
-      pageContentUpdatedScopeId(config.data.scope) === pending.scopeId &&
-      config.data.connectorId === pending.connectorId
-    );
-  }
-  return false;
-}
-
-async function persistCurrentNotionAutomationSource(
-  tx: WorkflowQueueAdmissionTransaction,
-  args: {
-    readonly automationId: string;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly pending: NotionPendingRow;
-    readonly page: NotionPageResponse;
-    readonly parent: {
-      readonly title: string | null;
-      readonly url: string;
-    };
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  if (args.pending.connectorId === null) {
-    throw new NotionAutomationSourceChangedError();
-  }
-  await lockConnectorAccountTarget(tx, {
-    orgId: args.orgId,
-    userId: args.userId,
-    target: { kind: "builtin", connectorSlug: "notion" },
-  });
-  const [current] = await tx
-    .select({
-      eventType: workflowAutomations.eventType,
-      eventConfig: workflowAutomations.eventConfig,
-    })
-    .from(workflowAutomations)
-    .where(
-      and(
-        eq(workflowAutomations.id, args.automationId),
-        eq(workflowAutomations.enabled, true),
-        eq(workflowAutomations.eventConnectorId, args.pending.connectorId),
-      ),
-    )
-    .for("update")
-    .limit(1);
-  const [pending] = await tx
-    .select({ id: notionWorkflowPendingEvents.id })
-    .from(notionWorkflowPendingEvents)
-    .where(
-      and(
-        eq(notionWorkflowPendingEvents.id, args.pending.id),
-        eq(notionWorkflowPendingEvents.automationId, args.automationId),
-        eq(notionWorkflowPendingEvents.connectorId, args.pending.connectorId),
-        eq(notionWorkflowPendingEvents.status, "running"),
-      ),
-    )
-    .for("update")
-    .limit(1);
-  signal.throwIfAborted();
-  if (
-    !current ||
-    !pending ||
-    !notionConfigMatchesPendingEvent(
-      current.eventType,
-      current.eventConfig,
-      args.pending,
-    )
-  ) {
-    throw new NotionAutomationSourceChangedError();
-  }
-  await markPendingEventProcessed(
-    {
-      db: tx,
-      pendingId: args.pending.id,
-      page: args.page,
-      parent: args.parent,
-    },
-    signal,
-  );
-}
-
 const NOTION_PAGE_BODY_NOTE =
   "Not included below: the Notion page body and child blocks. Connected Notion tools and the Notion API return them for the page id below.";
 
@@ -2602,10 +2453,8 @@ async function startNotionWorkflowRun(
   | {
       readonly kind: "result";
       readonly result: RunWorkflowAutomationResult;
-      readonly sourceTransitionPersisted: boolean;
     }
 > {
-  let sourceTransitionPersisted = false;
   const result = await settle(
     args.startRun(
       {
@@ -2619,20 +2468,15 @@ async function startNotionWorkflowRun(
         apiStartTime: now(),
         triggerSource: "automation-event",
         triggerBrief: args.triggerBrief,
-        persistSourceTransition: async (tx) => {
-          await persistCurrentNotionAutomationSource(
-            tx,
-            {
-              automationId: args.row.automation.id,
-              orgId: args.row.automation.orgId,
-              userId: args.row.automation.ownerUserId,
-              pending: args.pending,
-              page: args.page,
-              parent: args.parent,
-            },
-            signal,
-          );
-          sourceTransitionPersisted = true;
+        notionSource: {
+          automationId: args.row.automation.id,
+          orgId: args.row.automation.orgId,
+          userId: args.row.automation.ownerUserId,
+          pending: args.pending,
+          pageTitle: notionTitleFromProperties(args.page.properties),
+          pageUrl: args.page.url ?? null,
+          parentTitle: args.parent.title,
+          parentUrl: args.parent.url,
         },
       },
       signal,
@@ -2643,7 +2487,6 @@ async function startNotionWorkflowRun(
     return {
       kind: "result",
       result: result.value,
-      sourceTransitionPersisted,
     };
   }
   if (result.error instanceof NotionAutomationSourceChangedError) {
@@ -2670,11 +2513,6 @@ async function persistNotionWorkflowRunOutcome(
       signal,
     );
     return "skipped";
-  }
-  if (!args.result.sourceTransitionPersisted) {
-    throw new Error(
-      "Notion workflow run was enqueued without persisting its source transition",
-    );
   }
   return "executed";
 }

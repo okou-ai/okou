@@ -1,3 +1,4 @@
+import { GoogleMeetAutomationSourceChangedError } from "./workflow-google-meet-queue.service";
 import { Buffer } from "node:buffer";
 import { OAuth2Client } from "google-auth-library";
 import { command } from "ccstate";
@@ -41,7 +42,6 @@ import type { WorkflowAutomationContext } from "./workflow-automation-context.se
 import { ensureWorkflowUserAutomationThread } from "./workflow-user-automation-thread.service";
 import { lockBuiltinConnectorState } from "./auth-state-lock.service";
 import { reprojectGoogleMeetAutomationsForOwner } from "./google-meet-automation-account.service";
-import type { WorkflowQueueAdmissionTransaction } from "./workflow-chat-event-queue.service";
 
 const GOOGLE_MEET_ACCESS_TOKEN_ENVIRONMENT_NAME = "GOOGLE_MEET_TOKEN";
 const GOOGLE_WORKSPACE_EVENTS_API_BASE =
@@ -1775,76 +1775,6 @@ function googleMeetTriggerContext(args: {
   };
 }
 
-class GoogleMeetAutomationSourceChangedError extends Error {
-  constructor() {
-    super(
-      "Google Meet automation source changed before durable queue admission",
-    );
-    this.name = "GoogleMeetAutomationSourceChangedError";
-  }
-}
-
-async function persistCurrentGoogleMeetAutomationSource(
-  tx: WorkflowQueueAdmissionTransaction,
-  args: {
-    readonly automationId: string;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly connectorSourceId: string;
-    readonly subscriptionStateId: string;
-    readonly subscriptionName: string;
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  await lockBuiltinConnectorState(tx, {
-    orgId: args.orgId,
-    userId: args.userId,
-    connectorSlug: "google-meet",
-  });
-  const [currentState] = await tx
-    .select({ id: googleWorkspaceEventSubscriptionStates.id })
-    .from(googleWorkspaceEventSubscriptionStates)
-    .where(
-      and(
-        eq(googleWorkspaceEventSubscriptionStates.id, args.subscriptionStateId),
-        eq(
-          googleWorkspaceEventSubscriptionStates.subscriptionName,
-          args.subscriptionName,
-        ),
-        eq(
-          googleWorkspaceEventSubscriptionStates.connectorId,
-          args.connectorSourceId,
-        ),
-        eq(googleWorkspaceEventSubscriptionStates.provider, "google-meet"),
-      ),
-    )
-    .for("key share")
-    .limit(1);
-  const [currentAutomation] = await tx
-    .select({ id: workflowAutomations.id })
-    .from(workflowAutomations)
-    .where(
-      and(
-        eq(workflowAutomations.id, args.automationId),
-        eq(workflowAutomations.orgId, args.orgId),
-        eq(workflowAutomations.ownerUserId, args.userId),
-        eq(workflowAutomations.enabled, true),
-        eq(workflowAutomations.kind, "event"),
-        eq(
-          workflowAutomations.eventType,
-          GOOGLE_MEET_TRANSCRIPT_GENERATED_EVENT_TYPE,
-        ),
-        eq(workflowAutomations.eventConnectorId, args.connectorSourceId),
-      ),
-    )
-    .for("update")
-    .limit(1);
-  signal.throwIfAborted();
-  if (!currentState || !currentAutomation) {
-    throw new GoogleMeetAutomationSourceChangedError();
-  }
-}
-
 async function dispatchGoogleMeetTranscriptEventForState(
   args: {
     readonly db: Db;
@@ -2082,19 +2012,13 @@ export const dispatchGoogleWorkspaceEventsPubSubPush$ = command(
                 apiStartTime: args.apiStartTime,
                 triggerSource: "automation-event",
                 triggerBrief: runInput.triggerBrief,
-                persistSourceTransition: async (tx) => {
-                  await persistCurrentGoogleMeetAutomationSource(
-                    tx,
-                    {
-                      automationId: automation.automation.id,
-                      orgId: automation.automation.orgId,
-                      userId: automation.automation.ownerUserId,
-                      connectorSourceId: state.connectorId,
-                      subscriptionStateId: state.id,
-                      subscriptionName: state.subscriptionName,
-                    },
-                    signal,
-                  );
+                googleMeetSource: {
+                  automationId: automation.automation.id,
+                  orgId: automation.automation.orgId,
+                  userId: automation.automation.ownerUserId,
+                  connectorSourceId: state.connectorId,
+                  subscriptionStateId: state.id,
+                  subscriptionName: state.subscriptionName,
                 },
                 timing: timing.collectorForRunStart(),
               },

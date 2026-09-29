@@ -1,4 +1,5 @@
-import { resolveEnqueuedChatInputModel } from "./chat-input-model.service";
+import { enqueueIntegrationChatInput$ } from "./integration-chat-queue.service";
+import { resolveEnqueuedChatInputModel$ } from "./chat-input-model.service";
 import { touchNativeChatThread } from "./native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 import { command } from "ccstate";
@@ -35,10 +36,7 @@ import {
   publishThreadListChangedSafely,
 } from "../external/realtime";
 import { settle } from "../utils";
-import {
-  enqueueChatInput,
-  scheduleEnqueuedChatThreadPick$,
-} from "./chat-thread-queue-drain.service";
+import { scheduleEnqueuedChatThreadPick$ } from "./chat-thread-queue-drain.service";
 import {
   isFeishuInstallationEnabled,
   buildFeishuChatOpenUrl,
@@ -426,11 +424,15 @@ const persistCanonicalFeishuIngress$ = command(
       id: args.ingress.ingressId,
       chatThreadId: route.chatThreadId,
       eventType: "input.prompt",
-      modelSelection: await resolveEnqueuedChatInputModel(args.db, {
-        threadId: route.chatThreadId,
-        orgId: args.installation.orgId,
-        userId: args.connection.userId,
-      }),
+      modelSelection: await set(
+        resolveEnqueuedChatInputModel$,
+        {
+          threadId: route.chatThreadId,
+          orgId: args.installation.orgId,
+          userId: args.connection.userId,
+        },
+        signal,
+      ),
       userMessage: feishuInboundUserMessage(args.message, chatOpenUrl, assets),
       runId: null,
       feishuContext: {
@@ -439,25 +441,15 @@ const persistCanonicalFeishuIngress$ = command(
       },
       createdAt: args.ingress.createdAt,
     } as const;
-    await enqueueChatInput(args.db, {
-      chatThreadId: route.chatThreadId,
-      orgId: args.installation.orgId,
-      appendInput: async (tx) => {
-        // The entry's context row commits with the input it describes.
-        await insertChatEventContext(tx, values);
-        const inserted = await insertChatEvent(tx, values, "id");
-        await tx
-          .update(feishuChatIngress)
-          .set({ status: "processed", lastError: null, updatedAt: nowDate() })
-          .where(
-            and(
-              eq(feishuChatIngress.id, args.ingress.ingressId),
-              eq(feishuChatIngress.status, "processing"),
-            ),
-          );
-        return inserted?.id ?? null;
+    await set(
+      enqueueIntegrationChatInput$,
+      {
+        orgId: args.installation.orgId,
+        input: values,
+        ingress: { kind: "feishu", ingressId: args.ingress.ingressId },
       },
-    });
+      signal,
+    );
     signal.throwIfAborted();
     await touchNativeChatThread(args.db, {
       chatThreadId: route.chatThreadId,

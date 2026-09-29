@@ -11,7 +11,6 @@ import {
   workflows,
 } from "@okouai/db/schema/workflow";
 import { verifyCallbackRequest } from "../../lib/event-consumer/verify-signature";
-import type { Tx } from "../../lib/db-types";
 import { isUniqueViolation } from "../../lib/pg-errors";
 import { webUrl } from "../../lib/web-url";
 import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
@@ -450,30 +449,6 @@ type PreparedWorkflowWebhookDispatch =
   | { readonly kind: "unauthorized" }
   | { readonly kind: "rate_limited" };
 
-async function persistWebhookDelivery(
-  tx: Tx,
-  args: {
-    readonly delivery: PreparedWebhookDelivery;
-    readonly automationId: string;
-    readonly currentTime: Date;
-  },
-): Promise<void> {
-  // The receipt and source timestamp commit with the queue event. A duplicate
-  // delivery's unique violation rolls back its context, input and queue writes.
-  await tx.insert(workflowWebhookDeliveries).values({
-    ...args.delivery,
-    automationId: args.automationId,
-    status: "dispatched",
-    runId: null,
-    receivedAt: args.currentTime,
-    createdAt: args.currentTime,
-  });
-  await tx
-    .update(workflowWebhookAutomations)
-    .set({ lastReceivedAt: args.currentTime, updatedAt: args.currentTime })
-    .where(eq(workflowWebhookAutomations.automationId, args.automationId));
-}
-
 function webhookSignatureValid(args: {
   readonly rawBody: string;
   readonly secret: string;
@@ -638,17 +613,10 @@ const startWorkflowWebhookRun$ = command(
         apiStartTime: args.apiStartTime,
         triggerSource: "automation-event",
         timing: args.timing.collectorForRunStart(),
-        persistSourceTransition: async (tx) => {
-          await args.timing.measure(
-            "api_dispatch_pre_create_agent_automation_event_record_processed_event",
-            async () => {
-              await persistWebhookDelivery(tx, {
-                delivery: args.delivery,
-                automationId: args.row.automation.id,
-                currentTime: args.currentTime,
-              });
-            },
-          );
+        queueReceipt: {
+          kind: "webhook",
+          delivery: args.delivery,
+          receivedAt: args.currentTime,
         },
       },
       signal,

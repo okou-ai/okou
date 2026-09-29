@@ -1,4 +1,5 @@
-import { resolveEnqueuedChatInputModel } from "./chat-input-model.service";
+import { enqueueIntegrationChatInput$ } from "./integration-chat-queue.service";
+import { resolveEnqueuedChatInputModel$ } from "./chat-input-model.service";
 import { touchNativeChatThread } from "./native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
@@ -55,10 +56,7 @@ import {
 } from "./agentphone-chat-ingress.service";
 import { updateIntegrationChatThreadModel$ } from "./integration-chat-thread-model.service";
 import { createChatEventSourcePart } from "./chat-event-annotation.service";
-import {
-  enqueueChatInput,
-  scheduleEnqueuedChatThreadPick$,
-} from "./chat-thread-queue-drain.service";
+import { scheduleEnqueuedChatThreadPick$ } from "./chat-thread-queue-drain.service";
 import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
 import { listOrgModelPolicies$ } from "./model-policy.service";
 import { insertChatEvent, insertChatEventContext } from "./chat-event.service";
@@ -1401,11 +1399,15 @@ const persistAgentPhoneChatMessage$ = command(
       id: chatEventId,
       chatThreadId: route.chatThreadId,
       eventType: "input.prompt",
-      modelSelection: await resolveEnqueuedChatInputModel(args.db, {
-        threadId: route.chatThreadId,
-        orgId: args.userLink.orgId,
-        userId: args.userLink.userId,
-      }),
+      modelSelection: await set(
+        resolveEnqueuedChatInputModel$,
+        {
+          threadId: route.chatThreadId,
+          orgId: args.userLink.orgId,
+          userId: args.userLink.userId,
+        },
+        signal,
+      ),
       userMessage: createUserMessageDocument({
         text: canonicalAsset ? args.event.body.trim() : args.prompt,
         files: integrationInputMessageFiles(assets),
@@ -1433,15 +1435,11 @@ const persistAgentPhoneChatMessage$ = command(
       },
       createdAt: currentTime,
     } as const;
-    const eventId = await enqueueChatInput(args.db, {
-      chatThreadId: route.chatThreadId,
-      orgId: args.userLink.orgId,
-      appendInput: async (tx) => {
-        // The entry's context row commits with the input it describes.
-        await insertChatEventContext(tx, values);
-        return (await insertChatEvent(tx, values, "id"))?.id ?? null;
-      },
-    });
+    const eventId = await set(
+      enqueueIntegrationChatInput$,
+      { orgId: args.userLink.orgId, input: values },
+      signal,
+    );
     signal.throwIfAborted();
     if (eventId === null) {
       return { inserted: false };

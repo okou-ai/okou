@@ -1,3 +1,6 @@
+import { enqueueNotionWorkflowInput$ } from "./workflow-notion-queue.service";
+import { enqueueGoogleMeetWorkflowInput$ } from "./workflow-google-meet-queue.service";
+import { enqueueWorkflowInput$ } from "./workflow-input-queue.service";
 import { enqueueGmailWorkflowInput$ } from "./workflow-gmail-queue.service";
 import { enqueueGoogleCalendarWorkflowInput$ } from "./workflow-google-calendar-queue.service";
 import { command } from "ccstate";
@@ -8,7 +11,7 @@ import { publishChatThreadMessageCreatedSafely } from "../external/realtime";
 import { settle, settleIncludingAbort } from "../utils";
 import {
   revokePendingScheduleTicks,
-  prepareWorkflowAutomationQueueInput,
+  prepareWorkflowAutomationQueueInput$,
   ScheduleOccurrenceUnavailableError,
   workflowAutomationQueueEventWriter,
   type PersistWorkflowQueueSourceTransition,
@@ -138,7 +141,11 @@ function workflowQueueInputPreparation(
   timing: ApiDispatchTimingCollector,
 ) {
   if (
-    (args.googleFormsSource || args.googleCalendarSource || args.gmailSource) &&
+    (args.googleFormsSource ||
+      args.googleCalendarSource ||
+      args.gmailSource ||
+      args.googleMeetSource ||
+      args.notionSource) &&
     (args.scheduleClaim ||
       args.persistSourceTransition ||
       args.due.automation.kind === "schedule")
@@ -216,9 +223,10 @@ export const runWorkflowAutomationNow$ = command(
         ? { chatThreadId, automationId: automation.id }
         : undefined;
 
-    const preparedInput = await prepareWorkflowAutomationQueueInput(
-      db,
+    const preparedInput = await set(
+      prepareWorkflowAutomationQueueInput$,
       workflowQueueInputPreparation(args, timing),
+      signal,
     );
     signal.throwIfAborted();
     const appendInput = workflowAutomationQueueEventWriter(
@@ -260,24 +268,51 @@ export const runWorkflowAutomationNow$ = command(
                         { input: preparedInput, source: args.gmailSource },
                         signal,
                       )
-                    : enqueueChatInput(db, {
-                        chatThreadId,
-                        orgId: automation.orgId,
-                        appendInput,
-                        measureStep: (step, operation) => {
-                          return measureWorkflowAdmissionStep(
-                            timing,
-                            workflowQueueAdmissionStepAction(step),
-                            operation,
-                          );
-                        },
-                        ...queueAdmissionSourceTransition({
-                          scheduleClaim,
-                          persistSourceTransition,
-                          replacePendingTicks,
-                          timing,
-                        }),
-                      }),
+                    : args.googleMeetSource
+                      ? set(
+                          enqueueGoogleMeetWorkflowInput$,
+                          {
+                            input: preparedInput,
+                            source: args.googleMeetSource,
+                          },
+                          signal,
+                        )
+                      : args.notionSource
+                        ? set(
+                            enqueueNotionWorkflowInput$,
+                            { input: preparedInput, source: args.notionSource },
+                            signal,
+                          )
+                        : !scheduleClaim &&
+                            !persistSourceTransition &&
+                            !replacePendingTicks
+                          ? set(
+                              enqueueWorkflowInput$,
+                              {
+                                input: preparedInput,
+                                orgId: automation.orgId,
+                                receipt: args.queueReceipt,
+                              },
+                              signal,
+                            )
+                          : enqueueChatInput(db, {
+                              chatThreadId,
+                              orgId: automation.orgId,
+                              appendInput,
+                              measureStep: (step, operation) => {
+                                return measureWorkflowAdmissionStep(
+                                  timing,
+                                  workflowQueueAdmissionStepAction(step),
+                                  operation,
+                                );
+                              },
+                              ...queueAdmissionSourceTransition({
+                                scheduleClaim,
+                                persistSourceTransition,
+                                replacePendingTicks,
+                                timing,
+                              }),
+                            }),
             );
             if (!attempt.ok) {
               if (attempt.error instanceof ScheduleOccurrenceUnavailableError) {

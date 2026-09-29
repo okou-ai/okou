@@ -1,5 +1,6 @@
-import { resolveEnqueuedChatInputModel } from "./chat-input-model.service";
+import { resolveEnqueuedChatInputModel$ } from "./chat-input-model.service";
 import { randomUUID } from "node:crypto";
+import type { ChatInputModelSelection } from "@okouai/api-contracts/contracts/chat-input-model";
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
 import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context";
 import { chatEvents } from "@okouai/db/schema/chat-event";
@@ -42,10 +43,17 @@ import type {
   WorkflowAutomationEventPayload,
   WorkflowAutomationEventType,
 } from "./workflow-automation-context.service";
-import { assembleWorkflowAutomationRun } from "./workflow-automation-launch.service";
+import {
+  assembleWorkflowAutomationRun,
+  resolveWorkflowAutomationModelContext$,
+  type WorkflowModelContext,
+} from "./workflow-automation-launch.service";
 import { buildWorkflowAutomationQueuedLaunchMaterial } from "./workflow-automation-queued-launch-context.service";
 import { manualTriggerSource } from "./workflow-automation-trigger-source";
-import { measureWorkflowAdmissionStep } from "./workflow-queue-admission-timing.service";
+import {
+  measureWorkflowAdmissionStep,
+  recordWorkflowAdmissionDuration,
+} from "./workflow-queue-admission-timing.service";
 
 export type WorkflowQueueAdmissionTransaction = Tx;
 
@@ -105,30 +113,17 @@ interface WorkflowAutomationQueueEventArgs {
  * Prepare the run-less input, model selection and context before queue admission.
  * No database or transaction handle escapes in the returned ordinary values.
  */
-export async function prepareWorkflowAutomationQueueInput(
-  db: Db,
+function buildWorkflowAutomationQueueInput(
   args: WorkflowAutomationQueueEventArgs,
+  displayName: string | null,
+  modelSelection: ChatInputModelSelection,
 ) {
   const { automation } = args;
-  const [workflow] = await measureWorkflowAdmissionStep(
-    args.timing,
-    "api_dispatch_workflow_enqueue_display_name",
-    async () => {
-      return await db
-        .select({ displayName: workflows.displayName })
-        .from(workflows)
-        .where(eq(workflows.id, automation.workflowId))
-        .limit(1);
-    },
-  );
-  if (!workflow) {
-    throw new Error(`Workflow not found: ${automation.workflowId}`);
-  }
   const automationUserMessage = createUserMessageDocument({
     text: args.displayPrompt,
     nonContentPart: {
       type: "automation",
-      workflowName: workflow.displayName?.trim() || args.workflowName,
+      workflowName: displayName?.trim() || args.workflowName,
       workflowId: automation.workflowId,
       ...(args.triggerBrief === undefined
         ? {}
@@ -145,17 +140,7 @@ export async function prepareWorkflowAutomationQueueInput(
     createdAt,
     chatThreadId: args.chatThreadId,
     eventType: "input.automation" as const,
-    modelSelection: await measureWorkflowAdmissionStep(
-      args.timing,
-      "api_dispatch_workflow_enqueue_model_selection",
-      async () => {
-        return await resolveEnqueuedChatInputModel(db, {
-          threadId: args.chatThreadId,
-          orgId: automation.orgId,
-          userId: automation.ownerUserId,
-        });
-      },
-    ),
+    modelSelection,
     content: null,
     userMessage,
     runId: null,
@@ -195,9 +180,57 @@ export async function prepareWorkflowAutomationQueueInput(
   };
 }
 
-export type PreparedWorkflowAutomationQueueInput = Awaited<
-  ReturnType<typeof prepareWorkflowAutomationQueueInput>
+export type PreparedWorkflowAutomationQueueInput = ReturnType<
+  typeof buildWorkflowAutomationQueueInput
 >;
+
+/** Resolve display and model data before admission, returning plain values. */
+export const prepareWorkflowAutomationQueueInput$ = command(
+  async (
+    { set },
+    args: WorkflowAutomationQueueEventArgs,
+    signal: AbortSignal,
+  ) => {
+    const db = set(writeDb$);
+    const startedAt = performance.now();
+    const [workflow] = await db
+      .select({ displayName: workflows.displayName })
+      .from(workflows)
+      .where(eq(workflows.id, args.automation.workflowId))
+      .limit(1);
+    signal.throwIfAborted();
+    await recordWorkflowAdmissionDuration(
+      args.timing,
+      "api_dispatch_workflow_enqueue_display_name",
+      performance.now() - startedAt,
+    );
+    signal.throwIfAborted();
+    if (!workflow) {
+      throw new Error(`Workflow not found: ${args.automation.workflowId}`);
+    }
+    const modelStartedAt = performance.now();
+    const modelSelection = await set(
+      resolveEnqueuedChatInputModel$,
+      {
+        threadId: args.chatThreadId,
+        orgId: args.automation.orgId,
+        userId: args.automation.ownerUserId,
+      },
+      signal,
+    );
+    await recordWorkflowAdmissionDuration(
+      args.timing,
+      "api_dispatch_workflow_enqueue_model_selection",
+      performance.now() - modelStartedAt,
+    );
+    signal.throwIfAborted();
+    return buildWorkflowAutomationQueueInput(
+      args,
+      workflow.displayName,
+      modelSelection,
+    );
+  },
+);
 
 /** Legacy non-Forms callers still use the generic transaction callback. */
 export function workflowAutomationQueueEventWriter(
@@ -462,6 +495,7 @@ async function assembleAutomationRunForTarget(
     readonly head: ChatQueueHeadContext;
     readonly event: QueuedAutomationEvent;
     readonly target: LaunchTarget;
+    readonly modelContext: WorkflowModelContext;
     readonly rejection: (error: {
       readonly code: string;
       readonly message: string;
@@ -508,6 +542,7 @@ async function assembleAutomationRunForTarget(
           material.allowClaimedOnceScheduleAutomation,
       },
       queueEventId: event.id,
+      modelContext: args.modelContext,
       apiStartTime: head.apiStartTime,
       prompt: material.prompt,
       triggerBrief: event.triggerBrief ?? undefined,
@@ -613,9 +648,19 @@ export const assembleQueuedAutomationRun$ = command(
       }
       target = reconciledTarget;
     }
+    const modelContext = await set(
+      resolveWorkflowAutomationModelContext$,
+      {
+        orgId: target.automation.orgId,
+        userId: target.automation.ownerUserId,
+        chatThreadId: event.chatThreadId,
+        eventId: event.id,
+      },
+      signal,
+    );
     return await assembleAutomationRunForTarget(
       db,
-      { head, event, target, rejection },
+      { head, event, target, rejection, modelContext },
       signal,
     );
   },

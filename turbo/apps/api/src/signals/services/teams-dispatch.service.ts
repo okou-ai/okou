@@ -1,4 +1,5 @@
-import { resolveEnqueuedChatInputModel } from "./chat-input-model.service";
+import { enqueueIntegrationChatInput$ } from "./integration-chat-queue.service";
+import { resolveEnqueuedChatInputModel$ } from "./chat-input-model.service";
 import { touchNativeChatThread } from "./native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 import { createHash, randomBytes } from "node:crypto";
@@ -53,10 +54,7 @@ import {
   type TeamsGraphUserInfo,
 } from "../external/teams-bot-client";
 import { bestEffort, safeJsonParse } from "../utils";
-import {
-  enqueueChatInput,
-  scheduleEnqueuedChatThreadPick$,
-} from "./chat-thread-queue-drain.service";
+import { scheduleEnqueuedChatThreadPick$ } from "./chat-thread-queue-drain.service";
 import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
 import type { ChatQueueWaitReason } from "./chat-queue-wait-reason";
 import type { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
@@ -1628,11 +1626,15 @@ const persistTeamsChatMessage$ = command(
       id: chatEventId,
       chatThreadId: route.chatThreadId,
       eventType: "input.prompt",
-      modelSelection: await resolveEnqueuedChatInputModel(args.db, {
-        threadId: route.chatThreadId,
-        orgId: args.installation.orgId,
-        userId: args.connection.userId,
-      }),
+      modelSelection: await set(
+        resolveEnqueuedChatInputModel$,
+        {
+          threadId: route.chatThreadId,
+          orgId: args.installation.orgId,
+          userId: args.connection.userId,
+        },
+        signal,
+      ),
       userMessage: createUserMessageDocument({
         text: [
           args.activity.text,
@@ -1659,15 +1661,11 @@ const persistTeamsChatMessage$ = command(
       teamsContext: launchContext,
       createdAt: currentTime,
     } as const;
-    const eventId = await enqueueChatInput(args.db, {
-      chatThreadId: route.chatThreadId,
-      orgId: args.installation.orgId,
-      appendInput: async (tx) => {
-        // The entry's context row commits with the input it describes.
-        await insertChatEventContext(tx, values);
-        return (await insertChatEvent(tx, values, "id"))?.id ?? null;
-      },
-    });
+    const eventId = await set(
+      enqueueIntegrationChatInput$,
+      { orgId: args.installation.orgId, input: values },
+      signal,
+    );
     signal.throwIfAborted();
     if (eventId === null) {
       return { inserted: false };

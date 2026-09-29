@@ -1,4 +1,5 @@
-import { resolveEnqueuedChatInputModel } from "./chat-input-model.service";
+import { enqueueIntegrationChatInput$ } from "./integration-chat-queue.service";
+import { resolveEnqueuedChatInputModel$ } from "./chat-input-model.service";
 import { touchNativeChatThread } from "./native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 import { createHmac, timingSafeEqual } from "node:crypto";
@@ -55,10 +56,7 @@ import {
 import { now } from "../../lib/time";
 import { safeJsonParse, tapError } from "../utils";
 import { listOrgModelPolicies$ } from "./model-policy.service";
-import {
-  enqueueChatInput,
-  scheduleEnqueuedChatThreadPick$,
-} from "./chat-thread-queue-drain.service";
+import { scheduleEnqueuedChatThreadPick$ } from "./chat-thread-queue-drain.service";
 import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
 import {
   bindTelegramReplyMessageRoute,
@@ -1263,11 +1261,15 @@ const persistTelegramChatMessage$ = command(
       id: chatEventId,
       chatThreadId: binding.chatThreadId,
       eventType: "input.prompt",
-      modelSelection: await resolveEnqueuedChatInputModel(args.source.db, {
-        threadId: binding.chatThreadId,
-        orgId: args.source.orgId,
-        userId: args.source.userLink.userId,
-      }),
+      modelSelection: await set(
+        resolveEnqueuedChatInputModel$,
+        {
+          threadId: binding.chatThreadId,
+          orgId: args.source.orgId,
+          userId: args.source.userLink.userId,
+        },
+        signal,
+      ),
       content: null,
       userMessage: createUserMessageDocument({
         text: canonicalAsset ? runPrompt.text : args.prompt,
@@ -1287,14 +1289,11 @@ const persistTelegramChatMessage$ = command(
       }),
       createdAt: currentTime,
     } as const;
-    const eventId = await enqueueChatInput(args.source.db, {
-      chatThreadId: binding.chatThreadId,
-      orgId: args.source.orgId,
-      appendInput: async (tx) => {
-        await insertChatEventContext(tx, values);
-        return (await insertChatEvent(tx, values, "id"))?.id ?? null;
-      },
-    });
+    const eventId = await set(
+      enqueueIntegrationChatInput$,
+      { orgId: args.source.orgId, input: values },
+      signal,
+    );
     signal.throwIfAborted();
     if (eventId === null) {
       return { inserted: false };
