@@ -26,12 +26,23 @@ This investigation covers the source at
 `5ff7cf7d3447f05b134dd0cfbd97b9cb80fab8ca` and Stripe's published API contracts
 read on September 29, 2026. It supplements the
 [billing implementation inventory](advisory-lock-release-1-billing.md).
-The common remote write protocol and cross-preview Plan purchase admission
-remain **unfinished Release 1 implementation**. Neither is a gate that deployment
-or outgoing-writer drain alone can satisfy. This note does not claim that a
-solution under the terminal constraints is impossible.
+Ethan's approved declarative subscription decision, finalized without new schema
+in `bba5c515`, supersedes the
+strict ordering requirement investigated here. The current target is the
+[declarative implementation mapping](advisory-lock-release-1-declarative-stripe.md):
+a plain desired configuration derived from existing business records,
+identity-only synchronization and daily repair. No table, field or JSON
+coordination state is added.
+Temporary late quantity/schedule overwrites are accepted. The schedule/item
+fences below are historical alternatives, **not current completion gates**.
 
-## Writers that must share the protocol
+The verified provider contracts remain relevant to actual payment and recovery
+behavior. Duplicate payable subscriptions, pending-payment replacement,
+proration invoices, refunds and grants still need their own business safeguards.
+The desired writer model and those safeguards remain unfinished R1 code; this
+new decision does not mean that an implementation has already shipped.
+
+## Historical writer evidence; current mapping linked above
 
 | Writer                                                         | Current provider mutation                                                                                                                 | Existing business identity and remaining gap                                                                                                                                                                                 |
 | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -106,7 +117,7 @@ types. No live Stripe mutation or test-mode purchase was performed. A local
 provider fixture that implements the desired fence would not establish the
 provider's actual contract.
 
-## Why object identity still needs a complete protocol
+## Historical strict-ordering investigation: object identity
 
 Keeping a write bound to a captured schedule is a useful direction. If a newer
 operation releases schedule `S1` and publishes `S2`, an older operation must
@@ -239,7 +250,7 @@ replacement must preserve those business behaviors and resolve uncertain
 outcomes from authoritative provider state without creating a second payable
 purchase.
 
-## Completion evidence still required
+## Superseded strict-ordering completion criteria
 
 The implementation must cover all rows in the writer table, preserve paid
 entitlements and pending payment behavior, and use command-owned short SQL
@@ -249,11 +260,13 @@ and repeated original webhook events; assert resulting quantities, schedules,
 and amounts through user-facing APIs. Provider-boundary fixtures should model
 verified Stripe behavior, not invent conditional mutation guarantees.
 
-Only after that common protocol exists can the retained advisory acquisitions
-be classified solely as outgoing-writer compatibility. The two-release plan
-remains unchanged; this unresolved implementation is part of Release 1.
+The paragraph above describes the previous strict-ordering investigation. Its
+remote ordering/fence prerequisite is withdrawn. Current R1 completion instead
+requires every desired-state writer, bounded daily repair and the separate
+financial safeguards described in the declarative mapping. The two-release
+plan remains unchanged.
 
-## Replacing every schedule before initialization
+## Historical alternative: replacing every schedule before initialization
 
 A narrower candidate is valid to investigate and is not disproved merely by
 Stripe requiring two requests. Each schedule writer releases the attached
