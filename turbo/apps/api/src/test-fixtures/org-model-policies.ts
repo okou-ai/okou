@@ -38,6 +38,36 @@ export async function stagePreAddabilityModelPolicyFixture(args: {
   }
 }
 
+/** Enable one model in the test database without changing the production catalog. */
+export async function enableRunModelCatalogEntryFixture(
+  model: SupportedRunModel,
+): Promise<() => Promise<void>> {
+  const [existing] = await db()
+    .select({ allowNewOrgPolicy: runModelCatalog.allowNewOrgPolicy })
+    .from(runModelCatalog)
+    .where(eq(runModelCatalog.model, model))
+    .limit(1);
+  await db()
+    .insert(runModelCatalog)
+    .values({ model, allowNewOrgPolicy: true })
+    .onConflictDoUpdate({
+      target: runModelCatalog.model,
+      set: { allowNewOrgPolicy: true },
+    });
+  return async () => {
+    if (existing) {
+      await db()
+        .update(runModelCatalog)
+        .set({ allowNewOrgPolicy: existing.allowNewOrgPolicy })
+        .where(eq(runModelCatalog.model, model));
+    } else {
+      await db()
+        .delete(runModelCatalog)
+        .where(eq(runModelCatalog.model, model));
+    }
+  };
+}
+
 /** Remove one operator catalog row to exercise the production fail-closed path. */
 export async function removeRunModelCatalogEntryFixture(
   model: SupportedRunModel,

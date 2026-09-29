@@ -119,6 +119,10 @@ const MODEL_RUN_OPTIONS: Readonly<Record<string, ModelRunOptions>> =
     },
     "claude-opus-5": { efforts: CLAUDE_CODE_EFFORTS, defaultEffort: "high" },
     "claude-opus-4-8": { efforts: CLAUDE_CODE_EFFORTS, defaultEffort: "high" },
+    "claude-sonnet-5-5": {
+      efforts: CLAUDE_CODE_EFFORTS,
+      defaultEffort: "high",
+    },
     "claude-sonnet-5": { efforts: CLAUDE_CODE_EFFORTS, defaultEffort: "high" },
     "claude-sonnet-4-6": {
       efforts: ["low", "medium", "high", "max"],

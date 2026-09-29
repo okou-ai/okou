@@ -23,6 +23,7 @@ import { now } from "../../../lib/time";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import {
   removeRunModelCatalogEntryFixture,
+  enableRunModelCatalogEntryFixture,
   setOrgMemberRunModelOutsidePolicyFixture,
   setOrgModelPolicyProviderTypeFixture,
   stagePreAddabilityModelPolicyFixture,
@@ -297,10 +298,17 @@ describe("GET/PUT /api/model-policies", () => {
     expect(initial.body.modelsAvailableToAdd).not.toContain("gpt-6-sol");
     expect(initial.body.modelsAvailableToAdd).not.toContain("claude-opus-5-5");
     expect(initial.body.modelsAvailableToAdd).not.toContain(
+      "claude-sonnet-5-5",
+    );
+    expect(initial.body.modelsAvailableToAdd).not.toContain(
       DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
     );
 
-    for (const stagedModel of ["gpt-6-sol", "claude-opus-5-5"] as const) {
+    for (const stagedModel of [
+      "gpt-6-sol",
+      "claude-opus-5-5",
+      "claude-sonnet-5-5",
+    ] as const) {
       const rejected = await accept(
         client.update({
           headers: authHeaders(),
@@ -360,6 +368,83 @@ describe("GET/PUT /api/model-policies", () => {
       expect.arrayContaining([
         expect.objectContaining({ model: "gpt-6-luna", isDefault: false }),
       ]),
+    );
+  });
+
+  it("admits Sonnet 5.5 only after catalog activation and keeps defaults unchanged", async () => {
+    onTestFinished(
+      await enableRunModelCatalogEntryFixture("claude-sonnet-5-5"),
+    );
+    const fixture = seedFixture();
+    useSession(fixture);
+    await seedBuiltInModelCandidateKeys(context, "claude-sonnet-5-5");
+    const client = apiClient();
+    const listed = await accept(client.list({ headers: authHeaders() }), [200]);
+    expect(listed.body.modelsAvailableToAdd).toContain("claude-sonnet-5-5");
+    const added = await accept(
+      client.update({
+        headers: authHeaders(),
+        body: {
+          revision: listed.body.revision,
+          policies: [
+            ...toUpdate(listed.body),
+            makeBuiltInPolicy("claude-sonnet-5-5"),
+          ],
+        },
+      }),
+      [200],
+    );
+    expect(added.body.workspaceDefaultModel).toBe(
+      DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
+    );
+    expect(added.body.policies).toContainEqual(
+      expect.objectContaining({
+        model: "claude-sonnet-5-5",
+        isDefault: false,
+        runtimeProviderType: "anthropic-api-key",
+        routeStatus: "valid",
+      }),
+    );
+
+    const free = seedFixture();
+    await makeLimitedFreeWorkspace(free);
+    useSession(free);
+    const freePolicies = await accept(
+      client.list({ headers: authHeaders() }),
+      [200],
+    );
+    const providerId = await createOrgProvider(free, "anthropic-api-key");
+    for (const policy of [
+      makeBuiltInPolicy("claude-sonnet-5-5"),
+      {
+        ...makeBuiltInPolicy("claude-sonnet-5-5"),
+        defaultProviderType: "anthropic-api-key" as const,
+        modelProviderId: providerId,
+      },
+    ]) {
+      const denied = await client.update({
+        headers: authHeaders(),
+        body: {
+          revision: freePolicies.body.revision,
+          policies: [...toUpdate(freePolicies.body), policy],
+        },
+      });
+      expect(denied.status).toBe(402);
+      expect(denied.body).toMatchObject({
+        error: { code: "PRO_REQUIRED" },
+      });
+    }
+    const unchanged = await accept(
+      client.list({ headers: authHeaders() }),
+      [200],
+    );
+    expect(
+      unchanged.body.policies.some((policy) => {
+        return policy.model === "claude-sonnet-5-5";
+      }),
+    ).toBeFalsy();
+    expect(unchanged.body.workspaceDefaultModel).toBe(
+      LIMITED_FREE1_DEFAULT_RUN_MODEL,
     );
   });
 

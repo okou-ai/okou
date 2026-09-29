@@ -401,6 +401,7 @@ mod tests {
     fn build_claude_args_other_models_omit_effort() {
         for model in [
             "",
+            "claude-sonnet-5-5",
             "claude-sonnet-5",
             "claude-sonnet-4-6",
             "anthropic/claude-sonnet-5",

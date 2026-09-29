@@ -237,6 +237,46 @@ describe("native Pi execution edges", () => {
     },
   );
 
+  it("sends a Sonnet 5.5 Anthropic request with adaptive thinking and normal tool choice", async () => {
+    const fixture = fixtures.find(({ name }) => {
+      return name === "built-in anthropic";
+    });
+    if (!fixture) throw new Error("Missing Anthropic fixture");
+    const config = piModelConfigV4Schema.parse({
+      ...fixture.config,
+      model: "claude-sonnet-5-5",
+      catalogModel: "claude-sonnet-5-5",
+    });
+    const requests: Record<string, unknown>[] = [];
+    server.use(
+      http.post(piNativeInferenceUrl(config), async ({ request }) => {
+        requests.push((await request.json()) as Record<string, unknown>);
+        return messagesResponse("claude-sonnet-5-5");
+      }),
+    );
+    const materialized = await materialize(config);
+    const model = resolvePiAgentModel(materialized);
+    if (!model) throw new Error("Missing Sonnet 5.5 runtime model");
+    expect(model.cost).toMatchObject({ input: 2, output: 10, cacheRead: 0.2 });
+    expect(model.contextWindow).toBe(1_000_000);
+    expect(model.maxTokens).toBe(128_000);
+    const result = await piAgentStreamForConfig(materialized)(
+      model,
+      normalizeContext({
+        messages: [{ role: "user", content: "read the file", timestamp: 1 }],
+      }),
+      { apiKey: materialized.apiKey, reasoning: "high" },
+    ).result();
+    expect(result.stopReason).toBe("toolUse");
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({
+      model: "claude-sonnet-5-5",
+      thinking: { type: "adaptive" },
+      output_config: { effort: "high" },
+    });
+    expect(requests[0]?.tool_choice).toBeUndefined();
+  });
+
   it.each(
     fixtures.flatMap((fixture) => {
       return ["direct", "sandbox-firewall"].map((target) => {

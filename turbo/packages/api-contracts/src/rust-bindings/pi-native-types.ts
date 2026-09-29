@@ -75,12 +75,13 @@ export const piNativeTypeBindings: readonly RustTypeBinding[] = [
 
             {
               rustTypeName: `${prefix}CatalogModel`,
-              rustDoc: ["Frozen native catalog vocabulary."],
+              rustDoc: ["Native catalog vocabulary."],
               variants: variants([
                 "claude-fable-5-1",
                 "claude-opus-5-5",
                 "claude-opus-5",
                 "claude-opus-4-8",
+                "claude-sonnet-5-5",
                 "claude-sonnet-5",
                 "claude-sonnet-4-6",
               ]),

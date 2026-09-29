@@ -54,7 +54,11 @@ import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
 import { runModelCatalog } from "@okouai/db/schema/run-model-catalog";
-import { conflict, insufficientCredits } from "../../lib/error";
+import {
+  conflict,
+  insufficientCredits,
+  paidPlanRequired,
+} from "../../lib/error";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import { settle } from "../utils";
@@ -90,6 +94,7 @@ type ServiceResult<T> =
       readonly ok: false;
       readonly response:
         | ReturnType<typeof insufficientCredits>
+        | ReturnType<typeof paidPlanRequired>
         | ReturnType<typeof conflict>;
     };
 
@@ -131,8 +136,14 @@ function bad<T>(message: string): ServiceResult<T> {
   return { ok: false, message };
 }
 
-function planRestricted<T>(): ServiceResult<T> {
-  return { ok: false, response: insufficientCredits() };
+function planRestricted<T>(model?: SupportedRunModel): ServiceResult<T> {
+  return {
+    ok: false,
+    response:
+      model === "claude-sonnet-5-5"
+        ? paidPlanRequired()
+        : insufficientCredits(),
+  };
 }
 
 function isOAuthMemberProviderType(type: ModelProviderType): boolean {
@@ -150,6 +161,9 @@ function surfaceSupportsModel(
   surface: SurfaceRouteInfo,
   model: SupportedRunModel,
 ): boolean {
+  if (model === "claude-sonnet-5-5") {
+    return false;
+  }
   const providerType = providerTypeForSurface(surface.protocol);
   return (
     providerType !== null &&
@@ -946,7 +960,9 @@ function validateUpdatePolicies(
         capabilities,
       })
     ) {
-      return planRestricted();
+      return planRestricted(
+        capabilities.restrictedBuiltInModels ? model : undefined,
+      );
     }
     if (!parseCredentialScope(policy.credentialScope)) {
       return bad(`Unknown credential scope "${policy.credentialScope}"`);

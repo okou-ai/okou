@@ -1023,6 +1023,7 @@ type CreateRunRouteResult =
       readonly admissionFailure?: "subscription_account_disconnected";
     })
   | ApiErrorResponse<402, "INSUFFICIENT_CREDITS">
+  | ApiErrorResponse<402, "PRO_REQUIRED">
   | ApiErrorResponse<503, "PROVIDER_UNAVAILABLE">;
 
 type CreateRunErrorResult = Exclude<
