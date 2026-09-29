@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/okou-ai/okou/compare/runner-remote-v0.6.0...runner-remote-v0.6.1) (2026-09-29)
+
+
+### Bug Fixes
+
+* **vnc:** make ssh interoperability acceptance reproducible ([#37273](https://github.com/okou-ai/okou/issues/37273)) ([cac5a5b](https://github.com/okou-ai/okou/commit/cac5a5b940bddbcdb21b807f7f4c4d2ec5791964))
+
 ## [0.6.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.5.5...runner-remote-v0.6.0) (2026-09-28)
 
 

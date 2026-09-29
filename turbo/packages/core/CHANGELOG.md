@@ -1,5 +1,20 @@
 # Changelog
 
+## [8.720.4](https://github.com/okou-ai/okou/compare/core-v8.720.3...core-v8.720.4) (2026-09-29)
+
+
+### Refactoring
+
+* remove thread image model compatibility and dead generation metadata ([#37306](https://github.com/okou-ai/okou/issues/37306)) ([bb79964](https://github.com/okou-ai/okou/commit/bb7996407cbf06854852966ef1c5fc04a390d4d2))
+* simplify generation and template internals ([#37328](https://github.com/okou-ai/okou/issues/37328)) ([363beba](https://github.com/okou-ai/okou/commit/363beba298d77a4746bf7097f49d11342ea3fbb2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.527.1
+
 ## [8.720.3](https://github.com/okou-ai/okou/compare/core-v8.720.2...core-v8.720.3) (2026-09-29)
 
 
