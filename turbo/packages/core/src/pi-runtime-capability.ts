@@ -59,8 +59,6 @@ export const PI_RUNTIME_RESOLVABLE_MODELS = {
   ],
   openrouter: [
     "okou-1.0",
-    "okou-1.0-pro",
-    "okou-1.0-max",
     "deepseek/deepseek-v4.1-flash",
     "deepseek/deepseek-v4-flash",
     "openai/gpt-6-sol",

@@ -327,7 +327,7 @@ test.each(STRUCTURED_FAILURE_CASES)(
   },
 );
 
-test("shows configured Okou models when the Add Model switch is off", async () => {
+test("shows only Auto for configured Okou models when the Add Model switch is off", async () => {
   configureModelPolicies(
     ["okou-1.0-max", "okou-1.0-pro", "okou-1.0", "gpt-5.6-luna"],
     { defaultModel: "gpt-5.6-luna" },
@@ -352,9 +352,14 @@ test("shows configured Okou models when the Add Model switch is off", async () =
   );
   expect(
     optionNames.filter((name) => {
+      return name.includes("Auto");
+    }),
+  ).toHaveLength(1);
+  expect(
+    optionNames.some((name) => {
       return name.includes("Okou 1.0");
     }),
-  ).toHaveLength(3);
+  ).toBeFalsy();
   expect(
     optionNames.some((name) => {
       return name.includes("GPT 5.6 Luna");

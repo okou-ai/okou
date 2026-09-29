@@ -1570,14 +1570,6 @@ describe("CHAT-02: model-first provider policies", () => {
       model: "okou-1.0",
       preset: "@preset/okou-1-0",
     },
-    {
-      model: "okou-1.0-pro",
-      preset: "@preset/okou-1-0-pro",
-    },
-    {
-      model: "okou-1.0-max",
-      preset: "@preset/okou-1-0-max",
-    },
   ] as const)(
     "routes built-in $model only through its OpenRouter Preset",
     async ({ model, preset }) => {
