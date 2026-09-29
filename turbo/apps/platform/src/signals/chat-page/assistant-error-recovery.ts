@@ -852,7 +852,7 @@ export function createAssistantErrorRecoverySignals(deps: {
         : null;
       const features = get(featureSwitch$);
       const runOptions = runOptionsFromModelProviderSelection(modelSelection);
-      await set(
+      return await set(
         deps.chatEvents.sendEvent$,
         {
           kind: "input",
@@ -873,7 +873,6 @@ export function createAssistantErrorRecoverySignals(deps: {
         },
         signal,
       );
-      return true;
     },
   );
   const retryAssistantError$ = command(

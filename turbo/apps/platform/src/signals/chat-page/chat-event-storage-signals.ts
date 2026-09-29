@@ -12,6 +12,12 @@ import { captureTaskCompletedSuccessfully } from "../../lib/posthog.ts";
 import type { ChatEventDataKey } from "../../shared-database/data-key.ts";
 import { queryChatEventSharedDatabase$ } from "../shared-database.ts";
 import { reloadBillingStatus$ } from "../okou-page/billing.ts";
+import { authenticatedIdentity$ } from "../auth.ts";
+import {
+  deliveryIntentsChanged$,
+  listDeliveryIntents,
+  removeDeliveryIntent,
+} from "./chat-delivery-intents.ts";
 import { notifyChatEventsChanged$ } from "./chat-event-change-registry.ts";
 import type { ChatEvent } from "./chat-event-types.ts";
 import {
@@ -147,6 +153,25 @@ function createStoredChatEventsComputed({
   });
 }
 
+const reconcilePersistedDeliveryIntents$ = command(
+  async (
+    { get, set },
+    threadId: string,
+    events: readonly PersistedChatEvent[],
+    signal: AbortSignal,
+  ) => {
+    const identity = await get(authenticatedIdentity$);
+    signal.throwIfAborted();
+    const delivered = new Set(events.map((event) => {return event.id}));
+    for (const intent of listDeliveryIntents(identity)) {
+      if (intent.threadId === threadId && delivered.has(intent.clientEventId)) {
+        removeDeliveryIntent(identity, intent.clientEventId);
+      }
+    }
+    set(deliveryIntentsChanged$);
+  },
+);
+
 function createSharedDatabaseEventSignals({
   threadId,
   persistentChatEvents$,
@@ -184,6 +209,8 @@ function createSharedDatabaseEventSignals({
         return mergePersistentEvents([previous, events]);
       });
       set(reconcileOptimisticChatEvents$, { threadId, events });
+      await set(reconcilePersistedDeliveryIntents$, threadId, events, signal);
+      signal.throwIfAborted();
       await set(notifyChatEventsChanged$, chatEvents$, signal);
     },
   );
@@ -281,6 +308,8 @@ export function createChatEventStorageSignals({
         return mergePersistentEvents([previous, events]);
       });
       set(reconcileOptimisticChatEvents$, { threadId, events });
+      await set(reconcilePersistedDeliveryIntents$, threadId, events, signal);
+      signal.throwIfAborted();
       await set(notifyChatEventsChanged$, chatEvents$, signal);
       signal.throwIfAborted();
     },
@@ -292,6 +321,23 @@ export function createChatEventStorageSignals({
     mergePersistentEvents$,
   });
   const syncRemoteEvents$ = sharedDatabase.sync$;
+  /** Unlike the ordinary incremental sync, retry must contact the server. */
+  const confirmDelivery$ = command(
+    async ({ set }, eventId: string, signal: AbortSignal): Promise<boolean> => {
+      const rows = await set(
+        queryChatEventSharedDatabase$,
+        {
+          dataKey: { kind: "chat-event", threadId },
+          afterSeqId: null,
+          consistency: "catch-up",
+        },
+        signal,
+      );
+      signal.throwIfAborted();
+      await set(mergePersistentEvents$, rows.map(chatEventFromRow), signal);
+      return rows.some((row) => {return row.id === eventId});
+    },
+  );
   const initializeIndexedDbEvents$ = command(
     async ({ set }, signal: AbortSignal): Promise<void> => {
       await set(sharedDatabase.load$, signal);
@@ -305,5 +351,6 @@ export function createChatEventStorageSignals({
     initializeIndexedDbEvents$,
     appendOptimisticEvent$,
     syncRemoteEvents$,
+    confirmDelivery$,
   };
 }
