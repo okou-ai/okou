@@ -71,7 +71,7 @@ function menuItem(menu: HTMLElement, label: string): HTMLElement {
   return item;
 }
 
-test("keeps the separate attach, template and workflow buttons while the add menu is off", async () => {
+test("keeps attach and template without the workflow toolbar button while the add menu is off", async () => {
   const editor = await setupComposer({
     [FeatureSwitchKey.ComposerAddMenu]: false,
   });
@@ -79,11 +79,11 @@ test("keeps the separate attach, template and workflow buttons while the add men
 
   expect(within(card).getByLabelText("Attach")).toBeVisible();
   expect(within(card).getByLabelText("Template")).toBeVisible();
-  expect(within(card).getByLabelText("Create workflow")).toBeVisible();
+  expect(within(card).queryByLabelText("Create workflow")).toBeNull();
   expect(within(card).queryByLabelText("Add")).toBeNull();
 });
 
-test("collapses those buttons into the add menu's rows", async () => {
+test("groups attach, template and workflow actions in the add menu", async () => {
   const editor = await setupComposer({
     [FeatureSwitchKey.ComposerAddMenu]: true,
   });

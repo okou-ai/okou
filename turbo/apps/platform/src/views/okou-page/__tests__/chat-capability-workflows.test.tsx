@@ -5,6 +5,7 @@ import {
   type WorkflowAutomationSummary,
   type WorkflowAutomationUpdateRequest,
 } from "@okouai/api-contracts/contracts/workflows";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -188,6 +189,18 @@ function currentComposer(): HTMLElement {
 
 function composerText(): string {
   return normalizedText(currentComposer());
+}
+
+async function startWorkflowFromAddMenu(): Promise<void> {
+  click(await findButton("Add"));
+  const menu = await screen.findByRole("menu", { name: "Add" });
+  const item = queryAllByRoleFast("menuitem", menu).find((candidate) => {
+    return normalizedText(candidate) === "Create workflow";
+  });
+  if (!item) {
+    throw new Error("Expected the Create workflow menu item");
+  }
+  click(item);
 }
 
 test("Edit schedule and Gmail workflow triggers", async () => {
@@ -395,22 +408,27 @@ test("Present workflow trigger events as meaningful chat history", async () => {
   ).not.toBeInTheDocument();
 });
 
-test("Start creating a workflow from the chat composer", async () => {
+test("Start creating a workflow from the chat composer add menu", async () => {
   const originalDraft = "Keep this unsent customer follow-up.";
   installCapabilityChat({
     events: completedConversation("The composer is ready."),
   });
 
-  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.ComposerAddMenu]: true },
+  });
 
   await readyChat();
-  click(await findButton("Create workflow"));
+  await startWorkflowFromAddMenu();
   await waitFor(() => {
     expect(composerText()).toBe(CREATE_WORKFLOW_PROMPT);
   });
 
   await fill(currentComposer(), originalDraft);
-  click(await findButton("Create workflow"));
+  await startWorkflowFromAddMenu();
   let dialog = await screen.findByRole("dialog", {
     name: "Replace composer draft?",
   });
@@ -426,7 +444,7 @@ test("Start creating a workflow from the chat composer", async () => {
     expect(composerText()).toBe(originalDraft);
   });
 
-  click(await findButton("Create workflow"));
+  await startWorkflowFromAddMenu();
   dialog = await screen.findByRole("dialog", {
     name: "Replace composer draft?",
   });
