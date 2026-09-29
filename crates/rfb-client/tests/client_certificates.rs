@@ -46,6 +46,8 @@ struct Fixture {
     server_root: CertificateDer<'static>,
     client_certificate: CertificateDer<'static>,
     client_key: Vec<u8>,
+    client_ca_params: rcgen::CertificateParams,
+    client_ca_key: rcgen::KeyPair,
 }
 
 impl Fixture {
@@ -109,6 +111,8 @@ impl Fixture {
             server_root,
             client_certificate: client_certificate.der().clone(),
             client_key: client_key.serialize_der(),
+            client_ca_params: client_params,
+            client_ca_key: client_root_key,
         }
     }
 
@@ -212,6 +216,61 @@ async fn requested_identity_authenticates_exact_subtypes_on_tls12_and_tls13() {
                 .unwrap();
         }
     }
+}
+
+#[tokio::test]
+async fn complete_client_chain_is_presented_to_a_verifying_peer() {
+    let fixture = Fixture::new(false, true, false, false);
+    let issuer_key = rcgen::KeyPair::generate().unwrap();
+    let mut issuer_params = rcgen::CertificateParams::default();
+    issuer_params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
+    issuer_params.key_usages = vec![rcgen::KeyUsagePurpose::KeyCertSign];
+    let issuer = issuer_params
+        .signed_by(
+            &issuer_key,
+            &rcgen::Issuer::from_params(&fixture.client_ca_params, &fixture.client_ca_key),
+        )
+        .unwrap();
+    let leaf_key = rcgen::KeyPair::generate().unwrap();
+    let mut leaf_params =
+        rcgen::CertificateParams::new(vec!["client.example.test".into()]).unwrap();
+    leaf_params.extended_key_usages = vec![rcgen::ExtendedKeyUsagePurpose::ClientAuth];
+    let leaf = leaf_params
+        .signed_by(
+            &leaf_key,
+            &rcgen::Issuer::from_params(&issuer_params, &issuer_key),
+        )
+        .unwrap();
+    let identity = ClientIdentity::from_pkcs8_der(
+        vec![leaf.der().clone(), issuer.der().clone()],
+        PrivatePkcs8KeyDer::from(leaf_key.serialize_der()),
+    )
+    .unwrap();
+    let (client, server) = sockets().await;
+    let peer = async {
+        let mut stream = TlsAcceptor::from(Arc::clone(&fixture.config))
+            .accept(negotiate(server, 260).await)
+            .await
+            .unwrap();
+        assert_eq!(stream.get_ref().1.peer_certificates().unwrap().len(), 2);
+        stream.write_u32(0).await.unwrap();
+        stream.flush().await.unwrap();
+    };
+    let caller = async {
+        authenticate_with_client_certificate(
+            client,
+            NAME,
+            ClientCertificateAuthentication::None,
+            fixture.roots(),
+            identity,
+            deadline(),
+        )
+        .await
+        .unwrap();
+    };
+    timeout(Duration::from_secs(5), async { tokio::join!(peer, caller) })
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
