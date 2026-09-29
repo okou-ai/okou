@@ -76,7 +76,7 @@ import { removeUsagePackMemberAllocation } from "./usage-pack-allocation-change.
 import { refundUsagePackMemberCredits } from "./usage-pack-credit-refund.service";
 import {
   deleteBuiltinConnectorLocalState$,
-  loadStoredBuiltinConnectorRuntimeSnapshot,
+  loadStoredBuiltinConnectorRuntimeSnapshot$,
 } from "./connector-data.service";
 import {
   deleteClerkAgentLifecycleData$,
@@ -404,13 +404,12 @@ async function cancelStripeSubscriptionsForDeletedOrg(
 }
 
 const revokeOrgConnectorTokens$ = command(
-  async (
-    { set },
-    db: Db,
-    orgId: string,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    const snapshot = await loadStoredBuiltinConnectorRuntimeSnapshot(db);
+  async ({ set }, orgId: string, signal: AbortSignal): Promise<void> => {
+    const db = set(writeDb$);
+    const snapshot = await set(
+      loadStoredBuiltinConnectorRuntimeSnapshot$,
+      signal,
+    );
     signal.throwIfAborted();
     const rows = await db
       .select({
@@ -443,13 +442,12 @@ const revokeOrgConnectorTokens$ = command(
 );
 
 const revokeUserConnectorTokens$ = command(
-  async (
-    { set },
-    db: Db,
-    userId: string,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    const snapshot = await loadStoredBuiltinConnectorRuntimeSnapshot(db);
+  async ({ set }, userId: string, signal: AbortSignal): Promise<void> => {
+    const db = set(writeDb$);
+    const snapshot = await set(
+      loadStoredBuiltinConnectorRuntimeSnapshot$,
+      signal,
+    );
     signal.throwIfAborted();
     const rows = await db
       .select({
@@ -484,7 +482,6 @@ const revokeUserConnectorTokens$ = command(
 const cleanupOrgExternalServices$ = command(
   async (
     { set },
-    db: Db,
     orgId: string,
     required: boolean,
     signal: AbortSignal,
@@ -496,7 +493,7 @@ const cleanupOrgExternalServices$ = command(
       {
         name: "connector tokens",
         run: () => {
-          return set(revokeOrgConnectorTokens$, db, orgId, signal);
+          return set(revokeOrgConnectorTokens$, orgId, signal);
         },
       },
     ];
@@ -515,13 +512,8 @@ const cleanupOrgExternalServices$ = command(
 );
 
 const cleanupUserExternalServices$ = command(
-  async (
-    { set },
-    db: Db,
-    userId: string,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    await set(revokeUserConnectorTokens$, db, userId, signal);
+  async ({ set }, userId: string, signal: AbortSignal): Promise<void> => {
+    await set(revokeUserConnectorTokens$, userId, signal);
     signal.throwIfAborted();
   },
 );
@@ -1010,7 +1002,7 @@ export const cleanupClerkDeletedOrg$ = command(
       { kind: "organization", orgId },
       signal,
     );
-    await set(cleanupOrgExternalServices$, db, orgId, false, signal);
+    await set(cleanupOrgExternalServices$, orgId, false, signal);
     signal.throwIfAborted();
     await get(deleteOrgS3Data(db, orgId));
     signal.throwIfAborted();
@@ -1065,7 +1057,7 @@ export const cleanupClerkDeletedUser$ = command(
       signal.throwIfAborted();
     }
 
-    await set(cleanupUserExternalServices$, db, userId, signal);
+    await set(cleanupUserExternalServices$, userId, signal);
     signal.throwIfAborted();
     for (const orgId of emptyOrgIds) {
       signal.throwIfAborted();
@@ -1088,7 +1080,7 @@ export const cleanupClerkDeletedUser$ = command(
       );
       await cancelStripeSubscriptionsForDeletedOrg(db, orgId);
       signal.throwIfAborted();
-      await set(cleanupOrgExternalServices$, db, orgId, true, signal);
+      await set(cleanupOrgExternalServices$, orgId, true, signal);
       signal.throwIfAborted();
     }
 

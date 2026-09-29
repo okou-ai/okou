@@ -81,6 +81,7 @@ import {
   getConnectorRuntimeConnector,
   loadConnectorRuntimeSelection,
   loadConnectorRuntimeSnapshot,
+  loadConnectorRuntimeSnapshot$,
   type ConnectorRuntimeMethod,
   type ConnectorRuntimeSelection,
   type ConnectorRuntimeSnapshot,
@@ -297,6 +298,33 @@ export async function loadStoredBuiltinConnectorRuntimeSnapshot(
   });
   return null;
 }
+
+/** Own the accepted-catalog read used by local lifecycle cleanup. */
+export const loadStoredBuiltinConnectorRuntimeSnapshot$ = command(
+  async (
+    { set },
+    signal: AbortSignal,
+  ): Promise<ConnectorRuntimeSnapshot | null> => {
+    const result = await settle(
+      set(loadConnectorRuntimeSnapshot$, signal),
+      signal,
+    );
+    signal.throwIfAborted();
+    if (result.ok) {
+      return result.value;
+    }
+    if (!isConnectorCatalogUnavailableError(result.error)) {
+      throw result.error;
+    }
+    log.warn(
+      "Connector catalog unavailable while resolving stored connectors",
+      {
+        error: result.error,
+      },
+    );
+    return null;
+  },
+);
 
 /**
  * Loads only the catalog entries for the given stored connectors from the
