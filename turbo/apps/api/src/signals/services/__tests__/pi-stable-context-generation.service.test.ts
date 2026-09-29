@@ -51,7 +51,7 @@ import {
   PI_STABLE_CONTEXT_AGENT_SUBJECT,
   retirePiStableContextPublication,
 } from "../pi-stable-context-generation.service";
-import { deleteClerkStableContextLifecycleData } from "../agent-lifecycle.service";
+import { clerkStableContextCleanupSql } from "../clerk-lifecycle-plan";
 import { deleteClerkAgentLifecycleData$ } from "../clerk-agent-lifecycle.service";
 import { deleteExpiredPiStableContextArtifacts } from "../pi-launch-artifacts-cleanup.service";
 import { enqueuePiResourceVersionIndexes } from "../pi-resource-version-index.service";
@@ -2177,13 +2177,14 @@ describe("Pi stable context generation fences", () => {
         .toBeTruthy();
 
       const deletion = db.transaction(async (tx) => {
-        await deleteClerkStableContextLifecycleData(
-          tx,
+        for (const statement of clerkStableContextCleanupSql(
           scopeKind === "user"
             ? { kind: "user", userId: fixture.userId }
             : { kind: "organization", orgId: fixture.orgId },
           [fixture.agentId],
-        );
+        )) {
+          await tx.execute(statement);
+        }
         await tx.delete(agents).where(eq(agents.id, fixture.agentId));
       });
       operations.push(deletion);
