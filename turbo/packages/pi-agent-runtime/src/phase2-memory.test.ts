@@ -12,7 +12,6 @@ import { join } from "node:path";
 import { encode } from "gpt-tokenizer/encoding/o200k_base";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { resolvePiAgentModel } from "./model";
 import type { PiMemoryPhase2Diagnostic } from "./phase2-memory-diagnostics";
 import { renderPiMemoryPhase2Prompt } from "./phase2-memory-prompt";
 import { PI_MEMORY_PHASE2_TOOL_NAMES } from "./phase2-memory-tools";
@@ -106,7 +105,7 @@ function args(
   baseUrl: string,
   overrides: Partial<PiMemoryPhase2LocalConsolidationArgs> = {},
   /** Written into the literal below so the dialect arm stays discriminated. */
-  catalogModel = "gpt-5.6-terra",
+  catalogModel = "gpt-6-luna",
 ): PiMemoryPhase2LocalConsolidationArgs {
   return {
     memoryStorageId: "storage-phase2",
@@ -860,7 +859,7 @@ describe("Pi memory Phase 2 consolidation engine", () => {
         provider: "openai",
         baseUrl: provider.baseUrl,
         apiKey: "original-key",
-        model: "gpt-5.6-terra",
+        model: "gpt-6-luna",
         dialect: "openai-responses",
         transport: "sse",
         requestHeaders: headers,
@@ -1327,76 +1326,5 @@ describe("Pi memory Phase 2 consolidation engine", () => {
     await expect(stat(cleanupRoot ?? "missing")).rejects.toMatchObject({
       code: "ENOENT",
     });
-  });
-
-  async function maintenanceRequestBudget(
-    priorContextTokens: number,
-    catalogModel?: string,
-  ): Promise<number> {
-    const provider = await startProvider([
-      {
-        type: "tool",
-        name: "phase2_write",
-        arguments: {
-          path: "memory/MEMORY.md",
-          content: "# Task Group: maintenance budget\n",
-        },
-        usageTotalTokens: priorContextTokens,
-      },
-      { type: "text", text: "consolidated" },
-    ]);
-    const result = await runPiMemoryPhase2LocalConsolidation(
-      args(provider.baseUrl, {}, catalogModel),
-      new AbortController().signal,
-    );
-    expect(result.status).toBe("prepared");
-    const next = provider.requests[1];
-    if (!next) {
-      throw new Error("Missing the Phase 2 request after the reported context");
-    }
-    expect(next.body).toMatchObject({ reasoning: { effort: "medium" } });
-    const budget = next.body.max_output_tokens;
-    if (typeof budget !== "number") {
-      throw new Error("Phase 2 request did not serialize an output ceiling");
-    }
-    return budget;
-  }
-
-  it("serializes the official output ceiling past the legacy context threshold", async () => {
-    // The legacy catalog window collapses both of these to the Responses
-    // adapter's 16-token floor, which ends the turn as `length`.
-    expect(await maintenanceRequestBudget(270_000)).toBe(128_000);
-    expect(await maintenanceRequestBudget(330_000)).toBe(128_000);
-  });
-
-  it("keeps the real context clamp active near the official window", async () => {
-    const lower = await maintenanceRequestBudget(950_000);
-    const higher = await maintenanceRequestBudget(950_001);
-    expect(lower).toBeGreaterThan(16);
-    expect(lower).toBeLessThan(128_000);
-    expect(lower - higher).toBe(1);
-  });
-
-  it("scopes the correction to the one legacy catalog case", async () => {
-    const config = args("http://127.0.0.1:1/v1").model;
-    // Ordinary resolution keeps the catalog value before and after maintenance.
-    expect(resolvePiAgentModel(config)?.contextWindow).toBe(272_000);
-    // Precondition: the sibling model still carries the same stale catalog
-    // window. If the catalog is corrected upstream this fails deliberately, so
-    // the scope of the local correction is re-decided rather than drifting.
-    expect(
-      resolvePiAgentModel(
-        args("http://127.0.0.1:1/v1", {}, "gpt-5.6-sol").model,
-      )?.contextWindow,
-    ).toBe(272_000);
-    // The correction cannot lift a different catalog model on the same provider
-    // and dialect, so its derived ceiling stays below the corrected one.
-    const corrected = await maintenanceRequestBudget(270_000);
-    const untouched = await maintenanceRequestBudget(270_000, "gpt-5.6-sol");
-    expect(corrected).toBe(128_000);
-    expect(untouched).toBeLessThan(corrected);
-    const after = resolvePiAgentModel(config);
-    expect(after?.contextWindow).toBe(272_000);
-    expect(after?.maxTokens).toBe(128_000);
   });
 });

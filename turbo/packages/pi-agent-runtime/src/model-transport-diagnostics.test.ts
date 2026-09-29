@@ -33,7 +33,7 @@ async function provider(handler: RequestListener) {
   const config = {
     provider: "openai-codex",
     baseUrl: `http://127.0.0.1:${address.port}`,
-    model: "gpt-5.6-terra",
+    model: "gpt-6-luna",
     apiKey: "synthetic-token",
     accountId: "synthetic-account",
     dialect: "openai-codex-responses",

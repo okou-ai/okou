@@ -85,7 +85,7 @@ describe("captured Pi execution intent", () => {
         provider: "openai",
         baseUrl: "https://gateway.example.com/v1",
         model: "company-production",
-        catalogModel: "gpt-5.6-terra",
+        catalogModel: "gpt-6-luna",
         ...(generation === 1
           ? {
               apiKeyEnv: "OPENAI_API_KEY",
@@ -120,7 +120,7 @@ describe("captured Pi execution intent", () => {
         provider: "openai",
         baseUrl: "https://gateway.example.com/v1",
         model: "company-production",
-        catalogModel: "gpt-5.6-terra",
+        catalogModel: "gpt-6-luna",
         dialect: "openai-responses",
         transport: "sse",
         apiKey: "unused",

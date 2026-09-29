@@ -306,7 +306,7 @@ describe("CHAT-02: model-first provider policies", () => {
       frozenSummary,
     );
     const usagePricingResolution = await createGptUsagePricingResolution();
-    await configureBuiltInPiModel(actor, "gpt-5.6-terra");
+    await configureBuiltInPiModel(actor, "gpt-6-luna");
     await updateFeatureSwitchesForUser(
       context,
       { ...actor, orgId },
@@ -321,7 +321,7 @@ describe("CHAT-02: model-first provider policies", () => {
     const first = await sendChatRun(actor, {
       agentId,
       prompt: firstPrompt,
-      model: "gpt-5.6-terra",
+      model: "gpt-6-luna",
     });
     const firstClaim = await claimChatRun(runnerGroup, first.runId);
     // The first turn has no stored history, so the Sandbox starts fresh.
@@ -365,7 +365,7 @@ describe("CHAT-02: model-first provider policies", () => {
         agentId,
         threadId: first.threadId,
         prompt: "resume with the pinned Pi memory mount",
-        model: "gpt-5.6-terra",
+        model: "gpt-6-luna",
       },
       usagePricingResolution,
     );
@@ -417,7 +417,7 @@ describe("CHAT-02: model-first provider policies", () => {
 
   it("launches Pi with the instruction archive whose signing was held while HEAD advanced", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    await configureBuiltInPiModel(actor, "gpt-5.6-terra");
+    await configureBuiltInPiModel(actor, "gpt-6-luna");
     await updateFeatureSwitchesForUser(
       context,
       {
@@ -462,7 +462,7 @@ describe("CHAT-02: model-first provider policies", () => {
     const sending = sendChatRun(actor, {
       agentId,
       prompt: "prepare a complete Pi launch",
-      model: "gpt-5.6-terra",
+      model: "gpt-6-luna",
     });
     await archiveEntered.promise;
     const capturedArchiveUrls = new Set(signedArchiveUrls);
@@ -517,7 +517,7 @@ describe("CHAT-02: model-first provider policies", () => {
 
   it("pins canonical session writeback before archive materialization when HEAD advances", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    await configureBuiltInPiModel(actor, "gpt-5.6-terra");
+    await configureBuiltInPiModel(actor, "gpt-6-luna");
     await updateFeatureSwitchesForUser(
       context,
       {
@@ -552,7 +552,7 @@ describe("CHAT-02: model-first provider policies", () => {
       {
         agentId,
         prompt: "seed a nonempty memory version",
-        model: "gpt-5.6-terra",
+        model: "gpt-6-luna",
       },
       pricing,
     );
@@ -580,7 +580,7 @@ describe("CHAT-02: model-first provider policies", () => {
       {
         agentId,
         prompt: "establish canonical Pi writeback",
-        model: "gpt-5.6-terra",
+        model: "gpt-6-luna",
       },
       pricing,
     );
@@ -643,7 +643,7 @@ describe("CHAT-02: model-first provider policies", () => {
       {
         agentId,
         prompt: "own a concurrent memory write",
-        model: "gpt-5.6-terra",
+        model: "gpt-6-luna",
       },
       pricing,
     );
@@ -693,7 +693,7 @@ describe("CHAT-02: model-first provider policies", () => {
         agentId,
         threadId: first.threadId,
         prompt: "resume the frozen canonical memory",
-        model: "gpt-5.6-terra",
+        model: "gpt-6-luna",
         clientEventId: resumeEventId,
       },
       [201],
@@ -769,7 +769,7 @@ describe("CHAT-02: model-first provider policies", () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     await publishPendingPiInstructions(actor, agentId);
     const orgId = requireOrgId(actor);
-    await configureBuiltInPiModel(actor, "gpt-5.6-terra");
+    await configureBuiltInPiModel(actor, "gpt-6-luna");
     await updateFeatureSwitchesForUser(
       context,
       { ...actor, orgId },
@@ -784,7 +784,7 @@ describe("CHAT-02: model-first provider policies", () => {
     const run = await sendChatRun(actor, {
       agentId,
       prompt: "launch Pi with an absent memory Storage",
-      model: "gpt-5.6-terra",
+      model: "gpt-6-luna",
     });
     const claimed = await claimChatRun(runnerGroup, run.runId);
     const storageManifest = expectCanonicalStorageManifest(
@@ -826,7 +826,7 @@ describe("CHAT-02: model-first provider policies", () => {
     const memory = await commitMemoryVersion(context, actor, [
       { path: "memory_summary.md", content: summary },
     ]);
-    await configureBuiltInPiModel(actor, "gpt-5.6-terra");
+    await configureBuiltInPiModel(actor, "gpt-6-luna");
     await updateFeatureSwitchesForUser(
       context,
       { ...actor, orgId },
@@ -840,7 +840,7 @@ describe("CHAT-02: model-first provider policies", () => {
     const frozenMiss = await sendChatRun(actor, {
       agentId,
       prompt: "freeze the projection miss",
-      model: "gpt-5.6-terra",
+      model: "gpt-6-luna",
     });
 
     await seedReadyMemorySummaryProjection(context, actor, memory, summary);
@@ -856,7 +856,7 @@ describe("CHAT-02: model-first provider policies", () => {
     const newSession = await sendChatRun(actor, {
       agentId,
       prompt: "capture the now-ready projection in a new session",
-      model: "gpt-5.6-terra",
+      model: "gpt-6-luna",
     });
     const newSessionClaim = await claimChatRun(runnerGroup, newSession.runId);
     expect(newSessionClaim.claim.piLaunchConfig).toMatchObject({
@@ -883,7 +883,7 @@ describe("CHAT-02: model-first provider policies", () => {
       { path: "memory_summary.md", content: summary },
     ]);
     await seedReadyMemorySummaryProjection(context, actor, memory, summary);
-    await configureBuiltInPiModel(actor, "gpt-5.6-terra");
+    await configureBuiltInPiModel(actor, "gpt-6-luna");
 
     mockPiResourceArchiveDownloads();
     mockPiCheckpointObjectStore();
@@ -891,7 +891,7 @@ describe("CHAT-02: model-first provider policies", () => {
       return await sendChatRun(actor, {
         agentId,
         prompt,
-        model: "gpt-5.6-terra",
+        model: "gpt-6-luna",
       });
     }
 
@@ -1281,7 +1281,7 @@ describe("CHAT-02: model-first provider policies", () => {
 
     const usagePricingResolution = await createGptUsagePricingResolution();
 
-    await configureBuiltInPiModel(actor, "gpt-5.6-terra");
+    await configureBuiltInPiModel(actor, "gpt-6-luna");
     await updateFeatureSwitchesForUser(
       context,
       { ...actor, orgId },
@@ -1301,7 +1301,7 @@ describe("CHAT-02: model-first provider policies", () => {
         clientEventId: delegatedEventId,
         threadId: targetThread.id,
         prompt: delegatedPrompt,
-        model: "gpt-5.6-terra",
+        model: "gpt-6-luna",
       },
       [201],
       usagePricingResolution,
@@ -1466,7 +1466,7 @@ describe("CHAT-02: model-first provider policies", () => {
     const orgId = requireOrgId(actor);
     const usagePricingResolution = await createGptUsagePricingResolution();
 
-    await configureBuiltInPiModel(actor, "gpt-5.6-terra");
+    await configureBuiltInPiModel(actor, "gpt-6-luna");
     await updateFeatureSwitchesForUser(
       context,
       { ...actor, orgId },
@@ -1488,7 +1488,7 @@ describe("CHAT-02: model-first provider policies", () => {
       {
         agentId,
         prompt: firstPrompt,
-        model: "gpt-5.6-terra",
+        model: "gpt-6-luna",
       },
       usagePricingResolution,
     );
@@ -1576,7 +1576,7 @@ describe("CHAT-02: model-first provider policies", () => {
         agentId,
         threadId: first.threadId,
         prompt: "replace the leased candidate with a newer exact history",
-        model: "gpt-5.6-terra",
+        model: "gpt-6-luna",
       },
       usagePricingResolution,
     );
@@ -1714,7 +1714,7 @@ describe("CHAT-02: model-first provider policies", () => {
         agentId,
         threadId: first.threadId,
         prompt: "replace the synthetic Phase 2 selection watermark",
-        model: "gpt-5.6-terra",
+        model: "gpt-6-luna",
       },
       usagePricingResolution,
     );

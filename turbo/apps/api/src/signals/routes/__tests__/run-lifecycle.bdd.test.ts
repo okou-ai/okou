@@ -7858,7 +7858,7 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
           ? {
               provider: "openai",
               baseUrl: "https://api.openai.com/v1",
-              model: "gpt-5.6-terra",
+              model: "gpt-6-luna",
               apiKeyEnv: "OPENAI_API_KEY",
               credentialSecretName: "OPENAI_API_KEY",
             }
@@ -7869,7 +7869,7 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
                 transport: "sse",
                 provider: "openai-codex",
                 baseUrl: "https://chatgpt.com/backend-api",
-                model: "gpt-5.6-terra",
+                model: "gpt-6-luna",
                 serviceTier: "fast",
                 credentialBindings: [
                   {
@@ -7958,7 +7958,7 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
         transport: "sse",
         provider: "openai",
         baseUrl: "https://api.openai.com/v1",
-        model: "gpt-5.6-terra",
+        model: "gpt-6-luna",
         credentialBindings: [
           {
             kind: "api-key",

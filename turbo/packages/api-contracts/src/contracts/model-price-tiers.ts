@@ -9,8 +9,6 @@
 // it drives the model dropdown and all model-related UI via sortRowsByCatalog.
 // Recognized wire and historical IDs. Use ACTIVE_RUN_MODELS for model selection.
 export const SUPPORTED_RUN_MODELS = [
-  "okou-1.0-max",
-  "okou-1.0-pro",
   "okou-1.0",
   "claude-fable-5-1",
   "claude-fable-5",
@@ -24,7 +22,6 @@ export const SUPPORTED_RUN_MODELS = [
   "gpt-6-sol",
   "gpt-6-luna",
   "gpt-5.6-sol",
-  "gpt-5.6-terra",
   "gpt-5.6-luna",
   "gpt-5.5",
   "deepseek-v4.1-flash",
@@ -44,8 +41,6 @@ export type ModelPriceTier = "$" | "$$" | "$$$" | "$$$$";
 export const BUILT_IN_MODEL_PRICE_TIER = Object.freeze<
   Record<SupportedRunModel, ModelPriceTier>
 >({
-  "okou-1.0-max": "$$$",
-  "okou-1.0-pro": "$$",
   "okou-1.0": "$",
   "claude-fable-5-1": "$$$$",
   "claude-fable-5": "$$$$",
@@ -55,7 +50,6 @@ export const BUILT_IN_MODEL_PRICE_TIER = Object.freeze<
   "gpt-6-sol": "$$$",
   "gpt-6-luna": "$",
   "gpt-5.6-sol": "$$$",
-  "gpt-5.6-terra": "$$",
   "gpt-5.6-luna": "$",
   "gpt-5.5": "$$$",
   "claude-opus-4-8": "$$$",
@@ -75,14 +69,11 @@ export const BUILT_IN_MODEL_PRICE_TIER = Object.freeze<
 export const MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS: Readonly<
   Partial<Record<SupportedRunModel, number>>
 > = Object.freeze({
-  "okou-1.0-max": 272_001,
-  "okou-1.0-pro": 272_001,
   "okou-1.0": 272_001,
   "gpt-6-astra": 272_001,
   "gpt-6-sol": 272_001,
   "gpt-6-luna": 272_001,
   "gpt-5.5": 272_001,
   "gpt-5.6-sol": 272_001,
-  "gpt-5.6-terra": 272_001,
   "gpt-5.6-luna": 272_001,
 } satisfies Partial<Record<SupportedRunModel, number>>);

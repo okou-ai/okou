@@ -13,7 +13,6 @@ const US_MODELS: Readonly<Record<OpenRouterApi, readonly string[]>> = {
   responses: [
     "openai/gpt-6-astra",
     "openai/gpt-5.6-sol",
-    "openai/gpt-5.6-terra",
     "openai/gpt-5.6-luna",
   ],
   // Remaining platform Chat Completions models lack verified US support.

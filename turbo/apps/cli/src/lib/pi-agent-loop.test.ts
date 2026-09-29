@@ -405,9 +405,9 @@ async function startSandboxHost(args: {
     | "deepseek"
     | "deepseek-v41"
     | "openrouter-v41"
-    | "openrouter-terra"
-    | "terra"
-    | "codex-terra";
+    | "openrouter-luna"
+    | "luna"
+    | "codex-luna";
   readonly serviceTier?: "priority" | "fast";
 }): Promise<RpcHost> {
   const agentDir = join(args.root, ".pi", "agent");
@@ -431,9 +431,9 @@ async function startSandboxHost(args: {
     }),
     { mode: 0o600 },
   );
-  const terra = args.model === "terra" || args.model === "openrouter-terra";
+  const luna = args.model === "luna" || args.model === "openrouter-luna";
   const openrouter =
-    args.model === "openrouter-terra" || args.model === "openrouter-v41";
+    args.model === "openrouter-luna" || args.model === "openrouter-v41";
   const v41 = args.model === "deepseek-v41" || args.model === "openrouter-v41";
   const env = {
     ...process.env,
@@ -441,14 +441,14 @@ async function startSandboxHost(args: {
     OKOU_PI_SESSION_ID: SESSION_ID,
     OKOU_PI_LAUNCH_PAYLOAD_FILE: payloadFile,
     OKOU_PI_MODEL_CONFIG: JSON.stringify(
-      args.model === "codex-terra"
+      args.model === "codex-luna"
         ? {
             schemaVersion: 3,
             dialect: "openai-codex-responses",
             transport: "sse",
             provider: "openai-codex",
             baseUrl: args.providerBaseUrl,
-            model: "gpt-5.6-terra",
+            model: "gpt-6-luna",
             thinkingLevel: "low",
             serviceTier: args.serviceTier,
             credentialBindings: [
@@ -465,18 +465,18 @@ async function startSandboxHost(args: {
             ],
           }
         : {
-            provider: openrouter ? "openrouter" : terra ? "openai" : "deepseek",
+            provider: openrouter ? "openrouter" : luna ? "openai" : "deepseek",
             baseUrl: args.providerBaseUrl,
             model: v41
               ? openrouter
                 ? "deepseek/deepseek-v4.1-flash"
                 : "deepseek-flash"
               : openrouter
-                ? "openai/gpt-5.6-terra"
-                : terra
-                  ? "gpt-5.6-terra"
+                ? "openai/gpt-6-luna"
+                : luna
+                  ? "gpt-6-luna"
                   : "deepseek-v4-flash",
-            ...(terra
+            ...(luna
               ? {
                   thinkingLevel: "low" as const,
                 }
@@ -485,7 +485,7 @@ async function startSandboxHost(args: {
             apiKeyEnv: "OPENAI_API_KEY",
             credentialSecretName: openrouter
               ? "OPENROUTER_API_KEY"
-              : terra
+              : luna
                 ? "OPENAI_API_KEY"
                 : "DEEPSEEK_API_KEY",
           },
@@ -673,7 +673,7 @@ describe("sandbox Pi agent loop", () => {
               provider: "openai",
               baseUrl: "https://phase2-fixture.example/",
               apiKey: "SYNTHETIC_KEY",
-              model: "gpt-5.6-terra",
+              model: "gpt-6-luna",
               dialect: "openai-responses",
               transport: "sse",
             },
@@ -936,7 +936,7 @@ describe("sandbox Pi agent loop", () => {
     env.OKOU_PI_MODEL_CONFIG = JSON.stringify({
       provider: "openai",
       baseUrl: "https://api.openai.com/v1",
-      model: "gpt-5.6-terra",
+      model: "gpt-6-luna",
       thinkingLevel: "low",
       serviceTier: "priority",
       apiKeyEnv: "OPENAI_API_KEY",
@@ -947,7 +947,7 @@ describe("sandbox Pi agent loop", () => {
     expect(resolved.model).toStrictEqual({
       provider: "openai",
       baseUrl: "https://api.openai.com/v1",
-      model: "gpt-5.6-terra",
+      model: "gpt-6-luna",
       dialect: "openai-responses",
       transport: "sse",
       thinkingLevel: "low",
@@ -999,7 +999,7 @@ describe("sandbox Pi agent loop", () => {
         transport: "sse",
         provider: "openai-codex",
         baseUrl: "https://chatgpt.com/backend-api",
-        model: "gpt-5.6-terra",
+        model: "gpt-6-luna",
         thinkingLevel: "low",
         credentialBindings: [
           {
@@ -1022,7 +1022,7 @@ describe("sandbox Pi agent loop", () => {
         model: {
           provider: "openai-codex",
           baseUrl: "https://chatgpt.com/backend-api",
-          model: "gpt-5.6-terra",
+          model: "gpt-6-luna",
           ...(schemaVersion === 3 ? { serviceTier: "fast" } : {}),
           dialect: "openai-codex-responses",
           transport: "sse",
@@ -1072,7 +1072,7 @@ describe("sandbox Pi agent loop", () => {
         schemaVersion: 3,
         transport: "sse",
         baseUrl: "https://example.test/v1",
-        model: "gpt-5.6-terra",
+        model: "gpt-6-luna",
       });
       await expect(piSandboxAgentConfigFromEnv(env)).rejects.toThrow();
     },
@@ -1085,7 +1085,7 @@ describe("sandbox Pi agent loop", () => {
       env.OKOU_PI_MODEL_CONFIG = JSON.stringify({
         provider: "openai",
         baseUrl: "https://api.openai.com/v1",
-        model: "gpt-5.6-terra",
+        model: "gpt-6-luna",
         api,
         apiKeyEnv: "OPENAI_API_KEY",
         credentialSecretName: "OPENAI_API_KEY",
@@ -1127,7 +1127,7 @@ describe("sandbox Pi agent loop", () => {
     }
   });
 
-  it("keeps standard Terra tierless on the sandbox-first AgentSession call", async () => {
+  it("keeps standard Luna tierless on the sandbox-first AgentSession call", async () => {
     const root = await mkdtemp(join(tmpdir(), "okou-pi-sandbox-first-rpc-"));
     const prompt = "execute this sandbox-owned first turn once";
     const provider = await ProviderHarness.start();
@@ -1137,7 +1137,7 @@ describe("sandbox Pi agent loop", () => {
       host = await startSandboxHost({
         root,
         providerBaseUrl: provider.baseUrl,
-        model: "openrouter-terra",
+        model: "openrouter-luna",
       });
 
       const state = await host.state("sandbox-first-state");
@@ -1228,7 +1228,7 @@ describe("sandbox Pi agent loop", () => {
             root,
             restoredJsonl: h0,
             providerBaseUrl: provider.baseUrl,
-            model: "openrouter-terra",
+            model: "openrouter-luna",
           });
           const state = await host.state(`native-input-state-${turn}`);
           expect(state).toMatchObject({
@@ -1334,7 +1334,7 @@ describe("sandbox Pi agent loop", () => {
         root,
         restoredJsonl: session.toJsonl(),
         providerBaseUrl: provider.baseUrl,
-        model: "openrouter-terra",
+        model: "openrouter-luna",
         serviceTier: "priority",
       });
 
@@ -1441,7 +1441,7 @@ describe("sandbox Pi agent loop", () => {
         root,
         restoredJsonl: await readFile(sessionFile, "utf8"),
         providerBaseUrl: provider.baseUrl,
-        model: "openrouter-terra",
+        model: "openrouter-luna",
         serviceTier: "priority",
       });
 

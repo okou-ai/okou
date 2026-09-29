@@ -1,5 +1,5 @@
 {"type":"session","version":3,"id":"pi-0841-rollback-fixture","timestamp":"2026-09-08T10:35:09.955Z","cwd":"/home/user/workspace"}
-{"type":"model_change","id":"39d32408","parentId":null,"timestamp":"2026-09-08T10:35:09.955Z","provider":"openai","modelId":"gpt-5.6-terra"}
+{"type":"model_change","id":"39d32408","parentId":null,"timestamp":"2026-09-08T10:35:09.955Z","provider":"openai","modelId":"gpt-6-luna"}
 {"type":"thinking_level_change","id":"01001b0c","parentId":"39d32408","timestamp":"2026-09-08T10:35:09.955Z","thinkingLevel":"low"}
 {"type":"message","id":"11f485d1","parentId":"01001b0c","timestamp":"2026-09-08T10:35:09.955Z","message":{"role":"user","content":"historical branch root","timestamp":1}}
 {"type":"message","id":"0b621259","parentId":"11f485d1","timestamp":"2026-09-08T10:35:09.955Z","message":{"role":"assistant","content":[{"type":"text","text":"abandoned branch answer"}],"api":"faux","provider":"faux","model":"faux-1","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":2}}

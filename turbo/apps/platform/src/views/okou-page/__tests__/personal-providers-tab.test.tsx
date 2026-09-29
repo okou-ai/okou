@@ -7,6 +7,7 @@ import {
 import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
 
 import {
@@ -323,6 +324,59 @@ test("Review personal subscription identity and usage", async () => {
   expect(usageRings[0]).toHaveAttribute("aria-valuenow", "82");
   expect(usageRings[1]).toHaveAttribute("aria-valuenow", "55");
   expect(within(rowA).queryByText("82% left")).not.toBeInTheDocument();
+});
+
+test("Show no 5h availability when the weekly allowance is exhausted", async () => {
+  mockBrowserTimeZone("America/New_York");
+  mockNow(new Date("2030-01-01T00:48:00.000Z"), context.signal);
+  context.mocks.data.org({ id: "org_1", name: "Test Org", role: "member" });
+  const account = connectedPersonalCodexAccount({
+    id: "00000000-0000-4000-a000-000000000314",
+    email: "exhausted@example.com",
+    isActive: true,
+    createdAt: "2026-03-01T00:00:00Z",
+  });
+  context.mocks.data.personalModelProviders([
+    {
+      ...account,
+      subscriptionUsage: {
+        fiveHour: {
+          usedPercent: 0,
+          remainingPercent: 100,
+          resetAt: null,
+          windowSeconds: 18_000,
+        },
+        weekly: {
+          usedPercent: 100,
+          remainingPercent: 0,
+          resetAt: "2030-01-07T00:00:00.000Z",
+          windowSeconds: 604_800,
+        },
+      },
+    },
+  ]);
+  await openModelSettings("Models", {
+    [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
+  });
+
+  const row = await screen.findByTestId(`oauth-account-${account.id}`);
+  const [fiveHour, week] = within(row).getAllByRole("progressbar");
+  expect(fiveHour).toHaveAttribute("aria-valuenow", "0");
+  expect(week).toHaveAttribute("aria-valuenow", "0");
+  await userEvent.setup().hover(fiveHour);
+  await waitFor(() => {
+    expect(screen.getByText("0% left")).toBeVisible();
+    expect(screen.getByText("Resets in 5d 23h")).toBeVisible();
+    expect(
+      screen.getByText(
+        formatResetInTimeZone(
+          "2030-01-07T00:00:00.000Z",
+          "America/New_York",
+        ).replace(/^resets /u, ""),
+      ),
+    ).toBeVisible();
+  });
+  expect(screen.queryByText("Reset time unavailable")).not.toBeInTheDocument();
 });
 
 test("Organize personal subscriptions in accessible provider tables", async () => {

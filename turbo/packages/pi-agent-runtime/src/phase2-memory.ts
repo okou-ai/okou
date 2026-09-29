@@ -419,60 +419,6 @@ function providerResult(
 type ResolvedPiAgentModel = NonNullable<ReturnType<typeof resolvePiAgentModel>>;
 
 /**
- * The legacy catalog case this narrow maintenance correction adapts.
- *
- * The pinned catalog publishes `openai` / `gpt-5.6-terra` / `openai-responses`
- * with a 272000 context window. 272000 is that model's long-context pricing
- * threshold, above which the stated multipliers apply to the full request; the
- * official specification states 1050000 context tokens and 128000 maximum
- * output tokens: https://developers.openai.com/api/docs/models/gpt-5.6-terra
- */
-const PI_MEMORY_PHASE2_LEGACY_CONTEXT_PROVIDER = "openai";
-const PI_MEMORY_PHASE2_LEGACY_CONTEXT_API = "openai-responses";
-const PI_MEMORY_PHASE2_LEGACY_CONTEXT_CATALOG_MODEL = "gpt-5.6-terra";
-const PI_MEMORY_PHASE2_LEGACY_CONTEXT_WINDOW = 272_000;
-const PI_MEMORY_PHASE2_OFFICIAL_CONTEXT_WINDOW = 1_050_000;
-
-/**
- * Return the maintenance model with the stale catalog context window corrected.
- *
- * `buildBaseOptions` derives each request's output ceiling by subtracting the
- * estimated context from `contextWindow`, so the pricing threshold above caps a
- * long consolidation turn at the Responses adapter's minimum output budget. The
- * turn then ends as `length`, which Phase 2 correctly refuses to publish.
- *
- * This adapts only that one legacy case, only for maintenance, and only as an
- * immutable copy: the shared catalog object is never mutated, ordinary
- * resolution is untouched, and a value that is already corrected or otherwise
- * different is returned unchanged so newer metadata is never capped. Model
- * identity, provider, route, credentials, headers, tier, transport, reasoning
- * policy, `maxTokens` and pricing all stay exactly as resolved.
- *
- * Remove this correction once the pinned catalog publishes the official window:
- * the guard then stops matching, so it is inert rather than wrong. The catalog
- * identity is matched here instead of the caller's product model id because the
- * stale value belongs to that catalog entry, not to Okou's model selection.
- */
-function maintenanceModelWithOfficialContextWindow(
-  model: ResolvedPiAgentModel,
-  config: SnapshotPhase2Input["model"],
-): ResolvedPiAgentModel {
-  if (
-    model.provider !== PI_MEMORY_PHASE2_LEGACY_CONTEXT_PROVIDER ||
-    model.api !== PI_MEMORY_PHASE2_LEGACY_CONTEXT_API ||
-    (config.catalogModel ?? config.model) !==
-      PI_MEMORY_PHASE2_LEGACY_CONTEXT_CATALOG_MODEL ||
-    model.contextWindow !== PI_MEMORY_PHASE2_LEGACY_CONTEXT_WINDOW
-  ) {
-    return model;
-  }
-  return {
-    ...model,
-    contextWindow: PI_MEMORY_PHASE2_OFFICIAL_CONTEXT_WINDOW,
-  };
-}
-
-/**
  * Consolidation effort for the model this maintenance run actually resolved.
  *
  * Maintenance is pinned to the source run's own binding, so the sandbox sees
@@ -502,12 +448,7 @@ async function createMaintenanceSession(args: {
   if (!resolved) {
     throw new Phase2InputInvalidError();
   }
-  // One corrected model object reaches both provider registration and the real
-  // session, so the adapter cannot receive the stale window.
-  const model = maintenanceModelWithOfficialContextWindow(
-    resolved,
-    args.input.model,
-  );
+  const model = resolved;
   const modelRuntime = await createPiModelRuntime(
     {
       model,

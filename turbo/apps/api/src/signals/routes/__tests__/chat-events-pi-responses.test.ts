@@ -131,7 +131,7 @@ describe("CHAT-02: model-first provider policies", () => {
         "deepseek-v4.1-flash",
         "gpt-6-sol",
         "gpt-6-luna",
-        "gpt-5.6-terra",
+        "gpt-5.6-sol",
       ] as const
     ).flatMap((selectedModel) => {
       // The other DeepSeek US-on routes are covered per model by the
@@ -188,12 +188,12 @@ describe("CHAT-02: model-first provider policies", () => {
       ).resolves.toMatchObject({ launch_snapshot: { framework: "pi" } });
       const { claim } = await claimChatRun(runnerGroup, run.runId);
       expect(claim.cliAgentType).toBe("pi");
-      // The US endpoint is approved for Terra; the GPT 6 pair stays on the
-      // global OpenRouter endpoint even when the switch is enabled.
+      // Only the approved Sol route uses the US endpoint; the GPT 6 pair
+      // stays on the global OpenRouter endpoint even when enabled.
       expect(claim.piModelConfig).toMatchObject({
         provider: "openrouter",
         baseUrl:
-          selectedModel === "gpt-5.6-terra" && usRoutingEnabled
+          selectedModel === "gpt-5.6-sol" && usRoutingEnabled
             ? "https://us.openrouter.ai/api/v1"
             : "https://openrouter.ai/api/v1",
         model: `${selectedModel.startsWith("deepseek") ? "deepseek" : "openai"}/${selectedModel}`,
@@ -209,7 +209,7 @@ describe("CHAT-02: model-first provider policies", () => {
     const usagePricingResolution = await createGptUsagePricingResolution();
     const withOpenRouterRoute = await configureBuiltInPiModelOnOpenRouter(
       actor,
-      "gpt-5.6-terra",
+      "gpt-6-luna",
     );
 
     mockPiResourceArchiveDownloads();
@@ -221,7 +221,7 @@ describe("CHAT-02: model-first provider policies", () => {
         {
           agentId,
           prompt: seedPrompt,
-          model: "gpt-5.6-terra",
+          model: "gpt-6-luna",
         },
         usagePricingResolution,
       );
@@ -235,7 +235,7 @@ describe("CHAT-02: model-first provider policies", () => {
       claim: firstClaim,
       prompt: seedPrompt,
       run: first,
-      responsesModel: { provider: "openai", model: "gpt-5.6-terra" },
+      responsesModel: { provider: "openai", model: "gpt-6-luna" },
       usagePricingResolution,
     });
 
@@ -262,7 +262,7 @@ describe("CHAT-02: model-first provider policies", () => {
       ],
       api: "openai-completions",
       provider: "openrouter",
-      model: "openai/gpt-5.6-terra",
+      model: "openai/gpt-6-luna",
       usage: {
         input: 5,
         output: 3,
@@ -287,7 +287,7 @@ describe("CHAT-02: model-first provider policies", () => {
       content: [{ type: "text", text: "legacy API tool conclusion" }],
       api: "openai-completions",
       provider: "openrouter",
-      model: "openai/gpt-5.6-terra",
+      model: "openai/gpt-6-luna",
       usage: {
         input: 5,
         output: 3,
@@ -317,7 +317,7 @@ describe("CHAT-02: model-first provider policies", () => {
           agentId,
           threadId: first.threadId,
           prompt,
-          model: "gpt-5.6-terra",
+          model: "gpt-6-luna",
         },
         usagePricingResolution,
       );
@@ -354,7 +354,7 @@ describe("CHAT-02: model-first provider policies", () => {
     await cancelChatRun(actor, second.runId, claim.sandboxHeaders);
   }, 90_000);
 
-  it.each(["gpt-5.6-terra"] as const)(
+  it.each(["gpt-6-luna"] as const)(
     "reuses one OpenRouter Responses Pi session across standard, fast, and standard turns for %s",
     async (selectedModel) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
@@ -367,14 +367,14 @@ describe("CHAT-02: model-first provider policies", () => {
       mockPiResourceArchiveDownloads();
       const checkpointObjects = mockPiCheckpointObjectStore();
       const prompts = [
-        "start standard Terra in the canonical Pi session",
-        "continue fast Terra in the same Pi session",
-        "return to standard Terra in the same Pi session",
+        "start standard Luna in the canonical Pi session",
+        "continue fast Luna in the same Pi session",
+        "return to standard Luna in the same Pi session",
       ] as const;
       const answers = [
-        "first standard Terra answer",
-        "fast Terra answer",
-        "returned standard Terra answer",
+        "first standard Luna answer",
+        "fast Luna answer",
+        "returned standard Luna answer",
       ] as const;
 
       const first = await withOpenRouterRoute(async () => {
@@ -410,7 +410,7 @@ describe("CHAT-02: model-first provider policies", () => {
       );
       if (!firstBinding.agent_session_id) {
         throw new Error(
-          "Expected standard Terra to bind a canonical Pi session",
+          "Expected standard Luna to bind a canonical Pi session",
         );
       }
 
@@ -585,7 +585,7 @@ describe("CHAT-02: model-first provider policies", () => {
     90_000,
   );
 
-  it.each(["gpt-5.6-terra"] as const)(
+  it.each(["gpt-6-luna"] as const)(
     "promotes queued fast %s to a priority Pi Sandbox run",
     async (selectedModel) => {
       const { actor, agentId, runnerGroup, providerId } =
@@ -604,7 +604,7 @@ describe("CHAT-02: model-first provider policies", () => {
       ]);
       const anchor = await sendChatRun(actor, {
         agentId,
-        prompt: "hold the thread before queued fast Terra",
+        prompt: "hold the thread before queued fast Luna",
         model: "claude-fable-5-1",
       });
       const anchorClaim = await claimChatRun(runnerGroup, anchor.runId);
@@ -613,8 +613,8 @@ describe("CHAT-02: model-first provider policies", () => {
 
       mockPiResourceArchiveDownloads();
       const checkpointObjects = mockPiCheckpointObjectStore();
-      const prompt = "promote queued fast Terra through the callback";
-      const answer = "queued fast Terra Sandbox answer";
+      const prompt = "promote queued fast Luna through the callback";
+      const answer = "queued fast Luna Sandbox answer";
 
       const queuedId = randomUUID();
       const queued = await chat.requestSendEvent(
@@ -631,7 +631,7 @@ describe("CHAT-02: model-first provider policies", () => {
         { usagePricingResolution },
       );
       if (queued.status !== 201) {
-        throw new Error("Expected queued fast Terra to enter the chat queue");
+        throw new Error("Expected queued fast Luna to enter the chat queue");
       }
       expect(queued.body.runId).toBeNull();
 
@@ -656,7 +656,7 @@ describe("CHAT-02: model-first provider policies", () => {
         return event.revokesEventId === queuedId;
       });
       if (!promoted?.runId) {
-        throw new Error("Expected queued fast Terra to create a run");
+        throw new Error("Expected queued fast Luna to create a run");
       }
       const promotedRunId = promoted.runId;
       await flushWaitUntilForTest();
@@ -703,19 +703,19 @@ describe("CHAT-02: model-first provider policies", () => {
 
   const outcomeRepresentativeModels = {
     "openai-api-key": {
-      standard: "gpt-5.6-terra",
+      standard: "gpt-6-luna",
       failed: "gpt-5.6-sol",
       cancelled: "gpt-5.6-luna",
     },
     "openrouter-codex": {
       standard: "gpt-5.6-sol",
       failed: "gpt-5.6-luna",
-      cancelled: "gpt-5.6-terra",
+      cancelled: "gpt-6-luna",
     },
     "vercel-ai-gateway-codex": {
       standard: "gpt-5.6-luna",
-      failed: "gpt-5.6-terra",
-      cancelled: "gpt-5.6-sol",
+      failed: "gpt-5.6-sol",
+      cancelled: "gpt-5.6-luna",
     },
   } as const;
 

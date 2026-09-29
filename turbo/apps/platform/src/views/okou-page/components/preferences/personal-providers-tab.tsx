@@ -40,6 +40,7 @@ import {
   setSettingsCodexResetDialog$,
   settingsCodexResetDialog$,
 } from "../../../../signals/okou-page/settings/personal-model-providers.ts";
+import { subscriptionUsageWindows } from "../../../../lib/subscription-usage-windows.ts";
 import { modelPlanCapabilities$ } from "../../../../signals/okou-page/model-plan-capabilities.ts";
 import { openSettingsBillingPlans$ } from "../../../../signals/okou-page/settings/settings-dialog.ts";
 import { openClaudeCodeDeviceAuthDialogPersonal$ } from "../../../../signals/okou-page/settings/claude-code-device-auth.ts";
@@ -518,7 +519,8 @@ function OAuthAccountTableRow({
         role="cell"
         className="col-start-2 col-end-4 row-start-2 flex min-w-0 items-center justify-end gap-3 lg:col-start-3 lg:col-end-4 lg:row-start-1 lg:justify-start"
       >
-        {!account.needsReconnect && usageWindows(usage).length > 0 ? (
+        {!account.needsReconnect &&
+        subscriptionUsageWindows(usage).length > 0 ? (
           <SubscriptionUsageRings
             identity={identity}
             usage={usage}
@@ -1222,17 +1224,6 @@ function formatConnectedStatusDetail(
   return details.join(", ");
 }
 
-function hasUsageWindow(
-  window: SubscriptionUsage["fiveHour"],
-): window is SubscriptionUsageWindow {
-  return (
-    window !== null &&
-    (window.remainingPercent !== null ||
-      window.usedPercent !== null ||
-      window.resetAt !== null)
-  );
-}
-
 function formatUsagePercent(value: number | null): string | null {
   if (value === null || !Number.isFinite(value)) {
     return null;
@@ -1244,7 +1235,7 @@ function formatUsagePercent(value: number | null): string | null {
 function fallbackSubscriptionUsage(
   provider: ModelProviderResponse,
 ): SubscriptionUsage | null {
-  if (usageWindows(provider.subscriptionUsage).length > 0) {
+  if (subscriptionUsageWindows(provider.subscriptionUsage).length > 0) {
     return provider.subscriptionUsage ?? null;
   }
 
@@ -1264,25 +1255,6 @@ function fallbackSubscriptionUsage(
   return resetPeriod?.includes("5")
     ? { fiveHour: window, weekly: null }
     : { fiveHour: null, weekly: window };
-}
-
-function usageWindows(usage: SubscriptionUsage | null | undefined): readonly {
-  readonly kind: "fiveHour" | "week";
-  readonly window: SubscriptionUsageWindow;
-}[] {
-  return [
-    { kind: "fiveHour" as const, window: usage?.fiveHour ?? null },
-    { kind: "week" as const, window: usage?.weekly ?? null },
-  ].filter(
-    (
-      item,
-    ): item is {
-      kind: "fiveHour" | "week";
-      window: SubscriptionUsageWindow;
-    } => {
-      return hasUsageWindow(item.window);
-    },
-  );
 }
 
 function usageTone(remainingPercent: number | null): {
@@ -1328,7 +1300,7 @@ function SubscriptionUsageRings({
   readonly identity: string;
   readonly usage: SubscriptionUsage | null | undefined;
 }) {
-  const windows = usageWindows(usage);
+  const windows = subscriptionUsageWindows(usage);
 
   if (windows.length === 0) {
     return null;
@@ -1498,7 +1470,7 @@ function SubscriptionUsageMeter({
   usage: SubscriptionUsage | null | undefined;
 }) {
   const { t } = useTranslation();
-  const windows = usageWindows(usage);
+  const windows = subscriptionUsageWindows(usage);
 
   if (windows.length === 0) {
     return null;
@@ -1733,7 +1705,7 @@ function OAuthCredentialRow({
           </div>
         )}
       </div>
-      {status === "connected" && usageWindows(usage).length > 0 ? (
+      {status === "connected" && subscriptionUsageWindows(usage).length > 0 ? (
         <div className="mt-3">
           <SubscriptionUsageMeter usage={usage} />
         </div>

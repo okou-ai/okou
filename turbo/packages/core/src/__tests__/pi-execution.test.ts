@@ -63,20 +63,6 @@ describe("DeepSeek Pi admission", () => {
 });
 
 describe("Okou preset Pi admission", () => {
-  it.each(["okou-1.0-pro", "okou-1.0-max"] as const)(
-    "does not admit retired %s",
-    (selectedModel) => {
-      expect(
-        isPiExecutionRoute({
-          selectedModel,
-          modelProviderType: "built-in",
-          runtimeProviderType: "openrouter-codex",
-          codexServiceTier: undefined,
-        }),
-      ).toBe(false);
-    },
-  );
-
   it.each(["okou-1.0"] as const)(
     "admits %s only on the built-in OpenRouter route",
     (selectedModel) => {

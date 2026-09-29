@@ -298,7 +298,7 @@ describe("Pi sandbox execution contract", () => {
       piModelConfigSchema.parse({
         provider: "openai",
         baseUrl: "https://api.openai.com/v1",
-        model: "gpt-5.6-terra",
+        model: "gpt-6-luna",
         thinkingLevel: "low",
         serviceTier: "priority",
         apiKeyEnv: "OPENAI_API_KEY",
@@ -312,7 +312,7 @@ describe("Pi sandbox execution contract", () => {
       piModelConfigSchema.safeParse({
         provider: "openai",
         baseUrl: "https://api.openai.com/v1",
-        model: "gpt-5.6-terra",
+        model: "gpt-6-luna",
         thinkingLevel: "low",
         serviceTier: "fast",
         apiKeyEnv: "OPENAI_API_KEY",
@@ -394,7 +394,7 @@ describe("Pi sandbox execution contract", () => {
         transport: "sse",
         provider: "openai",
         baseUrl: "https://api.openai.com/v1",
-        model: "gpt-5.6-terra",
+        model: "gpt-6-luna",
         thinkingLevel: "low",
         credentialBindings: [
           {
@@ -410,7 +410,7 @@ describe("Pi sandbox execution contract", () => {
         transport: "sse",
         provider: "openai-codex",
         baseUrl: "https://chatgpt.com/backend-api",
-        model: "gpt-5.6-terra",
+        model: "gpt-6-luna",
         thinkingLevel: "low",
         credentialBindings: [
           {
@@ -471,7 +471,7 @@ describe("Pi sandbox execution contract", () => {
         { ...publicResponses, extra: true },
         { ...publicResponses, thinkingLevel: "future" },
         { ...publicResponses, catalogModel: "x".repeat(513) },
-        { ...codexResponses, catalogModel: "gpt-5.6-terra" },
+        { ...codexResponses, catalogModel: "gpt-6-luna" },
         { ...codexResponses, provider: "openai" },
         {
           ...codexResponses,
