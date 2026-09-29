@@ -7,6 +7,7 @@ import { getStartedClaims } from "@okouai/db/schema/get-started-claim";
 import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { and, eq, or, sql } from "drizzle-orm";
+import { orgPlanEntitlementValues } from "./org-plan-entitlements.service";
 
 export function slackRewardIdentity(
   orgId: string,
@@ -42,6 +43,13 @@ export function slackRewardIdentity(
       ),
     ),
     rewardKey: `slack:${workspaceId}`,
+    conflict: {
+      target: [
+        getStartedClaims.actorUserId,
+        getStartedClaims.questKey,
+        getStartedClaims.sourceKey,
+      ],
+    },
   };
 }
 
@@ -82,4 +90,22 @@ export function slackOrgRewardSql(
     completed_at = COALESCE(completed_at, ${sql.param(at, getStartedClaims.completedAt)}),
     lease_id = NULL, lease_expires_at = NULL, updated_at = ${sql.param(at, getStartedClaims.updatedAt)}
   WHERE ${getStartedClaims.id} = ${claim.id} AND EXISTS (SELECT 1 FROM credited)`;
+}
+
+/** Initial values only; the owning command inserts these iff it created the wallet. */
+export function slackRewardWalletEntitlement(orgId: string) {
+  return orgPlanEntitlementValues(
+    { orgId, tier: "limited-free-1", source: "org_metadata_migration" },
+    { stripeSubscriptionId: null, sourceMetadata: {} },
+  );
+}
+
+export function slackRewardIneligibleValues(reason: string, at: Date) {
+  return {
+    status: "ineligible" as const,
+    reason,
+    updatedAt: at,
+    leaseId: null,
+    leaseExpiresAt: null,
+  };
 }

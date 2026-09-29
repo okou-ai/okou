@@ -1,6 +1,3 @@
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { atomicOrgCreditExpirationSql } from "./org-credit-expiration";
-import { slackOrgRewardSql } from "./slack-installation-reward";
 import {
   GET_STARTED_REWARDS,
   GET_STARTED_REWARD_TTL_MS,
@@ -325,24 +322,9 @@ async function persistGetStartedGrant(
   const grantedAt = nowDate();
   const expiresAt = new Date(grantedAt.getTime() + GET_STARTED_REWARD_TTL_MS);
   if (claim.rewardTarget === "org") {
-    if (claim.questKey !== "slack") {
-      throw new Error("Unexpected organization reward");
-    }
-    await tx
-      .select({ orgId: orgMetadata.orgId })
-      .from(orgMetadata)
-      .where(eq(orgMetadata.orgId, claim.orgId))
-      .for("update");
-    await tx.execute(atomicOrgCreditExpirationSql(claim.orgId, grantedAt));
-    await tx.execute(slackOrgRewardSql(claim, rewardKey, grantedAt));
-    const [awarded] = await tx
-      .select()
-      .from(getStartedClaims)
-      .where(eq(getStartedClaims.id, claim.id));
-    if (!awarded || awarded.status !== "granted") {
-      throw new Error("Slack reward was not published");
-    }
-    return awarded;
+    throw new Error(
+      "Organization rewards must commit with the Slack installation",
+    );
   }
   const grant = await createUsagePackCreditGrant(tx, {
     orgId: claim.orgId,
@@ -391,7 +373,7 @@ export async function awardCompletedGetStartedQuest(
   args: {
     readonly orgId: string;
     readonly userId: string;
-    readonly questKey: "connector" | "slack" | "imessage" | "checkin";
+    readonly questKey: "connector" | "imessage" | "checkin";
     readonly sourceKey: string;
   },
 ): Promise<GetStartedClaimRow> {
@@ -399,10 +381,7 @@ export async function awardCompletedGetStartedQuest(
     ...args,
     completedAt: nowDate(),
   });
-  const rewardKey =
-    args.questKey === "slack"
-      ? `slack:${args.sourceKey}`
-      : `${args.questKey}:${args.userId}:${args.sourceKey}`;
+  const rewardKey = `${args.questKey}:${args.userId}:${args.sourceKey}`;
   return grantGetStartedClaim(tx, claim, rewardKey);
 }
 

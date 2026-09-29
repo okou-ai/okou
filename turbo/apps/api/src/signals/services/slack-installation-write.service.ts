@@ -4,12 +4,11 @@ import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { getStartedClaims } from "@okouai/db/schema/get-started-claim";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
 import { command } from "ccstate";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull, or, sql } from "drizzle-orm";
 import { isUniqueViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
-import { orgPlanEntitlementValues } from "./org-plan-entitlements.service";
 import {
   OrgCreditExpirationRequired,
   pendingOrgCreditExpirationQuery,
@@ -20,6 +19,7 @@ import {
   slackRewardIdentity,
   slackRewardUnavailableReason,
   slackOrgRewardSql,
+  slackRewardWalletEntitlement,
 } from "./slack-installation-reward";
 
 type SlackInstallation = typeof slackOrgInstallations.$inferSelect;
@@ -31,7 +31,7 @@ interface SlackInstallationWrite {
   readonly workspaceId: string;
   readonly orgId: string | null;
   readonly userId: string | null;
-  readonly isReinstall: boolean;
+  readonly mode: "install" | "reinstall" | "connect";
 }
 
 const commitSlackInstallation$ = command(
@@ -57,34 +57,48 @@ const commitSlackInstallation$ = command(
         if (inserted) {
           await tx
             .insert(orgPlanEntitlements)
-            .values(
-              orgPlanEntitlementValues(
-                {
-                  orgId,
-                  tier: "limited-free-1",
-                  source: "org_metadata_migration",
-                },
-                { stripeSubscriptionId: null, sourceMetadata: {} },
-              ),
-            )
+            .values(slackRewardWalletEntitlement(orgId))
             .onConflictDoNothing({ target: orgPlanEntitlements.orgId });
         }
       }
-      const [installed] = args.isReinstall
-        ? await tx
-            .update(slackOrgInstallations)
-            .set({ ...args.fields, updatedAt: nowDate() })
-            .where(eq(slackOrgInstallations.slackWorkspaceId, args.workspaceId))
-            .returning()
-        : await tx
-            .insert(slackOrgInstallations)
-            .values({
-              ...args.fields,
-              slackWorkspaceId: args.workspaceId,
-              orgId: args.orgId && args.userId ? args.orgId : null,
-              installedByUserId: args.orgId && args.userId ? args.userId : null,
-            })
-            .returning();
+      const allowedOwner = args.orgId
+        ? or(
+            eq(slackOrgInstallations.orgId, args.orgId),
+            isNull(slackOrgInstallations.orgId),
+          )
+        : undefined;
+      const [installed] =
+        args.mode === "reinstall"
+          ? await tx
+              .update(slackOrgInstallations)
+              .set({ ...args.fields, updatedAt: nowDate() })
+              .where(
+                and(
+                  eq(slackOrgInstallations.slackWorkspaceId, args.workspaceId),
+                  allowedOwner,
+                ),
+              )
+              .returning()
+          : await tx
+              .insert(slackOrgInstallations)
+              .values({
+                ...args.fields,
+                slackWorkspaceId: args.workspaceId,
+                orgId: args.orgId && args.userId ? args.orgId : null,
+                installedByUserId:
+                  args.orgId && args.userId ? args.userId : null,
+              })
+              .onConflictDoUpdate({
+                target: slackOrgInstallations.slackWorkspaceId,
+                set: {
+                  ...args.fields,
+                  orgId: args.orgId,
+                  installedByUserId: args.userId,
+                  updatedAt: nowDate(),
+                },
+                setWhere: args.mode === "connect" ? allowedOwner : sql`false`,
+              })
+              .returning();
       if (!installed) {
         throw new Error("Slack installation upsert did not return a row");
       }

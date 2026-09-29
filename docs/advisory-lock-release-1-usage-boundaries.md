@@ -117,17 +117,24 @@ graph is prepared and incompatible serving/in-flight/rollback writers are gone.
 
 This monetary preparation does **not** complete the ownership graph: subscription/Atom-plan grants and first-paid fulfillment still forward transaction handles through metadata, member-grant and pending-snapshot helpers. Those boundaries remain implementation work, not a drain gate.
 
-Slack is the only organization-scoped get-started reward. Its installation writer
-now owns the installation, claim, organization lot and wallet increment in one
-command transaction. Wallet ownership precedes the claim; award identity and the
-organization limit remain protected by their existing unique indexes. A conflicting
-award rolls back the whole installation attempt and retries from authoritative
-claims. The old database-bearing `grantOrgCredits` interface is removed. Two additional
-Slack callers (first workspace binding and connector installation) still use the
-existing claim helper inside their atomic installation transaction; they now own
-the wallet before installation/claim rows and finish expired remainder through
-the common SQL before publishing the reward. Their command ownership is unfinished. Other get-started rewards remain
-member-scoped and retain their separate unfinished transaction ownership graph.
+Slack is the only organization-scoped get-started reward. All three production
+entry points now commit through business-only commands: direct installation,
+connector installation, and first workspace binding. The installation commands
+own their database and execute the claim, lot and wallet SQL directly. The binding
+command also owns the connection switch and first binding; these changes and its
+permanent reward receipt still commit together. Token encryption and subsequent
+Slack notifications remain outside these transactions. The generic transaction-
+bearing reward helper no longer accepts Slack completions.
+
+Wallet ownership precedes installation and claim rows. Existing unique award and
+organization indexes still enforce permanent eligibility. Expired remainder or a
+conflicting unique award rolls back the entire attempted binding/installation,
+then the business command performs bounded outside-transaction recovery and reads
+current claims again. Reinstallation checks the current organization owner before
+publishing credentials. Other get-started rewards remain member-scoped and retain
+their separate unfinished transaction ownership graph. Slack notification/read
+helpers elsewhere still forward an ordinary database; this is not a claim that
+the entire Slack service graph is finished.
 
 Shared Usage settlement now participates in the same expiration predicate and
 bounded outside-transaction recovery. Its event claim, allowance and member debit
@@ -163,3 +170,12 @@ subscriptions would risk unrelated current plans. This remains implementation wo
 not a compatibility exception. The prepared monetary predicates above do not
 resolve the plan entitlement, pending-snapshot and member-grant helper propagation.
 R1 is not certified ready by this note.
+
+The shared-wallet API regression constructs the expiration counterexample through
+real operations: a processed usage event leaves debt of 95, two 50-credit invoice
+purchases yield a wallet of 5, and time advances past both lots. Concurrent delivery
+of the same new 150-credit purchase must return a balance of 150 and exactly its
+active grant. After one more credit is consumed, invoice replay must leave 149.
+No internal row edit, advisory lock, trigger or transaction gate constructs this
+state. Focused formatting and lint passed; behavior verification belongs to the
+final integrated PR pipeline.

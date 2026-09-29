@@ -1,3 +1,4 @@
+import { connectSlackWorkspace$ } from "../services/slack-workspace-write.service";
 import { persistSlackInstallation$ } from "../services/slack-installation-write.service";
 import { createHmac, timingSafeEqual } from "node:crypto";
 
@@ -22,7 +23,6 @@ import { encryptPersistentSecretValue } from "../services/crypto.utils";
 import { loadUserFeatureSwitchContext } from "../services/feature-switches.service";
 import { getMemberRoleAndUpdateCache$ } from "../services/auth.service";
 import {
-  connectSlackWorkspace$,
   notifySlackConnect$,
   publishSlackAdminSignal$,
 } from "../services/slack-connect.service";
@@ -564,7 +564,7 @@ const handleInstallCallback$ = command(
         workspaceId: oauthResult.teamId,
         orgId: args.state.orgId,
         userId: args.state.userId,
-        isReinstall,
+        mode: isReinstall ? "reinstall" : "install",
       },
       signal,
     );

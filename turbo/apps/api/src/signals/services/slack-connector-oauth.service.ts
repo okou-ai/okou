@@ -1,17 +1,13 @@
-import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
-import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
-import { orgPlanEntitlementValues } from "./org-plan-entitlements.service";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
+import { connectSlackWorkspace$ } from "./slack-workspace-write.service";
 import { randomBytes } from "node:crypto";
 
 import { command } from "ccstate";
-import { and, eq, isNull, or } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
+import { persistSlackInstallation$ } from "./slack-installation-write.service";
 import {
   isStaticConfidentialConnectorAuthClient,
   resolveConnectorAuthClient,
 } from "@okouai/connectors/connector-auth-method";
-import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
-import { awardCompletedGetStartedQuest } from "./get-started-rewards.service";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 
 import { env, optionalEnv } from "../../lib/env";
@@ -38,7 +34,6 @@ import { userFeatureSwitchContext } from "./feature-switches.service";
 import { encryptPersistentSecretValue } from "./crypto.utils";
 import { SLACK_BOT_SCOPES } from "./slack-data.service";
 import {
-  connectSlackWorkspace$,
   notifySlackConnect$,
   publishSlackAdminSignal$,
 } from "./slack-connect.service";
@@ -188,68 +183,23 @@ const storeInstallation$ = command(
       featureContext,
     );
     signal.throwIfAborted();
-    const values = {
-      slackWorkspaceName: oauth.teamName,
-      orgId: context.orgId,
-      encryptedBotToken,
-      botUserId: oauth.botUserId,
-      installedByUserId: context.userId,
-      botScopes: JSON.stringify(oauth.botScopes.split(",").filter(Boolean)),
-    } as const;
-    const installation = await set(writeDb$).transaction(async (tx) => {
-      const [walletInserted] = await tx
-        .insert(orgMetadataCanonicalWrites)
-        .values({ orgId: context.orgId })
-        .onConflictDoNothing()
-        .returning({ orgId: orgMetadata.orgId });
-      if (walletInserted) {
-        await tx
-          .insert(orgPlanEntitlements)
-          .values(
-            orgPlanEntitlementValues(
-              {
-                orgId: context.orgId,
-                tier: "limited-free-1",
-                source: "org_metadata_migration",
-              },
-              { stripeSubscriptionId: null, sourceMetadata: {} },
-            ),
-          )
-          .onConflictDoNothing({ target: orgPlanEntitlements.orgId });
-      }
-      await tx
-        .select({ orgId: orgMetadata.orgId })
-        .from(orgMetadata)
-        .where(eq(orgMetadata.orgId, context.orgId))
-        .for("update");
-      const [stored] = await tx
-        .insert(slackOrgInstallations)
-        .values({ slackWorkspaceId: oauth.teamId, ...values })
-        .onConflictDoUpdate({
-          target: slackOrgInstallations.slackWorkspaceId,
-          set: { ...values, updatedAt: nowDate() },
-          setWhere: or(
-            eq(slackOrgInstallations.orgId, context.orgId),
-            isNull(slackOrgInstallations.orgId),
-          ),
-        })
-        .returning({ id: slackOrgInstallations.slackWorkspaceId });
-      if (stored) {
-        await awardCompletedGetStartedQuest(tx, {
-          orgId: context.orgId,
-          userId: context.userId,
-          questKey: "slack",
-          sourceKey: stored.id,
-        });
-      }
-      return stored;
-    });
+    await set(
+      persistSlackInstallation$,
+      {
+        mode: "connect",
+        workspaceId: oauth.teamId,
+        orgId: context.orgId,
+        userId: context.userId,
+        fields: {
+          slackWorkspaceName: oauth.teamName,
+          encryptedBotToken,
+          botUserId: oauth.botUserId,
+          botScopes: JSON.stringify(oauth.botScopes.split(",").filter(Boolean)),
+        },
+      },
+      signal,
+    );
     signal.throwIfAborted();
-    if (!installation) {
-      throw new Error(
-        "This Slack workspace is already connected to another organization",
-      );
-    }
   },
 );
 
