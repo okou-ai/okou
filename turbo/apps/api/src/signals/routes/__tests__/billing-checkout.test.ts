@@ -12558,6 +12558,58 @@ describe("usage pack allocation management", () => {
     expect(state.changes[0]?.status).toBe("previewed");
   });
 
+  it("repairs a stale Stripe package quantity before quoting a member change", async () => {
+    mockNow(new Date("2035-01-16T00:00:00.000Z"));
+    onTestFinished(() => {
+      clearMockNow();
+    });
+    const fixture = await seedManagedUsagePack([
+      { userId: `user_${randomUUID()}`, usagePackUsd: 20 },
+    ]);
+    const sourceUserId =
+      (await readUsagePackState(fixture.orgId, fixture.usagePackSubscriptionId))
+        .allocations[0]?.userId ?? "";
+    // A late writer left Stripe at two packages; local records declare one.
+    let repaired = false;
+    context.mocks.stripe.subscriptions.retrieve.mockImplementation(() => {
+      return Promise.resolve(
+        managedUsagePackSubscription(
+          fixture,
+          new Map([[TEST_PRICE_USAGE_PACK_20, repaired ? 1 : 2]]),
+        ),
+      );
+    });
+    context.mocks.stripe.subscriptions.update.mockImplementation(() => {
+      repaired = true;
+      return Promise.resolve({});
+    });
+    mockUsagePackChangePreviews(1500, 5000);
+    const client = setupApp({ context, routes: billingCheckoutRoutes })(
+      billingUsagePackManagementContract,
+    );
+
+    const preview = await accept(
+      client.previewChange({
+        headers: { authorization: "Bearer clerk-session" },
+        body: { memberId: sourceUserId, targetUsagePackUsd: 50 },
+      }),
+      [200],
+    );
+
+    expect(preview.body.changeId).toStrictEqual(expect.any(String));
+    expect(context.mocks.stripe.subscriptions.update).toHaveBeenCalledTimes(1);
+    expect(context.mocks.stripe.subscriptions.update).toHaveBeenCalledWith(
+      fixture.subscriptionId,
+      {
+        items: [{ id: `si_${TEST_PRICE_USAGE_PACK_20}`, quantity: 1 }],
+        proration_behavior: "none",
+      },
+      undefined,
+    );
+    expect(context.mocks.stripe.invoices.create).not.toHaveBeenCalled();
+    expect(context.mocks.stripe.invoices.pay).not.toHaveBeenCalled();
+  });
+
   it("applies a paid upgrade once with the preview proration date", async () => {
     mockNow(new Date("2035-01-16T00:00:00.000Z"));
     onTestFinished(() => {

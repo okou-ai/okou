@@ -1323,6 +1323,35 @@ function storedUsagePackChangePreview(
   };
 }
 
+/**
+ * A quote prices changes against Stripe's current items. Converge any
+ * temporary configuration drift from the accepted local records first, so a
+ * stale late write is repaired instead of blocking the member's change. A
+ * failed repair leaves the quote's own quantity validation authoritative.
+ */
+const repairUsagePackConfigurationBeforeQuote$ = command(
+  async (
+    { set },
+    usagePackSubscriptionId: string,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const repaired = await settle(
+      set(
+        syncUsagePackSubscriptionConfiguration$,
+        usagePackSubscriptionId,
+        signal,
+      ),
+      signal,
+    );
+    if (!repaired.ok) {
+      L.warn("usage pack configuration repair before quote failed", {
+        usagePackSubscriptionId,
+        error: repaired.error,
+      });
+    }
+  },
+);
+
 export const previewUsagePackAllocationChange$ = command(
   async (
     { set },
@@ -1385,6 +1414,11 @@ export const previewUsagePackAllocationChange$ = command(
     ) {
       return { status: "plan_ending" };
     }
+    await set(
+      repairUsagePackConfigurationBeforeQuote$,
+      context.subscription.id,
+      signal,
+    );
     const preview = await previewUsagePackChangeInStripe(
       context,
       source,
@@ -1703,6 +1737,11 @@ export const previewUsagePackAllocationAddition$ = command(
         ),
     ]);
     signal.throwIfAborted();
+    await set(
+      repairUsagePackConfigurationBeforeQuote$,
+      args.usagePackSubscriptionId,
+      signal,
+    );
     return await previewUsagePackAllocationAdditionForContext(
       { subscription, allocations, changes },
       args,

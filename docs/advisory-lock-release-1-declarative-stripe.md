@@ -40,13 +40,17 @@ Implemented for member usage packs (`usage-pack-allocation-change.service.ts`):
   and grants, and reconciliation repairs quantity 1 → 2 once; a late stale
   quantity is repaired without a new invoice or payment; a second reconciliation
   over a converged subscription makes no update.
+- Member change and addition quotes first request the same identity-only sync,
+  so a stale late quantity is repaired instead of blocking the quote; an API
+  test covers 2 → 1 repair before a 50 USD change preview with no invoice.
 
-Still unimplemented: allocation preview/confirm and immediate member removal
-still require Stripe to match local quantities and throw on drift; they must
-derive from the local projection and request the same sync. Plan, migration,
-legacy Plan and concurrency writers, cancellation/restore ownership, webhook
-intent preservation, ordinary initial purchase admission and immediate unpaid
-concurrency identity remain as mapped below.
+Still unimplemented: confirmation, immediate member removal and the expired or
+deferred change reconcilers still validate Stripe against local quantities and
+throw on drift that the sync could not repair (for example, while a payment is
+in flight). Plan, migration, legacy Plan and concurrency writers,
+cancellation/restore ownership, webhook intent preservation, ordinary initial
+purchase admission and immediate unpaid concurrency identity remain as mapped
+below.
 
 ## Existing sources of each projected fact
 
