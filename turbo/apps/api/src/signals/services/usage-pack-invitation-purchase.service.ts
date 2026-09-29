@@ -1973,49 +1973,12 @@ export async function handleUsagePackInvitationCheckoutFailed(
   return true;
 }
 
-async function ensureAcceptedInvitationSnapshot(
-  tx: WriteTx,
-  purchase: UsagePackInvitationPurchaseRow,
-  invitationId: string | undefined,
-  userId: string,
-): Promise<string> {
-  if (purchase.allocationId) {
-    if (
-      invitationId &&
-      purchase.clerkInvitationId &&
-      purchase.clerkInvitationId !== invitationId
-    ) {
-      throw new Error("Accepted Clerk invitation does not match its purchase");
-    }
-    return purchase.allocationId;
-  }
-  const [allocation] = await tx
-    .insert(usagePackAllocations)
-    .values({
-      usagePackSubscriptionId: purchase.usagePackSubscriptionId,
-      orgId: purchase.orgId,
-      userId: invitationId ? null : userId,
-      invitationId: invitationId ?? null,
-      usagePackUsd: purchase.usagePackUsd,
-      stripePriceId: purchase.stripePriceId,
-      status: "paid_pending_invitation",
-      currentPeriodStart: purchase.currentPeriodStart,
-      currentPeriodEnd: purchase.currentPeriodEnd,
-    })
-    .returning({ id: usagePackAllocations.id });
-  if (!allocation) {
-    throw new Error("Failed to recover accepted invitation allocation");
-  }
-  return allocation.id;
-}
-
-async function activateAcceptedPurchase(
+async function claimAcceptedPurchaseActivation(
   db: Db,
   purchaseId: string,
-  signal: AbortSignal | undefined,
   allowRecovery: boolean,
-): Promise<void> {
-  const purchase = await db.transaction(async (tx) => {
+): Promise<UsagePackInvitationPurchaseRow | null> {
+  return await db.transaction(async (tx) => {
     await lockPurchase(tx, purchaseId);
     const staleBefore = new Date(nowDate().getTime() - RECONCILIATION_DELAY_MS);
     const [claimed] = await tx
@@ -2045,6 +2008,19 @@ async function activateAcceptedPurchase(
       .returning();
     return claimed ?? null;
   });
+}
+
+async function activateAcceptedPurchase(
+  db: Db,
+  purchaseId: string,
+  signal: AbortSignal | undefined,
+  allowRecovery: boolean,
+): Promise<void> {
+  const purchase = await claimAcceptedPurchaseActivation(
+    db,
+    purchaseId,
+    allowRecovery,
+  );
   if (!purchase?.acceptedUserId || !purchase.allocationId) {
     return;
   }
@@ -2120,10 +2096,25 @@ async function activateAcceptedPurchase(
       });
     }
     const at = nowDate();
-    await tx
+    const [activated] = await tx
       .update(usagePackAllocations)
       .set({ status: "active", updatedAt: at })
-      .where(eq(usagePackAllocations.id, allocationId));
+      .where(
+        and(
+          eq(usagePackAllocations.id, allocationId),
+          eq(usagePackAllocations.userId, acceptedUserId),
+          inArray(usagePackAllocations.status, [
+            "paid_pending_invitation",
+            "active",
+          ]),
+        ),
+      )
+      .returning({ id: usagePackAllocations.id });
+    if (!activated) {
+      throw new Error(
+        "Invitation allocation was retired or reassigned during activation",
+      );
+    }
     await tx
       .update(usagePackInvitationPurchases)
       .set({ status: "accepted", updatedAt: at })
@@ -2236,13 +2227,35 @@ async function recordInvitationAcceptance(
     if (!ACCEPTABLE_INVITATION_PURCHASE_STATUSES.has(purchase.status)) {
       return;
     }
-    const allocationId = await ensureAcceptedInvitationSnapshot(
-      tx,
-      purchase,
-      args.invitationId,
-      args.userId,
-    );
-    await tx
+    if (
+      args.invitationId &&
+      purchase.clerkInvitationId &&
+      purchase.clerkInvitationId !== args.invitationId
+    ) {
+      throw new Error("Accepted Clerk invitation does not match its purchase");
+    }
+    let allocationId = purchase.allocationId;
+    if (!allocationId) {
+      const [inserted] = await tx
+        .insert(usagePackAllocations)
+        .values({
+          usagePackSubscriptionId: purchase.usagePackSubscriptionId,
+          orgId: purchase.orgId,
+          userId: args.invitationId ? null : args.userId,
+          invitationId: args.invitationId ?? null,
+          usagePackUsd: purchase.usagePackUsd,
+          stripePriceId: purchase.stripePriceId,
+          status: "paid_pending_invitation",
+          currentPeriodStart: purchase.currentPeriodStart,
+          currentPeriodEnd: purchase.currentPeriodEnd,
+        })
+        .returning({ id: usagePackAllocations.id });
+      if (!inserted) {
+        throw new Error("Failed to recover accepted invitation allocation");
+      }
+      allocationId = inserted.id;
+    }
+    const [assigned] = await tx
       .update(usagePackAllocations)
       .set({
         userId: args.userId,
@@ -2250,7 +2263,26 @@ async function recordInvitationAcceptance(
         status: "paid_pending_invitation",
         updatedAt: nowDate(),
       })
-      .where(eq(usagePackAllocations.id, allocationId));
+      .where(
+        and(
+          eq(usagePackAllocations.id, allocationId),
+          inArray(usagePackAllocations.status, [
+            "paid_pending_invitation",
+            "pending_invitation",
+            "active",
+          ]),
+          or(
+            isNull(usagePackAllocations.userId),
+            eq(usagePackAllocations.userId, args.userId),
+          ),
+        ),
+      )
+      .returning({ id: usagePackAllocations.id });
+    if (!assigned) {
+      throw new Error(
+        "Invitation allocation was retired or reassigned before acceptance",
+      );
+    }
     await tx
       .update(usagePackInvitationPurchases)
       .set({
