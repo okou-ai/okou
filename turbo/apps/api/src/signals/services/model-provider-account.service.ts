@@ -32,9 +32,10 @@ import {
 
 import { settle } from "../utils";
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
-import { isUniqueViolation } from "../../lib/pg-errors";
+import { isUniqueViolation, safeSqlStateCode } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
+import { pgTextDecoder } from "../../lib/db-structured-result";
 import { publishPersonalModelProvidersChangedSafely } from "../external/realtime";
 import {
   decryptStoredSecretValue,
@@ -98,6 +99,10 @@ export type PersonalProviderAccountErrorResponse =
   | ReturnType<typeof notFound>
   | ReturnType<typeof conflict>;
 
+function isAccountMutationConflict(error: unknown): boolean {
+  return isUniqueViolation(error) || safeSqlStateCode(error) === "40P01";
+}
+
 /** Account writers rely on constraints instead of locks: one active account per
  * provider, one row per upstream identity and one secret per name. A losing
  * concurrent writer surfaces as an explicit conflict. */
@@ -108,7 +113,7 @@ async function withAccountConflict<T>(
   if (result.ok) {
     return result.value;
   }
-  if (isUniqueViolation(result.error)) {
+  if (isAccountMutationConflict(result.error)) {
     return conflict(ACCOUNT_CONFLICT_MESSAGE);
   }
   throw result.error;
@@ -175,50 +180,6 @@ async function encryptAccountSecrets(
     signal.throwIfAborted();
   }
   return encrypted;
-}
-
-async function upsertAccountSecrets(
-  db: Db,
-  accountId: string,
-  encryptedSecrets: readonly EncryptedAccountSecret[],
-): Promise<void> {
-  if (encryptedSecrets.length > 0) {
-    await db
-      .insert(modelProviderAccountSecrets)
-      .values(
-        encryptedSecrets.map((secret) => {
-          return { modelProviderAccountId: accountId, ...secret };
-        }),
-      )
-      .onConflictDoUpdate({
-        target: [
-          modelProviderAccountSecrets.modelProviderAccountId,
-          modelProviderAccountSecrets.name,
-        ],
-        set: {
-          encryptedValue: sql`excluded.encrypted_value`,
-          description: sql`excluded.description`,
-          updatedAt: nowDate(),
-        },
-      });
-  }
-  await db.delete(modelProviderAccountSecrets).where(
-    and(
-      eq(modelProviderAccountSecrets.modelProviderAccountId, accountId),
-      ...(encryptedSecrets.length === 0
-        ? []
-        : [
-            not(
-              inArray(
-                modelProviderAccountSecrets.name,
-                encryptedSecrets.map((secret) => {
-                  return secret.name;
-                }),
-              ),
-            ),
-          ]),
-    ),
-  );
 }
 
 export async function listPersonalModelProviderAccounts(args: {
@@ -319,49 +280,6 @@ function identityMatches(
   );
 }
 
-/** The `(org_id, user_id, type)` unique index owns concurrent first connects. */
-async function logicalProvider(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly type: PersonalSubscriptionProviderType;
-    readonly selectedModel: string | undefined;
-  },
-): Promise<ProviderRow> {
-  await db
-    .insert(modelProviders)
-    .values({
-      orgId: args.orgId,
-      userId: args.userId,
-      type: args.type,
-      isDefault: false,
-      selectedModel: args.selectedModel ?? null,
-    })
-    .onConflictDoNothing({
-      target: [
-        modelProviders.orgId,
-        modelProviders.userId,
-        modelProviders.type,
-      ],
-    });
-  const [provider] = await db
-    .select()
-    .from(modelProviders)
-    .where(
-      and(
-        eq(modelProviders.orgId, args.orgId),
-        eq(modelProviders.userId, args.userId),
-        eq(modelProviders.type, args.type),
-      ),
-    )
-    .limit(1);
-  if (!provider) {
-    throw new Error("Expected logical model provider row");
-  }
-  return provider;
-}
-
 function selectMutationTarget(args: {
   readonly accounts: readonly AccountRow[];
   readonly mode: PersonalProviderAccountMutation;
@@ -390,22 +308,13 @@ function selectMutationTarget(args: {
   );
 }
 
-async function applyAccountMutation(
-  db: Db,
-  args: {
-    readonly provider: ProviderRow;
-    readonly accounts: readonly AccountRow[];
-    readonly type: PersonalSubscriptionProviderType;
-    readonly authMethod: string | null;
-    readonly mode: PersonalProviderAccountMutation;
-    readonly metadata: ReturnType<typeof accountMetadataValues>;
-    readonly encryptedSecrets: readonly EncryptedAccountSecret[];
-  },
-): Promise<
-  | { readonly account: AccountRow; readonly created: boolean }
-  | ReturnType<typeof notFound>
-  | ReturnType<typeof badRequestMessage>
-> {
+function planAccountMutation(args: {
+  readonly accounts: readonly AccountRow[];
+  readonly type: PersonalSubscriptionProviderType;
+  readonly authMethod: string | null;
+  readonly mode: PersonalProviderAccountMutation;
+  readonly metadata: ReturnType<typeof accountMetadataValues>;
+}) {
   const connected = args.accounts.filter((account) => {
     return account.disconnectedAt === null;
   });
@@ -433,60 +342,61 @@ async function applyAccountMutation(
     connected.length === 0 ||
     target?.isActive === true ||
     selected?.isActive === true;
-  if (replacing) {
-    await retirePersonalModelProviderAccount(db, target);
-  }
-  if (active) {
-    await db
-      .update(modelProviderAccounts)
-      .set({ isActive: false })
-      .where(
-        and(
-          eq(modelProviderAccounts.modelProviderId, args.provider.id),
-          eq(modelProviderAccounts.isActive, true),
-          ...(selected ? [ne(modelProviderAccounts.id, selected.id)] : []),
-        ),
-      );
-  }
-  const values = {
-    ...args.metadata,
-    authMethod: args.authMethod,
-    isActive: active,
-    disconnectedAt: null,
+  return {
+    selected,
+    retiring: replacing ? target : null,
+    values: {
+      ...args.metadata,
+      authMethod: args.authMethod,
+      isActive: active,
+      disconnectedAt: null,
+    },
   };
-  // The provider/identity unique index merges a concurrent same-identity
-  // connection into one row instead of inserting a duplicate.
-  const [account] = selected
-    ? await db
-        .update(modelProviderAccounts)
-        .set(values)
-        .where(eq(modelProviderAccounts.id, selected.id))
-        .returning()
-    : await db
-        .insert(modelProviderAccounts)
-        .values({
-          ...values,
-          modelProviderId: args.provider.id,
-          orgId: args.provider.orgId,
-          userId: args.provider.userId,
-          type: args.type,
-        })
-        .onConflictDoUpdate({
-          target: [
-            modelProviderAccounts.modelProviderId,
-            modelProviderAccounts.externalAccountId,
-          ],
-          set: {
-            ...values,
-            isActive: sql`${modelProviderAccounts.isActive} OR excluded.is_active`,
-          },
-        })
-        .returning();
-  if (!account) {
-    throw new Error("Expected subscription account mutation to return");
+}
+
+function matchingAccountIdentityCondition(
+  type: PersonalSubscriptionProviderType,
+  metadata: ReturnType<typeof accountMetadataValues>,
+) {
+  if (type === CODEX_TYPE) {
+    return metadata.externalAccountId === null
+      ? sql`false`
+      : eq(modelProviderAccounts.externalAccountId, metadata.externalAccountId);
   }
-  await upsertAccountSecrets(db, account.id, args.encryptedSecrets);
-  return { account, created: !selected };
+  const emailAndWorkspace =
+    metadata.accountEmail && metadata.workspaceName
+      ? and(
+          sql`lower(btrim(${modelProviderAccounts.accountEmail})) = ${metadata.accountEmail}`,
+          sql`lower(btrim(${modelProviderAccounts.workspaceName})) = ${metadata.workspaceName.toLowerCase()}`,
+        )
+      : sql`false`;
+  return metadata.externalAccountId
+    ? or(
+        eq(modelProviderAccounts.externalAccountId, metadata.externalAccountId),
+        and(isNull(modelProviderAccounts.externalAccountId), emailAndWorkspace),
+      )
+    : emailAndWorkspace;
+}
+
+function retiringAccountStatement(account: AccountRow) {
+  const changedAt = nowDate();
+  return sql`WITH retained AS (
+    UPDATE ${modelProviderAccounts}
+    SET is_active = false, disconnected_at = ${changedAt}, updated_at = ${changedAt}
+    WHERE ${modelProviderAccounts.id} = ${account.id}
+      AND ${modelProviderAccounts.disconnectedAt} IS NULL
+      AND EXISTS (
+        SELECT 1 FROM ${agentRuns}
+        WHERE ${agentRuns.modelProviderId} = ${account.id}
+          AND ${agentRuns.orgId} = ${account.orgId}
+          AND ${agentRuns.userId} = ${account.userId}
+          AND ${agentRuns.status} IN ('pending', 'running')
+      )
+    RETURNING id
+  ) DELETE FROM ${modelProviderAccounts}
+    WHERE ${modelProviderAccounts.id} = ${account.id}
+      AND ${modelProviderAccounts.disconnectedAt} IS NULL
+      AND NOT EXISTS (SELECT 1 FROM retained)`;
 }
 
 function affectedCodexExpiryBindings(
@@ -516,8 +426,7 @@ function affectedCodexExpiryBindings(
   ];
 }
 
-type UpsertPersonalAccountArgs = {
-  readonly db: Db;
+export type UpsertPersonalAccountArgs = {
   readonly orgId: string;
   readonly userId: string;
   readonly type: PersonalSubscriptionProviderType;
@@ -555,113 +464,320 @@ async function resolveConnectionIdentityMetadata(
   return profile.ok ? { ...args.metadata, ...profile.value } : args.metadata;
 }
 
-export async function upsertPersonalModelProviderAccount(
-  args: UpsertPersonalAccountArgs,
-  signal: AbortSignal,
-): Promise<UpsertPersonalAccountResult> {
-  const resolvedMetadata = await resolveConnectionIdentityMetadata(
-    args,
-    signal,
-  );
-  signal.throwIfAborted();
-  const encryptedSecrets = await encryptAccountSecrets(
-    args.type,
-    args.secretValues,
-    args.featureSwitchContext,
-    signal,
-  );
-  const identityProof =
-    args.type === CLAUDE_CODE_TYPE
-      ? await prepareClaudeAccountIdentities(args, signal)
-      : null;
-  signal.throwIfAborted();
+interface PreparedPersonalAccountPublication {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly type: PersonalSubscriptionProviderType;
+  readonly authMethod: string | null;
+  readonly mode: PersonalProviderAccountMutation;
+  readonly selectedModel?: string;
+  readonly metadata: ReturnType<typeof accountMetadataValues>;
+  readonly encryptedSecrets: readonly EncryptedAccountSecret[];
+  readonly identityProof: ReadonlyMap<
+    string,
+    ClaudeAccountIdentityProof
+  > | null;
+}
 
-  const expiryBindings = new Set<string | null>();
-  const invalidateExpiry = () => {
-    for (const binding of expiryBindings) {
-      invalidateCodexResetCreditExpiry(
-        { scope: "personal", orgId: args.orgId, userId: args.userId },
-        { binding },
-      );
-    }
+function invalidateAccountExpiry(
+  args: { readonly orgId: string; readonly userId: string },
+  bindings: ReadonlySet<string | null>,
+) {
+  for (const binding of bindings) {
+    invalidateCodexResetCreditExpiry(
+      { scope: "personal", orgId: args.orgId, userId: args.userId },
+      { binding },
+    );
+  }
+}
+
+function accountSecretsPublicationStatement(
+  accountId: string,
+  encryptedSecrets: readonly EncryptedAccountSecret[],
+) {
+  const owner = eq(
+    modelProviderAccountSecrets.modelProviderAccountId,
+    accountId,
+  );
+  if (encryptedSecrets.length === 0) {
+    return sql`DELETE FROM ${modelProviderAccountSecrets} WHERE ${owner}`;
+  }
+  const rows = encryptedSecrets.map((secret) => {
+    return sql`(${accountId}, ${secret.name}, ${secret.encryptedValue}, ${secret.description})`;
+  });
+  const names = encryptedSecrets.map((secret) => {
+    return secret.name;
+  });
+  return sql`WITH upserted AS (
+    INSERT INTO ${modelProviderAccountSecrets}
+      (model_provider_account_id, name, encrypted_value, description)
+    VALUES ${sql.join(rows, sql`, `)}
+    ON CONFLICT (model_provider_account_id, name) DO UPDATE SET
+      encrypted_value = excluded.encrypted_value,
+      description = excluded.description,
+      updated_at = ${nowDate()}
+    RETURNING name
+  ) DELETE FROM ${modelProviderAccountSecrets}
+    WHERE ${owner} AND ${not(inArray(modelProviderAccountSecrets.name, names))}`;
+}
+
+function connectedAccountCondition(providerId: string) {
+  return and(
+    eq(modelProviderAccounts.modelProviderId, providerId),
+    isNull(modelProviderAccounts.disconnectedAt),
+  );
+}
+
+function retainedIdentityCondition(
+  providerId: string,
+  args: PreparedPersonalAccountPublication,
+) {
+  return and(
+    eq(modelProviderAccounts.modelProviderId, providerId),
+    isNotNull(modelProviderAccounts.disconnectedAt),
+    matchingAccountIdentityCondition(args.type, args.metadata),
+  );
+}
+
+function activeSiblingCondition(
+  providerId: string,
+  selected: AccountRow | null,
+) {
+  return and(
+    eq(modelProviderAccounts.modelProviderId, providerId),
+    eq(modelProviderAccounts.isActive, true),
+    ...(selected ? [ne(modelProviderAccounts.id, selected.id)] : []),
+  );
+}
+
+function accountPublicationInsertValues(
+  args: PreparedPersonalAccountPublication,
+  providerId: string,
+  values: Exclude<
+    ReturnType<typeof planAccountMutation>,
+    { readonly status: number }
+  >["values"],
+) {
+  return {
+    ...values,
+    modelProviderId: providerId,
+    orgId: args.orgId,
+    userId: args.userId,
+    type: args.type,
   };
-  const result = await withAccountConflict(() => {
-    return args.db.transaction(async (tx) => {
-      const provider = await logicalProvider(tx, {
-        orgId: args.orgId,
-        userId: args.userId,
-        type: args.type,
-        selectedModel: args.selectedModel,
-      });
-      signal.throwIfAborted();
-      const accounts = await applyClaudeIdentityProof(
-        tx,
-        await tx
+}
+
+function logicalProviderInsertValues(args: PreparedPersonalAccountPublication) {
+  return {
+    orgId: args.orgId,
+    userId: args.userId,
+    type: args.type,
+    isDefault: false,
+    selectedModel: args.selectedModel ?? null,
+  };
+}
+
+function logicalProviderConflict() {
+  return {
+    target: [modelProviders.orgId, modelProviders.userId, modelProviders.type],
+    set: { id: sql`${modelProviders.id}` },
+  };
+}
+
+function accountIdentityConflict(
+  values: Exclude<
+    ReturnType<typeof planAccountMutation>,
+    { readonly status: number }
+  >["values"],
+) {
+  return {
+    target: [
+      modelProviderAccounts.modelProviderId,
+      modelProviderAccounts.externalAccountId,
+    ],
+    set: {
+      ...values,
+      isActive: sql`${modelProviderAccounts.isActive} OR excluded.is_active`,
+    },
+  };
+}
+
+const publishPersonalModelProviderAccount$ = command(
+  async (
+    { set },
+    args: PreparedPersonalAccountPublication,
+    signal: AbortSignal,
+  ): Promise<UpsertPersonalAccountResult> => {
+    const db = set(writeDb$);
+    const expiryBindings = new Set<string | null>();
+    const outcome = await settle(
+      db.transaction(async (tx) => {
+        // The existing logical parent serializes its finite account-set mutation.
+        const [provider] = await tx
+          .insert(modelProviders)
+          .values(logicalProviderInsertValues(args))
+          .onConflictDoUpdate(logicalProviderConflict())
+          .returning();
+        if (!provider) {
+          throw new Error("Expected logical model provider row");
+        }
+        const connected = await tx
           .select()
           .from(modelProviderAccounts)
-          .where(eq(modelProviderAccounts.modelProviderId, provider.id))
-          .orderBy(modelProviderAccounts.id),
-        identityProof,
-      );
-      signal.throwIfAborted();
-      const metadata = accountMetadataValues({
-        type: args.type,
-        metadata: resolvedMetadata,
-        secretValues: args.secretValues,
-      });
-      for (const binding of affectedCodexExpiryBindings({
-        accounts,
-        mode: args.mode,
-        type: args.type,
-        metadata,
-      })) {
-        expiryBindings.add(binding);
-      }
-      invalidateExpiry();
-      const mutation = await applyAccountMutation(tx, {
-        provider,
-        accounts,
-        type: args.type,
-        authMethod: args.authMethod,
-        mode: args.mode,
-        metadata,
-        encryptedSecrets,
-      });
-      if ("status" in mutation) {
-        return mutation;
-      }
-      return {
-        provider: accountResponse({
-          account: mutation.account,
-          provider: await persistSubscriptionSelectedModel(tx, provider, args),
-        }),
-        created: mutation.created,
-      };
+          .where(connectedAccountCondition(provider.id))
+          .orderBy(modelProviderAccounts.id)
+          .limit(MAX_PERSONAL_PROVIDER_ACCOUNTS + 1);
+        if (connected.length > MAX_PERSONAL_PROVIDER_ACCOUNTS) {
+          return conflict(ACCOUNT_CONFLICT_MESSAGE);
+        }
+        const accounts: AccountRow[] = [];
+        for (const account of connected) {
+          const proof = args.identityProof?.get(account.id);
+          if (proof && !hasClaudeIdentity(account)) {
+            const [updated] = await tx
+              .update(modelProviderAccounts)
+              .set(claudeIdentityValues(proof.metadata))
+              .where(claudeIdentityProofCondition(account.id, proof))
+              .returning();
+            accounts.push(updated ?? account);
+          } else {
+            accounts.push(account);
+          }
+        }
+        const [retained] = await tx
+          .select()
+          .from(modelProviderAccounts)
+          .where(retainedIdentityCondition(provider.id, args))
+          .orderBy(modelProviderAccounts.id)
+          .limit(1);
+        if (retained) {
+          accounts.push(retained);
+        }
+        accounts.sort((left, right) => {
+          return left.id.localeCompare(right.id);
+        });
+        const plan = planAccountMutation({ ...args, accounts });
+        if ("status" in plan) {
+          return plan;
+        }
+        for (const binding of affectedCodexExpiryBindings({
+          ...args,
+          accounts,
+        })) {
+          expiryBindings.add(binding);
+        }
+        invalidateAccountExpiry(args, expiryBindings);
+        if (plan.retiring) {
+          await tx.execute(retiringAccountStatement(plan.retiring));
+        }
+        if (plan.values.isActive) {
+          await tx
+            .update(modelProviderAccounts)
+            .set({ isActive: false })
+            .where(activeSiblingCondition(provider.id, plan.selected));
+        }
+        const [account] = plan.selected
+          ? await tx
+              .update(modelProviderAccounts)
+              .set(plan.values)
+              .where(eq(modelProviderAccounts.id, plan.selected.id))
+              .returning()
+          : await tx
+              .insert(modelProviderAccounts)
+              .values(
+                accountPublicationInsertValues(args, provider.id, plan.values),
+              )
+              .onConflictDoUpdate(accountIdentityConflict(plan.values))
+              .returning();
+        if (!account) {
+          throw new Error("Expected subscription account mutation to return");
+        }
+        await tx.execute(
+          accountSecretsPublicationStatement(account.id, args.encryptedSecrets),
+        );
+        const selectedModel =
+          args.mode.kind === "replace-active"
+            ? (args.selectedModel ?? null)
+            : provider.selectedModel;
+        if (selectedModel !== provider.selectedModel) {
+          await tx
+            .update(modelProviders)
+            .set({ selectedModel, updatedAt: nowDate() })
+            .where(eq(modelProviders.id, provider.id));
+        }
+        signal.throwIfAborted();
+        return {
+          provider: accountResponse({
+            account,
+            provider: { ...provider, selectedModel },
+          }),
+          created: !plan.selected,
+        };
+      }),
+    ).finally(() => {
+      invalidateAccountExpiry(args, expiryBindings);
     });
-  }).finally(invalidateExpiry);
-  if (!("status" in result)) {
-    await publishPersonalModelProvidersChangedSafely(args.userId);
-  }
-  return result;
-}
+    signal.throwIfAborted();
+    if (!outcome.ok) {
+      if (isAccountMutationConflict(outcome.error)) {
+        return conflict(ACCOUNT_CONFLICT_MESSAGE);
+      }
+      throw outcome.error;
+    }
+    return outcome.value;
+  },
+);
 
-async function persistSubscriptionSelectedModel(
-  db: Db,
-  provider: ProviderRow,
-  args: Pick<UpsertPersonalAccountArgs, "mode" | "selectedModel">,
-): Promise<ProviderRow> {
-  const selectedModel =
-    args.mode.kind === "replace-active"
-      ? (args.selectedModel ?? null)
-      : provider.selectedModel;
-  if (selectedModel !== provider.selectedModel) {
-    await db
-      .update(modelProviders)
-      .set({ selectedModel, updatedAt: nowDate() })
-      .where(eq(modelProviders.id, provider.id));
-  }
-  return { ...provider, selectedModel };
-}
+export const upsertPersonalModelProviderAccount$ = command(
+  async (
+    { set },
+    args: UpsertPersonalAccountArgs,
+    signal: AbortSignal,
+  ): Promise<UpsertPersonalAccountResult> => {
+    const allowedNames = args.authMethod
+      ? (getSecretNamesForAuthMethod(args.type, args.authMethod) ?? [])
+      : [getSecretNameForType(args.type)];
+    if (
+      Object.keys(args.secretValues).some((name) => {
+        return !allowedNames.includes(name);
+      })
+    ) {
+      return badRequestMessage("Unsupported secrets for subscription account");
+    }
+    const metadata = await resolveConnectionIdentityMetadata(args, signal);
+    signal.throwIfAborted();
+    const encryptedSecrets = await encryptAccountSecrets(
+      args.type,
+      args.secretValues,
+      args.featureSwitchContext,
+      signal,
+    );
+    const identityProof =
+      args.type === CLAUDE_CODE_TYPE
+        ? await set(prepareClaudeAccountIdentities$, args, signal)
+        : null;
+    signal.throwIfAborted();
+    const result = await set(
+      publishPersonalModelProviderAccount$,
+      {
+        ...args,
+        encryptedSecrets,
+        identityProof,
+        metadata: accountMetadataValues({
+          type: args.type,
+          metadata,
+          secretValues: args.secretValues,
+        }),
+      },
+      signal,
+    );
+    if (!("status" in result)) {
+      await publishPersonalModelProvidersChangedSafely(args.userId);
+      signal.throwIfAborted();
+    }
+    return result;
+  },
+);
 
 function hasClaudeIdentity(identity: PersonalProviderAccountMetadata): boolean {
   return Boolean(
@@ -672,6 +788,41 @@ function hasClaudeIdentity(identity: PersonalProviderAccountMetadata): boolean {
 
 /** Profile identity for older Claude accounts is fetched outside any
  * transaction and recorded only while the row still lacks an identity. */
+interface ClaudeAccountIdentityProof {
+  readonly metadata: PersonalProviderAccountMetadata;
+  readonly encryptedValue: string;
+  readonly stateRevision: string;
+}
+
+function claudeIdentityProofCondition(
+  accountId: string,
+  proof: ClaudeAccountIdentityProof,
+) {
+  return and(
+    eq(modelProviderAccounts.id, accountId),
+    isNull(modelProviderAccounts.externalAccountId),
+    or(
+      isNull(modelProviderAccounts.accountEmail),
+      isNull(modelProviderAccounts.workspaceName),
+    ),
+    sql`${modelProviderAccounts.updatedAt}::text = ${proof.stateRevision}`,
+    sql`EXISTS (
+      SELECT 1 FROM ${modelProviderAccountSecrets}
+      WHERE ${modelProviderAccountSecrets.modelProviderAccountId} = ${modelProviderAccounts.id}
+        AND ${modelProviderAccountSecrets.name} = 'CLAUDE_CODE_OAUTH_TOKEN'
+        AND ${modelProviderAccountSecrets.encryptedValue} = ${proof.encryptedValue}
+    )`,
+  );
+}
+
+function claudeIdentityValues(metadata: PersonalProviderAccountMetadata) {
+  return {
+    externalAccountId: metadata.externalAccountId ?? null,
+    accountEmail: metadata.accountEmail ?? null,
+    workspaceName: metadata.workspaceName ?? null,
+  };
+}
+
 async function prepareClaudeAccountIdentities(
   args: {
     readonly db: Db;
@@ -680,11 +831,14 @@ async function prepareClaudeAccountIdentities(
     readonly featureSwitchContext: FeatureSwitchContext;
   },
   signal: AbortSignal,
-): Promise<ReadonlyMap<string, PersonalProviderAccountMetadata> | null> {
+): Promise<ReadonlyMap<string, ClaudeAccountIdentityProof> | null> {
   const rows = await args.db
     .select({
       account: modelProviderAccounts,
       encryptedValue: modelProviderAccountSecrets.encryptedValue,
+      stateRevision: sql`${modelProviderAccounts.updatedAt}::text`.mapWith(
+        pgTextDecoder,
+      ),
     })
     .from(modelProviderAccounts)
     .innerJoin(
@@ -703,14 +857,76 @@ async function prepareClaudeAccountIdentities(
         eq(modelProviderAccountSecrets.name, "CLAUDE_CODE_OAUTH_TOKEN"),
       ),
     );
-  const identities = new Map<string, PersonalProviderAccountMetadata>();
+  return await fetchClaudeAccountIdentityProofs(
+    rows,
+    args.featureSwitchContext,
+    signal,
+  );
+}
+
+const prepareClaudeAccountIdentities$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly featureSwitchContext: FeatureSwitchContext;
+    },
+    signal: AbortSignal,
+  ): Promise<ReadonlyMap<string, ClaudeAccountIdentityProof> | null> => {
+    const db = set(writeDb$);
+    const rows = await db
+      .select({
+        account: modelProviderAccounts,
+        encryptedValue: modelProviderAccountSecrets.encryptedValue,
+        stateRevision: sql`${modelProviderAccounts.updatedAt}::text`.mapWith(
+          pgTextDecoder,
+        ),
+      })
+      .from(modelProviderAccounts)
+      .innerJoin(
+        modelProviderAccountSecrets,
+        eq(
+          modelProviderAccountSecrets.modelProviderAccountId,
+          modelProviderAccounts.id,
+        ),
+      )
+      .where(
+        and(
+          eq(modelProviderAccounts.orgId, args.orgId),
+          eq(modelProviderAccounts.userId, args.userId),
+          eq(modelProviderAccounts.type, CLAUDE_CODE_TYPE),
+          isNull(modelProviderAccounts.disconnectedAt),
+          eq(modelProviderAccountSecrets.name, "CLAUDE_CODE_OAUTH_TOKEN"),
+        ),
+      )
+      .limit(MAX_PERSONAL_PROVIDER_ACCOUNTS + 1);
+    signal.throwIfAborted();
+    return await fetchClaudeAccountIdentityProofs(
+      rows,
+      args.featureSwitchContext,
+      signal,
+    );
+  },
+);
+
+async function fetchClaudeAccountIdentityProofs(
+  rows: readonly {
+    readonly account: AccountRow;
+    readonly encryptedValue: string;
+    readonly stateRevision: string;
+  }[],
+  featureSwitchContext: FeatureSwitchContext,
+  signal: AbortSignal,
+): Promise<ReadonlyMap<string, ClaudeAccountIdentityProof> | null> {
+  const identities = new Map<string, ClaudeAccountIdentityProof>();
   for (const row of rows) {
     if (hasClaudeIdentity(row.account)) {
       continue;
     }
     const accessToken = await decryptStoredSecretValue(
       row.encryptedValue,
-      args.featureSwitchContext,
+      featureSwitchContext,
     );
     signal.throwIfAborted();
     const result = await settle(
@@ -718,7 +934,11 @@ async function prepareClaudeAccountIdentities(
     );
     signal.throwIfAborted();
     if (result.ok && hasClaudeIdentity(result.value)) {
-      identities.set(row.account.id, result.value);
+      identities.set(row.account.id, {
+        metadata: result.value,
+        encryptedValue: row.encryptedValue,
+        stateRevision: row.stateRevision,
+      });
     }
   }
   return identities.size === 0 ? null : identities;
@@ -756,32 +976,19 @@ export async function identifyPersonalSubscriptionAccountsBeforeDisconnect(
 async function applyClaudeIdentityProof(
   db: Db,
   accounts: readonly AccountRow[],
-  proof: ReadonlyMap<string, PersonalProviderAccountMetadata> | null,
+  proof: ReadonlyMap<string, ClaudeAccountIdentityProof> | null,
 ): Promise<readonly AccountRow[]> {
   const hydrated: AccountRow[] = [];
   for (const account of accounts) {
-    const metadata = proof?.get(account.id);
-    if (!metadata || hasClaudeIdentity(account)) {
+    const identity = proof?.get(account.id);
+    if (!identity || hasClaudeIdentity(account)) {
       hydrated.push(account);
       continue;
     }
     const [updated] = await db
       .update(modelProviderAccounts)
-      .set({
-        externalAccountId: metadata.externalAccountId ?? null,
-        accountEmail: metadata.accountEmail ?? null,
-        workspaceName: metadata.workspaceName ?? null,
-      })
-      .where(
-        and(
-          eq(modelProviderAccounts.id, account.id),
-          isNull(modelProviderAccounts.externalAccountId),
-          or(
-            isNull(modelProviderAccounts.accountEmail),
-            isNull(modelProviderAccounts.workspaceName),
-          ),
-        ),
-      )
+      .set(claudeIdentityValues(identity.metadata))
+      .where(claudeIdentityProofCondition(account.id, identity))
       .returning();
     hydrated.push(updated ?? account);
   }
@@ -886,7 +1093,7 @@ export const activatePersonalModelProviderAccount$ = command(
     );
     signal.throwIfAborted();
     if (!mutation.ok) {
-      if (isUniqueViolation(mutation.error)) {
+      if (isAccountMutationConflict(mutation.error)) {
         return conflict(ACCOUNT_CONFLICT_MESSAGE);
       }
       throw mutation.error;

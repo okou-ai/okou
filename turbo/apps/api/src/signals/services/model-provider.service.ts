@@ -38,7 +38,8 @@ import {
   deletePersonalModelProviderAccount,
   isPersonalSubscriptionProviderType,
   identifyPersonalSubscriptionAccountsBeforeDisconnect,
-  upsertPersonalModelProviderAccount,
+  upsertPersonalModelProviderAccount$,
+  type UpsertPersonalAccountArgs,
   visiblePersonalModelProviderCondition,
 } from "./model-provider-account.service";
 
@@ -998,7 +999,6 @@ export const upsertUserMultiAuthModelProvider$ = command(
       return validationError;
     }
 
-    const writeDb = set(writeDb$);
     const featureSwitchContext = await get(
       userFeatureSwitchContext(args.orgId, args.userId),
     );
@@ -1008,8 +1008,9 @@ export const upsertUserMultiAuthModelProvider$ = command(
       args.userId !== ORG_SENTINEL_USER_ID &&
       isPersonalSubscriptionProviderType(args.type)
     ) {
-      return await upsertSingletonSubscription(
-        { db: writeDb, ...args, type: args.type, featureSwitchContext },
+      return await set(
+        upsertSingletonSubscription$,
+        { ...args, type: args.type },
         signal,
       );
     }
@@ -1166,92 +1167,85 @@ export const upsertOrgNoSecretModelProvider$ = command(
 const upsertSingletonSubscription$ = command(
   async (
     { get, set },
-    args: Omit<
-      Parameters<typeof upsertPersonalModelProviderAccount>[0],
-      "mode" | "db" | "featureSwitchContext"
-    >,
+    args: Omit<UpsertPersonalAccountArgs, "mode" | "featureSwitchContext">,
     signal: AbortSignal,
-  ) => {
+  ): Promise<
+    | BadRequestResponse
+    | { readonly provider: ModelProviderInfo; readonly created: boolean }
+  > => {
     const featureSwitchContext = await get(
       userFeatureSwitchContext(args.orgId, args.userId),
     );
     signal.throwIfAborted();
-    return await upsertSingletonSubscription(
-      { ...args, db: set(writeDb$), featureSwitchContext },
+    const db = set(writeDb$);
+    const [previous] = await db
+      .select({ id: modelProvidersTable.id })
+      .from(modelProvidersTable)
+      .where(
+        and(
+          eq(modelProvidersTable.orgId, args.orgId),
+          eq(modelProvidersTable.userId, args.userId),
+          eq(modelProvidersTable.type, args.type),
+          visiblePersonalModelProviderCondition(),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    const result = await set(
+      upsertPersonalModelProviderAccount$,
+      { ...args, featureSwitchContext, mode: { kind: "replace-active" } },
       signal,
     );
+    signal.throwIfAborted();
+    if ("status" in result) {
+      return badRequestMessage(result.body.error.message);
+    }
+    if (!result.provider.modelProviderId) {
+      throw new Error("Concrete subscription account has no logical provider");
+    }
+    const [provider] = await db
+      .select()
+      .from(modelProvidersTable)
+      .where(eq(modelProvidersTable.id, result.provider.modelProviderId))
+      .limit(1);
+    signal.throwIfAborted();
+    if (!provider) {
+      throw new Error("Subscription provider disappeared after connection");
+    }
+    // Personal subscription state lives only on the connected account; the
+    // logical provider row keeps the singleton ID, default and model selection.
+    const [account] = await db
+      .select()
+      .from(modelProviderAccounts)
+      .where(eq(modelProviderAccounts.id, result.provider.id))
+      .limit(1);
+    signal.throwIfAborted();
+    if (!account) {
+      throw new Error("Subscription account disappeared after connection");
+    }
+    return {
+      created: !previous,
+      provider: toModelProviderInfo({
+        id: provider.id,
+        userId: args.userId,
+        type: args.type,
+        authMethod: args.authMethod,
+        secretName: getSecretNameForType(args.type) ?? null,
+        secretNames: args.authMethod
+          ? (getSecretNamesForAuthMethod(args.type, args.authMethod) ?? null)
+          : null,
+        isDefault: provider.isDefault,
+        selectedModel: provider.selectedModel,
+        tokenExpiresAt: account.tokenExpiresAt,
+        needsReconnect: account.needsReconnect,
+        lastRefreshErrorCode: account.lastRefreshErrorCode,
+        workspaceName: account.workspaceName,
+        planType: account.planType,
+        subscriptionResetPeriod: account.subscriptionResetPeriod,
+        subscriptionNextResetAt: account.subscriptionNextResetAt,
+        createdAt: provider.createdAt,
+        updatedAt: provider.updatedAt,
+      }),
+    };
   },
 );
-
-async function upsertSingletonSubscription(
-  args: Omit<Parameters<typeof upsertPersonalModelProviderAccount>[0], "mode">,
-  signal: AbortSignal,
-): Promise<
-  | BadRequestResponse
-  | { readonly provider: ModelProviderInfo; readonly created: boolean }
-> {
-  const [previous] = await args.db
-    .select({ id: modelProvidersTable.id })
-    .from(modelProvidersTable)
-    .where(
-      and(
-        eq(modelProvidersTable.orgId, args.orgId),
-        eq(modelProvidersTable.userId, args.userId),
-        eq(modelProvidersTable.type, args.type),
-        visiblePersonalModelProviderCondition(),
-      ),
-    )
-    .limit(1);
-  const result = await upsertPersonalModelProviderAccount(
-    { ...args, mode: { kind: "replace-active" } },
-    signal,
-  );
-  if ("status" in result) {
-    return badRequestMessage(result.body.error.message);
-  }
-  if (!result.provider.modelProviderId) {
-    throw new Error("Concrete subscription account has no logical provider");
-  }
-  const [provider] = await args.db
-    .select()
-    .from(modelProvidersTable)
-    .where(eq(modelProvidersTable.id, result.provider.modelProviderId))
-    .limit(1);
-  if (!provider) {
-    throw new Error("Subscription provider disappeared after connection");
-  }
-  // Personal subscription state lives only on the connected account; the
-  // logical provider row keeps the singleton ID, default and model selection.
-  const [account] = await args.db
-    .select()
-    .from(modelProviderAccounts)
-    .where(eq(modelProviderAccounts.id, result.provider.id))
-    .limit(1);
-  if (!account) {
-    throw new Error("Subscription account disappeared after connection");
-  }
-  return {
-    created: !previous,
-    provider: toModelProviderInfo({
-      id: provider.id,
-      userId: args.userId,
-      type: args.type,
-      authMethod: args.authMethod,
-      secretName: getSecretNameForType(args.type) ?? null,
-      secretNames: args.authMethod
-        ? (getSecretNamesForAuthMethod(args.type, args.authMethod) ?? null)
-        : null,
-      isDefault: provider.isDefault,
-      selectedModel: provider.selectedModel,
-      tokenExpiresAt: account.tokenExpiresAt,
-      needsReconnect: account.needsReconnect,
-      lastRefreshErrorCode: account.lastRefreshErrorCode,
-      workspaceName: account.workspaceName,
-      planType: account.planType,
-      subscriptionResetPeriod: account.subscriptionResetPeriod,
-      subscriptionNextResetAt: account.subscriptionNextResetAt,
-      createdAt: provider.createdAt,
-      updatedAt: provider.updatedAt,
-    }),
-  };
-}

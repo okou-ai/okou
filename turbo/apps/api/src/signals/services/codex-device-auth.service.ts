@@ -29,7 +29,7 @@ import {
 } from "./crypto.utils";
 import { handleCodexAuthJsonPaste } from "./codex-auth-json-paste-handler";
 import {
-  upsertPersonalModelProviderAccount,
+  upsertPersonalModelProviderAccount$,
   type PersonalProviderAccountErrorResponse,
   type PersonalProviderAccountMutation,
 } from "./model-provider-account.service";
@@ -850,9 +850,9 @@ const importCodexAuthJson$ = command(
           const featureSwitchContext = await get(
             userFeatureSwitchContext(args.orgId, args.userId),
           );
-          const result = await upsertPersonalModelProviderAccount(
+          const result = await set(
+            upsertPersonalModelProviderAccount$,
             {
-              db: set(writeDb$),
               orgId: args.orgId,
               userId: args.userId,
               type: CODEX_DEVICE_AUTH_CONNECTOR_TYPE,

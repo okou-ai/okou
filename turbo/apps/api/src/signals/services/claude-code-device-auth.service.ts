@@ -31,7 +31,7 @@ import {
 } from "./crypto.utils";
 import { fetchClaudeCodeSubscriptionMetadata } from "./claude-code-usage.service";
 import {
-  upsertPersonalModelProviderAccount,
+  upsertPersonalModelProviderAccount$,
   type PersonalProviderAccountErrorResponse,
   type PersonalProviderAccountMutation,
 } from "./model-provider-account.service";
@@ -806,9 +806,9 @@ const importClaudeCodeOAuthToken$ = command(
         featureSwitchContext,
       )
     ) {
-      const result = await upsertPersonalModelProviderAccount(
+      const result = await set(
+        upsertPersonalModelProviderAccount$,
         {
-          db: set(writeDb$),
           orgId: args.orgId,
           userId: args.userId,
           type: CLAUDE_CODE_DEVICE_AUTH_CONNECTOR_TYPE,
