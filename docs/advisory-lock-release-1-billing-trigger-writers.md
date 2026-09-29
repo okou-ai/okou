@@ -54,20 +54,21 @@ listed in `docs/database/billing-attribution.md`.
 The existing `test-usage-state.ts` Run seeder is now an owning command. It
 inserts the session, Run and canonical attribution together, selecting the exact
 stored timestamp and source/thread fields. Its action dispatcher passes only
-business values. This removes that Run fixture's capture-trigger dependency.
+business values. Raw/model fixture insertion also owns its command, resolves the
+original Run attribution with owner validation, and publishes at most 500 rows
+plus monotone usage observation per transaction. A NULL legacy Run link remains
+`legacy_unknown`; the fixture does not invent an intentional runless anchor.
+Manual hourly materialization now copies the original identity, context and
+exact anchor, marks observation, and deletes the selected raw rows together in
+locked batches of at most 500. Its loop is outside each transaction. These
+existing actions pass only business values and remove their implicit capture
+and observation dependency; no new fixture endpoint or sequencing gate was added.
 
 The following checked-in state producers still obtain attribution implicitly
 from the current schema. They are not evidence of a missing production entry
 point, but need explicit fixture values or migration to ordinary API setup
 before tests can run against a trigger-free schema.
 
-- `routes/test-usage-state.ts`: `insertModelUsageEventForRun` and
-  `insertUsageEvent` omit the billing
-  identity and anchor; `materializeHourlyUsage` copies only live Run identity
-  into hourly rows. This fixture feeds usage records, compaction, Social and
-  other existing API tests through `routes/__tests__/helpers/usage-state.ts`.
-  An intentionally runless or legacy-unknown row must retain that intended
-  context; it must not be silently converted merely to make a test pass.
 - `routes/test-cron-cleanup-sandboxes-state.ts`: the lifecycle seeder inserts raw
   usage and a completed generation job using only their live Run ID. Its
   callers include cleanup, cancellation, queue, workflow and X deletion API

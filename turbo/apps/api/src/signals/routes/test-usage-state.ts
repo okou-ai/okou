@@ -37,7 +37,10 @@ import {
 } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
-import { pgTextDecoder } from "../../lib/db-structured-result";
+import {
+  nullableDriverValueDecoder,
+  pgTextDecoder,
+} from "../../lib/db-structured-result";
 import { billingRunAttributionWrite } from "../services/managed-usage-attribution";
 import { bodyResultOf } from "../context/request";
 import { request$ } from "../context/hono";
@@ -125,8 +128,6 @@ type UsageStateFixtureAction = UsageStateAction<
 type UsageStateRunAction = UsageStateAction<"seed-chat-thread">;
 
 type UsageStateEventWriteAction = UsageStateAction<
-  | "insert-model-usage-event-for-run"
-  | "insert-usage-event"
   | "attach-usage-allowance"
   | "read-allowance-window-state"
   | "read-usage-event-state"
@@ -136,7 +137,6 @@ type UsageStateEventMaterializationAction = UsageStateAction<
   | "delete-run"
   | "delete-billing-attribution"
   | "set-usage-event-created-at"
-  | "materialize-hourly-usage"
   | "read-usage-storage-counts"
 >;
 
@@ -495,44 +495,22 @@ function buildModelUsageRows(args: ModelUsageEventArgs): {
   return { rows };
 }
 
-async function insertModelUsageEventForRun(
-  db: Db,
-  args: ModelUsageEventArgs,
-): Promise<{ id: string }> {
-  const { rows } = buildModelUsageRows({
-    ...args,
-    inputTokens: args.inputTokens ?? 100,
-    outputTokens: args.outputTokens ?? 50,
-  });
-  const [row] = await db
-    .insert(usageEvent)
-    .values(rows)
-    .returning({ id: usageEvent.id });
-  if (!row) {
-    throw new Error("insertModelUsageEventForRun: returned no row");
-  }
-  return { id: row.id };
-}
-
-async function insertUsageEvent(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId?: string;
-    readonly runId?: string | null;
-    readonly kind?: string;
-    readonly provider?: string;
-    readonly category?: string;
-    readonly quantity?: number;
-    readonly status?: string;
-    readonly creditsCharged?: number;
-    readonly idempotencyKey?: string;
-    readonly billingError?: string | null;
-    readonly createdAt?: Date;
-    readonly processedAt?: Date | null;
-    readonly count?: number;
-  },
-): Promise<string> {
+function buildGenericUsageRows(args: {
+  readonly orgId: string;
+  readonly userId?: string;
+  readonly runId?: string | null;
+  readonly kind?: string;
+  readonly provider?: string;
+  readonly category?: string;
+  readonly quantity?: number;
+  readonly status?: string;
+  readonly creditsCharged?: number;
+  readonly idempotencyKey?: string;
+  readonly billingError?: string | null;
+  readonly createdAt?: Date;
+  readonly processedAt?: Date | null;
+  readonly count?: number;
+}) {
   const status = args.status ?? "pending";
   const processedAt =
     args.processedAt !== undefined
@@ -541,36 +519,171 @@ async function insertUsageEvent(
         ? nowDate()
         : null;
   const count = args.count ?? 1;
-  const values: (typeof usageEvent.$inferInsert)[] = Array.from(
-    { length: count },
-    () => {
-      return {
-        runId: args.runId ?? null,
-        orgId: args.orgId,
-        userId: args.userId ?? "test-user",
-        kind: args.kind ?? "connector",
-        provider: args.provider ?? "x",
-        category: args.category ?? "tweet.read",
-        quantity: args.quantity ?? 1,
-        status,
-        creditsCharged: args.creditsCharged ?? null,
-        billingError: args.billingError ?? null,
-        idempotencyKey: args.idempotencyKey ?? randomUUID(),
-        createdAt: args.createdAt ?? nowDate(),
-        processedAt,
-      };
-    },
-  );
-  const rows = await db
-    .insert(usageEvent)
-    .values(values)
-    .returning({ id: usageEvent.id });
-  const row = rows[0];
-  if (!row) {
-    throw new Error("insertUsageEvent: insert returned no row");
-  }
-  return row.id;
+  const values = Array.from({ length: count }, () => {
+    return {
+      runId: args.runId ?? null,
+      orgId: args.orgId,
+      userId: args.userId ?? "test-user",
+      kind: args.kind ?? "connector",
+      provider: args.provider ?? "x",
+      category: args.category ?? "tweet.read",
+      quantity: args.quantity ?? 1,
+      status,
+      creditsCharged: args.creditsCharged ?? null,
+      billingError: args.billingError ?? null,
+      idempotencyKey: args.idempotencyKey ?? randomUUID(),
+      createdAt: args.createdAt ?? nowDate(),
+      processedAt,
+    };
+  });
+  return values;
 }
+
+type UsageInsertAction = UsageStateAction<
+  "insert-model-usage-event-for-run" | "insert-usage-event"
+>;
+
+function buildFixtureUsageRows(body: UsageInsertAction) {
+  const processedAt =
+    body.processed_at === undefined
+      ? undefined
+      : parseOptionalDate(body.processed_at);
+  if (body.action === "insert-model-usage-event-for-run") {
+    return buildModelUsageRows({
+      orgId: body.org_id,
+      userId: body.user_id,
+      runId: body.run_id,
+      inputTokens: body.input_tokens ?? 100,
+      outputTokens: body.output_tokens ?? 50,
+      cacheReadInputTokens: body.cache_read_input_tokens,
+      cacheCreationInputTokens: body.cache_creation_input_tokens,
+      creditsCharged: body.credits_charged,
+      status: body.status,
+      processedAt,
+    }).rows;
+  }
+  return buildGenericUsageRows({
+    orgId: body.org_id,
+    userId: body.user_id,
+    runId: body.run_id,
+    kind: body.kind,
+    provider: body.provider,
+    category: body.category,
+    quantity: body.quantity,
+    status: body.status,
+    creditsCharged: body.credits_charged,
+    idempotencyKey: body.idempotency_key,
+    billingError: body.billing_error,
+    createdAt: parseMaybeDate(body.created_at),
+    processedAt,
+    count: body.count,
+  });
+}
+
+const insertFixtureUsage$ = command(
+  async ({ set }, body: UsageInsertAction, signal: AbortSignal) => {
+    const db = set(writeDb$);
+    const values = buildFixtureUsageRows(body);
+    let firstId: string | undefined;
+    for (let offset = 0; offset < values.length; offset += 500) {
+      const batch = values.slice(offset, offset + 500);
+      const ids = await db.transaction(async (tx) => {
+        const runId = body.run_id ?? null;
+        if (runId) {
+          const [run] = await tx
+            .select({
+              id: agentRuns.id,
+              orgId: agentRuns.orgId,
+              userId: agentRuns.userId,
+              startedAt: sql`${agentRuns.createdAt}::text`.mapWith(
+                pgTextDecoder,
+              ),
+              triggerSource: agentRuns.triggerSource,
+              threadId: agentRuns.chatThreadId,
+            })
+            .from(agentRuns)
+            .where(eq(agentRuns.id, runId))
+            .for("key share");
+          signal.throwIfAborted();
+          if (run) {
+            const capture = billingRunAttributionWrite(run);
+            const [captured] = await tx
+              .insert(billingRunAttribution)
+              .values(capture.values)
+              .onConflictDoUpdate(capture.conflict)
+              .returning({ runId: billingRunAttribution.runId });
+            if (!captured) {
+              throw new Error(
+                "Fixture usage identity conflicts with Run history",
+              );
+            }
+          }
+        }
+        const [attribution] = await tx
+          .select({
+            orgId: billingRunAttribution.orgId,
+            userId: billingRunAttribution.userId,
+            anchor: sql`${billingRunAttribution.runStartedAt}::text`.mapWith(
+              pgTextDecoder,
+            ),
+          })
+          .from(billingRunAttribution)
+          .where(runId ? eq(billingRunAttribution.runId, runId) : sql`false`)
+          .for("update");
+        signal.throwIfAborted();
+        if (
+          attribution &&
+          (attribution.orgId !== body.org_id ||
+            attribution.userId !== (body.user_id ?? "test-user"))
+        ) {
+          throw new Error("Fixture usage owner conflicts with Run history");
+        }
+        const inserted = await tx
+          .insert(usageEvent)
+          .values(
+            batch.map((row) => {
+              return {
+                ...row,
+                billingRunId: runId,
+                // A fixture's NULL legacy link does not prove intentional runless usage.
+                billingContext: attribution
+                  ? "run"
+                  : runId
+                    ? "missing_run"
+                    : "legacy_unknown",
+                billingAnchorAt: attribution
+                  ? sql`${attribution.anchor}::timestamp`
+                  : null,
+              };
+            }),
+          )
+          .returning({ id: usageEvent.id });
+        if (runId) {
+          await tx
+            .update(billingRunAttribution)
+            .set({ usageObserved: true })
+            .where(
+              and(
+                eq(billingRunAttribution.runId, runId),
+                eq(billingRunAttribution.usageObserved, false),
+              ),
+            );
+        }
+        signal.throwIfAborted();
+        return inserted;
+      });
+      signal.throwIfAborted();
+      firstId ??= ids[0]?.id;
+    }
+    if (!firstId) {
+      throw new Error("Fixture usage insert returned no row");
+    }
+    return {
+      status: 200 as const,
+      body: { ok: true as const, usage_event_id: firstId },
+    };
+  },
+);
 
 async function attachUsageAllowance(
   db: Db,
@@ -763,90 +876,129 @@ async function setUsageEventCreatedAt(
   signal.throwIfAborted();
 }
 
-async function materializeHourlyUsage(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly runId: string | null;
-  },
-  signal: AbortSignal,
-): Promise<number> {
-  return await db.transaction(async (tx) => {
-    const runPredicate =
-      args.runId === null
-        ? isNull(usageEvent.runId)
-        : eq(usageEvent.runId, args.runId);
-    const rows = await tx
-      .select({
-        id: usageEvent.id,
-        processedHour: sql`date_trunc('hour', ${usageEvent.processedAt})`
-          .mapWith(usageEvent.createdAt)
-          .as("processed_hour"),
-        orgId: usageEvent.orgId,
-        userId: usageEvent.userId,
-        runId: usageEvent.runId,
-        kind: usageEvent.kind,
-        provider: usageEvent.provider,
-        category: usageEvent.category,
-        shortWindowId: usageAllowanceAllocations.shortWindowId,
-        weeklyWindowId: usageAllowanceAllocations.weeklyWindowId,
-        quantity: usageEvent.quantity,
-        creditsCharged: usageEvent.creditsCharged,
-        allowanceUnits: usageAllowanceAllocations.unitsApplied,
-      })
-      .from(usageEvent)
-      .leftJoin(
-        usageAllowanceAllocations,
-        eq(usageAllowanceAllocations.usageEventId, usageEvent.id),
-      )
-      .where(
-        and(
-          eq(usageEvent.orgId, args.orgId),
-          eq(usageEvent.userId, args.userId),
-          runPredicate,
-          eq(usageEvent.status, "processed"),
-          isNotNull(usageEvent.processedAt),
-        ),
-      );
-    signal.throwIfAborted();
+const materializeHourlyUsage$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly runId: string | null;
+    },
+    signal: AbortSignal,
+  ): Promise<number> => {
+    const db = set(writeDb$);
+    let total = 0;
+    while (true) {
+      const materialized = await db.transaction(async (tx) => {
+        const runPredicate =
+          args.runId === null
+            ? isNull(usageEvent.runId)
+            : eq(usageEvent.runId, args.runId);
+        const rows = await tx
+          .select({
+            id: usageEvent.id,
+            processedHour: sql`date_trunc('hour', ${usageEvent.processedAt})`
+              .mapWith(usageEvent.createdAt)
+              .as("processed_hour"),
+            orgId: usageEvent.orgId,
+            userId: usageEvent.userId,
+            runId: usageEvent.runId,
+            billingRunId: usageEvent.billingRunId,
+            billingContext: usageEvent.billingContext,
+            billingAnchorAt: sql`${usageEvent.billingAnchorAt}::text`.mapWith(
+              nullableDriverValueDecoder(pgTextDecoder),
+            ),
+            kind: usageEvent.kind,
+            provider: usageEvent.provider,
+            category: usageEvent.category,
+            shortWindowId: usageAllowanceAllocations.shortWindowId,
+            weeklyWindowId: usageAllowanceAllocations.weeklyWindowId,
+            quantity: usageEvent.quantity,
+            creditsCharged: usageEvent.creditsCharged,
+            allowanceUnits: usageAllowanceAllocations.unitsApplied,
+          })
+          .from(usageEvent)
+          .leftJoin(
+            usageAllowanceAllocations,
+            eq(usageAllowanceAllocations.usageEventId, usageEvent.id),
+          )
+          .where(
+            and(
+              eq(usageEvent.orgId, args.orgId),
+              eq(usageEvent.userId, args.userId),
+              runPredicate,
+              eq(usageEvent.status, "processed"),
+              isNotNull(usageEvent.processedAt),
+            ),
+          )
+          .orderBy(usageEvent.id)
+          .limit(500)
+          .for("update", { of: usageEvent });
+        signal.throwIfAborted();
 
-    if (rows.length === 0) {
-      return 0;
+        if (rows.length === 0) {
+          return 0;
+        }
+
+        await tx.insert(usageEventHourlyRollup).values(
+          rows.map((row) => {
+            return {
+              processedHour: row.processedHour,
+              orgId: row.orgId,
+              userId: row.userId,
+              runId: row.runId,
+              billingRunId: row.billingRunId,
+              billingContext: row.billingContext,
+              billingAnchorAt:
+                row.billingAnchorAt === null
+                  ? null
+                  : sql`${row.billingAnchorAt}::timestamp`,
+              kind: row.kind,
+              provider: row.provider,
+              category: row.category,
+              shortWindowId: row.shortWindowId,
+              weeklyWindowId: row.weeklyWindowId,
+              quantity: row.quantity,
+              creditsCharged: row.creditsCharged ?? 0,
+              allowanceUnits: row.allowanceUnits ?? 0,
+            };
+          }),
+        );
+        signal.throwIfAborted();
+
+        const observedIds = rows.flatMap((row) => {
+          return row.billingRunId ? [row.billingRunId] : [];
+        });
+        if (observedIds.length > 0) {
+          await tx
+            .update(billingRunAttribution)
+            .set({ usageObserved: true })
+            .where(
+              and(
+                inArray(billingRunAttribution.runId, observedIds),
+                eq(billingRunAttribution.usageObserved, false),
+              ),
+            );
+        }
+        await tx.delete(usageEvent).where(
+          inArray(
+            usageEvent.id,
+            rows.map((row) => {
+              return row.id;
+            }),
+          ),
+        );
+        signal.throwIfAborted();
+        return rows.length;
+      });
+      signal.throwIfAborted();
+      total += materialized;
+      if (materialized < 500) {
+        return total;
+      }
     }
-
-    await tx.insert(usageEventHourlyRollup).values(
-      rows.map((row) => {
-        return {
-          processedHour: row.processedHour,
-          orgId: row.orgId,
-          userId: row.userId,
-          runId: row.runId,
-          kind: row.kind,
-          provider: row.provider,
-          category: row.category,
-          shortWindowId: row.shortWindowId,
-          weeklyWindowId: row.weeklyWindowId,
-          quantity: row.quantity,
-          creditsCharged: row.creditsCharged ?? 0,
-          allowanceUnits: row.allowanceUnits ?? 0,
-        };
-      }),
-    );
-    signal.throwIfAborted();
-
-    await tx.delete(usageEvent).where(
-      inArray(
-        usageEvent.id,
-        rows.map((row) => {
-          return row.id;
-        }),
-      ),
-    );
-    signal.throwIfAborted();
-    return rows.length;
-  });
-}
+  },
+);
 
 async function readUsageStorageCounts(
   db: Db,
@@ -1028,54 +1180,6 @@ async function mutateUsageStateEventWriteState(
   signal: AbortSignal,
 ) {
   switch (body.action) {
-    case "insert-model-usage-event-for-run": {
-      const result = await insertModelUsageEventForRun(db, {
-        orgId: body.org_id,
-        userId: body.user_id,
-        runId: body.run_id,
-        inputTokens: body.input_tokens,
-        outputTokens: body.output_tokens,
-        cacheReadInputTokens: body.cache_read_input_tokens,
-        cacheCreationInputTokens: body.cache_creation_input_tokens,
-        creditsCharged: body.credits_charged,
-        status: body.status,
-        processedAt:
-          body.processed_at === undefined
-            ? undefined
-            : parseOptionalDate(body.processed_at),
-      });
-      signal.throwIfAborted();
-      return {
-        status: 200 as const,
-        body: { ok: true as const, usage_event_id: result.id },
-      };
-    }
-    case "insert-usage-event": {
-      const id = await insertUsageEvent(db, {
-        orgId: body.org_id,
-        userId: body.user_id,
-        runId: body.run_id,
-        kind: body.kind,
-        provider: body.provider,
-        category: body.category,
-        quantity: body.quantity,
-        status: body.status,
-        creditsCharged: body.credits_charged,
-        idempotencyKey: body.idempotency_key,
-        billingError: body.billing_error,
-        createdAt: parseMaybeDate(body.created_at),
-        processedAt:
-          body.processed_at === undefined
-            ? undefined
-            : parseOptionalDate(body.processed_at),
-        count: body.count,
-      });
-      signal.throwIfAborted();
-      return {
-        status: 200 as const,
-        body: { ok: true as const, usage_event_id: id },
-      };
-    }
     case "attach-usage-allowance": {
       const windows = await attachUsageAllowance(db, {
         orgId: body.org_id,
@@ -1154,21 +1258,6 @@ async function mutateUsageStateEventMaterializationState(
       );
       return { status: 200 as const, body: { ok: true as const } };
     }
-    case "materialize-hourly-usage": {
-      const hourlyCount = await materializeHourlyUsage(
-        db,
-        {
-          orgId: body.org_id,
-          userId: body.user_id,
-          runId: body.run_id,
-        },
-        signal,
-      );
-      return {
-        status: 200 as const,
-        body: { ok: true as const, hourly_count: hourlyCount },
-      };
-    }
     case "read-usage-storage-counts": {
       const counts = await readUsageStorageCounts(db, {
         scope: body.scope,
@@ -1192,7 +1281,14 @@ async function mutateUsageState(
   db: Db,
   body: Exclude<
     TestUsageStateActionBody,
-    { action: "delete-usage-data" | "seed-run" }
+    {
+      action:
+        | "delete-usage-data"
+        | "seed-run"
+        | "insert-model-usage-event-for-run"
+        | "insert-usage-event"
+        | "materialize-hourly-usage";
+    }
   >,
   signal: AbortSignal,
 ) {
@@ -1205,8 +1301,6 @@ async function mutateUsageState(
     case "seed-chat-thread": {
       return await mutateUsageStateRunState(db, body, signal);
     }
-    case "insert-model-usage-event-for-run":
-    case "insert-usage-event":
     case "attach-usage-allowance":
     case "read-allowance-window-state":
     case "read-usage-event-state": {
@@ -1215,7 +1309,6 @@ async function mutateUsageState(
     case "delete-run":
     case "delete-billing-attribution":
     case "set-usage-event-created-at":
-    case "materialize-hourly-usage":
     case "read-usage-storage-counts": {
       return await mutateUsageStateEventMaterializationState(db, body, signal);
     }
@@ -1244,6 +1337,29 @@ const mutateUsageState$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   if (bodyResult.data.action === "seed-run") {
     return await set(seedUsageRunState$, bodyResult.data, signal);
+  }
+  if (
+    bodyResult.data.action === "insert-model-usage-event-for-run" ||
+    bodyResult.data.action === "insert-usage-event"
+  ) {
+    return await set(insertFixtureUsage$, bodyResult.data, signal);
+  }
+  if (bodyResult.data.action === "materialize-hourly-usage") {
+    const body = bodyResult.data;
+    const hourlyCount = await set(
+      materializeHourlyUsage$,
+      {
+        orgId: body.org_id,
+        userId: body.user_id,
+        runId: body.run_id,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    return {
+      status: 200 as const,
+      body: { ok: true as const, hourly_count: hourlyCount },
+    };
   }
   return await mutateUsageState(set(writeDb$), bodyResult.data, signal);
 });
