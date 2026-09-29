@@ -1166,14 +1166,18 @@ describe("POST /api/billing/checkout", () => {
       const fixture = createOrgFixture();
       authenticateOrg(fixture);
       const firstStarted = createDeferredPromise<void>(context.signal);
-      const firstResponse = createDeferredPromise<{ readonly id: string }>(
-        context.signal,
-      );
+      const firstResponse = createDeferredPromise<
+        { readonly id: string } | "lost_response"
+      >(context.signal);
       const candidate = { id: `cus_${randomUUID()}` };
       context.mocks.stripe.customers.create
-        .mockImplementationOnce(() => {
+        .mockImplementationOnce(async () => {
           firstStarted.resolve();
-          return firstResponse.promise;
+          const outcome = await firstResponse.promise;
+          if (outcome === "lost_response") {
+            throw new Error("Stripe customer response lost");
+          }
+          return outcome;
         })
         .mockResolvedValueOnce({ id: `cus_${randomUUID()}` });
       context.mocks.stripe.checkout.sessions.create.mockImplementation(
@@ -1208,7 +1212,7 @@ describe("POST /api/billing/checkout", () => {
       await firstStarted.promise;
       const second = await accept(client.create(request), [200]);
       if (firstOutcome === "lost_response") {
-        firstResponse.reject(new Error("Stripe customer response lost"));
+        firstResponse.resolve("lost_response");
       } else {
         firstResponse.resolve(candidate);
       }
