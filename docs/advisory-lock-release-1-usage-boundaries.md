@@ -125,8 +125,11 @@ now owns the installation, claim, organization lot and wallet increment in one
 command transaction. Wallet ownership precedes the claim; award identity and the
 organization limit remain protected by their existing unique indexes. A conflicting
 award rolls back the whole installation attempt and retries from authoritative
-claims. The shared reward helper no longer has an organization-credit branch or
-a database-bearing `grantOrgCredits` interface. Other get-started rewards remain
+claims. The old database-bearing `grantOrgCredits` interface is removed. Two additional
+Slack callers (first workspace binding and connector installation) still use the
+existing claim helper inside their atomic installation transaction; they now own
+the wallet before installation/claim rows and finish expired remainder through
+the common SQL before publishing the reward. Their command ownership is unfinished. Other get-started rewards remain
 member-scoped and retain their separate unfinished transaction ownership graph.
 
 Shared Usage settlement now participates in the same expiration predicate and

@@ -1,3 +1,6 @@
+import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
+import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
+import { orgPlanEntitlementValues } from "./org-plan-entitlements.service";
 import { awardCompletedGetStartedQuest } from "./get-started-rewards.service";
 import { command, computed, type Computed } from "ccstate";
 import type { SlackConnectLinkStatus } from "@okouai/api-contracts/contracts/slack-connect";
@@ -474,6 +477,31 @@ export const connectSlackWorkspace$ = command(
     signal.throwIfAborted();
     const result = await writeDb.transaction(
       async (tx): Promise<ConnectResult> => {
+        const [walletInserted] = await tx
+          .insert(orgMetadataCanonicalWrites)
+          .values({ orgId: args.orgId })
+          .onConflictDoNothing()
+          .returning({ orgId: orgMetadata.orgId });
+        if (walletInserted) {
+          await tx
+            .insert(orgPlanEntitlements)
+            .values(
+              orgPlanEntitlementValues(
+                {
+                  orgId: args.orgId,
+                  tier: "limited-free-1",
+                  source: "org_metadata_migration",
+                },
+                { stripeSubscriptionId: null, sourceMetadata: {} },
+              ),
+            )
+            .onConflictDoNothing({ target: orgPlanEntitlements.orgId });
+        }
+        await tx
+          .select({ orgId: orgMetadata.orgId })
+          .from(orgMetadata)
+          .where(eq(orgMetadata.orgId, args.orgId))
+          .for("update");
         const [installation] = await tx
           .select()
           .from(slackOrgInstallations)
