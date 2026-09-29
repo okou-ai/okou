@@ -12,6 +12,7 @@ export function createChatForwardComposerSignals(
   target: ChatForwardTarget,
   forward: ChatForwardContext,
   onOptimisticSend: () => void,
+  onAcceptedSend: () => void,
 ): {
   readonly prepare$: Command<
     ChatForwardComposerState | Promise<ChatForwardComposerState>,
@@ -23,6 +24,7 @@ export function createChatForwardComposerSignals(
       target.id,
       forward,
       onOptimisticSend,
+      onAcceptedSend,
     );
     const prepare$ = command(
       ({ set }, signal: AbortSignal): ChatForwardComposerState => {

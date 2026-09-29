@@ -358,18 +358,29 @@ export function ChatForwardDialog({
       sourceAgentId,
       sourceThreadTitle,
     );
-    const onOptimisticSend = () => {
-      onDismiss();
+    const notifyAccepted = () => {
       toast.success(
         t(($) => {
           return $.chat.forward.sent;
         }),
       );
     };
+    const onOptimisticSend = () => {
+      onDismiss();
+      // A new agent thread is only prepared here; the prompt has not been accepted.
+      if (nextTarget.kind === "thread") {
+        notifyAccepted();
+      }
+    };
+    const onAcceptedSend = () => {
+      if (nextTarget.kind === "agent") {
+        notifyAccepted();
+      }
+    };
     detach(
       prepare(
         createChatForwardComposerSignals,
-        { target: nextTarget, forward, onOptimisticSend },
+        { target: nextTarget, forward, onOptimisticSend, onAcceptedSend },
         signal,
       ),
       Reason.DomCallback,

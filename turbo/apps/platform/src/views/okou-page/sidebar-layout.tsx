@@ -25,6 +25,7 @@ import {
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
 import { AvatarFromUrl } from "./sidebar-shared.tsx";
 import { QueueDrawer } from "../queue-page/queue-drawer.tsx";
+import { NewThreadDeliveryNotice } from "./new-thread-delivery-notice.tsx";
 import {
   sidebarExpanded$,
   setSidebarExpanded$,
@@ -431,6 +432,7 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
         <InstallBanner />
         <IosInstallModal />
         {!isDesktop && <MobileTopBar />}
+        <NewThreadDeliveryNotice />
         {children}
       </WorkspaceInset>
     </div>,

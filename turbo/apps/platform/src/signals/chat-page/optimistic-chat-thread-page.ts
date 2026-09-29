@@ -16,6 +16,15 @@ import { accept } from "../../lib/accept.ts";
 import { startChatNavigationTiming$ } from "../../lib/posthog.ts";
 import { nowDate } from "../../lib/time.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
+import { authenticatedIdentity$ } from "../auth.ts";
+import {
+  classifyDeliveryFailure,
+  deliveryIntentsChanged$,
+  saveDeliveryIntent,
+  updateDeliveryIntent,
+  type NewThreadDeliveryIntent,
+} from "./chat-delivery-intents.ts";
+import { detach, Reason, settle } from "../utils.ts";
 import { currentChatThreadId$ } from "../agent-chat.ts";
 import { detachedNavigateTo$, searchParams$ } from "../route.ts";
 import { loadRightThread$ } from "./chat-thread-panes.ts";
@@ -83,6 +92,7 @@ interface SendNewThreadMessageRequest {
   routeSearchParams?: URLSearchParams;
   forward?: ChatForwardContext;
   onOptimisticSend?: () => void;
+  onAcceptedSend?: () => void;
   connectorSelections?: readonly ConnectorAccountSelection[];
   initialRemoteAccessOverrides?: readonly InitialRemoteAccessOverride[];
 }
@@ -347,50 +357,54 @@ const mintOptimisticThreadWithEvent$ = command(
   },
 );
 
-async function createChatThread(
-  args: {
-    readonly createClient: ApiClientFactory;
-    readonly agentId: string;
-    readonly title: string | undefined;
-    readonly clientThreadId: string;
-    readonly eventId: string;
-    readonly modelSelection: ModelProviderSelection;
-    readonly connectorSelections?: readonly ConnectorAccountSelection[];
-    readonly initialRemoteAccessOverrides?: readonly InitialRemoteAccessOverride[];
-  },
-  signal: AbortSignal,
-): Promise<void> {
+function newThreadCreateBody(args: {
+  readonly agentId: string;
+  readonly title: string | undefined;
+  readonly clientThreadId: string;
+  readonly eventId: string;
+  readonly modelSelection: ModelProviderSelection;
+  readonly connectorSelections?: readonly ConnectorAccountSelection[];
+  readonly initialRemoteAccessOverrides?: readonly InitialRemoteAccessOverride[];
+}) {
   const selectedEffort =
     args.modelSelection.modelSettings?.[args.modelSelection.selectedModel]
       ?.effort;
-  const client = args.createClient(chatThreadsContract);
+  return {
+    agentId: args.agentId,
+    clientThreadId: args.clientThreadId,
+    eventId: args.eventId,
+    model: args.modelSelection.selectedModel,
+    serviceTier:
+      args.modelSelection.codexServiceTier === "fast"
+        ? ("priority" as const)
+        : null,
+    ...(selectedEffort === undefined
+      ? {}
+      : { reasoningEffort: selectedEffort }),
+    ...(args.title ? { title: args.title } : {}),
+    ...(args.connectorSelections?.length
+      ? { connectorSelections: [...args.connectorSelections] }
+      : {}),
+    ...(args.initialRemoteAccessOverrides?.length
+      ? {
+          initialRemoteAccessOverrides: [...args.initialRemoteAccessOverrides],
+        }
+      : {}),
+  };
+}
+
+async function createChatThread(
+  createClient: ApiClientFactory,
+  body: ReturnType<typeof newThreadCreateBody>,
+  signal: AbortSignal,
+): Promise<void> {
   await accept(
-    client.create({
-      body: {
-        agentId: args.agentId,
-        clientThreadId: args.clientThreadId,
-        eventId: args.eventId,
-        model: args.modelSelection.selectedModel,
-        serviceTier:
-          args.modelSelection.codexServiceTier === "fast" ? "priority" : null,
-        ...(selectedEffort === undefined
-          ? {}
-          : { reasoningEffort: selectedEffort }),
-        ...(args.title ? { title: args.title } : {}),
-        ...(args.connectorSelections?.length
-          ? { connectorSelections: [...args.connectorSelections] }
-          : {}),
-        ...(args.initialRemoteAccessOverrides?.length
-          ? {
-              initialRemoteAccessOverrides: [
-                ...args.initialRemoteAccessOverrides,
-              ],
-            }
-          : {}),
-      },
+    createClient(chatThreadsContract).create({
+      body,
       fetchOptions: { signal },
     }),
     [201],
+    signal,
   );
   signal.throwIfAborted();
 }
@@ -438,14 +452,14 @@ const startNewChatThreadCreate$ = command(
     L.debug("startNewChatThreadCreate$ POST chat-threads start", { threadId });
     const createResult = (async (): Promise<void> => {
       await createChatThread(
-        {
-          createClient,
+        createClient,
+        newThreadCreateBody({
           agentId,
           title: undefined,
           clientThreadId: threadId,
           eventId,
           modelSelection,
-        },
+        }),
         signal,
       );
       L.debug("startNewChatThreadCreate$ POST chat-threads 201", { threadId });
@@ -478,24 +492,26 @@ export const createNewChatThread$ = command(
 
 /** The thread row, created alongside the send it is about to carry. */
 async function createNewThreadRecord(
-  args: Parameters<typeof createChatThread>[0],
+  createClient: ApiClientFactory,
+  body: ReturnType<typeof newThreadCreateBody>,
   signal: AbortSignal,
 ): Promise<void> {
-  await createChatThread(args, signal);
+  await createChatThread(createClient, body, signal);
   L.debug("sendNewThreadMessage$ POST chat-threads 201", {
-    threadId: args.clientThreadId,
+    threadId: body.clientThreadId,
   });
   signal.throwIfAborted();
 }
 
 const sendNewThreadMessage$ = command(
+  // oxlint-disable-next-line max-lines-per-function -- Preserve the ordered save/create/send transaction and its phase transitions together.
   async (
     { get, set },
     request: SendNewThreadMessageRequest,
     signal: AbortSignal,
   ): Promise<{
     readonly threadId: string;
-    readonly sendResult: Promise<void>;
+    readonly sendResult: Promise<boolean>;
   } | null> => {
     const { agentId, prompt } = request;
     const { computerUseHostId, cloudBrowserEnabled } = request;
@@ -526,6 +542,51 @@ const sendNewThreadMessage$ = command(
     const threadId = crypto.randomUUID();
     const clientEventId = crypto.randomUUID();
     const chatThreadEventId = crypto.randomUUID();
+    const identity = await get(authenticatedIdentity$);
+    signal.throwIfAborted();
+    const createBody = newThreadCreateBody({
+      agentId,
+      title: undefined,
+      clientThreadId: threadId,
+      eventId: chatThreadEventId,
+      modelSelection: resolvedModelSelection,
+      connectorSelections: request.connectorSelections,
+      initialRemoteAccessOverrides: request.initialRemoteAccessOverrides,
+    });
+    const sendBody = newThreadSendBody({
+      agentId,
+      threadId,
+      clientEventId,
+      prepared,
+      modelSelection: resolvedModelSelection,
+      realAgentInPreviewEnabled:
+        features[FeatureSwitchKey.RealAgentInPreview] ?? false,
+      userMessage: annotatedUserMessage,
+      computerUseHostId,
+      cloudBrowserEnabled,
+      sourceRunId: request.forward?.runId,
+    });
+    const intent: NewThreadDeliveryIntent = {
+      kind: "new-thread",
+      phase: "create",
+      threadId,
+      clientEventId,
+      createEventId: chatThreadEventId,
+      createdAt: nowDate().toISOString(),
+      status: "prepared",
+      rejection: null,
+      createBody,
+      body: sendBody,
+    };
+    if (!saveDeliveryIntent(identity, intent)) {
+      toast.error(
+        i18n.t(($) => {
+          return $.chat.newThreadDelivery.storageUnavailable;
+        }),
+      );
+      return null;
+    }
+    set(deliveryIntentsChanged$);
     set(
       appendOptimisticChatEvent$,
       createOptimisticChatEventEntry(
@@ -558,45 +619,89 @@ const sendNewThreadMessage$ = command(
     }
     request.onOptimisticSend?.();
     set(draft.clear$);
-    const clearDraftResult =
-      request.forward || request.preserveAgentDraft
-        ? Promise.resolve()
-        : set(clearAgentDraftById$, agentId, signal);
+    if (!request.forward && !request.preserveAgentDraft) {
+      detach(
+        settle(set(clearAgentDraftById$, agentId, signal)),
+        Reason.Daemon,
+        "clear agent draft after first-message recovery save",
+      );
+    }
     const createClient = get(apiClient$);
     L.debug("sendNewThreadMessage$ POST chat-threads start", { threadId });
-    const createResult = createNewThreadRecord(
-      {
-        createClient,
-        agentId,
-        title: undefined,
-        clientThreadId: threadId,
-        eventId: chatThreadEventId,
-        modelSelection: resolvedModelSelection,
-        connectorSelections: request.connectorSelections,
-        initialRemoteAccessOverrides: request.initialRemoteAccessOverrides,
-      },
-      signal,
-    );
-    const sendBody = newThreadSendBody({
-      agentId,
-      threadId,
-      clientEventId,
-      prepared,
-      modelSelection: resolvedModelSelection,
-      realAgentInPreviewEnabled:
-        features[FeatureSwitchKey.RealAgentInPreview] ?? false,
-      userMessage: annotatedUserMessage,
-      computerUseHostId,
-      cloudBrowserEnabled,
-      sourceRunId: request.forward?.runId,
-    });
-    const sendResult = (async (): Promise<void> => {
-      await Promise.all([clearDraftResult, createResult]);
+    const sendResult = (async (): Promise<boolean> => {
+      const currentIdentity = await settle(get(authenticatedIdentity$));
       signal.throwIfAborted();
-      await sendChatEvent(createClient, sendBody, signal);
+      if (
+        !currentIdentity.ok ||
+        currentIdentity.value.userId !== identity.userId ||
+        currentIdentity.value.orgId !== identity.orgId
+      ) {
+        updateDeliveryIntent(identity, clientEventId, {
+          status: "rejected",
+          rejection: "authentication",
+        });
+        set(deliveryIntentsChanged$);
+        return false;
+      }
+      const created = await settle(
+        createNewThreadRecord(createClient, createBody, signal),
+      );
       signal.throwIfAborted();
+      if (!created.ok) {
+        updateDeliveryIntent(
+          identity,
+          clientEventId,
+          classifyDeliveryFailure(created.error),
+        );
+        set(deliveryIntentsChanged$);
+        return false;
+      }
+      updateDeliveryIntent(identity, clientEventId, {
+        phase: "prompt",
+        status: "prepared",
+        rejection: null,
+      });
+      set(deliveryIntentsChanged$);
+      const promptIdentity = await settle(get(authenticatedIdentity$));
+      signal.throwIfAborted();
+      if (
+        !promptIdentity.ok ||
+        promptIdentity.value.userId !== identity.userId ||
+        promptIdentity.value.orgId !== identity.orgId
+      ) {
+        updateDeliveryIntent(identity, clientEventId, {
+          status: "rejected",
+          rejection: "authentication",
+        });
+        set(deliveryIntentsChanged$);
+        return false;
+      }
+      const sent = await settle(sendChatEvent(createClient, sendBody, signal));
+      signal.throwIfAborted();
+      if (!sent.ok) {
+        updateDeliveryIntent(
+          identity,
+          clientEventId,
+          classifyDeliveryFailure(sent.error),
+        );
+        set(deliveryIntentsChanged$);
+        return false;
+      }
+      updateDeliveryIntent(identity, clientEventId, {
+        status: "accepted",
+        rejection: null,
+      });
+      set(deliveryIntentsChanged$);
+      request.onAcceptedSend?.();
       L.debug("sendNewThreadMessage$ POST chat/events 201", { threadId });
+      return true;
     })();
+    // Navigation can fail before its caller begins awaiting the in-flight send.
+    detach(
+      sendResult,
+      Reason.Daemon,
+      "first-message delivery after navigation",
+    );
     return { threadId, sendResult };
   },
 );
@@ -624,9 +729,9 @@ export const sendNewThread$ = command(
       },
       signal,
     );
-    await result.sendResult;
+    const sent = await result.sendResult;
     signal.throwIfAborted();
-    return true;
+    return sent;
   },
 );
 
@@ -640,8 +745,8 @@ export const sendNewThreadWithoutNavigation$ = command(
     if (!result) {
       return false;
     }
-    await result.sendResult;
+    const sent = await result.sendResult;
     signal.throwIfAborted();
-    return true;
+    return sent;
   },
 );

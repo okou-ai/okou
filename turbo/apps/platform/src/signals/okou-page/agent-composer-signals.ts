@@ -135,6 +135,7 @@ const noOpEventAction$ = command(
 interface AgentComposerOptions {
   readonly forward?: ChatForwardContext;
   readonly onOptimisticSend?: () => void;
+  readonly onAcceptedSend?: () => void;
 }
 
 function createAgentSubmitMessage(
@@ -223,6 +224,9 @@ function createAgentSubmitMessage(
           ...(options.onOptimisticSend
             ? { onOptimisticSend: options.onOptimisticSend }
             : {}),
+          ...(options.onAcceptedSend
+            ? { onAcceptedSend: options.onAcceptedSend }
+            : {}),
           ...(connectorSelections.length > 0 ? { connectorSelections } : {}),
           ...(initialRemoteAccessOverrides.length > 0
             ? { initialRemoteAccessOverrides }
@@ -289,11 +293,12 @@ export function createForwardAgentComposerSignals(
   agentId: string,
   forward: ChatForwardContext,
   onOptimisticSend: () => void,
+  onAcceptedSend: () => void,
 ) {
   return createAgentComposerSignalsWithDraft(
     agentId,
     createAgentDraftSignals(agentId),
-    { forward, onOptimisticSend },
+    { forward, onOptimisticSend, onAcceptedSend },
   );
 }
 

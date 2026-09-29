@@ -65,6 +65,7 @@ function userMessageAgentDraftState(args: {
 
 function createAgentDraftSync(agentId: string, draft: DraftSignals) {
   const draftSyncReset$ = resetSignal();
+  const editRevision$ = state(0);
 
   const patchDraft$ = command(
     async ({ get }, payload: DraftPersistencePayload, signal: AbortSignal) => {
@@ -124,7 +125,8 @@ function createAgentDraftSync(agentId: string, draft: DraftSignals) {
     DRAFT_SYNC_DEBOUNCE_MS,
   );
 
-  const queueDraftSync$ = command(async ({ set }, signal: AbortSignal) => {
+  const queueDraftSync$ = command(async ({ get, set }, signal: AbortSignal) => {
+    set(editRevision$, get(editRevision$) + 1);
     const debouncedSignal = set(draftSyncReset$, signal);
     await set(debouncedSyncDraft$, debouncedSignal);
   });
@@ -133,10 +135,23 @@ function createAgentDraftSync(agentId: string, draft: DraftSignals) {
     set(draftSyncReset$);
   });
 
-  const flushDraftClear$ = command(async ({ set }, signal: AbortSignal) => {
-    set(draftSyncReset$);
-    await set(patchDraft$, { userMessage: null, attachments: null }, signal);
-  });
+  const flushDraftClear$ = command(
+    async ({ get, set }, signal: AbortSignal) => {
+      set(draftSyncReset$);
+      const clearRevision = get(editRevision$);
+      await set(
+        patchDraft$,
+        { userMessage: null, attachments: null },
+        signal,
+      ).finally(async () => {
+        // The server can apply a slow clear after a newer autosave. Repair that
+        // ordering with the latest draft, not the stale snapshot from the send.
+        if (!signal.aborted && get(editRevision$) !== clearRevision) {
+          await set(syncDraft$, signal);
+        }
+      });
+    },
+  );
 
   return { queueDraftSync$, cancelDraftSync$, flushDraftClear$ };
 }

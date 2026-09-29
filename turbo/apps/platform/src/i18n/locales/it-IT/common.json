@@ -2060,6 +2060,27 @@
       "template": "[Modello: {{title}}]"
     },
     "newChat": "Nuova chat",
+    "newThreadDelivery": {
+      "accepted": "First message accepted; waiting for confirmation in chat history.",
+      "agentConflict": "This chat cannot be retried with the saved agent.",
+      "checkAndRetry": "Check and retry",
+      "checking": "Checking…",
+      "create": "Chat creation",
+      "firstMessage": "First message",
+      "missingChat": "This chat is no longer available. Review your saved message instead of retrying.",
+      "openChat": "Open chat",
+      "pendingCreate": "Creating chat…",
+      "pendingPrompt": "Sending first message…",
+      "region": "New chat delivery recovery",
+      "rejected": "{{phase}} rejected. Your original message, uploaded file references, and options are saved in this browser.",
+      "rejectedAuth": "{{phase}} rejected. Sign in with the original account and organization before checking delivery.",
+      "review": "Review saved message",
+      "safeRetry": "Safe retry requires a browser with Web Locks support.",
+      "storageUnavailable": "Message not sent: this browser could not save a recovery copy. Free up storage and try again.",
+      "uncertain": "{{phase}} unconfirmed. Check the server before retrying; do not start another chat.",
+      "uncertainAuth": "{{phase}} unconfirmed. Sign in with the original account and organization before checking delivery.",
+      "uploadedFiles": "Uploaded files: {{files}}"
+    },
     "origins": {
       "agentphone": "iMessage",
       "discord": "Discord",
