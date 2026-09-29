@@ -25,7 +25,7 @@ and its function, leaving ten application triggers in the proposed R1 schema.
 | `usage_event.mark_raw_billing_usage_observed` and `usage_event_hourly_rollup.mark_hourly_billing_usage_observed`   | Marks attribution as having observed usage, protecting its retention.                                                | Raw insertion and compaction must include the monotone attribution update in their atomic writes.                                   |
 
 Retirement of these seven triggers still requires **unfinished replacement
-protocols**, not only outgoing-version drain. Voice, Runner telemetry,
+protocols**, not only outgoing-version drain. Voice,
 Pi Stage 1, hourly compaction and operator
 linkage also need a complete explicit capture/observation audit. Existing
 attribution readers and the retained convergence fallbacks do not replace
@@ -68,6 +68,14 @@ The following producer changes are implemented:
   captured thread identity and observed history. These writes prepare the
   trigger replacement, but the surrounding launch helpers still receive `tx`;
   command ownership of that caller graph remains unfinished.
+- Ordinary Runner usage and mixed X resource batches explicitly retain the live
+  owner, validate/capture canonical billing identity, insert their bounded event
+  set and mark observation in their owning command. BYOK model exclusion remains.
+  X source reservations, ordered resource claims, final quantities and replay
+  checks commit together; database clock samples after possible waits preserve
+  the existing date-admission window. Pure builders replace all transaction-aware
+  X ingestion helpers. X retention cleanup also owns its database and bounded
+  deletion. Existing Runner usage and X API tests cover the business contract.
 
 The standalone managed path commits before financial settlement as before;
 Social keeps its combined financial commit. No billing trigger is removed. Existing public API

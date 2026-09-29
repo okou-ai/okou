@@ -2,9 +2,8 @@ import { AsyncLocalStorage } from "node:async_hooks";
 
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { sql } from "drizzle-orm";
+import { QueryBuilder } from "drizzle-orm/pg-core";
 
-import type { Tx } from "../../lib/db-types";
-import type { Db } from "../external/db";
 import { singleton } from "../../lib/singleton";
 import { timestampWithoutTimeZone } from "../../lib/time";
 
@@ -21,16 +20,13 @@ export async function withXResourceClockForTest<T>(
 }
 
 /** Sample the database clock, not a transaction's potentially stale timestamp. */
-export async function readXResourceClock(db: Db | Tx): Promise<Date> {
+export function xResourceClockQuery() {
   const testClock = scopedClock.peek()?.getStore();
   const expression = testClock
     ? sql`${timestampWithoutTimeZone(testClock())}::timestamp`
     : sql`clock_timestamp() AT TIME ZONE 'UTC'`;
-  const [clock] = await db
-    .select({ at: expression.mapWith(agentRuns.createdAt) })
-    .from(sql`(VALUES (1)) AS x_resource_clock`);
-  if (!clock) {
-    throw new Error("X resource database clock returned no row");
-  }
-  return clock.at;
+  return new QueryBuilder()
+    .select({ at: expression.mapWith(agentRuns.createdAt).as("at") })
+    .from(sql`(VALUES (1)) AS x_resource_clock`)
+    .as("x_resource_clock_sample");
 }
