@@ -34,6 +34,7 @@ import {
 
 import { optionalEnv } from "../../lib/env";
 import { pgTextDecoder } from "../../lib/db-structured-result";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import { logger } from "../../lib/log";
 import { testOverride } from "../../lib/singleton";
 import { nowDate } from "../../lib/time";
@@ -1332,9 +1333,21 @@ const activateGoogleFormsAutomationWatch$ = command(
           connectorSlug: "google-forms",
         }),
       );
-      await tx.execute(
-        googleFormsLifecycleLockStatement(args.connectorId, args.formId),
+      // Outgoing reconciliation can hold lifecycle while refreshing credentials.
+      // Never wait for that second key while owning the credential key.
+      const [lifecycle] = parseRawRows(
+        z.object({ acquired: z.boolean() }),
+        await tx.execute(
+          // eslint-disable-next-line api/no-new-advisory-lock -- Try the existing R1 compatibility key instead of blocking in the outgoing refresh lock cycle; remove with that key in R2.
+          sql`SELECT pg_try_advisory_xact_lock(hashtext(${googleFormsLifecycleLockKey(args.connectorId, args.formId)})) AS acquired`,
+        ),
       );
+      if (!lifecycle?.acquired) {
+        return {
+          kind: "superseded",
+          message: "Google Forms watch is changing; retry the request",
+        };
+      }
       const [account] = await tx
         .select({ id: connectors.id })
         .from(connectors)
