@@ -57,9 +57,9 @@ import {
 import { publishSlackAdminSignal$ } from "./slack-connect.service";
 import {
   admitCanonicalSlackChatEvent,
-  ensureCanonicalSlackChatThreadRoute,
-  findSlackDirectMessageChatThreadId,
-  findSlackChatThreadRoute,
+  ensureCanonicalSlackChatThreadRoute$,
+  findSlackDirectMessageChatThreadId$,
+  findSlackChatThreadRoute$,
   slackSessionThreadTs,
 } from "./slack-chat-ingress.service";
 import { processCanonicalSlackIngress$ } from "./canonical-slack-ingress-processor.service";
@@ -705,7 +705,11 @@ const resolveConnectedSlackAgentRouteAdmission$ = command(
       threadTs: sessionThreadTs,
       userId: args.connection.userId,
     };
-    const existingRoute = await findSlackChatThreadRoute(args.db, routeKey);
+    const existingRoute = await set(
+      findSlackChatThreadRoute$,
+      routeKey,
+      signal,
+    );
     signal.throwIfAborted();
     if (existingRoute) {
       return { kind: "canonical", routeId: existingRoute.id };
@@ -731,17 +735,21 @@ const resolveConnectedSlackAgentRouteAdmission$ = command(
       return { kind: "ignored" };
     }
 
-    const route = await ensureCanonicalSlackChatThreadRoute(args.db, {
-      initialModel: await set(
-        resolveDefaultModelFirstPin$,
-        { orgId: args.orgId, userId: args.connection.userId },
-        signal,
-      ),
-      ...routeKey,
-      orgId: args.orgId,
-      agentId: effectiveCompose.composeId,
-      currentTime: nowDate(),
-    });
+    const route = await set(
+      ensureCanonicalSlackChatThreadRoute$,
+      {
+        initialModel: await set(
+          resolveDefaultModelFirstPin$,
+          { orgId: args.orgId, userId: args.connection.userId },
+          signal,
+        ),
+        ...routeKey,
+        orgId: args.orgId,
+        agentId: effectiveCompose.composeId,
+        currentTime: nowDate(),
+      },
+      signal,
+    );
     signal.throwIfAborted();
     return { kind: "canonical", routeId: route.id };
   },
@@ -1618,11 +1626,15 @@ const handleModelPickerSubmit$ = command(
     }
     const channelId = parseViewChannelId(payload.view?.private_metadata);
     const chatThreadId = channelId
-      ? await findSlackDirectMessageChatThreadId(db, {
-          connectionId: ctx.connection.id,
-          channelId,
-          userId: ctx.connection.userId,
-        })
+      ? await set(
+          findSlackDirectMessageChatThreadId$,
+          {
+            connectionId: ctx.connection.id,
+            channelId,
+            userId: ctx.connection.userId,
+          },
+          signal,
+        )
       : undefined;
     signal.throwIfAborted();
     const threadModel = await set(
