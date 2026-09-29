@@ -42,7 +42,7 @@ import type { AuthContext } from "../../types/auth";
 import type {
   AgentRunPreCreateSource,
   AgentRunRequestAgent,
-} from "./pick-chat-run.service";
+} from "./agent-run-contracts";
 import { recordGetStartedWorkflow } from "./get-started-workflow.service";
 import { resolveChatReasoningEffort } from "./chat-reasoning-effort.service";
 import {

@@ -19,10 +19,8 @@ import { and, count, eq, inArray } from "drizzle-orm";
 import { db } from "../lib/db";
 import { badRequestMessage, notFound } from "../lib/error";
 import { now } from "../lib/time";
-import {
-  createAgentRun$,
-  type CreateAgentRunArgs,
-} from "../signals/services/pick-chat-run.service";
+import { createAgentRun$ } from "../signals/services/background-agent-run.service";
+import type { CreateAgentRunArgs } from "../signals/services/agent-run-execution.service";
 import { buildAgentExecutionConfig } from "../signals/services/agent-execution-config";
 import { agentRunList } from "../signals/services/agent-runs.service";
 import {

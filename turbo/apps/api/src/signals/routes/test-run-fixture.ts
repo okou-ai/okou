@@ -12,7 +12,7 @@ import { bodyResultOf } from "../context/request";
 import { now } from "../../lib/time";
 import type { RouteEntry } from "../route-entry";
 import { ApiDispatchTimingCollector } from "../services/api-dispatch-timing.service";
-import { createTestFixtureAgentRun$ } from "../services/pick-chat-run.service";
+import { createTestFixtureAgentRun$ } from "../services/test-agent-run-fixture.service";
 
 const c = initContract();
 

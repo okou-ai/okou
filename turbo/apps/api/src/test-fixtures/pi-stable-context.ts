@@ -21,7 +21,7 @@ import {
   clearStableContextCacheIdentityBuildHookForTest,
   setStableAgentPromptBuildHookForTest,
   setStableContextCacheIdentityBuildHookForTest,
-} from "../signals/services/pick-chat-run.service";
+} from "../signals/services/agent-run-preparation-hooks";
 import { piStableContextInputDigest } from "../signals/services/pi-stable-context-digest.service";
 import {
   invalidatePiStableContext,

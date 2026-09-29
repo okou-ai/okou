@@ -30,7 +30,7 @@ import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
 import type {
   RunWorkflowAutomationResult,
   AutomationRow,
-} from "./pick-chat-run.service";
+} from "./workflow-automation-enqueue.service";
 import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
 import { workflowAutomationCanFire } from "./workflow-automation-access.service";
 import { ensureWorkflowUserAutomationThread } from "./workflow-user-automation-thread.service";

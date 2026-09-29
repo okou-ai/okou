@@ -16,10 +16,8 @@ import { logger } from "../../lib/log";
 import { now, nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import { settle } from "../utils";
-import {
-  createAgentRun$,
-  type PersistProducerRunBinding,
-} from "./pick-chat-run.service";
+import { createAgentRun$ } from "./background-agent-run.service";
+import type { PersistProducerRunBinding } from "./agent-run-contracts";
 import { dispatchRunCallbacks$ } from "./agent-run-callback.service";
 import {
   PiMemoryPhase2CredentialError,

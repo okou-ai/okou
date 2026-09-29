@@ -36,7 +36,7 @@ import {
 import type {
   WorkflowQueueAdmissionTransaction,
   AutomationRow,
-} from "./pick-chat-run.service";
+} from "./workflow-automation-enqueue.service";
 import {
   AutomationEventSourceTiming,
   type AutomationEventRunTiming,

@@ -244,7 +244,7 @@ async function readProjectionIdentity(
   const validator = currentConnectorCatalogValidatorIdentity();
   const row = await queryProjectionIdentity(db, sourceId, capabilityDigest);
   // Route integration tests use this seam to replace the active identity after
-  // the read, making both retry generations deterministic without timing sleeps.
+  // the read, making a concurrent publication deterministic without timing sleeps.
   await projectionIdentityReadHook.get()?.();
   if (
     row === undefined ||

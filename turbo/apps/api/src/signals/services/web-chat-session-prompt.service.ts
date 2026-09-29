@@ -18,11 +18,12 @@ import {
   or,
   sql,
 } from "drizzle-orm";
+import { computed, type Computed } from "ccstate";
 import { CONVERSATION_GUIDANCE } from "../../lib/conversation-guidance";
 import type { Db } from "../external/db";
 import { BEFORE_DISPATCH_CANCELLED_ERROR } from "./agent-run-cancellation";
 import type { ChatThreadSessionResolutionAction } from "./chat-session-continuity.service";
-import { loadWebChatIncompleteContext } from "./chat-incomplete-context.service";
+import { createWebChatIncompleteContextObjects } from "./chat-incomplete-context.service";
 import { visibleChatEventCondition } from "./chat-event-shared.service";
 import {
   chatEventTextCondition,
@@ -55,6 +56,19 @@ interface WebChatPriorRun {
   readonly events: readonly WebChatPriorRunEvent[];
 }
 
+interface WebChatPriorRunRow {
+  readonly runId: string;
+  readonly status: string;
+  readonly prompt: string;
+}
+
+interface WebChatPriorRunEventRow {
+  readonly runId: string | null;
+  readonly eventType: ChatEventType;
+  readonly content: string | null;
+  readonly userMessage: UserMessageDocument | null;
+}
+
 export interface WebChatSessionPromptContext {
   readonly generationTemplatePrompt: string;
   readonly computerUseHostDisplayName: string | null;
@@ -62,6 +76,17 @@ export interface WebChatSessionPromptContext {
   readonly agentRunSource: ChatAgentRunSourceAnnotation | null;
   readonly integrationNote: string;
 }
+
+export interface WebChatSessionPromptInput {
+  readonly db: Db;
+  readonly threadId: string;
+  readonly sessionAction: ChatThreadSessionResolutionAction;
+  readonly context: WebChatSessionPromptContext;
+}
+
+type SessionPromptInputObject = Computed<
+  Promise<WebChatSessionPromptInput | undefined>
+>;
 
 function buildWebChatPrompt(integrationNote: string): string {
   return [
@@ -272,60 +297,81 @@ export function lastRunMessageSeqIds(
     .groupBy(chatEvents.runId);
 }
 
-async function getLatestRunsByThreadId(
-  db: Db,
-  threadId: string,
-): Promise<WebChatPriorRun[]> {
-  const runRows = await db
-    .select({
-      runId: agentRuns.id,
-      status: agentRuns.status,
-      prompt: agentRuns.prompt,
-    })
-    .from(agentRuns)
-    .where(
-      and(
-        eq(agentRuns.chatThreadId, threadId),
-        isNotNull(agentRuns.triggerSource),
-        or(
-          sql`${agentRuns.status} IS DISTINCT FROM ${"cancelled"}`,
-          sql`${agentRuns.error} IS DISTINCT FROM ${BEFORE_DISPATCH_CANCELLED_ERROR}`,
+function createWebChatPriorRunRowsObject(input$: SessionPromptInputObject) {
+  return computed(async (get): Promise<readonly WebChatPriorRunRow[]> => {
+    const input = await get(input$);
+    if (!input || input.sessionAction !== "rotated") {
+      return [];
+    }
+    const { db, threadId } = input;
+    const runRows = await db
+      .select({
+        runId: agentRuns.id,
+        status: agentRuns.status,
+        prompt: agentRuns.prompt,
+      })
+      .from(agentRuns)
+      .where(
+        and(
+          eq(agentRuns.chatThreadId, threadId),
+          isNotNull(agentRuns.triggerSource),
+          or(
+            sql`${agentRuns.status} IS DISTINCT FROM ${"cancelled"}`,
+            sql`${agentRuns.error} IS DISTINCT FROM ${BEFORE_DISPATCH_CANCELLED_ERROR}`,
+          ),
         ),
-      ),
-    )
-    .orderBy(desc(agentRuns.createdAt))
-    .limit(RECENT_CHAT_RUN_LIMIT);
+      )
+      .orderBy(desc(agentRuns.createdAt))
+      .limit(RECENT_CHAT_RUN_LIMIT);
 
-  const orderedRuns = runRows.reverse();
-  const runIds = orderedRuns.map((run) => {
-    return run.runId;
+    return runRows.reverse();
   });
-  if (runIds.length === 0) {
-    return [];
-  }
+}
 
-  const eventRows = await db
-    .select({
-      runId: chatEvents.runId,
-      eventType: chatEvents.eventType,
-      content: canonicalChatEventContent(),
-      userMessage: canonicalChatEventUserMessage(),
-    })
-    .from(chatEvents)
-    .where(
-      and(
-        eq(chatEvents.chatThreadId, threadId),
-        chatEventTextCondition(),
-        inArray(chatEvents.runId, runIds),
-        visibleChatEventCondition(db),
-        or(
-          chatEventTypeIn(CHAT_EVENT_USER_MESSAGE_TEXT_TYPES),
-          inArray(chatEvents.seqId, lastRunMessageSeqIds(db, threadId, runIds)),
+function createWebChatPriorRunEventRowsObject(
+  input$: SessionPromptInputObject,
+  runs$: ReturnType<typeof createWebChatPriorRunRowsObject>,
+) {
+  return computed(async (get): Promise<readonly WebChatPriorRunEventRow[]> => {
+    const [input, runs] = await Promise.all([get(input$), get(runs$)]);
+    if (!input || runs.length === 0) {
+      return [];
+    }
+    const { db, threadId } = input;
+    const runIds = runs.map((run) => {
+      return run.runId;
+    });
+    return await db
+      .select({
+        runId: chatEvents.runId,
+        eventType: chatEvents.eventType,
+        content: canonicalChatEventContent(),
+        userMessage: canonicalChatEventUserMessage(),
+      })
+      .from(chatEvents)
+      .where(
+        and(
+          eq(chatEvents.chatThreadId, threadId),
+          chatEventTextCondition(),
+          inArray(chatEvents.runId, runIds),
+          visibleChatEventCondition(db),
+          or(
+            chatEventTypeIn(CHAT_EVENT_USER_MESSAGE_TEXT_TYPES),
+            inArray(
+              chatEvents.seqId,
+              lastRunMessageSeqIds(db, threadId, runIds),
+            ),
+          ),
         ),
-      ),
-    )
-    .orderBy(asc(chatEvents.seqId));
+      )
+      .orderBy(asc(chatEvents.seqId));
+  });
+}
 
+function attachPriorRunEvents(
+  orderedRuns: readonly WebChatPriorRunRow[],
+  eventRows: readonly WebChatPriorRunEventRow[],
+): readonly WebChatPriorRun[] {
   const eventsByRunId = new Map<string, WebChatPriorRunEvent[]>();
   for (const row of eventRows) {
     if (row.runId === null) {
@@ -358,25 +404,35 @@ async function getLatestRunsByThreadId(
  * conversation. Rounds whose run never completed are absent from the session
  * either way, so they keep their own block.
  */
-export async function resolveWebChatSessionPrompt(args: {
-  readonly db: Db;
-  readonly threadId: string;
-  readonly sessionAction: ChatThreadSessionResolutionAction;
-  readonly context: WebChatSessionPromptContext;
-}): Promise<string> {
-  const rotated = args.sessionAction === "rotated";
-  const incompleteContext = rotated
-    ? ""
-    : await loadWebChatIncompleteContext(args.db, args.threadId);
-  const priorContext = rotated
-    ? buildWebChatPriorRunsContext(
-        await getLatestRunsByThreadId(args.db, args.threadId),
-      )
-    : "";
-  return buildWebChatAppendSystemPrompt({
-    threadId: args.threadId,
-    incompleteContext,
-    priorContext,
-    context: args.context,
+export function createWebChatSessionPromptObjects(
+  input$: SessionPromptInputObject,
+) {
+  const runs$ = createWebChatPriorRunRowsObject(input$);
+  const events$ = createWebChatPriorRunEventRowsObject(input$, runs$);
+  const incompleteInput$ = computed(async (get) => {
+    const input = await get(input$);
+    return input?.sessionAction === "rotated" ? undefined : input;
   });
+  const { incompleteContext$ } =
+    createWebChatIncompleteContextObjects(incompleteInput$);
+  const priorContext$ = computed(async (get) => {
+    const [runs, events] = await Promise.all([get(runs$), get(events$)]);
+    return buildWebChatPriorRunsContext(attachPriorRunEvents(runs, events));
+  });
+  const prompt$ = computed(async (get) => {
+    const [input, incompleteContext, priorContext] = await Promise.all([
+      get(input$),
+      get(incompleteContext$),
+      get(priorContext$),
+    ]);
+    return input === undefined
+      ? undefined
+      : buildWebChatAppendSystemPrompt({
+          threadId: input.threadId,
+          incompleteContext,
+          priorContext,
+          context: input.context,
+        });
+  });
+  return { prompt$ };
 }

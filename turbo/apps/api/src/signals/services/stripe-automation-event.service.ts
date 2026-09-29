@@ -42,7 +42,7 @@ import type {
   AutomationRow,
   RunWorkflowAutomationNowArgs,
   RunWorkflowAutomationResult,
-} from "./pick-chat-run.service";
+} from "./workflow-automation-enqueue.service";
 import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
 
 const log = logger("api:stripe-automation-event");

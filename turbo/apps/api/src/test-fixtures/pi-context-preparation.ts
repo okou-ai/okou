@@ -6,7 +6,7 @@ import {
   clearAgentRunPreCreateParallelHookForTest,
   setAgentRunPreCreateParallelHookForTest,
   type AgentRunPreCreateParallelStage,
-} from "../signals/services/pick-chat-run.service";
+} from "../signals/services/agent-run-preparation-hooks";
 import { createDeferredPromise, settleIncludingAbort } from "../signals/utils";
 
 type PiContextPreparationStage =

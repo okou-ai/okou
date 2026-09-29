@@ -2,10 +2,8 @@ import type {
   QueuedPromptLaunchContext,
   QueuedPromptRejectionTarget,
 } from "./internal-chat-run-callback.service";
-import type {
-  DispatchFailedRunCallbacks,
-  CreateQueueFirstAgentRunCommandArgs,
-} from "./pick-chat-run.service";
+import type { DispatchFailedRunCallbacks } from "./agent-run-contracts";
+import type { CreateQueueFirstAgentRunCommandArgs } from "./agent-run-execution.service";
 
 /** Why a head is rejected, and who is told. */
 export interface ChatQueueHeadRejection {

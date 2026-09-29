@@ -7,6 +7,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { holdChatThreadRowLockFixture } from "../../../test-fixtures/chat-events";
+import { onRunConnectorAccountsReadFixture } from "../../../test-fixtures/connector-runtime-read";
 import {
   API_TEST_CONNECTOR_CATALOG,
   apiTestConnectorCatalogValidationAuthority,
@@ -163,20 +164,6 @@ async function configureRuntimeContextGateway(
   ]);
 }
 
-function setThreadConnectorCatalogReadHook(hook: () => Promise<void>): void {
-  // Admission first reads the run scope's projection and passes that result
-  // into preparation. Inject the failure/barrier only on the subsequent
-  // current-authority read for the stored thread account.
-  let admissionRead = true;
-  setApiTestConnectorCatalogRuntimeProjectionIdentityReadHook(() => {
-    if (admissionRead) {
-      admissionRead = false;
-      return Promise.resolve();
-    }
-    return hook();
-  });
-}
-
 describe("CHAT-02: thread connector account selection", () => {
   it.each(["missing", "incomplete"] as const)(
     "reads the selected account when the catalog projection is %s",
@@ -267,6 +254,76 @@ describe("CHAT-02: thread connector account selection", () => {
     await cancelChatRun(fixture.actor, run.runId, claimed.sandboxHeaders);
   });
 
+  it.each(["projection", "complete catalog"] as const)(
+    "keeps the input queued when its captured %s is replaced during preparation",
+    async (readPath) => {
+      const fixture = await selectedThreadConnectorFixture(
+        "Catalog generation changes during pick",
+      );
+      // A new generation prevents fixture setup's cached connector from
+      // satisfying the read whose database snapshot will be replaced below.
+      await installApiTestConnectorCatalog({
+        catalogVersion: `api-test-captured-runtime-${randomUUID()}`,
+        runtimeProjection: true,
+      });
+      onTestFinished(() => {
+        clearApiTestConnectorCatalogExternalReaderIdentityReplacements();
+        clearApiTestConnectorCatalogRuntimeProjectionIdentityReplacements();
+      });
+      const replaceCapturedCatalog = async () => {
+        clearApiTestConnectorCatalogExternalReaderIdentityReplacements();
+        clearApiTestConnectorCatalogRuntimeProjectionIdentityReplacements();
+        await installApiTestConnectorCatalog({
+          catalogVersion: `api-test-replaced-runtime-${randomUUID()}`,
+          runtimeProjection: true,
+        });
+      };
+      if (readPath === "projection") {
+        setApiTestConnectorCatalogRuntimeProjectionIdentityReadHook(
+          replaceCapturedCatalog,
+        );
+      } else {
+        await deleteApiTestConnectorCatalogRuntimeProjectionRow("openai");
+        setApiTestConnectorCatalogExternalReaderIdentityReadHook(
+          replaceCapturedCatalog,
+        );
+      }
+
+      const clientEventId = randomUUID();
+      const sent = await chat.requestSendEvent(
+        fixture.actor,
+        {
+          agentId: fixture.agentId,
+          threadId: fixture.threadId,
+          prompt: "Keep this input on a single catalog generation",
+          clientEventId,
+        },
+        [201],
+      );
+      expect(sent.body).toMatchObject({ runId: null });
+      if (readPath === "projection") {
+        await expect(clearAllDetached()).rejects.toThrow(
+          "Connector catalog changed during runtime selection",
+        );
+      } else {
+        await expect(clearAllDetached()).rejects.toMatchObject({
+          code: "CONNECTOR_CATALOG_UNAVAILABLE:captured_identity_unavailable",
+        });
+      }
+      const messages = await chat.listThreadEvents(
+        fixture.actor,
+        fixture.threadId,
+      );
+      expect(messages.events).toStrictEqual([
+        expect.objectContaining({
+          eventType: "input.prompt",
+          id: clientEventId,
+          runId: null,
+        }),
+      ]);
+    },
+  );
+
   describe("with a thread with a selected connector", () => {
     async function prepareScenario() {
       const fixture = await selectedThreadConnectorFixture(
@@ -348,25 +405,29 @@ describe("CHAT-02: thread connector account selection", () => {
       "Runtime context overlap thread",
     );
     await configureRuntimeContextGateway(fixture.actor);
-    onTestFinished(() => {
-      clearApiTestConnectorCatalogRuntimeProjectionIdentityReplacements();
-    });
-    const threadCatalogReadStarted = createDeferredPromise<void>(
+    const threadAccountsReadStarted = createDeferredPromise<void>(
       context.signal,
     );
+    const providerDecryptStarted = createDeferredPromise<void>(context.signal);
     onTestFinished(() => {
-      if (!threadCatalogReadStarted.settled()) {
-        threadCatalogReadStarted.resolve(undefined);
+      if (!threadAccountsReadStarted.settled()) {
+        threadAccountsReadStarted.resolve(undefined);
+      }
+      if (!providerDecryptStarted.settled()) {
+        providerDecryptStarted.resolve(undefined);
       }
     });
-    setThreadConnectorCatalogReadHook(() => {
-      if (!threadCatalogReadStarted.settled()) {
-        threadCatalogReadStarted.resolve(undefined);
+    const clearAccountReadHook = onRunConnectorAccountsReadFixture(async () => {
+      if (!threadAccountsReadStarted.settled()) {
+        threadAccountsReadStarted.resolve(undefined);
       }
-      return Promise.resolve();
+      await providerDecryptStarted.promise;
     });
     const kms = useSecretKmsProbe(undefined, async () => {
-      await threadCatalogReadStarted.promise;
+      if (!providerDecryptStarted.settled()) {
+        providerDecryptStarted.resolve(undefined);
+      }
+      await threadAccountsReadStarted.promise;
       return Buffer.from("0123456789abcdef0123456789abcdef", "utf8");
     });
 
@@ -375,8 +436,9 @@ describe("CHAT-02: thread connector account selection", () => {
       threadId: fixture.threadId,
       prompt: "Overlap stored thread selection with runtime context",
     });
-    expect(threadCatalogReadStarted.settled()).toBeTruthy();
-    clearApiTestConnectorCatalogRuntimeProjectionIdentityReplacements();
+    expect(threadAccountsReadStarted.settled()).toBeTruthy();
+    expect(providerDecryptStarted.settled()).toBeTruthy();
+    clearAccountReadHook();
     const claimed = await claimChatRun(fixture.runnerGroup, run.runId);
     expect(kms.decryptCalls).toBeGreaterThan(0);
     expect(claimed.claim.environment).toMatchObject({
@@ -395,9 +457,6 @@ describe("CHAT-02: thread connector account selection", () => {
       "Runtime context thread priority thread",
     );
     await configureRuntimeContextGateway(fixture.actor);
-    onTestFinished(() => {
-      clearApiTestConnectorCatalogRuntimeProjectionIdentityReplacements();
-    });
     const providerFailureStarted = createDeferredPromise<void>(context.signal);
     onTestFinished(() => {
       if (!providerFailureStarted.settled()) {
@@ -406,7 +465,7 @@ describe("CHAT-02: thread connector account selection", () => {
     });
     const threadError = new Error("runtime thread selection priority failure");
     const providerError = new Error("model provider below thread failure");
-    setThreadConnectorCatalogReadHook(async () => {
+    onRunConnectorAccountsReadFixture(async () => {
       await providerFailureStarted.promise;
       throw threadError;
     });
@@ -431,9 +490,9 @@ describe("CHAT-02: thread connector account selection", () => {
       runId: null,
       threadId: fixture.threadId,
     });
-    // Both background branches fail before pending admission. Observe the
-    // failure without consuming the input or fabricating a rejected run.
-    await expect(clearAllDetached()).rejects.toBe(providerError);
+    // Thread selection keeps its error priority when both branches fail before
+    // admission; the input remains queued and no rejected run is fabricated.
+    await expect(clearAllDetached()).rejects.toBe(threadError);
     expect(providerFailureStarted.settled()).toBeTruthy();
     expect(kms.decryptCalls).toBeGreaterThan(0);
     const messages = await chat.listThreadEvents(

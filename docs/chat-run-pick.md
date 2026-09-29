@@ -8,6 +8,25 @@ the same request Store and application-lifetime signal. The pre-existing direct
 run and test-fixture adapters use the shared preparation graph; they do not
 provide a second chat-run ingress.
 
+The picker exports no other runtime entry. It owns the claim, queue head,
+selected input identity, captured model policy and chat-specific orchestration.
+`agent-run-execution.service.ts` contains the genuinely shared selected-agent
+and execution signals factories: their typed query nodes are constructed once,
+and preparation, storage materialization and pending commit remain explicit
+commands. Pick, the Pi background entry in `background-agent-run.service.ts`,
+and the test-only adapter in `test-agent-run-fixture.service.ts` compose those
+capabilities with their own lifecycle rules. Connector runtime preparation is
+also shared with runtime synchronization in its own domain module. S1 automation
+enqueue writers and shared contracts have separate boundaries.
+
+The same-service rule keeps queue-specific reads and orchestration visible in
+Pick. It does not require duplicating execution capabilities used by non-chat
+production callers. Shared factories expose the read nodes and commands; they
+do not wrap the former asynchronous S3 helper chain. The graph still has an
+intentional authorization and selected-agent bootstrap boundary before generic
+execution context preparation. Independent reads start together when their real
+inputs are available, not all immediately after a claim.
+
 ## One pick and one organization pass
 
 Each call invalidates organization capacity/candidate reads and clears the
@@ -59,10 +78,19 @@ delivery and typing notifications receive the request dispatcher instead of
 creating a Store inside the pick's work.
 
 Configured connector account fallback is selection among different authorized
-accounts; it does not retry failed queries. Shared catalog infrastructure retains
-its projection-generation consistency checks and publication locks. These are
-resource snapshot semantics, not a loop that reruns a failed pick or session
-preparation.
+accounts; it does not retry failed queries. Runtime catalog selection captures
+one projection generation and fetches each uncached connector once. Missing rows
+trigger one count and identity check in parallel. A changed generation fails
+preparation; it is never adopted by a second attempt. An unchanged incomplete or
+invalid projection can use the complete snapshot only at the captured source,
+schema, catalog version/digest and capability digest.
+
+The runtime path uses `loadAcceptedConnectorCatalogSnapshotOnce`, including when
+no usable projection was initially present. Its payload read retains artifact
+and compatibility validation and fails if that captured snapshot disappears.
+The discovery/slug readers, runner firewall catalog and legacy complete runtime
+snapshot callers retain their existing `loadAcceptedConnectorCatalogSnapshot`
+compatibility behavior. Catalog publication locks remain unchanged.
 
 ## Pending atomic boundary
 
@@ -99,6 +127,12 @@ same Store has the receipt for that exact input event. Its
 Older queue heads and later cron requests have no receipt and emit no substitute
 measurement. The existing input-created-to-consume duration remains queue age;
 it overlaps enqueue time and must not be added to S1.
+
+Storage planning finishes before the materialization command. The nested
+`api_dispatch_prepare_storage_manifest_resolve_plan` span measures the read
+plan, while `api_dispatch_prepare_storage_manifest` now measures materialization
+of that prepared plan. The enclosing launch-preparation span still covers both;
+the nested spans must not be added to that enclosing duration.
 
 Route coverage includes FIFO and multi-thread traversal, rejection followed by
 another thread, token/lease recovery, unchanged model pins, stable application

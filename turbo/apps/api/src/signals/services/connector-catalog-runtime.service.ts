@@ -42,6 +42,7 @@ import {
   getConnectorCatalogResolutionDetail,
   listAcceptedConnectorCatalogAvailableSlugs,
   loadAcceptedConnectorCatalogSnapshot,
+  loadAcceptedConnectorCatalogSnapshotOnce,
   type AcceptedConnectorCatalogSnapshot,
   type ExternalCatalogIdentity,
 } from "./connector-catalog-external-reader.service";
@@ -814,12 +815,16 @@ function runtimeSelectionFromProjectedConnectors(args: {
 async function loadCompleteRuntimeSelection(args: {
   readonly db: ReadonlyDb;
   readonly timing: ConnectorCatalogLoadTiming;
+  readonly identity?: ExternalCatalogIdentity;
   readonly runtimeConnectorSlugs: readonly ConnectorSlug[];
   readonly metadataConnectorSlugs: readonly ConnectorSlug[];
 }): Promise<ConnectorRuntimeSelection> {
-  const acceptedSnapshot = await loadAcceptedConnectorCatalogSnapshot(
+  const acceptedSnapshot = await loadAcceptedConnectorCatalogSnapshotOnce(
     args.db,
-    args.timing,
+    {
+      timing: args.timing,
+      ...(args.identity === undefined ? {} : { identity: args.identity }),
+    },
   );
   const connectorSlugs = acceptedRequestedConnectorSlugs(
     acceptedSnapshot,
@@ -1029,6 +1034,7 @@ function observeRuntimeSelection(
 async function completeRuntimeSelectionFallback(args: {
   readonly db: ReadonlyDb;
   readonly timing: ConnectorCatalogLoadTiming;
+  readonly identity?: ExternalCatalogIdentity;
   readonly runtimeConnectorSlugs: readonly ConnectorSlug[];
   readonly metadataConnectorSlugs: readonly ConnectorSlug[];
   readonly reason: ConnectorCatalogRuntimeProjectionFallbackReason;
@@ -1043,13 +1049,17 @@ async function completeRuntimeSelectionFallback(args: {
 async function completeRuntimeSelectionBuildFallback(args: {
   readonly db: ReadonlyDb;
   readonly timing: ConnectorCatalogLoadTiming;
+  readonly projection: ConnectorCatalogRuntimeProjectionReadyIdentity;
   readonly runtimeConnectorSlugs: readonly ConnectorSlug[];
   readonly metadataConnectorSlugs: readonly ConnectorSlug[];
   readonly reason: ConnectorCatalogRuntimeProjectionFallbackReason;
 }): Promise<RuntimeSelectionBuildResult> {
   return {
     cacheOutcome: "not_applicable",
-    load: await completeRuntimeSelectionFallback(args),
+    load: await completeRuntimeSelectionFallback({
+      ...args,
+      identity: externalCatalogIdentity(args.projection.identity),
+    }),
   };
 }
 
@@ -1111,83 +1121,52 @@ async function buildProjectedRuntimeSelection(args: {
   readonly runtimeConnectorSlugs: readonly ConnectorSlug[];
   readonly metadataConnectorSlugs: readonly ConnectorSlug[];
 }): Promise<RuntimeSelectionBuildResult> {
-  let projection = args.projection;
+  const projection = args.projection;
   const selectedConnectorSlugs = requestedProjectionConnectorSlugs(args);
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    const { cached, uncachedSlugs } = takeCachedProjectedConnectors(
-      projection.identity,
-      selectedConnectorSlugs,
-    );
-    const cacheOutcome = uncachedSlugs.length === 0 ? "hit" : "miss";
-    const rows = await readProjectedRuntimeRows({
-      db: args.db,
-      timing: args.timing,
-      projection,
-      connectorSlugs: uncachedSlugs,
+  const { cached, uncachedSlugs } = takeCachedProjectedConnectors(
+    projection.identity,
+    selectedConnectorSlugs,
+  );
+  const cacheOutcome = uncachedSlugs.length === 0 ? "hit" : "miss";
+  const rows = await readProjectedRuntimeRows({
+    db: args.db,
+    timing: args.timing,
+    projection,
+    connectorSlugs: uncachedSlugs,
+  });
+  if (rows.kind === "fallback") {
+    return await completeRuntimeSelectionBuildFallback({
+      ...args,
+      reason: rows.reason,
     });
-    if (rows.kind === "fallback") {
-      return await completeRuntimeSelectionBuildFallback({
-        ...args,
-        reason: rows.reason,
-      });
-    }
-    if (rows.missingConnectorSlugs.length === 0) {
-      rememberProjectedConnectors(projection.identity, rows.connectors);
-      const selection = materializeProjectedRuntimeSelection({
-        ...args,
-        projection,
-        connectors: [...cached, ...rows.connectors],
-      });
-      return {
-        cacheOutcome,
-        load: {
-          selection,
-          source: "projection",
-        },
-      };
-    }
-    const actualConnectorCount = await args.timing.measure(
-      "api_dispatch_connector_catalog_count_projection_rows",
-      async () => {
-        return await countConnectorCatalogRuntimeProjectionRows({
-          db: args.db,
-          identity: projection.identity,
-        });
-      },
-    );
-    const confirmedRows =
-      actualConnectorCount === projection.identity.connectorCount
-        ? await readProjectedRuntimeRows({
+  }
+  if (rows.missingConnectorSlugs.length > 0) {
+    // Child rows and cached entries belong to this immutable projection set.
+    // Distinguish an unknown slug from an incomplete or replaced generation
+    // without querying its missing rows again or adopting a newer identity.
+    const [actualConnectorCount, latest] = await Promise.all([
+      args.timing.measure(
+        "api_dispatch_connector_catalog_count_projection_rows",
+        async () => {
+          return await countConnectorCatalogRuntimeProjectionRows({
             db: args.db,
-            timing: args.timing,
-            projection,
-            connectorSlugs: rows.missingConnectorSlugs,
-          })
-        : undefined;
-    const latest = await args.timing.measure(
-      "api_dispatch_connector_catalog_query_projection_identity",
-      async () => {
-        return await readConnectorCatalogRuntimeProjectionIdentity(args.db);
-      },
-    );
-    if (latest.kind === "fallback") {
-      return await completeRuntimeSelectionBuildFallback({
-        ...args,
-        reason: latest.reason,
-      });
-    }
+            identity: projection.identity,
+          });
+        },
+      ),
+      args.timing.measure(
+        "api_dispatch_connector_catalog_query_projection_identity",
+        async () => {
+          return await readConnectorCatalogRuntimeProjectionIdentity(args.db);
+        },
+      ),
+    ]);
     if (
+      latest.kind === "fallback" ||
       projectionIdentityKey(latest.projection.identity) !==
-      projectionIdentityKey(projection.identity)
+        projectionIdentityKey(projection.identity)
     ) {
-      if (attempt === 0) {
-        projection = latest.projection;
-        continue;
-      }
-      return await completeRuntimeSelectionBuildFallback({
-        ...args,
-        reason: "unstable",
-      });
+      throw new Error("Connector catalog changed during runtime selection");
     }
     if (actualConnectorCount !== projection.identity.connectorCount) {
       return await completeRuntimeSelectionBuildFallback({
@@ -1195,31 +1174,18 @@ async function buildProjectedRuntimeSelection(args: {
         reason: "incomplete",
       });
     }
-    if (confirmedRows?.kind === "fallback") {
-      return await completeRuntimeSelectionBuildFallback({
-        ...args,
-        reason: confirmedRows.reason,
-      });
-    }
-    const fetchedConnectors = [
-      ...rows.connectors,
-      ...(confirmedRows?.connectors ?? []),
-    ];
-    rememberProjectedConnectors(projection.identity, fetchedConnectors);
-    const selection = materializeProjectedRuntimeSelection({
-      ...args,
-      projection,
-      connectors: [...cached, ...fetchedConnectors],
-    });
-    return {
-      cacheOutcome,
-      load: {
-        selection,
-        source: "projection",
-      },
-    };
   }
-  throw new Error("Connector runtime projection retry exhausted");
+  rememberProjectedConnectors(projection.identity, rows.connectors);
+  return {
+    cacheOutcome,
+    load: {
+      selection: materializeProjectedRuntimeSelection({
+        ...args,
+        connectors: [...cached, ...rows.connectors],
+      }),
+      source: "projection",
+    },
+  };
 }
 
 function clearRuntimeSelectionInFlight(

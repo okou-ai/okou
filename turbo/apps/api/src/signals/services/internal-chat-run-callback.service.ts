@@ -138,7 +138,7 @@ import {
   type ModelFirstPin,
 } from "./model-selection.service";
 import { shouldUsePiExecution } from "./pi-sandbox-config";
-import type { DispatchFailedRunCallbacks } from "./pick-chat-run.service";
+import type { DispatchFailedRunCallbacks } from "./agent-run-contracts";
 import {
   additionalVolumesForRun,
   type PresentationTemplateVolume,

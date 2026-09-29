@@ -22,7 +22,7 @@ import {
   type RunWorkflowAutomationResult,
   type ScheduleUnclaimed,
   type WorkflowScheduleClaimPlan,
-} from "./pick-chat-run.service";
+} from "./workflow-automation-enqueue.service";
 import {
   bindMorningBriefScheduleClaimQueueEvent,
   claimMorningBriefSchedule,

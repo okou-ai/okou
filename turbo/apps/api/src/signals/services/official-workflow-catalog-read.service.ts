@@ -50,7 +50,7 @@ function officialWorkflowPayloadSchemaVersion(payload: unknown): number {
   return payload.schemaVersion;
 }
 
-function acceptedRevisionFromRow(
+export function acceptedRevisionFromRow(
   row: OfficialWorkflowRevisionRow,
 ): OfficialWorkflowAcceptedRevision {
   const definition = officialWorkflowDefinitionRevisionPayloadSchema.parse(
@@ -115,6 +115,12 @@ export async function readAcceptedOfficialWorkflowCatalog(
     )
     .limit(1);
   signal?.throwIfAborted();
+  return acceptedCatalogFromRow(row);
+}
+
+export function acceptedCatalogFromRow(
+  row: { readonly releaseId: string; readonly payload: unknown } | undefined,
+): AcceptedOfficialWorkflowCatalog | null {
   if (!row) {
     return null;
   }

@@ -72,7 +72,7 @@ export type CustomConnectorStoredValue =
       readonly value: string;
     };
 
-interface CustomConnectorCredentialDefinition {
+export interface CustomConnectorCredentialDefinition {
   readonly id: string;
   readonly authMode: OrgCustomConnectorAuthMode;
   readonly storageVersion: number;
@@ -131,7 +131,7 @@ interface CustomConnectorRuntimeStorageSnapshot {
   readonly values: readonly CustomConnectorStoredValue[];
 }
 
-interface CustomConnectorRuntimeStorageRow extends CustomConnectorStoredConnection {
+export interface CustomConnectorRuntimeStorageRow extends CustomConnectorStoredConnection {
   readonly kind: CustomConnectorRuntimeStorageKind | null;
   readonly key: string | null;
   readonly storedValue: string | null;
@@ -463,7 +463,7 @@ function customConnectorCredentialAccesses(
   return accesses;
 }
 
-function customConnectorRuntimeStorageSnapshot(
+export function customConnectorRuntimeStorageSnapshot(
   definitions: readonly CustomConnectorCredentialDefinition[],
   rows: readonly CustomConnectorRuntimeStorageRow[],
   memberConnectorIdsByCustomConnectorId: ReadonlyMap<string, string>,

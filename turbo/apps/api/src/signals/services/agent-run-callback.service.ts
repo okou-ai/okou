@@ -23,7 +23,7 @@ import {
 import { handleWorkflowAutomationInternalCallback$ } from "./workflow-automation-run-callback.service";
 import { handleWorkflowAutomationResultEmailInternalCallback$ } from "./internal-workflow-automation-result-email-callback.service";
 import { handlePiMemoryPhase2MaintenanceCallback } from "./pi-memory-phase2-maintenance.service";
-import type { DispatchFailedRunCallbacks } from "./pick-chat-run.service";
+import type { DispatchFailedRunCallbacks } from "./agent-run-contracts";
 
 const L = logger("AgentRunCallback");
 

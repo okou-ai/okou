@@ -1,12 +1,15 @@
 import { testChatEventRetentionContract } from "@okouai/api-contracts/contracts/test-chat-event-retention";
-import { command } from "ccstate";
+import { command, computed, state } from "ccstate";
 
-import { db } from "../../lib/db";
 import { request$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
+import { writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import { retainChatEvents$ } from "../services/cron-retain-chat-events.service";
-import { resolveWebChatSessionPrompt } from "../services/web-chat-session-prompt.service";
+import {
+  createWebChatSessionPromptObjects,
+  type WebChatSessionPromptInput,
+} from "../services/web-chat-session-prompt.service";
 import { recordChatEventRetentionCompleted } from "./cron-retain-chat-events";
 import {
   isTestEndpointAllowed,
@@ -17,6 +20,13 @@ const retentionBody$ = bodyResultOf(testChatEventRetentionContract.retain);
 const sessionPromptBody$ = bodyResultOf(
   testChatEventRetentionContract.sessionPrompt,
 );
+const internalSessionPromptInput$ = state<
+  WebChatSessionPromptInput | undefined
+>(undefined);
+const sessionPromptInput$ = computed((get) => {
+  return Promise.resolve(get(internalSessionPromptInput$));
+});
+const { prompt$ } = createWebChatSessionPromptObjects(sessionPromptInput$);
 
 const retainChatEventFixturesRoute$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -46,7 +56,7 @@ const retainChatEventFixturesRoute$ = command(
 );
 
 const resolveSessionPromptFixturesRoute$ = command(
-  async ({ get }, signal: AbortSignal) => {
+  async ({ get, set }, signal: AbortSignal) => {
     if (!isTestEndpointAllowed(get(request$))) {
       return testEndpointNotFoundResponse();
     }
@@ -55,8 +65,8 @@ const resolveSessionPromptFixturesRoute$ = command(
     if (!bodyResult.ok) {
       return bodyResult.response;
     }
-    const prompt = await resolveWebChatSessionPrompt({
-      db: db(),
+    set(internalSessionPromptInput$, {
+      db: set(writeDb$),
       threadId: bodyResult.data.chat_thread_id,
       sessionAction: "rotated",
       context: {
@@ -69,7 +79,11 @@ const resolveSessionPromptFixturesRoute$ = command(
         integrationNote: "",
       },
     });
+    const prompt = await get(prompt$);
     signal.throwIfAborted();
+    if (prompt === undefined) {
+      throw new Error("Session prompt fixture input was not initialized");
+    }
     return {
       status: 200 as const,
       body: { prompt },

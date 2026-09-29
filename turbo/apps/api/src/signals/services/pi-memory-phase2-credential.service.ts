@@ -17,7 +17,7 @@ import { storages } from "@okouai/db/schema/storage";
 import { and, asc, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import type { Tx } from "../../lib/db-types";
 import type { Db } from "../external/db";
-import type { AgentRunModelPin } from "./pick-chat-run.service";
+import type { AgentRunModelPin } from "./agent-run-contracts";
 import { resolveCurrentPersonalSubscriptionBundleForApi } from "./agent-webhook-firewall-auth.service";
 import { resolveBuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";

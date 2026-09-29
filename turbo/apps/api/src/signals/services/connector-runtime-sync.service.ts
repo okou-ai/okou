@@ -17,7 +17,7 @@ import {
   customConnectorRuntimeExecutionState,
   loadEffectiveCustomConnectorPermissionBundle,
   type CustomConnectorRuntimeDataRows,
-} from "./pick-chat-run.service";
+} from "./connector-runtime-preparation.service";
 import {
   loadConnectorRuntimeSelection,
   type ConnectorRuntimeSelection,

@@ -1,5 +1,8 @@
-import { command, type Command } from "ccstate";
+import { command, computed, state, type Command } from "ccstate";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
+import { orgConcurrencySubscriptions } from "@okouai/db/schema/org-concurrency-subscription";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import {
@@ -15,10 +18,10 @@ import {
 import { logger } from "../../lib/log";
 import { now, nowDate } from "../../lib/time";
 import { waitUntil } from "../context/wait-until";
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import { publishActiveInputToRunnerGroup } from "../external/realtime";
 import { safeSync, settle, tapError } from "../utils";
-import { orgHasRunCapacity, createPickObjects } from "./pick-chat-run.service";
+import { createPickObjects } from "./pick-chat-run.service";
 import type { ChatQueuePickResult } from "./chat-queue-wait-reason";
 import type { Tx } from "../../lib/db-types";
 import { listPendingChatInputs } from "./chat-event-queue.service";
@@ -31,7 +34,89 @@ import {
   markChatThreadQueued,
 } from "./queued-chat-thread.service";
 
+import {
+  activeConcurrencySubscriptionPredicate,
+  cappedBaseConcurrencyLimit,
+  totalConcurrencyLimit,
+} from "./org-concurrency-entitlements.service";
+
 const L = logger("ChatThreadQueue");
+
+/** Fresh, request-owned observation for drain stopping and integration notices. */
+function createQueueCapacityObjects() {
+  const internalObservation$ = state<{ readonly orgId: string } | null>(null);
+  const orgId$ = computed((get) => {
+    const input = get(internalObservation$);
+    if (!input) {
+      throw new Error("Queue capacity observation has no organization");
+    }
+    return input.orgId;
+  });
+  const activeCount$ = computed(async (get) => {
+    const orgId = get(orgId$);
+    get(internalObservation$);
+    const [row] = await get(db$)
+      .select({ count: count() })
+      .from(activeAgentRuns)
+      .where(eq(activeAgentRuns.orgId, orgId));
+    if (!row) {
+      throw new Error("Active agent run count returned no row");
+    }
+    return row.count;
+  });
+  const capacity$ = computed(async (get) => {
+    const orgId = get(orgId$);
+    get(internalObservation$);
+    const database = get(db$);
+    const at = nowDate();
+    const [[plan], subscriptions] = await Promise.all([
+      database
+        .select({
+          entitlementOrgId: orgPlanEntitlements.orgId,
+          metadataOrgId: orgMetadata.orgId,
+          baseConcurrencyLimit: orgPlanEntitlements.baseConcurrencyLimit,
+        })
+        .from(orgPlanEntitlements)
+        .fullJoin(orgMetadata, eq(orgMetadata.orgId, orgPlanEntitlements.orgId))
+        .where(
+          or(
+            eq(orgPlanEntitlements.orgId, orgId),
+            eq(orgMetadata.orgId, orgId),
+          ),
+        )
+        .limit(1),
+      database
+        .select({ slots: orgConcurrencySubscriptions.slots })
+        .from(orgConcurrencySubscriptions)
+        .where(activeConcurrencySubscriptionPredicate(orgId, at)),
+    ]);
+    if (plan?.entitlementOrgId === null && plan.metadataOrgId !== null) {
+      throw new Error(`Missing org plan entitlement for ${orgId}`);
+    }
+    const limit = totalConcurrencyLimit({
+      baseLimit: cappedBaseConcurrencyLimit(plan?.baseConcurrencyLimit ?? 0),
+      paidSlots: subscriptions.reduce((total, row) => {
+        return total + row.slots;
+      }, 0),
+    });
+    return Number.isFinite(limit) ? limit : 0;
+  });
+  const hasCapacity$ = computed(async (get) => {
+    const [activeCount, capacity] = await Promise.all([
+      get(activeCount$),
+      get(capacity$),
+    ]);
+    return capacity === 0 || activeCount < capacity;
+  });
+  return command(async ({ get, set }, orgId: string, signal: AbortSignal) => {
+    set(internalObservation$, { orgId });
+    const hasCapacity = await get(hasCapacity$);
+    signal.throwIfAborted();
+    return hasCapacity;
+  });
+}
+
+const observeOrgCapacity$ = createQueueCapacityObjects();
 
 export type EnqueueChatInputStep = "transaction" | "callback" | "queue_upsert";
 
@@ -165,38 +250,43 @@ export interface ChatQueuePick extends ChatQueuePickResult {
  * admission path. An active thread or another picker's lease suppresses an
  * org-full notice because the input can steer or follow that existing work.
  */
-async function enqueuedChatQueueWaitReason(
-  database: Db,
-  input: { readonly orgId: string; readonly chatThreadId: string },
-): Promise<ChatQueuePick> {
-  const [idle] = await database
-    .select({ chatThreadId: queuedChatThreads.chatThreadId })
-    .from(queuedChatThreads)
-    .where(
-      and(
-        eq(queuedChatThreads.orgId, input.orgId),
-        eq(queuedChatThreads.chatThreadId, input.chatThreadId),
-        or(
-          isNull(queuedChatThreads.claimExpiresAt),
-          lte(queuedChatThreads.claimExpiresAt, nowDate()),
+const enqueuedChatQueueWaitReason$ = command(
+  async (
+    { set },
+    input: { readonly orgId: string; readonly chatThreadId: string },
+    signal: AbortSignal,
+  ): Promise<ChatQueuePick> => {
+    const database = set(writeDb$);
+    const [idle] = await database
+      .select({ chatThreadId: queuedChatThreads.chatThreadId })
+      .from(queuedChatThreads)
+      .where(
+        and(
+          eq(queuedChatThreads.orgId, input.orgId),
+          eq(queuedChatThreads.chatThreadId, input.chatThreadId),
+          or(
+            isNull(queuedChatThreads.claimExpiresAt),
+            lte(queuedChatThreads.claimExpiresAt, nowDate()),
+          ),
+          notExists(
+            database
+              .select({ runId: activeAgentRuns.runId })
+              .from(activeAgentRuns)
+              .where(eq(activeAgentRuns.chatThreadId, input.chatThreadId)),
+          ),
         ),
-        notExists(
-          database
-            .select({ runId: activeAgentRuns.runId })
-            .from(activeAgentRuns)
-            .where(eq(activeAgentRuns.chatThreadId, input.chatThreadId)),
-        ),
-      ),
-    )
-    .limit(1);
-  return {
-    orgId: input.orgId,
-    reason:
-      idle && !(await orgHasRunCapacity(database, input.orgId))
-        ? "org-full"
-        : "thread-busy",
-  };
-}
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return {
+      orgId: input.orgId,
+      reason:
+        idle && !(await set(observeOrgCapacity$, input.orgId, signal))
+          ? "org-full"
+          : "thread-busy",
+    };
+  },
+);
 
 /**
  * After an enqueue commits: pick the thread once and notify its running run
@@ -239,7 +329,7 @@ export function createEnqueuedChatThreadPickScheduler<AfterPickInput>(
               if (input.afterPick !== undefined) {
                 const pick: ChatQueuePick = runId
                   ? { reason: "launched", orgId: input.orgId, runId }
-                  : await enqueuedChatQueueWaitReason(set(writeDb$), input);
+                  : await set(enqueuedChatQueueWaitReason$, input, signal);
                 signal.throwIfAborted();
                 await set(afterPick$, input.afterPick, pick, signal);
               }
@@ -326,7 +416,7 @@ export const pickOrgQueuedChatThreads$ = command(
       if (runId !== null) {
         launched += 1;
       } else {
-        const hasCapacity = await orgHasRunCapacity(database, input.orgId);
+        const hasCapacity = await set(observeOrgCapacity$, input.orgId, signal);
         signal.throwIfAborted();
         if (!hasCapacity) {
           return launched;

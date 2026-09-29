@@ -1892,24 +1892,33 @@ describe("workflow queue", () => {
       [automation.automationId],
     );
     const messages = await wf.readThreadEvents(threadId);
-    const claimedUserMessage = messages.find((message) => {
+    const claimedUserMessages = messages.filter((message) => {
       return (
+        message.eventType === "input.prompt" &&
         chatEventDisplayText(message) ===
           "queued user message before manual Run now" &&
         typeof message.runId === "string"
       );
     });
-    const userRunId = claimedUserMessage?.runId;
+    expect(claimedUserMessages).toHaveLength(1);
+    const userRunId = claimedUserMessages[0]?.runId;
     if (typeof userRunId !== "string") {
       throw new Error("Expected exactly one pick to launch the user message");
     }
-    await expect(workflowRunIds(threadId)).resolves.toStrictEqual([
-      firstRunId,
-      userRunId,
-    ]);
+    await expect(workflowRunIds(threadId)).resolves.toStrictEqual([firstRunId]);
+    expect(
+      messages.flatMap((message) => {
+        return message.eventType === "input.prompt" && message.runId
+          ? [message.runId]
+          : [];
+      }),
+    ).toStrictEqual([firstRunId, userRunId]);
 
     await requestRunCompletionThroughSandbox(scenario, userRunId);
     await clearAllDetached();
+    await expect(
+      runsApi.readRun(scenario.actor, userRunId),
+    ).resolves.toMatchObject({ status: "completed" });
     // If the losing request retained a lease, its expiration is the next
     // admission boundary. Advance the test clock, then issue a separate wake.
     mockNow(now() + 60_001);
@@ -1920,11 +1929,19 @@ describe("workflow queue", () => {
     );
     await expect(pendingAutomationEvents(threadId)).resolves.toStrictEqual([]);
     const finalRunIds = await workflowRunIds(threadId);
-    expect(finalRunIds).toHaveLength(3);
-    const manualRunId = finalRunIds[2];
+    expect(finalRunIds).toHaveLength(2);
+    expect(finalRunIds[0]).toBe(firstRunId);
+    const manualRunId = finalRunIds[1];
     if (!manualRunId) {
       throw new Error("Expected the manual automation after the user run");
     }
+    expect(
+      (await wf.readThreadEvents(threadId)).flatMap((message) => {
+        return message.eventType === "input.prompt" && message.runId
+          ? [message.runId]
+          : [];
+      }),
+    ).toStrictEqual([firstRunId, userRunId, manualRunId]);
     await runsApi.requestCancelRun(scenario.actor, manualRunId, [200]);
     await clearAllDetached();
   });

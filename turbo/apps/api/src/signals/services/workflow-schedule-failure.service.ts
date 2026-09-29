@@ -15,7 +15,7 @@ import {
   settleMorningBriefSchedulePreRunFailure,
 } from "./morning-brief-schedule-claim.service";
 import { calculateNextRun } from "./time-automation";
-import type { AutomationRow } from "./pick-chat-run.service";
+import type { AutomationRow } from "./workflow-automation-enqueue.service";
 
 const log = logger("WorkflowScheduleFailure");
 

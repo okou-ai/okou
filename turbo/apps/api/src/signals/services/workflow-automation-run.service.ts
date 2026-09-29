@@ -11,7 +11,7 @@ import {
   type WorkflowScheduleClaimPlan,
   type RunWorkflowAutomationNowArgs,
   type RunWorkflowAutomationResult,
-} from "./pick-chat-run.service";
+} from "./workflow-automation-enqueue.service";
 import {
   censusWorkflowAdmission,
   measureWorkflowAdmissionStep,

@@ -11,7 +11,7 @@ import {
   lockMorningBriefLegacyWriterAuthority,
   settleSelectedLegacyMorningBriefObligation,
 } from "./morning-brief-native-schedule.service";
-import { hasPendingAutomationEvent } from "./pick-chat-run.service";
+import { hasPendingAutomationEvent } from "./workflow-automation-enqueue.service";
 import { loadWorkflowUserAutomationThreadId } from "./workflow-user-automation-thread.service";
 import { SCHEDULE_GRACE_MS, scheduleExpired } from "./schedule-expiry-policy";
 

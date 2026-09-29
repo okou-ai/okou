@@ -179,6 +179,8 @@ interface ConnectorCatalogDiscoveryRead {
 
 type ExternalConnectorCatalogUnavailableReason =
   | "missing_current_identity"
+  | "captured_identity_unavailable"
+  | "runtime_identity_mismatch"
   | "missing_active_snapshot_after_retry"
   | "invalid_compatibility_evaluation"
   | `invalid_artifact:${ConnectorCatalogSyncFailureCode}`;
@@ -556,23 +558,13 @@ function deleteInFlightCatalog(
   }
 }
 
-async function loadAcceptedConnectorCatalogSnapshotAttempt(
-  db: ReadonlyDb,
-  timing: ConnectorCatalogLoadTiming | undefined,
-): Promise<AcceptedConnectorCatalogSnapshot | undefined> {
-  const sourceId = connectorCatalogSource().sourceId;
-  const capability = connectorCatalogExecutableCapabilityState();
-  const currentIdentity = await readCurrentIdentity({
-    db,
-    sourceId,
-    capabilityDigest: capability.digest,
-    ...(timing === undefined ? {} : { timing }),
-  });
-  if (!currentIdentity) {
-    throw new ExternalConnectorCatalogUnavailableError(
-      "missing_current_identity",
-    );
-  }
+async function loadAcceptedConnectorCatalogSnapshotAtIdentity(args: {
+  readonly db: ReadonlyDb;
+  readonly identity: ExternalCatalogIdentity;
+  readonly capability: ExecutableCapabilityState;
+  readonly timing: ConnectorCatalogLoadTiming | undefined;
+}): Promise<AcceptedConnectorCatalogSnapshot | undefined> {
+  const { db, identity: currentIdentity, capability, timing } = args;
   await runExternalReaderIdentityReadHook();
   const currentKey = identityKey(currentIdentity);
   const cache = preparedCatalogCache();
@@ -616,6 +608,67 @@ async function loadAcceptedConnectorCatalogSnapshotAttempt(
     return undefined;
   }
   cache.completed = { key: currentKey, catalog };
+  return catalog;
+}
+
+async function loadAcceptedConnectorCatalogSnapshotAttempt(
+  db: ReadonlyDb,
+  timing: ConnectorCatalogLoadTiming | undefined,
+): Promise<AcceptedConnectorCatalogSnapshot | undefined> {
+  const capability = connectorCatalogExecutableCapabilityState();
+  const identity = await readCurrentIdentity({
+    db,
+    sourceId: connectorCatalogSource().sourceId,
+    capabilityDigest: capability.digest,
+    ...(timing === undefined ? {} : { timing }),
+  });
+  if (!identity) {
+    throw new ExternalConnectorCatalogUnavailableError(
+      "missing_current_identity",
+    );
+  }
+  return await loadAcceptedConnectorCatalogSnapshotAtIdentity({
+    db,
+    identity,
+    capability,
+    timing,
+  });
+}
+
+/** Runtime preparation keeps the captured catalog generation or fails. */
+export async function loadAcceptedConnectorCatalogSnapshotOnce(
+  db: ReadonlyDb,
+  options: {
+    readonly identity?: ExternalCatalogIdentity;
+    readonly timing?: ConnectorCatalogLoadTiming;
+  },
+): Promise<AcceptedConnectorCatalogSnapshot> {
+  const { identity, timing } = options;
+  const capability = connectorCatalogExecutableCapabilityState();
+  if (
+    identity !== undefined &&
+    (identity.sourceId !== connectorCatalogSource().sourceId ||
+      identity.schemaVersion !== SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION ||
+      identity.capabilityDigest !== capability.digest)
+  ) {
+    throw new ExternalConnectorCatalogUnavailableError(
+      "runtime_identity_mismatch",
+    );
+  }
+  const catalog =
+    identity === undefined
+      ? await loadAcceptedConnectorCatalogSnapshotAttempt(db, timing)
+      : await loadAcceptedConnectorCatalogSnapshotAtIdentity({
+          db,
+          identity,
+          capability,
+          timing,
+        });
+  if (!catalog) {
+    throw new ExternalConnectorCatalogUnavailableError(
+      "captured_identity_unavailable",
+    );
+  }
   return catalog;
 }
 

@@ -52,7 +52,7 @@ import type {
   RunWorkflowAutomationResult,
   AutomationRow,
   WorkflowQueueAdmissionTransaction,
-} from "./pick-chat-run.service";
+} from "./workflow-automation-enqueue.service";
 import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
 import { lockConnectorAccountTarget } from "./auth-state-lock.service";
 import {
