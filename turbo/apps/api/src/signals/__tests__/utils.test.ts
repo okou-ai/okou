@@ -84,15 +84,14 @@ describe("collectAllDetachedErrorsForTest", () => {
     const firstError = new Error("outer detached failure");
     const secondError = new Error("nested detached failure");
     const completed: string[] = [];
+    const runNestedWork = async () => {
+      await Promise.resolve();
+      completed.push("inner");
+      throw secondError;
+    };
     detach(
       Promise.resolve().then(() => {
-        detach(
-          Promise.resolve().then(() => {
-            completed.push("inner");
-            throw secondError;
-          }),
-          Mechanism.WaitUntil,
-        );
+        detach(runNestedWork(), Mechanism.WaitUntil);
         completed.push("outer");
         throw firstError;
       }),

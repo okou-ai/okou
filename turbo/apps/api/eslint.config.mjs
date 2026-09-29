@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+
 import { config, oxlint } from "@okouai/eslint-config/base";
 import { apiLintPlugin } from "@okouai/eslint-rules/api";
 import ccstatePlugin from "@okouai/eslint-rules/ccstate";
@@ -690,7 +691,7 @@ export default [
         {
           patterns: [
             {
-              group: ["**/pick-chat-run.service"],
+              group: ["**/test-agent-run-fixture.service"],
               importNames: ["createTestFixtureAgentRun$"],
               message:
                 "Production chat run sources must use createPickObjects so every run consumes a queued input.",
@@ -844,7 +845,7 @@ export default [
               message: productionRouteTestImportMessage,
             },
             {
-              group: ["**/pick-chat-run.service"],
+              group: ["**/test-agent-run-fixture.service"],
               importNames: ["createTestFixtureAgentRun$"],
               message:
                 "Production chat run sources must use createPickObjects so every run consumes a queued input.",
@@ -889,7 +890,7 @@ export default [
               message: lowerLayerRouteImportMessage,
             },
             {
-              group: ["**/pick-chat-run.service"],
+              group: ["**/test-agent-run-fixture.service"],
               importNames: ["createTestFixtureAgentRun$"],
               message:
                 "Production chat run sources must use createPickObjects so every run consumes a queued input.",
