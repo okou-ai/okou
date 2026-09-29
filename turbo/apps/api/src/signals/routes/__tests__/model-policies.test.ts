@@ -11,7 +11,10 @@ import {
   type ModelProviderWriteType,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
-import { modelProvidersByTypeContract } from "@okouai/api-contracts/contracts/model-provider-routes";
+import {
+  modelProvidersByTypeContract,
+  modelProvidersMainContract,
+} from "@okouai/api-contracts/contracts/model-provider-routes";
 import { modelProviderConnectionsMainContract } from "@okouai/api-contracts/contracts/model-provider-gateways";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import type { ImageModelId } from "@okouai/api-contracts/contracts/image-models";
@@ -22,7 +25,6 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { now } from "../../../lib/time";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
-import { seedConnectedPersonalSubscriptionFixture } from "../../../test-fixtures/personal-subscription-model";
 import {
   holdModelPolicyPreferenceFixture,
   stageUnrepairedOrgModelPolicyFixture,
@@ -171,6 +173,38 @@ async function createOrgProvider(
   return providerId;
 }
 
+/** Enter Auto the way production does: a Debug admin uses the mode route. */
+async function switchModelMode(
+  fixture: ModelPolicyFixture,
+  mode: "auto" | "custom",
+): Promise<void> {
+  await updateFeatureSwitchesForUser(context, fixture, {
+    [FeatureSwitchKey.OkouDebug]: true,
+  });
+  useSession(fixture);
+  await accept(
+    apiClient().updateMode({ headers: authHeaders(), body: { mode } }),
+    [200],
+  );
+}
+
+async function connectCodexSubscription(
+  fixture: ModelPolicyFixture,
+): Promise<void> {
+  await createMiscRoutesApi(context).upsertPersonalModelProvider(
+    fixture,
+    {
+      type: "codex-oauth-token",
+      authMethod: "auth_json",
+      secrets: {
+        CODEX_AUTH_JSON: makeCodexAuthJson({ accountId: randomUUID() }),
+      },
+    },
+    [200, 201],
+  );
+  useSession(fixture);
+}
+
 async function makeLimitedFreeWorkspace(
   fixture: ModelPolicyFixture,
 ): Promise<void> {
@@ -181,12 +215,6 @@ async function makeLimitedFreeWorkspace(
       "Expected limited-free bootstrap to create a default agent",
     );
   }
-  // This helper exercises the policy configurator for existing Custom orgs.
-  await seedOrgMetadata({
-    orgId: fixture.orgId,
-    tier: "limited-free-1",
-    credits: 0,
-  });
 }
 
 /**
@@ -270,6 +298,26 @@ describe("GET/PUT /api/model-policies", () => {
       (await accept(gateways.list({ headers: authHeaders() }), [200])).body
         .connections,
     ).toStrictEqual([]);
+    const rejectedGateway = await accept(
+      gateways.create({
+        headers: authHeaders(),
+        body: {
+          displayName: "Auto workspace gateway",
+          secret: "test-only-gateway-secret",
+          surfaces: [
+            {
+              protocol: "anthropic-messages",
+              apiBaseUrl: "https://gateway.example.com/anthropic",
+              authHeaderName: "Authorization",
+              authHeaderTemplate: "Bearer {{secret}}",
+              modelMappings: {},
+            },
+          ],
+        },
+      }),
+      [400],
+    );
+    expect(rejectedGateway.body.error.message).toContain("Auto mode");
     const auto = await accept(client.list({ headers: authHeaders() }), [200]);
     expect(
       auto.body.policies.map((policy) => {
@@ -307,15 +355,15 @@ describe("GET/PUT /api/model-policies", () => {
     ).toBe(403);
   });
 
-  it("projects the six subscription catalog entries only for the connected Auto member and routes them in every model-first entry", async () => {
+  it("projects the six subscription catalog entries only for the connected Auto member", async () => {
     const fixture = seedFixture();
+    // Plan state is infrastructure-owned; Auto admits subscriptions on limited-free.
     await seedOrgMetadata({
       orgId: fixture.orgId,
       tier: "limited-free-1",
       credits: 0,
-      modelMode: "auto",
     });
-    useSession(fixture);
+    await switchModelMode(fixture, "auto");
     const client = apiClient();
     const before = await accept(client.list({ headers: authHeaders() }), [200]);
     expect(
@@ -323,14 +371,12 @@ describe("GET/PUT /api/model-policies", () => {
         return policy.model;
       }),
     ).toStrictEqual(["okou-1.0"]);
-    await seedConnectedPersonalSubscriptionFixture({
-      ...fixture,
-      type: "claude-code-oauth-token",
-    });
-    await seedConnectedPersonalSubscriptionFixture({
-      ...fixture,
-      type: "codex-oauth-token",
-    });
+    await createMiscRoutesApi(context).upsertPersonalModelProvider(
+      fixture,
+      { type: "claude-code-oauth-token", secret: "sk-ant-oat-auto-member" },
+      [200, 201],
+    );
+    await connectCodexSubscription(fixture);
     const after = await accept(client.list({ headers: authHeaders() }), [200]);
     expect(
       after.body.policies.map((policy) => {
@@ -388,6 +434,22 @@ describe("GET/PUT /api/model-policies", () => {
       [200],
     );
     expect(codexPreference.body.serviceTier).toBe("priority");
+    const outsideCatalogEffort = await accept(
+      preferenceClient.update({
+        headers: authHeaders(),
+        body: {
+          selectedModel: "gpt-6-luna",
+          serviceTier: null,
+          modelSettingsPatch: { model: "gpt-6-luna", effort: "ultra" },
+        },
+      }),
+      [400],
+    );
+    expect(outsideCatalogEffort.body).toMatchObject({
+      error: {
+        message: "Reasoning effort is not available for this subscription",
+      },
+    });
     const other = { ...fixture, userId: `user_${randomUUID()}` };
     useSession(other, "org:member");
     const otherList = await accept(
@@ -399,6 +461,71 @@ describe("GET/PUT /api/model-policies", () => {
         return policy.model;
       }),
     ).toStrictEqual(["okou-1.0"]);
+  });
+
+  it("returns subscription members to organization policies when Auto switches back to Custom", async () => {
+    const fixture = seedFixture();
+    await seedOrgMetadata({ orgId: fixture.orgId, tier: "pro", credits: 0 });
+    await switchModelMode(fixture, "auto");
+    await connectCodexSubscription(fixture);
+    const preferences = setupApp({
+      context,
+      routes: userModelPreferenceRoutes,
+    })(userModelPreferenceContract);
+    await accept(
+      preferences.update({
+        headers: authHeaders(),
+        body: { selectedModel: "gpt-6-sol", serviceTier: "priority" },
+      }),
+      [200],
+    );
+    const legacyProvider = await setupApp({
+      context,
+      routes: modelProvidersRoutes,
+    })(modelProvidersMainContract).upsert({
+      headers: authHeaders(),
+      body: { type: "anthropic-api-key", secret: "auto-workspace-key" },
+    });
+    expect(legacyProvider.status).toBe(400);
+
+    await switchModelMode(fixture, "custom");
+    const preference = await accept(
+      preferences.get({ headers: authHeaders() }),
+      [200],
+    );
+    expect(preference.body).toMatchObject({
+      selectedModel: "okou-1.0",
+      serviceTier: null,
+    });
+    const custom = await accept(
+      apiClient().list({ headers: authHeaders() }),
+      [200],
+    );
+    expect(custom.body.modelMode).toBe("custom");
+    expect(
+      custom.body.policies.map((policy) => {
+        return policy.model;
+      }),
+    ).toStrictEqual(["okou-1.0"]);
+    await createOrgProvider(fixture, "anthropic-api-key");
+    const updated = await accept(
+      apiClient().update({
+        headers: authHeaders(),
+        body: {
+          revision: custom.body.revision,
+          policies: [
+            makeBuiltInPolicy("okou-1.0", true),
+            makeBuiltInPolicy("gpt-6-luna"),
+          ],
+        },
+      }),
+      [200],
+    );
+    expect(
+      updated.body.policies.map((policy) => {
+        return policy.model;
+      }),
+    ).toStrictEqual(["okou-1.0", "gpt-6-luna"]);
   });
 
   it("filters only the Add Model projection with a personal switch", async () => {
@@ -1680,7 +1807,6 @@ describe("GET/PUT /api/model-policies", () => {
 
   it("preserves an omitted custom gateway surface and clears an explicit null", async () => {
     const fixture = await seedFixture();
-    await seedOrgMetadata({ orgId: fixture.orgId, tier: "pro", credits: 0 });
     useSession(fixture);
     const gatewayClient = setupApp({
       context,

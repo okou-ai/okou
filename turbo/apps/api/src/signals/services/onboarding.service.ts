@@ -84,20 +84,13 @@ async function markOnboardingComplete(
       },
     );
 
-    if (rows.length > 0) {
-      const [org] = await tx
-        .select({ mode: orgMetadataCanonicalWrites.modelMode })
-        .from(orgMetadataCanonicalWrites)
-        .where(eq(orgMetadataCanonicalWrites.orgId, orgId))
-        .limit(1);
-      if (org?.mode === "auto" || modelProvider !== undefined) {
-        await initializeOnboardingOrgModelPolicies(
-          tx,
-          orgId,
-          userId,
-          org?.mode === "auto" ? null : (modelProvider ?? null),
-        );
-      }
+    if (rows.length > 0 && modelProvider !== undefined) {
+      await initializeOnboardingOrgModelPolicies(
+        tx,
+        orgId,
+        userId,
+        modelProvider,
+      );
     }
     return rows.length > 0;
   });

@@ -28,7 +28,6 @@ export async function upsertOrgMetadataFixture(values: {
   readonly orgId: string;
   readonly tier: string;
   readonly credits: number;
-  readonly modelMode?: "auto" | "custom";
 }): Promise<void> {
   const tier = orgTierSchema.parse(values.tier);
   await createStore()
@@ -42,7 +41,6 @@ export async function upsertOrgMetadataFixture(values: {
           set: {
             tier: values.tier,
             credits: values.credits,
-            ...(values.modelMode ? { modelMode: values.modelMode } : {}),
             updatedAt: sql`now()`,
           },
         });
@@ -52,21 +50,6 @@ export async function upsertOrgMetadataFixture(values: {
         source: "org_metadata_migration",
       });
     });
-}
-
-export async function setOrgModelModeFixture(
-  orgId: string,
-  modelMode: "auto" | "custom",
-): Promise<void> {
-  const rows = await createStore()
-    .set(writeDb$)
-    .update(orgMetadata)
-    .set({ modelMode, updatedAt: sql`now()` })
-    .where(eq(orgMetadata.orgId, orgId))
-    .returning({ orgId: orgMetadata.orgId });
-  if (rows.length !== 1) {
-    throw new Error(`No organization metadata for ${orgId}`);
-  }
 }
 
 export async function expireAtomGrantFixture(values: {

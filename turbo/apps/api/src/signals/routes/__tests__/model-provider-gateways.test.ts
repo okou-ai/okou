@@ -7,8 +7,6 @@ import {
 } from "@okouai/api-contracts/contracts/model-provider-gateways";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
-import { setOrgModelModeFixture } from "../../../test-fixtures/org-metadata";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -114,43 +112,8 @@ describe("custom model provider gateway routes", () => {
     expect(forbiddenList.body.error.code).toBe("FORBIDDEN");
   });
 
-  it("rejects organization connections for new Auto workspaces", async () => {
-    const actor = useSession();
-    await seedOrgMetadata({
-      orgId: actor.orgId,
-      tier: "limited-free-1",
-      credits: 0,
-      modelMode: "auto",
-    });
-    const response = await accept(
-      mainClient().create({
-        headers: authHeaders(),
-        body: {
-          displayName: "Unavailable gateway",
-          secret: "test-secret",
-          surfaces: [
-            {
-              protocol: "anthropic-messages",
-              apiBaseUrl: "https://gateway.example.com",
-              authHeaderName: "Authorization",
-              authHeaderTemplate: "Bearer {{secret}}",
-              modelMappings: {},
-            },
-          ],
-        },
-      }),
-      [400],
-    );
-    expect(response.body.error.message).toContain("Auto mode");
-    expect(
-      (await accept(mainClient().list({ headers: authHeaders() }), [200])).body
-        .connections,
-    ).toStrictEqual([]);
-  });
-
   it("creates, normalizes, updates, lists, and deletes a connection", async () => {
-    const actor = useSession();
-    await seedOrgMetadata({ orgId: actor.orgId, tier: "pro", credits: 0 });
+    useSession();
     const created = await accept(
       mainClient().create({
         headers: authHeaders(),
@@ -390,7 +353,6 @@ describe("custom model provider gateway routes", () => {
     runs.acceptTelemetryIngest();
     const runnerGroup = runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
-    await setOrgModelModeFixture(actor.orgId, "custom");
     const agent = await bdd.createAgent(actor, {
       displayName: "Custom gateway runtime",
       visibility: "private",

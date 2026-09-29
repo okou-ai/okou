@@ -177,7 +177,7 @@ const EXPECTED_ADMITTED_ROUTES = [
 /**
  * The enumeration is driven by `ACTIVE_RUN_MODELS` and their providers, so it
  * shrinks only when a model is retired or a route is removed. The remaining
- * 216 combinations are all evaluated.
+ * 218 combinations are all evaluated.
  */
 const ENUMERATED_COMBINATIONS = 218;
 

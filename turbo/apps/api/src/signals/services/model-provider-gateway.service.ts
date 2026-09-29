@@ -41,7 +41,6 @@ async function customConnectionsAllowed(
     .select({ mode: orgMetadata.modelMode })
     .from(orgMetadata)
     .where(eq(orgMetadata.orgId, orgId))
-    .for("share")
     .limit(1);
   // A missing metadata row reads as Custom, matching every other mode check.
   return org?.mode !== "auto";

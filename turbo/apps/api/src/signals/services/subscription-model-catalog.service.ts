@@ -66,10 +66,15 @@ export async function loadMemberSubscriptionModels(
     const subscription = subscriptions.find((candidate) => {
       return candidate.type === row.subscriptionType;
     });
+    // Retired catalog models are a reachable state; they simply stop listing.
     if (
       !subscription ||
       !isSupportedRunModel(row.model) ||
-      getRunModelAccess(row.model) !== "allowed" ||
+      getRunModelAccess(row.model) !== "allowed"
+    ) {
+      return [];
+    }
+    if (
       !isModelSupportedByProvider(row.model, subscription.type) ||
       row.efforts.some((effort) => {
         return (
@@ -83,7 +88,9 @@ export async function loadMemberSubscriptionModels(
         (subscription.type !== "codex-oauth-token" ||
           !isCodexFastModeModel(row.model)))
     ) {
-      return [];
+      throw new Error(
+        `Invalid subscription model catalog row ${row.subscriptionType}/${row.model}`,
+      );
     }
     return [
       {

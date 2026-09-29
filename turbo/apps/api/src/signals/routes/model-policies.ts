@@ -7,20 +7,30 @@ import { loadUserFeatureSwitchContext } from "../services/feature-switches.servi
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
-import { badRequestMessage, notFound } from "../../lib/error";
+import { badRequestMessage } from "../../lib/error";
 import { publishModelPoliciesChangedForOrgSafely } from "../external/realtime";
 import type { RouteEntry } from "../route-entry";
 import {
   listOrgModelPolicies$,
   updateOrgModelPolicies$,
-  updateOrgModelMode$,
 } from "../services/model-policy.service";
+import { updateOrgModelMode$ } from "../services/org-model-mode.service";
 
 const adminRequired = Object.freeze({
   status: 403 as const,
   body: Object.freeze({
     error: Object.freeze({
       message: "Only admins can manage model policies",
+      code: "FORBIDDEN",
+    }),
+  }),
+});
+
+const debugRequired = Object.freeze({
+  status: 403 as const,
+  body: Object.freeze({
+    error: Object.freeze({
+      message: "Only Debug admins can change the model mode",
       code: "FORBIDDEN",
     }),
   }),
@@ -95,20 +105,20 @@ const updateModelModeInner$ = command(
     );
     signal.throwIfAborted();
     if (!isFeatureEnabled(FeatureSwitchKey.OkouDebug, context)) {
-      return adminRequired;
+      return debugRequired;
     }
-    const mode = await set(
+    const result = await set(
       updateOrgModelMode$,
       { orgId: auth.orgId, userId: auth.userId, mode: body.data.mode },
       signal,
     );
     signal.throwIfAborted();
-    if (mode === null) {
-      return notFound("Organization not found");
+    if (!result.ok) {
+      return result.response;
     }
     await publishModelPoliciesChangedForOrgSafely(auth.orgId);
     signal.throwIfAborted();
-    return { status: 200 as const, body: { mode } };
+    return { status: 200 as const, body: { mode: result.mode } };
   },
 );
 

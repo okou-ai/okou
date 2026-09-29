@@ -16,7 +16,7 @@ import {
 import { checkOrgPlanRunAdmission } from "./run-admission.service";
 import { isCloudModelMappingValid } from "@okouai/api-contracts/contracts/cloud-model-mapping";
 import { command } from "ccstate";
-import { and, asc, eq, inArray, notExists, notInArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, notInArray, sql } from "drizzle-orm";
 import {
   DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
   LIMITED_FREE1_DEFAULT_RUN_MODEL,
@@ -34,7 +34,6 @@ import {
   getRunModelRouteAccess,
   RETIRED_RUN_MODEL_MESSAGE,
   type ModelProviderCredentialScope,
-  type OrgModelMode,
   type OrgModelPoliciesResponse,
   type OrgModelPolicy,
   type OrgModelPolicyRouteStatus,
@@ -54,7 +53,6 @@ import {
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
-import { secrets } from "@okouai/db/schema/secret";
 import {
   loadMemberSubscriptionModels,
   type MemberSubscriptionModel,
@@ -553,36 +551,6 @@ async function ensureOrgModelPoliciesLocked(
   const capabilities = modelPolicyCapabilities(orgPlanCapabilities);
   const seedDefaultModel = getSeedDefaultModelForPlan(capabilities);
   const existing = await loadRows(db, orgId);
-  const [org] = await db
-    .select({ mode: orgMetadata.modelMode })
-    .from(orgMetadata)
-    .where(eq(orgMetadata.orgId, orgId))
-    .limit(1);
-  if (org?.mode === "auto") {
-    if (
-      existing.length !== 1 ||
-      existing[0]?.model !== "okou-1.0" ||
-      !existing[0].isDefault ||
-      existing[0].defaultProviderType !== "built-in"
-    ) {
-      await db
-        .delete(orgModelPolicies)
-        .where(eq(orgModelPolicies.orgId, orgId));
-      await db.insert(orgModelPolicies).values({
-        orgId,
-        model: "okou-1.0",
-        isDefault: true,
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        createdByUserId: userId,
-        updatedByUserId: userId,
-      });
-    }
-    return {
-      orgPlanCapabilities,
-      policies: await loadRows(db, orgId),
-    };
-  }
   if (existing.length > 0) {
     const existingDefault = existing.find((policy) => {
       return policy.isDefault;
@@ -709,25 +677,8 @@ export async function ensureOrgModelPolicyFacts(
     suppliedPlanCapabilities,
   );
   const capabilities = modelPolicyCapabilities(initial.orgPlanCapabilities);
-  const [org] = await db
-    .select({ mode: orgMetadata.modelMode })
-    .from(orgMetadata)
-    .where(eq(orgMetadata.orgId, orgId))
-    .limit(1);
-  const autoPoliciesReady =
-    initial.policies.length === 1 &&
-    initial.policies[0]?.model === "okou-1.0" &&
-    initial.policies[0].isDefault &&
-    initial.policies[0].defaultProviderType === "built-in";
-  if (org?.mode === "auto" && !autoPoliciesReady) {
-    return db.transaction(async (tx) => {
-      await lockPolicyWrites(tx, orgId);
-      return ensureOrgModelPoliciesLocked(tx, orgId, userId);
-    });
-  }
   if (
     initial.policies.length > 0 &&
-    (org?.mode !== "auto" || autoPoliciesReady) &&
     !shouldReplaceExistingDefaultForPlan(
       initial.policies.find((policy) => {
         return policy.isDefault;
@@ -1482,8 +1433,8 @@ export async function initializeOnboardingOrgModelPolicies(
   db: Db,
   orgId: string,
   userId: string,
-  provider: OnboardingSubscriptionProvider | null,
-): Promise<boolean> {
+  provider: OnboardingSubscriptionProvider,
+): Promise<void> {
   await lockPolicyWrites(db, orgId);
   const existing = await loadRows(db, orgId, true);
   const standardSeed = getDefaultOrgModelPolicySeed();
@@ -1513,17 +1464,10 @@ export async function initializeOnboardingOrgModelPolicies(
     );
   });
   if (existing.length > 0 && !hasOnlyStandardSeed) {
-    return false;
+    return;
   }
 
-  const seed =
-    provider === null
-      ? {
-          models: ["okou-1.0"] as const,
-          defaultModel: "okou-1.0" as const,
-          providerType: "built-in" as const,
-        }
-      : ONBOARDING_MODEL_POLICY_SEEDS[provider];
+  const seed = ONBOARDING_MODEL_POLICY_SEEDS[provider];
   await persistOrgModelPolicyUpdates({
     db,
     orgId,
@@ -1534,112 +1478,13 @@ export async function initializeOnboardingOrgModelPolicies(
         model,
         isDefault: model === seed.defaultModel,
         defaultProviderType: seed.providerType,
-        credentialScope: provider === null ? "org" : "member",
+        credentialScope: "member",
         modelProviderId: null,
         modelProviderSurfaceId: null,
       };
     }),
   });
-  return true;
 }
-
-export const updateOrgModelMode$ = command(
-  async (
-    { set },
-    params: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly mode: OrgModelMode;
-    },
-    signal: AbortSignal,
-  ): Promise<OrgModelMode | null> => {
-    const db = set(writeDb$);
-    const mode = await db.transaction(async (tx) => {
-      await lockPolicyWrites(tx, params.orgId);
-      const [org] = await tx
-        .select({ mode: orgMetadata.modelMode })
-        .from(orgMetadata)
-        .where(eq(orgMetadata.orgId, params.orgId))
-        .for("update")
-        .limit(1);
-      if (!org) {
-        return null;
-      }
-      if (params.mode === "auto") {
-        // Reset before deleting gateways: their surfaces can be referenced by policies.
-        await tx
-          .delete(orgModelPolicies)
-          .where(eq(orgModelPolicies.orgId, params.orgId));
-        await tx.insert(orgModelPolicies).values({
-          orgId: params.orgId,
-          model: "okou-1.0",
-          isDefault: true,
-          defaultProviderType: "built-in",
-          credentialScope: "org",
-          createdByUserId: params.userId,
-          updatedByUserId: params.userId,
-        });
-        const deleted = await tx
-          .delete(modelProviderConnections)
-          .where(eq(modelProviderConnections.orgId, params.orgId))
-          .returning({ secretId: modelProviderConnections.secretId });
-        const legacy = await tx
-          .delete(modelProviders)
-          .where(
-            and(
-              eq(modelProviders.orgId, params.orgId),
-              eq(modelProviders.userId, ORG_SENTINEL_USER_ID),
-            ),
-          )
-          .returning({ secretId: modelProviders.secretId });
-        const secretIds = [
-          ...deleted.map((connection) => {
-            return connection.secretId;
-          }),
-          ...legacy.flatMap((provider) => {
-            return provider.secretId ? [provider.secretId] : [];
-          }),
-        ];
-        if (secretIds.length > 0) {
-          await tx
-            .delete(secrets)
-            .where(
-              and(
-                inArray(secrets.id, secretIds),
-                notExists(
-                  tx
-                    .select({ id: modelProviders.id })
-                    .from(modelProviders)
-                    .where(eq(modelProviders.secretId, secrets.id)),
-                ),
-                notExists(
-                  tx
-                    .select({ id: modelProviderConnections.id })
-                    .from(modelProviderConnections)
-                    .where(eq(modelProviderConnections.secretId, secrets.id)),
-                ),
-              ),
-            );
-        }
-        await tx
-          .update(orgMembersMetadata)
-          .set({
-            selectedModel: "okou-1.0",
-            serviceTier: null,
-            updatedAt: nowDate(),
-          })
-          .where(eq(orgMembersMetadata.orgId, params.orgId));
-      }
-      await tx
-        .update(orgMetadata)
-        .set({ modelMode: params.mode, updatedAt: nowDate() })
-        .where(eq(orgMetadata.orgId, params.orgId));
-      return params.mode;
-    });
-    signal.throwIfAborted();
-    return mode;
-  },
-);
 
 export const listOrgModelPolicies$ = command(
   async (

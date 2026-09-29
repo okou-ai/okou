@@ -11,15 +11,13 @@ import {
   DialogTitle,
   Switch,
 } from "@okouai/ui";
-import {
-  orgModelPolicies$,
-  updateOrgModelMode$,
-} from "../../../../signals/external/org-model-policies.ts";
+import { orgModelPolicies$ } from "../../../../signals/external/org-model-policies.ts";
 import { isOrgAdmin$ } from "../../../../signals/org.ts";
 import { pageSignal$ } from "../../../../signals/page-signal.ts";
 import {
   autoModelConfirmationOpen$,
   setAutoModelConfirmationOpen$,
+  switchOrgModelMode$,
 } from "../../../../signals/okou-page/settings/org-model-mode.ts";
 import { detach, Reason } from "../../../../signals/utils.ts";
 
@@ -31,17 +29,13 @@ export function OrgModelModeControl() {
   const pageSignal = useGet(pageSignal$);
   const confirmationOpen = useGet(autoModelConfirmationOpen$);
   const setConfirmationOpen = useSet(setAutoModelConfirmationOpen$);
-  const [modeLoadable, setMode] = useLoadableSet(updateOrgModelMode$);
+  const [modeLoadable, switchMode] = useLoadableSet(switchOrgModelMode$);
   const saving = modeLoadable.state === "loading";
   const auto = data?.modelMode === "auto";
 
   const changeMode = (toAuto: boolean) => {
     detach(
-      (async () => {
-        await setMode(toAuto ? "auto" : "custom", pageSignal);
-        pageSignal.throwIfAborted();
-        setConfirmationOpen(false);
-      })(),
+      switchMode(toAuto ? "auto" : "custom", pageSignal),
       Reason.DomCallback,
     );
   };

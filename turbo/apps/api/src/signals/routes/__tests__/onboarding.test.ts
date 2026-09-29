@@ -12,10 +12,9 @@ import {
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
-import {
-  readOnboardingIndustryFixture,
-  upsertOrgMetadataFixture,
-} from "../../../test-fixtures/org-metadata";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { readOnboardingIndustryFixture } from "../../../test-fixtures/org-metadata";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRouteMocks } from "./helpers/route-test";
@@ -321,13 +320,21 @@ describe("POST /api/onboarding/complete", () => {
 
   it("seeds only Auto for an Auto organization despite a subscription choice", async () => {
     const actor = orgActor();
-    await upsertOrgMetadataFixture({
-      orgId: actor.orgId,
-      tier: "limited-free-1",
-      credits: 0,
-      modelMode: "auto",
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.OkouDebug]: true,
     });
     mocks.clerk.session(actor.userId, actor.orgId, actor.role);
+    await accept(
+      onboardingStatusClient().getStatus({ headers: authHeaders() }),
+      [200],
+    );
+    await accept(
+      modelPoliciesClient().updateMode({
+        headers: authHeaders(),
+        body: { mode: "auto" },
+      }),
+      [200],
+    );
     await accept(
       onboardingCompleteClient().complete({
         headers: authHeaders(),

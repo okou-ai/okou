@@ -1055,6 +1055,20 @@ export function createRunsApi(
       );
     },
 
+    /** Switches the org model mode as a Debug admin would. */
+    async updateOrgModelMode(
+      actor: ApiTestUser,
+      mode: "auto" | "custom",
+    ): Promise<void> {
+      await accept(
+        runApp(context)(modelPoliciesMainContract).updateMode({
+          headers: authenticate(context, actor),
+          body: { mode },
+        }),
+        [200],
+      );
+    },
+
     /**
      * Configures an org Anthropic key as the default model route. Fixtures
      * that drive the native Runner claim protocol pass `claude-fable-5-1`,

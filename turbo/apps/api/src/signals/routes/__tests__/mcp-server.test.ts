@@ -110,12 +110,9 @@ import {
 } from "../../../test-fixtures/chat-event-search";
 import { createRouteMocks } from "./helpers/route-test";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
-import {
-  setOrgDefaultAgentFixture,
-  setOrgModelModeFixture,
-} from "../../../test-fixtures/org-metadata";
-import { seedConnectedPersonalSubscriptionFixture } from "../../../test-fixtures/personal-subscription-model";
+import { setOrgDefaultAgentFixture } from "../../../test-fixtures/org-metadata";
 import { createBddApi } from "./helpers/api-bdd";
+import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -1181,24 +1178,32 @@ describe("MCP chat discovery and creation", () => {
 
   it("lists connected personal subscription models for the Auto member", async () => {
     const f = await threadFixture();
+    // Plan state is infrastructure-owned; Auto admits subscriptions on limited-free.
     await seedOrgMetadata({
       orgId: f.auth.orgId,
       tier: "limited-free-1",
       credits: 0,
-      modelMode: "auto",
     });
+    await updateFeatureSwitchesForUser(
+      context,
+      { userId: f.auth.userId, orgId: f.auth.orgId },
+      { [FeatureSwitchKey.OkouDebug]: true },
+    );
     createRouteMocks(context).clerk.session(f.auth.userId, f.auth.orgId);
     await accept(
       setupApp({ context, routes: modelPoliciesRoutes })(
         modelPoliciesMainContract,
-      ).list({ headers: { authorization: "Bearer clerk-session" } }),
+      ).updateMode({
+        headers: { authorization: "Bearer clerk-session" },
+        body: { mode: "auto" },
+      }),
       [200],
     );
-    await seedConnectedPersonalSubscriptionFixture({
-      orgId: f.auth.orgId,
-      userId: f.auth.userId,
-      type: "claude-code-oauth-token",
-    });
+    await createMiscRoutesApi(context).upsertPersonalModelProvider(
+      f.actor,
+      { type: "claude-code-oauth-token", secret: "sk-ant-oat-mcp-member" },
+      [200, 201],
+    );
     const models = await listModels(f.auth.token());
     expect(models.models).toContainEqual(
       expect.objectContaining({
@@ -1219,7 +1224,6 @@ describe("MCP chat discovery and creation", () => {
     const runs = createRunsApi(context);
     const model = "deepseek-v4-flash";
     await runs.grantProEntitlement(f.actor);
-    await setOrgModelModeFixture(f.auth.orgId, "custom");
     await seedBuiltInModelCandidateKeys(context, model);
     await runs.updateOrgModelPolicies(f.actor, [
       {
