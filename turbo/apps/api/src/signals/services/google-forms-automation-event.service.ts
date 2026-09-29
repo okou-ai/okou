@@ -786,6 +786,7 @@ export const ensureGoogleFormsWatchForUser$ = command(
       readonly connectorId: string;
       readonly resetAutomationId?: string;
       readonly seedCursor?: string;
+      readonly preserveCursor?: boolean;
       readonly allowStagedOfficialTarget?: boolean;
     },
     signal: AbortSignal,
@@ -887,6 +888,7 @@ interface GoogleFormsWatchPublication {
   readonly watch: z.infer<typeof googleFormsWatchSchema> | null;
   readonly cursor: string | null;
   readonly resetAutomationId?: string;
+  readonly preserveCursor?: boolean;
   readonly allowStagedOfficialTarget?: boolean;
 }
 
@@ -1056,7 +1058,9 @@ const publishGoogleFormsWatch$ = command(
             target: googleFormsAutomationCursors.automationId,
             set: {
               watchStateId: state.id,
-              lastSeenSubmittedTime: args.cursor,
+              lastSeenSubmittedTime: args.preserveCursor
+                ? sql`CASE WHEN ${googleFormsAutomationCursors.lastSeenSubmittedTime}::timestamptz > ${args.cursor}::timestamptz THEN ${googleFormsAutomationCursors.lastSeenSubmittedTime} ELSE ${args.cursor} END`
+                : args.cursor,
               updatedAt: currentTime,
             },
           });
@@ -1439,6 +1443,7 @@ const prepareGoogleFormsWatchesForOwner$ = command(
         eventConfig: workflowAutomations.eventConfig,
         connectorId: workflowAutomations.eventConnectorId,
         cursorWatchStateId: googleFormsAutomationCursors.watchStateId,
+        cursor: googleFormsAutomationCursors.lastSeenSubmittedTime,
         watchConnectorId: googleFormsWatchStates.connectorId,
         watchFormId: googleFormsWatchStates.formId,
         watchOrgId: googleFormsWatchStates.orgId,
@@ -1492,6 +1497,12 @@ const prepareGoogleFormsWatchesForOwner$ = command(
           connectorId: automation.connectorId,
           formId: config.form.id,
           resetAutomationId: automation.id,
+          // A deleted physical watch detaches rather than deletes its cursor.
+          // Repair resumes from durable progress instead of skipping to newest.
+          ...(automation.cursorWatchStateId === null &&
+          automation.cursor !== null
+            ? { seedCursor: automation.cursor, preserveCursor: true }
+            : {}),
         },
         signal,
       );
