@@ -123,6 +123,7 @@ describe("model-first canonical catalog", () => {
       "claude-opus-5-5",
       "claude-opus-5",
       "claude-opus-4-8",
+      "claude-sonnet-5-5",
       "claude-sonnet-5",
       "claude-sonnet-4-6",
       "gpt-6-astra",
@@ -339,6 +340,7 @@ describe("model-first canonical catalog", () => {
       "claude-opus-5-5",
       "claude-opus-5",
       "claude-opus-4-8",
+      "claude-sonnet-5-5",
       "claude-sonnet-5",
       "claude-sonnet-4-6",
       "gpt-6-astra",
@@ -372,7 +374,7 @@ describe("model-first canonical catalog", () => {
     expect(getProvidersForModel(model)).toEqual([]);
   });
 
-  it("restricts paid models only on the built-in route", () => {
+  it("restricts existing paid models only on the built-in route", () => {
     expect(getRunModelRouteAccess("gpt-6-astra", "built-in", true)).toBe(
       "pro_required",
     );
@@ -388,6 +390,35 @@ describe("model-first canonical catalog", () => {
     expect(getRunModelRouteAccess("gpt-5.5", "openai-api-key", true)).toBe(
       "retired",
     );
+  });
+
+  it("offers Sonnet 5.5 only through the approved routes and restricts free orgs", () => {
+    expect(getProvidersForModel("claude-sonnet-5-5")).toEqual([
+      "built-in",
+      "anthropic-api-key",
+    ]);
+    for (const route of ["built-in", "anthropic-api-key"]) {
+      expect(getRunModelRouteAccess("claude-sonnet-5-5", route, true)).toBe(
+        "pro_required",
+      );
+      expect(getRunModelRouteAccess("claude-sonnet-5-5", route, false)).toBe(
+        "allowed",
+      );
+    }
+    expect(getProvidersForModel("anthropic/claude-sonnet-5-5")).toEqual([
+      "built-in",
+      "anthropic-api-key",
+    ]);
+    expect(
+      getRunModelRouteAccess(
+        "anthropic/claude-sonnet-5-5",
+        "anthropic-api-key",
+        true,
+      ),
+    ).toBe("pro_required");
+    expect(getBuiltInModelPriceTier("claude-sonnet-5-5")).toBe("$$");
+    expect(DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL).toBe("gpt-6-luna");
+    expect(DEFAULT_ORG_MODEL_POLICY_MODELS).not.toContain("claude-sonnet-5-5");
   });
 
   it("returns compatible provider types for canonical models", () => {
@@ -783,6 +814,7 @@ describe("model-first canonical catalog", () => {
     "claude-fable-5-1",
     "claude-opus-5-5",
     "claude-opus-5",
+    "claude-sonnet-5-5",
     "claude-sonnet-5",
   ] as const)(
     "routes built-in model %s directly through Anthropic",
@@ -799,6 +831,7 @@ describe("model-first canonical catalog", () => {
       "claude-fable-5-1",
       "claude-opus-5-5",
       "claude-opus-5",
+      "claude-sonnet-5-5",
       "claude-sonnet-5",
       "okou-1.0-max",
       "okou-1.0-pro",
@@ -821,7 +854,9 @@ describe("model-first canonical catalog", () => {
 
     for (const model of ACTIVE_RUN_MODELS) {
       const candidates = getBuiltInModelRouteCandidates(model);
-      expect(candidates).toHaveLength(isOkouRunModel(model) ? 1 : 2);
+      expect(candidates).toHaveLength(
+        isOkouRunModel(model) || model === "claude-sonnet-5-5" ? 1 : 2,
+      );
       expect(candidates[0]?.providerType).toBe(
         getBuiltInConcreteProviderType(model),
       );

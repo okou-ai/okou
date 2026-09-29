@@ -54,7 +54,7 @@ export type PiModelPolicy =
  * a model to `SUPPORTED_RUN_MODELS` fails type-check until a decision is
  * recorded here, so admission, credential capture and API-owned billing can no
  * longer drift apart behind a comment. Admission narrows here only; the Gen4
- * reader vocabulary in `pi-native-models.ts` stays frozen.
+ * reader vocabulary in `pi-native-models.ts` is separately versioned.
  */
 export const PI_MODEL_POLICY = {
   "okou-1.0-max": { pi: true, route: "gpt-codex" },
@@ -67,6 +67,7 @@ export const PI_MODEL_POLICY = {
   },
   "claude-opus-5-5": { pi: true, route: "claude-native" },
   "claude-opus-5": { pi: true, route: "claude-native" },
+  "claude-sonnet-5-5": { pi: true, route: "claude-native" },
   "claude-sonnet-5": { pi: true, route: "claude-native" },
   "gpt-6-astra": {
     pi: false,
@@ -154,8 +155,9 @@ export function isPiNativeRoute(
     typeof model === "string" &&
     provider.success &&
     !Object.hasOwn(PI_EXCLUDED_ROUTES, provider.data) &&
-    (provider.data === "custom-anthropic-messages" ||
-      isModelSupportedByProvider(model, provider.data))
+    (provider.data === "custom-anthropic-messages"
+      ? model !== "claude-sonnet-5-5"
+      : isModelSupportedByProvider(model, provider.data))
   );
 }
 

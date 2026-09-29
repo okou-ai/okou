@@ -615,7 +615,7 @@ pub mod runners {
             },
         }
 
-        /// Frozen native catalog vocabulary.
+        /// Native catalog vocabulary.
         #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
         pub enum PiModelConfigV4AnthropicMessagesCatalogModel {
             /// Native wire value claude-fable-5-1.
@@ -630,6 +630,9 @@ pub mod runners {
             /// Native wire value claude-opus-4-8.
             #[serde(rename = "claude-opus-4-8")]
             ClaudeOpus48,
+            /// Native wire value claude-sonnet-5-5.
+            #[serde(rename = "claude-sonnet-5-5")]
+            ClaudeSonnet55,
             /// Native wire value claude-sonnet-5.
             #[serde(rename = "claude-sonnet-5")]
             ClaudeSonnet5,
@@ -768,7 +771,7 @@ pub mod runners {
                 PiModelConfigV4AnthropicMessagesCredentialBindingCredentialHeader,
         }
 
-        /// Frozen native catalog vocabulary.
+        /// Native catalog vocabulary.
         #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
         pub enum PiModelConfigV4BedrockConverseStreamCatalogModel {
             /// Native wire value claude-fable-5-1.
@@ -783,6 +786,9 @@ pub mod runners {
             /// Native wire value claude-opus-4-8.
             #[serde(rename = "claude-opus-4-8")]
             ClaudeOpus48,
+            /// Native wire value claude-sonnet-5-5.
+            #[serde(rename = "claude-sonnet-5-5")]
+            ClaudeSonnet55,
             /// Native wire value claude-sonnet-5.
             #[serde(rename = "claude-sonnet-5")]
             ClaudeSonnet5,

@@ -2,6 +2,7 @@ import {
   isBuiltInModelProviderType,
   getRunModelAccess,
   getRunModelRouteAccess,
+  normalizeBuiltInModelId,
   RETIRED_RUN_MODEL_MESSAGE,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
@@ -13,7 +14,11 @@ import {
   nullableDriverValueDecoder,
   pgInt8ToSafeIntegerDecoder,
 } from "../../lib/db-structured-result";
-import { badRequestMessage, insufficientCredits } from "../../lib/error";
+import {
+  badRequestMessage,
+  insufficientCredits,
+  paidPlanRequired,
+} from "../../lib/error";
 import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
 import {
@@ -25,6 +30,7 @@ import { resolveUsageAllowanceAvailability } from "./usage-allowance.service";
 
 type RunAdmissionFailure =
   | ReturnType<typeof insufficientCredits>
+  | ReturnType<typeof paidPlanRequired>
   | ReturnType<typeof badRequestMessage>;
 
 type CreditDb = Pick<Db, "$with" | "select" | "with">;
@@ -246,6 +252,12 @@ export function checkOrgPlanRunAdmission(params: {
   }
   if (!capabilities || capabilities.status !== "active") {
     return insufficientCredits();
+  }
+  if (
+    modelAccess === "pro_required" &&
+    normalizeBuiltInModelId(params.selectedModel ?? "") === "claude-sonnet-5-5"
+  ) {
+    return paidPlanRequired();
   }
   return (!capabilities.supportByok &&
     !isBuiltInModelProviderType(params.modelProviderType)) ||

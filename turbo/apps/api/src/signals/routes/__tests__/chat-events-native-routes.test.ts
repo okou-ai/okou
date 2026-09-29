@@ -346,7 +346,7 @@ describe("shared native Pi route activation", () => {
     async (model) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       configureNativeCliArtifact();
-      if (model === "claude-opus-5-5") {
+      if (model === "claude-opus-5-5" || model === "claude-sonnet-5-5") {
         await stagePreAddabilityModelPolicyFixture({
           orgId: requireOrgId(actor),
           userId: actor.userId,

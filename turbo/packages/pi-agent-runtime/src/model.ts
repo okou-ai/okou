@@ -166,6 +166,37 @@ function sourceModel(provider: string, model: string): Model<Api> | undefined {
   if (okouModel) {
     return okouModel;
   }
+  // The pinned pi-ai 0.87.1 catalog predates Sonnet 5.5. Anthropic publishes
+  // the same context, output and token rates as Sonnet 5, with the newer
+  // adaptive-thinking and conversation-bound thinking behavior.
+  if (provider === "anthropic" && model === "claude-sonnet-5-5") {
+    const sonnet5 = providerModels(provider).find((entry) => {
+      return entry.id === "claude-sonnet-5";
+    });
+    if (!sonnet5) return undefined;
+    return {
+      ...sonnet5,
+      id: model,
+      name: "Claude Sonnet 5.5",
+      thinkingLevelMap: {
+        off: null,
+        low: "low",
+        medium: "medium",
+        high: "high",
+        xhigh: "xhigh",
+        max: "max",
+      },
+      compat: {
+        ...sonnet5.compat,
+        supportsMidConvoEffort: true,
+        supportsMidConvoSystemMessages: true,
+        supportsMidConvoToolChanges: true,
+        forceAdaptiveThinking: true,
+        supportsTemperature: false,
+        supportsStrictTools: true,
+      },
+    };
+  }
   // pi-ai 0.86.1 retired `deepseek-v4-flash` from the DeepSeek catalog while
   // the product still offers it. Pin the exact 0.85.1 definition so admission,
   // tier and billing keep their current behaviour; see deepseek-v41-catalog.md.
