@@ -1297,6 +1297,20 @@ const EXPECTED_PERMANENT_TRIGGERS = [
     tableName: "cloudflare_access_configs",
     triggerName: "cloudflare_access_scope_change_guard",
   },
+  {
+    definition:
+      "CREATE TRIGGER google_forms_cursor_rebind_preserves_progress BEFORE UPDATE OF watch_state_id ON public.google_forms_automation_cursors FOR EACH ROW EXECUTE FUNCTION preserve_google_forms_cursor_on_rebind()",
+    schemaName: "public",
+    tableName: "google_forms_automation_cursors",
+    triggerName: "google_forms_cursor_rebind_preserves_progress",
+  },
+  {
+    definition:
+      "CREATE TRIGGER google_forms_cursor_source_lifecycle AFTER UPDATE OF kind, event_type, org_id, owner_user_id, workflow_id, event_connector_id, event_config, enabled, official_blueprint_key, official_intended_enabled ON public.workflow_automations FOR EACH ROW EXECUTE FUNCTION invalidate_google_forms_cursor_for_source_change()",
+    schemaName: "public",
+    tableName: "workflow_automations",
+    triggerName: "google_forms_cursor_source_lifecycle",
+  },
 ] as const satisfies readonly PermanentTrigger[];
 
 const EXPECTED_PERMANENT_FUNCTIONS = [
@@ -1367,6 +1381,20 @@ const EXPECTED_PERMANENT_FUNCTIONS = [
   {
     bodyHash: "9a32858723d6facc53fb33925484a8f3",
     functionName: "reject_cloudflare_access_scope_change",
+    identityArguments: "",
+    kind: "f",
+    schemaName: "public",
+  },
+  {
+    bodyHash: "08d7fef3005b52c17b923b9e065347c4",
+    functionName: "preserve_google_forms_cursor_on_rebind",
+    identityArguments: "",
+    kind: "f",
+    schemaName: "public",
+  },
+  {
+    bodyHash: "6ee3f38de364e2a7cd5c4e801346d128",
+    functionName: "invalidate_google_forms_cursor_for_source_change",
     identityArguments: "",
     kind: "f",
     schemaName: "public",

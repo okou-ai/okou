@@ -1485,6 +1485,13 @@
       "when": 1790657147885,
       "tag": "1289_google_forms_cursor_detachment",
       "breakpoints": true
+    },
+    {
+      "idx": 1290,
+      "version": "7",
+      "when": 1790658470974,
+      "tag": "1290_google_forms_cursor_lifecycle",
+      "breakpoints": true
     }
   ]
 }
