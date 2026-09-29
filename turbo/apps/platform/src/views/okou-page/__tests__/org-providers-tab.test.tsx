@@ -31,6 +31,7 @@ import {
   queryAllByRoleFast,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { createDeferredPromise } from "../../../signals/utils.ts";
 import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
 
 const context = testContext();
@@ -1048,6 +1049,76 @@ test("Rename a workspace gateway and rotate its private API key", async () => {
   expect(
     screen.getByTestId("org-model-policy-row-gpt-5.6-luna"),
   ).toBeInTheDocument();
+});
+
+test("Keep existing gateway controls while a failed list refresh is pending", async () => {
+  const refreshStarted = createDeferredPromise<void>(context.signal);
+  const releaseRefresh = createDeferredPromise<void>(context.signal);
+  const connection = gatewayConnectionResponse({
+    displayName: "Existing Gateway",
+    surfaces: [
+      {
+        protocol: "anthropic-messages",
+        apiBaseUrl: "https://gateway.example.com",
+        authHeaderName: "Authorization",
+        authHeaderTemplate: "Bearer {{secret}}",
+        modelMappings: { "claude-sonnet-5": "anthropic/claude-sonnet-5" },
+      },
+    ],
+  });
+  let saved = false;
+  mockAdminOrg();
+  context.mocks.data.orgModelProviders([]);
+  context.mocks.data.orgModelPolicies([
+    builtInPolicy(
+      "00000000-0000-4000-a000-000000000211",
+      "gpt-5.6-luna",
+      "GPT 5.6 Luna",
+      true,
+    ),
+  ]);
+  context.mocks.api(
+    modelProviderConnectionsMainContract.list,
+    async ({ respond }) => {
+      if (saved) {
+        refreshStarted.resolve();
+        await releaseRefresh.promise;
+        return respond(500, {
+          error: { code: "INTERNAL_ERROR", message: "Gateway list unavailable" },
+        });
+      }
+      return respond(200, { connections: [connection] });
+    },
+  );
+  context.mocks.api(
+    modelProviderConnectionsByIdContract.update,
+    ({ respond }) => {
+      saved = true;
+      return respond(200, connection);
+    },
+  );
+  await openProvidersTab();
+  const section = screen
+    .getByRole("heading", { name: "Provider connections" })
+    .closest("section");
+  if (!(section instanceof HTMLElement)) {
+    throw new Error("Provider connections section not found");
+  }
+  click(within(section).getByLabelText("Gateway actions"));
+  click(menuItemByText("Edit"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Edit model provider",
+  });
+  click(buttonByText("Save changes", dialog));
+  try {
+    await refreshStarted.promise;
+    expect(
+      screen.getByTestId("model-provider-connections-list"),
+    ).toBeInTheDocument();
+    expect(within(section).getByLabelText("Gateway actions")).toBeInTheDocument();
+  } finally {
+    releaseRefresh.resolve();
+  }
 });
 
 test("Route a workspace model through an existing custom gateway", async () => {

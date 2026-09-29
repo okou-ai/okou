@@ -1,4 +1,4 @@
-import { useGet, useLoadable, useSet } from "ccstate-react";
+import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { Cable, EllipsisVertical, Pencil, Plus, Trash } from "lucide-react";
@@ -523,7 +523,9 @@ export function ModelProviderConnectionsSection() {
   const { t } = useTranslation();
   const settingsDialogSignal = useGet(settingsDialogSignal$);
   const loadable = useLoadable(modelProviderConnections$);
-  const connections = loadable.state === "hasData" ? loadable.data : [];
+  const last = useLastResolved(modelProviderConnections$);
+  const connections =
+    loadable.state === "hasData" ? loadable.data : (last ?? []);
   if (!settingsDialogSignal || connections.length === 0) {
     return null;
   }
