@@ -597,35 +597,38 @@ function googleFormsLifecycleLockStatement(
   return sql`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
 }
 
-export async function hasEnabledGoogleFormsConsumer(
-  args: {
-    readonly db: Db;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly connectorId: string;
-    readonly formId: string;
+export const hasEnabledGoogleFormsConsumer$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly connectorId: string;
+      readonly formId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const db = set(writeDb$);
+    const [consumer] = await db
+      .select({ id: workflowAutomations.id })
+      .from(workflowAutomations)
+      .where(
+        and(
+          eq(workflowAutomations.ownerUserId, args.userId),
+          eq(workflowAutomations.orgId, args.orgId),
+          eq(workflowAutomations.enabled, true),
+          eq(workflowAutomations.kind, "event"),
+          eq(workflowAutomations.eventType, "google-forms-response-submitted"),
+          eq(workflowAutomations.eventConnectorId, args.connectorId),
+          sql`${workflowAutomations.eventConfig} ->> 'connectorId' = ${args.connectorId}`,
+          sql`${workflowAutomations.eventConfig} -> 'form' ->> 'id' = ${args.formId}`,
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return consumer !== undefined;
   },
-  signal: AbortSignal,
-): Promise<boolean> {
-  const [consumer] = await args.db
-    .select({ id: workflowAutomations.id })
-    .from(workflowAutomations)
-    .where(
-      and(
-        eq(workflowAutomations.ownerUserId, args.userId),
-        eq(workflowAutomations.orgId, args.orgId),
-        eq(workflowAutomations.enabled, true),
-        eq(workflowAutomations.kind, "event"),
-        eq(workflowAutomations.eventType, "google-forms-response-submitted"),
-        eq(workflowAutomations.eventConnectorId, args.connectorId),
-        sql`${workflowAutomations.eventConfig} ->> 'connectorId' = ${args.connectorId}`,
-        sql`${workflowAutomations.eventConfig} -> 'form' ->> 'id' = ${args.formId}`,
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  return consumer !== undefined;
-}
+);
 
 async function createGoogleFormsWatch(
   args: {
@@ -801,10 +804,7 @@ export const ensureGoogleFormsWatchForUser$ = command(
     if (access.kind !== "ok") {
       return access;
     }
-    const hasConsumer = await hasEnabledGoogleFormsConsumer(
-      { ...args, db },
-      signal,
-    );
+    const hasConsumer = await set(hasEnabledGoogleFormsConsumer$, args, signal);
     if (!hasConsumer && args.allowStagedOfficialTarget !== true) {
       return { kind: "ok", watchStateId: null };
     }
@@ -1081,15 +1081,20 @@ function googleFormsWatchSnapshotCondition(
   );
 }
 
-async function markGoogleFormsWatchForRetry(
-  db: Db,
-  state: ObservedGoogleFormsWatchState,
-): Promise<void> {
-  await db
-    .update(googleFormsWatchStates)
-    .set({ needsRewatch: true, updatedAt: sql`clock_timestamp()` })
-    .where(googleFormsWatchSnapshotCondition(state));
-}
+const markGoogleFormsWatchForRetry$ = command(
+  async (
+    { set },
+    state: ObservedGoogleFormsWatchState,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    await db
+      .update(googleFormsWatchStates)
+      .set({ needsRewatch: true, updatedAt: sql`clock_timestamp()` })
+      .where(googleFormsWatchSnapshotCondition(state));
+    signal.throwIfAborted();
+  },
+);
 
 const stopGoogleFormsWatchState$ = command(
   async (
@@ -1111,7 +1116,7 @@ const stopGoogleFormsWatchState$ = command(
     );
     signal.throwIfAborted();
     if (deleted.kind !== "ok" && !missingGoogleFormsWatch(deleted)) {
-      await markGoogleFormsWatchForRetry(db, args.state);
+      await set(markGoogleFormsWatchForRetry$, args.state, signal);
       signal.throwIfAborted();
       return { kind: "failed" };
     }
@@ -1184,14 +1189,15 @@ const reconcileGoogleFormsWatchState$ = command(
     if (!state) {
       return { kind: "unchanged" };
     }
-    const hasConsumer = await hasEnabledGoogleFormsConsumer(
-      { db, ...state },
+    const hasConsumer = await set(
+      hasEnabledGoogleFormsConsumer$,
+      state,
       signal,
     );
     const access = await resolveGoogleFormsAccess({ db, ...state }, signal);
     signal.throwIfAborted();
     if (access.kind !== "ok") {
-      await markGoogleFormsWatchForRetry(db, state);
+      await set(markGoogleFormsWatchForRetry$, state, signal);
       signal.throwIfAborted();
       return { kind: "failed" };
     }
@@ -1212,7 +1218,7 @@ const reconcileGoogleFormsWatchState$ = command(
       signal,
     );
     if (listed.kind !== "ok") {
-      await markGoogleFormsWatchForRetry(db, state);
+      await set(markGoogleFormsWatchForRetry$, state, signal);
       signal.throwIfAborted();
       return { kind: "failed" };
     }
@@ -1257,7 +1263,7 @@ const reconcileGoogleFormsWatchState$ = command(
     }
     signal.throwIfAborted();
     if (renewed.kind !== "ok") {
-      await markGoogleFormsWatchForRetry(db, state);
+      await set(markGoogleFormsWatchForRetry$, state, signal);
       signal.throwIfAborted();
       return { kind: "failed" };
     }
