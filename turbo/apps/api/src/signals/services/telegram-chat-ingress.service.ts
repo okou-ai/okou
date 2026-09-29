@@ -1,14 +1,16 @@
-import type { DefaultModelFirstPin } from "./model-selection.service";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { telegramChatThreadRoutes } from "@okouai/db/schema/telegram-chat-thread-route";
 import { and, eq } from "drizzle-orm";
 
-import type { Db } from "../external/db";
+import { writeDb$, type Db } from "../external/db";
+import { command } from "ccstate";
+import { randomUUID } from "node:crypto";
+import { loadNewChatThreadDefaults$ } from "./chat-thread-defaults.service";
 import {
-  appendChatThreadCreatedEvent,
-  insertChatThread,
-} from "./chat-thread-create.service";
-import type { Tx } from "../../lib/db-types";
+  integrationChatThreadValues,
+  integrationThreadCreatedEventSql,
+  type IntegrationChatThreadCreation,
+} from "./integration-chat-thread-publication";
 import {
   INTEGRATION_DM_SESSION_KEY,
   isIntegrationDmSessionKey,
@@ -34,15 +36,7 @@ interface LoadedTelegramChatThreadRoute extends TelegramChatThreadBinding {
   readonly chatId: string;
 }
 
-interface TelegramChatThreadCreateArgs {
-  readonly userId: string;
-  readonly orgId: string;
-  readonly agentId: string;
-  readonly currentTime: Date;
-  readonly initialModel: DefaultModelFirstPin;
-}
-
-type TelegramChatThreadTransaction = Tx;
+type TelegramChatThreadCreateArgs = IntegrationChatThreadCreation;
 
 function ownerWhere(ownerLink: TelegramOwnerLink) {
   return eq(telegramChatThreadRoutes.telegramOfficialUserLinkId, ownerLink.id);
@@ -59,17 +53,22 @@ function routeWhere(key: TelegramChatThreadRouteKey) {
 }
 
 /** Read the chat thread a Telegram conversation already routes to. */
-export async function findTelegramRoutedChatThreadId(
-  db: Pick<Db, "select">,
-  key: TelegramChatThreadRouteKey,
-): Promise<string | undefined> {
-  const [route] = await db
-    .select({ chatThreadId: telegramChatThreadRoutes.chatThreadId })
-    .from(telegramChatThreadRoutes)
-    .where(routeWhere(key))
-    .limit(1);
-  return route?.chatThreadId;
-}
+export const findTelegramRoutedChatThreadId$ = command(
+  async (
+    { set },
+    key: TelegramChatThreadRouteKey,
+    signal?: AbortSignal,
+  ): Promise<string | undefined> => {
+    const db = set(writeDb$);
+    const [route] = await db
+      .select({ chatThreadId: telegramChatThreadRoutes.chatThreadId })
+      .from(telegramChatThreadRoutes)
+      .where(routeWhere(key))
+      .limit(1);
+    signal?.throwIfAborted();
+    return route?.chatThreadId;
+  },
+);
 
 async function loadRoute(
   db: Pick<Db, "select" | "update">,
@@ -105,81 +104,6 @@ async function loadRoute(
     return { ...route, ...updated };
   }
   return route;
-}
-
-async function createCanonicalTelegramChatThread(
-  tx: TelegramChatThreadTransaction,
-  args: TelegramChatThreadCreateArgs,
-): Promise<NonNullable<Awaited<ReturnType<typeof insertChatThread>>>> {
-  const { initialModel } = args;
-  if (!initialModel.selectedModel) {
-    throw new Error("A model selection is required");
-  }
-  const thread = await insertChatThread(tx, {
-    orgId: args.orgId,
-    userId: args.userId,
-    agentId: args.agentId,
-    selectedModel: initialModel.selectedModel,
-    codexServiceTier: initialModel.serviceTier === "priority" ? "fast" : null,
-    title: null,
-    lastReadAt: args.currentTime,
-    lastMessageAt: args.currentTime,
-    createdAt: args.currentTime,
-    updatedAt: args.currentTime,
-  });
-  if (!thread) {
-    throw new Error("Failed to create canonical Telegram chat thread");
-  }
-  return thread;
-}
-
-export async function createTelegramChatThread(
-  db: Db,
-  args: TelegramChatThreadCreateArgs,
-): Promise<TelegramChatThreadBinding> {
-  return await db.transaction(async (tx) => {
-    const thread = await createCanonicalTelegramChatThread(tx, args);
-    await appendChatThreadCreatedEvent(tx, { orgId: args.orgId, thread });
-    return { chatThreadId: thread.id };
-  });
-}
-
-export async function ensureTelegramChatThreadRoute(
-  db: Db,
-  args: TelegramChatThreadRouteKey & TelegramChatThreadCreateArgs,
-): Promise<TelegramChatThreadBinding> {
-  return await db.transaction(async (tx) => {
-    const existing = await loadRoute(tx, args);
-    if (existing) {
-      return existing;
-    }
-
-    const thread = await createCanonicalTelegramChatThread(tx, args);
-    const [route] = await tx
-      .insert(telegramChatThreadRoutes)
-      .values({
-        telegramOfficialUserLinkId: args.ownerLink.id,
-        chatId: args.chatId,
-        rootMessageId: args.rootMessageId,
-        chatThreadId: thread.id,
-        createdAt: args.currentTime,
-      })
-      .onConflictDoNothing()
-      .returning({ chatThreadId: telegramChatThreadRoutes.chatThreadId });
-    if (!route) {
-      await tx.delete(chatThreads).where(eq(chatThreads.id, thread.id));
-      const conflicted = await loadRoute(tx, args);
-      if (!conflicted) {
-        throw new Error(
-          "Failed to resolve Telegram chat thread route after conflict",
-        );
-      }
-      return conflicted;
-    }
-
-    await appendChatThreadCreatedEvent(tx, { orgId: args.orgId, thread });
-    return route;
-  });
 }
 
 export async function persistTelegramReplyChainRoute(args: {
@@ -268,3 +192,114 @@ export async function bindTelegramReplyMessageRoute(
     throw new Error("Telegram reply-chain route conflicts with another thread");
   }
 }
+
+const ROUTE_COLUMNS = {
+  id: telegramChatThreadRoutes.id,
+  chatId: telegramChatThreadRoutes.chatId,
+  chatThreadId: telegramChatThreadRoutes.chatThreadId,
+} as const;
+
+/** The unique route and its new thread/event commit in this command alone. */
+export const ensureTelegramChatThreadRoute$ = command(
+  async (
+    { set },
+    args: TelegramChatThreadRouteKey & TelegramChatThreadCreateArgs,
+    signal: AbortSignal,
+  ): Promise<TelegramChatThreadBinding> => {
+    const defaults = await set(
+      loadNewChatThreadDefaults$,
+      { orgId: args.orgId, userId: args.userId },
+      signal,
+    );
+    const candidateId = randomUUID();
+    const db = set(writeDb$);
+    const result = await db.transaction(async (tx) => {
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const [existing] = await tx
+          .select(ROUTE_COLUMNS)
+          .from(telegramChatThreadRoutes)
+          .innerJoin(
+            chatThreads,
+            eq(chatThreads.id, telegramChatThreadRoutes.chatThreadId),
+          )
+          .where(routeWhere(args))
+          .limit(1)
+          .for("update");
+        if (existing) {
+          if (
+            args.rootMessageId === INTEGRATION_DM_SESSION_KEY &&
+            existing.chatId !== args.chatId
+          ) {
+            const [updated] = await tx
+              .update(telegramChatThreadRoutes)
+              .set({ chatId: args.chatId })
+              .where(
+                and(
+                  eq(telegramChatThreadRoutes.id, existing.id),
+                  routeWhere(args),
+                ),
+              )
+              .returning({ chatId: telegramChatThreadRoutes.chatId });
+            if (!updated) {
+              throw new Error("Failed to update Telegram DM route destination");
+            }
+            return { ...existing, ...updated };
+          }
+          return existing;
+        }
+        if (attempt === 1) {
+          break;
+        }
+        const thread = integrationChatThreadValues(args, candidateId, defaults);
+        await tx.insert(chatThreads).values(thread);
+        const [route] = await tx
+          .insert(telegramChatThreadRoutes)
+          .values({
+            telegramOfficialUserLinkId: args.ownerLink.id,
+            chatId: args.chatId,
+            rootMessageId: args.rootMessageId,
+            chatThreadId: thread.id,
+            createdAt: args.currentTime,
+          })
+          .onConflictDoNothing()
+          .returning(ROUTE_COLUMNS);
+        if (route) {
+          await tx.execute(
+            integrationThreadCreatedEventSql(args.orgId, thread),
+          );
+          signal.throwIfAborted();
+          return route;
+        }
+        await tx.delete(chatThreads).where(eq(chatThreads.id, thread.id));
+      }
+      throw new Error(
+        "Failed to resolve Telegram chat thread route after conflict",
+      );
+    });
+    signal.throwIfAborted();
+    return result;
+  },
+);
+
+export const createTelegramChatThread$ = command(
+  async (
+    { set },
+    args: TelegramChatThreadCreateArgs,
+    signal: AbortSignal,
+  ): Promise<TelegramChatThreadBinding> => {
+    const defaults = await set(
+      loadNewChatThreadDefaults$,
+      { orgId: args.orgId, userId: args.userId },
+      signal,
+    );
+    const thread = integrationChatThreadValues(args, randomUUID(), defaults);
+    const db = set(writeDb$);
+    await db.transaction(async (tx) => {
+      await tx.insert(chatThreads).values(thread);
+      await tx.execute(integrationThreadCreatedEventSql(args.orgId, thread));
+      signal.throwIfAborted();
+    });
+    signal.throwIfAborted();
+    return { chatThreadId: thread.id };
+  },
+);

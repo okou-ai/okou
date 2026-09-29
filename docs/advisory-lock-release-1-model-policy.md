@@ -85,8 +85,12 @@ MCP discovery/creation/projection, Discord interaction and welcome threads,
 integration thread creation, and workflow trigger preparation. Integration
 thread writers receive a plain prepared default pin and validate a required
 selection only when they actually create a thread; reusing an existing route
-does not require a valid new-thread default. Their remaining thread/event
-transaction helpers are separate ownership work, not a model-policy fallback.
+does not require a valid new-thread default. Telegram, AgentPhone and Teams
+route publication now obtains member defaults before the transaction and owns
+the route, thread and created-event SQL in one command. A unique-route loser
+deletes only its candidate thread and reads the winner once; existing direct
+message routes retain their destination updates. Plain value and event-SQL
+builders never receive a database handle.
 
 `ensureWorkflowUserAutomationThread$` prepares its default pin, localized title
 and member defaults before opening its own finite transaction. It directly
@@ -99,9 +103,10 @@ that inherited transaction.
 
 ## Ownership still unfinished outside this boundary
 
-The existing atomic automation-creation helpers still pass their transaction to
-the thread/event insertion helper. Integration route/thread/event writers and
-poller schedule claim/failure helpers also retain legacy database propagation.
+The existing atomic automation-creation and workflow-copy helpers still pass
+their transaction to the thread/event insertion helper. Feishu, Slack and Discord
+route/thread/event writers, Telegram reply-chain publication, and poller
+schedule claim/failure helpers also retain legacy database propagation.
 Moving lazy model selection out of those transactions does not complete their
 remaining write protocols. They must be migrated explicitly; serving drain,
 elapsed time and the retained model-policy advisory key do not do this work.
