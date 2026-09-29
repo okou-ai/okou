@@ -1,7 +1,4 @@
-import {
-  resolveDefaultModelFirstPin$,
-  type DefaultModelFirstPin,
-} from "./model-selection.service";
+import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
 import { enqueueIntegrationChatInput$ } from "./integration-chat-queue.service";
 import { resolveEnqueuedChatInputModel$ } from "./chat-input-model.service";
 import { touchNativeChatThread } from "./native-chat-event-write.service";
@@ -64,9 +61,9 @@ import { scheduleEnqueuedChatThreadPick$ } from "./chat-thread-queue-drain.servi
 import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
 import {
   bindTelegramReplyMessageRoute,
-  createTelegramChatThread,
-  ensureTelegramChatThreadRoute,
-  findTelegramRoutedChatThreadId,
+  createTelegramChatThread$,
+  ensureTelegramChatThreadRoute$,
+  findTelegramRoutedChatThreadId$,
   type TelegramOwnerLink,
 } from "./telegram-chat-ingress.service";
 import { updateIntegrationChatThreadModel$ } from "./integration-chat-thread-model.service";
@@ -1174,32 +1171,6 @@ function telegramInputFiles(
     : [];
 }
 
-async function resolveTelegramChatMessageThread(
-  args: {
-    readonly source: TelegramAgentMessageArgs;
-    readonly chatId: string;
-    readonly rootMessageId: string | undefined;
-  },
-  currentTime: Date,
-  initialModel: DefaultModelFirstPin,
-) {
-  const threadArgs = {
-    initialModel,
-    userId: args.source.userLink.userId,
-    orgId: args.source.orgId,
-    agentId: args.source.composeId,
-    currentTime,
-  };
-  return args.rootMessageId === undefined
-    ? await createTelegramChatThread(args.source.db, threadArgs)
-    : await ensureTelegramChatThreadRoute(args.source.db, {
-        ...threadArgs,
-        ownerLink: telegramOwnerLink(args.source),
-        chatId: args.chatId,
-        rootMessageId: args.rootMessageId,
-      });
-}
-
 type PersistedTelegramChatMessage =
   | {
       readonly inserted: true;
@@ -1232,15 +1203,30 @@ const persistTelegramChatMessage$ = command(
     if (existingMessage) {
       return { inserted: false };
     }
-    const binding = await resolveTelegramChatMessageThread(
-      args,
-      currentTime,
-      await set(
+    const threadArgs = {
+      initialModel: await set(
         resolveDefaultModelFirstPin$,
         { orgId: args.source.orgId, userId: args.source.userLink.userId },
         signal,
       ),
-    );
+      userId: args.source.userLink.userId,
+      orgId: args.source.orgId,
+      agentId: args.source.composeId,
+      currentTime,
+    };
+    const binding =
+      args.rootMessageId === undefined
+        ? await set(createTelegramChatThread$, threadArgs, signal)
+        : await set(
+            ensureTelegramChatThreadRoute$,
+            {
+              ...threadArgs,
+              ownerLink: telegramOwnerLink(args.source),
+              chatId: args.chatId,
+              rootMessageId: args.rootMessageId,
+            },
+            signal,
+          );
     signal.throwIfAborted();
 
     const file = extractTelegramFileForContext(args.source.message);
@@ -1449,25 +1435,34 @@ const handleTelegramAgentMessage$ = command(
 );
 
 /** The routed chat thread of the conversation a `/model` command is sent in. */
-async function findModelCommandChatThreadId(args: {
-  readonly db: Db;
-  readonly message: TelegramMessage;
-  readonly ownerLink: TelegramOwnerLink;
-}): Promise<string | undefined> {
-  const rootMessageId = rootMessageIdForAgentMessage({
-    isDM: args.message.chat.type === "private",
-    message: args.message,
-    botId: OFFICIAL_TELEGRAM_BOT_ID,
-  });
-  if (rootMessageId === undefined) {
-    return undefined;
-  }
-  return await findTelegramRoutedChatThreadId(args.db, {
-    ownerLink: args.ownerLink,
-    chatId: String(args.message.chat.id),
-    rootMessageId,
-  });
-}
+const findModelCommandChatThreadId$ = command(
+  async (
+    { set },
+    args: {
+      readonly message: TelegramMessage;
+      readonly ownerLink: TelegramOwnerLink;
+    },
+    signal: AbortSignal,
+  ): Promise<string | undefined> => {
+    const rootMessageId = rootMessageIdForAgentMessage({
+      isDM: args.message.chat.type === "private",
+      message: args.message,
+      botId: OFFICIAL_TELEGRAM_BOT_ID,
+    });
+    if (rootMessageId === undefined) {
+      return undefined;
+    }
+    return await set(
+      findTelegramRoutedChatThreadId$,
+      {
+        ownerLink: args.ownerLink,
+        chatId: String(args.message.chat.id),
+        rootMessageId,
+      },
+      signal,
+    );
+  },
+);
 
 const handleModelCommand$ = command(
   async (
@@ -1555,7 +1550,11 @@ const handleModelCommand$ = command(
       return;
     }
 
-    const chatThreadId = await findModelCommandChatThreadId(args);
+    const chatThreadId = await set(
+      findModelCommandChatThreadId$,
+      { message: args.message, ownerLink: args.ownerLink },
+      signal,
+    );
     signal.throwIfAborted();
     const threadModel = await set(
       updateIntegrationChatThreadModel$,

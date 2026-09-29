@@ -52,8 +52,8 @@ import {
   type AgentPhoneUserLink,
 } from "./agentphone-shared.service";
 import {
-  ensureAgentPhoneChatThreadRoute,
-  findAgentPhoneRoutedChatThreadId,
+  ensureAgentPhoneChatThreadRoute$,
+  findAgentPhoneRoutedChatThreadId$,
 } from "./agentphone-chat-ingress.service";
 import { updateIntegrationChatThreadModel$ } from "./integration-chat-thread-model.service";
 import { createChatEventSourcePart } from "./chat-event-annotation.service";
@@ -1137,10 +1137,14 @@ const handleModelCommand$ = command(
       return;
     }
 
-    const chatThreadId = await findAgentPhoneRoutedChatThreadId(args.db, {
-      agentphoneUserLinkId: args.userLinkId,
-      rootMessageId: agentPhoneChatRouteRootMessageId(args.event),
-    });
+    const chatThreadId = await set(
+      findAgentPhoneRoutedChatThreadId$,
+      {
+        agentphoneUserLinkId: args.userLinkId,
+        rootMessageId: agentPhoneChatRouteRootMessageId(args.event),
+      },
+      signal,
+    );
     signal.throwIfAborted();
     const threadModel = await set(
       updateIntegrationChatThreadModel$,
@@ -1361,20 +1365,24 @@ const persistAgentPhoneChatMessage$ = command(
     signal: AbortSignal,
   ): Promise<PersistedAgentPhoneChatMessage> => {
     const currentTime = new Date(args.apiStartTime);
-    const route = await ensureAgentPhoneChatThreadRoute(args.db, {
-      initialModel: await set(
-        resolveDefaultModelFirstPin$,
-        { orgId: args.userLink.orgId, userId: args.userLink.userId },
-        signal,
-      ),
-      agentphoneUserLinkId: args.userLink.id,
-      rootMessageId: args.rootMessageId,
-      conversationId: args.event.conversationId,
-      userId: args.userLink.userId,
-      orgId: args.userLink.orgId,
-      agentId: args.agent.composeId,
-      currentTime,
-    });
+    const route = await set(
+      ensureAgentPhoneChatThreadRoute$,
+      {
+        initialModel: await set(
+          resolveDefaultModelFirstPin$,
+          { orgId: args.userLink.orgId, userId: args.userLink.userId },
+          signal,
+        ),
+        agentphoneUserLinkId: args.userLink.id,
+        rootMessageId: args.rootMessageId,
+        conversationId: args.event.conversationId,
+        userId: args.userLink.userId,
+        orgId: args.userLink.orgId,
+        agentId: args.agent.composeId,
+        currentTime,
+      },
+      signal,
+    );
     signal.throwIfAborted();
 
     const chatEventId = agentPhoneChatMessageId({

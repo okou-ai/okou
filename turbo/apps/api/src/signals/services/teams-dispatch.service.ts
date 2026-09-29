@@ -61,8 +61,8 @@ import type { ChatQueueWaitReason } from "./chat-queue-wait-reason";
 import type { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
 import { listOrgModelPolicies$ } from "./model-policy.service";
 import {
-  ensureTeamsChatThreadRoute,
-  findTeamsRoutedChatThreadId,
+  ensureTeamsChatThreadRoute$,
+  findTeamsRoutedChatThreadId$,
 } from "./teams-chat-ingress.service";
 import { updateIntegrationChatThreadModel$ } from "./integration-chat-thread-model.service";
 import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
@@ -1585,20 +1585,24 @@ const persistTeamsChatMessage$ = command(
     const threadId = teamsSessionThreadId({
       activity: args.activity,
     });
-    const route = await ensureTeamsChatThreadRoute(args.db, {
-      initialModel: await set(
-        resolveDefaultModelFirstPin$,
-        { orgId: args.installation.orgId, userId: args.connection.userId },
-        signal,
-      ),
-      connectionId: args.connection.id,
-      conversationId: args.activity.conversationId,
-      threadId,
-      userId: args.connection.userId,
-      orgId: args.installation.orgId,
-      agentId: args.composeId,
-      currentTime,
-    });
+    const route = await set(
+      ensureTeamsChatThreadRoute$,
+      {
+        initialModel: await set(
+          resolveDefaultModelFirstPin$,
+          { orgId: args.installation.orgId, userId: args.connection.userId },
+          signal,
+        ),
+        connectionId: args.connection.id,
+        conversationId: args.activity.conversationId,
+        threadId,
+        userId: args.connection.userId,
+        orgId: args.installation.orgId,
+        agentId: args.composeId,
+        currentTime,
+      },
+      signal,
+    );
     signal.throwIfAborted();
 
     const assets = await set(
@@ -2011,12 +2015,16 @@ const connectedTeamsCardAction$ = command(
         replyText: "You don't have access to that model.",
       };
     }
-    const chatThreadId = await findTeamsRoutedChatThreadId(args.db, {
-      connectionId: args.connection.id,
-      conversationId: routeConversationId,
-      threadId: routeThreadId,
-      userId: args.connection.userId,
-    });
+    const chatThreadId = await set(
+      findTeamsRoutedChatThreadId$,
+      {
+        connectionId: args.connection.id,
+        conversationId: routeConversationId,
+        threadId: routeThreadId,
+        userId: args.connection.userId,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     const threadModel = await set(
       updateIntegrationChatThreadModel$,
