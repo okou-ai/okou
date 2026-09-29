@@ -595,6 +595,103 @@ function buildSingleAuthConflictSet(args: {
   return base;
 }
 
+const persistSingleAuthModelProvider$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly type: ModelProviderWriteType;
+      readonly secretName: string;
+      readonly encryptedValue: string;
+      readonly selectedModel?: string;
+      readonly metadata?: ModelProviderMetadata;
+    },
+    signal: AbortSignal,
+  ): Promise<{
+    readonly provider: ModelProviderRow;
+    readonly created: boolean;
+  }> => {
+    const db = set(writeDb$);
+    const result = await db.transaction(async (tx) => {
+      const [existingProvider] = await tx
+        .select({ id: modelProvidersTable.id })
+        .from(modelProvidersTable)
+        .where(
+          and(
+            eq(modelProvidersTable.orgId, args.orgId),
+            eq(modelProvidersTable.userId, args.userId),
+            eq(modelProvidersTable.type, args.type),
+          ),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+
+      const [upsertedSecret] = await tx
+        .insert(secrets)
+        .values({
+          userId: args.userId,
+          name: args.secretName,
+          encryptedValue: args.encryptedValue,
+          type: "model-provider",
+          description: `Model provider secret for ${MODEL_PROVIDER_TYPES[args.type].label}`,
+          orgId: args.orgId,
+        })
+        .onConflictDoUpdate({
+          target: [secrets.orgId, secrets.userId, secrets.name, secrets.type],
+          targetWhere: isNull(secrets.connectorId),
+          set: { encryptedValue: args.encryptedValue, updatedAt: nowDate() },
+        })
+        .returning();
+      signal.throwIfAborted();
+
+      if (!upsertedSecret) {
+        throw new Error("Expected secret upsert to return a row");
+      }
+
+      const [provider] = await tx
+        .insert(modelProvidersTable)
+        .values({
+          type: args.type,
+          userId: args.userId,
+          secretId: upsertedSecret.id,
+          isDefault: false,
+          selectedModel: args.selectedModel ?? null,
+          orgId: args.orgId,
+          tokenExpiresAt: args.metadata?.tokenExpiresAt ?? null,
+          workspaceName: args.metadata?.workspaceName ?? null,
+          planType: args.metadata?.planType ?? null,
+          subscriptionResetPeriod:
+            args.metadata?.subscriptionResetPeriod ?? null,
+          subscriptionNextResetAt:
+            args.metadata?.subscriptionNextResetAt ?? null,
+        })
+        .onConflictDoUpdate({
+          target: [
+            modelProvidersTable.orgId,
+            modelProvidersTable.userId,
+            modelProvidersTable.type,
+          ],
+          set: buildSingleAuthConflictSet({
+            secretId: upsertedSecret.id,
+            selectedModel: args.selectedModel,
+            metadata: args.metadata,
+          }),
+        })
+        .returning();
+      signal.throwIfAborted();
+
+      if (!provider) {
+        throw new Error("Expected model provider upsert to return a row");
+      }
+
+      return { provider, created: !existingProvider };
+    });
+    signal.throwIfAborted();
+    return result;
+  },
+);
+
 /**
  * Create or update a single-secret personal model provider.
  */
@@ -630,7 +727,6 @@ export const upsertUserModelProvider$ = command(
       return validation;
     }
     const { secretName } = validation;
-    const writeDb = set(writeDb$);
 
     if (
       args.userId !== ORG_SENTINEL_USER_ID &&
@@ -656,89 +752,24 @@ export const upsertUserModelProvider$ = command(
       secretName,
     });
 
-    // Pre-check: does a provider for this type already exist?
-    const [existingProvider] = await writeDb
-      .select({ id: modelProvidersTable.id })
-      .from(modelProvidersTable)
-      .where(
-        and(
-          eq(modelProvidersTable.orgId, args.orgId),
-          eq(modelProvidersTable.userId, args.userId),
-          eq(modelProvidersTable.type, args.type),
-        ),
-      )
-      .limit(1);
+    const result = await set(
+      persistSingleAuthModelProvider$,
+      { ...args, secretName, encryptedValue },
+      signal,
+    );
     signal.throwIfAborted();
-
-    // Atomic secret upsert.
-    const [upsertedSecret] = await writeDb
-      .insert(secrets)
-      .values({
-        userId: args.userId,
-        name: secretName,
-        encryptedValue,
-        type: "model-provider",
-        description: `Model provider secret for ${MODEL_PROVIDER_TYPES[args.type].label}`,
-        orgId: args.orgId,
-      })
-      .onConflictDoUpdate({
-        target: [secrets.orgId, secrets.userId, secrets.name, secrets.type],
-        targetWhere: isNull(secrets.connectorId),
-        set: { encryptedValue, updatedAt: nowDate() },
-      })
-      .returning();
-    signal.throwIfAborted();
-
-    if (!upsertedSecret) {
-      throw new Error("Expected secret upsert to return a row");
-    }
-
-    // Atomic model provider upsert.
-    const [provider] = await writeDb
-      .insert(modelProvidersTable)
-      .values({
-        type: args.type,
-        userId: args.userId,
-        secretId: upsertedSecret.id,
-        isDefault: false,
-        selectedModel: args.selectedModel ?? null,
-        orgId: args.orgId,
-        tokenExpiresAt: args.metadata?.tokenExpiresAt ?? null,
-        workspaceName: args.metadata?.workspaceName ?? null,
-        planType: args.metadata?.planType ?? null,
-        subscriptionResetPeriod: args.metadata?.subscriptionResetPeriod ?? null,
-        subscriptionNextResetAt: args.metadata?.subscriptionNextResetAt ?? null,
-      })
-      .onConflictDoUpdate({
-        target: [
-          modelProvidersTable.orgId,
-          modelProvidersTable.userId,
-          modelProvidersTable.type,
-        ],
-        set: buildSingleAuthConflictSet({
-          secretId: upsertedSecret.id,
-          selectedModel: args.selectedModel,
-          metadata: args.metadata,
-        }),
-      })
-      .returning();
-    signal.throwIfAborted();
-
-    if (!provider) {
-      throw new Error("Expected model provider upsert to return a row");
-    }
 
     await publishProviderChanged(args);
     signal.throwIfAborted();
 
     return {
       provider: toModelProviderInfoFromRow({
-        provider,
+        provider: result.provider,
         userId: args.userId,
         type: args.type,
         secretName,
       }),
-      created: !existingProvider,
+      created: result.created,
     };
   },
 );
