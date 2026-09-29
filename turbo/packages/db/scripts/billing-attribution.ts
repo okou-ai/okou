@@ -306,6 +306,16 @@ try {
               ) ORDER BY id FOR KEY SHARE NOWAIT`,
               [ids],
             );
+            // Match producer/compaction ownership: retained Run, captured
+            // attribution, then its usage children. Captured identity cannot
+            // disappear between validation and the explicit observed write.
+            await client.query(
+              `SELECT run_id FROM billing_run_attribution WHERE run_id IN (
+                SELECT COALESCE(billing_run_id, run_id) FROM ${tables[current]}
+                WHERE id = ANY($1::uuid[])
+              ) ORDER BY run_id FOR UPDATE NOWAIT`,
+              [ids],
+            );
             await client.query(
               `SELECT id FROM ${tables[current]} WHERE id = ANY($1::uuid[])
                 ORDER BY id FOR UPDATE NOWAIT`,
@@ -334,16 +344,34 @@ try {
                   [ids],
                 )
               : await client.query(
-                  `UPDATE ${tables[current]} t SET billing_run_id = COALESCE(t.billing_run_id, t.run_id), billing_context = 'run'
+                  `UPDATE ${tables[current]} t SET billing_run_id = a.run_id, billing_context = 'run'
+                  ${current === "jobs" ? "" : ", billing_anchor_at = a.run_started_at"}
+                FROM billing_run_attribution a
                 WHERE t.id = ANY($1::uuid[]) AND t.billing_context NOT IN ('run', 'runless', 'pi_memory_stage1')
-                  AND EXISTS (SELECT 1 FROM billing_run_attribution a WHERE a.run_id = COALESCE(t.billing_run_id, t.run_id)
-                    AND a.org_id = t.org_id AND a.user_id = t.user_id)
-                  AND NOT EXISTS (SELECT 1 FROM agent_runs r JOIN billing_run_attribution a ON a.run_id = r.id
-                    WHERE r.id = COALESCE(t.billing_run_id, t.run_id)
+                  AND a.run_id = COALESCE(t.billing_run_id, t.run_id)
+                  AND a.org_id = t.org_id AND a.user_id = t.user_id
+                  ${current === "jobs" ? "" : "AND (t.billing_anchor_at IS NULL OR t.billing_anchor_at = a.run_started_at)"}
+                  AND NOT EXISTS (SELECT 1 FROM agent_runs r
+                    WHERE r.id = a.run_id
                       AND (r.org_id <> t.org_id OR r.user_id <> t.user_id OR r.created_at <> a.run_started_at OR billing_usage_source(r.trigger_source) <> a.source))`,
                   [ids],
                 );
           populated = integer(result.rowCount);
+          if (current === "raw" || current === "hourly") {
+            // A repeated batch also repairs a missing monotone observation.
+            // Never manufacture an observation from a conflicting identity.
+            await client.query(
+              `UPDATE billing_run_attribution a SET usage_observed = true
+                WHERE NOT a.usage_observed AND EXISTS (
+                  SELECT 1 FROM ${tables[current]} t
+                  WHERE t.id = ANY($1::uuid[]) AND t.billing_context = 'run'
+                    AND t.billing_run_id = a.run_id
+                    AND t.org_id = a.org_id AND t.user_id = a.user_id
+                    AND t.billing_anchor_at = a.run_started_at
+                )`,
+              [ids],
+            );
+          }
         }
         await timeout();
         const countResult = await client.query(

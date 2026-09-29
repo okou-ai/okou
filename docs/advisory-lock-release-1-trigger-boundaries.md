@@ -26,8 +26,8 @@ application triggers remain in the proposed R1 schema.
 | `usage_event.mark_raw_billing_usage_observed` and `usage_event_hourly_rollup.mark_hourly_billing_usage_observed`   | Marks attribution as having observed usage, protecting its retention.                                                | Raw insertion and compaction must include the monotone attribution update in their atomic writes.                                   |
 
 Retirement of these seven triggers still requires **unfinished replacement
-protocols**, not only outgoing-version drain. Operator linkage and the complete
-caller/retention audit remain open. Existing
+protocols**, not only outgoing-version drain. The complete caller/retention
+audit remains open. Existing
 attribution readers and the retained convergence fallbacks do not replace
 these writes.
 
@@ -85,6 +85,12 @@ The following producer changes are implemented:
   back both insertion and deletion. No trigger is needed for these writes.
   Existing API coverage preserves totals across compaction, late usage and a
   repeated compaction run.
+- The retained `billing-attribution` operator now retains canonical attribution
+  before its bounded source rows, sets the original allowance anchor explicitly,
+  and marks matching raw/hourly identities observed in the same commit. Conflicting
+  existing anchors are reported, never replaced. This prepares the operator's
+  billing writes without executing it or certifying production convergence; its
+  existing outgoing-compactor barrier and writer-drain acknowledgement remain.
 - Pi Stage 1 explicitly supplies its runless billing identity and database
   occurrence/allowance timestamp. This removes its implicit anchor initialization,
   but does not complete ownership of its worker and provider caller graph.
