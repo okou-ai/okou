@@ -3,6 +3,8 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { builtinConnectorDcrRegistrations } from "@okouai/db/schema/connector-dcr-registration";
 import { builtinConnectorAccountOauthBindings } from "@okouai/db/schema/connector-account-oauth-binding";
 import { connectors } from "@okouai/db/schema/connector";
+import { connectorCatalogActiveSnapshot } from "@okouai/db/schema/connector-catalog";
+import type { ExternalCatalogIdentity } from "./connector-catalog-external-reader.service";
 import { writeDb$, type Db } from "../external/db";
 import { nowDate } from "../../lib/time";
 import {
@@ -200,11 +202,44 @@ export const hasBuiltinDcrLinkedAccounts$ = command(
   },
 );
 
+function builtinDcrCatalogCondition(identity: ExternalCatalogIdentity) {
+  return and(
+    eq(connectorCatalogActiveSnapshot.sourceId, identity.sourceId),
+    eq(connectorCatalogActiveSnapshot.schemaVersion, identity.schemaVersion),
+    eq(connectorCatalogActiveSnapshot.catalogVersion, identity.catalogVersion),
+    eq(connectorCatalogActiveSnapshot.catalogDigest, identity.catalogDigest),
+  );
+}
+
+async function prepareBuiltinDcrRegistration(
+  owner: BuiltinConnectorAutomaticContractOwner,
+  value: Parameters<McpAutomaticOAuthDcrStore["publish"]>[0],
+  signal: AbortSignal,
+) {
+  const encryptedClientSecret =
+    value.clientSecret === undefined
+      ? null
+      : await encryptStoredSecretValue(value.clientSecret);
+  signal.throwIfAborted();
+  return {
+    ...owner,
+    issuer: value.issuer,
+    clientId: value.clientId,
+    encryptedClientSecret,
+    tokenEndpointAuthMethod: value.tokenEndpointAuthMethod,
+    registeredScopes: [...value.registeredScopes],
+    redirectUri: value.redirectUri,
+    issuedAt: value.issuedAt,
+    expiresAt: value.expiresAt,
+  };
+}
+
 export const publishBuiltinDcrRegistration$ = command(
   async (
     { set },
     args: {
       readonly owner: BuiltinConnectorAutomaticContractOwner;
+      readonly catalogIdentity: ExternalCatalogIdentity;
       readonly value: Parameters<McpAutomaticOAuthDcrStore["publish"]>[0];
       readonly expectedRegistrationId: string | null;
     },
@@ -212,27 +247,24 @@ export const publishBuiltinDcrRegistration$ = command(
   ): Promise<Awaited<ReturnType<McpAutomaticOAuthDcrStore["publish"]>>> => {
     const db = set(writeDb$);
     const { owner, value, expectedRegistrationId } = args;
-    const encryptedClientSecret =
-      value.clientSecret === undefined
-        ? null
-        : await encryptStoredSecretValue(value.clientSecret);
-    signal.throwIfAborted();
-    const candidate = {
-      ...owner,
-      issuer: value.issuer,
-      clientId: value.clientId,
-      encryptedClientSecret,
-      tokenEndpointAuthMethod: value.tokenEndpointAuthMethod,
-      registeredScopes: [...value.registeredScopes],
-      redirectUri: value.redirectUri,
-      issuedAt: value.issuedAt,
-      expiresAt: value.expiresAt,
-    };
+    const candidate = await prepareBuiltinDcrRegistration(owner, value, signal);
     const issuerCondition = and(
       ownerCondition(owner),
       eq(builtinConnectorDcrRegistrations.issuer, value.issuer),
     );
     return await db.transaction(async (tx) => {
+      const [catalog] = await tx
+        .select({ sourceId: connectorCatalogActiveSnapshot.sourceId })
+        .from(connectorCatalogActiveSnapshot)
+        .where(builtinDcrCatalogCondition(args.catalogIdentity))
+        .for("share")
+        .limit(1);
+      if (!catalog) {
+        throw new McpAutomaticOAuthError(
+          { kind: "binding-drift", reason: "binding-drift" },
+          "Builtin MCP credential catalog changed during client registration",
+        );
+      }
       // Outgoing Automatic OAuth writers still rely on lifecycle coordination.
       // Remove only after those writers drain and rollback targets implement
       // conditional publication and exact registration retirement.

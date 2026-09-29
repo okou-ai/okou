@@ -116,6 +116,7 @@ type BuiltinAutomaticMethod = Extract<
   { readonly grant: { readonly kind: "automatic" } }
 >;
 interface BuiltinAutomaticContract {
+  readonly catalogIdentity: ConnectorRuntimeSnapshot["catalogIdentity"];
   readonly connectorSlug: string;
   readonly authMethodId: string;
   readonly storageVersion: number;
@@ -141,6 +142,7 @@ class StaleBuiltinAutomaticContractError extends Error {}
 function contractFromMethod(
   runtime: ConnectorRuntimeMethod,
   endpoint: string | undefined,
+  catalogIdentity: ConnectorRuntimeSnapshot["catalogIdentity"],
 ): BuiltinAutomaticContract | null {
   const { connectorSlug, authMethodId, method } = runtime;
   if (
@@ -165,6 +167,7 @@ function contractFromMethod(
     connectorSlug,
     authMethodId,
     endpoint,
+    catalogIdentity,
     storageVersion: method.storage.version,
     contractHash,
     method: {
@@ -191,6 +194,7 @@ function currentContractFromSnapshot(
     ? contractFromMethod(
         runtime,
         snapshot.connectors.get(connectorSlug)?.catalogConnector.mcp?.endpoint,
+        snapshot.catalogIdentity,
       )
     : null;
 }
@@ -446,7 +450,6 @@ const prepareBuiltinAutomaticAuthorization$ = command(
     },
     signal: AbortSignal,
   ) => {
-    const db = set(writeDb$);
     const { contract } = args;
     return await prepareMcpAutomaticOAuthAuthorization(
       {
@@ -469,11 +472,11 @@ const prepareBuiltinAutomaticAuthorization$ = command(
             );
           },
           publish: async (value, expectedRegistrationId, publicationSignal) => {
-            await assertCurrentContract(db, contract);
             return await set(
               publishBuiltinDcrRegistration$,
               {
                 owner: contractOwner(args.orgId, contract),
+                catalogIdentity: contract.catalogIdentity,
                 value,
                 expectedRegistrationId,
               },
@@ -520,6 +523,7 @@ export const startBuiltinConnectorAutomatic$ = command(
     const contract = contractFromMethod(
       args.resolved.runtimeMethod,
       args.resolved.catalogConnector.mcp?.endpoint,
+      args.resolved.snapshot.catalogIdentity,
     );
     if (!contract) {
       return { kind: "error", reason: "stale-contract" };
