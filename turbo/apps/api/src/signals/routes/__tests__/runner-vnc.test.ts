@@ -17,6 +17,7 @@ import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
+import { requireVncCredentialId } from "./helpers/vnc-response";
 import { inlineSshKey } from "./helpers/ssh-credential";
 import {
   createVncRuntimeApi,
@@ -198,6 +199,46 @@ describe("private Runner VNC authority", () => {
     expect((await check(f, first.generation)).body).toStrictEqual({
       outcome: "valid",
     });
+  });
+
+  it("requires an exact X509None capability and resolves without decrypting a credential", async () => {
+    const f = await api.fixture();
+    await accept(
+      api.connections().update({
+        headers: vncSessionHeaders,
+        params: { connectionId: f.connectionId },
+        body: {
+          expectedGeneration: 1,
+          security: { type: "x509_none", trust: { mode: "system" } },
+          credential: { type: "none" },
+        },
+      }),
+      [200],
+    );
+    const kms = useSecretKmsProbe();
+    expect(
+      await api.resolve(f, { supportedProfiles: [...vncProfiles] }),
+    ).toStrictEqual({ outcome: "unsupported_profile" });
+    expect((await check(f, 1)).body).toStrictEqual({
+      outcome: "configuration_changed",
+    });
+    const resolved = await api.resolve(f, {
+      supportedProfiles: [
+        {
+          authMethod: "none",
+          securityType: "x509_none",
+          transportType: "direct",
+        },
+      ],
+    });
+    expect(resolved).toMatchObject({
+      outcome: "resolved_transport",
+      authentication: { method: "none" },
+      security: { type: "x509_none", trust: { mode: "system" } },
+      generation: 2,
+    });
+    expect(kms.decryptCalls).toBe(0);
+    expect((await check(f, 2)).body).toStrictEqual({ outcome: "valid" });
   });
 
   it("rejects wrong auth classes and exact winning-process mismatches before KMS", async () => {
@@ -727,7 +768,7 @@ describe("private Runner VNC authority", () => {
     const rotated = await accept(
       api.credentials().update({
         headers: vncSessionHeaders,
-        params: { credentialId: saved.body.credentialId },
+        params: { credentialId: requireVncCredentialId(saved.body) },
         body: {
           expectedRevision: 1,
           authentication: { method: "vnc_password", password: "rotated" },
@@ -860,7 +901,7 @@ describe("private Runner VNC authority", () => {
     const rotated = await accept(
       api.credentials().update({
         headers: vncSessionHeaders,
-        params: { credentialId: apple.body.credentialId },
+        params: { credentialId: requireVncCredentialId(apple.body) },
         body: {
           expectedRevision: 1,
           authentication: {
@@ -1019,7 +1060,7 @@ describe("private Runner VNC authority", () => {
     const rotated = await accept(
       api.credentials().update({
         headers: vncSessionHeaders,
-        params: { credentialId: saved.body.credentialId },
+        params: { credentialId: requireVncCredentialId(saved.body) },
         body: {
           expectedRevision: 1,
           authentication: {
@@ -1235,7 +1276,7 @@ describe("private Runner VNC authority", () => {
     const rotated = await accept(
       api.credentials().update({
         headers: vncSessionHeaders,
-        params: { credentialId: saved.body.credentialId },
+        params: { credentialId: requireVncCredentialId(saved.body) },
         body: {
           expectedRevision: 1,
           authentication: {

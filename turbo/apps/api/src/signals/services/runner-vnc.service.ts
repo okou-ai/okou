@@ -97,6 +97,18 @@ function matchesExpectedTransport(
   );
 }
 
+function validateStoredProfile(row: CurrentVncAuthority): void {
+  if (
+    !isVncProfileCompatible(row.authMethod, row.securityType) ||
+    (row.authMethod === "none"
+      ? row.credentialId !== null || row.joinedCredentialId !== null
+      : row.credentialId === null ||
+        row.joinedCredentialId !== row.credentialId)
+  ) {
+    throw new Error("VNC connection has an invalid stored profile");
+  }
+}
+
 function selectedCapability(
   row: CurrentVncAuthority,
   transport: TransportSnapshot,
@@ -144,9 +156,7 @@ export async function checkRunnerVnc(
   if (!row || !(await hasCurrentVncMembership(clerk, row, signal))) {
     return { outcome: "unavailable" };
   }
-  if (!isVncProfileCompatible(row.authMethod, row.securityType)) {
-    throw new Error("VNC connection has an invalid stored profile");
-  }
+  validateStoredProfile(row);
   const transport = storedTransportSnapshot(row);
   if (!hasTransportAuthority(row, transport)) {
     return { outcome: "unavailable" };
@@ -203,6 +213,12 @@ async function decryptRunnerAuthentication(
   row: CurrentVncAuthority,
   signal: AbortSignal,
 ) {
+  if (row.authMethod === "none") {
+    return { method: "none" as const };
+  }
+  if (row.encryptedPassword === null) {
+    throw new Error("VNC connection credential is missing");
+  }
   // No database transaction or row lock spans KMS. Never log this value or its validation issues.
   const decrypted = await settle(
     decryptStoredSecretValue(row.encryptedPassword),
@@ -333,9 +349,7 @@ export async function resolveRunnerVnc(
   if (!row || !(await hasCurrentVncMembership(clerk, row, signal))) {
     return { outcome: "unavailable" };
   }
-  if (!isVncProfileCompatible(row.authMethod, row.securityType)) {
-    throw new Error("VNC connection has an invalid stored profile");
-  }
+  validateStoredProfile(row);
   const transport = storedTransportSnapshot(row);
   if (!hasTransportAuthority(row, transport)) {
     return { outcome: "unavailable" };

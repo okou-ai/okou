@@ -5,9 +5,14 @@ VNC is an independent remote-access capability alongside SSH. The
 staff. Owner configuration, chat host selection, metadata inventory and
 private Runner authority are described in
 [Runner VNC authority](runner-vnc-authority.md).
-The Runner, owner configuration and Agent inventory support the exact X509Vnc,
-X509Plain, SSH-protected Apple classic password, Apple DH, Apple Direct SRP
-and Apple RSA/SRP profiles.
+The Runner, owner configuration and Agent inventory support the exact X509None,
+X509Vnc, X509Plain, SSH-protected Apple classic password, Apple DH, Apple Direct
+SRP and Apple RSA/SRP profiles. X509None requires an explicit owner selection:
+its TLS certificate verifies the **server** and encrypts the stream, but it
+provides **no VNC client authentication**. Any other client with access to the
+VNC listener may control the desktop. An SSH route authenticates the selected
+SSH hop only; it cannot establish isolation of the downstream VNC listener.
+The owner must choose and manage the destination's exposure accordingly.
 The feature remains unavailable until a separate activation decision.
 
 ## Supported profiles and rollout state
@@ -19,6 +24,12 @@ The feature remains unavailable until a separate activation decision.
 | Owner API, app and Agent inventory       | Exposed                                                                   | Exposed                                                                   | Available only behind `VncAccess`      |
 | Runner without the advertised exact pair | Supported                                                                 | `unsupported_profile` before KMS                                          | Fail closed; no downgrade              |
 | Production switch                        | Disabled                                                                  | Disabled                                                                  | Separate activation decision           |
+
+X509None is also an exact `none` / `x509_none` pair for direct and saved-SSH
+routes. The RFB engine has TigerVNC fixture coverage. Owner/API/Runner support
+requires an upgraded Runner that advertises the exact pair and a migration
+allowing a null credential only for X509None; an older Runner rejects it without
+downgrading. This is not evidence of a production Agent/server acceptance run.
 
 Acceptance must name the exact server and Runner versions and distinguish
 engine-only evidence, controlled Runner integration and a real Agent session.
@@ -180,7 +191,12 @@ and authenticates the onward RFB connection. Switching routes preserves the
 draft endpoint, security, credential and SSH selection instead of rewriting
 them.
 
-Select a saved VNC credential or create one. The certificate-verified choices are
+Select a saved VNC credential or create one for password-backed profiles.
+X509None has no VNC credential; the owner must explicitly select it, and the
+settings UI displays the no-client-authentication warning both while editing
+and on the saved connection. It retains certificate verification (system or
+custom CA), does not allow a certificate bypass, and is never an implicit
+fallback when another authentication method fails. The certificate-verified choices are
 VeNCrypt X509Vnc (certificate-verified TLS plus a classic VNC password) or
 VeNCrypt X509Plain (certificate-verified TLS plus username/password
 authentication); Mac VNC has separate SSH-only Apple classic VNC password,
@@ -190,7 +206,10 @@ passwords must contain 1–8 printable ASCII characters.
 X509Plain usernames accept 1–255 UTF-8 bytes and passwords accept 1–1023 UTF-8
 bytes. Spaces are significant and embedded NUL is rejected. Changing profiles
 clears draft authentication material and only exact compatible credentials are
-selectable. The app does not offer unsupported authentication profiles or an
+selectable. Moving between X509None and a password-backed profile requires an
+explicit credential change; older Runners lacking the exact `none` / `x509_none`
+capability return `unsupported_profile` before any credential lookup or KMS
+operation. The app does not offer unsupported authentication profiles or an
 insecure certificate bypass.
 
 Choose system certificate authorities or paste the public CA certificates

@@ -26,6 +26,12 @@ const vncHostBaseSchema = vncConnectionMetadataSchema
 export const vncHostSchema = z.discriminatedUnion("securityType", [
   vncHostBaseSchema
     .extend({
+      authMethod: z.literal("none"),
+      securityType: z.literal("x509_none"),
+    })
+    .strict(),
+  vncHostBaseSchema
+    .extend({
       authMethod: z.literal("vnc_password"),
       securityType: z.literal("x509_vnc"),
     })

@@ -24,14 +24,23 @@ function isX509Security(
   security: VncConnectionResponse["security"],
 ): security is Extract<
   VncConnectionResponse["security"],
-  { type: "x509_vnc" | "x509_plain" }
+  { type: "x509_none" | "x509_vnc" | "x509_plain" }
 > {
-  return security.type === "x509_vnc" || security.type === "x509_plain";
+  return (
+    security.type === "x509_none" ||
+    security.type === "x509_vnc" ||
+    security.type === "x509_plain"
+  );
 }
 
 function VncProfileLabel({ profile }: { readonly profile: VncProfile }) {
   const { t } = useTranslation();
   switch (profile) {
+    case "x509_none": {
+      return t(($) => {
+        return $.vnc.security.x509None;
+      });
+    }
     case "x509_vnc": {
       return t(($) => {
         return $.vnc.security.x509Vnc;
@@ -74,6 +83,11 @@ function VncAuthenticationLabel({
 }) {
   const { t } = useTranslation();
   switch (method) {
+    case "none": {
+      return t(($) => {
+        return $.vnc.security.x509None;
+      });
+    }
     case "vnc_password": {
       return t(($) => {
         return $.vnc.credential.method;
@@ -190,9 +204,21 @@ function VncHostCard({
           {connection.security.serverName ?? connection.host}
         </p>
       ) : null}
-      <p className="break-all text-sm text-muted-foreground">
-        {connection.credentialName}
-      </p>
+      {"credentialName" in connection && (
+        <p className="break-all text-sm text-muted-foreground">
+          {connection.credentialName}
+        </p>
+      )}
+      {connection.security.type === "x509_none" && (
+        <p
+          role="alert"
+          className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+        >
+          {t(($) => {
+            return $.vnc.security.x509NoneHelp;
+          })}
+        </p>
+      )}
       <p className="text-sm text-muted-foreground">
         <VncProfileLabel profile={connection.security.type} />
         {" · "}

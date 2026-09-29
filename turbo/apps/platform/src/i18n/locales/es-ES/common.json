@@ -5876,6 +5876,8 @@
       "x509Plain": "Usuario y contraseña cifrados (X509Plain)",
       "x509PlainHelp": "Requiere VeNCrypt X509Plain. TLS verifica el servidor antes de enviar el nombre de usuario y la contraseña.",
       "x509Vnc": "VNC cifrado (X509Vnc)",
+      "x509None": "Cifrado sin contraseña VNC (X509None)",
+      "x509NoneHelp": "TLS verifica el servidor y cifra la sesión, pero no le autentica ante el servidor VNC. Otras personas que puedan acceder al servidor podrían controlar el escritorio. SSH solo protege el trayecto hasta el host SSH elegido, no el acceso de otros clientes ni saltos posteriores. Elija esto solo para un destino que controle.",
       "x509VncHelp": "Requiere VeNCrypt X509Vnc. TLS verifica el servidor antes de enviar la contraseña VNC."
     },
     "summary_one": "{{count}} host configurado",

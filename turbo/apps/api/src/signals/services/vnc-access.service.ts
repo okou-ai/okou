@@ -4,7 +4,6 @@ import { agents } from "@okouai/db/schema/agent";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { sshConnections } from "@okouai/db/schema/ssh-connection";
 import { vncConnections } from "@okouai/db/schema/vnc-connection";
-import { vncCredentials } from "@okouai/db/schema/vnc-credential";
 import { and, asc, eq } from "drizzle-orm";
 
 import type { ReadonlyDb } from "../external/db";
@@ -31,7 +30,7 @@ export async function listRunVncHosts(
       displayName: vncConnections.displayName,
       host: vncConnections.host,
       port: vncConnections.port,
-      authMethod: vncCredentials.authMethod,
+      authMethod: vncConnections.authMethod,
       securityType: vncConnections.securityType,
     })
     .from(agentRuns)
@@ -65,14 +64,6 @@ export async function listRunVncHosts(
         eq(sshConnections.id, vncConnections.sshConnectionId),
         eq(sshConnections.orgId, agentRuns.orgId),
         eq(sshConnections.userId, agentRuns.userId),
-      ),
-    )
-    .leftJoin(
-      vncCredentials,
-      and(
-        eq(vncCredentials.id, vncConnections.credentialId),
-        eq(vncCredentials.orgId, owner.orgId),
-        eq(vncCredentials.userId, owner.userId),
       ),
     )
     .where(

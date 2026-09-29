@@ -39,7 +39,11 @@ const auth = Object.freeze({
     memberships: [{ id: "org_vnc_settings" }],
   },
 });
-const host = Object.freeze<VncConnectionResponse>({
+type CredentialedVncConnection = Extract<
+  VncConnectionResponse,
+  { credentialId: string }
+>;
+const host = Object.freeze<CredentialedVncConnection>({
   id: "b0000000-0000-4000-8000-000000000001",
   displayName: "Design workstation",
   host: "desktop.example.com",
@@ -64,7 +68,7 @@ type PlainCredential = Extract<
   VncCredentialResponse,
   { authMethod: "username_password" }
 >;
-const plainHost = Object.freeze<VncConnectionResponse>({
+const plainHost = Object.freeze<CredentialedVncConnection>({
   ...host,
   id: "b0000000-0000-4000-8000-000000000002",
   displayName: "Plain workstation",
@@ -98,7 +102,7 @@ const sshHost = Object.freeze<SshConnectionResponse>({
   createdAt: host.createdAt,
   updatedAt: host.updatedAt,
 });
-const tunneledHost = Object.freeze<VncConnectionResponse>({
+const tunneledHost = Object.freeze<CredentialedVncConnection>({
   ...host,
   id: "b0000000-0000-4000-8000-000000000003",
   displayName: "Private desktop",
@@ -340,6 +344,59 @@ test("An owner reuses a VNC credential without exposing its password", async () 
       transport: { type: "direct" },
       credential: { id: credential.id },
       security: { type: "x509_vnc", trust: { mode: "system" } },
+    },
+  ]);
+});
+
+test("X509None is an explicit credentialless choice with persistent client-authentication warning", async () => {
+  const noneHost: VncConnectionResponse = {
+    id: "b0000000-0000-4000-8000-000000000010",
+    displayName: "Owner selected no VNC password",
+    host: "desktop.example.com",
+    port: 5900,
+    security: { type: "x509_none", trust: { mode: "system" } },
+    credential: { type: "none" },
+    generation: 1,
+    createdAt: host.createdAt,
+    updatedAt: host.updatedAt,
+  };
+  mockSettings({ connections: [noneHost], credentials: [] });
+  const requests: unknown[] = [];
+  context.mocks.api(vncConnectionsContract.create, ({ body, respond }) => {
+    requests.push(body);
+    return respond(201, { ...noneHost, id: body.id });
+  });
+  await page();
+  await screen.findByText(noneHost.displayName);
+  expect(screen.getByRole("alert")).toHaveTextContent(
+    "does not authenticate you to the VNC server",
+  );
+  click(getAction("button", "Add host"));
+  const dialog = await screen.findByRole("dialog", { name: "Add host" });
+  await fillHost(dialog);
+  await choose(
+    dialog,
+    "Security profile",
+    "Encrypted without a VNC password (X509None)",
+  );
+  expect(within(dialog).getByRole("alert")).toHaveTextContent(
+    "Anyone else who can reach that server",
+  );
+  expect(within(dialog).queryByLabelText("Credential")).toBeNull();
+  expect(getAction("button", "Save", dialog)).toBeEnabled();
+  click(getAction("button", "Save", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(requests).toStrictEqual([
+    {
+      id: expect.any(String),
+      displayName: "Second desktop",
+      host: "second.example.com",
+      port: 5900,
+      transport: { type: "direct" },
+      credential: { type: "none" },
+      security: { type: "x509_none", trust: { mode: "system" } },
     },
   ]);
 });
@@ -881,7 +938,7 @@ test.each([
       sshConnections: [sshHost],
     });
     const requests: unknown[] = [];
-    const appleHost: VncConnectionResponse = {
+    const appleHost: CredentialedVncConnection = {
       ...host,
       host: "127.0.0.1",
       credentialName: "Mac login",

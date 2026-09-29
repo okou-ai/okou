@@ -15,6 +15,7 @@ import { createRouteMocks } from "./helpers/route-test";
 import { inlineSshKey } from "./helpers/ssh-credential";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
+import { requireVncCredentialId } from "./helpers/vnc-response";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -215,6 +216,103 @@ describe("VNC owner configuration", () => {
     expect(
       (await accept(credentials().list({ headers }), [200])).body.credentials,
     ).toStrictEqual([]);
+  });
+
+  it("persists explicitly selected X509None without a credential and requires explicit rebinds", async () => {
+    useSecretKmsProbe();
+    await owner();
+    const none = {
+      type: "x509_none" as const,
+      trust: { mode: "system" as const },
+    };
+    const created = await accept(
+      connections().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          displayName: "No VNC password",
+          host: "vnc.example.com",
+          security: none,
+          credential: { type: "none" },
+        },
+      }),
+      [201],
+    );
+    expect(created.body).toMatchObject({
+      security: none,
+      credential: { type: "none" },
+      generation: 1,
+    });
+    expect("credentialId" in created.body).toBe(false);
+    expect(
+      (await accept(connections().list({ headers }), [200])).body.connections,
+    ).toStrictEqual([created.body]);
+    expect(
+      (await accept(credentials().list({ headers }), [200])).body.credentials,
+    ).toStrictEqual([]);
+
+    const invalid = await rawRequest("/api/vnc/connections", {
+      id: randomUUID(),
+      displayName: "Wrong authentication",
+      host: "vnc.example.com",
+      security: none,
+      credential: {
+        create: {
+          name: "Secret",
+          authentication: passwordAuthentication("secret"),
+        },
+      },
+    });
+    expect(invalid.status).toBe(400);
+    const silentSwitch = await rawRequest(
+      `/api/vnc/connections/${created.body.id}`,
+      {
+        expectedGeneration: 1,
+        security,
+      },
+      "PATCH",
+    );
+    expect(silentSwitch.status).toBe(400);
+    const withPassword = await accept(
+      connections().update({
+        headers,
+        params: { connectionId: created.body.id },
+        body: {
+          expectedGeneration: 1,
+          security,
+          credential: {
+            create: {
+              name: "Explicit password",
+              authentication: passwordAuthentication("secret"),
+            },
+          },
+        },
+      }),
+      [200],
+    );
+    expect(withPassword.body).toMatchObject({ security, generation: 2 });
+    expect(requireVncCredentialId(withPassword.body)).toBeDefined();
+    const backToNone = await accept(
+      connections().update({
+        headers,
+        params: { connectionId: created.body.id },
+        body: {
+          expectedGeneration: 2,
+          security: none,
+          credential: { type: "none" },
+        },
+      }),
+      [200],
+    );
+    expect(backToNone.body).toMatchObject({
+      security: none,
+      credential: { type: "none" },
+      generation: 3,
+    });
+    expect("credentialId" in backToNone.body).toBe(false);
+    expect(
+      (await accept(credentials().list({ headers }), [200])).body.credentials,
+    ).toHaveLength(1);
   });
 
   it("persists typed SSH routes, certificate identity and restrictive deletion", async () => {
@@ -569,7 +667,7 @@ describe("VNC owner configuration", () => {
       expect(
         (
           await rawRequest(
-            `/api/vnc/credentials/${saved.body.credentialId}`,
+            `/api/vnc/credentials/${requireVncCredentialId(saved.body)}`,
             {
               expectedRevision: 1,
               authentication,
@@ -1027,7 +1125,9 @@ describe("VNC owner configuration", () => {
       [201],
     );
     expect(second.body.id).not.toBe(first.body.id);
-    expect(second.body.credentialId).not.toBe(first.body.credentialId);
+    expect(requireVncCredentialId(second.body)).not.toBe(
+      requireVncCredentialId(first.body),
+    );
     expect(second.body.host).toBe(first.body.host);
     expect(second.body.port).toBe(first.body.port);
     expect(second.body.security).toMatchObject({
@@ -1046,7 +1146,7 @@ describe("VNC owner configuration", () => {
     );
     expect(updated.body).toMatchObject({
       id: second.body.id,
-      credentialId: second.body.credentialId,
+      credentialId: requireVncCredentialId(second.body),
       generation: 2,
       displayName: "Renamed",
       security,
@@ -1068,7 +1168,7 @@ describe("VNC owner configuration", () => {
     await accept(
       credentials().delete({
         headers,
-        params: { credentialId: first.body.credentialId },
+        params: { credentialId: requireVncCredentialId(first.body) },
         body: { expectedRevision: 1 },
       }),
       [204],
@@ -1077,7 +1177,7 @@ describe("VNC owner configuration", () => {
       (await accept(credentials().list({ headers }), [200])).body.credentials,
     ).toMatchObject([
       {
-        id: second.body.credentialId,
+        id: requireVncCredentialId(second.body),
         authMethod: "vnc_password",
         revision: 1,
         hosts: [{ id: second.body.id, displayName: "Renamed" }],
@@ -1143,7 +1243,7 @@ describe("VNC owner configuration", () => {
     await accept(
       credentials().delete({
         headers,
-        params: { credentialId: saved.body.credentialId },
+        params: { credentialId: requireVncCredentialId(saved.body) },
         body: { expectedRevision: 1 },
       }),
       [204],
@@ -1175,13 +1275,19 @@ describe("VNC owner configuration", () => {
       displayName: "New desktop",
       generation: 1,
     });
-    expect(recreated.body.credentialId).not.toBe(saved.body.credentialId);
+    expect(requireVncCredentialId(recreated.body)).not.toBe(
+      requireVncCredentialId(saved.body),
+    );
     expect(
       (await accept(connections().list({ headers }), [200])).body.connections,
     ).toStrictEqual([recreated.body]);
     const logins = await accept(credentials().list({ headers }), [200]);
     expect(logins.body.credentials).toMatchObject([
-      { id: recreated.body.credentialId, name: "New login", revision: 1 },
+      {
+        id: requireVncCredentialId(recreated.body),
+        name: "New login",
+        revision: 1,
+      },
     ]);
   });
 
@@ -1198,7 +1304,7 @@ describe("VNC owner configuration", () => {
       credentials().create({
         headers,
         body: {
-          id: saved.body.credentialId,
+          id: requireVncCredentialId(saved.body),
           name: "Retry",
           authentication: passwordAuthentication("changed"),
         },
@@ -1250,7 +1356,7 @@ describe("VNC owner configuration", () => {
         headers,
         body: {
           ...hostBody("VNC.EXAMPLE.COM."),
-          credential: { id: first.body.credentialId },
+          credential: { id: requireVncCredentialId(first.body) },
         },
       }),
       [201],
@@ -1259,7 +1365,7 @@ describe("VNC owner configuration", () => {
       connections().create({ headers, body: hostBody() }),
       [201],
     );
-    const params = { credentialId: first.body.credentialId };
+    const params = { credentialId: requireVncCredentialId(first.body) };
     const rotated = await accept(
       credentials().update({
         headers,
@@ -1469,7 +1575,7 @@ describe("VNC owner configuration", () => {
         expect(hosts.body.connections).toStrictEqual([outcome.response.body]);
         expect(logins.body.credentials).toStrictEqual([
           expect.objectContaining({
-            id: outcome.response.body.credentialId,
+            id: requireVncCredentialId(outcome.response.body),
             name: "Desktop password",
             hosts: [{ id: body.id, displayName: "Desktop" }],
           }),
@@ -1514,7 +1620,7 @@ describe("VNC owner configuration", () => {
           headers,
           body: {
             ...hostBody("race.example.com"),
-            credential: { id: host.credentialId },
+            credential: { id: requireVncCredentialId(host) },
           },
         }),
         [201, 404],
@@ -1522,7 +1628,7 @@ describe("VNC owner configuration", () => {
       accept(
         credentials().delete({
           headers,
-          params: { credentialId: host.credentialId },
+          params: { credentialId: requireVncCredentialId(host) },
           body: { expectedRevision: 1 },
         }),
         [204, 409],

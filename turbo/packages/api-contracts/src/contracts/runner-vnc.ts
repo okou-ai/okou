@@ -24,10 +24,16 @@ const transportSnapshotSchema = z.discriminatedUnion("type", [
 export const runnerVncSecuritySchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("x509_vnc"), trust: vncTrustSchema }).strict(),
   z.object({ type: z.literal("x509_plain"), trust: vncTrustSchema }).strict(),
+  z.object({ type: z.literal("x509_none"), trust: vncTrustSchema }).strict(),
   z.object({ type: z.literal("apple_vnc_password") }).strict(),
   z.object({ type: z.literal("apple_dh") }).strict(),
   z.object({ type: z.literal("apple_srp") }).strict(),
   z.object({ type: z.literal("apple_rsa_srp") }).strict(),
+]);
+
+const runnerX509AuthenticationSchema = z.discriminatedUnion("method", [
+  ...vncAuthenticationSchema.options,
+  z.object({ method: z.literal("none") }).strict(),
 ]);
 
 const commonRequestSchema = z
@@ -45,6 +51,7 @@ const commonRequestSchema = z
 const supportedProfileSchema = z
   .object({
     authMethod: z.enum([
+      "none",
       "vnc_password",
       "username_password",
       "apple_dh_username_password",
@@ -52,6 +59,7 @@ const supportedProfileSchema = z
       "apple_rsa_srp_username_password",
     ]),
     securityType: z.enum([
+      "x509_none",
       "x509_vnc",
       "x509_plain",
       "apple_vnc_password",
@@ -64,6 +72,7 @@ const supportedProfileSchema = z
   .strict()
   .refine((profile) => {
     return (
+      (profile.authMethod === "none" && profile.securityType === "x509_none") ||
       (profile.authMethod === "vnc_password" &&
         profile.securityType === "x509_vnc") ||
       (profile.authMethod === "vnc_password" &&
@@ -104,7 +113,7 @@ const resolveResponseSchema = z.discriminatedUnion("outcome", [
       generation: generationSchema,
       serverName: z.string().min(1).max(VNC_HOST_MAX_LENGTH),
       transport: transportSnapshotSchema,
-      authentication: vncAuthenticationSchema,
+      authentication: runnerX509AuthenticationSchema,
       security: runnerVncSecuritySchema,
     })
     .strict(),
@@ -115,7 +124,7 @@ const resolveResponseSchema = z.discriminatedUnion("outcome", [
       port: z.int().min(1).max(65_535),
       generation: generationSchema,
       transport: transportSnapshotSchema,
-      authentication: vncAuthenticationSchema,
+      authentication: runnerX509AuthenticationSchema,
       security: runnerVncSecuritySchema,
     })
     .strict(),
@@ -126,7 +135,7 @@ const resolveResponseSchema = z.discriminatedUnion("outcome", [
       port: z.int().min(1).max(65_535),
       generation: generationSchema,
       transport: transportSnapshotSchema,
-      authentication: vncAuthenticationSchema,
+      authentication: runnerX509AuthenticationSchema,
       security: runnerVncSecuritySchema,
     })
     .strict(),
@@ -137,7 +146,7 @@ const resolveResponseSchema = z.discriminatedUnion("outcome", [
       port: z.int().min(1).max(65_535),
       generation: generationSchema,
       transport: transportSnapshotSchema,
-      authentication: vncAuthenticationSchema,
+      authentication: runnerX509AuthenticationSchema,
       security: runnerVncSecuritySchema,
     })
     .strict(),
@@ -148,7 +157,7 @@ const resolveResponseSchema = z.discriminatedUnion("outcome", [
       port: z.int().min(1).max(65_535),
       generation: generationSchema,
       transport: transportSnapshotSchema,
-      authentication: vncAuthenticationSchema,
+      authentication: runnerX509AuthenticationSchema,
       security: runnerVncSecuritySchema,
     })
     .strict(),

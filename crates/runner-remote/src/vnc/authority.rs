@@ -675,6 +675,11 @@ impl Authority {
     ) -> Result<Credential, Failure> {
         let mut supported_profiles = vec![
             ResolveRequestSupportedProfile {
+                auth_method: ResolveRequestSupportedProfileAuthMethod::None,
+                security_type: ResolveRequestSupportedProfileSecurityType::X509None,
+                transport_type: ResolveRequestSupportedProfileTransportType::Direct,
+            },
+            ResolveRequestSupportedProfile {
                 auth_method: ResolveRequestSupportedProfileAuthMethod::VncPassword,
                 security_type: ResolveRequestSupportedProfileSecurityType::X509Vnc,
                 transport_type: ResolveRequestSupportedProfileTransportType::Direct,
@@ -687,6 +692,11 @@ impl Authority {
         ];
         if supports_ssh {
             supported_profiles.extend([
+                ResolveRequestSupportedProfile {
+                    auth_method: ResolveRequestSupportedProfileAuthMethod::None,
+                    security_type: ResolveRequestSupportedProfileSecurityType::X509None,
+                    transport_type: ResolveRequestSupportedProfileTransportType::Ssh,
+                },
                 ResolveRequestSupportedProfile {
                     auth_method: ResolveRequestSupportedProfileAuthMethod::VncPassword,
                     security_type: ResolveRequestSupportedProfileSecurityType::X509Vnc,
@@ -834,6 +844,10 @@ impl Authority {
         super::network::validate_host(&host)?;
         let transport = parse_transport(transport, supports_ssh)?;
         let (authentication, trust) = match (authentication, security) {
+            (
+                ResolveResponseResolvedTransportAuthentication::None,
+                ResolveResponseResolvedTransportSecurity::X509None { trust },
+            ) => (X509Authentication::None, trust),
             (
                 ResolveResponseResolvedTransportAuthentication::VncPassword { password },
                 ResolveResponseResolvedTransportSecurity::X509Vnc { trust },
