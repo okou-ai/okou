@@ -844,6 +844,7 @@ export const completeBuiltinConnectorAutomatic$ = command(
 async function readBuiltinConnectorAutomaticOAuthBinding(
   db: Db,
   connectorId: string,
+  authorization: LockedAutomaticCredentialContext,
 ): Promise<
   | (McpAutomaticOAuthBinding & {
       readonly endpoint: string;
@@ -876,7 +877,16 @@ async function readBuiltinConnectorAutomaticOAuthBinding(
         eq(connectors.userId, builtinConnectorAccountOauthBindings.userId),
       ),
     )
-    .where(eq(connectors.id, connectorId))
+    .where(
+      and(
+        eq(connectors.id, connectorId),
+        eq(
+          builtinConnectorAccountOauthBindings.createdAt,
+          sql`${authorization.initialBindingCreatedAt}::timestamp`,
+        ),
+        sql`${builtinConnectorAccountOauthBindings}.xmin::text = ${authorization.initialBindingRowVersion}`,
+      ),
+    )
     .limit(1);
   if (
     !row ||
@@ -961,8 +971,8 @@ interface LockedAutomaticCredentialContext {
   readonly contract: BuiltinAutomaticContract;
   readonly accessName: string;
   readonly initialAccessEncrypted: string | undefined;
-  readonly initialRevision: string;
-  readonly initialRowVersion: string;
+  readonly initialBindingCreatedAt: string;
+  readonly initialBindingRowVersion: string;
   readonly accountIdentity: ReturnType<typeof and>;
 }
 
@@ -1023,13 +1033,17 @@ function automaticRefreshMetadata(
   };
 }
 
-function automaticInitialAccountSnapshotCondition(
+function automaticInitialAuthorizationCondition(
   context: LockedAutomaticCredentialContext,
 ) {
   return and(
     context.accountIdentity,
-    eq(connectors.updatedAt, sql`${context.initialRevision}::timestamp`),
-    sql`${connectors}.xmin::text = ${context.initialRowVersion}`,
+    sql`EXISTS (
+      SELECT 1 FROM ${builtinConnectorAccountOauthBindings}
+      WHERE ${builtinConnectorAccountOauthBindings.connectorAccountId} = ${connectors.id}
+        AND ${builtinConnectorAccountOauthBindings}.xmin::text = ${context.initialBindingRowVersion}
+        AND ${builtinConnectorAccountOauthBindings.createdAt} = ${context.initialBindingCreatedAt}::timestamp
+    )`,
   );
 }
 
@@ -1260,7 +1274,7 @@ async function resolveLockedAutomatic(
       rowVersion: sql`${connectors}.xmin::text`.mapWith(pgTextDecoder),
     })
     .from(connectors)
-    .where(automaticInitialAccountSnapshotCondition(context))
+    .where(automaticInitialAuthorizationCondition(context))
     .for("update")
     .limit(1);
   signal.throwIfAborted();
@@ -1293,9 +1307,14 @@ async function resolveLockedAutomatic(
   const binding = await readBuiltinConnectorAutomaticOAuthBinding(
     tx,
     account.id,
+    context,
   );
+  if (!binding) {
+    // A fresh read after the account lock must still find the observed consent.
+    // Do not mark a replacement authorization as revoked.
+    return { kind: "unavailable", reason: "reconnect" };
+  }
   if (
-    !binding ||
     binding.contractHash !== contract.contractHash ||
     binding.endpoint !== contract.endpoint
   ) {
@@ -1323,13 +1342,13 @@ async function resolveLockedAutomatic(
   if (!access) {
     return await markReconnect(tx, account);
   }
-  // A newer ciphertext is not proof of a sibling refresh: reconnect keeps the
-  // account ID too. Reject the old request instead of borrowing new authority.
-  if (access.encryptedValue !== initialAccessEncrypted) {
-    return { kind: "unavailable", reason: "reconnect" };
-  }
+  // The unchanged consent binding, checked while locking the account, proves
+  // that newer ciphertext belongs to this authorization. Reconnect replaces the
+  // binding even when the account, provider identity and client stay the same.
+  const refreshedSinceInitialRead =
+    access.encryptedValue !== initialAccessEncrypted;
   if (
-    !args.forceRefresh &&
+    (!args.forceRefresh || refreshedSinceInitialRead) &&
     accessTokenRemainsValid(account.tokenExpiresAt, 60_000)
   ) {
     return {
@@ -1379,10 +1398,27 @@ export async function resolveBuiltinConnectorAutomaticMcpCredential(
   const [initialAccount] = await args.db
     .select({
       automaticAuthType: connectors.automaticAuthType,
-      stateRevision: sql`${connectors.updatedAt}::text`.mapWith(pgTextDecoder),
-      rowVersion: sql`${connectors}.xmin::text`.mapWith(pgTextDecoder),
+      binding: {
+        connectorAccountId:
+          builtinConnectorAccountOauthBindings.connectorAccountId,
+        createdAt:
+          sql`${builtinConnectorAccountOauthBindings.createdAt}::text`.mapWith(
+            pgTextDecoder,
+          ),
+        rowVersion:
+          sql`${builtinConnectorAccountOauthBindings}.xmin::text`.mapWith(
+            pgTextDecoder,
+          ),
+      },
     })
     .from(connectors)
+    .leftJoin(
+      builtinConnectorAccountOauthBindings,
+      eq(
+        builtinConnectorAccountOauthBindings.connectorAccountId,
+        connectors.id,
+      ),
+    )
     .where(accountIdentity)
     .limit(1);
   signal.throwIfAborted();
@@ -1393,6 +1429,10 @@ export async function resolveBuiltinConnectorAutomaticMcpCredential(
   if (initialAccount.automaticAuthType === "none") {
     return { kind: "none" };
   }
+  if (!initialAccount.binding) {
+    return { kind: "unavailable", reason: "reconnect" };
+  }
+  const initialBinding = initialAccount.binding;
   const contract = await currentContract(
     args.db,
     args.connectorSlug,
@@ -1427,8 +1467,8 @@ export async function resolveBuiltinConnectorAutomaticMcpCredential(
           contract,
           accessName,
           initialAccessEncrypted: initialAccess?.encryptedValue,
-          initialRevision: initialAccount.stateRevision,
-          initialRowVersion: initialAccount.rowVersion,
+          initialBindingCreatedAt: initialBinding.createdAt,
+          initialBindingRowVersion: initialBinding.rowVersion,
           accountIdentity,
         },
         signal,
