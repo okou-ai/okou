@@ -7,7 +7,6 @@ import {
   findWebsiteTemplatePackage,
   findWebsiteTemplateResource,
   listTemplates,
-  listWebsiteTemplatePackages,
 } from "../resource-registry";
 
 const EXPECTED_WEBSITE_TEMPLATE_IDS = [
@@ -201,9 +200,6 @@ describe("website template items", () => {
   });
 
   it("resolves built-in website templates as private R2 pull resources", () => {
-    const packages = listWebsiteTemplatePackages();
-
-    expect(packages).toHaveLength(WEBSITE_TEMPLATE_ITEMS.length);
     for (const item of WEBSITE_TEMPLATE_ITEMS) {
       const pkg = findWebsiteTemplatePackage(item.templateId);
       expect(pkg).toMatchObject({
@@ -258,9 +254,6 @@ describe("website template items", () => {
         }),
       );
     }
-    expect(listWebsiteTemplatePackages()).toHaveLength(
-      WEBSITE_TEMPLATE_ITEMS.length,
-    );
     expect(
       listTemplates("website").some((template) => {
         return template.id.endsWith("-v2");

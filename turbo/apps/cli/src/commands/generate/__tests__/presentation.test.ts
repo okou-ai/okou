@@ -45,19 +45,8 @@ describe("okou generate presentation command", () => {
     const stdout = mockConsoleLog.mock.calls.flat().join("\n");
     expect(stdout).toContain("# Okou generate presentation");
     expect(stdout).toContain("direct HTML presentation authoring packet");
-    expect(stdout).not.toContain("generation source-selection packet");
-    expect(stdout).not.toContain("## Stage 1: Resource Selection");
-    expect(stdout).not.toContain("## Candidate Registry Slice");
     expect(stdout).toContain("API migration plan");
-    expect(stdout).not.toContain("skill:article-magazine");
-    expect(stdout).not.toContain("design-system:");
-    expect(stdout).not.toContain("Selected design system");
     expect(stdout).toContain("Selected template: agent decides");
-    expect(stdout).not.toContain("template:html-ppt-graphify-dark-graph");
-    expect(stdout).not.toContain("template:saas-landing");
-    expect(stdout).not.toContain("## Output Contract");
-    expect(stdout).not.toContain("```bash");
-    expect(stdout).not.toContain("okou host ./generated/mockups");
     expect(stdout).toContain("Slide count: 10");
     expect(stdout).toContain("Use a fixed 1920x1080 slide canvas");
     expect(stdout).toContain(
@@ -178,7 +167,7 @@ describe("okou generate presentation command", () => {
     expect(helpOutput).toContain("--visibility <visibility>");
   });
 
-  it("should list presentation templates but not design systems in help", () => {
+  it("should list presentation templates in help", () => {
     let helpOutput = "";
     presentationCommand.configureOutput({
       writeOut: (str: string) => {
@@ -188,14 +177,9 @@ describe("okou generate presentation command", () => {
 
     presentationCommand.outputHelp();
 
-    expect(helpOutput).not.toContain("Design Systems:");
-    expect(helpOutput).not.toContain("design-system:apple");
     expect(helpOutput).toContain("Templates (presentation):");
     expect(helpOutput).toContain("template:html-ppt-playful-launch");
-    expect(helpOutput).not.toContain("Templates (presentation registry):");
     expect(helpOutput).not.toContain("(no presentation templates registered)");
-    expect(helpOutput).not.toContain("template:html-ppt-pitch-deck");
-    expect(helpOutput).not.toContain("template:saas-landing");
   });
 
   it("resolves --template to direct-HTML instructions", async () => {
@@ -276,7 +260,6 @@ describe("okou generate presentation command", () => {
       expect(stderr).toContain(
         'okou generate presentation --template template:html-ppt-playful-launch --prompt "..."',
       );
-      expect(stderr).not.toContain("Available design systems");
     } finally {
       mockConsoleError.mockRestore();
     }

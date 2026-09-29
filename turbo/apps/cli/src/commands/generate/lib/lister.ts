@@ -44,7 +44,7 @@ export type GenerationType = ConnectorGenerationType | BuiltInGenerationType;
 interface BuiltInGenerationCommand {
   label: string;
   command: string;
-  models: string;
+  description: string;
 }
 
 interface GenerationContext {
@@ -57,47 +57,47 @@ const BUILT_IN_GENERATION_COMMANDS: Partial<
   image: {
     label: "Built-in image generation",
     command: "okou generate image --provider built-in -h",
-    models: `Uses ${IMAGE_MODEL_SETTING_SUMMARY}. Available: OpenAI: gpt-image-2.5-flare, gpt-image-2.5-sunburst; fal.ai: gpt-image-1, gpt-image-2, flux-2-pro, ideogram-4, flux-pro-1.1, flux-pro-1.1-ultra, qwen-image-3, seedream4, nano-banana-2, nano-banana-2-lite; BytePlus: seedream5-pro, seedream5-lite`,
+    description: `Models: Uses ${IMAGE_MODEL_SETTING_SUMMARY}. Available: OpenAI: gpt-image-2.5-flare, gpt-image-2.5-sunburst; fal.ai: gpt-image-1, gpt-image-2, flux-2-pro, ideogram-4, flux-pro-1.1, flux-pro-1.1-ultra, qwen-image-3, seedream4, nano-banana-2, nano-banana-2-lite; BytePlus: seedream5-pro, seedream5-lite`,
   },
   presentation: {
     label: "Built-in presentation generation",
     command: "okou generate presentation -h",
-    models: "gpt-5.5",
+    description: "Returns authoring instructions for the calling agent.",
   },
   report: {
     label: "Built-in report generation",
     command: "okou generate report -h",
-    models: "gpt-5.5",
+    description: "Returns authoring instructions for the calling agent.",
   },
   "docs-design": {
     label: "Built-in docs design generation",
     command: "okou generate docs-design -h",
-    models: "gpt-5.5",
+    description: "Returns authoring instructions for the calling agent.",
   },
   poster: {
     label: "Built-in poster generation",
     command: "okou generate poster -h",
-    models: "gpt-5.5",
+    description: "Returns authoring instructions for the calling agent.",
   },
   "dashboard-design": {
     label: "Built-in dashboard design generation",
     command: "okou generate dashboard-design -h",
-    models: "gpt-5.5",
+    description: "Returns authoring instructions for the calling agent.",
   },
   "mobile-app-design": {
     label: "Built-in mobile app design generation",
     command: "okou generate mobile-app-design -h",
-    models: "gpt-5.5",
+    description: "Returns authoring instructions for the calling agent.",
   },
   website: {
     label: "Built-in website generation",
     command: "okou generate website -h",
-    models: "gpt-5.5",
+    description: "Returns authoring instructions for the calling agent.",
   },
   sprite: {
     label: "Built-in sprite asset generation",
     command: "okou generate sprite -h",
-    models: `Built-in image generation with ${IMAGE_MODEL_SETTING_SUMMARY}`,
+    description: `Models: Built-in image generation with ${IMAGE_MODEL_SETTING_SUMMARY}`,
   },
 };
 
@@ -445,7 +445,7 @@ function renderBuiltInCommand(params: {
   console.log("");
   console.log("Built-in command:");
   console.log(`  Okou  ${command.label}`);
-  console.log(`  Models: ${command.models}`);
+  console.log(`  ${command.description}`);
   if (unavailableMessage) {
     console.log(`  Availability: ${unavailableMessage}`);
   }

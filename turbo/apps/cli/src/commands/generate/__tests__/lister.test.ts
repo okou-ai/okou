@@ -538,7 +538,9 @@ describe("okou generate lister", () => {
     );
     expect(text).toContain("Built-in command:");
     expect(text).toContain("Built-in presentation generation");
-    expect(text).toContain("Models: gpt-5.5");
+    expect(text).toContain(
+      "Returns authoring instructions for the calling agent.",
+    );
     expect(text).toContain("Use: okou generate presentation -h");
   });
 
@@ -553,7 +555,9 @@ describe("okou generate lister", () => {
     expect(text).not.toContain("No ready website generation connectors found.");
     expect(text).toContain("Built-in command:");
     expect(text).toContain("Built-in website generation");
-    expect(text).toContain("Models: gpt-5.5");
+    expect(text).toContain(
+      "Returns authoring instructions for the calling agent.",
+    );
     expect(text).toContain("Use: okou generate website -h");
     expect(text).toContain("Context:");
     expect(text).toContain(
@@ -591,7 +595,9 @@ describe("okou generate lister", () => {
     expect(text).not.toContain(`No ready ${type} generation connectors found.`);
     expect(text).toContain("Built-in command:");
     expect(text).toContain(commandLabel);
-    expect(text).toContain("Models: gpt-5.5");
+    expect(text).toContain(
+      "Returns authoring instructions for the calling agent.",
+    );
     expect(text).toContain(`Use: okou generate ${type} -h`);
   });
 

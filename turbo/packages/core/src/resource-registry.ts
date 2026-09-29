@@ -29,9 +29,7 @@ type ResourceKind =
   | "template"
   | "design-system"
   | "color-system"
-  | "image-style"
-  | "audio-style"
-  | "bundle-template";
+  | "image-style";
 
 interface ResourceSourceRef {
   readonly path: string;
@@ -60,7 +58,6 @@ export interface RegistryEntry {
 }
 
 export interface ResourceCandidateSlice {
-  readonly registryVersion: string;
   /** Pinned Git source for every candidate without `source.archive`. */
   readonly source: {
     readonly repo: string;
@@ -77,8 +74,6 @@ const RESOURCE_REGISTRY_REPO = "nexu-io/open-design";
 const RESOURCE_REGISTRY_COMMIT = "3fb620af423534643677c7c6fae76be088fa770a";
 const SKILLS_REPO = "okou-ai/okou-skills";
 const SKILLS_REF = "main";
-
-export const RESOURCE_REGISTRY_VERSION = "v1";
 
 function privateR2ArchiveSource(
   path: string,
@@ -3502,10 +3497,6 @@ function websiteTemplatePackageToRegistryEntry(
   };
 }
 
-export function listWebsiteTemplatePackages(): readonly WebsiteTemplatePackage[] {
-  return WEBSITE_TEMPLATE_PACKAGES;
-}
-
 export function findWebsiteTemplatePackage(
   templateId: string,
 ): WebsiteTemplatePackage | undefined {
@@ -3712,7 +3703,6 @@ export function selectResourceCandidates(
   target?: GenerationTarget,
 ): ResourceCandidateSlice {
   return {
-    registryVersion: RESOURCE_REGISTRY_VERSION,
     source: {
       repo: RESOURCE_REGISTRY_REPO,
       ref: RESOURCE_REGISTRY_COMMIT,

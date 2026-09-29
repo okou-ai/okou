@@ -6,7 +6,6 @@ import {
   buildPresentationRunbookInstructionLines,
   findPresentationRunbookPackage,
   listPresentationRunbookPackages,
-  resolvePresentationRunbookColorToken,
 } from "@okouai/core/resource-registry";
 import {
   PRESENTATION_IMAGE_BATCH_INSTRUCTION,
@@ -147,19 +146,13 @@ ${formatPresentationTemplateListing(templates)}`;
           if (!template) {
             throw unknownTemplateError(options.template, config.usageCommand);
           }
-          const color = resolvePresentationRunbookColorToken(
-            template,
-            undefined,
-          );
-          const colorSystemToken =
-            "error" in color ? template.defaultColorSystem : color.token;
           console.log(
             [
               "# Presentation Generation (template)",
               "",
               ...buildPresentationRunbookInstructionLines({
                 runbookPackage: template,
-                colorSystemToken,
+                colorSystemToken: template.defaultColorSystem,
                 hostCommand,
               }),
               ...deliveryInstructions,

@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import {
-  createSpriteAuthoringPacket,
+  createSpriteAuthoringInstructions,
   type SpritePlan,
 } from "../shared/sprite-authoring";
 import { dispatchGenerate } from "./lib/dispatch";
@@ -234,11 +234,11 @@ Notes:
         name: slugify(options.name ?? prompt),
       };
 
-      const packet = createSpriteAuthoringPacket({
+      const instructions = createSpriteAuthoringInstructions({
         prompt,
         plan,
         visibility: options.visibility,
       });
-      console.log(packet.instructions);
+      console.log(instructions);
     }),
   );
