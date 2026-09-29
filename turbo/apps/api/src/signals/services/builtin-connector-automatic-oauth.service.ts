@@ -236,8 +236,8 @@ function dcrStore(db: Db, orgId: string, contract: BuiltinAutomaticContract) {
   return builtinConnectorAutomaticDcrStore({
     db,
     owner: contractOwner(orgId, contract),
-    assertCurrentContract: async (lockedDb) => {
-      await assertCurrentContract(lockedDb, contract);
+    assertCurrentContract: async () => {
+      await assertCurrentContract(db, contract);
     },
   });
 }
