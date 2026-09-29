@@ -79,6 +79,31 @@ would restore the previously identified response-loss window. Only after both
 parts hold may R2 drop these triggers/functions while R1 and R2 mix. No extra
 release wave is inferred from this remaining work.
 
+#### Remaining publication interval witness
+
+The following interleaving is statically constructible; it has not been
+runtime-reproduced in this round. Ensure A prepares a seed for an enabled
+source. Disable B commits and deletes that cursor. Enable C restores the same
+connector/form and has not yet published its new baseline. A's current target
+predicate sees enabled=true and the same configuration, so it can insert its
+older seed into the now-missing cursor. Binding-only conflict updates do not
+protect this INSERT case, and migration 1290's UPDATE trigger does not protect
+it either. The old interval can consequently include responses from the
+explicitly disabled period.
+
+The fix must capture the automation's full-precision `updated_at` and `xmin`
+before preparation, then fence publication to that observed delivery interval.
+Its lost-ownership result must also be propagated through the existing callers:
+`createGoogleFormsEventAutomationForWorkflow$` currently deletes the automation
+by ID on watch failure, and the ordinary branch of
+`restoreDisabledWorkflowAutomation` updates by ID during enable rollback.
+Returning an ordinary preparation error from a new snapshot fence would let
+those callers delete or restore a newer winner. They need conditional cleanup
+or an explicit superseded result that skips cleanup of the newer interval,
+with fresh preparation owned by the current caller. Neither returning a false
+success nor adding a CAS only at publication completes this protocol. This is
+unfinished R1 work and must be fixed before the trigger removal gate is met.
+
 ### Validation
 
 Focused ESLint/Oxlint/format checks pass for committed source changes. DCR final command publication core types and Calendar core types pass; the integrated PR must validate the latest combined head and schema migration. The command-owned accepted-catalog reader retains the current identity/cache check, exact payload identity query and one bounded retry when activation changes the sole current row. It reuses the same attestation and compatibility validation as legacy readers. The Forms schema snapshot changes only google_forms_automation_cursors; the subsequent custom migration adds the two cursor invariant functions/triggers. API tests cover remote-watch repair/catch-up, pending responses after an already enabled automation rebinds the same watch, DCR concurrent authorizations using a shared published client with usable callbacks, and explicit Forms disable/re-enable behavior. A response retrieval calls the real disable API before returning provider data, then asserts that no automation input was enqueued. Existing API coverage also exercises source account switches, connector deletion/re-add and same-target official reconfiguration. The mixed-version claim additionally relies on the inspected outgoing SQL writing `watch_state_id` in every cursor upsert; the tests do not pretend to execute an outgoing API build. No local Vitest suite or development server was run.
