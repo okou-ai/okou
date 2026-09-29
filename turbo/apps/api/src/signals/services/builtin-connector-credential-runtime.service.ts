@@ -714,7 +714,7 @@ async function readCurrentConnectorRefreshWinner(
     ne(sql`${connectors.updatedAt}::text`, args.connection.stateRevision),
     // A concurrent publication can replace this request's result only when
     // its committed credential is still usable. Unknown expiry is not proof.
-    gt(connectors.tokenExpiresAt, sql`clock_timestamp()`),
+    gt(connectors.tokenExpiresAt, nowDate()),
   );
   const db = args.persist?.db ?? args.db;
   const [winner] =
