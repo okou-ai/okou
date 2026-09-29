@@ -663,6 +663,25 @@ feature-prompt digest so a changed switch state cannot silently reuse the old
 cached guidance. Older API versions ignore the new semantic field; no database
 migration or rollback floor is needed.
 
+### Safe tab inspection across native-input callbacks (#37311)
+
+A fresh `agent-browser` attachment may select an unrelated live tab. Browser
+continuation guidance now asks the agent to use `okou browser tab list` and
+`okou browser tab select <id>` rather than trusting that selection or printing
+raw `agent-browser` tab output. The CLI discards untrusted child output and
+exposes only current-session tab IDs, the selected flag, and HTTP(S) origins.
+It does not recover the action's exact page target: multiple tabs at the same
+origin may remain ambiguous after non-sensitive page inspection, in which case
+the agent must stop rather than guess. A successful
+native input write still does not submit the website form or establish login.
+
+The API prompt and these CLI commands are delivered in the same code change.
+New launch contexts bind the serving API's CLI package, but queued runs may
+retain an older CLI that lacks the safe commands. The prompt explicitly stops
+when safe tab inspection is unavailable; it never falls back to raw tab output.
+No stored Browser action, callback, provider contract, or feature-switch state
+changes, so older API/CLI pairs retain their previous guidance and behavior.
+
 ## Member source-first onboarding completion column (2026-09-27)
 
 Migration `1269_org_member_onboarding_completed_at` adds the nullable

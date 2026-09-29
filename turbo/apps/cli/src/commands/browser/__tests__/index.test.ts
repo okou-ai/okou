@@ -75,7 +75,15 @@ describe("okou browser command", () => {
       browserCommand.commands.map((command) => {
         return command.name();
       }),
-    ).toStrictEqual(["use", "lease", "new", "status", "view", "input-request"]);
+    ).toStrictEqual([
+      "use",
+      "lease",
+      "new",
+      "status",
+      "view",
+      "tab",
+      "input-request",
+    ]);
   });
 
   it("guides agents to native credential input before last-resort takeover", () => {
@@ -92,6 +100,8 @@ describe("okou browser command", () => {
       },
     });
 
+    expect(help).toContain("okou browser tab list");
+    expect(help).toContain("okou browser tab select t2");
     expect(help).toContain('"fieldKind":"password"');
     expect(help).toContain('"fieldKind":"one_time_code"');
     expect(help).toContain(
@@ -332,6 +342,189 @@ describe("okou browser command", () => {
       "agent-browser",
       ["--session", "booking-browser", "connect", CDP_URL],
       { stdio: "ignore" },
+    );
+  });
+
+  it("lists only current-session IDs, selection and redacted origins", async () => {
+    const secret = "private-oauth-code";
+    spawnSyncMock.mockReturnValue({
+      status: 0,
+      stdout: JSON.stringify({
+        success: true,
+        data: {
+          tabs: [
+            {
+              tabId: "t1",
+              url: `https://user:password@accounts.example.test/login?code=${secret}#fragment`,
+              title: `title-${secret}`,
+              label: `label-${secret}`,
+              active: false,
+            },
+            {
+              tabId: "t2",
+              url: "about:blank",
+              title: `title-${secret}`,
+              active: true,
+            },
+          ],
+        },
+      }),
+      stderr: secret,
+    });
+
+    await browserCommand.parseAsync(["node", "cli", "tab", "list", "--json"]);
+
+    expect(spawnSyncMock).toHaveBeenCalledWith(
+      "agent-browser",
+      ["--session", "okou-browser", "tab", "list", "--json"],
+      {
+        encoding: "utf8",
+        timeout: 15_000,
+        maxBuffer: 1024 * 1024,
+        stdio: ["ignore", "pipe", "ignore"],
+      },
+    );
+    const output = consoleLog.mock.calls.flat().join("\n");
+    expect(JSON.parse(output)).toStrictEqual({
+      tabs: [
+        { id: "t1", origin: "https://accounts.example.test", active: false },
+        { id: "t2", origin: "non-web", active: true },
+      ],
+    });
+    expect(output).not.toContain(secret);
+    expect(output).not.toContain("user:password");
+    expect(consoleError.mock.calls.flat().join("\n")).toBe("");
+  });
+
+  it("does not guess which of two same-origin tabs is the input page", async () => {
+    spawnSyncMock.mockReturnValue({
+      status: 0,
+      stdout: JSON.stringify({
+        success: true,
+        data: {
+          tabs: [
+            {
+              tabId: "t1",
+              url: "https://login.example.test/one",
+              active: true,
+            },
+            {
+              tabId: "t2",
+              url: "https://login.example.test/two",
+              active: false,
+            },
+          ],
+        },
+      }),
+    });
+
+    await browserCommand.parseAsync(["node", "cli", "tab", "list"]);
+
+    expect(consoleLog.mock.calls.flat()).toStrictEqual([
+      "t1 (selected) https://login.example.test",
+      "t2 https://login.example.test",
+    ]);
+    expect(spawnSyncMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("selects an explicit tab and verifies it without printing raw switch output", async () => {
+    const secret = "private-oauth-code";
+    spawnSyncMock
+      .mockReturnValueOnce({
+        status: 0,
+        stdout: `✓ Secret ?code=${secret}`,
+        stderr: secret,
+      })
+      .mockReturnValueOnce({
+        status: 0,
+        stdout: JSON.stringify({
+          success: true,
+          data: {
+            tabs: [
+              {
+                tabId: "t1",
+                url: "https://other.example.test/",
+                active: false,
+              },
+              {
+                tabId: "t2",
+                url: `https://accounts.example.test/login?code=${secret}`,
+                title: secret,
+                active: true,
+              },
+            ],
+          },
+        }),
+      });
+
+    await browserCommand.parseAsync([
+      "node",
+      "cli",
+      "tab",
+      "select",
+      "t2",
+      "--agent-session",
+      "booking-browser",
+      "--json",
+    ]);
+
+    expect(
+      spawnSyncMock.mock.calls.map((call) => {
+        return call[1];
+      }),
+    ).toStrictEqual([
+      ["--session", "booking-browser", "tab", "t2"],
+      ["--session", "booking-browser", "tab", "list", "--json"],
+    ]);
+    const output = consoleLog.mock.calls.flat().join("\n");
+    expect(JSON.parse(output)).toStrictEqual({
+      tab: { id: "t2", origin: "https://accounts.example.test", active: true },
+    });
+    expect(output).not.toContain(secret);
+  });
+
+  it("fails closed without revealing malformed tab output or switch errors", async () => {
+    const secret = "private-oauth-code";
+    spawnSyncMock.mockReturnValueOnce({
+      status: 0,
+      stdout: `not JSON ${secret}`,
+    });
+    await expect(
+      browserCommand.parseAsync(["node", "cli", "tab", "list"]),
+    ).rejects.toThrow("process.exit called");
+    expect(consoleError.mock.calls.flat().join("\n")).not.toContain(secret);
+    expect(consoleLog.mock.calls.flat()).toStrictEqual([]);
+
+    consoleError.mockClear();
+    spawnSyncMock.mockReturnValueOnce({
+      status: 1,
+      stdout: secret,
+      stderr: secret,
+    });
+    await expect(
+      browserCommand.parseAsync(["node", "cli", "tab", "select", "t1"]),
+    ).rejects.toThrow("process.exit called");
+    expect(consoleError.mock.calls.flat().join("\n")).not.toContain(secret);
+    expect(consoleLog.mock.calls.flat()).toStrictEqual([]);
+  });
+
+  it("does not claim selection when the post-switch tab is not active", async () => {
+    spawnSyncMock
+      .mockReturnValueOnce({ status: 0, stdout: "selected" })
+      .mockReturnValueOnce({
+        status: 0,
+        stdout: JSON.stringify({
+          success: true,
+          data: {
+            tabs: [{ tabId: "t1", url: "https://example.test", active: false }],
+          },
+        }),
+      });
+    await expect(
+      browserCommand.parseAsync(["node", "cli", "tab", "select", "t1"]),
+    ).rejects.toThrow("process.exit called");
+    expect(consoleError.mock.calls.flat().join("\n")).toContain(
+      "Browser tab selection could not be verified",
     );
   });
 });

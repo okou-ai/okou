@@ -5913,6 +5913,9 @@ describe("okou browser route", () => {
     expect(claim.appendSystemPrompt ?? "").not.toContain(
       "okou browser input-request",
     );
+    expect(claim.appendSystemPrompt ?? "").not.toContain(
+      "Browser tab continuity:",
+    );
     const browserToken = runs.okouTokenForRunWithCapabilities(
       actor,
       sent.runId,
@@ -5950,6 +5953,11 @@ describe("okou browser route", () => {
     );
     expect(appendSystemPrompt).not.toContain("okou browser input-request");
     expect(appendSystemPrompt).toContain(
+      "Browser tab continuity: after a fresh `okou browser use` attachment",
+    );
+    expect(appendSystemPrompt).toContain("`okou browser tab list`");
+    expect(appendSystemPrompt).not.toContain("Browser input completion:");
+    expect(appendSystemPrompt).toContain(
       "Direct Browser takeover is a last resort, not the default for login",
     );
     expect(appendSystemPrompt).not.toContain("Browser user input priority:");
@@ -5981,6 +5989,14 @@ describe("okou browser route", () => {
     expect(appendSystemPrompt).toContain(
       "After it succeeds, return its exact action URL and use no further Browser commands in this turn",
     );
+    expect(appendSystemPrompt).toContain("`okou browser tab select <id>`");
+    expect(appendSystemPrompt).toContain(
+      "same-origin candidates remain ambiguous",
+    );
+    expect(appendSystemPrompt).toContain(
+      "On a successful callback, run `okou browser use` and recover the existing intended page",
+    );
+    expect(appendSystemPrompt).toContain("submit at most once");
     expect(appendSystemPrompt).toContain(
       "If a target is stale, inspect and recapture it once where safe; never blindly replay an uncertain write",
     );
