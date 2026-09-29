@@ -124,7 +124,7 @@ export function prepareSocialSettlement(
       : 0,
   };
 }
-export function checkedSocialSettlementPlan(
+export function socialPlan(
   prepared: PreparedSocialSettlement | undefined,
   job: (Job & { readonly xmin: string }) | undefined,
 ) {

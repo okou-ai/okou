@@ -38,7 +38,7 @@ import {
 import {
   socialJobQuery,
   socialClaimUnavailable,
-  checkedSocialSettlementPlan,
+  socialPlan,
   socialWhere,
   socialValues,
   type SocialSettlementClaim,
@@ -98,10 +98,8 @@ const commitUsageBatch$ = command(
   async ({ set }, args: SettlementBatchArgs, signal: AbortSignal) => {
     const { orgId, refresh, batch } = args;
     const db = set(writeDb$);
-    const { startedAt, work: initialWork } = settlementObservation(
-      performance.now(),
-    );
-    const work = { ...initialWork };
+    const { startedAt, work: seed } = settlementObservation(performance.now());
+    const work = { ...seed };
     const result = await db.transaction(async (tx) => {
       await tx.execute(usageEventCompactionLockSql("shared"));
       work.lockWaitMs = Math.round(performance.now() - startedAt);
@@ -111,8 +109,7 @@ const commitUsageBatch$ = command(
       if (socialClaimUnavailable(args.social, job)) {
         return null;
       }
-      const social = checkedSocialSettlementPlan(batch.social, job);
-      const managed = social.usage;
+      const { usage: managed, processPending } = socialPlan(batch.social, job);
       await tx.execute(orgCreditCompatibilityLockSql(orgId));
       if (managed) {
         const [run] = await tx
@@ -144,7 +141,7 @@ const commitUsageBatch$ = command(
       const at = nowDate();
       const acquiredAt = Math.round(performance.now() - startedAt);
       work.orgLockWaitMs = acquiredAt - work.lockWaitMs;
-      const events = social.processPending
+      const events = processPending
         ? await tx
             .update(usageEvent)
             .set({ status: "processed", creditsCharged: 0, processedAt: at })
