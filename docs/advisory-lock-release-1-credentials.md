@@ -496,3 +496,17 @@ The usage-hint thread-deletion race was traced through both callers: their
 existing `tapError` boundary isolates a missing-thread append after financial
 commit while retaining cancellation. No hint retry, parent lock or transaction
 was added for that accepted best-effort output.
+
+### Calendar retired-channel verification
+
+Pipeline `36560635172` at `02b3748` exposed a Calendar test that still expected
+an inactive old channel to remain locally authenticated after account selection
+changed and remote stop failed. The accepted best-effort lifecycle instead
+deletes that inactive local identity before attempting remote cleanup; the
+notification lookup correctly returns 401. The test now constructs account
+switching entirely through public APIs and verifies rejection, no queued Run
+from the old source, and a Run bound to the selected account from its notification.
+It removes the direct projection-clearing fixture and exact provider-read counts.
+Normal notification, repair-to-usable-watch and permission tests remain; no old
+channel recovery state, advisory gate or trigger is restored to retain the prior
+200-with-zero-dispatch implementation detail.

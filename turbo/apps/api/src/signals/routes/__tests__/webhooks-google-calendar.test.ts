@@ -23,7 +23,6 @@ import {
 } from "./helpers/api-bdd-workflows";
 import { chatEventDisplayText } from "./helpers/chat-event";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import { clearWorkflowAutomationEventConnectorAsPreviousApi } from "./helpers/runtime-state";
 import { createRouteMocks } from "./helpers/route-test";
 import { chatThreadRoutes } from "../chat-threads";
 import { connectorAccountRoutes } from "../connector-accounts";
@@ -653,7 +652,7 @@ describe("POST /api/webhooks/google-calendar", () => {
     });
   });
 
-  describe("with a legacy Calendar projection", () => {
+  describe("after switching Calendar accounts", () => {
     async function prepareScenario() {
       const firstAccessToken = "calendar-first-access-token";
       const secondAccessToken = "calendar-second-access-token";
@@ -716,11 +715,6 @@ describe("POST /api/webhooks/google-calendar", () => {
         }),
         [200],
       );
-      await clearWorkflowAutomationEventConnectorAsPreviousApi(
-        context,
-        created.body.id,
-      );
-
       const firstWatch = calendar.channels.find((channel) => {
         return channel.accessToken === firstAccessToken;
       });
@@ -743,29 +737,22 @@ describe("POST /api/webhooks/google-calendar", () => {
     beforeEach(async () => {
       preparedScenario = await prepareScenario();
     });
-    it("repairs a legacy projection and dispatches only from the selected Calendar account", async () => {
-      const {
-        firstWatch,
-        calendar,
-        secondWatch,
-        secondAccessToken,
-        scenario,
-        secondConnectorId,
-      } = preparedScenario;
+    it("rejects the retired source and dispatches from the selected account even when remote stop fails", async () => {
+      const { firstWatch, secondWatch, scenario, secondConnectorId } =
+        preparedScenario;
 
       const oldSource = await postGoogleCalendarWebhook(
         webhookHeaders(firstWatch),
       );
+      // The selected-account API retires the old local channel immediately;
+      // failure of best-effort remote stop does not preserve its authority.
       expect(oldSource).toStrictEqual({
-        status: 200,
-        body: {
-          success: true,
-          watchStates: 1,
-          dispatched: 0,
-          duplicates: 0,
-        },
+        status: 401,
+        body: { error: "Unauthorized" },
       });
-      expect(calendar.incrementalAccessTokens).toStrictEqual([]);
+      await runsApi.heartbeatRunner(scenario.runnerGroup);
+      const idleAfterOldSource = await runsApi.pollRunner(scenario.runnerGroup);
+      expect(idleAfterOldSource.body.job).toBeNull();
 
       const selectedSource = await postGoogleCalendarWebhook(
         webhookHeaders(secondWatch),
@@ -780,10 +767,6 @@ describe("POST /api/webhooks/google-calendar", () => {
         },
       });
       await flushWaitUntilForTest();
-      expect(calendar.incrementalAccessTokens).toStrictEqual([
-        secondAccessToken,
-      ]);
-
       await runsApi.heartbeatRunner(scenario.runnerGroup);
       const job = await runsApi.pollRunner(scenario.runnerGroup);
       if (!job.body.job) {
