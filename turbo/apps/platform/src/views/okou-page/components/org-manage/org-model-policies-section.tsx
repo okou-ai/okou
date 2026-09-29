@@ -631,6 +631,7 @@ function PolicyRow({
   connections,
   disabled,
   canDelete,
+  canManage,
   onEdit,
   onDelete,
 }: {
@@ -639,6 +640,7 @@ function PolicyRow({
   connections: ModelProviderConnectionResponse[];
   disabled: boolean;
   canDelete: boolean;
+  canManage: boolean;
   onEdit: (policy: OrgModelPolicy) => void;
   onDelete: (policy: OrgModelPolicy) => void;
 }) {
@@ -662,7 +664,12 @@ function PolicyRow({
   return (
     <div
       data-testid={`org-model-policy-row-${policy.model}`}
-      className="relative grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 rounded-lg px-3 py-3.5 transition-colors after:pointer-events-none after:absolute after:bottom-0 after:left-[3.75rem] after:right-3 after:h-px after:bg-divider/50 after:content-[''] last:after:hidden hover:bg-gray-50 dark:hover:bg-gray-100 lg:grid-cols-[minmax(0,1fr)_236px_96px_36px]"
+      className={cn(
+        "relative grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 rounded-lg px-3 py-3.5 transition-colors after:pointer-events-none after:absolute after:bottom-0 after:left-[3.75rem] after:right-3 after:h-px after:bg-divider/50 after:content-[''] last:after:hidden hover:bg-gray-50 dark:hover:bg-gray-100",
+        canManage
+          ? "lg:grid-cols-[minmax(0,1fr)_236px_96px_36px]"
+          : "lg:grid-cols-[minmax(0,1fr)_236px_96px]",
+      )}
     >
       <div className="col-start-1 row-start-1 flex min-w-0 flex-col justify-center">
         <div className="flex min-w-0 items-center gap-2">
@@ -693,15 +700,17 @@ function PolicyRow({
           </p>
         )}
       </div>
-      <div className="col-start-2 row-start-1 flex items-center justify-end lg:col-start-4">
-        <PolicyActionsMenu
-          policy={policy}
-          disabled={disabled}
-          canDelete={canDelete}
-          onEdit={onEdit}
-          onDelete={onDelete}
-        />
-      </div>
+      {canManage && (
+        <div className="col-start-2 row-start-1 flex items-center justify-end lg:col-start-4">
+          <PolicyActionsMenu
+            policy={policy}
+            disabled={disabled}
+            canDelete={canDelete}
+            onEdit={onEdit}
+            onDelete={onDelete}
+          />
+        </div>
+      )}
       <div className="col-start-1 row-start-2 flex min-w-0 flex-col justify-center lg:col-start-2 lg:row-start-1">
         <div className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
           <span className="flex size-7 shrink-0 items-center justify-center">
@@ -1801,6 +1810,11 @@ export function OrgModelPoliciesSection() {
   }
 
   const policies = data.policies;
+  const canManageModelPolicies =
+    policiesLoadable.state === "hasData" &&
+    policies.some((policy) => {
+      return isByokProviderType(policy.defaultProviderType);
+    });
   const visiblePolicies = policies.filter((policy) => {
     return ACTIVE_RUN_MODELS.includes(policy.model);
   });
@@ -1834,19 +1848,19 @@ export function OrgModelPoliciesSection() {
     submit(makePolicyDefault(policies, model));
   };
   const handleOpenAddModel = () => {
-    if (saving) {
+    if (saving || !canManageModelPolicies) {
       return;
     }
     openAddModelDialog(addableModels[0] ?? null);
   };
   const handleEditPolicy = (policy: OrgModelPolicy) => {
-    if (saving) {
+    if (saving || !canManageModelPolicies) {
       return;
     }
     openEditModelDialog(policy);
   };
   const handleDeletePolicy = (policy: OrgModelPolicy) => {
-    if (saving || policies.length <= 1) {
+    if (saving || !canManageModelPolicies || policies.length <= 1) {
       return;
     }
     submit(removePolicy(policies, policy.model));
@@ -1871,15 +1885,24 @@ export function OrgModelPoliciesSection() {
             return $.settings.models.policies.workspaceDescription;
           })}
           action={
-            <AddModelButton
-              hasModels={addableModels.length > 0}
-              disabled={saving}
-              onClick={handleOpenAddModel}
-            />
+            canManageModelPolicies ? (
+              <AddModelButton
+                hasModels={addableModels.length > 0}
+                disabled={saving}
+                onClick={handleOpenAddModel}
+              />
+            ) : null
           }
         />
         <div className="overflow-hidden rounded-xl bg-card border border-surface-border">
-          <div className="hidden grid-cols-[minmax(0,1fr)_236px_96px_36px] gap-3 border-b border-border/50 px-5 py-3 text-xs font-medium text-muted-foreground lg:grid">
+          <div
+            className={cn(
+              "hidden gap-3 border-b border-border/50 px-5 py-3 text-xs font-medium text-muted-foreground lg:grid",
+              canManageModelPolicies
+                ? "lg:grid-cols-[minmax(0,1fr)_236px_96px_36px]"
+                : "lg:grid-cols-[minmax(0,1fr)_236px_96px]",
+            )}
+          >
             <span>
               {t(($) => {
                 return $.settings.models.policies.model;
@@ -1895,7 +1918,7 @@ export function OrgModelPoliciesSection() {
                 return $.settings.models.policies.pricing;
               })}
             </span>
-            <span />
+            {canManageModelPolicies && <span />}
           </div>
           <div className="p-2">
             {visiblePolicies.map((policy) => {
@@ -1907,6 +1930,7 @@ export function OrgModelPoliciesSection() {
                   connections={connections}
                   disabled={false}
                   canDelete={policies.length > 1}
+                  canManage={canManageModelPolicies}
                   onEdit={handleEditPolicy}
                   onDelete={handleDeletePolicy}
                 />

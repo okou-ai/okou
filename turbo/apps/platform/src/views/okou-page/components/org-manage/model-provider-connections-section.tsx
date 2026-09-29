@@ -1,4 +1,4 @@
-import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
+import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { Cable, EllipsisVertical, Pencil, Plus, Trash } from "lucide-react";
@@ -523,10 +523,8 @@ export function ModelProviderConnectionsSection() {
   const { t } = useTranslation();
   const settingsDialogSignal = useGet(settingsDialogSignal$);
   const loadable = useLoadable(modelProviderConnections$);
-  const last = useLastResolved(modelProviderConnections$);
-  const connections =
-    loadable.state === "hasData" ? loadable.data : (last ?? []);
-  if (!settingsDialogSignal) {
+  const connections = loadable.state === "hasData" ? loadable.data : [];
+  if (!settingsDialogSignal || connections.length === 0) {
     return null;
   }
   return (
@@ -540,26 +538,18 @@ export function ModelProviderConnectionsSection() {
         })}
         action={<AddConnectionMenu />}
       />
-      {connections.length === 0 ? (
-        <p className="rounded-xl bg-card px-4 py-5 text-sm text-muted-foreground border border-surface-border">
-          {t(($) => {
-            return $.settings.models.gateways.empty;
+      <div
+        className="overflow-hidden rounded-xl bg-card border border-surface-border"
+        data-testid="model-provider-connections-list"
+      >
+        <div className="p-2">
+          {connections.map((connection) => {
+            return (
+              <ConnectionRow key={connection.id} connection={connection} />
+            );
           })}
-        </p>
-      ) : (
-        <div
-          className="overflow-hidden rounded-xl bg-card border border-surface-border"
-          data-testid="model-provider-connections-list"
-        >
-          <div className="p-2">
-            {connections.map((connection) => {
-              return (
-                <ConnectionRow key={connection.id} connection={connection} />
-              );
-            })}
-          </div>
         </div>
-      )}
+      </div>
       <ConnectionDialog />
       <DeleteConnectionDialog />
     </section>
