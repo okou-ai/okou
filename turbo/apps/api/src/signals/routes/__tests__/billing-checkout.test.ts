@@ -13686,6 +13686,13 @@ describe("usage pack allocation management", () => {
     );
     expect(context.mocks.stripe.creditNotes.create).not.toHaveBeenCalled();
 
+    // Stripe now reflects the applied removal, so reconciliation has no drift.
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+      managedUsagePackSubscription(
+        fixture,
+        new Map([[TEST_PRICE_USAGE_PACK_20, 1]]),
+      ),
+    );
     await runBillingReconciliation(fixture.orgId);
 
     const duplicateEvent = {
