@@ -3,6 +3,7 @@ import { Command } from "commander";
 
 import { getChatThread } from "../../lib/api/domains/chat";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
+import { getPlatformOrigin } from "../../lib/platform-url";
 import { formatChatEffort, resolveChatThreadId } from "./shared";
 
 interface GetOptions {
@@ -28,7 +29,7 @@ Examples:
 
 Notes:
   - Defaults --thread-id to OKOU_CHAT_THREAD_ID from the current web chat thread
-  - Prints thread metadata; okou chat messages prints the messages
+  - Prints thread metadata and its web URL; okou chat messages prints the messages
   - Authenticates via OKOU_TOKEN (requires chat-thread:read capability)`,
   )
   .action(
@@ -36,13 +37,18 @@ Notes:
       const threadId = resolveChatThreadId(options.threadId);
 
       const thread = await getChatThread({ threadId });
+      const url = new URL(
+        `/chats/${encodeURIComponent(thread.id)}`,
+        await getPlatformOrigin(),
+      ).href;
       if (options.json) {
-        console.log(JSON.stringify(thread));
+        console.log(JSON.stringify({ ...thread, url }));
         return;
       }
 
       console.log(chalk.green("✓ Chat thread loaded"));
       console.log(chalk.dim(`  Thread: ${thread.id}`));
+      console.log(chalk.cyan(`  URL:    ${url}`));
       if (thread.agentId) {
         console.log(chalk.dim(`  Agent:  ${thread.agentId}`));
       }

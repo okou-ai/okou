@@ -62,6 +62,9 @@ describe("okou chat get command", () => {
     const output = mockConsoleLog.mock.calls.flat().join("\n");
     expect(output).toContain("Chat thread loaded");
     expect(output).toContain(`Thread: ${THREAD_ID}`);
+    expect(output).toContain(
+      `URL:    http://localhost:3000/chats/${THREAD_ID}`,
+    );
     expect(output).toContain(`Agent:  ${AGENT_ID}`);
     expect(output).toContain("Title:  Launch plan");
     expect(output).toContain("Model:  claude-sonnet-5 · effort extra");
@@ -105,6 +108,7 @@ describe("okou chat get command", () => {
         agentId: AGENT_ID,
         title: "Launch plan",
         selectedModel: "claude-sonnet-5",
+        url: `http://localhost:3000/chats/${THREAD_ID}`,
       },
     );
   });
@@ -131,6 +135,7 @@ describe("okou chat get command", () => {
 
   it("loads another chat thread passed with --thread-id", async () => {
     vi.stubEnv("OKOU_CHAT_THREAD_ID", undefined);
+    vi.stubEnv("OKOU_APP_URL", "https://chat.example.com/");
     server.use(
       http.get(OTHER_GET_URL, () => {
         return HttpResponse.json({
@@ -152,6 +157,9 @@ describe("okou chat get command", () => {
 
     const output = mockConsoleLog.mock.calls.flat().join("\n");
     expect(output).toContain(`Thread: ${OTHER_THREAD_ID}`);
+    expect(output).toContain(
+      `URL:    https://chat.example.com/chats/${OTHER_THREAD_ID}`,
+    );
     expect(output).toContain("Title:  Delegation source");
   });
 
