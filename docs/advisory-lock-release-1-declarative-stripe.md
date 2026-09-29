@@ -4,7 +4,7 @@ This mapping follows Ethan's final September 29 decision in `bba5c515`, which
 withdraws the briefly proposed subscription-table exception. The canonical
 [terminal contract](advisory-lock-terminal-state.md) is authoritative. Source was
 checked at `c036a6f`. **No new table, persisted field or JSON coordination state
-is proposed here.** The shared projection below is not implemented yet; this
+is proposed here.** Only the usage pack slice below is implemented; this
 mapping does not declare R1 ready.
 
 The earlier requirement to prevent every late quantity or schedule overwrite is
@@ -12,6 +12,41 @@ withdrawn. A successful later synchronization may repair 3 → 2 back to the
 latest intended 3. Schedule replacement, shared item idempotency keys and remote
 fencing are no longer prerequisites. Purchase duplication and issued invoices
 remain different: configuration repair cannot reverse an extra charge.
+
+## Implementation status
+
+Implemented for member usage packs (`usage-pack-allocation-change.service.ts`):
+
+- `loadUsagePackConfigurationSource$` reads the subscription, its allocations,
+  open allocation changes, in-flight Plan changes and open migrations without a
+  transaction. `desiredUsagePackConfiguration` is a pure function of those rows:
+  current packages from projected allocation statuses, renewal packages after
+  already `scheduled` changes. Previewed quotes do not participate.
+- `syncUsagePackSubscriptionConfiguration$(usagePackSubscriptionId, signal?)`
+  carries only the identity, reloads that projection, reads Stripe and repairs
+  current items or the current/renewal schedule phases with
+  `proration_behavior: "none"` and no idempotency key, so a repeated repair of
+  the same drift is never suppressed. It defers, rather than overwrites, when an
+  allocation or Plan change is `applying`/`pending_payment`, a migration is open,
+  Stripe reports `pending_update`, the renewal phase carries a different Plan,
+  or the schedule has more than one future phase.
+- Invitation activation and refund removal commit local rows first and call the
+  sync after commit. A failed sync no longer blocks acceptance or grants.
+- `syncUsagePackSubscriptionConfigurations$` runs in the hourly billing cron and
+  visits one of 24 stable `hashtext(id)` buckets, so each active subscription
+  is compared daily without a cursor, dirty flag or new column. Scoped
+  reconciliation visits every subscription of the requested organizations.
+- API tests: a lost Stripe response after acceptance keeps the accepted state
+  and grants, and reconciliation repairs quantity 1 → 2 once; a late stale
+  quantity is repaired without a new invoice or payment; a second reconciliation
+  over a converged subscription makes no update.
+
+Still unimplemented: allocation preview/confirm and immediate member removal
+still require Stripe to match local quantities and throw on drift; they must
+derive from the local projection and request the same sync. Plan, migration,
+legacy Plan and concurrency writers, cancellation/restore ownership, webhook
+intent preservation, ordinary initial purchase admission and immediate unpaid
+concurrency identity remain as mapped below.
 
 ## Existing sources of each projected fact
 

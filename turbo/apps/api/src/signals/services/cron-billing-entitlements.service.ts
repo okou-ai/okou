@@ -53,6 +53,7 @@ import {
 } from "./usage-pack-subscription.service";
 import { reconcileUsagePackCreditRefunds } from "./usage-pack-credit-refund.service";
 import { reconcileUsagePackInvitationPurchases$ } from "./usage-pack-invitation-purchase.service";
+import { syncUsagePackSubscriptionConfigurations$ } from "./usage-pack-allocation-change.service";
 import { reconcileUsagePackSubscriptionMigrations$ } from "./usage-pack-subscription-migration.service";
 import { disableIneligibleWorkflowWebhookAutomationsForOrg } from "./workflow-webhook-automation-entitlement.service";
 import { isCurrentStripePreviewMetadata } from "./stripe-preview-metadata.service";
@@ -1662,6 +1663,35 @@ async function reconcileCandidateRows(
   return { downgraded, expiredConcurrency, reconciledUsageAllowances };
 }
 
+/**
+ * Invitation recovery first commits accepted local allocations; the daily
+ * configuration sweep then converges Stripe from those records by identity.
+ */
+const reconcileUsagePackInvitationsAndConfiguration$ = command(
+  async (
+    { set },
+    scope: BillingReconciliationScope | undefined,
+    signal: AbortSignal,
+  ): Promise<number> => {
+    const invitations = await set(
+      reconcileUsagePackInvitationPurchases$,
+      scope,
+      signal,
+    );
+    signal.throwIfAborted();
+    const configuration = await set(
+      syncUsagePackSubscriptionConfigurations$,
+      scope,
+      signal,
+    );
+    signal.throwIfAborted();
+    if (configuration.updated > 0 || configuration.failed > 0) {
+      L.warn("usage pack Stripe configuration reconciled", configuration);
+    }
+    return invitations;
+  },
+);
+
 const reconcileBillingEntitlementsForScope$ = command(
   async (
     { set },
@@ -1728,7 +1758,7 @@ const reconcileBillingEntitlementsForScope$ = command(
     signal.throwIfAborted();
 
     const invitationPurchasesReconciled = await set(
-      reconcileUsagePackInvitationPurchases$,
+      reconcileUsagePackInvitationsAndConfiguration$,
       scope,
       signal,
     );

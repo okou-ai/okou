@@ -18,6 +18,7 @@ import {
   usagePackAllocations,
   usagePackInvoiceFulfillments,
   usagePackSubscriptionChanges,
+  usagePackSubscriptionMigrations,
   usagePackSubscriptions,
 } from "@okouai/db/schema/usage-pack-subscription";
 import {
@@ -47,10 +48,12 @@ import {
   type StripeInvoiceLine,
   type StripePriceRecurring,
   type StripeRef,
+  type StripeSchedulePhase,
   type StripeSchedulePhaseDiscountParam,
   type StripeSchedulePhaseItemParam,
   type StripeSchedulePhaseParam,
   type StripeSubscription,
+  type StripeSubscriptionSchedule,
   type StripeSubscriptionUpdateItemParam,
 } from "../external/stripe-client";
 import { settle } from "../utils";
@@ -1708,12 +1711,29 @@ export const previewUsagePackAllocationAddition$ = command(
   },
 );
 
+/**
+ * An operation-owned projection keeps its idempotency key. An identity-only
+ * configuration repair sends none: it sets absolute quantities, so replay is
+ * harmless, while a reused key could suppress a later repair of the same drift.
+ */
+function projectionRequestOptions(
+  operationId: string | null,
+  projectionId: string,
+  target: "schedule" | "subscription",
+): { readonly idempotencyKey: string } | undefined {
+  return operationId
+    ? {
+        idempotencyKey: `usage-pack-projection:${operationId}:${projectionId}:${target}`,
+      }
+    : undefined;
+}
+
 async function syncUsagePackProjection(
   subscription: UsagePackChangeSubscriptionInput,
   args: {
     readonly currentQuantities: ReadonlyMap<string, number>;
     readonly renewalQuantities: ReadonlyMap<string, number>;
-    readonly operationId: string;
+    readonly operationId: string | null;
   },
   signal?: AbortSignal,
 ): Promise<void> {
@@ -1761,9 +1781,7 @@ async function syncUsagePackProjection(
           ),
         ],
       },
-      {
-        idempotencyKey: `usage-pack-projection:${args.operationId}:${projectionId}:schedule`,
-      },
+      projectionRequestOptions(args.operationId, projectionId, "schedule"),
     );
   } else if (
     !quantitiesMatch(
@@ -1780,141 +1798,383 @@ async function syncUsagePackProjection(
         ),
         proration_behavior: "none",
       },
-      {
-        idempotencyKey: `usage-pack-projection:${args.operationId}:${projectionId}:subscription`,
-      },
+      projectionRequestOptions(args.operationId, projectionId, "subscription"),
     );
   }
   signal?.throwIfAborted();
 }
 
-type UsagePackInvitationProjectionChange =
+const USAGE_PACK_CONFIGURATION_SWEEP_PAGE_SIZE = 100;
+const USAGE_PACK_CONFIGURATION_SWEEP_BUCKETS = 24;
+const FINANCIAL_ALLOCATION_CHANGE_STATUSES = [
+  "applying",
+  "pending_payment",
+] as const;
+const FINANCIAL_PLAN_CHANGE_STATUSES = ["applying", "pending_payment"] as const;
+const OPEN_MIGRATION_STATUSES = ["applying", "revising", "scheduled"] as const;
+
+export type UsagePackConfigurationSyncResult =
+  | { readonly status: "unchanged" | "updated" }
   | {
-      readonly kind: "accept";
-      readonly allocationId: string;
-      readonly userId: string;
-    }
-  | { readonly kind: "remove"; readonly allocationId: string };
+      readonly status: "deferred";
+      readonly reason:
+        | "missing_subscription"
+        | "financial_change_in_flight"
+        | "migration_in_flight"
+        | "stripe_pending_update"
+        | "empty_projection"
+        | "scheduled_plan_change"
+        | "missing_renewal_schedule";
+    };
 
-function contextForInvitationProjection(
-  context: UsagePackChangeContext,
-  change: UsagePackInvitationProjectionChange,
-): UsagePackChangeContext {
-  const allocation = context.allocations.find((candidate) => {
-    return candidate.id === change.allocationId;
-  });
-  if (change.kind === "remove") {
-    if (allocation?.status !== "inactive") {
-      throw new Error("Removed invitation allocation is not inactive");
-    }
-    return context;
-  }
-  if (
-    allocation?.userId !== change.userId ||
-    (allocation.status !== "paid_pending_invitation" &&
-      allocation.status !== "active")
-  ) {
-    throw new Error("Accepted invitation allocation is not ready");
-  }
-  return withAcceptedInvitationAllocations(context);
-}
-
-async function syncUsagePackInvitationProjection(
-  db: Pick<Db, "select">,
-  args: {
-    readonly usagePackSubscriptionId: string;
-    readonly operationId: string;
-    readonly change: UsagePackInvitationProjectionChange;
-  },
-  signal?: AbortSignal,
-): Promise<void> {
-  const context = await loadUsagePackChangeContextBySubscriptionId(
-    db,
-    args.usagePackSubscriptionId,
-  );
-  const stripeSubscriptionId = context?.subscription.stripeSubscriptionId;
-  if (!context || !stripeSubscriptionId) {
-    throw new Error("Usage pack subscription is not ready");
-  }
-  const subscription =
-    await getStripeClient().subscriptions.retrieve(stripeSubscriptionId);
-  signal?.throwIfAborted();
-  if (
-    subscription.id !== stripeSubscriptionId ||
-    stripeObjectId(subscription.customer) !==
-      context.subscription.stripeCustomerId
-  ) {
-    throw new Error("Stripe subscription does not match the usage pack record");
-  }
-  const projectionContext = contextForInvitationProjection(
-    context,
-    args.change,
-  );
-  const currentQuantities = packageQuantitiesForAllocations(
-    projectionContext.allocations,
-  );
-  const scheduledChanges = projectionContext.changes.filter((change) => {
-    return change.status === "scheduled";
-  });
-  const renewalQuantities = projectedQuantitiesAfterChanges(
-    projectionContext,
-    scheduledChanges,
-  );
-  await syncUsagePackProjection(
-    subscription,
-    {
-      currentQuantities,
-      renewalQuantities,
-      operationId: args.operationId,
-    },
-    signal,
-  );
+interface UsagePackConfigurationSource {
+  readonly context: UsagePackChangeContext;
+  readonly financialChangeInFlight: boolean;
+  readonly migrationInFlight: boolean;
 }
 
 /**
- * Converges Stripe to the local allocation projection without creating a
- * current-period proration. This is safe to retry after invitation acceptance.
+ * Reads the accepted local business records that declare one usage pack
+ * subscription's Stripe configuration. No transaction is needed: the result is
+ * a point-in-time projection and every later sync reloads it again.
  */
-export async function syncUsagePackAllocationProjection(
-  db: Pick<Db, "select">,
-  args: {
-    readonly usagePackSubscriptionId: string;
-    readonly operationId: string;
-    readonly includedAllocationId: string;
-    readonly includedUserId: string;
+const loadUsagePackConfigurationSource$ = command(
+  async (
+    { set },
+    usagePackSubscriptionId: string,
+    signal?: AbortSignal,
+  ): Promise<UsagePackConfigurationSource | null> => {
+    const db = set(writeDb$);
+    const [subscription] = await db
+      .select()
+      .from(usagePackSubscriptions)
+      .where(eq(usagePackSubscriptions.id, usagePackSubscriptionId))
+      .limit(1);
+    signal?.throwIfAborted();
+    if (
+      !subscription?.stripeSubscriptionId ||
+      TERMINAL_SUBSCRIPTION_STATUSES.some((status) => {
+        return subscription.subscriptionStatus === status;
+      })
+    ) {
+      return null;
+    }
+    const [allocations, changes, planChanges, migrations] = await Promise.all([
+      db
+        .select()
+        .from(usagePackAllocations)
+        .where(
+          eq(
+            usagePackAllocations.usagePackSubscriptionId,
+            usagePackSubscriptionId,
+          ),
+        ),
+      db
+        .select()
+        .from(usagePackAllocationChanges)
+        .where(
+          and(
+            eq(
+              usagePackAllocationChanges.usagePackSubscriptionId,
+              usagePackSubscriptionId,
+            ),
+            inArray(usagePackAllocationChanges.status, [
+              ...OPEN_CHANGE_STATUSES,
+            ]),
+          ),
+        ),
+      db
+        .select({ id: usagePackSubscriptionChanges.id })
+        .from(usagePackSubscriptionChanges)
+        .where(
+          and(
+            eq(
+              usagePackSubscriptionChanges.usagePackSubscriptionId,
+              usagePackSubscriptionId,
+            ),
+            inArray(usagePackSubscriptionChanges.status, [
+              ...FINANCIAL_PLAN_CHANGE_STATUSES,
+            ]),
+          ),
+        )
+        .limit(1),
+      db
+        .select({ id: usagePackSubscriptionMigrations.id })
+        .from(usagePackSubscriptionMigrations)
+        .where(
+          and(
+            eq(
+              usagePackSubscriptionMigrations.stripeSubscriptionId,
+              subscription.stripeSubscriptionId,
+            ),
+            inArray(usagePackSubscriptionMigrations.status, [
+              ...OPEN_MIGRATION_STATUSES,
+            ]),
+          ),
+        )
+        .limit(1),
+    ]);
+    signal?.throwIfAborted();
+    return {
+      context: { subscription, allocations, changes },
+      financialChangeInFlight:
+        planChanges.length > 0 ||
+        changes.some((change) => {
+          return FINANCIAL_ALLOCATION_CHANGE_STATUSES.some((status) => {
+            return change.status === status;
+          });
+        }),
+      migrationInFlight: migrations.length > 0,
+    };
   },
-  signal?: AbortSignal,
-): Promise<void> {
-  await syncUsagePackInvitationProjection(
-    db,
-    {
-      usagePackSubscriptionId: args.usagePackSubscriptionId,
-      operationId: args.operationId,
-      change: {
-        kind: "accept",
-        allocationId: args.includedAllocationId,
-        userId: args.includedUserId,
-      },
-    },
-    signal,
-  );
+);
+
+/**
+ * Pure projection of accepted local records: current recurring packages and
+ * the packages that renew after already-scheduled changes. A previewed quote
+ * is not intent and does not participate.
+ */
+function desiredUsagePackConfiguration(context: UsagePackChangeContext): {
+  readonly current: ReadonlyMap<string, number>;
+  readonly renewal: ReadonlyMap<string, number>;
+} {
+  return {
+    current: packageQuantitiesForAllocations(context.allocations),
+    renewal: projectedQuantitiesAfterChanges(
+      context,
+      context.changes.filter((change) => {
+        return change.status === "scheduled";
+      }),
+    ),
+  };
 }
 
-/** Removes a refunded, already-billed invitation from current and renewal quantities. */
-export async function syncUsagePackAllocationProjectionAfterInvitationRemoval(
-  db: Pick<Db, "select">,
-  args: {
-    readonly usagePackSubscriptionId: string;
-    readonly operationId: string;
-    readonly removedAllocationId: string;
-  },
-): Promise<void> {
-  await syncUsagePackInvitationProjection(db, {
-    usagePackSubscriptionId: args.usagePackSubscriptionId,
-    operationId: args.operationId,
-    change: { kind: "remove", allocationId: args.removedAllocationId },
-  });
+function schedulePhaseQuantities(
+  phase: StripeSchedulePhase | undefined,
+  kind: "package" | "other",
+): ReadonlyMap<string, number> {
+  const quantities = new Map<string, number>();
+  for (const item of phase?.items ?? []) {
+    const priceId = stripeObjectId(item.price);
+    if (
+      !priceId ||
+      (usagePackUsdForKnownPriceId(priceId) === null) !== (kind === "other")
+    ) {
+      continue;
+    }
+    quantities.set(
+      priceId,
+      (quantities.get(priceId) ?? 0) + (item.quantity ?? 1),
+    );
+  }
+  return quantities;
 }
+
+/**
+ * The phase covering `at` and the single phase that follows it. A schedule
+ * releasing after its current phase renews with that phase's items. More
+ * future phases belong to another workflow and are not rewritten here.
+ */
+function currentAndRenewalSchedulePhases(
+  schedule: StripeSubscriptionSchedule,
+  at: Date,
+): {
+  readonly current: StripeSchedulePhase;
+  readonly renewal: StripeSchedulePhase;
+} | null {
+  const seconds = Math.floor(at.getTime() / 1000);
+  const index = schedule.phases.findIndex((phase) => {
+    return phase.start_date <= seconds && seconds < phase.end_date;
+  });
+  const current = schedule.phases[index];
+  if (!current || schedule.phases.length - index > 2) {
+    return null;
+  }
+  return { current, renewal: schedule.phases[index + 1] ?? current };
+}
+
+function subscriptionOtherQuantities(
+  subscription: UsagePackChangeSubscriptionInput,
+): ReadonlyMap<string, number> {
+  const quantities = new Map<string, number>();
+  for (const item of subscription.items.data) {
+    if (usagePackUsdForKnownPriceId(item.price.id) !== null) {
+      continue;
+    }
+    quantities.set(
+      item.price.id,
+      (quantities.get(item.price.id) ?? 0) + (item.quantity ?? 1),
+    );
+  }
+  return quantities;
+}
+
+/**
+ * Converges one usage pack Stripe subscription to the latest accepted local
+ * business records. It carries only the subscription identity, reloads local
+ * intent each time and never replays a caller's captured quantities, so a late
+ * stale write is repaired by any later sync. Repairs use no proration and never
+ * create invoices, grants or refunds. Paid operations still in flight own their
+ * payment workflow; the sync defers instead of replacing their invoice.
+ */
+export const syncUsagePackSubscriptionConfiguration$ = command(
+  async (
+    { set },
+    usagePackSubscriptionId: string,
+    signal?: AbortSignal,
+  ): Promise<UsagePackConfigurationSyncResult> => {
+    const source = await set(
+      loadUsagePackConfigurationSource$,
+      usagePackSubscriptionId,
+      signal,
+    );
+    const stripeSubscriptionId =
+      source?.context.subscription.stripeSubscriptionId;
+    if (!source || !stripeSubscriptionId) {
+      return { status: "deferred", reason: "missing_subscription" };
+    }
+    if (source.financialChangeInFlight) {
+      return { status: "deferred", reason: "financial_change_in_flight" };
+    }
+    if (source.migrationInFlight) {
+      return { status: "deferred", reason: "migration_in_flight" };
+    }
+    const desired = desiredUsagePackConfiguration(source.context);
+    if (desired.current.size === 0 || desired.renewal.size === 0) {
+      return { status: "deferred", reason: "empty_projection" };
+    }
+    const stripe = getStripeClient();
+    const subscription = (await stripe.subscriptions.retrieve(
+      stripeSubscriptionId,
+    )) as UsagePackChangeSubscriptionInput;
+    signal?.throwIfAborted();
+    validateStripeSubscriptionIdentity(source.context, subscription);
+    if (subscription.pending_update) {
+      return { status: "deferred", reason: "stripe_pending_update" };
+    }
+    const currentMatches = quantitiesMatch(
+      desired.current,
+      packageQuantitiesForSubscription(subscription),
+    );
+    const scheduleId = subscriptionScheduleId(subscription);
+    if (!scheduleId) {
+      if (!currentMatches) {
+        await syncUsagePackProjection(
+          subscription,
+          {
+            currentQuantities: desired.current,
+            renewalQuantities: desired.current,
+            operationId: null,
+          },
+          signal,
+        );
+      }
+      if (!quantitiesMatch(desired.current, desired.renewal)) {
+        return { status: "deferred", reason: "missing_renewal_schedule" };
+      }
+      return { status: currentMatches ? "unchanged" : "updated" };
+    }
+    const schedule = await stripe.subscriptionSchedules.retrieve(scheduleId);
+    signal?.throwIfAborted();
+    const phases = currentAndRenewalSchedulePhases(schedule, nowDate());
+    if (
+      !phases ||
+      !quantitiesMatch(
+        schedulePhaseQuantities(phases.renewal, "other"),
+        subscriptionOtherQuantities(subscription),
+      )
+    ) {
+      return { status: "deferred", reason: "scheduled_plan_change" };
+    }
+    if (
+      currentMatches &&
+      quantitiesMatch(
+        schedulePhaseQuantities(phases.current, "package"),
+        desired.current,
+      ) &&
+      quantitiesMatch(
+        schedulePhaseQuantities(phases.renewal, "package"),
+        desired.renewal,
+      )
+    ) {
+      return { status: "unchanged" };
+    }
+    await syncUsagePackProjection(
+      subscription,
+      {
+        currentQuantities: desired.current,
+        renewalQuantities: desired.renewal,
+        operationId: null,
+      },
+      signal,
+    );
+    return { status: "updated" };
+  },
+);
+
+/**
+ * Daily configuration reconciliation. The hourly billing cron visits one of
+ * 24 stable identity buckets, so every active subscription is compared at
+ * least once per day without a dirty flag or cursor column. Scoped runs visit
+ * every subscription of the requested organizations. Paging happens outside
+ * any transaction and each identity is synced independently.
+ */
+export const syncUsagePackSubscriptionConfigurations$ = command(
+  async (
+    { set },
+    scope: BillingReconciliationScope | undefined,
+    signal: AbortSignal,
+  ): Promise<{ readonly updated: number; readonly failed: number }> => {
+    const db = set(writeDb$);
+    const bucket =
+      nowDate().getUTCHours() % USAGE_PACK_CONFIGURATION_SWEEP_BUCKETS;
+    let after: string | null = null;
+    let updated = 0;
+    let failed = 0;
+    for (;;) {
+      const page: readonly { readonly id: string }[] = await db
+        .select({ id: usagePackSubscriptions.id })
+        .from(usagePackSubscriptions)
+        .where(
+          and(
+            isNotNull(usagePackSubscriptions.stripeSubscriptionId),
+            notInArray(usagePackSubscriptions.subscriptionStatus, [
+              ...TERMINAL_SUBSCRIPTION_STATUSES,
+            ]),
+            scope
+              ? inArray(usagePackSubscriptions.orgId, [...scope.orgIds])
+              : sql`(hashtext(${usagePackSubscriptions.id}::text) & 2147483647) % ${USAGE_PACK_CONFIGURATION_SWEEP_BUCKETS} = ${bucket}`,
+            after ? gt(usagePackSubscriptions.id, after) : undefined,
+          ),
+        )
+        .orderBy(asc(usagePackSubscriptions.id))
+        .limit(USAGE_PACK_CONFIGURATION_SWEEP_PAGE_SIZE);
+      signal.throwIfAborted();
+      for (const { id } of page) {
+        const result = await settle(
+          set(syncUsagePackSubscriptionConfiguration$, id, signal),
+          signal,
+        );
+        if (!result.ok) {
+          failed += 1;
+          L.warn("usage pack configuration reconciliation failed", {
+            usagePackSubscriptionId: id,
+            error: result.error,
+          });
+          continue;
+        }
+        if (result.value.status === "updated") {
+          updated += 1;
+        }
+      }
+      const last = page.at(-1);
+      if (!last || page.length < USAGE_PACK_CONFIGURATION_SWEEP_PAGE_SIZE) {
+        return { updated, failed };
+      }
+      after = last.id;
+    }
+  },
+);
 
 async function scheduleUsagePackAllocationChange(
   context: UsagePackChangeContext,

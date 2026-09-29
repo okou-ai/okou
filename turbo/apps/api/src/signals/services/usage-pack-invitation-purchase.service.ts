@@ -52,8 +52,7 @@ import {
   calculateUsagePackAdditionCreditGrant,
   usagePackBillingCompatibilityLockSql,
   previewUsagePackAllocationAddition$,
-  syncUsagePackAllocationProjection,
-  syncUsagePackAllocationProjectionAfterInvitationRemoval,
+  syncUsagePackSubscriptionConfiguration$,
   type UsagePackAllocationAdditionChargePreview,
   type UsagePackAllocationAdditionPreview,
 } from "./usage-pack-allocation-change.service";
@@ -1304,6 +1303,34 @@ const finalizeRefund$ = command(
   },
 );
 
+/**
+ * Best-effort post-commit Stripe convergence for an invitation's recurring
+ * package quantity. The committed allocation is the declared intent; a failed
+ * or skipped sync is repaired by the daily configuration reconciliation.
+ */
+const syncInvitationSubscriptionConfiguration$ = command(
+  async (
+    { set },
+    usagePackSubscriptionId: string,
+    signal?: AbortSignal,
+  ): Promise<void> => {
+    const result = await settle(
+      set(
+        syncUsagePackSubscriptionConfiguration$,
+        usagePackSubscriptionId,
+        signal,
+      ),
+      signal,
+    );
+    if (!result.ok) {
+      L.warn("usage pack invitation configuration sync failed", {
+        usagePackSubscriptionId,
+        error: result.error,
+      });
+    }
+  },
+);
+
 const removeRefundedInvitationProjection$ = command(
   async (
     { set },
@@ -1340,12 +1367,14 @@ const removeRefundedInvitationProjection$ = command(
         .update(usagePackAllocations)
         .set({ status: "inactive", updatedAt: nowDate() })
         .where(eq(usagePackAllocations.id, allocationId));
-      await syncUsagePackAllocationProjectionAfterInvitationRemoval(tx, {
-        usagePackSubscriptionId: current.usagePackSubscriptionId,
-        operationId: `invitation:${current.id}:refund`,
-        removedAllocationId: allocationId,
-      });
     });
+    signal?.throwIfAborted();
+    await set(
+      syncInvitationSubscriptionConfiguration$,
+      purchase.usagePackSubscriptionId,
+      signal,
+    );
+    signal?.throwIfAborted();
   },
 );
 
@@ -2325,18 +2354,8 @@ const activateAcceptedPurchase$ = command(
           "Invitation acceptance is missing its user or allocation",
         );
       }
-      await syncUsagePackAllocationProjection(
-        tx,
-        {
-          usagePackSubscriptionId: current.usagePackSubscriptionId,
-          operationId: `invitation:${current.id}`,
-          includedAllocationId: allocationId,
-          includedUserId: acceptedUserId,
-        },
-        signal,
-      );
-      // Provider projection has returned. Publish grants only while owning the
-      // same wallet as settlement; no provider request follows this acquisition.
+      // Publish grants only while owning the same wallet as settlement. The
+      // recurring Stripe quantity follows from this commit by identity sync.
       const [wallet] = await tx
         .select()
         .from(memberRewardWalletQuery(current.orgId));
@@ -2381,6 +2400,13 @@ const activateAcceptedPurchase$ = command(
           ),
         );
     });
+    signal?.throwIfAborted();
+    await set(
+      syncInvitationSubscriptionConfiguration$,
+      purchase.usagePackSubscriptionId,
+      signal,
+    );
+    signal?.throwIfAborted();
   },
 );
 

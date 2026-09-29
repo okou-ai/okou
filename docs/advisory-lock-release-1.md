@@ -133,8 +133,12 @@ ownership shape. Specialized Webhook/Stripe creation, final enable and Official
 rollback, Morning Brief native lifecycle, Run/Pi callbacks and unbounded tick
 coalescing remain explicitly unfinished in the workflow inventory.
 
-Invitation payment/claim/refund/acceptance commits now own their direct SQL;
-exactly two invitation projection edges still carry a transaction through Stripe.
+Invitation payment/claim/refund/acceptance commits now own their direct SQL.
+Activation and refund removal commit only local allocation/grant rows, then call
+the identity-only `syncUsagePackSubscriptionConfiguration$` after commit; no
+invitation transaction carries Stripe I/O. The same command runs from the hourly
+billing cron in 24 stable identity buckets, so each usage pack subscription is
+reconciled daily (see the declarative Stripe mapping for its exact scope).
 Initial and revised migration quote preparation/publication use owning commands
 and reject a changed source Plan before inserting or retiring intent. Existing
 Plan/allocation/invitation operations share admission predicates, but the complete
