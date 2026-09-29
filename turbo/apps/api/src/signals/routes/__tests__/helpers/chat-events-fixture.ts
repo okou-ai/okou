@@ -842,10 +842,10 @@ export function createChatEventsFixture(context: TestContext) {
     }
     let runId: string | null | undefined = sent.body.runId;
     if (runId === null) {
-      // Sends enqueue before the background pick creates a run association.
-      // Tests that need the completed pick can await that domain boundary;
-      // other tests may deliberately keep its publication work pending.
-      if (options?.awaitEnqueuedPick) {
+      // A successful-run fixture owns the enqueued pick before inspecting its
+      // effects. Tests that intentionally hold publication can opt out and
+      // observe their own explicit intermediate boundary.
+      if (options?.awaitEnqueuedPick !== false) {
         await flushWaitUntilForTest();
       }
       const messages = await waitForThreadMessages(

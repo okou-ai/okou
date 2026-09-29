@@ -313,16 +313,17 @@ describe("CHAT-02: thread connector account selection", () => {
       );
       expect(sent.body).toMatchObject({ runId: null });
       await captured.promise;
-      const failedPick =
-        readPath === "projection"
-          ? expect(flushWaitUntilForTest()).rejects.toThrow(
-              "Connector catalog changed during runtime selection",
-            )
-          : expect(flushWaitUntilForTest()).rejects.toMatchObject({
-              code: "CONNECTOR_CATALOG_UNAVAILABLE:captured_identity_unavailable",
-            });
+      const failedPick = flushWaitUntilForTest();
       releaseReplacement.resolve(undefined);
-      await failedPick;
+      if (readPath === "projection") {
+        await expect(failedPick).rejects.toThrow(
+          "Connector catalog changed during runtime selection",
+        );
+      } else {
+        await expect(failedPick).rejects.toMatchObject({
+          code: "CONNECTOR_CATALOG_UNAVAILABLE:captured_identity_unavailable",
+        });
+      }
       const messages = await chat.listThreadEvents(
         fixture.actor,
         fixture.threadId,
@@ -518,11 +519,9 @@ describe("CHAT-02: thread connector account selection", () => {
       threadId: fixture.threadId,
     });
     await Promise.all([providerStarted.promise, threadStarted.promise]);
-    const failedPick = expect(flushWaitUntilForTest()).rejects.toBe(
-      providerError,
-    );
+    const failedPick = flushWaitUntilForTest();
     releaseProvider.resolve(undefined);
-    await failedPick;
+    await expect(failedPick).rejects.toBe(providerError);
     // The background pick returns its first failure while the other started
     // branch remains owned by Promise.all and has not been released yet.
     expect(releaseThread.settled()).toBeFalsy();

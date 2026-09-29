@@ -1225,8 +1225,7 @@ interface ConnectorRuntimeSelectionSlugs {
   readonly metadataConnectorSlugs?: readonly ConnectorSlug[];
 }
 
-/** Construct the complete catalog read graph once for the enclosing request. */
-export function createConnectorRuntimeSelectionObjects(
+function createRuntimeCatalogInputObjects(
   input$: Computed<
     ConnectorRuntimeSelectionInput | Promise<ConnectorRuntimeSelectionInput>
   >,
@@ -1254,6 +1253,18 @@ export function createConnectorRuntimeSelectionObjects(
       ),
     };
   });
+  return { catalogReadInput$, catalogIdentity$, requestedSlugs$ };
+}
+
+type RuntimeCatalogInputObjects = ReturnType<
+  typeof createRuntimeCatalogInputObjects
+>;
+
+function createRuntimeCatalogProjectionRowsObject({
+  catalogReadInput$,
+  catalogIdentity$,
+  requestedSlugs$,
+}: RuntimeCatalogInputObjects) {
   const projectionRows$ = computed(async (get) => {
     const [captured, requested, { db, timing }] = await Promise.all([
       get(catalogIdentity$),
@@ -1333,6 +1344,17 @@ export function createConnectorRuntimeSelectionObjects(
         uncachedSlugs.length === 0 ? ("hit" as const) : ("miss" as const),
     };
   });
+  return projectionRows$;
+}
+
+type RuntimeCatalogProjectionRows = ReturnType<
+  typeof createRuntimeCatalogProjectionRowsObject
+>;
+
+function createRuntimeCatalogRevalidationObjects(
+  catalogReadInput$: RuntimeCatalogInputObjects["catalogReadInput$"],
+  projectionRows$: RuntimeCatalogProjectionRows,
+) {
   const projectionCount$ = computed(async (get) => {
     const rows = await get(projectionRows$);
     if (
@@ -1375,6 +1397,16 @@ export function createConnectorRuntimeSelectionObjects(
   // This is a distinct node and query, never a reread of cached catalogIdentity$.
   const catalogIdentityNow$ =
     createConnectorCatalogIdentityObject(freshIdentityInput$);
+  return { projectionCount$, catalogIdentityNow$ };
+}
+
+function createRuntimeCatalogProjectionResultObject(
+  projectionRows$: RuntimeCatalogProjectionRows,
+  {
+    projectionCount$,
+    catalogIdentityNow$,
+  }: ReturnType<typeof createRuntimeCatalogRevalidationObjects>,
+) {
   const projectionResult$ = computed(async (get) => {
     const [read, actualConnectorCount, latest] = await Promise.all([
       get(projectionRows$),
@@ -1411,6 +1443,17 @@ export function createConnectorRuntimeSelectionObjects(
     }
     return { ...read, rows: read.rows };
   });
+  return projectionResult$;
+}
+
+type RuntimeCatalogProjectionResult = ReturnType<
+  typeof createRuntimeCatalogProjectionResultObject
+>;
+
+function createRuntimeCatalogCompleteSnapshotObject(
+  catalogReadInput$: RuntimeCatalogInputObjects["catalogReadInput$"],
+  projectionResult$: RuntimeCatalogProjectionResult,
+) {
   const completeSnapshotInput$ = computed(async (get) => {
     const result = await get(projectionResult$);
     if (result.kind !== "fallback") {
@@ -1429,6 +1472,16 @@ export function createConnectorRuntimeSelectionObjects(
   const completeSnapshot$ = createCapturedConnectorCatalogSnapshotObject(
     completeSnapshotInput$,
   );
+  return completeSnapshot$;
+}
+
+function createRuntimeCatalogSelectionResultObject(
+  catalogReadInput$: RuntimeCatalogInputObjects["catalogReadInput$"],
+  projectionResult$: RuntimeCatalogProjectionResult,
+  completeSnapshot$: ReturnType<
+    typeof createRuntimeCatalogCompleteSnapshotObject
+  >,
+) {
   const selectionResult$ = computed(
     async (get): Promise<RuntimeSelectionBuildResult> => {
       const [result, { timing }] = await Promise.all([
@@ -1471,6 +1524,19 @@ export function createConnectorRuntimeSelectionObjects(
       };
     },
   );
+  return selectionResult$;
+}
+
+function createRuntimeCatalogSelectionObject(
+  {
+    catalogReadInput$,
+    catalogIdentity$,
+    requestedSlugs$,
+  }: RuntimeCatalogInputObjects,
+  selectionResult$: ReturnType<
+    typeof createRuntimeCatalogSelectionResultObject
+  >,
+) {
   const connectorCatalog$ = computed(async (get) => {
     const { timing } = await get(catalogReadInput$);
     return await timing.measureComplete(async () => {
@@ -1524,6 +1590,42 @@ export function createConnectorRuntimeSelectionObjects(
       return result.load.selection;
     });
   });
+  return connectorCatalog$;
+}
+
+/** Construct the complete catalog read graph once for the enclosing request. */
+export function createConnectorRuntimeSelectionObjects(
+  input$: Computed<
+    ConnectorRuntimeSelectionInput | Promise<ConnectorRuntimeSelectionInput>
+  >,
+  slugs$: Computed<
+    ConnectorRuntimeSelectionSlugs | Promise<ConnectorRuntimeSelectionSlugs>
+  >,
+) {
+  const inputObjects = createRuntimeCatalogInputObjects(input$, slugs$);
+  const projectionRows$ =
+    createRuntimeCatalogProjectionRowsObject(inputObjects);
+  const revalidationObjects = createRuntimeCatalogRevalidationObjects(
+    inputObjects.catalogReadInput$,
+    projectionRows$,
+  );
+  const projectionResult$ = createRuntimeCatalogProjectionResultObject(
+    projectionRows$,
+    revalidationObjects,
+  );
+  const completeSnapshot$ = createRuntimeCatalogCompleteSnapshotObject(
+    inputObjects.catalogReadInput$,
+    projectionResult$,
+  );
+  const selectionResult$ = createRuntimeCatalogSelectionResultObject(
+    inputObjects.catalogReadInput$,
+    projectionResult$,
+    completeSnapshot$,
+  );
+  const connectorCatalog$ = createRuntimeCatalogSelectionObject(
+    inputObjects,
+    selectionResult$,
+  );
   return { connectorCatalog$ };
 }
 

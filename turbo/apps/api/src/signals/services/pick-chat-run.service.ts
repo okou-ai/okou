@@ -1340,7 +1340,7 @@ function automationSelectionCommand(
   };
 }
 
-function createWorkflowAutomationLaunchObjects() {
+function createWorkflowAutomationLaunchReadGraph() {
   const sources = createAutomationLaunchReadiness();
   const { internalInput$, input$, readiness$ } = sources;
   const { computerUseHostGrant$, runInput$ } =
@@ -1401,6 +1401,41 @@ function createWorkflowAutomationLaunchObjects() {
         }
       : null;
   });
+  return {
+    internalInput$,
+    input$,
+    readiness$,
+    computerUseHostGrant$,
+    runInput$,
+    resolveAutomationModel$,
+    recordQueuedWorkflowReward$,
+    internalTiming$,
+    internalModel$,
+    internalAssembly$,
+    timing$,
+    model$,
+    identityInput$,
+    selectionInput$,
+  };
+}
+
+function createWorkflowAutomationLaunchObjects() {
+  const {
+    internalInput$,
+    input$,
+    readiness$,
+    computerUseHostGrant$,
+    runInput$,
+    resolveAutomationModel$,
+    recordQueuedWorkflowReward$,
+    internalTiming$,
+    internalModel$,
+    internalAssembly$,
+    timing$,
+    model$,
+    identityInput$,
+    selectionInput$,
+  } = createWorkflowAutomationLaunchReadGraph();
   const prepareAutomationModel$ = command(
     async ({ get, set }, signal: AbortSignal): Promise<ModelContext> => {
       const failure = await get(readiness$);
@@ -1761,18 +1796,29 @@ function queuedAutomationLaunchArguments(args: {
   };
 }
 
-function createQueuedAutomationAssembler(
-  sources: ReturnType<typeof createQueuedAutomationInputs>,
-  budget: ReturnType<typeof createQueuedAutomationBudget>,
-  material: ReturnType<typeof createQueuedAutomationMaterial>,
-  reconciliation: ReturnType<typeof createQueuedAutomationReconciliation>,
-) {
-  const launch = createWorkflowAutomationLaunchObjects();
+interface QueuedAutomationInitializationDependencies {
+  readonly sources: ReturnType<typeof createQueuedAutomationInputs>;
+  readonly budget: ReturnType<typeof createQueuedAutomationBudget>;
+  readonly material: ReturnType<typeof createQueuedAutomationMaterial>;
+  readonly reconciliation: ReturnType<
+    typeof createQueuedAutomationReconciliation
+  >;
+  readonly launch: ReturnType<typeof createWorkflowAutomationLaunchObjects>;
+  readonly internalEarlyAssembly$: State<ChatQueueRunAssembly | null>;
+}
+
+function createInitializeQueuedAutomationCommand({
+  sources,
+  budget,
+  material,
+  reconciliation,
+  launch,
+  internalEarlyAssembly$,
+}: QueuedAutomationInitializationDependencies) {
   const { internalHead$, event$, target$ } = sources;
   const { sourceAutonomyBudget$, autonomyBudget$ } = budget;
   const { launchMaterial$ } = material;
   const { reconcileOfficialWorkflow$ } = reconciliation;
-  const internalEarlyAssembly$ = state<ChatQueueRunAssembly | null>(null);
   const initializeQueuedAutomation$ = command(
     async (
       { get, set },
@@ -1882,6 +1928,27 @@ function createQueuedAutomationAssembler(
       );
     },
   );
+  return initializeQueuedAutomation$;
+}
+
+function createQueuedAutomationAssembler(
+  sources: ReturnType<typeof createQueuedAutomationInputs>,
+  budget: ReturnType<typeof createQueuedAutomationBudget>,
+  material: ReturnType<typeof createQueuedAutomationMaterial>,
+  reconciliation: ReturnType<typeof createQueuedAutomationReconciliation>,
+) {
+  const launch = createWorkflowAutomationLaunchObjects();
+  const { event$, target$ } = sources;
+  const { launchMaterial$ } = material;
+  const internalEarlyAssembly$ = state<ChatQueueRunAssembly | null>(null);
+  const initializeQueuedAutomation$ = createInitializeQueuedAutomationCommand({
+    sources,
+    budget,
+    material,
+    reconciliation,
+    launch,
+    internalEarlyAssembly$,
+  });
   const assembly$ = computed(async (get): Promise<ChatQueueRunAssembly> => {
     const early = get(internalEarlyAssembly$);
     if (early) {
@@ -5898,20 +5965,17 @@ function createPromptStage3({
   };
 }
 
-function createQueuedPromptRunObjects() {
-  const { resolveQueuedModel$ } = createQueuedModelObjects();
-  const stage0 = createPromptStage0();
-  const stage1 = createPromptStage1(stage0);
-  const stage2 = createPromptStage2({
-    ...stage0,
-    ...stage1,
-  });
-  const stage3 = createPromptStage3({
-    resolveQueuedModel$,
-    ...stage0,
-    ...stage1,
-    ...stage2,
-  });
+interface PromptExecutionGraph {
+  readonly stage0: ReturnType<typeof createPromptStage0>;
+  readonly stage2: ReturnType<typeof createPromptStage2>;
+  readonly stage3: ReturnType<typeof createPromptStage3>;
+}
+
+function createPromptExecutionSelection({
+  stage0,
+  stage2,
+  stage3,
+}: PromptExecutionGraph) {
   const identityInput$ = computed(async (get) => {
     if (get(stage3.internalEarlyAssembly$)) {
       return null;
@@ -5998,6 +6062,14 @@ function createQueuedPromptRunObjects() {
       },
     };
   });
+  return { identityInput$, selectionInput$ };
+}
+
+function createPromptExecutionResources({
+  stage0,
+  stage2,
+  stage3,
+}: PromptExecutionGraph) {
   const threadSession$ = computed(async (get) => {
     if (get(stage3.internalEarlyAssembly$)) {
       return undefined;
@@ -6064,10 +6136,6 @@ function createQueuedPromptRunObjects() {
       : additionalVolumesForRun(templates.presentationTemplateVolumes);
   });
   return {
-    initializeQueuedPrompt$: stage3.initializeQueuedPrompt$,
-    assembly$: stage3.assembly$,
-    identityInput$,
-    selectionInput$,
     threadSession$,
     command$,
     featureSwitchContext$,
@@ -6075,6 +6143,29 @@ function createQueuedPromptRunObjects() {
     callbackInputs$,
     storageBody$,
     connectorSourceId$,
+  };
+}
+
+function createQueuedPromptRunObjects() {
+  const { resolveQueuedModel$ } = createQueuedModelObjects();
+  const stage0 = createPromptStage0();
+  const stage1 = createPromptStage1(stage0);
+  const stage2 = createPromptStage2({
+    ...stage0,
+    ...stage1,
+  });
+  const stage3 = createPromptStage3({
+    resolveQueuedModel$,
+    ...stage0,
+    ...stage1,
+    ...stage2,
+  });
+  const graph = { stage0, stage2, stage3 };
+  return {
+    initializeQueuedPrompt$: stage3.initializeQueuedPrompt$,
+    assembly$: stage3.assembly$,
+    ...createPromptExecutionSelection(graph),
+    ...createPromptExecutionResources(graph),
   };
 }
 
@@ -6356,6 +6447,50 @@ const rejectChatQueueHead$ = command(
   },
 );
 
+const recordQueuedInputAdmissionTiming$ = command(
+  async (
+    { get },
+    head: ChatQueueHeadContext,
+    createdAt: Date,
+    timing: ApiDispatchTimingCollector,
+    signal: AbortSignal,
+  ) => {
+    const apiStartTime = head.apiStartTime;
+    const committedAt = get(chatInputEnqueueCommits$).get(head.id);
+    if (committedAt !== undefined) {
+      timing.recordDuration(
+        "api_dispatch_enqueue_commit_to_consume_start",
+        "top_level",
+        apiStartTime - committedAt,
+        apiStartTime,
+        { capture_scope: "request_observed_commit" },
+      );
+    }
+    if (head.contextType === "automation") {
+      // Queue age includes enqueue work and legitimate FIFO waiting. It must
+      // not be added to S1 or reported as enqueue-commit-to-consume latency.
+      await recordWorkflowAdmissionDuration(
+        timing,
+        "api_dispatch_workflow_event_created_to_consume_start",
+        Math.max(0, apiStartTime - createdAt.getTime()),
+      );
+      signal.throwIfAborted();
+    }
+  },
+);
+
+function unreadyQueueHeadRejection(
+  head: ChatQueueHeadContext,
+): ChatQueueHeadRejection {
+  return {
+    userId: head.userId,
+    error: {
+      code: "INTERNAL_ERROR",
+      message: "The input could not be started",
+    },
+  };
+}
+
 /** Construct one consumer for the pick graph, sharing its request Store. */
 function createConsumeHeadCommand(
   internalInput$: ReturnType<typeof createQueueConsumptionInput>,
@@ -6412,13 +6547,7 @@ function createConsumeHeadCommand(
           rejectChatQueueHead$,
           {
             head,
-            rejection: {
-              userId: head.userId,
-              error: {
-                code: "INTERNAL_ERROR",
-                message: "The input could not be started",
-              },
-            },
+            rejection: unreadyQueueHeadRejection(head),
           },
           signal,
         );
@@ -6445,27 +6574,13 @@ function createConsumeHeadCommand(
         );
         return { kind: "passed" };
       }
-      const timing = assembly.run.timing ?? new ApiDispatchTimingCollector();
-      const committedAt = get(chatInputEnqueueCommits$).get(head.id);
-      if (committedAt !== undefined) {
-        timing.recordDuration(
-          "api_dispatch_enqueue_commit_to_consume_start",
-          "top_level",
-          apiStartTime - committedAt,
-          apiStartTime,
-          { capture_scope: "request_observed_commit" },
-        );
-      }
-      if (head.contextType === "automation") {
-        // Queue age includes enqueue work and legitimate FIFO waiting. It must
-        // not be added to S1 or reported as enqueue-commit-to-consume latency.
-        await recordWorkflowAdmissionDuration(
-          timing,
-          "api_dispatch_workflow_event_created_to_consume_start",
-          Math.max(0, apiStartTime - input.head.createdAt.getTime()),
-        );
-        signal.throwIfAborted();
-      }
+      await set(
+        recordQueuedInputAdmissionTiming$,
+        head,
+        input.head.createdAt,
+        assembly.run.timing ?? new ApiDispatchTimingCollector(),
+        signal,
+      );
       const result = await set(
         head.contextType === "automation"
           ? automationExecution.completeAgentRun$

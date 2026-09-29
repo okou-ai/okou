@@ -134,11 +134,9 @@ describe("CHAT-02: model-first provider policies", () => {
       preparation.arrival("thread-session"),
     ]);
     const sessionError = jsonHttpException(422, "session preparation failed");
-    const failedPick = expect(flushWaitUntilForTest()).rejects.toBe(
-      sessionError,
-    );
+    const failedPick = flushWaitUntilForTest();
     preparation.reject("thread-session", sessionError);
-    await failedPick;
+    await expect(failedPick).rejects.toBe(sessionError);
     const authorizationError = jsonHttpException(
       409,
       "authorization preparation failed",

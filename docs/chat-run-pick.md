@@ -161,6 +161,9 @@ the nested spans must not be added to that enclosing duration.
 Route coverage includes FIFO and multi-thread traversal, rejection followed by
 another thread, token/lease recovery, unchanged model pins, stable application
 session IDs with native-history reset, and stale-session transaction rollback
-without retries. Local static validation cannot establish production latency or
-replace the database-backed PR test pipeline. No P50/P95 improvement is asserted
+without retries. Successful-run fixtures await the tracked enqueue/pick work
+before inspecting admission. Tests that intentionally hold a branch observe an
+explicit intermediate boundary; elapsed polling time does not establish that
+background work has completed. Local static validation cannot establish
+production latency or replace the database-backed PR test pipeline. No P50/P95 improvement is asserted
 by this refactor.
