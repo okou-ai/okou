@@ -1214,94 +1214,101 @@ describe("GET /api/usage/record", () => {
     expect(retried.body).toStrictEqual(caughtUp.body);
   });
 
-  it("finishes expired remainder before a new purchase and preserves duplicate receipts", async () => {
-    const fixture = await entitledRecordActor();
-    webhooks.configureStripeBillingEnv();
-    const provider = uniqueProvider("expired-wallet-purchase");
-    const pricing = await createUsagePricingFixture({
-      configured: [
-        {
-          kind: "connector",
-          provider,
-          category: "api_request",
-          unitPrice: 1,
-          unitSize: 1,
-        },
-      ],
-    });
-    onTestFinished(pricing.cleanup);
-    const run = await createUnthreadedRun(fixture.actor, {
-      prompt: "Wallet expiry admission",
-      triggerSource: "test",
-    });
-    await webhooks.requestAgentUsageEvent(
-      {
-        runId: run.runId,
-        events: [
+  it.each([2, 120])(
+    "finishes %i expired purchases before a new purchase and preserves duplicate receipts",
+    async (expiredPurchaseCount) => {
+      const fixture = await entitledRecordActor();
+      webhooks.configureStripeBillingEnv();
+      const provider = uniqueProvider("expired-wallet-purchase");
+      const pricing = await createUsagePricingFixture({
+        configured: [
           {
-            idempotencyKey: randomUUID(),
             kind: "connector",
             provider,
             category: "api_request",
-            quantity: 20_095,
+            unitPrice: 1,
+            unitSize: 1,
           },
         ],
-      },
-      sandboxHeaders(fixture.actor, run.runId),
-      [200],
-    );
-    await billing.processOrgUsageEvents(fixture.actor, pricing.resolution);
-    expect((await billing.readBillingStatus(fixture.actor)).credits).toBe(-95);
-
-    // Two 50-credit purchases leave a wallet of 5, but 100 tracked credits.
-    // The preceding debt is a real processed usage event, not an internal row edit.
-    const expiresAt = new Date(nowDate().getTime() + DAY_MS);
-    for (const subtotal of [5, 5]) {
-      await webhooks.postStripeEvent(
-        creditPurchaseEvent(fixture.actor, subtotal, expiresAt),
+      });
+      onTestFinished(pricing.cleanup);
+      const run = await createUnthreadedRun(fixture.actor, {
+        prompt: "Wallet expiry admission",
+        triggerSource: "test",
+      });
+      await webhooks.requestAgentUsageEvent(
+        {
+          runId: run.runId,
+          events: [
+            {
+              idempotencyKey: randomUUID(),
+              kind: "connector",
+              provider,
+              category: "api_request",
+              quantity: 20_000 + expiredPurchaseCount * 50 - 5,
+            },
+          ],
+        },
+        sandboxHeaders(fixture.actor, run.runId),
         [200],
       );
-    }
-    expect((await billing.readBillingStatus(fixture.actor)).credits).toBe(5);
-    mockNow(new Date(expiresAt.getTime() + 1000));
-    const purchase = creditPurchaseEvent(
-      fixture.actor,
-      15,
-      new Date(expiresAt.getTime() + 30 * DAY_MS),
-    );
-    await Promise.all([
-      webhooks.postStripeEvent(purchase, [200]),
-      webhooks.postStripeEvent(purchase, [200]),
-    ]);
-    const afterPurchase = await billing.readBillingStatus(fixture.actor);
-    expect(afterPurchase.credits).toBe(150);
-    expect(afterPurchase.creditGrants).toStrictEqual([
-      expect.objectContaining({
-        source: "credit_purchase",
-        amount: 150,
-        remaining: 150,
-      }),
-    ]);
-    await webhooks.requestAgentUsageEvent(
-      {
-        runId: run.runId,
-        events: [
-          {
-            idempotencyKey: randomUUID(),
-            kind: "connector",
-            provider,
-            category: "api_request",
-            quantity: 1,
-          },
-        ],
-      },
-      sandboxHeaders(fixture.actor, run.runId),
-      [200],
-    );
-    await billing.processOrgUsageEvents(fixture.actor, pricing.resolution);
-    await webhooks.postStripeEvent(purchase, [200]);
-    expect((await billing.readBillingStatus(fixture.actor)).credits).toBe(149);
-  });
+      await billing.processOrgUsageEvents(fixture.actor, pricing.resolution);
+      expect((await billing.readBillingStatus(fixture.actor)).credits).toBe(
+        5 - expiredPurchaseCount * 50,
+      );
+
+      // Repaying real usage debt leaves a wallet of 5 with much larger tracked
+      // expiration. Both small and accumulated histories must preserve the new money.
+      const expiresAt = new Date(nowDate().getTime() + DAY_MS);
+      for (let index = 0; index < expiredPurchaseCount; index++) {
+        await webhooks.postStripeEvent(
+          creditPurchaseEvent(fixture.actor, 5, expiresAt),
+          [200],
+        );
+      }
+      expect((await billing.readBillingStatus(fixture.actor)).credits).toBe(5);
+      mockNow(new Date(expiresAt.getTime() + 1000));
+      const purchase = creditPurchaseEvent(
+        fixture.actor,
+        15,
+        new Date(expiresAt.getTime() + 30 * DAY_MS),
+      );
+      await Promise.all([
+        webhooks.postStripeEvent(purchase, [200]),
+        webhooks.postStripeEvent(purchase, [200]),
+      ]);
+      const afterPurchase = await billing.readBillingStatus(fixture.actor);
+      expect(afterPurchase.credits).toBe(150);
+      expect(afterPurchase.creditGrants).toStrictEqual([
+        expect.objectContaining({
+          source: "credit_purchase",
+          amount: 150,
+          remaining: 150,
+        }),
+      ]);
+      await webhooks.requestAgentUsageEvent(
+        {
+          runId: run.runId,
+          events: [
+            {
+              idempotencyKey: randomUUID(),
+              kind: "connector",
+              provider,
+              category: "api_request",
+              quantity: 1,
+            },
+          ],
+        },
+        sandboxHeaders(fixture.actor, run.runId),
+        [200],
+      );
+      await billing.processOrgUsageEvents(fixture.actor, pricing.resolution);
+      await webhooks.postStripeEvent(purchase, [200]);
+      expect((await billing.readBillingStatus(fixture.actor)).credits).toBe(
+        149,
+      );
+    },
+  );
 
   it("returns an empty null-period response for free billing period usage", async () => {
     mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);

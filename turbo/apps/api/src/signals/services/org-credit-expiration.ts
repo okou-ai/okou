@@ -1,7 +1,9 @@
 import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { and, eq, gt, lte, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, lte, notInArray, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
+
+export const ORG_CREDIT_EXPIRATION_BATCH_SIZE = 100;
 
 export class OrgCreditExpirationRequired extends Error {
   constructor(readonly orgId: string) {
@@ -37,18 +39,58 @@ export function requireNoPendingOrgCreditExpiration(
   }
 }
 
+/** A wallet owner checks completeness before choosing the R1 compatibility path. */
+export function omittedOrgCreditExpirationQuery(
+  orgId: string,
+  at: Date,
+  ids: readonly string[],
+) {
+  return new QueryBuilder()
+    .select({ id: creditExpiresRecord.id })
+    .from(creditExpiresRecord)
+    .where(
+      and(
+        expiredOrgCreditsWhere(orgId, at),
+        notInArray(creditExpiresRecord.id, ids),
+      ),
+    )
+    .limit(1)
+    .as("omitted_org_credit_expiration");
+}
+
+/** Only the finite prepared identities can be cleared by this write. */
+export function boundedOrgCreditExpirationSql(
+  orgId: string,
+  at: Date,
+  ids: readonly string[],
+) {
+  if (ids.length === 0 || ids.length > ORG_CREDIT_EXPIRATION_BATCH_SIZE) {
+    throw new Error("Invalid organization credit expiration batch");
+  }
+  return orgCreditExpirationSql(orgId, at, ids);
+}
+
 /**
  * R1 compatibility: expiration is still one atomic wallet clamp. The pre-R1
  * adders do not reject expired remainder, so committing partial expiration can
- * erase or retain the wrong part of a concurrent purchase. R2 can bound this
- * command only after all those adders, debt clearers and extenders drain.
+ * erase or retain the wrong part of a concurrent purchase. Remove this fallback
+ * only after all those adders, debt clearers and extenders drain. The bounded
+ * owner already executes the finite write when its prepared set is complete.
  */
 export function atomicOrgCreditExpirationSql(orgId: string, at: Date) {
+  return orgCreditExpirationSql(orgId, at);
+}
+
+function orgCreditExpirationSql(
+  orgId: string,
+  at: Date,
+  ids?: readonly string[],
+) {
   return sql`WITH expired AS MATERIALIZED (
     SELECT ${creditExpiresRecord.id} AS id,
            ${creditExpiresRecord.remaining} AS remaining
     FROM ${creditExpiresRecord}
-    WHERE ${expiredOrgCreditsWhere(orgId, at)}
+    WHERE ${and(expiredOrgCreditsWhere(orgId, at), ids ? inArray(creditExpiresRecord.id, ids) : undefined)}
     ORDER BY ${creditExpiresRecord.expiresAt}, ${creditExpiresRecord.id}
     FOR UPDATE
   ), cleared AS (

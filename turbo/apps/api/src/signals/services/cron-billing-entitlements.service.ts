@@ -1,7 +1,6 @@
-import { expiryLotDeductionsSql } from "./credit-usage-settlement-plan";
+import { expireOrgCreditsAt$ } from "./org-credit-expiration.service";
 import { cancelEmptyUsagePackSubscription$ } from "./billing-downgrade.service";
 import type { OrgTier } from "@okouai/api-contracts/contracts/orgs";
-import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
 import { orgConcurrencySubscriptions } from "@okouai/db/schema/org-concurrency-subscription";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { orgUsageAllowanceEntitlements } from "@okouai/db/schema/org-usage-allowance";
@@ -9,9 +8,7 @@ import { usagePackSubscriptions } from "@okouai/db/schema/usage-pack-subscriptio
 import { command } from "ccstate";
 import {
   and,
-  asc,
   eq,
-  gt,
   inArray,
   isNotNull,
   isNull,
@@ -1166,60 +1163,11 @@ const expireAtomGrantCandidates$ = command(
     },
     signal: AbortSignal,
   ) => {
-    const db = set(writeDb$);
     const ready: AtomGrantCandidate[] = [];
     for (const candidate of args.candidates) {
       const { orgId } = candidate;
       const result = await settle(
-        db.transaction(async (tx) => {
-          // Settlement also owns the wallet before expiration lots. The outgoing
-          // cron does the reverse and has no advisory guard; its deadlock failure
-          // remains possible until those requests drain.
-          await tx
-            .select({ orgId: orgMetadata.orgId })
-            .from(orgMetadata)
-            .where(eq(orgMetadata.orgId, orgId))
-            .for("update");
-          const expired = await tx
-            .select({
-              id: creditExpiresRecord.id,
-              remaining: creditExpiresRecord.remaining,
-            })
-            .from(creditExpiresRecord)
-            .where(
-              and(
-                eq(creditExpiresRecord.orgId, orgId),
-                lte(creditExpiresRecord.expiresAt, args.at),
-                gt(creditExpiresRecord.remaining, 0),
-              ),
-            )
-            .orderBy(
-              asc(creditExpiresRecord.expiresAt),
-              asc(creditExpiresRecord.id),
-            )
-            .for("update");
-          const totalExpired = expired.reduce((sum, record) => {
-            return sum + record.remaining;
-          }, 0);
-          if (totalExpired <= 0) {
-            return;
-          }
-          await tx.execute(
-            expiryLotDeductionsSql(
-              expired.map((record) => {
-                return { id: record.id, amount: record.remaining };
-              }),
-            ),
-          );
-          await tx
-            .update(orgMetadata)
-            .set({
-              credits: sql`GREATEST(${orgMetadata.credits} - ${totalExpired}, 0)`,
-              updatedAt: args.at,
-            })
-            .where(eq(orgMetadata.orgId, orgId));
-          signal.throwIfAborted();
-        }),
+        set(expireOrgCreditsAt$, { orgId, at: args.at }, signal),
         signal,
       );
       signal.throwIfAborted();
