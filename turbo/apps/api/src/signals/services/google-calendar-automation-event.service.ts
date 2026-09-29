@@ -1920,7 +1920,6 @@ async function cleanupRegisteredCalendarWatch(args: {
         eq(googleCalendarWatchStates.id, args.prepared.stateId),
         eq(googleCalendarWatchStates.channelId, args.prepared.channelId),
         eq(googleCalendarWatchStates.resourceId, args.resourceId),
-        eq(googleCalendarWatchStates.needsRewatch, false),
       ),
     )
     .limit(1);
