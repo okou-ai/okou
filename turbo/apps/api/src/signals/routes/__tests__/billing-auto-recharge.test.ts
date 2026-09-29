@@ -527,7 +527,10 @@ describe("PUT /api/billing/auto-recharge", () => {
       return Promise.resolve({ id: invoiceId });
     });
     context.mocks.stripe.invoices.finalizeInvoice.mockImplementation(
-      (invoiceId: string) => {
+      (invoiceId: unknown) => {
+        if (typeof invoiceId !== "string") {
+          throw new Error("Expected a Stripe invoice identity");
+        }
         paidInvoiceIds.push(invoiceId);
         return Promise.resolve({ id: invoiceId, status: "paid" });
       },
