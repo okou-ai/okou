@@ -37,7 +37,9 @@ function NewThreadDeliveryItem({
         ? `${phase} rejected. Sign in with the original account and organization before checking delivery.`
         : `${phase} rejected. Your original message, uploaded file references, and options are saved in this browser.`
       : intent.status === "uncertain"
-        ? `${phase} unconfirmed. Check the server before retrying; do not start another chat.`
+        ? intent.rejection === "authentication"
+          ? `${phase} unconfirmed. Sign in with the original account and organization before checking delivery.`
+          : `${phase} unconfirmed. Check the server before retrying; do not start another chat.`
         : intent.status === "accepted"
           ? "First message accepted; waiting for confirmation in chat history."
           : intent.phase === "create"
