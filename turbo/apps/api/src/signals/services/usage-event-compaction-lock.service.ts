@@ -3,9 +3,6 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { sql } from "drizzle-orm";
 
 import { singleton } from "../../lib/singleton";
-import type { Db } from "../external/db";
-
-type UsageEventCompactionLockDb = Pick<Db, "execute">;
 
 const scopedUsageEventCompactionLock = singleton(() => {
   return new AsyncLocalStorage<string | undefined>();
@@ -43,11 +40,4 @@ export function usageEventCompactionLockSql(
       hashtext('vm0'),
       hashtext(${lockKey})
     )`;
-}
-
-export async function lockUsageEventCompaction(
-  db: UsageEventCompactionLockDb,
-  mode: "shared" | "exclusive" = "exclusive",
-): Promise<void> {
-  await db.execute(usageEventCompactionLockSql(mode));
 }

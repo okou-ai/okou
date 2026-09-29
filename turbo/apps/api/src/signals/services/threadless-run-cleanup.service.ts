@@ -25,7 +25,7 @@ import { settle } from "../utils";
 import { failPendingInlineOnlyDeliveryCallbacksForDeletedThread } from "./agent-run-callback.service";
 import { dispatchCompleteSideEffects$ } from "./agent-run-lifecycle.service";
 import { cancelRun$, dispatchCancelSideEffects$ } from "./run-cancel.service";
-import { lockUsageEventCompaction } from "./usage-event-compaction-lock.service";
+import { usageEventCompactionLockSql } from "./usage-event-compaction-lock.service";
 import { lockDeletionProtection } from "./threadless-run-protection.service";
 import { THREADLESS_RUN_PROTECTIONS } from "./threadless-run-protections";
 
@@ -217,9 +217,9 @@ async function deleteIfStillEligible(
   quietBefore: Date,
 ): Promise<boolean> {
   const receipt = await db.transaction(async (tx) => {
-    // Account cleanup and compaction hold ledger rows before Runs. Exclude
-    // that maintenance before our Run-delete FK acquires ledger-row locks.
-    await lockUsageEventCompaction(tx, "shared");
+    // Outgoing account cleanup and compaction hold ledger rows before Runs.
+    // Current writers retain Run parents before acquiring ledger children.
+    await tx.execute(usageEventCompactionLockSql("shared"));
     const [current] = await tx
       .select({
         status: agentRuns.status,

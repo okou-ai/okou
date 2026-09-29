@@ -9,6 +9,7 @@ import {
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { chatThreadDrafts } from "@okouai/db/schema/chat-thread-draft";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
+import { orgUsageAllowanceEntitlements } from "@okouai/db/schema/org-usage-allowance";
 import { and, asc, eq, inArray, or, sql, type SQL } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 
@@ -188,13 +189,11 @@ async function deleteClerkUserLifecycleData(
   userId: string,
 ): Promise<void> {
   const receipt = await db.transaction(async (tx) => {
-    // This legacy lifecycle owner still owns the complete atomic deletion.
-    // Keep its compatibility barrier while its remaining conversation helpers
-    // and parent/ledger ordering are migrated; there is no nested usage tx.
+    // Outgoing maintenance still owns ledger rows before parents. Release 1
+    // keeps its barrier, but every current writer takes jobs and parents first.
     await tx.execute(usageEventCompactionLockSql());
-    for (const target of usageCleanupTargets({ scope: "user", id: userId })) {
-      await tx.delete(target.table).where(target.condition);
-    }
+    const [jobs, ...usage] = usageCleanupTargets({ scope: "user", id: userId });
+    await tx.delete(jobs.table).where(jobs.condition);
     const userSessions = tx
       .select({ id: agentSessions.id })
       .from(agentSessions)
@@ -225,6 +224,12 @@ async function deleteClerkUserLifecycleData(
     const runIds = runs.map((run) => {
       return run.id;
     });
+    // Run parents precede their usage/allocation FK children. Delete raw rows
+    // before hourly rows so a concurrent compaction cannot republish a rollup
+    // behind this deletion's READ COMMITTED snapshot.
+    for (const target of usage) {
+      await tx.delete(target.table).where(target.condition);
+    }
     const removed = await deleteRunConversations(tx, runIds);
     await deleteLockedRuns(tx, runIds);
     await tx.delete(agentSessions).where(eq(agentSessions.userId, userId));
@@ -247,15 +252,14 @@ async function deleteClerkOrganizationLifecycleData(
   orgId: string,
 ): Promise<void> {
   const receipt = await db.transaction(async (tx) => {
-    // Keep the compatibility barrier until this lifecycle owner's remaining
-    // conversation helpers and parent/ledger ordering are migrated together.
+    // Match Social settlement's job-before-parent ownership. Acquire every
+    // Session/Run parent before the entitlement and its ledger children below.
     await tx.execute(usageEventCompactionLockSql());
-    for (const target of usageCleanupTargets({
+    const [jobs, ...usage] = usageCleanupTargets({
       scope: "organization",
       id: orgId,
-    })) {
-      await tx.delete(target.table).where(target.condition);
-    }
+    });
+    await tx.delete(jobs.table).where(jobs.condition);
     const agentScope = eq(agents.orgId, orgId);
     const ownedAgents = await tx
       .select({ id: agents.id })
@@ -298,6 +302,17 @@ async function deleteClerkOrganizationLifecycleData(
     const runIds = runs.map((run) => {
       return run.id;
     });
+    // Settlement and Run activation both own parents before this entitlement.
+    // Owning it before raw/allocation deletion also prevents a stale refresh
+    // or window insertion from interleaving with the entitlement cascade.
+    await tx
+      .select({ id: orgUsageAllowanceEntitlements.id })
+      .from(orgUsageAllowanceEntitlements)
+      .where(eq(orgUsageAllowanceEntitlements.orgId, orgId))
+      .for("update");
+    for (const target of usage) {
+      await tx.delete(target.table).where(target.condition);
+    }
     const removed = await deleteRunConversations(tx, runIds);
     await deleteLockedRuns(tx, runIds);
     const scope = { kind: "organization", orgId } as const;

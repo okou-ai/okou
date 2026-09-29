@@ -18,7 +18,7 @@ import { isLockNotAvailable } from "../../lib/pg-errors";
 import { requireAgentPermission } from "../../lib/require-agent-permission";
 import { settle } from "../utils";
 import { deleteAgentStableContextLifecycleData } from "./agent-lifecycle.service";
-import { lockUsageEventCompaction } from "./usage-event-compaction-lock.service";
+import { usageEventCompactionLockSql } from "./usage-event-compaction-lock.service";
 import {
   lockAgentInstructionsStoragesInTransaction,
   removeLockedAgentInstructionsStoragesInTransaction,
@@ -207,9 +207,9 @@ export async function deleteAgentInTransaction(tx: Tx, args: DeleteAgentArgs) {
   await tx.execute(
     sql`SELECT set_config('lock_timeout', ${DELETE_AGENT_LOCK_TIMEOUT}, true)`,
   );
-  // Maintenance can retain ledger rows before locking Runs. Join admission
-  // before parent locks so our Run-delete FK cannot reverse that order.
-  await lockUsageEventCompaction(tx, "shared");
+  // Outgoing maintenance retains ledger rows before Runs. Keep compatibility
+  // admission before this current writer's parent-before-ledger ownership.
+  await tx.execute(usageEventCompactionLockSql("shared"));
   // Read authorization without a row lock, then fence every native owner before
   // taking the Agent lifecycle lock. The lifecycle reader below revalidates the
   // same permission and identity under lock before any deletion commits.

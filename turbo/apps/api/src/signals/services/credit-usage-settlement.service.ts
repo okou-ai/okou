@@ -90,13 +90,14 @@ export const settleOrgUsage$ = command(
           .values(managedValues(managed, run))
           .onConflictDoNothing({ target: usageEvent.idempotencyKey });
       }
+      // Parent ownership precedes usage and its allocation FK rows, matching
+      // deletion, launch activation and compaction. Own parents before the
+      // entitlement as well: launch and cleanup can already own those Runs.
+      const parents = await tx.select().from(pendingParentsQuery(orgId));
       const [wallet] = await tx.select().from(walletQuery(orgId));
       const [entitlement] = await tx.select().from(entitlementQuery(orgId));
       work.orgLockWaitMs =
         Math.round(performance.now() - startedAt) - work.lockWaitMs;
-      // Parent ownership precedes usage and its allocation FK rows, matching
-      // deletion and compaction. It is compatible with Run status updates.
-      const parents = await tx.select().from(pendingParentsQuery(orgId));
       const events = processPending
         ? await tx
             .update(usageEvent)
