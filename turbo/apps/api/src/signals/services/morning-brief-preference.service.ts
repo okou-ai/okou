@@ -17,17 +17,17 @@ import { clerk$ } from "../external/clerk";
 import { settle } from "../utils";
 import { nowDate } from "../../lib/time";
 import {
-  loadMorningBriefEnrollment,
+  loadMorningBriefEnrollment$,
   morningBriefEnrollmentWhere,
-  recordMorningBriefChoice,
-  recordMorningBriefMembership,
+  recordMorningBriefChoice$,
+  recordMorningBriefMembership$,
   type MorningBriefMemberIdentity,
 } from "./morning-brief-enrollment-data.service";
 import {
-  claimMorningBriefEnrollment,
-  deferMorningBriefPrerequisite,
-  finishMorningBriefEnrollmentAttempt,
-  prepareMorningBriefEnrollment,
+  claimMorningBriefEnrollment$,
+  deferMorningBriefPrerequisite$,
+  finishMorningBriefEnrollmentAttempt$,
+  prepareMorningBriefEnrollment$,
 } from "./morning-brief-enrollment-retry.service";
 import { readAcceptedOfficialWorkflowDefinition } from "./official-workflow-catalog-read.service";
 import {
@@ -161,7 +161,7 @@ async function loadUnavailableReason(
 async function loadPendingPreference(
   db: ReadonlyDb,
   args: MorningBriefPreferenceArgs,
-  enrollment: Awaited<ReturnType<typeof loadMorningBriefEnrollment>>,
+  enrollment: typeof morningBriefEnrollments.$inferSelect | undefined,
   installationAgentId?: string,
 ): Promise<MorningBriefPreferenceResult> {
   const unavailableReason = await loadUnavailableReason(
@@ -295,7 +295,7 @@ const qualifyMorningBriefMembership$ = command(
   ): Promise<EnsureMorningBriefDefaultEnabledResult | null> => {
     const db = set(writeDb$);
     const identity = morningBriefOwner(args);
-    let enrollment = await loadMorningBriefEnrollment(db, identity);
+    let enrollment = await set(loadMorningBriefEnrollment$, identity, signal);
     signal.throwIfAborted();
     if (
       enrollment &&
@@ -346,14 +346,18 @@ const qualifyMorningBriefMembership$ = command(
       if (!Number.isFinite(createdAt.getTime())) {
         throw new Error("Invalid Clerk membership creation time");
       }
-      await recordMorningBriefMembership(db, {
-        ...identity,
-        membershipId: membership.id,
-        createdAt,
-        preserveRetrySchedule: true,
-      });
+      await set(
+        recordMorningBriefMembership$,
+        {
+          ...identity,
+          membershipId: membership.id,
+          createdAt,
+          preserveRetrySchedule: true,
+        },
+        signal,
+      );
       signal.throwIfAborted();
-      enrollment = await loadMorningBriefEnrollment(db, identity);
+      enrollment = await set(loadMorningBriefEnrollment$, identity, signal);
       signal.throwIfAborted();
     }
     if (enrollment?.state !== "pending") {
@@ -389,7 +393,7 @@ const installMorningBriefEnrollment$ = command(
     );
     signal.throwIfAborted();
     if (installed.kind === "ok") {
-      const intent = await loadMorningBriefEnrollment(db, identity);
+      const intent = await set(loadMorningBriefEnrollment$, identity, signal);
       signal.throwIfAborted();
       if (intent?.state !== "pending") {
         const automationId = await loadMorningBriefAutomationId(
@@ -561,9 +565,9 @@ const ensureMorningBriefWhileLocked$ = command(
         installationCount: installations.length,
       };
     }
-    await prepareMorningBriefEnrollment(db, identity);
+    await set(prepareMorningBriefEnrollment$, identity, signal);
     signal.throwIfAborted();
-    const enrollment = await loadMorningBriefEnrollment(db, identity);
+    const enrollment = await set(loadMorningBriefEnrollment$, identity, signal);
     signal.throwIfAborted();
     if (!enrollment) {
       throw new Error("Morning Brief enrollment intent is missing");
@@ -589,15 +593,16 @@ const ensureMorningBriefWhileLocked$ = command(
           );
     signal.throwIfAborted();
     if (preflight !== null && preflight.outcome !== "ready") {
-      await deferMorningBriefPrerequisite(
-        db,
+      await set(
+        deferMorningBriefPrerequisite$,
         enrollment,
         preflight.outcome === "failed" ? preflight.message : null,
+        signal,
       );
       signal.throwIfAborted();
       return preflight;
     }
-    const claim = await claimMorningBriefEnrollment(db, enrollment);
+    const claim = await set(claimMorningBriefEnrollment$, enrollment, signal);
     signal.throwIfAborted();
     if (!claim) {
       return { outcome: "skipped", reason: "retry-deferred" };
@@ -619,11 +624,12 @@ const ensureMorningBriefWhileLocked$ = command(
       : result.value.result.outcome === "failed"
         ? result.value.result.message
         : null;
-    await finishMorningBriefEnrollmentAttempt(
-      db,
+    await set(
+      finishMorningBriefEnrollmentAttempt$,
       claim,
       lastError,
       result.ok && result.value.localDeferral,
+      signal,
     );
     signal.throwIfAborted();
     if (!result.ok) {
@@ -738,13 +744,13 @@ const updateMorningBriefWhileLocked$ = command(
     signal.throwIfAborted();
 
     if (!installation) {
-      await recordMorningBriefChoice(db, identity, args.enabled);
+      await set(recordMorningBriefChoice$, identity, args.enabled, signal);
       signal.throwIfAborted();
       return await set(createMorningBriefFromPreference$, args, signal);
     }
 
     if (installation.installationState !== "installed") {
-      await recordMorningBriefChoice(db, identity, args.enabled);
+      await set(recordMorningBriefChoice$, identity, args.enabled, signal);
       signal.throwIfAborted();
       return await loadInstalledPreference(db, args);
     }
@@ -768,7 +774,7 @@ const updateMorningBriefWhileLocked$ = command(
       }
     }
 
-    await recordMorningBriefChoice(db, identity, args.enabled);
+    await set(recordMorningBriefChoice$, identity, args.enabled, signal);
     signal.throwIfAborted();
     const current = await loadInstalledPreference(db, args);
     signal.throwIfAborted();

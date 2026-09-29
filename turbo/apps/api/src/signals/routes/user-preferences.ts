@@ -27,7 +27,7 @@ import {
   updateUserPreferences$,
   userPreferences,
 } from "../services/user-data.service";
-import { prepareMorningBriefEnrollment } from "../services/morning-brief-enrollment-retry.service";
+import { prepareMorningBriefEnrollment$ } from "../services/morning-brief-enrollment-retry.service";
 import { settle, tapError } from "../utils";
 
 const L = logger("user-preferences");
@@ -251,7 +251,7 @@ const initializeUserPreferencesInner$ = command(
     if (writeOutcome.kind === "invalid-timezone") {
       return badRequestMessage("Invalid timezone");
     }
-    await prepareMorningBriefEnrollment(db, identity);
+    await set(prepareMorningBriefEnrollment$, identity, signal);
     signal.throwIfAborted();
     const enrollment = await settle(
       set(

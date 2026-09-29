@@ -26,7 +26,7 @@ import {
   executeClerkUserDeletionWork$,
 } from "../services/clerk-user-deletion-job.service";
 import { handleUsagePackInvitationAccepted } from "../services/usage-pack-invitation-purchase.service";
-import { recordMorningBriefMembership } from "../services/morning-brief-enrollment-data.service";
+import { recordMorningBriefMembership$ } from "../services/morning-brief-enrollment-data.service";
 import {
   ensureMorningBriefDefaultEnabled$,
   type EnsureMorningBriefDefaultEnabledResult,
@@ -575,12 +575,16 @@ const enrollMorningBriefMembership$ = command(
       );
       return;
     }
-    await recordMorningBriefMembership(set(writeDb$), {
-      orgId: identity.orgId,
-      userId: identity.userId,
-      membershipId: identity.membershipId,
-      createdAt,
-    });
+    await set(
+      recordMorningBriefMembership$,
+      {
+        orgId: identity.orgId,
+        userId: identity.userId,
+        membershipId: identity.membershipId,
+        createdAt,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     enqueueMorningBriefMembershipProvisioning({
       identity: { ...identity, createdAt },

@@ -7,11 +7,11 @@ import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import {
-  loadMorningBriefEnrollment,
+  loadMorningBriefEnrollment$,
   type MorningBriefMemberIdentity,
   morningBriefEnrollmentWhere,
 } from "./morning-brief-enrollment-data.service";
-import { prepareMorningBriefEnrollment } from "./morning-brief-enrollment-retry.service";
+import { prepareMorningBriefEnrollment$ } from "./morning-brief-enrollment-retry.service";
 import { ensureMorningBriefDefaultEnabled$ } from "./morning-brief-preference.service";
 
 const log = logger("MorningBriefEnrollment");
@@ -52,7 +52,7 @@ const executeMorningBriefEnrollmentScope$ = command(
       .limit(20);
     signal.throwIfAborted();
     for (const member of missing) {
-      await prepareMorningBriefEnrollment(db, member);
+      await set(prepareMorningBriefEnrollment$, member, signal);
       signal.throwIfAborted();
     }
     const currentTime = nowDate();
@@ -89,7 +89,11 @@ const executeMorningBriefEnrollmentScope$ = command(
         continue;
       }
       attempted++;
-      const currentEnrollment = await loadMorningBriefEnrollment(db, identity);
+      const currentEnrollment = await set(
+        loadMorningBriefEnrollment$,
+        identity,
+        signal,
+      );
       signal.throwIfAborted();
       const lastError = !result.ok
         ? String(result.error)

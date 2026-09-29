@@ -10,7 +10,7 @@ import { and, asc, eq } from "drizzle-orm";
 
 import type { ReadonlyDb } from "../external/db";
 import {
-  loadMorningBriefEnrollment,
+  morningBriefEnrollmentWhere,
   type MorningBriefMemberIdentity,
 } from "./morning-brief-enrollment-data.service";
 import { loadWorkflowUserAutomationThreadId } from "./workflow-user-automation-thread.service";
@@ -182,7 +182,11 @@ export async function loadMorningBriefOwnership(
   db: MorningBriefStateReader,
   owner: MorningBriefMemberIdentity,
 ): Promise<MorningBriefOwnership> {
-  const enrollment = await loadMorningBriefEnrollment(db, owner);
+  const [enrollment] = await db
+    .select()
+    .from(morningBriefEnrollments)
+    .where(morningBriefEnrollmentWhere(owner))
+    .limit(1);
   const installations = await loadMorningBriefInstallations(db, owner);
   if (installations.length <= 1) {
     return { owner, enrollment, installations, installation: installations[0] };

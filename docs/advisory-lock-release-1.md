@@ -184,6 +184,26 @@ explicit product approval, recorded in the terminal document. Gmail remote-stop
 code is removed; the remaining caller ownership work is implementation. None of
 these gaps is evidence for a third release or merely waiting for R2 deployment.
 
+### Morning Brief enrollment ownership
+
+Enrollment reads, first admission, explicit choices, membership qualification
+publication, retry admission and retry completion now use business-argument
+commands. Each resolves `writeDb$` internally and executes its finite SQL;
+Clerk webhook, timezone initialization, the bounded worker and preference
+callers no longer pass a database handle into this subgraph. Existing predicates
+retain the recorded choice, membership identity and retry schedule. The legacy
+transactional migration-state reader performs its enrollment SELECT directly,
+so it does not cross into a separate command and lose its caller snapshot.
+
+This change does not remove the outer preference lock/callback transaction or
+finish the native absent-owner and generic workflow publication protocol. Those
+remain implementation work: the installed automation and the enrollment choice
+must share conditional publication before Release 2 removes that boundary. The
+existing enrollment lease/backoff fields predate this cleanup; no new field or
+coordination state was introduced. Existing user API tests cover first
+installation, explicit disable, membership changes and retries. Scoped formatting,
+Oxlint and ESLint pass; combined-head type and behavior checks are still required.
+
 ## Transaction inventory
 
 The baseline syntax inventory scans actual `.transaction(...)` call expressions
