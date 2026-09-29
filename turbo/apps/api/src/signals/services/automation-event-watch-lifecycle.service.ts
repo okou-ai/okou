@@ -7,11 +7,11 @@ import {
 } from "@okouai/api-contracts/contracts/workflows";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { and, eq, isNotNull } from "drizzle-orm";
-import { writeDb$, type Db } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { workflowAutomationSnapshot } from "./workflow-automation-snapshot";
 import {
-  ensureGmailWatchForUser,
-  reconcileGmailWatchesForUser,
+  ensureGmailWatchForUser$,
+  reconcileGmailWatchesForUser$,
 } from "./gmail-automation-event.service";
 import {
   ensureGoogleCalendarWatchForUser,
@@ -175,9 +175,9 @@ export const reconcileAutomationEventWatches$ = command(
     let succeeded = true;
     for (const target of targets.values()) {
       if (target.provider === "gmail") {
-        const reconciled = await reconcileGmailWatchesForUser(
+        const reconciled = await set(
+          reconcileGmailWatchesForUser$,
           {
-            db: db,
             orgId: target.orgId,
             userId: target.userId,
           },
@@ -243,8 +243,9 @@ export const reconcileAutomationEventWatchInventoryForOwner$ = command(
     signal: AbortSignal,
   ): Promise<boolean> => {
     const db = set(writeDb$);
-    const gmail = await reconcileGmailWatchesForUser(
-      { db, orgId: args.orgId, userId: args.userId },
+    const gmail = await set(
+      reconcileGmailWatchesForUser$,
+      { orgId: args.orgId, userId: args.userId },
       signal,
     );
     signal.throwIfAborted();
@@ -285,91 +286,94 @@ type AutomationEventWatchReconfigurationResult =
       readonly kind: "bad-request";
       readonly message: string;
     };
-async function ensureNonFormsTarget(
-  db: Db,
-  target: Exclude<
-    AutomationEventWatchTarget,
-    {
-      provider: "google_forms";
-    }
-  >,
-  allowStagedOfficialTarget: boolean,
-  signal: AbortSignal,
-): Promise<AutomationEventWatchReconfigurationResult> {
-  let result:
-    | {
-        readonly kind: "ok";
-      }
-    | {
-        readonly kind: "bad_request";
-        readonly message: string;
-      };
-  if (target.provider === "gmail") {
-    result =
-      target.connectorId === null
-        ? {
-            kind: "bad_request",
-            message: "Connect Gmail before using Gmail event automations",
-          }
-        : await ensureGmailWatchForUser(
-            {
-              db,
-              orgId: target.orgId,
-              userId: target.userId,
-              connectorId: target.connectorId,
-              forceRefresh: false,
-              allowStagedOfficialTarget,
-            },
-            signal,
-          );
-  } else if (target.provider === "google_meet") {
-    result = await ensureGoogleMeetTranscriptGeneratedSubscriptionForUser(
+const ensureNonFormsTarget$ = command(
+  async (
+    { set },
+    target: Exclude<
+      AutomationEventWatchTarget,
       {
-        db,
-        orgId: target.orgId,
-        userId: target.userId,
-        connectorId: target.connectorId,
-        allowStagedOfficialTarget,
-      },
-      signal,
-    );
-  } else {
-    result =
-      target.connectorId === null
-        ? {
-            kind: "bad_request",
-            message:
-              "Connect Google Calendar before using Google Calendar event automations",
-          }
-        : allowStagedOfficialTarget
-          ? await stageGoogleCalendarWatchTargetForReconfiguration(
+        provider: "google_forms";
+      }
+    >,
+    allowStagedOfficialTarget: boolean,
+    signal: AbortSignal,
+  ): Promise<AutomationEventWatchReconfigurationResult> => {
+    const db = set(writeDb$);
+    let result:
+      | {
+          readonly kind: "ok";
+        }
+      | {
+          readonly kind: "bad_request";
+          readonly message: string;
+        };
+    if (target.provider === "gmail") {
+      result =
+        target.connectorId === null
+          ? {
+              kind: "bad_request",
+              message: "Connect Gmail before using Gmail event automations",
+            }
+          : await set(
+              ensureGmailWatchForUser$,
               {
-                db,
                 orgId: target.orgId,
                 userId: target.userId,
                 connectorId: target.connectorId,
-                calendarId: target.calendarId,
                 forceRefresh: false,
-              },
-              signal,
-            )
-          : await ensureGoogleCalendarWatchForUser(
-              {
-                db,
-                orgId: target.orgId,
-                userId: target.userId,
-                connectorId: target.connectorId,
-                calendarId: target.calendarId,
-                forceRefresh: false,
+                allowStagedOfficialTarget,
               },
               signal,
             );
-  }
-  signal.throwIfAborted();
-  return result.kind === "ok"
-    ? result
-    : { kind: "bad-request", message: result.message };
-}
+    } else if (target.provider === "google_meet") {
+      result = await ensureGoogleMeetTranscriptGeneratedSubscriptionForUser(
+        {
+          db,
+          orgId: target.orgId,
+          userId: target.userId,
+          connectorId: target.connectorId,
+          allowStagedOfficialTarget,
+        },
+        signal,
+      );
+    } else {
+      result =
+        target.connectorId === null
+          ? {
+              kind: "bad_request",
+              message:
+                "Connect Google Calendar before using Google Calendar event automations",
+            }
+          : allowStagedOfficialTarget
+            ? await stageGoogleCalendarWatchTargetForReconfiguration(
+                {
+                  db,
+                  orgId: target.orgId,
+                  userId: target.userId,
+                  connectorId: target.connectorId,
+                  calendarId: target.calendarId,
+                  forceRefresh: false,
+                },
+                signal,
+              )
+            : await ensureGoogleCalendarWatchForUser(
+                {
+                  db,
+                  orgId: target.orgId,
+                  userId: target.userId,
+                  connectorId: target.connectorId,
+                  calendarId: target.calendarId,
+                  forceRefresh: false,
+                },
+                signal,
+              );
+    }
+    signal.throwIfAborted();
+    return result.kind === "ok"
+      ? result
+      : { kind: "bad-request", message: result.message };
+  },
+);
 const ensureGoogleFormsTarget$ = command(
   async (
     { set },
@@ -531,8 +535,8 @@ export const ensureAutomationEventWatchReconfiguration$ = command(
       nonFormsTargets.set(targetKey(target), target);
     }
     for (const target of nonFormsTargets.values()) {
-      const ensured = await ensureNonFormsTarget(
-        db,
+      const ensured = await set(
+        ensureNonFormsTarget$,
         target,
         allowStagedOfficialTargets,
         signal,

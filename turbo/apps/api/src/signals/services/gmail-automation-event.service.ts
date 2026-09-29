@@ -1,8 +1,9 @@
 import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
+import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import { OAuth2Client } from "google-auth-library";
 import { command } from "ccstate";
-import { and, asc, eq, inArray, notExists, sql } from "drizzle-orm";
+import { and, asc, eq, getTableColumns, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   gmailLabelAppliedEventConfigSchema,
@@ -20,6 +21,8 @@ import {
   workflowAutomations,
   workflows,
 } from "@okouai/db/schema/workflow";
+import { connectors } from "@okouai/db/schema/connector";
+import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { testOverride } from "../../lib/singleton";
@@ -27,7 +30,10 @@ import { writeDb$, type Db } from "../external/db";
 import { now, nowDate } from "../../lib/time";
 import { safeJsonParse, settle, tapError } from "../utils";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
-import { loadConnectorRuntimeSnapshot } from "./connector-catalog-runtime.service";
+import {
+  loadConnectorRuntimeSnapshot,
+  loadConnectorRuntimeSnapshot$,
+} from "./connector-catalog-runtime.service";
 import {
   builtinConnectorCredentialRuntimeValueRef,
   loadBuiltinConnectorCredentialConnection,
@@ -44,8 +50,12 @@ import type { WorkflowQueueAdmissionTransaction } from "./workflow-chat-event-qu
 import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
 import { workflowAutomationCanFire } from "./workflow-automation-access.service";
 import { ensureWorkflowUserAutomationThread } from "./workflow-user-automation-thread.service";
-import { reprojectGmailAutomationsForOwner } from "./gmail-automation-account.service";
-import { lockConnectorAccountTarget } from "./auth-state-lock.service";
+import { builtinConnectorStateLockStatement } from "./auth-state-lock.service";
+import {
+  loadBuiltinConnectorCredentialConnection$,
+  loadBuiltinConnectorCredentialValues$,
+  refreshBuiltinConnectorCredentialAccess$,
+} from "./builtin-connector-credential-command.service";
 
 const log = logger("api:gmail-automation-event");
 
@@ -371,6 +381,114 @@ async function resolveGmailAccess(
   };
 }
 
+const resolveGmailAccess$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly connectorId: string;
+      readonly refreshExpiredToken?: boolean;
+    },
+    signal: AbortSignal,
+  ): Promise<GmailAccessResult> => {
+    const currentTime = nowDate();
+    const snapshot = await set(loadConnectorRuntimeSnapshot$, signal);
+    signal.throwIfAborted();
+    const loaded = await set(loadBuiltinConnectorCredentialConnection$, {
+      snapshot,
+      orgId: args.orgId,
+      userId: args.userId,
+      connectorSlug: "gmail",
+      connectorId: args.connectorId,
+    });
+    signal.throwIfAborted();
+    if (loaded.kind === "missing") {
+      return {
+        kind: "bad_request",
+        message: "Connect Gmail before adding a Gmail event automation",
+      };
+    }
+    if (loaded.kind === "unavailable" || loaded.connection.needsReconnect) {
+      return {
+        kind: "bad_request",
+        message: "Reconnect Gmail before using Gmail event automations",
+      };
+    }
+    const connection = loaded.connection;
+    const accessTokenValueRef = builtinConnectorCredentialRuntimeValueRef(
+      connection,
+      GMAIL_ACCESS_TOKEN_ENVIRONMENT_NAME,
+    );
+    if (accessTokenValueRef === null) {
+      return {
+        kind: "bad_request",
+        message: "Reconnect Gmail before using Gmail event automations",
+      };
+    }
+    const values = await set(
+      loadBuiltinConnectorCredentialValues$,
+      {
+        connection,
+        valueRefs: [accessTokenValueRef],
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    const accessToken = values.get(accessTokenValueRef);
+    if (!accessToken) {
+      return {
+        kind: "bad_request",
+        message: "Reconnect Gmail before using Gmail event automations",
+      };
+    }
+    if (
+      !tokenNeedsRefresh(connection.tokenExpiresAt, currentTime) ||
+      args.refreshExpiredToken === false
+    ) {
+      return {
+        kind: "ok",
+        access: {
+          connectorId: connection.connectorId,
+          emailAddress: connection.externalEmail,
+          accessToken,
+        },
+      };
+    }
+    const refreshed = await set(
+      refreshBuiltinConnectorCredentialAccess$,
+      {
+        connection,
+        orgId: args.orgId,
+        userId: args.userId,
+        runtimeEnvironmentName: GMAIL_ACCESS_TOKEN_ENVIRONMENT_NAME,
+        persist: { markNeedsReconnectOnFailure: true },
+      },
+      signal,
+    );
+    if (refreshed.kind === "configuration-unavailable") {
+      return {
+        kind: "bad_request",
+        message: "Google OAuth client env vars are not configured",
+      };
+    }
+    if (refreshed.kind !== "ok") {
+      return {
+        kind: "bad_request",
+        message: "Reconnect Gmail before using Gmail event automations",
+      };
+    }
+    return {
+      kind: "ok",
+      access: {
+        connectorId: connection.connectorId,
+        emailAddress: connection.externalEmail,
+        accessToken: refreshed.accessToken,
+      },
+    };
+  },
+);
+
 async function gmailFetchJson<T>(
   schema: z.ZodType<T>,
   accessToken: string,
@@ -523,26 +641,6 @@ function normalizeGmailAddress(emailAddress: string): string {
   return emailAddress.trim().toLowerCase();
 }
 
-function gmailLifecycleLockKey(
-  emailAddress: string,
-  topicName: string,
-): string {
-  const scopeHash = createHash("sha256")
-    .update(`${normalizeGmailAddress(emailAddress)}\n${topicName}`)
-    .digest("hex");
-  return `workflow_watch:gmail:${scopeHash}`;
-}
-
-async function lockGmailLifecycle(
-  db: Db,
-  emailAddress: string,
-  topicName: string,
-): Promise<void> {
-  const lockKey = gmailLifecycleLockKey(emailAddress, topicName);
-  // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-  await db.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`);
-}
-
 export async function hasEnabledGmailConsumer(
   args: {
     readonly db: Db;
@@ -570,56 +668,16 @@ export async function hasEnabledGmailConsumer(
   return consumer !== undefined;
 }
 
-async function loadGmailPhysicalWatchStates(
-  args: {
-    readonly db: Db;
-    readonly emailAddress: string;
-    readonly topicName: string;
-  },
-  signal: AbortSignal,
-): Promise<GmailWatchStateRow[]> {
-  const states = await args.db
-    .select()
-    .from(gmailWatchStates)
-    .where(
-      and(
-        eq(
-          sql`lower(${gmailWatchStates.emailAddress})`,
-          normalizeGmailAddress(args.emailAddress),
-        ),
-        eq(gmailWatchStates.topicName, args.topicName),
-      ),
-    )
-    .orderBy(asc(gmailWatchStates.createdAt), asc(gmailWatchStates.id));
-  signal.throwIfAborted();
-  return states;
-}
-
-async function partitionGmailStatesByConsumer(
-  args: {
-    readonly db: Db;
-    readonly states: readonly GmailWatchStateRow[];
-  },
-  signal: AbortSignal,
-): Promise<{
-  readonly active: GmailWatchStateRow[];
-  readonly inactive: GmailWatchStateRow[];
-}> {
-  const active: GmailWatchStateRow[] = [];
-  const inactive: GmailWatchStateRow[] = [];
-  for (const state of args.states) {
-    const hasConsumer = await hasEnabledGmailConsumer(
-      {
-        db: args.db,
-        orgId: state.orgId,
-        userId: state.userId,
-        connectorId: state.connectorId,
-      },
-      signal,
-    );
-    (hasConsumer ? active : inactive).push(state);
-  }
-  return { active, inactive };
+function gmailStateHasEnabledConsumer() {
+  return sql`EXISTS (
+    SELECT 1 FROM ${workflowAutomations}
+    WHERE ${workflowAutomations.orgId} = ${gmailWatchStates.orgId}
+      AND ${workflowAutomations.ownerUserId} = ${gmailWatchStates.userId}
+      AND ${workflowAutomations.eventConnectorId} = ${gmailWatchStates.connectorId}
+      AND ${workflowAutomations.enabled}
+      AND ${workflowAutomations.kind} = 'event'
+      AND ${workflowAutomations.eventType} IN ('gmail-new-message', 'gmail-label-applied')
+  )`.mapWith(pgBooleanDecoder);
 }
 
 function watchExpirationDate(expiration: string): Date {
@@ -630,577 +688,519 @@ function watchExpirationDate(expiration: string): Date {
   return new Date(millis);
 }
 
-async function deleteGmailWatchStates(
-  db: Db,
-  states: readonly GmailWatchStateRow[],
-): Promise<void> {
-  if (states.length === 0) {
-    return;
-  }
-  await db.delete(gmailWatchStates).where(
-    and(
-      inArray(
-        gmailWatchStates.id,
-        states.map((state) => {
-          return state.id;
-        }),
-      ),
-      notExists(
-        db
-          .select({ id: workflowAutomations.id })
-          .from(workflowAutomations)
-          .where(
-            and(
-              eq(workflowAutomations.orgId, gmailWatchStates.orgId),
-              eq(workflowAutomations.ownerUserId, gmailWatchStates.userId),
-              eq(
-                workflowAutomations.eventConnectorId,
-                gmailWatchStates.connectorId,
-              ),
-              eq(workflowAutomations.enabled, true),
-              eq(workflowAutomations.kind, "event"),
-              inArray(workflowAutomations.eventType, [...GMAIL_EVENT_TYPES]),
-            ),
-          ),
-      ),
-    ),
-  );
-}
-
-async function persistEnsuredGmailWatch(args: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly access: GmailAccess;
-  readonly emailAddress: string;
-  readonly topicName: string;
-  readonly activeStates: readonly GmailWatchStateRow[];
-  readonly inactiveStates: readonly GmailWatchStateRow[];
-  readonly resetCurrentCursor: boolean;
-  readonly watch: z.infer<typeof gmailWatchResponseSchema>;
-  readonly currentTime: Date;
-}): Promise<void> {
-  const expiration = watchExpirationDate(args.watch.expiration);
-  await deleteGmailWatchStates(args.db, args.inactiveStates);
-  if (args.activeStates.length > 0) {
-    await args.db
-      .update(gmailWatchStates)
-      .set({
-        watchExpirationAt: expiration,
-        lastWatchRenewedAt: args.currentTime,
-        needsRewatch: false,
-        updatedAt: args.currentTime,
-      })
-      .where(
-        inArray(
-          gmailWatchStates.id,
-          args.activeStates.map((state) => {
-            return state.id;
-          }),
-        ),
-      );
-  }
-  await args.db
-    .insert(gmailWatchStates)
-    .values({
-      orgId: args.orgId,
-      userId: args.userId,
-      connectorId: args.access.connectorId,
-      emailAddress: args.emailAddress,
-      topicName: args.topicName,
-      lastHistoryId: args.watch.historyId,
-      watchExpirationAt: expiration,
-      lastWatchRenewedAt: args.currentTime,
-      needsRewatch: false,
-      createdAt: args.currentTime,
-      updatedAt: args.currentTime,
-    })
-    .onConflictDoUpdate({
-      target: [gmailWatchStates.connectorId, gmailWatchStates.topicName],
-      set: {
-        emailAddress: args.emailAddress,
-        ...(args.resetCurrentCursor
-          ? { lastHistoryId: args.watch.historyId }
-          : {}),
-        watchExpirationAt: expiration,
-        lastWatchRenewedAt: args.currentTime,
-        needsRewatch: false,
-        updatedAt: args.currentTime,
-      },
-    });
-}
-
-async function ensureGmailWatchWithResolvedAccess(
-  args: {
-    readonly db: Db;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly access: GmailAccess;
-    readonly emailAddress: string;
-    readonly topicName: string;
-    readonly forceRefresh: boolean;
-    readonly allowStagedOfficialTarget: boolean;
-  },
-  signal: AbortSignal,
-): Promise<EnsureGmailWatchResult> {
-  return await args.db.transaction(async (tx) => {
-    await lockGmailLifecycle(tx, args.emailAddress, args.topicName);
-    signal.throwIfAborted();
-    if (
-      !args.allowStagedOfficialTarget &&
-      !(await hasEnabledGmailConsumer(
-        {
-          db: tx,
-          orgId: args.orgId,
-          userId: args.userId,
-          connectorId: args.access.connectorId,
-        },
-        signal,
-      ))
-    ) {
-      return { kind: "ok" };
-    }
-
-    const states = await loadGmailPhysicalWatchStates(
-      {
-        db: tx,
-        emailAddress: args.emailAddress,
-        topicName: args.topicName,
-      },
-      signal,
-    );
-    const { active, inactive } = await partitionGmailStatesByConsumer(
-      {
-        db: tx,
-        states,
-      },
-      signal,
-    );
-    const localState = active.find((state) => {
-      return state.connectorId === args.access.connectorId;
-    });
-    const currentTime = nowDate();
-    if (
-      localState &&
-      !args.forceRefresh &&
-      !localState.needsRewatch &&
-      localState.watchExpirationAt.getTime() >
-        currentTime.getTime() + WATCH_RENEWAL_WINDOW_MS
-    ) {
-      await deleteGmailWatchStates(tx, inactive);
-      return { kind: "ok" };
-    }
-
-    const watch = await watchGmailMailbox(
-      {
-        accessToken: args.access.accessToken,
-        topicName: args.topicName,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    if (watch.kind !== "ok") {
-      return {
-        kind: "bad_request",
-        message: "Failed to register Gmail watch for event automation setup",
-      };
-    }
-    await persistEnsuredGmailWatch({
-      db: tx,
-      orgId: args.orgId,
-      userId: args.userId,
-      access: args.access,
-      emailAddress: args.emailAddress,
-      topicName: args.topicName,
-      activeStates: active,
-      inactiveStates: inactive,
-      resetCurrentCursor: args.forceRefresh,
-      watch: watch.value,
-      currentTime,
-    });
-    signal.throwIfAborted();
-    log.debug("Workflow watch lifecycle reconciled", {
-      provider: "gmail",
-      action: "ensure",
-      result: "ok",
-    });
-    return { kind: "ok" };
-  });
-}
-
-export async function ensureGmailWatchForUser(
-  args: {
-    readonly db: Db;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly connectorId: string;
-    readonly forceRefresh?: boolean;
-    readonly allowStagedOfficialTarget?: boolean;
-  },
-  signal: AbortSignal,
-): Promise<EnsureGmailWatchResult> {
-  const topicName = optionalEnv("GMAIL_PUBSUB_TOPIC_NAME");
-  if (!topicName) {
-    return {
-      kind: "bad_request",
-      message: "GMAIL_PUBSUB_TOPIC_NAME is not configured",
-    };
-  }
-
-  const accessResult = await resolveGmailAccess(args, signal);
-  signal.throwIfAborted();
-  if (accessResult.kind !== "ok") {
-    return accessResult;
-  }
-
-  let emailAddress = accessResult.access.emailAddress;
-  if (!emailAddress) {
-    const profile = await fetchGmailProfile(
-      accessResult.access.accessToken,
-      signal,
-    );
-    signal.throwIfAborted();
-    if (profile.kind !== "ok") {
-      return {
-        kind: "bad_request",
-        message: "Failed to read Gmail profile for event automation setup",
-      };
-    }
-    emailAddress = profile.value.emailAddress;
-  }
-
-  return await ensureGmailWatchWithResolvedAccess(
-    {
-      db: args.db,
-      orgId: args.orgId,
-      userId: args.userId,
-      access: accessResult.access,
-      emailAddress,
-      topicName,
-      forceRefresh: args.forceRefresh ?? false,
-      allowStagedOfficialTarget: args.allowStagedOfficialTarget ?? false,
-    },
-    signal,
-  );
-}
-
 interface GmailPhysicalScopeInput {
   readonly emailAddress: string;
   readonly topicName: string;
   readonly renewBefore?: Date;
 }
 
-interface ReconcileGmailPhysicalScopeArgs extends GmailPhysicalScopeInput {
-  readonly db: Db;
-}
-
-async function resolveGmailAccessFromStates(
-  args: {
-    readonly db: Db;
-    readonly states: readonly GmailWatchStateRow[];
-  },
-  signal: AbortSignal,
-): Promise<GmailAccess | null> {
-  for (const state of args.states) {
-    const result = await resolveGmailAccess(
-      {
-        db: args.db,
-        orgId: state.orgId,
-        userId: state.userId,
-        connectorId: state.connectorId,
-      },
-      signal,
-    );
+const loadGmailPhysicalWatchStates$ = command(
+  async ({ set }, args: GmailPhysicalScopeInput, signal: AbortSignal) => {
+    const db = set(writeDb$);
+    const states = await db
+      .select({
+        ...getTableColumns(gmailWatchStates),
+        hasConsumer: gmailStateHasEnabledConsumer(),
+      })
+      .from(gmailWatchStates)
+      .where(
+        and(
+          eq(
+            sql`lower(${gmailWatchStates.emailAddress})`,
+            normalizeGmailAddress(args.emailAddress),
+          ),
+          eq(gmailWatchStates.topicName, args.topicName),
+        ),
+      )
+      .orderBy(asc(gmailWatchStates.createdAt), asc(gmailWatchStates.id));
     signal.throwIfAborted();
-    if (result.kind === "ok") {
-      return result.access;
-    }
-  }
-  return null;
-}
-
-async function reconcileActiveGmailStates(
-  args: {
-    readonly db: Db;
-    readonly active: readonly GmailWatchStateRow[];
-    readonly inactive: readonly GmailWatchStateRow[];
-    readonly topicName: string;
-    readonly renewBefore?: Date;
+    return states;
   },
-  signal: AbortSignal,
-): Promise<GmailWatchReconcileResult> {
-  await deleteGmailWatchStates(args.db, args.inactive);
-  if (args.inactive.length > 0) {
-    log.debug("Workflow watch lifecycle reconciled", {
-      provider: "gmail",
-      action: "remove_local_state",
-      result: "ok",
-    });
-  }
-  const renewBefore = args.renewBefore;
-  const renewalDue =
-    renewBefore !== undefined &&
-    args.active.some((state) => {
-      return (
-        state.needsRewatch ||
-        state.watchExpirationAt.getTime() <= renewBefore.getTime()
+);
+
+const removeInactiveGmailWatchStates$ = command(
+  async ({ set }, scope: GmailPhysicalScopeInput, signal: AbortSignal) => {
+    const db = set(writeDb$);
+    await db
+      .delete(gmailWatchStates)
+      .where(
+        and(
+          eq(
+            sql`lower(${gmailWatchStates.emailAddress})`,
+            normalizeGmailAddress(scope.emailAddress),
+          ),
+          eq(gmailWatchStates.topicName, scope.topicName),
+          sql`NOT ${gmailStateHasEnabledConsumer()}`,
+        ),
       );
-    });
-  if (!renewalDue) {
-    return args.inactive.length > 0
-      ? { kind: "local_removed" }
-      : { kind: "unchanged" };
-  }
-
-  const access = await resolveGmailAccessFromStates(
-    {
-      db: args.db,
-      states: args.active,
-    },
-    signal,
-  );
-  if (!access) {
-    return { kind: "failed" };
-  }
-  const watch = await watchGmailMailbox(
-    {
-      accessToken: access.accessToken,
-      topicName: args.topicName,
-    },
-    signal,
-  );
-  signal.throwIfAborted();
-  if (watch.kind !== "ok") {
-    log.warn("Workflow watch lifecycle reconciliation failed", {
-      provider: "gmail",
-      action: "renew",
-      result: "provider_error",
-      status: watch.status,
-    });
-    return { kind: "failed" };
-  }
-
-  const currentTime = nowDate();
-  await args.db
-    .update(gmailWatchStates)
-    .set({
-      watchExpirationAt: watchExpirationDate(watch.value.expiration),
-      lastWatchRenewedAt: currentTime,
-      needsRewatch: false,
-      updatedAt: currentTime,
-    })
-    .where(
-      inArray(
-        gmailWatchStates.id,
-        args.active.map((state) => {
-          return state.id;
-        }),
-      ),
-    );
-  log.debug("Workflow watch lifecycle reconciled", {
-    provider: "gmail",
-    action: "renew",
-    result: "ok",
-  });
-  return { kind: "renewed" };
-}
-
-async function stopInactiveGmailStates(
-  args: { readonly db: Db; readonly states: readonly GmailWatchStateRow[] },
-  signal: AbortSignal,
-): Promise<GmailWatchReconcileResult> {
-  await deleteGmailWatchStates(args.db, args.states);
-  signal.throwIfAborted();
-  return { kind: "stopped" };
-}
-
-async function reconcileGmailPhysicalScopeLocked(
-  db: Db,
-  args: GmailPhysicalScopeInput,
-  signal: AbortSignal,
-): Promise<GmailWatchReconcileResult> {
-  const states = await loadGmailPhysicalWatchStates(
-    {
-      db,
-      emailAddress: args.emailAddress,
-      topicName: args.topicName,
-    },
-    signal,
-  );
-  if (states.length === 0) {
-    return { kind: "unchanged" };
-  }
-  const { active, inactive } = await partitionGmailStatesByConsumer(
-    {
-      db,
-      states,
-    },
-    signal,
-  );
-  if (active.length > 0) {
-    return await reconcileActiveGmailStates(
-      {
-        db,
-        active,
-        inactive,
-        topicName: args.topicName,
-        ...(args.renewBefore === undefined
-          ? {}
-          : { renewBefore: args.renewBefore }),
-      },
-      signal,
-    );
-  }
-  return await stopInactiveGmailStates(
-    {
-      db,
-      states,
-    },
-    signal,
-  );
-}
-
-async function reconcileGmailPhysicalScope(
-  args: ReconcileGmailPhysicalScopeArgs,
-  signal: AbortSignal,
-): Promise<GmailWatchReconcileResult> {
-  return await args.db.transaction(async (tx) => {
-    await lockGmailLifecycle(tx, args.emailAddress, args.topicName);
     signal.throwIfAborted();
-    return await reconcileGmailPhysicalScopeLocked(tx, args, signal);
-  });
+  },
+);
+
+function gmailLifecycleLockStatement(args: GmailPhysicalScopeInput) {
+  const scopeHash = createHash("sha256")
+    .update(`${normalizeGmailAddress(args.emailAddress)}\n${args.topicName}`)
+    .digest("hex");
+  const key = `workflow_watch:gmail:${scopeHash}`;
+  // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
+  return sql`SELECT pg_advisory_xact_lock(hashtext(${key}))`;
 }
 
-function gmailPhysicalScopes(states: readonly GmailWatchStateRow[]): readonly {
+function gmailWatchInsertValues(
+  args: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly connectorId: string;
+    readonly emailAddress: string;
+    readonly topicName: string;
+  },
+  watch: z.infer<typeof gmailWatchResponseSchema>,
+  currentTime: Date,
+) {
+  return {
+    orgId: args.orgId,
+    userId: args.userId,
+    connectorId: args.connectorId,
+    emailAddress: args.emailAddress,
+    topicName: args.topicName,
+    lastHistoryId: watch.historyId,
+    watchExpirationAt: watchExpirationDate(watch.expiration),
+    lastWatchRenewedAt: currentTime,
+    needsRewatch: false,
+    createdAt: currentTime,
+    updatedAt: currentTime,
+  };
+}
+
+interface GmailWatchPublicationInput {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly connectorId: string;
   readonly emailAddress: string;
   readonly topicName: string;
-}[] {
+  readonly resetCurrentCursor: boolean;
+  readonly forceRefresh: boolean;
+  readonly allowStagedOfficialTarget: boolean;
+  readonly accessToken: string;
+}
+
+const publishGmailWatch$ = command(
+  async (
+    { set },
+    args: GmailWatchPublicationInput,
+    signal: AbortSignal,
+  ): Promise<"published" | "inactive" | "failed"> => {
+    const db = set(writeDb$);
+    const currentTime = nowDate();
+    return await db.transaction(async (tx) => {
+      // R1 compatibility only: outgoing APIs still call users.stop under this
+      // key. Release 2 moves watch HTTP before this transaction after those
+      // writers and rollback targets are gone; R1 writers never call stop.
+      await tx.execute(gmailLifecycleLockStatement(args));
+      const [existing] = await tx
+        .select({
+          watchExpirationAt: gmailWatchStates.watchExpirationAt,
+          needsRewatch: gmailWatchStates.needsRewatch,
+          hasConsumer: gmailStateHasEnabledConsumer(),
+        })
+        .from(gmailWatchStates)
+        .where(
+          and(
+            eq(gmailWatchStates.connectorId, args.connectorId),
+            eq(gmailWatchStates.topicName, args.topicName),
+          ),
+        )
+        .limit(1);
+      if (
+        existing?.hasConsumer &&
+        !args.forceRefresh &&
+        !existing.needsRewatch &&
+        existing.watchExpirationAt.getTime() >
+          currentTime.getTime() + WATCH_RENEWAL_WINDOW_MS
+      ) {
+        return "published";
+      }
+      const watchResult = await watchGmailMailbox(
+        { accessToken: args.accessToken, topicName: args.topicName },
+        signal,
+      );
+      signal.throwIfAborted();
+      if (watchResult.kind !== "ok") {
+        return "failed";
+      }
+      const watch = watchResult.value;
+      const expiration = watchExpirationDate(watch.expiration);
+      const [account] = await tx
+        .select({ id: connectors.id })
+        .from(connectors)
+        .where(
+          and(
+            eq(connectors.id, args.connectorId),
+            eq(connectors.orgId, args.orgId),
+            eq(connectors.userId, args.userId),
+            eq(connectors.connectorSlug, "gmail"),
+            eq(connectors.needsReconnect, false),
+            sql`(${connectors.externalEmail} IS NULL OR lower(${connectors.externalEmail}) = ${normalizeGmailAddress(args.emailAddress)})`,
+          ),
+        )
+        .for("key share")
+        .limit(1);
+      if (!account) {
+        return "inactive";
+      }
+      const [consumer] = await tx
+        .select({ id: workflowAutomations.id })
+        .from(workflowAutomations)
+        .where(
+          and(
+            eq(workflowAutomations.orgId, args.orgId),
+            eq(workflowAutomations.ownerUserId, args.userId),
+            eq(workflowAutomations.eventConnectorId, args.connectorId),
+            sql`(${workflowAutomations.enabled} OR (${args.allowStagedOfficialTarget}
+              AND ${workflowAutomations.officialReconciliationStatus} = 'reconciling'
+              AND ${workflowAutomations.officialBlueprintKey} IS NOT NULL))`,
+            eq(workflowAutomations.kind, "event"),
+            inArray(workflowAutomations.eventType, [...GMAIL_EVENT_TYPES]),
+          ),
+        )
+        .for("share")
+        .limit(1);
+      if (!consumer) {
+        return "inactive";
+      }
+      await tx
+        .update(gmailWatchStates)
+        .set({
+          watchExpirationAt: expiration,
+          lastWatchRenewedAt: currentTime,
+          needsRewatch: false,
+          updatedAt: currentTime,
+        })
+        .where(
+          and(
+            eq(
+              sql`lower(${gmailWatchStates.emailAddress})`,
+              normalizeGmailAddress(args.emailAddress),
+            ),
+            eq(gmailWatchStates.topicName, args.topicName),
+            gmailStateHasEnabledConsumer(),
+          ),
+        );
+      await tx
+        .insert(gmailWatchStates)
+        .values(gmailWatchInsertValues(args, watch, currentTime))
+        .onConflictDoUpdate({
+          target: [gmailWatchStates.connectorId, gmailWatchStates.topicName],
+          set: {
+            emailAddress: args.emailAddress,
+            ...(args.resetCurrentCursor
+              ? {
+                  lastHistoryId: sql`greatest(${gmailWatchStates.lastHistoryId}::numeric, ${watch.historyId}::numeric)::text`,
+                }
+              : {}),
+            watchExpirationAt: expiration,
+            lastWatchRenewedAt: currentTime,
+            needsRewatch: false,
+            updatedAt: currentTime,
+          },
+        });
+      signal.throwIfAborted();
+      return "published";
+    });
+  },
+);
+
+export const ensureGmailWatchForUser$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly connectorId: string;
+      readonly forceRefresh?: boolean;
+      readonly allowStagedOfficialTarget?: boolean;
+    },
+    signal: AbortSignal,
+  ): Promise<EnsureGmailWatchResult> => {
+    const topicName = optionalEnv("GMAIL_PUBSUB_TOPIC_NAME");
+    if (!topicName) {
+      return {
+        kind: "bad_request",
+        message: "GMAIL_PUBSUB_TOPIC_NAME is not configured",
+      };
+    }
+    const access = await set(resolveGmailAccess$, args, signal);
+    signal.throwIfAborted();
+    if (access.kind !== "ok") {
+      return access;
+    }
+    let emailAddress = access.access.emailAddress;
+    if (!emailAddress) {
+      const profile = await fetchGmailProfile(
+        access.access.accessToken,
+        signal,
+      );
+      signal.throwIfAborted();
+      if (profile.kind !== "ok") {
+        return {
+          kind: "bad_request",
+          message: "Failed to read Gmail profile for event automation setup",
+        };
+      }
+      emailAddress = profile.value.emailAddress;
+    }
+    const scope = { emailAddress, topicName };
+    const published = await set(
+      publishGmailWatch$,
+      {
+        ...args,
+        ...scope,
+        resetCurrentCursor: args.forceRefresh ?? false,
+        forceRefresh: args.forceRefresh ?? false,
+        allowStagedOfficialTarget: args.allowStagedOfficialTarget ?? false,
+        accessToken: access.access.accessToken,
+      },
+      signal,
+    );
+    if (published === "failed") {
+      return {
+        kind: "bad_request",
+        message: "Failed to register Gmail watch for event automation setup",
+      };
+    }
+    if (!args.allowStagedOfficialTarget) {
+      await set(removeInactiveGmailWatchStates$, scope, signal);
+    }
+    return { kind: "ok" };
+  },
+);
+
+const reconcileGmailPhysicalScope$ = command(
+  async (
+    { set },
+    args: GmailPhysicalScopeInput,
+    signal: AbortSignal,
+  ): Promise<GmailWatchReconcileResult> => {
+    const states = await set(loadGmailPhysicalWatchStates$, args, signal);
+    const active = states.filter((state) => {
+      return state.hasConsumer;
+    });
+    await set(removeInactiveGmailWatchStates$, args, signal);
+    if (active.length === 0) {
+      return states.length === 0 ? { kind: "unchanged" } : { kind: "stopped" };
+    }
+    const renewBefore = args.renewBefore;
+    if (
+      renewBefore === undefined ||
+      !active.some((state) => {
+        return (
+          state.needsRewatch ||
+          state.watchExpirationAt.getTime() <= renewBefore.getTime()
+        );
+      })
+    ) {
+      return active.length === states.length
+        ? { kind: "unchanged" }
+        : { kind: "local_removed" };
+    }
+    let access: GmailAccess | null = null;
+    for (const state of active) {
+      const result = await set(
+        resolveGmailAccess$,
+        {
+          orgId: state.orgId,
+          userId: state.userId,
+          connectorId: state.connectorId,
+        },
+        signal,
+      );
+      if (result.kind === "ok") {
+        access = result.access;
+        break;
+      }
+    }
+    if (!access) {
+      return { kind: "failed" };
+    }
+    const connectorId = access.connectorId;
+    const source = active.find((state) => {
+      return state.connectorId === connectorId;
+    });
+    if (!source) {
+      return { kind: "failed" };
+    }
+    const published = await set(
+      publishGmailWatch$,
+      {
+        orgId: source.orgId,
+        userId: source.userId,
+        connectorId: source.connectorId,
+        emailAddress: args.emailAddress,
+        topicName: args.topicName,
+        accessToken: access.accessToken,
+        resetCurrentCursor: false,
+        forceRefresh: true,
+        allowStagedOfficialTarget: false,
+      },
+      signal,
+    );
+    return published === "failed"
+      ? { kind: "failed" }
+      : published === "inactive"
+        ? { kind: "unchanged" }
+        : { kind: "renewed" };
+  },
+);
+
+function gmailPhysicalScopes(
+  states: readonly GmailWatchStateRow[],
+): readonly { readonly emailAddress: string; readonly topicName: string }[] {
   const scopes = new Map<
     string,
     { readonly emailAddress: string; readonly topicName: string }
   >();
   for (const state of states) {
-    const key = `${normalizeGmailAddress(state.emailAddress)}\n${state.topicName}`;
-    scopes.set(key, {
-      emailAddress: state.emailAddress,
-      topicName: state.topicName,
-    });
+    scopes.set(
+      `${normalizeGmailAddress(state.emailAddress)}\n${state.topicName}`,
+      { emailAddress: state.emailAddress, topicName: state.topicName },
+    );
   }
   return [...scopes.values()];
 }
 
-async function renewGmailPhysicalScopes(
-  args: {
-    readonly db: Db;
-    readonly scopes: readonly {
-      readonly emailAddress: string;
-      readonly topicName: string;
-    }[];
-    readonly renewBefore: Date;
+const renewGmailPhysicalScopes$ = command(
+  async (
+    { set },
+    args: {
+      readonly scopes: readonly {
+        readonly emailAddress: string;
+        readonly topicName: string;
+      }[];
+      readonly renewBefore: Date;
+    },
+    signal: AbortSignal,
+  ): Promise<{ readonly renewed: number; readonly failed: number }> => {
+    let renewed = 0;
+    let failed = 0;
+    for (const scope of args.scopes) {
+      const result = await set(
+        reconcileGmailPhysicalScope$,
+        { ...scope, renewBefore: args.renewBefore },
+        signal,
+      );
+      renewed += result.kind === "renewed" ? 1 : 0;
+      failed += result.kind === "failed" ? 1 : 0;
+    }
+    return { renewed, failed };
   },
-  signal: AbortSignal,
-): Promise<{ readonly renewed: number; readonly failed: number }> {
-  let renewed = 0;
-  let failed = 0;
-  for (const scope of args.scopes) {
-    const result = await reconcileGmailPhysicalScope(
-      {
-        db: args.db,
-        ...scope,
-        renewBefore: args.renewBefore,
-      },
-      signal,
-    );
+);
+
+const loadEnabledGmailConnectorIds$ = command(
+  async (
+    { set },
+    args: { readonly orgId: string; readonly userId: string },
+    signal: AbortSignal,
+  ) => {
+    const db = set(writeDb$);
+    const consumers = await db
+      .selectDistinct({ connectorId: workflowAutomations.eventConnectorId })
+      .from(workflowAutomations)
+      .where(
+        and(
+          eq(workflowAutomations.orgId, args.orgId),
+          eq(workflowAutomations.ownerUserId, args.userId),
+          eq(workflowAutomations.enabled, true),
+          eq(workflowAutomations.kind, "event"),
+          inArray(workflowAutomations.eventType, [...GMAIL_EVENT_TYPES]),
+        ),
+      );
     signal.throwIfAborted();
-    renewed += result.kind === "renewed" ? 1 : 0;
-    failed += result.kind === "failed" ? 1 : 0;
-  }
-  return { renewed, failed };
-}
-
-async function loadEnabledGmailConnectorIds(
-  db: Db,
-  args: { readonly orgId: string; readonly userId: string },
-): Promise<readonly string[]> {
-  const consumers = await db
-    .selectDistinct({ connectorId: workflowAutomations.eventConnectorId })
-    .from(workflowAutomations)
-    .where(
-      and(
-        eq(workflowAutomations.orgId, args.orgId),
-        eq(workflowAutomations.ownerUserId, args.userId),
-        eq(workflowAutomations.enabled, true),
-        eq(workflowAutomations.kind, "event"),
-        inArray(workflowAutomations.eventType, [...GMAIL_EVENT_TYPES]),
-      ),
-    );
-  return consumers.flatMap((consumer) => {
-    return consumer.connectorId === null ? [] : [consumer.connectorId];
-  });
-}
-
-async function repairGmailAutomationProjections(
-  db: Db,
-  args: { readonly orgId: string; readonly userId: string },
-): Promise<void> {
-  await db.transaction(async (tx) => {
-    await lockConnectorAccountTarget(tx, {
-      ...args,
-      target: { kind: "builtin", connectorSlug: "gmail" },
+    return consumers.flatMap((consumer) => {
+      return consumer.connectorId === null ? [] : [consumer.connectorId];
     });
-    await reprojectGmailAutomationsForOwner(tx, args);
-  });
-}
-
-export async function reconcileGmailWatchesForUser(
-  args: {
-    readonly db: Db;
-    readonly orgId: string;
-    readonly userId: string;
   },
-  signal: AbortSignal,
-): Promise<boolean> {
-  await repairGmailAutomationProjections(args.db, args);
-  signal.throwIfAborted();
-  const connectorIds = await loadEnabledGmailConnectorIds(args.db, args);
-  signal.throwIfAborted();
-  let succeeded = true;
-  for (const connectorId of connectorIds) {
-    const ensured = await ensureGmailWatchForUser(
-      {
-        db: args.db,
-        orgId: args.orgId,
-        userId: args.userId,
-        connectorId,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    succeeded &&= ensured.kind === "ok";
-  }
+);
 
-  const states = await args.db
-    .select()
-    .from(gmailWatchStates)
-    .where(
-      and(
-        eq(gmailWatchStates.orgId, args.orgId),
-        eq(gmailWatchStates.userId, args.userId),
-      ),
-    );
-  signal.throwIfAborted();
-  for (const scope of gmailPhysicalScopes(states)) {
-    const result = await reconcileGmailPhysicalScope(
-      {
-        db: args.db,
-        ...scope,
-      },
-      signal,
-    );
-    succeeded &&= result.kind !== "failed";
-  }
-  return succeeded;
-}
+const repairGmailAutomationProjections$ = command(
+  async (
+    { set },
+    args: { readonly orgId: string; readonly userId: string },
+    signal: AbortSignal,
+  ) => {
+    const db = set(writeDb$);
+    await db.transaction(async (tx) => {
+      await tx.execute(
+        builtinConnectorStateLockStatement({ ...args, connectorSlug: "gmail" }),
+      );
+      await tx.execute(sql`
+      WITH candidates AS MATERIALIZED (
+        SELECT ${workflowAutomations.id} AS id,
+          CASE WHEN ${chatThreadConnectorSelections.connectorSlug} IS NOT NULL
+            THEN ${chatThreadConnectorSelections.connectorId} ELSE ${connectors.id} END AS desired_connector_id
+        FROM ${workflowAutomations}
+        LEFT JOIN ${workflowUserAutomationThreads}
+          ON ${workflowUserAutomationThreads.orgId} = ${workflowAutomations.orgId}
+          AND ${workflowUserAutomationThreads.userId} = ${workflowAutomations.ownerUserId}
+          AND ${workflowUserAutomationThreads.workflowId} = ${workflowAutomations.workflowId}
+        LEFT JOIN ${chatThreadConnectorSelections}
+          ON ${chatThreadConnectorSelections.chatThreadId} = ${workflowUserAutomationThreads.chatThreadId}
+          AND ${chatThreadConnectorSelections.connectorSlug} = 'gmail'
+        LEFT JOIN ${connectors}
+          ON ${connectors.orgId} = ${args.orgId} AND ${connectors.userId} = ${args.userId}
+          AND ${connectors.connectorSlug} = 'gmail' AND ${connectors.isDefault}
+        WHERE ${workflowAutomations.orgId} = ${args.orgId} AND ${workflowAutomations.ownerUserId} = ${args.userId}
+          AND ${workflowAutomations.kind} = 'event' AND ${workflowAutomations.eventType} IN ('gmail-new-message', 'gmail-label-applied')
+        ORDER BY ${workflowAutomations.id} FOR UPDATE OF ${workflowAutomations}
+      )
+      UPDATE ${workflowAutomations} SET event_connector_id = candidates.desired_connector_id,
+        event_config = CASE WHEN ${workflowAutomations.eventType} = 'gmail-label-applied'
+          THEN ${workflowAutomations.eventConfig} - 'resolvedLabelId' ELSE ${workflowAutomations.eventConfig} END
+      FROM candidates WHERE ${workflowAutomations.id} = candidates.id
+        AND ${workflowAutomations.eventConnectorId} IS DISTINCT FROM candidates.desired_connector_id
+    `);
+      signal.throwIfAborted();
+    });
+  },
+);
+
+export const reconcileGmailWatchesForUser$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    await set(repairGmailAutomationProjections$, args, signal);
+    const connectorIds = await set(loadEnabledGmailConnectorIds$, args, signal);
+    let succeeded = true;
+    for (const connectorId of connectorIds) {
+      const ensured = await set(
+        ensureGmailWatchForUser$,
+        { ...args, connectorId },
+        signal,
+      );
+      succeeded &&= ensured.kind === "ok";
+    }
+    const db = set(writeDb$);
+    const states = await db
+      .select()
+      .from(gmailWatchStates)
+      .where(
+        and(
+          eq(gmailWatchStates.orgId, args.orgId),
+          eq(gmailWatchStates.userId, args.userId),
+        ),
+      );
+    signal.throwIfAborted();
+    for (const scope of gmailPhysicalScopes(states)) {
+      const result = await set(reconcileGmailPhysicalScope$, scope, signal);
+      succeeded &&= result.kind !== "failed";
+    }
+    return succeeded;
+  },
+);
 
 async function listGmailHistory(
   args: {
@@ -1644,6 +1644,7 @@ type GmailDispatchStateResult =
       readonly kind: "ok";
       readonly dispatched: number;
       readonly duplicates: number;
+      readonly needsRewatch?: boolean;
     }
   | { readonly kind: "run_error"; readonly message: string };
 
@@ -2365,20 +2366,7 @@ async function hasCurrentGmailWatchConsumer(
   if (hasConsumer) {
     return true;
   }
-  await repairGmailAutomationProjections(args.db, {
-    orgId: args.state.orgId,
-    userId: args.state.userId,
-  });
-  signal.throwIfAborted();
-  return await hasEnabledGmailConsumer(
-    {
-      db: args.db,
-      orgId: args.state.orgId,
-      userId: args.state.userId,
-      connectorId: args.state.connectorId,
-    },
-    signal,
-  );
+  return false;
 }
 
 async function dispatchGmailWatchState(
@@ -2434,17 +2422,7 @@ async function dispatchGmailWatchState(
   );
   signal.throwIfAborted();
   if (history.kind === "stale_cursor") {
-    await ensureGmailWatchForUser(
-      {
-        db: args.db,
-        orgId: args.state.orgId,
-        userId: args.state.userId,
-        connectorId: args.state.connectorId,
-        forceRefresh: true,
-      },
-      signal,
-    );
-    return { kind: "ok", dispatched: 0, duplicates: 0 };
+    return { kind: "ok", dispatched: 0, duplicates: 0, needsRewatch: true };
   }
   if (history.kind === "gmail_error") {
     log.warn("Gmail history lookup failed", {
@@ -2567,6 +2545,30 @@ const startGmailWorkflowRun$ = command(
   },
 );
 
+const repairRequestedGmailWatch$ = command(
+  async (
+    { set },
+    args: {
+      readonly state: GmailWatchStateRow;
+      readonly needsRewatch: boolean;
+    },
+    signal: AbortSignal,
+  ) => {
+    if (args.needsRewatch) {
+      await set(
+        ensureGmailWatchForUser$,
+        {
+          orgId: args.state.orgId,
+          userId: args.state.userId,
+          connectorId: args.state.connectorId,
+          forceRefresh: true,
+        },
+        signal,
+      );
+    }
+  },
+);
+
 export const dispatchGmailPubSubPush$ = command(
   async (
     { set },
@@ -2663,6 +2665,11 @@ export const dispatchGmailPubSubPush$ = command(
     let duplicates = 0;
 
     for (const state of states) {
+      await set(
+        repairGmailAutomationProjections$,
+        { orgId: state.orgId, userId: state.userId },
+        signal,
+      );
       const result = await dispatchGmailWatchState(
         {
           db,
@@ -2676,6 +2683,11 @@ export const dispatchGmailPubSubPush$ = command(
       if (result.kind !== "ok") {
         return result;
       }
+      await set(
+        repairRequestedGmailWatch$,
+        { state, needsRewatch: result.needsRewatch === true },
+        signal,
+      );
       dispatched += result.dispatched;
       duplicates += result.duplicates;
     }
@@ -2724,10 +2736,10 @@ export const renewGmailWatches$ = command(
 
     let repairFailures = 0;
     for (const owner of owners.values()) {
-      await repairGmailAutomationProjections(db, owner);
+      await set(repairGmailAutomationProjections$, owner, signal);
       signal.throwIfAborted();
       const [connectorIds, states] = await Promise.all([
-        loadEnabledGmailConnectorIds(db, owner),
+        set(loadEnabledGmailConnectorIds$, owner, signal),
         db
           .select({ connectorId: gmailWatchStates.connectorId })
           .from(gmailWatchStates)
@@ -2748,8 +2760,9 @@ export const renewGmailWatches$ = command(
         if (watchedConnectorIds.has(connectorId)) {
           continue;
         }
-        const result = await ensureGmailWatchForUser(
-          { db, ...owner, connectorId },
+        const result = await set(
+          ensureGmailWatchForUser$,
+          { ...owner, connectorId },
           signal,
         );
         signal.throwIfAborted();
@@ -2763,8 +2776,9 @@ export const renewGmailWatches$ = command(
     );
     const states = await db.select().from(gmailWatchStates);
     signal.throwIfAborted();
-    const renewed = await renewGmailPhysicalScopes(
-      { db, scopes: gmailPhysicalScopes(states), renewBefore },
+    const renewed = await set(
+      renewGmailPhysicalScopes$,
+      { scopes: gmailPhysicalScopes(states), renewBefore },
       signal,
     );
     return {
@@ -2782,9 +2796,9 @@ export const renewGmailWatchScope$ = command(
     signal: AbortSignal,
   ) => {
     const currentTime = nowDate();
-    return await renewGmailPhysicalScopes(
+    return await set(
+      renewGmailPhysicalScopes$,
       {
-        db: set(writeDb$),
         scopes: [{ emailAddress, topicName }],
         renewBefore: new Date(currentTime.getTime() + WATCH_RENEWAL_WINDOW_MS),
       },

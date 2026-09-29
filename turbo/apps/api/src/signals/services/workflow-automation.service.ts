@@ -88,7 +88,7 @@ import { prepareGithubWebhookEventConfigForPersist } from "./github-webhook-auto
 import { prepareGithubWorkflowRunEventConfigForPersist } from "./github-workflow-run-event.service";
 import { resolveGmailAutomationConnectorId } from "./gmail-automation-account.service";
 import {
-  ensureGmailWatchForUser,
+  ensureGmailWatchForUser$,
   hasEnabledGmailConsumer,
   resolveGmailLabelForUser,
 } from "./gmail-automation-event.service";
@@ -2212,9 +2212,9 @@ const createGmailEventAutomationForWorkflow$ = command(
     }
     signal.throwIfAborted();
     const watchResult = await onRejection(
-      ensureGmailWatchForUser(
+      set(
+        ensureGmailWatchForUser$,
         {
-          db: db,
           orgId: args.input.orgId,
           userId: args.input.member.userId,
           connectorId: persistedConnectorId,
@@ -5221,9 +5221,9 @@ const ensureEnabledAutomationEventWatch$ = command(
           message: "Connect Gmail before using Gmail event automations",
         };
       }
-      const result = await ensureGmailWatchForUser(
+      const result = await set(
+        ensureGmailWatchForUser$,
         {
-          db: db,
           orgId: args.automation.orgId,
           userId: args.automation.ownerUserId,
           connectorId: args.automation.eventConnectorId,

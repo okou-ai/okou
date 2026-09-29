@@ -86,7 +86,7 @@ import {
   type ConnectorRuntimeSelection,
   type ConnectorRuntimeSnapshot,
 } from "./connector-catalog-runtime.service";
-import { reconcileGmailWatchesForUser } from "./gmail-automation-event.service";
+import { reconcileGmailWatchesForUser$ } from "./gmail-automation-event.service";
 import {
   prepareGoogleCalendarWatchStopWithAccountTargetLocked,
   reconcileGoogleCalendarWatchesForUser,
@@ -979,7 +979,7 @@ const reconcileAccountBoundAutomationWatches$ = command(
     const db = set(writeDb$);
     if (args.connectorSlug === "gmail") {
       await bestEffort(
-        reconcileGmailWatchesForUser({ db, ...args }, signal),
+        set(reconcileGmailWatchesForUser$, { ...args }, signal),
         signal,
       );
     } else if (args.connectorSlug === "google-calendar") {
@@ -1350,8 +1350,9 @@ export const deleteBuiltinConnectorLocalState$ = command(
     );
     if (args.connectorSlug === "gmail") {
       await bestEffort(
-        reconcileGmailWatchesForUser(
-          { db: writeDb, orgId: args.orgId, userId: args.userId },
+        set(
+          reconcileGmailWatchesForUser$,
+          { orgId: args.orgId, userId: args.userId },
           signal,
         ),
         signal,

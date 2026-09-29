@@ -80,7 +80,7 @@ import {
   loadOwnedRunAutonomyBudget,
 } from "../services/autonomy-budget.service";
 import { awaitWithSignal, bestEffort, onRejection, settle } from "../utils";
-import { reconcileGmailWatchesForUser } from "../services/gmail-automation-event.service";
+import { reconcileGmailWatchesForUser$ } from "../services/gmail-automation-event.service";
 import { reconcileGoogleCalendarWatchesForUser } from "../services/google-calendar-automation-event.service";
 import { lockConnectorAccountTarget } from "../services/auth-state-lock.service";
 import { reprojectWorkflowAutomationsForOwner } from "../services/workflow-automation-account-projection.service";
@@ -1646,7 +1646,14 @@ const reconcileCopiedWorkflowAutomationWatches$ = command(
     const db = set(writeDb$);
     const owner = { db: db, orgId: args.orgId, userId: args.userId };
     if (args.copied.accountConnectorSlugs.includes("gmail")) {
-      await bestEffort(reconcileGmailWatchesForUser(owner, signal), signal);
+      await bestEffort(
+        set(
+          reconcileGmailWatchesForUser$,
+          { orgId: args.orgId, userId: args.userId },
+          signal,
+        ),
+        signal,
+      );
     }
     if (args.copied.accountConnectorSlugs.includes("google-calendar")) {
       await bestEffort(

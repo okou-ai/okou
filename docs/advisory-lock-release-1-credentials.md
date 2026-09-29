@@ -23,7 +23,7 @@ The six advisory acquisition definitions remain. This work prepares selected wri
 
 - Builtin OAuth callback, Automatic OAuth refresh and its legacy retirement store, ordinary refresh's legacy helper-owned commit path and its nine resolver chains still propagate root database or transaction values. Automatic callback including state claim, catalog preparation and post-commit wakeup has a command-owned boundary. Other builtin/custom callback routes still use the legacy state helper; it remains only for those actual callers.
 - Model-provider firewall refresh, settings and account paths have not been migrated to the complete final command-owned conditional protocol. They still execute provider/KMS work through the locked helper graph.
-- Gmail now has explicit approval for local disable, stopping renewal and remote natural expiry without account-global `users.stop`. Its remote-stop code is removed; ensure/renew and the remaining caller graph still require command migration. Calendar also has explicit approval for a remote gap and best-effort candidate cleanup; authority and basic deduplication remain required.
+- Gmail now has explicit approval for local disable, stopping renewal and remote natural expiry without account-global `users.stop`. Its remote-stop code is removed. Ensure, renewal and watch reconciliation now use owning commands; legacy dispatch/label and shared credential callers remain. Calendar also has explicit approval for a remote gap and best-effort candidate cleanup; authority and basic deduplication remain required.
 - Calendar lifecycle preparation/activation/reconciliation still has helper-owned and propagated transaction paths. Current-channel remote stop remains inside the existing decision boundary.
 - Forms workflow-thread creation still accepts a transaction. Shared create/official authority preparation, account-deletion watch cleanup and queue model preparation retain legacy database interfaces. The regular Forms watch/configuration/dispatch credential path now uses owning commands. Other event sources still use the legacy workflow queue source callback; this does not claim to migrate those sources.
 
@@ -247,8 +247,41 @@ message dispatch and retry deduplication remain covered. The normal source test
 no longer mutates an internal projection to simulate an old API before asserting
 its public result.
 
-This implements the accepted stop behavior; it does not finish Gmail's legacy
-ensure, renewal, dispatch, account projection or shared credential command graph.
-Those helper transactions still include external work and must be migrated before
-R1 is ready. Their remaining lifecycle lock is not justified by the removed
-`users.stop` behavior, nor by a product decision still being pending.
+Gmail ensure, physical-scope renewal, reconciliation and projection repair now
+accept business inputs in commands. Credential reads, KMS, OAuth refresh and
+profile requests complete before watch publication. Projection repair owns its
+finite SQL transaction and uses ordinary SQL predicates for the selected account.
+All route, account deletion, automation enable and official watch adapters call
+these commands without forwarding a database or transaction.
+
+One **compatibility boundary**, distinct from the remaining implementation work,
+is still required. Outgoing pre-R1 `reconcileGmailPhysicalScope` and connector
+cleanup call account-wide `users.stop` while holding the existing mailbox/topic
+lifecycle key. If a new writer performs `watch` outside that key while the old
+stop is in flight, the old request can arrive last and disable a newly enabled
+consumer. Gmail has no watch inventory read to promptly detect that loss. The
+accepted Gmail decision does not permit interrupting remaining consumers.
+
+`publishGmailWatch$` therefore temporarily owns the existing lifecycle key,
+`watch` HTTP, and direct local publication in the same command transaction.
+The healthy-state shortcut also runs under that key: an unlocked earlier read
+could otherwise return success just before an outgoing stop deletes the state.
+It acquires account/automation row locks only after the HTTP response and checks
+current ownership, reconnect state, physical email and enabled/staged authority
+before inserting a watch. No handle leaves the command. This is an explicit R1
+exception to the final external-I/O rule, not a permanent transaction shape.
+
+**R2 gate:** every API capable of `users.stop` has stopped serving, its in-flight
+requests have drained, and the supported rollback target also uses local stop.
+Then move `watch` HTTP before the finite publication transaction and delete the
+lifecycle key. R1/R2 coexistence is compatible because neither calls `users.stop`.
+Credential/account coordination has its own separate writer gates.
+
+**Still unfinished:** legacy Gmail label preparation and event dispatch/queue
+helpers still forward handles, as do shared credential and account deletion
+paths. Those paths are implementation work, not covered by the outgoing-stop
+gate. This change does not claim the entire credential or event-source graph is
+R1 ready. API coverage retains shared-mailbox consumption, local disable and
+reenable, authorized sources, deduplication and watch-error compensation; the
+old official-removal retry assertion has been replaced by immediate local
+removal without contacting `users.stop`.
