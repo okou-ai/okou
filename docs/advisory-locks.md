@@ -5,6 +5,13 @@ locks. Do not introduce new advisory locks. Existing call sites are temporary
 cleanup work; remove them as their business invariants move to database
 constraints, atomic SQL, or a smaller transaction over the affected rows.
 
+The [agreed terminal state and release plan](./advisory-lock-terminal-state.md)
+defines the binding constraints for the remaining cleanup: no new persisted
+fields, no transaction propagation, and no external I/O inside transactions.
+Earlier examples below do not authorize adding coordination state. Track the
+implementation and unresolved prerequisites in the
+[Release 1 inventory](./advisory-lock-release-1.md).
+
 ## Why we are removing them
 
 Advisory locks have been overused for problems that a unique index or a simple
