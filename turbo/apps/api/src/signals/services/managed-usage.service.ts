@@ -1,3 +1,4 @@
+import type { ProcessOrgUsageEventsResult } from "./credit-usage-pricing";
 import { randomUUID } from "node:crypto";
 
 import { agentRuns } from "@okouai/db/runtime/agent-run";
@@ -22,7 +23,6 @@ import type { Tx } from "../../lib/db-types";
 import {
   processOrgUsageEvents$,
   processOrgUsageEventsInLockedTransaction,
-  type ProcessOrgUsageEventsResult,
 } from "./credit-usage.service";
 import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import { resolveActiveRunCreditAdmission } from "./run-admission.service";

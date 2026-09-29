@@ -451,6 +451,11 @@ async function applyPreparedUsageAllowanceRefresh(
   };
 }
 
+export function orgCreditCompatibilityLockSql(orgId: string) {
+  // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
+  return sql`SELECT pg_advisory_xact_lock(hashtext('credit_' || ${orgId}))`;
+}
+
 export async function lockOrgCredits(
   tx: UsageAllowanceStore,
   orgId: string,
@@ -460,10 +465,7 @@ export async function lockOrgCredits(
   // unconditional processed write and issues windows without row ownership.
   // Remove the advisory call only after pre-Release-1 serving/in-flight and
   // rollback writers are gone. Release 1/2 share the rows below and event CAS.
-  await tx.execute(
-    // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-    sql`SELECT pg_advisory_xact_lock(hashtext('credit_' || ${orgId}))`,
-  );
+  await tx.execute(orgCreditCompatibilityLockSql(orgId));
   if (scope === "settlement") {
     // Settlement owns the balance before grant/expiry rows. Admission only
     // owns allowance; it can already hold a plan row and must not reverse the

@@ -8,16 +8,11 @@ import { usagePricing } from "@okouai/db/schema/usage-pricing";
 import { and, asc, eq, gt, inArray, lte, sql } from "drizzle-orm";
 
 import { recordBillingOperationTimings } from "../external/sandbox-op-log";
-import { writeDb$ } from "../external/db";
+import { settleOrgUsage$ } from "./credit-usage-settlement.service";
 import { nowDate } from "../../lib/time";
 import { logger } from "../../lib/log";
-import { usageUnderbillingFields } from "../usage-underbilling";
 import { safeSync, tapError } from "../utils";
-import {
-  resolveUsagePricingProvider,
-  usagePricingResolution$,
-  type UsagePricingResolution,
-} from "../context/usage-pricing-resolution";
+import type { UsagePricingResolution } from "../context/usage-pricing-resolution";
 import { maybeEmitRunUsageEvent$ } from "./chat-usage-event.service";
 import {
   enqueueCreditLowBalanceAlert$,
@@ -27,13 +22,19 @@ import {
 import { triggerAutoRecharge$ } from "./credit-recharge.service";
 import {
   applyUsageAllowanceToUsageEventsInLockedTransaction,
-  prepareUsageAllowanceRefresh$,
   type PreparedUsageAllowanceRefresh,
   lockOrgCredits,
 } from "./usage-allowance.service";
 import type { Tx } from "../../lib/db-types";
 import { writeOrgMetadataWithDefaultPlanEntitlement } from "./org-plan-entitlements.service";
 import { lockUsageEventCompaction } from "./usage-event-compaction-lock.service";
+
+import {
+  priceUsageEvents,
+  type ProcessOrgUsageEventsResult,
+  type SettlementWorkObservation,
+  type UsageEventSettlementOutcome,
+} from "./credit-usage-pricing";
 
 const L = logger("CreditUsage");
 
@@ -241,166 +242,6 @@ async function deductFromUsagePackCredits(
     remainingCharge -= deduction;
   }
   return { sharedCredits: remainingCharge, grantRows: grants.length };
-}
-
-interface SettlementWorkObservation {
-  readonly lockWaitMs: number;
-  readonly orgLockWaitMs: number;
-  readonly settlementWorkMs: number;
-  readonly pendingReadMs: number;
-  readonly pricingReadMs: number;
-  readonly pricingCalculationMs: number;
-  readonly allowanceMs: number;
-  readonly allowanceAllocationReadMs: number;
-  readonly allowanceAnchorMs: number;
-  readonly allowanceWindowLockMs: number;
-  readonly allowanceWindowIssueMs: number;
-  readonly allowanceAllocateMs: number;
-  readonly allowanceWindowWriteMs: number;
-  readonly allowanceAllocationWriteMs: number;
-  readonly eventWriteMs: number;
-  readonly grantDeductionMs: number;
-  readonly orgCreditMs: number;
-  readonly orgBalanceReadMs: number;
-  readonly orgExpireCreditsMs: number;
-  readonly orgDebitMs: number;
-  readonly orgExpiryLotDeductionMs: number;
-  // Standalone settlement only; inline managed callers own a larger transaction.
-  readonly transactionDurationMs?: number;
-  readonly pendingEvents: number;
-  readonly pricingRows: number;
-  readonly affectedUsers: number;
-  readonly grantRows: number;
-  readonly expiredRows: number;
-  readonly expiryRows: number;
-}
-
-export interface ProcessOrgUsageEventsResult {
-  readonly sharedCreditsCharged: number;
-  readonly runIds: readonly string[];
-  readonly lowBalanceAlert: CreditLowBalanceAlertArgs | null;
-  readonly work: SettlementWorkObservation;
-}
-
-interface UsageEventRecord {
-  readonly id: string;
-  readonly runId: string | null;
-  readonly billingAnchorAt: Date | null;
-  readonly idempotencyKey: string;
-  readonly userId: string;
-  readonly kind: string;
-  readonly provider: string;
-  readonly category: string;
-  readonly quantity: number;
-  readonly pricingUnitPrice: number | null;
-  readonly pricingUnitSize: number | null;
-  readonly pricingCreditsLimit: number | null;
-  readonly createdAt: Date;
-}
-type UsagePricingRecord = typeof usagePricing.$inferSelect;
-type UsageEventBillingError = "missing_pricing" | "fallback_pricing" | null;
-
-interface PricedUsageEvent {
-  readonly record: UsageEventRecord;
-  readonly grossCredits: number;
-  readonly billingError: UsageEventBillingError;
-}
-
-function priceUsageEvents(
-  records: readonly UsageEventRecord[],
-  pricingRecords: readonly UsagePricingRecord[],
-  orgId: string,
-  pricingResolution: UsagePricingResolution,
-): PricedUsageEvent[] {
-  const pricingByKey = new Map(
-    pricingRecords.map((pricing) => {
-      return [
-        `${pricing.kind}|${pricing.provider}|${pricing.category}`,
-        pricing,
-      ];
-    }),
-  );
-  const pricedEvents: PricedUsageEvent[] = [];
-  for (const record of records) {
-    if (
-      record.pricingUnitPrice !== null &&
-      record.pricingUnitSize !== null &&
-      record.pricingCreditsLimit !== null
-    ) {
-      const numerator =
-        BigInt(record.quantity) * BigInt(record.pricingUnitPrice);
-      const denominator = BigInt(record.pricingUnitSize);
-      const credits = (numerator + denominator - 1n) / denominator;
-      const limit = BigInt(record.pricingCreditsLimit);
-      pricedEvents.push({
-        record,
-        grossCredits: Number(credits < limit ? credits : limit),
-        billingError: null,
-      });
-      continue;
-    }
-    const lookupProvider = resolveUsagePricingProvider(
-      pricingResolution,
-      record.kind,
-      record.provider,
-    );
-    const exactPricing = pricingByKey.get(
-      `${record.kind}|${lookupProvider}|${record.category}`,
-    );
-    const pricing =
-      exactPricing ??
-      pricingByKey.get(`${record.kind}|${lookupProvider}|__fallback__`);
-
-    if (!pricing) {
-      L.error("Missing usage_pricing — charged zero", {
-        ...usageUnderbillingFields("missing_pricing", "confirmed"),
-        orgId,
-        runId: record.runId,
-        idempotencyKey: record.idempotencyKey,
-        userId: record.userId,
-        kind: record.kind,
-        provider: record.provider,
-        category: record.category,
-        quantity: record.quantity,
-      });
-      pricedEvents.push({
-        record,
-        grossCredits: 0,
-        billingError: "missing_pricing",
-      });
-      continue;
-    }
-
-    if (!exactPricing) {
-      L.error("Missing usage_pricing — billed at fallback rate", {
-        ...usageUnderbillingFields("fallback_pricing", "confirmed"),
-        orgId,
-        runId: record.runId,
-        idempotencyKey: record.idempotencyKey,
-        userId: record.userId,
-        kind: record.kind,
-        provider: record.provider,
-        category: record.category,
-        quantity: record.quantity,
-        fallbackUnitPrice: pricing.unitPrice,
-      });
-    }
-
-    pricedEvents.push({
-      record,
-      grossCredits: Math.ceil(
-        (record.quantity * pricing.unitPrice) / pricing.unitSize,
-      ),
-      billingError: exactPricing ? null : "fallback_pricing",
-    });
-  }
-  return pricedEvents;
-}
-
-interface UsageEventSettlementOutcome {
-  readonly usageEventId: string;
-  readonly creditsCharged: number;
-  readonly billingError: UsageEventBillingError;
 }
 
 async function markUsageEventsProcessed(
@@ -871,35 +712,9 @@ export const completeProcessedOrgUsage$ = command(
  * Effects run after COMMIT so callers never retain ledger locks during I/O.
  */
 export const processOrgUsageEvents$ = command(
-  async ({ get, set }, orgId: string, signal: AbortSignal): Promise<void> => {
-    const writeDb = set(writeDb$);
-    const pricingResolution = get(usagePricingResolution$);
-    const refresh = await set(
-      prepareUsageAllowanceRefresh$,
-      { orgId, requirePendingUsage: true },
-      signal,
-    );
-    const transactionStartedAt = performance.now();
-    const result = await writeDb.transaction((tx) => {
-      return processOrgUsageEventsInTransaction(
-        tx,
-        orgId,
-        pricingResolution,
-        refresh,
-        signal,
-      );
-    });
+  async ({ set }, orgId: string, signal: AbortSignal): Promise<void> => {
+    const result = await set(settleOrgUsage$, orgId, signal);
     signal.throwIfAborted();
-    const transactionDurationMs = Math.round(
-      performance.now() - transactionStartedAt,
-    );
-    await set(
-      completeProcessedOrgUsage$,
-      {
-        orgId,
-        result: { ...result, work: { ...result.work, transactionDurationMs } },
-      },
-      signal,
-    );
+    await set(completeProcessedOrgUsage$, { orgId, result }, signal);
   },
 );
