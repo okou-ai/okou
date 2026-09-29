@@ -196,11 +196,58 @@ function loadRows(
 
 // Seeds/repaired defaults and replacement writes share one organization-local
 // fence. Normal selection reads take no lock when no repair is needed.
-async function lockPolicyWrites(db: Db, orgId: string): Promise<void> {
+async function lockPolicyWrites(
+  db: Db,
+  orgId: string,
+  userId: string,
+): Promise<{ readonly initializeSeed: boolean }> {
   await db.execute(
     // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
     sql`SELECT pg_advisory_xact_lock(hashtextextended(${`model-policy:${orgId}`}, 0))`,
   );
+
+  const before = await loadRows(db, orgId, true);
+  let initializeSeed = false;
+  if (before.length === 0) {
+    // The existing partial UNIQUE default slot arbitrates an empty policy set.
+    // Insert just its real default row: inserting the entire seed could add
+    // unwanted models after a concurrent writer replaces that seed.
+    const seed = getDefaultOrgModelPolicySeed().find((policy) => {
+      return policy.isDefault;
+    });
+    if (!seed) {
+      throw new Error("The default model policy seed has no default");
+    }
+    const [inserted] = await db
+      .insert(orgModelPolicies)
+      .values({
+        ...seed,
+        orgId,
+        createdByUserId: userId,
+        updatedByUserId: userId,
+      })
+      .onConflictDoNothing()
+      .returning({ id: orgModelPolicies.id });
+    initializeSeed = inserted !== undefined;
+  }
+
+  // A writer may replace every row while this SELECT waits. Compare against a
+  // fresh statement before accepting ownership of the complete current set.
+  // R1's legacy key remains until every supported writer uses this protocol.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const lockedIds = await lockPolicyParents(db, orgId);
+    const current = await loadRows(db, orgId, true);
+    if (
+      current.length > 0 &&
+      current.length === lockedIds.size &&
+      current.every((row) => {
+        return lockedIds.has(row.id);
+      })
+    ) {
+      return { initializeSeed };
+    }
+  }
+  throw new Error("Model policies changed concurrently; retry the operation");
 }
 
 function policyRevision(rows: readonly OrgModelPolicyRow[]): string {
@@ -215,7 +262,7 @@ function policyRevision(rows: readonly OrgModelPolicyRow[]): string {
     .digest("hex");
 }
 
-async function lockPolicyParents(db: Db, orgId: string): Promise<void> {
+async function lockPolicyParents(db: Db, orgId: string): Promise<Set<string>> {
   // Parent rows precede child policy rows. This also fences FK SET NULL from
   // provider/surface deletion without acquiring A's credential lifecycle lock.
   await db
@@ -245,12 +292,17 @@ async function lockPolicyParents(db: Db, orgId: string): Promise<void> {
     .where(eq(modelProviderConnections.orgId, orgId))
     .orderBy(asc(modelProviderSurfaces.id))
     .for("share", { of: modelProviderSurfaces });
-  await db
+  const policies = await db
     .select({ id: orgModelPolicies.id })
     .from(orgModelPolicies)
     .where(eq(orgModelPolicies.orgId, orgId))
     .orderBy(asc(orgModelPolicies.id))
     .for("no key update");
+  return new Set(
+    policies.map((policy) => {
+      return policy.id;
+    }),
+  );
 }
 
 function policiesByModel(
@@ -523,12 +575,13 @@ async function ensureOrgModelPoliciesLocked(
   db: Db,
   orgId: string,
   userId: string,
+  initializeSeed: boolean,
 ): Promise<EnsuredOrgModelPolicyFacts> {
   const orgPlanCapabilities = await loadOrgPlanCapabilities(db, orgId);
   const capabilities = modelPolicyCapabilities(orgPlanCapabilities);
   const seedDefaultModel = getSeedDefaultModelForPlan(capabilities);
   const existing = await loadRows(db, orgId);
-  if (existing.length > 0) {
+  if (existing.length > 0 && !initializeSeed) {
     const existingDefault = existing.find((policy) => {
       return policy.isDefault;
     });
@@ -663,8 +716,13 @@ export async function ensureOrgModelPolicyFacts(
     return initial;
   }
   return db.transaction(async (tx) => {
-    await lockPolicyWrites(tx, orgId);
-    return ensureOrgModelPoliciesLocked(tx, orgId, userId);
+    const ownership = await lockPolicyWrites(tx, orgId, userId);
+    return ensureOrgModelPoliciesLocked(
+      tx,
+      orgId,
+      userId,
+      ownership.initializeSeed,
+    );
   });
 }
 
@@ -1319,7 +1377,7 @@ export async function initializeOnboardingOrgModelPolicies(
   userId: string,
   provider: OnboardingSubscriptionProvider,
 ): Promise<void> {
-  await lockPolicyWrites(db, orgId);
+  const ownership = await lockPolicyWrites(db, orgId, userId);
   const existing = await loadRows(db, orgId, true);
   const standardSeed = getDefaultOrgModelPolicySeed();
   // An older API may have written this untouched seed before onboarding finishes.
@@ -1347,7 +1405,11 @@ export async function initializeOnboardingOrgModelPolicies(
       })
     );
   });
-  if (existing.length > 0 && !hasOnlyStandardSeed) {
+  if (
+    existing.length > 0 &&
+    !ownership.initializeSeed &&
+    !hasOnlyStandardSeed
+  ) {
     return;
   }
 
@@ -1413,8 +1475,7 @@ export const updateOrgModelPolicies$ = command(
       return refreshConflict();
     }
     const written = await db.transaction(async (tx) => {
-      await lockPolicyWrites(tx, params.orgId);
-      await lockPolicyParents(tx, params.orgId);
+      await lockPolicyWrites(tx, params.orgId, params.userId);
       signal.throwIfAborted();
       const existing = await loadRows(tx, params.orgId, true);
       if (
