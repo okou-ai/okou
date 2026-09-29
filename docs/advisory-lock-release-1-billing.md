@@ -55,6 +55,20 @@ paid subscription appears. These predicates fix admission and recovery cases;
 they do not replace the common arbitration still required for provider creates
 whose outcome is not yet observable.
 
+Checkout's existing credit binding and canonical Plan subscription lookup now
+belong to business-argument commands that obtain their own database and return
+ordinary values. The concurrency checkout target, payment preview and
+revalidation chain no longer accepts or forwards database handles. Its owning
+read command directly verifies the entitlement and active subscription rows,
+preserving missing-entitlement errors, the paid-through grace predicate and
+the requirement to restore an existing canceling add-on before buying more.
+
+The retained purchase acquisition is now a pure SQL builder, executed directly
+by its caller. This removes that transaction-handle interface; it does not
+complete the pending-snapshot callback graph or make the unresolved provider
+creation protocol safe to remove. Plan confirmation still retains the
+documented provider-I/O compatibility boundary until that protocol exists.
+
 ### Restoration publication and setup callbacks
 
 Direct restoration and the payment-method setup callback now call the same

@@ -17,7 +17,7 @@ import { z } from "zod";
 import { env } from "../../lib/env";
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
-import { db$, writeDb$, type ReadonlyDb } from "../external/db";
+import { writeDb$ } from "../external/db";
 import {
   getStripeClient,
   listAllStripeSubscriptions,
@@ -37,7 +37,7 @@ import {
   completeBillingOperationInvoice,
   completeBillingOperationInvoiceWithInvoice,
 } from "./billing-operation-invoice.service";
-import { lockBillingPurchaseOrg } from "./billing-purchase-lock.service";
+import { billingPurchaseCompatibilityLockSql } from "./billing-purchase-lock.service";
 import {
   createBillingPreviewToken,
   parseBillingPreviewToken,
@@ -171,19 +171,24 @@ export type SubscriptionCheckoutTier =
   (typeof STRIPE_SUBSCRIPTION_PRICE_TIERS)[number];
 export type BillingSubscriptionTier = SubscriptionCheckoutTier | "custom";
 
-export async function orgPlanSubscriptionId(
-  db: ReadonlyDb,
-  orgId: string,
-): Promise<string | null> {
-  const [plan] = await db
-    .select({
-      stripeSubscriptionId: orgPlanEntitlements.stripeSubscriptionId,
-    })
-    .from(orgPlanEntitlements)
-    .where(eq(orgPlanEntitlements.orgId, orgId))
-    .limit(1);
-  return plan?.stripeSubscriptionId ?? null;
-}
+export const orgPlanSubscriptionId$ = command(
+  async (
+    { set },
+    orgId: string,
+    signal: AbortSignal,
+  ): Promise<string | null> => {
+    const db = set(writeDb$);
+    const [plan] = await db
+      .select({
+        stripeSubscriptionId: orgPlanEntitlements.stripeSubscriptionId,
+      })
+      .from(orgPlanEntitlements)
+      .where(eq(orgPlanEntitlements.orgId, orgId))
+      .limit(1);
+    signal.throwIfAborted();
+    return plan?.stripeSubscriptionId ?? null;
+  },
+);
 
 const creditPurchasePreviewTokenSchema = z.object({
   version: z.literal(1),
@@ -465,26 +470,31 @@ interface ExistingCreditBilling {
   readonly subscriptionId: string | null;
 }
 
-async function existingCreditBilling(
-  orgId: string,
-  db: ReadonlyDb,
-): Promise<ExistingCreditBilling | null> {
-  const [org] = await db
-    .select({
-      customerId: orgMetadata.stripeCustomerId,
-      subscriptionId: orgMetadata.stripeSubscriptionId,
-    })
-    .from(orgMetadata)
-    .where(eq(orgMetadata.orgId, orgId))
-    .limit(1);
-  if (!org?.customerId) {
-    return null;
-  }
-  return {
-    customerId: org.customerId,
-    subscriptionId: org.subscriptionId,
-  };
-}
+const existingCreditBilling$ = command(
+  async (
+    { set },
+    orgId: string,
+    signal: AbortSignal,
+  ): Promise<ExistingCreditBilling | null> => {
+    const db = set(writeDb$);
+    const [org] = await db
+      .select({
+        customerId: orgMetadata.stripeCustomerId,
+        subscriptionId: orgMetadata.stripeSubscriptionId,
+      })
+      .from(orgMetadata)
+      .where(eq(orgMetadata.orgId, orgId))
+      .limit(1);
+    signal.throwIfAborted();
+    if (!org?.customerId) {
+      return null;
+    }
+    return {
+      customerId: org.customerId,
+      subscriptionId: org.subscriptionId,
+    };
+  },
+);
 
 async function existingCreditCouponId(
   stripe: StripeClient,
@@ -524,11 +534,11 @@ function creditPurchasePayableAmount(invoice: StripeInvoice): number {
 
 export const previewExistingBillingCreditPurchase$ = command(
   async (
-    { get },
+    { set },
     args: PreviewExistingBillingCreditPurchaseArgs,
     signal: AbortSignal,
   ): Promise<CreditPurchasePreviewResponse | null> => {
-    const billing = await existingCreditBilling(args.orgId, get(db$));
+    const billing = await set(existingCreditBilling$, args.orgId, signal);
     signal.throwIfAborted();
     if (!billing) {
       return null;
@@ -661,7 +671,7 @@ async function discardChangedCreditPurchaseInvoice(
 
 export const confirmExistingBillingCreditPurchase$ = command(
   async (
-    { get, set },
+    { set },
     orgId: string,
     previewToken: string,
     signal: AbortSignal,
@@ -676,7 +686,7 @@ export const confirmExistingBillingCreditPurchase$ = command(
       return { status: "invalid_preview" };
     }
 
-    const billing = await existingCreditBilling(orgId, get(db$));
+    const billing = await set(existingCreditBilling$, orgId, signal);
     signal.throwIfAborted();
     if (!billing || billing.customerId !== preview.customerId) {
       return { status: "billing_unavailable" };
@@ -1126,7 +1136,7 @@ export const confirmPlanPurchase$ = command(
         // Outgoing APIs admit Plan purchases through this boundary. Keep it
         // during Release 1 while cross-preview purchase admission is completed;
         // the transaction remains owned by this command rather than a helper.
-        await lockBillingPurchaseOrg(tx, orgId);
+        await tx.execute(billingPurchaseCompatibilityLockSql(orgId));
         signal.throwIfAborted();
         const stripe = getStripeClient();
         const subscriptionState = await planPurchaseSubscriptionState(
@@ -1485,9 +1495,10 @@ export const previewInitialConcurrencyPurchase$ = command(
     },
     signal: AbortSignal,
   ): Promise<PreviewInitialConcurrencyPurchaseResult> => {
-    const subscriptionId = await orgPlanSubscriptionId(
-      set(writeDb$),
+    const subscriptionId = await set(
+      orgPlanSubscriptionId$,
       args.orgId,
+      signal,
     );
     signal.throwIfAborted();
     if (!subscriptionId) {
@@ -1514,9 +1525,10 @@ export const startConcurrencyPurchase$ = command(
     args: StartConcurrencyPurchaseArgs,
     signal: AbortSignal,
   ): Promise<StartConcurrencyPurchaseResult> => {
-    const subscriptionId = await orgPlanSubscriptionId(
-      set(writeDb$),
+    const subscriptionId = await set(
+      orgPlanSubscriptionId$,
       args.orgId,
+      signal,
     );
     signal.throwIfAborted();
     if (!subscriptionId) {

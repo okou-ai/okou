@@ -12,15 +12,19 @@ import {
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
-import { db$, type ReadonlyDb } from "../external/db";
+import { writeDb$ } from "../external/db";
+import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
+import { orgConcurrencySubscriptions } from "@okouai/db/schema/org-concurrency-subscription";
+import { asc, eq } from "drizzle-orm";
 import {
   activeConcurrencyPriceId,
-  activeConcurrencySubscriptions,
+  activeConcurrencySubscriptionPredicate,
   type ActiveConcurrencySubscription,
 } from "../services/org-concurrency-entitlements.service";
 import {
   previewInitialConcurrencyPurchase$,
-  orgPlanSubscriptionId,
+  orgPlanSubscriptionId$,
   startConcurrencyPurchase$,
 } from "../services/billing-checkout.service";
 import { previewConcurrencySubscriptionChange$ } from "../services/billing-concurrency-subscription.service";
@@ -31,7 +35,6 @@ import {
   type BillingPurchasePaymentMethod,
 } from "../services/billing-payment-method.service";
 import { getStripeClient } from "../external/stripe-client";
-import { loadOrgPlanCapabilities } from "../services/org-plan-entitlement-read.service";
 import type { RouteEntry } from "../route-entry";
 
 const adminRequired = Object.freeze({
@@ -52,158 +55,197 @@ type ConcurrencyPurchaseTarget =
     }
   | { readonly ok: false; readonly message: string };
 
-async function loadConcurrencyPurchaseTarget(
-  db: ReadonlyDb,
-  orgId: string,
-  signal: AbortSignal,
-): Promise<ConcurrencyPurchaseTarget> {
-  const capabilities = await loadOrgPlanCapabilities(db, orgId);
-  signal.throwIfAborted();
-  if (capabilities?.canBuyConcurrency !== true) {
-    return {
-      ok: false,
-      message:
-        "Additional concurrency is only available for Team or Custom workspaces",
-    };
-  }
-
-  const priceId = activeConcurrencyPriceId();
-  if (!priceId) {
-    return { ok: false, message: "Concurrency price not configured" };
-  }
-
-  const subscriptions = await activeConcurrencySubscriptions(db, orgId);
-  signal.throwIfAborted();
-  const existingSubscription = subscriptions.find((subscription) => {
-    return !subscription.cancelAtPeriodEnd;
-  });
-  if (!existingSubscription && subscriptions.length > 0) {
-    return {
-      ok: false,
-      message:
-        "Restore the existing concurrency subscription before buying more slots",
-    };
-  }
-
-  return {
-    ok: true,
-    priceId,
-    existingSubscription,
-  };
-}
+const loadConcurrencyPurchaseTarget$ = command(
+  async (
+    { set },
+    orgId: string,
+    signal: AbortSignal,
+  ): Promise<ConcurrencyPurchaseTarget> => {
+    const db = set(writeDb$);
+    const [capabilities] = await db
+      .select({
+        canBuyConcurrency: orgPlanEntitlements.canBuyConcurrency,
+        restrictedBuiltInModels: orgPlanEntitlements.restrictedBuiltInModels,
+      })
+      .from(orgPlanEntitlements)
+      .where(eq(orgPlanEntitlements.orgId, orgId))
+      .limit(1);
+    signal.throwIfAborted();
+    if (!capabilities) {
+      const [org] = await db
+        .select({ orgId: orgMetadata.orgId })
+        .from(orgMetadata)
+        .where(eq(orgMetadata.orgId, orgId))
+        .limit(1);
+      signal.throwIfAborted();
+      if (org) {
+        throw new Error(`Missing org plan entitlement for ${orgId}`);
+      }
+    } else if (capabilities.restrictedBuiltInModels === null) {
+      throw new Error(
+        `Unexpected NULL restricted_built_in_models for org plan entitlement ${orgId}`,
+      );
+    }
+    if (capabilities?.canBuyConcurrency !== true) {
+      return {
+        ok: false,
+        message:
+          "Additional concurrency is only available for Team or Custom workspaces",
+      };
+    }
+    const priceId = activeConcurrencyPriceId();
+    if (!priceId) {
+      return { ok: false, message: "Concurrency price not configured" };
+    }
+    const rows = await db
+      .select({
+        id: orgConcurrencySubscriptions.stripeSubscriptionId,
+        quantity: orgConcurrencySubscriptions.slots,
+        currentPeriodEnd: orgConcurrencySubscriptions.currentPeriodEnd,
+        cancelAtPeriodEnd: orgConcurrencySubscriptions.cancelAtPeriodEnd,
+        scheduledQuantity: orgConcurrencySubscriptions.scheduledSlots,
+        scheduledChangeAt: orgConcurrencySubscriptions.scheduledChangeAt,
+      })
+      .from(orgConcurrencySubscriptions)
+      .where(activeConcurrencySubscriptionPredicate(orgId, nowDate()))
+      .orderBy(
+        asc(orgConcurrencySubscriptions.createdAt),
+        asc(orgConcurrencySubscriptions.stripeSubscriptionId),
+      );
+    signal.throwIfAborted();
+    const subscriptions = rows.filter((row) => {
+      return row.quantity > 0;
+    });
+    const existingSubscription = subscriptions.find((subscription) => {
+      return !subscription.cancelAtPeriodEnd;
+    });
+    if (!existingSubscription && subscriptions.length > 0) {
+      return {
+        ok: false,
+        message:
+          "Restore the existing concurrency subscription before buying more slots",
+      };
+    }
+    return { ok: true, priceId, existingSubscription };
+  },
+);
 
 type ReadyConcurrencyPurchaseTarget = Extract<
   ConcurrencyPurchaseTarget,
   { readonly ok: true }
 >;
 
-async function loadConcurrencyPaymentPreview(
-  args: {
-    readonly db: ReadonlyDb;
-    readonly orgId: string;
-    readonly target: ReadyConcurrencyPurchaseTarget;
-    readonly quantity: number;
-    readonly supportsInAppPreview: boolean;
-    readonly returnUrl: string | undefined;
-  },
-  signal: AbortSignal,
-): Promise<
-  | { readonly kind: "missing_subscription" }
-  | {
-      readonly kind: "ready";
-      readonly paymentMethodPreviewToken?: string;
-    }
-> {
-  const subscriptionId =
-    args.target.existingSubscription?.id ??
-    (await orgPlanSubscriptionId(args.db, args.orgId));
-  signal.throwIfAborted();
-  if (!subscriptionId) {
-    return { kind: "missing_subscription" };
-  }
-  if (!args.supportsInAppPreview || !args.returnUrl) {
-    return { kind: "ready" };
-  }
-  const targetQuantity = args.target.existingSubscription
-    ? args.target.existingSubscription.quantity + args.quantity
-    : args.quantity;
-  const route = await routeBillingPurchasePreview(
-    {
-      stripe: getStripeClient(),
-      orgId: args.orgId,
-      customerId: null,
-      subscriptionId,
-      operation: "concurrency",
-      operationId: `${subscriptionId}:${targetQuantity}`,
-      returnUrl: args.returnUrl,
+const loadConcurrencyPaymentPreview$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly target: ReadyConcurrencyPurchaseTarget;
+      readonly quantity: number;
+      readonly supportsInAppPreview: boolean;
+      readonly returnUrl: string | undefined;
     },
-    signal,
-  );
-  return {
-    kind: "ready",
-    ...(route.paymentMethodPreviewToken
-      ? { paymentMethodPreviewToken: route.paymentMethodPreviewToken }
-      : {}),
-  };
-}
+    signal: AbortSignal,
+  ): Promise<
+    | { readonly kind: "missing_subscription" }
+    | {
+        readonly kind: "ready";
+        readonly paymentMethodPreviewToken?: string;
+      }
+  > => {
+    const subscriptionId =
+      args.target.existingSubscription?.id ??
+      (await set(orgPlanSubscriptionId$, args.orgId, signal));
+    signal.throwIfAborted();
+    if (!subscriptionId) {
+      return { kind: "missing_subscription" };
+    }
+    if (!args.supportsInAppPreview || !args.returnUrl) {
+      return { kind: "ready" };
+    }
+    const targetQuantity = args.target.existingSubscription
+      ? args.target.existingSubscription.quantity + args.quantity
+      : args.quantity;
+    const route = await routeBillingPurchasePreview(
+      {
+        stripe: getStripeClient(),
+        orgId: args.orgId,
+        customerId: null,
+        subscriptionId,
+        operation: "concurrency",
+        operationId: `${subscriptionId}:${targetQuantity}`,
+        returnUrl: args.returnUrl,
+      },
+      signal,
+    );
+    return {
+      kind: "ready",
+      ...(route.paymentMethodPreviewToken
+        ? { paymentMethodPreviewToken: route.paymentMethodPreviewToken }
+        : {}),
+    };
+  },
+);
 
-async function revalidateConcurrencyPaymentPreview(
-  args: {
-    readonly db: ReadonlyDb;
-    readonly orgId: string;
-    readonly target: ReadyConcurrencyPurchaseTarget;
-    readonly quantity: number;
-    readonly paymentMethodPreviewToken: string;
-  },
-  signal: AbortSignal,
-): Promise<
-  | {
-      readonly kind: "continue";
-      readonly paymentMethod?: BillingPurchasePaymentMethod;
-    }
-  | { readonly kind: "invalid_preview" }
-> {
-  const subscriptionId =
-    args.target.existingSubscription?.id ??
-    (await orgPlanSubscriptionId(args.db, args.orgId));
-  signal.throwIfAborted();
-  const targetQuantity = args.target.existingSubscription
-    ? args.target.existingSubscription.quantity + args.quantity
-    : args.quantity;
-  const preview = parseBillingPaymentMethodPreviewToken(
-    args.paymentMethodPreviewToken,
-  );
-  if (
-    !subscriptionId ||
-    !preview ||
-    preview.operation !== "concurrency" ||
-    preview.operationId !== `${subscriptionId}:${targetQuantity}` ||
-    preview.orgId !== args.orgId ||
-    preview.subscriptionId !== subscriptionId ||
-    new Date(preview.expiresAt) <= nowDate()
-  ) {
-    return { kind: "invalid_preview" };
-  }
-  const revalidated = await revalidateBillingPurchase(
-    {
-      stripe: getStripeClient(),
-      orgId: args.orgId,
-      customerId: preview.customerId,
-      subscriptionId,
-      paymentMethodId: preview.paymentMethodId,
-      operation: preview.operation,
-      operationId: preview.operationId,
-      returnUrl: preview.returnUrl,
+const revalidateConcurrencyPaymentPreview$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly target: ReadyConcurrencyPurchaseTarget;
+      readonly quantity: number;
+      readonly paymentMethodPreviewToken: string;
     },
-    signal,
-  );
-  if (revalidated.kind === "invalid_preview") {
-    return { kind: "invalid_preview" };
-  }
-  return revalidated.kind === "hosted_invoice"
-    ? { kind: "continue" }
-    : { kind: "continue", paymentMethod: revalidated };
-}
+    signal: AbortSignal,
+  ): Promise<
+    | {
+        readonly kind: "continue";
+        readonly paymentMethod?: BillingPurchasePaymentMethod;
+      }
+    | { readonly kind: "invalid_preview" }
+  > => {
+    const subscriptionId =
+      args.target.existingSubscription?.id ??
+      (await set(orgPlanSubscriptionId$, args.orgId, signal));
+    signal.throwIfAborted();
+    const targetQuantity = args.target.existingSubscription
+      ? args.target.existingSubscription.quantity + args.quantity
+      : args.quantity;
+    const preview = parseBillingPaymentMethodPreviewToken(
+      args.paymentMethodPreviewToken,
+    );
+    if (
+      !subscriptionId ||
+      !preview ||
+      preview.operation !== "concurrency" ||
+      preview.operationId !== `${subscriptionId}:${targetQuantity}` ||
+      preview.orgId !== args.orgId ||
+      preview.subscriptionId !== subscriptionId ||
+      new Date(preview.expiresAt) <= nowDate()
+    ) {
+      return { kind: "invalid_preview" };
+    }
+    const revalidated = await revalidateBillingPurchase(
+      {
+        stripe: getStripeClient(),
+        orgId: args.orgId,
+        customerId: preview.customerId,
+        subscriptionId,
+        paymentMethodId: preview.paymentMethodId,
+        operation: preview.operation,
+        operationId: preview.operationId,
+        returnUrl: preview.returnUrl,
+      },
+      signal,
+    );
+    if (revalidated.kind === "invalid_preview") {
+      return { kind: "invalid_preview" };
+    }
+    return revalidated.kind === "hosted_invoice"
+      ? { kind: "continue" }
+      : { kind: "continue", paymentMethod: revalidated };
+  },
+);
 
 const concurrencyCheckoutPreviewAuthed$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -228,8 +270,8 @@ const concurrencyCheckoutPreviewAuthed$ = command(
       );
     }
 
-    const target = await loadConcurrencyPurchaseTarget(
-      get(db$),
+    const target = await set(
+      loadConcurrencyPurchaseTarget$,
       auth.orgId,
       signal,
     );
@@ -237,9 +279,9 @@ const concurrencyCheckoutPreviewAuthed$ = command(
       return badRequestMessage(target.message);
     }
 
-    const paymentPreview = await loadConcurrencyPaymentPreview(
+    const paymentPreview = await set(
+      loadConcurrencyPaymentPreview$,
       {
-        db: get(db$),
         orgId: auth.orgId,
         target,
         quantity: bodyResult.data.quantity,
@@ -361,7 +403,6 @@ const concurrencyCheckoutAuthed$ = command(
     const { quantity, paymentMethodPreviewToken, successUrl, cancelUrl } =
       bodyResult.data;
 
-    const db = get(db$);
     if (
       !billingRedirectAllowed(successUrl) ||
       !billingRedirectAllowed(cancelUrl)
@@ -371,16 +412,20 @@ const concurrencyCheckoutAuthed$ = command(
       );
     }
 
-    const target = await loadConcurrencyPurchaseTarget(db, auth.orgId, signal);
+    const target = await set(
+      loadConcurrencyPurchaseTarget$,
+      auth.orgId,
+      signal,
+    );
     if (!target.ok) {
       return badRequestMessage(target.message);
     }
 
     let paymentMethod: BillingPurchasePaymentMethod | undefined;
     if (paymentMethodPreviewToken) {
-      const revalidated = await revalidateConcurrencyPaymentPreview(
+      const revalidated = await set(
+        revalidateConcurrencyPaymentPreview$,
         {
-          db,
           orgId: auth.orgId,
           target,
           quantity,

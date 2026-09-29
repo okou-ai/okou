@@ -5,7 +5,7 @@ import {
 import { asc, eq, inArray, or } from "drizzle-orm";
 
 import type { ApiDb, Tx } from "../../lib/db-types";
-import { lockBillingPurchaseOrg } from "./billing-purchase-lock.service";
+import { billingPurchaseCompatibilityLockSql } from "./billing-purchase-lock.service";
 
 function isPending(status: string): boolean {
   return status === "checkout_pending" || status === "purchase_pending";
@@ -21,7 +21,7 @@ async function lockPendingSnapshotOrgs(
     throw new Error("Usage pack writes require an organization scope");
   }
   for (const orgId of orderedOrgIds) {
-    await lockBillingPurchaseOrg(tx, orgId);
+    await tx.execute(billingPurchaseCompatibilityLockSql(orgId));
   }
   // Outgoing lifecycle writers lock the subscription before their AFTER
   // trigger locks the guard. Lock all existing roots before any guard, also

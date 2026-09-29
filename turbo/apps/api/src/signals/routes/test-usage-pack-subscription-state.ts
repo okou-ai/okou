@@ -24,7 +24,7 @@ import { request$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
 import { type Db, writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
-import { lockBillingPurchaseOrg } from "../services/billing-purchase-lock.service";
+import { billingPurchaseCompatibilityLockSql } from "../services/billing-purchase-lock.service";
 import type { Tx } from "../../lib/db-types";
 import {
   repairUsagePackPendingSnapshotGuards,
@@ -422,7 +422,7 @@ async function holdBillingPurchaseLock(
   billingPurchaseLockGate.set(gate);
   await onRejection(
     db.transaction(async (tx) => {
-      await lockBillingPurchaseOrg(tx, body.orgId);
+      await tx.execute(billingPurchaseCompatibilityLockSql(body.orgId));
       signal.throwIfAborted();
       const rows = await executeRawRows(
         tx,
