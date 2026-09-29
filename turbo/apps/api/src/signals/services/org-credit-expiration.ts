@@ -83,3 +83,12 @@ export function orgCreditInvoiceGrantSql(
   ) UPDATE ${orgMetadata} SET credits = credits + ${grant.amount}, updated_at = ${sql.param(at, orgMetadata.updatedAt)}
     WHERE ${orgMetadata.orgId} = ${orgId} AND EXISTS (SELECT 1 FROM receipt)`;
 }
+
+export function trialCreditExtensionWhere(orgId: string, amount: number) {
+  return and(
+    eq(creditExpiresRecord.orgId, orgId),
+    eq(creditExpiresRecord.source, "subscription_renewal"),
+    eq(creditExpiresRecord.amount, amount),
+    gt(creditExpiresRecord.remaining, 0),
+  );
+}

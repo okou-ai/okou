@@ -154,8 +154,12 @@ only decreases expiry; subsequent monetary writers observe any resulting remaind
 The preview/test state seed routes are test-only writers, not supported production
 balance writers. They remain a separate fixture command-ownership cleanup.
 
-Plan/Atom replacement cancellations now run after local financial commit, using
-only the committed previous subscription ID. Existing replay paths still retry the
-provider cancellation. Plan entitlement, pending-snapshot and member-grant helper
-propagation remains explicitly unfinished despite these monetary improvements.
+Plan/Atom replacement cancellations still execute within the existing transaction
+chain. Moving them after commit without a complete replay identity loses some
+cancellations: the currently stored subscription ID has been overwritten, and the
+existing Stripe customer-list fallback excludes some previously selected IDs (for
+example past-due lower-tier subscriptions). Broadening cancellation to all customer
+subscriptions would risk unrelated current plans. This remains implementation work,
+not a compatibility exception. The prepared monetary predicates above do not
+resolve the plan entitlement, pending-snapshot and member-grant helper propagation.
 R1 is not certified ready by this note.

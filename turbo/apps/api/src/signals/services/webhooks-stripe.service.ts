@@ -1,6 +1,7 @@
 import {
   atomicOrgCreditExpirationSql,
   orgCreditInvoiceGrantSql,
+  trialCreditExtensionWhere,
 } from "./org-credit-expiration";
 import { grantPurchasedOrgCredits$ } from "./org-credit-grant.service";
 import type { OrgTier } from "@okouai/api-contracts/contracts/orgs";
@@ -1684,28 +1685,16 @@ async function insertStripeCustomerOrgMetadata(
   return rows.length > 0;
 }
 
-interface PlanInvoicePublication {
-  readonly processed: boolean;
-  readonly cancelReplaced?: string | null;
-}
-
-function planInvoicePublication(
-  processed: boolean,
-  cancelReplaced?: string | null,
-): PlanInvoicePublication {
-  return { processed, cancelReplaced };
-}
-
 async function processAtomPlanGrantInvoicePaid(
   db: Db,
   invoice: InvoiceInput,
   details: AtomPlanGrantInvoiceDetails,
-): Promise<PlanInvoicePublication> {
+): Promise<boolean> {
   return await db.transaction(async (tx) => {
     await insertStripeCustomerOrgMetadata(tx, details);
     const lockedOrg = await lockInvoicePaidOrg(tx, details.orgId);
     if (!lockedOrg) {
-      return planInvoicePublication(false);
+      return false;
     }
     if (lockedOrg.lastProcessedInvoiceId === invoice.id) {
       if (
@@ -1716,11 +1705,17 @@ async function processAtomPlanGrantInvoicePaid(
         await upsertAtomGrantPlanEntitlement(tx, invoice, details);
       }
       await grantAtomRedeemMemberUsagePack(tx, invoice, details);
+      await cancelReplacedSubscriptionsAfterAtomGrant({
+        orgId: details.orgId,
+        customerId: details.customerId,
+        invoiceId: invoice.id,
+        knownOldSubscriptionId: lockedOrg.stripeSubscriptionId,
+      });
       L.debug("atom grant invoice already processed", {
         invoiceId: invoice.id,
         orgId: details.orgId,
       });
-      return planInvoicePublication(true, lockedOrg.stripeSubscriptionId);
+      return true;
     }
     if (
       atomUsagePackGrantWouldNotExtendEntitlement({
@@ -1730,7 +1725,7 @@ async function processAtomPlanGrantInvoicePaid(
       })
     ) {
       await grantAtomRedeemMemberUsagePack(tx, invoice, details);
-      return planInvoicePublication(true);
+      return true;
     }
     if (
       atomGrantWouldReplaceWithSameOrLowerTier({
@@ -1739,7 +1734,7 @@ async function processAtomPlanGrantInvoicePaid(
       })
     ) {
       rejectAtomGrantTierReplacement({ invoice, details, lockedOrg });
-      return planInvoicePublication(false);
+      return false;
     }
 
     if (details.credits > 0) {
@@ -1766,11 +1761,17 @@ async function processAtomPlanGrantInvoicePaid(
         ) {
           await upsertAtomGrantPlanEntitlement(tx, invoice, details);
         }
+        await cancelReplacedSubscriptionsAfterAtomGrant({
+          orgId: details.orgId,
+          customerId: details.customerId,
+          invoiceId: invoice.id,
+          knownOldSubscriptionId: lockedOrg.stripeSubscriptionId,
+        });
         L.debug("atom grant invoice credits already processed", {
           invoiceId: invoice.id,
           orgId: details.orgId,
         });
-        return planInvoicePublication(true, lockedOrg.stripeSubscriptionId);
+        return true;
       }
     }
     await writeOrgMetadataWithPlanEntitlements(tx, {
@@ -1803,7 +1804,13 @@ async function processAtomPlanGrantInvoicePaid(
       },
     });
     await grantAtomRedeemMemberUsagePack(tx, invoice, details);
-    return planInvoicePublication(true, lockedOrg.stripeSubscriptionId);
+    await cancelReplacedSubscriptionsAfterAtomGrant({
+      orgId: details.orgId,
+      customerId: details.customerId,
+      invoiceId: invoice.id,
+      knownOldSubscriptionId: lockedOrg.stripeSubscriptionId,
+    });
+    return true;
   });
 }
 
@@ -1887,16 +1894,7 @@ const handleAtomGrantInvoicePaid$ = command(
       details,
     );
     signal.throwIfAborted();
-    if (processed.cancelReplaced !== undefined) {
-      await cancelReplacedSubscriptionsAfterAtomGrant({
-        orgId: details.orgId,
-        customerId: details.customerId,
-        invoiceId: invoice.id,
-        knownOldSubscriptionId: processed.cancelReplaced,
-      });
-      signal.throwIfAborted();
-    }
-    if (!processed.processed) {
+    if (!processed) {
       return { handled: true, drainOrgId: null };
     }
 
@@ -3509,6 +3507,14 @@ async function processNoCreditSubscriptionInvoicePaid(
     subscriptionId: args.subscriptionId,
     details: args.details,
   });
+  await cancelReplacedPlanSubscriptionsAfterInvoice({
+    orgId: args.orgId,
+    customerId: args.customerId,
+    invoiceId: args.invoice.id,
+    newSubscriptionId: args.subscriptionId,
+    targetTier: args.details.tier,
+    knownOldSubscriptionId: args.replacedSubscriptionId,
+  });
 }
 
 async function reconcileAlreadyProcessedSubscriptionInvoice(
@@ -3530,6 +3536,14 @@ async function reconcileAlreadyProcessedSubscriptionInvoice(
       details: args.details,
     });
   }
+  await cancelReplacedPlanSubscriptionsAfterInvoice({
+    orgId: args.orgId,
+    customerId: args.customerId,
+    invoiceId: args.invoiceId,
+    newSubscriptionId: args.subscriptionId,
+    targetTier: args.details.tier,
+    knownOldSubscriptionId: args.replacedSubscriptionId,
+  });
   L.debug("invoice.paid already processed by concurrent delivery", {
     invoiceId: args.invoiceId,
     orgId: args.orgId,
@@ -3545,10 +3559,10 @@ async function processSubscriptionInvoicePaid(
     readonly orgId: string;
     readonly details: SubscriptionInvoiceDetails;
   },
-): Promise<PlanInvoicePublication> {
+): Promise<boolean> {
   const lockedOrg = await lockInvoicePaidOrg(tx, args.orgId);
   if (!lockedOrg) {
-    return planInvoicePublication(false);
+    return false;
   }
   const replacedSubscriptionId = replacedPlanSubscriptionId({
     currentSubscriptionId: lockedOrg.stripeSubscriptionId,
@@ -3565,7 +3579,7 @@ async function processSubscriptionInvoicePaid(
       lockedOrg,
       replacedSubscriptionId,
     });
-    return planInvoicePublication(true, replacedSubscriptionId);
+    return true;
   }
 
   if (
@@ -3588,7 +3602,7 @@ async function processSubscriptionInvoicePaid(
         targetTier: args.details.tier,
       }),
     });
-    return planInvoicePublication(false);
+    return false;
   }
 
   if (args.details.credits === 0) {
@@ -3596,7 +3610,7 @@ async function processSubscriptionInvoicePaid(
       ...args,
       replacedSubscriptionId,
     });
-    return planInvoicePublication(true, replacedSubscriptionId);
+    return true;
   }
 
   const trialingExistingSubscription =
@@ -3615,21 +3629,14 @@ async function processSubscriptionInvoicePaid(
     await tx
       .update(creditExpiresRecord)
       .set({ expiresAt: args.details.expiresAt })
-      .where(
-        and(
-          eq(creditExpiresRecord.orgId, args.orgId),
-          eq(creditExpiresRecord.source, "subscription_renewal"),
-          eq(creditExpiresRecord.amount, args.details.credits),
-          gt(creditExpiresRecord.remaining, 0),
-        ),
-      );
+      .where(trialCreditExtensionWhere(args.orgId, args.details.credits));
     await updateSubscriptionInvoiceMetadata(tx, {
       orgId: args.orgId,
       invoiceId: args.invoice.id,
       subscriptionId: args.subscriptionId,
       details: args.details,
     });
-    return planInvoicePublication(true);
+    return true;
   }
 
   await tx.execute(atomicOrgCreditExpirationSql(args.orgId, nowDate()));
@@ -3658,7 +3665,7 @@ async function processSubscriptionInvoicePaid(
       invoiceId: args.invoice.id,
       orgId: args.orgId,
     });
-    return planInvoicePublication(true);
+    return true;
   }
 
   await updateSubscriptionInvoiceMetadata(tx, {
@@ -3667,7 +3674,15 @@ async function processSubscriptionInvoicePaid(
     subscriptionId: args.subscriptionId,
     details: args.details,
   });
-  return planInvoicePublication(true, replacedSubscriptionId);
+  await cancelReplacedPlanSubscriptionsAfterInvoice({
+    orgId: args.orgId,
+    customerId: args.customerId,
+    invoiceId: args.invoice.id,
+    newSubscriptionId: args.subscriptionId,
+    targetTier: args.details.tier,
+    knownOldSubscriptionId: replacedSubscriptionId,
+  });
+  return true;
 }
 
 const handleCheckoutCompleted$ = command(
@@ -3871,17 +3886,7 @@ async function handlePlanSubscriptionInvoicePaid(
       details,
     });
   });
-  if (processed.cancelReplaced !== undefined) {
-    await cancelReplacedPlanSubscriptionsAfterInvoice({
-      orgId: org.orgId,
-      customerId,
-      invoiceId: invoice.id,
-      newSubscriptionId: subscriptionId,
-      targetTier: details.tier,
-      knownOldSubscriptionId: processed.cancelReplaced,
-    });
-  }
-  return processed.processed
+  return processed
     ? org.orgId
     : (concurrencyResult.drainOrgId ?? fallbackDrainOrgId);
 }
