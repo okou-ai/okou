@@ -47,7 +47,13 @@ On a disposable machine where package installation is authorized, ensure
 available. Do not replace the installed OpenSSH version. TigerVNC must be
 `1.13.1+dfsg-2build2`; verify with `dpkg-query` before starting the fixture.
 If the existing host lacks a dependency and installing it is not authorized,
-use an isolated environment or stop rather than changing the host.
+use an isolated environment or stop rather than changing the host. For an
+isolated `python3-xlib` extraction, export `VNC_ACCEPT_PYTHONPATH` as the
+absolute, test-account-readable directory containing `Xlib/__init__.py` (for
+example, its `usr/lib/python3/dist-packages` directory). Use only a trusted
+package and remove the extraction after the test; otherwise leave the variable
+unset and use the system `/usr/bin/python3` installation. The script checks the
+import as the disposable account before starting sshd.
 
 Build the current exact-head Runner test before changing host state:
 
@@ -88,6 +94,14 @@ case "$VNC_RUNNER_TEST_BINARY" in
   *) echo "unexpected Runner test binary path" >&2; exit 1 ;;
 esac
 test -x "$VNC_RUNNER_TEST_BINARY"
+VNC_ACCEPT_PYTHONPATH="${VNC_ACCEPT_PYTHONPATH:-}"
+if [ -n "$VNC_ACCEPT_PYTHONPATH" ]; then
+  case "$VNC_ACCEPT_PYTHONPATH" in
+    /*) ;;
+    *) echo "isolated Python path must be absolute" >&2; exit 1 ;;
+  esac
+  test -r "$VNC_ACCEPT_PYTHONPATH/Xlib/__init__.py"
+fi
 "$VNC_RUNNER_TEST_BINARY" --list --ignored | grep -F \
   'ssh::tests::vnc_interoperability::installed_openssh_tigervnc_vnc_transport_acceptance' >/dev/null
 printf 'test_source_sha=%s\n' "$(git rev-parse HEAD)"
@@ -172,6 +186,8 @@ trap 'exit 143' TERM
 VNC_ACCEPT_PASSWORD="$(openssl rand -base64 24)"
 sudo useradd --create-home --shell /bin/bash "$VNC_ACCEPT_USER"
 VNC_ACCEPT_CREATED=1
+sudo -u "$VNC_ACCEPT_USER" env PYTHONPATH="$VNC_ACCEPT_PYTHONPATH" \
+  /usr/bin/python3 -c 'from Xlib import X, display'
 printf '%s:%s\n' "$VNC_ACCEPT_USER" "$VNC_ACCEPT_PASSWORD" | sudo chpasswd
 ssh-keygen -q -t ed25519 -N '' -f "$VNC_ACCEPT_DIR/host_key"
 ssh-keygen -q -t ed25519 -N '' -f "$VNC_ACCEPT_DIR/client_key"
@@ -237,6 +253,7 @@ chmod 711 "$VNC_ACCEPT_DIR"
 sudo -u "$VNC_ACCEPT_USER" env \
   HOME="/home/$VNC_ACCEPT_USER" \
   TMPDIR="$VNC_ACCEPT_DIR/test" \
+  PYTHONPATH="$VNC_ACCEPT_PYTHONPATH" \
   VNC_OPENSSH_VERSION="$VNC_OPENSSH_VERSION" \
   VNC_OPENSSH_PORT="$VNC_OPENSSH_PORT" \
   VNC_OPENSSH_USERNAME="$VNC_ACCEPT_USER" \
