@@ -298,3 +298,14 @@ balances after another acceptance delivery. The existing 100-credit inviter
 reward remains asserted. The separate membership-created webhook test retains
 its distinct entry point and exact two-grant/expiry assertions. The Atom Custom
 quantity assertion and its authoritative Stripe period fixture remain intact.
+
+The former stale-checkout concurrency test no longer installs a production
+`billing_purchase` advisory lock, reads `pg_locks`, or waits for a blocked
+transaction. Its hold/read/release fixture actions and all gate state are removed.
+The replacement starts a real usage-pack Checkout API request, delays the Stripe
+Session response, and runs reconciliation concurrently after the snapshot TTL.
+It asserts that the Checkout URL remains resumable through the purchase API and
+that the billing API still exposes the original tier and credit balance until
+payment. This proves the user-visible outcome without claiming a particular
+internal database interleaving. Separate expiration, replacement, and
+post-creation cancellation tests retain their distinct behavior coverage.

@@ -14,17 +14,14 @@ import {
   usagePackSubscriptions,
 } from "@okouai/db/schema/usage-pack-subscription";
 import { command } from "ccstate";
-import { and, asc, count, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { z } from "zod";
 
-import { executeRawRows } from "../../lib/db-raw-rows";
-import { testOverride } from "../../lib/singleton";
 import { nowDate } from "../../lib/time";
 import { request$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
 import { type Db, writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
-import { billingPurchaseCompatibilityLockSql } from "../services/billing-purchase-lock.service";
 import type { Tx } from "../../lib/db-types";
 import {
   repairUsagePackPendingSnapshotGuards,
@@ -32,7 +29,6 @@ import {
 } from "../services/usage-pack-pending-snapshot.service";
 import { loadOrgPlanCapabilities } from "../services/org-plan-entitlement-read.service";
 import { prepareUsagePackMemberCreditRefunds } from "../services/usage-pack-credit-refund.service";
-import { createDeferredPromise, onRejection } from "../utils";
 import {
   isTestEndpointAllowed,
   testEndpointNotFoundResponse,
@@ -89,21 +85,6 @@ const actionBodySchema = z.discriminatedUnion("action", [
     usagePackSubscriptionId: z.string().uuid(),
     stripeCheckoutSessionId: z.string().min(1),
     updatedAt: z.iso.datetime(),
-  }),
-  z.object({
-    action: z.literal("hold-billing-purchase-lock"),
-    orgId: z.string().min(1),
-    usagePackSubscriptionId: z.string().uuid(),
-    stripeCheckoutSessionId: z.string().min(1),
-    updatedAt: z.iso.datetime(),
-  }),
-  z.object({
-    action: z.literal("read-billing-purchase-lock-state"),
-    orgId: z.string().min(1),
-  }),
-  z.object({
-    action: z.literal("release-billing-purchase-lock"),
-    orgId: z.string().min(1),
   }),
   z.object({
     action: z.literal("set-grant-remaining"),
@@ -298,11 +279,6 @@ const actionResponseSchema = z.discriminatedUnion("action", [
     usagePackSubscriptionId: z.string().uuid(),
   }),
   z.object({ action: z.literal("read"), state: readStateSchema }),
-  z.object({
-    action: z.literal("billing-purchase-lock-state"),
-    held: z.boolean(),
-    waiterCount: z.number().int().nonnegative(),
-  }),
   z.object({ action: z.literal("ok") }),
 ]);
 
@@ -338,39 +314,10 @@ type SeedLegacyMigrationAction = Extract<
   TestUsagePackSubscriptionStateAction,
   { readonly action: "seed-legacy-migration" }
 >;
-type HoldBillingPurchaseLockAction = Extract<
-  TestUsagePackSubscriptionStateAction,
-  { readonly action: "hold-billing-purchase-lock" }
->;
 type CorrelateLegacyCheckoutSessionAction = Extract<
   TestUsagePackSubscriptionStateAction,
   { readonly action: "correlate-legacy-checkout-session" }
 >;
-
-interface BillingPurchaseLockGate {
-  readonly orgId: string;
-  holderPid: number | null;
-  readonly released: ReturnType<typeof createDeferredPromise<void>>;
-  readonly release: () => void;
-}
-
-const billingPurchaseLockGate = testOverride<BillingPurchaseLockGate | null>(
-  () => {
-    return null;
-  },
-);
-
-const lockHolderRowSchema = z.object({ holderPid: z.int() });
-const lockStateRowSchema = z.object({
-  held: z.boolean(),
-  waiterCount: z.int().nonnegative(),
-});
-
-function clearBillingPurchaseLockGate(gate: BillingPurchaseLockGate): void {
-  if (billingPurchaseLockGate.get() === gate) {
-    billingPurchaseLockGate.clear();
-  }
-}
 
 async function correlateLegacyCheckoutSession(
   db: Db,
@@ -398,125 +345,6 @@ async function correlateLegacyCheckoutSession(
   if (correlated.length !== 1) {
     throw new Error("Failed to correlate the legacy Checkout Session");
   }
-}
-
-async function holdBillingPurchaseLock(
-  db: Db,
-  body: HoldBillingPurchaseLockAction,
-  signal: AbortSignal,
-): Promise<void> {
-  if (billingPurchaseLockGate.get()) {
-    throw new Error("A billing purchase lock gate is already active");
-  }
-  const released = createDeferredPromise<void>(signal);
-  const gate: BillingPurchaseLockGate = {
-    orgId: body.orgId,
-    holderPid: null,
-    released,
-    release: () => {
-      if (!released.settled()) {
-        released.resolve(undefined);
-      }
-    },
-  };
-  billingPurchaseLockGate.set(gate);
-  await onRejection(
-    db.transaction(async (tx) => {
-      await tx.execute(billingPurchaseCompatibilityLockSql(body.orgId));
-      signal.throwIfAborted();
-      const rows = await executeRawRows(
-        tx,
-        sql`SELECT pg_backend_pid() AS "holderPid"`,
-        lockHolderRowSchema,
-      );
-      signal.throwIfAborted();
-      const holder = rows[0];
-      if (!holder) {
-        throw new Error("Failed to read billing purchase lock holder");
-      }
-      gate.holderPid = holder.holderPid;
-      await gate.released.promise;
-      const correlated = await tx
-        .update(usagePackSubscriptions)
-        .set({
-          stripeCheckoutSessionId: body.stripeCheckoutSessionId,
-          updatedAt: new Date(body.updatedAt),
-        })
-        .where(
-          and(
-            eq(usagePackSubscriptions.id, body.usagePackSubscriptionId),
-            eq(usagePackSubscriptions.orgId, body.orgId),
-            eq(usagePackSubscriptions.subscriptionStatus, "checkout_pending"),
-            isNull(usagePackSubscriptions.stripeCheckoutSessionId),
-            isNull(usagePackSubscriptions.stripeSubscriptionId),
-          ),
-        )
-        .returning({ id: usagePackSubscriptions.id });
-      if (correlated.length !== 1) {
-        throw new Error("Failed to correlate the usage pack Checkout Session");
-      }
-    }),
-    () => {
-      clearBillingPurchaseLockGate(gate);
-    },
-  );
-  clearBillingPurchaseLockGate(gate);
-}
-
-async function readBillingPurchaseLockState(
-  db: Db,
-  orgId: string,
-  signal: AbortSignal,
-): Promise<{ readonly held: boolean; readonly waiterCount: number }> {
-  const gate = billingPurchaseLockGate.get();
-  const holderPid = gate?.orgId === orgId ? gate.holderPid : null;
-  if (holderPid === null || holderPid === undefined) {
-    return { held: false, waiterCount: 0 };
-  }
-  const rows = await executeRawRows(
-    db,
-    sql`
-      SELECT
-        EXISTS (
-          SELECT 1
-          FROM pg_locks held
-          WHERE
-            held.pid = ${holderPid}
-            AND held.locktype = 'advisory'
-            AND held.granted
-        ) AS "held",
-        (
-          SELECT ${count()}::int
-          FROM pg_locks held
-          INNER JOIN pg_locks waiting
-            ON waiting.locktype = held.locktype
-            AND waiting.database IS NOT DISTINCT FROM held.database
-            AND waiting.classid IS NOT DISTINCT FROM held.classid
-            AND waiting.objid IS NOT DISTINCT FROM held.objid
-            AND waiting.objsubid IS NOT DISTINCT FROM held.objsubid
-          WHERE
-            held.pid = ${holderPid}
-            AND held.locktype = 'advisory'
-            AND held.granted
-            AND NOT waiting.granted
-        ) AS "waiterCount"
-    `,
-    lockStateRowSchema,
-  );
-  signal.throwIfAborted();
-  const state = rows[0];
-  if (!state) {
-    throw new Error("Failed to read billing purchase lock state");
-  }
-  return state;
-}
-
-function releaseBillingPurchaseLock(orgId: string): void {
-  const gate = billingPurchaseLockGate.get();
-  if (!gate || gate.orgId !== orgId) {
-    throw new Error(`No billing purchase lock gate for ${orgId}`);
-  }
-  gate.release();
 }
 
 // Stripe callbacks and cron are production ingress surfaces, but production
@@ -1037,28 +865,6 @@ const mutateTestUsagePackSubscriptionState$ = command(
       }
       case "correlate-legacy-checkout-session": {
         await correlateLegacyCheckoutSession(db, body, signal);
-        return { status: 200 as const, body: { action: "ok" as const } };
-      }
-      case "hold-billing-purchase-lock": {
-        await holdBillingPurchaseLock(db, body, signal);
-        return { status: 200 as const, body: { action: "ok" as const } };
-      }
-      case "read-billing-purchase-lock-state": {
-        const state = await readBillingPurchaseLockState(
-          db,
-          body.orgId,
-          signal,
-        );
-        return {
-          status: 200 as const,
-          body: {
-            action: "billing-purchase-lock-state" as const,
-            ...state,
-          },
-        };
-      }
-      case "release-billing-purchase-lock": {
-        releaseBillingPurchaseLock(body.orgId);
         return { status: 200 as const, body: { action: "ok" as const } };
       }
       case "set-grant-remaining": {

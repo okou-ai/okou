@@ -3916,135 +3916,94 @@ describe("POST /api/billing/usage-pack-checkout", () => {
     });
   });
 
-  it("rechecks a stale snapshot after waiting for a concurrent Checkout writer", async () => {
-    const reconciledAt = new Date("2035-05-15T00:00:00.000Z");
-    mockNow(reconciledAt);
+  it("keeps an unpaid Checkout usable through concurrent snapshot reconciliation", async () => {
+    const startedAt = new Date("2035-05-15T00:00:00.000Z");
+    mockNow(startedAt);
     onTestFinished(() => {
       clearMockNow();
     });
     const fixture = createOrgFixture();
     const customerId = `cus_${randomUUID()}`;
-    const checkoutSessionId = `cs_${randomUUID()}`;
-    await seedOrgMetadata({
-      orgId: fixture.orgId,
-      tier: "limited-free-1",
-      credits: 0,
+    const session = {
+      id: `cs_${randomUUID()}`,
+      url: "https://checkout.stripe.test/concurrent-reconciliation",
+    };
+    authenticateOrg(fixture);
+    mockClerkOrganization(fixture);
+    context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+      {
+        data: [
+          {
+            role: "org:admin",
+            publicUserData: { userId: fixture.userId },
+            createdAt: now(),
+          },
+        ],
+      },
+    );
+    context.mocks.clerk.organizations.getOrganizationInvitationList.mockResolvedValue(
+      { data: [] },
+    );
+    context.mocks.stripe.customers.create.mockResolvedValue({ id: customerId });
+    context.mocks.stripe.subscriptions.list.mockResolvedValue({
+      data: [],
+      has_more: false,
     });
-    const seeded = await usagePackStateAction({
-      action: "seed",
-      orgId: fixture.orgId,
-      tier: "pro",
-      stripePlanPriceId: TEST_PRICE_USAGE_PACK_PLAN_PRO,
-      stripeCustomerId: customerId,
-      stripeCheckoutSessionId: null,
-      allocations: [
-        {
-          userId: fixture.userId,
-          invitationId: null,
-          usagePackUsd: 20,
-          stripePriceId: TEST_PRICE_USAGE_PACK_20,
-        },
-      ],
+    context.mocks.stripe.checkout.sessions.retrieve.mockResolvedValue({
+      ...session,
+      status: "open",
     });
-    if (seeded.action !== "seeded") {
-      throw new Error("Failed to seed a racing usage pack snapshot");
-    }
-    const usagePackSubscriptionId = seeded.usagePackSubscriptionId;
+    const before = await readBillingStatus(fixture);
+    const creating = createDeferredPromise<void>(context.signal);
+    const response = createDeferredPromise<typeof session>(context.signal);
+    let usagePackSubscriptionId: string | undefined;
+    context.mocks.stripe.checkout.sessions.create.mockImplementation(
+      (input) => {
+        usagePackSubscriptionId =
+          stripeInputMetadata(input).usagePackSubscriptionId;
+        creating.resolve();
+        return response.promise;
+      },
+    );
+    const client = setupApp({ context, routes: billingCheckoutRoutes })(
+      billingUsagePackCheckoutContract,
+    );
+    const request = {
+      headers: { authorization: "Bearer clerk-session" },
+      body: usagePackCheckoutBody(fixture.userId),
+    };
+    const checkout = accept(client.create(request), [200]);
+    const reconciliations: Promise<void>[] = [];
     onTestFinished(async () => {
-      await usagePackStateAction({
-        action: "cleanup",
-        orgId: fixture.orgId,
-        usagePackSubscriptionId,
-        deleteGrants: false,
-        deleteOrgMetadata: true,
-      });
-    });
-    await usagePackStateAction({
-      action: "set-updated-at",
-      orgId: fixture.orgId,
-      usagePackSubscriptionId,
-      updatedAt: new Date(
-        reconciledAt.getTime() - 16 * 60 * 1000,
-      ).toISOString(),
-    });
-
-    const reconciliationPromises: Promise<void>[] = [];
-    const holdPromise = usagePackStateAction({
-      action: "hold-billing-purchase-lock",
-      orgId: fixture.orgId,
-      usagePackSubscriptionId,
-      stripeCheckoutSessionId: checkoutSessionId,
-      updatedAt: reconciledAt.toISOString(),
-    });
-    onTestFinished(async () => {
-      const lockState = await usagePackStateAction({
-        action: "read-billing-purchase-lock-state",
-        orgId: fixture.orgId,
-      });
-      if (
-        lockState.action === "billing-purchase-lock-state" &&
-        lockState.held
-      ) {
+      if (!response.settled()) {
+        response.resolve(session);
+      }
+      await Promise.allSettled([checkout, ...reconciliations]);
+      if (usagePackSubscriptionId) {
         await usagePackStateAction({
-          action: "release-billing-purchase-lock",
+          action: "cleanup",
           orgId: fixture.orgId,
+          usagePackSubscriptionId,
+          deleteGrants: false,
+          deleteOrgMetadata: true,
         });
       }
-      await Promise.allSettled([holdPromise]);
-      await Promise.allSettled(reconciliationPromises);
     });
-    await expect
-      .poll(
-        async () => {
-          const state = await usagePackStateAction({
-            action: "read-billing-purchase-lock-state",
-            orgId: fixture.orgId,
-          });
-          return state.action === "billing-purchase-lock-state" && state.held;
-        },
-        { timeout: 5000, interval: 20 },
-      )
-      .toBeTruthy();
+    await creating.promise;
+    mockNow(new Date(startedAt.getTime() + 16 * 60 * 1000));
+    const reconciliation = reconcileBillingOrganization(fixture.orgId);
+    reconciliations.push(reconciliation);
+    response.resolve(session);
+    const [created] = await Promise.all([checkout, reconciliation]);
+    expect(created.body).toStrictEqual({ url: session.url });
 
-    const reconciliationPromise = reconcileBillingOrganization(fixture.orgId);
-    reconciliationPromises.push(reconciliationPromise);
-    await expect
-      .poll(
-        async () => {
-          const state = await usagePackStateAction({
-            action: "read-billing-purchase-lock-state",
-            orgId: fixture.orgId,
-          });
-          return state.action === "billing-purchase-lock-state"
-            ? state.waiterCount
-            : 0;
-        },
-        { timeout: 5000, interval: 20 },
-      )
-      .toBeGreaterThanOrEqual(1);
-
-    await usagePackStateAction({
-      action: "release-billing-purchase-lock",
-      orgId: fixture.orgId,
-    });
-    await holdPromise;
-    await reconciliationPromise;
-
-    const state = await readUsagePackState(
-      fixture.orgId,
-      usagePackSubscriptionId,
-    );
-    expect(state.subscription).toMatchObject({
-      stripeCheckoutSessionId: checkoutSessionId,
-      stripeSubscriptionId: null,
-      subscriptionStatus: "checkout_pending",
-    });
-    expect(state.allocations).toStrictEqual([
-      expect.objectContaining({ status: "pending_payment" }),
-    ]);
-    expect(
-      context.mocks.stripe.checkout.sessions.retrieve,
-    ).not.toHaveBeenCalled();
+    // Checkout remains resumable after the stale-snapshot sweep, and an unpaid
+    // purchase does not activate the plan or issue credits.
+    const resumed = await accept(client.create(request), [200]);
+    expect(resumed.body).toStrictEqual({ url: session.url });
+    const after = await readBillingStatus(fixture);
+    expect(after.tier).toBe(before.tier);
+    expect(after.credits).toBe(before.credits);
   });
 
   it("commits Checkout correlation before honoring an abort from Session creation", async () => {
