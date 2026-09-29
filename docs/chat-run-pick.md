@@ -19,10 +19,25 @@ capabilities with their own lifecycle rules. Connector runtime preparation is
 also shared with runtime synchronization in its own domain module. S1 automation
 enqueue writers and shared contracts have separate boundaries.
 
-The same-service rule keeps queue-specific reads and orchestration visible in
-Pick. It does not require duplicating execution capabilities used by non-chat
-production callers. Shared factories expose the read nodes and commands; they
-do not wrap the former asynchronous S3 helper chain. After agent authorization,
+File boundaries follow the platform thread signals pattern:
+`createChatPanelSignals` composes child factories such as
+`createChatThreadPinSignals` and `createChatThreadSharingSignals`. Pick likewise
+composes prompt, connector/catalog, storage and persistence signals objects at
+construction. A child receives the required `Computed`, `State` or `Command`
+references (or immutable identity), using explicit parameters or a narrow
+`Pick<Signals, ...>`. It exposes the nodes and commands the parent needs.
+
+Splitting files is supported; a plain asynchronous business-query or preparation
+helper chain is not a shared boundary. Factories construct every node once,
+perform no I/O, create no Store and capture no `AbortSignal`. Commands do not
+construct temporary subgraphs. Business reads belong directly in computed nodes;
+writes and orchestration belong in explicit commands, with the caller's signal
+last. Locked commit-time validation remains inside its transaction. Pure
+conversion and decoding functions can remain ordinary functions. Awaited result
+bags passed between stages do not substitute for signal dependencies. The Pi
+entry composes the same shared capabilities without adding a second chat entry.
+
+After agent authorization,
 member settings, paid-tool settings and persisted environment reads start beside
 bootstrap preparation. Provider preparation and connector account/credential
 reads depend on the metadata they consume, without waiting for unrelated
@@ -93,9 +108,21 @@ Storage plan, request and presigned-cache nodes are constructed with the factory
 Initializing a missing root records the actual created root in private state;
 downstream storage reads update from that result without reloading the pick or
 selecting another thread. Each new pick clears those initialization results.
-Pi memory summary resolution stays in the resource command because it can enqueue
-or requeue a missing/invalid projection, and a missing memory root's final identity
-is available only after initialization.
+Pi memory summary selection composes a fixed projection-read subgraph after the
+actual memory-root identity is available. A separate repair command enqueues a
+missing projection or requeues a corrupt one. This preserves the existing memory
+domain's best-effort repair and frozen recall behavior, including the flag-off
+and already-captured-epoch paths; it does not turn preparation failures into an
+alternative run or retry.
+
+Admission, model-policy initialization and allowance refresh also expose signals
+objects. Final admission deliberately captures a fresh plan, credit/expiry and
+usage-pack snapshot. Their independent read nodes join with `Promise.all`; an
+allowance refresh is requested only when admission needs it. Policy repair and
+allowance refresh commands retain their existing locked transaction semantics.
+The initial queued-model graph supplies its already-read snapshots directly as
+signals, while final admission owns its later snapshot. Commit-time locks and
+credit revalidation remain transaction-local.
 
 Configured connector account fallback is selection among different authorized
 accounts; it does not retry failed queries. Runtime catalog selection uses fixed

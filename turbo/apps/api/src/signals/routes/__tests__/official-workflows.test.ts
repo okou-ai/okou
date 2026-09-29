@@ -8369,20 +8369,13 @@ describe("Official Workflow Run admission", () => {
             status: 200,
             body: { success: true, duplicate: false },
           });
-          await expect
-            .poll(async () => {
-              return (
-                await readLatestWorkflowAutomationRunFixture(
-                  context,
-                  webhookAutomation.id,
-                )
-              )?.runId;
-            })
-            .toEqual(expect.any(String));
+          // Webhook acceptance schedules admission in waitUntil.
+          await flushWaitUntilForTest();
           const webhookRun = await readLatestWorkflowAutomationRunFixture(
             context,
             webhookAutomation.id,
           );
+          expect(webhookRun?.runId).toEqual(expect.any(String));
           if (!webhookRun) {
             throw new Error("Expected Official webhook Automation Run");
           }

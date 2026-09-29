@@ -135,7 +135,8 @@ import { computeContentHashFromHashes } from "@okouai/api-contracts/contracts/st
 import { publishPiResourceVersionIndex } from "./pi-resource-version-index.service";
 import {
   enqueueMemorySummaryProjection,
-  readMemorySummaryProjection,
+  createMemorySummaryProjectionObjects,
+  type MemorySummaryProjectionReadInput,
 } from "./memory-summary-projection.service";
 import { normalizeMountOverlay } from "./storage-mount-overlay";
 import type {
@@ -322,10 +323,8 @@ import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { personalSubscriptionAccountIdentity } from "./personal-subscription-recovery.service";
 import {
   isFreePlanForCreditAdmission,
-  checkOrgCreditsForRunAdmission,
-  resolveOrgCreditAvailability,
-  checkResolvedOrgCreditsForRunAdmission,
-  checkOrgPlanRunAdmission,
+  createRunAdmissionObjects,
+  type RunAdmissionInput,
 } from "./run-admission.service";
 import { observePreparedLaunchPersistenceForTest } from "./prepared-launch-persistence-observer.service";
 import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
@@ -8518,63 +8517,35 @@ async function buildPermissionManifest(
   );
 }
 
-async function checkFinalRunAdmission(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly modelProviderType: string | null | undefined;
-    readonly selectedModel: string | null | undefined;
-    readonly enforceBuiltInCredits: boolean;
-    readonly timing: ApiDispatchTimingCollector;
-  },
-  signal: AbortSignal,
-): Promise<CreateRunErrorResult | null> {
-  if (args.enforceBuiltInCredits) {
-    return await args.timing.measure(
-      "api_dispatch_check_built_in_credits",
-      "nested",
-      async () => {
-        const availability = await resolveOrgCreditAvailability({
-          db,
-          orgId: args.orgId,
-          userId: args.userId,
-        });
-        signal.throwIfAborted();
-        return (
-          (await checkResolvedOrgCreditsForRunAdmission({
-            db,
-            orgId: args.orgId,
-            userId: args.userId,
-            modelProviderType: args.modelProviderType,
-            selectedModel: args.selectedModel,
-            availability,
-          })) ?? null
-        );
-      },
-    );
-  }
-
-  const capabilities = await loadOrgPlanCapabilities(db, args.orgId);
-  signal.throwIfAborted();
-  return (
-    checkOrgPlanRunAdmission({
-      capabilities,
-      modelProviderType: args.modelProviderType,
-      selectedModel: args.selectedModel,
-    }) ?? null
+function createRunAdmissionCheckObjects() {
+  const internalInput$ = state<RunAdmissionInput | null>(null);
+  const input$ = computed((get) => {
+    const input = get(internalInput$);
+    if (!input) {
+      throw new Error("Run admission input is not installed");
+    }
+    return input;
+  });
+  const admission = createRunAdmissionObjects(input$);
+  const checkAdmission$ = command(
+    async ({ set }, input: RunAdmissionInput, signal: AbortSignal) => {
+      signal.throwIfAborted();
+      // The model/provider check and the final admission check deliberately
+      // take fresh snapshots. Never reuse an earlier phase's entitlement.
+      set(internalInput$, input);
+      return await set(admission.checkAdmission$, signal);
+    },
   );
-}
-
-async function checkOrgRunPlanStatus(
-  db: Db,
-  args: { readonly orgId: string },
-): Promise<CreateRunErrorResult | null> {
-  const capabilities = await loadOrgPlanCapabilities(db, args.orgId);
-  if (!capabilities) {
-    return insufficientCredits();
-  }
-  return capabilities.status === "active" ? null : insufficientCredits();
+  const checkPlanStatus$ = command(
+    async ({ get, set }, input: RunAdmissionInput, signal: AbortSignal) => {
+      signal.throwIfAborted();
+      set(internalInput$, input);
+      const capabilities = await get(admission.capabilities$);
+      signal.throwIfAborted();
+      return capabilities?.status === "active" ? null : insufficientCredits();
+    },
+  );
+  return { checkAdmission$, checkPlanStatus$ };
 }
 
 interface RunAgentObservation {
@@ -9918,6 +9889,11 @@ function noContentPiMemoryRecall(args: {
   return { ...args, status: "no-content" };
 }
 
+interface PriorPiMemoryRecall {
+  readonly recall: PiMemoryRecallSelection;
+  readonly mismatchReason?: "identity_mismatch" | "invalid_epoch";
+}
+
 function priorPiMemoryRecall(args: {
   readonly currentMemoryMount: Pick<
     StorageMountMetadata,
@@ -9927,7 +9903,7 @@ function priorPiMemoryRecall(args: {
     | readonly PersistedStorageMount[]
     | undefined;
   readonly persistedStorageMounts: readonly PersistedStorageMount[] | undefined;
-}): PiMemoryRecallSelection | undefined {
+}): PriorPiMemoryRecall | undefined {
   const priorMount =
     canonicalPiMemoryMount(args.previousRunStorageMounts) ??
     canonicalPiMemoryMount(args.persistedStorageMounts);
@@ -9942,101 +9918,121 @@ function priorPiMemoryRecall(args: {
     parsed.data.memoryStorageId === args.currentMemoryMount.storageId &&
     parsed.data.storageVersionId === args.currentMemoryMount.versionId
   ) {
-    return parsed.data;
+    return { recall: parsed.data };
   }
-  L.warn("Pi memory recall epoch did not match the pinned mount", {
-    memoryStorageId: args.currentMemoryMount.storageId,
-    storageVersionId: args.currentMemoryMount.versionId,
-    reason: parsed.success ? "identity_mismatch" : "invalid_epoch",
-  });
-  return noContentPiMemoryRecall({
-    memoryStorageId: args.currentMemoryMount.storageId,
-    storageVersionId: args.currentMemoryMount.versionId,
+  return {
+    recall: noContentPiMemoryRecall({
+      memoryStorageId: args.currentMemoryMount.storageId,
+      storageVersionId: args.currentMemoryMount.versionId,
+    }),
+    mismatchReason: parsed.success ? "identity_mismatch" : "invalid_epoch",
+  };
+}
+
+function createPiMemoryRecallSelectionObject(
+  input$: Computed<PreparePiLaunchResourcesArgs>,
+) {
+  return computed(async (get) => {
+    const args = get(input$);
+    const { metadata } = await args.storagePlan;
+    const currentMemoryMount = canonicalPiMemoryMount(metadata.storageMounts);
+    const persistedMemoryMount = canonicalPiMemoryMount(
+      metadata.persistedStorageMounts,
+    );
+    if (
+      args.chatThreadId === undefined ||
+      currentMemoryMount === undefined ||
+      persistedMemoryMount === undefined ||
+      persistedMemoryMount.storageId !== currentMemoryMount.storageId ||
+      persistedMemoryMount.version !== currentMemoryMount.versionId
+    ) {
+      return { kind: "unavailable" as const };
+    }
+    const identity = {
+      memoryStorageId: currentMemoryMount.storageId,
+      storageVersionId: currentMemoryMount.versionId,
+    };
+    if (!args.piMemoryEnabled) {
+      return {
+        kind: "captured" as const,
+        recall: noContentPiMemoryRecall(identity),
+        mismatchReason: undefined,
+      };
+    }
+    const prior = priorPiMemoryRecall({
+      currentMemoryMount,
+      previousRunStorageMounts: args.previousRunStorageMounts,
+      persistedStorageMounts: metadata.persistedStorageMounts,
+    });
+    return prior === undefined
+      ? {
+          kind: "projection" as const,
+          identity,
+          input: {
+            db: args.db,
+            args: { orgId: args.orgId, userId: args.userId, ...identity },
+          },
+        }
+      : { kind: "captured" as const, ...prior };
   });
 }
 
-async function resolvePiMemoryRecall(
-  args: {
-    readonly db: Db;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly piMemoryEnabled: boolean;
-    readonly storageMounts: readonly StorageMountMetadata[];
-    readonly persistedStorageMounts:
-      | readonly PersistedStorageMount[]
-      | undefined;
-    readonly previousRunStorageMounts:
-      | readonly PersistedStorageMount[]
-      | undefined;
-  },
-  signal: AbortSignal,
-): Promise<PiMemoryRecallSelection | undefined> {
-  const currentMemoryMount = canonicalPiMemoryMount(args.storageMounts);
-  const persistedMemoryMount = canonicalPiMemoryMount(
-    args.persistedStorageMounts,
+function createPiMemoryRecallObjects(
+  input$: Computed<PreparePiLaunchResourcesArgs>,
+) {
+  const selection$ = createPiMemoryRecallSelectionObject(input$);
+  const projectionInput$ = computed(
+    async (get): Promise<MemorySummaryProjectionReadInput | undefined> => {
+      const selection = await get(selection$);
+      return selection.kind === "projection" ? selection.input : undefined;
+    },
   );
-  if (
-    currentMemoryMount === undefined ||
-    persistedMemoryMount === undefined ||
-    persistedMemoryMount.storageId !== currentMemoryMount.storageId ||
-    persistedMemoryMount.version !== currentMemoryMount.versionId
-  ) {
-    return undefined;
-  }
-  if (!args.piMemoryEnabled) {
-    // PiMemory is off for this owner: the mount stays pinned, but neither a
-    // prior recall epoch nor the summary projection is read, so nothing from
-    // the memory tree reaches the prompt.
-    return noContentPiMemoryRecall({
-      memoryStorageId: currentMemoryMount.storageId,
-      storageVersionId: currentMemoryMount.versionId,
-    });
-  }
-
-  const prior = priorPiMemoryRecall({
-    currentMemoryMount,
-    previousRunStorageMounts: args.previousRunStorageMounts,
-    persistedStorageMounts: args.persistedStorageMounts,
-  });
-  if (prior !== undefined) {
-    return prior;
-  }
-
-  const projection = await settle(
-    readMemorySummaryProjection(
-      args.db,
-      {
-        orgId: args.orgId,
-        userId: args.userId,
-        memoryStorageId: currentMemoryMount.storageId,
-        storageVersionId: currentMemoryMount.versionId,
-      },
-      signal,
-    ),
-    signal,
+  const { projection$, repairProjection$ } =
+    createMemorySummaryProjectionObjects(projectionInput$);
+  const resolvePiMemoryRecall$ = command(
+    async (
+      { get, set },
+      signal: AbortSignal,
+    ): Promise<PiMemoryRecallSelection | undefined> => {
+      const selection = await get(selection$);
+      signal.throwIfAborted();
+      if (selection.kind === "unavailable") {
+        return undefined;
+      }
+      if (selection.kind === "captured") {
+        if (selection.mismatchReason) {
+          L.warn("Pi memory recall epoch did not match the pinned mount", {
+            memoryStorageId: selection.recall.memoryStorageId,
+            storageVersionId: selection.recall.storageVersionId,
+            reason: selection.mismatchReason,
+          });
+        }
+        return selection.recall;
+      }
+      const projection = await settle(get(projection$), signal);
+      signal.throwIfAborted();
+      if (!projection.ok) {
+        L.warn("Pi memory summary projection read failed", {
+          ...selection.identity,
+          errorClass:
+            projection.error instanceof Error
+              ? projection.error.name
+              : "NonErrorThrown",
+        });
+        return noContentPiMemoryRecall(selection.identity);
+      }
+      await set(repairProjection$, projection.value, signal);
+      const ready = projection.value?.ready;
+      return ready
+        ? piMemoryRecallSelectionSchema.parse({
+            status: "ready",
+            ...selection.identity,
+            ...ready,
+          })
+        : noContentPiMemoryRecall(selection.identity);
+    },
   );
-  if (!projection.ok) {
-    L.warn("Pi memory summary projection read failed", {
-      memoryStorageId: currentMemoryMount.storageId,
-      storageVersionId: currentMemoryMount.versionId,
-      errorClass:
-        projection.error instanceof Error
-          ? projection.error.name
-          : "NonErrorThrown",
-    });
-  }
-  if (!projection.ok || projection.value === null) {
-    return noContentPiMemoryRecall({
-      memoryStorageId: currentMemoryMount.storageId,
-      storageVersionId: currentMemoryMount.versionId,
-    });
-  }
-  return piMemoryRecallSelectionSchema.parse({
-    status: "ready",
-    memoryStorageId: currentMemoryMount.storageId,
-    storageVersionId: currentMemoryMount.versionId,
-    ...projection.value,
-  });
+  return { resolvePiMemoryRecall$ };
 }
 
 function withPiMemoryRecallEpoch(
@@ -10126,101 +10122,102 @@ interface PreparePiLaunchResourcesArgs {
   readonly piLaunchConfig: CreateAgentRunArgs["piLaunchConfig"];
 }
 
-const preparePiLaunchResources$ = command(
-  async (
-    _store,
-    args: PreparePiLaunchResourcesArgs,
-    signal: AbortSignal,
-  ): Promise<PreparedPiLaunchResources | undefined> => {
-    if (args.piSandbox === undefined) {
-      return undefined;
+function createPreparePiLaunchResourcesCommand() {
+  const internalInput$ = state<PreparePiLaunchResourcesArgs | null>(null);
+  const input$ = computed((get) => {
+    const input = get(internalInput$);
+    if (!input) {
+      throw new Error("Pi launch resources have no captured input");
     }
-    const piSandbox = args.piSandbox;
-    const threadless = args.chatThreadId === undefined;
-    const sessionId = args.chatThreadId ?? args.runId;
-    const observe = piPreparationObserver(args.runId);
-    const finish = startPiPreparationObservation(observe, "launch", signal);
-    const result = await onRejection(
-      measureApiDispatchTiming(
-        args.timing,
-        "api_dispatch_prepare_pi_launch_resources",
-        "nested",
-        async () => {
-          const resumeSessionPromise = threadless
-            ? Promise.resolve(undefined)
-            : measureApiDispatchTiming(
-                args.timing,
-                "api_dispatch_prepare_pi_launch_resume_session",
-                "nested",
-                async () => {
-                  return await measurePiPreparation(
-                    observe,
-                    "launch_resume",
-                    () => {
-                      return Promise.resolve(args.resumeSession);
-                    },
-                    signal,
-                  );
-                },
-              );
-          const memoryPromise = (async () => {
-            // Both request and canonical session writeback ownership/version and
-            // overlay order are final before recall can observe this attempt.
-            const { metadata } = await args.storagePlan;
-            signal.throwIfAborted();
-            const memoryRecall = threadless
-              ? undefined
-              : await measurePiPreparation(
-                  observe,
-                  "launch_memory",
-                  () => {
-                    return resolvePiMemoryRecall(
-                      {
-                        db: args.db,
-                        orgId: args.orgId,
-                        userId: args.userId,
-                        piMemoryEnabled: args.piMemoryEnabled,
-                        storageMounts: metadata.storageMounts,
-                        persistedStorageMounts: metadata.persistedStorageMounts,
-                        previousRunStorageMounts: args.previousRunStorageMounts,
+    return input;
+  });
+  const { resolvePiMemoryRecall$ } = createPiMemoryRecallObjects(input$);
+  return command(
+    async (
+      { set },
+      args: PreparePiLaunchResourcesArgs,
+      signal: AbortSignal,
+    ): Promise<PreparedPiLaunchResources | undefined> => {
+      if (args.piSandbox === undefined) {
+        return undefined;
+      }
+      set(internalInput$, args);
+      const piSandbox = args.piSandbox;
+      const threadless = args.chatThreadId === undefined;
+      const sessionId = args.chatThreadId ?? args.runId;
+      const observe = piPreparationObserver(args.runId);
+      const finish = startPiPreparationObservation(observe, "launch", signal);
+      const result = await onRejection(
+        measureApiDispatchTiming(
+          args.timing,
+          "api_dispatch_prepare_pi_launch_resources",
+          "nested",
+          async () => {
+            const resumeSessionPromise = threadless
+              ? Promise.resolve(undefined)
+              : measureApiDispatchTiming(
+                  args.timing,
+                  "api_dispatch_prepare_pi_launch_resume_session",
+                  "nested",
+                  async () => {
+                    return await measurePiPreparation(
+                      observe,
+                      "launch_resume",
+                      () => {
+                        return Promise.resolve(args.resumeSession);
                       },
                       signal,
                     );
                   },
-                  signal,
                 );
-            return { memoryRecall };
-          })();
-          const [resumeSession, { memoryRecall }] = await Promise.all([
-            resumeSessionPromise,
-            memoryPromise,
-          ]);
-          signal.throwIfAborted();
-          return measurePiPreparationSync(
-            observe,
-            "launch_identity",
-            () => {
-              return assemblePiLaunchResources({
-                modelConfig: piSandbox,
-                piLaunchConfig: args.piLaunchConfig,
-                memoryRecall,
-                resumeSession,
-                sessionId,
-              });
-            },
-            signal,
-          );
+            const memoryPromise = (async () => {
+              // Both request and canonical session writeback ownership/version and
+              // overlay order are final before recall can observe this attempt.
+              await args.storagePlan;
+              signal.throwIfAborted();
+              const memoryRecall = threadless
+                ? undefined
+                : await measurePiPreparation(
+                    observe,
+                    "launch_memory",
+                    () => {
+                      return set(resolvePiMemoryRecall$, signal);
+                    },
+                    signal,
+                  );
+              return { memoryRecall };
+            })();
+            const [resumeSession, { memoryRecall }] = await Promise.all([
+              resumeSessionPromise,
+              memoryPromise,
+            ]);
+            signal.throwIfAborted();
+            return measurePiPreparationSync(
+              observe,
+              "launch_identity",
+              () => {
+                return assemblePiLaunchResources({
+                  modelConfig: piSandbox,
+                  piLaunchConfig: args.piLaunchConfig,
+                  memoryRecall,
+                  resumeSession,
+                  sessionId,
+                });
+              },
+              signal,
+            );
+          },
+        ),
+        () => {
+          finish("error");
         },
-      ),
-      () => {
-        finish("error");
-      },
-    );
-    signal.throwIfAborted();
-    finish("success");
-    return result;
-  },
-);
+      );
+      signal.throwIfAborted();
+      finish("success");
+      return result;
+    },
+  );
+}
 
 function preparedRunnerGroup(
   content: agentRunCreateAgentExecutionConfig,
@@ -10533,6 +10530,7 @@ function createMaterializeStorageCommand(
     typeof createAgentRunStorageObjects
   >["materializeAgentRunStorage$"],
 ) {
+  const preparePiLaunchResources$ = createPreparePiLaunchResourcesCommand();
   return command(
     async (
       { get, set },
@@ -15740,24 +15738,33 @@ function finalizePreparedRunContext(
   };
 }
 
-const checkUnavailableProviderCredits$ = command(
-  async ({ set }, args: CreateAgentRunArgs, signal: AbortSignal) => {
-    const failure = await checkOrgCreditsForRunAdmission({
-      db: set(writeDb$),
-      orgId: args.orgId,
-      userId: args.userId,
-      modelProviderType: "built-in",
-      selectedModel: args.selectedModelOverride,
-    });
-    signal.throwIfAborted();
-    return failure;
-  },
-);
+function createCheckUnavailableProviderCreditsCommand() {
+  const { checkAdmission$ } = createRunAdmissionCheckObjects();
+  return command(
+    async ({ set }, args: CreateAgentRunArgs, signal: AbortSignal) => {
+      return await set(
+        checkAdmission$,
+        {
+          db: set(writeDb$),
+          orgId: args.orgId,
+          userId: args.userId,
+          modelProviderType: "built-in",
+          selectedModel: args.selectedModelOverride,
+          enforceBuiltInCredits: true,
+        },
+        signal,
+      );
+    },
+  );
+}
 
 function createPrepareAgentRunCommand(
   internalContextInput$: State<PrepareRunContextInput | null>,
   runContext$: Computed<Promise<PreparedRunContext | CreateRunErrorResult>>,
 ) {
+  const { checkPlanStatus$ } = createRunAdmissionCheckObjects();
+  const checkUnavailableProviderCredits$ =
+    createCheckUnavailableProviderCreditsCommand();
   const prepareAgentRun$ = command(
     async (
       { get, set },
@@ -15784,7 +15791,18 @@ function createPrepareAgentRunCommand(
           "api_dispatch_check_org_tier",
           "top_level",
           async () => {
-            return await checkOrgRunPlanStatus(db, { orgId: args.orgId });
+            return await set(
+              checkPlanStatus$,
+              {
+                db,
+                orgId: args.orgId,
+                userId: args.userId,
+                modelProviderType: args.modelProviderType,
+                selectedModel: args.selectedModelOverride,
+                enforceBuiltInCredits: false,
+              },
+              signal,
+            );
           },
         );
         signal.throwIfAborted();
@@ -15840,6 +15858,7 @@ function createCompleteAgentRunCommand(
     typeof createLaunchObjects
   >["createAtomicLaunchRun$"],
 ) {
+  const { checkAdmission$ } = createRunAdmissionCheckObjects();
   const completeAgentRun$ = command(
     async (
       { set },
@@ -15866,18 +15885,27 @@ function createCompleteAgentRunCommand(
         "api_dispatch_check_run_admission",
         "top_level",
         async () => {
-          return await checkFinalRunAdmission(
-            db,
-            {
-              orgId: args.orgId,
-              userId: args.userId,
-              modelProviderType,
-              selectedModel,
-              enforceBuiltInCredits,
-              timing,
-            },
-            signal,
-          );
+          const check = () => {
+            return set(
+              checkAdmission$,
+              {
+                db,
+                orgId: args.orgId,
+                userId: args.userId,
+                modelProviderType,
+                selectedModel,
+                enforceBuiltInCredits,
+              },
+              signal,
+            );
+          };
+          return enforceBuiltInCredits
+            ? await timing.measure(
+                "api_dispatch_check_built_in_credits",
+                "nested",
+                check,
+              )
+            : await check();
         },
       );
       signal.throwIfAborted();
@@ -18754,6 +18782,8 @@ function createPrepareReadySelectedRunCommand(
   sources?: SelectedAgentRunGraphSources,
   earlyStorage?: ReturnType<typeof createSelectedStorageObjects>,
 ) {
+  const checkUnavailableProviderCredits$ =
+    createCheckUnavailableProviderCreditsCommand();
   const { input$, runArgs$, shared } = graph;
   const { contextInput$, runContext$ } = context;
   const observeExecution$ = createObserveSelectedExecutionCommand(input$);

@@ -4118,62 +4118,53 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     });
   });
 
-  it("selects reusable-sandbox preferences by profile and history generation", async () => {
-    const { reuseRunnerId, first, heartbeatHolder, pollFollowUp } =
-      await setupSameThreadReuseScenario();
+  it.each(["mismatched profile", "different generation", "exact generation"])(
+    "selects reusable-sandbox preferences by profile and history generation: %s",
+    async (holder) => {
+      const { reuseRunnerId, first, heartbeatHolder, pollFollowUp } =
+        await setupSameThreadReuseScenario();
 
-    await heartbeatHolder({
-      admittableProfiles: ["vm0/default"],
-      workspaceCaches: [{ profile: "vm0/large", workspaceAffinityVersion: 1 }],
-    });
-    const mismatchedCapableWorkspace = await pollFollowUp(
-      "continue with a mismatched capable workspace",
-    );
-    expect(runnerPreference(mismatchedCapableWorkspace.job)).toStrictEqual({
-      kind: "noPreference",
-      reason: "noViableHolder",
-    });
+      if (holder === "mismatched profile") {
+        await heartbeatHolder({
+          admittableProfiles: ["vm0/default"],
+          workspaceCaches: [
+            { profile: "vm0/large", workspaceAffinityVersion: 1 },
+          ],
+        });
+        const mismatchedCapableWorkspace = await pollFollowUp(
+          "continue with a mismatched capable workspace",
+        );
+        expect(runnerPreference(mismatchedCapableWorkspace.job)).toStrictEqual({
+          kind: "noPreference",
+          reason: "noViableHolder",
+        });
+        return;
+      }
 
-    await heartbeatHolder({
-      admittableProfiles: [],
-      reusableSandbox: {
-        profile: "vm0/default",
-        historyGenerationRunId: randomUUID(),
-      },
-    });
-    const differentGenerationHolder = await pollFollowUp(
-      "continue with a different reusable generation",
-    );
-    expect(runnerPreference(differentGenerationHolder.job)).toStrictEqual({
-      kind: "preference",
-      runnerIdentity: {
-        runnerId: reuseRunnerId,
-        heartbeatGeneration: 1,
-      },
-      tier: "reusableSandbox",
-      expiresAt: expect.any(String),
-    });
-
-    await heartbeatHolder({
-      admittableProfiles: [],
-      reusableSandbox: {
-        profile: "vm0/default",
-        historyGenerationRunId: first.runId,
-      },
-    });
-    const exactGenerationHolder = await pollFollowUp(
-      "continue with exact reusable generation",
-    );
-    expect(runnerPreference(exactGenerationHolder.job)).toStrictEqual({
-      kind: "preference",
-      runnerIdentity: {
-        runnerId: reuseRunnerId,
-        heartbeatGeneration: 1,
-      },
-      tier: "exactSandbox",
-      expiresAt: expect.any(String),
-    });
-  });
+      const exactGeneration = holder === "exact generation";
+      await heartbeatHolder({
+        admittableProfiles: [],
+        reusableSandbox: {
+          profile: "vm0/default",
+          historyGenerationRunId: exactGeneration ? first.runId : randomUUID(),
+        },
+      });
+      const reusableHolder = await pollFollowUp(
+        exactGeneration
+          ? "continue with exact reusable generation"
+          : "continue with a different reusable generation",
+      );
+      expect(runnerPreference(reusableHolder.job)).toStrictEqual({
+        kind: "preference",
+        runnerIdentity: {
+          runnerId: reuseRunnerId,
+          heartbeatGeneration: 1,
+        },
+        tier: exactGeneration ? "exactSandbox" : "reusableSandbox",
+        expiresAt: expect.any(String),
+      });
+    },
+  );
 
   it("prefers a recent same-generation predecessor before its producer heartbeat arrives", async () => {
     const sourceCompletedAt = now();
@@ -4658,110 +4649,78 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     await flushWaitUntilForTest();
   });
 
-  it("omits same-thread reuse preferences for unavailable holders", async () => {
-    const {
-      actor,
-      api,
-      cliAgentSessionId,
-      first,
-      heartbeatHolder,
-      pollFollowUp,
-      waitForCancellation,
-      webhooks,
-    } = await setupSameThreadReuseScenario();
+  it.each(["starting", "full", "stale", "incompatible profile", "draining"])(
+    "omits same-thread reuse preferences for unavailable holders: %s",
+    async (holder) => {
+      const {
+        actor,
+        api,
+        cliAgentSessionId,
+        first,
+        heartbeatHolder,
+        pollFollowUp,
+        waitForCancellation,
+        webhooks,
+      } = await setupSameThreadReuseScenario();
 
-    await heartbeatHolder({
-      admittableProfiles: ["vm0/default"],
-      mode: "starting",
-    });
-    const startingHolder = await pollFollowUp(
-      "continue while holder is starting",
-    );
-    expect(startingHolder.job?.cliAgentSessionId).toBe(cliAgentSessionId);
-    expect(runnerPreference(startingHolder.job)).toMatchObject({
-      kind: "noPreference",
-    });
-
-    await heartbeatHolder({
-      admittableProfiles: [],
-    });
-    const unavailableHolder = await pollFollowUp(
-      "continue when holder is full",
-      false,
-    );
-    expect(unavailableHolder.job?.cliAgentSessionId).toBe(cliAgentSessionId);
-    expect(runnerPreference(unavailableHolder.job)).toMatchObject({
-      kind: "noPreference",
-    });
-    const unavailableClaim = await api.claimRunnerJob(
-      unavailableHolder.run.runId,
-    );
-    expect(unavailableClaim.prompt).toBe("continue when holder is full");
-    await api.requestCancelRun(actor, unavailableHolder.run.runId, [200]);
-    await webhooks.requestAgentComplete(
-      {
-        runId: unavailableHolder.run.runId,
-        exitCode: 1,
-        error: "Run cancelled",
-      },
-      { authorization: `Bearer ${unavailableClaim.sandboxToken}` },
-      [200],
-    );
-    await flushWaitUntilForTest();
-    await waitForCancellation(unavailableHolder.run.runId);
-
-    mockNow(now() - 60_000);
-    onTestFinished(() => {
-      clearMockNow();
-    });
-    await heartbeatHolder({
-      admittableProfiles: ["vm0/default"],
-      workspaceCaches: [
-        { profile: "vm0/default", workspaceAffinityVersion: 1 },
-      ],
-    });
-    clearMockNow();
-    const staleHolder = await pollFollowUp(
-      "continue after holder heartbeat is stale",
-    );
-    expect(staleHolder.job?.cliAgentSessionId).toBe(cliAgentSessionId);
-    expect(runnerPreference(staleHolder.job)).toMatchObject({
-      kind: "noPreference",
-    });
-
-    await heartbeatHolder({
-      admittableProfiles: [],
-      reusableSandbox: {
-        profile: "vm0/large",
-        historyGenerationRunId: first.runId,
-      },
-    });
-    const profileIncompatibleHolder = await pollFollowUp(
-      "continue when holder cannot run requested profile",
-    );
-    expect(profileIncompatibleHolder.job?.cliAgentSessionId).toBe(
-      cliAgentSessionId,
-    );
-    expect(runnerPreference(profileIncompatibleHolder.job)).toMatchObject({
-      kind: "noPreference",
-    });
-
-    await heartbeatHolder({
-      admittableProfiles: [],
-      reusableSandbox: {
-        profile: "vm0/default",
-        historyGenerationRunId: first.runId,
-      },
-      mode: "draining",
-    });
-    const drainingHolder = await pollFollowUp(
-      "continue while holder is draining",
-    );
-    expect(drainingHolder.job?.cliAgentSessionId).toBe(cliAgentSessionId);
-    expect(runnerPreference(drainingHolder.job)).toMatchObject({
-      kind: "noPreference",
-    });
-  });
+      if (holder === "starting") {
+        await heartbeatHolder({
+          admittableProfiles: ["vm0/default"],
+          mode: "starting",
+        });
+      } else if (holder === "full") {
+        await heartbeatHolder({ admittableProfiles: [] });
+      } else if (holder === "stale") {
+        mockNow(now() - 60_000);
+        onTestFinished(() => {
+          clearMockNow();
+        });
+        await heartbeatHolder({
+          admittableProfiles: ["vm0/default"],
+          workspaceCaches: [
+            { profile: "vm0/default", workspaceAffinityVersion: 1 },
+          ],
+        });
+        clearMockNow();
+      } else {
+        await heartbeatHolder({
+          admittableProfiles: [],
+          reusableSandbox: {
+            profile: holder === "draining" ? "vm0/default" : "vm0/large",
+            historyGenerationRunId: first.runId,
+          },
+          ...(holder === "draining" ? { mode: "draining" as const } : {}),
+        });
+      }
+      const prompt =
+        holder === "full"
+          ? "continue when holder is full"
+          : `continue with ${holder} holder`;
+      const unavailableHolder = await pollFollowUp(prompt, holder !== "full");
+      expect(unavailableHolder.job?.cliAgentSessionId).toBe(cliAgentSessionId);
+      expect(runnerPreference(unavailableHolder.job)).toMatchObject({
+        kind: "noPreference",
+      });
+      if (holder === "full") {
+        const unavailableClaim = await api.claimRunnerJob(
+          unavailableHolder.run.runId,
+        );
+        expect(unavailableClaim.prompt).toBe("continue when holder is full");
+        await api.requestCancelRun(actor, unavailableHolder.run.runId, [200]);
+        await webhooks.requestAgentComplete(
+          {
+            runId: unavailableHolder.run.runId,
+            exitCode: 1,
+            error: "Run cancelled",
+          },
+          { authorization: `Bearer ${unavailableClaim.sandboxToken}` },
+          [200],
+        );
+        await flushWaitUntilForTest();
+        await waitForCancellation(unavailableHolder.run.runId);
+      }
+    },
+  );
 
   async function setupOrderedHeartbeats() {
     const api = createRunsApi(context);

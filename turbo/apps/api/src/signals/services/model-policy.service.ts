@@ -14,7 +14,7 @@ import {
 } from "./effective-model-route.service";
 import { checkOrgPlanRunAdmission } from "./run-admission.service";
 import { isCloudModelMappingValid } from "@okouai/api-contracts/contracts/cloud-model-mapping";
-import { command } from "ccstate";
+import { command, type Computed } from "ccstate";
 import { and, asc, eq, inArray, notInArray, sql } from "drizzle-orm";
 import {
   DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
@@ -50,6 +50,8 @@ import {
   modelProviderSurfaces,
 } from "@okouai/db/schema/model-provider-gateway";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
+import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
 import { runModelCatalog } from "@okouai/db/schema/run-model-catalog";
 import {
@@ -61,6 +63,7 @@ import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import {
   loadOrgPlanCapabilities,
+  runtimeStatusForEntitlement,
   type OrgPlanCapabilities,
 } from "./org-plan-entitlement-read.service";
 
@@ -537,8 +540,12 @@ async function ensureOrgModelPoliciesLocked(
   db: Db,
   orgId: string,
   userId: string,
+  suppliedPlanCapabilities?: OrgPlanCapabilities | null,
 ): Promise<EnsuredOrgModelPolicyFacts> {
-  const orgPlanCapabilities = await loadOrgPlanCapabilities(db, orgId);
+  const orgPlanCapabilities =
+    suppliedPlanCapabilities === undefined
+      ? await loadOrgPlanCapabilities(db, orgId)
+      : suppliedPlanCapabilities;
   const capabilities = modelPolicyCapabilities(orgPlanCapabilities);
   const seedDefaultModel = getSeedDefaultModelForPlan(capabilities);
   const existing = await loadRows(db, orgId);
@@ -672,8 +679,110 @@ export async function ensureOrgModelPolicyFacts(
   );
 }
 
+interface OrgModelPolicyInitializationScope {
+  readonly orgId: string;
+  readonly userId: string;
+}
+
+/** Construct policy repair once; normal admission consumes its existing read graph. */
+export function createOrgModelPolicyInitializationObjects(
+  input$: Computed<
+    | OrgModelPolicyInitializationScope
+    | Promise<OrgModelPolicyInitializationScope>
+  >,
+  initialFacts$: Computed<
+    EnsuredOrgModelPolicyFacts | Promise<EnsuredOrgModelPolicyFacts>
+  >,
+) {
+  const initializeModelPolicy$ = command(
+    async ({ get, set }, signal: AbortSignal) => {
+      const [input, initial] = await Promise.all([
+        get(input$),
+        get(initialFacts$),
+      ]);
+      signal.throwIfAborted();
+      const capabilities = modelPolicyCapabilities(initial.orgPlanCapabilities);
+      if (
+        initial.policies.length > 0 &&
+        !shouldReplaceExistingDefaultForPlan(
+          initial.policies.find((policy) => {
+            return policy.isDefault;
+          }),
+          capabilities,
+        )
+      ) {
+        return initial;
+      }
+      const facts = await set(writeDb$).transaction(async (tx) => {
+        await lockPolicyWrites(tx, input.orgId);
+        signal.throwIfAborted();
+        // Revalidate after the policy-write fence. The normal request reads
+        // already live in the caller's graph; these reads protect this write.
+        const [row] = await tx
+          .select({
+            planKey: orgPlanEntitlements.planKey,
+            status: orgPlanEntitlements.status,
+            baseConcurrencyLimit: orgPlanEntitlements.baseConcurrencyLimit,
+            canBuyConcurrency: orgPlanEntitlements.canBuyConcurrency,
+            canBuyCredits: orgPlanEntitlements.canBuyCredits,
+            showUsagePack: orgPlanEntitlements.showUsagePack,
+            autoRechargeAllowed: orgPlanEntitlements.autoRechargeAllowed,
+            supportByok: orgPlanEntitlements.supportByok,
+            restrictedBuiltInModels:
+              orgPlanEntitlements.restrictedBuiltInModels,
+            videoGenerationAllowed: orgPlanEntitlements.videoGenerationAllowed,
+            workflowWebhookAutomationAllowed:
+              orgPlanEntitlements.workflowWebhookTriggerAllowed,
+            audioLifetimeLimit: orgPlanEntitlements.audioLifetimeLimit,
+            audioDailyRateLimit: orgPlanEntitlements.audioDailyRateLimit,
+            audioDailyDurationSeconds:
+              orgPlanEntitlements.audioDailyDurationSeconds,
+          })
+          .from(orgPlanEntitlements)
+          .where(eq(orgPlanEntitlements.orgId, input.orgId))
+          .limit(1);
+        signal.throwIfAborted();
+        let orgPlanCapabilities: OrgPlanCapabilities | null = null;
+        if (row) {
+          if (row.restrictedBuiltInModels === null) {
+            throw new Error(
+              `Unexpected NULL restricted_built_in_models for org plan entitlement ${input.orgId}`,
+            );
+          }
+          orgPlanCapabilities = {
+            ...row,
+            restrictedBuiltInModels: row.restrictedBuiltInModels,
+            status: runtimeStatusForEntitlement(row.status),
+          };
+        } else {
+          const [org] = await tx
+            .select({ orgId: orgMetadata.orgId })
+            .from(orgMetadata)
+            .where(eq(orgMetadata.orgId, input.orgId))
+            .limit(1);
+          signal.throwIfAborted();
+          if (org) {
+            throw new Error(`Missing org plan entitlement for ${input.orgId}`);
+          }
+        }
+        const initialized = await ensureOrgModelPoliciesLocked(
+          tx,
+          input.orgId,
+          input.userId,
+          orgPlanCapabilities,
+        );
+        signal.throwIfAborted();
+        return initialized;
+      });
+      signal.throwIfAborted();
+      return facts;
+    },
+  );
+  return { initializeModelPolicy$ };
+}
+
 /** Apply the existing initialization policy to an already-read request snapshot. */
-export function ensureOrgModelPolicyFactsFromSnapshot(
+function ensureOrgModelPolicyFactsFromSnapshot(
   db: Db,
   orgId: string,
   userId: string,

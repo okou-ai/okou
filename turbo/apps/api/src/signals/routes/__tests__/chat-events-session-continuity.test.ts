@@ -8,7 +8,13 @@ import {
   reassignThreadAgentFixture,
   replaceThreadSessionBindingFixture,
 } from "../../../test-fixtures/chat-events";
+import {
+  barrierQueryBinds,
+  barrierQueryText,
+  withDatabaseTransactionBarrierFixture,
+} from "../../../test-fixtures/database-transaction-barrier";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { onRejection } from "../../utils";
 import { expectApiError } from "./helpers/api-bdd";
 import { mockCodexDeviceAuthProvider } from "./helpers/api-bdd-auth-device";
 import { createFirewallApi } from "./helpers/api-bdd-firewall";
@@ -732,38 +738,67 @@ describe("CHAT-02: run-level model overrides", () => {
       throw new Error("Expected the first run to establish a session");
     }
 
-    const conversationClear = await holdThreadSessionConversationClearFixture({
-      threadId: first.threadId,
-      signal: context.signal,
-    });
-    onTestFinished(async () => {
-      conversationClear.release();
-      await conversationClear.done;
-    });
     const secondEventId = randomUUID();
-    await chat.requestSendEvent(
-      actor,
+    const sessionId = firstBinding.agent_session_id;
+    await withDatabaseTransactionBarrierFixture(
       {
-        agentId,
-        threadId: first.threadId,
-        prompt: "preserve the queued input if its checkpoint changes",
-        clientEventId: secondEventId,
+        select: (queryArgs) => {
+          const query = barrierQueryText(queryArgs);
+          return (
+            query.startsWith("select ") &&
+            query.includes('from "agent_sessions"') &&
+            query.includes("for update") &&
+            barrierQueryBinds(queryArgs, sessionId)
+          );
+        },
+        stopAt: (_queryArgs, selectingStatement) => {
+          return selectingStatement;
+        },
+        work: async (commit) => {
+          const conversationClear =
+            await holdThreadSessionConversationClearFixture({
+              threadId: first.threadId,
+              signal: context.signal,
+            });
+          const releaseClear = async () => {
+            conversationClear.release();
+            await conversationClear.done;
+          };
+          onTestFinished(releaseClear);
+          await onRejection(
+            (async () => {
+              await chat.requestSendEvent(
+                actor,
+                {
+                  agentId,
+                  threadId: first.threadId,
+                  prompt: "preserve the queued input if its checkpoint changes",
+                  clientEventId: secondEventId,
+                },
+                [201],
+              );
+              // Preparation must reach its real session revalidation before
+              // observing the lock. The independent read graph may take any
+              // amount of preparation time without consuming the poll budget.
+              await commit.entered;
+              const backgroundCompletion = (async () => {
+                await expect(flushWaitUntilForTest()).rejects.toThrow(
+                  "Chat thread session changed during run preparation",
+                );
+              })();
+              commit.release();
+              await expect
+                .poll(conversationClear.blockedWaiterCount)
+                .toBeGreaterThanOrEqual(1);
+              await releaseClear();
+              await backgroundCompletion;
+            })(),
+            releaseClear,
+          );
+        },
       },
-      [201],
+      context.signal,
     );
-    // The pending transaction observes the change after acquiring the session
-    // row lock. It must roll back once instead of preparing another launch.
-    await expect
-      .poll(conversationClear.blockedWaiterCount)
-      .toBeGreaterThanOrEqual(1);
-    const backgroundCompletion = (async () => {
-      await expect(flushWaitUntilForTest()).rejects.toThrow(
-        "Chat thread session changed during run preparation",
-      );
-    })();
-    conversationClear.release();
-    await conversationClear.done;
-    await backgroundCompletion;
 
     const events = await chat.listThreadEvents(actor, first.threadId);
     expect(

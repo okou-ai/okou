@@ -126,7 +126,7 @@ import {
 } from "@okouai/core/feature-switch";
 import {
   type EnsuredOrgModelPolicyFacts,
-  ensureOrgModelPolicyFactsFromSnapshot,
+  createOrgModelPolicyInitializationObjects,
 } from "./model-policy.service";
 import {
   canonicalChatInputModelSelection,
@@ -137,7 +137,6 @@ import {
 import {
   type OrgPlanCapabilities,
   runtimeStatusForEntitlement,
-  loadOrgPlanCapabilities,
 } from "./org-plan-entitlement-read.service";
 import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
 import {
@@ -172,7 +171,7 @@ import {
 import {
   ACTIVE_ALLOWANCE_STATUSES,
   activeAllowanceCutoff,
-  resolveUsageAllowanceAvailabilityFromSnapshot,
+  createUsageAllowanceObjects,
 } from "./usage-allowance.service";
 import { checkOrgPlanRunAdmission } from "./run-admission.service";
 import {
@@ -2608,42 +2607,29 @@ function createQueuedModelCommands(
 ) {
   const { input$, capabilities$, initialPolicies$, internalPolicyFacts$ } =
     sources;
-  const { allowanceSnapshot$ } = allowance;
+  const initialFacts$ = computed(async (get) => {
+    const [orgPlanCapabilities, policies] = await Promise.all([
+      get(capabilities$),
+      get(initialPolicies$),
+    ]);
+    return { orgPlanCapabilities, policies };
+  });
+  const { initializeModelPolicy$: ensureModelPolicy$ } =
+    createOrgModelPolicyInitializationObjects(input$, initialFacts$);
+  const allowanceInput$ = computed((get) => {
+    return { orgId: get(input$).orgId };
+  });
+  const { resolveAvailability$: refreshUsageAllowance$ } =
+    createUsageAllowanceObjects(allowanceInput$, allowance.allowanceSnapshot$);
   const initializeModelPolicy$ = command(
     async ({ get, set }, signal: AbortSignal) => {
       const input = get(input$);
-      const [orgPlanCapabilities, policies] = await Promise.all([
-        get(capabilities$),
-        get(initialPolicies$),
-      ]);
-      signal.throwIfAborted();
-      const initial = { orgPlanCapabilities, policies };
       const facts =
         input.userId === "__no_preference__"
-          ? initial
-          : await ensureOrgModelPolicyFactsFromSnapshot(
-              set(writeDb$),
-              input.orgId,
-              input.userId,
-              initial,
-            );
+          ? await get(initialFacts$)
+          : await set(ensureModelPolicy$, signal);
       signal.throwIfAborted();
       set(internalPolicyFacts$, facts);
-    },
-  );
-  const refreshUsageAllowance$ = command(
-    async ({ get, set }, signal: AbortSignal) => {
-      const startedAt = performance.now();
-      const snapshot = await get(allowanceSnapshot$);
-      signal.throwIfAborted();
-      const allowance = await resolveUsageAllowanceAvailabilityFromSnapshot(
-        set(writeDb$),
-        get(input$).orgId,
-        snapshot,
-        startedAt,
-      );
-      signal.throwIfAborted();
-      return allowance;
     },
   );
   return { initializeModelPolicy$, refreshUsageAllowance$ };
@@ -6228,105 +6214,138 @@ function createQueueHeadContextObject(
  * unique revoke edge with any other consumer, so it is written at most once;
  * a lost edge returns null.
  */
-async function appendChatQueueHeadRejection(
-  db: Db,
-  args: {
-    readonly chatThreadId: string;
-    readonly eventId: string;
-    readonly errorMarker: string;
-    readonly displayError: string;
+const appendChatQueueHeadRejection$ = command(
+  async (
+    { set },
+    args: {
+      readonly chatThreadId: string;
+      readonly eventId: string;
+      readonly errorMarker: string;
+      readonly displayError: string;
+    },
+    signal: AbortSignal,
+  ): Promise<{ readonly assistantEventId: string } | null> => {
+    signal.throwIfAborted();
+    const result = await set(writeDb$).transaction(async (tx) => {
+      const [head] = await tx
+        .select({
+          userMessage: canonicalChatEventUserMessage(),
+          createdAt: chatEvents.createdAt,
+        })
+        .from(chatEvents)
+        .where(
+          and(
+            eq(chatEvents.id, args.eventId),
+            eq(chatEvents.chatThreadId, args.chatThreadId),
+          ),
+        )
+        .limit(1);
+      if (!head?.userMessage) {
+        throw new Error("Queued input event is missing userMessage");
+      }
+      const rejectedAt = new Date(
+        Math.max(nowDate().getTime(), head.createdAt.getTime() + 1),
+      );
+      const rejected = await replaceChatEvent(tx, args.eventId, {
+        chatThreadId: args.chatThreadId,
+        eventType: "input.rejected",
+        userMessage: head.userMessage,
+        runId: null,
+        error: args.errorMarker,
+        createdAt: rejectedAt,
+      });
+      if (!rejected) {
+        return null;
+      }
+      const assistant = await insertChatEvent(tx, {
+        chatThreadId: args.chatThreadId,
+        eventType: "output.error",
+        content: args.displayError,
+        runId: null,
+        error: args.errorMarker,
+        createdAt: new Date(rejectedAt.getTime() + 1),
+      });
+      if (!assistant) {
+        throw new Error("Failed to append queued input rejection");
+      }
+      await touchChatThreadLastMessageAt(
+        tx,
+        args.chatThreadId,
+        assistant.createdAt,
+      );
+      return { assistantEventId: assistant.id };
+    });
+    signal.throwIfAborted();
+    return result;
   },
-): Promise<{ readonly assistantEventId: string } | null> {
-  return await db.transaction(async (tx) => {
-    const [head] = await tx
+);
+
+const publishChatQueueHeadConsumed$ = command(
+  async (
+    _context,
+    head: {
+      readonly chatThreadId: string;
+      readonly orgId: string;
+      readonly userId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    signal.throwIfAborted();
+    await publishChatThreadMessageCreatedSafely({
+      userId: head.userId,
+      orgId: head.orgId,
+      threadId: head.chatThreadId,
+    });
+    signal.throwIfAborted();
+    await publishThreadListChangedSafely({
+      userId: head.userId,
+      orgId: head.orgId,
+    });
+    signal.throwIfAborted();
+  },
+);
+
+/** Read only the billing guidance required by a rejected direct input. */
+function createDirectSendInsufficientCreditsMessage(
+  input$: State<ChatQueueConsumptionInput | null>,
+) {
+  return computed(async (get) => {
+    const input = get(input$);
+    if (!input) {
+      throw new Error("Rejection guidance requires a selected input");
+    }
+    const db = get(db$);
+    const [capabilities] = await db
       .select({
-        userMessage: canonicalChatEventUserMessage(),
-        createdAt: chatEvents.createdAt,
+        canBuyCredits: orgPlanEntitlements.canBuyCredits,
+        restrictedBuiltInModels: orgPlanEntitlements.restrictedBuiltInModels,
       })
-      .from(chatEvents)
-      .where(
-        and(
-          eq(chatEvents.id, args.eventId),
-          eq(chatEvents.chatThreadId, args.chatThreadId),
-        ),
-      )
+      .from(orgPlanEntitlements)
+      .where(eq(orgPlanEntitlements.orgId, input.orgId))
       .limit(1);
-    if (!head?.userMessage) {
-      throw new Error("Queued input event is missing userMessage");
+    if (!capabilities) {
+      const [org] = await db
+        .select({ orgId: orgMetadata.orgId })
+        .from(orgMetadata)
+        .where(eq(orgMetadata.orgId, input.orgId))
+        .limit(1);
+      if (org) {
+        throw new Error(`Missing org plan entitlement for ${input.orgId}`);
+      }
+    } else if (capabilities.restrictedBuiltInModels === null) {
+      throw new Error(
+        `Unexpected NULL restricted_built_in_models for org plan entitlement ${input.orgId}`,
+      );
     }
-    const rejectedAt = new Date(
-      Math.max(nowDate().getTime(), head.createdAt.getTime() + 1),
-    );
-    const rejected = await replaceChatEvent(tx, args.eventId, {
-      chatThreadId: args.chatThreadId,
-      eventType: "input.rejected",
-      userMessage: head.userMessage,
-      runId: null,
-      error: args.errorMarker,
-      createdAt: rejectedAt,
-    });
-    if (!rejected) {
-      return null;
-    }
-    const assistant = await insertChatEvent(tx, {
-      chatThreadId: args.chatThreadId,
-      eventType: "output.error",
-      content: args.displayError,
-      runId: null,
-      error: args.errorMarker,
-      createdAt: new Date(rejectedAt.getTime() + 1),
-    });
-    if (!assistant) {
-      throw new Error("Failed to append queued input rejection");
-    }
-    await touchChatThreadLastMessageAt(
-      tx,
-      args.chatThreadId,
-      assistant.createdAt,
-    );
-    return { assistantEventId: assistant.id };
-  });
-}
-
-async function publishChatQueueHeadConsumed(head: {
-  readonly chatThreadId: string;
-  readonly orgId: string;
-  readonly userId: string;
-}): Promise<void> {
-  await publishChatThreadMessageCreatedSafely({
-    userId: head.userId,
-    orgId: head.orgId,
-    threadId: head.chatThreadId,
-  });
-  await publishThreadListChangedSafely({
-    userId: head.userId,
-    orgId: head.orgId,
-  });
-}
-
-/**
- * The guidance a direct chat send (web, CLI, MCP, or another agent) shows when
- * the workspace has no spendable credits. Integration inputs use the
- * external-surface formatter instead.
- */
-async function directSendInsufficientCreditsMessage(
-  db: Db,
-  orgId: string,
-): Promise<string> {
-  const capabilities = await loadOrgPlanCapabilities(db, orgId);
-  const appUrl = env("APP_URL");
-  if (capabilities?.canBuyCredits !== true) {
+    const appUrl = env("APP_URL");
     return [
       "Insufficient credits. This workspace has no spendable credits right now.",
       "",
-      `Upgrade to Pro to get more credits: ${appUrl}/?settings=billing&billingView=plans`,
+      capabilities?.canBuyCredits === true
+        ? `Buy more credits or adjust auto-recharge: ${appUrl}/?settings=usage`
+        : `Upgrade to Pro to get more credits: ${appUrl}/?settings=billing&billingView=plans`,
     ].join("\n");
-  }
-  return [
-    "Insufficient credits. This workspace has no spendable credits right now.",
-    "",
-    `Buy more credits or adjust auto-recharge: ${appUrl}/?settings=usage`,
-  ].join("\n");
+  });
 }
 
 function isDirectSendContext(contextType: string | null): boolean {
@@ -6338,114 +6357,123 @@ function isDirectSendContext(contextType: string | null): boolean {
  * with a formatted `output.error`, tell the thread's viewers, and deliver the
  * error to the integration the input came from.
  */
-const rejectChatQueueHead$ = command(
-  async (
-    { set },
-    args: {
-      readonly head: ChatQueueHeadContext;
-      readonly rejection: ChatQueueHeadRejection;
-    },
-    signal: AbortSignal,
-  ): Promise<void> => {
-    const { head, rejection } = args;
-    // An admission conflict is written for the user as is; any other error
-    // is a run error the external-surface formatter explains.
-    const formatted = await settle(
-      (async () => {
-        if (rejection.error.code === "CONFLICT") {
-          return rejection.error.message;
-        }
-        if (
-          rejection.error.code === "INSUFFICIENT_CREDITS" &&
-          isDirectSendContext(head.contextType)
-        ) {
-          return await directSendInsufficientCreditsMessage(
-            set(writeDb$),
-            head.orgId,
+function createQueueHeadRejectionObjects(
+  input$: State<ChatQueueConsumptionInput | null>,
+) {
+  const directSendInsufficientCreditsMessage$ =
+    createDirectSendInsufficientCreditsMessage(input$);
+  const rejectChatQueueHead$ = command(
+    async (
+      { get, set },
+      args: {
+        readonly head: ChatQueueHeadContext;
+        readonly rejection: ChatQueueHeadRejection;
+      },
+      signal: AbortSignal,
+    ): Promise<void> => {
+      const { head, rejection } = args;
+      // An admission conflict is written for the user as is; any other error
+      // is a run error the external-surface formatter explains.
+      const formatted = await settle(
+        (async () => {
+          if (rejection.error.code === "CONFLICT") {
+            return rejection.error.message;
+          }
+          if (
+            rejection.error.code === "INSUFFICIENT_CREDITS" &&
+            isDirectSendContext(head.contextType)
+          ) {
+            return await get(directSendInsufficientCreditsMessage$);
+          }
+          return await set(
+            formatIntegrationRunError$,
+            {
+              orgId: head.orgId,
+              userId: rejection.userId,
+              code: rejection.error.code,
+              message: rejection.error.message,
+            },
+            signal,
           );
-        }
-        return await set(
-          formatIntegrationRunError$,
-          {
-            orgId: head.orgId,
-            userId: rejection.userId,
-            code: rejection.error.code,
-            message: rejection.error.message,
-          },
-          signal,
-        );
-      })(),
-      signal,
-    );
-    if (!formatted.ok) {
-      log.error("Failed to format queued input rejection", {
-        chatThreadId: head.chatThreadId,
-        eventId: head.id,
-        error: formatted.error,
-      });
-    }
-    const displayError = formatted.ok
-      ? formatted.value
-      : "The input could not be started";
-    const rejected = await appendChatQueueHeadRejection(set(writeDb$), {
-      chatThreadId: head.chatThreadId,
-      eventId: head.id,
-      errorMarker: rejection.error.code.toLowerCase(),
-      displayError,
-    });
-    signal.throwIfAborted();
-    if (!rejected) {
-      return;
-    }
-    const logRejection =
-      rejection.error.code === "INSUFFICIENT_CREDITS" ? log.debug : log.warn;
-    logRejection("Rejected queued chat input", {
-      chatThreadId: head.chatThreadId,
-      eventId: head.id,
-      contextType: head.contextType,
-      code: rejection.error.code,
-      error: rejection.error.message,
-    });
-    if (head.contextType === "automation") {
-      await settleRejectedAutomationInput(
-        set(writeDb$),
+        })(),
+        signal,
+      );
+      if (!formatted.ok) {
+        log.error("Failed to format queued input rejection", {
+          chatThreadId: head.chatThreadId,
+          eventId: head.id,
+          error: formatted.error,
+        });
+      }
+      const displayError = formatted.ok
+        ? formatted.value
+        : "The input could not be started";
+      const rejected = await set(
+        appendChatQueueHeadRejection$,
         {
-          contextId: head.contextId,
-          queueEventId: head.id,
-          error: rejection.error,
+          chatThreadId: head.chatThreadId,
+          eventId: head.id,
+          errorMarker: rejection.error.code.toLowerCase(),
+          displayError,
         },
         signal,
       );
-    }
-    signal.throwIfAborted();
-    await publishChatQueueHeadConsumed(head);
-    signal.throwIfAborted();
-    const delivery = rejection.delivery
-      ? set(
-          deliverQueuedPromptRejection$,
-          rejection.delivery,
-          rejected.assistantEventId,
-          signal,
-        )
-      : rejection.error.code === "INTERNAL_ERROR"
-        ? set(
-            deliverUnexpectedQueuedPromptRejection$,
-            { head, assistantEventId: rejected.assistantEventId },
-            signal,
-          )
-        : undefined;
-    if (!delivery) {
-      return;
-    }
-    await tapError(delivery, (error) => {
-      log.warn("Failed to deliver queued input rejection", {
+      signal.throwIfAborted();
+      if (!rejected) {
+        return;
+      }
+      const logRejection =
+        rejection.error.code === "INSUFFICIENT_CREDITS" ? log.debug : log.warn;
+      logRejection("Rejected queued chat input", {
         chatThreadId: head.chatThreadId,
         eventId: head.id,
-        error,
+        contextType: head.contextType,
+        code: rejection.error.code,
+        error: rejection.error.message,
       });
-    });
-  },
-);
+      if (head.contextType === "automation") {
+        await settleRejectedAutomationInput(
+          set(writeDb$),
+          {
+            contextId: head.contextId,
+            queueEventId: head.id,
+            error: rejection.error,
+          },
+          signal,
+        );
+      }
+      signal.throwIfAborted();
+      await set(publishChatQueueHeadConsumed$, head, signal);
+      signal.throwIfAborted();
+      const delivery = rejection.delivery
+        ? set(
+            deliverQueuedPromptRejection$,
+            rejection.delivery,
+            rejected.assistantEventId,
+            signal,
+          )
+        : rejection.error.code === "INTERNAL_ERROR"
+          ? set(
+              deliverUnexpectedQueuedPromptRejection$,
+              { head, assistantEventId: rejected.assistantEventId },
+              signal,
+            )
+          : undefined;
+      if (!delivery) {
+        return;
+      }
+      await tapError(delivery, (error) => {
+        log.warn("Failed to deliver queued input rejection", {
+          chatThreadId: head.chatThreadId,
+          eventId: head.id,
+          error,
+        });
+      });
+    },
+  );
+
+  return { rejectChatQueueHead$ };
+}
 
 const recordQueuedInputAdmissionTiming$ = command(
   async (
@@ -6491,11 +6519,31 @@ function unreadyQueueHeadRejection(
   };
 }
 
+function capturedQueueHeadContext(
+  input: ChatQueueConsumptionInput,
+  context: Pick<
+    ChatQueueHeadContext,
+    "contextType" | "contextId" | "userId" | "agentId"
+  >,
+  apiStartTime: number,
+): ChatQueueHeadContext {
+  return {
+    id: input.head.id,
+    chatThreadId: input.chatThreadId,
+    orgId: input.orgId,
+    apiStartTime,
+    dispatchFailedCallbacks: input.dispatchFailedCallbacks,
+    ...context,
+  };
+}
+
 /** Construct one consumer for the pick graph, sharing its request Store. */
 function createConsumeHeadCommand(
   internalInput$: ReturnType<typeof createQueueConsumptionInput>,
   headContext$: ReturnType<typeof createQueueHeadContextObject>,
 ) {
+  const { rejectChatQueueHead$ } =
+    createQueueHeadRejectionObjects(internalInput$);
   const automation = createQueuedAutomationRunObjects();
   const prompt = createQueuedPromptRunObjects();
   const promptExecution = createAgentRunObjects(prompt);
@@ -6513,14 +6561,7 @@ function createConsumeHeadCommand(
       if (!loaded) {
         return { kind: "passed" };
       }
-      const head: ChatQueueHeadContext = {
-        id: input.head.id,
-        chatThreadId: input.chatThreadId,
-        orgId: input.orgId,
-        apiStartTime,
-        dispatchFailedCallbacks: input.dispatchFailedCallbacks,
-        ...loaded,
-      };
+      const head = capturedQueueHeadContext(input, loaded, apiStartTime);
       await set(
         head.contextType === "automation"
           ? automation.initializeQueuedAutomation$
@@ -6658,7 +6699,7 @@ function createChatQueueConsumerObjects() {
       } else {
         await pending.assembly.launched.record(pending.runId, signal);
       }
-      await publishChatQueueHeadConsumed(pending.head);
+      await set(publishChatQueueHeadConsumed$, pending.head, signal);
       signal.throwIfAborted();
     },
   );

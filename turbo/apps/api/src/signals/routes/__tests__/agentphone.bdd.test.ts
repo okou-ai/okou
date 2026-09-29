@@ -2431,20 +2431,19 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(idle.body.job).toBeNull();
   });
 
-  it("replies in the group when iMessage drops the at-sign from an opening mention", async () => {
-    const runs = createRunsApi(context);
-    const ap = createAgentPhoneBddApi(context);
-    const { phone, runnerGroup, sends } = await entitledLinkedActor();
-    const conversationId = uniqueConversationId();
-
-    // The provider delivers native iMessage mentions as plain display names.
-    for (const body of [
-      "Okou hi",
-      "okou hi",
-      "  OKOU，帮我总结",
-      "Okou",
-      "okou would probably know",
-    ]) {
+  it.each([
+    "Okou hi",
+    "okou hi",
+    "  OKOU，帮我总结",
+    "Okou",
+    "okou would probably know",
+  ])(
+    "replies in the group when iMessage drops the at-sign from an opening mention: %s",
+    async (body) => {
+      const ap = createAgentPhoneBddApi(context);
+      const { phone, runnerGroup, sends } = await entitledLinkedActor();
+      const conversationId = uniqueConversationId();
+      // The provider delivers native iMessage mentions as plain display names.
       const beforeReply = sends.messages.length;
       const messageId = await ap.postAgentPhoneInboundMessage({
         channel: "imessage",
@@ -2462,8 +2461,23 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         replyToMessageId: messageId,
         body: "Task completed successfully.",
       });
-    }
+    },
+  );
 
+  it("ignores iMessage group text without an opening address", async () => {
+    const runs = createRunsApi(context);
+    const ap = createAgentPhoneBddApi(context);
+    const { phone, runnerGroup, sends } = await entitledLinkedActor();
+    const conversationId = uniqueConversationId();
+    await ap.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: phone,
+      body: "Okou establish the group thread",
+      conversationId,
+      isGroup: true,
+    });
+    const initialRun = await claimDispatchedRun(runnerGroup);
+    await completeSandboxRun(initialRun.sandboxToken, initialRun.runId, 0);
     // A URL, a longer name, or an embedded name is not an opening address.
     const beforeChatter = sends.messages.length;
     for (const body of [

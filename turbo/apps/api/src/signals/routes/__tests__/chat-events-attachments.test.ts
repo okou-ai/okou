@@ -88,13 +88,8 @@ async function waitForLaunchedRunId(
   threadId: string,
   clientEventId: string,
 ): Promise<string> {
-  const messages = await waitForThreadMessages(actor, threadId, (items) => {
-    return userMessages(items).some((message) => {
-      return (
-        message.revokesEventId === clientEventId && message.runId !== undefined
-      );
-    });
-  });
+  await flushWaitUntilForTest();
+  const messages = await chat.listThreadEvents(actor, threadId);
   const runId = userMessages(messages.events).find((message) => {
     return message.revokesEventId === clientEventId;
   })?.runId;

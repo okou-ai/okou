@@ -19,7 +19,7 @@ import {
 } from "@okouai/core/storage-names";
 import { memorySummaryProjections } from "@okouai/db/schema/memory-summary-projection";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
-import { command } from "ccstate";
+import { command, computed, state, type Computed } from "ccstate";
 import { and, asc, eq, isNull, lte, ne, or } from "drizzle-orm";
 import { encode } from "gpt-tokenizer/encoding/o200k_base";
 import { Parser } from "tar";
@@ -852,110 +852,55 @@ function readyProjectionIsAuthentic(
   );
 }
 
-async function requeueInvalidReadyProjection(
-  db: Db,
-  scope: MemorySummaryProjectionScope,
-  signal: AbortSignal,
-): Promise<void> {
-  await db
-    .update(memorySummaryProjections)
-    .set({
-      status: "pending",
-      leaseId: null,
-      leaseExpiresAt: null,
-      availableAt: nowDate(),
-      lastErrorClass: "read_integrity_mismatch",
-      content: null,
-      sourceHash: null,
-      sourceSize: null,
-      tokenCount: null,
-      updatedAt: nowDate(),
-    })
-    .where(
-      and(
-        eq(memorySummaryProjections.memoryStorageId, scope.memoryStorageId),
-        eq(memorySummaryProjections.storageVersionId, scope.storageVersionId),
-        eq(memorySummaryProjections.status, "ready"),
-      ),
-    );
-  signal.throwIfAborted();
+export interface MemorySummaryProjectionReadInput {
+  readonly db: Db;
+  readonly args: ReadMemorySummaryProjectionArgs;
 }
 
-export async function readMemorySummaryProjection(
-  db: Db,
-  args: ReadMemorySummaryProjectionArgs,
-  signal: AbortSignal,
-): Promise<ReadyMemorySummaryProjection | null> {
-  const [row] = await db
-    .select({
-      storageId: storages.id,
-      storageOrgId: storages.orgId,
-      storageUserId: storages.userId,
-      storageName: storages.name,
-      projectionStatus: memorySummaryProjections.status,
-      content: memorySummaryProjections.content,
-      sourceHash: memorySummaryProjections.sourceHash,
-      sourceSize: memorySummaryProjections.sourceSize,
-      tokenCount: memorySummaryProjections.tokenCount,
-    })
-    .from(storages)
-    .innerJoin(
-      storageVersions,
-      and(
-        eq(storageVersions.storageId, storages.id),
-        eq(storageVersions.id, args.storageVersionId),
-      ),
-    )
-    .leftJoin(
-      memorySummaryProjections,
-      and(
-        eq(memorySummaryProjections.memoryStorageId, storages.id),
-        eq(memorySummaryProjections.storageVersionId, storageVersions.id),
-        eq(memorySummaryProjections.orgId, args.orgId),
-        eq(memorySummaryProjections.userId, args.userId),
-      ),
-    )
-    .where(
-      and(
-        eq(storages.id, args.memoryStorageId),
-        eq(storages.orgId, args.orgId),
-        eq(storages.userId, args.userId),
-        eq(storages.name, MEMORY_ARTIFACT_NAME),
-        ne(storages.userId, VOLUME_ORG_USER_ID),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
+interface MemorySummaryProjectionReadRow {
+  readonly storageId: string;
+  readonly storageOrgId: string;
+  readonly storageUserId: string;
+  readonly storageName: string;
+  readonly projectionStatus: string | null;
+  readonly content: string | null;
+  readonly sourceHash: string | null;
+  readonly sourceSize: number | null;
+  readonly tokenCount: number | null;
+}
+
+interface MemorySummaryProjectionReadResult {
+  readonly input: MemorySummaryProjectionReadInput;
+  readonly ready: ReadyMemorySummaryProjection | null;
+  readonly repair?:
+    | {
+        readonly kind: "enqueue";
+        readonly storage: CanonicalMemoryStorageIdentity;
+      }
+    | { readonly kind: "requeue" };
+}
+
+function memorySummaryProjectionReadResult(
+  input: MemorySummaryProjectionReadInput,
+  row: MemorySummaryProjectionReadRow | undefined,
+): MemorySummaryProjectionReadResult {
   if (!row) {
-    return null;
+    return { input, ready: null };
   }
   if (row.projectionStatus === null) {
-    const enqueued = await settle(
-      enqueueMemorySummaryProjection(
-        {
-          db,
-          storage: {
-            id: row.storageId,
-            orgId: row.storageOrgId,
-            userId: row.storageUserId,
-            name: row.storageName,
-          },
-          storageVersionId: args.storageVersionId,
+    return {
+      input,
+      ready: null,
+      repair: {
+        kind: "enqueue",
+        storage: {
+          id: row.storageId,
+          orgId: row.storageOrgId,
+          userId: row.storageUserId,
+          name: row.storageName,
         },
-        signal,
-      ),
-      signal,
-    );
-    if (!enqueued.ok) {
-      log.warn("Memory summary projection read enqueue failed", {
-        orgId: args.orgId,
-        userId: args.userId,
-        memoryStorageId: args.memoryStorageId,
-        storageVersionId: args.storageVersionId,
-        errorClass: retryErrorClass(enqueued.error),
-      });
-    }
-    return null;
+      },
+    };
   }
   if (
     row.projectionStatus !== "ready" ||
@@ -964,48 +909,180 @@ export async function readMemorySummaryProjection(
     row.sourceSize === null ||
     row.tokenCount === null
   ) {
-    return null;
+    return { input, ready: null };
   }
-
   const ready = {
     content: row.content,
     sourceHash: row.sourceHash,
     sourceSize: row.sourceSize,
     tokenCount: row.tokenCount,
   };
-  if (!readyProjectionIsAuthentic(ready)) {
-    const requeued = await settle(
-      requeueInvalidReadyProjection(
-        db,
-        {
-          memoryStorageId: args.memoryStorageId,
-          storageVersionId: args.storageVersionId,
-        },
+  return readyProjectionIsAuthentic(ready)
+    ? { input, ready }
+    : { input, ready: null, repair: { kind: "requeue" } };
+}
+
+function createMemorySummaryProjectionReadObject(
+  input$: Computed<
+    | MemorySummaryProjectionReadInput
+    | undefined
+    | Promise<MemorySummaryProjectionReadInput | undefined>
+  >,
+) {
+  return computed(
+    async (get): Promise<MemorySummaryProjectionReadResult | null> => {
+      const input = await get(input$);
+      if (!input) {
+        return null;
+      }
+      const { db, args } = input;
+      const [row] = await db
+        .select({
+          storageId: storages.id,
+          storageOrgId: storages.orgId,
+          storageUserId: storages.userId,
+          storageName: storages.name,
+          projectionStatus: memorySummaryProjections.status,
+          content: memorySummaryProjections.content,
+          sourceHash: memorySummaryProjections.sourceHash,
+          sourceSize: memorySummaryProjections.sourceSize,
+          tokenCount: memorySummaryProjections.tokenCount,
+        })
+        .from(storages)
+        .innerJoin(
+          storageVersions,
+          and(
+            eq(storageVersions.storageId, storages.id),
+            eq(storageVersions.id, args.storageVersionId),
+          ),
+        )
+        .leftJoin(
+          memorySummaryProjections,
+          and(
+            eq(memorySummaryProjections.memoryStorageId, storages.id),
+            eq(memorySummaryProjections.storageVersionId, storageVersions.id),
+            eq(memorySummaryProjections.orgId, args.orgId),
+            eq(memorySummaryProjections.userId, args.userId),
+          ),
+        )
+        .where(
+          and(
+            eq(storages.id, args.memoryStorageId),
+            eq(storages.orgId, args.orgId),
+            eq(storages.userId, args.userId),
+            eq(storages.name, MEMORY_ARTIFACT_NAME),
+            ne(storages.userId, VOLUME_ORG_USER_ID),
+          ),
+        )
+        .limit(1);
+      return memorySummaryProjectionReadResult(input, row);
+    },
+  );
+}
+
+const repairMemorySummaryProjection$ = command(
+  async (
+    _store,
+    observation: MemorySummaryProjectionReadResult | null,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    signal.throwIfAborted();
+    if (!observation?.repair) {
+      return;
+    }
+    const { db, args } = observation.input;
+    if (observation.repair.kind === "enqueue") {
+      const { storage } = observation.repair;
+      const enqueued = await settle(
+        db
+          .insert(memorySummaryProjections)
+          .values({
+            memoryStorageId: storage.id,
+            storageVersionId: args.storageVersionId,
+            orgId: storage.orgId,
+            userId: storage.userId,
+          })
+          .onConflictDoNothing(),
         signal,
-      ),
+      );
+      signal.throwIfAborted();
+      if (!enqueued.ok) {
+        log.warn("Memory summary projection read enqueue failed", {
+          ...args,
+          errorClass: retryErrorClass(enqueued.error),
+        });
+      }
+      return;
+    }
+    const requeued = await settle(
+      db
+        .update(memorySummaryProjections)
+        .set({
+          status: "pending",
+          leaseId: null,
+          leaseExpiresAt: null,
+          availableAt: nowDate(),
+          lastErrorClass: "read_integrity_mismatch",
+          content: null,
+          sourceHash: null,
+          sourceSize: null,
+          tokenCount: null,
+          updatedAt: nowDate(),
+        })
+        .where(
+          and(
+            eq(memorySummaryProjections.memoryStorageId, args.memoryStorageId),
+            eq(
+              memorySummaryProjections.storageVersionId,
+              args.storageVersionId,
+            ),
+            eq(memorySummaryProjections.status, "ready"),
+          ),
+        ),
       signal,
     );
+    signal.throwIfAborted();
     log.warn("Memory summary projection failed read integrity", {
-      orgId: args.orgId,
-      userId: args.userId,
-      memoryStorageId: args.memoryStorageId,
-      storageVersionId: args.storageVersionId,
+      ...args,
       errorClass: "read_integrity_mismatch",
       requeueErrorClass: requeued.ok
         ? undefined
         : retryErrorClass(requeued.error),
     });
-    return null;
-  }
-  return ready;
-}
-
-export const readMemorySummaryProjection$ = command(
-  async (
-    { set },
-    args: ReadMemorySummaryProjectionArgs,
-    signal: AbortSignal,
-  ): Promise<ReadyMemorySummaryProjection | null> => {
-    return await readMemorySummaryProjection(set(writeDb$), args, signal);
   },
 );
+
+/** Compose one immutable read snapshot with its explicit best-effort repair. */
+export function createMemorySummaryProjectionObjects(
+  input$: Parameters<typeof createMemorySummaryProjectionReadObject>[0],
+) {
+  const projection$ = createMemorySummaryProjectionReadObject(input$);
+  return { projection$, repairProjection$: repairMemorySummaryProjection$ };
+}
+
+function createReadMemorySummaryProjectionCommand() {
+  const internalInput$ = state<MemorySummaryProjectionReadInput | undefined>(
+    undefined,
+  );
+  const input$ = computed((get) => {
+    return get(internalInput$);
+  });
+  const { projection$, repairProjection$ } =
+    createMemorySummaryProjectionObjects(input$);
+  return command(
+    async (
+      { get, set },
+      args: ReadMemorySummaryProjectionArgs,
+      signal: AbortSignal,
+    ): Promise<ReadyMemorySummaryProjection | null> => {
+      set(internalInput$, { db: set(writeDb$), args });
+      const observation = await get(projection$);
+      signal.throwIfAborted();
+      await set(repairProjection$, observation, signal);
+      return observation?.ready ?? null;
+    },
+  );
+}
+
+export const readMemorySummaryProjection$ =
+  createReadMemorySummaryProjectionCommand();

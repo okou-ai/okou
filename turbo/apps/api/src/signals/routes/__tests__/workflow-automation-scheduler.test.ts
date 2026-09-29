@@ -884,22 +884,21 @@ describe("okou workflow automation scheduler", () => {
         await runsApi.requestCancelRun(scenario.actor, blocker, [200]);
       }
       mocks.clerk.session(member.userId, scenario.orgId, "org:member");
-      await expect
-        .poll(async () => {
-          return (await workflowRunMessages(threadId)).length;
-        })
-        .toBe(1);
+      // Slot release schedules the next pick. Own that work before checking
+      // the account captured by the newly admitted automation run.
+      await flushWaitUntilForTest();
+      await expect(workflowRunMessages(threadId)).resolves.toHaveLength(1);
       const message = await onlyWorkflowRunMessage(threadId);
       // The run binds the owner's account current at run creation: the
       // original account for an immediate launch, the later one for a pick.
       const expectedOwner = queuedLaunch
         ? { ...later, identity: "later-owner-account" }
         : { ...owner, identity: "automation-owner" };
-      await expect
-        .poll(async () => {
-          return (await runsApi.readRun(member, message.runId)).status;
-        })
-        .toBe("pending");
+      await expect(
+        runsApi.readRun(member, message.runId),
+      ).resolves.toMatchObject({
+        status: "pending",
+      });
       await runsApi.heartbeatRunner(scenario.runnerGroup);
       const claim = await runsApi.claimRunnerJob(message.runId);
       expect(claim.cliAgentType).toBe("codex");

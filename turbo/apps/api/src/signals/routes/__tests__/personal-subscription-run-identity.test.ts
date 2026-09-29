@@ -727,21 +727,18 @@ describe("personal subscription run identity", () => {
     }
     expect(responseRunIds.size).toBeLessThanOrEqual(1);
 
-    let claimedRunId: string | undefined;
-    await expect
-      .poll(async () => {
-        const events = (await chat.listThreadEvents(f.actor, thread.id)).events;
-        const claims = events.filter((event) => {
-          return (
-            event.eventType === "input.prompt" &&
-            event.revokesEventId === headId &&
-            event.runId !== null
-          );
-        });
-        claimedRunId = claims[0]?.runId ?? undefined;
-        return claims.length;
-      })
-      .toBe(1);
+    await flushWaitUntilForTest();
+    const admittedEvents = (await chat.listThreadEvents(f.actor, thread.id))
+      .events;
+    const claims = admittedEvents.filter((event) => {
+      return (
+        event.eventType === "input.prompt" &&
+        event.revokesEventId === headId &&
+        event.runId !== null
+      );
+    });
+    expect(claims).toHaveLength(1);
+    const claimedRunId = claims[0]?.runId;
     if (!claimedRunId) {
       throw new Error("Expected the input to be claimed by one run");
     }
