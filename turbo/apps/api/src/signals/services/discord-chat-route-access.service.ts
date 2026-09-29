@@ -1,4 +1,4 @@
-import { createStore } from "ccstate";
+import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { discordChatThreadRoutes } from "@okouai/db/schema/discord-chat-thread-route";
 import type { Db } from "../external/db";
@@ -14,39 +14,41 @@ interface DiscordChatRouteAccessArgs {
   readonly hasConversationContext: boolean;
 }
 
-async function loadCurrentConversationAccess(
-  args: DiscordChatRouteAccessArgs,
-  channelId: string,
-  mode: "view" | "read" | "write",
-  signal: AbortSignal,
-) {
-  // eslint-disable-next-line ccstate/no-create-store -- Pre-2026-09-29 legacy only; no new violations or suppressions. Access check; migrate to the request command graph.
-  const access = await createStore().set(
-    requireDiscordConversationAccess$,
-    {
-      orgId: args.orgId,
-      userId: args.userId,
-      guildId: args.target.guildId,
-      channelId,
-      mode,
-    },
-    signal,
-  );
-  signal.throwIfAborted();
-  if (access.kind === "denied") {
-    if (access.response.status === 403 || access.response.status === 404) {
+const loadCurrentConversationAccess$ = command(
+  async (
+    { set },
+    args: DiscordChatRouteAccessArgs,
+    channelId: string,
+    mode: "view" | "read" | "write",
+    signal: AbortSignal,
+  ) => {
+    const access = await set(
+      requireDiscordConversationAccess$,
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+        guildId: args.target.guildId,
+        channelId,
+        mode,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (access.kind === "denied") {
+      if (access.response.status === 403 || access.response.status === 404) {
+        return null;
+      }
+      throw new Error(`Discord access check failed: ${access.response.status}`);
+    }
+    if (
+      access.binding.connectionId !== args.target.connectionId ||
+      access.binding.discordUserId !== args.target.discordUserId
+    ) {
       return null;
     }
-    throw new Error(`Discord access check failed: ${access.response.status}`);
-  }
-  if (
-    access.binding.connectionId !== args.target.connectionId ||
-    access.binding.discordUserId !== args.target.discordUserId
-  ) {
-    return null;
-  }
-  return access;
-}
+    return access;
+  },
+);
 
 /** The sender's sticky route still owns this chat and exact destination. */
 export async function findDiscordChatRoute(
@@ -70,47 +72,53 @@ export async function findDiscordChatRoute(
   return route;
 }
 
-export async function loadDiscordChatRouteAccess(
-  db: Db,
-  args: DiscordChatRouteAccessArgs,
-  signal: AbortSignal,
-) {
-  const route = await findDiscordChatRoute(db, args);
-  signal.throwIfAborted();
-  if (!route) {
-    return null;
-  }
-  const sourceAccess = await loadCurrentConversationAccess(
-    args,
-    args.sourceChannelId,
-    "view",
-    signal,
-  );
-  if (!sourceAccess) {
-    return null;
-  }
-  // The bot DM channel is shared by every org and DM session of this Discord
-  // user, so its history never reaches a run, including context persisted
-  // before DM ingress stopped reading it.
-  let conversationContextAllowed =
-    sourceAccess.channel.type !== 1 && sourceAccess.messageContentEnabled;
-  if (args.hasConversationContext && conversationContextAllowed) {
-    conversationContextAllowed =
-      (await loadCurrentConversationAccess(
-        args,
-        args.sourceChannelId,
-        "read",
-        signal,
-      )) !== null;
-  }
-  const access = await loadCurrentConversationAccess(
-    args,
-    args.target.channelId,
-    "write",
-    signal,
-  );
-  if (!access) {
-    return null;
-  }
-  return { ...access, routeId: route.id, conversationContextAllowed };
-}
+export const loadDiscordChatRouteAccess$ = command(
+  async (
+    { set },
+    db: Db,
+    args: DiscordChatRouteAccessArgs,
+    signal: AbortSignal,
+  ) => {
+    const route = await findDiscordChatRoute(db, args);
+    signal.throwIfAborted();
+    if (!route) {
+      return null;
+    }
+    const sourceAccess = await set(
+      loadCurrentConversationAccess$,
+      args,
+      args.sourceChannelId,
+      "view",
+      signal,
+    );
+    if (!sourceAccess) {
+      return null;
+    }
+    // The bot DM channel is shared by every org and DM session of this Discord
+    // user, so its history never reaches a run, including context persisted
+    // before DM ingress stopped reading it.
+    let conversationContextAllowed =
+      sourceAccess.channel.type !== 1 && sourceAccess.messageContentEnabled;
+    if (args.hasConversationContext && conversationContextAllowed) {
+      conversationContextAllowed =
+        (await set(
+          loadCurrentConversationAccess$,
+          args,
+          args.sourceChannelId,
+          "read",
+          signal,
+        )) !== null;
+    }
+    const access = await set(
+      loadCurrentConversationAccess$,
+      args,
+      args.target.channelId,
+      "write",
+      signal,
+    );
+    if (!access) {
+      return null;
+    }
+    return { ...access, routeId: route.id, conversationContextAllowed };
+  },
+);

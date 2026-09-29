@@ -36,6 +36,7 @@ export type JsonResponseObserver = (
 ) => void;
 
 interface HonoSignalHandlerOptions {
+  readonly initializeServices$: Command<void, []>;
   readonly usagePricingResolution?: UsagePricingResolution;
   readonly systemSkillStorageResolution?: SystemSkillStorageResolution;
   readonly observeJsonResponse?: JsonResponseObserver;
@@ -125,16 +126,18 @@ export function honoSignalHandler(
   contract: AppRoute,
   signal: AbortSignal,
   {
+    initializeServices$,
     usagePricingResolution,
     systemSkillStorageResolution,
     observeJsonResponse,
-  }: HonoSignalHandlerOptions = {},
+  }: HonoSignalHandlerOptions,
 ): Handler {
   return async (context) => {
     const apiStartTime = now();
     const store = createStore();
     store.set(setRootSignal$, signal);
     store.set(initHono$, context, contract, apiStartTime);
+    store.set(initializeServices$);
     if (usagePricingResolution) {
       store.set(setUsagePricingResolution$, usagePricingResolution);
     }

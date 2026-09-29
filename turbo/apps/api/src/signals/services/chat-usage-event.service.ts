@@ -1,4 +1,4 @@
-import { runEventHistory } from "./run-event-provenance.service";
+import { runEventHistory$ } from "./run-event-provenance.service";
 import { randomUUID } from "node:crypto";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { chatEventSnapshots } from "@okouai/db/schema/chat-event-snapshot";
@@ -206,7 +206,7 @@ const prepareRunUsageArchive$ = command(
     // taking the writer's SQL transaction or its outgoing-writer compatibility key.
     const history = hot
       ? undefined
-      : await runEventHistory(db, run.chatThreadId, runId, signal);
+      : await set(runEventHistory$, db, run.chatThreadId, runId, signal);
     signal.throwIfAborted();
     const archived = history
       ? [...history].reverse().find((event) => {

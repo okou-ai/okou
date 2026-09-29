@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { command } from "ccstate";
+import { command, type Command } from "ccstate";
 import {
   linkLayoutFromSegment,
   linkLayoutSegment,
@@ -698,102 +698,200 @@ function canonicalInputResponseContentType(
   return contentType;
 }
 
-const importCanonicalInputFile$ = command(
-  async (
-    { get, set },
-    args: {
-      readonly asset: CanonicalAssetRow;
-      readonly userId: string;
-      readonly download: (signal: AbortSignal) => Promise<Response>;
-      readonly contentType: string;
-      readonly maxBytes: number;
-    },
-    signal: AbortSignal,
-  ): Promise<CanonicalInputAsset> => {
-    const importController = new AbortController();
-    const importSignal = AbortSignal.any([
-      signal,
-      importController.signal,
-      AbortSignal.timeout(INPUT_IMPORT_TIMEOUT_MS),
-    ]);
-    const imported = await settleIncludingAbort(
-      (async (): Promise<{
-        readonly buffer: Buffer;
-        readonly checksumSha256: string;
+function createCanonicalInputFileImportCommand<DownloadArgs>(
+  download$: Command<Promise<Response>, [DownloadArgs, AbortSignal]>,
+) {
+  return command(
+    async (
+      { get, set },
+      args: {
+        readonly asset: CanonicalAssetRow;
+        readonly userId: string;
+        readonly download: DownloadArgs;
         readonly contentType: string;
-      }> => {
-        const response = await args.download(importSignal);
-        const contentType = canonicalInputResponseContentType(
-          response,
-          args.contentType,
-        );
-        if (Number(response.headers.get("content-length")) > args.maxBytes) {
-          throw new InputFileImportError(
-            "too-large",
-            "File exceeds maximum size",
+        readonly maxBytes: number;
+      },
+      signal: AbortSignal,
+    ): Promise<CanonicalInputAsset> => {
+      const importController = new AbortController();
+      const importSignal = AbortSignal.any([
+        signal,
+        importController.signal,
+        AbortSignal.timeout(INPUT_IMPORT_TIMEOUT_MS),
+      ]);
+      const imported = await settleIncludingAbort(
+        (async (): Promise<{
+          readonly buffer: Buffer;
+          readonly checksumSha256: string;
+          readonly contentType: string;
+        }> => {
+          const response = await set(download$, args.download, importSignal);
+          const contentType = canonicalInputResponseContentType(
+            response,
+            args.contentType,
           );
-        }
-        const buffer = await readInputFileBuffer(response, args.maxBytes);
-        importSignal.throwIfAborted();
-        if (buffer.length === 0) {
-          throw new InputFileImportError("download-failed", "File is empty");
-        }
-        const checksumSha256 = createHash("sha256")
-          .update(buffer)
-          .digest("hex");
-        if (!args.asset.storageKey) {
-          throw new Error("Canonical input asset storage key is missing");
-        }
-        await get(
-          putS3Object(
-            artifactStorageBucket(args.asset.metadata),
-            args.asset.storageKey,
-            buffer,
-            contentType,
-            {
-              signal: importSignal,
-              metadata:
-                args.asset.metadata.storage !== undefined
-                  ? { "artifact-id": args.asset.id }
-                  : artifactObjectMetadata(
-                      args.userId,
-                      args.asset.id,
-                      args.asset.filename ?? args.asset.id,
-                      canonicalAssetLinkLayout(args.asset.metadata),
-                    ),
-            },
-          ),
-        );
-        return { buffer, checksumSha256, contentType };
-      })(),
-    );
-    signal.throwIfAborted();
+          if (Number(response.headers.get("content-length")) > args.maxBytes) {
+            throw new InputFileImportError(
+              "too-large",
+              "File exceeds maximum size",
+            );
+          }
+          const buffer = await readInputFileBuffer(response, args.maxBytes);
+          importSignal.throwIfAborted();
+          if (buffer.length === 0) {
+            throw new InputFileImportError("download-failed", "File is empty");
+          }
+          const checksumSha256 = createHash("sha256")
+            .update(buffer)
+            .digest("hex");
+          if (!args.asset.storageKey) {
+            throw new Error("Canonical input asset storage key is missing");
+          }
+          await get(
+            putS3Object(
+              artifactStorageBucket(args.asset.metadata),
+              args.asset.storageKey,
+              buffer,
+              contentType,
+              {
+                signal: importSignal,
+                metadata:
+                  args.asset.metadata.storage !== undefined
+                    ? { "artifact-id": args.asset.id }
+                    : artifactObjectMetadata(
+                        args.userId,
+                        args.asset.id,
+                        args.asset.filename ?? args.asset.id,
+                        canonicalAssetLinkLayout(args.asset.metadata),
+                      ),
+              },
+            ),
+          );
+          return { buffer, checksumSha256, contentType };
+        })(),
+      );
+      signal.throwIfAborted();
 
-    const db = set(writeDb$);
-    if (!imported.ok) {
-      const error = importSignal.aborted ? importSignal.reason : imported.error;
-      // Abort the fetch instead of awaiting stream cancellation: a tee'd
-      // response can hold cancellation open until its other reader finishes.
-      importController.abort();
-      const failed = await markCanonicalInputFailed(db, {
+      const db = set(writeDb$);
+      if (!imported.ok) {
+        const error = importSignal.aborted
+          ? importSignal.reason
+          : imported.error;
+        // Abort the fetch instead of awaiting stream cancellation: a tee'd
+        // response can hold cancellation open until its other reader finishes.
+        importController.abort();
+        const failed = await markCanonicalInputFailed(db, {
+          asset: args.asset,
+          userId: args.userId,
+          error: inputMaterializationError(error),
+        });
+        signal.throwIfAborted();
+        return canonicalInputResult(failed);
+      }
+      const ready = await markCanonicalInputReady(db, {
         asset: args.asset,
         userId: args.userId,
-        error: inputMaterializationError(error),
+        sizeBytes: imported.value.buffer.length,
+        checksumSha256: imported.value.checksumSha256,
+        contentType: imported.value.contentType,
       });
       signal.throwIfAborted();
-      return canonicalInputResult(failed);
-    }
-    const ready = await markCanonicalInputReady(db, {
-      asset: args.asset,
-      userId: args.userId,
-      sizeBytes: imported.value.buffer.length,
-      checksumSha256: imported.value.checksumSha256,
-      contentType: imported.value.contentType,
-    });
-    signal.throwIfAborted();
-    return canonicalInputResult(ready);
+      return canonicalInputResult(ready);
+    },
+  );
+}
+
+/** Build one static importer graph around a provider's download command. */
+export function createCanonicalInputFileCommands<DownloadArgs>(
+  download$: Command<Promise<Response>, [DownloadArgs, AbortSignal]>,
+) {
+  const importCanonicalInputFile$ =
+    createCanonicalInputFileImportCommand(download$);
+
+  /** Import an integration attachment under its upstream, installation-scoped identity. */
+  const materializeCanonicalInputFile$ = command(
+    async (
+      { set },
+      args: CanonicalInputFileArgs & {
+        readonly download: DownloadArgs;
+        readonly maxBytes?: number;
+      },
+      signal: AbortSignal,
+    ): Promise<CanonicalInputAsset> => {
+      const db = set(writeDb$);
+      let asset = await canonicalAssetByIdentity(db, args);
+      signal.throwIfAborted();
+      if (!asset) {
+        const artifact = await set(allocateCanonicalArtifact$, args, signal);
+        asset = await ensureCanonicalInputAsset(db, { ...args, artifact });
+        signal.throwIfAborted();
+      }
+      if (
+        asset.materializationStatus === "ready" ||
+        (asset.materializationStatus === "failed" &&
+          asset.materializationError?.retryable === false)
+      ) {
+        return canonicalInputResult(asset);
+      }
+      const maxBytes = args.maxBytes ?? MAX_INPUT_FILE_SIZE_BYTES;
+      const immediateError = immediateInputError(
+        args.contentType,
+        args.size,
+        maxBytes,
+      );
+      if (immediateError) {
+        const failed = await markCanonicalInputFailed(db, {
+          asset,
+          userId: args.userId,
+          error: immediateError,
+        });
+        signal.throwIfAborted();
+        return canonicalInputResult(failed);
+      }
+      asset = await resetCanonicalInputPending(db, {
+        asset,
+        userId: args.userId,
+      });
+      signal.throwIfAborted();
+      if (
+        asset.materializationStatus === "ready" ||
+        (asset.materializationStatus === "failed" &&
+          asset.materializationError?.retryable === false)
+      ) {
+        return canonicalInputResult(asset);
+      }
+      return set(
+        importCanonicalInputFile$,
+        {
+          asset,
+          userId: args.userId,
+          download: args.download,
+          contentType: args.contentType,
+          maxBytes,
+        },
+        signal,
+      );
+    },
+  );
+
+  return { importCanonicalInputFile$, materializeCanonicalInputFile$ };
+}
+
+const downloadCanonicalInputFile$ = command(
+  (
+    _context,
+    download: (signal: AbortSignal) => Promise<Response>,
+    signal: AbortSignal,
+  ) => {
+    return download(signal);
   },
 );
+
+const canonicalInputFileCommands = createCanonicalInputFileCommands(
+  downloadCanonicalInputFile$,
+);
+const { importCanonicalInputFile$ } = canonicalInputFileCommands;
+export const { materializeCanonicalInputFile$ } = canonicalInputFileCommands;
 
 const materializeCanonicalSlackInputFile$ = command(
   async (
@@ -908,72 +1006,6 @@ const materializeCanonicalSlackInputFile$ = command(
       signal,
     );
     return { ...imported, slackFileId: fileId };
-  },
-);
-
-/** Import an integration attachment under its upstream, installation-scoped identity. */
-export const materializeCanonicalInputFile$ = command(
-  async (
-    { set },
-    args: CanonicalInputFileArgs & {
-      readonly download: (signal: AbortSignal) => Promise<Response>;
-      readonly maxBytes?: number;
-    },
-    signal: AbortSignal,
-  ): Promise<CanonicalInputAsset> => {
-    const db = set(writeDb$);
-    let asset = await canonicalAssetByIdentity(db, args);
-    signal.throwIfAborted();
-    if (!asset) {
-      const artifact = await set(allocateCanonicalArtifact$, args, signal);
-      asset = await ensureCanonicalInputAsset(db, { ...args, artifact });
-      signal.throwIfAborted();
-    }
-    if (
-      asset.materializationStatus === "ready" ||
-      (asset.materializationStatus === "failed" &&
-        asset.materializationError?.retryable === false)
-    ) {
-      return canonicalInputResult(asset);
-    }
-    const maxBytes = args.maxBytes ?? MAX_INPUT_FILE_SIZE_BYTES;
-    const immediateError = immediateInputError(
-      args.contentType,
-      args.size,
-      maxBytes,
-    );
-    if (immediateError) {
-      const failed = await markCanonicalInputFailed(db, {
-        asset,
-        userId: args.userId,
-        error: immediateError,
-      });
-      signal.throwIfAborted();
-      return canonicalInputResult(failed);
-    }
-    asset = await resetCanonicalInputPending(db, {
-      asset,
-      userId: args.userId,
-    });
-    signal.throwIfAborted();
-    if (
-      asset.materializationStatus === "ready" ||
-      (asset.materializationStatus === "failed" &&
-        asset.materializationError?.retryable === false)
-    ) {
-      return canonicalInputResult(asset);
-    }
-    return set(
-      importCanonicalInputFile$,
-      {
-        asset,
-        userId: args.userId,
-        download: args.download,
-        contentType: args.contentType,
-        maxBytes,
-      },
-      signal,
-    );
   },
 );
 

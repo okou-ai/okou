@@ -24,6 +24,8 @@ import { insertChatEvent, replaceChatEvent } from "./chat-event.service";
 import { formatIntegrationRunError$ } from "./integration-run-errors.service";
 import {
   assembleQueuedPromptRun$,
+  deliverQueuedPromptRejection$,
+  recordQueuedPromptRunLaunch$,
   deliverUnexpectedQueuedPromptRejection$,
 } from "./internal-chat-run-callback.service";
 import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
@@ -313,21 +315,24 @@ const rejectChatQueueHead$ = command(
     signal.throwIfAborted();
     await publishChatQueueHeadConsumed(head);
     signal.throwIfAborted();
-    const deliver =
-      rejection.deliver ??
-      (rejection.error.code === "INTERNAL_ERROR"
-        ? (assistantEventId: string, deliverySignal: AbortSignal) => {
-            return set(
-              deliverUnexpectedQueuedPromptRejection$,
-              { head, assistantEventId },
-              deliverySignal,
-            );
-          }
-        : undefined);
-    if (!deliver) {
+    const delivery = rejection.delivery
+      ? set(
+          deliverQueuedPromptRejection$,
+          rejection.delivery,
+          rejected.assistantEventId,
+          signal,
+        )
+      : rejection.error.code === "INTERNAL_ERROR"
+        ? set(
+            deliverUnexpectedQueuedPromptRejection$,
+            { head, assistantEventId: rejected.assistantEventId },
+            signal,
+          )
+        : undefined;
+    if (!delivery) {
       return;
     }
-    await tapError(deliver(rejected.assistantEventId, signal), (error) => {
+    await tapError(delivery, (error) => {
       log.warn("Failed to deliver queued input rejection", {
         chatThreadId: head.chatThreadId,
         eventId: head.id,
@@ -501,7 +506,15 @@ export const consumeChatQueueHead$ = command(
       return { kind: "passed" };
     }
     if (result.status === 201) {
-      await assembly.launched(result.body.runId, signal);
+      if (assembly.launched.kind === "prompt") {
+        set(
+          recordQueuedPromptRunLaunch$,
+          assembly.launched.context,
+          result.body.runId,
+        );
+      } else {
+        await assembly.launched.record(result.body.runId, signal);
+      }
       signal.throwIfAborted();
       await publishChatQueueHeadConsumed(head);
       signal.throwIfAborted();

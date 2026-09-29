@@ -11,6 +11,7 @@ import {
   CLIENT_VERSION_HEADER,
 } from "@okouai/api-contracts/contracts/client-headers";
 import { serializeError } from "@okouai/core/log-utils";
+import { command } from "ccstate";
 // oxlint-disable-next-line no-restricted-imports -- app factory owns the Hono instance
 import { Hono, type Context, type Next } from "hono";
 import { HTTPException } from "hono/http-exception";
@@ -36,8 +37,8 @@ import {
   ingestToAxiom,
 } from "./signals/external/axiom";
 import type { RouteEntry } from "./signals/route-entry";
-import { configureChatRunFinishedEventDispatcher } from "./signals/services/chat-run-finished-event-registration.service";
-import { configureOfficialWorkflowReconciliationDispatcher } from "./signals/services/official-workflow-reconciliation-registration.service";
+import { configureChatRunFinishedEventDispatcher$ } from "./signals/services/chat-run-finished-event-registration.service";
+import { configureOfficialWorkflowReconciliationDispatcher$ } from "./signals/services/official-workflow-reconciliation-registration.service";
 import type { UsagePricingResolution } from "./signals/context/usage-pricing-resolution";
 import type { SystemSkillStorageResolution } from "./signals/context/system-skill-storage-resolution";
 import {
@@ -48,6 +49,11 @@ import {
 } from "./signals/utils";
 
 const L = logger("App");
+
+const initializeApiServices$ = command(({ set }): void => {
+  set(configureChatRunFinishedEventDispatcher$);
+  set(configureOfficialWorkflowReconciliationDispatcher$);
+});
 
 const AUTH_PATHS = ["/sign-in", "/sign-up"] as const;
 const PREVIEW_AUTOMATION_BYPASS_ERROR = "Preview automation bypass required";
@@ -554,8 +560,6 @@ export function createAppWithRoutes({
   usagePricingResolution,
   systemSkillStorageResolution,
 }: CreateAppWithRoutesOptions): Hono {
-  configureChatRunFinishedEventDispatcher();
-  configureOfficialWorkflowReconciliationDispatcher();
   const app = new Hono();
   app.onError(handleError);
 
@@ -606,6 +610,7 @@ export function createAppWithRoutes({
   for (const entry of routes) {
     const { route } = entry;
     const routeHandler = honoSignalHandler(entry.handler, route, signal, {
+      initializeServices$: initializeApiServices$,
       usagePricingResolution,
       systemSkillStorageResolution,
       observeJsonResponse: entry.observeJsonResponse,

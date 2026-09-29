@@ -1,3 +1,7 @@
+import type {
+  QueuedPromptLaunchContext,
+  QueuedPromptRejectionTarget,
+} from "./internal-chat-run-callback.service";
 import type { DispatchFailedRunCallbacks } from "./agent-run-create.service";
 import type { CreateQueueFirstAgentRunCommandArgs } from "./agent-runs-create.service";
 
@@ -7,10 +11,7 @@ export interface ChatQueueHeadRejection {
   /** The user the rejection text is formatted for. */
   readonly userId: string;
   /** Delivers the rejection to the integration the input came from, if any. */
-  readonly deliver?: (
-    assistantEventId: string,
-    signal: AbortSignal,
-  ) => Promise<void>;
+  readonly delivery?: QueuedPromptRejectionTarget;
 }
 
 /** The queue head an assembler builds a run for. */
@@ -43,7 +44,18 @@ export type ChatQueueRunAssembly =
         readonly code: string;
         readonly message: string;
       }) => ChatQueueHeadRejection;
-      readonly launched: (runId: string, signal: AbortSignal) => Promise<void>;
+      readonly launched:
+        | {
+            readonly kind: "prompt";
+            readonly context: QueuedPromptLaunchContext;
+          }
+        | {
+            readonly kind: "automation";
+            readonly record: (
+              runId: string,
+              signal: AbortSignal,
+            ) => Promise<void>;
+          };
     }
   | { readonly kind: "rejected"; readonly rejection: ChatQueueHeadRejection }
   | { readonly kind: "not-ready" };

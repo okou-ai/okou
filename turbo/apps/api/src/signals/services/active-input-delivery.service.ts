@@ -1,3 +1,4 @@
+import { command } from "ccstate";
 import {
   runStatusSchema,
   type RunStatus,
@@ -14,7 +15,7 @@ import {
   activeInputDeliveryPromptFitsControlPayload,
   activeInputRowsByIds,
   activeInputTemplateIdentities,
-  materializeActiveInputSource,
+  materializeActiveInputSource$,
   type ActiveInputSourceRow,
 } from "./active-input-prompt.service";
 import { logTemplateUsage } from "../../lib/template-usage-log";
@@ -264,59 +265,62 @@ async function steeringAnchorSeqId(
  * exceeds the control payload) yields `null` and stays queued for the next
  * pick, which rejects or launches it; later prompts do not overtake it.
  */
-export async function loadNextSteerableInput(
-  db: Db,
-  args: {
-    readonly runId: string;
-    readonly userId: string;
-    readonly orgId: string;
-  },
-  signal: AbortSignal,
-): Promise<NextSteerableInputResult> {
-  const scope = await loadActiveInputDeliveryScope(db, args, signal);
-  if (!scope) {
-    return { outcome: "forbidden" };
-  }
-  if (scope.status !== "running") {
-    return { outcome: "found", input: null };
-  }
-  const afterSeqId = await steeringAnchorSeqId(db, scope);
-  signal.throwIfAborted();
-  const [next] = await listPendingChatInputs(db, {
-    chatThreadId: scope.chatThreadId,
-    eventTypes: ["input.prompt"],
-    budgetForRunId: scope.runId,
-    afterSeqId,
-  });
-  signal.throwIfAborted();
-  if (!next) {
-    return { outcome: "found", input: null };
-  }
-  const [source] = await activeInputRowsByIds(db, scope.chatThreadId, [
-    next.id,
-  ]);
-  signal.throwIfAborted();
-  if (!source) {
-    throw new Error("Pending steerable input disappeared from its thread");
-  }
-  const prompt = await settle(
-    materializeActiveInputSource(db, source, scope, signal),
-    signal,
-  );
-  if (!prompt.ok) {
-    if (!(prompt.error instanceof DiscordQueuedLaunchUnavailableError)) {
-      throw prompt.error;
+export const loadNextSteerableInput$ = command(
+  async (
+    { set },
+    db: Db,
+    args: {
+      readonly runId: string;
+      readonly userId: string;
+      readonly orgId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<NextSteerableInputResult> => {
+    const scope = await loadActiveInputDeliveryScope(db, args, signal);
+    if (!scope) {
+      return { outcome: "forbidden" };
     }
-    return { outcome: "found", input: null };
-  }
-  if (!activeInputDeliveryPromptFitsControlPayload(source.id, prompt.value)) {
-    return { outcome: "found", input: null };
-  }
-  return {
-    outcome: "found",
-    input: { eventId: source.id, prompt: prompt.value },
-  };
-}
+    if (scope.status !== "running") {
+      return { outcome: "found", input: null };
+    }
+    const afterSeqId = await steeringAnchorSeqId(db, scope);
+    signal.throwIfAborted();
+    const [next] = await listPendingChatInputs(db, {
+      chatThreadId: scope.chatThreadId,
+      eventTypes: ["input.prompt"],
+      budgetForRunId: scope.runId,
+      afterSeqId,
+    });
+    signal.throwIfAborted();
+    if (!next) {
+      return { outcome: "found", input: null };
+    }
+    const [source] = await activeInputRowsByIds(db, scope.chatThreadId, [
+      next.id,
+    ]);
+    signal.throwIfAborted();
+    if (!source) {
+      throw new Error("Pending steerable input disappeared from its thread");
+    }
+    const prompt = await settle(
+      set(materializeActiveInputSource$, db, source, scope, signal),
+      signal,
+    );
+    if (!prompt.ok) {
+      if (!(prompt.error instanceof DiscordQueuedLaunchUnavailableError)) {
+        throw prompt.error;
+      }
+      return { outcome: "found", input: null };
+    }
+    if (!activeInputDeliveryPromptFitsControlPayload(source.id, prompt.value)) {
+      return { outcome: "found", input: null };
+    }
+    return {
+      outcome: "found",
+      input: { eventId: source.id, prompt: prompt.value },
+    };
+  },
+);
 
 /**
  * The runner handed a prompt or its own budget to the model. Consume it with

@@ -1,6 +1,5 @@
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
-import { formatRunErrorForExternalSurface } from "@okouai/api-contracts/contracts/errors";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { agents } from "@okouai/db/schema/agent";
@@ -27,7 +26,7 @@ import type {
 } from "./internal-run-callback";
 import { formatRunErrorForRunOwner$ } from "./run-error-format.service";
 import { getRunOutputText } from "./run-output.service";
-import { saveRunSummary, saveRunSummary$ } from "./run-summary.service";
+import { saveRunSummary$ } from "./run-summary.service";
 import { resolveIntegrationAgentResponsePresentation } from "./integration-agent-response-presentation.service";
 
 const L = logger("InternalCallbacksFeishuOrg");
@@ -296,37 +295,3 @@ export const handleFeishuOrgInternalCallback$ = command(
     );
   },
 );
-
-export async function handleFeishuOrgInternalCallbackWithoutCcstate(
-  db: Db,
-  callback: InternalRunCallbackEnvelope,
-  signal = new AbortController().signal,
-): Promise<InternalRunCallbackDispatchResult> {
-  return await handleFeishuCallback(
-    {
-      db,
-      callback,
-      formatRunError: (params) => {
-        return Promise.resolve(
-          formatRunErrorForExternalSurface({
-            code: "INTERNAL_SERVER_ERROR",
-            message: params.errorMessage,
-          }),
-        );
-      },
-      saveRunSummary: async (runId, prompt, resultText) => {
-        await saveRunSummary(
-          db,
-          {
-            runId,
-            triggerSource: "feishu",
-            prompt,
-            resultText,
-          },
-          signal,
-        );
-      },
-    },
-    signal,
-  );
-}
