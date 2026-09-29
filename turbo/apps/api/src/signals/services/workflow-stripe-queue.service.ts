@@ -79,7 +79,11 @@ function stripeSourceCredentialAccess(
     !automation ||
     !connector ||
     automation.orgId !== source.orgId ||
-    automation.ownerUserId !== source.userId
+    automation.ownerUserId !== source.userId ||
+    connector.orgId !== source.orgId ||
+    connector.userId !== source.userId ||
+    connector.connectorSlug !== "stripe" ||
+    connector.authMethod !== "oauth"
   ) {
     throw new StripeDeliveryTargetChangedError("automation_target_unavailable");
   }
@@ -105,14 +109,6 @@ function stripeSourceCredentialAccess(
         !config.data.billingReasons.includes(billingReason.data)))
   ) {
     throw new StripeDeliveryTargetChangedError("automation_no_longer_matches");
-  }
-  if (
-    connector.orgId !== source.orgId ||
-    connector.userId !== source.userId ||
-    connector.connectorSlug !== "stripe" ||
-    connector.authMethod !== "oauth"
-  ) {
-    throw new StripeDeliveryTargetChangedError("connector_unavailable");
   }
   const access = resolveBuiltinConnectorCredentialAccess({
     snapshot,
