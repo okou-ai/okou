@@ -3,8 +3,9 @@
 This Release 1 change starts from `5b458cc9`. It prepares the mutable
 `org_concurrency_subscriptions` projection for coexistence with a Release 2
 writer that no longer takes `stripe_concurrency_subscription:<subscription>`.
-It complements [customer and invitation preparation](https://github.com/okou-ai/okou/pull/37318)
-and does not complete organization purchase or shared usage-pack projection work.
+It accompanies [customer and invitation preparation](advisory-lock-release-1-billing.md)
+in the single Release 1 PR #37313. Organization purchase and shared usage-pack
+projection work are not complete.
 
 ## Conditional publication
 
@@ -63,7 +64,7 @@ writer can overwrite the other's completed publication from an older read.
 No App/Runner contract, client floor, or Runner drain is introduced.
 
 This change adds no advisory acquisition and removes none; the combined billing
-wave still has six definitions after PR #37318. The shared usage-pack
+wave still has six definitions after removal of the invitation-email acquisition. The shared usage-pack
 allocation/Plan/migration/invitation absolute Stripe writes need separate
 ordering and recovery work. Conditional local cache publication does not solve
 remote quantity overwrite ordering.

@@ -17756,6 +17756,23 @@ describe("POST /api/billing/concurrency-checkout", () => {
         },
       },
     };
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValueOnce({
+      id: subscriptionId,
+      customer: customerId,
+      status: "active",
+      cancel_at_period_end: false,
+      items: {
+        data: [
+          { price: { id: TEST_PRICE_CUSTOM }, quantity: 1 },
+          {
+            id: concurrencyItemId,
+            price: { id: TEST_PRICE_CONCURRENCY },
+            quantity: 10,
+            current_period_end: concurrencyPeriodEndUnix,
+          },
+        ],
+      },
+    });
     context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(
       concurrencyInvoiceEvent,
     );
@@ -20916,6 +20933,23 @@ describe("POST /api/billing/concurrency-checkout", () => {
         },
       },
     };
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
+      id: fixture.subscriptionId,
+      customer: fixture.customerId,
+      status: "active",
+      cancel_at_period_end: false,
+      metadata,
+      items: {
+        data: [
+          { price: { id: TEST_PRICE_TEAM }, quantity: 1 },
+          {
+            price: { id: TEST_PRICE_CONCURRENCY },
+            quantity: 3,
+            current_period_end: periodEndUnix,
+          },
+        ],
+      },
+    });
     context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(event);
 
     await accept(
@@ -21742,6 +21776,9 @@ describe("POST /api/billing/concurrency-checkout", () => {
         },
       ],
     });
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValueOnce(
+      scheduledItemEvent.data.object,
+    );
     context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(
       scheduledItemEvent,
     );
