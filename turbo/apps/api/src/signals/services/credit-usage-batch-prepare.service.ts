@@ -51,7 +51,7 @@ export const prepareUsageSettlementBatch$ = command(
     if (keys.length > USAGE_SETTLEMENT_BATCH_SIZE) {
       throw new Error("Usage settlement batch exceeds its event bound");
     }
-    const events = await db
+    const snapshots = await db
       .select({
         event: usageEvent,
         xmin: sql`${usageEvent}.xmin::text`.mapWith(pgTextDecoder),
@@ -60,13 +60,21 @@ export const prepareUsageSettlementBatch$ = command(
       .where(
         and(
           eq(usageEvent.orgId, args.orgId),
-          eq(usageEvent.status, "pending"),
+          args.social ? undefined : eq(usageEvent.status, "pending"),
           inArray(usageEvent.idempotencyKey, keys),
         ),
       )
       .orderBy(asc(usageEvent.id))
       .limit(USAGE_SETTLEMENT_BATCH_SIZE);
     signal.throwIfAborted();
+    const events = snapshots.filter(({ event }) => {
+      return event.status === "pending";
+    });
+    const hasSocialReceipt =
+      Boolean(args.social) &&
+      snapshots.some(({ event }) => {
+        return event.status === "processed";
+      });
     const pricingKeys = settlementPricingKeys(
       events,
       get(usagePricingResolution$),
@@ -110,6 +118,7 @@ export const prepareUsageSettlementBatch$ = command(
     return {
       events,
       social,
+      hasSocialReceipt,
       pricing,
       pricingKeys,
       prices,

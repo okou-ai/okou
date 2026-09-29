@@ -1,3 +1,4 @@
+import { UsageSettlementSnapshotConflict } from "./credit-usage-batch";
 import { randomUUID } from "node:crypto";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import {
@@ -231,7 +232,7 @@ export function planPreparedAllowanceEntitlement(
     refresh?.entitlementId !== entitlement.id ||
     refresh.snapshot !== entitlement.snapshot
   ) {
-    throw new Error(
+    throw new UsageSettlementSnapshotConflict(
       "Usage allowance entitlement changed before prepared Stripe refresh",
     );
   }

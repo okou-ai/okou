@@ -46,7 +46,6 @@ import {
   SocialDataProviderError,
   type SocialDataProviderPlan,
 } from "./social-data-provider-catalog";
-import { prepareUsageAllowanceRefresh$ } from "./usage-allowance.service";
 
 export const SOCIAL_DATA_RECONCILIATION_TIMEOUT_MS = 240_000;
 const CLAIM_MS = 180_000;
@@ -640,8 +639,6 @@ const settleSocialDataJob$ = command(
     const [current] = await db
       .select({
         creditsCharged: socialDataJobs.creditsCharged,
-        actualCostUsdMicros: socialDataJobs.actualCostUsdMicros,
-        maxCredits: socialDataJobs.maxCredits,
       })
       .from(socialDataJobs)
       .where(claimedWhere(claim));
@@ -649,21 +646,10 @@ const settleSocialDataJob$ = command(
     if (!current || current.creditsCharged !== null) {
       return;
     }
-    const allowanceRefresh =
-      current.actualCostUsdMicros !== null &&
-      current.actualCostUsdMicros > 0 &&
-      current.maxCredits > 0
-        ? await set(
-            prepareUsageAllowanceRefresh$,
-            { orgId: claim.job.orgId },
-            signal,
-          )
-        : undefined;
     const effects = await set(
       settleOrgUsage$,
       {
         orgId: claim.job.orgId,
-        refresh: allowanceRefresh,
         social: { jobId: claim.job.id, expiresAt: claim.expiresAt },
       },
       signal,

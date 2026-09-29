@@ -10,7 +10,6 @@ import { safeSync, tapError } from "../utils";
 import { maybeEmitRunUsageEvent$ } from "./chat-usage-event.service";
 import { enqueueCreditLowBalanceAlert$ } from "./credit-low-balance-alert.service";
 import { triggerAutoRecharge$ } from "./credit-recharge.service";
-import { prepareUsageAllowanceRefresh$ } from "./usage-allowance.service";
 import type { ProcessOrgUsageEventsResult } from "./credit-usage-pricing";
 
 const L = logger("CreditUsage");
@@ -140,14 +139,9 @@ export const processUsageEventKeys$ = command(
         offset,
         offset + USAGE_SETTLEMENT_BATCH_SIZE,
       );
-      const refresh = await set(
-        prepareUsageAllowanceRefresh$,
-        { orgId: args.orgId, requirePendingUsage: true },
-        signal,
-      );
       const result = await set(
         settleOrgUsage$,
-        { orgId: args.orgId, idempotencyKeys, refresh },
+        { orgId: args.orgId, idempotencyKeys },
         signal,
       );
       if (result) {

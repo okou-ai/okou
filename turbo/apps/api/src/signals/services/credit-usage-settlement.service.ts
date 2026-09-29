@@ -14,6 +14,7 @@ import { settle } from "../utils";
 import { prepareUsageSettlementBatch$ } from "./credit-usage-batch-prepare.service";
 import {
   requireCompleteUsageClaim,
+  usageAllowanceRefreshArgs,
   UsageSettlementSnapshotConflict,
   requiredSettlementDebit,
   type PreparedUsageBatch,
@@ -71,17 +72,18 @@ import {
 import { usageEventCompactionLockSql } from "./usage-event-compaction-lock.service";
 import {
   orgCreditCompatibilityLockSql,
+  prepareUsageAllowanceRefresh$,
   type PreparedUsageAllowanceRefresh,
 } from "./usage-allowance.service";
 
 interface UsageSettlementArgs {
   readonly orgId: string;
   readonly idempotencyKeys?: readonly string[];
-  readonly refresh?: PreparedUsageAllowanceRefresh;
   readonly social?: SocialSettlementClaim;
 }
 
 interface SettlementBatchArgs extends UsageSettlementArgs {
+  readonly refresh?: PreparedUsageAllowanceRefresh;
   readonly batch: PreparedUsageBatch;
 }
 
@@ -223,8 +225,12 @@ export const settleOrgUsage$ = command(
   async ({ get, set }, args: UsageSettlementArgs, signal: AbortSignal) => {
     for (let attempt = 0; ; attempt++) {
       const batch = await set(prepareUsageSettlementBatch$, args, signal);
+      const refreshArgs = usageAllowanceRefreshArgs(args, batch);
+      const refresh = refreshArgs
+        ? await set(prepareUsageAllowanceRefresh$, refreshArgs, signal)
+        : undefined;
       const outcome = await settle(
-        set(commitUsageBatch$, { ...args, batch }, signal),
+        set(commitUsageBatch$, { ...args, batch, refresh }, signal),
       );
       signal.throwIfAborted();
       if (!outcome.ok) {

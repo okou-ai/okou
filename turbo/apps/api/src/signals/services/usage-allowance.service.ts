@@ -247,7 +247,10 @@ async function prepareAllowanceRefresh(
   )) as UsageAllowanceSubscriptionInput;
   return { entitlementId: row.id, snapshot: row.snapshot, subscription };
 }
-function pendingAllowanceRefreshQuery(orgId: string) {
+function pendingAllowanceRefreshQuery(
+  orgId: string,
+  idempotencyKeys?: readonly string[],
+) {
   const queryBuilder = new QueryBuilder();
   const anchor = sql`COALESCE(${usageEvent.billingAnchorAt}, ${agentRuns.createdAt}, ${usageEvent.createdAt})`;
   const issuedWindow = (kind: UsageAllowanceWindowKind) => {
@@ -274,6 +277,9 @@ function pendingAllowanceRefreshQuery(orgId: string) {
       and(
         eq(usageEvent.orgId, orgId),
         eq(usageEvent.status, "pending"),
+        idempotencyKeys
+          ? inArray(usageEvent.idempotencyKey, [...idempotencyKeys])
+          : undefined,
         notExists(
           queryBuilder
             .select({ id: usageAllowanceAllocations.usageEventId })
@@ -291,14 +297,18 @@ function pendingAllowanceRefreshQuery(orgId: string) {
 export const prepareUsageAllowanceRefresh$ = command(
   async (
     { set },
-    args: { readonly orgId: string; readonly requirePendingUsage?: boolean },
+    args: {
+      readonly orgId: string;
+      readonly requirePendingUsage?: boolean;
+      readonly idempotencyKeys?: readonly string[];
+    },
     signal: AbortSignal,
   ) => {
     const db = set(writeDb$);
     if (args.requirePendingUsage) {
       const [pending] = await db
         .select()
-        .from(pendingAllowanceRefreshQuery(args.orgId));
+        .from(pendingAllowanceRefreshQuery(args.orgId, args.idempotencyKeys));
       signal.throwIfAborted();
       if (!pending) {
         return undefined;
