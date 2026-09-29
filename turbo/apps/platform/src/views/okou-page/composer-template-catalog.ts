@@ -18,11 +18,10 @@ import { r2ImageTransformUrl } from "@okouai/core/r2-image-transform";
 import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ComposerTemplateAttachment } from "../../signals/okou-page/tiptap-workflow-composer.ts";
 
-/** Falls back to the stylesheet's own default when an item pins no system. */
 export function defaultPresentationTemplateThemeId(
   item: PresentationTemplateItem,
 ): string {
-  return item.colorSystemId?.replace("color-system:", "") ?? "warm-sand";
+  return item.colorSystemId.replace("color-system:", "");
 }
 
 export function presentationTemplateColorSystemId(themeId: string): string {
@@ -141,7 +140,7 @@ function presentationPreview(
 ): SlashTemplatePreview {
   // `cardPreviewImage` is already the item's default color system, which is the
   // one a fresh selection uses.
-  const cover = coverUrl(item.cardPreviewImage ?? item.previewImage);
+  const cover = coverUrl(item.cardPreviewImage);
   return {
     slug: item.slug,
     title: item.title,
@@ -159,7 +158,7 @@ function presentationPreview(
 function illustrationPreview(
   item: IllustrationTemplateItem,
 ): SlashTemplatePreview {
-  const cover = nativeCoverUrl(item.cardPreviewImage ?? item.previewImage);
+  const cover = nativeCoverUrl(item.cardPreviewImage);
   return {
     slug: item.slug,
     title: item.title,

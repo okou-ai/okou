@@ -416,14 +416,11 @@ interface ImageGenerationNotifier {
 function createImageGenerationRealtime(
   accepted: ImageGenerationAcceptedResponse,
 ): Realtime {
-  let nextAuthRequest = accepted.realtime.tokenRequest;
   const authCallback: NonNullable<AuthOptions["authCallback"]> = (
     _params,
     callback,
   ) => {
-    const current = nextAuthRequest;
-    nextAuthRequest = accepted.realtime.tokenRequest;
-    callback(null, current);
+    callback(null, accepted.realtime.tokenRequest);
   };
 
   return new Realtime({

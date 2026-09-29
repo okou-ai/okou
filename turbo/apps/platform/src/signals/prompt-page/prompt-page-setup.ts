@@ -73,8 +73,7 @@ function presentationGenerationTemplateFromId(
       type: "presentation",
       selection: {
         templateId: presentationTemplate.templateId,
-        colorSystemId:
-          presentationTemplate.colorSystemId ?? "color-system:warm-sand",
+        colorSystemId: presentationTemplate.colorSystemId,
         previewUrl: presentationTemplate.embedUrl,
       },
     },

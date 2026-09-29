@@ -69,9 +69,7 @@ function expectStaticPreviewImages(
     item.cardPreviewImage,
     item.embedUrl,
     ...item.previewImages,
-  ].filter((url): url is string => {
-    return url !== undefined;
-  });
+  ];
 
   for (const url of assetUrls) {
     for (const forbidden of FORBIDDEN_ASSET_URL_PARTS) {
@@ -81,11 +79,11 @@ function expectStaticPreviewImages(
 }
 
 function expectColorSystem(
-  colorSystemId: string | undefined,
+  colorSystemId: string,
   expectedColorSystemId: string,
 ): void {
   expect(colorSystemId).toBe(expectedColorSystemId);
-  expect(findColorSystem(colorSystemId ?? "")).toBeDefined();
+  expect(findColorSystem(colorSystemId)).toBeDefined();
 }
 
 const BATCH_PRESENTATION_PICKER_ITEMS = [
@@ -238,9 +236,6 @@ describe("presentation template items", () => {
   it("defines themed first-slide card preview assets for picker thumbnails", () => {
     for (const item of PRESENTATION_TEMPLATE_PICKER_ITEMS) {
       expect(item.cardPreviewImagesByTheme, item.slug).toBeDefined();
-      if (!item.cardPreviewImagesByTheme) {
-        throw new Error(`missing themed card previews for ${item.slug}`);
-      }
 
       expect(Object.keys(item.cardPreviewImagesByTheme).sort()).toEqual(
         [...PRESENTATION_TEMPLATE_PICKER_CARD_PREVIEW_THEMES].sort(),
@@ -253,8 +248,7 @@ describe("presentation template items", () => {
         expect(url, `${item.slug}:${themeId}`).not.toContain("/cdn-cgi/image/");
       }
 
-      const defaultThemeId =
-        item.colorSystemId?.replace("color-system:", "") ?? "warm-sand";
+      const defaultThemeId = item.colorSystemId.replace("color-system:", "");
       expect(item.cardPreviewImage, item.slug).toBe(
         item.cardPreviewImagesByTheme[defaultThemeId],
       );
@@ -273,7 +267,7 @@ describe("presentation template items", () => {
         findPresentationRunbookPackage(item.templateId),
         item.templateId,
       ).toBeDefined();
-      expect(findColorSystem(item.colorSystemId ?? "")).toBeDefined();
+      expect(findColorSystem(item.colorSystemId)).toBeDefined();
     }
   });
 
@@ -391,7 +385,7 @@ describe("presentation template items", () => {
       );
       expectStaticPreviewImages(item);
       expect(item.cardPreviewImage).toBe(
-        item.cardPreviewImagesByTheme?.[expected.defaultThemeId],
+        item.cardPreviewImagesByTheme[expected.defaultThemeId],
       );
       expect(
         findPresentationRunbookPackage(item.templateId),

@@ -291,7 +291,7 @@ export async function authorizedUserTemplates(
     return [];
   }
   const rows = await db
-    .select()
+    .select({ id: userTemplates.id, manifest: userTemplates.manifest })
     .from(userTemplates)
     .where(
       and(

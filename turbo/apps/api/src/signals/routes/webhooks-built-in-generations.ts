@@ -605,10 +605,7 @@ const handleFalImageCompletion$ = command(
         privateArtifacts: builtInGenerationIsPrivate(args.job.request),
         pricing,
         generation,
-        usageIdempotency: {
-          generationId: args.job.id,
-          scope: "image",
-        },
+        generationId: args.job.id,
       },
       signal,
     );

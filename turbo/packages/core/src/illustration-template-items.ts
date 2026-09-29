@@ -917,7 +917,7 @@ export interface IllustrationTemplateItem {
   readonly illustrationStyleId: string;
   readonly previewImage: string;
   readonly previewImages: readonly string[];
-  readonly cardPreviewImage?: string;
+  readonly cardPreviewImage: string;
   /** Intrinsic pixel dimensions of the style's reference frame, used to reserve
    * the card's aspect ratio so the full illustration renders without cropping,
    * letterboxing, or layout shift. */

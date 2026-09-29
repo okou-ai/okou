@@ -72,7 +72,7 @@ test("Send the selected presentation theme from its preview", async () => {
 test("Use a presentation template's default theme", async () => {
   const capture = mockTemplateChat();
   const template = builtInTemplate();
-  const defaultTheme = template.colorSystemId ?? "color-system:warm-sand";
+  const defaultTheme = template.colorSystemId;
   const user = userEvent.setup();
 
   await setupPage({

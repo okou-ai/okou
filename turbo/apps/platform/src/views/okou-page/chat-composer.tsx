@@ -1188,17 +1188,17 @@ function WorkflowTemplateGrid({
 function presentationTemplateSlideCount(
   item: PresentationTemplateItem,
 ): number {
-  return Math.max(item.slideCount ?? item.previewImages.length, 1);
+  return Math.max(item.slideCount, 1);
 }
 
 function presentationTemplateThemedCardPreviewSource(
   item: PresentationTemplateItem,
   theme: PresentationTemplateThemeOption | undefined,
-): string | undefined {
+): string {
   if (theme === undefined) {
     return item.cardPreviewImage;
   }
-  return item.cardPreviewImagesByTheme?.[theme.id] ?? item.cardPreviewImage;
+  return item.cardPreviewImagesByTheme[theme.id] ?? item.cardPreviewImage;
 }
 
 function presentationTemplateCardSlideImage(
@@ -1207,12 +1207,11 @@ function presentationTemplateCardSlideImage(
   theme?: PresentationTemplateThemeOption,
   size: TemplatePreviewImageSize = TEMPLATE_CARD_PREVIEW_SIZE,
 ): string {
-  const cardPreviewSource =
-    index === 0
-      ? presentationTemplateThemedCardPreviewSource(item, theme)
-      : undefined;
-  if (cardPreviewSource !== undefined) {
-    return r2ImageTransformUrl(cardPreviewSource, size);
+  if (index === 0) {
+    return r2ImageTransformUrl(
+      presentationTemplateThemedCardPreviewSource(item, theme),
+      size,
+    );
   }
   return presentationTemplateGallerySlideImage(item, index, size);
 }
@@ -1259,10 +1258,7 @@ function presentationTemplateDetailSlideImageSource(
   htmlPreviewFailed: boolean,
 ): string {
   if (index === 0) {
-    return (
-      presentationTemplateThemedCardPreviewSource(item, theme) ??
-      presentationTemplateGallerySlideUrl(item, index)
-    );
+    return presentationTemplateThemedCardPreviewSource(item, theme);
   }
   if (htmlPreviewFailed) {
     return presentationTemplateGallerySlideUrl(item, index);

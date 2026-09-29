@@ -21,7 +21,6 @@ import {
 } from "@okouai/core/image-model-catalog";
 import { formatRegistryListing } from "./resource-listing";
 import { dispatchGenerate } from "../generate/lib/dispatch";
-import type { GenerationType } from "../generate/lib/generation-type";
 
 interface ImageOptions {
   prompt?: string;
@@ -49,24 +48,17 @@ interface ImageOptions {
   visibility?: ArtifactVisibility;
 }
 
-interface ImageGenerateCommandConfig {
-  name: string;
-  generationType: GenerationType;
-  usageCommand: string;
-  examples: string;
-}
-
 type ImagePromptMode = "compile" | "compiled" | "raw";
 
-function requireImageModeError(usageCommand: string): Error {
+function requireImageModeError(): Error {
   const styles = listImageStyles();
   const message = [
     "Choose one image prompt mode",
     "",
     "Modes:",
-    `  Compile styled prompt: ${usageCommand} --style ${styles[0]?.id ?? "<style-id>"} --prompt "..." --compile`,
-    `  Generate compiled prompt: ${usageCommand} --compiled-prompt "..."`,
-    `  Generate raw prompt: ${usageCommand} --raw-prompt "..."`,
+    `  Compile styled prompt: okou generate image --style ${styles[0]?.id ?? "<style-id>"} --prompt "..." --compile`,
+    '  Generate compiled prompt: okou generate image --compiled-prompt "..."',
+    '  Generate raw prompt: okou generate image --raw-prompt "..."',
     "",
     "Available styles:",
     formatRegistryListing(styles, "image styles"),
@@ -74,7 +66,7 @@ function requireImageModeError(usageCommand: string): Error {
   return new Error(message);
 }
 
-function unknownStyleError(id: string, usageCommand: string): Error {
+function unknownStyleError(id: string): Error {
   const styles = listImageStyles();
   const message = [
     `Unknown image style: ${id}`,
@@ -83,7 +75,7 @@ function unknownStyleError(id: string, usageCommand: string): Error {
     formatRegistryListing(styles, "image styles"),
     "",
     `Example:`,
-    `  ${usageCommand} --style ${styles[0]?.id ?? "<style-id>"} --prompt "..." --compile`,
+    `  okou generate image --style ${styles[0]?.id ?? "<style-id>"} --prompt "..." --compile`,
   ].join("\n");
   return new Error(message);
 }
@@ -176,10 +168,7 @@ function imageExecutionOnlyOption(
   return options.json ? "--json" : undefined;
 }
 
-function resolveImagePromptMode(
-  options: ImageOptions,
-  usageCommand: string,
-): ImagePromptMode {
+function resolveImagePromptMode(options: ImageOptions): ImagePromptMode {
   const hasCompiledPrompt = options.compiledPrompt !== undefined;
   const hasRawPrompt = options.rawPrompt !== undefined;
   const compile = options.compile === true;
@@ -192,7 +181,7 @@ function resolveImagePromptMode(
   }
 
   if ([compile, hasCompiledPrompt, hasRawPrompt].filter(Boolean).length !== 1) {
-    throw requireImageModeError(usageCommand);
+    throw requireImageModeError();
   }
 
   if (compile && !options.style) {
@@ -214,11 +203,9 @@ function resolveImagePromptMode(
   return "raw";
 }
 
-export function createImageGenerateCommand(
-  config: ImageGenerateCommandConfig,
-): Command {
+export function createImageGenerateCommand(): Command {
   return new Command()
-    .name(config.name)
+    .name("image")
     .description("Generate a billed image file from a prompt")
     .option(
       "--prompt <text>",
@@ -302,7 +289,14 @@ export function createImageGenerateCommand(
       const styles = listImageStyles();
       return `
 Examples:
-${config.examples}
+  Compile styled prompt: okou generate image --style image-style:notion-illustration --prompt "A product manager mapping a launch plan" --compile
+  Generate compiled:     okou generate image --compiled-prompt "A Notion-style brush-pen illustration..."
+  Generate raw:          okou generate image --raw-prompt "A watercolor fox"
+  Pipe compile prompt:   cat prompt.txt | okou generate image --style image-style:notion-illustration --compile
+  Size and quality:      okou generate image --compiled-prompt "A poster" --size 1024x1536 --quality high
+  Image-to-image:        okou generate image --compiled-prompt "Turn this mockup into a polished product shot" --image-url https://example.com/mockup.png
+  List providers:        okou generate image
+  Use a connector:       okou generate image --provider replicate
 
 Output:
   Prints the generated /f/ image file URL and metadata with --compiled-prompt
@@ -387,7 +381,7 @@ ${formatRegistryListing(styles, "image styles")}`;
     .action(
       withErrorHandler(async (options: ImageOptions) => {
         const dispatch = await dispatchGenerate({
-          generationType: config.generationType,
+          generationType: "image",
           provider: options.provider,
           prompt: resolvePromptInput(options),
           all: options.all,
@@ -400,7 +394,7 @@ ${formatRegistryListing(styles, "image styles")}`;
         });
         if (dispatch.outcome === "handled") return;
         const resolvedPrompt = dispatch.prompt;
-        const mode = resolveImagePromptMode(options, config.usageCommand);
+        const mode = resolveImagePromptMode(options);
 
         if (mode === "compile") {
           if (options.visibility) {
@@ -419,7 +413,7 @@ ${formatRegistryListing(styles, "image styles")}`;
           }
           const style = findImageStyle(styleId);
           if (!style) {
-            throw unknownStyleError(styleId, config.usageCommand);
+            throw unknownStyleError(styleId);
           }
 
           const instructions = createStyledImageCompilationInstructions({

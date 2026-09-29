@@ -28,10 +28,7 @@ import { checkBillableOperationCredits$ } from "./billable-operation-admission.s
 import { storeGeneratedArtifactObject$ } from "./artifact-storage.service";
 import { recordWebUploadedFile$ } from "./run-uploaded-files.service";
 import { processOrgUsageEvents$ } from "./credit-usage.service";
-import {
-  builtInGenerationUsageIdempotencyKey,
-  type BuiltInGenerationUsageIdempotency,
-} from "./built-in-generation-usage-idempotency";
+import { builtInGenerationUsageIdempotencyKey } from "./built-in-generation-usage-idempotency";
 
 const FAL_IMAGE_QUEUE_URL_PREFIX = "https://queue.fal.run";
 const FAL_BILLABLE_UNITS_HEADER = "x-fal-billable-units";
@@ -2485,8 +2482,7 @@ export const recordGeneratedImage$ = command(
       readonly privateArtifacts: boolean;
       readonly pricing: ImagePricing;
       readonly generation: ParsedImageGeneration;
-      readonly recordArtifact?: boolean;
-      readonly usageIdempotency: BuiltInGenerationUsageIdempotency;
+      readonly generationId: string;
     },
     signal: AbortSignal,
   ): Promise<RecordedImage> => {
@@ -2507,29 +2503,24 @@ export const recordGeneratedImage$ = command(
     const { id: fileId, filename, key: s3Key, url } = artifact;
     const contentType = contentTypeForFormat(params.generation.outputFormat);
 
-    if (params.recordArtifact !== false) {
-      await set(
-        recordWebUploadedFile$,
-        {
-          runId: params.runId,
-          externalId: fileId,
-          userId: params.userId,
-          orgId: params.orgId,
-          filename,
-          contentType,
-          sizeBytes: params.generation.imageBytes.byteLength,
-          url,
-          s3Key,
-          layout: artifact.layout,
-          metadata: generatedImageMetadata(
-            params.generation,
-            artifact.isPrivate,
-          ),
-        },
-        signal,
-      );
-      signal.throwIfAborted();
-    }
+    await set(
+      recordWebUploadedFile$,
+      {
+        runId: params.runId,
+        externalId: fileId,
+        userId: params.userId,
+        orgId: params.orgId,
+        filename,
+        contentType,
+        sizeBytes: params.generation.imageBytes.byteLength,
+        url,
+        s3Key,
+        layout: artifact.layout,
+        metadata: generatedImageMetadata(params.generation, artifact.isPrivate),
+      },
+      signal,
+    );
+    signal.throwIfAborted();
 
     const usageRows = params.generation.billing.filter((row) => {
       return row.quantity > 0;
@@ -2544,7 +2535,7 @@ export const recordGeneratedImage$ = command(
             billingRunId: params.billingRunId,
             billingContext: params.billingContext,
             idempotencyKey: builtInGenerationUsageIdempotencyKey({
-              ...params.usageIdempotency,
+              generationId: params.generationId,
               category: row.category,
             }),
             orgId: params.orgId,

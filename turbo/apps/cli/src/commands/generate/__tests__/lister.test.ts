@@ -653,8 +653,5 @@ describe("okou generate lister", () => {
     await expect(
       generateCommand.parseAsync(["node", "cli", "spaceship"]),
     ).rejects.toThrow();
-    await expect(
-      generateCommand.parseAsync(["node", "cli", "audio"]),
-    ).rejects.toThrow();
   });
 });

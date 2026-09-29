@@ -4,10 +4,10 @@ export interface PresentationTemplateItem {
   readonly embedUrl: string;
   readonly previewImage: string;
   readonly previewImages: readonly string[];
-  readonly slideCount?: number;
-  readonly cardPreviewImage?: string;
-  readonly cardPreviewImagesByTheme?: Readonly<Record<string, string>>;
-  readonly colorSystemId?: string;
+  readonly slideCount: number;
+  readonly cardPreviewImage: string;
+  readonly cardPreviewImagesByTheme: Readonly<Record<string, string>>;
+  readonly colorSystemId: string;
   readonly templateId: string;
 }
 

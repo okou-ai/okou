@@ -16,7 +16,6 @@ import {
   type HtmlArtifactKind,
 } from "./html-artifact-authoring";
 import { dispatchGenerate } from "../generate/lib/dispatch";
-import type { GenerationType } from "../generate/lib/generation-type";
 import {
   createArtifactVisibilityOption,
   type ArtifactVisibility,
@@ -32,13 +31,9 @@ interface ArtifactOptions {
 }
 
 interface ArtifactCommandConfig {
-  name: string;
-  generationType: GenerationType;
-  target: HtmlArtifactKind;
+  target: Exclude<HtmlArtifactKind, "website">;
   description: string;
-  usageCommand: string;
   examples: string;
-  details: (options: ArtifactOptions) => readonly string[];
   artifactRules: readonly string[];
 }
 
@@ -81,8 +76,9 @@ function unknownTemplateError(
 export function createArtifactGenerateCommand(
   config: ArtifactCommandConfig,
 ): Command {
+  const usageCommand = `okou generate ${config.target}`;
   return new Command()
-    .name(config.name)
+    .name(config.target)
     .description(config.description)
     .option("--prompt <text>", "Artifact prompt; can also be piped via stdin")
     .option("--site-slug <slug>", "Hosted site slug override")
@@ -120,7 +116,7 @@ ${formatRegistryListing(templates, `${config.target} templates`)}`;
     .action(
       withErrorHandler(async (options: ArtifactOptions) => {
         const dispatch = await dispatchGenerate({
-          generationType: config.generationType,
+          generationType: config.target,
           prompt: options.prompt,
         });
         if (dispatch.outcome === "handled") return;
@@ -134,10 +130,7 @@ ${formatRegistryListing(templates, `${config.target} templates`)}`;
           );
           const entry = findDesignSystem(canonical);
           if (!entry) {
-            throw unknownDesignSystemError(
-              options.designSystem,
-              config.usageCommand,
-            );
+            throw unknownDesignSystemError(options.designSystem, usageCommand);
           }
           resolvedDesignSystem = entry;
         }
@@ -152,7 +145,7 @@ ${formatRegistryListing(templates, `${config.target} templates`)}`;
           if (!entry || !entry.targets?.includes(config.target)) {
             throw unknownTemplateError(
               options.template,
-              config.usageCommand,
+              usageCommand,
               config.target,
             );
           }
@@ -178,7 +171,11 @@ ${formatRegistryListing(templates, `${config.target} templates`)}`;
           slugSource: options.title,
           siteSlug: options.siteSlug,
           visibility: options.visibility,
-          details: [...config.details(options), ...extraDetails],
+          details: [
+            `Artifact kind: ${config.target}`,
+            `Requested title/name: ${options.title ?? "not specified"}`,
+            ...extraDetails,
+          ],
           artifactRules: config.artifactRules,
         });
 
