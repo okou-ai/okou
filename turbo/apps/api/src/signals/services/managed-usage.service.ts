@@ -1,14 +1,19 @@
 import { resolveUsageAllowanceAvailability$ } from "./usage-allowance-availability.service";
 import {
   managedUsageReceiptCredits,
-  managedRunQuery,
-  managedValues,
   receiptQuery,
   type ManagedUsageRecordArgs,
   type ManagedUsageResource,
 } from "./managed-usage-record";
+import {
+  attributedManagedValues,
+  managedAttributionQuery,
+  managedAttributionWrite,
+  managedBillingRunQuery,
+} from "./managed-usage-attribution";
 import { randomUUID } from "node:crypto";
 
+import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
 import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { usageEvent } from "@okouai/db/schema/usage-event";
@@ -19,6 +24,7 @@ import { and, eq, gt, lte, sql, sum } from "drizzle-orm";
 import {
   nullableDriverValueDecoder,
   pgInt8ToBigIntDecoder,
+  pgTextDecoder,
 } from "../../lib/db-structured-result";
 import {
   resolveUsagePricingProvider,
@@ -274,12 +280,47 @@ export const recordManagedUsage$ = command(
     };
     await db.transaction(async (tx) => {
       const [run] = args.actor.runId
-        ? await tx.select().from(managedRunQuery(args))
+        ? await tx.select().from(managedBillingRunQuery(args.actor.runId))
         : [];
-      await tx
+      let [attribution] = args.actor.runId
+        ? await tx.select().from(managedAttributionQuery(args.actor.runId))
+        : [];
+      if (!attribution && run) {
+        const capture = managedAttributionWrite(args, run);
+        [attribution] = await tx
+          .insert(billingRunAttribution)
+          .values(capture.values)
+          .onConflictDoUpdate(capture.conflict)
+          .returning({
+            runId: billingRunAttribution.runId,
+            orgId: billingRunAttribution.orgId,
+            userId: billingRunAttribution.userId,
+            startedAt: sql`${billingRunAttribution.runStartedAt}::text`.mapWith(
+              pgTextDecoder,
+            ),
+          });
+        if (!attribution) {
+          throw new Error(
+            "Managed usage Run attribution conflicts with history",
+          );
+        }
+      }
+      const [inserted] = await tx
         .insert(usageEvent)
-        .values(managedValues(identity, run))
-        .onConflictDoNothing({ target: usageEvent.idempotencyKey });
+        .values(attributedManagedValues(identity, run, attribution))
+        .onConflictDoNothing({ target: usageEvent.idempotencyKey })
+        .returning({ id: usageEvent.id });
+      if (inserted && attribution) {
+        await tx
+          .update(billingRunAttribution)
+          .set({ usageObserved: true })
+          .where(
+            and(
+              eq(billingRunAttribution.runId, attribution.runId),
+              eq(billingRunAttribution.usageObserved, false),
+            ),
+          );
+      }
       signal.throwIfAborted();
     });
     signal.throwIfAborted();

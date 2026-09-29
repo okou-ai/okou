@@ -16,22 +16,50 @@ and its function, leaving ten application triggers in the proposed R1 schema.
 
 ## Existing billing attribution triggers
 
-| Table and trigger                                                                                                  | Current business guarantee                                                                                           | Replacement work                                                                                                   |
-| ------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `agent_runs.capture_billing_run_attribution`                                                                       | Captures the original organization, user, run start, source and thread identity.                                     | Both Run insertion paths must explicitly publish attribution atomically with the Run.                              |
-| `billing_run_attribution.billing_run_attribution_immutable`                                                        | Rejects changed attribution, regressing `usage_observed`, or replacement of an established thread identity.          | Every mutation must use the same identity predicates and monotone observed transition.                             |
-| `usage_event.capture_usage_billing_attribution` and `usage_event_hourly_rollup.capture_hourly_billing_attribution` | Resolves run identity, context and original allowance anchor, including Pi Stage 1, and rejects inconsistent owners. | Raw and rollup writers must explicitly resolve and validate these ordinary business values in their owning commit. |
-| `built_in_generation_jobs.capture_generation_billing_identity`                                                     | Establishes immutable run/runless generation attribution.                                                            | Generation job creation and updates must publish the same identity explicitly.                                     |
-| `usage_event.mark_raw_billing_usage_observed` and `usage_event_hourly_rollup.mark_hourly_billing_usage_observed`   | Marks attribution as having observed usage, protecting its retention.                                                | Raw insertion and compaction must include the monotone attribution update in their atomic writes.                  |
+| Table and trigger                                                                                                  | Current business guarantee                                                                                           | Replacement work                                                                                                                   |
+| ------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `agent_runs.capture_billing_run_attribution`                                                                       | Captures the original organization, user, run start, source and thread identity.                                     | Both Run insertion paths must explicitly publish attribution atomically with the Run.                                              |
+| `billing_run_attribution.billing_run_attribution_immutable`                                                        | Rejects changed attribution, regressing `usage_observed`, or replacement of an established thread identity.          | Every mutation must use the same identity predicates and monotone observed transition.                                             |
+| `usage_event.capture_usage_billing_attribution` and `usage_event_hourly_rollup.capture_hourly_billing_attribution` | Resolves run identity, context and original allowance anchor, including Pi Stage 1, and rejects inconsistent owners. | Raw and rollup writers must explicitly resolve and validate these ordinary business values in their owning commit.                 |
+| `built_in_generation_jobs.capture_generation_billing_identity`                                                     | Establishes immutable run/runless generation attribution.                                                            | Generation creation now supplies its identity explicitly; outgoing and operator writers still require a complete retirement audit. |
+| `usage_event.mark_raw_billing_usage_observed` and `usage_event_hourly_rollup.mark_hourly_billing_usage_observed`   | Marks attribution as having observed usage, protecting its retention.                                                | Raw insertion and compaction must include the monotone attribution update in their atomic writes.                                  |
 
-These seven triggers are **unfinished replacement protocols**, not only an
-outgoing-version drain condition. For example, `managedValues` in
-`managed-usage-record.ts` still supplies `missing_run` for an existing Run and
-relies on the trigger to complete the context and anchor. Generation insertion
-in `built-in-generation.service.ts` supplies `runId` without the complete billing
-identity. Both Run creation paths in `agent-run-create.service.ts` still depend
-on trigger-side attribution publication. Existing attribution readers and the
-retained convergence fallbacks do not replace these writes.
+Retirement of these seven triggers still requires **unfinished replacement
+protocols**, not only outgoing-version drain. Both Run creation paths in
+`agent-run-create.service.ts` still depend on trigger-side attribution
+publication. The Social settlement insertion still uses `managedValues` in
+`managed-usage-record.ts`, which supplies `missing_run` for an existing Run and
+relies on the trigger to complete the context and anchor. OpenRouter, image
+usage, voice, Runner telemetry, Pi Stage 1, hourly compaction and operator
+linkage also need a complete explicit capture/observation audit. Existing
+attribution readers and the retained convergence fallbacks do not replace
+these writes.
+
+Two bounded producer changes are implemented:
+
+- `createImageGenerationJob$` supplies both `billing_run_id` and its explicit
+  `run`/`runless` context in the existing single job INSERT. Status, provider
+  callback and result updates leave these fields unchanged. A later Run FK
+  `SET NULL` does not erase the original independent billing identity.
+- `recordManagedUsage$` owns Run parent retention, canonical attribution lookup,
+  any missing live-Run capture, raw event insertion and monotone
+  `usage_observed` publication in one short SQL transaction. Only pure query and
+  value builders are reused. An existing attribution remains authoritative
+  even after the live Run is deleted; it must match the billed organization and
+  user. A supplied Run without either source stays `missing_run`, with no
+  fabricated allowance anchor. An explicitly runless event uses its own
+  database occurrence time. The original Run timestamp travels as PostgreSQL
+  text so sub-millisecond precision survives. Capturing a previously missing
+  row validates original organization/user/start/source and only fills unknown
+  thread grouping, preserving captured identity and observed history. A
+  duplicate event does not add a second usage receipt or charge.
+
+The standalone managed path commits before financial settlement as before;
+Social's combined financial commit is a different writer and is not claimed
+complete by this change. No billing trigger is removed. Existing public API
+coverage for managed Run billing display, runless allowance consumption and
+image webhook completion remains; behavioral verification belongs to the
+integrated PR pipeline.
 
 Their creation is historical migration 1119; migrations 1141 and 1193 contain
 later function definitions. Preserve those migrations. Once all R1 writers
