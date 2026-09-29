@@ -113,8 +113,12 @@ requests:
   revocation still have inherited native-authority helper chains. Webhook and
   Stripe-specific creation and workflow copy still propagate handles through the
   shared thread initializer; their entry contexts are ordinary values now, but
-  those remaining transaction internals are not completed. Notion/Meet provider
-  preparation and Official reconfiguration have separate remaining caller work. The absent
+  those remaining transaction internals are not completed. Notion configuration
+  preparation and re-enable validation now invoke owning credential commands with
+  business inputs; account selection is an owned scalar read, including explicit
+  null selections. Provider preparation happens before publication. The final
+  enable writer and Official reconfiguration still have separate inherited
+  transaction work; Meet provider preparation remains separate. The absent
   native-owner key remains necessary for the current shared writer protocol:
   first materialization can otherwise race an ordinary/selected classification.
   Preparing its terminal protocol is still implementation work, not merely an

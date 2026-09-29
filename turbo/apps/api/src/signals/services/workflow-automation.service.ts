@@ -143,10 +143,10 @@ import {
   resolveNotionAutomationConnectorId,
 } from "./notion-automation-account.service";
 import {
-  prepareNotionChildPageEventConfigForPersist,
-  prepareNotionDatabaseItemEventConfigForPersist,
-  prepareNotionPageContentUpdatedEventConfigForPersist,
-  validateNotionEventConfigForConnector,
+  prepareNotionChildPageEventConfigForPersist$,
+  prepareNotionDatabaseItemEventConfigForPersist$,
+  prepareNotionPageContentUpdatedEventConfigForPersist$,
+  validateNotionEventConfigForConnector$,
 } from "./notion-automation-event.service";
 import { readAcceptedOfficialWorkflowCatalog } from "./official-workflow-catalog-read.service";
 import {
@@ -1774,6 +1774,27 @@ function eventAutomationConnectorSelectionSql(args: {
       LIMIT 1) END AS "connectorId"`;
 }
 
+const readEventAutomationConnectorId$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly workflowId: string;
+      readonly connectorSlug: string;
+    },
+    signal: AbortSignal,
+  ): Promise<string | null> => {
+    const db = set(writeDb$);
+    const [selected] = parseRawRows(
+      z.object({ connectorId: z.string().nullable() }),
+      await db.execute(eventAutomationConnectorSelectionSql(args)),
+    );
+    signal.throwIfAborted();
+    return selected?.connectorId ?? null;
+  },
+);
+
 function preparedEventAutomationValues(
   args: InsertEventAutomationArgs,
   eventConnectorId: string | null,
@@ -3111,9 +3132,8 @@ const createNotionEventAutomationForWorkflow$ = command(
     },
     signal: AbortSignal,
   ): Promise<AutomationResult> => {
-    const db = set(writeDb$);
-    const account = await resolveNotionAutomationAccountForCreation(
-      db,
+    const account = await set(
+      resolveNotionAutomationAccountForCreation$,
       {
         orgId: args.input.orgId,
         userId: args.input.member.userId,
@@ -3130,8 +3150,8 @@ const createNotionEventAutomationForWorkflow$ = command(
     if (args.input.eventType === "notion-child-page-created") {
       preparedConfig =
         eventConfig.event === "child_page_created"
-          ? await prepareNotionChildPageEventConfigForPersist(
-              db,
+          ? await set(
+              prepareNotionChildPageEventConfigForPersist$,
               {
                 orgId: args.input.orgId,
                 userId: args.input.member.userId,
@@ -3156,8 +3176,8 @@ const createNotionEventAutomationForWorkflow$ = command(
     } else if (args.input.eventType === "notion-database-item-created") {
       preparedConfig =
         eventConfig.event === "database_item_created"
-          ? await prepareNotionDatabaseItemEventConfigForPersist(
-              db,
+          ? await set(
+              prepareNotionDatabaseItemEventConfigForPersist$,
               {
                 orgId: args.input.orgId,
                 userId: args.input.member.userId,
@@ -3182,8 +3202,8 @@ const createNotionEventAutomationForWorkflow$ = command(
     } else {
       preparedConfig =
         eventConfig.event === "page_content_updated"
-          ? await prepareNotionPageContentUpdatedEventConfigForPersist(
-              db,
+          ? await set(
+              prepareNotionPageContentUpdatedEventConfigForPersist$,
               {
                 orgId: args.input.orgId,
                 userId: args.input.member.userId,
@@ -3230,30 +3250,36 @@ const createNotionEventAutomationForWorkflow$ = command(
     );
   },
 );
-async function resolveNotionAutomationAccountForCreation(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly workflowId: string;
-  },
-  signal: AbortSignal,
-): Promise<
-  | {
-      readonly kind: "ok";
-      readonly connectorId: string;
-    }
-  | AutomationActionFailure
-> {
-  const connectorId = await resolveNotionAutomationConnectorId(db, args);
-  signal.throwIfAborted();
-  return connectorId === null
-    ? {
-        kind: "bad-request",
-        message: "Connect Notion before adding a Notion event automation",
+const resolveNotionAutomationAccountForCreation$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly workflowId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<
+    | {
+        readonly kind: "ok";
+        readonly connectorId: string;
       }
-    : { kind: "ok", connectorId };
-}
+    | AutomationActionFailure
+  > => {
+    const connectorId = await set(
+      readEventAutomationConnectorId$,
+      { ...args, connectorSlug: "notion" },
+      signal,
+    );
+    signal.throwIfAborted();
+    return connectorId === null
+      ? {
+          kind: "bad-request",
+          message: "Connect Notion before adding a Notion event automation",
+        }
+      : { kind: "ok", connectorId };
+  },
+);
 
 const persistCreatedNotionAutomation$ = command(
   async (
@@ -4128,116 +4154,124 @@ async function prepareOfficialChatRunFinishedEvent(
   return preparedOfficialEvent(input.eventConfig);
 }
 
-async function prepareOfficialNotionEvent(
-  db: Db,
-  input: CreateNotionEventAutomationInput,
-  signal: AbortSignal,
-): Promise<OfficialAutomationEventPreparationResult> {
-  const eventConnectorId = await resolveNotionAutomationConnectorId(db, {
-    orgId: input.orgId,
-    userId: input.member.userId,
-    workflowId: input.workflowId,
-  });
-  signal.throwIfAborted();
-  if (eventConnectorId === null) {
-    return {
-      kind: "bad-request",
-      message: "Connect Notion before adding a Notion event automation",
-    };
-  }
-  const config = input.eventConfig;
-  if (input.eventType === "notion-child-page-created") {
-    if (config.event !== "child_page_created") {
+const prepareOfficialNotionEvent$ = command(
+  async (
+    { set },
+    input: CreateNotionEventAutomationInput,
+    signal: AbortSignal,
+  ): Promise<OfficialAutomationEventPreparationResult> => {
+    const eventConnectorId = await set(
+      readEventAutomationConnectorId$,
+      {
+        orgId: input.orgId,
+        userId: input.member.userId,
+        workflowId: input.workflowId,
+        connectorSlug: "notion",
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (eventConnectorId === null) {
+      return {
+        kind: "bad-request",
+        message: "Connect Notion before adding a Notion event automation",
+      };
+    }
+    const config = input.eventConfig;
+    if (input.eventType === "notion-child-page-created") {
+      if (config.event !== "child_page_created") {
+        return {
+          kind: "bad-request",
+          message: "Unsupported Notion automation event config",
+        };
+      }
+      const prepared = await set(
+        prepareNotionChildPageEventConfigForPersist$,
+        {
+          orgId: input.orgId,
+          userId: input.member.userId,
+          connectorId: eventConnectorId,
+          eventConfig:
+            "parentPageUrl" in config
+              ? config
+              : {
+                  provider: "notion",
+                  event: "child_page_created",
+                  parentPageUrl:
+                    config.parentPage.rawUrl ?? config.parentPage.url,
+                },
+        },
+        signal,
+      );
+      return prepared.kind === "ok"
+        ? preparedOfficialEvent(prepared.eventConfig, { eventConnectorId })
+        : prepared;
+    }
+    if (input.eventType === "notion-database-item-created") {
+      if (config.event !== "database_item_created") {
+        return {
+          kind: "bad-request",
+          message: "Unsupported Notion automation event config",
+        };
+      }
+      const prepared = await set(
+        prepareNotionDatabaseItemEventConfigForPersist$,
+        {
+          orgId: input.orgId,
+          userId: input.member.userId,
+          connectorId: eventConnectorId,
+          eventConfig:
+            "databaseUrl" in config
+              ? config
+              : {
+                  provider: "notion",
+                  event: "database_item_created",
+                  databaseUrl:
+                    config.dataSource.rawUrl ?? config.dataSource.url,
+                },
+        },
+        signal,
+      );
+      return prepared.kind === "ok"
+        ? preparedOfficialEvent(prepared.eventConfig, { eventConnectorId })
+        : prepared;
+    }
+    if (config.event !== "page_content_updated") {
       return {
         kind: "bad-request",
         message: "Unsupported Notion automation event config",
       };
     }
-    const prepared = await prepareNotionChildPageEventConfigForPersist(
-      db,
+    const eventConfig =
+      "scope" in config
+        ? config.scope.type === "page"
+          ? {
+              provider: "notion" as const,
+              event: "page_content_updated" as const,
+              pageUrl: config.scope.page.rawUrl ?? config.scope.page.url,
+            }
+          : {
+              provider: "notion" as const,
+              event: "page_content_updated" as const,
+              databaseUrl:
+                config.scope.dataSource.rawUrl ?? config.scope.dataSource.url,
+            }
+        : config;
+    const prepared = await set(
+      prepareNotionPageContentUpdatedEventConfigForPersist$,
       {
         orgId: input.orgId,
         userId: input.member.userId,
         connectorId: eventConnectorId,
-        eventConfig:
-          "parentPageUrl" in config
-            ? config
-            : {
-                provider: "notion",
-                event: "child_page_created",
-                parentPageUrl:
-                  config.parentPage.rawUrl ?? config.parentPage.url,
-              },
+        eventConfig,
       },
       signal,
     );
     return prepared.kind === "ok"
       ? preparedOfficialEvent(prepared.eventConfig, { eventConnectorId })
       : prepared;
-  }
-  if (input.eventType === "notion-database-item-created") {
-    if (config.event !== "database_item_created") {
-      return {
-        kind: "bad-request",
-        message: "Unsupported Notion automation event config",
-      };
-    }
-    const prepared = await prepareNotionDatabaseItemEventConfigForPersist(
-      db,
-      {
-        orgId: input.orgId,
-        userId: input.member.userId,
-        connectorId: eventConnectorId,
-        eventConfig:
-          "databaseUrl" in config
-            ? config
-            : {
-                provider: "notion",
-                event: "database_item_created",
-                databaseUrl: config.dataSource.rawUrl ?? config.dataSource.url,
-              },
-      },
-      signal,
-    );
-    return prepared.kind === "ok"
-      ? preparedOfficialEvent(prepared.eventConfig, { eventConnectorId })
-      : prepared;
-  }
-  if (config.event !== "page_content_updated") {
-    return {
-      kind: "bad-request",
-      message: "Unsupported Notion automation event config",
-    };
-  }
-  const eventConfig =
-    "scope" in config
-      ? config.scope.type === "page"
-        ? {
-            provider: "notion" as const,
-            event: "page_content_updated" as const,
-            pageUrl: config.scope.page.rawUrl ?? config.scope.page.url,
-          }
-        : {
-            provider: "notion" as const,
-            event: "page_content_updated" as const,
-            databaseUrl:
-              config.scope.dataSource.rawUrl ?? config.scope.dataSource.url,
-          }
-      : config;
-  const prepared = await prepareNotionPageContentUpdatedEventConfigForPersist(
-    db,
-    {
-      orgId: input.orgId,
-      userId: input.member.userId,
-      connectorId: eventConnectorId,
-      eventConfig,
-    },
-    signal,
-  );
-  return prepared.kind === "ok"
-    ? preparedOfficialEvent(prepared.eventConfig, { eventConnectorId })
-    : prepared;
-}
+  },
+);
 
 const prepareOfficialGmailEvent$ = command(
   async (
@@ -4479,7 +4513,7 @@ export const prepareOfficialAutomationReconfiguration$ = command(
       return await prepareOfficialGoogleMeetEvent(db, input, signal);
     }
     if (automationCreateInputIsNotion(input)) {
-      return await prepareOfficialNotionEvent(db, input, signal);
+      return await set(prepareOfficialNotionEvent$, input, signal);
     }
     if (automationCreateInputIsStripeInvoicePaid(input)) {
       const enabled = await get(
@@ -6365,65 +6399,69 @@ async function persistEnabledWorkflowAutomation(
       : { status: "ok", row: enabledRow };
   });
 }
-async function prepareEnabledAutomationAccountProjection(
-  db: Db,
-  automation: AutomationRow,
-  signal: AbortSignal,
-): Promise<
-  | {
-      readonly kind: "ok";
-      readonly eventConnectorId: string | null;
+const prepareEnabledAutomationAccountProjection$ = command(
+  async (
+    { set },
+    automation: AutomationRow,
+    signal: AbortSignal,
+  ): Promise<
+    | {
+        readonly kind: "ok";
+        readonly eventConnectorId: string | null;
+      }
+    | AutomationActionFailure
+  > => {
+    const provider = workflowAutomationAccountConnectorSlug(
+      automation.eventType,
+    );
+    if (provider === null || provider === "stripe") {
+      return { kind: "ok", eventConnectorId: automation.eventConnectorId };
     }
-  | AutomationActionFailure
-> {
-  const provider = workflowAutomationAccountConnectorSlug(automation.eventType);
-  if (provider === null || provider === "stripe") {
-    return { kind: "ok", eventConnectorId: automation.eventConnectorId };
-  }
-  const connectorArgs = {
-    orgId: automation.orgId,
-    userId: automation.ownerUserId,
-    workflowId: automation.workflowId,
-  };
-  const eventConnectorId = await resolveEnabledAutomationConnectorId(
-    db,
-    provider,
-    connectorArgs,
-  );
-  signal.throwIfAborted();
-  if (eventConnectorId === null) {
-    return {
-      kind: "bad-request",
-      message: enabledAutomationUnavailableMessage(provider),
-    };
-  }
-  if (provider !== "notion") {
-    return { kind: "ok", eventConnectorId };
-  }
-  if (!supportedNotionEventType(automation.eventType)) {
-    throw new Error("Notion automation account projection is incomplete");
-  }
-  const eventType = automation.eventType;
-  const validation = await validateNotionEventConfigForConnector(
-    db,
-    {
+    const connectorArgs = {
       orgId: automation.orgId,
       userId: automation.ownerUserId,
-      connectorId: eventConnectorId,
-      eventType,
-      eventConfig: notionConfigWithConnectorId(
+      workflowId: automation.workflowId,
+    };
+    const eventConnectorId = await set(
+      readEventAutomationConnectorId$,
+      { ...connectorArgs, connectorSlug: provider },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (eventConnectorId === null) {
+      return {
+        kind: "bad-request",
+        message: enabledAutomationUnavailableMessage(provider),
+      };
+    }
+    if (provider !== "notion") {
+      return { kind: "ok", eventConnectorId };
+    }
+    if (!supportedNotionEventType(automation.eventType)) {
+      throw new Error("Notion automation account projection is incomplete");
+    }
+    const eventType = automation.eventType;
+    const validation = await set(
+      validateNotionEventConfigForConnector$,
+      {
+        orgId: automation.orgId,
+        userId: automation.ownerUserId,
+        connectorId: eventConnectorId,
         eventType,
-        automation.eventConfig,
-        eventConnectorId,
-      ),
-    },
-    signal,
-  );
-  signal.throwIfAborted();
-  return validation.kind === "ok"
-    ? { kind: "ok", eventConnectorId }
-    : validation;
-}
+        eventConfig: notionConfigWithConnectorId(
+          eventType,
+          automation.eventConfig,
+          eventConnectorId,
+        ),
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    return validation.kind === "ok"
+      ? { kind: "ok", eventConnectorId }
+      : validation;
+  },
+);
 
 function enabledAutomationWithAccountProjection(
   automation: AutomationRow,
@@ -6768,8 +6806,8 @@ const persistAndReconcileEnabledWorkflowAutomation$ = command(
       );
     }
     const db = set(writeDb$);
-    const accountProjection = await prepareEnabledAutomationAccountProjection(
-      db,
+    const accountProjection = await set(
+      prepareEnabledAutomationAccountProjection$,
       args.automation,
       signal,
     );
