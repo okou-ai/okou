@@ -57,7 +57,7 @@ test("switches to Auto Model after confirmation and keeps provider settings", as
   await waitFor(() => {
     expect(toggle).toBeChecked();
   });
-  expect(screen.getByText("Okou 1.0")).toBeVisible();
+  await expect(screen.findByText("Okou 1.0")).resolves.toBeVisible();
   expect(
     queryAllByRoleFast("button").some((button) => {
       return button.textContent?.trim() === "Add model";

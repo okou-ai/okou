@@ -210,6 +210,7 @@ async function listSeededLimitedFreePolicies(): Promise<{
 describe("GET/PUT /api/model-policies", () => {
   it("keeps the org mode separate from policies and exposes Auto policies to members without the switch", async () => {
     const fixture = seedFixture();
+    await seedOrgMetadata({ orgId: fixture.orgId, tier: "pro", credits: 0 });
     useSession(fixture);
     const client = apiClient();
     const initial = await accept(
@@ -247,7 +248,7 @@ describe("GET/PUT /api/model-policies", () => {
       changed.body.policies.map((policy) => {
         return policy.model;
       }),
-    ).toEqual(["okou-1.0"]);
+    ).toStrictEqual(["okou-1.0"]);
 
     await accept(
       client.updateMode({
@@ -265,7 +266,7 @@ describe("GET/PUT /api/model-policies", () => {
       member.body.policies.map((policy) => {
         return policy.model;
       }),
-    ).toEqual(["okou-1.0"]);
+    ).toStrictEqual(["okou-1.0"]);
     expect(
       (
         await client.updateMode({

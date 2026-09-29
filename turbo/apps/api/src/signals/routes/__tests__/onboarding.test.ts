@@ -336,7 +336,7 @@ describe("POST /api/onboarding/complete", () => {
       [200],
     );
     expect(response.body.modelMode).toBe("auto");
-    expect(response.body.policies).toEqual([
+    expect(response.body.policies).toStrictEqual([
       expect.objectContaining({
         model: "okou-1.0",
         isDefault: true,
@@ -369,7 +369,7 @@ describe("POST /api/onboarding/complete", () => {
       response.body.policies.map((policy) => {
         return policy.model;
       }),
-    ).toEqual(["gpt-6-astra", "gpt-6-sol", "gpt-6-luna"]);
+    ).toStrictEqual(["gpt-6-astra", "gpt-6-sol", "gpt-6-luna"]);
   });
 
   it.each([
