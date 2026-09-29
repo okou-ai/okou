@@ -90,7 +90,6 @@ describe("CHAT-02: steering input prompts into a running run", () => {
       api.nextSteerableInput(token, active.runId),
     ).resolves.toStrictEqual(next);
 
-    context.mocks.ably.publish.mockClear();
     const declarations = await Promise.all([
       api.requestDeclareSteeredInputAs(
         `Bearer ${token}`,
@@ -110,11 +109,20 @@ describe("CHAT-02: steering input prompts into a running run", () => {
         return body;
       }),
     ).toStrictEqual([{ outcome: "steered" }, { outcome: "steered" }]);
-    expect(
-      context.mocks.ably.publish.mock.calls.filter(([topic]) => {
-        return topic === `chatThreadMessageCreated:${active.threadId}`;
-      }),
-    ).toHaveLength(1);
+    const afterConcurrentDeclarations = await chat.listThreadEvents(
+      actor,
+      active.threadId,
+    );
+    const firstReplacements = afterConcurrentDeclarations.events.filter(
+      (event) => {
+        return event.revokesEventId === firstEventId;
+      },
+    );
+    expect(firstReplacements).toHaveLength(1);
+    expect(firstReplacements[0]).toMatchObject({
+      eventType: "input.prompt",
+      runId: active.runId,
+    });
 
     await expect(
       api.nextSteerableInput(token, active.runId),
