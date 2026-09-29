@@ -12259,20 +12259,6 @@ describe("usage pack allocation management", () => {
       accept(packagePreview, [409]),
       accept(planPreview, [409]),
     ]);
-    const refreshed = await accept(
-      client.previewSubscriptionChange({
-        headers: { authorization: "Bearer clerk-session" },
-        body: {
-          targetTier: "team",
-          memberUsagePacks: [{ memberId: fixture.userId, usagePackUsd: 50 }],
-        },
-      }),
-      [200],
-    );
-    expect(refreshed.body).toMatchObject({
-      immediateAmountCents: 1500,
-      nextRecurringAmountCents: 0,
-    });
     const management = await accept(
       client.get({ headers: { authorization: "Bearer clerk-session" } }),
       [200],
@@ -12288,6 +12274,20 @@ describe("usage pack allocation management", () => {
       purchasedCredits: 20_000,
       bonusCredits: 400,
       totalCredits: 20_400,
+    });
+    const refreshed = await accept(
+      client.previewSubscriptionChange({
+        headers: { authorization: "Bearer clerk-session" },
+        body: {
+          targetTier: "team",
+          memberUsagePacks: [{ memberId: fixture.userId, usagePackUsd: 50 }],
+        },
+      }),
+      [200],
+    );
+    expect(refreshed.body).toMatchObject({
+      immediateAmountCents: 1500,
+      nextRecurringAmountCents: 0,
     });
   });
 
