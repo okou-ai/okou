@@ -1464,13 +1464,6 @@
       "when": 1790637409904,
       "tag": "1286_chat_event_v8",
       "breakpoints": true
-    },
-    {
-      "idx": 1287,
-      "version": "7",
-      "when": 1790645009491,
-      "tag": "1287_hot_firebrand",
-      "breakpoints": true
     }
   ]
 }

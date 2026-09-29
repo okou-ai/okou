@@ -297,12 +297,14 @@ unchanged; a future rotation must include VNC in its current inventory.
 ## Membership and deletion lifecycle
 
 The configuration tables are `vnc_credentials` and `vnc_connections`. Both use the
-organization/user pair as their owner, matching SSH configuration. Migration
-`1287_hot_firebrand` removes the retired `agent_vnc_access` table after the
-old API serving window drains; only current chat host permission authorizes
-Run access. Current membership authorizes access to that owner's configuration.
-If the user leaves
-and rejoins before cleanup removes the configuration, it remains the same
+organization/user pair as their owner, matching SSH configuration. The retired
+`agent_vnc_access` table remains physically present for older serving API
+versions during the code-only cleanup in PR #37305; current code does not read
+or write it, and only current chat host permission authorizes Run access.
+Physical table removal belongs to #37272 after that API version and its
+rollback floor have advanced. Current membership authorizes access to that
+owner's configuration. If the user leaves and rejoins before cleanup removes
+the configuration, it remains the same
 owner's data and is accessible again. Each saved connection retains its own
 identity across membership changes.
 

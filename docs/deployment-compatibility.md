@@ -133,36 +133,30 @@ older API could have read or written those rows during the overlap. Existing
 rows never authorize access on the new API. The owner does not require
 preserving rollback to a pre-cutover API for this cleanup.
 
-### Agent-grant table contraction (#37272)
+### Remaining Agent-grant reader retirement (PR #37305)
 
-Migration `1287_hot_firebrand` drops only `agent_ssh_access` and
-`agent_vnc_access`. The API no longer reads or writes either table, including
-VNC owner cleanup and the test runtime endpoint; current chat-scoped SSH/VNC
-host authority and owner configuration cleanup remain. Historical migration
-replay retains fixtures that create these tables in isolated historical schemas.
+#36360 intentionally retained VNC owner-cleanup reads, locks and deletes on
+`agent_vnc_access` for serving older APIs. Production API versions containing
+#37274, including the `8531a2b` build observed on 2026-09-29, **still access
+this table** during user, organization and membership cleanup. The earlier
+production drain proved only that pre-#37274 binaries had stopped serving; it
+did not make a same-release VNC grant table drop safe.
 
-**Pre-deployment evidence (2026-09-29 01:16 UTC; not a migration receipt):**
-#37274 merged as `b40684e` and its descendant `3ce1bc2` was promoted to
-production in [API promotion job
-109188222899](https://github.com/okou-ai/okou/actions/runs/36498080195/job/109188222899)
-(completed 2026-09-28 23:51:50 UTC). Vercel's READY production target
-`dpl_Bhc1WpzjbKXqkDEUvDbtH2GZvinQ` at `020a4d8c` contains that commit;
-all four production aliases (`api.okou.ai`, `api.vm0.ai`, `vm0-api.vm6.ai`,
-`vm0-api-prod.vm6.ai`) and cache-bypassed build-info requests on both public
-domains agreed. More than one hour elapsed since the earlier safe promotion,
-exceeding even Vercel's documented [30-minute extended function execution
-limit](https://vercel.com/docs/functions/configuring-functions/duration).
-This supports a completed _serving invocation_ drain, unlike checking a merge
-or one current request alone. A later rollback to an old API would invalidate
-this evidence.
+PR #37305 removes this last production VNC grant dependency and the test-only
+SSH grant writer, while **retaining both physical grant tables and their schema
+declarations**. During its rollout the old API can continue to use the table
+because there is no drop migration. Current chat-scoped SSH/VNC host authority,
+VNC configuration cleanup and historical migration replay remain unchanged.
 
-**Deployment gate:** Immediately before deploying this migration, confirm the
-production target and every serving/rollback-eligible API contain #37274 and
-that old invocations have drained. Because schema migrations run before API
-promotion, never deploy this drop while a pre-#37274 API may serve. After the
-drop, the rollback floor is an API that does not access either retired table;
-pre-#37274 binaries are not valid rollback targets. This entry is a rollout
-plan, not a claim that the migration has run in production.
+**Separate future contraction (#37272):** Deploy a new table-drop migration only
+after an API version containing the code-only PR has been promoted to every
+production API target, all earlier invocations that access either table have
+drained, and the rollback floor excludes those binaries. Recheck live aliases,
+serving versions and the actual function-execution bound immediately before
+deploying that migration; a merge, one sampled response or the #37274 drain
+alone is insufficient. Because migrations run before API promotion, combining
+the last-reader removal and the physical drop in one release is unsafe. No
+table-drop migration or production migration receipt is included here.
 
 ## Video model columns and `video_model_updated` dropped (#37249)
 
