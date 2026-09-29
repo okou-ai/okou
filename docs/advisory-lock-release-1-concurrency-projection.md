@@ -95,9 +95,12 @@ No App/Runner contract, client floor, or Runner drain is introduced.
 
 This change adds no advisory acquisition and removes none; the combined billing
 wave still has six definitions after removal of the invitation-email acquisition. The shared usage-pack
-allocation/Plan/migration/invitation absolute Stripe writes need separate
-ordering and recovery work. Conditional local cache publication does not solve
-remote quantity overwrite ordering.
+allocation/Plan/migration/invitation writers still need the approved local
+desired-state publication and daily Stripe reconciliation. Temporary remote
+quantity drift is accepted. This conditional provider-fact cache is not the
+authoritative desired configuration; webhooks must not overwrite that intent.
+Repeated reconciliation must preserve payment actions and avoid duplicate
+charges or unpaid entitlement.
 
 ## Verification
 

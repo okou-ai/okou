@@ -66,8 +66,8 @@ subscription as ordinary inputs. Its publication command obtains `writeDb$` and
 owns all SQL: existing subscription roots lock before the existing pending-count
 guard, the root is reread under lock and its allocations are read, correlation
 and shape are validated, and subscription binding, matching Plan metadata, and the final
-pending count commit together. The retained trigger may also update the count;
-the command assigns the verified final value rather than applying a second delta.
+pending count commit together. The command assigns the verified final pending count; the former pending-count
+trigger was already retired by historical migration 1132.
 No transaction or database handle reaches a helper, and no Stripe call occurs
 inside this commit. Customer and Session mismatches reject before local writes.
 
@@ -77,8 +77,8 @@ invitation commands described below. One-time-credit and canonical Plan-binding
 branches still have legacy database-aware services; converting the dispatcher
 to a command does **not** finish those chains. Ordinary subscription lifecycle
 synchronization and the purchase creation/confirmation graphs also remain
-unfinished. This change does not establish remote quantity ordering or retire
-the pending-count trigger while those writers remain.
+unfinished. These paths still need the approved desired-state and reconciliation
+model; no pending-count trigger is retained by this PR.
 
 ### Usage-pack in-app price preview
 
@@ -144,8 +144,8 @@ passed to the former restoration or allocation-cleanup helpers.
 Setup Checkout validation and dispatch are also commands with business data.
 The validation command reads its own database; provider payment-method updates
 and follow-up commands receive no database handle. These changes prevent stale
-local publication. They do not establish ordering between remote cancellation,
-restoration and schedule writers.
+local publication. Cancellation, restoration and schedule writers still need
+to publish desired configuration for identity-only reconciliation.
 
 ### Downgrade and empty-subscription cancellation publication
 
@@ -170,8 +170,8 @@ state. A conditional-publication conflict is a supported response. Existing
 member-removal and reconciliation API cases continue to cover cancellation and
 refund behavior. The allocation preparation, nonempty removal, refund and
 reconciliation helper graphs still propagate database handles and remain
-unfinished. This local ownership change does not solve remote quantity/schedule
-ordering or the shared purchase-admission protocol.
+unfinished. This local ownership change does not implement desired-state
+reconciliation or the shared payable-purchase admission protocol.
 
 ### Concurrency change, cancellation and restoration publication
 
@@ -190,9 +190,10 @@ transactions. Concurrent cancellation coverage accepts either serialized success
 or a conditional-publication conflict and checks the final public subscription
 quantity and cancellation state.
 
-This completes local conditional publication for these three entry points. It
-does not fence already-issued Stripe updates or establish shared schedule
-ordering; those remote guarantees remain part of the unresolved protocol below.
+This completes local conditional publication for these three entry points. They
+still need to commit desired business configuration before synchronization.
+Already-issued Stripe updates may temporarily drift; subsequent reconciliation
+must restore the latest local intent without repeating financial effects.
 
 ### Invitation preview ownership
 
@@ -311,8 +312,8 @@ the transaction cannot commit two open purchases or lose a committed receipt.
 | `stripe_customer_<org>`                           | Provider idempotency and conditional publication implemented; retained acquisition | Outgoing creation has no idempotency key and unconditionally overwrites the binding                                                                      | Verified API drain and compatible rollback targets; then delete the finite publication acquisition                                                                         |
 | `billing_purchase:<org>`                          | Retained; replacement protocol is not complete in this PR                          | Stateless Plan previews have different purchase IDs; two creations can both become payable. Pending usage-pack snapshot writers also share this boundary | Complete a common creation/arbitration protocol for every Plan and usage-pack writer, then verify API drain and rollback compatibility                                     |
 | `stripe_concurrency_subscription:<subscription>`  | Conditional projection protocol implemented; retained acquisition                  | Outgoing handlers publish unconditional projections; all new writers advance the existing timestamp and new reconciliation results use exact-value CAS   | Verify API drain, compatible rollback targets and mixed-version conditional publication; provider reads already occur outside the local commit                             |
-| `usage_pack_billing:<org>` in allocation service  | Retained; replacement protocol is not complete in this PR                          | Allocation, migration, invitation activation/refund, and deferred schedule workflows issue absolute Stripe quantity/schedule updates                     | Demonstrate ordering and recovery across all existing operation identities, with remote work outside local commits; then verify mixed R1/R2 writers and rollback targets   |
-| `usage_pack_billing:<org>` in plan-change service | Retained; replacement protocol is not complete in this PR                          | Plan changes and allocation changes share the same remote subscription and can overwrite each other's current or renewal quantities                      | Same common projection protocol as allocation; an independent per-change idempotency key is insufficient                                                                   |
+| `usage_pack_billing:<org>` in allocation service  | Retained; replacement protocol is not complete in this PR                          | Allocation, migration, invitation activation/refund, and deferred schedule workflows issue absolute Stripe quantity/schedule updates                     | Implement desired-state writes, daily reconciliation and payment idempotency with remote work outside commits; verify old/new intent ownership and rollback compatibility  |
+| `usage_pack_billing:<org>` in plan-change service | Retained; replacement protocol is not complete in this PR                          | Plan/allocation writers have not yet committed shared local desired current/renewal configuration; temporary provider drift itself is accepted           | Same desired-state/reconciliation implementation as allocation; real invoice and entitlement identities must still prevent repeated financial effects                      |
 | `usage_pack_invitation:<purchase>`                | Conditional claims and guarded result writes implemented; retained acquisition     | Outgoing purchase writers still read state and subsequently update by ID; activation/refund also enters the unresolved shared projection workflow        | Finish all purchase write/cleanup predicates and the shared projection protocol, remove transaction propagation, then verify outgoing API drain and rollback compatibility |
 | `usage_pack_invitation_email:<org>:<email>`       | Removed                                                                            | Existing business unique index arbitrates both old and new writers                                                                                       | No additional release gate                                                                                                                                                 |
 
@@ -402,11 +403,12 @@ unchanged member credits through production APIs. It does not hold database
 locks, inspect waiters or install a test trigger.
 
 This is one part of common writer preparation, not a completed organization
-purchase or remote ordering protocol. Outgoing allocation writers do not repeat
+purchase or desired-state reconciliation protocol. Outgoing allocation writers do not repeat
 the Plan check after external pricing; the old advisory boundary does not itself
 repair that pre-existing stale-preview window. The shared advisory acquisition
-also still covers other outgoing allocation, Plan, invitation and migration
-writers whose parent/child order and remote protocol remain unfinished. Its
+also still covers outgoing allocation, Plan, invitation and migration writers.
+Their local intent ownership, payment effects and command boundaries remain
+unfinished; temporary remote drift alone no longer justifies this lock. Its
 removal therefore needs both the remaining common protocol implementation and
 verified retirement of those incompatible writers.
 
@@ -451,8 +453,9 @@ The added API regression pauses both package and Plan pricing at Stripe, deliver
 a real subscription-cancellation webhook, and verifies that both stale previews
 are rejected while the cancellation, original allocation and credits remain
 visible through billing APIs. Remaining legacy writers have not all adopted
-this root order, and the common remote Stripe protocol is still required before
-removing their compatibility boundary.
+this root order. Their payment and intent-ownership boundaries need conversion
+to the approved declarative model; strict remote configuration ordering is no
+longer a removal prerequisite.
 
 ## Unresolved Release 1 work
 
@@ -604,10 +607,12 @@ payment-backed invitation records and completion state together.
 The historical pending-count trigger was dropped by migration
 `1132_retire_prepared_domain_triggers`; comments that still called it retained
 are corrected. No migration or schema shape changes are introduced here.
-The shared `usage_pack_billing` compatibility boundary remains: remote schedule
-publication, reconciliation and other billing writers have not yet implemented
-the common provider protocol. These command changes do not complete
-that protocol or turn its missing implementation into a deployment-drain gate.
+The shared `usage_pack_billing` boundary remains as unfinished implementation:
+remote schedule publication and other billing writers have not yet adopted
+local desired-state writes and daily reconciliation. These command changes do
+not implement that model or turn its missing implementation into a drain gate.
+Each retained acquisition must be reassessed against payment and intent
+ownership, not the superseded prohibition on temporary configuration drift.
 
 Existing public billing migration tests retain paid materialization, revision,
 invitation acceptance/refunds and original-event redelivery coverage. Local
