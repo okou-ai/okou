@@ -566,6 +566,16 @@ function sameAutomationConfigurationBaseline(
   );
 }
 
+function reconfigurationSourceCondition(expected: OfficialAutomationRow) {
+  // Forms preparation belongs to one exact consumption interval. Other
+  // configuration preparation may overlap an independent user pause: reread
+  // that intent under ownership, validate the configuration below and retain
+  // the current enabled/intended-enabled values when applying the patch.
+  return expected.eventType === "google-forms-response-submitted"
+    ? observedWorkflowAutomationCondition(expected)
+    : eq(workflowAutomations.id, expected.id);
+}
+
 async function upsertActiveIdentity(
   db: Db,
   automation: OfficialAutomationRow,
@@ -700,7 +710,7 @@ async function persistReconfigurationPatch(
     const [current] = await tx
       .select(workflowAutomationColumns())
       .from(workflowAutomations)
-      .where(observedWorkflowAutomationCondition(args.expected))
+      .where(reconfigurationSourceCondition(args.expected))
       .for("update")
       .limit(1);
     if (
@@ -1375,7 +1385,7 @@ async function stageAutomationStructureTransition(
     const [current] = await tx
       .select(workflowAutomationColumns())
       .from(workflowAutomations)
-      .where(observedWorkflowAutomationCondition(args.automation))
+      .where(reconfigurationSourceCondition(args.automation))
       .for("update")
       .limit(1);
     if (
