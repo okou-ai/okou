@@ -1,3 +1,4 @@
+import type { EmptyUsagePackCancellation } from "./billing-downgrade.service";
 import {
   type BillingPurchaseConfirmResponse,
   USAGE_PACKS_USD,
@@ -3455,7 +3456,11 @@ export async function reconcileUsagePackSubscriptions(
   db: Db,
   scope: BillingReconciliationScope | undefined,
   signal: AbortSignal,
-): Promise<ReconcileUsagePackSubscriptionResult> {
+): Promise<
+  ReconcileUsagePackSubscriptionResult & {
+    readonly emptyCancellations: readonly EmptyUsagePackCancellation[];
+  }
+> {
   signal.throwIfAborted();
 
   const subscriptionChanges = await reconcileUsagePackSubscriptionChanges(
@@ -3558,5 +3563,9 @@ export async function reconcileUsagePackSubscriptions(
       orgIds.add(orgId);
     }
   }
-  return { reconciled, orgIds: [...orgIds] };
+  return {
+    reconciled,
+    orgIds: [...orgIds],
+    emptyCancellations: allocationChanges.emptyCancellations,
+  };
 }

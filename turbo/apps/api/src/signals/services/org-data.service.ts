@@ -1,3 +1,4 @@
+import { cancelEmptyUsagePackSubscription$ } from "./billing-downgrade.service";
 import { command } from "ccstate";
 import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
@@ -336,8 +337,16 @@ const commitOrgMemberRemoval$ = command(
       await cancelUsagePackMemberRemovalReservation(db, reservationId);
     });
     signal.throwIfAborted();
-    await removeUsagePackMemberAllocation(db, args, signal);
+    const emptyCancellation = await removeUsagePackMemberAllocation(
+      db,
+      args,
+      signal,
+    );
     signal.throwIfAborted();
+    if (emptyCancellation) {
+      await set(cancelEmptyUsagePackSubscription$, emptyCancellation, signal);
+      signal.throwIfAborted();
+    }
     await refundUsagePackMemberCredits(db, args, signal);
     signal.throwIfAborted();
     await set(cleanupOrgMemberResources$, args, onSlotsReleased, signal);

@@ -1,3 +1,4 @@
+import { cancelEmptyUsagePackSubscription$ } from "./billing-downgrade.service";
 import type { OrgTier } from "@okouai/api-contracts/contracts/orgs";
 import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
 import { orgConcurrencySubscriptions } from "@okouai/db/schema/org-concurrency-subscription";
@@ -1722,8 +1723,25 @@ const reconcileBillingEntitlementsForScope$ = command(
     const usagePackMigrationReconciliation =
       await reconcileUsagePackSubscriptionMigrations(db, scope, signal);
     signal.throwIfAborted();
-    await reconcileUsagePackSubscriptions(db, scope, signal);
+    const usagePackReconciliation = await reconcileUsagePackSubscriptions(
+      db,
+      scope,
+      signal,
+    );
     signal.throwIfAborted();
+    for (const cancellation of usagePackReconciliation.emptyCancellations) {
+      const canceled = await settle(
+        set(cancelEmptyUsagePackSubscription$, cancellation, signal),
+        signal,
+      );
+      signal.throwIfAborted();
+      if (!canceled.ok) {
+        L.error("empty usage pack cancellation reconciliation failed", {
+          usagePackSubscriptionId: cancellation.usagePackSubscriptionId,
+          error: canceled.error,
+        });
+      }
+    }
     await reconcileUsagePackCreditRefunds(db, scope, signal);
     signal.throwIfAborted();
     const clerk = get(clerk$);

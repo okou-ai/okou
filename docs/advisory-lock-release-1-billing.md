@@ -68,10 +68,35 @@ passed to the former restoration or allocation-cleanup helpers.
 
 Setup Checkout validation and dispatch are also commands with business data.
 The validation command reads its own database; provider payment-method updates
-and follow-up commands receive no database handle. The separate downgrade
-implementation still propagates a database internally and remains unfinished.
-These changes prevent stale local publication. They do not establish ordering
-between remote cancellation, restoration and schedule writers.
+and follow-up commands receive no database handle. These changes prevent stale
+local publication. They do not establish ordering between remote cancellation,
+restoration and schedule writers.
+
+### Downgrade and empty-subscription cancellation publication
+
+Direct downgrade, payment-method setup completion, last-member removal and the
+reconciliation retry all dispatch the same business-input downgrade command.
+The command reads ordinary local snapshots, prepares cancellation or schedule
+changes through Stripe, and publishes direct SQL in its own bounded transaction.
+Publication matches the original metadata row and its transient PostgreSQL
+`xmin`; matching superseded concurrency state is cleared in that same commit.
+The direct API reports a conflict if a newer billing transition won.
+
+For an empty usage-pack subscription, the owning member-removal or cron command
+receives ordinary subscription/change IDs from the existing allocation workflow.
+It dispatches cancellation without forwarding that workflow's database handle.
+The cancellation commit also conditionally marks the exact usage-pack
+subscription and removal change as canceled/scheduled, so these local results
+cannot commit separately from the metadata transition.
+
+The concurrent Team cancellation API case verifies at least one successful
+request and the final billing period, retained active tier and cancellation
+state. A conditional-publication conflict is a supported response. Existing
+member-removal and reconciliation API cases continue to cover cancellation and
+refund behavior. The allocation preparation, nonempty removal, refund and
+reconciliation helper graphs still propagate database handles and remain
+unfinished. This local ownership change does not solve remote quantity/schedule
+ordering or the shared purchase-admission protocol.
 
 ### Concurrency change, cancellation and restoration publication
 
@@ -175,7 +200,10 @@ This is a call-chain inventory, not a count of matching type signatures:
   allocation update. The former `billingSetupSubscriptionState(db, ...)`,
   `applyBillingSetupPaymentMethod(db, ...)` and setup-dispatch database arguments
   are removed; owning commands read the finite local state and call provider
-  operations outside transactions. Downgrade internals remain separate work.
+  operations outside transactions. Downgrade snapshot and publication commands
+  now own their SQL as well; empty-subscription callers dispatch through ordinary
+  IDs and atomically publish the related local usage-pack state. The surrounding
+  allocation/refund/reconciliation helper graph still needs command ownership.
 - **Concurrency change, cancellation and restoration:** read/preparation
   interfaces accept no database. Each publication is direct conditional SQL in
   its owning command, after external provider work. No transaction spans that

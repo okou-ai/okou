@@ -1,3 +1,4 @@
+import { cancelEmptyUsagePackSubscription$ } from "./billing-downgrade.service";
 import { organizationAgentRunScopePredicate } from "./pi-inference-lifecycle.service";
 import { piMemoryStage1Days } from "@okouai/db/schema/pi-memory-stage1-schedule";
 import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
@@ -1053,8 +1054,16 @@ const commitClerkDeletedOrgMembershipCleanup$ = command(
   ): Promise<void> => {
     signal.throwIfAborted();
     const db = set(writeDb$);
-    await removeUsagePackMemberAllocation(db, args, signal);
+    const emptyCancellation = await removeUsagePackMemberAllocation(
+      db,
+      args,
+      signal,
+    );
     signal.throwIfAborted();
+    if (emptyCancellation) {
+      await set(cancelEmptyUsagePackSubscription$, emptyCancellation, signal);
+      signal.throwIfAborted();
+    }
     await refundUsagePackMemberCredits(db, args, signal);
     signal.throwIfAborted();
     await set(cleanupOrgMemberResources$, args, onSlotsReleased, signal);

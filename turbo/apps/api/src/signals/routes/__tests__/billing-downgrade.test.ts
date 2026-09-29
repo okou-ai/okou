@@ -943,7 +943,7 @@ describe("POST /api/billing/downgrade", () => {
     ).not.toHaveBeenCalled();
   });
 
-  it("downgrades team to limited-free-1 via cancel at period end", async () => {
+  it("converges concurrent Team cancellation at the period end", async () => {
     const subId = `sub-team-suspend-${randomUUID().slice(0, 8)}`;
     const periodEnd = new Date(now() + 30 * 86_400 * 1000);
     const fixture = await track(
@@ -986,18 +986,39 @@ describe("POST /api/billing/downgrade", () => {
     const client = setupApp({ context, routes: billingDowngradeRoutes })(
       billingDowngradeContract,
     );
-    const response = await accept(
-      client.create({
-        body: { targetTier: "limited-free-1" },
-        headers: { authorization: "Bearer clerk-session" },
+    const responses = await Promise.all(
+      [0, 1].map(() => {
+        return accept(
+          client.create({
+            body: { targetTier: "limited-free-1" },
+            headers: { authorization: "Bearer clerk-session" },
+          }),
+          [200, 409],
+        );
       }),
-      [200],
     );
-
-    expect(response.body).toStrictEqual({
-      success: true,
-      effectiveDate: expectedEffectiveDate,
-    });
+    expect(
+      responses.some((response) => {
+        return response.status === 200;
+      }),
+    ).toBeTruthy();
+    for (const response of responses) {
+      expect(response.body).toStrictEqual(
+        response.status === 200
+          ? { success: true, effectiveDate: expectedEffectiveDate }
+          : {
+              error: {
+                code: "CONFLICT",
+                message:
+                  "Billing changed while downgrading; refresh and try again",
+              },
+            },
+      );
+    }
+    const status = await readBillingStatus();
+    expect(status.body.cancelAtPeriodEnd).toBeTruthy();
+    expect(status.body.currentPeriodEnd).toBe(expectedEffectiveDate);
+    expect(status.body.tier).toBe("team");
     expect(context.mocks.stripe.subscriptions.update).toHaveBeenCalledWith(
       subId,
       { cancel_at_period_end: true },

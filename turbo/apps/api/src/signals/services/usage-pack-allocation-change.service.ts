@@ -54,7 +54,7 @@ import {
   setStripeSubscriptionPaymentMethod,
   type BillingPurchasePaymentMethod,
 } from "./billing-payment-method.service";
-import { downgradeSubscriptionForOrg } from "./billing-downgrade.service";
+import type { EmptyUsagePackCancellation } from "./billing-downgrade.service";
 import {
   activeUsagePackPriceId,
   isUsagePackPlanPriceId,
@@ -2082,13 +2082,18 @@ async function prepareUsagePackMemberRemoval(
   });
 }
 
-interface DeferredUsagePackChangeResult {
+interface ScheduledUsagePackChange {
   readonly effectiveAt: Date;
   readonly stripeScheduleId: string | null;
 }
 
+type DeferredUsagePackChangeResult =
+  | ScheduledUsagePackChange
+  | {
+      readonly emptyCancellation: EmptyUsagePackCancellation;
+    };
+
 async function applyDeferredUsagePackChange(
-  db: Db,
   context: UsagePackChangeContext,
   change: UsagePackAllocationChangeRow,
   subscription: UsagePackChangeSubscriptionInput,
@@ -2097,7 +2102,6 @@ async function applyDeferredUsagePackChange(
   if (change.kind === "upgrade") {
     throw new Error("Usage pack upgrades cannot be deferred");
   }
-  const period = usagePackItemPeriod(subscription);
   const remainingQuantities = projectedPackageQuantities(context, change);
   if (remainingQuantities.size > 0) {
     const scheduled = await scheduleUsagePackAllocationChange(
@@ -2114,33 +2118,12 @@ async function applyDeferredUsagePackChange(
   if (change.kind !== "removal") {
     throw new Error("A usage pack downgrade must retain a package");
   }
-  const cancellation = await downgradeSubscriptionForOrg(
-    db,
-    {
-      orgId: context.subscription.orgId,
-      targetTier: "limited-free-1",
-      requirePaymentMethod: false,
-    },
-    signal,
-  );
-  if (!cancellation.ok) {
-    throw new Error(
-      `Failed to cancel empty usage pack subscription: ${cancellation.reason}`,
-    );
-  }
-  if (cancellation.status !== "scheduled") {
-    throw new Error("Usage pack cancellation unexpectedly requires payment");
-  }
-  await db
-    .update(usagePackSubscriptions)
-    .set({ cancelAtPeriodEnd: true, updatedAt: nowDate() })
-    .where(eq(usagePackSubscriptions.id, context.subscription.id));
-  signal?.throwIfAborted();
   return {
-    effectiveAt: cancellation.effectiveDate
-      ? new Date(cancellation.effectiveDate)
-      : new Date(period.end * 1000),
-    stripeScheduleId: null,
+    emptyCancellation: {
+      orgId: context.subscription.orgId,
+      usagePackSubscriptionId: context.subscription.id,
+      allocationChangeId: change.id,
+    },
   };
 }
 
@@ -2152,12 +2135,14 @@ async function scheduleDeferredUsagePackChange(
   signal: AbortSignal | undefined,
 ): Promise<DeferredUsagePackChangeResult> {
   const scheduled = await applyDeferredUsagePackChange(
-    db,
     context,
     change,
     subscription,
     signal,
   );
+  if ("emptyCancellation" in scheduled) {
+    return scheduled;
+  }
   const updatedAt = nowDate();
   await db
     .update(usagePackAllocationChanges)
@@ -2254,11 +2239,11 @@ export async function removeUsagePackMemberAllocation(
     readonly userId: string;
   },
   signal: AbortSignal,
-): Promise<boolean> {
+): Promise<EmptyUsagePackCancellation | null> {
   const prepared = await prepareUsagePackMemberRemoval(db, args);
   signal.throwIfAborted();
   if (!prepared) {
-    return false;
+    return null;
   }
   const stripeSubscriptionId =
     prepared.context.subscription.stripeSubscriptionId;
@@ -2274,13 +2259,16 @@ export async function removeUsagePackMemberAllocation(
   );
   if (remainingQuantities.size === 0) {
     validateCurrentStripeProjection(prepared.context, stripeSubscription);
-    await scheduleDeferredUsagePackChange(
+    const deferred = await scheduleDeferredUsagePackChange(
       db,
       prepared.context,
       prepared.change,
       stripeSubscription,
       signal,
     );
+    if ("emptyCancellation" in deferred) {
+      return deferred.emptyCancellation;
+    }
   } else {
     await applyImmediateUsagePackMemberRemoval(
       db,
@@ -2290,7 +2278,7 @@ export async function removeUsagePackMemberAllocation(
       signal,
     );
   }
-  return true;
+  return null;
 }
 
 function latestInvoice(subscription: StripeSubscription): StripeInvoice | null {
@@ -3636,7 +3624,10 @@ async function retryApplyingDeferredUsagePackChange(
   context: UsagePackChangeContext,
   subscription: StripeSubscription,
   signal: AbortSignal,
-): Promise<number> {
+): Promise<{
+  readonly reconciled: number;
+  readonly cancellation?: EmptyUsagePackCancellation;
+}> {
   const change = context.changes.find((candidate) => {
     return (
       candidate.subscriptionChangeId === null &&
@@ -3645,17 +3636,19 @@ async function retryApplyingDeferredUsagePackChange(
     );
   });
   if (!change) {
-    return 0;
+    return { reconciled: 0 };
   }
   validateCurrentStripeProjection(context, subscription);
-  await scheduleDeferredUsagePackChange(
+  const deferred = await scheduleDeferredUsagePackChange(
     db,
     context,
     change,
     subscription,
     signal,
   );
-  return 1;
+  return "emptyCancellation" in deferred
+    ? { reconciled: 0, cancellation: deferred.emptyCancellation }
+    : { reconciled: 1 };
 }
 
 async function usagePackChangeCandidateSubscriptionIds(
@@ -3709,16 +3702,18 @@ async function reconcileUsagePackAllocationChangeCandidate(
 ): Promise<{
   readonly reconciled: number;
   readonly orgIds: readonly string[];
+  readonly emptyCancellations: readonly EmptyUsagePackCancellation[];
 }> {
   let reconciled = 0;
   const orgIds = new Set<string>();
+  const emptyCancellations: EmptyUsagePackCancellation[] = [];
   const context = await loadUsagePackChangeContextBySubscriptionId(
     db,
     usagePackSubscriptionId,
   );
   signal.throwIfAborted();
   if (!context?.subscription.stripeSubscriptionId) {
-    return { reconciled, orgIds: [...orgIds] };
+    return { reconciled, orgIds: [...orgIds], emptyCancellations };
   }
   const subscription = await getStripeClient().subscriptions.retrieve(
     context.subscription.stripeSubscriptionId,
@@ -3740,14 +3735,18 @@ async function reconcileUsagePackAllocationChangeCandidate(
     usagePackSubscriptionId,
   );
   if (!refreshed) {
-    return { reconciled, orgIds: [...orgIds] };
+    return { reconciled, orgIds: [...orgIds], emptyCancellations };
   }
-  reconciled += await retryApplyingDeferredUsagePackChange(
+  const deferred = await retryApplyingDeferredUsagePackChange(
     db,
     refreshed,
     subscription,
     signal,
   );
+  reconciled += deferred.reconciled;
+  if (deferred.cancellation) {
+    emptyCancellations.push(deferred.cancellation);
+  }
   const hasOpenUpgrade = refreshed.changes.some((change) => {
     return change.subscriptionChangeId === null && change.kind === "upgrade";
   });
@@ -3778,7 +3777,7 @@ async function reconcileUsagePackAllocationChangeCandidate(
     );
   }
   signal.throwIfAborted();
-  return { reconciled, orgIds: [...orgIds] };
+  return { reconciled, orgIds: [...orgIds], emptyCancellations };
 }
 
 export async function reconcileUsagePackAllocationChanges(
@@ -3788,6 +3787,7 @@ export async function reconcileUsagePackAllocationChanges(
 ): Promise<{
   readonly reconciled: number;
   readonly orgIds: readonly string[];
+  readonly emptyCancellations: readonly EmptyUsagePackCancellation[];
 }> {
   signal.throwIfAborted();
   const at = nowDate();
@@ -3820,6 +3820,7 @@ export async function reconcileUsagePackAllocationChanges(
   );
   signal.throwIfAborted();
   const orgIds = new Set<string>();
+  const emptyCancellations: EmptyUsagePackCancellation[] = [];
   let reconciled = expiredPreviews.length;
   for (const usagePackSubscriptionId of subscriptionIds) {
     const result = await settle(
@@ -3839,11 +3840,12 @@ export async function reconcileUsagePackAllocationChanges(
       continue;
     }
     reconciled += result.value.reconciled;
+    emptyCancellations.push(...result.value.emptyCancellations);
     for (const orgId of result.value.orgIds) {
       orgIds.add(orgId);
     }
   }
-  return { reconciled, orgIds: [...orgIds] };
+  return { reconciled, orgIds: [...orgIds], emptyCancellations };
 }
 
 function existingConfirmationResponse(
@@ -4006,6 +4008,9 @@ async function confirmUsagePackDowngrade(
     subscription,
     signal,
   );
+  if ("emptyCancellation" in scheduled) {
+    throw new Error("A usage pack downgrade must retain a package");
+  }
   return {
     status: "confirmed",
     response: {
