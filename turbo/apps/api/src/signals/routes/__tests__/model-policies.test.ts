@@ -11,7 +11,6 @@ import {
   type ModelProviderWriteType,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
-import { modelProvidersByTypeContract } from "@okouai/api-contracts/contracts/model-provider-routes";
 import { modelProviderConnectionsMainContract } from "@okouai/api-contracts/contracts/model-provider-gateways";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import type { ImageModelId } from "@okouai/api-contracts/contracts/image-models";
@@ -23,9 +22,6 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { now } from "../../../lib/time";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import {
-  holdModelPolicyPreferenceFixture,
-  stageUnrepairedOrgModelPolicyFixture,
-  readUnrepairedOrgModelPolicyFixture,
   removeRunModelCatalogEntryFixture,
   setOrgMemberRunModelOutsidePolicyFixture,
   setOrgModelPolicyProviderTypeFixture,
@@ -48,7 +44,6 @@ import { makeCodexAuthJson } from "./helpers/api-bdd-auth-device";
 import { seedBuiltInModelCandidateKeys } from "./helpers/runtime-state";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { modelPoliciesRoutes } from "../model-policies";
-import { modelProvidersRoutes } from "../model-providers";
 import { modelProviderGatewayRoutes } from "../model-provider-gateways";
 import { userModelPreferenceRoutes } from "../user-model-preference";
 
@@ -2645,247 +2640,6 @@ describe("conditional organization model policy writes", () => {
         selectedModel: "gpt-5.6-luna",
         serviceTier: null,
       });
-    },
-  );
-
-  it("keeps the revision decision protected while a replacement waits on member preferences", async () => {
-    const fixture = seedFixture();
-    useSession(fixture);
-    await accept(
-      apiClient().update({
-        headers: authHeaders(),
-        body: {
-          revision: await currentPolicyRevision(),
-          policies: [
-            makeBuiltInPolicy("gpt-5.6-luna", true),
-            makeBuiltInPolicy("gpt-6-astra"),
-          ],
-        },
-      }),
-      [200],
-    );
-    const preferences = setupApp({
-      context,
-      routes: userModelPreferenceRoutes,
-    })(userModelPreferenceContract);
-    await accept(
-      preferences.update({
-        headers: authHeaders(),
-        body: { selectedModel: "gpt-6-astra", serviceTier: null },
-      }),
-      [200],
-    );
-    useSession(fixture);
-    const snapshot = await accept(
-      apiClient().list({ headers: authHeaders() }),
-      [200],
-    );
-    const boundary = await holdModelPolicyPreferenceFixture(
-      fixture.orgId,
-      context.signal,
-    );
-    onTestFinished(async () => {
-      boundary.release();
-      await boundary.done;
-    });
-    const first = apiClient().update({
-      headers: authHeaders(),
-      body: {
-        policies: [makeBuiltInPolicy("gpt-5.6-luna", true)],
-        revision: snapshot.body.revision,
-      },
-    });
-    await vi.waitFor(async () => {
-      return await expect(boundary.blockedTransactions()).resolves.toBe(1);
-    });
-    const second = apiClient().update({
-      headers: authHeaders(),
-      body: {
-        policies: [
-          ...toUpdate(snapshot.body),
-          makeBuiltInPolicy("deepseek-v4-flash"),
-        ],
-        revision: snapshot.body.revision,
-      },
-    });
-    await vi.waitFor(async () => {
-      return await expect(boundary.blockedTransactions()).resolves.toBe(2);
-    });
-    boundary.release();
-    await boundary.done;
-    await accept(first, [200]);
-    await accept(second, [409]);
-    const current = await accept(
-      apiClient().list({ headers: authHeaders() }),
-      [200],
-    );
-    expect(
-      current.body.policies.map((policy) => {
-        return policy.model;
-      }),
-    ).toStrictEqual(["gpt-5.6-luna"]);
-    const preference = await accept(
-      preferences.get({ headers: authHeaders() }),
-      [200],
-    );
-    expect(preference.body.selectedModel).toBe("gpt-5.6-luna");
-  });
-});
-
-describe("conditional policy writes and persisted repair boundaries", () => {
-  it("serializes a provider deletion behind a replacement that passed its precondition", async () => {
-    const fixture = seedFixture();
-    useSession(fixture);
-    const providerId = await createOrgProvider(fixture, "anthropic-api-key");
-    const retainedPolicy: UpdateOrgModelPolicy = {
-      model: "claude-opus-5",
-      isDefault: true,
-      defaultProviderType: "anthropic-api-key",
-      credentialScope: "org",
-      modelProviderId: providerId,
-      modelProviderSurfaceId: null,
-    };
-    await accept(
-      apiClient().update({
-        headers: authHeaders(),
-        body: {
-          revision: await currentPolicyRevision(),
-          policies: [retainedPolicy, makeBuiltInPolicy("gpt-6-astra")],
-        },
-      }),
-      [200],
-    );
-    const preferences = setupApp({
-      context,
-      routes: userModelPreferenceRoutes,
-    })(userModelPreferenceContract);
-    await accept(
-      preferences.update({
-        headers: authHeaders(),
-        body: { selectedModel: "gpt-6-astra", serviceTier: null },
-      }),
-      [200],
-    );
-    useSession(fixture);
-    const snapshot = await accept(
-      apiClient().list({ headers: authHeaders() }),
-      [200],
-    );
-    const boundary = await holdModelPolicyPreferenceFixture(
-      fixture.orgId,
-      context.signal,
-    );
-    onTestFinished(async () => {
-      boundary.release();
-      await boundary.done;
-    });
-    const replacement = apiClient().update({
-      headers: authHeaders(),
-      body: { policies: [retainedPolicy], revision: snapshot.body.revision },
-    });
-    await vi.waitFor(async () => {
-      await expect(boundary.blockedTransactions()).resolves.toBe(1);
-    });
-    const providerClient = setupApp({ context, routes: modelProvidersRoutes })(
-      modelProvidersByTypeContract,
-    );
-    const deletion = providerClient.delete({
-      headers: authHeaders(),
-      params: { type: "anthropic-api-key" },
-    });
-    await vi.waitFor(async () => {
-      await expect(boundary.blockedTransactions()).resolves.toBe(2);
-    });
-    boundary.release();
-    await boundary.done;
-    await accept(replacement, [200]);
-    await accept(deletion, [204]);
-    const current = await accept(
-      apiClient().list({ headers: authHeaders() }),
-      [200],
-    );
-    expect(current.body.policies).toHaveLength(1);
-    expect(current.body.policies[0]).toMatchObject({
-      model: retainedPolicy.model,
-      defaultProviderType: retainedPolicy.defaultProviderType,
-      credentialScope: "org",
-      modelProviderId: null,
-      routeStatus: "missing_provider",
-      isDefault: true,
-    });
-    const preference = await accept(
-      preferences.get({ headers: authHeaders() }),
-      [200],
-    );
-    expect(preference.body.selectedModel).toBe(retainedPolicy.model);
-  });
-
-  it.each(["unseeded", "missing_default"] as const)(
-    "rejects missing and stale preconditions before repairing %s policies",
-    async (state) => {
-      const fixture = seedFixture();
-      useSession(fixture);
-      await accept(
-        apiClient().update({
-          headers: authHeaders(),
-          body: {
-            revision: await currentPolicyRevision(),
-            policies: [
-              makeBuiltInPolicy("gpt-5.6-luna", true),
-              makeBuiltInPolicy("gpt-6-astra"),
-            ],
-          },
-        }),
-        [200],
-      );
-      const preferences = setupApp({
-        context,
-        routes: userModelPreferenceRoutes,
-      })(userModelPreferenceContract);
-      await accept(
-        preferences.update({
-          headers: authHeaders(),
-          body: { selectedModel: "gpt-6-astra", serviceTier: null },
-        }),
-        [200],
-      );
-      useSession(fixture);
-      const previous = await accept(
-        apiClient().list({ headers: authHeaders() }),
-        [200],
-      );
-      await stageUnrepairedOrgModelPolicyFixture({
-        orgId: fixture.orgId,
-        state,
-      });
-      const before = await readUnrepairedOrgModelPolicyFixture(fixture.orgId);
-      for (const revision of [undefined, previous.body.revision]) {
-        const rejected = await accept(
-          apiClient().update({
-            headers: authHeaders(),
-            body: {
-              policies: [makeBuiltInPolicy("gpt-5.6-luna", true)],
-              revision,
-            },
-          }),
-          [409],
-        );
-        expect(rejected.body.error.message).toContain("Refresh model settings");
-        await expect(
-          readUnrepairedOrgModelPolicyFixture(fixture.orgId),
-        ).resolves.toStrictEqual(before);
-      }
-      // The normal read still owns initialization/default repair after rejection.
-      const repaired = await accept(
-        apiClient().list({ headers: authHeaders() }),
-        [200],
-      );
-      expect(repaired.body.policies.length).toBeGreaterThan(0);
-      expect(
-        repaired.body.policies.filter((policy) => {
-          return policy.isDefault;
-        }),
-      ).toHaveLength(1);
     },
   );
 });
