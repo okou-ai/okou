@@ -3560,7 +3560,7 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     ]);
   });
 
-  it("cancels replaced subscriptions and reads the Custom grant billing period", async () => {
+  it("retries Atom replacement cleanup without repeating credits and reads the Custom period", async () => {
     const bdd = createBddApi(context);
     const billing = createBillingMediaApi(context);
     const runs = createRunsApi(context);
@@ -3581,44 +3581,57 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
         },
       ],
     });
-    context.mocks.stripe.subscriptions.cancel.mockResolvedValue({
-      id: granted.subscriptionId,
-    });
+    context.mocks.stripe.subscriptions.cancel
+      .mockRejectedValueOnce(new Error("Temporary Atom replacement failure"))
+      .mockResolvedValue({ id: granted.subscriptionId });
 
-    await api.postStripeEvent(
-      stripeEvent({
-        type: "invoice.paid",
-        object: {
-          id: `in_bdd_atom_team_${suffix}`,
-          customer: granted.customerId,
-          metadata: {
-            type: "atom_grant",
-            purpose: "atom_grant",
-            source: "atom_entitlement",
-            orgId,
-            tier: "team",
-            duration: "7d",
-            atomGrantExpiresAt: isoOf(grantExpiresAtUnix),
-          },
-          parent: null,
-          lines: {
-            has_more: false,
-            data: [
-              {
-                id: `il_bdd_atom_team_${suffix}`,
-                quantity: 1,
-                price: { id: "price_bdd_atom_grant" },
-                period: {
-                  start: grantStartsAtUnix,
-                  end: grantExpiresAtUnix,
-                },
-                parent: { type: "invoice_item_details" },
-              },
-            ],
-          },
+    const teamEvent = stripeEvent({
+      type: "invoice.paid",
+      object: {
+        id: `in_bdd_atom_team_${suffix}`,
+        customer: granted.customerId,
+        metadata: {
+          type: "atom_grant",
+          purpose: "atom_grant",
+          source: "atom_entitlement",
+          orgId,
+          tier: "team",
+          duration: "7d",
+          atomGrantExpiresAt: isoOf(grantExpiresAtUnix),
         },
+        parent: null,
+        lines: {
+          has_more: false,
+          data: [
+            {
+              id: `il_bdd_atom_team_${suffix}`,
+              quantity: 1,
+              price: { id: "price_bdd_atom_grant" },
+              period: {
+                start: grantStartsAtUnix,
+                end: grantExpiresAtUnix,
+              },
+              parent: { type: "invoice_item_details" },
+            },
+          ],
+        },
+      },
+    });
+    await api.postStripeEvent(teamEvent, [500]);
+    const afterFailedCleanup = await billing.readBillingStatus(actor);
+    expect(afterFailedCleanup.tier).toBe("team");
+    expect(afterFailedCleanup.credits).toBe(140_000);
+    expect(
+      afterFailedCleanup.creditGrants.filter((grant) => {
+        return grant.amount === 120_000;
       }),
-      [200],
+    ).toHaveLength(1);
+    await api.postStripeEvent(teamEvent, [200]);
+    await api.postStripeEvent(teamEvent, [200]);
+    const afterRetry = await billing.readBillingStatus(actor);
+    expect(afterRetry.credits).toBe(140_000);
+    expect(afterRetry.creditGrants).toStrictEqual(
+      afterFailedCleanup.creditGrants,
     );
 
     expect(context.mocks.stripe.subscriptions.cancel).toHaveBeenCalledWith(
