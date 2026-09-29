@@ -65,8 +65,21 @@ export async function setOrgModelModeFixture(
     .set({ modelMode, updatedAt: sql`now()` })
     .where(eq(orgMetadata.orgId, orgId))
     .returning({ orgId: orgMetadata.orgId });
-  if (rows.length !== 1)
+  if (rows.length !== 1) {
     throw new Error(`No organization metadata for ${orgId}`);
+  }
+}
+
+// Legacy API BDD helpers configure organization providers for a pre-existing
+// Custom workspace. A missing metadata row already reads as Custom.
+export async function setCustomOrgModelModeIfPresentFixture(
+  orgId: string,
+): Promise<void> {
+  await createStore()
+    .set(writeDb$)
+    .update(orgMetadata)
+    .set({ modelMode: "custom", updatedAt: sql`now()` })
+    .where(eq(orgMetadata.orgId, orgId));
 }
 
 export async function expireAtomGrantFixture(values: {

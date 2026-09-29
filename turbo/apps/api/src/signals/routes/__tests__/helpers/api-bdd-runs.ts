@@ -54,6 +54,7 @@ import {
 } from "../../../../__tests__/test-app";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { apiTestS3PresignedUrl } from "../../../../__tests__/mocks";
+import { setCustomOrgModelModeIfPresentFixture } from "../../../../test-fixtures/org-metadata";
 import { mockEnv, mockOptionalEnv } from "../../../../lib/env";
 import { now, withNowScopeForTest } from "../../../../lib/time";
 import { createDeferredPromise } from "../../../utils";
@@ -1040,6 +1041,12 @@ export function createRunsApi(
       actor: ApiTestUser,
       policies: OrgModelPolicyRequest["policies"],
     ): Promise<void> {
+      if (!actor.orgId) {
+        throw new Error(
+          "Custom organization model policy setup requires an org",
+        );
+      }
+      await setCustomOrgModelModeIfPresentFixture(actor.orgId);
       const snapshot = await accept(
         runApp(context)(modelPoliciesMainContract).list({
           headers: authenticate(context, actor),
@@ -1066,6 +1073,10 @@ export function createRunsApi(
         readonly model?: OrgPolicyModel;
       } = {},
     ): Promise<{ readonly providerId: string }> {
+      if (!actor.orgId) {
+        throw new Error("Custom organization provider setup requires an org");
+      }
+      await setCustomOrgModelModeIfPresentFixture(actor.orgId);
       const providerResponse = await accept(
         runApp(context)(modelProvidersMainContract).upsert({
           headers: authenticate(context, actor),

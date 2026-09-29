@@ -26,8 +26,9 @@ export async function seedConnectedPersonalSubscriptionFixture(args: {
       set: { updatedAt: new Date() },
     })
     .returning({ id: modelProviders.id });
-  if (!provider)
+  if (!provider) {
     throw new Error("Expected a logical personal subscription provider");
+  }
   await db.insert(modelProviderAccounts).values({
     modelProviderId: provider.id,
     orgId: args.orgId,

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { afterEach, describe, expect, it } from "vitest";
-import { DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL } from "@okouai/api-contracts/contracts/model-providers";
+import { seedConnectedPersonalSubscriptionFixture } from "../../../test-fixtures/personal-subscription-model";
 
 import { testContext } from "../../../__tests__/test-context";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
@@ -296,10 +296,10 @@ describe("AUTH-03 user model preference", () => {
     });
 
     const updated = await cfg.updateModelPreference(admin, {
-      selectedModel: DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
+      selectedModel: "okou-1.0",
       serviceTier: null,
     });
-    expect(updated.selectedModel).toBe(DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL);
+    expect(updated.selectedModel).toBe("okou-1.0");
     expect(updated.serviceTier).toBeNull();
     expect(updated.updatedAt).toStrictEqual(expect.any(String));
     const readUpdated = await cfg.readModelPreference(admin);
@@ -329,6 +329,14 @@ describe("AUTH-03 user model preference", () => {
   it("stores independent model effort preferences without deleting prior entries", async () => {
     const admin = api.user();
     await onboardAdmin(admin, { slug: slug("bdd-uc-effort") });
+    if (!admin.orgId) {
+      throw new Error("Expected an organization for subscription preferences");
+    }
+    await seedConnectedPersonalSubscriptionFixture({
+      orgId: admin.orgId,
+      userId: admin.userId,
+      type: "codex-oauth-token",
+    });
 
     const astra = await cfg.updateModelPreference(admin, {
       selectedModel: "gpt-6-astra",
@@ -366,7 +374,7 @@ describe("AUTH-03 user model preference", () => {
     );
     expectApiError(unsupported.body);
     expect(unsupported.body.error.message).toBe(
-      "Reasoning effort is not supported by the selected model",
+      "Reasoning effort is not available for this subscription",
     );
   });
 

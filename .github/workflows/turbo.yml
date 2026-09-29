@@ -2697,6 +2697,10 @@ jobs:
           # Product mode switching remains restricted to Debug admins.
           npm install -g neonctl@2.15.0
           database_url="$(neonctl connection-string "$NEON_BRANCH_NAME" --project-id "$NEON_PROJECT_ID" --database-name neondb --role-name neondb_owner --pooled --ssl verify-full)"
+          WORKFLOW_COMMAND_DATA="${database_url//%/%25}"
+          WORKFLOW_COMMAND_DATA="${WORKFLOW_COMMAND_DATA//$'\r'/%0D}"
+          WORKFLOW_COMMAND_DATA="${WORKFLOW_COMMAND_DATA//$'\n'/%0A}"
+          printf '::add-mask::%s\n' "$WORKFLOW_COMMAND_DATA"
           if [[ -z "$database_url" ]]; then
             echo "Runner E2E preview database unavailable" >&2
             exit 1
