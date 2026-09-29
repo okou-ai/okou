@@ -243,7 +243,7 @@ describe("VNC owner configuration", () => {
       credential: { type: "none" },
       generation: 1,
     });
-    expect("credentialId" in created.body).toBe(false);
+    expect("credentialId" in created.body).toBeFalsy();
     expect(
       (await accept(connections().list({ headers }), [200])).body.connections,
     ).toStrictEqual([created.body]);
@@ -309,7 +309,7 @@ describe("VNC owner configuration", () => {
       credential: { type: "none" },
       generation: 3,
     });
-    expect("credentialId" in backToNone.body).toBe(false);
+    expect("credentialId" in backToNone.body).toBeFalsy();
     expect(
       (await accept(credentials().list({ headers }), [200])).body.credentials,
     ).toHaveLength(1);

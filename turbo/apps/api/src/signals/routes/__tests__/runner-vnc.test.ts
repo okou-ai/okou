@@ -216,9 +216,9 @@ describe("private Runner VNC authority", () => {
       [200],
     );
     const kms = useSecretKmsProbe();
-    expect(
-      await api.resolve(f, { supportedProfiles: [...vncProfiles] }),
-    ).toStrictEqual({ outcome: "unsupported_profile" });
+    await expect(
+      api.resolve(f, { supportedProfiles: [...vncProfiles] }),
+    ).resolves.toStrictEqual({ outcome: "unsupported_profile" });
     expect((await check(f, 1)).body).toStrictEqual({
       outcome: "configuration_changed",
     });
@@ -278,9 +278,9 @@ describe("private Runner VNC authority", () => {
       },
     ];
     const kms = useSecretKmsProbe();
-    expect(await api.resolve(f, { supportedProfiles: profiles })).toStrictEqual(
-      { outcome: "unavailable" },
-    );
+    await expect(
+      api.resolve(f, { supportedProfiles: profiles }),
+    ).resolves.toStrictEqual({ outcome: "unavailable" });
     await accept(
       setupApp({ context, routes: chatRemoteAccessRoutes })(
         chatRemoteAccessContract,
@@ -291,20 +291,20 @@ describe("private Runner VNC authority", () => {
       }),
       [200],
     );
-    expect(
-      await api.resolve(f, {
+    await expect(
+      api.resolve(f, {
         supportedProfiles: [{ ...profiles[0]!, transportType: "direct" }],
       }),
-    ).toStrictEqual({ outcome: "unsupported_profile" });
-    expect(await api.resolve(f, { supportedProfiles: profiles })).toMatchObject(
-      {
-        outcome: "resolved_transport",
-        authentication: { method: "none" },
-        security: { type: "x509_none" },
-        transport: { type: "ssh", connectionId: ssh.body.id },
-        generation: 2,
-      },
-    );
+    ).resolves.toStrictEqual({ outcome: "unsupported_profile" });
+    await expect(
+      api.resolve(f, { supportedProfiles: profiles }),
+    ).resolves.toMatchObject({
+      outcome: "resolved_transport",
+      authentication: { method: "none" },
+      security: { type: "x509_none" },
+      transport: { type: "ssh", connectionId: ssh.body.id },
+      generation: 2,
+    });
     expect(kms.decryptCalls).toBe(0);
   });
 

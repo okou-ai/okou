@@ -255,6 +255,33 @@ async function selectUpdateVncCredential(args: {
     : vncFailure("profileMismatch");
 }
 
+function validCreateCredentialProfile(
+  credential: CreateVncConnectionRequest["credential"],
+  securityType: Metadata["securityType"],
+): boolean {
+  if ((securityType === "x509_none") !== "type" in credential) {
+    return false;
+  }
+  return (
+    !("create" in credential) ||
+    isVncProfileCompatible(
+      credential.create.authentication.method,
+      securityType,
+    )
+  );
+}
+
+function validSelectedCredentialProfile(
+  credential: CredentialMetadata | null,
+  securityType: Metadata["securityType"],
+): boolean {
+  return (
+    (credential === null) === (securityType === "x509_none") &&
+    (credential === null ||
+      isVncProfileCompatible(credential.authMethod, securityType))
+  );
+}
+
 export async function createVncConnection(args: {
   readonly db: Db;
   readonly owner: VncOwner;
@@ -293,14 +320,9 @@ export async function createVncConnection(args: {
   if (!route.ok) {
     return route;
   }
-  const credentialless = security.value.securityType === "x509_none";
-  if (credentialless !== "type" in args.body.credential) {
-    return vncFailure("profileMismatch");
-  }
   if (
-    "create" in args.body.credential &&
-    !isVncProfileCompatible(
-      args.body.credential.create.authentication.method,
+    !validCreateCredentialProfile(
+      args.body.credential,
       security.value.securityType,
     )
   ) {
@@ -346,12 +368,10 @@ export async function createVncConnection(args: {
         return credential;
       }
       if (
-        credentialless !== (credential === null) ||
-        (credential !== null &&
-          !isVncProfileCompatible(
-            credential.value.authMethod,
-            security.value.securityType,
-          ))
+        !validSelectedCredentialProfile(
+          credential?.value ?? null,
+          security.value.securityType,
+        )
       ) {
         return vncFailure("profileMismatch");
       }
@@ -388,6 +408,49 @@ export async function createVncConnection(args: {
     );
   }
   return transaction.value;
+}
+
+async function selectUpdatedProfileCredential(args: {
+  readonly tx: VncTransaction;
+  readonly owner: VncOwner;
+  readonly requestedCredential: UpdateVncConnectionRequest["credential"];
+  readonly prepared: Awaited<
+    ReturnType<typeof prepareVncCredentialSelection>
+  > | null;
+  readonly currentCredentialId: string | null;
+  readonly securityType: Metadata["securityType"];
+}): Promise<VncResult<CredentialMetadata | null>> {
+  const credentialless = args.securityType === "x509_none";
+  if (
+    (args.requestedCredential !== undefined &&
+      credentialless !== "type" in args.requestedCredential) ||
+    (credentialless !== (args.currentCredentialId === null) &&
+      args.requestedCredential === undefined)
+  ) {
+    return vncFailure("profileMismatch");
+  }
+  if (credentialless) {
+    return { ok: true, value: null };
+  }
+  return await selectUpdateVncCredential({
+    tx: args.tx,
+    owner: args.owner,
+    prepared: args.prepared,
+    currentCredentialId: args.currentCredentialId,
+    securityType: args.securityType,
+  });
+}
+
+function updatedVncTransport(
+  current: Metadata,
+  requested: UpdateVncConnectionRequest["transport"],
+): NonNullable<UpdateVncConnectionRequest["transport"]> {
+  return (
+    requested ??
+    (current.transportType === "ssh" && current.sshConnectionId !== null
+      ? { type: "ssh", connectionId: current.sshConnectionId }
+      : { type: "direct" })
+  );
 }
 
 export async function updateVncConnection(args: {
@@ -447,14 +510,10 @@ export async function updateVncConnection(args: {
     }
     const newHost = host?.value ?? current.host;
     const newPort = args.body.port ?? current.port;
-    const requestedTransport =
-      args.body.transport ??
-      (current.transportType === "ssh" && current.sshConnectionId !== null
-        ? ({
-            type: "ssh",
-            connectionId: current.sshConnectionId,
-          } as const)
-        : ({ type: "direct" } as const));
+    const requestedTransport = updatedVncTransport(
+      current,
+      args.body.transport,
+    );
     const transport = prepareVncTransport(requestedTransport, newHost);
     if (!transport.ok) {
       return transport;
@@ -477,29 +536,15 @@ export async function updateVncConnection(args: {
     if (!route.ok) {
       return route;
     }
-    const credentialless = securityType === "x509_none";
-    if (
-      (credentialless &&
-        args.body.credential !== undefined &&
-        !("type" in args.body.credential)) ||
-      (!credentialless &&
-        args.body.credential !== undefined &&
-        "type" in args.body.credential) ||
-      (credentialless !== (current.credentialId === null) &&
-        args.body.credential === undefined)
-    ) {
-      return vncFailure("profileMismatch");
-    }
-    const credential = credentialless
-      ? null
-      : await selectUpdateVncCredential({
-          tx,
-          owner,
-          prepared: preparedCredential ?? null,
-          currentCredentialId: current.credentialId,
-          securityType,
-        });
-    if (credential !== null && !credential.ok) {
+    const credential = await selectUpdatedProfileCredential({
+      tx,
+      owner,
+      requestedCredential: args.body.credential,
+      prepared: preparedCredential ?? null,
+      currentCredentialId: current.credentialId,
+      securityType,
+    });
+    if (!credential.ok) {
       return credential;
     }
     const [updated] = await tx
@@ -509,8 +554,8 @@ export async function updateVncConnection(args: {
         host: newHost,
         port: newPort,
         ...transport.value,
-        credentialId: credential?.value.id ?? null,
-        authMethod: credential?.value.authMethod ?? "none",
+        credentialId: credential.value?.id ?? null,
+        authMethod: credential.value?.authMethod ?? "none",
         ...security?.value,
         generation: current.generation + 1,
         updatedAt: nowDate(),
@@ -522,7 +567,7 @@ export async function updateVncConnection(args: {
     }
     return {
       ok: true as const,
-      value: response(updated, credential?.value ?? null),
+      value: response(updated, credential.value),
     };
   });
 }
