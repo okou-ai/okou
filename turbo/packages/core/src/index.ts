@@ -25,10 +25,6 @@ export {
   type IllustrationTemplateItem,
 } from "./illustration-template-items";
 export {
-  VIDEO_TEMPLATE_ITEMS,
-  type VideoTemplateItem,
-} from "./video-template-items";
-export {
   WEBSITE_TEMPLATE_ITEMS,
   findWebsiteTemplateItem,
   type WebsiteTemplateItem,

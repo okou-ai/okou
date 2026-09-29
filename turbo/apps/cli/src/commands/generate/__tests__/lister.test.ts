@@ -316,8 +316,6 @@ describe("okou generate lister", () => {
       "Models: Uses the image model selected in Settings › Built-in tools (default gpt-image-2.5-flare). Available: OpenAI: gpt-image-2.5-flare, gpt-image-2.5-sunburst; fal.ai: gpt-image-1, gpt-image-2, flux-2-pro, ideogram-4, flux-pro-1.1, flux-pro-1.1-ultra, qwen-image-3, seedream4, nano-banana-2, nano-banana-2-lite; BytePlus: seedream5-pro, seedream5-lite",
     );
     expect(text).toContain("Use: okou generate image --provider built-in -h");
-    expect(text).not.toContain("Fallback option:");
-    expect(text).not.toContain("Official provider:");
     expect(text).not.toContain("Next actions:");
     expect(text).not.toContain("default-account-a");
     expect(defaultStatusRequests).toBe(0);
@@ -542,9 +540,6 @@ describe("okou generate lister", () => {
     expect(text).toContain("Built-in presentation generation");
     expect(text).toContain("Models: gpt-5.5");
     expect(text).toContain("Use: okou generate presentation -h");
-    expect(text).not.toContain("Model: gpt-5.5");
-    expect(text).not.toContain("Fallback option:");
-    expect(text).not.toContain("Official provider:");
   });
 
   it("suggests the built-in website command", async () => {
@@ -570,9 +565,6 @@ describe("okou generate lister", () => {
     expect(text).toContain(
       "Existing web app changes should usually follow the project's own build, test, and deploy workflow.",
     );
-    expect(text).not.toContain("Model: gpt-5.5");
-    expect(text).not.toContain("Fallback option:");
-    expect(text).not.toContain("Official provider:");
   });
 
   it.each([

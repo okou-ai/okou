@@ -190,7 +190,6 @@ describe("okou generate website command", () => {
     );
     expect(imageWorkflow).toContain("never call `okou generate image`");
     expect(imageWorkflow).toContain("or a template image wrapper directly");
-    expect(imageWorkflow).not.toContain("a fourth is rejected");
   });
 
   it("should use the generated base slug when no stable site slug is provided", async () => {

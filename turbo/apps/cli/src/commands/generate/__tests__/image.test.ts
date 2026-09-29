@@ -644,7 +644,6 @@ describe("okou generate image command", () => {
     );
     expect(stdout).toContain("Source image URLs: none");
     expect(stdout).toContain("## Image Authoring Rules");
-    expect(stdout).not.toContain("## Parameter Precedence");
     expect(stdout).toContain("CLI fallback values last");
     expect(stdout).toContain(
       "`--background` accepts only `auto`, `opaque`, or `transparent`",

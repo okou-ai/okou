@@ -23,19 +23,6 @@ export type GenerationTarget =
   | "report"
   | "docs-design";
 
-export type GenerationOutputKind =
-  | "website"
-  | "image"
-  | "audio"
-  | "video"
-  | "presentation"
-  | "report"
-  | "poster"
-  | "dashboard-design"
-  | "mobile-app-design"
-  | "docs-design"
-  | "bundle";
-
 type ResourceKind =
   | "skill"
   | "tool"

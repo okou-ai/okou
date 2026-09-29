@@ -41,13 +41,6 @@ type BuiltInGenerationType =
   | "website";
 export type GenerationType = ConnectorGenerationType | BuiltInGenerationType;
 
-interface BuiltInGenerationProvider {
-  label: string;
-  model: string;
-  command: string;
-  reason: string;
-}
-
 interface BuiltInGenerationCommand {
   label: string;
   command: string;
@@ -57,10 +50,6 @@ interface BuiltInGenerationCommand {
 interface GenerationContext {
   readonly lines: readonly string[];
 }
-
-const BUILT_IN_GENERATION_PROVIDERS: Partial<
-  Record<GenerationType, readonly BuiltInGenerationProvider[]>
-> = {};
 
 const BUILT_IN_GENERATION_COMMANDS: Partial<
   Record<GenerationType, BuiltInGenerationCommand>
@@ -183,12 +172,6 @@ function getConnectorGenerationType(
     case "text":
       return generationType;
   }
-}
-
-function getBuiltInProviders(
-  generationType: GenerationType,
-): readonly BuiltInGenerationProvider[] {
-  return BUILT_IN_GENERATION_PROVIDERS[generationType] ?? [];
 }
 
 function getBuiltInCommand(
@@ -451,35 +434,22 @@ function renderActions(
   }
 }
 
-function renderBuiltInProvider(params: {
+function renderBuiltInCommand(params: {
   generationType: GenerationType;
   unavailableMessage: string | undefined;
 }): void {
   const { generationType, unavailableMessage } = params;
   const command = getBuiltInCommand(generationType);
-  if (command) {
-    console.log("");
-    console.log("Built-in command:");
-    console.log(`  Okou  ${command.label}`);
-    console.log(`  Models: ${command.models}`);
-    if (unavailableMessage) {
-      console.log(`  Availability: ${unavailableMessage}`);
-    }
-    console.log(`  Use: ${command.command}`);
-    return;
-  }
-
-  const providers = getBuiltInProviders(generationType);
-  if (providers.length === 0) return;
+  if (!command) return;
 
   console.log("");
-  console.log(
-    providers.length === 1 ? "Built-in provider:" : "Built-in providers:",
-  );
-  for (const provider of providers) {
-    console.log(`  Okou  ${provider.label}  Model: ${provider.model}`);
-    console.log(`  Use: ${provider.command}`);
+  console.log("Built-in command:");
+  console.log(`  Okou  ${command.label}`);
+  console.log(`  Models: ${command.models}`);
+  if (unavailableMessage) {
+    console.log(`  Availability: ${unavailableMessage}`);
   }
+  console.log(`  Use: ${command.command}`);
 }
 
 function renderGenerationContext(generationType: GenerationType): void {
@@ -539,7 +509,7 @@ function renderText(params: {
     }
   }
 
-  renderBuiltInProvider({
+  renderBuiltInCommand({
     generationType,
     unavailableMessage,
   });

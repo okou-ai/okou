@@ -12,7 +12,7 @@ import {
   formatRegistryListing,
 } from "./resource-listing";
 import {
-  createHtmlArtifactAuthoringPacket,
+  createHtmlArtifactAuthoringInstructions,
   type HtmlArtifactKind,
 } from "./html-artifact-authoring";
 import { dispatchGenerate } from "../generate/lib/dispatch";
@@ -172,7 +172,7 @@ ${formatRegistryListing(templates, `${config.target} templates`)}`;
           }`,
         ];
 
-        const packet = createHtmlArtifactAuthoringPacket({
+        const instructions = createHtmlArtifactAuthoringInstructions({
           kind: config.target,
           prompt,
           slugSource: options.title,
@@ -182,7 +182,7 @@ ${formatRegistryListing(templates, `${config.target} templates`)}`;
           artifactRules: config.artifactRules,
         });
 
-        console.log(packet.instructions);
+        console.log(instructions);
       }),
     );
 }

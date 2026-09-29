@@ -281,38 +281,4 @@ describe("okou generate presentation command", () => {
       mockConsoleError.mockRestore();
     }
   });
-
-  it.each(["--design-system", "--runbook"])(
-    "should reject removed presentation selector flag %s",
-    async (flag) => {
-      const mockStderrWrite = vi
-        .spyOn(process.stderr, "write")
-        .mockImplementation((() => {
-          return true;
-        }) as never);
-
-      try {
-        await expect(async () => {
-          await generateCommand.parseAsync([
-            "node",
-            "cli",
-            "presentation",
-            "--prompt",
-            "investor pitch",
-            flag,
-            "html-ppt-playful-launch",
-          ]);
-        }).rejects.toThrow("process.exit called");
-
-        const stderr = mockStderrWrite.mock.calls
-          .map(([chunk]) => {
-            return String(chunk);
-          })
-          .join("");
-        expect(stderr).toContain(`unknown option '${flag}'`);
-      } finally {
-        mockStderrWrite.mockRestore();
-      }
-    },
-  );
 });
