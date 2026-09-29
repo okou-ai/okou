@@ -59,7 +59,7 @@ import {
 import {
   confirmUsagePackAllocationChange,
   getUsagePackManagement,
-  previewUsagePackAllocationChange,
+  previewUsagePackAllocationChange$,
 } from "../services/usage-pack-allocation-change.service";
 import {
   confirmUsagePackSubscriptionChange,
@@ -854,8 +854,8 @@ const usagePackChangePreviewAuthed$ = command(
       );
     }
     const db = set(writeDb$);
-    const result = await previewUsagePackAllocationChange(
-      db,
+    const result = await set(
+      previewUsagePackAllocationChange$,
       {
         orgId: access.auth.orgId,
         userId: bodyResult.data.memberId,

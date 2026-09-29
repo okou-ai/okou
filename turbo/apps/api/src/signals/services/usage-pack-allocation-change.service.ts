@@ -1090,56 +1090,176 @@ async function previewUsagePackChangeInStripe(
   };
 }
 
-async function persistUsagePackChangePreview(
-  db: Db,
+function allocationChangePreviewValues(
   context: UsagePackChangeContext,
   source: UsagePackAllocationRow,
   args: UsagePackChangePreviewArgs,
   preview: StripeUsagePackChangePreview,
-): Promise<UsagePackAllocationChangeRow | undefined> {
-  const [change] = await db.transaction(async (tx) => {
-    await lockUsagePackBillingOrg(tx, args.orgId);
-    await expireStaleUsagePackPreviews(tx, args.orgId, preview.createdAt);
-    const [lockedSource] = await tx
-      .select()
-      .from(usagePackAllocations)
-      .where(eq(usagePackAllocations.id, source.id))
-      .for("update")
-      .limit(1);
-    if (
-      !lockedSource ||
-      lockedSource.status !== "active" ||
-      lockedSource.usagePackUsd !== source.usagePackUsd ||
-      lockedSource.stripePriceId !== source.stripePriceId
-    ) {
-      return [];
-    }
-    return await tx
-      .insert(usagePackAllocationChanges)
-      .values({
-        usagePackSubscriptionId: context.subscription.id,
-        orgId: args.orgId,
-        userId: args.userId,
-        sourceAllocationId: source.id,
-        kind: preview.kind,
-        sourceUsagePackUsd: source.usagePackUsd,
-        sourceStripePriceId: source.stripePriceId,
-        targetUsagePackUsd: args.targetUsagePackUsd,
-        targetStripePriceId: preview.targetStripePriceId,
-        prorationTimestamp: preview.prorationTimestamp,
-        immediateAmountCents: preview.immediateAmountCents,
-        nextRecurringAmountCents: preview.nextRecurringAmountCents,
-        currency: preview.currency,
-        effectiveAt: preview.effectiveAt,
-        previewExpiresAt: preview.expiresAt,
-        createdAt: preview.createdAt,
-        updatedAt: preview.createdAt,
-      })
-      .onConflictDoNothing()
-      .returning();
-  });
-  return change;
+): typeof usagePackAllocationChanges.$inferInsert {
+  return {
+    usagePackSubscriptionId: context.subscription.id,
+    orgId: args.orgId,
+    userId: args.userId,
+    sourceAllocationId: source.id,
+    kind: preview.kind,
+    sourceUsagePackUsd: source.usagePackUsd,
+    sourceStripePriceId: source.stripePriceId,
+    targetUsagePackUsd: args.targetUsagePackUsd,
+    targetStripePriceId: preview.targetStripePriceId,
+    prorationTimestamp: preview.prorationTimestamp,
+    immediateAmountCents: preview.immediateAmountCents,
+    nextRecurringAmountCents: preview.nextRecurringAmountCents,
+    currency: preview.currency,
+    effectiveAt: preview.effectiveAt,
+    previewExpiresAt: preview.expiresAt,
+    createdAt: preview.createdAt,
+    updatedAt: preview.createdAt,
+  };
 }
+
+const persistUsagePackChangePreview$ = command(
+  async (
+    { set },
+    input: {
+      readonly context: UsagePackChangeContext;
+      readonly source: UsagePackAllocationRow;
+      readonly args: UsagePackChangePreviewArgs;
+      readonly preview: StripeUsagePackChangePreview;
+    },
+    signal: AbortSignal,
+  ): Promise<UsagePackAllocationChangeRow | undefined> => {
+    const { context, source, args, preview } = input;
+    const db = set(writeDb$);
+    const [change] = await db.transaction(async (tx) => {
+      await tx.execute(usagePackBillingCompatibilityLockSql(args.orgId));
+      const [root] = await tx
+        .select({ id: usagePackSubscriptions.id })
+        .from(usagePackSubscriptions)
+        .where(
+          and(
+            eq(usagePackSubscriptions.id, context.subscription.id),
+            eq(usagePackSubscriptions.orgId, args.orgId),
+          ),
+        )
+        .for("update")
+        .limit(1);
+      if (!root) {
+        return [];
+      }
+      // A Plan preview may have committed while Stripe prepared these prices.
+      // Both admission writers lock the real subscription before its children.
+      const [planChange] = await tx
+        .select({ id: usagePackSubscriptionChanges.id })
+        .from(usagePackSubscriptionChanges)
+        .where(
+          and(
+            eq(usagePackSubscriptionChanges.orgId, args.orgId),
+            inArray(usagePackSubscriptionChanges.status, [
+              "previewed",
+              "applying",
+              "pending_payment",
+            ]),
+          ),
+        )
+        .limit(1);
+      if (planChange) {
+        return [];
+      }
+      await tx
+        .update(usagePackAllocationChanges)
+        .set({
+          status: "failed",
+          failureReason: "preview_expired",
+          completedAt: preview.createdAt,
+          updatedAt: preview.createdAt,
+        })
+        .where(
+          and(
+            eq(usagePackAllocationChanges.orgId, args.orgId),
+            eq(usagePackAllocationChanges.status, "previewed"),
+            lte(usagePackAllocationChanges.previewExpiresAt, preview.createdAt),
+          ),
+        );
+      const [lockedSource] = await tx
+        .select()
+        .from(usagePackAllocations)
+        .where(eq(usagePackAllocations.id, source.id))
+        .for("update")
+        .limit(1);
+      signal.throwIfAborted();
+      if (
+        !lockedSource ||
+        lockedSource.status !== "active" ||
+        lockedSource.orgId !== args.orgId ||
+        lockedSource.userId !== args.userId ||
+        lockedSource.usagePackSubscriptionId !== context.subscription.id ||
+        lockedSource.usagePackUsd !== source.usagePackUsd ||
+        lockedSource.stripePriceId !== source.stripePriceId
+      ) {
+        return [];
+      }
+      return await tx
+        .insert(usagePackAllocationChanges)
+        .values(allocationChangePreviewValues(context, source, args, preview))
+        .onConflictDoNothing()
+        .returning();
+    });
+    signal.throwIfAborted();
+    return change;
+  },
+);
+
+const usagePackAllocationPreviewContext$ = command(
+  async (
+    { set },
+    orgId: string,
+    signal: AbortSignal,
+  ): Promise<UsagePackChangeContext | null> => {
+    const db = set(writeDb$);
+    const [subscription] = await db
+      .select()
+      .from(usagePackSubscriptions)
+      .where(
+        and(
+          eq(usagePackSubscriptions.orgId, orgId),
+          isNotNull(usagePackSubscriptions.stripeSubscriptionId),
+          notInArray(usagePackSubscriptions.subscriptionStatus, [
+            ...TERMINAL_SUBSCRIPTION_STATUSES,
+          ]),
+        ),
+      )
+      .orderBy(desc(usagePackSubscriptions.updatedAt))
+      .limit(1);
+    signal.throwIfAborted();
+    if (!subscription) {
+      return null;
+    }
+    const [allocations, changes] = await Promise.all([
+      db
+        .select()
+        .from(usagePackAllocations)
+        .where(
+          eq(usagePackAllocations.usagePackSubscriptionId, subscription.id),
+        ),
+      db
+        .select()
+        .from(usagePackAllocationChanges)
+        .where(
+          and(
+            eq(
+              usagePackAllocationChanges.usagePackSubscriptionId,
+              subscription.id,
+            ),
+            inArray(usagePackAllocationChanges.status, [
+              ...OPEN_CHANGE_STATUSES,
+            ]),
+          ),
+        ),
+    ]);
+    signal.throwIfAborted();
+    return { subscription, allocations, changes };
+  },
+);
 
 function storedUsagePackChangePreview(
   change: UsagePackAllocationChangeRow,
@@ -1173,100 +1293,108 @@ function storedUsagePackChangePreview(
   };
 }
 
-export async function previewUsagePackAllocationChange(
-  db: Db,
-  args: UsagePackChangePreviewArgs,
-  signal: AbortSignal,
-): Promise<UsagePackChangePreviewResult> {
-  const [openSubscriptionChange] = await db
-    .select({ id: usagePackSubscriptionChanges.id })
-    .from(usagePackSubscriptionChanges)
-    .where(
-      and(
-        eq(usagePackSubscriptionChanges.orgId, args.orgId),
-        inArray(usagePackSubscriptionChanges.status, [
-          "previewed",
-          "applying",
-          "pending_payment",
-        ]),
-      ),
-    )
-    .limit(1);
-  if (openSubscriptionChange) {
-    return { status: "conflict" };
-  }
-  const context = await loadUsagePackChangeContextForOrg(db, args.orgId);
-  const stripeSubscriptionId = context?.subscription.stripeSubscriptionId;
-  if (!context || !stripeSubscriptionId) {
-    return { status: "not_found" };
-  }
-  const existing = context.changes.find((change) => {
-    return (
-      change.subscriptionChangeId === null && change.userId === args.userId
+export const previewUsagePackAllocationChange$ = command(
+  async (
+    { set },
+    args: UsagePackChangePreviewArgs,
+    signal: AbortSignal,
+  ): Promise<UsagePackChangePreviewResult> => {
+    const db = set(writeDb$);
+    const [openSubscriptionChange] = await db
+      .select({ id: usagePackSubscriptionChanges.id })
+      .from(usagePackSubscriptionChanges)
+      .where(
+        and(
+          eq(usagePackSubscriptionChanges.orgId, args.orgId),
+          inArray(usagePackSubscriptionChanges.status, [
+            "previewed",
+            "applying",
+            "pending_payment",
+          ]),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (openSubscriptionChange) {
+      return { status: "conflict" };
+    }
+    const context = await set(
+      usagePackAllocationPreviewContext$,
+      args.orgId,
+      signal,
     );
-  });
-  if (
-    existing &&
-    (existing.status !== "previewed" ||
-      (existing.previewExpiresAt !== null &&
-        existing.previewExpiresAt > nowDate()))
-  ) {
-    return existing.targetUsagePackUsd === args.targetUsagePackUsd
-      ? { status: "ready", preview: storedUsagePackChangePreview(existing) }
-      : { status: "conflict" };
-  }
-  const source = activeAllocationForMember(context, args.userId);
-  if (!source) {
-    return { status: "not_found" };
-  }
-  if (source.usagePackUsd === args.targetUsagePackUsd) {
-    return { status: "same_package" };
-  }
-  if (
-    context.subscription.cancelAtPeriodEnd &&
-    args.targetUsagePackUsd < source.usagePackUsd
-  ) {
-    return { status: "plan_ending" };
-  }
-  const preview = await previewUsagePackChangeInStripe(
-    context,
-    source,
-    stripeSubscriptionId,
-    args.targetUsagePackUsd,
-    signal,
-  );
-  if (preview === "plan_ending") {
-    return { status: "plan_ending" };
-  }
-  if (!preview) {
-    return { status: "conflict" };
-  }
-  const change = await persistUsagePackChangePreview(
-    db,
-    context,
-    source,
-    args,
-    preview,
-  );
-  if (!change) {
-    return { status: "conflict" };
-  }
-  return {
-    status: "ready",
-    preview: {
-      changeId: change.id,
-      kind: preview.kind,
-      sourceUsagePackUsd: usagePackUsd(source.usagePackUsd),
-      targetUsagePackUsd: args.targetUsagePackUsd,
-      immediateAmountCents: preview.immediateAmountCents,
-      nextRecurringAmountCents: preview.nextRecurringAmountCents,
-      currency: preview.currency,
-      effectiveAt: preview.effectiveAt.toISOString(),
-      prorationDate: new Date(preview.prorationTimestamp * 1000).toISOString(),
-      expiresAt: preview.expiresAt.toISOString(),
-    },
-  };
-}
+    const stripeSubscriptionId = context?.subscription.stripeSubscriptionId;
+    if (!context || !stripeSubscriptionId) {
+      return { status: "not_found" };
+    }
+    const existing = context.changes.find((change) => {
+      return (
+        change.subscriptionChangeId === null && change.userId === args.userId
+      );
+    });
+    if (
+      existing &&
+      (existing.status !== "previewed" ||
+        (existing.previewExpiresAt !== null &&
+          existing.previewExpiresAt > nowDate()))
+    ) {
+      return existing.targetUsagePackUsd === args.targetUsagePackUsd
+        ? { status: "ready", preview: storedUsagePackChangePreview(existing) }
+        : { status: "conflict" };
+    }
+    const source = activeAllocationForMember(context, args.userId);
+    if (!source) {
+      return { status: "not_found" };
+    }
+    if (source.usagePackUsd === args.targetUsagePackUsd) {
+      return { status: "same_package" };
+    }
+    if (
+      context.subscription.cancelAtPeriodEnd &&
+      args.targetUsagePackUsd < source.usagePackUsd
+    ) {
+      return { status: "plan_ending" };
+    }
+    const preview = await previewUsagePackChangeInStripe(
+      context,
+      source,
+      stripeSubscriptionId,
+      args.targetUsagePackUsd,
+      signal,
+    );
+    if (preview === "plan_ending") {
+      return { status: "plan_ending" };
+    }
+    if (!preview) {
+      return { status: "conflict" };
+    }
+    const change = await set(
+      persistUsagePackChangePreview$,
+      { context, source, args, preview },
+      signal,
+    );
+    if (!change) {
+      return { status: "conflict" };
+    }
+    return {
+      status: "ready",
+      preview: {
+        changeId: change.id,
+        kind: preview.kind,
+        sourceUsagePackUsd: usagePackUsd(source.usagePackUsd),
+        targetUsagePackUsd: args.targetUsagePackUsd,
+        immediateAmountCents: preview.immediateAmountCents,
+        nextRecurringAmountCents: preview.nextRecurringAmountCents,
+        currency: preview.currency,
+        effectiveAt: preview.effectiveAt.toISOString(),
+        prorationDate: new Date(
+          preview.prorationTimestamp * 1000,
+        ).toISOString(),
+        expiresAt: preview.expiresAt.toISOString(),
+      },
+    };
+  },
+);
 
 function subscriptionPhaseItems(
   subscription: UsagePackChangeSubscriptionInput,

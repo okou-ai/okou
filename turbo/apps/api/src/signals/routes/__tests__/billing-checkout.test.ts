@@ -12199,6 +12199,87 @@ describe("usage pack allocation management", () => {
     );
   });
 
+  it("rejects a package preview when a Plan preview wins during Stripe preparation", async () => {
+    const fixture = await purchaseDeferredReplaySubscription();
+    const subscription = managedUsagePackSubscription(
+      fixture,
+      new Map([[TEST_PRICE_USAGE_PACK_20, 1]]),
+    );
+    const packageStarted = createDeferredPromise<void>(context.signal);
+    const packageResponse = createDeferredPromise<typeof subscription>(
+      context.signal,
+    );
+    context.mocks.stripe.subscriptions.retrieve
+      .mockResolvedValue(subscription)
+      .mockImplementationOnce(() => {
+        packageStarted.resolve();
+        return packageResponse.promise;
+      });
+    mockUsagePackChangePreviews(1500, 4000);
+    const client = setupApp({ context, routes: billingCheckoutRoutes })(
+      billingUsagePackManagementContract,
+    );
+    const packagePreview = client.previewChange({
+      headers: { authorization: "Bearer clerk-session" },
+      body: { memberId: fixture.userId, targetUsagePackUsd: 50 },
+    });
+    onTestFinished(async () => {
+      if (!packageResponse.settled()) {
+        packageResponse.resolve(subscription);
+      }
+      if (!packageStarted.settled()) {
+        packageStarted.resolve();
+      }
+      await Promise.allSettled([packagePreview]);
+    });
+    await packageStarted.promise;
+    const planPreview = await accept(
+      client.previewSubscriptionChange({
+        headers: { authorization: "Bearer clerk-session" },
+        body: {
+          targetTier: "pro",
+          memberUsagePacks: [{ memberId: fixture.userId, usagePackUsd: 20 }],
+        },
+      }),
+      [200],
+    );
+    expect(planPreview.body).toMatchObject({
+      sourceTier: "team",
+      targetTier: "pro",
+    });
+    packageResponse.resolve(subscription);
+    await accept(packagePreview, [409]);
+    // The winning real Plan intent still blocks a later standalone package change.
+    await accept(
+      client.previewChange({
+        headers: { authorization: "Bearer clerk-session" },
+        body: { memberId: fixture.userId, targetUsagePackUsd: 50 },
+      }),
+      [409],
+    );
+    const management = await accept(
+      client.get({
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [200],
+    );
+    expect(management.body).toMatchObject({
+      tier: "team",
+      allocations: [
+        expect.objectContaining({
+          memberId: fixture.userId,
+          usagePackUsd: 20,
+          pendingChange: null,
+        }),
+      ],
+    });
+    await expect(readDeferredReplayCredits(fixture)).resolves.toMatchObject({
+      purchasedCredits: 20_000,
+      bonusCredits: 400,
+      totalCredits: 20_400,
+    });
+  });
+
   it("serializes concurrent package previews across an organization", async () => {
     const firstUserId = `user_${randomUUID()}`;
     const secondUserId = `user_${randomUUID()}`;

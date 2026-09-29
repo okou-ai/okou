@@ -1374,6 +1374,21 @@ async function persistSubscriptionChangePreview(
   return await db.transaction(async (tx) => {
     const { context } = args.prepared;
     await lockUsagePackBillingOrg(tx, context.subscription.orgId);
+    // Match standalone allocation-preview admission: parent before child writes.
+    const [root] = await tx
+      .select({ id: usagePackSubscriptions.id })
+      .from(usagePackSubscriptions)
+      .where(
+        and(
+          eq(usagePackSubscriptions.id, context.subscription.id),
+          eq(usagePackSubscriptions.orgId, context.subscription.orgId),
+        ),
+      )
+      .for("update")
+      .limit(1);
+    if (!root) {
+      return null;
+    }
     await failExpiredPreviews(tx, context.subscription.orgId, args.createdAt);
     await supersedePreviewedSubscriptionChanges(
       tx,

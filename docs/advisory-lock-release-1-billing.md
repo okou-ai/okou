@@ -308,6 +308,42 @@ This is a call-chain inventory, not a count of matching type signatures:
   `createUsagePackCreditGrant`. Activation and refund projection still hold an
   outer transaction across Stripe. This is not terminal transaction ownership.
 
+## Allocation and Plan preview admission
+
+Standalone allocation preview publication now runs in
+`persistUsagePackChangePreview$`, with ordinary business inputs, its own
+`writeDb$`, and direct bounded SQL. Stripe pricing remains outside the transaction.
+The commit locks the existing usage-pack subscription root before child rows,
+rechecks for a real Plan change in `previewed`, `applying`, or `pending_payment`,
+validates the allocation's organization, member, subscription and original price,
+and inserts the preview under the existing uniqueness constraints. The Plan
+preview publisher takes that same parent lock before expiring or superseding
+child previews. No claim field, coordination row or synthetic state is added.
+
+This closes a concrete new-writer admission race: allocation pricing can start
+before a Plan preview, wait for Stripe while the Plan preview commits, and then
+attempt to publish. The initial unlocked Plan lookup is insufficient; the final
+owning-command check now returns a conflict. Failed or completed Plan changes do
+not block a new preview. An expired preview retains the existing lifecycle until
+the normal preview retirement/supersession path changes its status.
+
+The regression test prepares a paid subscription through Checkout and webhook
+APIs, delays only the provider response, publishes the competing Plan preview,
+and checks the rejected allocation request, unchanged billing allocation and
+unchanged member credits through production APIs. It does not hold database
+locks, inspect waiters or install a test trigger.
+
+This is one part of common writer preparation, not a completed organization
+purchase or remote ordering protocol. Outgoing allocation writers do not repeat
+the Plan check after external pricing; the old advisory boundary does not itself
+repair that pre-existing stale-preview window. The shared advisory acquisition
+also still covers other outgoing allocation, Plan, invitation and migration
+writers whose parent/child order and remote protocol remain unfinished. Its
+removal therefore needs both the remaining common protocol implementation and
+verified retirement of those incompatible writers. Plan preview persistence
+still uses a database-aware helper and transaction-aware validation/insertion;
+its command ownership remains implementation work rather than a drain-only gate.
+
 ## Unresolved Release 1 work
 
 Billing Release 1 preparation is **not complete**. The important unresolved
