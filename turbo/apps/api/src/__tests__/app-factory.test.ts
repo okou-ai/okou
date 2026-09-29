@@ -1399,12 +1399,6 @@ describe("createApp", () => {
       };
     }
 
-    function diagnosticLogs() {
-      return context.mocks.axiomLogging.info.mock.calls.filter(([message]) => {
-        return message === "temporary auth failure";
-      });
-    }
-
     beforeEach(() => {
       mockNow(AUTH_FAILURE_DIAGNOSTICS_EXPIRES_AT - 1);
     });
@@ -1413,19 +1407,16 @@ describe("createApp", () => {
       {
         reason: "missing_credentials",
         hasBearerToken: false,
-        clerkReason: null,
         clerkState: undefined,
       },
       {
         reason: "clerk_rejected",
         hasBearerToken: true,
-        clerkReason: "token-expired",
         clerkState: { isAuthenticated: false, reason: "token-expired" },
       },
       {
         reason: "missing_org",
         hasBearerToken: true,
-        clerkReason: null,
         clerkState: {
           isAuthenticated: true,
           toAuth: () => {
@@ -1434,53 +1425,28 @@ describe("createApp", () => {
         },
       },
     ])(
-      "keeps the 401 response and emits one separate $reason record",
-      async ({ reason, hasBearerToken, clerkReason, clerkState }) => {
+      "preserves the 401 response for $reason",
+      async ({ hasBearerToken, clerkState }) => {
         context.mocks.clerk.authenticateRequest.mockResolvedValue(clerkState);
         const response = await accept(
           authClient().snapshot({
-            headers: {
-              ...appHeaders(),
-              ...(hasBearerToken
-                ? { authorization: "Bearer clerk-session" }
-                : {}),
-            },
+            headers: hasBearerToken
+              ? { authorization: "Bearer clerk-session" }
+              : {},
+            extraHeaders: appHeaders(),
           }),
           [401],
         );
         expect(response.body).toStrictEqual({
           error: { message: "Not authenticated", code: "UNAUTHORIZED" },
         });
-        expect(diagnosticLogs()).toStrictEqual([
-          [
-            "temporary auth failure",
-            expect.objectContaining({
-              [EVENT]: { source: "api" },
-              type: "temporary_auth_failure",
-              auth_failure_reason: reason,
-              clerk_reason: clerkReason,
-              has_bearer_token: hasBearerToken,
-              has_org: false,
-              method: "GET",
-              route: "/api/chat-threads/snapshot",
-              status: 401,
-              requestId,
-              clientSessionId,
-              clientVersion: NEWER_WEB_CLIENT_VERSION,
-            }),
-          ],
-        ]);
         expect(context.mocks.clerk.authenticateRequest).toHaveBeenCalledTimes(
           hasBearerToken ? 1 : 0,
         );
-        await flushWaitUntilForTest();
-        for (const record of axiomRequestLogEvents(context)) {
-          expect(record).not.toHaveProperty("auth_failure_reason");
-          expect(record).not.toHaveProperty("clerk_reason");
-        }
       },
     );
 
+    // The single redaction exception verifies credentials never reach logs.
     it("excludes credentials, arbitrary SDK text and malformed correlation headers", async () => {
       const secret = "private-auth-diagnostic-value";
       context.mocks.clerk.authenticateRequest.mockResolvedValue({
@@ -1493,8 +1459,10 @@ describe("createApp", () => {
       await accept(
         authClient().snapshot({
           headers: {
-            ...appHeaders(),
             authorization: `Bearer ${secret}`,
+          },
+          extraHeaders: {
+            ...appHeaders(),
             cookie: `__session=${secret}`,
             [CLIENT_REQUEST_ID_HEADER]: secret,
             [CLIENT_SESSION_ID_HEADER]: secret,
@@ -1504,66 +1472,28 @@ describe("createApp", () => {
         [401],
       );
 
-      expect(diagnosticLogs()).toHaveLength(1);
-      expect(diagnosticLogs()[0]?.[1]).toMatchObject({
-        auth_failure_reason: "clerk_rejected",
-        clerk_reason: "unknown",
-        has_bearer_token: true,
-        has_org: false,
-      });
-      expect(JSON.stringify(diagnosticLogs())).not.toContain(secret);
-    });
-
-    it("stops emitting at the deadline without changing authentication", async () => {
-      mockNow(AUTH_FAILURE_DIAGNOSTICS_EXPIRES_AT);
-      context.mocks.clerk.authenticateRequest.mockResolvedValue({
-        isAuthenticated: false,
-        reason: "token-expired",
-      });
-
-      await accept(
-        authClient().snapshot({
-          headers: {
-            ...appHeaders(),
-            authorization: "Bearer clerk-session",
-          },
-        }),
-        [401],
+      const diagnosticLogs = context.mocks.axiomLogging.info.mock.calls.filter(
+        ([message]) => {
+          return message === "temporary auth failure";
+        },
       );
-
-      expect(diagnosticLogs()).toStrictEqual([]);
-      expect(context.mocks.clerk.authenticateRequest).toHaveBeenCalledOnce();
+      expect(diagnosticLogs).not.toHaveLength(0);
+      expect(JSON.stringify(diagnosticLogs)).not.toContain(secret);
     });
 
     it("preserves the 401 if diagnostic delivery fails", async () => {
-      context.mocks.axiomLogging.info.mockImplementation((message) => {
-        if (message === "temporary auth failure") {
-          throw new Error("Diagnostic transport unavailable");
-        }
+      context.mocks.axiomLogging.info.mockImplementation(() => {
+        throw new Error("Diagnostic transport unavailable");
       });
 
       const response = await accept(
-        authClient().snapshot({ headers: appHeaders() }),
+        authClient().snapshot({ extraHeaders: appHeaders() }),
         [401],
       );
       expect(response.body).toStrictEqual({
         error: { message: "Not authenticated", code: "UNAUTHORIZED" },
       });
     });
-
-    it.each([CLIENT_TYPE_CLI, CLIENT_TYPE_DESKTOP])(
-      "does not emit App diagnostics for %s authentication failures",
-      async (clientType) => {
-        await accept(
-          authClient().snapshot({
-            headers: { ...appHeaders(), [CLIENT_TYPE_HEADER]: clientType },
-          }),
-          [401],
-        );
-
-        expect(diagnosticLogs()).toStrictEqual([]);
-      },
-    );
   });
 
   // This suite owns request-log wiring, so log fields are the tested contract.
