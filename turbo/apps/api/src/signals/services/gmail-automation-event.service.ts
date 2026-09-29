@@ -26,7 +26,7 @@ import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-con
 import { optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { testOverride } from "../../lib/singleton";
-import { writeDb$, type Db } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { now, nowDate } from "../../lib/time";
 import { safeJsonParse, settle, tapError } from "../utils";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
@@ -40,7 +40,7 @@ import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
 import type { AutomationRow } from "./workflow-automation-launch.service";
 import type { WorkflowQueueAdmissionTransaction } from "./workflow-chat-event-queue.service";
 import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
-import { workflowAutomationCanFire } from "./workflow-automation-access.service";
+import { workflowAutomationCanFire$ } from "./workflow-automation-access.service";
 import { ensureWorkflowUserAutomationThread } from "./workflow-user-automation-thread.service";
 import {
   builtinConnectorStateLockStatement,
@@ -1454,15 +1454,6 @@ interface GmailEventAutomationRow {
   readonly config: GmailAutomationEventConfig;
 }
 
-type GmailRunStarter = (args: {
-  readonly automation: GmailEventAutomationRow;
-  readonly connectorSourceId: string;
-  readonly watchStateId: string;
-  readonly decoded: DecodedGmailPubSubPush;
-  readonly message: GmailMessageContext;
-  readonly timing: AutomationEventRunTiming;
-}) => Promise<"ok" | "error" | "superseded">;
-
 interface GmailWorkflowRunStartTestInput {
   readonly automationId: string;
   readonly workflowName: string;
@@ -1544,126 +1535,132 @@ type GmailDispatchStateResult =
     }
   | { readonly kind: "run_error"; readonly message: string };
 
-async function loadGmailWatchStates(
-  args: {
-    readonly db: Db;
-    readonly decoded: DecodedGmailPubSubPush;
-    readonly topicName: string;
+const loadGmailWatchStates$ = command(
+  async (
+    { set },
+    args: {
+      readonly decoded: DecodedGmailPubSubPush;
+      readonly topicName: string;
+    },
+    signal: AbortSignal,
+  ): Promise<GmailWatchStateRow[]> => {
+    const db = set(writeDb$);
+    const states = await db
+      .select()
+      .from(gmailWatchStates)
+      .where(
+        and(
+          eq(
+            sql`lower(${gmailWatchStates.emailAddress})`,
+            normalizeGmailAddress(args.decoded.emailAddress),
+          ),
+          eq(gmailWatchStates.topicName, args.topicName),
+        ),
+      );
+    signal.throwIfAborted();
+
+    return states;
   },
-  signal: AbortSignal,
-): Promise<GmailWatchStateRow[]> {
-  const states = await args.db
-    .select()
-    .from(gmailWatchStates)
-    .where(
-      and(
-        eq(
-          sql`lower(${gmailWatchStates.emailAddress})`,
-          normalizeGmailAddress(args.decoded.emailAddress),
-        ),
-        eq(gmailWatchStates.topicName, args.topicName),
-      ),
-    );
-  signal.throwIfAborted();
+);
 
-  return states;
-}
-
-async function loadGmailEventAutomations(
-  args: {
-    readonly db: Db;
-    readonly state: GmailWatchStateRow;
-  },
-  signal: AbortSignal,
-): Promise<GmailEventAutomationRow[]> {
-  const automationRows = await args.db
-    .select({
-      automation: workflowAutomationColumns(),
-      agentId: workflows.agentId,
-      workflowName: workflows.name,
-      workflowDisplayName: workflows.displayName,
-      chatThreadId: workflowUserAutomationThreads.chatThreadId,
-    })
-    .from(workflowAutomations)
-    .innerJoin(workflows, eq(workflowAutomations.workflowId, workflows.id))
-    .leftJoin(
-      workflowUserAutomationThreads,
-      and(
-        eq(workflowUserAutomationThreads.orgId, workflowAutomations.orgId),
-        eq(
-          workflowUserAutomationThreads.userId,
-          workflowAutomations.ownerUserId,
+const loadGmailEventAutomations$ = command(
+  async (
+    { set },
+    args: {
+      readonly state: GmailWatchStateRow;
+    },
+    signal: AbortSignal,
+  ): Promise<GmailEventAutomationRow[]> => {
+    const db = set(writeDb$);
+    const automationRows = await db
+      .select({
+        automation: workflowAutomationColumns(),
+        agentId: workflows.agentId,
+        workflowName: workflows.name,
+        workflowDisplayName: workflows.displayName,
+        chatThreadId: workflowUserAutomationThreads.chatThreadId,
+      })
+      .from(workflowAutomations)
+      .innerJoin(workflows, eq(workflowAutomations.workflowId, workflows.id))
+      .leftJoin(
+        workflowUserAutomationThreads,
+        and(
+          eq(workflowUserAutomationThreads.orgId, workflowAutomations.orgId),
+          eq(
+            workflowUserAutomationThreads.userId,
+            workflowAutomations.ownerUserId,
+          ),
+          eq(
+            workflowUserAutomationThreads.workflowId,
+            workflowAutomations.workflowId,
+          ),
         ),
-        eq(
-          workflowUserAutomationThreads.workflowId,
-          workflowAutomations.workflowId,
+      )
+      .where(
+        and(
+          eq(workflowAutomations.orgId, args.state.orgId),
+          eq(workflowAutomations.ownerUserId, args.state.userId),
+          eq(workflowAutomations.enabled, true),
+          eq(workflowAutomations.kind, "event"),
+          eq(workflowAutomations.eventConnectorId, args.state.connectorId),
+          inArray(workflowAutomations.eventType, [
+            "gmail-new-message",
+            "gmail-label-applied",
+          ]),
         ),
-      ),
-    )
-    .where(
-      and(
-        eq(workflowAutomations.orgId, args.state.orgId),
-        eq(workflowAutomations.ownerUserId, args.state.userId),
-        eq(workflowAutomations.enabled, true),
-        eq(workflowAutomations.kind, "event"),
-        eq(workflowAutomations.eventConnectorId, args.state.connectorId),
-        inArray(workflowAutomations.eventType, [
-          "gmail-new-message",
-          "gmail-label-applied",
-        ]),
-      ),
-    );
-  signal.throwIfAborted();
+      );
+    signal.throwIfAborted();
 
-  const currentTime = nowDate();
-  const automations: GmailEventAutomationRow[] = [];
-  for (const row of automationRows) {
-    const config =
-      row.automation.eventType === "gmail-label-applied"
-        ? gmailLabelAppliedEventConfigSchema.safeParse(
-            row.automation.eventConfig,
-          )
-        : gmailNewMessageEventConfigSchema.safeParse(
-            row.automation.eventConfig,
-          );
-    if (!config.success) {
-      continue;
-    }
-    const canFire = await workflowAutomationCanFire(
-      args.db,
-      {
+    const currentTime = nowDate();
+    const automations: GmailEventAutomationRow[] = [];
+    for (const row of automationRows) {
+      const config =
+        row.automation.eventType === "gmail-label-applied"
+          ? gmailLabelAppliedEventConfigSchema.safeParse(
+              row.automation.eventConfig,
+            )
+          : gmailNewMessageEventConfigSchema.safeParse(
+              row.automation.eventConfig,
+            );
+      if (!config.success) {
+        continue;
+      }
+      const canFire = await set(
+        workflowAutomationCanFire$,
+        {
+          automation: row.automation,
+          agentId: row.agentId,
+        },
+        signal,
+      );
+      signal.throwIfAborted();
+      if (!canFire) {
+        continue;
+      }
+      const chatThreadId =
+        row.chatThreadId ??
+        (await db.transaction(async (tx) => {
+          return await ensureWorkflowUserAutomationThread(tx, {
+            orgId: row.automation.orgId,
+            userId: row.automation.ownerUserId,
+            workflowId: row.automation.workflowId,
+            agentId: row.agentId,
+            workflowTitle: row.workflowDisplayName ?? row.workflowName,
+            currentTime,
+          });
+        }));
+      signal.throwIfAborted();
+      automations.push({
         automation: row.automation,
         agentId: row.agentId,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    if (!canFire) {
-      continue;
+        workflowName: row.workflowName,
+        chatThreadId,
+        config: config.data,
+      });
     }
-    const chatThreadId =
-      row.chatThreadId ??
-      (await args.db.transaction(async (tx) => {
-        return await ensureWorkflowUserAutomationThread(tx, {
-          orgId: row.automation.orgId,
-          userId: row.automation.ownerUserId,
-          workflowId: row.automation.workflowId,
-          agentId: row.agentId,
-          workflowTitle: row.workflowDisplayName ?? row.workflowName,
-          currentTime,
-        });
-      }));
-    signal.throwIfAborted();
-    automations.push({
-      automation: row.automation,
-      agentId: row.agentId,
-      workflowName: row.workflowName,
-      chatThreadId,
-      config: config.data,
-    });
-  }
-  return automations;
-}
+    return automations;
+  },
+);
 
 async function cachedGmailMessageContext(
   args: {
@@ -1691,57 +1688,60 @@ async function cachedGmailMessageContext(
   return message;
 }
 
-async function insertGmailProcessedEvent(
-  args: {
-    readonly db: Db;
-    readonly state: GmailWatchStateRow;
-    readonly automation: GmailEventAutomationRow;
-    readonly decoded: DecodedGmailPubSubPush;
-    readonly event: GmailHistoryMessageEvent;
-    readonly message: GmailMessageContext;
-  },
-  signal: AbortSignal,
-): Promise<
-  | { readonly kind: "inserted"; readonly id: string }
-  | { readonly kind: "duplicate" }
-  | { readonly kind: "stale_source" }
-> {
-  return await args.db.transaction(async (tx) => {
-    const [currentState] = await tx
-      .select({ id: gmailWatchStates.id })
-      .from(gmailWatchStates)
-      .where(
-        and(
-          eq(gmailWatchStates.id, args.state.id),
-          eq(gmailWatchStates.connectorId, args.state.connectorId),
-        ),
-      )
-      .for("key share")
-      .limit(1);
-    signal.throwIfAborted();
-    if (!currentState) {
-      return { kind: "stale_source" };
-    }
+const insertGmailProcessedEvent$ = command(
+  async (
+    { set },
+    args: {
+      readonly state: GmailWatchStateRow;
+      readonly automation: GmailEventAutomationRow;
+      readonly decoded: DecodedGmailPubSubPush;
+      readonly event: GmailHistoryMessageEvent;
+      readonly message: GmailMessageContext;
+    },
+    signal: AbortSignal,
+  ): Promise<
+    | { readonly kind: "inserted"; readonly id: string }
+    | { readonly kind: "duplicate" }
+    | { readonly kind: "stale_source" }
+  > => {
+    const db = set(writeDb$);
+    return await db.transaction(async (tx) => {
+      const [currentState] = await tx
+        .select({ id: gmailWatchStates.id })
+        .from(gmailWatchStates)
+        .where(
+          and(
+            eq(gmailWatchStates.id, args.state.id),
+            eq(gmailWatchStates.connectorId, args.state.connectorId),
+          ),
+        )
+        .for("key share")
+        .limit(1);
+      signal.throwIfAborted();
+      if (!currentState) {
+        return { kind: "stale_source" };
+      }
 
-    const [processed] = await tx
-      .insert(gmailProcessedEvents)
-      .values({
-        watchStateId: args.state.id,
-        automationId: args.automation.automation.id,
-        pubsubMessageId: args.decoded.messageId,
-        historyId: args.event.historyId,
-        messageId: args.event.messageId,
-        threadId: args.message.threadId,
-        createdAt: nowDate(),
-      })
-      .onConflictDoNothing()
-      .returning({ id: gmailProcessedEvents.id });
-    signal.throwIfAborted();
-    return processed
-      ? { kind: "inserted", id: processed.id }
-      : { kind: "duplicate" };
-  });
-}
+      const [processed] = await tx
+        .insert(gmailProcessedEvents)
+        .values({
+          watchStateId: args.state.id,
+          automationId: args.automation.automation.id,
+          pubsubMessageId: args.decoded.messageId,
+          historyId: args.event.historyId,
+          messageId: args.event.messageId,
+          threadId: args.message.threadId,
+          createdAt: nowDate(),
+        })
+        .onConflictDoNothing()
+        .returning({ id: gmailProcessedEvents.id });
+      signal.throwIfAborted();
+      return processed
+        ? { kind: "inserted", id: processed.id }
+        : { kind: "duplicate" };
+    });
+  },
+);
 
 function gmailTriggerContext(args: {
   readonly workflowName: string;
@@ -1803,61 +1803,70 @@ function buildGmailWorkflowAutomationBrief(args: {
   ].join("\n");
 }
 
-async function dispatchGmailAutomationEvent(
-  args: {
-    readonly db: Db;
-    readonly state: GmailWatchStateRow;
-    readonly automation: GmailEventAutomationRow;
-    readonly decoded: DecodedGmailPubSubPush;
-    readonly event: GmailHistoryMessageAdded;
-    readonly message: GmailMessageContext;
-    readonly timing: AutomationEventRunTiming;
-    readonly startRun: GmailRunStarter;
-  },
-  signal: AbortSignal,
-): Promise<
-  "dispatched" | "duplicate" | "skipped" | { readonly kind: "run_error" }
-> {
-  const processed = await args.timing.measure(
-    "api_dispatch_pre_create_agent_automation_event_record_processed_event",
-    async () => {
-      return await insertGmailProcessedEvent(args, signal);
+const dispatchGmailAutomationEvent$ = command(
+  async (
+    { set },
+    args: {
+      readonly state: GmailWatchStateRow;
+      readonly automation: GmailEventAutomationRow;
+      readonly decoded: DecodedGmailPubSubPush;
+      readonly event: GmailHistoryMessageAdded;
+      readonly message: GmailMessageContext;
+      readonly timing: AutomationEventRunTiming;
+      readonly apiStartTime: number;
     },
-  );
-  if (processed.kind === "stale_source") {
-    return "skipped";
-  }
-  if (processed.kind === "duplicate") {
-    return "duplicate";
-  }
-  const processedId = processed.id;
-
-  const result = await args.startRun({
-    automation: args.automation,
-    connectorSourceId: args.state.connectorId,
-    watchStateId: args.state.id,
-    decoded: args.decoded,
-    message: args.message,
-    timing: args.timing,
-  });
-  signal.throwIfAborted();
-  if (result === "superseded") {
-    await args.db
-      .delete(gmailProcessedEvents)
-      .where(eq(gmailProcessedEvents.id, processedId));
+    signal: AbortSignal,
+  ): Promise<
+    "dispatched" | "duplicate" | "skipped" | { readonly kind: "run_error" }
+  > => {
+    const db = set(writeDb$);
+    const processed = await args.timing.measure(
+      "api_dispatch_pre_create_agent_automation_event_record_processed_event",
+      async () => {
+        return await set(insertGmailProcessedEvent$, args, signal);
+      },
+    );
     signal.throwIfAborted();
-    return "skipped";
-  }
-  if (result !== "ok") {
-    await args.db
-      .delete(gmailProcessedEvents)
-      .where(eq(gmailProcessedEvents.id, processedId));
-    signal.throwIfAborted();
-    return { kind: "run_error" };
-  }
+    if (processed.kind === "stale_source") {
+      return "skipped";
+    }
+    if (processed.kind === "duplicate") {
+      return "duplicate";
+    }
+    const processedId = processed.id;
 
-  return "dispatched";
-}
+    const result = await set(
+      startGmailWorkflowRun$,
+      {
+        automation: args.automation,
+        connectorSourceId: args.state.connectorId,
+        watchStateId: args.state.id,
+        decoded: args.decoded,
+        message: args.message,
+        timing: args.timing,
+        apiStartTime: args.apiStartTime,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (result === "superseded") {
+      await db
+        .delete(gmailProcessedEvents)
+        .where(eq(gmailProcessedEvents.id, processedId));
+      signal.throwIfAborted();
+      return "skipped";
+    }
+    if (result !== "ok") {
+      await db
+        .delete(gmailProcessedEvents)
+        .where(eq(gmailProcessedEvents.id, processedId));
+      signal.throwIfAborted();
+      return { kind: "run_error" };
+    }
+
+    return "dispatched";
+  },
+);
 
 function isGmailNewMessageAutomation(
   automation: GmailEventAutomationRow,
@@ -1875,367 +1884,384 @@ function isGmailLabelAppliedAutomation(
   return automation.config.event === "label_applied";
 }
 
-async function updateResolvedGmailLabelId(
-  args: {
-    readonly db: Db;
-    readonly automation: GmailEventAutomationRow & {
-      readonly config: GmailLabelAppliedEventConfig;
-    };
-    readonly connectorId: string;
-    readonly watchStateId: string;
-    readonly labelId: string;
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  if (args.automation.config.resolvedLabelId === args.labelId) {
-    return;
-  }
-
-  await args.db.transaction(async (tx) => {
-    await lockConnectorAccountTarget(tx, {
-      orgId: args.automation.automation.orgId,
-      userId: args.automation.automation.ownerUserId,
-      target: { kind: "builtin", connectorSlug: "gmail" },
-    });
-    const [currentState] = await tx
-      .select({ id: gmailWatchStates.id })
-      .from(gmailWatchStates)
-      .where(
-        and(
-          eq(gmailWatchStates.id, args.watchStateId),
-          eq(gmailWatchStates.connectorId, args.connectorId),
-        ),
-      )
-      .for("key share")
-      .limit(1);
-    if (!currentState) {
+const updateResolvedGmailLabelId$ = command(
+  async (
+    { set },
+    args: {
+      readonly automation: GmailEventAutomationRow & {
+        readonly config: GmailLabelAppliedEventConfig;
+      };
+      readonly connectorId: string;
+      readonly watchStateId: string;
+      readonly labelId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    if (args.automation.config.resolvedLabelId === args.labelId) {
       return;
     }
-    await tx
-      .update(workflowAutomations)
-      .set({
-        eventConfig: {
-          ...args.automation.config,
-          resolvedLabelId: args.labelId,
-        },
-        updatedAt: nowDate(),
-      })
-      .where(
-        and(
-          eq(workflowAutomations.id, args.automation.automation.id),
-          eq(workflowAutomations.eventConnectorId, args.connectorId),
-        ),
+
+    await db.transaction(async (tx) => {
+      await tx.execute(
+        builtinConnectorStateLockStatement({
+          orgId: args.automation.automation.orgId,
+          userId: args.automation.automation.ownerUserId,
+          connectorSlug: "gmail",
+        }),
       );
-  });
-  signal.throwIfAborted();
-}
-
-async function labelAppliedAutomationMatchesEvent(
-  args: {
-    readonly db: Db;
-    readonly accessToken: string;
-    readonly connectorId: string;
-    readonly watchStateId: string;
-    readonly automation: GmailEventAutomationRow & {
-      readonly config: GmailLabelAppliedEventConfig;
-    };
-    readonly event: GmailHistoryLabelAdded;
-    readonly labelCache: Map<string, GmailLabelResolveResult>;
-  },
-  signal: AbortSignal,
-): Promise<boolean> {
-  const eventLabelIds = new Set(args.event.labelIds);
-  const resolvedLabelId = args.automation.config.resolvedLabelId;
-  if (resolvedLabelId && eventLabelIds.has(resolvedLabelId)) {
-    return true;
-  }
-
-  const labelName = args.automation.config.labelName;
-  const cached = args.labelCache.get(labelName);
-  const label =
-    cached ??
-    (await resolveGmailLabelByName(
-      {
-        accessToken: args.accessToken,
-        labelName,
-      },
-      signal,
-    ));
-  signal.throwIfAborted();
-  if (!cached) {
-    args.labelCache.set(labelName, label);
-  }
-  if (label.kind !== "ok") {
-    log.warn("Gmail label event skipped because label lookup failed", {
-      automationId: args.automation.automation.id,
-      labelName,
-      message: label.message,
+      const [currentState] = await tx
+        .select({ id: gmailWatchStates.id })
+        .from(gmailWatchStates)
+        .where(
+          and(
+            eq(gmailWatchStates.id, args.watchStateId),
+            eq(gmailWatchStates.connectorId, args.connectorId),
+          ),
+        )
+        .for("key share")
+        .limit(1);
+      if (!currentState) {
+        return;
+      }
+      await tx
+        .update(workflowAutomations)
+        .set({
+          eventConfig: {
+            ...args.automation.config,
+            resolvedLabelId: args.labelId,
+          },
+          updatedAt: nowDate(),
+        })
+        .where(
+          and(
+            eq(workflowAutomations.id, args.automation.automation.id),
+            eq(workflowAutomations.eventConnectorId, args.connectorId),
+            eq(workflowAutomations.eventConfig, args.automation.config),
+          ),
+        );
     });
-    return false;
-  }
-  if (!eventLabelIds.has(label.labelId)) {
-    return false;
-  }
-
-  await updateResolvedGmailLabelId(
-    {
-      db: args.db,
-      automation: args.automation,
-      connectorId: args.connectorId,
-      watchStateId: args.watchStateId,
-      labelId: label.labelId,
-    },
-    signal,
-  );
-  return true;
-}
-
-async function dispatchGmailNewMessageHistoryEvent(
-  args: {
-    readonly db: Db;
-    readonly state: GmailWatchStateRow;
-    readonly decoded: DecodedGmailPubSubPush;
-    readonly accessToken: string;
-    readonly automations: readonly GmailEventAutomationRow[];
-    readonly event: GmailHistoryMessageAdded;
-    readonly messageCache: Map<string, GmailMessageContext | null>;
-    readonly sourceTiming: AutomationEventSourceTiming;
-    readonly startRun: GmailRunStarter;
+    signal.throwIfAborted();
   },
-  signal: AbortSignal,
-): Promise<GmailDispatchStateResult> {
-  const message = await args.sourceTiming.measure(
-    "api_dispatch_pre_create_agent_automation_event_load_external_events",
-    async () => {
-      return await cachedGmailMessageContext(
+);
+
+const labelAppliedAutomationMatchesEvent$ = command(
+  async (
+    { set },
+    args: {
+      readonly accessToken: string;
+      readonly connectorId: string;
+      readonly watchStateId: string;
+      readonly automation: GmailEventAutomationRow & {
+        readonly config: GmailLabelAppliedEventConfig;
+      };
+      readonly event: GmailHistoryLabelAdded;
+      readonly labelCache: Map<string, GmailLabelResolveResult>;
+    },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const eventLabelIds = new Set(args.event.labelIds);
+    const resolvedLabelId = args.automation.config.resolvedLabelId;
+    if (resolvedLabelId && eventLabelIds.has(resolvedLabelId)) {
+      return true;
+    }
+
+    const labelName = args.automation.config.labelName;
+    const cached = args.labelCache.get(labelName);
+    const label =
+      cached ??
+      (await resolveGmailLabelByName(
         {
-          cache: args.messageCache,
           accessToken: args.accessToken,
-          event: args.event,
+          labelName,
         },
         signal,
-      );
-    },
-  );
-  if (!message || !messageIsInbound(message)) {
-    return { kind: "ok", dispatched: 0, duplicates: 0 };
-  }
-
-  let dispatched = 0;
-  let duplicates = 0;
-
-  for (const automation of args.automations) {
-    const runTiming = args.sourceTiming.createRunTiming();
-    const matches = await runTiming.measure(
-      "api_dispatch_pre_create_agent_automation_event_match_automations",
-      () => {
-        return (
-          isGmailNewMessageAutomation(automation) &&
-          gmailMessageMatchesConfig(message, automation.config)
-        );
-      },
-    );
-    if (!matches) {
-      continue;
+      ));
+    signal.throwIfAborted();
+    if (!cached) {
+      args.labelCache.set(labelName, label);
     }
-    const result = await dispatchGmailAutomationEvent(
+    if (label.kind !== "ok") {
+      log.warn("Gmail label event skipped because label lookup failed", {
+        automationId: args.automation.automation.id,
+        labelName,
+        message: label.message,
+      });
+      return false;
+    }
+    if (!eventLabelIds.has(label.labelId)) {
+      return false;
+    }
+
+    await set(
+      updateResolvedGmailLabelId$,
       {
-        db: args.db,
-        state: args.state,
-        automation,
-        decoded: args.decoded,
-        event: args.event,
-        message,
-        timing: runTiming,
-        startRun: args.startRun,
+        automation: args.automation,
+        connectorId: args.connectorId,
+        watchStateId: args.watchStateId,
+        labelId: label.labelId,
       },
       signal,
     );
-    if (typeof result !== "string") {
-      return {
-        kind: "run_error",
-        message: "Failed to start Gmail event workflow run",
-      };
-    }
-    dispatched += result === "dispatched" ? 1 : 0;
-    duplicates += result === "duplicate" ? 1 : 0;
-  }
-
-  return { kind: "ok", dispatched, duplicates };
-}
-
-async function dispatchGmailLabelAppliedHistoryEvent(
-  args: {
-    readonly db: Db;
-    readonly state: GmailWatchStateRow;
-    readonly decoded: DecodedGmailPubSubPush;
-    readonly accessToken: string;
-    readonly automations: readonly GmailEventAutomationRow[];
-    readonly event: GmailHistoryLabelAdded;
-    readonly messageCache: Map<string, GmailMessageContext | null>;
-    readonly labelCache: Map<string, GmailLabelResolveResult>;
-    readonly sourceTiming: AutomationEventSourceTiming;
-    readonly startRun: GmailRunStarter;
+    return true;
   },
-  signal: AbortSignal,
-): Promise<GmailDispatchStateResult> {
-  const labelAutomations = args.automations.filter(
-    isGmailLabelAppliedAutomation,
-  );
-  if (labelAutomations.length === 0 || args.event.labelIds.length === 0) {
-    return { kind: "ok", dispatched: 0, duplicates: 0 };
-  }
+);
 
-  const matchingAutomations: {
-    readonly automation: (typeof labelAutomations)[number];
-    readonly timing: AutomationEventRunTiming;
-  }[] = [];
-  for (const automation of labelAutomations) {
-    const runTiming = args.sourceTiming.createRunTiming();
-    const matches = await runTiming.measure(
-      "api_dispatch_pre_create_agent_automation_event_match_automations",
+const dispatchGmailNewMessageHistoryEvent$ = command(
+  async (
+    { set },
+    args: {
+      readonly state: GmailWatchStateRow;
+      readonly decoded: DecodedGmailPubSubPush;
+      readonly accessToken: string;
+      readonly automations: readonly GmailEventAutomationRow[];
+      readonly event: GmailHistoryMessageAdded;
+      readonly messageCache: Map<string, GmailMessageContext | null>;
+      readonly sourceTiming: AutomationEventSourceTiming;
+      readonly apiStartTime: number;
+    },
+    signal: AbortSignal,
+  ): Promise<GmailDispatchStateResult> => {
+    const message = await args.sourceTiming.measure(
+      "api_dispatch_pre_create_agent_automation_event_load_external_events",
       async () => {
-        return await labelAppliedAutomationMatchesEvent(
+        return await cachedGmailMessageContext(
           {
-            db: args.db,
+            cache: args.messageCache,
             accessToken: args.accessToken,
-            connectorId: args.state.connectorId,
-            watchStateId: args.state.id,
-            automation,
             event: args.event,
-            labelCache: args.labelCache,
           },
           signal,
         );
       },
     );
-    if (matches) {
-      matchingAutomations.push({ automation, timing: runTiming });
+    signal.throwIfAborted();
+    if (!message || !messageIsInbound(message)) {
+      return { kind: "ok", dispatched: 0, duplicates: 0 };
     }
-  }
-  if (matchingAutomations.length === 0) {
-    return { kind: "ok", dispatched: 0, duplicates: 0 };
-  }
 
-  const messageStartedAt = now();
-  const message = await cachedGmailMessageContext(
-    {
-      cache: args.messageCache,
-      accessToken: args.accessToken,
-      event: args.event,
-    },
-    signal,
-  );
-  const messageFinishedAt = now();
-  if (!message) {
-    return { kind: "ok", dispatched: 0, duplicates: 0 };
-  }
+    let dispatched = 0;
+    let duplicates = 0;
 
-  let dispatched = 0;
-  let duplicates = 0;
-
-  for (const match of matchingAutomations) {
-    match.timing.recordElapsed(
-      "api_dispatch_pre_create_agent_automation_event_load_external_events",
-      messageStartedAt,
-      messageFinishedAt,
-    );
-    const result = await dispatchGmailAutomationEvent(
-      {
-        db: args.db,
-        state: args.state,
-        automation: match.automation,
-        decoded: args.decoded,
-        event: args.event,
-        message,
-        timing: match.timing,
-        startRun: args.startRun,
-      },
-      signal,
-    );
-    if (typeof result !== "string") {
-      return {
-        kind: "run_error",
-        message: "Failed to start Gmail event workflow run",
-      };
-    }
-    dispatched += result === "dispatched" ? 1 : 0;
-    duplicates += result === "duplicate" ? 1 : 0;
-  }
-
-  return { kind: "ok", dispatched, duplicates };
-}
-
-async function dispatchGmailHistoryEvents(
-  args: {
-    readonly db: Db;
-    readonly state: GmailWatchStateRow;
-    readonly decoded: DecodedGmailPubSubPush;
-    readonly accessToken: string;
-    readonly history: Extract<
-      GmailHistoryResult,
-      {
-        readonly kind: "ok";
+    for (const automation of args.automations) {
+      const runTiming = args.sourceTiming.createRunTiming();
+      const matches = await runTiming.measure(
+        "api_dispatch_pre_create_agent_automation_event_match_automations",
+        () => {
+          return (
+            isGmailNewMessageAutomation(automation) &&
+            gmailMessageMatchesConfig(message, automation.config)
+          );
+        },
+      );
+      signal.throwIfAborted();
+      if (!matches) {
+        continue;
       }
-    >;
-    readonly automations: readonly GmailEventAutomationRow[];
-    readonly sourceTiming: AutomationEventSourceTiming;
-    readonly startRun: GmailRunStarter;
+      const result = await set(
+        dispatchGmailAutomationEvent$,
+        {
+          state: args.state,
+          automation,
+          decoded: args.decoded,
+          event: args.event,
+          message,
+          timing: runTiming,
+          apiStartTime: args.apiStartTime,
+        },
+        signal,
+      );
+      if (typeof result !== "string") {
+        return {
+          kind: "run_error",
+          message: "Failed to start Gmail event workflow run",
+        };
+      }
+      dispatched += result === "dispatched" ? 1 : 0;
+      duplicates += result === "duplicate" ? 1 : 0;
+    }
+
+    return { kind: "ok", dispatched, duplicates };
   },
-  signal: AbortSignal,
-): Promise<GmailDispatchStateResult> {
-  const messageCache = new Map<string, GmailMessageContext | null>();
-  const labelCache = new Map<string, GmailLabelResolveResult>();
-  let dispatched = 0;
-  let duplicates = 0;
+);
 
-  for (const event of args.history.messagesAdded) {
-    const result = await dispatchGmailNewMessageHistoryEvent(
+const dispatchGmailLabelAppliedHistoryEvent$ = command(
+  async (
+    { set },
+    args: {
+      readonly state: GmailWatchStateRow;
+      readonly decoded: DecodedGmailPubSubPush;
+      readonly accessToken: string;
+      readonly automations: readonly GmailEventAutomationRow[];
+      readonly event: GmailHistoryLabelAdded;
+      readonly messageCache: Map<string, GmailMessageContext | null>;
+      readonly labelCache: Map<string, GmailLabelResolveResult>;
+      readonly sourceTiming: AutomationEventSourceTiming;
+      readonly apiStartTime: number;
+    },
+    signal: AbortSignal,
+  ): Promise<GmailDispatchStateResult> => {
+    const labelAutomations = args.automations.filter(
+      isGmailLabelAppliedAutomation,
+    );
+    if (labelAutomations.length === 0 || args.event.labelIds.length === 0) {
+      return { kind: "ok", dispatched: 0, duplicates: 0 };
+    }
+
+    const matchingAutomations: {
+      readonly automation: (typeof labelAutomations)[number];
+      readonly timing: AutomationEventRunTiming;
+    }[] = [];
+    for (const automation of labelAutomations) {
+      const runTiming = args.sourceTiming.createRunTiming();
+      const matches = await runTiming.measure(
+        "api_dispatch_pre_create_agent_automation_event_match_automations",
+        async () => {
+          return await set(
+            labelAppliedAutomationMatchesEvent$,
+            {
+              accessToken: args.accessToken,
+              connectorId: args.state.connectorId,
+              watchStateId: args.state.id,
+              automation,
+              event: args.event,
+              labelCache: args.labelCache,
+            },
+            signal,
+          );
+        },
+      );
+      signal.throwIfAborted();
+      if (matches) {
+        matchingAutomations.push({ automation, timing: runTiming });
+      }
+    }
+    if (matchingAutomations.length === 0) {
+      return { kind: "ok", dispatched: 0, duplicates: 0 };
+    }
+
+    const messageStartedAt = now();
+    const message = await cachedGmailMessageContext(
       {
-        db: args.db,
-        state: args.state,
-        decoded: args.decoded,
+        cache: args.messageCache,
         accessToken: args.accessToken,
-        automations: args.automations,
-        event,
-        messageCache,
-        sourceTiming: args.sourceTiming.fork(),
-        startRun: args.startRun,
+        event: args.event,
       },
       signal,
     );
-    if (result.kind !== "ok") {
-      return result;
+    const messageFinishedAt = now();
+    if (!message) {
+      return { kind: "ok", dispatched: 0, duplicates: 0 };
     }
-    dispatched += result.dispatched;
-    duplicates += result.duplicates;
-  }
 
-  for (const event of args.history.labelsAdded) {
-    const result = await dispatchGmailLabelAppliedHistoryEvent(
-      {
-        db: args.db,
-        state: args.state,
-        decoded: args.decoded,
-        accessToken: args.accessToken,
-        automations: args.automations,
-        event,
-        messageCache,
-        labelCache,
-        sourceTiming: args.sourceTiming.fork(),
-        startRun: args.startRun,
-      },
-      signal,
-    );
-    if (result.kind !== "ok") {
-      return result;
+    let dispatched = 0;
+    let duplicates = 0;
+
+    for (const match of matchingAutomations) {
+      match.timing.recordElapsed(
+        "api_dispatch_pre_create_agent_automation_event_load_external_events",
+        messageStartedAt,
+        messageFinishedAt,
+      );
+      const result = await set(
+        dispatchGmailAutomationEvent$,
+        {
+          state: args.state,
+          automation: match.automation,
+          decoded: args.decoded,
+          event: args.event,
+          message,
+          timing: match.timing,
+          apiStartTime: args.apiStartTime,
+        },
+        signal,
+      );
+      if (typeof result !== "string") {
+        return {
+          kind: "run_error",
+          message: "Failed to start Gmail event workflow run",
+        };
+      }
+      dispatched += result === "dispatched" ? 1 : 0;
+      duplicates += result === "duplicate" ? 1 : 0;
     }
-    dispatched += result.dispatched;
-    duplicates += result.duplicates;
-  }
 
-  return { kind: "ok", dispatched, duplicates };
-}
+    return { kind: "ok", dispatched, duplicates };
+  },
+);
+
+const dispatchGmailHistoryEvents$ = command(
+  async (
+    { set },
+    args: {
+      readonly state: GmailWatchStateRow;
+      readonly decoded: DecodedGmailPubSubPush;
+      readonly accessToken: string;
+      readonly history: Extract<
+        GmailHistoryResult,
+        {
+          readonly kind: "ok";
+        }
+      >;
+      readonly automations: readonly GmailEventAutomationRow[];
+      readonly sourceTiming: AutomationEventSourceTiming;
+      readonly apiStartTime: number;
+    },
+    signal: AbortSignal,
+  ): Promise<GmailDispatchStateResult> => {
+    const messageCache = new Map<string, GmailMessageContext | null>();
+    const labelCache = new Map<string, GmailLabelResolveResult>();
+    let dispatched = 0;
+    let duplicates = 0;
+
+    for (const event of args.history.messagesAdded) {
+      const result = await set(
+        dispatchGmailNewMessageHistoryEvent$,
+        {
+          state: args.state,
+          decoded: args.decoded,
+          accessToken: args.accessToken,
+          automations: args.automations,
+          event,
+          messageCache,
+          sourceTiming: args.sourceTiming.fork(),
+          apiStartTime: args.apiStartTime,
+        },
+        signal,
+      );
+      if (result.kind !== "ok") {
+        return result;
+      }
+      dispatched += result.dispatched;
+      duplicates += result.duplicates;
+    }
+
+    for (const event of args.history.labelsAdded) {
+      const result = await set(
+        dispatchGmailLabelAppliedHistoryEvent$,
+        {
+          state: args.state,
+          decoded: args.decoded,
+          accessToken: args.accessToken,
+          automations: args.automations,
+          event,
+          messageCache,
+          labelCache,
+          sourceTiming: args.sourceTiming.fork(),
+          apiStartTime: args.apiStartTime,
+        },
+        signal,
+      );
+      if (result.kind !== "ok") {
+        return result;
+      }
+      dispatched += result.dispatched;
+      duplicates += result.duplicates;
+    }
+
+    return { kind: "ok", dispatched, duplicates };
+  },
+);
 
 const loadGmailDispatchAccess$ = command(
   async (
@@ -2258,81 +2284,85 @@ const loadGmailDispatchAccess$ = command(
   },
 );
 
-async function dispatchGmailWatchState(
-  args: {
-    readonly db: Db;
-    readonly state: GmailWatchStateRow;
-    readonly access: GmailAccess | null;
-    readonly decoded: DecodedGmailPubSubPush;
-    readonly sourceTiming: AutomationEventSourceTiming;
-    readonly startRun: GmailRunStarter;
-  },
-  signal: AbortSignal,
-): Promise<GmailDispatchStateResult> {
-  const access = args.access;
-  if (!access) {
-    return { kind: "ok", dispatched: 0, duplicates: 0 };
-  }
+const dispatchGmailWatchState$ = command(
+  async (
+    { set },
+    args: {
+      readonly state: GmailWatchStateRow;
+      readonly access: GmailAccess | null;
+      readonly decoded: DecodedGmailPubSubPush;
+      readonly sourceTiming: AutomationEventSourceTiming;
+      readonly apiStartTime: number;
+    },
+    signal: AbortSignal,
+  ): Promise<GmailDispatchStateResult> => {
+    const db = set(writeDb$);
+    const access = args.access;
+    if (!access) {
+      return { kind: "ok", dispatched: 0, duplicates: 0 };
+    }
 
-  const history = await args.sourceTiming.measure(
-    "api_dispatch_pre_create_agent_automation_event_load_external_events",
-    async () => {
-      return await listGmailHistory(
-        {
-          accessToken: access.accessToken,
-          startHistoryId: args.state.lastHistoryId,
-        },
-        signal,
-      );
-    },
-  );
-  signal.throwIfAborted();
-  if (history.kind === "stale_cursor") {
-    return { kind: "ok", dispatched: 0, duplicates: 0, needsRewatch: true };
-  }
-  if (history.kind === "gmail_error") {
-    log.warn("Gmail history lookup failed", {
-      watchStateId: args.state.id,
-      message: history.message,
-    });
-    return { kind: "ok", dispatched: 0, duplicates: 0 };
-  }
+    const history = await args.sourceTiming.measure(
+      "api_dispatch_pre_create_agent_automation_event_load_external_events",
+      async () => {
+        return await listGmailHistory(
+          {
+            accessToken: access.accessToken,
+            startHistoryId: args.state.lastHistoryId,
+          },
+          signal,
+        );
+      },
+    );
+    signal.throwIfAborted();
+    if (history.kind === "stale_cursor") {
+      return { kind: "ok", dispatched: 0, duplicates: 0, needsRewatch: true };
+    }
+    if (history.kind === "gmail_error") {
+      log.warn("Gmail history lookup failed", {
+        watchStateId: args.state.id,
+        message: history.message,
+      });
+      return { kind: "ok", dispatched: 0, duplicates: 0 };
+    }
 
-  const automations = await args.sourceTiming.measure(
-    "api_dispatch_pre_create_agent_automation_event_load_automations",
-    async () => {
-      return await loadGmailEventAutomations(args, signal);
-    },
-  );
-  const result = await dispatchGmailHistoryEvents(
-    {
-      db: args.db,
-      state: args.state,
-      decoded: args.decoded,
-      accessToken: access.accessToken,
-      history,
-      automations,
-      sourceTiming: args.sourceTiming,
-      startRun: args.startRun,
-    },
-    signal,
-  );
-  if (result.kind !== "ok") {
+    const automations = await args.sourceTiming.measure(
+      "api_dispatch_pre_create_agent_automation_event_load_automations",
+      async () => {
+        return await set(loadGmailEventAutomations$, args, signal);
+      },
+    );
+    signal.throwIfAborted();
+    const result = await set(
+      dispatchGmailHistoryEvents$,
+      {
+        state: args.state,
+        decoded: args.decoded,
+        accessToken: access.accessToken,
+        history,
+        automations,
+        sourceTiming: args.sourceTiming,
+        apiStartTime: args.apiStartTime,
+      },
+      signal,
+    );
+    if (result.kind !== "ok") {
+      return result;
+    }
+
+    await db
+      .update(gmailWatchStates)
+      .set({
+        lastHistoryId: args.decoded.historyId,
+        needsRewatch: false,
+        updatedAt: nowDate(),
+      })
+      .where(eq(gmailWatchStates.id, args.state.id));
+    signal.throwIfAborted();
+
     return result;
-  }
-
-  await args.db
-    .update(gmailWatchStates)
-    .set({
-      lastHistoryId: args.decoded.historyId,
-      needsRewatch: false,
-      updatedAt: nowDate(),
-    })
-    .where(eq(gmailWatchStates.id, args.state.id));
-  signal.throwIfAborted();
-
-  return result;
-}
+  },
+);
 
 const startGmailWorkflowRun$ = command(
   async (
@@ -2348,6 +2378,21 @@ const startGmailWorkflowRun$ = command(
     },
     signal: AbortSignal,
   ): Promise<"ok" | "error" | "superseded"> => {
+    const runStarterOverride = gmailRunStarterOverride.get();
+    if (runStarterOverride) {
+      return await runStarterOverride({
+        automationId: args.automation.automation.id,
+        workflowName: args.automation.workflowName,
+        emailAddress: args.decoded.emailAddress,
+        messageId: args.message.messageId,
+        threadId: args.message.threadId,
+        subject: args.message.subject,
+        triggerBrief: buildGmailWorkflowAutomationBrief({
+          automationConfig: args.automation.config,
+          message: args.message,
+        }),
+      });
+    }
     const runInput = await args.timing.measure(
       "api_dispatch_pre_create_agent_automation_event_build_run_input",
       () => {
@@ -2473,13 +2518,12 @@ export const dispatchGmailPubSubPush$ = command(
       "gmail",
       args.apiStartTime,
     );
-    const db = set(writeDb$);
     const states = await sourceTiming.measure(
       "api_dispatch_pre_create_agent_automation_event_load_source_state",
       async () => {
-        return await loadGmailWatchStates(
+        return await set(
+          loadGmailWatchStates$,
           {
-            db,
             decoded,
             topicName,
           },
@@ -2488,58 +2532,19 @@ export const dispatchGmailPubSubPush$ = command(
       },
     );
     signal.throwIfAborted();
-    const runStarterOverride = gmailRunStarterOverride.get();
-    const startRun: GmailRunStarter = runStarterOverride
-      ? async ({ automation, decoded, message }) => {
-          return await runStarterOverride({
-            automationId: automation.automation.id,
-            workflowName: automation.workflowName,
-            emailAddress: decoded.emailAddress,
-            messageId: message.messageId,
-            threadId: message.threadId,
-            subject: message.subject,
-            triggerBrief: buildGmailWorkflowAutomationBrief({
-              automationConfig: automation.config,
-              message,
-            }),
-          });
-        }
-      : async ({
-          automation,
-          connectorSourceId,
-          watchStateId,
-          decoded,
-          message,
-          timing,
-        }) => {
-          return await set(
-            startGmailWorkflowRun$,
-            {
-              automation,
-              connectorSourceId,
-              watchStateId,
-              decoded,
-              message,
-              timing,
-              apiStartTime: args.apiStartTime,
-            },
-            signal,
-          );
-        };
-
     let dispatched = 0;
     let duplicates = 0;
 
     for (const state of states) {
       const access = await set(loadGmailDispatchAccess$, state, signal);
-      const result = await dispatchGmailWatchState(
+      const result = await set(
+        dispatchGmailWatchState$,
         {
-          db,
           state,
           access,
           decoded,
           sourceTiming: sourceTiming.fork(),
-          startRun,
+          apiStartTime: args.apiStartTime,
         },
         signal,
       );

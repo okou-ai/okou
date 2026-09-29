@@ -23,7 +23,7 @@ The six advisory acquisition definitions remain. This work prepares selected wri
 
 - Builtin OAuth callback, Automatic OAuth refresh and its legacy retirement store, ordinary refresh's legacy helper-owned commit path and its nine resolver chains still propagate root database or transaction values. Automatic callback including state claim, catalog preparation and post-commit wakeup has a command-owned boundary. Other builtin/custom callback routes still use the legacy state helper; it remains only for those actual callers.
 - Model-provider firewall refresh, settings and account paths have not been migrated to the complete final command-owned conditional protocol. They still execute provider/KMS work through the locked helper graph.
-- Gmail now has explicit approval for local disable, stopping renewal and remote natural expiry without account-global `users.stop`. Its remote-stop code is removed. Ensure, renewal and watch reconciliation now use owning commands; legacy dispatch/queue SQL and shared credential callers remain. Calendar also has explicit approval for a remote gap and best-effort candidate cleanup; authority and basic deduplication remain required.
+- Gmail now has explicit approval for local disable, stopping renewal and remote natural expiry without account-global `users.stop`. Its remote-stop code is removed. Ensure, renewal and watch reconciliation now use owning commands; missing-thread initialization, queue source admission and shared credential callers remain. Calendar also has explicit approval for a remote gap and best-effort candidate cleanup; authority and basic deduplication remain required.
 - Calendar lifecycle preparation/activation/reconciliation still has helper-owned and propagated transaction paths. Current-channel remote stop remains inside the existing decision boundary.
 - Forms workflow-thread creation still accepts a transaction. Shared create/official authority preparation and queue model preparation retain legacy database interfaces. Forms account-deletion watch preparation now has its own command outside deletion transactions. The regular Forms watch/configuration/dispatch credential path now uses owning commands. Other event sources still use the legacy workflow queue source callback; this does not claim to migrate those sources.
 
@@ -181,8 +181,9 @@ structural schema matches main exactly. The final zero-trigger and no-new-field
 requirements remain in force, and Forms no longer introduces a trigger removal
 gate based on outgoing newest-response repair.
 
-Remaining R1 implementation is explicit: shared Forms creation and queue thread
-initialization still propagate handles; generic
+The Forms service has no Db parameter interface. Remaining R1 implementation is
+explicit: its missing-thread branch still hands tx to the shared thread initializer,
+and shared Forms creation still propagates handles; generic
 account deletion, selection and credential callers retain their legacy outer
 transaction graphs. Cross-kind official transitions, initial materialization and
 other providers' finalization paths still need command ownership migration.
@@ -286,18 +287,26 @@ Then move `watch` HTTP before the finite publication transaction and delete the
 lifecycle key. R1/R2 coexistence is compatible because neither calls `users.stop`.
 Credential/account coordination has its own separate writer gates.
 
-**Still unfinished:** legacy Gmail event dispatch/queue SQL helpers still forward
-handles, as do shared credential and account deletion paths. Gmail label
-preparation, ordinary/official configuration and dispatch credential access now
-use owning commands; the legacy Gmail credential resolver has been deleted.
-Ordinary Gmail configuration publication also owns its short transaction, executes
-the selected-account predicate and UPDATE directly, and reads its summary after
-commit without forwarding a handle. Those paths are implementation work, not covered by the outgoing-stop
-gate. This change does not claim the entire credential or event-source graph is
-R1 ready. API coverage retains shared-mailbox consumption, local disable and
-reenable, authorized sources, deduplication and watch-error compensation; the
-old official-removal retry assertion has been replaced by immediate local
-removal without contacting `users.stop`.
+Gmail watch and automation reads, processed-event deduplication, resolved-label
+publication and history-cursor updates now execute SQL in owning commands. The
+resolved-label write is conditional on the observed event configuration, so a
+late label lookup cannot overwrite a user's newer configuration. Ordinary and
+official configuration preparation, account reads and credential access use
+business inputs; ordinary configuration publication owns its short transaction
+and reads its summary after commit. The dispatcher no longer passes a database
+or a store-capturing start-run callback through event/history helpers.
+
+**Still unfinished:** the Gmail missing-thread branch calls
+`ensureWorkflowUserAutomationThread(tx, ...)`, and durable queue admission still
+passes a transaction to `persistCurrentGmailAutomationSource` through the common
+source callback. Shared credential rotation, generic account deletion and shared
+creation also retain their separate legacy graphs. Only these named remaining
+graphs are implementation work; they are not covered by the outgoing-stop gate.
+The migrated watch/configuration/dispatch SQL is complete within its stated
+scope. API coverage retains shared-mailbox consumption, local disable and
+reenable, authorized sources, deduplication and watch-error compensation; old
+remote-stop retry assertions now check immediate local removal without
+contacting `users.stop`.
 
 ### Unresolved one-time refresh consumption
 
