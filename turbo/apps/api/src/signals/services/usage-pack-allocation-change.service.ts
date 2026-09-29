@@ -4151,13 +4151,18 @@ export const prepareUsagePackChangeConfirmation$ = command(
     const at = nowDate();
     const result = await db.transaction(async (tx) => {
       await tx.execute(usagePackBillingCompatibilityLockSql(args.orgId));
-      await tx.execute(sql`SELECT ${usagePackSubscriptions.id} FROM ${usagePackSubscriptions}
+      const parentCount = (
+        await tx.execute(sql`SELECT ${usagePackSubscriptions.id} FROM ${usagePackSubscriptions}
       JOIN ${usagePackAllocationChanges}
         ON ${usagePackAllocationChanges.usagePackSubscriptionId} = ${usagePackSubscriptions.id}
         AND ${usagePackAllocationChanges.orgId} = ${usagePackSubscriptions.orgId}
       WHERE ${usagePackAllocationChanges.id} = ${args.changeId}
         AND ${usagePackSubscriptions.orgId} = ${args.orgId}
-      FOR UPDATE OF ${usagePackSubscriptions}`);
+      FOR UPDATE OF ${usagePackSubscriptions}`)
+      ).rowCount;
+      if (parentCount !== 1) {
+        return { status: "not_found" as const };
+      }
       const [change] = await tx
         .select()
         .from(usagePackAllocationChanges)

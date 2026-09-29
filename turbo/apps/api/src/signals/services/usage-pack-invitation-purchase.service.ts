@@ -1449,7 +1449,12 @@ const refundPurchase$ = command(
         return null;
       }
       await tx.execute(usagePackBillingCompatibilityLockSql(identity.orgId));
-      await tx.execute(invitationMutationSubscriptionSql(purchaseId));
+      const parentCount = (
+        await tx.execute(invitationMutationSubscriptionSql(purchaseId))
+      ).rowCount;
+      if (parentCount !== 1) {
+        return null;
+      }
       await tx.execute(invitationPurchaseCompatibilityLockSql(purchaseId));
       if (
         (
@@ -2225,7 +2230,12 @@ const claimAcceptedPurchaseActivation$ = command(
         return null;
       }
       await tx.execute(usagePackBillingCompatibilityLockSql(identity.orgId));
-      await tx.execute(invitationMutationSubscriptionSql(purchaseId));
+      const parentCount = (
+        await tx.execute(invitationMutationSubscriptionSql(purchaseId))
+      ).rowCount;
+      if (parentCount !== 1) {
+        return null;
+      }
       await tx.execute(invitationPurchaseCompatibilityLockSql(purchaseId));
       if (
         (
