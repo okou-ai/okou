@@ -54,10 +54,11 @@ requests:
 - Stripe workflow ingress fan-out, delivery claim/finalization and missing-source
   projection repair still have inherited database/transaction helper chains.
   Removing its queue-publication callback does not finish those paths.
-- Integration route initialization and the surrounding provider dispatch/read
-  helpers need their own complete caller inventory. Preparing a model pin or
-  migrating a queue write does not by itself complete thread, Storage or
-  credential initialization.
+- Telegram reply-chain, Slack/Feishu webhook receipt admission, and Discord
+  discovery/destination helpers still forward database handles. Route/thread/event
+  publication itself now uses owning commands for all six integrations; Discord
+  receipt/ingress admission also has its own finite command. These completed
+  boundaries do not finish the surrounding Storage, dispatch or credential graph.
 
 ## Test changes and validation boundary
 
