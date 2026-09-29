@@ -4786,26 +4786,52 @@ async function findFirewallAuthRun(
   });
 }
 
-async function admitFirewallAuthResponse(
-  db: Db,
-  auth: SandboxAuth,
-): Promise<boolean> {
-  return await db.transaction(async (tx) => {
-    const [run] = await tx
-      .select({ status: agentRuns.status })
-      .from(agentRuns)
-      .where(
-        and(
-          eq(agentRuns.id, auth.runId),
-          eq(agentRuns.userId, auth.userId),
-          eq(agentRuns.orgId, auth.orgId),
-        ),
-      )
-      .for("update")
-      .limit(1);
-    return run !== undefined && firewallAuthRunIsActive(run.status);
-  });
-}
+/** Final admission owns its single statement. Credential/provider work has
+ * finished; no transaction handle or callback is passed in from preparation. */
+export const admitPreparedFirewallAuthResponse$ = command(
+  async (
+    { set },
+    args: {
+      readonly auth: SandboxAuth;
+      readonly response: ResolveFirewallAuthResult;
+    },
+    signal: AbortSignal,
+  ): Promise<ResolveFirewallAuthResult> => {
+    if (args.response.status !== 200) {
+      return args.response;
+    }
+    const db = set(writeDb$);
+    const startedAt = performance.now();
+    let success = false;
+    return await (async () => {
+      // The final owner/status check keeps its existing row-lock ordering. A
+      // single statement needs no larger application transaction boundary.
+      const [run] = await db
+        .select({ status: agentRuns.status })
+        .from(agentRuns)
+        .where(
+          and(
+            eq(agentRuns.id, args.auth.runId),
+            eq(agentRuns.userId, args.auth.userId),
+            eq(agentRuns.orgId, args.auth.orgId),
+          ),
+        )
+        .for("update")
+        .limit(1);
+      signal.throwIfAborted();
+      success = run !== undefined && firewallAuthRunIsActive(run.status);
+      return success ? args.response : forbiddenTerminalRun();
+    })().finally(() => {
+      recordFirewallAuthTimings(args.auth.runId, [
+        {
+          actionType: "firewall_auth_admit",
+          durationMs: Math.max(0, performance.now() - startedAt),
+          success,
+        },
+      ]);
+    });
+  },
+);
 
 async function decryptFirewallAuthSecrets(
   db: Db,
@@ -6434,29 +6460,18 @@ async function resolveFirewallAuthWithTimings(
       ? forbiddenTerminalRun()
       : resolution.response;
   }
-  const finalized = finalizeFirewallAuth({
+  return finalizeFirewallAuth({
     body,
     referenced: preparation.referenced,
     material: resolution.material,
     billableExpiresAt: preparation.billableExpiresAt,
   });
-  if (finalized.status !== 200) {
-    return finalized;
-  }
-  const admitted = await measureFirewallAuthStage(
-    timingRecords,
-    "firewall_auth_admit",
-    async () => {
-      return await admitFirewallAuthResponse(db, auth);
-    },
-    (result) => {
-      return result;
-    },
-  );
-  return admitted ? finalized : forbiddenTerminalRun();
 }
 
-export async function resolveFirewallAuth(
+/** Produces credential material only. The route must invoke
+ * admitPreparedFirewallAuthResponse$ before returning a successful response.
+ * Legacy credential preparation still has its separate Db-aware graph. */
+export async function prepareFirewallAuthResponse(
   db: Db,
   auth: SandboxAuth,
   body: FirewallAuthBody,
