@@ -1,4 +1,3 @@
-import { singleton } from "../../lib/singleton";
 import {
   personalSubscriptionAccountAccessCondition,
   isPersonalSubscriptionProviderType,
@@ -98,6 +97,7 @@ import { command } from "ccstate";
 import { writeDb$, type Db } from "../external/db";
 import { recordSandboxOperations } from "../external/sandbox-op-log";
 import { safeSync, settle, settleIncludingAbort, tapError } from "../utils";
+import { runAfterSameProcessRefresh } from "./same-process-refresh";
 import {
   decryptPersistentSecretsMap,
   decryptStoredSecretValue,
@@ -3199,17 +3199,6 @@ async function refreshPreparedLockedAccessToken(args: {
   };
 }
 
-/**
- * Same-process duplicate suppression only: a request for a credential that
- * this API instance is already refreshing starts after that attempt settles,
- * then observes its published result. It is not cross-instance coordination
- * and holds no database state; concurrent refreshes on different instances
- * remain the accepted ordinary-refresh risk.
- */
-const sameProcessRefreshes = singleton(() => {
-  return new Map<string, Promise<unknown>>();
-});
-
 function refreshSourceKey(args: RefreshAccessTokenArgs): string {
   return JSON.stringify([
     args.sourceType,
@@ -3219,29 +3208,6 @@ function refreshSourceKey(args: RefreshAccessTokenArgs): string {
     args.sourceId ?? null,
     args.metadataKey ?? null,
   ]);
-}
-
-async function runAfterSameProcessRefresh<T>(
-  key: string,
-  refresh: () => Promise<T>,
-): Promise<T> {
-  const refreshes = sameProcessRefreshes();
-  const previous = refreshes.get(key);
-  const current = (async () => {
-    if (previous) {
-      await settleIncludingAbort(previous);
-    }
-    return await refresh();
-  })();
-  refreshes.set(key, current);
-  const settled = await settleIncludingAbort(current);
-  if (refreshes.get(key) === current) {
-    refreshes.delete(key);
-  }
-  if (!settled.ok) {
-    throw settled.error;
-  }
-  return settled.value;
 }
 
 async function refreshAccessTokenForSource(

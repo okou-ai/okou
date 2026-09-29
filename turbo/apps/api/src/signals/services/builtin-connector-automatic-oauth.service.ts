@@ -28,6 +28,7 @@ import { pgTextDecoder } from "../../lib/db-structured-result";
 import type { Tx } from "../../lib/db-types";
 import { writeDb$, type Db } from "../external/db";
 import { safeJsonParse, safeSync, settle } from "../utils";
+import { runAfterSameProcessRefresh } from "./same-process-refresh";
 import type { ResolvedConnectorActionMethod } from "./connector-action-resolver.service";
 import {
   getConnectorRuntimeMethod,
@@ -286,38 +287,58 @@ function tokenStorageName(
   return name;
 }
 
-async function writeTokens(
-  db: Db,
+interface EncryptedAutomaticToken {
+  readonly name: string;
+  readonly encryptedValue: string;
+}
+
+async function encryptAutomaticTokens(
   args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly connectorId: string;
     readonly contract: BuiltinAutomaticContract;
     readonly token: McpAutomaticOAuthTokenResult;
     readonly fallbackRefreshToken?: string;
   },
   signal: AbortSignal,
-): Promise<void> {
+): Promise<readonly EncryptedAutomaticToken[]> {
   const tokens = {
     accessToken: args.token.accessToken,
     refreshToken: args.token.refreshToken ?? args.fallbackRefreshToken,
     idToken: args.token.idToken,
   };
+  const encrypted: EncryptedAutomaticToken[] = [];
   for (const key of ["accessToken", "refreshToken", "idToken"] as const) {
     const name = tokenStorageName(args.contract, key);
     const value = tokens[key];
     if (!name || !value) {
       continue;
     }
-    const encryptedValue = await encryptStoredSecretValue(value);
+    encrypted.push({
+      name,
+      encryptedValue: await encryptStoredSecretValue(value),
+    });
     signal.throwIfAborted();
+  }
+  return encrypted;
+}
+
+async function writeEncryptedTokens(
+  db: Db,
+  args: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly connectorId: string;
+    readonly contract: BuiltinAutomaticContract;
+    readonly tokens: readonly EncryptedAutomaticToken[];
+  },
+): Promise<void> {
+  for (const token of args.tokens) {
     await upsertConnectorOwnedSecret(db, {
       connectorId: args.connectorId,
       orgId: args.orgId,
       userId: args.userId,
       storage: args.contract.method.storage,
-      name,
-      encryptedValue,
+      name: token.name,
+      encryptedValue: token.encryptedValue,
       description: "Automatic MCP OAuth token",
     });
   }
@@ -956,6 +977,30 @@ type CredentialResult =
       readonly reason: "reconnect" | "temporary" | "stale-contract";
     };
 
+type AutomaticRefreshBinding = NonNullable<
+  Awaited<ReturnType<typeof readBuiltinConnectorAutomaticOAuthBinding>>
+>;
+
+/** Another refresh or credential change won the exact publication CAS. */
+interface PublicationLost {
+  readonly kind: "publication-lost";
+}
+
+/** Decisions from the local read transaction; KMS and HTTP happen after it. */
+type LockedAutomaticOutcome =
+  | CredentialResult
+  | {
+      readonly kind: "stored-access";
+      readonly encryptedAccess: string;
+      readonly tokenExpiresAt: Date | null;
+    }
+  | {
+      readonly kind: "refresh-required";
+      readonly binding: AutomaticRefreshBinding;
+      readonly account: ObservedAutomaticAccount;
+      readonly encryptedRefreshToken: string;
+    };
+
 interface ResolveAutomaticCredentialArgs {
   readonly db: Db;
   readonly orgId: string;
@@ -1080,21 +1125,60 @@ async function markReconnect(
   return { kind: "unavailable", reason: "reconnect" };
 }
 
-async function refreshLockedAutomatic(
+/**
+ * Ordinary refresh outside any transaction: KMS decryption, discovery and the
+ * provider token request run first; one short transaction then takes the
+ * outgoing-writer compatibility keys and publishes by exact account/token CAS.
+ */
+async function handleAutomaticRefreshFailure(
   context: {
-    readonly args: ResolveAutomaticCredentialArgs;
-    readonly tx: Tx;
-    readonly contract: BuiltinAutomaticContract;
-    readonly binding: NonNullable<
-      Awaited<ReturnType<typeof readBuiltinConnectorAutomaticOAuthBinding>>
-    >;
+    readonly db: Db;
+    readonly store: ReturnType<typeof dcrStore>;
+    readonly binding: AutomaticRefreshBinding;
+    readonly account: ObservedAutomaticAccount;
+    readonly observedRefreshToken: {
+      readonly name: string;
+      readonly encryptedValue: string;
+    };
+  },
+  error: unknown,
+): Promise<CredentialResult> {
+  const { binding } = context;
+  if (
+    isAutomaticOAuthInvalidClient(error) &&
+    binding.registrationMethod === "dcr"
+  ) {
+    await context.store.retire(binding.dcrRegistration.id);
+    return { kind: "unavailable", reason: "reconnect" };
+  }
+  if (
+    isAutomaticOAuthInvalidClient(error) ||
+    isAutomaticOAuthInvalidGrant(error) ||
+    (error instanceof McpAutomaticOAuthError && error.kind === "binding-drift")
+  ) {
+    return await markReconnect(
+      context.db,
+      context.account,
+      context.observedRefreshToken,
+    );
+  }
+  if (error instanceof McpAutomaticOAuthError && error.kind === "temporary") {
+    return { kind: "unavailable", reason: "temporary" };
+  }
+  throw error;
+}
+
+async function refreshAutomaticOutsideTransaction(
+  args: ResolveAutomaticCredentialArgs,
+  contract: BuiltinAutomaticContract,
+  observed: {
+    readonly binding: AutomaticRefreshBinding;
     readonly account: ObservedAutomaticAccount;
     readonly encryptedRefreshToken: string;
   },
   signal: AbortSignal,
-): Promise<CredentialResult> {
-  const { args, tx, contract, binding, account, encryptedRefreshToken } =
-    context;
+): Promise<CredentialResult | PublicationLost> {
+  const { binding, account, encryptedRefreshToken } = observed;
   const refreshName = tokenStorageName(contract, "refreshToken");
   if (refreshName === null) {
     return { kind: "unavailable", reason: "stale-contract" };
@@ -1103,7 +1187,7 @@ async function refreshLockedAutomatic(
     name: refreshName,
     encryptedValue: encryptedRefreshToken,
   };
-  const store = dcrStore(tx, args.orgId, contract);
+  const store = dcrStore(args.db, args.orgId, contract);
   const refreshToken = await decryptStoredSecretValue(encryptedRefreshToken);
   signal.throwIfAborted();
   const metadata = configuredOkouMcpOAuthClientMetadata();
@@ -1128,39 +1212,15 @@ async function refreshLockedAutomatic(
     signal,
   );
   if (!refreshed.ok) {
-    if (
-      isAutomaticOAuthInvalidClient(refreshed.error) &&
-      binding.registrationMethod === "dcr"
-    ) {
-      await store.retire(binding.dcrRegistration.id);
-      return { kind: "unavailable", reason: "reconnect" };
-    }
-    if (
-      isAutomaticOAuthInvalidClient(refreshed.error) ||
-      isAutomaticOAuthInvalidGrant(refreshed.error) ||
-      (refreshed.error instanceof McpAutomaticOAuthError &&
-        refreshed.error.kind === "binding-drift")
-    ) {
-      return await markReconnect(tx, account, observedRefreshToken);
-    }
-    if (
-      refreshed.error instanceof McpAutomaticOAuthError &&
-      refreshed.error.kind === "temporary"
-    ) {
-      return { kind: "unavailable", reason: "temporary" };
-    }
-    throw refreshed.error;
-  }
-  if (
-    !(await credentialDestinationMatches(
-      tx,
-      contract,
-      args.expectedEndpoint,
-      signal,
-    ))
-  ) {
-    throw new StaleBuiltinAutomaticContractError(
-      "Builtin MCP credential destination changed during refresh",
+    return await handleAutomaticRefreshFailure(
+      {
+        db: args.db,
+        store,
+        binding,
+        account,
+        observedRefreshToken,
+      },
+      refreshed.error,
     );
   }
   const identity = resolveRefreshedOAuthIdentity(
@@ -1172,38 +1232,66 @@ async function refreshLockedAutomatic(
     refreshed.value.userInfo,
   );
   if (identity.kind === "mismatch") {
-    return await markReconnect(tx, account, observedRefreshToken);
+    return await markReconnect(args.db, account, observedRefreshToken);
   }
-  // Claim the exact observed owner before writing any token from this response.
-  // The token bundle and metadata either publish together or the transaction rolls back.
-  const [published] = await tx
-    .update(connectors)
-    .set(automaticRefreshMetadata(account, refreshed.value, identity))
-    .where(
-      and(
-        automaticAccountSnapshotCondition(account),
-        automaticStoredRefreshTokenCondition({
-          account,
-          name: refreshName,
-          encryptedValue: encryptedRefreshToken,
-        }),
-      ),
-    )
-    .returning({ id: connectors.id });
-  if (!published) {
-    return { kind: "unavailable", reason: "reconnect" };
-  }
-  await writeTokens(
-    tx,
-    {
-      ...args,
-      connectorId: account.id,
-      contract,
-      token: refreshed.value,
-      fallbackRefreshToken: refreshToken,
-    },
+  const tokens = await encryptAutomaticTokens(
+    { contract, token: refreshed.value, fallbackRefreshToken: refreshToken },
     signal,
   );
+  const published = await args.db.transaction(async (tx) => {
+    // Outgoing writers still use these keys; the CAS below decides.
+    await lockBuiltinConnectorAutomaticLifecycle(
+      tx,
+      contractOwner(args.orgId, contract),
+    );
+    await lockConnectorAccountTarget(tx, {
+      orgId: args.orgId,
+      userId: args.userId,
+      target: { kind: "builtin", connectorSlug: args.connectorSlug },
+    });
+    if (
+      !(await credentialDestinationMatches(
+        tx,
+        contract,
+        args.expectedEndpoint,
+        signal,
+      ))
+    ) {
+      throw new StaleBuiltinAutomaticContractError(
+        "Builtin MCP credential destination changed during refresh",
+      );
+    }
+    // Claim the exact observed owner and stored refresh token before writing
+    // any token from this response; the bundle publishes together or not at all.
+    const [claimed] = await tx
+      .update(connectors)
+      .set(automaticRefreshMetadata(account, refreshed.value, identity))
+      .where(
+        and(
+          automaticAccountSnapshotCondition(account),
+          automaticStoredRefreshTokenCondition({
+            account,
+            name: refreshName,
+            encryptedValue: encryptedRefreshToken,
+          }),
+        ),
+      )
+      .returning({ id: connectors.id });
+    if (!claimed) {
+      return false;
+    }
+    await writeEncryptedTokens(tx, {
+      orgId: args.orgId,
+      userId: args.userId,
+      connectorId: account.id,
+      contract,
+      tokens,
+    });
+    return true;
+  });
+  if (!published) {
+    return { kind: "publication-lost" };
+  }
   return {
     kind: "oauth",
     accessToken: refreshed.value.accessToken,
@@ -1256,7 +1344,7 @@ async function resolveLockedAutomatic(
   args: ResolveAutomaticCredentialArgs,
   context: LockedAutomaticCredentialContext,
   signal: AbortSignal,
-): Promise<CredentialResult> {
+): Promise<LockedAutomaticOutcome> {
   const { contract, accessName, initialAccessEncrypted } = context;
   await lockBuiltinConnectorAutomaticLifecycle(
     tx,
@@ -1352,8 +1440,8 @@ async function resolveLockedAutomatic(
     accessTokenRemainsValid(account.tokenExpiresAt, 60_000)
   ) {
     return {
-      kind: "oauth",
-      accessToken: await decryptStoredSecretValue(access.encryptedValue),
+      kind: "stored-access",
+      encryptedAccess: access.encryptedValue,
       tokenExpiresAt: account.tokenExpiresAt,
     };
   }
@@ -1364,30 +1452,74 @@ async function resolveLockedAutomatic(
       accessTokenRemainsValid(account.tokenExpiresAt, 0)
     ) {
       return {
-        kind: "oauth",
-        accessToken: await decryptStoredSecretValue(access.encryptedValue),
+        kind: "stored-access",
+        encryptedAccess: access.encryptedValue,
         tokenExpiresAt: account.tokenExpiresAt,
       };
     }
     return await markReconnect(tx, account);
   }
-  return await refreshLockedAutomatic(
-    {
+  return {
+    kind: "refresh-required",
+    binding,
+    account,
+    encryptedRefreshToken: refresh.encryptedValue,
+  };
+}
+
+async function resolveAutomaticOutcome(
+  args: ResolveAutomaticCredentialArgs,
+  contract: BuiltinAutomaticContract,
+  outcome: LockedAutomaticOutcome,
+  signal: AbortSignal,
+): Promise<CredentialResult | PublicationLost> {
+  if (outcome.kind === "stored-access") {
+    return {
+      kind: "oauth",
+      accessToken: await decryptStoredSecretValue(outcome.encryptedAccess),
+      tokenExpiresAt: outcome.tokenExpiresAt,
+    };
+  }
+  if (outcome.kind === "refresh-required") {
+    return await refreshAutomaticOutsideTransaction(
       args,
-      tx,
       contract,
-      binding,
-      account,
-      encryptedRefreshToken: refresh.encryptedValue,
-    },
-    signal,
-  );
+      outcome,
+      signal,
+    );
+  }
+  return outcome;
 }
 
 export async function resolveBuiltinConnectorAutomaticMcpCredential(
   args: ResolveAutomaticCredentialArgs,
   signal: AbortSignal,
 ): Promise<CredentialResult> {
+  return await runAfterSameProcessRefresh(
+    JSON.stringify([
+      "automatic-mcp",
+      args.orgId,
+      args.userId,
+      args.connectorId,
+    ]),
+    async () => {
+      const first = await resolveAutomaticMcpCredentialOnce(args, signal);
+      if (first.kind !== "publication-lost") {
+        return first;
+      }
+      // Re-read once: the winner's published credential is normally usable.
+      const second = await resolveAutomaticMcpCredentialOnce(args, signal);
+      return second.kind === "publication-lost"
+        ? { kind: "unavailable", reason: "reconnect" }
+        : second;
+    },
+  );
+}
+
+async function resolveAutomaticMcpCredentialOnce(
+  args: ResolveAutomaticCredentialArgs,
+  signal: AbortSignal,
+): Promise<CredentialResult | PublicationLost> {
   const accountIdentity = and(
     eq(connectors.id, args.connectorId),
     eq(connectors.orgId, args.orgId),
@@ -1459,21 +1591,26 @@ export async function resolveBuiltinConnectorAutomaticMcpCredential(
     .limit(1);
   signal.throwIfAborted();
   const resolved = await settle(
-    args.db.transaction(async (tx) => {
-      return await resolveLockedAutomatic(
-        tx,
-        args,
-        {
-          contract,
-          accessName,
-          initialAccessEncrypted: initialAccess?.encryptedValue,
-          initialBindingCreatedAt: initialBinding.createdAt,
-          initialBindingRowVersion: initialBinding.rowVersion,
-          accountIdentity,
-        },
-        signal,
-      );
-    }),
+    resolveAutomaticOutcome(
+      args,
+      contract,
+      await args.db.transaction(async (tx) => {
+        return await resolveLockedAutomatic(
+          tx,
+          args,
+          {
+            contract,
+            accessName,
+            initialAccessEncrypted: initialAccess?.encryptedValue,
+            initialBindingCreatedAt: initialBinding.createdAt,
+            initialBindingRowVersion: initialBinding.rowVersion,
+            accountIdentity,
+          },
+          signal,
+        );
+      }),
+      signal,
+    ),
     signal,
   );
   if (!resolved.ok) {
