@@ -11,6 +11,26 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.986.1](https://github.com/okou-ai/okou/compare/app-v0.986.0...app-v0.986.1) (2026-09-29)
+
+
+### Bug Fixes
+
+* **app:** cap five-hour subscription availability at weekly limit ([#37371](https://github.com/okou-ai/okou/issues/37371)) ([cdf68fa](https://github.com/okou-ai/okou/commit/cdf68fa2f8ac44c22aa2f4d9256e5895cc506baa))
+
+
+### Refactoring
+
+* remove retired terra and okou model variants ([#37368](https://github.com/okou-ai/okou/issues/37368)) ([e9a6e7a](https://github.com/okou-ai/okou/commit/e9a6e7a92cf3a408831a392afbc882e714037e22))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.529.1
+    * @okouai/core bumped to 8.722.1
+
 ## [0.986.0](https://github.com/okou-ai/okou/compare/app-v0.985.0...app-v0.986.0) (2026-09-29)
 
 

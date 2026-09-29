@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.214.5](https://github.com/okou-ai/okou/compare/runner-rs-v0.214.4...runner-rs-v0.214.5) (2026-09-29)
+
+
+### Refactoring
+
+* remove retired terra and okou model variants ([#37368](https://github.com/okou-ai/okou/issues/37368)) ([e9a6e7a](https://github.com/okou-ai/okou/commit/e9a6e7a92cf3a408831a392afbc882e714037e22))
+
 ## [0.214.4](https://github.com/okou-ai/okou/compare/runner-rs-v0.214.3...runner-rs-v0.214.4) (2026-09-29)
 
 ## [0.214.3](https://github.com/okou-ai/okou/compare/runner-rs-v0.214.2...runner-rs-v0.214.3) (2026-09-29)

@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.722.1](https://github.com/okou-ai/okou/compare/core-v8.722.0...core-v8.722.1) (2026-09-29)
+
+
+### Refactoring
+
+* remove retired terra and okou model variants ([#37368](https://github.com/okou-ai/okou/issues/37368)) ([e9a6e7a](https://github.com/okou-ai/okou/commit/e9a6e7a92cf3a408831a392afbc882e714037e22))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.529.1
+
 ## [8.722.0](https://github.com/okou-ai/okou/compare/core-v8.721.0...core-v8.722.0) (2026-09-29)
 
 

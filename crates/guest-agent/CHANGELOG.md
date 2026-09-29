@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.101.1](https://github.com/okou-ai/okou/compare/guest-agent-v0.101.0...guest-agent-v0.101.1) (2026-09-29)
+
+
+### Refactoring
+
+* remove retired terra and okou model variants ([#37368](https://github.com/okou-ai/okou/issues/37368)) ([e9a6e7a](https://github.com/okou-ai/okou/commit/e9a6e7a92cf3a408831a392afbc882e714037e22))
+
 ## [0.101.0](https://github.com/okou-ai/okou/compare/guest-agent-v0.100.0...guest-agent-v0.101.0) (2026-09-29)
 
 

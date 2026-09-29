@@ -8,6 +8,28 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.698.1](https://github.com/okou-ai/okou/compare/api-v1.698.0...api-v1.698.1) (2026-09-29)
+
+
+### Bug Fixes
+
+* **api:** scope integration model commands to routed chat threads ([#37366](https://github.com/okou-ai/okou/issues/37366)) ([2135875](https://github.com/okou-ai/okou/commit/213587572862c9987e7d0c040cb0eab8282ff926))
+
+
+### Refactoring
+
+* remove retired terra and okou model variants ([#37368](https://github.com/okou-ai/okou/issues/37368)) ([e9a6e7a](https://github.com/okou-ai/okou/commit/e9a6e7a92cf3a408831a392afbc882e714037e22))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.529.1
+    * @okouai/core bumped to 8.722.1
+    * @okouai/db bumped to 1.313.6
+    * @okouai/pi-agent-runtime bumped to 1.43.1
+
 ## [1.698.0](https://github.com/okou-ai/okou/compare/api-v1.697.0...api-v1.698.0) (2026-09-29)
 
 
