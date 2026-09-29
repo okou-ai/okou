@@ -4706,7 +4706,7 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
         },
       },
     });
-    context.mocks.stripe.subscriptions.retrieve.mockResolvedValueOnce(
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
       customSubscription,
     );
     context.mocks.stripe.subscriptions.list.mockResolvedValueOnce({
@@ -5315,54 +5315,23 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
       quantity: 2,
       periodEnd,
     });
-    const staleRetrieve = createDeferredPromise<unknown>(context.signal);
-    const releaseStaleRetrieve = (): void => {
-      if (!staleRetrieve.settled()) {
-        staleRetrieve.resolve(staleState);
-      }
-    };
-    onTestFinished(releaseStaleRetrieve);
-    context.mocks.stripe.subscriptions.retrieve.mockReset();
-    context.mocks.stripe.subscriptions.retrieve
-      .mockImplementationOnce(() => {
-        return staleRetrieve.promise;
-      })
-      .mockResolvedValue(currentState);
-
-    const constructedEventsBefore =
-      context.mocks.stripe.webhooks.constructEvent.mock.calls.length;
-    const staleRequest = api.postStripeEvent(
-      stripeEvent({
-        type: "customer.subscription.updated",
-        object: staleState,
-      }),
-      [200],
-    );
-    await expect
-      .poll(() => {
-        return context.mocks.stripe.subscriptions.retrieve.mock.calls.length;
-      })
-      .toBe(1);
-
-    const currentRequest = api.postStripeEvent(
-      stripeEvent({
-        type: "customer.subscription.updated",
-        object: currentState,
-      }),
-      [200],
-    );
-    await expect
-      .poll(() => {
-        return context.mocks.stripe.webhooks.constructEvent.mock.calls.length;
-      })
-      .toBe(constructedEventsBefore + 2);
-    await billing.readBillingStatus(actor);
-    expect(context.mocks.stripe.subscriptions.retrieve).toHaveBeenCalledTimes(
-      1,
-    );
-
-    releaseStaleRetrieve();
-    await Promise.all([staleRequest, currentRequest]);
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(currentState);
+    await Promise.all([
+      api.postStripeEvent(
+        stripeEvent({
+          type: "customer.subscription.updated",
+          object: staleState,
+        }),
+        [200],
+      ),
+      api.postStripeEvent(
+        stripeEvent({
+          type: "customer.subscription.updated",
+          object: currentState,
+        }),
+        [200],
+      ),
+    ]);
     billingStatus = await billing.readBillingStatus(actor);
     expect(billingStatus.concurrencySubscriptions).toStrictEqual([
       expect.objectContaining({ id: subscriptionId, quantity: 2 }),

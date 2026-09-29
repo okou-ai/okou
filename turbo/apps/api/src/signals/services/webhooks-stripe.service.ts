@@ -14,6 +14,7 @@ import { command } from "ccstate";
 import { and, eq, gt, inArray, isNull, lte, or, sql } from "drizzle-orm";
 
 import { env } from "../../lib/env";
+import { pgTextDecoder } from "../../lib/db-structured-result";
 import { logger } from "../../lib/log";
 import { now, nowDate, timestampWithoutTimeZone } from "../../lib/time";
 import { clerk$ } from "../external/clerk";
@@ -86,6 +87,8 @@ import {
   handleUsagePackMigrationInvoicePaid,
   handleUsagePackMigrationSubscriptionUpdated,
 } from "./usage-pack-subscription-migration.service";
+
+import { concurrencySubscriptionUpdatedAt } from "./concurrency-subscription-write";
 
 const L = logger("WebhookStripe");
 
@@ -359,6 +362,7 @@ interface ConcurrencySubscriptionState {
   readonly subscriptionStatus: string;
   readonly currentPeriodEnd: Date | null;
   readonly cancelAtPeriodEnd: boolean;
+  readonly hasSchedule: boolean;
 }
 
 function concurrencySubscriptionState(
@@ -375,6 +379,8 @@ function concurrencySubscriptionState(
     slots,
     subscriptionStatus: subscription.status,
     currentPeriodEnd: concurrencySubscriptionPeriodEnd(subscription),
+    hasSchedule:
+      subscription.schedule !== null && subscription.schedule !== undefined,
     cancelAtPeriodEnd:
       subscription.cancel_at_period_end &&
       knownBillingPlanPriceItem(subscription.items.data) === undefined,
@@ -384,15 +390,25 @@ function concurrencySubscriptionState(
 async function retrieveConcurrencySubscriptionState(
   subscriptionId: string,
 ): Promise<ConcurrencySubscriptionState | null> {
-  const subscription =
-    await getStripeClient().subscriptions.retrieve(subscriptionId);
-  return concurrencySubscriptionState(subscription);
+  const result = await settle(
+    getStripeClient().subscriptions.retrieve(subscriptionId),
+  );
+  if (!result.ok) {
+    if (isStripeResourceMissingError(result.error)) {
+      return null;
+    }
+    throw result.error;
+  }
+  return concurrencySubscriptionState(result.value);
 }
 
 async function lockConcurrencySubscriptionState(
   tx: WriteTx,
   subscriptionId: string,
 ): Promise<void> {
+  // Outgoing webhooks publish unconditional projections. Release 1 keeps their
+  // boundary while all projection writers adopt conditional publication. The
+  // API drain and compatible rollback targets, not a delay, gate its removal.
   const lockKey = `stripe_concurrency_subscription:${subscriptionId}`;
   await tx.execute(
     // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
@@ -2853,66 +2869,6 @@ function concurrencyInvoiceEntitlementValue(args: {
   };
 }
 
-async function upsertConcurrencySubscriptionState(
-  tx: WriteTx,
-  args: {
-    readonly orgId: string;
-    readonly subscriptionId: string;
-    readonly state: ConcurrencySubscriptionState;
-  },
-): Promise<void> {
-  const updatedAt = nowDate();
-  await tx
-    .insert(orgConcurrencySubscriptions)
-    .values({
-      orgId: args.orgId,
-      stripeSubscriptionId: args.subscriptionId,
-      stripePriceId: args.state.stripePriceId,
-      slots: args.state.slots,
-      subscriptionStatus: args.state.subscriptionStatus,
-      currentPeriodEnd: args.state.currentPeriodEnd,
-      cancelAtPeriodEnd: args.state.cancelAtPeriodEnd,
-      updatedAt,
-    })
-    .onConflictDoUpdate({
-      target: orgConcurrencySubscriptions.stripeSubscriptionId,
-      set: {
-        orgId: args.orgId,
-        stripePriceId: args.state.stripePriceId,
-        slots: args.state.slots,
-        subscriptionStatus: args.state.subscriptionStatus,
-        currentPeriodEnd: args.state.currentPeriodEnd,
-        cancelAtPeriodEnd: args.state.cancelAtPeriodEnd,
-        updatedAt,
-      },
-    });
-}
-
-function concurrencyInvoiceSubscriptionState(
-  values: readonly ConcurrencyInvoiceEntitlementValue[],
-): ConcurrencySubscriptionState | null {
-  const activeValues = values.filter((value) => {
-    return value.expiresAt > nowDate();
-  });
-  const currentValues = activeValues.length > 0 ? activeValues : values;
-  const firstValue = currentValues[0];
-  if (!firstValue) {
-    return null;
-  }
-
-  return {
-    stripePriceId: firstValue.stripePriceId,
-    slots: currentValues.reduce((sum, value) => {
-      return sum + value.slots;
-    }, 0),
-    subscriptionStatus: "active",
-    currentPeriodEnd: currentValues.reduce((latest, value) => {
-      return value.expiresAt > latest ? value.expiresAt : latest;
-    }, firstValue.expiresAt),
-    cancelAtPeriodEnd: false,
-  };
-}
-
 async function handleConcurrencyInvoicePaid(
   db: Db,
   getClerk: ClerkClientProvider,
@@ -2977,16 +2933,50 @@ async function handleConcurrencyInvoicePaid(
     const [existing] = await tx
       .select({
         subscriptionId: orgConcurrencySubscriptions.stripeSubscriptionId,
+        updatedAtText:
+          sql`${orgConcurrencySubscriptions.updatedAt}::text`.mapWith(
+            pgTextDecoder,
+          ),
       })
       .from(orgConcurrencySubscriptions)
       .where(
         eq(orgConcurrencySubscriptions.stripeSubscriptionId, subscriptionId),
       )
       .limit(1);
-    const state = existing
-      ? await retrieveConcurrencySubscriptionState(subscriptionId)
-      : concurrencyInvoiceSubscriptionState(values);
+    // Paid invoice lines are immutable evidence, not the current renewable
+    // subscription state. Delayed first invoices must not revive canceled plans.
+    const state = await retrieveConcurrencySubscriptionState(subscriptionId);
     if (!state) {
+      if (existing) {
+        const [retired] = await tx
+          .update(orgConcurrencySubscriptions)
+          .set({
+            subscriptionStatus: "canceled",
+            cancelAtPeriodEnd: false,
+            scheduledSlots: null,
+            scheduledChangeAt: null,
+            currentPeriodEnd: nowDate(),
+            updatedAt: concurrencySubscriptionUpdatedAt(nowDate()),
+          })
+          .where(
+            and(
+              eq(
+                orgConcurrencySubscriptions.stripeSubscriptionId,
+                subscriptionId,
+              ),
+              eq(
+                orgConcurrencySubscriptions.updatedAt,
+                sql`${existing.updatedAtText}::timestamp`,
+              ),
+            ),
+          )
+          .returning({ id: orgConcurrencySubscriptions.stripeSubscriptionId });
+        if (!retired) {
+          throw new Error(
+            "Concurrency subscription changed during invoice reconciliation",
+          );
+        }
+      }
       return null;
     }
     const insertedRows =
@@ -2997,11 +2987,52 @@ async function handleConcurrencyInvoicePaid(
             .values(values)
             .onConflictDoNothing()
             .returning({ id: orgConcurrencyEntitlements.id });
-    await upsertConcurrencySubscriptionState(tx, {
+    const projection = {
       orgId: org.orgId,
-      subscriptionId,
-      state,
-    });
+      stripePriceId: state.stripePriceId,
+      slots: state.slots,
+      subscriptionStatus: state.subscriptionStatus,
+      currentPeriodEnd: state.currentPeriodEnd,
+      cancelAtPeriodEnd: state.cancelAtPeriodEnd,
+    };
+    const written = existing
+      ? await tx
+          .update(orgConcurrencySubscriptions)
+          .set({
+            ...projection,
+            updatedAt: concurrencySubscriptionUpdatedAt(nowDate()),
+          })
+          .where(
+            and(
+              eq(
+                orgConcurrencySubscriptions.stripeSubscriptionId,
+                subscriptionId,
+              ),
+              eq(
+                orgConcurrencySubscriptions.updatedAt,
+                sql`${existing.updatedAtText}::timestamp`,
+              ),
+            ),
+          )
+          .returning({ id: orgConcurrencySubscriptions.stripeSubscriptionId })
+      : await tx
+          .insert(orgConcurrencySubscriptions)
+          .values({
+            ...projection,
+            stripeSubscriptionId: subscriptionId,
+            updatedAt: nowDate(),
+          })
+          .onConflictDoNothing({
+            target: orgConcurrencySubscriptions.stripeSubscriptionId,
+          })
+          .returning({ id: orgConcurrencySubscriptions.stripeSubscriptionId });
+    if (written.length === 0) {
+      // Roll back the related invoice inserts and let Stripe retry the entire
+      // delivery against current state. A stale result is never a success.
+      throw new Error(
+        "Concurrency subscription changed during invoice reconciliation",
+      );
+    }
     return { insertedLines: insertedRows.length, state };
   });
 
@@ -4105,9 +4136,12 @@ async function handleConcurrencySubscriptionUpdated(
     const [existing] = await tx
       .select({
         orgId: orgConcurrencySubscriptions.orgId,
-        slots: orgConcurrencySubscriptions.slots,
         cancelAtPeriodEnd: orgConcurrencySubscriptions.cancelAtPeriodEnd,
         scheduledSlots: orgConcurrencySubscriptions.scheduledSlots,
+        updatedAtText:
+          sql`${orgConcurrencySubscriptions.updatedAt}::text`.mapWith(
+            pgTextDecoder,
+          ),
       })
       .from(orgConcurrencySubscriptions)
       .where(
@@ -4118,11 +4152,10 @@ async function handleConcurrencySubscriptionUpdated(
       return [];
     }
 
-    const eventState = concurrencySubscriptionState(subscription);
-    const state =
-      eventState?.slots === existing.slots
-        ? eventState
-        : await retrieveConcurrencySubscriptionState(subscription.id);
+    // An equal quantity does not make an event current: cancellation, status,
+    // renewal and schedule can change independently. Read Stripe for every
+    // projection and publish only against the database snapshot it started from.
+    const state = await retrieveConcurrencySubscriptionState(subscription.id);
     if (!state) {
       const rows = await tx
         .update(orgConcurrencySubscriptions)
@@ -4132,12 +4165,26 @@ async function handleConcurrencySubscriptionUpdated(
           scheduledSlots: null,
           scheduledChangeAt: null,
           currentPeriodEnd: nowDate(),
-          updatedAt: nowDate(),
+          updatedAt: concurrencySubscriptionUpdatedAt(nowDate()),
         })
         .where(
-          eq(orgConcurrencySubscriptions.stripeSubscriptionId, subscription.id),
+          and(
+            eq(
+              orgConcurrencySubscriptions.stripeSubscriptionId,
+              subscription.id,
+            ),
+            eq(
+              orgConcurrencySubscriptions.updatedAt,
+              sql`${existing.updatedAtText}::timestamp`,
+            ),
+          ),
         )
         .returning({ orgId: orgConcurrencySubscriptions.orgId });
+      if (rows.length === 0) {
+        throw new Error(
+          "Concurrency subscription changed during Stripe reconciliation",
+        );
+      }
       return rows.map((row) => {
         return row.orgId;
       });
@@ -4152,19 +4199,28 @@ async function handleConcurrencySubscriptionUpdated(
         currentPeriodEnd: state.currentPeriodEnd,
         cancelAtPeriodEnd:
           state.cancelAtPeriodEnd ||
-          (existing.cancelAtPeriodEnd &&
-            subscription.schedule !== null &&
-            subscription.schedule !== undefined),
+          (existing.cancelAtPeriodEnd && state.hasSchedule),
         ...(existing.scheduledSlots === state.slots
           ? { scheduledSlots: null, scheduledChangeAt: null }
           : {}),
-        updatedAt: nowDate(),
+        updatedAt: concurrencySubscriptionUpdatedAt(nowDate()),
       })
       .where(
-        eq(orgConcurrencySubscriptions.stripeSubscriptionId, subscription.id),
+        and(
+          eq(orgConcurrencySubscriptions.stripeSubscriptionId, subscription.id),
+          eq(
+            orgConcurrencySubscriptions.updatedAt,
+            sql`${existing.updatedAtText}::timestamp`,
+          ),
+        ),
       )
       .returning({ orgId: orgConcurrencySubscriptions.orgId });
 
+    if (rows.length === 0) {
+      throw new Error(
+        "Concurrency subscription changed during Stripe reconciliation",
+      );
+    }
     return rows.map((row) => {
       return row.orgId;
     });
@@ -4720,7 +4776,7 @@ async function handleSubscriptionDeletedLegacy(
       subscriptionStatus: "canceled",
       cancelAtPeriodEnd: false,
       currentPeriodEnd: nowDate(),
-      updatedAt: nowDate(),
+      updatedAt: concurrencySubscriptionUpdatedAt(nowDate()),
     })
     .where(
       eq(orgConcurrencySubscriptions.stripeSubscriptionId, subscription.id),

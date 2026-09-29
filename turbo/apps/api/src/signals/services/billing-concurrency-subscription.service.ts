@@ -2,6 +2,8 @@ import { retireMarketingMetadata } from "../../lib/marketing-metadata";
 import { randomUUID } from "node:crypto";
 
 import { command } from "ccstate";
+
+import { concurrencySubscriptionUpdatedAt } from "./concurrency-subscription-write";
 import type {
   ConcurrencySubscriptionChangePreviewResponse,
   ConcurrencySubscriptionChangeResponse,
@@ -199,7 +201,7 @@ async function writeScheduledConcurrencyChange(
     .set({
       scheduledSlots: args.quantity,
       scheduledChangeAt: args.effectiveAt ? new Date(args.effectiveAt) : null,
-      updatedAt: nowDate(),
+      updatedAt: concurrencySubscriptionUpdatedAt(nowDate()),
     })
     .where(
       and(
@@ -2291,7 +2293,7 @@ export const cancelConcurrencySubscription$ = command(
         cancelAtPeriodEnd: true,
         scheduledSlots: null,
         scheduledChangeAt: null,
-        updatedAt: nowDate(),
+        updatedAt: concurrencySubscriptionUpdatedAt(nowDate()),
       })
       .where(
         and(
@@ -2460,7 +2462,7 @@ export const restoreConcurrencySubscription$ = command(
         cancelAtPeriodEnd: false,
         scheduledSlots: null,
         scheduledChangeAt: null,
-        updatedAt: nowDate(),
+        updatedAt: concurrencySubscriptionUpdatedAt(nowDate()),
       })
       .where(
         and(
