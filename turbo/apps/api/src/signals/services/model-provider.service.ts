@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { command, computed, type Computed } from "ccstate";
 import {
   getAuthMethodsForType,
@@ -16,7 +17,6 @@ import {
   type ModelProviderWriteType,
 } from "@okouai/api-contracts/contracts/model-providers";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
-import { upsertBuiltInNoSecretModelProviderIdentity } from "@okouai/db/operations/model-provider-built-in-identity";
 import { modelProviders as modelProvidersTable } from "@okouai/db/schema/model-provider";
 import { modelProviderConnections } from "@okouai/db/schema/model-provider-gateway";
 import { modelProviderAccounts } from "@okouai/db/schema/model-provider-account";
@@ -1094,26 +1094,43 @@ export const upsertOrgNoSecretModelProvider$ = command(
       selectedModel: args.selectedModel,
     });
 
-    const result = await upsertBuiltInNoSecretModelProviderIdentity(
-      writeDb,
-      {
-        orgId: args.orgId,
+    const proposedId = randomUUID();
+    const [provider] = await writeDb
+      .insert(modelProvidersTable)
+      .values({
+        id: proposedId,
+        type: "built-in",
+        userId: ORG_SENTINEL_USER_ID,
+        isDefault: false,
         selectedModel: args.selectedModel ?? null,
-        updatedAt: nowDate(),
-      },
-      signal,
-    );
+        orgId: args.orgId,
+      })
+      .onConflictDoUpdate({
+        target: [
+          modelProvidersTable.orgId,
+          modelProvidersTable.userId,
+          modelProvidersTable.type,
+        ],
+        set: {
+          selectedModel: args.selectedModel ?? null,
+          updatedAt: nowDate(),
+        },
+      })
+      .returning();
     signal.throwIfAborted();
+    if (!provider) {
+      throw new Error("Expected no-secret model provider upsert to return row");
+    }
 
     await publishModelPoliciesChangedForOrgSafely(args.orgId);
     signal.throwIfAborted();
     return {
       provider: toModelProviderInfoFromRow({
-        provider: result.provider,
+        provider,
         userId: ORG_SENTINEL_USER_ID,
         type: args.type,
       }),
-      created: result.created,
+      created: provider.id === proposedId,
     };
   },
 );
