@@ -617,6 +617,136 @@ test("Deleting the default built-in model promotes the remaining route", async (
   ).toHaveTextContent("DeepSeek V4 Flash");
 });
 
+test("Deleting one legacy model preserves other restricted routes", async () => {
+  mockAdminOrg();
+  mockBillingCapabilities({
+    supportByok: false,
+    restrictedBuiltInModels: true,
+  });
+  context.mocks.data.orgModelProviders([]);
+  context.mocks.data.orgModelPolicies([
+    builtInPolicy(
+      "00000000-0000-4000-a000-000000000211",
+      "claude-fable-5-1",
+      "Claude Fable 5.1",
+      false,
+    ),
+    builtInPolicy(
+      "00000000-0000-4000-a000-000000000212",
+      "gpt-6-astra",
+      "GPT 6 Astra",
+      false,
+    ),
+    builtInPolicy(
+      "00000000-0000-4000-a000-000000000213",
+      "gpt-5.6-luna",
+      "GPT 5.6 Luna",
+      true,
+    ),
+  ]);
+  mockGatewayConnectionLifecycle([]);
+  await openProvidersTab();
+
+  const row = await screen.findByTestId(
+    "org-model-policy-row-claude-fable-5-1",
+  );
+  click(within(row).getByLabelText("Delete model Claude Fable 5.1"));
+  await waitFor(() => {
+    expect(
+      screen.queryByTestId("org-model-policy-row-claude-fable-5-1"),
+    ).not.toBeInTheDocument();
+  });
+  expect(
+    screen.getByTestId("org-model-policy-row-gpt-6-astra"),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByTestId("org-model-policy-row-gpt-5.6-luna"),
+  ).toBeInTheDocument();
+});
+
+test("Deleting a default picks an allowed fallback without removing restricted routes", async () => {
+  mockAdminOrg();
+  mockBillingCapabilities({
+    supportByok: false,
+    restrictedBuiltInModels: true,
+  });
+  context.mocks.data.orgModelProviders([]);
+  context.mocks.data.orgModelPolicies([
+    builtInPolicy(
+      "00000000-0000-4000-a000-000000000211",
+      "claude-fable-5-1",
+      "Claude Fable 5.1",
+      false,
+    ),
+    builtInPolicy(
+      "00000000-0000-4000-a000-000000000212",
+      "gpt-5.6-luna",
+      "GPT 5.6 Luna",
+      true,
+    ),
+    builtInPolicy(
+      "00000000-0000-4000-a000-000000000213",
+      "deepseek-v4-flash",
+      "DeepSeek V4 Flash",
+      false,
+    ),
+  ]);
+  mockGatewayConnectionLifecycle([]);
+  await openProvidersTab();
+
+  const row = await screen.findByTestId("org-model-policy-row-gpt-5.6-luna");
+  click(within(row).getByLabelText("Delete model GPT 5.6 Luna"));
+  await waitFor(() => {
+    expect(
+      screen.queryByTestId("org-model-policy-row-gpt-5.6-luna"),
+    ).not.toBeInTheDocument();
+  });
+  expect(
+    screen.getByTestId("org-model-policy-row-claude-fable-5-1"),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByRole("combobox", { name: "Default model" }),
+  ).toHaveTextContent("DeepSeek V4 Flash");
+});
+
+test("Prevent deleting the only plan-eligible default route", async () => {
+  mockAdminOrg();
+  mockBillingCapabilities({
+    supportByok: false,
+    restrictedBuiltInModels: true,
+  });
+  context.mocks.data.orgModelProviders([]);
+  context.mocks.data.orgModelPolicies([
+    builtInPolicy(
+      "00000000-0000-4000-a000-000000000211",
+      "claude-fable-5-1",
+      "Claude Fable 5.1",
+      false,
+    ),
+    builtInPolicy(
+      "00000000-0000-4000-a000-000000000212",
+      "gpt-5.6-luna",
+      "GPT 5.6 Luna",
+      true,
+    ),
+  ]);
+  mockGatewayConnectionLifecycle([]);
+  await openProvidersTab();
+
+  const defaultRow = await screen.findByTestId(
+    "org-model-policy-row-gpt-5.6-luna",
+  );
+  expect(
+    within(defaultRow).getByLabelText("Delete model GPT 5.6 Luna"),
+  ).toBeDisabled();
+  const restrictedRow = screen.getByTestId(
+    "org-model-policy-row-claude-fable-5-1",
+  );
+  expect(
+    within(restrictedRow).getByLabelText("Delete model Claude Fable 5.1"),
+  ).toBeEnabled();
+});
+
 test("Keep model configuration for a selected workspace API key", async () => {
   mockApiKeyModelRouteStory();
   await openProvidersTab();

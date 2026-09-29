@@ -222,9 +222,27 @@ function upsertPolicy(
   return updates;
 }
 
+function canDeletePolicy(
+  policies: OrgModelPolicy[],
+  policy: OrgModelPolicy,
+  modelCapabilities: ModelPlanCapabilities,
+): boolean {
+  return (
+    policies.length > 1 &&
+    (!policy.isDefault ||
+      policies.some((candidate) => {
+        return (
+          candidate.model !== policy.model &&
+          modelPolicyAllowedForPlan(candidate, modelCapabilities)
+        );
+      }))
+  );
+}
+
 function removePolicy(
   policies: OrgModelPolicy[],
   model: SupportedRunModel,
+  modelCapabilities: ModelPlanCapabilities,
 ): UpdateOrgModelPolicy[] {
   const removed = policies.find((policy) => {
     return policy.model === model;
@@ -239,8 +257,11 @@ function removePolicy(
     }) &&
     updates[0]
   ) {
-    return updates.map((policy, index) => {
-      return { ...policy, isDefault: index === 0 };
+    const fallback = updates.find((policy) => {
+      return modelPolicyAllowedForPlan(policy, modelCapabilities);
+    });
+    return updates.map((policy) => {
+      return { ...policy, isDefault: policy.model === fallback?.model };
     });
   }
   return updates;
@@ -1834,12 +1855,17 @@ export function OrgModelPoliciesSection() {
     return isAddableBuiltInModel(model);
   });
 
-  const submit = (next: UpdateOrgModelPolicy[]) => {
+  const submit = (
+    next: UpdateOrgModelPolicy[],
+    preserveExistingRoutes = false,
+  ) => {
     detach(
       (async () => {
         await updatePolicies(
           {
-            policies: filterPolicyUpdatesForPlan(next, modelCapabilities),
+            policies: preserveExistingRoutes
+              ? next
+              : filterPolicyUpdatesForPlan(next, modelCapabilities),
             revision: data.revision,
           },
           pageSignal,
@@ -1872,10 +1898,12 @@ export function OrgModelPoliciesSection() {
     openEditModelDialog(policy);
   };
   const handleDeletePolicy = (policy: OrgModelPolicy) => {
-    if (saving || policies.length <= 1) {
+    if (saving || !canDeletePolicy(policies, policy, modelCapabilities)) {
       return;
     }
-    submit(removePolicy(policies, policy.model));
+    // Unchanged existing routes remain valid on a restricted plan. Do not
+    // drop other models when deleting just this policy.
+    submit(removePolicy(policies, policy.model, modelCapabilities), true);
   };
 
   return (
@@ -1934,7 +1962,11 @@ export function OrgModelPoliciesSection() {
                   providers={providers}
                   connections={connections}
                   disabled={saving}
-                  canDelete={policies.length > 1}
+                  canDelete={canDeletePolicy(
+                    policies,
+                    policy,
+                    modelCapabilities,
+                  )}
                   canEdit={canManageModelPolicies}
                   onEdit={handleEditPolicy}
                   onDelete={handleDeletePolicy}
