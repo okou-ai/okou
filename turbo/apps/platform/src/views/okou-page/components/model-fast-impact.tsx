@@ -9,86 +9,35 @@ import { useTranslation } from "react-i18next";
 import { formatLocalizedNumber } from "../../../i18n/format.ts";
 
 /**
- * Fast's speed and cost on the policy's route. Every multiplier comes from the
- * model's run options, so a model whose Fast tier costs or gains differently is
- * configured there rather than here.
+ * Fast's cost on the policy's route. Multipliers come from the model's run
+ * options so the displayed cost stays aligned with the effective provider.
  */
-export function ModelFastImpact({
-  policy,
-  compact = false,
-}: {
-  policy: OrgModelPolicy;
-  compact?: boolean;
-}) {
+export function ModelFastImpact({ policy }: { policy: OrgModelPolicy }) {
   const { t } = useTranslation();
   const route = getMemberModelPolicyRoute(policy);
   const builtIn = isBuiltInModelProviderType(route.providerType);
   const provider = route.runtimeProviderType;
   const fast = getModelRunOptions(policy.model).fast;
-  if (compact && builtIn && fast) {
-    return t(
-      ($) => {
-        return $.settings.models.picker.fastImpact.compactSummary;
-      },
-      { multiplier: formatLocalizedNumber(fast.builtInCreditMultiplier) },
-    );
-  }
-  let speed = t(($) => {
-    return $.settings.models.picker.fastImpact.providerSpeed;
-  });
-  if (
-    provider === "codex-oauth-token" &&
-    fast?.chatGptSpeedMultiplier !== undefined
-  ) {
-    speed = t(
-      ($) => {
-        return $.settings.models.picker.fastImpact.modelSpeed;
-      },
-      { multiplier: formatLocalizedNumber(fast.chatGptSpeedMultiplier) },
-    );
-  } else if (provider === "openai-api-key") {
-    speed =
-      fast?.apiSpeedMultiplier === undefined
-        ? t(($) => {
-            return $.settings.models.picker.fastImpact.fasterResponses;
-          })
-        : t(
-            ($) => {
-              return $.settings.models.picker.fastImpact.apiSpeed;
-            },
-            { multiplier: formatLocalizedNumber(fast.apiSpeedMultiplier) },
-          );
+  if (!fast) {
+    return null;
   }
 
-  let usage = t(($) => {
-    return $.settings.models.picker.fastImpact.providerUsage;
-  });
-  if (fast && builtIn) {
-    usage = t(
-      ($) => {
-        return $.settings.models.picker.fastImpact.okouCredits;
-      },
-      { multiplier: formatLocalizedNumber(fast.builtInCreditMultiplier) },
-    );
-  } else if (fast && provider === "codex-oauth-token") {
-    usage = t(
-      ($) => {
-        return $.settings.models.picker.fastImpact.chatGptUsage;
-      },
-      { multiplier: formatLocalizedNumber(fast.chatGptUsageMultiplier) },
-    );
-  } else if (fast && provider === "openai-api-key") {
-    usage = t(
-      ($) => {
-        return $.settings.models.picker.fastImpact.apiCost;
-      },
-      { multiplier: formatLocalizedNumber(fast.apiCostMultiplier) },
-    );
+  let multiplier: number;
+  if (builtIn) {
+    multiplier = fast.builtInCreditMultiplier;
+  } else if (provider === "codex-oauth-token") {
+    multiplier = fast.chatGptUsageMultiplier;
+  } else if (provider === "openai-api-key") {
+    multiplier = fast.apiCostMultiplier;
+  } else {
+    return t(($) => {
+      return $.settings.models.picker.fastImpact.providerUsage;
+    });
   }
   return t(
     ($) => {
-      return $.settings.models.picker.fastImpact.summary;
+      return $.settings.models.picker.fastImpact.creditCost;
     },
-    { speed, usage },
+    { multiplier: formatLocalizedNumber(multiplier) },
   );
 }

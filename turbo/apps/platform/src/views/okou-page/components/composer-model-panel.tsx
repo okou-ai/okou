@@ -178,9 +178,7 @@ function ComposerModelPanelBody({
           onChange={onChange}
           disabled={!configurable}
           fastImpact={
-            fastAvailable ? (
-              <ModelFastImpact policy={selectedPolicy} compact />
-            ) : null
+            fastAvailable ? <ModelFastImpact policy={selectedPolicy} /> : null
           }
         />
       )}

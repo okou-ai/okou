@@ -4940,16 +4940,8 @@
         },
         "fast": "빠름",
         "fastImpact": {
-          "apiCost": "API 토큰 비용 {{multiplier}}×",
-          "apiSpeed": "모델 속도 최대 {{multiplier}}×",
-          "chatGptUsage": "ChatGPT 사용량 {{multiplier}}×",
-          "compactSummary": "더 빠른 응답 · {{multiplier}}× 크레딧",
-          "fasterResponses": "더 빠른 모델 응답",
-          "modelSpeed": "모델 속도 {{multiplier}}×",
-          "okouCredits": "Okou 모델 크레딧 사용량 {{multiplier}}×",
-          "providerSpeed": "속도는 제공업체에 따라 다름",
-          "providerUsage": "사용량은 제공업체에 따라 다름",
-          "summary": "{{speed}} · {{usage}}"
+          "creditCost": "크레딧 비용 {{multiplier}}×",
+          "providerUsage": "사용량은 제공업체에 따라 다름"
         },
         "fastMode": "빠른 모드",
         "generationPriceTiers": {

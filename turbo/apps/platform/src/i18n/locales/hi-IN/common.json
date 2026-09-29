@@ -4958,16 +4958,8 @@
         },
         "fast": "तेज़",
         "fastImpact": {
-          "apiCost": "{{multiplier}}× API टोकन लागत",
-          "apiSpeed": "अधिकतम {{multiplier}}× मॉडल गति",
-          "chatGptUsage": "{{multiplier}}× ChatGPT उपयोग",
-          "compactSummary": "तेज़ जवाब · {{multiplier}}× क्रेडिट",
-          "fasterResponses": "मॉडल के तेज़ जवाब",
-          "modelSpeed": "{{multiplier}}× मॉडल गति",
-          "okouCredits": "{{multiplier}}× Okou मॉडल क्रेडिट",
-          "providerSpeed": "गति प्रदाता पर निर्भर है",
-          "providerUsage": "उपयोग प्रदाता पर निर्भर है",
-          "summary": "{{speed}} · {{usage}}"
+          "creditCost": "{{multiplier}}× क्रेडिट लागत",
+          "providerUsage": "उपयोग प्रदाता पर निर्भर है"
         },
         "fastMode": "तेज़ मोड",
         "generationPriceTiers": {
