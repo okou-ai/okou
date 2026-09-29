@@ -1,3 +1,5 @@
+import { prepareUsageGrantPrefix$ } from "./usage-grant-prefix-prepare.service";
+import { usageGrossByUser } from "./usage-grant-prefix";
 import { priceUsageEvents } from "./credit-usage-pricing";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { usagePricing } from "@okouai/db/schema/usage-pricing";
@@ -82,20 +84,28 @@ export const prepareUsageSettlementBatch$ = command(
     const records = events.map(({ event }) => {
       return event;
     });
+    const priced = priceUsageEvents(
+      records,
+      prices,
+      args.orgId,
+      get(usagePricingResolution$),
+      false,
+    );
+    const social = prepareSocialSettlement(job);
+    const grants = await set(
+      prepareUsageGrantPrefix$,
+      { orgId: args.orgId, grossByUser: usageGrossByUser(priced, social) },
+      signal,
+    );
     return {
       events,
-      social: prepareSocialSettlement(job),
+      social,
       pricing,
       pricingKeys,
       prices,
       records,
-      priced: priceUsageEvents(
-        records,
-        prices,
-        args.orgId,
-        get(usagePricingResolution$),
-        false,
-      ),
+      priced,
+      grants,
     };
   },
 );

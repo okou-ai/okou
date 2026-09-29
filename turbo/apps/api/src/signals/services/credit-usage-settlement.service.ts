@@ -1,3 +1,9 @@
+import {
+  preparedMemberGrantsQuery,
+  requiredUsageGrantPrefix,
+  unseenGrantPrefixQuery,
+  requireCurrentGrantPrefix,
+} from "./usage-grant-prefix";
 import { settle } from "../utils";
 import { prepareUsageSettlementBatch$ } from "./credit-usage-batch-prepare.service";
 import {
@@ -37,8 +43,7 @@ import {
   emptySettlementReceipt,
   hasNoStandaloneUsage,
   planUsageCharges,
-  settledEventValues,
-  memberGrantsQuery,
+  settledEventsSql,
   planMemberGrantDeductions,
   memberGrantDeductionsSql,
   expiryLotsQuery,
@@ -84,7 +89,6 @@ const commitUsageBatch$ = command(
     const startedAt = performance.now();
     const work = { ...initialSettlementObservation() };
     const result = await db.transaction(async (tx) => {
-      const at = nowDate();
       await tx.execute(usageEventCompactionLockSql("shared"));
       work.lockWaitMs = Math.round(performance.now() - startedAt);
       const [job] = args.social
@@ -116,6 +120,7 @@ const commitUsageBatch$ = command(
         .from(pendingParentsQuery(orgId, batch.events, key));
       const [wallet] = await tx.select().from(walletQuery(orgId));
       const [entitlement] = await tx.select().from(entitlementQuery(orgId));
+      const at = nowDate();
       work.orgLockWaitMs =
         Math.round(performance.now() - startedAt) - work.lockWaitMs;
       const events = processPending
@@ -150,15 +155,15 @@ const commitUsageBatch$ = command(
         await tx.execute(mutation);
       }
       const charges = planUsageCharges(priced, allowance.applied);
-      const values = settledEventValues(charges, at);
-      await tx
-        .update(usageEvent)
-        .set(values.values)
-        .from(values.source)
-        .where(values.condition);
+      await tx.execute(settledEventsSql(charges, at));
+      const prefix = requiredUsageGrantPrefix(batch.grants, charges.byUser);
       const grants = await tx
         .select()
-        .from(memberGrantsQuery(orgId, charges.byUser, at));
+        .from(preparedMemberGrantsQuery(orgId, prefix, at));
+      const [unseenGrant] = await tx
+        .select()
+        .from(unseenGrantPrefixQuery(orgId, prefix, at));
+      requireCurrentGrantPrefix(prefix, grants, unseenGrant);
       const deduction = planMemberGrantDeductions(charges.byUser, grants);
       await tx.execute(memberGrantDeductionsSql(deduction.updates));
       work.affectedUsers = charges.byUser.size;

@@ -296,6 +296,32 @@ async function recordConnectorUsage(
   );
 }
 
+/** The webhook accepts at most 100 events per request. */
+async function recordConnectorBacklog(
+  actor: ApiTestUser,
+  runId: string,
+  provider: string,
+): Promise<void> {
+  for (const count of [100, 1]) {
+    await webhooks.requestAgentUsageEvent(
+      {
+        runId,
+        events: Array.from({ length: count }, () => {
+          return {
+            idempotencyKey: randomUUID(),
+            kind: "connector" as const,
+            provider,
+            category: "api_request",
+            quantity: 1,
+          };
+        }),
+      },
+      sandboxHeaders(actor, runId),
+      [200],
+    );
+  }
+}
+
 async function recordImageUsage(
   actor: ApiTestUser,
   runId: string,
@@ -1054,11 +1080,21 @@ describe("GET /api/usage/record", () => {
     ]);
   });
 
-  it("uses Maps grounding settlement time consistently for rows, totals, and breakdowns", async () => {
+  it("returns the current Maps receipt before settling a multi-page backlog exactly once", async () => {
     const fixture = await entitledRecordActor();
     billing.configureMapsProvider();
+    const provider = uniqueProvider("maps-pending-backlog");
     const pricing = await createUsagePricingFixture({
-      configured: MAPS_GROUNDING_PRICING_ROWS,
+      configured: [
+        ...MAPS_GROUNDING_PRICING_ROWS,
+        {
+          kind: "connector",
+          provider,
+          category: "api_request",
+          unitPrice: 1,
+          unitSize: 1,
+        },
+      ],
     });
     onTestFinished(pricing.cleanup);
     server.use(
@@ -1071,6 +1107,7 @@ describe("GET /api/usage/record", () => {
       prompt: "Settlement boundary usage",
       triggerSource: "test",
     });
+    await recordConnectorBacklog(fixture.actor, run.runId, provider);
     const settledAt = new Date(nowDate().getTime() + 8 * DAY_MS);
     mockNow(settledAt);
     const mapsToken = api.okouTokenForRunWithCapabilities(
@@ -1128,6 +1165,14 @@ describe("GET /api/usage/record", () => {
         ],
       },
     ]);
+    await billing.processOrgUsageEvents(fixture.actor, pricing.resolution);
+    const caughtUp = await billing.readUsageRecord(fixture.actor, "7d");
+    expect(caughtUp.body.totalCredits).toBe(133);
+    expect(caughtUp.body.rows).toHaveLength(1);
+    expect(caughtUp.body.rows[0]?.credits).toBe(133);
+    await billing.processOrgUsageEvents(fixture.actor, pricing.resolution);
+    const retried = await billing.readUsageRecord(fixture.actor, "7d");
+    expect(retried.body).toStrictEqual(caughtUp.body);
   });
 
   it("returns an empty null-period response for free billing period usage", async () => {

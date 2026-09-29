@@ -65,7 +65,7 @@ export function planUsageCharges(
   return { byUser, outcomes };
 }
 
-export function settledEventValues(
+export function settledEventsSql(
   plan: ReturnType<typeof planUsageCharges>,
   at: Date,
 ) {
@@ -84,55 +84,13 @@ export function settledEventValues(
         return outcome.billingError;
       }),
     )}::varchar(50)[]) AS settlement(id, credits_charged, billing_error)`;
-  return {
-    source,
-    values: {
-      creditsCharged: sql`settlement.credits_charged`,
-      status: "processed" as const,
-      processedAt: at,
-      billingError: sql`settlement.billing_error`,
-    },
-    condition: eq(usageEvent.id, sql`settlement.id`),
-  };
-}
-
-export function memberGrantsQuery(
-  orgId: string,
-  charges: ReadonlyMap<string, number>,
-  at: Date,
-) {
-  return new QueryBuilder()
-    .select({
-      id: usagePackCreditGrants.id,
-      userId: usagePackCreditGrants.userId,
-      remainingAmount: usagePackCreditGrants.remainingAmount,
-    })
-    .from(usagePackCreditGrants)
-    .where(
-      and(
-        eq(usagePackCreditGrants.orgId, orgId),
-        inArray(
-          usagePackCreditGrants.userId,
-          [...charges]
-            .filter(([, amount]) => {
-              return amount > 0;
-            })
-            .map(([userId]) => {
-              return userId;
-            }),
-        ),
-        gt(usagePackCreditGrants.remainingAmount, 0),
-        gt(usagePackCreditGrants.expiresAt, at),
-      ),
-    )
-    .orderBy(
-      asc(usagePackCreditGrants.userId),
-      sql`CASE ${usagePackCreditGrants.grantType} WHEN 'purchased' THEN 0 ELSE 1 END`,
-      asc(usagePackCreditGrants.expiresAt),
-      asc(usagePackCreditGrants.id),
-    )
-    .for("update")
-    .as("settlement_grants");
+  return sql`UPDATE ${usageEvent}
+    SET credits_charged = settlement.credits_charged,
+        status = 'processed',
+        processed_at = ${sql.param(at, usageEvent.processedAt)},
+        billing_error = settlement.billing_error
+    FROM ${source}
+    WHERE ${usageEvent.id} = settlement.id`;
 }
 
 export function planMemberGrantDeductions(
