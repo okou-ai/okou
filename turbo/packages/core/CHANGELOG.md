@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.722.0](https://github.com/okou-ai/okou/compare/core-v8.721.0...core-v8.722.0) (2026-09-29)
+
+
+### Features
+
+* retire okou 1.0 pro and max and label base auto ([#37363](https://github.com/okou-ai/okou/issues/37363)) ([bf7c3d6](https://github.com/okou-ai/okou/commit/bf7c3d6bd75218646f5c5b131a138558a26b21d7))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.529.0
+
 ## [8.721.0](https://github.com/okou-ai/okou/compare/core-v8.720.4...core-v8.721.0) (2026-09-29)
 
 
