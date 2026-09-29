@@ -7798,7 +7798,7 @@ describe("Official Workflow installations", () => {
     ]);
   });
 
-  it("compensates event-watch update and removal failures before committing current state", async () => {
+  it("compensates failed Gmail watch updates and removes local consumption without remote stop", async () => {
     installCatalogStorageFixture();
     const suffix = randomUUID().replaceAll("-", "").slice(0, 10);
     const definitionName = `api-test-reconcile-watch-${suffix}`;
@@ -7825,7 +7825,6 @@ describe("Official Workflow installations", () => {
     await workflowBdd.connectConnector(actor, "gmail");
     mockOptionalEnv("GMAIL_PUBSUB_TOPIC_NAME", GMAIL_TOPIC_NAME);
     let watchShouldFail = false;
-    let stopShouldFail = false;
     let watchCalls = 0;
     let stopCalls = 0;
     server.use(
@@ -7848,9 +7847,10 @@ describe("Official Workflow installations", () => {
       }),
       http.post("https://gmail.googleapis.com/gmail/v1/users/me/stop", () => {
         stopCalls++;
-        return stopShouldFail
-          ? HttpResponse.json({ error: "stop failed" }, { status: 500 })
-          : new HttpResponse(null, { status: 204 });
+        return HttpResponse.json(
+          { error: "stop must not be called" },
+          { status: 500 },
+        );
       }),
     );
     await setOfficialWorkflowsEnabled(actor, true);
@@ -7942,40 +7942,21 @@ describe("Official Workflow installations", () => {
       },
     });
 
-    stopShouldFail = true;
     await syncCatalog(catalog([activeDefinition(definitionName, [])]));
     await expect(
       runOfficialWorkflowReconciliationWorker(),
     ).resolves.toStrictEqual({
       claimed: 1,
-      completed: 0,
+      completed: 1,
       advanced: 0,
-      retried: 1,
-      installations: 0,
+      retried: 0,
+      installations: 1,
     });
-    const compensatedRemoval = await accept(
-      installationClient().get({ headers, params: { workflowId } }),
-      [200],
-    );
-    expect(compensatedRemoval.body.workflow.automations[0]).toMatchObject({
-      id: automation.id,
-      enabled: true,
-      eventConfig: expect.objectContaining({ labelName: "Follow Up" }),
-      official: {
-        intendedEnabled: true,
-        reconciliationStatus: "failed",
-      },
-    });
-
-    stopShouldFail = false;
-    await makeOfficialWorkflowReconciliationWorkDue(definitionName);
-    await runOfficialWorkflowReconciliationWorker();
     const removed = await accept(
       installationClient().get({ headers, params: { workflowId } }),
       [200],
     );
     expect(removed.body.workflow.automations).toStrictEqual([]);
-    expect(watchCalls).toBeGreaterThan(1);
     expect(stopCalls).toBe(0);
   });
 });
