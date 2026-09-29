@@ -1241,6 +1241,139 @@ describe("Google Forms Pub/Sub webhook", () => {
     ).toHaveLength(0);
   });
 
+  it.each(["superseded", "provider failure"])(
+    "publishes a complete selected-account interval after %s",
+    async (outcome) => {
+      const {
+        first,
+        firstConnector,
+        firstWatchId,
+        secondConnector,
+        secondWatchId,
+      } = await setupGoogleFormsMultiAccountAutomations();
+      const resumedCursor = "2026-08-05T10:15:00.123456Z";
+      const responseTime = "2026-08-05T10:16:00.123456Z";
+      const selectAccount = async (connectionId: string) => {
+        return await accept(
+          chatThreadConnectorSelectionsClient().update({
+            headers: authHeaders(),
+            params: { id: first.chatThreadId },
+            body: {
+              connectionId,
+              target: { kind: "builtin", connectorSlug: "google-forms" },
+            },
+          }),
+          [200],
+        );
+      };
+      let preparingReplacement = false;
+      server.use(
+        http.get(
+          "https://forms.googleapis.com/v1/forms/:formId/responses",
+          async ({ request }) => {
+            const filter = new URL(request.url).searchParams.get("filter");
+            if (filter !== null) {
+              expect([
+                `timestamp > ${resumedCursor}`,
+                `timestamp > ${SEED_CURSOR}`,
+              ]).toContain(filter);
+              return HttpResponse.json({
+                responses: [
+                  {
+                    responseId: "after-account-publication",
+                    createTime: responseTime,
+                    lastSubmittedTime: responseTime,
+                    respondentEmail: "selected-account@example.test",
+                  },
+                ],
+              });
+            }
+            if (!preparingReplacement) {
+              preparingReplacement = true;
+              // The selected source has changed but remote preparation is not
+              // complete. Even an outgoing watch must not fire the old account.
+              await expect(
+                postWebhook(
+                  formsPushBody("during-account-preparation", firstWatchId),
+                ),
+              ).resolves.toMatchObject({
+                status: 200,
+                body: { dispatched: 0 },
+              });
+              if (outcome === "provider failure") {
+                return HttpResponse.json(
+                  { error: { message: "Provider unavailable" } },
+                  { status: 503 },
+                );
+              }
+              await selectAccount(firstConnector.id);
+              return HttpResponse.json({
+                responses: [
+                  {
+                    responseId: "superseded-account-seed",
+                    createTime: SEED_CURSOR,
+                    lastSubmittedTime: SEED_CURSOR,
+                  },
+                ],
+              });
+            }
+            return HttpResponse.json({
+              responses: [
+                {
+                  responseId: "replacement-baseline",
+                  createTime: resumedCursor,
+                  lastSubmittedTime: resumedCursor,
+                },
+              ],
+            });
+          },
+        ),
+      );
+      await selectAccount(secondConnector.id);
+      if (outcome === "provider failure") {
+        // Repeating the same public choice repairs its missing projection;
+        // recovery does not require changing the account again.
+        await selectAccount(secondConnector.id);
+      }
+      const current = await accept(
+        automationsClient().get({
+          headers: authHeaders(),
+          params: { id: first.automationId },
+        }),
+        [200],
+      );
+      expect(current.body).toMatchObject({
+        enabled: true,
+        eventConfig: {
+          connectorId:
+            outcome === "superseded" ? firstConnector.id : secondConnector.id,
+        },
+      });
+      await expect(
+        postWebhook(
+          formsPushBody(
+            "after-account-publication",
+            outcome === "superseded" ? firstWatchId : secondWatchId,
+          ),
+        ),
+      ).resolves.toMatchObject({
+        status: 200,
+        body: { dispatched: outcome === "superseded" ? 1 : 2 },
+      });
+      await flushWaitUntilForTest();
+      const events = await workflows.readThreadEvents(first.chatThreadId);
+      expect(
+        events
+          .filter((event) => {
+            return event.eventType === "input.automation";
+          })
+          .map(chatEventDisplayText),
+      ).toStrictEqual([
+        `A new response from selected-account@example.test was submitted to Google Form "${FORM_TITLE}".`,
+      ]);
+    },
+  );
+
   it("routes the selected account with exact credentials", async () => {
     const { formsApi, first, second, secondConnector, secondWatchId } =
       await setupGoogleFormsMultiAccountAutomations();

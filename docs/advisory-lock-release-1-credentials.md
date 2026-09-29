@@ -213,3 +213,41 @@ Departure cleanup also updates already-disabled ordinary automation rows. This i
 The ordinary activation follow-up passes the full API type-check command, focused ESLint, plain Oxlint, formatting and whitespace checks. Its behavior regressions have not been executed locally; the combined PR pipeline remains the behavioral verification boundary.
 
 Thread deletion likewise updates already-disabled bound automations, invalidating a Forms preparation observation before detaching the thread. A provider-HTTP-boundary regression deletes the actual chat thread during preparation without re-enabling; the old request must return conflict, the automation must remain disabled, and the prepared watch notification must dispatch no run.
+
+### Selected-account Forms interval publication
+
+Account selection, selection removal, default change, account deletion and builtin
+credential publication share the Forms projection writer. It now locks automation
+rows in ID order before deleting any cursor. When the selected account changes,
+it clears the existing nullable `event_connector_id` and removes the old cursor
+in that same account transaction. The configured account remains the actual
+selected business source; there is no new coordination field or JSON state.
+A null projection means that this source is not currently usable, including when
+provider preparation fails. Both inspected outgoing and R1 dispatch readers and
+final queue admission require the non-null exact projected account, so neither
+can dispatch the retired source during preparation.
+
+Owner reconciliation also follows this staging protocol. It resolves the current
+selected/default account for an unbound enabled automation, prepares its watch and
+new source baseline outside SQL, and invokes `publishGoogleFormsAutomationInterval$`.
+That command obtains `writeDb$`, rechecks the current account selection and exact
+automation observation, then binds the account and publishes its cursor together.
+It reuses the ordinary activation command's account key and nonblocking lifecycle
+key acquisition, including its conflict outcome. A failed preparation leaves the
+source unavailable; the next reconciliation, including a repeated identical user
+account selection, can finish publication. A superseded preparation cannot replace
+a newer source. Repair of an unchanged source still keeps its existing cursor.
+
+The new API scenarios switch the account while a provider response is in flight
+and return a provider failure. They check that the retired watch dispatches no
+input during preparation, a newer account choice survives a late result, and an
+identical account selection recovers after failure with the new baseline intact.
+No database gates or internal state assertions are used.
+
+This closes the selected-account interval and row-order gap in the current Forms
+projection writer. The shared account transaction callers still pass handles to
+the legacy multi-provider projection adapter; their command ownership is a
+separate implementation task. Ordinary already-enabled generic enable and official
+source reconfiguration are also still distinct caller-boundary work. Migration
+1290 remains necessary for outgoing unconditional repair upserts and source writers;
+this change does not claim that its complete retirement gate is met.

@@ -6032,7 +6032,8 @@ const activateInactiveGoogleFormsAutomation$ = command(
         connectorId: eventConfig.connectorId,
         resetAutomationId: args.previousAutomation.id,
         automationSnapshot: workflowAutomationSnapshot(args.previousAutomation),
-        activation: {
+        interval: {
+          kind: "activation",
           automationId: args.previousAutomation.id,
           workflowId: args.previousAutomation.workflowId,
           eventConfig,

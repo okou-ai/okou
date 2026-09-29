@@ -54,6 +54,7 @@ import {
   loadBuiltinConnectorCredentialValues,
   refreshBuiltinConnectorCredentialAccess,
 } from "./builtin-connector-credential-runtime.service";
+import { googleFormsAccountProjectionMutation } from "./google-forms-automation-account.service";
 import { GoogleFormsSourceTransitionChangedError } from "./workflow-google-forms-queue.service";
 import {
   AutomationEventSourceTiming,
@@ -867,25 +868,30 @@ function missingGoogleFormsConsumer(
       };
 }
 
-interface GoogleFormsAutomationActivation {
+type GoogleFormsAutomationInterval = {
   readonly automationId: string;
   readonly workflowId: string;
   readonly eventConfig: GoogleFormsResponseSubmittedEventConfig;
-  readonly nextRunAt: Date | null;
-  readonly inheritedAutonomyBudget?: number;
-}
+} & (
+  | {
+      readonly kind: "activation";
+      readonly nextRunAt: Date | null;
+      readonly inheritedAutonomyBudget?: number;
+    }
+  | { readonly kind: "account-replacement" }
+);
 
 function googleFormsPublicationHasConsumer(
   hasConsumer: boolean,
   args: {
     readonly allowStagedOfficialTarget?: boolean;
-    readonly activation?: GoogleFormsAutomationActivation;
+    readonly interval?: GoogleFormsAutomationInterval;
   },
 ) {
   return (
     hasConsumer ||
     args.allowStagedOfficialTarget === true ||
-    args.activation !== undefined
+    args.interval !== undefined
   );
 }
 
@@ -901,7 +907,7 @@ export const ensureGoogleFormsWatchForUser$ = command(
       readonly automationSnapshot?: WorkflowAutomationSnapshot;
       readonly seedCursor?: string;
       readonly allowStagedOfficialTarget?: boolean;
-      readonly activation?: GoogleFormsAutomationActivation;
+      readonly interval?: GoogleFormsAutomationInterval;
     },
     signal: AbortSignal,
   ): Promise<EnsureGoogleFormsWatchResult> => {
@@ -1007,7 +1013,7 @@ interface GoogleFormsWatchPublication {
   readonly resetAutomationId?: string;
   readonly automationSnapshot?: WorkflowAutomationSnapshot;
   readonly allowStagedOfficialTarget?: boolean;
-  readonly activation?: GoogleFormsAutomationActivation;
+  readonly interval?: GoogleFormsAutomationInterval;
 }
 
 const restoreGoogleFormsWatchForPublication$ = command(
@@ -1289,43 +1295,49 @@ export const readGoogleFormsActivationAccount$ = command(
   },
 );
 
-function googleFormsActivationTargetCondition(
+function googleFormsIntervalTargetCondition(
   args: GoogleFormsWatchPublication,
-  activation: GoogleFormsAutomationActivation,
+  interval: GoogleFormsAutomationInterval,
 ) {
   if (args.automationSnapshot === undefined || args.cursor === null) {
     throw new Error(
-      "Google Forms activation requires its observation and baseline",
+      "Google Forms publication requires its observation and baseline",
     );
   }
   return and(
-    eq(workflowAutomations.id, activation.automationId),
+    eq(workflowAutomations.id, interval.automationId),
     eq(workflowAutomations.orgId, args.orgId),
     eq(workflowAutomations.ownerUserId, args.userId),
-    eq(workflowAutomations.workflowId, activation.workflowId),
+    eq(workflowAutomations.workflowId, interval.workflowId),
     eq(workflowAutomations.eventType, "google-forms-response-submitted"),
-    eq(workflowAutomations.enabled, false),
-    isNull(workflowAutomations.officialBlueprintKey),
+    interval.kind === "activation"
+      ? and(
+          eq(workflowAutomations.enabled, false),
+          isNull(workflowAutomations.officialBlueprintKey),
+        )
+      : and(
+          eq(workflowAutomations.enabled, true),
+          isNull(workflowAutomations.eventConnectorId),
+          sql`${workflowAutomations.eventConfig} ->> 'connectorId' = ${args.connectorId}`,
+          sql`${workflowAutomations.eventConfig} -> 'form' ->> 'id' = ${args.formId}`,
+        ),
     workflowAutomationSnapshotCondition(args.automationSnapshot),
   );
 }
 
-const activateGoogleFormsAutomationWatch$ = command(
+const publishGoogleFormsAutomationInterval$ = command(
   async (
     { set },
     args: GoogleFormsWatchPublication & {
-      readonly activation: GoogleFormsAutomationActivation;
+      readonly interval: GoogleFormsAutomationInterval;
     },
     signal: AbortSignal,
   ): Promise<
     EnsureGoogleFormsWatchResult | { readonly kind: "watch_missing" }
   > => {
     const db = set(writeDb$);
-    const { activation } = args;
-    const targetCondition = googleFormsActivationTargetCondition(
-      args,
-      activation,
-    );
+    const { interval } = args;
+    const targetCondition = googleFormsIntervalTargetCondition(args, interval);
     return await db.transaction(async (tx) => {
       await tx.execute(
         builtinConnectorStateLockStatement({
@@ -1354,7 +1366,7 @@ const activateGoogleFormsAutomationWatch$ = command(
         .where(
           googleFormsActivationAccountCondition({
             ...args,
-            workflowId: activation.workflowId,
+            workflowId: interval.workflowId,
           }),
         )
         .for("key share")
@@ -1402,33 +1414,34 @@ const activateGoogleFormsAutomationWatch$ = command(
       const [enabledAutomation] = await tx
         .update(workflowAutomations)
         .set({
-          enabled: true,
           eventConnectorId: args.connectorId,
-          eventConfig: activation.eventConfig,
-          nextRunAt: activation.nextRunAt,
-          consecutiveFailures: 0,
+          eventConfig: interval.eventConfig,
           updatedAt: currentTime,
-          ...(activation.inheritedAutonomyBudget === undefined
-            ? {}
-            : { autonomyBudget: activation.inheritedAutonomyBudget }),
+          ...(interval.kind === "activation"
+            ? {
+                enabled: true,
+                nextRunAt: interval.nextRunAt,
+                consecutiveFailures: 0,
+                ...(interval.inheritedAutonomyBudget === undefined
+                  ? {}
+                  : { autonomyBudget: interval.inheritedAutonomyBudget }),
+              }
+            : {}),
         })
         .where(targetCondition)
         .returning(workflowAutomationColumns());
       if (!enabledAutomation || args.cursor === null) {
-        throw new Error("Google Forms activation lost its locked observation");
+        throw new Error("Google Forms publication lost its locked observation");
       }
-      // Old repair may insert while this automation is disabled. This owning
-      // activation replaces that interval atomically with the prepared baseline.
+      // Replace any outgoing repair cursor with this prepared interval in the same
+      // commit that enables or publishes the selected source.
       await tx
         .delete(googleFormsAutomationCursors)
         .where(
-          eq(
-            googleFormsAutomationCursors.automationId,
-            activation.automationId,
-          ),
+          eq(googleFormsAutomationCursors.automationId, interval.automationId),
         );
       await tx.insert(googleFormsAutomationCursors).values({
-        automationId: activation.automationId,
+        automationId: interval.automationId,
         watchStateId: state.id,
         lastSeenSubmittedTime: args.cursor,
         createdAt: currentTime,
@@ -1442,11 +1455,11 @@ const activateGoogleFormsAutomationWatch$ = command(
 
 const publishPreparedGoogleFormsWatch$ = command(
   async ({ set }, args: GoogleFormsWatchPublication, signal: AbortSignal) => {
-    return args.activation === undefined
+    return args.interval === undefined
       ? await set(publishGoogleFormsWatch$, args, signal)
       : await set(
-          activateGoogleFormsAutomationWatch$,
-          { ...args, activation: args.activation },
+          publishGoogleFormsAutomationInterval$,
+          { ...args, interval: args.interval },
           signal,
         );
   },
@@ -1678,31 +1691,6 @@ const reconcileGoogleFormsWatchState$ = command(
   },
 );
 
-function googleFormsProjectionMutation(
-  automation: {
-    readonly eventConfig: unknown;
-    readonly eventConnectorId: string | null;
-  },
-  desiredConnectorId: string | null,
-) {
-  const config = googleFormsResponseSubmittedEventConfigSchema.parse(
-    automation.eventConfig,
-  );
-  const sourceChanged =
-    desiredConnectorId === null ||
-    config.connectorId !== desiredConnectorId ||
-    (automation.eventConnectorId !== null &&
-      automation.eventConnectorId !== desiredConnectorId);
-  const eventConfig =
-    desiredConnectorId === null || config.connectorId === desiredConnectorId
-      ? config
-      : { ...config, connectorId: desiredConnectorId };
-  const changed =
-    automation.eventConnectorId !== desiredConnectorId ||
-    eventConfig.connectorId !== config.connectorId;
-  return { sourceChanged, eventConfig, changed };
-}
-
 const reprojectGoogleFormsAutomationOwnership$ = command(
   async (
     { set },
@@ -1720,6 +1708,7 @@ const reprojectGoogleFormsAutomationOwnership$ = command(
       const automations = await tx
         .select({
           id: workflowAutomations.id,
+          enabled: workflowAutomations.enabled,
           workflowId: workflowAutomations.workflowId,
           eventConfig: workflowAutomations.eventConfig,
           eventConnectorId: workflowAutomations.eventConnectorId,
@@ -1736,6 +1725,7 @@ const reprojectGoogleFormsAutomationOwnership$ = command(
             ),
           ),
         )
+        .orderBy(asc(workflowAutomations.id))
         .for("update");
       for (const automation of automations) {
         const [selection] = await tx
@@ -1779,26 +1769,23 @@ const reprojectGoogleFormsAutomationOwnership$ = command(
         const desiredConnectorId = selection
           ? selection.connectorId
           : (defaultAccount?.connectorId ?? null);
-        const mutation = googleFormsProjectionMutation(
+        const mutation = googleFormsAccountProjectionMutation(
           automation,
           desiredConnectorId,
         );
-        if (mutation.sourceChanged) {
-          await tx
-            .delete(googleFormsAutomationCursors)
-            .where(
-              eq(googleFormsAutomationCursors.automationId, automation.id),
-            );
+        if (!mutation.changed) {
+          continue;
         }
-        if (mutation.changed) {
-          await tx
-            .update(workflowAutomations)
-            .set({
-              eventConnectorId: desiredConnectorId,
-              eventConfig: mutation.eventConfig,
-            })
-            .where(eq(workflowAutomations.id, automation.id));
-        }
+        await tx
+          .update(workflowAutomations)
+          .set({
+            eventConnectorId: mutation.eventConnectorId,
+            eventConfig: mutation.eventConfig,
+          })
+          .where(eq(workflowAutomations.id, automation.id));
+        await tx
+          .delete(googleFormsAutomationCursors)
+          .where(eq(googleFormsAutomationCursors.automationId, automation.id));
       }
       signal.throwIfAborted();
     });
@@ -1823,6 +1810,7 @@ const prepareGoogleFormsWatchesForOwner$ = command(
       .select({
         ...workflowAutomationSnapshotColumns(),
         id: workflowAutomations.id,
+        workflowId: workflowAutomations.workflowId,
         eventConfig: workflowAutomations.eventConfig,
         connectorId: workflowAutomations.eventConnectorId,
         cursorWatchStateId: googleFormsAutomationCursors.watchStateId,
@@ -1859,7 +1847,14 @@ const prepareGoogleFormsWatchesForOwner$ = command(
       const config = googleFormsResponseSubmittedEventConfigSchema.parse(
         automation.eventConfig,
       );
-      if (automation.connectorId === null) {
+      const connectorId =
+        automation.connectorId ??
+        (await set(
+          readGoogleFormsActivationAccount$,
+          { ...args, workflowId: automation.workflowId },
+          signal,
+        ));
+      if (connectorId === null) {
         continue;
       }
       const cursorIsExact =
@@ -1877,13 +1872,24 @@ const prepareGoogleFormsWatchesForOwner$ = command(
         {
           orgId: args.orgId,
           userId: args.userId,
-          connectorId: automation.connectorId,
+          connectorId,
           formId: config.form.id,
           resetAutomationId: automation.id,
           automationSnapshot: automation,
+          ...(automation.connectorId === null
+            ? {
+                interval: {
+                  kind: "account-replacement" as const,
+                  automationId: automation.id,
+                  workflowId: automation.workflowId,
+                  eventConfig: { ...config, connectorId },
+                },
+              }
+            : {}),
           // A deleted physical watch detaches rather than deletes its cursor.
           // Repair resumes from durable progress instead of skipping to newest.
-          ...(automation.cursorWatchStateId === null &&
+          ...(automation.connectorId !== null &&
+          automation.cursorWatchStateId === null &&
           automation.cursor !== null
             ? { seedCursor: automation.cursor }
             : {}),

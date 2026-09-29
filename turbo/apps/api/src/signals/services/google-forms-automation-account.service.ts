@@ -1,7 +1,7 @@
 import { googleFormsResponseSubmittedEventConfigSchema } from "@okouai/api-contracts/contracts/workflows";
 import { googleFormsAutomationCursors } from "@okouai/db/schema/google-forms-event";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 
 import type { Db, ReadonlyDb } from "../external/db";
 import { resolveWorkflowAutomationConnectorId } from "./workflow-automation-account.service";
@@ -20,6 +20,38 @@ export async function resolveGoogleFormsAutomationConnectorId(
   });
 }
 
+/** A changed selected account is unavailable until its watch interval is ready. */
+export function googleFormsAccountProjectionMutation(
+  automation: {
+    readonly enabled: boolean;
+    readonly eventConfig: unknown;
+    readonly eventConnectorId: string | null;
+  },
+  desiredConnectorId: string | null,
+) {
+  const config = googleFormsResponseSubmittedEventConfigSchema.parse(
+    automation.eventConfig,
+  );
+  const sourceChanged =
+    desiredConnectorId === null ||
+    config.connectorId !== desiredConnectorId ||
+    (automation.eventConnectorId !== null &&
+      automation.eventConnectorId !== desiredConnectorId);
+  const eventConfig =
+    desiredConnectorId === null || config.connectorId === desiredConnectorId
+      ? config
+      : { ...config, connectorId: desiredConnectorId };
+  const eventConnectorId =
+    automation.enabled &&
+    (sourceChanged || automation.eventConnectorId === null)
+      ? null
+      : desiredConnectorId;
+  const changed =
+    automation.eventConnectorId !== eventConnectorId ||
+    eventConfig.connectorId !== config.connectorId;
+  return { eventConfig, eventConnectorId, changed };
+}
+
 export async function reprojectGoogleFormsAutomationsForOwner(
   db: Db,
   args: {
@@ -30,6 +62,7 @@ export async function reprojectGoogleFormsAutomationsForOwner(
   const automations = await db
     .select({
       id: workflowAutomations.id,
+      enabled: workflowAutomations.enabled,
       workflowId: workflowAutomations.workflowId,
       eventConfig: workflowAutomations.eventConfig,
       eventConnectorId: workflowAutomations.eventConnectorId,
@@ -42,12 +75,11 @@ export async function reprojectGoogleFormsAutomationsForOwner(
         eq(workflowAutomations.kind, "event"),
         eq(workflowAutomations.eventType, "google-forms-response-submitted"),
       ),
-    );
+    )
+    .orderBy(asc(workflowAutomations.id))
+    .for("update");
 
   for (const automation of automations) {
-    const config = googleFormsResponseSubmittedEventConfigSchema.parse(
-      automation.eventConfig,
-    );
     const desiredConnectorId = await resolveGoogleFormsAutomationConnectorId(
       db,
       {
@@ -55,29 +87,24 @@ export async function reprojectGoogleFormsAutomationsForOwner(
         workflowId: automation.workflowId,
       },
     );
-    const sourceChanged =
-      desiredConnectorId === null ||
-      config.connectorId !== desiredConnectorId ||
-      (automation.eventConnectorId !== null &&
-        automation.eventConnectorId !== desiredConnectorId);
-    if (sourceChanged) {
-      await db
-        .delete(googleFormsAutomationCursors)
-        .where(eq(googleFormsAutomationCursors.automationId, automation.id));
-    }
-    const eventConfig =
-      desiredConnectorId === null || config.connectorId === desiredConnectorId
-        ? config
-        : { ...config, connectorId: desiredConnectorId };
-    if (
-      automation.eventConnectorId === desiredConnectorId &&
-      eventConfig.connectorId === config.connectorId
-    ) {
+    const mutation = googleFormsAccountProjectionMutation(
+      automation,
+      desiredConnectorId,
+    );
+    if (!mutation.changed) {
       continue;
     }
+    // Owning account writers already hold the account compatibility key. Match
+    // publication's automation-before-cursor row order, including without 1290.
     await db
       .update(workflowAutomations)
-      .set({ eventConnectorId: desiredConnectorId, eventConfig })
+      .set({
+        eventConnectorId: mutation.eventConnectorId,
+        eventConfig: mutation.eventConfig,
+      })
       .where(eq(workflowAutomations.id, automation.id));
+    await db
+      .delete(googleFormsAutomationCursors)
+      .where(eq(googleFormsAutomationCursors.automationId, automation.id));
   }
 }
