@@ -29,7 +29,7 @@ import {
   type VncOwner,
 } from "./vnc-owner-lifecycle.service";
 
-export const vncCredentialMetadata = Object.freeze({
+const vncCredentialMetadata = Object.freeze({
   id: vncCredentials.id,
   name: vncCredentials.name,
   username: vncCredentials.username,

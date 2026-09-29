@@ -107,7 +107,6 @@ export const listRunSshHosts$ = command(
     if (rows.length === 0) {
       return null;
     }
-    signal.throwIfAborted();
     return {
       hosts: rows.flatMap((row) => {
         if (row.id === null) {
