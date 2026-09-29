@@ -7,10 +7,11 @@ propagation. It does **not** declare the whole billing package ready for
 Release 2.
 
 The accepted Stripe target has since changed to
-[local desired state and daily reconciliation](advisory-lock-terminal-state.md#declarative-stripe-subscriptions-and-daily-reconciliation),
-with one new business table allowed if needed. Temporary quantity/schedule drift
-is accepted. Earlier references here to a common remote ordering protocol do
-not require preventing every stale intermediate configuration write; assess
+[a subscription projection from existing data and daily reconciliation](advisory-lock-terminal-state.md#declarative-stripe-subscriptions-and-daily-reconciliation).
+No new database tables or fields are allowed; the briefly considered table
+exception is withdrawn. Temporary quantity/schedule drift is accepted. Earlier
+references here to a common remote ordering protocol do not require preventing
+every stale intermediate configuration write; assess
 them against eventual convergence and the retained financial guarantees.
 This records the new target, not an implemented replacement.
 
@@ -460,9 +461,10 @@ longer a removal prerequisite.
 ## Unresolved Release 1 work
 
 Billing Release 1 preparation is **not complete**. The accepted replacement is
-durable local desired subscription state and daily reconciliation across the
-shared writers. If an older request writes quantity 2 after a newer request
-wrote 3, that temporary drift is now accepted: subsequent reconciliation must
+deriving the desired subscription from existing business records and using the
+same projection for mutation-time synchronization and daily reconciliation.
+If an older request writes quantity 2 after a newer request wrote 3, that
+temporary drift is now accepted: subsequent reconciliation must
 read the desired 3 and repair Stripe. A database CAS cannot undo a remote write,
 but preventing that intermediate write is no longer an acceptance requirement.
 
@@ -475,18 +477,20 @@ issue invoices, replace payment actions incorrectly or grant unpaid service.
 The current allocation, plan-change, migration and invitation rows have useful
 business identities and recovery states. Allocation, plan change, migration,
 invitation, concurrency add-on, cancellation and restoration must all express
-their intended configuration through the same desired-state model. Webhooks
-must keep observed provider facts separate from that intent. A complete
-replacement includes these GA writers even if a usage-pack UI is staff-only;
-the approved business table does not authorize a generic lock or claim table.
+their intended configuration through one projection of existing records. Map
+each desired current/future item to its authoritative existing fields and
+writers. Webhooks must keep observed provider facts separate from that intent.
+A complete replacement includes these GA writers even if a usage-pack UI is
+staff-only, without adding a subscription table, fields or hidden coordination
+state.
 
 Plan purchase creation also cannot use `stripe_subscription_id` as an unchecked
 reservation. The current webhook explicitly rejects replacing an active/trialing
 binding with an incomplete subscription, billing management reads that binding,
 and Stripe `default_incomplete` can immediately activate zero-cost/trial
 subscriptions. Merely publishing a candidate ID before payment would change
-those observable semantics without establishing common admission. The new
-business-table allowance does not by itself solve duplicate payable purchases.
+those observable semantics without establishing common admission. The derived
+subscription projection does not by itself solve duplicate payable purchases.
 Additional implementation belongs to the same Release 1 wave before calling it
 ready; this finding alone is not evidence that a third release is required.
 

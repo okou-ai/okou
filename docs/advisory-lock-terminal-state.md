@@ -27,14 +27,12 @@ these 28 definitions, not the complete retirement scope.
    a store adapter, a callback API, or an injected context. Neither handle may
    be returned or captured by work that escapes the command. The ORM's local
    transaction callback is where `tx` is used directly.
-4. **Reuse existing persisted state, with one approved business-table
-   exception.** Ethan approved adding one table, including its necessary
-   business fields, for an organization's desired subscription configuration.
-   The declarative Stripe contract below defines its purpose. Other cleanup
-   paths still add no persisted fields. Do not add revision, generation, claim,
-   lease, operation, or publication fields merely to replace locks. Generic
-   coordination tables and coordination fields hidden inside JSON remain
-   outside the approved scope.
+4. **This cleanup adds no database tables or persisted fields.** Reuse existing
+   business records, identifiers, states, values and constraints. Derive the
+   desired Stripe subscription from that data; do not persist a second copy
+   in a new subscription table. Do not add revision, generation, claim, lease,
+   operation or publication fields to implement the plan, or hide new persisted
+   coordination state inside existing JSON fields.
 5. **No application-defined database triggers remain in the final schema.**
    Do not move coordination, cursor lifecycle, projections, or other business
    writes into trigger functions. Express those transitions explicitly in the
@@ -46,11 +44,12 @@ Adding or adjusting an index or constraint over existing fields is compatible
 with this target when the actual business contract requires it. Normal SQL
 continues to use PostgreSQL's internal row/index locks and atomicity.
 
-The subscription table is a narrow, explicit exception to the earlier
-no-new-fields decision, not general permission to add coordination state.
-If another path has no demonstrated implementation under these constraints,
-record it as unresolved. Do not silently add schema state or weaken the
-accepted observable correctness requirements to declare the path complete.
+Ethan withdrew the briefly considered subscription-table exception on
+September 29. The no-new-tables/no-new-fields constraint applies to every
+package, including declarative Stripe synchronization. If a path has no
+demonstrated implementation under these constraints, record the specific gap
+as unresolved. Do not silently add schema state or weaken the accepted
+observable correctness requirements to declare the path complete.
 
 ## Transaction boundaries
 
@@ -219,22 +218,34 @@ decision does not authorize new persisted coordination fields.
 
 ### Declarative Stripe subscriptions and daily reconciliation
 
-**The database owns the desired subscription configuration; Stripe converges
-to it.** Ethan approved daily reconciliation and, if needed, one new business
-table for the organization's intended plan, item quantities, cancellation and
-current/next-period configuration. This is durable product intent, separate
-from observed Stripe state and confirmed paid entitlements. Existing rows that
-represent paid slots or invoice facts must not silently become desired state.
+**Existing local business data defines the desired subscription; Stripe
+converges to that derived configuration.** Build the organization's intended
+plan, item quantities, cancellation and current/next-period configuration from
+existing records and fields. The desired subscription is a computed business
+projection, not another persisted copy. Daily reconciliation is accepted;
+adding a subscription table or fields is not.
+
+The implementation must map each part of the projection to its authoritative
+existing source and trace the commands and webhooks that write those sources.
+Keep user intent, observed provider state and confirmed paid entitlements
+distinct in that mapping. Do not merely round-trip an observed Stripe snapshot
+as the desired configuration, or reinterpret paid slots or invoice facts as an
+unpaid request. If a mapping is incomplete, identify the precise business fact
+and writer still to resolve without adding schema state or declaring the whole
+projection complete.
 
 The required flow is:
 
 1. A command accepts business inputs, obtains `writeDb$` internally and commits
-   the desired configuration and any necessary related local writes in a short
-   transaction. No database handle escapes and no Stripe request runs inside it.
+   the change to existing business records and any necessary related local
+   writes in a short transaction. No database handle escapes and no Stripe
+   request runs inside it.
 2. Synchronization receives the organization identity and reloads its latest
-   committed desired configuration. Outside the transaction, read Stripe,
-   compare current/future configuration, and apply the differences. Do not
-   replay a captured imperative request such as an old quantity increment.
+   committed business data, then derives the complete desired subscription with
+   a shared projection. Outside the transaction, read Stripe, compare
+   current/future configuration, and apply the differences. Do not replay a
+   captured imperative request such as an old quantity increment. Mutation-time
+   sync and daily reconciliation use the same projection.
 3. Reconcile organizations once per day, including changes whose immediate
    synchronization failed or never ran. A best-effort sync after a user change
    can reduce delay; immediate provider convergence is not a correctness
@@ -338,8 +349,8 @@ Coordinate actual shared behavior:
 
 The final implementation must follow the constraints above, even where earlier
 discussion proposed new revisions, operation columns, generation pointers, or
-versioned storage. Only the approved desired-subscription business table is an
-exception; those other field-adding proposals are not part of this target.
+versioned storage. Those table- or field-adding proposals are not part of this
+target; declarative Stripe synchronization has no schema exception.
 
 ## Rollout and completion
 
@@ -355,10 +366,10 @@ the normal rolling production release model, plan **two deployment waves** for
 the complete cleanup. The seven work packages above are implementation groups;
 they can feed these same two waves rather than requiring seven releases.
 
-| Wave                                                    | Work                                                                                                                                                                                                                                                                                                                         | Required compatibility                                                                                                                                                             |
-| ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Release 1: prepare and directly retire compatible paths | Complete replacements under the accepted contracts, including the approved subscription table if needed. Retire non-GA paths directly and GA paths compatible with every supported writer. For remaining GA paths, retain only the advisory coordination and transaction boundaries needed to coexist with the outgoing API. | Outgoing code and Release 1 remain correct together. Every writer that Release 2 will overlap with must already support the replacement protocol.                                  |
-| Release 2: complete retirement                          | Remove the remaining advisory calls and proven temporary compatibility boundaries, including trigger/FK transitions. Finish only transaction ownership steps explicitly required to remain with outgoing writers, retire prepared operator/function compatibility, and repeat the whole-API sweep.                           | Release 1 and Release 2 coexist safely without relying on the removed locks. Incompatible pre-Release-1 writers are no longer serving, in flight, or retained as rollback targets. |
+| Wave                                                    | Work                                                                                                                                                                                                                                                                                                 | Required compatibility                                                                                                                                                             |
+| ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Release 1: prepare and directly retire compatible paths | Complete replacements using existing business data under the accepted contracts. Retire non-GA paths directly and GA paths compatible with every supported writer. For remaining GA paths, retain only the advisory coordination and transaction boundaries needed to coexist with the outgoing API. | Outgoing code and Release 1 remain correct together. Every writer that Release 2 will overlap with must already support the replacement protocol.                                  |
+| Release 2: complete retirement                          | Remove the remaining advisory calls and proven temporary compatibility boundaries, including trigger/FK transitions. Finish only transaction ownership steps explicitly required to remain with outgoing writers, retire prepared operator/function compatibility, and repeat the whole-API sweep.   | Release 1 and Release 2 coexist safely without relying on the removed locks. Incompatible pre-Release-1 writers are no longer serving, in flight, or retained as rollback targets. |
 
 Every R2 boundary needs a concrete outgoing-writer dependency and an already
 implemented R1 replacement protocol. Missing conditional writes, unbounded
@@ -381,13 +392,13 @@ the default Agent without a CAS. These writers must first participate in a
 common compatible protocol before the shared advisory coordination disappears.
 No new fields are needed merely to split that deployment transition.
 
-For the approved subscription table, document additive schema deployment,
-initialization from existing business state, and intent ownership across
-supported old/new writers and webhooks. Initialization or an old snapshot must
-not erase a newer user choice. Evaluate Stripe compatibility against the
-accepted daily convergence contract: temporary provider quantity/schedule drift
-alone is not a reason to retain an old lock. Payment and entitlement effects
-still require their own compatibility evidence.
+For declarative Stripe synchronization, document the existing source records
+and intent ownership across supported old/new writers and webhooks. An old
+provider snapshot must not erase a newer user choice in those records. There
+is no new subscription table to initialize or keep synchronized. Evaluate
+compatibility against the accepted daily convergence contract: temporary
+provider quantity/schedule drift alone is not a reason to retain an old lock.
+Payment and entitlement effects still require their own compatibility evidence.
 
 Between the waves, verify the deployed serving versions, supported rollback
 versions, and the relevant in-flight work. Keep Release 1 as a compatible
@@ -414,8 +425,9 @@ Completion requires:
 - Zero database or transaction handles forwarded out of those commands, and
   zero transaction objects escaping their local transaction callback.
 - Zero external I/O or workflow-spanning work inside those transactions.
-- No new persisted fields outside the approved desired-subscription business
-  table; no new persisted lock, lease or generic coordination state.
+- Zero new database tables or persisted fields introduced by this cleanup,
+  including its Stripe subscription projection; no new persisted coordination
+  state hidden inside existing fields.
 - Zero application-defined database triggers in the final schema; their business
   transitions are explicit in command-owned SQL.
 - User-visible behavior verified through production APIs, including relevant
