@@ -102,7 +102,6 @@ test.each([
 );
 
 test("Uses the effective subscription for reasoning and Fast guidance", async () => {
-  const user = userEvent.setup({ delay: null });
   installRunChat({
     selectedModel: "gpt-5.6-sol",
     codexServiceTier: "fast",
@@ -126,12 +125,15 @@ test("Uses the effective subscription for reasoning and Fast guidance", async ()
   expect(
     within(settings).getByRole("slider", { name: "Effort" }),
   ).toHaveAttribute("aria-valuetext", "Max");
-  expect(within(settings).getByRole("switch", { name: "Fast" })).toBeChecked();
-  await user.hover(within(settings).getByText("Fast"));
-  await expect(
-    screen.findByText("1.5× model speed · 2.5× ChatGPT usage"),
-  ).resolves.toBeInTheDocument();
-  expect(screen.queryByText(/2× Okou model credits/u)).not.toBeInTheDocument();
+  expect(
+    within(settings).getByRole("switch", { name: "Fast mode" }),
+  ).toBeChecked();
+  expect(within(settings).getByText("Lower usage")).toBeVisible();
+  expect(within(settings).getByText("Higher usage")).toBeVisible();
+  expect(
+    within(settings).getByText("1.5× model speed · 2.5× ChatGPT usage"),
+  ).toBeVisible();
+  expect(within(settings).queryByText(/credits/u)).not.toBeInTheDocument();
 });
 
 test("Reconnects the current personal candidate despite an organization API route", async () => {

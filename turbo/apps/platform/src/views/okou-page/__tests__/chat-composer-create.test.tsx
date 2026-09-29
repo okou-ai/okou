@@ -283,7 +283,7 @@ const createTemplateScenarios = [
           type: "presentation" as const,
           selection: {
             templateId: template.templateId,
-            colorSystemId: template.colorSystemId ?? undefined,
+            colorSystemId: template.colorSystemId,
           },
         },
       };

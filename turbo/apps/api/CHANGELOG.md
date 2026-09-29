@@ -8,6 +8,25 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.695.3](https://github.com/okou-ai/okou/compare/api-v1.695.2...api-v1.695.3) (2026-09-29)
+
+
+### Refactoring
+
+* remove thread image model compatibility and dead generation metadata ([#37306](https://github.com/okou-ai/okou/issues/37306)) ([bb79964](https://github.com/okou-ai/okou/commit/bb7996407cbf06854852966ef1c5fc04a390d4d2))
+* retire remaining vnc grant cleanup reads ([#37305](https://github.com/okou-ai/okou/issues/37305)) ([712de8a](https://github.com/okou-ai/okou/commit/712de8a72b7e4613311ea1b29812074dba43e0ce))
+* simplify generation and template internals ([#37328](https://github.com/okou-ai/okou/issues/37328)) ([363beba](https://github.com/okou-ai/okou/commit/363beba298d77a4746bf7097f49d11342ea3fbb2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.527.1
+    * @okouai/core bumped to 8.720.4
+    * @okouai/db bumped to 1.313.3
+    * @okouai/pi-agent-runtime bumped to 1.41.7
+
 ## [1.695.2](https://github.com/okou-ai/okou/compare/api-v1.695.1...api-v1.695.2) (2026-09-29)
 
 

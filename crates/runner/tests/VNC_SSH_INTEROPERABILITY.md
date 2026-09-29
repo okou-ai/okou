@@ -1,4 +1,4 @@
-# Pinned OpenSSH plus TigerVNC interoperability
+# Installed OpenSSH plus pinned TigerVNC interoperability
 
 This explicit ignored test composes the production Runner SSH authority,
 host-key verification, direct-tcpip forwarding, VNC authority, inner TLS/RFB
@@ -14,11 +14,13 @@ It covers this matrix:
 | Public key               | X509Vnc           |
 | Public key               | X509Plain         |
 
-The gate pins Ubuntu 24.04 `openssh-server` version
-`1:9.6p1-3ubuntu13.14` and TigerVNC version
-`1.13.1+dfsg-2build2`. Missing or different packages fail the requested run.
-Changing either pin requires a reviewed compatibility update; ordinary package
-drift is not acceptance evidence.
+Run on Ubuntu 24.04 with the installed `openssh-server` and
+`openssh-client`, and record both exact package versions in the evidence. Do
+not downgrade a working SSH installation just to run this test. TigerVNC is
+pinned to `1.13.1+dfsg-2build2`; a missing or different TigerVNC package fails
+the requested run. Changing that pin requires a reviewed compatibility update.
+A pass on one installed OpenSSH version is evidence for that version, not an
+unexecuted OpenSSH version or a substitute for an owner-to-Agent workflow.
 
 The test is ignored by default. A normal `cargo test` does not establish this
 interop boundary.
@@ -39,37 +41,77 @@ fixture-generated CA. No route substitution or raw-TCP fallback is permitted.
 
 ## Prerequisites
 
-Install the exact packages:
-
-```sh
-sudo apt-get update
-sudo apt-get install --no-install-recommends \
-  openssh-server=1:9.6p1-3ubuntu13.14 \
-  openssh-client=1:9.6p1-3ubuntu13.14 \
-  tigervnc-standalone-server=1.13.1+dfsg-2build2 \
-  tigervnc-tools=1.13.1+dfsg-2build2 \
-  python3-xlib=0.33-2 x11-xserver-utils openssl
-```
+On a disposable machine where package installation is authorized, ensure
+`openssh-server`, `openssh-client`, `tigervnc-standalone-server`,
+`tigervnc-tools`, `python3-xlib`, `x11-xserver-utils` and `openssl` are
+available. Do not replace the installed OpenSSH version. TigerVNC must be
+`1.13.1+dfsg-2build2`; verify with `dpkg-query` before starting the fixture.
+If the existing host lacks a dependency and installing it is not authorized,
+use an isolated environment or stop rather than changing the host. For an
+isolated `python3-xlib` extraction, export `VNC_ACCEPT_PYTHONPATH` as the
+absolute, test-account-readable directory containing `Xlib/__init__.py` (for
+example, its `usr/lib/python3/dist-packages` directory). Use only a trusted
+package and remove the extraction after the test; otherwise leave the variable
+unset and use the system `/usr/bin/python3` installation. The script checks the
+import as the disposable account before starting sshd.
 
 Build the current exact-head Runner test before changing host state:
 
 ```sh
-cargo test --manifest-path crates/Cargo.toml --profile local -p runner \
-  ssh::tests::vnc_interoperability::pinned_openssh_tigervnc_vnc_transport_acceptance \
+git rev-parse HEAD
+cargo test --manifest-path crates/Cargo.toml --profile local -p runner-remote --lib \
+  ssh::tests::vnc_interoperability::installed_openssh_tigervnc_vnc_transport_acceptance \
   --no-run
 ```
 
-Locate the test executable produced by that command and record its SHA-256 and
-the current commit. Do not reuse a binary built from another head.
+Copy the exact `runner_remote-*` executable path printed by this Cargo invocation
+(`Executable unittests src/lib.rs (...)`) into `VNC_RUNNER_TEST_BINARY` and export
+it for the separate Bash script below. Do not select the newest file in a shared
+build directory: it may come from another head even if it lists the same test.
+Record the commit and binary SHA-256. Do not use the `runner` package's different
+test executable.
 
 ## Disposable setup and run
 
 The following reference procedure intentionally requires explicit local review.
 It generates the password without printing it, binds only loopback, permits only
-local TCP forwarding, and removes the account and all generated material on
-exit. Choose a unique account name; the procedure refuses an existing one.
+local TCP forwarding, and cleans up the owned account and generated material
+on exit. A failed cleanup exits nonzero and reports residual resources for
+manual inspection. Choose a unique account name; the procedure refuses an
+existing one.
+From the repository root, save the block as a Bash script and run it with the
+exact build-output path exported, for example
+`export VNC_RUNNER_TEST_BINARY=crates/target/local/deps/runner_remote-<hash>`.
+Do not paste the block into an existing interactive shell: its traps and
+fail-fast settings belong to the standalone script.
 
-```sh
+```bash
+#!/usr/bin/env bash
+set -Eeuo pipefail
+: "${VNC_RUNNER_TEST_BINARY:?set this to the exact executable path printed by Cargo}"
+case "$VNC_RUNNER_TEST_BINARY" in
+  */deps/runner_remote-*) ;;
+  *) echo "unexpected Runner test binary path" >&2; exit 1 ;;
+esac
+test -x "$VNC_RUNNER_TEST_BINARY"
+VNC_ACCEPT_PYTHONPATH="${VNC_ACCEPT_PYTHONPATH:-}"
+if [ -n "$VNC_ACCEPT_PYTHONPATH" ]; then
+  case "$VNC_ACCEPT_PYTHONPATH" in
+    /*) ;;
+    *) echo "isolated Python path must be absolute" >&2; exit 1 ;;
+  esac
+  test -r "$VNC_ACCEPT_PYTHONPATH/Xlib/__init__.py"
+fi
+"$VNC_RUNNER_TEST_BINARY" --list --ignored | grep -F \
+  'ssh::tests::vnc_interoperability::installed_openssh_tigervnc_vnc_transport_acceptance' >/dev/null
+printf 'test_source_sha=%s\n' "$(git rev-parse HEAD)"
+sha256sum "$VNC_RUNNER_TEST_BINARY"
+VNC_OPENSSH_VERSION="$(dpkg-query -W -f='${Version}' openssh-server)"
+VNC_OPENSSH_CLIENT_VERSION="$(dpkg-query -W -f='${Version}' openssh-client)"
+VNC_TIGERVNC_VERSION="$(dpkg-query -W -f='${Version}' tigervnc-standalone-server)"
+test "$VNC_TIGERVNC_VERSION" = '1.13.1+dfsg-2build2'
+printf 'OpenSSH server=%s client=%s; TigerVNC=%s\n' \
+  "$VNC_OPENSSH_VERSION" "$VNC_OPENSSH_CLIENT_VERSION" "$VNC_TIGERVNC_VERSION"
 VNC_ACCEPT_USER="okou-vnc-accept-$$"
 if id "$VNC_ACCEPT_USER" >/dev/null 2>&1; then
   echo "refusing to reuse existing account: $VNC_ACCEPT_USER" >&2
@@ -80,34 +122,72 @@ case "$VNC_ACCEPT_DIR" in
   /tmp/okou-vnc-ssh-accept.*) ;;
   *) echo "unexpected acceptance directory" >&2; exit 1 ;;
 esac
-VNC_ACCEPT_PASSWORD="$(openssl rand -base64 24)"
+VNC_ACCEPT_PASSWORD=""
+VNC_ACCEPT_CREATED=0
 VNC_SSHD_PID=""
 
 cleanup_vnc_acceptance() {
+  local result=$? command_line="" preserve_scratch=0
+  trap - EXIT INT TERM
   if [ -z "$VNC_SSHD_PID" ] && [ -f "$VNC_ACCEPT_DIR/sshd.pid" ]; then
-    VNC_SSHD_PID="$(sudo cat "$VNC_ACCEPT_DIR/sshd.pid")"
+    VNC_SSHD_PID="$(sudo cat "$VNC_ACCEPT_DIR/sshd.pid" 2>/dev/null)" || {
+      echo "cannot read isolated sshd PID; retain scratch for inspection" >&2
+      preserve_scratch=1
+      result=1
+    }
   fi
-  if [ -n "$VNC_SSHD_PID" ]; then
-    sudo kill "$VNC_SSHD_PID" 2>/dev/null || true
-    for _ in $(seq 1 50); do
-      if ! sudo kill -0 "$VNC_SSHD_PID" 2>/dev/null; then
-        break
-      fi
-      sleep 0.1
-    done
-    if sudo kill -0 "$VNC_SSHD_PID" 2>/dev/null; then
-      sudo kill -KILL "$VNC_SSHD_PID" 2>/dev/null || true
+  if [[ "$VNC_SSHD_PID" =~ ^[0-9]+$ ]]; then
+    command_line="$(sudo ps -p "$VNC_SSHD_PID" -o args= 2>/dev/null || true)"
+    if [[ "$command_line" == *"$VNC_ACCEPT_DIR/sshd_config"* ]]; then
+      sudo kill "$VNC_SSHD_PID" 2>/dev/null || result=1
+      for _ in $(seq 1 50); do
+        command_line="$(sudo ps -p "$VNC_SSHD_PID" -o args= 2>/dev/null || true)"
+        [[ "$command_line" == *"$VNC_ACCEPT_DIR/sshd_config"* ]] || break
+        sleep 0.1
+      done
+      # If the isolated daemon does not exit, retain its files for manual
+      # inspection instead of force-killing a PID that could have been reused.
+    elif [ -n "$command_line" ]; then
+      echo "refusing to kill an unrelated sshd PID" >&2
+      preserve_scratch=1
+      result=1
     fi
+    if [ -d "/proc/$VNC_SSHD_PID" ]; then
+      command_line="$(sudo ps -p "$VNC_SSHD_PID" -o args= 2>/dev/null || true)"
+      if [[ "$command_line" == *"$VNC_ACCEPT_DIR/sshd_config"* || -z "$command_line" ]]; then
+        echo "cannot confirm isolated sshd has exited; retain scratch" >&2
+        preserve_scratch=1
+        result=1
+      fi
+    fi
+  elif [ -n "$VNC_SSHD_PID" ]; then
+    echo "invalid isolated sshd PID; inspect before manual cleanup" >&2
+    preserve_scratch=1
+    result=1
   fi
-  sudo userdel --remove "$VNC_ACCEPT_USER" 2>/dev/null || true
-  case "$VNC_ACCEPT_DIR" in
-    /tmp/okou-vnc-ssh-accept.*) sudo rm -rf -- "$VNC_ACCEPT_DIR" ;;
-  esac
+  if (( VNC_ACCEPT_CREATED )); then
+    sudo userdel --remove "$VNC_ACCEPT_USER" 2>/dev/null || result=1
+  fi
+  if (( ! preserve_scratch )) && [[ "$VNC_ACCEPT_DIR" == /tmp/okou-vnc-ssh-accept.* &&
+        -d "$VNC_ACCEPT_DIR" && ! -L "$VNC_ACCEPT_DIR" ]]; then
+    sudo rm -rf -- "$VNC_ACCEPT_DIR" || result=1
+  fi
+  if [ -e "$VNC_ACCEPT_DIR" ] || id "$VNC_ACCEPT_USER" >/dev/null 2>&1; then
+    echo "acceptance resources remain; inspect and clean them manually" >&2
+    result=1
+  fi
   unset VNC_ACCEPT_PASSWORD
+  exit "$result"
 }
-trap cleanup_vnc_acceptance EXIT INT TERM
+trap cleanup_vnc_acceptance EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
+VNC_ACCEPT_PASSWORD="$(openssl rand -base64 24)"
 sudo useradd --create-home --shell /bin/bash "$VNC_ACCEPT_USER"
+VNC_ACCEPT_CREATED=1
+sudo -u "$VNC_ACCEPT_USER" env PYTHONPATH="$VNC_ACCEPT_PYTHONPATH" \
+  /usr/bin/python3 -c 'from Xlib import X, display'
 printf '%s:%s\n' "$VNC_ACCEPT_USER" "$VNC_ACCEPT_PASSWORD" | sudo chpasswd
 ssh-keygen -q -t ed25519 -N '' -f "$VNC_ACCEPT_DIR/host_key"
 ssh-keygen -q -t ed25519 -N '' -f "$VNC_ACCEPT_DIR/client_key"
@@ -155,26 +235,30 @@ for _ in $(seq 1 20); do
 done
 test "$VNC_SSHD_READY" = 1
 
-VNC_OPENSSH_VERSION="$(dpkg-query -W -f='${Version}' openssh-server)"
-test "$VNC_OPENSSH_VERSION" = "1:9.6p1-3ubuntu13.14"
 VNC_OPENSSH_HOST_KEY_ALGORITHM="$(awk '{print $1}' "$VNC_ACCEPT_DIR/host_key.pub")"
 VNC_OPENSSH_HOST_KEY_FINGERPRINT="$(ssh-keygen -lf "$VNC_ACCEPT_DIR/host_key.pub" -E sha256 | awk '{print $2}')"
-VNC_RUNNER_TEST_BINARY="$(find crates/target/local/deps -maxdepth 1 -type f \
-  -name 'runner-*' -perm -111 -printf '%T@ %p\n' | sort -n | tail -1 | cut -d' ' -f2-)"
-test -n "$VNC_RUNNER_TEST_BINARY"
+printf 'ssh_loopback=127.0.0.1:%s host_key=%s/%s\n' \
+  "$VNC_OPENSSH_PORT" "$VNC_OPENSSH_HOST_KEY_ALGORITHM" "$VNC_OPENSSH_HOST_KEY_FINGERPRINT"
 sudo install -m 755 "$VNC_RUNNER_TEST_BINARY" "$VNC_ACCEPT_DIR/runner-tests"
 sudo install -m 644 crates/rfb-client/tests/fixtures/tigervnc.py \
   "$VNC_ACCEPT_DIR/tigervnc.py"
-sudo chown -R "$VNC_ACCEPT_USER:$VNC_ACCEPT_USER" "$VNC_ACCEPT_DIR"
+# The test account only needs a private work directory and its client key.
+# Keep sshd_config, sshd.pid, sshd.log and the host key unwritable by it.
+sudo install -d -m 700 -o "$VNC_ACCEPT_USER" -g "$VNC_ACCEPT_USER" \
+  "$VNC_ACCEPT_DIR/test"
+sudo install -m 600 -o "$VNC_ACCEPT_USER" -g "$VNC_ACCEPT_USER" \
+  "$VNC_ACCEPT_DIR/client_key" "$VNC_ACCEPT_DIR/test/client_key"
+chmod 711 "$VNC_ACCEPT_DIR"
 
 sudo -u "$VNC_ACCEPT_USER" env \
   HOME="/home/$VNC_ACCEPT_USER" \
-  TMPDIR="$VNC_ACCEPT_DIR" \
+  TMPDIR="$VNC_ACCEPT_DIR/test" \
+  PYTHONPATH="$VNC_ACCEPT_PYTHONPATH" \
   VNC_OPENSSH_VERSION="$VNC_OPENSSH_VERSION" \
   VNC_OPENSSH_PORT="$VNC_OPENSSH_PORT" \
   VNC_OPENSSH_USERNAME="$VNC_ACCEPT_USER" \
   VNC_OPENSSH_PASSWORD="$VNC_ACCEPT_PASSWORD" \
-  VNC_OPENSSH_PRIVATE_KEY="$VNC_ACCEPT_DIR/client_key" \
+  VNC_OPENSSH_PRIVATE_KEY="$VNC_ACCEPT_DIR/test/client_key" \
   VNC_OPENSSH_HOST_KEY_ALGORITHM="$VNC_OPENSSH_HOST_KEY_ALGORITHM" \
   VNC_OPENSSH_HOST_KEY_FINGERPRINT="$VNC_OPENSSH_HOST_KEY_FINGERPRINT" \
   RFB_TIGERVNC_FIXTURE="$VNC_ACCEPT_DIR/tigervnc.py" \
@@ -182,7 +266,7 @@ sudo -u "$VNC_ACCEPT_USER" env \
   RFB_TIGERVNC_PLAIN_PASSWORD="$VNC_ACCEPT_PASSWORD" \
   RFB_TIGERVNC_PAM_SERVICE=tigervnc \
   "$VNC_ACCEPT_DIR/runner-tests" \
-  ssh::tests::vnc_interoperability::pinned_openssh_tigervnc_vnc_transport_acceptance \
+  ssh::tests::vnc_interoperability::installed_openssh_tigervnc_vnc_transport_acceptance \
   --ignored --exact --nocapture
 ```
 
@@ -194,8 +278,9 @@ acceptance host is outside this procedure.
 Record all of the following against the exact PR head:
 
 - commit and test-binary SHA-256;
-- `dpkg-query` versions for OpenSSH and TigerVNC;
-- the four matrix cases and their start/status/capture/close result;
+- `dpkg-query` versions for both installed OpenSSH packages and pinned TigerVNC;
+- the four matrix cases and their start/status/capture/close result, including
+  each `matrix_case_destination` RFB port;
 - the pinned host-key algorithm/fingerprint and non-secret loopback topology;
 - certificate identity `localhost` and exact forwarded RFB port;
 - test exit status;

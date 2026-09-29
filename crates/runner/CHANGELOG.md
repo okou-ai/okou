@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.214.3](https://github.com/okou-ai/okou/compare/runner-rs-v0.214.2...runner-rs-v0.214.3) (2026-09-29)
+
+
+### Bug Fixes
+
+* **vnc:** make ssh interoperability acceptance reproducible ([#37273](https://github.com/okou-ai/okou/issues/37273)) ([cac5a5b](https://github.com/okou-ai/okou/commit/cac5a5b940bddbcdb21b807f7f4c4d2ec5791964))
+
 ## [0.214.2](https://github.com/okou-ai/okou/compare/runner-rs-v0.214.1...runner-rs-v0.214.2) (2026-09-28)
 
 ## [0.214.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.214.0...runner-rs-v0.214.1) (2026-09-28)

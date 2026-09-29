@@ -496,7 +496,7 @@ run in the PR pipeline.
 
 The ignored Runner interoperability lane composes the production SSH authority,
 direct-tcpip forwarding, VNC authority, session, capture and close paths against
-OpenSSH `1:9.6p1-3ubuntu13.14` and TigerVNC
+an explicitly recorded installed OpenSSH version and TigerVNC
 `1.13.1+dfsg-2build2`. It covers password and public-key SSH crossed with
 X509Vnc and X509Plain, pins the SSH host key and `localhost` certificate
 identity, records the exact forwarded destination, and requires teardown of the

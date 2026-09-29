@@ -180,6 +180,7 @@ import {
   createMailDraftCardSignalsRegistry,
   type MailDraftCardSignalsRegistry,
 } from "./mail-draft.ts";
+import { embedMarkdownMailDrafts$ } from "./markdown-mail-drafts.ts";
 import { createBrowserSessionSignals } from "./browser-session-block.ts";
 import { createChatThreadContainerSignals } from "./chat-thread-container.ts";
 import { replyTurnKey } from "./chat-event-group-keys.ts";
@@ -1586,6 +1587,7 @@ function createEventTreeParser(registries: EventTreeRegistries) {
     chatActionContext,
     mermaidDiagrams,
     artifactCardSignals,
+    mailDraftCardSignals,
     imageLoads,
   } = registries;
   const registerCardRef$ = createCardRefRegistrar(registries);
@@ -1617,6 +1619,7 @@ function createEventTreeParser(registries: EventTreeRegistries) {
         artifactCardSignals,
         chatActionContext.threadId,
       );
+      set(embedMarkdownMailDrafts$, tree, mailDraftCardSignals);
       embedImageLoadSignals(tree, (url) => {
         return set(imageLoads.register$, url);
       });

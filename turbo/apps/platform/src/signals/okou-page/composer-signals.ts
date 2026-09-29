@@ -69,11 +69,6 @@ import {
   createImageAnnotationSignals,
   type ImageAnnotationSignals,
 } from "./image-annotation.ts";
-import {
-  CREATE_WORKFLOW_WITH_CHAT_PROMPT,
-  replaceWorkflowPromptDraftTarget$,
-  setReplaceWorkflowPromptDraftTarget$,
-} from "../chat-page/workflow-prompt-action.ts";
 
 type ComposerEditorSignals = Pick<
   WorkflowComposerSignals,
@@ -150,13 +145,6 @@ export interface ComposerPendingEvent {
   readonly kind: "message" | "automation";
   readonly id: string;
   readonly text: string;
-}
-
-interface ComposerWorkflowSignals extends ComposerWorkflowEditorSignals {
-  readonly createWorkflowPrompt$: Command<Promise<void>, [AbortSignal]>;
-  readonly replaceWorkflowPromptOpen$: Computed<boolean>;
-  readonly confirmReplaceWorkflowPrompt$: Command<Promise<void>, [AbortSignal]>;
-  readonly setReplaceWorkflowPromptOpen$: Command<void, [boolean]>;
 }
 
 interface ComposerDraftSignals {
@@ -260,7 +248,7 @@ export interface ComposerSignals {
   readonly editor: ComposerEditorSignals;
   readonly voice: ComposerVoiceInputSignals;
   readonly feedback: WorkflowComposerSignals["feedback"];
-  readonly workflow: ComposerWorkflowSignals;
+  readonly workflow: ComposerWorkflowEditorSignals;
   readonly suggestion: ComposerSuggestionSignals;
   readonly connector: ComposerConnectorSignals;
   readonly draft: ComposerDraftSignals;
@@ -413,70 +401,6 @@ function createComputerUseUiSignals(): Pick<
   };
 }
 
-function createComposerWorkflowPromptSignals(
-  options: CreateComposerSignalsOptions,
-  workflowComposer: WorkflowComposerSignals,
-  taskChips: ComposerTaskChipsSignals,
-): Pick<
-  ComposerWorkflowSignals,
-  | "createWorkflowPrompt$"
-  | "replaceWorkflowPromptOpen$"
-  | "confirmReplaceWorkflowPrompt$"
-  | "setReplaceWorkflowPromptOpen$"
-> {
-  const draft = options.draft.signals;
-  const draftTarget = `composer:${options.threadId ?? "new-thread"}`;
-  const replaceWorkflowPromptOpen$ = computed((get): boolean => {
-    return get(replaceWorkflowPromptDraftTarget$) === draftTarget;
-  });
-  const applyWorkflowPrompt$ = command(
-    async ({ set }, signal: AbortSignal): Promise<void> => {
-      if (options.threadId !== undefined) {
-        set(draft.clear$);
-      }
-      set(draft.setInput$, CREATE_WORKFLOW_WITH_CHAT_PROMPT);
-      // The prompt and the Workflow chip start the same job, so the row leaves
-      // the composer where that chip would: the task selected and its ideas
-      // open. Where the chips are switched off there is nothing to select, and
-      // `openTask$` is a no-op.
-      set(taskChips.openTask$, "workflow");
-      await set(options.draft.save$, signal);
-      if (options.threadId !== undefined) {
-        set(workflowComposer.focus$);
-      }
-    },
-  );
-  const createWorkflowPrompt$ = command(
-    async ({ get, set }, signal: AbortSignal): Promise<void> => {
-      const hasDraft =
-        set(draft.readInput$).trim().length > 0 ||
-        (options.threadId !== undefined && get(draft.attachments$).length > 0);
-      if (hasDraft) {
-        set(setReplaceWorkflowPromptDraftTarget$, draftTarget);
-        return;
-      }
-      await set(applyWorkflowPrompt$, signal);
-    },
-  );
-  const confirmReplaceWorkflowPrompt$ = command(
-    async ({ set }, signal: AbortSignal): Promise<void> => {
-      set(setReplaceWorkflowPromptDraftTarget$, null);
-      await set(applyWorkflowPrompt$, signal);
-    },
-  );
-  const setReplaceWorkflowPromptOpen$ = command(
-    ({ set }, open: boolean): void => {
-      set(setReplaceWorkflowPromptDraftTarget$, open ? draftTarget : null);
-    },
-  );
-  return {
-    createWorkflowPrompt$,
-    replaceWorkflowPromptOpen$,
-    confirmReplaceWorkflowPrompt$,
-    setReplaceWorkflowPromptOpen$,
-  };
-}
-
 function createRemoveQueuedMessage(
   removeQueuedMessage$: CreateComposerSignalsOptions["removeQueuedMessage$"],
   workflowComposer: WorkflowComposerSignals,
@@ -617,11 +541,6 @@ export function createComposerSignals(
     { voice, create, taskChips },
   );
   const fileInput = createComposerFileInputSignals();
-  const workflowPrompt = createComposerWorkflowPromptSignals(
-    options,
-    workflowComposer,
-    taskChips,
-  );
   const imageAnnotation = createImageAnnotationSignals();
   /**
    * Teardown owner for the annotation session and its in-flight derivative
@@ -660,10 +579,7 @@ export function createComposerSignals(
     editor: composerEditorSignals(workflowComposer, options),
     voice,
     feedback: workflowComposer.feedback,
-    workflow: {
-      ...composerWorkflowSignals(workflowComposer),
-      ...workflowPrompt,
-    },
+    workflow: composerWorkflowSignals(workflowComposer),
     suggestion: composerSuggestionSignals(workflowComposer),
     connector:
       options.connector ??

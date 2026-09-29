@@ -1760,7 +1760,6 @@
         "slideCountAuto": "Auto",
         "slideCountRange": "{{range}} slides"
       },
-      "createWorkflow": "Create workflow",
       "message": "Message",
       "modelForThisChat": "Model for this chat",
       "placeholder": "Ask me to automate workflows, manage tasks...",
@@ -2077,10 +2076,6 @@
       "retry": "Retry",
       "title": "Remote access",
       "unavailableSsh": "unavailable SSH host"
-    },
-    "replaceDraft": {
-      "description": "Continuing will clear your current composer draft and start a workflow prompt.",
-      "title": "Replace composer draft?"
     },
     "run": {
       "collapseWorkHistory": "Collapse work history",
@@ -4947,6 +4942,10 @@
         "effort": "Effort",
         "effortScale": {
           "faster": "Faster",
+          "fewerCredits": "Fewer credits",
+          "higherUsage": "Higher usage",
+          "lowerUsage": "Lower usage",
+          "moreCredits": "More credits",
           "smarter": "Smarter"
         },
         "fast": "Fast",
@@ -4954,6 +4953,7 @@
           "apiCost": "{{multiplier}}× API token cost",
           "apiSpeed": "Up to {{multiplier}}× model speed",
           "chatGptUsage": "{{multiplier}}× ChatGPT usage",
+          "compactSummary": "Faster responses · {{multiplier}}× credits",
           "fasterResponses": "Faster model responses",
           "modelSpeed": "{{multiplier}}× model speed",
           "okouCredits": "{{multiplier}}× Okou model credits",
@@ -4961,6 +4961,7 @@
           "providerUsage": "Usage depends on provider",
           "summary": "{{speed}} · {{usage}}"
         },
+        "fastMode": "Fast mode",
         "generationPriceTiers": {
           "higher": "Higher cost per generation",
           "highest": "Highest cost per generation",

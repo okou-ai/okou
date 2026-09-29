@@ -82,7 +82,7 @@ describe("okou resource pull registry resolver", () => {
 
   it("resolves every website template v2 package", () => {
     for (const item of WEBSITE_TEMPLATE_ITEMS) {
-      const resourceId = `${item.resourceId}-v2`;
+      const resourceId = `${item.templateId}-v2`;
 
       expect(findRegistryResourceForPull(resourceId)).toEqual(
         expect.objectContaining({
@@ -90,7 +90,7 @@ describe("okou resource pull registry resolver", () => {
           kind: "template",
           targets: ["website"],
           source: expect.objectContaining({
-            path: item.sourcePath,
+            path: item.slug,
             archive: {
               type: "tar.gz",
               sha256: EXPECTED_WEBSITE_TEMPLATE_V2_SHA256[item.slug],

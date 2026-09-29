@@ -1757,7 +1757,6 @@
         "slideCountAuto": "자동",
         "slideCountRange": "{{range}}장"
       },
-      "createWorkflow": "워크플로 생성",
       "message": "메시지",
       "modelForThisChat": "이 채팅의 모델",
       "placeholder": "워크플로 자동화, 작업 관리 등을 요청하세요...",
@@ -2069,10 +2068,6 @@
       "retry": "다시 시도",
       "title": "원격 액세스",
       "unavailableSsh": "사용할 수 없는 SSH 호스트"
-    },
-    "replaceDraft": {
-      "description": "계속하면 현재 작성 중인 초안이 삭제되고 워크플로 프롬프트가 시작됩니다.",
-      "title": "작성 중인 초안을 교체하시겠습니까?"
     },
     "run": {
       "collapseWorkHistory": "작업 기록 접기",
@@ -4937,6 +4932,10 @@
         "effort": "강도",
         "effortScale": {
           "faster": "빠르게",
+          "fewerCredits": "크레딧 적게",
+          "higherUsage": "사용량 많이",
+          "lowerUsage": "사용량 적게",
+          "moreCredits": "크레딧 많이",
           "smarter": "똑똑하게"
         },
         "fast": "빠름",
@@ -4944,6 +4943,7 @@
           "apiCost": "API 토큰 비용 {{multiplier}}×",
           "apiSpeed": "모델 속도 최대 {{multiplier}}×",
           "chatGptUsage": "ChatGPT 사용량 {{multiplier}}×",
+          "compactSummary": "더 빠른 응답 · {{multiplier}}× 크레딧",
           "fasterResponses": "더 빠른 모델 응답",
           "modelSpeed": "모델 속도 {{multiplier}}×",
           "okouCredits": "Okou 모델 크레딧 사용량 {{multiplier}}×",
@@ -4951,6 +4951,7 @@
           "providerUsage": "사용량은 제공업체에 따라 다름",
           "summary": "{{speed}} · {{usage}}"
         },
+        "fastMode": "빠른 모드",
         "generationPriceTiers": {
           "higher": "생성당 비용 높음",
           "highest": "생성당 비용 가장 높음",

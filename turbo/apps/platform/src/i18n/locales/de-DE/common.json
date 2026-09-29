@@ -1760,7 +1760,6 @@
         "slideCountAuto": "Automatisch",
         "slideCountRange": "{{range}} Folien"
       },
-      "createWorkflow": "Workflow erstellen",
       "message": "Nachricht",
       "modelForThisChat": "Modell für diesen Chat",
       "placeholder": "Bitten Sie mich, Workflows zu automatisieren und Aufgaben zu verwalten...",
@@ -2077,10 +2076,6 @@
       "retry": "Erneut versuchen",
       "title": "Fernzugriff",
       "unavailableSsh": "nicht verfügbarer SSH-Host"
-    },
-    "replaceDraft": {
-      "description": "Wenn Sie fortfahren, wird Ihr aktueller Composer-Entwurf gelöscht und eine Workflow-Eingabeaufforderung gestartet.",
-      "title": "Composer-Entwurf ersetzen?"
     },
     "run": {
       "collapseWorkHistory": "Arbeitsverlauf einklappen",
@@ -4955,6 +4950,10 @@
         "effort": "Aufwand",
         "effortScale": {
           "faster": "Schneller",
+          "fewerCredits": "Weniger Credits",
+          "higherUsage": "Höherer Verbrauch",
+          "lowerUsage": "Geringerer Verbrauch",
+          "moreCredits": "Mehr Credits",
           "smarter": "Intelligenter"
         },
         "fast": "Schnell",
@@ -4962,6 +4961,7 @@
           "apiCost": "{{multiplier}}× API-Tokenkosten",
           "apiSpeed": "Bis zu {{multiplier}}× Modellgeschwindigkeit",
           "chatGptUsage": "{{multiplier}}× ChatGPT-Verbrauch",
+          "compactSummary": "Schnellere Antworten · {{multiplier}}× Credits",
           "fasterResponses": "Schnellere Modellantworten",
           "modelSpeed": "{{multiplier}}× Modellgeschwindigkeit",
           "okouCredits": "{{multiplier}}× Okou-Modell-Credits",
@@ -4969,6 +4969,7 @@
           "providerUsage": "Verbrauch hängt vom Anbieter ab",
           "summary": "{{speed}} · {{usage}}"
         },
+        "fastMode": "Schnellmodus",
         "generationPriceTiers": {
           "higher": "Höhere Kosten pro Generierung",
           "highest": "Höchste Kosten pro Generierung",

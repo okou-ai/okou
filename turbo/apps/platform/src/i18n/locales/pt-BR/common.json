@@ -1789,7 +1789,6 @@
         "slideCountAuto": "Automático",
         "slideCountRange": "{{range}} slides"
       },
-      "createWorkflow": "Criar fluxo de trabalho",
       "message": "Mensagem",
       "modelForThisChat": "Modelo para este chat",
       "placeholder": "Peça para automatizar fluxos de trabalho, gerenciar tarefas...",
@@ -2119,10 +2118,6 @@
       "retry": "Tentar novamente",
       "title": "Acesso remoto",
       "unavailableSsh": "host SSH indisponível"
-    },
-    "replaceDraft": {
-      "description": "Continuar limpará o rascunho atual do editor e iniciará um prompt de fluxo de trabalho.",
-      "title": "Substituir rascunho do editor?"
     },
     "run": {
       "collapseWorkHistory": "Recolher histórico de trabalho",
@@ -5019,6 +5014,10 @@
         "effort": "Esforço",
         "effortScale": {
           "faster": "Mais rápido",
+          "fewerCredits": "Menos créditos",
+          "higherUsage": "Maior consumo",
+          "lowerUsage": "Menor consumo",
+          "moreCredits": "Mais créditos",
           "smarter": "Mais inteligente"
         },
         "fast": "Rápido",
@@ -5026,6 +5025,7 @@
           "apiCost": "{{multiplier}}× o custo de tokens da API",
           "apiSpeed": "Até {{multiplier}}× a velocidade do modelo",
           "chatGptUsage": "{{multiplier}}× o consumo do ChatGPT",
+          "compactSummary": "Respostas mais rápidas · {{multiplier}}× créditos",
           "fasterResponses": "Respostas do modelo mais rápidas",
           "modelSpeed": "{{multiplier}}× a velocidade do modelo",
           "okouCredits": "{{multiplier}}× os créditos de modelo do Okou",
@@ -5033,6 +5033,7 @@
           "providerUsage": "O consumo depende do provedor",
           "summary": "{{speed}} · {{usage}}"
         },
+        "fastMode": "Modo rápido",
         "generationPriceTiers": {
           "higher": "Custo mais alto por geração",
           "highest": "Custo máximo por geração",

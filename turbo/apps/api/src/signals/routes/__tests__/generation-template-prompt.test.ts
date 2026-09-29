@@ -339,7 +339,7 @@ describe("buildGenerationTemplatePrompt", () => {
 
   it("builds website template package guidance", () => {
     const item = WEBSITE_TEMPLATE_ITEMS[0]!;
-    const resourceId = item.resourceId;
+    const resourceId = item.templateId;
     const latestPackage = findWebsiteTemplatePackage(resourceId);
     if (!latestPackage) {
       throw new Error("Expected current Website template package");
@@ -369,7 +369,7 @@ describe("buildGenerationTemplatePrompt", () => {
       `okou resource pull ${resourceId} --dir ./generated/resources`,
     );
     expect(result.prompt).toContain(
-      `Read ./generated/resources/${item.sourcePath}/SKILL.md before authoring`,
+      `Read ./generated/resources/${item.slug}/SKILL.md before authoring`,
     );
     expect(result.prompt).toContain(
       "Assemble the page once with `node tools/compose.mjs <section-ids...>`",
@@ -410,7 +410,7 @@ describe("buildGenerationTemplatePrompt", () => {
 
   it("selects every current website template package", () => {
     for (const item of WEBSITE_TEMPLATE_ITEMS) {
-      const resourceId = item.resourceId;
+      const resourceId = item.templateId;
       const result = buildGenerationTemplatePrompt({
         type: "website",
         selection: {
@@ -430,7 +430,7 @@ describe("buildGenerationTemplatePrompt", () => {
       expect(result.prompt).toContain(`Template package id: ${resourceId}`);
       expect(result.prompt).toContain(`Package resource: ${resourceId}`);
       expect(result.prompt).toContain(
-        `Read ./generated/resources/${item.sourcePath}/SKILL.md before authoring`,
+        `Read ./generated/resources/${item.slug}/SKILL.md before authoring`,
       );
       expect(result.prompt).toContain(
         "okou generate image-batch start <manifest.tsv> <state-dir>",

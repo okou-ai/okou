@@ -1544,6 +1544,24 @@ describe("MCP chat discovery and creation", () => {
     expect(
       (await getMessages(token, { threadId: args.requestId })).messages,
     ).toMatchObject([{ text: args.message }]);
+    const original = (
+      await f.chat.listThreadEvents(f.actor, args.requestId)
+    ).events.find((event) => {
+      return (
+        event.id === combined.input.inputRef.eventId &&
+        event.eventType === "input.prompt"
+      );
+    });
+    if (original?.eventType !== "input.prompt") {
+      throw new Error("Expected the combined input event");
+    }
+    expect(original.userMessage).toStrictEqual({
+      version: 1,
+      parts: [
+        { type: "text", text: args.message },
+        { type: "source", kind: "mcp", clientId: "mcp_test_client" },
+      ],
+    });
 
     await f.runs.updateOrgModelPolicies(f.actor, [
       {
@@ -1582,6 +1600,36 @@ describe("MCP chat discovery and creation", () => {
     expect(
       (await getMessages(token, { threadId: args.requestId })).messages,
     ).toHaveLength(1);
+    const after = (
+      await f.chat.listThreadEvents(f.actor, args.requestId)
+    ).events.find((event) => {
+      return (
+        event.id === combined.input.inputRef.eventId &&
+        event.eventType === "input.prompt"
+      );
+    });
+    if (after?.eventType !== "input.prompt") {
+      throw new Error("Expected the replayed combined input event");
+    }
+    expect(after.userMessage).toStrictEqual(original.userMessage);
+    const differentClient = f.auth.token({
+      client_id: "different_combined_client",
+      scope: defaultScopes,
+    });
+    await expect(createThread(differentClient, args)).resolves.toMatchObject({
+      threadId: args.requestId,
+      replayed: true,
+      input: { inputRef: combined.input.inputRef },
+    });
+    const unchanged = (
+      await f.chat.listThreadEvents(f.actor, args.requestId)
+    ).events.find((event) => {
+      return event.id === combined.input.inputRef.eventId;
+    });
+    if (unchanged?.eventType !== "input.prompt") {
+      throw new Error("Expected the original combined input event");
+    }
+    expect(unchanged.userMessage).toStrictEqual(original.userMessage);
   });
 
   it("finishes combined creation after its HTTP caller disconnects and recovers one input", async () => {
@@ -3232,6 +3280,234 @@ describe("MCP chat status", () => {
 });
 
 describe("MCP chat mutations", () => {
+  it("keeps the first signed client source on a cross-client retry without leaking the token", async () => {
+    const f = await messageFixture();
+    const archived: RecordedChatEventPut[] = [];
+    installFakeChatEventR2(context, archived);
+    const thread = await f.chat.createThread(f.actor, {
+      agentId: f.agent.agentId,
+    });
+    const metadataUrl = "https://mcp-client.example.test/oauth/client.json";
+    context.mocks.dns.lookupOverrides.set("mcp-client.example.test", [
+      { address: "8.8.8.8", family: 4 },
+    ]);
+    const authorizationHeaders: (string | null)[] = [];
+    server.use(
+      http.get(metadataUrl, ({ request }) => {
+        authorizationHeaders.push(request.headers.get("authorization"));
+        return HttpResponse.json({
+          client_id: metadataUrl,
+          client_name: "  Claude   Code  ",
+        });
+      }),
+    );
+    const args = {
+      threadId: thread.id,
+      requestId: randomUUID(),
+      text: "Source stays with the accepted message",
+    };
+    const token = f.auth.token({
+      client_id: metadataUrl,
+      scope: defaultScopes,
+    });
+    const receipt = await sendMessage(token, args);
+    await waitForRejectedInput(token, receipt.inputRef);
+    const original = (
+      await f.chat.listThreadEvents(f.actor, thread.id)
+    ).events.find((event) => {
+      return event.id === args.requestId && event.eventType === "input.prompt";
+    });
+    if (original?.eventType !== "input.prompt") {
+      throw new Error("Expected the MCP input event");
+    }
+    expect(original.userMessage).toStrictEqual({
+      version: 1,
+      parts: [
+        { type: "text", text: args.text },
+        {
+          type: "source",
+          kind: "mcp",
+          clientId: metadataUrl,
+          clientName: "Claude Code",
+        },
+      ],
+    });
+    expect(authorizationHeaders).toStrictEqual([null]);
+    expect(
+      (await getMessages(token, { threadId: thread.id })).messages,
+    ).toMatchObject([{ text: args.text }]);
+
+    // A later metadata edit cannot change the already accepted input.
+    server.use(
+      http.get(metadataUrl, () => {
+        return HttpResponse.json({
+          client_id: metadataUrl,
+          client_name: "Renamed client",
+        });
+      }),
+    );
+    await expect(sendMessage(token, args)).resolves.toMatchObject({
+      inputRef: receipt.inputRef,
+      replayed: true,
+    });
+    const differentClient = f.auth.token({
+      client_id: "another_signed_client",
+      scope: defaultScopes,
+    });
+    await expect(sendMessage(differentClient, args)).resolves.toMatchObject({
+      inputRef: receipt.inputRef,
+      replayed: true,
+    });
+    expect(
+      structuredToolError(
+        await callTool(differentClient, "send_chat_message", {
+          ...args,
+          text: "A different message must still conflict",
+        }),
+      ),
+    ).toMatchObject({ code: "request_id_conflict", retryable: false });
+    const after = (
+      await f.chat.listThreadEvents(f.actor, thread.id)
+    ).events.find((event) => {
+      return event.id === args.requestId && event.eventType === "input.prompt";
+    });
+    if (after?.eventType !== "input.prompt") {
+      throw new Error("Expected the replayed MCP input event");
+    }
+    expect(after.userMessage).toStrictEqual(original.userMessage);
+    // The canonical archive must retain the source and the MCP history must
+    // remain readable after its raw input row is deleted. Raw Events correctly
+    // return 410 for a cursor that predates retention, so inspect the captured
+    // R2 write rather than attempting to read expired rows from sequence zero.
+    // Only the cutoff needs a fixture: public MCP sends cannot backdate input.
+    await setQueuedUserMessageCreatedAtFixture({
+      eventId: args.requestId,
+      createdAt: new Date(now() - 31 * 24 * 60 * 60 * 1000),
+    });
+    await snapshotMessages(thread.id);
+    const archive = archived.at(-1);
+    if (!archive) {
+      throw new Error("Expected the canonical MCP archive");
+    }
+    const archivedInput = gunzipSync(archive.body)
+      .toString("utf8")
+      .trimEnd()
+      .split("\n")
+      .map((line) => {
+        return chatEventRowSchema.parse(JSON.parse(line));
+      })
+      .find((row) => {
+        return row.id === args.requestId;
+      });
+    expect(archivedInput?.payload?.userMessage).toStrictEqual(
+      original.userMessage,
+    );
+    const retained = await accept(
+      setupApp({ context, routes: testChatEventRetentionRoutes })(
+        testChatEventRetentionContract,
+      ).retain({ body: { chat_thread_ids: [thread.id] } }),
+      [200],
+    );
+    expect(retained.body.deleted).toBe(1);
+    expect(
+      (await getMessages(token, { threadId: thread.id })).messages,
+    ).toMatchObject([{ text: args.text }]);
+  });
+
+  it("keeps signed provenance but omits unsafe or mismatched client display metadata", async () => {
+    const f = await messageFixture();
+    const thread = await f.chat.createThread(f.actor, {
+      agentId: f.agent.agentId,
+    });
+    const metadataUrl =
+      "https://untrusted-client.example.test/oauth/client.json";
+    context.mocks.dns.lookupOverrides.set("untrusted-client.example.test", [
+      { address: "8.8.8.8", family: 4 },
+    ]);
+    server.use(
+      http.get(metadataUrl, () => {
+        return HttpResponse.json({
+          client_id: "https://different.example.test/oauth/client.json",
+          client_name: "Do not show this name",
+        });
+      }),
+    );
+    for (const clientId of [
+      metadataUrl,
+      "https://localhost/private",
+      "mcp_non_url_client",
+    ]) {
+      const args = {
+        threadId: thread.id,
+        requestId: randomUUID(),
+        text: `Missing metadata for ${clientId}`,
+      };
+      const token = f.auth.token({ client_id: clientId, scope: defaultScopes });
+      const receipt = await sendMessage(token, args);
+      await waitForRejectedInput(token, receipt.inputRef);
+      const original = (
+        await f.chat.listThreadEvents(f.actor, thread.id)
+      ).events.find((event) => {
+        return (
+          event.id === args.requestId && event.eventType === "input.prompt"
+        );
+      });
+      if (original?.eventType !== "input.prompt") {
+        throw new Error("Expected the fallback MCP input event");
+      }
+      expect(original.userMessage).toStrictEqual({
+        version: 1,
+        parts: [
+          { type: "text", text: args.text },
+          { type: "source", kind: "mcp", clientId },
+        ],
+      });
+    }
+
+    // A matching client_id cannot make an oversized or unavailable name safe.
+    for (const response of [
+      HttpResponse.json({
+        client_id: metadataUrl,
+        client_name: "x".repeat(121),
+      }),
+      HttpResponse.json({
+        client_id: metadataUrl,
+        client_name: "A\u202eB",
+      }),
+      new HttpResponse(null, { status: 503 }),
+    ]) {
+      server.use(
+        http.get(metadataUrl, () => {
+          return response;
+        }),
+      );
+      const requestId = randomUUID();
+      const token = f.auth.token({
+        client_id: metadataUrl,
+        scope: defaultScopes,
+      });
+      const receipt = await sendMessage(token, {
+        threadId: thread.id,
+        requestId,
+        text: "Still accepted without a display name",
+      });
+      await waitForRejectedInput(token, receipt.inputRef);
+      const input = (
+        await f.chat.listThreadEvents(f.actor, thread.id)
+      ).events.find((event) => {
+        return event.id === requestId;
+      });
+      if (input?.eventType !== "input.prompt") {
+        throw new Error("Expected the fallback input event");
+      }
+      expect(input.userMessage.parts[1]).toStrictEqual({
+        type: "source",
+        kind: "mcp",
+        clientId: metadataUrl,
+      });
+    }
+  });
+
   it("treats UUID letter case as the same submission identity", async () => {
     const f = await messageFixture();
     const thread = await f.chat.createThread(f.actor, {
@@ -3300,7 +3576,13 @@ describe("MCP chat mutations", () => {
     expect(original).toMatchObject({
       seqId: result.inputRef.seqId,
       eventType: "input.prompt",
-      userMessage: { version: 1, parts: [{ type: "text", text }] },
+      userMessage: {
+        version: 1,
+        parts: [
+          { type: "text", text },
+          { type: "source", kind: "mcp", clientId: "mcp_test_client" },
+        ],
+      },
     });
     const [message] = (await getMessages(token, { threadId: thread.id }))
       .messages;
@@ -7024,6 +7306,8 @@ describe("external MCP entry", () => {
     { aud: undefined },
     { org_id: undefined },
     { client_id: undefined },
+    { client_id: "   " },
+    { client_id: "x".repeat(2049) },
     { sub: "machine_client" },
     { exp: 1 },
     { nbf: 9_000_000_000 },

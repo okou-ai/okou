@@ -11,6 +11,27 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.984.4](https://github.com/okou-ai/okou/compare/app-v0.984.3...app-v0.984.4) (2026-09-29)
+
+
+### Bug Fixes
+
+* **app:** support mail draft links inside and outside chat ([#37325](https://github.com/okou-ai/okou/issues/37325)) ([cd20229](https://github.com/okou-ai/okou/commit/cd20229225653aad191480db564f5f3ab4c775d8))
+
+
+### Refactoring
+
+* remove thread image model compatibility and dead generation metadata ([#37306](https://github.com/okou-ai/okou/issues/37306)) ([bb79964](https://github.com/okou-ai/okou/commit/bb7996407cbf06854852966ef1c5fc04a390d4d2))
+* simplify generation and template internals ([#37328](https://github.com/okou-ai/okou/issues/37328)) ([363beba](https://github.com/okou-ai/okou/commit/363beba298d77a4746bf7097f49d11342ea3fbb2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.527.1
+    * @okouai/core bumped to 8.720.4
+
 ## [0.984.3](https://github.com/okou-ai/okou/compare/app-v0.984.2...app-v0.984.3) (2026-09-29)
 
 

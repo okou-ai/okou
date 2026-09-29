@@ -1789,7 +1789,6 @@
         "slideCountAuto": "Automatique",
         "slideCountRange": "{{range}} diapositives"
       },
-      "createWorkflow": "Créer un workflow",
       "message": "Message",
       "modelForThisChat": "Modèle pour cette discussion",
       "placeholder": "Demandez-moi d’automatiser des workflows, de gérer des tâches...",
@@ -2119,10 +2118,6 @@
       "retry": "Réessayer",
       "title": "Accès à distance",
       "unavailableSsh": "hôte SSH indisponible"
-    },
-    "replaceDraft": {
-      "description": "Continuer effacera votre brouillon actuel dans la zone de saisie et démarrera un prompt de workflow.",
-      "title": "Remplacer le brouillon du compositeur ?"
     },
     "run": {
       "collapseWorkHistory": "Réduire l'historique du travail",
@@ -5019,6 +5014,10 @@
         "effort": "Effort",
         "effortScale": {
           "faster": "Plus rapide",
+          "fewerCredits": "Moins de crédits",
+          "higherUsage": "Plus de consommation",
+          "lowerUsage": "Moins de consommation",
+          "moreCredits": "Plus de crédits",
           "smarter": "Plus intelligent"
         },
         "fast": "Rapide",
@@ -5026,6 +5025,7 @@
           "apiCost": "{{multiplier}}× le coût des tokens API",
           "apiSpeed": "Jusqu’à {{multiplier}}× la vitesse du modèle",
           "chatGptUsage": "{{multiplier}}× la consommation ChatGPT",
+          "compactSummary": "Réponses plus rapides · {{multiplier}}× crédits",
           "fasterResponses": "Réponses du modèle plus rapides",
           "modelSpeed": "{{multiplier}}× la vitesse du modèle",
           "okouCredits": "{{multiplier}}× les crédits de modèle Okou",
@@ -5033,6 +5033,7 @@
           "providerUsage": "La consommation dépend du fournisseur",
           "summary": "{{speed}} · {{usage}}"
         },
+        "fastMode": "Mode rapide",
         "generationPriceTiers": {
           "higher": "Coût plus élevé par génération",
           "highest": "Coût le plus élevé par génération",

@@ -1757,7 +1757,6 @@
         "slideCountAuto": "自动",
         "slideCountRange": "{{range}} 页"
       },
-      "createWorkflow": "创建工作流",
       "message": "消息",
       "modelForThisChat": "本次对话使用的模型",
       "placeholder": "让我自动化工作流、管理任务…",
@@ -2069,10 +2068,6 @@
       "retry": "重试",
       "title": "远程访问",
       "unavailableSsh": "不可用的 SSH 主机"
-    },
-    "replaceDraft": {
-      "description": "继续将清空你当前的输入框草稿，并开始一个工作流提示词。",
-      "title": "替换输入框草稿？"
     },
     "run": {
       "collapseWorkHistory": "收起工作记录",
@@ -4937,6 +4932,10 @@
         "effort": "思考强度",
         "effortScale": {
           "faster": "更快",
+          "fewerCredits": "更少积分",
+          "higherUsage": "更高用量",
+          "lowerUsage": "更低用量",
+          "moreCredits": "更多积分",
           "smarter": "更聪明"
         },
         "fast": "快速",
@@ -4944,6 +4943,7 @@
           "apiCost": "{{multiplier}}×API token成本",
           "apiSpeed": "模型速度最高{{multiplier}}×",
           "chatGptUsage": "{{multiplier}}×ChatGPT用量",
+          "compactSummary": "响应更快 · {{multiplier}}× 积分",
           "fasterResponses": "模型响应更快",
           "modelSpeed": "{{multiplier}}×模型速度",
           "okouCredits": "{{multiplier}}×Okou模型积分",
@@ -4951,6 +4951,7 @@
           "providerUsage": "用量取决于服务商",
           "summary": "{{speed}} · {{usage}}"
         },
+        "fastMode": "快速模式",
         "generationPriceTiers": {
           "higher": "单次生成成本较高",
           "highest": "单次生成成本最高",

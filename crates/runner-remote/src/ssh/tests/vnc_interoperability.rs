@@ -1,5 +1,5 @@
 //! Explicit independent OpenSSH plus TigerVNC acceptance.
-//! See `tests/VNC_SSH_INTEROPERABILITY.md`.
+//! See `crates/runner/tests/VNC_SSH_INTEROPERABILITY.md`.
 
 use runner_rpc_proto::stream::{Frame, Reader};
 use serde_json::{Value, json};
@@ -25,7 +25,6 @@ use crate::{
     vnc::VncRuntime,
 };
 
-const OPENSSH_PACKAGE_VERSION: &str = "1:9.6p1-3ubuntu13.14";
 const TIGERVNC_PACKAGE_VERSION: &str = "1.13.1+dfsg-2build2";
 
 #[derive(Clone, Copy)]
@@ -76,7 +75,7 @@ impl TigerVnc {
             .stderr(Stdio::inherit())
             .kill_on_drop(true)
             .spawn()
-            .expect("run the isolated setup in tests/VNC_SSH_INTEROPERABILITY.md");
+            .expect("run the isolated setup in crates/runner/tests/VNC_SSH_INTEROPERABILITY.md");
         let input = child.stdin.take().unwrap();
         let output = BufReader::new(child.stdout.take().unwrap());
         let mut fixture = Self {
@@ -184,13 +183,23 @@ async fn capture(harness: &Harness, session: &str) -> (Value, Vec<u8>) {
 }
 
 #[tokio::test]
-#[ignore = "requires the pinned disposable OpenSSH/TigerVNC host setup"]
-async fn pinned_openssh_tigervnc_vnc_transport_acceptance() {
-    assert_eq!(required("VNC_OPENSSH_VERSION"), OPENSSH_PACKAGE_VERSION);
+#[ignore = "requires the disposable OpenSSH/TigerVNC host setup"]
+async fn installed_openssh_tigervnc_vnc_transport_acceptance() {
+    eprintln!("openssh_server_version={}", required("VNC_OPENSSH_VERSION"));
     tokio::time::timeout(Duration::from_secs(240), async {
         for password in [true, false] {
             for security in [Security::Vnc, Security::Plain] {
+                eprintln!(
+                    "matrix_case_start: ssh={} vnc={}",
+                    if password { "password" } else { "public-key" },
+                    security.api_name()
+                );
                 run_case(password, security).await;
+                eprintln!(
+                    "matrix_case_passed: ssh={} vnc={}",
+                    if password { "password" } else { "public-key" },
+                    security.api_name()
+                );
             }
         }
     })
@@ -204,6 +213,13 @@ async fn run_case(password: bool, security: Security) {
     let mut harness = Harness::new(Reply::default()).await;
     *harness.network.target.lock().unwrap() =
         SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), ssh_port);
+    // Keep the mock public DNS answer's port aligned with the isolated sshd.
+    // TestNetwork::connect redirects the validated address to its loopback target.
+    {
+        let mut answers = harness.network.answers.lock().unwrap();
+        assert_eq!(answers.len(), 1);
+        answers[0].set_port(ssh_port);
+    }
     let http = http_client(HttpClientConfig {
         api_url: harness.api.base_url(),
         vercel_bypass: None,
@@ -224,6 +240,11 @@ async fn run_case(password: bool, security: Security) {
         }),
     };
     let vnc_port = fixture.ready["port"].as_u64().unwrap();
+    eprintln!(
+        "matrix_case_destination: ssh={} vnc={} rfb=127.0.0.1:{vnc_port} tls_identity=localhost",
+        if password { "password" } else { "public-key" },
+        security.api_name()
+    );
     let ca_bundle = std::fs::read_to_string(fixture.ready["ca_pem"].as_str().unwrap()).unwrap();
     let vnc_resolve = harness
         .api

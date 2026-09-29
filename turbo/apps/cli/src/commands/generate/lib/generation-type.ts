@@ -5,8 +5,10 @@ export type ConnectorGenerationType =
   | "image"
   | "text";
 
-type BuiltInGenerationType =
+export type GenerationType =
+  | "code"
   | "dashboard-design"
+  | "document"
   | "docs-design"
   | "image"
   | "mobile-app-design"
@@ -15,8 +17,8 @@ type BuiltInGenerationType =
   | "presentation"
   | "report"
   | "sprite"
+  | "text"
   | "website";
-export type GenerationType = ConnectorGenerationType | BuiltInGenerationType;
 
 export function getConnectorGenerationType(
   generationType: GenerationType,
@@ -33,7 +35,6 @@ export function getConnectorGenerationType(
     case "sprite":
     case "website":
       return null;
-    case "audio":
     case "code":
     case "document":
     case "image":

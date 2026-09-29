@@ -26,7 +26,14 @@ const oauthClaimsSchema = z.object({
   aud: z.union([z.string().min(1), z.array(z.string().min(1)).min(1)]),
   sub: z.string().startsWith("user_").min(6),
   org_id: z.string().startsWith("org_").min(5),
-  client_id: z.string().min(1),
+  // Must fit the persisted MCP source contract before any input is accepted.
+  client_id: z
+    .string()
+    .min(1)
+    .max(2048)
+    .refine((value) => {
+      return value.trim().length > 0;
+    }),
   exp: z.number().int().positive(),
   scope: z.string().optional(),
   scp: z.array(z.string().min(1)).optional(),
@@ -533,6 +540,43 @@ const clerkSessionFailureReasons: readonly string[] = Object.freeze([
   "unexpected-error",
 ]);
 
+// @clerk/backend@3.13.1 decorates an expired token's reason with its
+// refresh outcome. POST requests cannot refresh, so the fixed allowlist above
+// would report their expired Bearer tokens only as `unknown`. The SDK can also
+// append a provider-defined error code: never include an unchecked suffix.
+const expiredSessionRefreshPrefix = "session-token-expired-refresh-";
+const knownExpiredSessionRefreshOutcomes: readonly string[] = Object.freeze([
+  "non-eligible-no-refresh-cookie",
+  "non-eligible-non-get",
+  "invalid-session-token",
+  "missing-api-client",
+  "missing-session-token",
+  "missing-refresh-token",
+  "expired-session-token-decode-failed",
+  "expired-session-token-missing-sid-claim",
+  "fetch-error",
+  "unexpected-sdk-error",
+  "unexpected-bapi-error",
+]);
+
+function safeClerkSessionFailureReason(reason: unknown): string {
+  // Diagnostics must never turn an unauthenticated request into a 500 when
+  // Clerk omits a reason (or changes the rejection payload at runtime).
+  if (typeof reason !== "string") {
+    return "unknown";
+  }
+  if (clerkSessionFailureReasons.includes(reason)) {
+    return reason;
+  }
+  if (reason.startsWith(expiredSessionRefreshPrefix)) {
+    const outcome = reason.slice(expiredSessionRefreshPrefix.length);
+    return knownExpiredSessionRefreshOutcomes.includes(outcome)
+      ? `${expiredSessionRefreshPrefix}${outcome}`
+      : `${expiredSessionRefreshPrefix}other`;
+  }
+  return "unknown";
+}
+
 /** The only two fields the Clerk webhook route reads off an event. */
 export interface ClerkWebhookEvent {
   readonly type: string;
@@ -737,9 +781,7 @@ export async function authenticateClerkSession(
   if (!requestState.isAuthenticated) {
     return {
       identity: null,
-      failureReason: clerkSessionFailureReasons.includes(requestState.reason)
-        ? requestState.reason
-        : "unknown",
+      failureReason: safeClerkSessionFailureReason(requestState.reason),
     };
   }
 

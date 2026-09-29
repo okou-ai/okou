@@ -1760,7 +1760,6 @@
         "slideCountAuto": "स्वचालित",
         "slideCountRange": "{{range}} स्लाइड"
       },
-      "createWorkflow": "वर्कफ़्लो बनाएँ",
       "message": "संदेश",
       "modelForThisChat": "इस चैट के लिए मॉडल",
       "placeholder": "मुझसे वर्कफ़्लो ऑटोमेट करने और टास्क मैनेज करने के लिए कहें...",
@@ -2077,10 +2076,6 @@
       "retry": "फिर से कोशिश करें",
       "title": "रिमोट एक्सेस",
       "unavailableSsh": "अनुपलब्ध SSH होस्ट"
-    },
-    "replaceDraft": {
-      "description": "जारी रखने से आपका वर्तमान कंपोज़र ड्राफ्ट साफ़ हो जाएगा और वर्कफ़्लो प्रॉम्प्ट प्रारंभ हो जाएगा।",
-      "title": "कंपोज़र ड्राफ्ट बदलें?"
     },
     "run": {
       "collapseWorkHistory": "कार्य इतिहास संक्षिप्त करें",
@@ -4955,6 +4950,10 @@
         "effort": "प्रयास",
         "effortScale": {
           "faster": "तेज़",
+          "fewerCredits": "कम क्रेडिट",
+          "higherUsage": "अधिक उपयोग",
+          "lowerUsage": "कम उपयोग",
+          "moreCredits": "अधिक क्रेडिट",
           "smarter": "समझदार"
         },
         "fast": "तेज़",
@@ -4962,6 +4961,7 @@
           "apiCost": "{{multiplier}}× API टोकन लागत",
           "apiSpeed": "अधिकतम {{multiplier}}× मॉडल गति",
           "chatGptUsage": "{{multiplier}}× ChatGPT उपयोग",
+          "compactSummary": "तेज़ जवाब · {{multiplier}}× क्रेडिट",
           "fasterResponses": "मॉडल के तेज़ जवाब",
           "modelSpeed": "{{multiplier}}× मॉडल गति",
           "okouCredits": "{{multiplier}}× Okou मॉडल क्रेडिट",
@@ -4969,6 +4969,7 @@
           "providerUsage": "उपयोग प्रदाता पर निर्भर है",
           "summary": "{{speed}} · {{usage}}"
         },
+        "fastMode": "तेज़ मोड",
         "generationPriceTiers": {
           "higher": "प्रति जनरेशन अधिक लागत",
           "highest": "प्रति जनरेशन सबसे अधिक लागत",

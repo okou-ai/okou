@@ -1,7 +1,6 @@
 import { Command, InvalidArgumentError } from "commander";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { dispatchGenerate } from "../generate/lib/dispatch";
-import type { GenerationType } from "../generate/lib/generation-type";
 import {
   buildPresentationRunbookInstructionLines,
   findPresentationRunbookPackage,
@@ -30,13 +29,6 @@ interface PresentationOptions {
   visibility?: ArtifactVisibility;
 }
 
-interface PresentationGenerateCommandConfig {
-  name: string;
-  generationType: GenerationType;
-  usageCommand: string;
-  examples: string;
-}
-
 function parseSlideCount(value: string): number {
   const slideCount = Number(value);
   if (!Number.isInteger(slideCount)) {
@@ -48,12 +40,8 @@ function parseSlideCount(value: string): number {
   return slideCount;
 }
 
-function listPresentationTemplates(): readonly PresentationRunbookPackage[] {
-  return listPresentationRunbookPackages();
-}
-
-function unknownTemplateError(id: string, usageCommand: string): Error {
-  const templates = listPresentationTemplates();
+function unknownTemplateError(id: string): Error {
+  const templates = listPresentationRunbookPackages();
   const message = [
     `Unknown template for presentation: ${id}`,
     "",
@@ -61,7 +49,7 @@ function unknownTemplateError(id: string, usageCommand: string): Error {
     formatPresentationTemplateListing(templates),
     "",
     "Example:",
-    `  ${usageCommand} --template ${
+    `  okou generate presentation --template ${
       templates[0]?.templateId ?? "<template-id>"
     } --prompt "..."`,
   ].join("\n");
@@ -81,11 +69,9 @@ function formatPresentationTemplateListing(
     .join("\n\n");
 }
 
-export function createPresentationGenerateCommand(
-  config: PresentationGenerateCommandConfig,
-): Command {
+export function createPresentationGenerateCommand(): Command {
   return new Command()
-    .name(config.name)
+    .name("presentation")
     .description("Generate an HTML presentation from a prompt")
     .option(
       "--prompt <text>",
@@ -100,10 +86,14 @@ export function createPresentationGenerateCommand(
     )
     .option("--slides <count>", "Slide count: 4-20", parseSlideCount, 8)
     .addHelpText("after", () => {
-      const templates = listPresentationTemplates();
+      const templates = listPresentationRunbookPackages();
       return `
 Examples:
-${config.examples}
+  Generate deck:         okou generate presentation --prompt "A strategy deck for reducing support volume"
+  Pipe prompt:           cat brief.txt | okou generate presentation
+  Pick slide count:      okou generate presentation --slides 10 --prompt "A product launch narrative"
+  Custom site slug:      okou generate presentation --site-slug api-migration-plan --prompt "API migration plan"
+  Show choices:          okou generate presentation
 
 Output:
   Prints a source-selection packet for the current agent.
@@ -118,7 +108,7 @@ ${formatPresentationTemplateListing(templates)}`;
     .action(
       withErrorHandler(async (options: PresentationOptions) => {
         const dispatch = await dispatchGenerate({
-          generationType: config.generationType,
+          generationType: "presentation",
           prompt: options.prompt,
         });
         if (dispatch.outcome === "handled") return;
@@ -144,7 +134,7 @@ ${formatPresentationTemplateListing(templates)}`;
           );
           const template = findPresentationRunbookPackage(canonical);
           if (!template) {
-            throw unknownTemplateError(options.template, config.usageCommand);
+            throw unknownTemplateError(options.template);
           }
           console.log(
             [

@@ -32,9 +32,8 @@ const BUILT_IN_GENERATION_TIMEOUT_ERROR: BuiltInGenerationError = Object.freeze(
   },
 );
 
-interface CreateBuiltInGenerationJobArgs {
+interface CreateImageGenerationJobArgs {
   readonly generationId: string;
-  readonly type: BuiltInGenerationType;
   readonly orgId: string;
   readonly userId: string;
   readonly runId: string | undefined;
@@ -47,13 +46,9 @@ interface BuiltInGenerationRequestInternal {
   readonly admissionId?: string;
   readonly provider?: "openai" | "fal" | "byteplus" | "minimax" | "joggai";
   readonly providerJobId?: string;
-  readonly providerSessionId?: string;
-  readonly providerStatus?: string;
-  readonly providerNotice?: string;
   readonly providerStatusUrl?: string;
   readonly providerResponseUrl?: string;
   readonly providerTask?: string;
-  readonly presentation?: unknown;
 }
 
 export interface BuiltInGenerationWebhookJob {
@@ -112,19 +107,11 @@ export function builtInGenerationRequestWithInternal(
       privateArtifacts: internal.privateArtifacts,
       provider: internal.provider,
       providerJobId: internal.providerJobId,
-      providerSessionId: internal.providerSessionId,
-      providerStatus: internal.providerStatus,
-      providerNotice: internal.providerNotice,
       providerStatusUrl: internal.providerStatusUrl,
       providerResponseUrl: internal.providerResponseUrl,
       providerTask: internal.providerTask,
-      presentation: internal.presentation,
     }),
   };
-}
-
-function optionalString(value: unknown): string | undefined {
-  return typeof value === "string" ? value : undefined;
 }
 
 function parsePrivateArtifactsPolicy(value: unknown): boolean | undefined {
@@ -158,9 +145,6 @@ export function readBuiltInGenerationRequestInternal(
         : undefined,
     providerJobId:
       typeof value.providerJobId === "string" ? value.providerJobId : undefined,
-    providerSessionId: optionalString(value.providerSessionId),
-    providerStatus: optionalString(value.providerStatus),
-    providerNotice: optionalString(value.providerNotice),
     providerStatusUrl:
       typeof value.providerStatusUrl === "string"
         ? value.providerStatusUrl
@@ -171,7 +155,6 @@ export function readBuiltInGenerationRequestInternal(
         : undefined,
     providerTask:
       typeof value.providerTask === "string" ? value.providerTask : undefined,
-    presentation: value.presentation,
   };
 }
 
@@ -306,23 +289,22 @@ async function publishJobSafely(job: BuiltInGenerationJobRow): Promise<void> {
   await publishBuiltInGenerationChanged(job.userId, job.id, payload);
 }
 
-export const createBuiltInGenerationJob$ = command(
+export const createImageGenerationJob$ = command(
   async (
     { get, set },
-    args: CreateBuiltInGenerationJobArgs,
+    args: CreateImageGenerationJobArgs,
     signal: AbortSignal,
   ) => {
     const privateArtifacts =
       args.privateArtifacts ??
-      ((args.type === "image" || args.type === "video") &&
-        (await get(privateArtifactCreationEnabled(args.orgId, args.userId))));
+      (await get(privateArtifactCreationEnabled(args.orgId, args.userId)));
     signal.throwIfAborted();
     const writeDb = set(writeDb$);
     const [job] = await writeDb
       .insert(builtInGenerationJobs)
       .values({
         id: args.generationId,
-        type: args.type,
+        type: "image",
         orgId: args.orgId,
         userId: args.userId,
         runId: args.runId ?? null,
@@ -482,7 +464,7 @@ export const mergeBuiltInGenerationJobInternal$ = command(
     const writeDb = set(writeDb$);
     const patch = compactObject({ ...args.internal });
     // Merge in SQL so callbacks and submission/status persistence cannot erase
-    // each other's session ID, video ID, or admission metadata.
+    // each other's provider job or admission metadata.
     await writeDb
       .update(builtInGenerationJobs)
       .set({

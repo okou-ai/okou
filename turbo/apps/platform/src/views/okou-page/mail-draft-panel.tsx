@@ -14,7 +14,7 @@ import type {
   MailDraft,
   MailInlineImage,
 } from "@okouai/api-contracts/contracts/mail";
-import { Button, buttonVariants } from "@okouai/ui";
+import { Button, buttonVariants, cn } from "@okouai/ui";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
@@ -43,13 +43,23 @@ import {
 } from "./attachment-chips.tsx";
 import { useGmailReconnect } from "./use-gmail-reconnect.ts";
 
-interface MailDraftSidebarProps {
+const STANDALONE_ACTION_CLASS_NAME =
+  "bg-foreground text-background hover:bg-foreground-hover active:bg-foreground-pressed";
+
+interface MailDraftPanelProps {
   readonly signals: MailDraftSignals;
-  readonly onClose: () => void;
+  readonly onClose?: () => void;
 }
 
-function SidebarCloseButton({ close }: { readonly close: () => void }) {
+function SidebarCloseButton({
+  close,
+}: {
+  readonly close: (() => void) | undefined;
+}) {
   const { t } = useTranslation();
+  if (!close) {
+    return null;
+  }
   return (
     <Button
       showTooltip
@@ -66,15 +76,23 @@ function SidebarCloseButton({ close }: { readonly close: () => void }) {
   );
 }
 
-function MailDraftSidebarSkeleton({ close }: { readonly close: () => void }) {
+function MailDraftSidebarSkeleton({
+  close,
+}: {
+  readonly close: (() => void) | undefined;
+}) {
   const { t } = useTranslation();
+  const Container = close ? "aside" : "section";
   return (
-    <aside
+    <Container
       aria-busy="true"
       aria-label={t(($) => {
         return $.chat.mail.loadingDetails;
       })}
-      className="flex h-full w-full min-h-0 flex-col border-l border-border/60 bg-background xl:border-l-0"
+      className={cn(
+        "flex h-full w-full min-h-0 flex-col bg-background",
+        close && "border-l border-border/60 xl:border-l-0",
+      )}
     >
       <div className="min-h-0 flex-1 overflow-hidden px-5 py-5 animate-pulse">
         <div className="border-b border-border/60 pb-5">
@@ -103,7 +121,7 @@ function MailDraftSidebarSkeleton({ close }: { readonly close: () => void }) {
         <div className="h-8 w-20 rounded-md bg-muted/50" />
         <div className="h-8 w-24 rounded-md bg-muted/50" />
       </footer>
-    </aside>
+    </Container>
   );
 }
 
@@ -113,16 +131,20 @@ function UnavailableMailDraftSidebar({
   message,
 }: {
   readonly action?: ReactNode;
-  readonly close: () => void;
+  readonly close: (() => void) | undefined;
   readonly message: string;
 }) {
   const { t } = useTranslation();
+  const Container = close ? "aside" : "section";
   return (
-    <aside
+    <Container
       aria-label={t(($) => {
         return $.chat.mail.details;
       })}
-      className="flex h-full w-full flex-col border-l border-border/60 bg-background xl:border-l-0"
+      className={cn(
+        "flex h-full w-full flex-col bg-background",
+        close && "border-l border-border/60 xl:border-l-0",
+      )}
     >
       <div className="flex min-h-14 items-center border-b border-border/60 px-4">
         <span className="min-w-0 flex-1 text-sm font-medium">
@@ -138,16 +160,18 @@ function UnavailableMailDraftSidebar({
           {action}
         </div>
       </div>
-    </aside>
+    </Container>
   );
 }
 
 function GmailReconnectButton({
   signals,
   connectionId,
+  standalone,
 }: {
   readonly signals: MailDraftSignals;
   readonly connectionId: string | undefined;
+  readonly standalone: boolean;
 }) {
   const { t } = useTranslation();
   const reloadDraft = useSet(signals.reloadDraft$);
@@ -159,6 +183,7 @@ function GmailReconnectButton({
     <Button
       type="button"
       size="sm"
+      className={standalone ? STANDALONE_ACTION_CLASS_NAME : undefined}
       disabled={reconnectDisabled}
       onClick={reconnect}
     >
@@ -178,7 +203,7 @@ function MailMessageHeader({
   close,
   draft,
 }: {
-  readonly close: () => void;
+  readonly close: (() => void) | undefined;
   readonly draft: MailDraft;
 }) {
   const { t } = useTranslation();
@@ -988,7 +1013,7 @@ function MailDraftDetails({
   draft,
   signals,
 }: {
-  readonly close: () => void;
+  readonly close: (() => void) | undefined;
   readonly draft: MailDraft;
   readonly signals: MailDraftSignals;
 }) {
@@ -1024,7 +1049,7 @@ function MailDraftDetails({
         </div>
         {attachments.length > 0 ? (
           <div className="grid gap-2.5 border-t border-border/60 pt-4">
-            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <div className="text-xs font-medium text-muted-foreground">
               {t(($) => {
                 return $.chat.attachments.title;
               })}
@@ -1058,7 +1083,7 @@ function MailDraftDetail({
 }: {
   readonly draft: MailDraft;
   readonly signals: MailDraftSignals;
-  readonly close: () => void;
+  readonly close: (() => void) | undefined;
 }) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
@@ -1076,7 +1101,7 @@ function MailDraftDetail({
   const onDelete = () => {
     const deleteAndClose = async () => {
       await deleteDraft(pageSignal);
-      close();
+      close?.();
     };
     detach(deleteAndClose(), Reason.DomCallback);
   };
@@ -1091,17 +1116,21 @@ function MailDraftDetail({
     };
     detach(sendAndNotify(), Reason.DomCallback);
   };
+  const Container = close ? "aside" : "section";
   return (
-    <aside
+    <Container
       aria-label={t(($) => {
         return $.chat.mail.details;
       })}
       data-chat-thread-container-id={signals.threadId}
-      data-testid="mail-draft-sidebar"
-      className="flex h-full w-full min-h-0 flex-col border-l border-border/60 bg-background xl:border-l-0"
+      data-testid={close ? "mail-draft-sidebar" : undefined}
+      className={cn(
+        "flex h-full w-full min-h-0 flex-col bg-background",
+        close && "border-l border-border/60 xl:border-l-0",
+      )}
     >
       <MailDraftDetails close={close} draft={draft} signals={signals} />
-      <footer className="flex shrink-0 items-center justify-between gap-2 border-t border-border/60 px-4 py-3">
+      <footer className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-border/60 px-4 py-3">
         {active ? (
           <Button
             type="button"
@@ -1123,7 +1152,7 @@ function MailDraftDetail({
         ) : (
           <span />
         )}
-        <div className="flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-2">
           <a
             href={openInGmail}
             target="_blank"
@@ -1136,7 +1165,13 @@ function MailDraftDetail({
             })}
           </a>
           {active ? (
-            <Button type="button" size="sm" disabled={pending} onClick={onSend}>
+            <Button
+              type="button"
+              size="sm"
+              className={close ? undefined : STANDALONE_ACTION_CLASS_NAME}
+              disabled={pending}
+              onClick={onSend}
+            >
               {sendLoadable.state === "loading" ? (
                 <Loader2 size={15} className="animate-spin" />
               ) : (
@@ -1149,11 +1184,11 @@ function MailDraftDetail({
           ) : null}
         </div>
       </footer>
-    </aside>
+    </Container>
   );
 }
 
-export function MailDraftSidebar({ signals, onClose }: MailDraftSidebarProps) {
+export function MailDraftPanel({ signals, onClose }: MailDraftPanelProps) {
   const { t } = useTranslation();
   const draftLoadable = useLastLoadable(signals.sidebarDraft$);
   if (draftLoadable.state === "loading") {
@@ -1180,6 +1215,7 @@ export function MailDraftSidebar({ signals, onClose }: MailDraftSidebarProps) {
           <GmailReconnectButton
             signals={signals}
             connectionId={draftLoadable.data.reconnectConnectionId}
+            standalone={!onClose}
           />
         }
       />

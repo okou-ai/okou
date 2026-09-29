@@ -16,6 +16,7 @@ import { env } from "../../lib/env";
 import type { ApiOrgRole } from "../../types/auth";
 import { writeDb$, type Db } from "../external/db";
 import { sendNormalEvent$ } from "./chat-events.command";
+import { mcpClientDisplayName } from "./mcp-client-display-name.service";
 import {
   MCP_SUBMISSION_RETRY_MS,
   resolveMcpSubmission,
@@ -27,6 +28,7 @@ interface Principal {
   readonly userId: string;
   readonly orgId: string;
   readonly orgRole: ApiOrgRole;
+  readonly clientId: string;
 }
 
 async function mcpInputDisposition(
@@ -99,10 +101,18 @@ export const submitMcpChatInput$ = command(
   > => {
     const db = set(writeDb$);
     const { principal } = args;
+    const clientName = await mcpClientDisplayName(principal.clientId, signal);
+    signal.throwIfAborted();
     const sent = await set(
       sendNormalEvent$,
       {
         auth: { tokenType: "oauth", ...principal },
+        mcpSource: {
+          type: "source",
+          kind: "mcp",
+          clientId: principal.clientId,
+          ...(clientName === undefined ? {} : { clientName }),
+        },
         userId: principal.userId,
         orgId: principal.orgId,
         body: {

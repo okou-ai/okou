@@ -12,8 +12,11 @@ general client rules instead of a per-endpoint negotiation:
 - The Web App is gated by the enforced Web client floor (`X-Client-Version`
   with `426 Upgrade Required`). A schema bump that old App builds cannot read
   raises that floor.
-- CLI artifacts are commit-addressed and live at most about two hours, so they
-  track the current API without a separate version floor.
+- Runs may use a commit-addressed CLI package captured when their execution
+  context was created or a compatible CLI installed in the runner rootfs.
+  Neither necessarily advances with each API deployment. Before adding a
+  persisted kind, inspect the CLI's actual readers and gate or drain any
+  incompatible supported callers rather than assuming a fixed expiry.
 
 Platform and CLI readers still require Snapshot responses to include the
 paired `lastEventId`; they do not reconstruct missing response metadata from
@@ -32,13 +35,33 @@ caller-authored MCP source parts; the `/mcp` writer still emits only the old
 text-only input shape in this reader-preparation release.
 
 The new kind is **not** readable by older strict V7 App/API/snapshot readers.
-Before the separate writer activation in #37234, verify that this prepared
-reader has been promoted to every serving API and App, older App builds are
-blocked by an enforced Web client floor, earlier serving/rollback APIs and
-persisted-history readers are excluded or prepared, and outstanding old CLI
-contexts have drained. A merged reader PR or newer `main` alone does not prove
-this gate. Do not let a writer emit the new kind until this compatibility
-boundary is satisfied.
+The #37234 writer appends the source to the same immutable input as MCP text,
+using only the verified OAuth client ID. A bounded, optional name is snapshotted
+from a matching HTTPS CIMD document; the document is self-asserted display
+metadata, not proof of which software is running. Invalid or unavailable
+metadata leaves the name absent and the authorized send succeeds. Replays
+preserve the original name and source, even when another authorized OAuth
+client retries the same request ID and text; retry identity does not require
+the original client ID. Pre-cutover text-only input replays remain text-only
+for their 24-hour retry window (remove the temporary retry
+branch after the last old-writer acceptance plus drain; #37276). Existing
+messages are never inferred or retroactively labeled.
+
+Before activating the writer, verify that the prepared reader is serving from
+every current API/App and history/snapshot path, and independently deploy and
+verify the Web client floor at `0.982.0` or newer (the first reader-capable App;
+#37277 / PR #37278). Inspect the actual CLI read paths rather than requiring
+a blanket old-context drain: `okou chat messages` validates Raw Event and
+Snapshot rows with `chatEventRowSchema`, whose `payload.userMessage` is opaque;
+other current CLI chat commands do not parse that document's source kind. This
+new MCP part does not require a CLI floor or old-run drain for those paths. If
+an independently supported strict CLI reader is identified, verify its
+compatibility or gate and drain it before activation. A merged reader PR,
+newer `main`, or production release tag alone does not prove the serving gate.
+Older rollback artifacts are expressly unsupported for this change; restoring
+one after source-bearing events exist requires a separate coordinated
+compatibility decision. Do not activate the writer until the current-serving
+compatibility boundary is satisfied.
 
 ## V8
 

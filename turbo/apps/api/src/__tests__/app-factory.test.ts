@@ -1446,6 +1446,88 @@ describe("createApp", () => {
       },
     );
 
+    it.each([
+      {
+        sdkReason: "session-token-expired-refresh-non-eligible-non-get",
+        loggedReason: "session-token-expired-refresh-non-eligible-non-get",
+      },
+      {
+        sdkReason: "session-token-expired-refresh-fetch-error",
+        loggedReason: "session-token-expired-refresh-fetch-error",
+      },
+      {
+        sdkReason: "session-token-expired-refresh-private-provider-detail",
+        loggedReason: "session-token-expired-refresh-other",
+      },
+    ])(
+      "classifies an expired session refresh outcome without logging arbitrary SDK text ($loggedReason)",
+      async ({ sdkReason, loggedReason }) => {
+        context.mocks.clerk.authenticateRequest.mockResolvedValue({
+          isAuthenticated: false,
+          reason: sdkReason,
+          message: "private-sdk-error-message",
+        });
+        const headers = { authorization: "Bearer synthetic-session" };
+        const extraHeaders = appHeaders();
+        const api = authClient();
+        const response = sdkReason.endsWith("non-eligible-non-get")
+          ? await accept(
+              api.create({
+                body: { agentId: "agent_auth_diagnostics" },
+                headers,
+                extraHeaders,
+              }),
+              [401],
+            )
+          : await accept(api.snapshot({ headers, extraHeaders }), [401]);
+        expect(response.body).toStrictEqual({
+          error: { message: "Not authenticated", code: "UNAUTHORIZED" },
+        });
+        const diagnosticLogs =
+          context.mocks.axiomLogging.info.mock.calls.filter(([message]) => {
+            return message === "temporary auth failure";
+          });
+        expect(diagnosticLogs.at(-1)?.[1]).toMatchObject({
+          auth_failure_reason: "clerk_rejected",
+          clerk_reason: loggedReason,
+          has_bearer_token: true,
+        });
+        expect(JSON.stringify(diagnosticLogs)).not.toContain(
+          "private-provider-detail",
+        );
+        expect(JSON.stringify(diagnosticLogs)).not.toContain(
+          "private-sdk-error-message",
+        );
+      },
+    );
+
+    it("keeps an unauthenticated Clerk response without a reason at 401", async () => {
+      context.mocks.clerk.authenticateRequest.mockResolvedValue({
+        isAuthenticated: false,
+      });
+
+      const response = await accept(
+        authClient().snapshot({
+          headers: { authorization: "Bearer synthetic-session" },
+          extraHeaders: appHeaders(),
+        }),
+        [401],
+      );
+      expect(response.body).toStrictEqual({
+        error: { message: "Not authenticated", code: "UNAUTHORIZED" },
+      });
+      const diagnosticLogs = context.mocks.axiomLogging.info.mock.calls.filter(
+        ([message]) => {
+          return message === "temporary auth failure";
+        },
+      );
+      expect(diagnosticLogs.at(-1)?.[1]).toMatchObject({
+        auth_failure_reason: "clerk_rejected",
+        clerk_reason: "unknown",
+        has_bearer_token: true,
+      });
+    });
+
     // The single redaction exception verifies credentials never reach logs.
     it("excludes credentials, arbitrary SDK text and malformed correlation headers", async () => {
       const secret = "private-auth-diagnostic-value";

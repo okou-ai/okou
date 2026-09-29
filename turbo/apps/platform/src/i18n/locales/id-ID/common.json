@@ -1757,7 +1757,6 @@
         "slideCountAuto": "Otomatis",
         "slideCountRange": "{{range}} slide"
       },
-      "createWorkflow": "Buat alur kerja",
       "message": "Pesan",
       "modelForThisChat": "Model untuk chat ini",
       "placeholder": "Minta saya mengotomatiskan alur kerja, mengelola tugas...",
@@ -2069,10 +2068,6 @@
       "retry": "Coba lagi",
       "title": "Akses jarak jauh",
       "unavailableSsh": "host SSH tidak tersedia"
-    },
-    "replaceDraft": {
-      "description": "Melanjutkan akan menghapus draf composer saat ini dan memulai prompt alur kerja.",
-      "title": "Ganti draf composer?"
     },
     "run": {
       "collapseWorkHistory": "Ciutkan riwayat kerja",
@@ -4937,6 +4932,10 @@
         "effort": "Upaya",
         "effortScale": {
           "faster": "Lebih cepat",
+          "fewerCredits": "Kredit lebih sedikit",
+          "higherUsage": "Penggunaan lebih tinggi",
+          "lowerUsage": "Penggunaan lebih rendah",
+          "moreCredits": "Kredit lebih banyak",
           "smarter": "Lebih cerdas"
         },
         "fast": "Cepat",
@@ -4944,6 +4943,7 @@
           "apiCost": "{{multiplier}}× biaya token API",
           "apiSpeed": "Hingga {{multiplier}}× kecepatan model",
           "chatGptUsage": "{{multiplier}}× penggunaan ChatGPT",
+          "compactSummary": "Respons lebih cepat · {{multiplier}}× kredit",
           "fasterResponses": "Respons model lebih cepat",
           "modelSpeed": "{{multiplier}}× kecepatan model",
           "okouCredits": "{{multiplier}}× kredit model Okou",
@@ -4951,6 +4951,7 @@
           "providerUsage": "Penggunaan bergantung pada penyedia",
           "summary": "{{speed}} · {{usage}}"
         },
+        "fastMode": "Mode cepat",
         "generationPriceTiers": {
           "higher": "Biaya lebih tinggi per generasi",
           "highest": "Biaya tertinggi per generasi",

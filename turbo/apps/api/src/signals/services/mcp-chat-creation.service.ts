@@ -51,6 +51,7 @@ interface Principal {
   readonly userId: string;
   readonly orgId: string;
   readonly orgRole: ApiOrgRole;
+  readonly clientId: string;
 }
 
 /** The creation output without the combined input's receipt. */

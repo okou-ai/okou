@@ -25,7 +25,6 @@ export type GenerationTarget =
 
 type ResourceKind =
   | "skill"
-  | "tool"
   | "template"
   | "design-system"
   | "color-system"
@@ -3374,7 +3373,7 @@ export function findPresentationRunbookResource(
 export interface WebsiteTemplatePackage {
   /** Picker template id; this is also the pull id for website packages. */
   readonly templateId: WebsiteTemplateItem["templateId"];
-  readonly resourceId: WebsiteTemplateItem["resourceId"];
+  readonly resourceId: WebsiteTemplateItem["templateId"];
   readonly slug: WebsiteTemplateItem["slug"];
   readonly name: WebsiteTemplateItem["title"];
   readonly description: WebsiteTemplateItem["description"];
@@ -3422,12 +3421,12 @@ const WEBSITE_TEMPLATE_PACKAGES: readonly WebsiteTemplatePackage[] =
   WEBSITE_TEMPLATE_ITEMS.map((item) => {
     return {
       templateId: item.templateId,
-      resourceId: item.resourceId,
-      slug: item.sourcePath,
+      resourceId: item.templateId,
+      slug: item.slug,
       name: item.title,
       description: item.description,
       source: privateR2ArchiveSource(
-        item.sourcePath,
+        item.slug,
         websiteTemplateArchiveSha256(item.slug),
       ),
     };
@@ -3473,12 +3472,12 @@ const WEBSITE_TEMPLATE_V2_PACKAGES: readonly WebsiteTemplatePackage[] =
   WEBSITE_TEMPLATE_ITEMS.map((item) => {
     return {
       templateId: `${item.templateId}-v2`,
-      resourceId: `${item.resourceId}-v2`,
-      slug: item.sourcePath,
+      resourceId: `${item.templateId}-v2`,
+      slug: item.slug,
       name: item.title,
       description: item.description,
       source: privateR2ArchiveSource(
-        item.sourcePath,
+        item.slug,
         websiteTemplateV2ArchiveSha256(item.slug),
       ),
     };
@@ -3529,7 +3528,7 @@ export function findWebsiteTemplateResource(
     return websiteTemplatePackageToRegistryEntry(directPackage);
   }
   const normalizedResourceId =
-    findWebsiteTemplateItem(resourceId)?.resourceId ?? resourceId;
+    findWebsiteTemplateItem(resourceId)?.templateId ?? resourceId;
   const pkg = WEBSITE_TEMPLATE_PACKAGES.find((entry) => {
     return entry.resourceId === normalizedResourceId;
   });
@@ -3630,16 +3629,6 @@ export function listSkills(
 
 export function findSkill(id: string): RegistryEntry | undefined {
   return listSkills().find((entry) => {
-    return entry.id === id;
-  });
-}
-
-export function listTools(): readonly RegistryEntry[] {
-  return filterByKind("tool");
-}
-
-export function findTool(id: string): RegistryEntry | undefined {
-  return listTools().find((entry) => {
     return entry.id === id;
   });
 }

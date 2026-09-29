@@ -24,6 +24,7 @@ import {
 import { parseChatThreadLink } from "../../lib/chat-thread-link.ts";
 import { openImageLightbox$ } from "../../signals/okou-page/attachment-chips.ts";
 import { openMarkdownArtifact$ } from "../../signals/okou-page/markdown-artifact-preview.ts";
+import { openThreadMailDraft$ } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import type {
   ArtifactKind,
@@ -251,6 +252,7 @@ function ArtifactLinkIcon({ kind }: { readonly kind: ArtifactKind }) {
 
 function MediaLink({ href, children, ...rest }: MarkdownAnchorProps) {
   const openArtifact = useSet(openMarkdownArtifact$);
+  const openMailDraft = useSet(openThreadMailDraft$);
   const openImageLightbox = useSet(openImageLightbox$);
   const card = rest.node?.data?.card;
   return (
@@ -261,7 +263,10 @@ function MediaLink({ href, children, ...rest }: MarkdownAnchorProps) {
         if (shouldUseNativeAnchorNavigation(event)) {
           return;
         }
-        if (card?.kind === "artifact") {
+        if (card?.kind === "mail-draft") {
+          event.preventDefault();
+          openMailDraft(card.signals);
+        } else if (card?.kind === "artifact") {
           event.preventDefault();
           openArtifact(card);
         } else if (href && isSafeMediaUrl(href) && isImageUrl(href)) {

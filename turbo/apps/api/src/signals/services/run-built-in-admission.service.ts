@@ -10,13 +10,6 @@ const RUN_BUILT_IN_MAX_IN_FLIGHT = 3;
 const RUN_BUILT_IN_MAX_STARTED = 50;
 const RUN_BUILT_IN_ADMISSION_TTL_MS = 30 * 60 * 1000;
 
-type RunBuiltInGenerationKind =
-  | "image"
-  | "video"
-  | "presentation"
-  | "website"
-  | "voice";
-
 export interface RunBuiltInAdmission {
   readonly id: string;
 }
@@ -74,7 +67,6 @@ export const startRunBuiltInAdmission$ = command(
     { set },
     args: {
       readonly runId: string | undefined;
-      readonly kind: RunBuiltInGenerationKind;
     },
     signal: AbortSignal,
   ): Promise<RunBuiltInAdmissionResult> => {
@@ -132,7 +124,7 @@ export const startRunBuiltInAdmission$ = command(
         .insert(runBuiltInAdmissions)
         .values({
           runId,
-          kind: args.kind,
+          kind: "image",
           status: "active",
           expiresAt,
         })

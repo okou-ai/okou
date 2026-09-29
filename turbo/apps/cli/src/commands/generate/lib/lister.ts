@@ -103,7 +103,6 @@ const GENERATION_CONTEXT: Partial<Record<GenerationType, GenerationContext>> = {
 };
 
 const GENERATION_TYPE_LABELS: Record<GenerationType, string> = {
-  audio: "Audio",
   code: "Code",
   "dashboard-design": "Dashboard design",
   document: "Document",

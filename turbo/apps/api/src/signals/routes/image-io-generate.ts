@@ -44,7 +44,7 @@ import {
 import {
   builtInGenerationRequestWithInternal,
   completeBuiltInGenerationJob$,
-  createBuiltInGenerationJob$,
+  createImageGenerationJob$,
   failBuiltInGenerationJob$,
   markBuiltInGenerationRunning$,
   mergeBuiltInGenerationJobInternal$,
@@ -329,10 +329,7 @@ const executeDirectImageProviderJob$ = command(
         privateArtifacts: args.privateArtifacts,
         pricing: args.pricing,
         generation,
-        usageIdempotency: {
-          generationId: args.generationId,
-          scope: "image",
-        },
+        generationId: args.generationId,
       },
       signal,
     );
@@ -524,20 +521,15 @@ const postImageInner$ = command(
       generationId,
     );
     signal.throwIfAborted();
-    const admission = await set(
-      startRunBuiltInAdmission$,
-      { runId, kind: "image" },
-      signal,
-    );
+    const admission = await set(startRunBuiltInAdmission$, { runId }, signal);
     if (isRunBuiltInAdmissionError(admission)) {
       return admission;
     }
 
     const { privateArtifacts } = await set(
-      createBuiltInGenerationJob$,
+      createImageGenerationJob$,
       {
         generationId,
-        type: "image",
         orgId: auth.orgId,
         privateArtifacts: requiredPrivateArtifacts,
         userId: auth.userId,
