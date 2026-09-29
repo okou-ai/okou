@@ -399,6 +399,10 @@ test("Forwarding the first message to an agent retains the source conversation",
   });
   expect(ids?.threadId).toBe(createdThreadId);
   expect(ids?.promptEventId).not.toBe(ids?.createEventId);
+  const saved = savedFirstMessage();
+  expect(saved.body.sourceRunId).toBeDefined();
+  expect(saved.body.threadId).toBe(createdThreadId);
+  expect(saved.createBody.eventId).toBe(createEventId);
 });
 
 test("A create rejection retries the saved thread/event IDs, not a second chat", async () => {
@@ -699,6 +703,13 @@ test("Unavailable recovery storage prevents first-message side effects", async (
     .mockImplementation(() => {
       throw new DOMException("Storage full", "QuotaExceededError");
     });
+  context.signal.addEventListener(
+    "abort",
+    () => {
+      storage.mockRestore();
+    },
+    { once: true },
+  );
   click(await findEnabledButton("Send"));
   await waitFor(() => {
     expect(screen.getByRole("textbox", { name: "Message" })).toHaveTextContent(
