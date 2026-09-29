@@ -1,3 +1,4 @@
+import { command } from "ccstate";
 import type { OAuthClientMetadata } from "@modelcontextprotocol/client";
 import { and, eq, inArray, isNotNull } from "drizzle-orm";
 import { z } from "zod";
@@ -12,7 +13,7 @@ import { orgCustomConnectorDcrRegistrations } from "@okouai/db/schema/org-custom
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 
 import { nowDate } from "../../lib/time";
-import type { Db } from "../external/db";
+import { writeDb$, type Db } from "../external/db";
 import {
   decryptStoredSecretValue,
   encryptStoredSecretValue,
@@ -397,134 +398,147 @@ async function prepareCustomDcrRegistration(
   };
 }
 
-async function publishCustomDcrRegistration(
-  args: CustomDcrStoreArgs,
-  registration: Parameters<McpAutomaticOAuthDcrStore["publish"]>[0],
-  expectedRegistrationId: string | null,
-  signal: AbortSignal,
-): Promise<Awaited<ReturnType<McpAutomaticOAuthDcrStore["publish"]>>> {
-  const candidate = await prepareCustomDcrRegistration(
-    args,
-    registration,
-    signal,
+function customDcrIssuerCondition(customConnectorId: string, issuer: string) {
+  return and(
+    eq(orgCustomConnectorDcrRegistrations.customConnectorId, customConnectorId),
+    eq(orgCustomConnectorDcrRegistrations.issuer, issuer),
   );
-  const issuerCondition = and(
-    eq(
-      orgCustomConnectorDcrRegistrations.customConnectorId,
+}
+
+const publishCustomDcrRegistration$ = command(
+  async (
+    { set },
+    args: Omit<CustomDcrStoreArgs, "db"> & {
+      readonly registration: Parameters<
+        McpAutomaticOAuthDcrStore["publish"]
+      >[0];
+      readonly expectedRegistrationId: string | null;
+    },
+    signal: AbortSignal,
+  ): Promise<Awaited<ReturnType<McpAutomaticOAuthDcrStore["publish"]>>> => {
+    const db = set(writeDb$);
+    const candidate = await prepareCustomDcrRegistration(
+      args,
+      args.registration,
+      signal,
+    );
+    const issuerCondition = customDcrIssuerCondition(
       args.customConnectorId,
-    ),
-    eq(orgCustomConnectorDcrRegistrations.issuer, registration.issuer),
-  );
-  return await args.db.transaction(async (tx) => {
-    const [definition] = await tx
-      .select({ id: orgCustomConnectors.id })
-      .from(orgCustomConnectors)
-      .where(
-        and(
-          eq(orgCustomConnectors.id, args.customConnectorId),
-          eq(orgCustomConnectors.orgId, args.orgId),
-          eq(orgCustomConnectors.authMode, "automatic"),
-          eq(orgCustomConnectors.storageVersion, args.storageVersion),
-          eq(orgCustomConnectors.mcpEndpoint, args.endpoint),
-        ),
-      )
-      .for("update")
-      .limit(1);
-    if (!definition) {
-      throw new Error(
-        "Custom connector credential contract changed during Automatic OAuth registration",
-      );
-    }
-    const [current] = await tx
-      .select()
-      .from(orgCustomConnectorDcrRegistrations)
-      .where(issuerCondition)
-      .for("update")
-      .limit(1);
-    if (current && current.id !== expectedRegistrationId) {
-      return {
-        ...current,
-        hasClientSecret: current.encryptedClientSecret !== null,
-      };
-    }
-    if (current) {
-      const bindingCondition = eq(
-        customConnectorAccountOauthBindings.dcrRegistrationId,
-        current.id,
-      );
-      const accounts = await tx
-        .select({
-          id: customConnectorAccountOauthBindings.connectorAccountId,
-        })
-        .from(customConnectorAccountOauthBindings)
-        .where(bindingCondition);
-      if (
-        accounts.length > 0 &&
-        (current.expiresAt === null || current.expiresAt > nowDate())
-      ) {
-        throw new McpAutomaticOAuthError(
-          { kind: "incompatible", reason: "registration-conflict" },
-          "Existing MCP OAuth registration acquired a linked account during preparation",
+      args.registration.issuer,
+    );
+    return await db.transaction(async (tx) => {
+      const [definition] = await tx
+        .select({ id: orgCustomConnectors.id })
+        .from(orgCustomConnectors)
+        .where(
+          and(
+            eq(orgCustomConnectors.id, args.customConnectorId),
+            eq(orgCustomConnectors.orgId, args.orgId),
+            eq(orgCustomConnectors.authMode, "automatic"),
+            eq(orgCustomConnectors.storageVersion, args.storageVersion),
+            eq(orgCustomConnectors.mcpEndpoint, args.endpoint),
+          ),
+        )
+        .for("update")
+        .limit(1);
+      if (!definition) {
+        throw new Error(
+          "Custom connector credential contract changed during Automatic OAuth registration",
         );
       }
-      if (accounts.length > 0) {
-        await tx
-          .update(connectors)
-          .set({
-            needsReconnect: true,
-            reconnectReason: "authorization_expired_or_revoked",
-            updatedAt: nowDate(),
+      const [current] = await tx
+        .select()
+        .from(orgCustomConnectorDcrRegistrations)
+        .where(issuerCondition)
+        .for("update")
+        .limit(1);
+      if (current && current.id !== args.expectedRegistrationId) {
+        return {
+          ...current,
+          hasClientSecret: current.encryptedClientSecret !== null,
+        };
+      }
+      if (current) {
+        const bindingCondition = eq(
+          customConnectorAccountOauthBindings.dcrRegistrationId,
+          current.id,
+        );
+        const accounts = await tx
+          .select({
+            id: customConnectorAccountOauthBindings.connectorAccountId,
           })
+          .from(customConnectorAccountOauthBindings)
+          .where(bindingCondition);
+        if (
+          accounts.length > 0 &&
+          (current.expiresAt === null || current.expiresAt > nowDate())
+        ) {
+          throw new McpAutomaticOAuthError(
+            { kind: "incompatible", reason: "registration-conflict" },
+            "Existing MCP OAuth registration acquired a linked account during preparation",
+          );
+        }
+        if (accounts.length > 0) {
+          await tx
+            .update(connectors)
+            .set({
+              needsReconnect: true,
+              reconnectReason: "authorization_expired_or_revoked",
+              updatedAt: nowDate(),
+            })
+            .where(
+              inArray(
+                connectors.id,
+                tx
+                  .select({
+                    id: customConnectorAccountOauthBindings.connectorAccountId,
+                  })
+                  .from(customConnectorAccountOauthBindings)
+                  .where(bindingCondition),
+              ),
+            );
+        }
+        await tx
+          .delete(customConnectorAccountOauthBindings)
+          .where(bindingCondition);
+        await tx
+          .delete(orgCustomConnectorDcrRegistrations)
           .where(
-            inArray(
-              connectors.id,
-              tx
-                .select({
-                  id: customConnectorAccountOauthBindings.connectorAccountId,
-                })
-                .from(customConnectorAccountOauthBindings)
-                .where(bindingCondition),
+            and(
+              eq(orgCustomConnectorDcrRegistrations.id, current.id),
+              eq(
+                orgCustomConnectorDcrRegistrations.customConnectorId,
+                args.customConnectorId,
+              ),
             ),
           );
       }
-      await tx
-        .delete(customConnectorAccountOauthBindings)
-        .where(bindingCondition);
-      await tx
-        .delete(orgCustomConnectorDcrRegistrations)
-        .where(
-          and(
-            eq(orgCustomConnectorDcrRegistrations.id, current.id),
-            eq(
-              orgCustomConnectorDcrRegistrations.customConnectorId,
-              args.customConnectorId,
-            ),
-          ),
-        );
-    }
-    const [inserted] = await tx
-      .insert(orgCustomConnectorDcrRegistrations)
-      .values(candidate)
-      .onConflictDoNothing()
-      .returning();
-    const [winner] = inserted
-      ? [inserted]
-      : await tx
-          .select()
-          .from(orgCustomConnectorDcrRegistrations)
-          .where(issuerCondition)
-          .limit(1);
-    if (!winner) {
-      throw new Error("Failed to persist MCP OAuth dynamic registration");
-    }
-    return {
-      ...winner,
-      hasClientSecret: winner.encryptedClientSecret !== null,
-    };
-  });
-}
+      const [inserted] = await tx
+        .insert(orgCustomConnectorDcrRegistrations)
+        .values(candidate)
+        .onConflictDoNothing()
+        .returning();
+      const [winner] = inserted
+        ? [inserted]
+        : await tx
+            .select()
+            .from(orgCustomConnectorDcrRegistrations)
+            .where(issuerCondition)
+            .limit(1);
+      if (!winner) {
+        throw new Error("Failed to persist MCP OAuth dynamic registration");
+      }
+      return {
+        ...winner,
+        hasClientSecret: winner.encryptedClientSecret !== null,
+      };
+    });
+  },
+);
 
-function customDcrStore(args: CustomDcrStoreArgs): McpAutomaticOAuthDcrStore {
+function customDcrStore(
+  args: CustomDcrStoreArgs,
+): Omit<McpAutomaticOAuthDcrStore, "publish"> {
   return {
     ...customDcrClientStore(args),
     async readByIssuer(issuer) {
@@ -541,14 +555,6 @@ function customDcrStore(args: CustomDcrStoreArgs): McpAutomaticOAuthDcrStore {
     },
     async retire(registrationId) {
       await retireCustomConnectorDcrRegistration(args.db, registrationId);
-    },
-    async publish(registration, expectedRegistrationId, signal) {
-      return await publishCustomDcrRegistration(
-        args,
-        registration,
-        expectedRegistrationId,
-        signal,
-      );
     },
   };
 }
@@ -572,39 +578,60 @@ type CustomConnectorAutomaticOAuthAuthorization = Omit<
   readonly context: CustomConnectorCanonicalAutomaticOAuthStateContext;
 };
 
-export async function prepareCustomConnectorAutomaticOAuthAuthorization(
-  args: {
-    readonly db: Db;
-    readonly orgId: string;
-    readonly customConnectorId: string;
-    readonly storageVersion: number;
-    readonly endpoint: string;
-    readonly redirectUri: string;
-    readonly state: string;
-    readonly cimdClientId: string;
-    readonly dcrClientMetadata: OAuthClientMetadata;
-    readonly featureContext: FeatureSwitchContext;
+export const prepareCustomConnectorAutomaticOAuthAuthorization$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly customConnectorId: string;
+      readonly storageVersion: number;
+      readonly endpoint: string;
+      readonly redirectUri: string;
+      readonly state: string;
+      readonly cimdClientId: string;
+      readonly dcrClientMetadata: OAuthClientMetadata;
+      readonly featureContext: FeatureSwitchContext;
+    },
+    signal: AbortSignal,
+  ): Promise<
+    CustomConnectorAutomaticOAuthAuthorization | McpAutomaticNoAuth
+  > => {
+    const db = set(writeDb$);
+    const prepared = await prepareMcpAutomaticOAuthAuthorization(
+      {
+        ...args,
+        dcrStore: {
+          ...customDcrStore({ ...args, db }),
+          publish: async (
+            registration,
+            expectedRegistrationId,
+            publicationSignal,
+          ) => {
+            return await set(
+              publishCustomDcrRegistration$,
+              { ...args, registration, expectedRegistrationId },
+              publicationSignal,
+            );
+          },
+        },
+      },
+      signal,
+    );
+    if (prepared.kind === "none") {
+      return prepared;
+    }
+    return {
+      ...prepared,
+      context: {
+        ...prepared.context,
+        version: 2,
+        authMode: "automatic",
+        connectorId: args.customConnectorId,
+        storageVersion: args.storageVersion,
+      } satisfies CustomConnectorCanonicalAutomaticOAuthStateContext,
+    };
   },
-  signal: AbortSignal,
-): Promise<CustomConnectorAutomaticOAuthAuthorization | McpAutomaticNoAuth> {
-  const prepared = await prepareMcpAutomaticOAuthAuthorization(
-    { ...args, dcrStore: customDcrStore(args) },
-    signal,
-  );
-  if (prepared.kind === "none") {
-    return prepared;
-  }
-  return {
-    ...prepared,
-    context: {
-      ...prepared.context,
-      version: 2,
-      authMode: "automatic",
-      connectorId: args.customConnectorId,
-      storageVersion: args.storageVersion,
-    } satisfies CustomConnectorCanonicalAutomaticOAuthStateContext,
-  };
-}
+);
 
 export async function prepareCustomConnectorAutomaticOAuthReauthorization(
   args: {

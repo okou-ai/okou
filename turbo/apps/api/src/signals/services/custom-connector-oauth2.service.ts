@@ -79,7 +79,7 @@ import {
 import { mcpOAuthSafeFetch } from "./mcp-oauth-safe-fetch.service";
 import {
   customConnectorAutomaticOAuthErrorCode,
-  prepareCustomConnectorAutomaticOAuthAuthorization,
+  prepareCustomConnectorAutomaticOAuthAuthorization$,
   prepareCustomConnectorAutomaticOAuthReauthorization,
   readCustomConnectorAutomaticOAuthBinding,
   refreshCustomConnectorAutomaticOAuthToken,
@@ -668,114 +668,117 @@ function prepareCustomOAuthStart(
   };
 }
 
-async function prepareAutomaticOAuthStart(
-  context: {
-    readonly db: Db;
-    readonly connector: CustomConnectorRow & {
-      readonly kind: "mcp";
-      readonly authMode: "automatic";
-      readonly oauthConfig: null;
-    };
-    readonly args: StartCustomConnectorOAuth2Args;
-    readonly featureContext: FeatureSwitchContext;
-    readonly client: AutomaticOAuthClientPresentation;
-  },
-  signal: AbortSignal,
-) {
-  const { db, connector, args, featureContext, client } = context;
-  const preflight = await db.transaction(async (tx) => {
-    await lockCustomConnectorOAuth2CredentialContract({
-      db: tx,
-      orgId: args.orgId,
-      connectorId: connector.id,
-      storageVersion: connector.storageVersion,
-      authMode: "automatic",
-    });
-    return await resolveConnectorConnectionMutation(tx, {
-      orgId: args.orgId,
-      userId: args.userId,
-      target: { kind: "custom", customConnectorId: connector.id },
-      mutation: args.account,
-      allowSiblings: true,
-    });
-  });
-  signal.throwIfAborted();
-  if (preflight.kind !== "ready") {
-    return {
-      ok: false as const,
-      response: connectorConnectionMutationFailure(preflight),
-    };
-  }
-  const state = generateConnectorOAuthState();
-  const automatic = await settle(
-    prepareCustomConnectorAutomaticOAuthAuthorization(
-      {
-        db,
-        orgId: args.orgId,
-        customConnectorId: connector.id,
-        storageVersion: connector.storageVersion,
-        endpoint: connector.endpoint,
-        redirectUri: client.redirectUri,
-        state,
-        cimdClientId: client.cimdClientId,
-        dcrClientMetadata: client.dcrClientMetadata,
-        featureContext,
-      },
-      signal,
-    ),
-    signal,
-  );
-  if (!automatic.ok) {
-    const error = automatic.error;
-    if (!(error instanceof McpAutomaticOAuthError)) {
-      throw error;
-    }
-    const code = customConnectorAutomaticOAuthErrorCode(error);
-    const response =
-      error.kind === "temporary"
-        ? {
-            status: 502 as const,
-            body: {
-              error: {
-                code,
-                message:
-                  "The MCP OAuth provider is temporarily unavailable. Try again later.",
-              },
-            },
-          }
-        : {
-            status: 400 as const,
-            body: {
-              error: {
-                code,
-                message:
-                  "Automatic MCP OAuth setup failed. Check the server's OAuth configuration or choose another authentication method.",
-              },
-            },
-          };
-    return { ok: false as const, response };
-  }
-  const prepared = automatic.value;
-  if (prepared.kind === "none") {
-    return { ok: true as const, result: prepared };
-  }
-  return {
-    ok: true as const,
-    result: {
-      kind: "oauth" as const,
-      prepared: {
-        authMode: "automatic",
-        redirectUri: client.redirectUri,
-        state,
-        authorizationUrl: prepared.authorizationUrl,
-        codeVerifier: prepared.codeVerifier,
-        oauthRequestedScopes: prepared.requestedScope,
-        context:
-          prepared.context satisfies PreparedCustomConnectorAutomaticOAuthStateContext,
-      } satisfies PreparedOAuthStart,
+const prepareAutomaticOAuthStart$ = command(
+  async (
+    { set },
+    context: {
+      readonly connector: CustomConnectorRow & {
+        readonly kind: "mcp";
+        readonly authMode: "automatic";
+        readonly oauthConfig: null;
+      };
+      readonly args: StartCustomConnectorOAuth2Args;
+      readonly featureContext: FeatureSwitchContext;
+      readonly client: AutomaticOAuthClientPresentation;
     },
-  };
-}
+    signal: AbortSignal,
+  ) => {
+    const db = set(writeDb$);
+    const { connector, args, featureContext, client } = context;
+    const preflight = await db.transaction(async (tx) => {
+      await lockCustomConnectorOAuth2CredentialContract({
+        db: tx,
+        orgId: args.orgId,
+        connectorId: connector.id,
+        storageVersion: connector.storageVersion,
+        authMode: "automatic",
+      });
+      return await resolveConnectorConnectionMutation(tx, {
+        orgId: args.orgId,
+        userId: args.userId,
+        target: { kind: "custom", customConnectorId: connector.id },
+        mutation: args.account,
+        allowSiblings: true,
+      });
+    });
+    signal.throwIfAborted();
+    if (preflight.kind !== "ready") {
+      return {
+        ok: false as const,
+        response: connectorConnectionMutationFailure(preflight),
+      };
+    }
+    const state = generateConnectorOAuthState();
+    const automatic = await settle(
+      set(
+        prepareCustomConnectorAutomaticOAuthAuthorization$,
+        {
+          orgId: args.orgId,
+          customConnectorId: connector.id,
+          storageVersion: connector.storageVersion,
+          endpoint: connector.endpoint,
+          redirectUri: client.redirectUri,
+          state,
+          cimdClientId: client.cimdClientId,
+          dcrClientMetadata: client.dcrClientMetadata,
+          featureContext,
+        },
+        signal,
+      ),
+      signal,
+    );
+    if (!automatic.ok) {
+      const error = automatic.error;
+      if (!(error instanceof McpAutomaticOAuthError)) {
+        throw error;
+      }
+      const code = customConnectorAutomaticOAuthErrorCode(error);
+      const response =
+        error.kind === "temporary"
+          ? {
+              status: 502 as const,
+              body: {
+                error: {
+                  code,
+                  message:
+                    "The MCP OAuth provider is temporarily unavailable. Try again later.",
+                },
+              },
+            }
+          : {
+              status: 400 as const,
+              body: {
+                error: {
+                  code,
+                  message:
+                    "Automatic MCP OAuth setup failed. Check the server's OAuth configuration or choose another authentication method.",
+                },
+              },
+            };
+      return { ok: false as const, response };
+    }
+    const prepared = automatic.value;
+    if (prepared.kind === "none") {
+      return { ok: true as const, result: prepared };
+    }
+    return {
+      ok: true as const,
+      result: {
+        kind: "oauth" as const,
+        prepared: {
+          authMode: "automatic",
+          redirectUri: client.redirectUri,
+          state,
+          authorizationUrl: prepared.authorizationUrl,
+          codeVerifier: prepared.codeVerifier,
+          oauthRequestedScopes: prepared.requestedScope,
+          context:
+            prepared.context satisfies PreparedCustomConnectorAutomaticOAuthStateContext,
+        } satisfies PreparedOAuthStart,
+      },
+    };
+  },
+);
 
 async function persistCustomConnectorOAuthStart(
   context: {
@@ -1015,9 +1018,9 @@ export const startCustomConnectorOAuth2$ = command(
         userFeatureSwitchContext(args.orgId, args.userId),
       );
       signal.throwIfAborted();
-      const automatic = await prepareAutomaticOAuthStart(
+      const automatic = await set(
+        prepareAutomaticOAuthStart$,
         {
-          db: set(writeDb$),
           connector,
           args,
           featureContext,
