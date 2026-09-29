@@ -2016,6 +2016,27 @@
       "template": "[模板：{{title}}]"
     },
     "newChat": "新建聊天",
+    "newThreadDelivery": {
+      "accepted": "首条消息已被服务器接收，等待聊天记录确认。",
+      "agentConflict": "此聊天与保存的智能体不匹配，无法安全重试。",
+      "checkAndRetry": "检查并重试",
+      "checking": "正在检查…",
+      "create": "创建聊天",
+      "firstMessage": "首条消息",
+      "missingChat": "此聊天已不可用。请查看保存的消息，不要直接重试。",
+      "openChat": "打开聊天",
+      "pendingCreate": "正在创建聊天…",
+      "pendingPrompt": "正在发送首条消息…",
+      "region": "新聊天投递恢复",
+      "rejected": "{{phase}}被拒绝。原始消息、已上传文件的引用及选项已保存在此浏览器中。",
+      "rejectedAuth": "{{phase}}被拒绝。请用原账号和组织登录，再检查投递状态。",
+      "review": "查看保存的消息",
+      "safeRetry": "安全重试需要支持 Web Locks 的浏览器。",
+      "storageUnavailable": "消息未发送：浏览器无法保存恢复副本。请释放存储空间后重试。",
+      "uncertain": "{{phase}}尚未确认。重试前请检查服务器状态；不要另建聊天。",
+      "uncertainAuth": "{{phase}}尚未确认。请用原账号和组织登录，再检查投递状态。",
+      "uploadedFiles": "已上传文件：{{files}}"
+    },
     "origins": {
       "agentphone": "iMessage",
       "discord": "Discord",

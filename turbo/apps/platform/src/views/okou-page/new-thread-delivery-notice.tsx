@@ -1,5 +1,6 @@
 import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
+import { useTranslation } from "react-i18next";
 import { Button } from "@okouai/ui";
 import {
   deliveryIntents$,
@@ -20,7 +21,15 @@ function NewThreadDeliveryItem({
 }) {
   const [retryState, retry] = useLoadableSet(retryNewThreadDelivery$);
   const signal = useGet(rootSignal$);
-  const phase = intent.phase === "create" ? "Chat creation" : "First message";
+  const { t } = useTranslation();
+  const phase =
+    intent.phase === "create"
+      ? t(($) => {
+          return $.chat.newThreadDelivery.create;
+        })
+      : t(($) => {
+          return $.chat.newThreadDelivery.firstMessage;
+        });
   const savedText =
     intent.body.userMessage?.parts
       .flatMap((part) => {
@@ -34,17 +43,43 @@ function NewThreadDeliveryItem({
   const status =
     intent.status === "rejected"
       ? intent.rejection === "authentication"
-        ? `${phase} rejected. Sign in with the original account and organization before checking delivery.`
-        : `${phase} rejected. Your original message, uploaded file references, and options are saved in this browser.`
+        ? t(
+            ($) => {
+              return $.chat.newThreadDelivery.rejectedAuth;
+            },
+            { phase },
+          )
+        : t(
+            ($) => {
+              return $.chat.newThreadDelivery.rejected;
+            },
+            { phase },
+          )
       : intent.status === "uncertain"
         ? intent.rejection === "authentication"
-          ? `${phase} unconfirmed. Sign in with the original account and organization before checking delivery.`
-          : `${phase} unconfirmed. Check the server before retrying; do not start another chat.`
+          ? t(
+              ($) => {
+                return $.chat.newThreadDelivery.uncertainAuth;
+              },
+              { phase },
+            )
+          : t(
+              ($) => {
+                return $.chat.newThreadDelivery.uncertain;
+              },
+              { phase },
+            )
         : intent.status === "accepted"
-          ? "First message accepted; waiting for confirmation in chat history."
+          ? t(($) => {
+              return $.chat.newThreadDelivery.accepted;
+            })
           : intent.phase === "create"
-            ? "Creating chat…"
-            : "Sending first message…";
+            ? t(($) => {
+                return $.chat.newThreadDelivery.pendingCreate;
+              })
+            : t(($) => {
+                return $.chat.newThreadDelivery.pendingPrompt;
+              });
   return (
     <div
       data-new-thread-delivery-id={intent.clientEventId}
@@ -58,7 +93,9 @@ function NewThreadDeliveryItem({
           options={{ pathParams: { threadId: intent.threadId } }}
           className="shrink-0 underline"
         >
-          Open chat
+          {t(($) => {
+            return $.chat.newThreadDelivery.openChat;
+          })}
         </Link>
       ) : null}
       {intent.status === "rejected" || intent.status === "uncertain" ? (
@@ -74,22 +111,39 @@ function NewThreadDeliveryItem({
             );
           }}
         >
-          {retryState.state === "loading" ? "Checking…" : "Check and retry"}
+          {retryState.state === "loading"
+            ? t(($) => {
+                return $.chat.newThreadDelivery.checking;
+              })
+            : t(($) => {
+                return $.chat.newThreadDelivery.checkAndRetry;
+              })}
         </Button>
       ) : null}
       {!navigator.locks &&
       (intent.status === "rejected" || intent.status === "uncertain") ? (
-        <span>Safe retry requires a browser with Web Locks support.</span>
+        <span>
+          {t(($) => {
+            return $.chat.newThreadDelivery.safeRetry;
+          })}
+        </span>
       ) : null}
       {intent.status === "rejected" || intent.status === "uncertain" ? (
         <details className="w-full min-w-0">
           <summary className="cursor-pointer underline">
-            Review saved message
+            {t(($) => {
+              return $.chat.newThreadDelivery.review;
+            })}
           </summary>
           <p className="mt-1 whitespace-pre-wrap break-words">{savedText}</p>
           {filenames.length > 0 ? (
             <p className="mt-1 break-words">
-              Uploaded files: {filenames.join(", ")}
+              {t(
+                ($) => {
+                  return $.chat.newThreadDelivery.uploadedFiles;
+                },
+                { files: filenames.join(", ") },
+              )}
             </p>
           ) : null}
         </details>
@@ -101,6 +155,7 @@ function NewThreadDeliveryItem({
 /** Mounted above all chat pages so an uncreated thread still has a recovery path. */
 export function NewThreadDeliveryNotice() {
   const onRef = useSet(newThreadDeliveryOnRef$);
+  const { t } = useTranslation();
   // Do not render a previous account's cached result while auth/org is changing.
   const loadable = useLoadable(deliveryIntents$);
   const intents =
@@ -114,7 +169,9 @@ export function NewThreadDeliveryNotice() {
       <span ref={onRef} aria-hidden hidden />
       {intents.length > 0 ? (
         <section
-          aria-label="New chat delivery recovery"
+          aria-label={t(($) => {
+            return $.chat.newThreadDelivery.region;
+          })}
           className="max-h-40 shrink-0 overflow-y-auto border-b border-border bg-background text-foreground"
         >
           {intents.map((intent) => {

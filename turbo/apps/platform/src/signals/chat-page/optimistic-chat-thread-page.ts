@@ -579,7 +579,9 @@ const sendNewThreadMessage$ = command(
     };
     if (!saveDeliveryIntent(identity, intent)) {
       toast.error(
-        "Message not sent: this browser could not save a recovery copy. Free up storage and try again.",
+        i18n.t(($) => {
+          return $.chat.newThreadDelivery.storageUnavailable;
+        }),
       );
       return null;
     }
