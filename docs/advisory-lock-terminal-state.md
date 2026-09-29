@@ -16,14 +16,17 @@ these 28 definitions, not the complete retirement scope.
    fixtures, and functions present in the final database schema. An earlier
    audit classification of KEEP is temporary, not an exemption.
 2. **Necessary cross-table writes may use a short transaction owned by one
-   command.** The command opens the transaction, executes the necessary SQL,
-   and commits. For example, inserting a unique credit grant and updating its
+   command.** Its caller-supplied parameters contain business inputs and, when
+   needed, a final `AbortSignal`; they never contain `db` or `tx`. Inside the
+   command, obtain the database with `const db = set(writeDb$)`, open the
+   transaction with `db.transaction(...)`, execute the necessary SQL, and await
+   its commit. For example, inserting a unique credit grant and updating its
    corresponding balance can be one local atomic operation.
-3. **Transactions are not propagated.** A transaction object must not be passed
-   to a helper, another command or service, supplied through a transaction-aware
-   callback API, injected into context, returned, or captured by deferred work.
-   The ORM's transaction callback is the local scope in which its transaction
-   object may be used.
+3. **Database and transaction handles stay inside their owning command.** That
+   command must not pass `db` or `tx` to a helper, another command or service,
+   a store adapter, a callback API, or an injected context. Neither handle may
+   be returned or captured by work that escapes the command. The ORM's local
+   transaction callback is where `tx` is used directly.
 4. **This cleanup adds no persisted fields.** Reuse existing identifiers,
    states, values, and constraints. Do not add revision, generation, claim,
    lease, operation, or publication fields to implement the plan. Do not
@@ -44,7 +47,40 @@ weaken observable correctness to declare the path complete.
 A short transaction contains a bounded set of local database reads and writes
 for one atomic business result. Its SQL lives inside the owning command's
 transaction callback. Reusable pure calculations and SQL builders may accept
-ordinary values; they must not receive or execute against that transaction.
+ordinary values; they must not receive a database or transaction handle.
+
+The required shape is a ccstate `command` that acquires its own database from
+`writeDb$`. The following example illustrates the boundary; the table and input
+names stand for the operation's existing business schema:
+
+```typescript
+const updateRelatedRows$ = command(
+  async (
+    { set },
+    input: UpdateRelatedRowsInput,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    signal.throwIfAborted();
+    await db.transaction(async (tx) => {
+      await tx
+        .update(firstTable)
+        .set(input.firstValues)
+        .where(eq(firstTable.id, input.firstId));
+      await tx
+        .update(secondTable)
+        .set(input.secondValues)
+        .where(eq(secondTable.id, input.secondId));
+    });
+  },
+);
+```
+
+The command owns the whole open/write/commit boundary. A helper or store that
+accepts `Db` and opens its own transaction does not satisfy this shape. Moving
+`db` or `tx` into an argument object, a closure, a callback, or a `Db | Tx` type
+does not satisfy it either. Returning plain committed business results is
+allowed; returning a handle or a query that still depends on it is not.
 
 The surrounding workflow exchanges plain inputs and committed results between
 commands. It does not open a transaction and pass it down a call chain.
@@ -54,10 +90,10 @@ pagination, and lengthy preparation outside transactions. A transaction must
 not wait for another command to perform such work. Moving an entire workflow
 into one large command does not make its transaction short.
 
-Remove transaction-accepting interfaces, including transaction-bearing argument
-objects and callback wrappers. Renaming a transaction parameter to `db`, using
-a database/transaction union type, or capturing it in a closure does not change
-the boundary.
+Remove caller-injected database and transaction parameters from commands that
+own these writes, together with transaction-bearing argument objects and
+callback wrappers. Execute their SQL inside the owning command instead of
+forwarding either handle through the workflow.
 
 Prefer, in order:
 
@@ -225,8 +261,10 @@ Completion requires:
 
 - Zero advisory acquisitions in production code, retained operational tools,
   executable fixtures, and functions in the final database schema.
-- Zero transaction objects propagated beyond their owning command's local
-  transaction callback.
+- Transaction-owning commands accept no `db` or `tx`, acquire their own database
+  through `set(writeDb$)`, and complete their own local transaction.
+- Zero database or transaction handles forwarded out of those commands, and
+  zero transaction objects escaping their local transaction callback.
 - Zero external I/O or workflow-spanning work inside those transactions.
 - Zero new persisted fields introduced by this cleanup.
 - User-visible behavior verified through production APIs, including relevant
