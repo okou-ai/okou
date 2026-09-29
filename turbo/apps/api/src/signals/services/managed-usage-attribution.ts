@@ -132,12 +132,13 @@ export function attributedManagedValues(
   run: BillingRun | undefined,
   attribution: BillingAttribution | undefined,
 ) {
-  if (
-    run &&
-    (run.id !== args.actor.runId ||
-      run.orgId !== args.actor.orgId ||
-      run.userId !== args.actor.userId)
-  ) {
+  const ownedRun =
+    run?.id === args.actor.runId &&
+    run?.orgId === args.actor.orgId &&
+    run?.userId === args.actor.userId
+      ? run
+      : undefined;
+  if (run && !ownedRun && !attribution) {
     throw new Error("Managed usage Run ownership does not match");
   }
   if (
@@ -151,7 +152,9 @@ export function attributedManagedValues(
     );
   }
   return {
-    ...managedValues(args, run),
+    // Historical attribution remains authoritative independently of the live
+    // Run. Retain a live FK only for the same billed owner, as before capture.
+    ...managedValues(args, ownedRun),
     billingRunId: args.actor.runId ?? null,
     billingContext: attribution
       ? "run"

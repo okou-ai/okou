@@ -61,8 +61,15 @@ coverage for managed Run billing display, runless allowance consumption and
 image webhook completion remains; behavioral verification belongs to the
 integrated PR pipeline.
 
-Their creation is historical migration 1119; migrations 1141 and 1193 contain
-later function definitions. Preserve those migrations. Once all R1 writers
+The effective function definitions are migration 1119 for generation identity
+and observed publication, 1141 for usage context and anchor, 1193 for canonical
+identity and thread capture, and 1226 for the source classifier, including
+Discord. The standalone managed writer follows the canonical owner and anchor
+when that row already exists, independently of a missing or differently owned
+live Run; only a matching live owner retains the content FK. Without canonical
+attribution, a differently owned live Run cannot establish a new billed
+identity. These are separate checks, not a fallback to the live Run's billing
+owner. Preserve the historical migrations. Once all R1 writers
 explicitly maintain the guarantees, use serving, in-flight and rollback evidence
 to retire current trigger/function definitions in a new migration. A source
 scan or the age of the old migrations cannot establish that gate.
