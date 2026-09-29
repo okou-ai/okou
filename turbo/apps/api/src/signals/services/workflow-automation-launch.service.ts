@@ -11,7 +11,8 @@ import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reas
 import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
-import { eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
+import { morningBriefScheduleClaims } from "@okouai/db/schema/morning-brief-schedule-claim";
 import { writeDb$, type Db } from "../external/db";
 import { now, nowDate } from "../../lib/time";
 import type { DispatchFailedRunCallbacks } from "./agent-run-create.service";
@@ -34,11 +35,7 @@ import {
   measureApiDispatchTiming,
 } from "./api-dispatch-timing.service";
 import type { CreateQueueFirstAgentRunCommandArgs } from "./agent-runs-create.service";
-import {
-  bindMorningBriefScheduleClaimRun,
-  morningBriefScheduleClaimBound,
-  morningBriefScheduleClaimSuperseded,
-} from "./morning-brief-schedule-claim.service";
+import { bindMorningBriefScheduleClaimRun } from "./morning-brief-schedule-claim.service";
 import { workflowAutomationCanFire$ } from "./workflow-automation-access.service";
 import { loadComputerUseHostGrantForAutoSend } from "./chat-computer-use-host.service";
 import { shouldUsePiExecution } from "./pi-sandbox-config";
@@ -170,7 +167,7 @@ interface AssembleWorkflowAutomationRunArgs extends WorkflowAutomationLaunchArgs
 interface AssembledWorkflowAutomationRun {
   readonly kind: "assembled";
   readonly run: CreateQueueFirstAgentRunCommandArgs;
-  readonly launched: (runId: string, signal: AbortSignal) => Promise<void>;
+  readonly launched: WorkflowAutomationRunStart;
 }
 
 interface WorkflowAutomationRunInput {
@@ -519,33 +516,32 @@ async function buildTimedWorkflowAutomationRunInput(args: {
   );
 }
 
-async function recordWorkflowAutomationRunStart(
-  input: {
-    readonly db: Db;
-    readonly args: WorkflowAutomationLaunchArgs;
-    readonly runId: string;
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  const { db, args, runId } = input;
-  const { automation, chatThreadId } = args.due;
-  await finalizeClaimedRunUserMessage({
-    orgId: automation.orgId,
-    threadId: chatThreadId,
-    userId: automation.ownerUserId,
-  });
-  signal.throwIfAborted();
-
-  await recordWorkflowAutomationLastRun(db, {
-    automationId: automation.id,
-    runId,
-    recordLastRunId: args.recordLastRunId !== false,
-    recordLastRunAt: args.recordLastRunAt,
-    disableClaimedOnceSchedule:
-      args.due.allowClaimedOnceScheduleAutomation === true,
-  });
-  signal.throwIfAborted();
+export interface WorkflowAutomationRunStart {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly chatThreadId: string;
+  readonly automationId: string;
+  readonly recordLastRunId: boolean;
+  readonly recordLastRunAt: boolean;
+  readonly disableClaimedOnceSchedule: boolean;
 }
+
+export const recordWorkflowAutomationRunStart$ = command(
+  async (
+    { set },
+    input: WorkflowAutomationRunStart,
+    runId: string,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    await finalizeClaimedRunUserMessage({
+      orgId: input.orgId,
+      threadId: input.chatThreadId,
+      userId: input.userId,
+    });
+    signal.throwIfAborted();
+    await set(recordWorkflowAutomationLastRun$, { ...input, runId }, signal);
+  },
+);
 
 /**
  * The late last-run write that follows the launch transaction.
@@ -555,57 +551,86 @@ async function recordWorkflowAutomationRunStart(
  * committed while this transaction waited visible here; folding that read into
  * the UPDATE as a subquery would evaluate it against the pre-wait snapshot.
  */
-export async function recordWorkflowAutomationLastRun(
-  db: Db,
-  args: {
-    readonly automationId: string;
-    readonly runId: string;
-    readonly recordLastRunId: boolean;
-    readonly recordLastRunAt: boolean;
-    readonly disableClaimedOnceSchedule: boolean;
-  },
-): Promise<void> {
-  const lastRunFields = () => {
-    return {
-      ...(args.recordLastRunId ? { lastRunId: args.runId } : {}),
-      ...(args.recordLastRunAt ? { lastRunAt: nowDate() } : {}),
-      ...(args.disableClaimedOnceSchedule ? { enabled: false } : {}),
-      updatedAt: nowDate(),
+const recordWorkflowAutomationLastRun$ = command(
+  async (
+    { set },
+    args: {
+      readonly automationId: string;
+      readonly runId: string;
+      readonly recordLastRunId: boolean;
+      readonly recordLastRunAt: boolean;
+      readonly disableClaimedOnceSchedule: boolean;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    const lastRunFields = () => {
+      return {
+        ...(args.recordLastRunId ? { lastRunId: args.runId } : {}),
+        ...(args.recordLastRunAt ? { lastRunAt: nowDate() } : {}),
+        ...(args.disableClaimedOnceSchedule ? { enabled: false } : {}),
+        updatedAt: nowDate(),
+      };
     };
-  };
 
-  // Only a journaled occurrence needs the serialized path. The binding is
-  // written in the launch transaction that created this Run and has already
-  // committed, so a Run without one can never acquire one later and keeps the
-  // original single-statement write, adding no row-lock contention to every
-  // other automation.
-  if (!(await morningBriefScheduleClaimBound(db, args.runId))) {
-    await db
-      .update(workflowAutomations)
-      .set(lastRunFields())
-      .where(eq(workflowAutomations.id, args.automationId));
-    return;
-  }
-
-  await db.transaction(async (tx) => {
-    const [locked] = await tx
-      .select({ id: workflowAutomations.id })
-      .from(workflowAutomations)
-      .where(eq(workflowAutomations.id, args.automationId))
-      .limit(1)
-      .for("update");
-    if (!locked) {
+    // Only a journaled occurrence needs the serialized path. The binding is
+    // written in the launch transaction that created this Run and has already
+    // committed, so a Run without one can never acquire one later and keeps the
+    // original single-statement write, adding no row-lock contention to every
+    // other automation.
+    const [bound] = await db
+      .select({ id: morningBriefScheduleClaims.id })
+      .from(morningBriefScheduleClaims)
+      .where(eq(morningBriefScheduleClaims.runId, args.runId))
+      .limit(1);
+    signal.throwIfAborted();
+    if (!bound) {
+      await db
+        .update(workflowAutomations)
+        .set(lastRunFields())
+        .where(eq(workflowAutomations.id, args.automationId));
+      signal.throwIfAborted();
       return;
     }
-    if (await morningBriefScheduleClaimSuperseded(tx, args.runId)) {
-      return;
-    }
-    await tx
-      .update(workflowAutomations)
-      .set(lastRunFields())
-      .where(eq(workflowAutomations.id, args.automationId));
-  });
-}
+
+    await db.transaction(async (tx) => {
+      const [locked] = await tx
+        .select({ id: workflowAutomations.id })
+        .from(workflowAutomations)
+        .where(eq(workflowAutomations.id, args.automationId))
+        .limit(1)
+        .for("update");
+      if (!locked) {
+        return;
+      }
+      const [own] = await tx
+        .select({
+          automationId: morningBriefScheduleClaims.automationId,
+          claimSequence: morningBriefScheduleClaims.claimSequence,
+        })
+        .from(morningBriefScheduleClaims)
+        .where(eq(morningBriefScheduleClaims.runId, args.runId))
+        .limit(1);
+      if (own) {
+        const [current] = await tx
+          .select({ claimSequence: morningBriefScheduleClaims.claimSequence })
+          .from(morningBriefScheduleClaims)
+          .where(eq(morningBriefScheduleClaims.automationId, own.automationId))
+          .orderBy(desc(morningBriefScheduleClaims.claimSequence))
+          .limit(1);
+        if ((current?.claimSequence ?? own.claimSequence) > own.claimSequence) {
+          return;
+        }
+      }
+      await tx
+        .update(workflowAutomations)
+        .set(lastRunFields())
+        .where(eq(workflowAutomations.id, args.automationId));
+      signal.throwIfAborted();
+    });
+    signal.throwIfAborted();
+  },
+);
 
 function workflowAutomationAgentRunAuth(automation: {
   readonly orgId: string;
@@ -733,11 +758,15 @@ export async function assembleWorkflowAutomationRun(
       },
       timing,
     },
-    launched: async (runId, launchedSignal) => {
-      await recordWorkflowAutomationRunStart(
-        { db, args, runId },
-        launchedSignal,
-      );
+    launched: {
+      orgId: automation.orgId,
+      userId: automation.ownerUserId,
+      chatThreadId,
+      automationId: automation.id,
+      recordLastRunId: args.recordLastRunId !== false,
+      recordLastRunAt: args.recordLastRunAt,
+      disableClaimedOnceSchedule:
+        args.due.allowClaimedOnceScheduleAutomation === true,
     },
   };
 }

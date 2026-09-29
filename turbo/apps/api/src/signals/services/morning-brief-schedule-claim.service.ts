@@ -233,58 +233,6 @@ export async function bindMorningBriefScheduleClaimRun(
     );
 }
 
-/** Whether this Run belongs to a recorded occurrence at all. */
-export async function morningBriefScheduleClaimBound(
-  db: Pick<Db, "select">,
-  runId: string,
-): Promise<boolean> {
-  const [bound] = await db
-    .select({ id: morningBriefScheduleClaims.id })
-    .from(morningBriefScheduleClaims)
-    .where(eq(morningBriefScheduleClaims.runId, runId))
-    .limit(1);
-  return bound !== undefined;
-}
-
-/**
- * Whether a newer journaled claim already superseded the occurrence this Run
- * belongs to.
- *
- * The launch transaction commits the Run and its journal binding together, but
- * the last-run fields are written after that transaction returns. This must not
- * be folded into that late UPDATE as a subquery: under READ COMMITTED a single
- * statement keeps the snapshot it started with, so an UPDATE that begins before
- * a newer claimant commits, then waits on the automation row, would still
- * evaluate the subquery against its pre-wait snapshot and overwrite the newer
- * value. The caller therefore takes the automation row lock first and calls
- * this afterwards, as separate statements that observe everything the wait let
- * through. An unjournaled Run matches no occurrence and is never superseded,
- * which keeps every other automation's behavior unchanged.
- */
-export async function morningBriefScheduleClaimSuperseded(
-  tx: Tx,
-  runId: string,
-): Promise<boolean> {
-  const [own] = await tx
-    .select({
-      automationId: morningBriefScheduleClaims.automationId,
-      claimSequence: morningBriefScheduleClaims.claimSequence,
-    })
-    .from(morningBriefScheduleClaims)
-    .where(eq(morningBriefScheduleClaims.runId, runId))
-    .limit(1);
-  if (!own) {
-    return false;
-  }
-  const [current] = await tx
-    .select({ claimSequence: morningBriefScheduleClaims.claimSequence })
-    .from(morningBriefScheduleClaims)
-    .where(eq(morningBriefScheduleClaims.automationId, own.automationId))
-    .orderBy(desc(morningBriefScheduleClaims.claimSequence))
-    .limit(1);
-  return (current?.claimSequence ?? own.claimSequence) > own.claimSequence;
-}
-
 type MorningBriefScheduleRevocationScope =
   | {
       readonly kind: "membership";

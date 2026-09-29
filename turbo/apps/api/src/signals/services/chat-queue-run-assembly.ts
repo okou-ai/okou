@@ -1,3 +1,4 @@
+import type { WorkflowAutomationRunStart } from "./workflow-automation-launch.service";
 import type {
   QueuedPromptLaunchContext,
   QueuedPromptRejectionTarget,
@@ -51,10 +52,7 @@ export type ChatQueueRunAssembly =
           }
         | {
             readonly kind: "automation";
-            readonly record: (
-              runId: string,
-              signal: AbortSignal,
-            ) => Promise<void>;
+            readonly input: WorkflowAutomationRunStart;
           };
     }
   | { readonly kind: "rejected"; readonly rejection: ChatQueueHeadRejection }

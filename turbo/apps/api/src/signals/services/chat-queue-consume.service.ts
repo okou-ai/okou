@@ -1,3 +1,4 @@
+import { recordWorkflowAutomationRunStart$ } from "./workflow-automation-launch.service";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { command } from "ccstate";
@@ -513,7 +514,12 @@ export const consumeChatQueueHead$ = command(
           result.body.runId,
         );
       } else {
-        await assembly.launched.record(result.body.runId, signal);
+        await set(
+          recordWorkflowAutomationRunStart$,
+          assembly.launched.input,
+          result.body.runId,
+          signal,
+        );
       }
       signal.throwIfAborted();
       await publishChatQueueHeadConsumed(head);
