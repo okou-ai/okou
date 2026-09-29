@@ -33,7 +33,6 @@ run_real_codex_steer() {
     local after_complete_prompt="$2"
     local initial_prompt='Run `sleep 10` with Bash, then follow the instruction in the next message received during this run. If no follow-up is received, reply only RESULT=missing.'
     local expected_output="${steer_prompt#Reply only }"
-    local after_complete_output="RESULT=codex-after-complete+$after_complete_prompt"
     local steer_result run_id thread_id steer_output successor_result
     local successor_run_id successor_output
 
@@ -54,8 +53,8 @@ run_real_codex_steer() {
         "$RUNNER_AGENT_ID" \
         "$thread_id" \
         "$run_id" \
-        "Reply only $after_complete_output" \
-        "$after_complete_output" \
+        "Reply only $after_complete_prompt" \
+        "$after_complete_prompt" \
         150)" || return 1
     successor_run_id="$(jq -er '.runId' <<< "$successor_result")" || return 1
     successor_output="$(_wait_for_runner_chat_completion \
@@ -77,17 +76,15 @@ run_real_codex_steer() {
 }
 
 @test "real codex steers an active run then starts a successor" {
-    local steer_nonce steer_prompt after_complete_nonce after_complete_prompt
-    steer_nonce="$(_runner_uuid)"
-    steer_prompt="Reply only RESULT=codex-steer-${steer_nonce%%-*}"
-    after_complete_nonce="$(_runner_uuid)"
-    after_complete_prompt="codex-new-run-${after_complete_nonce%%-*}"
+    # Run and event IDs identify this invocation; keep live-model replies short.
+    local steer_prompt='Reply only RESULT=STEER_OK'
+    local after_complete_prompt='RESULT=NEXT_OK'
 
     run run_real_codex_steer "$steer_prompt" "$after_complete_prompt"
 
     assert_success
     assert_output --partial "${steer_prompt#Reply only }"
-    assert_output --partial "RESULT=codex-after-complete+$after_complete_prompt"
+    assert_output --partial "$after_complete_prompt"
     assert_output --partial '"status":"completed"'
     [[ -n "$(runner_chat_field "$output" '.runId')" ]]
     [[ -n "$(runner_chat_field "$output" '.steerEventId')" ]]
