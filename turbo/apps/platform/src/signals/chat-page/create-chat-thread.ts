@@ -3265,6 +3265,45 @@ function createSendMessage(deps: SendMessageDeps) {
   );
 }
 
+function queueInputForRequest(args: {
+  readonly agentId: string;
+  readonly options: QueueMessageOptions;
+  readonly result: PreparedSendMessageResult;
+  readonly modelSelection: ModelProviderSelection | null;
+  readonly runOptions: ChatRunOptionsRequest | undefined;
+  readonly realAgentInPreviewEnabled: boolean;
+}): SendInputChatEvent {
+  const {
+    agentId,
+    options,
+    result,
+    modelSelection,
+    runOptions,
+    realAgentInPreviewEnabled,
+  } = args;
+  return {
+    kind: "input",
+    delivery: "queue",
+    agentId,
+    prompt: result.prompt,
+    hasTextContent: result.hasTextContent,
+    userMessage: queueUserMessage(options, result),
+    selectedModel: modelSelection?.selectedModel ?? null,
+    ...(runOptions === undefined ? {} : { runOptions }),
+    ...(realAgentInPreviewEnabled ? { realAgentInPreview: true } : {}),
+    ...(options.computerUseHostId === undefined
+      ? {}
+      : { computerUseHostId: options.computerUseHostId }),
+    ...(options.cloudBrowserEnabled === undefined
+      ? {}
+      : { cloudBrowserEnabled: options.cloudBrowserEnabled }),
+    ...(options.forward ? { source: options.forward } : {}),
+    ...(options.onOptimisticSend
+      ? { onOptimisticSend: options.onOptimisticSend }
+      : {}),
+  };
+}
+
 function createQueueMessage(deps: SendMessageDeps) {
   const {
     threadId,
@@ -3306,33 +3345,18 @@ function createQueueMessage(deps: SendMessageDeps) {
       }
       signal.throwIfAborted();
       const features = get(featureSwitch$);
-      const userMessage = queueUserMessage(options, result);
-
       const { runOptions, realAgentInPreviewEnabled } = sendRuntimeOptions(
         features,
         modelSelection,
       );
-      const input: SendInputChatEvent = {
-        kind: "input",
-        delivery: "queue",
+      const input = queueInputForRequest({
         agentId,
-        prompt: result.prompt,
-        hasTextContent: result.hasTextContent,
-        userMessage,
-        selectedModel: modelSelection?.selectedModel ?? null,
-        ...(runOptions === undefined ? {} : { runOptions }),
-        ...(realAgentInPreviewEnabled ? { realAgentInPreview: true } : {}),
-        ...(options.computerUseHostId === undefined
-          ? {}
-          : { computerUseHostId: options.computerUseHostId }),
-        ...(options.cloudBrowserEnabled === undefined
-          ? {}
-          : { cloudBrowserEnabled: options.cloudBrowserEnabled }),
-        ...(options.forward ? { source: options.forward } : {}),
-        ...(options.onOptimisticSend
-          ? { onOptimisticSend: options.onOptimisticSend }
-          : {}),
-      };
+        options,
+        result,
+        modelSelection,
+        runOptions,
+        realAgentInPreviewEnabled,
+      });
       const intent = await set(deps.prepareInput$, input, signal);
       if (!intent) {
         return false;

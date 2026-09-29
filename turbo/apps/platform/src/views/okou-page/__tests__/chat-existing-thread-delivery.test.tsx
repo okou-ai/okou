@@ -6,15 +6,17 @@ import {
   chatEventRowSchema,
   type ChatEventRow,
 } from "@okouai/api-contracts/contracts/chat-event-rows";
-import { chatThreadEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { chatEventRowsResponse } from "../../../signals/__tests__/test-helpers.ts";
-import { mockChatEventRowContextType } from "./chat-event-test-helpers.ts";
 import {
   chatEventsContract,
+  chatThreadEventsContract,
   type ChatEventSendBody,
 } from "@okouai/api-contracts/contracts/chat-threads";
+import {
+  chatEventRowsResponse,
+  testContext,
+} from "../../../signals/__tests__/test-helpers.ts";
+import { mockChatEventRowContextType } from "./chat-event-test-helpers.ts";
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { resetSignal } from "../../../signals/utils.ts";
 import { nowDate } from "../../../lib/time.ts";
 import {
@@ -97,11 +99,11 @@ test("a rejected existing-thread send is visible and retries with the original I
   await readyChat();
   await sendViaComposer("Retain this launch instruction");
 
-  expect(
-    await screen.findByText(
+  await expect(
+    screen.findByText(
       "Message not sent. Sign in again, then check delivery before retrying.",
     ),
-  ).toBeInTheDocument();
+  ).resolves.toBeInTheDocument();
   expect(
     screen.getByText("Retain this launch instruction"),
   ).toBeInTheDocument();
@@ -112,11 +114,11 @@ test("a rejected existing-thread send is visible and retries with the original I
 
   reject = false;
   click(await findButton("Check and retry"));
-  expect(
-    await screen.findByText(
+  await expect(
+    screen.findByText(
       "Message accepted; waiting for confirmation in the chat history.",
     ),
-  ).toBeInTheDocument();
+  ).resolves.toBeInTheDocument();
   expect(requests).toHaveLength(2);
   expect(requests[1]?.clientEventId).toBe(requests[0]?.clientEventId);
   expect(requests[1]?.chatThreadSortEventId).toBe(
@@ -196,18 +198,18 @@ test("a saved prompt from a prior page lifetime is shown with an uncertain state
         },
       },
     }),
-  ).toBe(true);
+  ).toBeTruthy();
 
   await setupPage({ context, path: RUN_PATH });
   await readyChat();
-  expect(
-    await screen.findByText("Recover my original brief"),
-  ).toBeInTheDocument();
-  expect(
-    await screen.findByText(
+  await expect(
+    screen.findByText("Recover my original brief"),
+  ).resolves.toBeInTheDocument();
+  await expect(
+    screen.findByText(
       "Delivery unconfirmed. Check the server before retrying.",
     ),
-  ).toBeInTheDocument();
+  ).resolves.toBeInTheDocument();
 });
 
 test("a missing POST response keeps an uncertain queued message with uploaded file references", async () => {
@@ -243,11 +245,11 @@ test("a missing POST response keeps an uncertain queued message with uploaded fi
   await userEvent.upload(input!, file);
   await findEnabledButton("Send");
   await sendViaComposer("Queue the specification review");
-  expect(
-    await screen.findByText(
+  await expect(
+    screen.findByText(
       "Delivery unconfirmed. Check the server before retrying.",
     ),
-  ).toBeInTheDocument();
+  ).resolves.toBeInTheDocument();
   expect(
     screen.getByText("Queue the specification review"),
   ).toBeInTheDocument();
@@ -302,7 +304,7 @@ test("an intent for a different signed-in member never appears on this chat", as
         },
       },
     ),
-  ).toBe(true);
+  ).toBeTruthy();
   await setupPage({ context, path: RUN_PATH });
   await readyChat();
   expect(document.body).not.toHaveTextContent(
@@ -335,11 +337,11 @@ test("a server-accepted prompt with a lost response reconciles before retry", as
   await setupPage({ context, path: RUN_PATH });
   await readyChat();
   await sendViaComposer("Prepare the handoff memo");
-  expect(
-    await screen.findByText(
+  await expect(
+    screen.findByText(
       "Delivery unconfirmed. Check the server before retrying.",
     ),
-  ).toBeInTheDocument();
+  ).resolves.toBeInTheDocument();
   expect(postCount).toBe(1);
   const id = requestBody?.clientEventId;
   if (!id || !requestBody || !("prompt" in requestBody)) {
@@ -386,11 +388,11 @@ test("a rejected send remains recoverable after an actual page remount", async (
   });
   await readyChat();
   await sendViaComposer("Preserve this after reload");
-  expect(
-    await screen.findByText(
+  await expect(
+    screen.findByText(
       "Message not sent. Sign in again, then check delivery before retrying.",
     ),
-  ).toBeInTheDocument();
+  ).resolves.toBeInTheDocument();
 
   context.store.set(resetPage$);
   cleanup();
@@ -399,14 +401,14 @@ test("a rejected send remains recoverable after an actual page remount", async (
   vi.mocked(window.history.back).mockRestore();
   await setupPage({ context: refreshedContext, path: RUN_PATH });
   await readyChat();
-  expect(
-    await screen.findByText("Preserve this after reload"),
-  ).toBeInTheDocument();
-  expect(
-    await screen.findByText(
+  await expect(
+    screen.findByText("Preserve this after reload"),
+  ).resolves.toBeInTheDocument();
+  await expect(
+    screen.findByText(
       "Message not sent. Sign in again, then check delivery before retrying.",
     ),
-  ).toBeInTheDocument();
+  ).resolves.toBeInTheDocument();
 });
 
 test("forwarding into an existing thread does not claim a rejected message was sent", async () => {
@@ -433,11 +435,11 @@ test("forwarding into an existing thread does not claim a rejected message was s
   });
   await fill(forwardComposer, "Send this to the active discussion");
   click(await findEnabledButton("Send", dialog));
-  expect(
-    await screen.findByText(
+  await expect(
+    screen.findByText(
       "Forward not sent. Your message is saved in this browser.",
     ),
-  ).toBeInTheDocument();
+  ).resolves.toBeInTheDocument();
   expect(dialog).toBeInTheDocument();
   const [forwardIntent] = listDeliveryIntents(identity()).filter((intent) => {
     return (

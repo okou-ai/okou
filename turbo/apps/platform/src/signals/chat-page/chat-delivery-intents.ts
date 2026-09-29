@@ -97,8 +97,42 @@ function expired(value: unknown): boolean {
     return true;
   }
   const date = value.createdAt;
-  const time = typeof date === "string" ? Date.parse(date) : NaN;
+  const time = typeof date === "string" ? Date.parse(date) : Number.NaN;
   return !Number.isFinite(time) || time > now() || now() - time > MAX_AGE_MS;
+}
+
+function validBaseIntent(value: object, body: ChatEventSendBody): boolean {
+  return (
+    "clientEventId" in value &&
+    typeof value.clientEventId === "string" &&
+    body.clientEventId === value.clientEventId &&
+    "threadId" in value &&
+    typeof value.threadId === "string" &&
+    (body.threadId ?? body.clientThreadId) === value.threadId &&
+    "status" in value &&
+    ["prepared", "accepted", "rejected", "uncertain"].includes(
+      String(value.status),
+    ) &&
+    "rejection" in value &&
+    [null, "authentication", "rejected"].includes(
+      value.rejection as string | null,
+    )
+  );
+}
+
+function validNewThreadIntent(value: object, threadId: string): boolean {
+  const creation =
+    "createBody" in value
+      ? chatThreadsContract.create.body.safeParse(value.createBody)
+      : null;
+  return (
+    creation?.success === true &&
+    creation.data.clientThreadId === threadId &&
+    "phase" in value &&
+    ["create", "prompt"].includes(String(value.phase)) &&
+    "createEventId" in value &&
+    typeof value.createEventId === "string"
+  );
 }
 
 function parseIntent(raw: string | null): ChatDeliveryIntent | null {
@@ -116,22 +150,7 @@ function parseIntent(raw: string | null): ChatDeliveryIntent | null {
   if (!body.success || !("prompt" in body.data)) {
     return null;
   }
-  if (
-    !("clientEventId" in value) ||
-    typeof value.clientEventId !== "string" ||
-    body.data.clientEventId !== value.clientEventId ||
-    !("threadId" in value) ||
-    typeof value.threadId !== "string" ||
-    (body.data.threadId ?? body.data.clientThreadId) !== value.threadId ||
-    !("status" in value) ||
-    !["prepared", "accepted", "rejected", "uncertain"].includes(
-      String(value.status),
-    ) ||
-    !("rejection" in value) ||
-    ![null, "authentication", "rejected"].includes(
-      value.rejection as string | null,
-    )
-  ) {
+  if (!validBaseIntent(value, body.data)) {
     return null;
   }
   if ("kind" in value && value.kind === "existing-thread") {
@@ -144,17 +163,11 @@ function parseIntent(raw: string | null): ChatDeliveryIntent | null {
     return value as unknown as ExistingThreadDeliveryIntent;
   }
   if ("kind" in value && value.kind === "new-thread") {
-    const creation =
-      "createBody" in value
-        ? chatThreadsContract.create.body.safeParse(value.createBody)
-        : null;
     if (
-      !creation?.success ||
-      creation.data.clientThreadId !== value.threadId ||
-      !("phase" in value) ||
-      !["create", "prompt"].includes(String(value.phase)) ||
-      !("createEventId" in value) ||
-      typeof value.createEventId !== "string"
+      !validNewThreadIntent(
+        value,
+        body.data.threadId ?? body.data.clientThreadId ?? "",
+      )
     ) {
       return null;
     }
