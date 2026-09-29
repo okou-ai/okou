@@ -6104,6 +6104,46 @@ describe("okou browser route", () => {
       }
     }
 
+    mockNow(STARTED_AT_MS + 11 * MINUTE_MS);
+    await reconcileBrowsers(current.threadId);
+    const suspended = await accept(
+      client().get({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { threadId: current.threadId },
+      }),
+      [200],
+    );
+    expect(suspended.body.browser.status).toBe("suspended");
+
+    const resumed = await Promise.all(
+      Array.from({ length: 3 }, () => {
+        return client().use({
+          headers: current.claim.browserHeaders,
+          body: {},
+        });
+      }),
+    );
+    const active = await accept(
+      client().use({ headers: current.claim.browserHeaders, body: {} }),
+      [200],
+    );
+    expect(active.body.browser).toMatchObject({
+      threadId: current.threadId,
+      status: "active",
+    });
+    expect(active.body.cdpUrl).not.toBe(attached.body.cdpUrl);
+    expect(
+      resumed.some((result) => {
+        return result.status === 200;
+      }),
+    ).toBeTruthy();
+    for (const result of resumed) {
+      expect([200, 409]).toContain(result.status);
+      if (result.status === 200) {
+        expect(result.body.cdpUrl).toBe(active.body.cdpUrl);
+      }
+    }
+
     await chat.deleteThread(actor, current.threadId);
     await flushWaitUntilForTest();
   });
