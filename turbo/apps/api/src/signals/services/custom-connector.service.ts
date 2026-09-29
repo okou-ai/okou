@@ -44,11 +44,14 @@ import { db$, writeDb$, type ReadonlyDb } from "../external/db";
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import { safeSync } from "../utils";
+import { safeSync, settle } from "../utils";
 import { encryptStoredSecretValue } from "./crypto.utils";
 import { userFeatureSwitchContext } from "./feature-switches.service";
 import { addUserCustomConnector } from "./user-connectors.service";
-import { loadConnectorRuntimeSnapshot } from "./connector-catalog-runtime.service";
+import {
+  loadConnectorRuntimeSnapshot,
+  loadConnectorRuntimeSnapshot$,
+} from "./connector-catalog-runtime.service";
 import {
   customConnectorDefinitionSelection,
   type CustomConnectorDefinitionRow,
@@ -76,7 +79,7 @@ import { preparedVolumePublicationSql } from "./storage-volume-publication-sql";
 import { StorageVersionIdentityConflictError } from "./storage-version-registration.service";
 import {
   commitConnectorRuntimeMutation,
-  publishConnectorRuntimeSyncWakeups,
+  publishConnectorRuntimeSyncWakeups$,
 } from "./connector-runtime-wakeup.service";
 import {
   publishCustomConnectorOrganizationInvalidationAfterCommit,
@@ -91,7 +94,6 @@ import {
   writeConnectorConnectionMetadata,
 } from "./connector-connection-write.service";
 import type { Tx } from "../../lib/db-types";
-import { writeCustomConnectorOAuthState } from "./custom-connector-oauth-write.service";
 import { invalidatePiStableContextsForOrg } from "./pi-stable-context-generation.service";
 
 const L = logger("CustomConnectorService");
@@ -151,7 +153,6 @@ type ForbiddenResponse = {
     };
   };
 };
-type DbTransaction = Tx;
 
 function forbidden(message: string): ForbiddenResponse {
   return {
@@ -1572,24 +1573,28 @@ function validateDefinition(
   };
 }
 
-async function validatePermissionBundleRef(
-  db: ReadonlyDb,
-  permissionBundleRef: CustomConnectorPermissionBundleRef | null,
-): Promise<BadRequestResponse | null> {
-  if (permissionBundleRef === null) {
-    return null;
-  }
-  const snapshot = await loadConnectorRuntimeSnapshot(db);
-  const bundle = await loadCustomConnectorPermissionBundle({
-    catalog: snapshot.serverFirewallMetadata,
-    ref: permissionBundleRef,
-  });
-  return bundle
-    ? null
-    : badRequestMessage(
-        `Unknown custom connector permission bundle: ${permissionBundleRef}`,
-      );
-}
+const validatePermissionBundleRef$ = command(
+  async (
+    { set },
+    permissionBundleRef: CustomConnectorPermissionBundleRef | null,
+    signal: AbortSignal,
+  ): Promise<BadRequestResponse | null> => {
+    if (permissionBundleRef === null) {
+      return null;
+    }
+    const snapshot = await set(loadConnectorRuntimeSnapshot$, signal);
+    const bundle = await loadCustomConnectorPermissionBundle({
+      catalog: snapshot.serverFirewallMetadata,
+      ref: permissionBundleRef,
+    });
+    signal.throwIfAborted();
+    return bundle
+      ? null
+      : badRequestMessage(
+          `Unknown custom connector permission bundle: ${permissionBundleRef}`,
+        );
+  },
+);
 
 function definitionFromCreateInput(
   input: CreateCustomConnectorBody,
@@ -1745,66 +1750,60 @@ const persistCustomConnectorCreate$ = command(
   > => {
     const db = set(writeDb$);
     return await db.transaction(async (tx) => {
-      return await writeCustomConnectorOAuthState(
-        tx,
-        [{ connectorId: args.connectorId, orgId: args.orgId }],
-        async () => {
-          if (args.preparedSkill) {
-            const { rowCount: published } = await tx.execute(
-              preparedVolumePublicationSql(args.preparedSkill, nowDate()),
-            );
-            if (published !== 1) {
-              throw new StorageVersionIdentityConflictError(
-                args.preparedSkill.version.versionId,
-              );
-            }
-            signal.throwIfAborted();
-          }
-          const [row] = await tx
-            .insert(orgCustomConnectors)
-            .values({
-              id: args.connectorId,
-              orgId: args.orgId,
-              slug: args.slug,
-              displayName: args.definition.displayName,
-              ...protocolColumns(args.definition),
-              fields: [...args.definition.fields],
-              headerInjections: [...args.definition.headerInjections],
-              queryInjections: [...args.definition.queryInjections],
-              authMode: args.definition.authMode,
-              skillMarkdown: args.definition.skillMarkdown,
-              skillStorageVersionId:
-                args.preparedSkill?.version.versionId ?? null,
-              storageVersion: args.storageVersion,
-              createdBy: args.userId,
-            })
-            .returning(customConnectorDefinitionSelection());
-          if (!row) {
-            throw new Error("Expected insert to return a row");
-          }
-          let oauthConfig: CustomConnectorOAuthConfigRow | null = null;
-          if (
-            args.oauthConfigUpdate.kind === "upsert" &&
-            args.encryptedClientSecret
-          ) {
-            const [insertedOAuthConfig] = await tx
-              .insert(orgCustomConnectorOauthConfigs)
-              .values({
-                connectorId: row.id,
-                orgId: args.orgId,
-                ...args.oauthConfigUpdate.config,
-                encryptedClientSecret: args.encryptedClientSecret,
-              })
-              .returning();
-            if (!insertedOAuthConfig) {
-              throw new Error("Expected OAuth config insert to return a row");
-            }
-            oauthConfig = insertedOAuthConfig;
-          }
-          await invalidatePiStableContextsForOrg(tx, args.orgId);
-          return { row, oauthConfig };
-        },
-      );
+      if (args.preparedSkill) {
+        const { rowCount: published } = await tx.execute(
+          preparedVolumePublicationSql(args.preparedSkill, nowDate()),
+        );
+        if (published !== 1) {
+          throw new StorageVersionIdentityConflictError(
+            args.preparedSkill.version.versionId,
+          );
+        }
+        signal.throwIfAborted();
+      }
+      const [row] = await tx
+        .insert(orgCustomConnectors)
+        .values({
+          id: args.connectorId,
+          orgId: args.orgId,
+          slug: args.slug,
+          displayName: args.definition.displayName,
+          ...protocolColumns(args.definition),
+          fields: [...args.definition.fields],
+          headerInjections: [...args.definition.headerInjections],
+          queryInjections: [...args.definition.queryInjections],
+          authMode: args.definition.authMode,
+          skillMarkdown: args.definition.skillMarkdown,
+          skillStorageVersionId: args.preparedSkill?.version.versionId ?? null,
+          storageVersion: args.storageVersion,
+          createdBy: args.userId,
+        })
+        .returning(customConnectorDefinitionSelection());
+      if (!row) {
+        throw new Error("Expected insert to return a row");
+      }
+      let oauthConfig: CustomConnectorOAuthConfigRow | null = null;
+      if (
+        args.oauthConfigUpdate.kind === "upsert" &&
+        args.encryptedClientSecret
+      ) {
+        const [insertedOAuthConfig] = await tx
+          .insert(orgCustomConnectorOauthConfigs)
+          .values({
+            connectorId: row.id,
+            orgId: args.orgId,
+            ...args.oauthConfigUpdate.config,
+            encryptedClientSecret: args.encryptedClientSecret,
+          })
+          .returning();
+        if (!insertedOAuthConfig) {
+          throw new Error("Expected OAuth config insert to return a row");
+        }
+        oauthConfig = insertedOAuthConfig;
+      }
+      requireCustomConnectorOAuthConfig(row.authMode, oauthConfig);
+      await invalidatePiStableContextsForOrg(tx, args.orgId);
+      return { row, oauthConfig };
     });
   },
 );
@@ -1820,14 +1819,14 @@ export const createCustomConnector$ = command(
     signal: AbortSignal,
   ): Promise<CustomConnectorRow | BadRequestResponse> => {
     const canonicalInput = definitionFromCreateInput(args.input);
-    const writeDb = set(writeDb$);
     const v = validateDefinition(canonicalInput);
     if (isBadRequest(v)) {
       return v;
     }
-    const invalidPermissionBundle = await validatePermissionBundleRef(
-      writeDb,
+    const invalidPermissionBundle = await set(
+      validatePermissionBundleRef$,
       v.permissionBundleRef,
+      signal,
     );
     signal.throwIfAborted();
     if (invalidPermissionBundle) {
@@ -1915,34 +1914,42 @@ export const createCustomConnector$ = command(
   },
 );
 
-async function loadCustomConnectorForUpdate(
-  db: ReadonlyDb,
-  args: { readonly orgId: string; readonly id: string },
-): Promise<CustomConnectorRow | null> {
-  const [result] = await db
-    .select({
-      connector: customConnectorDefinitionSelection(),
-      oauthConfig: orgCustomConnectorOauthConfigs,
-    })
-    .from(orgCustomConnectors)
-    .leftJoin(
-      orgCustomConnectorOauthConfigs,
-      and(
-        eq(orgCustomConnectorOauthConfigs.connectorId, orgCustomConnectors.id),
-        eq(orgCustomConnectorOauthConfigs.orgId, orgCustomConnectors.orgId),
-      ),
-    )
-    .where(
-      and(
-        eq(orgCustomConnectors.id, args.id),
-        eq(orgCustomConnectors.orgId, args.orgId),
-      ),
-    )
-    .limit(1);
-  return result
-    ? normaliseCustomConnectorRow(result.connector, result.oauthConfig)
-    : null;
-}
+const loadCustomConnectorForUpdate$ = command(
+  async (
+    { set },
+    args: { readonly orgId: string; readonly id: string },
+    signal: AbortSignal,
+  ): Promise<CustomConnectorRow | null> => {
+    const db = set(writeDb$);
+    const [result] = await db
+      .select({
+        connector: customConnectorDefinitionSelection(),
+        oauthConfig: orgCustomConnectorOauthConfigs,
+      })
+      .from(orgCustomConnectors)
+      .leftJoin(
+        orgCustomConnectorOauthConfigs,
+        and(
+          eq(
+            orgCustomConnectorOauthConfigs.connectorId,
+            orgCustomConnectors.id,
+          ),
+          eq(orgCustomConnectorOauthConfigs.orgId, orgCustomConnectors.orgId),
+        ),
+      )
+      .where(
+        and(
+          eq(orgCustomConnectors.id, args.id),
+          eq(orgCustomConnectors.orgId, args.orgId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return result
+      ? normaliseCustomConnectorRow(result.connector, result.oauthConfig)
+      : null;
+  },
+);
 
 function nextOAuthConfigForUpdate(args: {
   readonly connector: CustomConnectorRow;
@@ -1981,72 +1988,87 @@ interface PersistCustomConnectorUpdateArgs {
   readonly preparedSkill: PreparedServerSideVolume | null;
 }
 
-async function deleteReplacedAutomaticOAuthData(
-  tx: DbTransaction,
+function replacedAutomaticOAuthDeletionSql(
   args: Pick<
     PersistCustomConnectorUpdateArgs,
     "existing" | "definition" | "id" | "orgId"
   >,
-): Promise<void> {
+) {
   if (
     args.existing.authMode !== "automatic" ||
     args.definition.authMode === "automatic"
   ) {
-    return;
+    return [];
   }
-  await tx
-    .delete(customConnectorAccountOauthBindings)
-    .where(eq(customConnectorAccountOauthBindings.customConnectorId, args.id));
-  await tx
-    .delete(orgCustomConnectorDcrRegistrations)
-    .where(
-      and(
-        eq(orgCustomConnectorDcrRegistrations.customConnectorId, args.id),
-        eq(orgCustomConnectorDcrRegistrations.orgId, args.orgId),
-      ),
-    );
+  return [
+    sql`DELETE FROM ${customConnectorAccountOauthBindings}
+      WHERE ${customConnectorAccountOauthBindings.customConnectorId} = ${args.id}`,
+    sql`DELETE FROM ${orgCustomConnectorDcrRegistrations}
+      WHERE ${orgCustomConnectorDcrRegistrations.customConnectorId} = ${args.id}
+        AND ${orgCustomConnectorDcrRegistrations.orgId} = ${args.orgId}`,
+  ];
 }
 
-async function persistCustomConnectorOAuthConfigUpdate(
-  tx: Tx,
+function customConnectorOAuthConfigUpdateSql(
   args: PersistCustomConnectorUpdateArgs,
-): Promise<CustomConnectorOAuthConfigRow | null> {
-  let storedOAuthConfig: CustomConnectorOAuthConfigRow | null = null;
+  at: Date,
+) {
+  const config = orgCustomConnectorOauthConfigs;
   if (args.oauthConfigUpdate.kind === "none") {
-    await tx
-      .delete(orgCustomConnectorOauthConfigs)
-      .where(
-        and(
-          eq(orgCustomConnectorOauthConfigs.connectorId, args.id),
-          eq(orgCustomConnectorOauthConfigs.orgId, args.orgId),
-        ),
-      );
-  } else if (args.oauthConfigUpdate.kind === "preserve") {
-    storedOAuthConfig = args.oauthConfigUpdate.config;
-  } else {
-    if (!args.encryptedClientSecret) {
-      throw new Error("Expected encrypted OAuth client secret");
-    }
-    const [upserted] = await tx
-      .insert(orgCustomConnectorOauthConfigs)
-      .values({
-        connectorId: args.id,
-        orgId: args.orgId,
-        ...args.oauthConfigUpdate.config,
-        encryptedClientSecret: args.encryptedClientSecret,
-      })
-      .onConflictDoUpdate({
-        target: orgCustomConnectorOauthConfigs.connectorId,
-        set: {
-          ...args.oauthConfigUpdate.config,
-          encryptedClientSecret: args.encryptedClientSecret,
-          updatedAt: nowDate(),
-        },
-      })
-      .returning();
-    storedOAuthConfig = upserted ?? null;
+    return [
+      sql`DELETE FROM ${config} WHERE ${config.connectorId} = ${args.id} AND ${config.orgId} = ${args.orgId}`,
+    ];
   }
-  return storedOAuthConfig;
+  if (args.oauthConfigUpdate.kind === "preserve") {
+    return [];
+  }
+  if (!args.encryptedClientSecret) {
+    throw new Error("Expected encrypted OAuth client secret");
+  }
+  const values = args.oauthConfigUpdate.config;
+  return [
+    sql`INSERT INTO ${config} (
+    connector_id, org_id, provider_adapter, client_id, encrypted_client_secret,
+    authorization_url, token_url, token_endpoint_auth_method, pkce_method, scopes, authorization_params
+  ) VALUES (
+    ${args.id}, ${args.orgId}, ${values.providerAdapter}, ${values.clientId}, ${args.encryptedClientSecret},
+    ${values.authorizationUrl}, ${values.tokenUrl}, ${values.tokenEndpointAuthMethod}, ${values.pkceMethod},
+    ${sql.param(values.scopes, config.scopes)}, ${sql.param(values.authorizationParams, config.authorizationParams)}
+  ) ON CONFLICT (connector_id) DO UPDATE SET
+    provider_adapter = EXCLUDED.provider_adapter, client_id = EXCLUDED.client_id,
+    encrypted_client_secret = EXCLUDED.encrypted_client_secret,
+    authorization_url = EXCLUDED.authorization_url, token_url = EXCLUDED.token_url,
+    token_endpoint_auth_method = EXCLUDED.token_endpoint_auth_method, pkce_method = EXCLUDED.pkce_method,
+    scopes = EXCLUDED.scopes, authorization_params = EXCLUDED.authorization_params,
+    updated_at = ${sql.param(at, config.updatedAt)}`,
+  ];
+}
+
+function requireCustomConnectorOAuthConfig(
+  authMode: ValidatedDefinition["authMode"],
+  config: CustomConnectorOAuthConfigRow | null,
+): void {
+  if ((authMode === "oauth") !== (config !== null)) {
+    throw new Error("custom connector OAuth mode and config do not match");
+  }
+}
+
+function customConnectorDefinitionUpdateValues(
+  args: PersistCustomConnectorUpdateArgs,
+  at: Date,
+) {
+  return {
+    displayName: args.definition.displayName,
+    ...protocolColumns(args.definition),
+    fields: [...args.definition.fields],
+    headerInjections: [...args.definition.headerInjections],
+    queryInjections: [...args.definition.queryInjections],
+    authMode: args.definition.authMode,
+    skillMarkdown: args.definition.skillMarkdown,
+    skillStorageVersionId: args.preparedSkill?.version.versionId ?? null,
+    storageVersion: args.storageVersion,
+    updatedAt: at,
+  };
 }
 
 const persistCustomConnectorUpdate$ = command(
@@ -2101,54 +2123,52 @@ const persistCustomConnectorUpdate$ = command(
             )
           : null;
       }
-      return await writeCustomConnectorOAuthState(
-        tx,
-        [{ connectorId: args.id, orgId: args.orgId }],
-        async () => {
-          if (args.preparedSkill) {
-            const { rowCount: published } = await tx.execute(
-              preparedVolumePublicationSql(args.preparedSkill, nowDate()),
-            );
-            if (published !== 1) {
-              throw new StorageVersionIdentityConflictError(
-                args.preparedSkill.version.versionId,
-              );
-            }
-            signal.throwIfAborted();
-          }
-          await deleteReplacedAutomaticOAuthData(tx, args);
-          const kindColumns = protocolColumns(args.definition);
-          const [updated] = await tx
-            .update(orgCustomConnectors)
-            .set({
-              displayName: args.definition.displayName,
-              ...kindColumns,
-              fields: [...args.definition.fields],
-              headerInjections: [...args.definition.headerInjections],
-              queryInjections: [...args.definition.queryInjections],
-              authMode: args.definition.authMode,
-              skillMarkdown: args.definition.skillMarkdown,
-              skillStorageVersionId:
-                args.preparedSkill?.version.versionId ?? null,
-              storageVersion: args.storageVersion,
-              updatedAt: nowDate(),
-            })
-            .where(
-              and(
-                eq(orgCustomConnectors.id, args.id),
-                eq(orgCustomConnectors.orgId, args.orgId),
-              ),
-            )
-            .returning(customConnectorDefinitionSelection());
-          if (!updated) {
-            throw new Error("Expected locked custom connector to be updated");
-          }
-          const storedOAuthConfig =
-            await persistCustomConnectorOAuthConfigUpdate(tx, args);
-          await invalidatePiStableContextsForOrg(tx, args.orgId);
-          return { row: updated, oauthConfig: storedOAuthConfig };
-        },
-      );
+      if (args.preparedSkill) {
+        const { rowCount: published } = await tx.execute(
+          preparedVolumePublicationSql(args.preparedSkill, nowDate()),
+        );
+        if (published !== 1) {
+          throw new StorageVersionIdentityConflictError(
+            args.preparedSkill.version.versionId,
+          );
+        }
+        signal.throwIfAborted();
+      }
+      for (const statement of replacedAutomaticOAuthDeletionSql(args)) {
+        await tx.execute(statement);
+      }
+      const [updated] = await tx
+        .update(orgCustomConnectors)
+        .set(customConnectorDefinitionUpdateValues(args, nowDate()))
+        .where(
+          and(
+            eq(orgCustomConnectors.id, args.id),
+            eq(orgCustomConnectors.orgId, args.orgId),
+          ),
+        )
+        .returning(customConnectorDefinitionSelection());
+      if (!updated) {
+        throw new Error("Expected locked custom connector to be updated");
+      }
+      for (const statement of customConnectorOAuthConfigUpdateSql(
+        args,
+        nowDate(),
+      )) {
+        await tx.execute(statement);
+      }
+      const [oauthConfig] = await tx
+        .select()
+        .from(orgCustomConnectorOauthConfigs)
+        .where(
+          and(
+            eq(orgCustomConnectorOauthConfigs.connectorId, args.id),
+            eq(orgCustomConnectorOauthConfigs.orgId, args.orgId),
+          ),
+        );
+      const storedOAuthConfig = oauthConfig ?? null;
+      requireCustomConnectorOAuthConfig(updated.authMode, storedOAuthConfig);
+      await invalidatePiStableContextsForOrg(tx, args.orgId);
+      return { row: updated, oauthConfig: storedOAuthConfig };
     });
   },
 );
@@ -2162,7 +2182,6 @@ const persistCustomConnectorUpdateAndPublishRuntimeWakeup$ = command(
     readonly result: CustomConnectorRow | BadRequestResponse | null;
     readonly postCommitAbort?: CapturedConnectorClientInvalidationAbort;
   }> => {
-    const db = set(writeDb$);
     const result = await set(persistCustomConnectorUpdate$, args, signal);
     if (isBadRequest(result) || !result) {
       return {
@@ -2180,11 +2199,22 @@ const persistCustomConnectorUpdateAndPublishRuntimeWakeup$ = command(
       args.grantConfigurationChanged ||
       connector.storageVersion !== args.existing.storageVersion
     ) {
-      await publishConnectorRuntimeSyncWakeups({
-        db,
-        scope: { orgId: args.orgId },
-        targets: [{ kind: "custom", customConnectorId: connector.id }],
-      });
+      // eslint-disable-next-line api/signal-check-await -- Finish both committed invalidations before propagating cancellation.
+      const wakeup = await settle(
+        set(
+          publishConnectorRuntimeSyncWakeups$,
+          {
+            scope: { orgId: args.orgId },
+            targets: [{ kind: "custom", customConnectorId: connector.id }],
+          },
+          signal,
+        ),
+      );
+      // The wakeup command observes cancellation only after its publication.
+      // Keep that outcome until organization invalidation has also completed.
+      if (!wakeup.ok && (!signal.aborted || wakeup.error !== signal.reason)) {
+        throw wakeup.error;
+      }
     }
     return {
       result: connector,
@@ -2281,8 +2311,11 @@ export const updateCustomConnectorDefinition$ = command(
     },
     signal: AbortSignal,
   ): Promise<UpdateCustomConnectorDefinitionResult> => {
-    const writeDb = set(writeDb$);
-    const existingConnector = await loadCustomConnectorForUpdate(writeDb, args);
+    const existingConnector = await set(
+      loadCustomConnectorForUpdate$,
+      args,
+      signal,
+    );
     signal.throwIfAborted();
     if (!existingConnector) {
       return notFound("Custom connector not found");
@@ -2297,9 +2330,10 @@ export const updateCustomConnectorDefinition$ = command(
     if (isBadRequest(prepared)) {
       return prepared;
     }
-    const invalidPermissionBundle = await validatePermissionBundleRef(
-      writeDb,
+    const invalidPermissionBundle = await set(
+      validatePermissionBundleRef$,
       prepared.definition.permissionBundleRef,
+      signal,
     );
     signal.throwIfAborted();
     if (invalidPermissionBundle) {

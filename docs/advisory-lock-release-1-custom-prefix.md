@@ -16,3 +16,20 @@ API tests now permit concurrent definitions and edits with equivalent normalized
 The removed duplicate prefix-concurrency test added no distinct boundary beyond normalized equivalent URLs. Other definition validation and organization authorization tests remain. No internal row lock, trigger or artificial database gate is used.
 
 This is the prefix exclusion slice only. Custom OAuth writes and shared skill Storage commits still have transaction-aware interfaces and remain implementation work in the main R1 inventory. A lower advisory count is not R1 readiness. Behavioral verification belongs to the combined PR pipeline.
+
+## Definition write ownership
+
+Custom connector create/update now execute their mode/config SQL directly in the
+owning command. They no longer pass a transaction or callback through
+`writeCustomConnectorOAuthState`; the existing parent identity protects updates,
+new parent insertion protects creation, and final mode/config consistency is
+checked before commit. Automatic-registration retirement and OAuth upsert builders
+receive only business values. Definition preflight and accepted-catalog reads use
+business-input commands, and runtime wakeups own their post-commit read. Both
+runtime and organization invalidation complete before reporting cancellation.
+
+This does not complete the whole Custom/Storage chain: Pi stable-context
+invalidation/recapture still forwards the transaction, and other account writers
+and Feishu's mode/config writer retain their legacy helpers. These are R1
+implementation gaps, not outgoing-only compatibility boundaries. Provider/KMS
+preparation and prepared Storage upload/verification remain outside these commits.

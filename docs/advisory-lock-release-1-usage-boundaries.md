@@ -220,14 +220,14 @@ only decreases expiry; subsequent monetary writers observe any resulting remaind
 The preview/test state seed routes are test-only writers, not supported production
 balance writers. They remain a separate fixture command-ownership cleanup.
 
-Plan/Atom replacement cancellations still execute within the existing transaction
-chain. Moving them after commit without a complete replay identity loses some
-cancellations: the currently stored subscription ID has been overwritten, and the
-existing Stripe customer-list fallback excludes some previously selected IDs (for
-example past-due lower-tier subscriptions). Broadening cancellation to all customer
-subscriptions would risk unrelated current plans. This remains implementation work,
-not a compatibility exception. The prepared monetary predicates above do not
-resolve the plan entitlement, pending-snapshot and member-grant helper propagation.
+Plan/Atom replacement cancellations now run after the owning invoice commit,
+using candidate identities prepared before publication plus its observed prior
+binding. Original-event redelivery retries cleanup without granting again; a
+newer already-bound Plan prevents obsolete invoice cleanup. Those protocols are
+detailed below. Identifying a newer payable but still-unbound purchase remains
+an unfinished part of shared purchase admission; broad customer-wide cancellation
+is not a safe substitute. The monetary predicates above do not resolve the
+remaining allocation, remote schedule or unbounded trial-extension protocols.
 R1 is not certified ready by this note.
 
 The shared-wallet API regression constructs the expiration counterexample through
@@ -273,10 +273,12 @@ change does not claim the terminal transaction footprint is already reached.
 The caller chain now dispatches invoice fulfillment as a command from signed
 Stripe events, reconciliation, migration finalization/replay and both migration
 confirmation APIs, preserving each caller's final `AbortSignal`. Migration remote
-scheduling, snapshot materialization and invitation completion still use their
-legacy helper ownership; converting orchestration callers does not certify those
-separate write protocols. Plan/Atom cancellation replay remains implementation
-work; usage-pack plan activation is now owned as described below. Focused Prettier, Oxlint and ESLint passed; combined types and
+scheduling still uses its legacy transaction graph; snapshot materialization and
+invitation payment/claim/refund commits now have owning commands. Two invitation
+projection edges still pass a transaction through Stripe work. Converting the
+orchestration callers does not certify those separate protocols. Plan/Atom
+post-commit cancellation replay and usage-pack plan activation are owned as
+described below. Focused Prettier, Oxlint and ESLint passed; combined types and
 behavior checks must use the integrated PR HEAD.
 
 The Atom member-credit-only invoice path now uses `grantAtomMemberCredits$`.
@@ -292,7 +294,7 @@ publication command described below.
 
 Plan-change invoice activation now dispatches `activateUsagePackPlanFromSubscription$` and its owning publication command with ordinary Stripe and local snapshot values. Neither command accepts or forwards a database handle. Preparation resolves the existing binding and reads the finite allocation candidates outside the transaction. Publication directly executes the subscription, organization plan, entitlement, and pending-count SQL in one local transaction, with no provider calls. It rereads the current bound subscription and the prepared allocation IDs, rejects a terminal or moved subscription, validates the current quantities, and rejects newly active allocations omitted by preparation before publishing anything.
 
-The R1 publication still takes the existing billing compatibility keys and locks organization subscription roots before the pending guard. This order remains necessary while outgoing lifecycle writers lock a subscription and then enter their pending-count trigger. Removing those compatibility boundaries requires the complete common pending-snapshot writer protocol and the documented outgoing-writer/drain/rollback evidence; changing this activation command alone is not that evidence. Stripe quantity/schedule ordering, the remaining allocation/plan-change helpers, and legacy Atom/plan replacement cancellation are still separate implementation gaps.
+The R1 publication still takes the existing billing compatibility keys and locks organization subscription roots before the pending guard. This order remains necessary while outgoing lifecycle writers lock a subscription and then enter their pending-count trigger. Removing those compatibility boundaries requires the complete common pending-snapshot writer protocol and the documented outgoing-writer/drain/rollback evidence; changing this activation command alone is not that evidence. Stripe quantity/schedule ordering, the remaining allocation/plan-change helpers, and admission of still-unbound payable replacement candidates remain separate implementation gaps. Atom/Plan cancellation already follows its owning publication commit, as detailed below.
 
 Focused Prettier, Oxlint, ESLint, and diff checks cover this change. Existing user-API plan-change and paid-invoice behavior tests must run against the integrated PR head; no local Vitest or development server was run.
 

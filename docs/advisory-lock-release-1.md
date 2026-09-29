@@ -17,10 +17,10 @@ The initial implementation baseline was main
 `5b458cc9df60ce0c3ffc7e1783ec3d36be9634e1`: 28 production acquisition definitions,
 one catalog fixture acquisition, and one attribution operator acquisition.
 Historical migration SQL is counted separately. The integration branch also
-includes main `2135875`, preserving browser preferences, thread-image schema
+includes main `d29e72c`, preserving browser preferences, thread-image schema
 contraction, retired Agent SSH/VNC grants, current generation identity, the
 Okou Pro/Max retirement and default-policy repair, and the rule prohibiting new
-database triggers. Integration `/model` controls retain main's routed-thread-only
+database triggers. Main's published migration 1289 and X509None VNC profile are preserved; the PR-only retirements follow at 1290–1292. Integration `/model` controls retain main's routed-thread-only
 behavior and no longer change a member default or recreate a retired session.
 
 Browser and custom account preparation from #37097 was verified against live
