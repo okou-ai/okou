@@ -12572,10 +12572,11 @@ describe("usage pack allocation management", () => {
     // A late writer left Stripe at two packages; local records declare one.
     let repaired = false;
     context.mocks.stripe.subscriptions.retrieve.mockImplementation(() => {
+      const quantity = repaired ? 1 : 2;
       return Promise.resolve(
         managedUsagePackSubscription(
           fixture,
-          new Map([[TEST_PRICE_USAGE_PACK_20, repaired ? 1 : 2]]),
+          new Map([[TEST_PRICE_USAGE_PACK_20, quantity]]),
         ),
       );
     });
@@ -12608,6 +12609,105 @@ describe("usage pack allocation management", () => {
     );
     expect(context.mocks.stripe.invoices.create).not.toHaveBeenCalled();
     expect(context.mocks.stripe.invoices.pay).not.toHaveBeenCalled();
+  });
+
+  it("repairs stale Stripe quantities before confirming a paid upgrade", async () => {
+    mockNow(new Date("2035-01-16T00:00:00.000Z"));
+    onTestFinished(() => {
+      clearMockNow();
+    });
+    const fixture = await seedManagedUsagePack([
+      { userId: `user_${randomUUID()}`, usagePackUsd: 20 },
+    ]);
+    const sourceUserId =
+      (await readUsagePackState(fixture.orgId, fixture.usagePackSubscriptionId))
+        .allocations[0]?.userId ?? "";
+    const oldSubscription = managedUsagePackSubscription(
+      fixture,
+      new Map([[TEST_PRICE_USAGE_PACK_20, 1]]),
+    );
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+      oldSubscription,
+    );
+    mockUsagePackChangePreviews(1500, 5000);
+    const client = setupApp({ context, routes: billingCheckoutRoutes })(
+      billingUsagePackManagementContract,
+    );
+    const preview = await accept(
+      client.previewChange({
+        headers: { authorization: "Bearer clerk-session" },
+        body: { memberId: sourceUserId, targetUsagePackUsd: 50 },
+      }),
+      [200],
+    );
+    const prorationTimestamp = Math.floor(
+      new Date(preview.body.prorationDate).getTime() / 1000,
+    );
+
+    // A late writer leaves Stripe at two packages after the quote.
+    let repaired = false;
+    const staleSubscription = managedUsagePackSubscription(
+      fixture,
+      new Map([[TEST_PRICE_USAGE_PACK_20, 2]]),
+    );
+    context.mocks.stripe.subscriptions.retrieve.mockImplementation(() => {
+      const current = repaired ? oldSubscription : staleSubscription;
+      return Promise.resolve(current);
+    });
+    const pendingInvoiceId = `in_${randomUUID()}`;
+    context.mocks.stripe.subscriptions.update.mockImplementation(
+      (_id: unknown, params: unknown) => {
+        if (
+          typeof params === "object" &&
+          params !== null &&
+          "proration_behavior" in params &&
+          params.proration_behavior === "none"
+        ) {
+          repaired = true;
+          return Promise.resolve(oldSubscription);
+        }
+        return Promise.resolve({
+          ...oldSubscription,
+          pending_update: { expires_at: prorationTimestamp + 300 },
+          latest_invoice: {
+            id: pendingInvoiceId,
+            status: "open",
+            hosted_invoice_url: `https://invoice.stripe.test/${pendingInvoiceId}`,
+          },
+        });
+      },
+    );
+
+    const confirmed = await accept(
+      client.confirmChange({
+        params: { changeId: preview.body.changeId },
+        headers: { authorization: "Bearer clerk-session" },
+        body: {},
+      }),
+      [200],
+    );
+
+    expect(confirmed.body.status).toBe("pending_payment");
+    expect(context.mocks.stripe.subscriptions.update).toHaveBeenNthCalledWith(
+      1,
+      fixture.subscriptionId,
+      {
+        items: [{ id: `si_${TEST_PRICE_USAGE_PACK_20}`, quantity: 1 }],
+        proration_behavior: "none",
+      },
+      undefined,
+    );
+    expect(context.mocks.stripe.subscriptions.update).toHaveBeenNthCalledWith(
+      2,
+      fixture.subscriptionId,
+      expect.objectContaining({
+        payment_behavior: "pending_if_incomplete",
+        proration_behavior: "always_invoice",
+        proration_date: prorationTimestamp,
+      }),
+      { idempotencyKey: `usage-pack-change:${preview.body.changeId}:apply` },
+    );
+    expect(context.mocks.stripe.subscriptions.update).toHaveBeenCalledTimes(2);
   });
 
   it("applies a paid upgrade once with the preview proration date", async () => {

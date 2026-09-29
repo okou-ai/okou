@@ -49,7 +49,11 @@ Implemented for member usage packs (`usage-pack-allocation-change.service.ts`):
   blocks it. The API removal test starts from a stale quantity 3 and converges
   to 1.
 
-Still unimplemented: change confirmation, the last-member deferred removal and
+- Confirming a previewed member change first repairs drift the same way,
+  before the change is claimed as a paid operation. The API test repairs 2 → 1
+  with no proration, then applies the quoted `always_invoice` upgrade once.
+
+Still unimplemented: the last-member deferred removal and
 the expired or deferred change reconcilers still validate Stripe against local
 quantities and throw on drift that the sync could not repair (for example,
 while a payment is in flight). Plan, migration, legacy Plan and concurrency writers,

@@ -4444,6 +4444,44 @@ type PreparedUsagePackChangeConfirmation =
   | { readonly status: "expired" }
   | { readonly status: "conflict" };
 
+/**
+ * Before a previewed member change is claimed for payment, converge temporary
+ * Stripe drift from local allocations. Once claimed, the change is a financial
+ * operation and the identity sync defers to it.
+ */
+export const repairUsagePackConfigurationBeforeConfirmation$ = command(
+  async (
+    { set },
+    args: { readonly orgId: string; readonly changeId: string },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    const [change] = await db
+      .select({
+        usagePackSubscriptionId:
+          usagePackAllocationChanges.usagePackSubscriptionId,
+      })
+      .from(usagePackAllocationChanges)
+      .where(
+        and(
+          eq(usagePackAllocationChanges.id, args.changeId),
+          eq(usagePackAllocationChanges.orgId, args.orgId),
+          eq(usagePackAllocationChanges.status, "previewed"),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!change) {
+      return;
+    }
+    await set(
+      repairUsagePackConfigurationBeforeQuote$,
+      change.usagePackSubscriptionId,
+      signal,
+    );
+  },
+);
+
 export const prepareUsagePackChangeConfirmation$ = command(
   async (
     { set },

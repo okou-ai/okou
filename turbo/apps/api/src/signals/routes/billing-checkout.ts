@@ -59,6 +59,7 @@ import {
 import {
   confirmUsagePackAllocationChange,
   prepareUsagePackChangeConfirmation$,
+  repairUsagePackConfigurationBeforeConfirmation$,
   getUsagePackManagement,
   previewUsagePackAllocationChange$,
 } from "../services/usage-pack-allocation-change.service";
@@ -970,6 +971,11 @@ const usagePackChangeConfirmAuthed$ = command(
         paymentMethod = revalidated;
       }
     }
+    await set(
+      repairUsagePackConfigurationBeforeConfirmation$,
+      { orgId: access.auth.orgId, changeId },
+      signal,
+    );
     const prepared = await set(
       prepareUsagePackChangeConfirmation$,
       { orgId: access.auth.orgId, changeId },
