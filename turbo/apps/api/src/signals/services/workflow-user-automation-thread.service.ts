@@ -4,7 +4,6 @@ import {
 } from "@okouai/api-contracts/contracts/user-preferences";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
-import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
   workflowAutomations,
   workflowUserAutomationThreads,
@@ -17,11 +16,11 @@ import {
   chatThreadModelPinColumns,
   resolveRequiredDefaultChatThreadModelPin,
 } from "./chat-thread-model.service";
+import type { ChatThreadEventTransaction } from "./chat-thread-event.service";
 import {
-  appendChatThreadEvent,
-  type ChatThreadEventTransaction,
-} from "./chat-thread-event.service";
-import { loadNewChatThreadModelSettings } from "./chat-thread-model-settings.service";
+  appendChatThreadCreatedEvent,
+  insertChatThread,
+} from "./chat-thread-create.service";
 import {
   readAcceptedOfficialWorkflowDefinition,
   readAcceptedOfficialWorkflowRevision,
@@ -223,43 +222,25 @@ async function createAutomationChatThread(
     orgId: args.orgId,
     userId: args.userId,
   });
-  const modelSettings = await loadNewChatThreadModelSettings(db, {
+  const pinColumns = chatThreadModelPinColumns(pin);
+  const thread = await insertChatThread(db, {
     orgId: args.orgId,
     userId: args.userId,
+    agentId: args.agentId,
+    title: args.title,
+    modelProviderId: pinColumns.modelProviderId,
+    modelProviderType: pinColumns.modelProviderType,
+    modelProviderCredentialScope: pinColumns.modelProviderCredentialScope,
+    selectedModel: pinColumns.selectedModel,
+    codexServiceTier: pin.serviceTier === "priority" ? "fast" : null,
+    lastMessageAt: args.currentTime,
+    createdAt: args.currentTime,
+    updatedAt: args.currentTime,
   });
-  const pinColumns = chatThreadModelPinColumns(pin);
-  const [thread] = await db
-    .insert(chatThreads)
-    .values({
-      userId: args.userId,
-      agentId: args.agentId,
-      title: args.title,
-      modelProviderId: pinColumns.modelProviderId,
-      modelProviderType: pinColumns.modelProviderType,
-      modelProviderCredentialScope: pinColumns.modelProviderCredentialScope,
-      selectedModel: pinColumns.selectedModel,
-      modelSettings,
-      codexServiceTier: pin.serviceTier === "priority" ? "fast" : null,
-      lastMessageAt: args.currentTime,
-      createdAt: args.currentTime,
-      updatedAt: args.currentTime,
-    })
-    .returning({ id: chatThreads.id, createdAt: chatThreads.createdAt });
   if (!thread) {
     throw new Error("Failed to create workflow automation chat thread");
   }
-  await appendChatThreadEvent(db, {
-    kind: "created",
-    userId: args.userId,
-    orgId: args.orgId,
-    chatThreadId: thread.id,
-    agentId: args.agentId,
-    title: args.title,
-    selectedModel: pin.selectedModel,
-    modelSettings,
-    serviceTier: pin.serviceTier,
-    createdAt: thread.createdAt,
-  });
+  await appendChatThreadCreatedEvent(db, { orgId: args.orgId, thread });
   return thread.id;
 }
 

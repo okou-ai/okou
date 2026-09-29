@@ -132,7 +132,7 @@ describe("POST /api/chat-threads/:id/rename", () => {
       modelSettings: {},
       serviceTier: null,
       computerUseHostId: null,
-      cloudBrowserEnabled: false,
+      cloudBrowserEnabled: true,
       selectedImageModel: null,
     });
   });

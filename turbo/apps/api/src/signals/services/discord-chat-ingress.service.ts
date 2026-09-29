@@ -11,8 +11,10 @@ import { discordChatThreadRoutes } from "@okouai/db/schema/discord-chat-thread-r
 import { and, eq } from "drizzle-orm";
 
 import type { Db } from "../external/db";
-import { appendChatThreadEvent } from "./chat-thread-event.service";
-import { loadNewChatThreadModelSettings } from "./chat-thread-model-settings.service";
+import {
+  appendChatThreadCreatedEvent,
+  insertChatThread,
+} from "./chat-thread-create.service";
 import type { Tx } from "../../lib/db-types";
 
 interface DiscordChatThreadRouteKey {
@@ -222,26 +224,18 @@ export async function ensureCanonicalDiscordChatThreadRoute(
       tx,
       args,
     );
-    const modelSettings = await loadNewChatThreadModelSettings(tx, {
+    const thread = await insertChatThread(tx, {
       orgId: args.orgId,
       userId: args.userId,
+      agentId: args.agentId,
+      selectedModel: initialModel.selectedModel,
+      codexServiceTier: initialModel.serviceTier === "priority" ? "fast" : null,
+      title: null,
+      lastReadAt: args.currentTime,
+      lastMessageAt: args.currentTime,
+      createdAt: args.currentTime,
+      updatedAt: args.currentTime,
     });
-    const [thread] = await tx
-      .insert(chatThreads)
-      .values({
-        userId: args.userId,
-        agentId: args.agentId,
-        selectedModel: initialModel.selectedModel,
-        modelSettings,
-        codexServiceTier:
-          initialModel.serviceTier === "priority" ? "fast" : null,
-        title: null,
-        lastReadAt: args.currentTime,
-        lastMessageAt: args.currentTime,
-        createdAt: args.currentTime,
-        updatedAt: args.currentTime,
-      })
-      .returning({ id: chatThreads.id, createdAt: chatThreads.createdAt });
     if (!thread) {
       throw new Error("Failed to create canonical Discord chat thread");
     }
@@ -281,18 +275,7 @@ export async function ensureCanonicalDiscordChatThreadRoute(
       return winner;
     }
 
-    await appendChatThreadEvent(tx, {
-      kind: "created",
-      userId: args.userId,
-      orgId: args.orgId,
-      chatThreadId: thread.id,
-      agentId: args.agentId,
-      title: null,
-      selectedModel: initialModel.selectedModel,
-      modelSettings,
-      serviceTier: initialModel.serviceTier,
-      createdAt: thread.createdAt,
-    });
+    await appendChatThreadCreatedEvent(tx, { orgId: args.orgId, thread });
     await attachIngressRoute(tx, args.ingressId, route.id);
     return route;
   });

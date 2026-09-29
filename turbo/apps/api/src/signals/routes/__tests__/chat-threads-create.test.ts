@@ -26,6 +26,7 @@ import {
   manualHttpCustomConnectorCreateBody,
 } from "./helpers/api-bdd-connectors";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { seedRun$ } from "./helpers/usage-state";
 import { createRouteMocks } from "./helpers/route-test";
@@ -231,6 +232,72 @@ async function readCreatedThreadEvent(threadId: string, token: string) {
 }
 
 describe("POST /api/chat-threads", () => {
+  it.each([true, false])(
+    "snapshots the member's cloud browser preference (%s) and preserves it on replay",
+    async (enabled) => {
+      const fixture = await seedAgent();
+      const preferences = createMiscRoutesApi(context);
+      await preferences.updatePreferences(
+        fixture.actor,
+        { cloudBrowserEnabledByDefault: enabled },
+        [200],
+      );
+      const token = okouToken({
+        userId: fixture.userId,
+        orgId: fixture.orgId,
+        capabilities: ["chat-thread:read", "chat-thread:write"],
+      });
+      const headers = { authorization: `Bearer ${token}` };
+      const body = {
+        agentId: fixture.agentId,
+        clientThreadId: randomUUID(),
+        model: WORKSPACE_DEFAULT_MODEL,
+      } as const;
+      const first = await accept(
+        threadsClient().create({ headers, body }),
+        [201],
+      );
+      await expect(
+        readCreatedThreadEvent(first.body.id, token),
+      ).resolves.toMatchObject({ cloudBrowserEnabled: enabled });
+
+      await preferences.updatePreferences(
+        fixture.actor,
+        { cloudBrowserEnabledByDefault: !enabled },
+        [200],
+      );
+      const replay = await accept(
+        threadsClient().create({ headers, body }),
+        [201],
+      );
+      expect(replay.body.id).toBe(first.body.id);
+      const retained = await accept(
+        metadataClient().get({ headers, params: { id: first.body.id } }),
+        [200],
+      );
+      expect(retained.body.cloudBrowserEnabled).toBe(enabled);
+      await expect(
+        readCreatedThreadEvents(first.body.id, token),
+      ).resolves.toHaveLength(1);
+
+      const next = await accept(
+        threadsClient().create({
+          headers,
+          body: { ...body, clientThreadId: randomUUID() },
+        }),
+        [201],
+      );
+      const updated = await accept(
+        metadataClient().get({ headers, params: { id: next.body.id } }),
+        [200],
+      );
+      expect(updated.body.cloudBrowserEnabled).toBe(!enabled);
+      await expect(
+        readCreatedThreadEvent(next.body.id, token),
+      ).resolves.toMatchObject({ cloudBrowserEnabled: !enabled });
+    },
+  );
+
   it("creates initial SSH and VNC overrides and preserves them on replay", async () => {
     initializeVncRuntimeTest();
     const fixture = await seedAgent();
@@ -1219,7 +1286,7 @@ describe("POST /api/chat-threads", () => {
       modelSettings: {},
       serviceTier: null,
       computerUseHostId: null,
-      cloudBrowserEnabled: false,
+      cloudBrowserEnabled: true,
       selectedImageModel: null,
     });
     await expect(

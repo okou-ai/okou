@@ -228,7 +228,7 @@ describe("POST /api/welcome-chat-threads", () => {
       selectedModel: MODEL,
       serviceTier: null,
       selectedImageModel: null,
-      cloudBrowserEnabled: false,
+      cloudBrowserEnabled: true,
     });
     const rows = await chat.listThreadEventRows(actor, body.id);
     expect(rows).toHaveLength(1);

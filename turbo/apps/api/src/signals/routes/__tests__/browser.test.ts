@@ -50,6 +50,7 @@ import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createComputerUseBddApi } from "./helpers/api-bdd-computer-use";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { setBrowserTabSnapshotAsPreviousApi } from "./helpers/runtime-state";
 import { createRouteMocks } from "./helpers/route-test";
@@ -5805,6 +5806,77 @@ async function reconcileBrowsers(
 }
 
 describe("okou browser route", () => {
+  it.each([true, false])(
+    "applies the saved cloud browser preference (%s) to a new chat and its run permissions",
+    async (enabled) => {
+      const { runs, chat, actor, agent } = await setupBrowserScenario();
+      await createMiscRoutesApi(context).updatePreferences(
+        actor,
+        { cloudBrowserEnabledByDefault: enabled },
+        [200],
+      );
+      const sent = await chat.sendAndLaunch(actor, {
+        agentId: agent.agentId,
+        prompt: "Use my saved browser preference",
+      });
+      await expect(
+        chat.readThreadMetadata(actor, sent.threadId),
+      ).resolves.toMatchObject({ cloudBrowserEnabled: enabled });
+      await flushWaitUntilForTest();
+      const claim = await runs.claimRunnerJob(sent.runId);
+      const browser = await accept(
+        client().get({
+          headers: {
+            authorization: `Bearer ${claim.platformEnvironment.OKOU_TOKEN}`,
+          },
+          params: { threadId: sent.threadId },
+        }),
+        [403, 404],
+      );
+      // An authorized run reaches the empty browser lookup; a disabled run
+      // has no browser capability and is rejected before that lookup.
+      expect(browser.status).toBe(enabled ? 404 : 403);
+      expect(browser.body.error.code).toBe(
+        enabled ? "BROWSER_NOT_FOUND" : "FORBIDDEN",
+      );
+    },
+  );
+
+  it.each([
+    "cloud browser",
+    "disabled",
+    "no computer",
+    "computer use",
+  ] as const)(
+    "honors an explicit %s selection over saved Chat preferences",
+    async (selection) => {
+      const { runs, chat, actor, agent } = await setupBrowserScenario();
+      await createMiscRoutesApi(context).updatePreferences(
+        actor,
+        { cloudBrowserEnabledByDefault: selection !== "cloud browser" },
+        [200],
+      );
+      const host =
+        selection === "computer use"
+          ? await computerUse.startComputerUseHost(actor)
+          : null;
+      const sent = await chat.sendAndLaunch(actor, {
+        agentId: agent.agentId,
+        prompt: "Use this chat's explicit computer selection",
+        ...(selection === "disabled" || selection === "cloud browser"
+          ? { cloudBrowserEnabled: selection === "cloud browser" }
+          : { computerUseHostId: host?.hostId ?? null }),
+      });
+      await expect(
+        chat.readThreadMetadata(actor, sent.threadId),
+      ).resolves.toMatchObject({
+        cloudBrowserEnabled: selection === "cloud browser",
+        computerUseHostId: host?.hostId ?? null,
+      });
+      await runs.requestCancelRun(actor, sent.runId, [200]);
+    },
+  );
+
   it("requires a chat thread when starting a managed browser", async () => {
     const { runs, actor } = await setupBrowserScenario();
 
@@ -5820,7 +5892,7 @@ describe("okou browser route", () => {
     });
   });
 
-  it("keeps managed browser access off for a default chat thread", async () => {
+  it("keeps managed browser access off when the user explicitly disables it", async () => {
     const { runs, chat, actor, agent } = await setupBrowserScenario();
     await updateFeatureSwitchesForUser(context, actor, {
       [FeatureSwitchKey.BrowserNativeInput]: true,
@@ -5828,6 +5900,7 @@ describe("okou browser route", () => {
     const sent = await chat.sendAndLaunch(actor, {
       agentId: agent.agentId,
       prompt: "Try to open a managed browser without enabling it",
+      cloudBrowserEnabled: false,
     });
     await flushWaitUntilForTest();
     const claim = await runs.claimRunnerJob(sent.runId);
@@ -5960,6 +6033,7 @@ describe("okou browser route", () => {
     const sent = await chat.sendAndLaunch(actor, {
       agentId: agent.agentId,
       prompt: "Ask the user to enable a cloud browser",
+      cloudBrowserEnabled: false,
     });
     const sandboxRunToken = runs.sandboxTokenForRun(actor, sent.runId);
     const sandboxCreated = await accept(

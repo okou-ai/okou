@@ -997,6 +997,7 @@ describe("Teams chat callbacks", () => {
       if (!createdThread) {
         throw new Error("Expected the canonical Teams chat thread");
       }
+      expect(createdThread.cloudBrowserEnabled).toBeTruthy();
       const threadMessages = await readProjectedChatEvents(context, {
         threadId: createdThread.chatThreadId,
         headers: { authorization: "Bearer clerk-session" },
