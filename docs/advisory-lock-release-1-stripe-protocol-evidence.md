@@ -4,9 +4,10 @@
 
 On September 29, Ethan approved the
 [declarative subscription contract](advisory-lock-terminal-state.md#declarative-stripe-subscriptions-and-daily-reconciliation):
-local desired configuration, once-daily Stripe reconciliation, temporary
-quantity/schedule drift and one new business table if needed. This supersedes
-the strict configuration-ordering requirement used by the investigation below.
+desired configuration derived from existing business records, once-daily Stripe
+reconciliation and temporary quantity/schedule drift. The briefly considered
+new-table exception is withdrawn; no new database tables or fields are allowed.
+This supersedes the strict configuration-ordering requirement used below.
 Its item/schedule fencing and common-key proposals are historical alternatives,
 not prerequisites for the accepted target. Per-operation idempotency need not
 order configuration writes when reconciliation restores the latest intent.
@@ -15,8 +16,9 @@ The provider facts and financial boundaries remain relevant: reconciliation
 must not create duplicate payable subscriptions, replay charges or grants, or
 treat an intended purchase as paid. Replacing pending invoices or issuing
 proration invoices is a financial effect, not just repairable configuration
-drift. No implementation of the new desired-state table or daily reconciliation
-is claimed by this documentation update.
+drift. No completed mapping from every existing source to the desired
+subscription, or implementation of daily reconciliation, is claimed by this
+documentation update.
 
 ## Historical strict-ordering investigation
 
