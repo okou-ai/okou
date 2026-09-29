@@ -4944,6 +4944,69 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       "Bearer drive-access-refreshed",
     ]);
 
+    // Upload refresh must publish its token before retrying the provider. A
+    // later status request can use it even when Google refuses another refresh.
+    mockGoogleDriveConnectorOAuth({
+      refreshOutcome: { type: "ok", accessToken: "drive-upload-refreshed" },
+    });
+    mockGoogleDriveArtifactUpload({
+      id: "drive-upload-after-refresh",
+      name: "data.csv",
+    });
+    mockGoogleDriveFilesList((request) => {
+      if (
+        request.headers.get("authorization") !== "Bearer drive-upload-refreshed"
+      ) {
+        return { status: 401 };
+      }
+      return {
+        status: 200,
+        files: [{ id: "drive-folder", name: "artifacts" }],
+      };
+    });
+    const refreshedUpload = await chat.requestSyncThreadArtifact(
+      actor,
+      run.threadId,
+      { runId: run.runId, fileId: csvId },
+      [200],
+    );
+    expect(refreshedUpload.body).toMatchObject({
+      id: "drive-upload-after-refresh",
+    });
+    mockGoogleDriveConnectorOAuth();
+    mockGoogleDriveFilesList((request) => {
+      if (
+        request.headers.get("authorization") !== "Bearer drive-upload-refreshed"
+      ) {
+        return { status: 401 };
+      }
+      return {
+        status: 200,
+        files: [
+          {
+            id: "drive-upload-after-refresh",
+            name: "data.csv",
+            appProperties: {
+              vm0Artifact: "true",
+              vm0ThreadId: run.threadId,
+              vm0RunId: run.runId,
+              vm0FileId: csvId,
+            },
+          },
+        ],
+      };
+    });
+    artifacts = await chat.listThreadArtifacts(actor, run.threadId);
+    expect(
+      artifacts.runs[0]?.files.find((file) => {
+        return file.id === csvId;
+      })?.googleDriveSync,
+    ).toMatchObject({
+      status: "synced",
+      accountReady: true,
+      id: "drive-upload-after-refresh",
+    });
+
     // Transient OAuth failures remain connected and retry on later polls.
     const transientRefresh = mockGoogleDriveConnectorOAuth({
       refreshOutcome: { type: "server-error" },
