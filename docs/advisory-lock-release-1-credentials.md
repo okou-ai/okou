@@ -192,9 +192,9 @@ inventory entries. The cursor schema is identical to main.
 
 After integrating main `bf7c3d6`, published migration 1288 is also preserved.
 The three Drizzle-generated PR migrations are
-`1289_retire_provisional_billing_purge`,
-`1290_retire_cloudflare_scope_change_trigger`, and
-`1291_retire_billing_attribution_mutation_guard`. Historical migration files
+`1290_retire_provisional_billing_purge`,
+`1291_retire_cloudflare_scope_change_trigger`, and
+`1292_retire_billing_attribution_mutation_guard`. Historical migration files
 through 1288 remain unchanged. The generated snapshots' structural schema
 matches main exactly; only their generated identity chain differs. The final
 zero-trigger and no-new-field requirements remain in force, and Forms no longer introduces a trigger removal

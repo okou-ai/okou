@@ -89,6 +89,7 @@ try {
     "1211_daily_diamondback.sql",
     "1229_peaceful_mathemanic.sql",
     "1253_unique_zarek.sql",
+    "1289_thick_bruce_banner.sql",
   ]) {
     await client.query(
       (await migration(name)).replaceAll('"public".', `"${schema}".`),
@@ -297,6 +298,27 @@ try {
       },
     );
   }
+
+  await client.query(
+    "INSERT INTO vnc_connections (id,org_id,user_id,display_name,host,credential_id,auth_method,security_type,trust_mode) VALUES ('00000000-0000-4000-8000-000000000099','org','owner','Credentialless','none.example.com',NULL,'none','x509_none','system')",
+  );
+  const credentialless = await client.query(
+    "SELECT credential_id,auth_method,security_type FROM vnc_connections WHERE id='00000000-0000-4000-8000-000000000099'",
+  );
+  assert.deepEqual(credentialless.rows, [
+    { credential_id: null, auth_method: "none", security_type: "x509_none" },
+  ]);
+  await rejects(
+    "UPDATE vnc_connections SET security_type='x509_vnc' WHERE id='00000000-0000-4000-8000-000000000099'",
+    { code: "23514", constraint: "chk_vnc_connections_profile" },
+  );
+  await rejects(
+    "UPDATE vnc_connections SET credential_id='00000000-0000-4000-8000-000000000001' WHERE id='00000000-0000-4000-8000-000000000099'",
+    { code: "23514", constraint: "chk_vnc_connections_profile" },
+  );
+  await client.query(
+    "DELETE FROM vnc_connections WHERE id='00000000-0000-4000-8000-000000000099'",
+  );
 
   await rejects(
     "UPDATE vnc_credentials SET username='operator',auth_method='username_password' WHERE id='00000000-0000-4000-8000-000000000001'",

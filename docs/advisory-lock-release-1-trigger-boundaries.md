@@ -11,10 +11,10 @@ application triggers**, backed by nine distinct trigger functions. PostgreSQL's
 internal constraint triggers are excluded. This is checked-in schema evidence,
 not a live production catalog query. The test constant's historical name is not
 approval to retain these objects in the terminal schema. Migration
-`1290_retire_cloudflare_scope_change_trigger` removes one redundant trigger
+`1291_retire_cloudflare_scope_change_trigger` removes one redundant trigger
 and its function. With the two unshipped Forms triggers withdrawn, eight
 application triggers remained before the independent canonical mutation-guard
-retirement below. Migration `1291_retire_billing_attribution_mutation_guard`
+retirement below. Migration `1292_retire_billing_attribution_mutation_guard`
 removes that redundant trigger and function; seven application triggers remain
 in the proposed R1 schema.
 
@@ -23,7 +23,7 @@ in the proposed R1 schema.
 | Table and trigger                                                                                                  | Current business guarantee                                                                                           | Replacement work                                                                                                                     |
 | ------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | `agent_runs.capture_billing_run_attribution`                                                                       | Captures the original organization, user, run start, source and thread identity.                                     | Both Run insertion paths now publish attribution atomically with the Run; their broader launch transaction ownership is unfinished.  |
-| `billing_run_attribution.billing_run_attribution_immutable`                                                        | Rejects changed attribution, regressing `usage_observed`, or replacement of an established thread identity.          | Removed by migration 1291: every supported mutation already preserves these identities and monotone observation; see evidence below. |
+| `billing_run_attribution.billing_run_attribution_immutable`                                                        | Rejects changed attribution, regressing `usage_observed`, or replacement of an established thread identity.          | Removed by migration 1292: every supported mutation already preserves these identities and monotone observation; see evidence below. |
 | `usage_event.capture_usage_billing_attribution` and `usage_event_hourly_rollup.capture_hourly_billing_attribution` | Resolves run identity, context and original allowance anchor, including Pi Stage 1, and rejects inconsistent owners. | Raw and rollup writers must explicitly resolve and validate these ordinary business values in their owning commit.                   |
 | `built_in_generation_jobs.capture_generation_billing_identity`                                                     | Establishes immutable run/runless generation attribution.                                                            | Generation creation now supplies its identity explicitly; outgoing and operator writers still require a complete retirement audit.   |
 | `usage_event.mark_raw_billing_usage_observed` and `usage_event_hourly_rollup.mark_hourly_billing_usage_observed`   | Marks attribution as having observed usage, protecting its retention.                                                | Raw insertion and compaction must include the monotone attribution update in their atomic writes.                                    |
@@ -144,7 +144,7 @@ and reader fallback removal still needs its own data evidence.
 
 ## Canonical mutation guard: independent retirement evidence
 
-Migration `1291_retire_billing_attribution_mutation_guard` removes
+Migration `1292_retire_billing_attribution_mutation_guard` removes
 `billing_run_attribution_immutable` and `reject_billing_attribution_update`.
 It does not remove any capture, observation or attribution reader fallback.
 
@@ -184,7 +184,7 @@ inventory verifies that the retired guard/function are absent.
 | Table and trigger                                                | Current business guarantee                                                                                                                | Replacement work                                                                                                    |
 | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | `ssh_connections.ssh_cloudflare_access_binding_guard`            | A shared config read rejects a personal Cloudflare config owned by another user. The separate foreign key protects organization identity. | R1 writers implement the predicate; retirement still needs the historical writer gate below.                        |
-| `cloudflare_access_configs.cloudflare_access_scope_change_guard` | Rejects incompatible scope/owner changes while hosts still reference the config.                                                          | All conversion writers already implement this invariant. Migration 1290 retires it while the binding guard remains. |
+| `cloudflare_access_configs.cloudflare_access_scope_change_guard` | Rejects incompatible scope/owner changes while hosts still reference the config.                                                          | All conversion writers already implement this invariant. Migration 1291 retires it while the binding guard remains. |
 
 Migration 1203 creates both; 1222 updates scope-change behavior. The source audit
 at `29f6115` distinguishes these two boundaries rather than assuming they share
@@ -258,7 +258,7 @@ trigger-side shared config lock and rechecks ownership after a conversion.
 Thus removing only `cloudflare_access_scope_change_guard` and
 `reject_cloudflare_access_scope_change` does not require the foundation API to
 disappear first. Preserve the same-org foreign key and scope/owner check
-constraint. Migration `1290_retire_cloudflare_scope_change_trigger` retires this redundant
+constraint. Migration `1291_retire_cloudflare_scope_change_trigger` retires this redundant
 trigger/function and updates the expected schema inventory. Its metadata was
 generated with Drizzle; migrations 1203/1222 stay unchanged.
 The historical `test-cloudflare-access.ts` migration test applies selected old

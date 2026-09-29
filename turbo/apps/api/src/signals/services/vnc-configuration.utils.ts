@@ -293,10 +293,11 @@ export function prepareVncSecurity(security: VncSecurity): VncResult<{
 }
 
 export function isVncProfileCompatible(
-  authMethod: VncAuthentication["method"],
+  authMethod: VncAuthentication["method"] | "none",
   securityType: VncSecurity["type"],
 ): boolean {
   return (
+    (authMethod === "none" && securityType === "x509_none") ||
     (authMethod === "vnc_password" && securityType === "x509_vnc") ||
     (authMethod === "vnc_password" && securityType === "apple_vnc_password") ||
     (authMethod === "username_password" && securityType === "x509_plain") ||

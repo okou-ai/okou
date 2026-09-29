@@ -1,7 +1,8 @@
-import type {
-  CreateVncConnectionRequest,
-  UpdateVncConnectionRequest,
-  VncConnectionResponse,
+import {
+  vncConnectionResponseSchema,
+  type CreateVncConnectionRequest,
+  type UpdateVncConnectionRequest,
+  type VncConnectionResponse,
 } from "@okouai/api-contracts/contracts/vnc-connections";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { sshConnections } from "@okouai/db/schema/ssh-connection";
@@ -121,7 +122,7 @@ function responseSecurity(row: Metadata): VncConnectionResponse["security"] {
 
 function response(
   row: Metadata,
-  credential: { readonly name: string },
+  credential: { readonly name: string } | null,
 ): VncConnectionResponse {
   validateStoredTrust(row);
   if (!isVncProfileCompatible(row.authMethod, row.securityType)) {
@@ -133,7 +134,13 @@ function response(
   ) {
     throw new Error("VNC connection has an invalid stored transport");
   }
-  return {
+  const credentialless = row.securityType === "x509_none";
+  if (credentialless !== (row.credentialId === null && credential === null)) {
+    throw new Error(
+      "VNC connection has an invalid stored credential reference",
+    );
+  }
+  return vncConnectionResponseSchema.parse({
     ...(row.transportType === "ssh" && row.sshConnectionId !== null
       ? {
           transport: {
@@ -146,13 +153,14 @@ function response(
     displayName: row.displayName,
     host: row.host,
     port: row.port,
-    credentialId: row.credentialId,
-    credentialName: credential.name,
+    ...(credentialless
+      ? { credential: { type: "none" } }
+      : { credentialId: row.credentialId, credentialName: credential?.name }),
     security: responseSecurity(row),
     generation: row.generation,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
-  };
+  });
 }
 
 export async function listVncConnections(
@@ -165,7 +173,7 @@ export async function listVncConnections(
       credential: { name: vncCredentials.name },
     })
     .from(vncConnections)
-    .innerJoin(
+    .leftJoin(
       vncCredentials,
       and(
         eq(vncCredentials.id, vncConnections.credentialId),
@@ -192,6 +200,31 @@ export async function summarizeVncConnections(
     throw new Error("VNC connection count query returned no row");
   }
   return row;
+}
+
+function validCreateCredentialProfile(
+  credential: CreateVncConnectionRequest["credential"],
+  securityType: Metadata["securityType"],
+): boolean {
+  return (
+    (securityType === "x509_none") === "type" in credential &&
+    (!("create" in credential) ||
+      isVncProfileCompatible(
+        credential.create.authentication.method,
+        securityType,
+      ))
+  );
+}
+
+function validSelectedCredentialProfile(
+  credential: CredentialMetadata | null,
+  securityType: Metadata["securityType"],
+): boolean {
+  return (
+    (credential === null) === (securityType === "x509_none") &&
+    (credential === null ||
+      isVncProfileCompatible(credential.authMethod, securityType))
+  );
 }
 
 interface CreateVncConnectionArgs {
@@ -238,18 +271,20 @@ const prepareCreateVncConnection$ = command(
       return route;
     }
     if (
-      "create" in args.body.credential &&
-      !isVncProfileCompatible(
-        args.body.credential.create.authentication.method,
+      !validCreateCredentialProfile(
+        args.body.credential,
         security.value.securityType,
       )
     ) {
       return vncFailure("profileMismatch");
     }
-    const preparedCredential = await prepareVncCredentialSelection(
-      args.body.credential,
-      args.featureContext,
-    );
+    const preparedCredential =
+      "type" in args.body.credential
+        ? null
+        : await prepareVncCredentialSelection(
+            args.body.credential,
+            args.featureContext,
+          );
     signal.throwIfAborted();
     return {
       ok: true as const,
@@ -312,13 +347,13 @@ export const createVncConnection$ = command(
             return vncFailure("sshConnectionNotFound");
           }
         }
-        let credential: CredentialMetadata | undefined;
+        let credential: CredentialMetadata | undefined | null = null;
         if (preparedCredential?.create !== undefined) {
           [credential] = await tx
             .insert(vncCredentials)
             .values({ ...owner, ...preparedCredential.create })
             .returning(vncCredentialMetadata);
-        } else {
+        } else if (preparedCredential !== null) {
           [credential] = await tx
             .select(vncCredentialMetadata)
             .from(vncCredentials)
@@ -331,12 +366,12 @@ export const createVncConnection$ = command(
             )
             .for("key share");
         }
-        if (!credential) {
+        if (credential === undefined) {
           return vncFailure("credentialNotFound");
         }
         if (
-          !isVncProfileCompatible(
-            credential.authMethod,
+          !validSelectedCredentialProfile(
+            credential,
             security.value.securityType,
           )
         ) {
@@ -351,8 +386,8 @@ export const createVncConnection$ = command(
             host: host.value,
             port: args.body.port,
             ...transport.value,
-            credentialId: credential.id,
-            authMethod: credential.authMethod,
+            credentialId: credential?.id ?? null,
+            authMethod: credential?.authMethod ?? "none",
             ...security.value,
           })
           .returning(metadata);
@@ -413,7 +448,7 @@ const prepareUpdateVncConnection$ = command(
       return vncFailure("generationConflict");
     }
     const preparedCredential =
-      args.body.credential === undefined
+      args.body.credential === undefined || "type" in args.body.credential
         ? undefined
         : await prepareVncCredentialSelection(
             args.body.credential,
@@ -457,6 +492,15 @@ function resolveVncConnectionUpdate(
   );
   if (!route.ok) {
     return route;
+  }
+  const credentialless = securityType === "x509_none";
+  if (
+    (args.body.credential !== undefined &&
+      credentialless !== "type" in args.body.credential) ||
+    (credentialless !== (current.credentialId === null) &&
+      args.body.credential === undefined)
+  ) {
+    return vncFailure("profileMismatch");
   }
   if (
     preparedCredential?.create !== undefined &&
@@ -535,32 +579,33 @@ export const updateVncConnection$ = command(
           return vncFailure("sshConnectionNotFound");
         }
       }
-      let credential: CredentialMetadata | undefined;
+      let credential: CredentialMetadata | undefined | null = null;
       if (preparedCredential?.create !== undefined) {
         [credential] = await tx
           .insert(vncCredentials)
           .values({ ...owner, ...preparedCredential.create })
           .returning(vncCredentialMetadata);
-      } else {
+      } else if (securityType !== "x509_none") {
+        const credentialId = preparedCredential?.id ?? current.credentialId;
+        if (credentialId === null) {
+          return vncFailure("credentialNotFound");
+        }
         [credential] = await tx
           .select(vncCredentialMetadata)
           .from(vncCredentials)
           .where(
             and(
-              eq(
-                vncCredentials.id,
-                preparedCredential?.id ?? current.credentialId,
-              ),
+              eq(vncCredentials.id, credentialId),
               eq(vncCredentials.orgId, owner.orgId),
               eq(vncCredentials.userId, owner.userId),
             ),
           )
           .for("key share");
       }
-      if (!credential) {
+      if (credential === undefined) {
         return vncFailure("credentialNotFound");
       }
-      if (!isVncProfileCompatible(credential.authMethod, securityType)) {
+      if (!validSelectedCredentialProfile(credential, securityType)) {
         return vncFailure("profileMismatch");
       }
       const [updated] = await tx
@@ -570,8 +615,8 @@ export const updateVncConnection$ = command(
           host: newHost,
           port: newPort,
           ...transport.value,
-          credentialId: credential.id,
-          authMethod: credential.authMethod,
+          credentialId: credential?.id ?? null,
+          authMethod: credential?.authMethod ?? "none",
           ...security?.value,
           generation: current.generation + 1,
           updatedAt: nowDate(),

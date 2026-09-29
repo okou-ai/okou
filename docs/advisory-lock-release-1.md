@@ -84,14 +84,14 @@ the baseline. A definition can serve multiple runtime callers.
 - The billing-attribution operator retains the compaction compatibility key but
   now takes live Run parents before source rows and rolls back on contention
   without advancing its checkpoint.
-- Migration `1289_retire_provisional_billing_purge` drops the unused current
+- Migration `1290_retire_provisional_billing_purge` drops the unused current
   `purge_quiescent_provisional_billing_attribution` function. Historical
   migrations stay unchanged. The schema snapshot adds no table columns.
 - The unshipped Forms detachment and cursor-trigger migrations are withdrawn.
   The existing non-null cascading cursor/watch relationship is unchanged; repair
   may start from newest and may miss failure-window triggers. Normal dispatch,
   basic deduplication, stop and authority checks remain required.
-- Migration `1290_retire_cloudflare_scope_change_trigger` removes the redundant
+- Migration `1291_retire_cloudflare_scope_change_trigger` removes the redundant
   scope-change trigger and function. Every historical conversion writer already
   owns the config and detaches incompatible hosts. The SSH binding trigger stays
   for foundation-era readers without `FOR SHARE`; its separate deployment gate
@@ -100,7 +100,7 @@ the baseline. A definition can serve multiple runtime callers.
   census has not established their removal conditions; tool age and CI references
   are not convergence evidence.
 
-Migration `1291_retire_billing_attribution_mutation_guard` also removes the
+Migration `1292_retire_billing_attribution_mutation_guard` also removes the
 redundant canonical attribution mutation guard. Outgoing capture functions and
 the retained operator already compare immutable identity, fill only unknown
 thread grouping, and never regress observation. The writer-by-writer evidence
@@ -113,7 +113,7 @@ The zero-trigger terminal constraint from `4fa8844` applies to all application
 triggers, including nine that predate this PR. The
 [trigger retirement inventory](./advisory-lock-release-1-trigger-boundaries.md)
 records the historical eleven-definition proposal. The two unshipped Forms
-triggers are withdrawn, and migration 1290 retires the redundant Cloudflare
+triggers are withdrawn, and migration 1291 retires the redundant Cloudflare
 scope-change guard. Seven definitions remain: six billing attribution and one
 SSH binding. Their explicit writer replacements remain an
 acceptance requirement; the existing schema-test constant named

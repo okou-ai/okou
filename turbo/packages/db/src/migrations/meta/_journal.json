@@ -1482,22 +1482,29 @@
     {
       "idx": 1289,
       "version": "7",
-      "when": 1790677751876,
-      "tag": "1289_retire_provisional_billing_purge",
+      "when": 1790677953790,
+      "tag": "1289_thick_bruce_banner",
       "breakpoints": true
     },
     {
       "idx": 1290,
       "version": "7",
-      "when": 1790677760339,
-      "tag": "1290_retire_cloudflare_scope_change_trigger",
+      "when": 1790688838472,
+      "tag": "1290_retire_provisional_billing_purge",
       "breakpoints": true
     },
     {
       "idx": 1291,
       "version": "7",
-      "when": 1790677820388,
-      "tag": "1291_retire_billing_attribution_mutation_guard",
+      "when": 1790688852570,
+      "tag": "1291_retire_cloudflare_scope_change_trigger",
+      "breakpoints": true
+    },
+    {
+      "idx": 1292,
+      "version": "7",
+      "when": 1790688872201,
+      "tag": "1292_retire_billing_attribution_mutation_guard",
       "breakpoints": true
     }
   ]

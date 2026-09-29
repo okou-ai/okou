@@ -43,6 +43,8 @@ export async function currentRunnerVncAuthority(
       trustMode: vncConnections.trustMode,
       caBundle: vncConnections.caBundle,
       authMethod: vncConnections.authMethod,
+      credentialId: vncConnections.credentialId,
+      joinedCredentialId: vncCredentials.id,
       username: vncCredentials.username,
       encryptedPassword: vncCredentials.encryptedPassword,
     })
@@ -71,7 +73,7 @@ export async function currentRunnerVncAuthority(
         eq(vncConnections.userId, agentRuns.userId),
       ),
     )
-    .innerJoin(
+    .leftJoin(
       vncCredentials,
       and(
         eq(vncCredentials.id, vncConnections.credentialId),

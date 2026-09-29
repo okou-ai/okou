@@ -5775,6 +5775,8 @@
       "serverNameHint": "例如 desktop.internal.example.com",
       "system": "系统证书颁发机构",
       "title": "服务器证书信任",
+      "x509None": "加密连接，无 VNC 密码（X509None）",
+      "x509NoneHelp": "TLS 会验证服务器并加密会话，但不会向 VNC 服务器验证你的身份。其他能连接该服务器的人也可能控制桌面。SSH 仅保护到所选 SSH 主机的连接，不能阻止其他客户端或后续转发访问。仅为你管理的端点选择此配置。",
       "x509Plain": "加密的用户名和密码（X509Plain）",
       "x509PlainHelp": "需要VeNCrypt X509Plain。TLS会在发送用户名和密码之前验证服务器。",
       "x509Vnc": "加密VNC（X509Vnc）",

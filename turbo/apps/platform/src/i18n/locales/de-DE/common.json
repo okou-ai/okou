@@ -5798,6 +5798,8 @@
       "serverNameHint": "z. B. desktop.internal.example.com",
       "system": "Zertifizierungsstellen des Systems",
       "title": "Vertrauen in Serverzertifikate",
+      "x509None": "Verschlüsselt ohne VNC-Passwort (X509None)",
+      "x509NoneHelp": "TLS prüft den Server und verschlüsselt die Sitzung, authentifiziert Sie aber nicht beim VNC-Server. Andere mit Zugriff auf den Server können den Desktop steuern. SSH schützt nur den Weg zum gewählten SSH-Host, nicht vor anderen Clients oder einer Weiterleitung. Nur für einen eigenen Endpunkt wählen.",
       "x509Plain": "Verschlüsselter Benutzername und Passwort (X509Plain)",
       "x509PlainHelp": "Erfordert VeNCrypt X509Plain. TLS überprüft den Server, bevor Benutzername und Passwort gesendet werden.",
       "x509Vnc": "Verschlüsseltes VNC (X509Vnc)",

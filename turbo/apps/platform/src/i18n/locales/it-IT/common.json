@@ -5873,6 +5873,8 @@
       "serverNameHint": "es. desktop.internal.example.com",
       "system": "Autorità di certificazione del sistema",
       "title": "Attendibilità del certificato del server",
+      "x509None": "Cifrato senza password VNC (X509None)",
+      "x509NoneHelp": "TLS verifica il server e cifra la sessione, ma non ti autentica presso il server VNC. Chiunque altro possa raggiungere quel server potrebbe controllare il desktop. SSH protegge solo il percorso fino all'host SSH scelto, non l'accesso di altri client o un inoltro successivo. Scegli questa opzione solo per un endpoint che controlli.",
       "x509Plain": "Nome utente e password crittografati (X509Plain)",
       "x509PlainHelp": "Richiede VeNCrypt X509Plain. TLS verifica il server prima di inviare il nome utente e la password.",
       "x509Vnc": "VNC crittografato (X509Vnc)",
