@@ -479,3 +479,20 @@ and plan-change reconciliation still use the legacy database-aware service
 interfaces and remain explicit Release 1 implementation work. This finite
 retirement change does not retire the pending-count trigger or certify the full
 reconciliation caller graph as complete.
+
+### Cancellation changes during preview preparation
+
+Plan preview publication compares the current cancellation state with the Stripe
+subscription actually used to price the preview. A webhook catching up with that
+same provider state does not invalidate an immediate upgrade: its quote already
+has no next recurring payment. A different cancellation state still rejects the
+prepared quote before retiring or inserting any intent. Binding, tier, price,
+period, allocation and competing-intent checks remain in the owning transaction.
+
+The combined-head API5 failures at `74a09e9` had two separate causes: the overly
+strict comparison to the earlier local cancellation value, and a preview fixture
+using the obsolete invoice-line `price` field instead of `pricing.price_details`.
+Both are corrected without changing the expected 200/409 responses. Public API
+checks retain the allocation and credit balance, reject stale package and Plan
+quotes, and verify a fresh preview succeeds after cancellation. The final combined
+pipeline must verify these fixes; source checks do not replace behavior checks.

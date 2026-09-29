@@ -6863,7 +6863,7 @@ describe("usage pack allocation management", () => {
       {
         id: `il_preview_${randomUUID()}`,
         amount: amountCents,
-        price: { id: targetPriceId },
+        pricing: { price_details: { price: targetPriceId } },
         period: { start: prorationTimestamp },
         parent: {
           type: "subscription_item_details" as const,
@@ -8148,11 +8148,14 @@ describe("usage pack allocation management", () => {
       }),
     );
     expect(cancellationSynchronized).toBeTruthy();
-    const state = await readUsagePackState(
-      fixture.orgId,
-      fixture.usagePackSubscriptionId,
+    expect((await readBillingStatus(fixture)).cancelAtPeriodEnd).toBeTruthy();
+    const management = await accept(
+      client.get({ headers: { authorization: "Bearer clerk-session" } }),
+      [200],
     );
-    expect(state.subscription?.cancelAtPeriodEnd).toBeTruthy();
+    expect(management.body.allocations).toStrictEqual([
+      expect.objectContaining({ memberId: userId, usagePackUsd: 20 }),
+    ]);
   });
 
   it("rejects a deferred usage pack change when the Plan cancellation webhook arrives during preview", async () => {
@@ -12256,6 +12259,20 @@ describe("usage pack allocation management", () => {
       accept(packagePreview, [409]),
       accept(planPreview, [409]),
     ]);
+    const refreshed = await accept(
+      client.previewSubscriptionChange({
+        headers: { authorization: "Bearer clerk-session" },
+        body: {
+          targetTier: "team",
+          memberUsagePacks: [{ memberId: fixture.userId, usagePackUsd: 50 }],
+        },
+      }),
+      [200],
+    );
+    expect(refreshed.body).toMatchObject({
+      immediateAmountCents: 1500,
+      nextRecurringAmountCents: 0,
+    });
     const management = await accept(
       client.get({ headers: { authorization: "Bearer clerk-session" } }),
       [200],

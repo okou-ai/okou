@@ -1158,7 +1158,15 @@ function subscriptionPreviewSourceStatus(
     return "plan_ending";
   }
   if (
-    !usagePackPreviewSubscriptionMatches(context.subscription, subscription)
+    !usagePackPreviewSubscriptionMatches(
+      {
+        ...context.subscription,
+        // A webhook may catch up with the Stripe state used to price this
+        // preview. Accept that catch-up, but reject a different cancellation.
+        cancelAtPeriodEnd: stripeSubscriptionWillEnd(prepared.subscription),
+      },
+      subscription,
+    )
   ) {
     return false;
   }
