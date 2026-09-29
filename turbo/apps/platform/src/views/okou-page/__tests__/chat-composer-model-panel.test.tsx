@@ -114,6 +114,12 @@ test("Pick only chat models, with effort and Fast in the same panel", async () =
   expect(
     within(panel).getByRole("switch", { name: "Fast" }),
   ).toBeInTheDocument();
+  // Only the model list scrolls; effort and Fast stay pinned below it.
+  const viewport = models.closest('[data-slot="scroll-area-viewport"]');
+  expect(viewport).not.toBeNull();
+  expect(viewport).not.toContainElement(
+    within(panel).getByRole("slider", { name: "Effort" }),
+  );
 });
 
 test("Keep the panel open while changing effort, Fast and model", async () => {

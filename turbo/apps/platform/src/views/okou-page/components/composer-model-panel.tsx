@@ -1,4 +1,5 @@
 import { Radio as RadioPrimitive } from "@base-ui/react/radio";
+import { ScrollArea } from "@base-ui/react/scroll-area";
 import { isMemberModelPolicyConfigurable } from "@okouai/api-contracts/contracts/member-model-policy";
 import {
   getCanonicalModelDisplayName,
@@ -12,6 +13,7 @@ import {
   PopoverContent,
   PopoverTrigger,
   RadioGroup,
+  ScrollBar,
   cn,
 } from "@okouai/ui";
 import { useLastLoadable, useLastResolved } from "ccstate-react";
@@ -24,6 +26,7 @@ import {
   DEFAULT_MODEL_PLAN_CAPABILITIES,
   modelPlanCapabilities$,
 } from "../../../signals/okou-page/model-plan-capabilities.ts";
+import { SCROLL_FADE_Y_WHEN_OVERFLOWING } from "../scroll-fade.ts";
 import {
   ChatEffortSettings,
   ChatFastSetting,
@@ -103,50 +106,73 @@ function ComposerModelPanelBody({
     configurable && isCodexFastModeModel(selectedPolicy.model);
   return (
     <>
-      <div className="flex h-7 items-center px-2 text-xs text-muted-foreground">
+      <div className="flex h-7 shrink-0 items-center px-2 text-xs text-muted-foreground">
         {chatModelsLabel}
       </div>
-      <RadioGroup
-        aria-label={chatModelsLabel}
-        value={state.selection?.selectedModel ?? null}
-        onValueChange={(model: SupportedRunModel) => {
-          changeModel(
-            value.selectedModel === model ? value : { selectedModel: model },
-          );
-        }}
-        className="flex max-h-[284px] flex-col gap-0.5 overflow-y-auto overscroll-contain py-1"
-      >
-        {state.policies.length === 0 && (
-          <p className="px-2 py-2 text-sm text-muted-foreground">
-            {t(($) => {
-              return $.settings.models.picker.noConfiguredModels;
-            })}
-          </p>
-        )}
-        {state.policies.map((policy) => {
-          const selected = state.selection?.selectedModel === policy.model;
-          return (
-            <RadioPrimitive.Root
-              key={policy.model}
-              value={policy.model}
-              disabled={!isMemberModelPolicyConfigurable(policy)}
-              nativeButton
-              render={<button type="button" />}
-              className={cn(
-                "relative flex w-full shrink-0 cursor-default select-none items-center rounded-lg px-2 pr-8 text-left font-normal text-foreground outline-none transition-colors hover:bg-state-hover focus-visible:bg-state-hover data-disabled:pointer-events-none data-disabled:opacity-50",
-                MENU_ROW_HEIGHT_CLASS,
-              )}
+      {/*
+       * Only the model list scrolls; the heading above and the effort rows
+       * below stay put. The list shrinks before the popover outgrows
+       * `--available-height`, and `-mr-1` lands the overlay track on the
+       * popover's own edge instead of over the rows, the way shadcn's Base UI
+       * Scroll Area places it.
+       */}
+      <ScrollArea.Root className="group relative -mr-1 flex min-h-0 flex-col">
+        <ScrollArea.Viewport
+          data-slot="scroll-area-viewport"
+          className={cn(
+            "max-h-[284px] min-h-0 overscroll-contain pr-1 focus:outline-none",
+            SCROLL_FADE_Y_WHEN_OVERFLOWING,
+          )}
+        >
+          <ScrollArea.Content>
+            <RadioGroup
+              aria-label={chatModelsLabel}
+              value={state.selection?.selectedModel ?? null}
+              onValueChange={(model: SupportedRunModel) => {
+                changeModel(
+                  value.selectedModel === model
+                    ? value
+                    : { selectedModel: model },
+                );
+              }}
+              className="flex flex-col gap-0.5 py-1"
             >
-              <ModelFirstPolicyRowContent
-                policy={policy}
-                modelCapabilities={modelCapabilities}
-                selected={selected}
-                showSelectedIndicator
-              />
-            </RadioPrimitive.Root>
-          );
-        })}
-      </RadioGroup>
+              {state.policies.length === 0 && (
+                <p className="px-2 py-2 text-sm text-muted-foreground">
+                  {t(($) => {
+                    return $.settings.models.picker.noConfiguredModels;
+                  })}
+                </p>
+              )}
+              {state.policies.map((policy) => {
+                const selected =
+                  state.selection?.selectedModel === policy.model;
+                return (
+                  <RadioPrimitive.Root
+                    key={policy.model}
+                    value={policy.model}
+                    disabled={!isMemberModelPolicyConfigurable(policy)}
+                    nativeButton
+                    render={<button type="button" />}
+                    className={cn(
+                      "relative flex w-full shrink-0 cursor-default select-none items-center rounded-lg px-2 pr-8 text-left font-normal text-foreground outline-none transition-colors hover:bg-state-hover focus-visible:bg-state-hover data-disabled:pointer-events-none data-disabled:opacity-50",
+                      MENU_ROW_HEIGHT_CLASS,
+                    )}
+                  >
+                    <ModelFirstPolicyRowContent
+                      policy={policy}
+                      modelCapabilities={modelCapabilities}
+                      selected={selected}
+                      showSelectedIndicator
+                    />
+                  </RadioPrimitive.Root>
+                );
+              })}
+            </RadioGroup>
+          </ScrollArea.Content>
+        </ScrollArea.Viewport>
+        <ScrollBar data-testid="composer-model-panel-scrollbar" />
+      </ScrollArea.Root>
       {selectedPolicy !== undefined && (
         <ComposerModelPanelOptions
           value={value}
@@ -177,7 +203,7 @@ function ComposerModelPanelOptions({
     return null;
   }
   return (
-    <div className="mt-1 border-t border-divider pt-0.5">
+    <div className="mt-1 shrink-0 border-t border-divider pt-0.5">
       <ChatEffortSettings
         showValue={false}
         selection={value}
@@ -292,7 +318,7 @@ export function ComposerModelPanel({
         aria-label={t(($) => {
           return $.settings.models.picker.chatModels;
         })}
-        className="w-[304px] max-w-[calc(100vw-16px)] p-1"
+        className="flex max-h-[var(--available-height)] w-[304px] max-w-[calc(100vw-16px)] flex-col p-1"
       >
         <ComposerModelPanelBody
           value={value}
