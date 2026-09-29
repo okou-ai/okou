@@ -1,4 +1,10 @@
 import {
+  usageExpiryScope,
+  expiryLotsQuery,
+  unseenExpiryQuery,
+  planCurrentExpiryDeduction,
+} from "./usage-expiry-prefix";
+import {
   preparedMemberGrantsQuery,
   requiredUsageGrantPrefix,
   unseenGrantPrefixQuery,
@@ -46,8 +52,6 @@ import {
   settledEventsSql,
   planMemberGrantDeductions,
   memberGrantDeductionsSql,
-  expiryLotsQuery,
-  planExpiryLotDeductions,
   expiryLotDeductionsSql,
   orgDebitPlan,
   walletQuery,
@@ -97,10 +101,8 @@ const commitUsageBatch$ = command(
       if (socialClaimUnavailable(args.social, job)) {
         return null;
       }
-      const { usage: managed, processPending } = checkedSocialSettlementPlan(
-        batch.social,
-        job,
-      );
+      const social = checkedSocialSettlementPlan(batch.social, job);
+      const managed = social.usage;
       await tx.execute(orgCreditCompatibilityLockSql(orgId));
       const [run] = managed
         ? await tx.select().from(managedRunQuery(managed))
@@ -123,7 +125,7 @@ const commitUsageBatch$ = command(
       const at = nowDate();
       work.orgLockWaitMs =
         Math.round(performance.now() - startedAt) - work.lockWaitMs;
-      const events = processPending
+      const events = social.processPending
         ? await tx
             .update(usageEvent)
             .set({ status: "processed", creditsCharged: 0, processedAt: at })
@@ -169,12 +171,16 @@ const commitUsageBatch$ = command(
       work.affectedUsers = charges.byUser.size;
       work.grantRows = grants.length;
       const amount = deduction.sharedCredits;
+      const lotScope = usageExpiryScope(orgId, batch.lots, amount, at);
       const lots =
-        amount > 0 ? await tx.select().from(expiryLotsQuery(orgId)) : [];
-      const expiry = planExpiryLotDeductions(lots, amount, at);
+        amount > 0 ? await tx.select().from(expiryLotsQuery(lotScope)) : [];
+      const [unseenLot] =
+        amount > 0 ? await tx.select().from(unseenExpiryQuery(lotScope)) : [];
+      const expiry = planCurrentExpiryDeduction(lotScope, lots, unseenLot);
       await tx.execute(expiryLotDeductionsSql(expiry.updates));
       work.expiredRows = expiry.expiredRows;
       work.expiryRows = expiry.expiryRows;
+      const receiptState = { amount, wallet, expiry, work };
       let afterCredits = wallet?.credits ?? 0;
       if (amount > 0) {
         const debit = orgDebitPlan(orgId, amount, expiry.expired, at);
@@ -204,11 +210,8 @@ const commitUsageBatch$ = command(
       }
       signal.throwIfAborted();
       return settlementReceipt(orgId, priced, {
-        amount,
-        wallet,
+        ...receiptState,
         afterCredits,
-        expiry,
-        work,
       });
     });
     signal.throwIfAborted();

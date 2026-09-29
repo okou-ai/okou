@@ -1,3 +1,4 @@
+import type { PreparedUsageExpiryPrefix } from "./usage-expiry-prefix";
 import type { PreparedUsageGrantPrefix } from "./usage-grant-prefix";
 import type { PreparedSocialSettlement } from "./social-data-settlement-plan";
 import {
@@ -152,6 +153,7 @@ export function reportCommittedSettlementPricing(
 
 export interface PreparedUsageBatch {
   readonly grants: PreparedUsageGrantPrefix;
+  readonly lots: PreparedUsageExpiryPrefix;
   readonly social?: PreparedSocialSettlement;
   readonly events: PendingUsageSnapshot[];
   readonly pricing: PricingSnapshot[];

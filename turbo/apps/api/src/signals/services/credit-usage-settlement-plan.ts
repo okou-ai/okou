@@ -9,17 +9,7 @@ import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { usagePackCreditGrants } from "@okouai/db/schema/usage-pack-credit-grant";
-import {
-  and,
-  asc,
-  eq,
-  exists,
-  gt,
-  inArray,
-  isNull,
-  or,
-  sql,
-} from "drizzle-orm";
+import { and, asc, eq, exists, inArray, isNull, or, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { orgTierSchema } from "@okouai/api-contracts/contracts/orgs";
 import { orgPlanEntitlementValues } from "./org-plan-entitlements.service";
@@ -132,25 +122,6 @@ export function memberGrantDeductionsSql(
     WHERE ${usagePackCreditGrants.id} = deduction.id`;
 }
 
-export function expiryLotsQuery(orgId: string) {
-  return new QueryBuilder()
-    .select({
-      id: creditExpiresRecord.id,
-      remaining: creditExpiresRecord.remaining,
-      expiresAt: creditExpiresRecord.expiresAt,
-    })
-    .from(creditExpiresRecord)
-    .where(
-      and(
-        eq(creditExpiresRecord.orgId, orgId),
-        gt(creditExpiresRecord.remaining, 0),
-      ),
-    )
-    .orderBy(asc(creditExpiresRecord.expiresAt), asc(creditExpiresRecord.id))
-    .for("update")
-    .as("settlement_expiry_lots");
-}
-
 export function planExpiryLotDeductions(
   lots: readonly { id: string; remaining: number; expiresAt: Date }[],
   amount: number,
@@ -160,19 +131,19 @@ export function planExpiryLotDeductions(
   let expired = 0;
   let expiredRows = 0;
   let expiryRows = 0;
-  const updates: { id: string; remaining: number }[] = [];
+  const updates: { id: string; amount: number }[] = [];
   for (const lot of lots) {
     if (lot.expiresAt <= at) {
       expired += lot.remaining;
       expiredRows += 1;
-      updates.push({ id: lot.id, remaining: 0 });
+      updates.push({ id: lot.id, amount: lot.remaining });
     } else {
       expiryRows += 1;
       if (left <= 0) {
         continue;
       }
       const deduction = Math.min(left, lot.remaining);
-      updates.push({ id: lot.id, remaining: lot.remaining - deduction });
+      updates.push({ id: lot.id, amount: deduction });
       left -= deduction;
     }
   }
@@ -180,18 +151,18 @@ export function planExpiryLotDeductions(
 }
 
 export function expiryLotDeductionsSql(
-  updates: readonly { id: string; remaining: number }[],
+  updates: readonly { id: string; amount: number }[],
 ) {
-  return sql`UPDATE ${creditExpiresRecord} SET remaining = deduction.remaining
+  return sql`UPDATE ${creditExpiresRecord} SET remaining = remaining - deduction.amount
     FROM unnest(${sql.param(
       updates.map((update) => {
         return update.id;
       }),
     )}::uuid[], ${sql.param(
       updates.map((update) => {
-        return update.remaining;
+        return update.amount;
       }),
-    )}::bigint[]) AS deduction(id, remaining)
+    )}::bigint[]) AS deduction(id, amount)
     WHERE ${creditExpiresRecord.id} = deduction.id`;
 }
 
