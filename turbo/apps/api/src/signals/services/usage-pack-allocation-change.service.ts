@@ -1,4 +1,9 @@
 import {
+  grantSubscriptionOwnershipQuery,
+  grantWalletOwnershipQuery,
+  requireGrantOwnership,
+} from "./usage-pack-grant-ownership";
+import {
   type UsagePackChangeConfirmResponse,
   type UsagePackChangePreviewResponse,
   type UsagePackManagementResponse,
@@ -3343,14 +3348,31 @@ async function commitUsagePackUpgradeInvoice(
   },
 ): Promise<void> {
   await db.transaction(async (tx) => {
+    await tx.execute(usagePackBillingCompatibilityLockSql(args.change.orgId));
+    const [subscription] = await tx
+      .select()
+      .from(
+        grantSubscriptionOwnershipQuery(
+          args.change.orgId,
+          args.change.usagePackSubscriptionId,
+        ),
+      );
+    const [wallet] = await tx
+      .select()
+      .from(grantWalletOwnershipQuery(args.change.orgId));
+    requireGrantOwnership(subscription, wallet);
     const [change] = await tx
       .select()
       .from(usagePackAllocationChanges)
       .where(eq(usagePackAllocationChanges.id, args.change.id))
       .for("update")
       .limit(1);
-    if (!change) {
-      throw new Error(`Unknown usage pack change: ${args.change.id}`);
+    if (
+      !change ||
+      change.orgId !== args.change.orgId ||
+      change.usagePackSubscriptionId !== args.change.usagePackSubscriptionId
+    ) {
+      throw new Error(`Unknown or moved usage pack change: ${args.change.id}`);
     }
     if (
       await usagePackInvoiceFulfillmentExists(
@@ -3556,14 +3578,17 @@ async function fulfillPreparedSubscriptionChange(
   expectedRoot: UsagePackSubscriptionChangeRow,
   preparedGrants: readonly PreparedSubscriptionChangeGrant[],
 ): Promise<void> {
-  await lockUsagePackBillingOrg(tx, expectedRoot.orgId);
   const [root] = await tx
     .select()
     .from(usagePackSubscriptionChanges)
     .where(eq(usagePackSubscriptionChanges.id, args.subscriptionChangeId))
     .for("update")
     .limit(1);
-  if (!root) {
+  if (
+    !root ||
+    root.orgId !== expectedRoot.orgId ||
+    root.usagePackSubscriptionId !== expectedRoot.usagePackSubscriptionId
+  ) {
     throw new Error(
       `Unknown usage pack subscription change: ${args.subscriptionChangeId}`,
     );
@@ -3641,6 +3666,19 @@ export async function fulfillUsagePackSubscriptionChangeInvoice(
   const { expectedRoot, preparedGrants } =
     await prepareSubscriptionChangeFulfillment(db, args);
   await db.transaction(async (tx) => {
+    await tx.execute(usagePackBillingCompatibilityLockSql(expectedRoot.orgId));
+    const [subscription] = await tx
+      .select()
+      .from(
+        grantSubscriptionOwnershipQuery(
+          expectedRoot.orgId,
+          expectedRoot.usagePackSubscriptionId,
+        ),
+      );
+    const [wallet] = await tx
+      .select()
+      .from(grantWalletOwnershipQuery(expectedRoot.orgId));
+    requireGrantOwnership(subscription, wallet);
     await fulfillPreparedSubscriptionChange(
       tx,
       args,
