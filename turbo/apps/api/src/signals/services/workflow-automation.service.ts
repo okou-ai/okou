@@ -107,7 +107,7 @@ import {
 import { resolveGoogleFormsAutomationConnectorId } from "./google-forms-automation-account.service";
 import {
   ensureGoogleFormsWatchForUser$,
-  hasEnabledGoogleFormsConsumer,
+  hasEnabledGoogleFormsConsumer$,
   prepareGoogleFormsResponseEventConfigForPersist,
 } from "./google-forms-automation-event.service";
 import { resolveGoogleMeetAutomationConnectorId } from "./google-meet-automation-account.service";
@@ -2597,9 +2597,9 @@ const createGoogleFormsEventAutomationForWorkflow$ = command(
       return prepared;
     }
     const hadConsumer = args.input.enabled
-      ? await hasEnabledGoogleFormsConsumer(
+      ? await set(
+          hasEnabledGoogleFormsConsumer$,
           {
-            db: db,
             orgId: args.input.orgId,
             userId: args.input.member.userId,
             connectorId: prepared.eventConfig.connectorId,
@@ -5104,77 +5104,81 @@ const ensureEventAutomationCanBeEnabled$ = command(
   },
 );
 
-async function enabledWatchHadConsumer(
-  args: {
-    readonly db: Db;
-    readonly automation: AutomationRow;
-  },
-  signal: AbortSignal,
-): Promise<boolean> {
-  if (supportedGmailEventType(args.automation.eventType)) {
+const enabledWatchHadConsumer$ = command(
+  async (
+    { set },
+    args: {
+      readonly automation: AutomationRow;
+    },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const db = set(writeDb$);
+    if (supportedGmailEventType(args.automation.eventType)) {
+      if (args.automation.eventConnectorId === null) {
+        return false;
+      }
+      return await hasEnabledGmailConsumer(
+        {
+          db: db,
+          orgId: args.automation.orgId,
+          userId: args.automation.ownerUserId,
+          connectorId: args.automation.eventConnectorId,
+        },
+        signal,
+      );
+    }
+    if (supportedGoogleMeetEventType(args.automation.eventType)) {
+      if (args.automation.eventConnectorId === null) {
+        return false;
+      }
+      return await hasEnabledGoogleMeetConsumer(
+        {
+          db: db,
+          orgId: args.automation.orgId,
+          userId: args.automation.ownerUserId,
+          connectorId: args.automation.eventConnectorId,
+        },
+        signal,
+      );
+    }
+    if (supportedGoogleFormsEventType(args.automation.eventType)) {
+      const config = googleFormsResponseSubmittedEventConfigSchema.parse(
+        args.automation.eventConfig,
+      );
+      return await set(
+        hasEnabledGoogleFormsConsumer$,
+        {
+          orgId: args.automation.orgId,
+          userId: args.automation.ownerUserId,
+          connectorId: config.connectorId,
+          formId: config.form.id,
+        },
+        signal,
+      );
+    }
+    if (!supportedGoogleCalendarEventType(args.automation.eventType)) {
+      return false;
+    }
     if (args.automation.eventConnectorId === null) {
       return false;
     }
-    return await hasEnabledGmailConsumer(
-      {
-        db: args.db,
-        orgId: args.automation.orgId,
-        userId: args.automation.ownerUserId,
-        connectorId: args.automation.eventConnectorId,
-      },
-      signal,
-    );
-  }
-  if (supportedGoogleMeetEventType(args.automation.eventType)) {
-    if (args.automation.eventConnectorId === null) {
-      return false;
-    }
-    return await hasEnabledGoogleMeetConsumer(
-      {
-        db: args.db,
-        orgId: args.automation.orgId,
-        userId: args.automation.ownerUserId,
-        connectorId: args.automation.eventConnectorId,
-      },
-      signal,
-    );
-  }
-  if (supportedGoogleFormsEventType(args.automation.eventType)) {
-    const config = googleFormsResponseSubmittedEventConfigSchema.parse(
+    const config = parseGoogleCalendarEventConfig(
+      args.automation.eventType,
       args.automation.eventConfig,
     );
-    return await hasEnabledGoogleFormsConsumer(
+    return await hasEnabledGoogleCalendarConsumer(
       {
-        db: args.db,
+        db: db,
         orgId: args.automation.orgId,
         userId: args.automation.ownerUserId,
-        connectorId: config.connectorId,
-        formId: config.form.id,
+        connectorId: args.automation.eventConnectorId,
+        calendarId: config.calendarId,
       },
       signal,
     );
-  }
-  if (!supportedGoogleCalendarEventType(args.automation.eventType)) {
-    return false;
-  }
-  if (args.automation.eventConnectorId === null) {
-    return false;
-  }
-  const config = parseGoogleCalendarEventConfig(
-    args.automation.eventType,
-    args.automation.eventConfig,
-  );
-  return await hasEnabledGoogleCalendarConsumer(
-    {
-      db: args.db,
-      orgId: args.automation.orgId,
-      userId: args.automation.ownerUserId,
-      connectorId: args.automation.eventConnectorId,
-      calendarId: config.calendarId,
-    },
-    signal,
-  );
-}
+  },
+);
+
 const ensureEnabledAutomationEventWatch$ = command(
   async (
     { set },
@@ -5963,8 +5967,9 @@ const persistAndReconcileEnabledWorkflowAutomation$ = command(
       args.automation,
       accountProjection.eventConnectorId,
     );
-    const watchHadConsumer = await enabledWatchHadConsumer(
-      { db, automation },
+    const watchHadConsumer = await set(
+      enabledWatchHadConsumer$,
+      { automation },
       signal,
     );
     const enabled = await persistEnabledWorkflowAutomation(

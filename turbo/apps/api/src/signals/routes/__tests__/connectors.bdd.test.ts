@@ -2302,6 +2302,39 @@ describe("CONN-02: external-code authorization", () => {
 });
 
 describe("CONN-03: custom connectors and connector-owned secrets", () => {
+  it("publishes only one definition for concurrent equivalent prefixes", async () => {
+    const admin = createBddApi(context).user({ orgRole: "org:admin" });
+    const prefix = `https://${randomUUID()}.prefix-race.test/v1/`;
+    const responses = await Promise.all(
+      ["first", "second"].map((name) => {
+        return connectorsApi.requestCreateCustomConnector(
+          admin,
+          manualHttpCustomConnectorCreateBody({
+            displayName: `Prefix ${name}`,
+            prefixTemplates: [prefix],
+          }),
+          [201, 400],
+        );
+      }),
+    );
+    expect(
+      responses
+        .map((response) => {
+          return response.status;
+        })
+        .sort(),
+    ).toStrictEqual([201, 400]);
+    const definitions = await connectorsApi.listCustomConnectors(admin);
+    expect(
+      definitions.filter((definition) => {
+        return (
+          definition.kind === "http" &&
+          definition.prefixTemplates.includes(prefix)
+        );
+      }),
+    ).toHaveLength(1);
+  });
+
   it("rejects credentialless manual auth across definition write boundaries", async () => {
     const admin = createBddApi(context).user({ orgRole: "org:admin" });
     const rand = randomUUID().replace(/-/g, "").slice(0, 8);
