@@ -1746,11 +1746,6 @@ const handleOfficialCommand$ = command(
       return;
     }
 
-    if (args.command === "new_session") {
-      await reply(formatTelegramCommandError("Command retired."), signal);
-      return;
-    }
-
     if (!userLink) {
       await connectPrompt(signal);
       return;

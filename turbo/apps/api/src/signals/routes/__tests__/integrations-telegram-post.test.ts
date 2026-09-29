@@ -1929,28 +1929,6 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       "existing Okou conversation",
     );
     await expect(selectedModelFor(fixture)).resolves.toBe("deepseek-v4-flash");
-
-    const retired = await postWebhook({
-      telegramBotId: fixture.telegramBotId,
-      secret: fixture.webhookSecret,
-      body: {
-        update_id: 104,
-        message: {
-          message_id: 1014,
-          chat: { id: Number(fixture.telegramUserId), type: "private" },
-          from: {
-            id: Number(fixture.telegramUserId),
-            username: "alice",
-            first_name: "Alice",
-          },
-          text: "/new_session",
-        },
-      },
-    });
-    expect(retired.status).toBe(200);
-    await flushWaitUntilForTest();
-    expect(telegramMocks.sentMessages[3]?.text).toContain("Command retired");
-    await expect(selectedModelFor(fixture)).resolves.toBe("deepseek-v4-flash");
   });
 
   it.each(["photo", "document"] as const)(

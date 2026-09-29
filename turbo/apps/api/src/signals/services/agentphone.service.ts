@@ -1283,14 +1283,6 @@ const dispatchAgentPhoneCommand$ = command(
         );
         return true;
       }
-      case "new_session": {
-        await sendAgentPhoneSlashCommandText(
-          args.event,
-          "Command retired.",
-          signal,
-        );
-        return true;
-      }
       case "help": {
         await sendAgentPhoneSlashCommandText(
           args.event,
@@ -1318,7 +1310,8 @@ const dispatchAgentPhoneCommand$ = command(
         return true;
       }
       default: {
-        return false;
+        // Unknown slash commands are not agent prompts.
+        return true;
       }
     }
   },
