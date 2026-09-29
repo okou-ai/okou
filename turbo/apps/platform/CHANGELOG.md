@@ -11,6 +11,21 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.984.0](https://github.com/okou-ai/okou/compare/app-v0.983.0...app-v0.984.0) (2026-09-29)
+
+
+### Features
+
+* **chat:** upgrade chat event schema to v8 ([#37251](https://github.com/okou-ai/okou/issues/37251)) ([141a593](https://github.com/okou-ai/okou/commit/141a5931dc1960f3378d1cd75511e668e658760f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.527.0
+    * @okouai/core bumped to 8.720.1
+
 ## [0.983.0](https://github.com/okou-ai/okou/compare/app-v0.982.0...app-v0.983.0) (2026-09-28)
 
 
