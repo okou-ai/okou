@@ -21,7 +21,6 @@ import { z } from "zod";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { setCustomOrgModelModeIfPresentFixture } from "../../../test-fixtures/org-metadata";
 import { mockEnv } from "../../../lib/env";
 import {
   clearMockMonotonicNow,
@@ -439,8 +438,6 @@ async function disconnect(owner: Actor): Promise<void> {
 
 async function configureModelPreferences(scope: Pick<Fixture, "owner">) {
   await createRunsApi(context).grantProEntitlement(scope.owner);
-  // Org-wide provider credentials in this picker scenario require Custom mode.
-  await setCustomOrgModelModeIfPresentFixture(scope.owner.orgId);
   const headers = accountApi.authenticate(scope.owner);
   const providers = setupApp({ context, routes: modelProvidersRoutes })(
     modelProvidersMainContract,

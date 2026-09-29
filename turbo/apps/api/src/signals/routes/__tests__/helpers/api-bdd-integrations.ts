@@ -52,7 +52,6 @@ import { slackOauthContract } from "@okouai/api-contracts/contracts/slack-oauth"
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import { HttpResponse, http } from "msw";
 import { createApp } from "../../../../app-factory";
-import { setCustomOrgModelModeIfPresentFixture } from "../../../../test-fixtures/org-metadata";
 import { mockEnv, mockOptionalEnv } from "../../../../lib/env";
 import { now } from "../../../../lib/time";
 import { server } from "../../../../mocks/server";
@@ -1259,11 +1258,6 @@ export function createBddIntegrationApi(context: TestContext) {
     // Slack run fixtures claim native Runner jobs, so both org models are
     // policy-excluded from Pi.
     async configureSlackRunModelPolicies(actor: ApiTestUser): Promise<void> {
-      if (!actor.orgId) {
-        throw new Error("Expected a Slack workspace organization");
-      }
-      // These Slack routing cases configure organization BYOK policies.
-      await setCustomOrgModelModeIfPresentFixture(actor.orgId);
       const providers = setupApp({ context, routes: modelProvidersRoutes })(
         modelProvidersMainContract,
       );

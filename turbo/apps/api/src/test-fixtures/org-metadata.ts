@@ -28,7 +28,6 @@ export async function upsertOrgMetadataFixture(values: {
   readonly orgId: string;
   readonly tier: string;
   readonly credits: number;
-  /** Test a pre-existing Custom workspace unless a scenario explicitly opts into Auto. */
   readonly modelMode?: "auto" | "custom";
 }): Promise<void> {
   const tier = orgTierSchema.parse(values.tier);
@@ -37,13 +36,13 @@ export async function upsertOrgMetadataFixture(values: {
     .transaction(async (tx) => {
       await tx
         .insert(orgMetadataCanonicalWrites)
-        .values({ ...values, modelMode: values.modelMode ?? "custom" })
+        .values(values)
         .onConflictDoUpdate({
           target: orgMetadataCanonicalWrites.orgId,
           set: {
             tier: values.tier,
             credits: values.credits,
-            modelMode: values.modelMode ?? "custom",
+            ...(values.modelMode ? { modelMode: values.modelMode } : {}),
             updatedAt: sql`now()`,
           },
         });
@@ -68,18 +67,6 @@ export async function setOrgModelModeFixture(
   if (rows.length !== 1) {
     throw new Error(`No organization metadata for ${orgId}`);
   }
-}
-
-// Legacy API BDD helpers configure organization providers for a pre-existing
-// Custom workspace. A missing metadata row already reads as Custom.
-export async function setCustomOrgModelModeIfPresentFixture(
-  orgId: string,
-): Promise<void> {
-  await createStore()
-    .set(writeDb$)
-    .update(orgMetadata)
-    .set({ modelMode: "custom", updatedAt: sql`now()` })
-    .where(eq(orgMetadata.orgId, orgId));
 }
 
 export async function expireAtomGrantFixture(values: {

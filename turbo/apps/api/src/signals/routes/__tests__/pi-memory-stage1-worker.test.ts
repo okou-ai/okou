@@ -1745,15 +1745,6 @@ async function activateAnotherCodexAccount(
 }
 
 async function gatewaySource(storage: StorageFixture, mapsLuna = true) {
-  // Gateway source setup runs before the storage candidate seeds plan metadata.
-  // Create the same Pro fixture now with Custom mode so the org connection API
-  // is available; later credit-specific cases may still adjust its balance.
-  await seedOrgMetadata({
-    orgId: storage.org_id,
-    tier: "pro",
-    credits: 100_000,
-    modelMode: "custom",
-  });
   createRouteMocks(context).clerk.session(
     storage.user_id,
     storage.org_id,

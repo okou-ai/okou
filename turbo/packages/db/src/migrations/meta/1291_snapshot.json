@@ -22643,7 +22643,7 @@
           "type": "varchar(6)",
           "primaryKey": false,
           "notNull": true,
-          "default": "'auto'"
+          "default": "'custom'"
         },
         "onboarding_industry": {
           "name": "onboarding_industry",

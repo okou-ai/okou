@@ -403,12 +403,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.AutoModel]: {
-    maintainer: "ethan@okou.ai",
-    description:
-      "Show the organization Auto Model / Custom mode controls to selected users.",
-    enabled: false,
-  },
   [FeatureSwitchKey.PersonalModelProviderAccounts]: {
     maintainer: "ethan@okou.ai",
     description:

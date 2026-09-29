@@ -741,7 +741,7 @@ describe("WHCB-01: third-party webhook verification boundaries", () => {
     expect(membershipDeleted.body).toBe("OK");
   });
 
-  it("bootstraps limited-free billing without org Provider Connections after Clerk org creation", async () => {
+  it("bootstraps limited-free billing and model providers after Clerk org creation", async () => {
     const runs = createRunsApi(context);
     const admin = await createLimitedFreeOrgFromClerk();
 
@@ -783,7 +783,11 @@ describe("WHCB-01: third-party webhook verification boundaries", () => {
     });
     expectExpiresAboutThirtyDaysFromNow(onboardingCreditGrant?.expiresAt);
     const limitedFreeProviders = await runs.listOrgModelProviders(admin);
-    expect(limitedFreeProviders).toStrictEqual([]);
+    expect(
+      limitedFreeProviders.find((provider) => {
+        return provider.type === "built-in";
+      })?.selectedModel,
+    ).toBe("gpt-6-luna");
   });
 
   it("keeps Clerk membership creation from duplicating bootstrap state", async () => {

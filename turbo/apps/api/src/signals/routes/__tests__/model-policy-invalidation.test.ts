@@ -10,7 +10,6 @@ import {
 } from "@okouai/api-contracts/contracts/model-provider-gateways";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { upsertOrgMetadataFixture } from "../../../test-fixtures/org-metadata";
 import { meModelProvidersUpsertRoutes } from "../me-model-providers-upsert";
 import { meModelProvidersDeleteRoutes } from "../me-model-providers-delete";
 import { modelProviderGatewayRoutes } from "../model-provider-gateways";
@@ -81,7 +80,6 @@ describe("model policy invalidation", () => {
 
   it("publishes organization surface changes after successful mutations", async () => {
     const { orgId } = identity();
-    await upsertOrgMetadataFixture({ orgId, tier: "pro", credits: 100_000 });
     const clients = setupApp({ context, routes: modelProviderGatewayRoutes });
     const main = clients(modelProviderConnectionsMainContract);
     const byId = clients(modelProviderConnectionsByIdContract);

@@ -1,15 +1,21 @@
 import { randomUUID } from "node:crypto";
+
 import {
   onboardingCompleteContract,
   onboardingStatusContract,
 } from "@okouai/api-contracts/contracts/onboarding";
 import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
-import { DEFAULT_ORG_MODEL_POLICY_MODELS } from "@okouai/api-contracts/contracts/model-providers";
+import {
+  DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
+  DEFAULT_ORG_MODEL_POLICY_MODELS,
+} from "@okouai/api-contracts/contracts/model-providers";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
-import { readOnboardingIndustryFixture } from "../../../test-fixtures/org-metadata";
-import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
+import {
+  readOnboardingIndustryFixture,
+  upsertOrgMetadataFixture,
+} from "../../../test-fixtures/org-metadata";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRouteMocks } from "./helpers/route-test";
@@ -207,8 +213,10 @@ describe("member source-first onboarding", () => {
       policies.body.policies.map((policy) => {
         return policy.model;
       }),
-    ).toStrictEqual(["okou-1.0"]);
-    expect(policies.body.workspaceDefaultModel).toBe("okou-1.0");
+    ).toStrictEqual(DEFAULT_ORG_MODEL_POLICY_MODELS);
+    expect(policies.body.workspaceDefaultModel).toBe(
+      DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
+    );
   });
 
   it("does not pull a member who already chats in the workspace into onboarding", async () => {
@@ -305,16 +313,25 @@ describe("POST /api/onboarding/complete", () => {
       policies.body.policies.map((policy) => {
         return policy.model;
       }),
-    ).toStrictEqual(["okou-1.0"]);
-    expect(policies.body.workspaceDefaultModel).toBe("okou-1.0");
+    ).toStrictEqual(DEFAULT_ORG_MODEL_POLICY_MODELS);
+    expect(policies.body.workspaceDefaultModel).toBe(
+      DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
+    );
   });
 
-  it("seeds only Auto for a new organization without a feature switch", async () => {
+  it("seeds only Auto for an Auto organization despite a subscription choice", async () => {
     const actor = orgActor();
+    await upsertOrgMetadataFixture({
+      orgId: actor.orgId,
+      tier: "limited-free-1",
+      credits: 0,
+      modelMode: "auto",
+    });
     mocks.clerk.session(actor.userId, actor.orgId, actor.role);
     await accept(
       onboardingCompleteClient().complete({
         headers: authHeaders(),
+        query: { modelProvider: "codex" },
         body: {},
       }),
       [200],
@@ -334,29 +351,6 @@ describe("POST /api/onboarding/complete", () => {
     ]);
   });
 
-  it("keeps a new organization in Auto when an old client submits a subscription choice", async () => {
-    const actor = orgActor();
-    mocks.clerk.session(actor.userId, actor.orgId, actor.role);
-    await accept(
-      onboardingCompleteClient().complete({
-        headers: authHeaders(),
-        query: { modelProvider: "codex" },
-        body: {},
-      }),
-      [200],
-    );
-    const response = await accept(
-      modelPoliciesClient().list({ headers: authHeaders() }),
-      [200],
-    );
-    expect(response.body.modelMode).toBe("auto");
-    expect(
-      response.body.policies.map((policy) => {
-        return policy.model;
-      }),
-    ).toStrictEqual(["okou-1.0"]);
-  });
-
   it.each([
     {
       provider: "codex" as const,
@@ -374,11 +368,6 @@ describe("POST /api/onboarding/complete", () => {
     "seeds $provider subscription models even when the default seed was read first",
     async ({ provider, models, defaultModel, route }) => {
       const actor = orgActor();
-      await seedOrgMetadata({
-        orgId: actor.orgId,
-        tier: "limited-free-1",
-        credits: 0,
-      });
       mocks.clerk.session(actor.userId, actor.orgId, actor.role);
       const policies = modelPoliciesClient();
       const before = await accept(
@@ -444,11 +433,6 @@ describe("POST /api/onboarding/complete", () => {
 
   it("applies a subscription choice after the previous untouched model seed", async () => {
     const actor = orgActor();
-    await seedOrgMetadata({
-      orgId: actor.orgId,
-      tier: "limited-free-1",
-      credits: 0,
-    });
     mocks.clerk.session(actor.userId, actor.orgId, actor.role);
     const policies = modelPoliciesClient();
     const before = await accept(
@@ -512,13 +496,8 @@ describe("POST /api/onboarding/complete", () => {
     });
   });
 
-  it("seeds the chosen models for an existing Custom organization before first policy read", async () => {
+  it("seeds the chosen models when no model policies were read before completion", async () => {
     const actor = orgActor();
-    await seedOrgMetadata({
-      orgId: actor.orgId,
-      tier: "limited-free-1",
-      credits: 0,
-    });
     mocks.clerk.session(actor.userId, actor.orgId, actor.role);
 
     await accept(
@@ -543,11 +522,6 @@ describe("POST /api/onboarding/complete", () => {
 
   it("keeps a customized model policy when onboarding completes", async () => {
     const actor = orgActor();
-    await seedOrgMetadata({
-      orgId: actor.orgId,
-      tier: "limited-free-1",
-      credits: 0,
-    });
     mocks.clerk.session(actor.userId, actor.orgId, actor.role);
     const policies = modelPoliciesClient();
     const before = await accept(

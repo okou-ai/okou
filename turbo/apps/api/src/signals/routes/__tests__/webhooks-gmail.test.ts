@@ -22,7 +22,6 @@ import { createApp } from "../../../app-factory";
 import { mockOptionalEnv } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { setOrgModelModeFixture } from "../../../test-fixtures/org-metadata";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
 import {
@@ -435,21 +434,20 @@ async function configureWorkspaceModelProvider(
   // gained a Pi route, so keep this fixture on its intended execution path.
 
   await configureBuiltInModelKey();
-  // Gmail queue scenarios exercise a pre-existing configurable workspace.
-  await setOrgModelModeFixture(actor.orgId, "custom");
   const policies = await miscApi.listModelPolicies(actor);
   const workspacePolicy = policies.policies.find((policy) => {
-    return policy.isDefault;
+    return policy.model === GMAIL_WORKSPACE_MODEL;
   });
   if (!workspacePolicy) {
-    throw new Error("Expected an organization default model policy");
+    throw new Error(
+      `Expected ${GMAIL_WORKSPACE_MODEL} model policy to be available`,
+    );
   }
   await miscApi.updateModelPolicies(
     actor,
     [
       {
         ...workspacePolicy,
-        model: GMAIL_WORKSPACE_MODEL,
         isDefault: true,
         defaultProviderType: "built-in",
         credentialScope: "org",

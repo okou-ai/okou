@@ -43,7 +43,8 @@ async function customConnectionsAllowed(
     .where(eq(orgMetadata.orgId, orgId))
     .for("share")
     .limit(1);
-  return org?.mode === "custom";
+  // A missing metadata row reads as Custom, matching every other mode check.
+  return org?.mode !== "auto";
 }
 
 type BadRequestResponse = ReturnType<typeof badRequestMessage>;

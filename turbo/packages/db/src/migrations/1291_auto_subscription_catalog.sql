@@ -12,12 +12,9 @@ CREATE TABLE "subscription_model_catalog" (
 	CONSTRAINT "chk_subscription_model_catalog_service_tier" CHECK ("subscription_model_catalog"."service_tier" IS NULL OR "subscription_model_catalog"."service_tier" = 'priority')
 );
 --> statement-breakpoint
--- Preserve Custom for every organization that exists before this migration.
 ALTER TABLE "org_metadata" ADD COLUMN "model_mode" varchar(6) DEFAULT 'custom' NOT NULL;--> statement-breakpoint
 CREATE UNIQUE INDEX "idx_subscription_model_catalog_type_model" ON "subscription_model_catalog" USING btree ("subscription_type","model");--> statement-breakpoint
 ALTER TABLE "org_metadata" ADD CONSTRAINT "chk_org_metadata_model_mode" CHECK ("org_metadata"."model_mode" IN ('auto', 'custom'));--> statement-breakpoint
--- Newly created organizations default to Auto; existing rows remain Custom.
-ALTER TABLE "org_metadata" ALTER COLUMN "model_mode" SET DEFAULT 'auto';--> statement-breakpoint
 INSERT INTO "subscription_model_catalog" ("subscription_type", "model", "display_name", "efforts", "service_tier", "sort_order") VALUES
   ('claude-code-oauth-token', 'claude-sonnet-5-5', 'Claude Sonnet 5.5', ARRAY['low','medium','high','extra','max','ultracode'], NULL, 1),
   ('claude-code-oauth-token', 'claude-opus-5-5', 'Claude Opus 5.5', ARRAY['low','medium','high','extra','max','ultracode'], NULL, 2),
