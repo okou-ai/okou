@@ -2191,7 +2191,7 @@ describe("POST /api/webhooks/teams/bot", () => {
     await expect(
       userConfigApi.readModelPreference(actor),
     ).resolves.toMatchObject({
-      selectedModel: "claude-fable-5-1",
+      selectedModel: null,
     });
 
     expect(outboundRequests).toHaveLength(6);
@@ -2223,39 +2223,7 @@ describe("POST /api/webhooks/teams/bot", () => {
     });
     expect(outboundRequests[3]?.body).toMatchObject({
       type: "message",
-      summary: expect.stringContaining("Choose the model"),
-      attachments: [
-        {
-          contentType: "application/vnd.microsoft.card.adaptive",
-          content: {
-            type: "AdaptiveCard",
-            version: "1.4",
-            body: expect.arrayContaining([
-              expect.objectContaining({
-                type: "Input.ChoiceSet",
-                id: "selectedModel",
-                choices: expect.arrayContaining([
-                  expect.objectContaining({
-                    title: expect.stringContaining("Claude Fable 5.1"),
-                    value: "claude-fable-5-1",
-                  }),
-                ]),
-              }),
-            ]),
-            actions: [
-              {
-                type: "Action.Submit",
-                title: "Switch",
-                data: {
-                  okouTeamsAction: "switch_model",
-                  routeConversationId: `a:personal-${fixture.teamsUserId}`,
-                  routeThreadId: "direct-message:main",
-                },
-              },
-            ],
-          },
-        },
-      ],
+      text: expect.stringContaining("existing Okou conversation"),
     });
     expect(outboundRequests[4]?.body).toMatchObject({
       type: "message",
@@ -2265,7 +2233,7 @@ describe("POST /api/webhooks/teams/bot", () => {
     });
     expect(outboundRequests[5]?.body).toMatchObject({
       type: "message",
-      text: expect.stringContaining("Claude Fable 5.1"),
+      text: expect.stringContaining("out of date"),
     });
 
     outboundRequests.splice(0, outboundRequests.length);
@@ -2417,8 +2385,8 @@ describe("POST /api/webhooks/teams/bot", () => {
           id: activityIds.switchModel,
           text: "",
           value: {
-            // A card sent from the main DM leaves this reply thread's
-            // model unchanged and only updates the member default.
+            // A card without its original chat thread id is stale and cannot
+            // modify this reply thread or the member default.
             okouTeamsAction: "switch_model",
             selectedModel: "gpt-6-astra",
             routeConversationId: `a:personal-${fixture.teamsUserId}`,
@@ -2468,7 +2436,7 @@ describe("POST /api/webhooks/teams/bot", () => {
     });
   });
 
-  it("switches the main Teams DM thread and the member default from the model card", async () => {
+  it("switches only the main Teams DM thread from the model card", async () => {
     const { fixture, actor, runnerGroup } = await setupConnectedTeamsBotActor();
     const anthropic = await runsApi.createOrgModelProvider(actor, {
       type: "anthropic-api-key",
@@ -2522,6 +2490,22 @@ describe("POST /api/webhooks/teams/bot", () => {
     await runsApi.requestCancelRun(actor, initialRunId, [200]);
     await completeCancelledRun(initialRunId, initialClaim.sandboxToken);
 
+    mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+    const beforeEvents = await accept(
+      setupApp({ context, routes: chatThreadRoutes })(
+        chatThreadsContract,
+      ).events({
+        headers: { authorization: "Bearer clerk-session" },
+        query: {},
+      }),
+      [200],
+    );
+    const dmThread = beforeEvents.body.events.find((event) => {
+      return event.kind === "created";
+    });
+    if (!dmThread) {
+      throw new Error("Expected the main Teams DM thread");
+    }
     const switchResponse = await postTeamsActivity({
       activity: teamsPersonalMessageActivity({
         fixture,
@@ -2532,6 +2516,7 @@ describe("POST /api/webhooks/teams/bot", () => {
           selectedModel: "gpt-6-astra",
           routeConversationId: `a:personal-${fixture.teamsUserId}`,
           routeThreadId: "direct-message:main",
+          chatThreadId: dmThread.chatThreadId,
         },
       }),
       token: teamsToken(),
@@ -2540,7 +2525,7 @@ describe("POST /api/webhooks/teams/bot", () => {
     await readTeamsBotResponseAndFlush(switchResponse);
     await expect(
       userConfigApi.readModelPreference(actor),
-    ).resolves.toMatchObject({ selectedModel: "gpt-6-astra" });
+    ).resolves.toMatchObject({ selectedModel: null });
     mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
     const threadEvents = await accept(
       setupApp({ context, routes: chatThreadRoutes })(

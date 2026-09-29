@@ -36,6 +36,7 @@ export function discordAccountPicker(args: {
   readonly action: DiscordPickerAction;
   readonly actor: DiscordInteractionActor;
   readonly connectionId: string;
+  readonly modelThreadTag?: string;
   readonly botToken: string;
   /** Omitted when a command opens the picker on the current value's page. */
   readonly page?: number;

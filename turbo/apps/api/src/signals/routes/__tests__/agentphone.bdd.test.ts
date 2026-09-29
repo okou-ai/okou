@@ -1176,7 +1176,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         return;
       }
 
-      // /new_session over iMessage replies without the SMS reliability warning.
+      // The retired command is handled without resetting the session.
       const beforeNewSession = sends.messages.length;
       await ap.postAgentPhoneInboundMessage({
         channel: "imessage",
@@ -1186,9 +1186,9 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         isGroup: false,
       });
       await waitForSendCount(sends, beforeNewSession + 1);
-      expect(lastSend(sends).body).toBe("New session started.");
+      expect(lastSend(sends).body).toBe("Command retired.");
 
-      // The next DM starts a fresh session.
+      // The next DM continues the same session.
       await ap.postAgentPhoneInboundMessage({
         channel: "imessage",
         from: phone,
@@ -1199,7 +1199,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       const run3 = await claimDispatchedRun(runnerGroup);
       await completeSandboxRun(run3.sandboxToken, run3.runId, 0);
       const session3 = await waitForRunSessionIdPresent(actor, run3.runId);
-      expect(session3).not.toBe(session1);
+      expect(session3).toBe(session1);
     },
   );
 
@@ -1236,14 +1236,12 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       beforeEach(async () => {
         preparedScenario = await prepareScenario();
       });
-      it("switches the existing DM thread and the member default", async () => {
+      it("switches only the existing DM thread", async () => {
         const { actor, send, sends, complete } = preparedScenario;
         const integrations = createBddIntegrationApi(context);
         if (scenario.model !== "claude-fable-5-1") {
-          // No DM thread exists yet, so only the member default changes and
-          // the new thread initializes from it.
-          await send(`/model ${scenario.model}`);
-          expect(lastSend(sends).body).toContain("Switched to");
+          // The browser preference still controls initialization of new threads.
+          await integrations.updateUserModelPreference(actor, scenario.model);
         }
         const original = await complete(
           "start the selected model session",
@@ -1256,7 +1254,10 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         expect(lastSend(sends).body).toContain("Switched to");
         await expect(
           integrations.readUserModelPreference(actor),
-        ).resolves.toMatchObject({ selectedModel: scenario.otherModel });
+        ).resolves.toMatchObject({
+          selectedModel:
+            scenario.model === "claude-fable-5-1" ? null : scenario.model,
+        });
         const lifecycle = await createChatFilesBddApi(
           context,
         ).requestThreadEvents(actor, {}, [200]);
@@ -1291,7 +1292,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
   );
 
   describe.each(modelSessionScenarios)(
-    "starts a new $channel DM on request (conversation: $withConversation)",
+    "does not reset the $channel DM (conversation: $withConversation)",
     (scenario) => {
       async function prepareScenario() {
         return await modelSessionScenario(scenario);
@@ -1300,7 +1301,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       beforeEach(async () => {
         preparedScenario = await prepareScenario();
       });
-      it("retains the old thread as history after an explicit reset", async () => {
+      it("keeps the routed thread and model after the retired command", async () => {
         const { actor, complete, send, sends } = preparedScenario;
         const original = await complete(
           "start the default model session",
@@ -1317,15 +1318,14 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         expect(alternate.threadCount).toBe(1);
 
         await send("/new_session");
-        expect(lastSend(sends).body).toContain("New session started");
-        const reset = await complete(
-          "start again after resetting the DM",
+        expect(lastSend(sends).body).toContain("Command retired");
+        const continued = await complete(
+          "continue after the retired command",
           "gpt-6-astra",
         );
-        expect(reset.resumedSessionId).toBeUndefined();
-        expect(reset.selectedModel).toBe("gpt-6-astra");
-        expect(reset.threadId).not.toBe(alternate.threadId);
-        expect(reset.threadCount).toBe(2);
+        expect(continued.selectedModel).toBe("gpt-6-astra");
+        expect(continued.threadId).toBe(alternate.threadId);
+        expect(continued.threadCount).toBe(1);
         const history = await createChatFilesBddApi(context).listThreadEvents(
           actor,
           original.threadId,
@@ -1371,13 +1371,12 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(available.selectedModel).toBe("gpt-6-astra");
     expect(available.threadCount).toBe(1);
     await send("/new_session");
-    const fresh = await complete(
-      "start with the available workspace default",
+    const continued = await complete(
+      "continue with the available workspace default",
       "claude-fable-5-1",
     );
-    expect(fresh.selectedModel).toBe("claude-fable-5-1");
-    expect(fresh.threadId).not.toBe(preferred.threadId);
-    expect(fresh.threadCount).toBe(2);
+    expect(continued.threadId).toBe(preferred.threadId);
+    expect(continued.threadCount).toBe(1);
   });
 
   it("keeps the DM service tier captured when its thread was created", async () => {
@@ -1403,10 +1402,13 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(standard.threadId).toBe(fast.threadId);
     expect(standard.threadCount).toBe(1);
     await send("/new_session");
-    const fresh = await complete("start with standard service", "gpt-6-astra");
-    expect(fresh.serviceTier).toBeUndefined();
-    expect(fresh.threadId).not.toBe(fast.threadId);
-    expect(fresh.threadCount).toBe(2);
+    const continued = await complete(
+      "continue with fast service",
+      "gpt-6-astra",
+    );
+    expect(continued.serviceTier).toBe("fast");
+    expect(continued.threadId).toBe(fast.threadId);
+    expect(continued.threadCount).toBe(1);
   });
 
   it("shares one canonical session across AgentPhone and web messages on the same thread", async () => {
@@ -1961,6 +1963,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(help).toContain("Okou text message commands");
     expect(help).toContain("/connect - Connect this phone number to Okou");
     expect(help).toContain("/model - Choose your model");
+    expect(help).not.toContain("/new_session");
     expect(help).toContain(SMS_RISK_WARNING);
 
     const alreadyConnected = await commandReply("/connect");
@@ -1968,21 +1971,14 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(alreadyConnected).toContain("start using Okou");
     expect(alreadyConnected).toContain(SMS_RISK_WARNING);
 
+    const before = await integrations.readUserModelPreference(actor);
     const modelOptions = await commandReply("/model");
-    expect(modelOptions).toContain("Available models");
-    expect(modelOptions).toContain("Current: workspace default");
-    expect(modelOptions).toContain("/model claude-sonnet-5");
-    expect(modelOptions).toContain("(workspace default)");
-
+    expect(modelOptions).toContain("existing Okou conversation");
     const switched = await commandReply("/model claude-sonnet-5");
-    expect(switched).toContain("Switched to ");
-
-    const optionsAfterSwitch = await commandReply("/model");
-    expect(optionsAfterSwitch).toContain("Current: Claude Sonnet 5");
-    expect(optionsAfterSwitch).toContain("(current, workspace default)");
-
-    const unknownModel = await commandReply("/model not-a-model");
-    expect(unknownModel).toContain('Error: Unknown model "not-a-model".');
+    expect(switched).toContain("existing Okou conversation");
+    await expect(
+      integrations.readUserModelPreference(actor),
+    ).resolves.toStrictEqual(before);
 
     const disconnected = await commandReply("/disconnect");
     expect(disconnected).toContain(
@@ -1997,7 +1993,8 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     );
 
     const newSessionUnlinked = await commandReply("/new_session");
-    expect(newSessionUnlinked).toContain("/agentphone/connect?");
+    expect(newSessionUnlinked).toContain("Command retired.");
+    expect(newSessionUnlinked).not.toContain("/agentphone/connect?");
     expect(newSessionUnlinked).toContain(SMS_RISK_WARNING);
 
     const modelUnlinked = await commandReply("/model");
@@ -2263,7 +2260,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     await waitForSendMatching(sends, beforeSessionReset, (send) => {
       return (
         send.toNumber === bddGroupId(conversationId) &&
-        send.body === "New session started."
+        send.body === "Command retired."
       );
     });
   });

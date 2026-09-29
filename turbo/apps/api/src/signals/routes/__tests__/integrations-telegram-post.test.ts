@@ -1126,7 +1126,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
           org_id: dm.member.orgId,
           user_id: dm.member.userId,
         }),
-      ).resolves.toMatchObject({ selected_model: "gpt-6-astra" });
+      ).resolves.toMatchObject({ selected_model: null });
       const alternate = await completeDm("switch the main DM model", 3507);
       expect(alternate.claim.cliAgentType).toBe("codex");
       expect(alternate.chatThread.id).toBe(main.chatThread.id);
@@ -1849,7 +1849,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     );
   });
 
-  it("lists, updates, and rejects model command arguments", async () => {
+  it("does not change the member default before a Telegram conversation exists", async () => {
     const fixture = await trackFixture(
       seedTelegramPostFixture({ seedOfficialLink: true }),
     );
@@ -1878,14 +1878,9 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     });
     expect(list.status).toBe(200);
     await flushWaitUntilForTest();
-    expect(telegramMocks.sentMessages[0]?.text).toContain("Available models");
     expect(telegramMocks.sentMessages[0]?.text).toContain(
-      "/model claude-sonnet-5",
+      "existing Okou conversation",
     );
-    expect(telegramMocks.sentMessages[0]?.text).toContain(
-      "/model deepseek-v4-flash",
-    );
-    expect(telegramMocks.sentMessages[0]?.text).not.toContain("/model default");
 
     const switchModel = await postWebhook({
       telegramBotId: fixture.telegramBotId,
@@ -1906,7 +1901,10 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     });
     expect(switchModel.status).toBe(200);
     await flushWaitUntilForTest();
-    await expect(selectedModelFor(fixture)).resolves.toBe("claude-sonnet-5");
+    expect(telegramMocks.sentMessages[1]?.text).toContain(
+      "existing Okou conversation",
+    );
+    await expect(selectedModelFor(fixture)).resolves.toBe("deepseek-v4-flash");
 
     const defaultModel = await postWebhook({
       telegramBotId: fixture.telegramBotId,
@@ -1928,9 +1926,31 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     expect(defaultModel.status).toBe(200);
     await flushWaitUntilForTest();
     expect(telegramMocks.sentMessages[2]?.text).toContain(
-      "Unknown model &quot;default&quot;.",
+      "existing Okou conversation",
     );
-    await expect(selectedModelFor(fixture)).resolves.toBe("claude-sonnet-5");
+    await expect(selectedModelFor(fixture)).resolves.toBe("deepseek-v4-flash");
+
+    const retired = await postWebhook({
+      telegramBotId: fixture.telegramBotId,
+      secret: fixture.webhookSecret,
+      body: {
+        update_id: 104,
+        message: {
+          message_id: 1014,
+          chat: { id: Number(fixture.telegramUserId), type: "private" },
+          from: {
+            id: Number(fixture.telegramUserId),
+            username: "alice",
+            first_name: "Alice",
+          },
+          text: "/new_session",
+        },
+      },
+    });
+    expect(retired.status).toBe(200);
+    await flushWaitUntilForTest();
+    expect(telegramMocks.sentMessages[3]?.text).toContain("Command retired");
+    await expect(selectedModelFor(fixture)).resolves.toBe("deepseek-v4-flash");
   });
 
   it.each(["photo", "document"] as const)(

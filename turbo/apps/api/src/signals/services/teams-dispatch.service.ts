@@ -65,7 +65,10 @@ import {
   ensureTeamsChatThreadRoute,
   findTeamsRoutedChatThreadId,
 } from "./teams-chat-ingress.service";
-import { updateIntegrationChatThreadModel$ } from "./integration-chat-thread-model.service";
+import {
+  readIntegrationChatThreadModel,
+  updateIntegrationChatThreadModel$,
+} from "./integration-chat-thread-model.service";
 import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
 import { formatTeamsFileForContext } from "./teams-prompt";
 import { InputFileImportError } from "./canonical-asset.service";
@@ -78,10 +81,6 @@ import {
   type IntegrationInputAsset,
 } from "./integration-input-assets.service";
 import type { TeamsFileTokenPayload } from "./teams-file-token";
-import {
-  updateUserModelPreference$,
-  userModelPreference,
-} from "./user-data.service";
 import {
   buildTeamsConnectUrlForActivity,
   disconnectTeamsConnection$,
@@ -103,6 +102,7 @@ const TEAMS_MODEL_PICKER_INPUT_ID = "selectedModel";
 // of the conversation where `/model` was sent.
 const TEAMS_MODEL_PICKER_CONVERSATION_KEY = "routeConversationId";
 const TEAMS_MODEL_PICKER_THREAD_KEY = "routeThreadId";
+const TEAMS_MODEL_PICKER_CHAT_THREAD_KEY = "chatThreadId";
 const TEAMS_THINKING_REACTION_TYPE = "1f4ad_thoughtballoon";
 const TEAMS_FILE_DOWNLOAD_INFO_CONTENT_TYPE =
   "application/vnd.microsoft.teams.file.download.info";
@@ -346,6 +346,7 @@ function buildTeamsModelPickerCard(args: {
   readonly currentSelectedModel: string | null;
   readonly routeConversationId: string;
   readonly routeThreadId: string;
+  readonly chatThreadId: string;
 }): TeamsAdaptiveCard {
   const choices = args.options.map((option) => {
     return {
@@ -353,21 +354,12 @@ function buildTeamsModelPickerCard(args: {
       value: option.model,
     };
   });
-  const defaultModel = args.options.find((option) => {
-    return option.isDefault;
-  })?.model;
   const currentChoice = args.currentSelectedModel
     ? choices.find((choice) => {
         return choice.value === args.currentSelectedModel;
       })
     : undefined;
-  const defaultChoice = defaultModel
-    ? choices.find((choice) => {
-        return choice.value === defaultModel;
-      })
-    : undefined;
-  const initialValue =
-    currentChoice?.value ?? defaultChoice?.value ?? choices[0]?.value;
+  const initialValue = currentChoice?.value ?? choices[0]?.value;
 
   return {
     type: "AdaptiveCard",
@@ -375,7 +367,7 @@ function buildTeamsModelPickerCard(args: {
     body: [
       {
         type: "TextBlock",
-        text: "Choose your model. This only affects your own runs.",
+        text: "Choose the model for this conversation.",
         wrap: true,
       },
       {
@@ -396,6 +388,7 @@ function buildTeamsModelPickerCard(args: {
           [TEAMS_CARD_ACTION_KEY]: TEAMS_MODEL_PICKER_ACTION,
           [TEAMS_MODEL_PICKER_CONVERSATION_KEY]: args.routeConversationId,
           [TEAMS_MODEL_PICKER_THREAD_KEY]: args.routeThreadId,
+          [TEAMS_MODEL_PICKER_CHAT_THREAD_KEY]: args.chatThreadId,
         },
       },
     ],
@@ -798,9 +791,10 @@ async function resolveEffectiveCompose(args: {
 
 const teamsModelPickerState$ = command(
   async (
-    { get, set },
+    { set },
     orgId: string,
     userId: string,
+    currentSelectedModel: string,
     signal: AbortSignal,
   ): Promise<{
     readonly enabled: boolean;
@@ -808,10 +802,11 @@ const teamsModelPickerState$ = command(
     readonly currentSelectedModel: string | null;
   }> => {
     const visibleModels = new Set(getBuiltInVisibleModels());
-    const [policies, preference] = await Promise.all([
-      set(listOrgModelPolicies$, { orgId, userId }, signal),
-      get(userModelPreference({ orgId, userId })),
-    ]);
+    const policies = await set(
+      listOrgModelPolicies$,
+      { orgId, userId },
+      signal,
+    );
     signal.throwIfAborted();
 
     return {
@@ -832,7 +827,7 @@ const teamsModelPickerState$ = command(
           };
         })
         .slice(0, TEAMS_MODEL_PICKER_MAX_OPTIONS),
-      currentSelectedModel: preference.selectedModel,
+      currentSelectedModel,
     };
   },
 );
@@ -1913,10 +1908,32 @@ const connectedCommandBeforeCompose$ = command(
         return orgDefaultAgentNotice();
       }
       case "model": {
+        const routeThreadId = teamsSessionThreadId({ activity: args.activity });
+        const chatThreadId = await findTeamsRoutedChatThreadId(args.db, {
+          connectionId: args.connection.id,
+          conversationId: args.activity.conversationId,
+          threadId: routeThreadId,
+          userId: args.connection.userId,
+        });
+        signal.throwIfAborted();
+        const currentModel = await readIntegrationChatThreadModel(args.db, {
+          orgId: args.installation.orgId,
+          userId: args.connection.userId,
+          chatThreadId,
+        });
+        signal.throwIfAborted();
+        if (!chatThreadId || !currentModel) {
+          return {
+            kind: "notice",
+            replyText:
+              "Start or enter an existing Okou conversation before using /model.",
+          };
+        }
         const picker = await set(
           teamsModelPickerState$,
           args.installation.orgId,
           args.connection.userId,
+          currentModel,
           signal,
         );
         signal.throwIfAborted();
@@ -1934,12 +1951,13 @@ const connectedCommandBeforeCompose$ = command(
         }
         return {
           kind: "notice",
-          replyText: "Choose the model for your Teams agent.",
+          replyText: "Choose the model for this Teams conversation.",
           card: buildTeamsModelPickerCard({
             options: picker.options,
             currentSelectedModel: picker.currentSelectedModel,
             routeConversationId: args.activity.conversationId,
-            routeThreadId: teamsSessionThreadId({ activity: args.activity }),
+            routeThreadId,
+            chatThreadId,
           }),
         };
       }
@@ -1984,17 +2002,47 @@ const connectedTeamsCardAction$ = command(
       args.activity.value,
       TEAMS_MODEL_PICKER_THREAD_KEY,
     );
-    if (!routeConversationId || !routeThreadId) {
+    const expectedChatThreadId = stringValue(
+      args.activity.value,
+      TEAMS_MODEL_PICKER_CHAT_THREAD_KEY,
+    );
+    if (!routeConversationId || !routeThreadId || !expectedChatThreadId) {
       return {
         kind: "notice",
         replyText: "This model picker is out of date. Send `/model` again.",
       };
     }
 
+    const chatThreadId = await findTeamsRoutedChatThreadId(args.db, {
+      connectionId: args.connection.id,
+      conversationId: routeConversationId,
+      threadId: routeThreadId,
+      userId: args.connection.userId,
+    });
+    signal.throwIfAborted();
+    if (!chatThreadId || chatThreadId !== expectedChatThreadId) {
+      return {
+        kind: "notice",
+        replyText: "This model picker is out of date. Send `/model` again.",
+      };
+    }
+    const currentModel = await readIntegrationChatThreadModel(args.db, {
+      orgId: args.installation.orgId,
+      userId: args.connection.userId,
+      chatThreadId,
+    });
+    signal.throwIfAborted();
+    if (!currentModel) {
+      return {
+        kind: "notice",
+        replyText: "This model picker is out of date. Send `/model` again.",
+      };
+    }
     const picker = await set(
       teamsModelPickerState$,
       args.installation.orgId,
       args.connection.userId,
+      currentModel,
       signal,
     );
     signal.throwIfAborted();
@@ -2007,12 +2055,6 @@ const connectedTeamsCardAction$ = command(
         replyText: "You don't have access to that model.",
       };
     }
-    const chatThreadId = await findTeamsRoutedChatThreadId(args.db, {
-      connectionId: args.connection.id,
-      conversationId: routeConversationId,
-      threadId: routeThreadId,
-      userId: args.connection.userId,
-    });
     signal.throwIfAborted();
     const threadModel = await set(
       updateIntegrationChatThreadModel$,
@@ -2024,21 +2066,15 @@ const connectedTeamsCardAction$ = command(
       },
       signal,
     );
-    if (threadModel.kind === "rejected") {
+    if (threadModel.kind !== "updated") {
       return {
         kind: "notice",
-        replyText: "You don't have access to that model.",
+        replyText:
+          threadModel.kind === "no_thread"
+            ? "This model picker is out of date. Send `/model` again."
+            : "You don't have access to that model.",
       };
     }
-    await set(
-      updateUserModelPreference$,
-      {
-        orgId: args.installation.orgId,
-        userId: args.connection.userId,
-        preference: { selectedModel: option.model, serviceTier: null },
-      },
-      signal,
-    );
     signal.throwIfAborted();
     return {
       kind: "notice",
