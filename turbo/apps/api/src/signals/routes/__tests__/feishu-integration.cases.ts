@@ -4189,7 +4189,7 @@ export function registerFeishuIntegrationTests(
         ).toBeTruthy();
         expect(
           commandReplies.some((content) => {
-            return content.includes("Choose a model");
+            return content.includes("existing Okou conversation");
           }),
         ).toBeTruthy();
         clearConnectorInvalidationMocks();
