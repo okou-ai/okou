@@ -172,6 +172,7 @@ import {
 import { lockWorkflowWebhookAutomationTierEligibleForOrg } from "./workflow-webhook-automation-entitlement.service";
 import {
   buildWorkflowWebhookSummaryFields,
+  workflowWebhookSummaryFields,
   defaultWebhookReceivedEventConfig,
   encryptWorkflowWebhookSecret,
   encryptWorkflowWebhookToken,
@@ -790,6 +791,24 @@ function stripeInvoicePaidRowToSummary(
   };
 }
 
+function stripeAutomationHealthSummary(
+  health:
+    | {
+        readonly lastMatchingEventReceivedAt: Date | null;
+        readonly lastDeliveryStatus: StripeWorkflowAutomationHealth["lastDeliveryStatus"];
+        readonly lastDeliveryStatusAt: Date | null;
+      }
+    | undefined,
+): StripeWorkflowAutomationHealth {
+  return {
+    lastMatchingEventReceivedAt:
+      health?.lastMatchingEventReceivedAt?.toISOString() ?? null,
+    lastDeliveryStatus: health?.lastDeliveryStatus ?? null,
+    lastDeliveryStatusAt: health?.lastDeliveryStatusAt?.toISOString() ?? null,
+    warning: health?.lastDeliveryStatus === "failed" ? "delivery_failed" : null,
+  };
+}
+
 async function loadStripeWorkflowAutomationHealth(
   db: ReadonlyDb,
   automationId: string,
@@ -805,13 +824,7 @@ async function loadStripeWorkflowAutomationHealth(
     .from(stripeWorkflowAutomationHealth)
     .where(eq(stripeWorkflowAutomationHealth.automationId, automationId))
     .limit(1);
-  return {
-    lastMatchingEventReceivedAt:
-      health?.lastMatchingEventReceivedAt?.toISOString() ?? null,
-    lastDeliveryStatus: health?.lastDeliveryStatus ?? null,
-    lastDeliveryStatusAt: health?.lastDeliveryStatusAt?.toISOString() ?? null,
-    warning: health?.lastDeliveryStatus === "failed" ? "delivery_failed" : null,
-  };
+  return stripeAutomationHealthSummary(health);
 }
 
 interface EventSummaryWarnings {
@@ -2281,61 +2294,76 @@ const createGmailEventAutomationForWorkflow$ = command(
   },
 );
 
-async function insertScheduleAutomation(
-  db: Db,
-  args: {
-    readonly input: CreateScheduleAutomationInput;
-    readonly workflowId: string;
-    readonly automationId?: string;
-    readonly columns: ScheduleColumns;
-    readonly nextRunAt: Date | null;
-    readonly currentTime: Date;
-  },
-): Promise<WorkflowAutomationSummary> {
-  return await db.transaction(async (tx) => {
-    // Preserve and lock an existing workflow-user binding without materializing
-    // an empty thread. The first scheduled or manual run creates one if absent.
-    const [binding] = await tx
-      .select({ chatThreadId: workflowUserAutomationThreads.chatThreadId })
-      .from(workflowUserAutomationThreads)
-      .where(
-        and(
-          eq(workflowUserAutomationThreads.orgId, args.input.orgId),
-          eq(workflowUserAutomationThreads.userId, args.input.member.userId),
-          eq(workflowUserAutomationThreads.workflowId, args.workflowId),
-        ),
-      )
-      .limit(1)
-      .for("update");
-    const chatThreadId = binding?.chatThreadId ?? null;
+const insertScheduleAutomation$ = command(
+  async (
+    { set },
+    args: {
+      readonly input: CreateScheduleAutomationInput;
+      readonly workflowId: string;
+      readonly automationId?: string;
+      readonly columns: ScheduleColumns;
+      readonly nextRunAt: Date | null;
+      readonly currentTime: Date;
+    },
+    signal: AbortSignal,
+  ): Promise<WorkflowAutomationSummary> => {
+    const db = set(writeDb$);
+    const summary = await db.transaction(async (tx) => {
+      // Preserve and lock an existing workflow-user binding without materializing
+      // an empty thread. The first scheduled or manual run creates one if absent.
+      const [binding] = await tx
+        .select({ chatThreadId: workflowUserAutomationThreads.chatThreadId })
+        .from(workflowUserAutomationThreads)
+        .where(
+          and(
+            eq(workflowUserAutomationThreads.orgId, args.input.orgId),
+            eq(workflowUserAutomationThreads.userId, args.input.member.userId),
+            eq(workflowUserAutomationThreads.workflowId, args.workflowId),
+          ),
+        )
+        .limit(1)
+        .for("update");
+      const chatThreadId = binding?.chatThreadId ?? null;
 
-    const row = await insertWorkflowAutomation(tx, {
-      id: args.automationId,
-      orgId: args.input.orgId,
-      workflowId: args.workflowId,
-      ownerUserId: args.input.member.userId,
-      kind: "schedule",
-      eventType: null,
-      eventConfig: null,
-      scheduleType: args.columns.scheduleType,
-      cronExpression: args.columns.cronExpression,
-      intervalSeconds: args.columns.intervalSeconds,
-      atTime: args.columns.atTime,
-      timezone: args.columns.timezone,
-      enabled: args.input.enabled,
-      nextRunAt: args.nextRunAt,
-      ...(args.input.autonomyBudget === undefined
-        ? {}
-        : { autonomyBudget: args.input.autonomyBudget }),
-      createdAt: args.currentTime,
-      updatedAt: args.currentTime,
+      const [row] = await tx
+        .insert(workflowAutomations)
+        .values({
+          id: args.automationId,
+          orgId: args.input.orgId,
+          workflowId: args.workflowId,
+          ownerUserId: args.input.member.userId,
+          kind: "schedule",
+          eventType: null,
+          eventConfig: null,
+          scheduleType: args.columns.scheduleType,
+          cronExpression: args.columns.cronExpression,
+          intervalSeconds: args.columns.intervalSeconds,
+          atTime: args.columns.atTime,
+          timezone: args.columns.timezone,
+          enabled: args.input.enabled,
+          nextRunAt: args.nextRunAt,
+          ...(args.input.autonomyBudget === undefined
+            ? {}
+            : { autonomyBudget: args.input.autonomyBudget }),
+          createdAt: args.currentTime,
+          updatedAt: args.currentTime,
+        })
+        .returning(workflowAutomationColumns());
+      if (!row) {
+        throw new Error("Failed to create workflow automation");
+      }
+      const schedule = rowToSchedule(row);
+      return {
+        ...rowSummaryBase(row, chatThreadId),
+        kind: "schedule" as const,
+        schedule,
+        scheduleSummary: summarizeSchedule(schedule),
+      };
     });
-    if (!row) {
-      throw new Error("Failed to create workflow automation");
-    }
-    return await rowToSummary(tx, row, { chatThreadId });
-  });
-}
+    signal.throwIfAborted();
+    return summary;
+  },
+);
 
 async function createWebhookEventAutomationForWorkflow(
   args: {
@@ -3348,222 +3376,304 @@ const createEventAutomationForWorkflow$ = command(
   },
 );
 
-async function lockPlainOfficialAutomation(
-  db: Db,
-  automationId: string,
-): Promise<AutomationRow> {
-  const [automation] = await db
-    .select()
-    .from(workflowAutomations)
-    .where(
-      and(
-        eq(workflowAutomations.id, automationId),
-        isNull(workflowAutomations.officialBlueprintKey),
-        isNull(workflowAutomations.officialAppliedFingerprint),
-        isNull(workflowAutomations.officialReconciliationStatus),
-        isNull(workflowAutomations.officialParameterBindings),
-        isNull(workflowAutomations.officialIntendedEnabled),
-        isNull(workflowAutomations.officialResultEmailEnabled),
-      ),
-    )
-    .for("update")
-    .limit(1);
-  if (!automation) {
-    throw new Error("Failed to lock new Official Workflow automation");
-  }
-  return automation;
-}
-
-async function stagedMaterializationReservationIsOwned(
-  db: Db,
-  automation: AutomationRow,
-  automationId: string,
-  metadata: OfficialAutomationCreationMetadata,
-): Promise<boolean> {
-  if (metadata.stagedMaterialization !== true) {
-    return true;
-  }
-  if (
-    metadata.automationId === undefined ||
-    metadata.automationId !== automationId ||
-    automation.enabled
-  ) {
-    throw new Error("Official materialization identity is incomplete");
-  }
-  const [reservation] = await db
-    .select({
-      retainedAppliedFingerprint:
-        officialWorkflowAutomationIdentities.retainedAppliedFingerprint,
-      retainedParameterBindings:
-        officialWorkflowAutomationIdentities.retainedParameterBindings,
-      retainedIntendedEnabled:
-        officialWorkflowAutomationIdentities.retainedIntendedEnabled,
-    })
-    .from(officialWorkflowAutomationIdentities)
-    .where(
-      and(
-        eq(officialWorkflowAutomationIdentities.id, metadata.automationId),
-        eq(
-          officialWorkflowAutomationIdentities.blueprintKey,
-          metadata.blueprintKey,
-        ),
-        eq(
-          officialWorkflowAutomationIdentities.workflowId,
-          automation.workflowId,
-        ),
-        eq(officialWorkflowAutomationIdentities.state, "reconciling"),
-        isNull(officialWorkflowAutomationIdentities.automationId),
-      ),
-    )
-    .for("update")
-    .limit(1);
-  return (
-    reservation?.retainedAppliedFingerprint === metadata.appliedFingerprint &&
-    isDeepStrictEqual(
-      reservation.retainedParameterBindings,
-      metadata.parameterBindings,
-    ) &&
-    reservation.retainedIntendedEnabled === (metadata.intendedEnabled ?? true)
+function plainOfficialAutomationWhere(automationId: string) {
+  return and(
+    eq(workflowAutomations.id, automationId),
+    isNull(workflowAutomations.officialBlueprintKey),
+    isNull(workflowAutomations.officialAppliedFingerprint),
+    isNull(workflowAutomations.officialReconciliationStatus),
+    isNull(workflowAutomations.officialParameterBindings),
+    isNull(workflowAutomations.officialIntendedEnabled),
+    isNull(workflowAutomations.officialResultEmailEnabled),
   );
 }
 
-async function upsertCreatedOfficialAutomationIdentity(
-  db: Db,
-  automation: AutomationRow,
+function officialAutomationMetadataValues(
   metadata: OfficialAutomationCreationMetadata,
-  currentTime: Date,
-): Promise<void> {
-  await db
-    .insert(officialWorkflowAutomationIdentities)
-    .values({
-      id: automation.id,
-      workflowId: automation.workflowId,
-      automationId: automation.id,
-      blueprintKey: metadata.blueprintKey,
-      state: "active",
-      retainedParameterBindings: null,
-      retainedIntendedEnabled: null,
-      retainedAppliedFingerprint: null,
-      createdAt: currentTime,
-      updatedAt: currentTime,
-    })
-    .onConflictDoUpdate({
-      target: [
-        officialWorkflowAutomationIdentities.workflowId,
-        officialWorkflowAutomationIdentities.blueprintKey,
-      ],
-      set: {
-        automationId: automation.id,
-        state: "active",
-        retainedParameterBindings: null,
-        retainedIntendedEnabled: null,
-        retainedAppliedFingerprint: null,
-        updatedAt: currentTime,
-      },
-    });
-}
-
-async function persistOfficialAutomationMetadata(
-  db: Db,
-  automationId: string,
-  metadata: OfficialAutomationCreationMetadata,
+  at: Date,
 ) {
-  const plain = await lockPlainOfficialAutomation(db, automationId);
-  if (
-    !(await stagedMaterializationReservationIsOwned(
-      db,
-      plain,
-      automationId,
-      metadata,
-    ))
-  ) {
-    return { kind: "reservation-lost" as const };
-  }
-  const currentTime = nowDate();
-  const [updated] = await db
-    .update(workflowAutomations)
-    .set({
-      officialBlueprintKey: metadata.blueprintKey,
-      officialAppliedFingerprint: metadata.appliedFingerprint,
-      officialReconciliationStatus:
-        metadata.stagedMaterialization === true ? "reconciling" : "current",
-      officialParameterBindings: [...metadata.parameterBindings],
-      officialIntendedEnabled: metadata.intendedEnabled ?? true,
-      officialResultEmailEnabled: metadata.resultEmailEnabled,
-      updatedAt: currentTime,
-    })
-    .where(
-      and(
-        eq(workflowAutomations.id, automationId),
-        eq(workflowAutomations.updatedAt, plain.updatedAt),
-        isNull(workflowAutomations.officialBlueprintKey),
-        isNull(workflowAutomations.officialAppliedFingerprint),
-        isNull(workflowAutomations.officialReconciliationStatus),
-        isNull(workflowAutomations.officialParameterBindings),
-        isNull(workflowAutomations.officialIntendedEnabled),
-        isNull(workflowAutomations.officialResultEmailEnabled),
-      ),
-    )
-    .returning(workflowAutomationColumns());
-  if (!updated) {
-    throw new Error("Failed to mark Official Workflow automation");
-  }
-  if (metadata.stagedMaterialization !== true) {
-    await upsertCreatedOfficialAutomationIdentity(
-      db,
-      updated,
-      metadata,
-      currentTime,
-    );
-  }
-  return { kind: "attached" as const, row: updated };
-}
-
-async function attachOfficialAutomationMetadata(
-  db: Db,
-  result: AutomationResult,
-  metadata: OfficialAutomationCreationMetadata | undefined,
-  signal: AbortSignal,
-): Promise<AutomationResult> {
-  if (result.kind !== "ok" || metadata === undefined) {
-    return result;
-  }
-  const attached = await db.transaction(async (tx) => {
-    return await persistOfficialAutomationMetadata(
-      tx,
-      result.summary.id,
-      metadata,
-    );
-  });
-  signal.throwIfAborted();
-  if (attached.kind === "reservation-lost") {
-    await db
-      .delete(workflowAutomations)
-      .where(
-        and(
-          eq(workflowAutomations.id, result.summary.id),
-          eq(workflowAutomations.enabled, false),
-          isNull(workflowAutomations.officialBlueprintKey),
-          isNull(workflowAutomations.officialAppliedFingerprint),
-          isNull(workflowAutomations.officialReconciliationStatus),
-          isNull(workflowAutomations.officialParameterBindings),
-          isNull(workflowAutomations.officialIntendedEnabled),
-          isNull(workflowAutomations.officialResultEmailEnabled),
-        ),
-      );
-    signal.throwIfAborted();
-    return {
-      kind: "conflict",
-      message: "Official Workflow reconciliation was superseded",
-    };
-  }
   return {
-    kind: "ok",
-    summary: await rowToSummary(db, attached.row, {
-      chatThreadId: result.summary.chatThreadId,
-    }),
+    officialBlueprintKey: metadata.blueprintKey,
+    officialAppliedFingerprint: metadata.appliedFingerprint,
+    officialReconciliationStatus:
+      metadata.stagedMaterialization === true
+        ? ("reconciling" as const)
+        : ("current" as const),
+    officialParameterBindings: [...metadata.parameterBindings],
+    officialIntendedEnabled: metadata.intendedEnabled ?? true,
+    officialResultEmailEnabled: metadata.resultEmailEnabled,
+    updatedAt: at,
   };
 }
+
+function activeOfficialAutomationIdentityValues(
+  automation: AutomationRow,
+  metadata: OfficialAutomationCreationMetadata,
+  at: Date,
+) {
+  return {
+    id: automation.id,
+    workflowId: automation.workflowId,
+    automationId: automation.id,
+    blueprintKey: metadata.blueprintKey,
+    state: "active" as const,
+    retainedParameterBindings: null,
+    retainedIntendedEnabled: null,
+    retainedAppliedFingerprint: null,
+    createdAt: at,
+    updatedAt: at,
+  };
+}
+
+const persistOfficialAutomationMetadata$ = command(
+  async (
+    { set },
+    args: {
+      readonly automationId: string;
+      readonly metadata: OfficialAutomationCreationMetadata;
+    },
+    signal: AbortSignal,
+  ) => {
+    const db = set(writeDb$);
+    const { automationId, metadata } = args;
+    const result = await db.transaction(async (tx) => {
+      const [plain] = await tx
+        .select()
+        .from(workflowAutomations)
+        .where(plainOfficialAutomationWhere(automationId))
+        .for("update")
+        .limit(1);
+      if (!plain) {
+        throw new Error("Failed to lock new Official Workflow automation");
+      }
+      if (metadata.stagedMaterialization === true) {
+        if (
+          metadata.automationId === undefined ||
+          metadata.automationId !== automationId ||
+          plain.enabled
+        ) {
+          throw new Error("Official materialization identity is incomplete");
+        }
+        const [reservation] = await tx
+          .select({
+            retainedAppliedFingerprint:
+              officialWorkflowAutomationIdentities.retainedAppliedFingerprint,
+            retainedParameterBindings:
+              officialWorkflowAutomationIdentities.retainedParameterBindings,
+            retainedIntendedEnabled:
+              officialWorkflowAutomationIdentities.retainedIntendedEnabled,
+          })
+          .from(officialWorkflowAutomationIdentities)
+          .where(
+            and(
+              eq(
+                officialWorkflowAutomationIdentities.id,
+                metadata.automationId,
+              ),
+              eq(
+                officialWorkflowAutomationIdentities.blueprintKey,
+                metadata.blueprintKey,
+              ),
+              eq(
+                officialWorkflowAutomationIdentities.workflowId,
+                plain.workflowId,
+              ),
+              eq(officialWorkflowAutomationIdentities.state, "reconciling"),
+              isNull(officialWorkflowAutomationIdentities.automationId),
+            ),
+          )
+          .for("update")
+          .limit(1);
+        if (
+          reservation?.retainedAppliedFingerprint !==
+            metadata.appliedFingerprint ||
+          !isDeepStrictEqual(
+            reservation.retainedParameterBindings,
+            metadata.parameterBindings,
+          ) ||
+          reservation.retainedIntendedEnabled !==
+            (metadata.intendedEnabled ?? true)
+        ) {
+          return { kind: "reservation-lost" as const };
+        }
+      }
+      const at = nowDate();
+      const [updated] = await tx
+        .update(workflowAutomations)
+        .set(officialAutomationMetadataValues(metadata, at))
+        .where(
+          and(
+            plainOfficialAutomationWhere(automationId),
+            eq(workflowAutomations.updatedAt, plain.updatedAt),
+          ),
+        )
+        .returning(workflowAutomationColumns());
+      if (!updated) {
+        throw new Error("Failed to mark Official Workflow automation");
+      }
+      if (metadata.stagedMaterialization !== true) {
+        await tx
+          .insert(officialWorkflowAutomationIdentities)
+          .values(activeOfficialAutomationIdentityValues(updated, metadata, at))
+          .onConflictDoUpdate({
+            target: [
+              officialWorkflowAutomationIdentities.workflowId,
+              officialWorkflowAutomationIdentities.blueprintKey,
+            ],
+            set: {
+              automationId: updated.id,
+              state: "active",
+              retainedParameterBindings: null,
+              retainedIntendedEnabled: null,
+              retainedAppliedFingerprint: null,
+              updatedAt: at,
+            },
+          });
+      }
+      return { kind: "attached" as const, row: updated };
+    });
+    signal.throwIfAborted();
+    return result;
+  },
+);
+
+const loadCommittedAutomationSummary$ = command(
+  async (
+    { set },
+    args: { readonly row: AutomationRow; readonly chatThreadId: string | null },
+    signal: AbortSignal,
+  ): Promise<WorkflowAutomationSummary> => {
+    const db = set(writeDb$);
+    const { row, chatThreadId } = args;
+    if (row.kind === "event") {
+      if (row.eventType === "stripe-invoice-paid") {
+        const [health] = await db
+          .select({
+            lastMatchingEventReceivedAt:
+              stripeWorkflowAutomationHealth.lastMatchingEventReceivedAt,
+            lastDeliveryStatus:
+              stripeWorkflowAutomationHealth.latestDeliveryStatus,
+            lastDeliveryStatusAt:
+              stripeWorkflowAutomationHealth.latestDeliveryStatusAt,
+          })
+          .from(stripeWorkflowAutomationHealth)
+          .where(eq(stripeWorkflowAutomationHealth.automationId, row.id))
+          .limit(1);
+        signal.throwIfAborted();
+        return stripeInvoicePaidRowToSummary(
+          row,
+          chatThreadId,
+          stripeAutomationHealthSummary(health),
+        );
+      }
+      if (row.eventType === "webhook-received") {
+        const [webhook] = await db
+          .select()
+          .from(workflowWebhookAutomations)
+          .where(eq(workflowWebhookAutomations.automationId, row.id))
+          .limit(1);
+        signal.throwIfAborted();
+        if (!webhook) {
+          throw new Error(
+            `Workflow webhook automation config missing: ${row.id}`,
+          );
+        }
+        return {
+          ...rowSummaryBase(row, chatThreadId),
+          kind: "event",
+          eventType: "webhook-received",
+          eventConfig: webhookReceivedEventConfigSchema.parse(row.eventConfig),
+          schedule: null,
+          scheduleSummary: null,
+          ...workflowWebhookSummaryFields(webhook, {}),
+        };
+      }
+      let warning: GoogleCalendarWatchActionRequiredReason | undefined;
+      const calendarId = googleCalendarIdFromAutomationRow(row);
+      if (calendarId !== null && row.eventConnectorId !== null) {
+        const [state] = await db
+          .select({
+            reason: googleCalendarWatchStates.actionRequiredReason,
+            startedAt: googleCalendarWatchStates.actionRequiredAt,
+          })
+          .from(googleCalendarWatchStates)
+          .where(
+            and(
+              eq(googleCalendarWatchStates.orgId, row.orgId),
+              eq(googleCalendarWatchStates.userId, row.ownerUserId),
+              eq(googleCalendarWatchStates.connectorId, row.eventConnectorId),
+              eq(googleCalendarWatchStates.calendarId, calendarId),
+            ),
+          )
+          .limit(1);
+        signal.throwIfAborted();
+        if (state && (state.reason === null) !== (state.startedAt === null)) {
+          throw new Error("Incomplete Google Calendar action-required episode");
+        }
+        warning = state?.reason ?? undefined;
+      }
+      const summary = eventRowToSummary(row, chatThreadId, {
+        googleCalendar: warning,
+      });
+      if (summary) {
+        return summary;
+      }
+    }
+    const schedule = rowToSchedule(row);
+    return {
+      ...rowSummaryBase(row, chatThreadId),
+      kind: "schedule",
+      schedule,
+      scheduleSummary: summarizeSchedule(schedule),
+    };
+  },
+);
+
+const attachOfficialAutomationMetadata$ = command(
+  async (
+    { set },
+    args: {
+      readonly result: AutomationResult;
+      readonly metadata: OfficialAutomationCreationMetadata | undefined;
+    },
+    signal: AbortSignal,
+  ): Promise<AutomationResult> => {
+    const { result, metadata } = args;
+    if (result.kind !== "ok" || metadata === undefined) {
+      return result;
+    }
+    const attached = await set(
+      persistOfficialAutomationMetadata$,
+      { automationId: result.summary.id, metadata },
+      signal,
+    );
+    if (attached.kind === "reservation-lost") {
+      const db = set(writeDb$);
+      await db
+        .delete(workflowAutomations)
+        .where(
+          and(
+            plainOfficialAutomationWhere(result.summary.id),
+            eq(workflowAutomations.enabled, false),
+          ),
+        );
+      signal.throwIfAborted();
+      return {
+        kind: "conflict",
+        message: "Official Workflow reconciliation was superseded",
+      };
+    }
+    const summary = await set(
+      loadCommittedAutomationSummary$,
+      {
+        row: attached.row,
+        chatThreadId: result.summary.chatThreadId,
+      },
+      signal,
+    );
+    return { kind: "ok", summary };
+  },
+);
 export const createWorkflowAutomation$ = command(
   async (
     { set },
@@ -3635,10 +3745,12 @@ export const createWorkflowAutomation$ = command(
         signal,
       );
       signal.throwIfAborted();
-      const result = await attachOfficialAutomationMetadata(
-        writeDb,
-        created,
-        args.officialInstallation,
+      const result = await set(
+        attachOfficialAutomationMetadata$,
+        {
+          result: created,
+          metadata: args.officialInstallation,
+        },
         signal,
       );
       if (result.kind === "ok") {
@@ -3657,19 +3769,25 @@ export const createWorkflowAutomation$ = command(
     }
     const cols = scheduleToColumns(args.schedule);
     const nextRunAt = resolveNextRunAt(args.schedule, args.enabled, now);
-    const summary = await insertScheduleAutomation(writeDb, {
-      input: args,
-      workflowId: workflow.id,
-      automationId: args.officialInstallation?.automationId,
-      columns: cols,
-      nextRunAt,
-      currentTime: now,
-    });
+    const summary = await set(
+      insertScheduleAutomation$,
+      {
+        input: args,
+        workflowId: workflow.id,
+        automationId: args.officialInstallation?.automationId,
+        columns: cols,
+        nextRunAt,
+        currentTime: now,
+      },
+      signal,
+    );
     signal.throwIfAborted();
-    const attached = await attachOfficialAutomationMetadata(
-      writeDb,
-      { kind: "ok", summary },
-      args.officialInstallation,
+    const attached = await set(
+      attachOfficialAutomationMetadata$,
+      {
+        result: { kind: "ok", summary },
+        metadata: args.officialInstallation,
+      },
       signal,
     );
     if (attached.kind !== "ok") {

@@ -80,6 +80,14 @@ transaction handles to another function.
   UPDATE before callbacks can observe the Run, without a workflow-supplied
   transaction callback.
 
+- Schedule automation insertion now owns its exact binding-row lock and
+  automation INSERT in `insertScheduleAutomation$`; it does not materialize an
+  empty thread. Official automation metadata attachment owns its exact plain-row
+  lock, staged reservation verification, conditional metadata UPDATE and active
+  identity publication in `persistOfficialAutomationMetadata$`. Pure field and
+  predicate builders receive ordinary values only. The response's committed
+  Stripe/Calendar/webhook reads run after that transaction in an owning command.
+
 ## Implementation still required
 
 These are implementation tasks, not conditions satisfied by draining old API
@@ -90,7 +98,10 @@ requests:
   a fixed row bound remains to be implemented without revoking a winner before
   its new occurrence is admitted.
 - Morning Brief preference, native delivery, installation/reconciliation and
-  revocation still have inherited native-authority helper chains. The absent
+  revocation still have inherited native-authority helper chains. Event automation
+  creation and workflow copy still propagate handles through the shared thread
+  initializer; schedule insertion and Official metadata attachment are completed
+  boundaries, not completion of those enclosing creation graphs. The absent
   native-owner key remains necessary for the current shared writer protocol:
   first materialization can otherwise race an ordinary/selected classification.
   Preparing its terminal protocol is still implementation work, not merely an

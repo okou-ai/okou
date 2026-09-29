@@ -112,6 +112,25 @@ async function decryptWorkflowWebhookSecret(
   });
 }
 
+export function workflowWebhookSummaryFields(
+  webhook: WebhookAutomationRow,
+  args: { readonly webhookToken?: string; readonly webhookSecret?: string },
+) {
+  return {
+    ...(args.webhookToken
+      ? {
+          webhookUrl: workflowWebhookUrlForToken(args.webhookToken),
+        }
+      : {}),
+    secretLastFour: webhook.secretLastFour,
+    disabledReason: webhook.disabledReason,
+    lastReceivedAt: webhook.lastReceivedAt
+      ? webhook.lastReceivedAt.toISOString()
+      : null,
+    ...(args.webhookSecret ? { webhookSecret: args.webhookSecret } : {}),
+  };
+}
+
 export async function buildWorkflowWebhookSummaryFields(
   db: ReadonlyDb,
   args: { readonly automation: AutomationRow } & (
@@ -142,19 +161,7 @@ export async function buildWorkflowWebhookSummaryFields(
     );
   }
 
-  return {
-    ...(args.webhookToken
-      ? {
-          webhookUrl: workflowWebhookUrlForToken(args.webhookToken),
-        }
-      : {}),
-    secretLastFour: webhook.secretLastFour,
-    disabledReason: webhook.disabledReason,
-    lastReceivedAt: webhook.lastReceivedAt
-      ? webhook.lastReceivedAt.toISOString()
-      : null,
-    ...(args.webhookSecret ? { webhookSecret: args.webhookSecret } : {}),
-  };
+  return workflowWebhookSummaryFields(webhook, args);
 }
 
 export async function revealWorkflowWebhookSecretFields(
