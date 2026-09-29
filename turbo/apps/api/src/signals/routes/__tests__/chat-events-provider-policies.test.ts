@@ -1782,7 +1782,7 @@ describe("CHAT-02: model-first provider policies", () => {
       [
         "claude-sonnet-5",
         "claude-fable-5-1",
-        "gpt-6-luna",
+        "gpt-5.6-luna",
         "deepseek-v4-flash",
       ] as const
     ).flatMap((model) => {
