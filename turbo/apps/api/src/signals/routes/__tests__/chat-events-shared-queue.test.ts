@@ -804,7 +804,7 @@ describe("CHAT-02: shared user message queue", () => {
       context,
       rotatedAnchor.threadId,
     );
-    expect(rotatedBinding.agent_session_id).not.toBe(
+    expect(rotatedBinding.agent_session_id).toBe(
       originalBinding.agent_session_id,
     );
     const rotatedClaim = await claimChatRun(runnerGroup, rotatedRunId);

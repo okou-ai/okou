@@ -18,7 +18,7 @@ import {
   type DiscordAccessMode,
 } from "./discord-provider-access";
 
-type DiscordBindingAccess =
+export type DiscordBindingAccess =
   | {
       kind: "allowed";
       binding: DiscordVerifiedBinding;

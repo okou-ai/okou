@@ -18,7 +18,6 @@ import {
   type OrgRole,
 } from "@okouai/api-contracts/contracts/org-members";
 import { usagePackUsdSchema } from "@okouai/api-contracts/contracts/billing";
-
 import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import {
   clerk$,
@@ -370,7 +369,7 @@ export const leaveOrg$ = command(
         });
       },
       (slots) => {
-        set(scheduleReleasedSlotPicks$, slots);
+        set(scheduleReleasedSlotPicks$, slots, signal);
       },
     );
     signal.throwIfAborted();
@@ -438,7 +437,7 @@ export const removeOrgMember$ = command(
         });
       },
       (slots) => {
-        set(scheduleReleasedSlotPicks$, slots);
+        set(scheduleReleasedSlotPicks$, slots, signal);
       },
     );
     signal.throwIfAborted();

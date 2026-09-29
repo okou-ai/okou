@@ -650,6 +650,21 @@ export async function ensureOrgModelPolicyFacts(
     orgId,
     suppliedPlanCapabilities,
   );
+  return await ensureOrgModelPolicyFactsFromSnapshot(
+    db,
+    orgId,
+    userId,
+    initial,
+  );
+}
+
+/** Apply the existing initialization policy to an already-read request snapshot. */
+export function ensureOrgModelPolicyFactsFromSnapshot(
+  db: Db,
+  orgId: string,
+  userId: string,
+  initial: EnsuredOrgModelPolicyFacts,
+): Promise<EnsuredOrgModelPolicyFacts> {
   const capabilities = modelPolicyCapabilities(initial.orgPlanCapabilities);
   if (
     initial.policies.length > 0 &&
@@ -660,7 +675,7 @@ export async function ensureOrgModelPolicyFacts(
       capabilities,
     )
   ) {
-    return initial;
+    return Promise.resolve(initial);
   }
   return db.transaction(async (tx) => {
     await lockPolicyWrites(tx, orgId);

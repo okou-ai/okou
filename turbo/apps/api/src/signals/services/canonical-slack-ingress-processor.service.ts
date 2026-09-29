@@ -9,7 +9,6 @@ import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
 import { and, asc, eq, gte, lte, lt, or, sql } from "drizzle-orm";
 import { z } from "zod";
-
 import { logger } from "../../lib/log";
 import {
   enrichMessageContent,
@@ -836,27 +835,32 @@ export const processCanonicalSlackIngress$ = command(
         );
         signal.throwIfAborted();
         // Enqueue, then the background pick, then the UI realtime events.
-        set(scheduleEnqueuedChatThreadPick$, {
-          chatThreadId: ingress.chatThreadId,
-          afterPick: async (pick, pickSignal) => {
-            await settleCanonicalSlackStatusAfterPick(
-              db,
-              { ingress, ingressId: args.ingressId, reason: pick.reason },
-              pickSignal,
-            );
+        set(
+          scheduleEnqueuedChatThreadPick$,
+          {
+            orgId: ingress.orgId,
+            chatThreadId: ingress.chatThreadId,
+            afterPick: async (pick, pickSignal) => {
+              await settleCanonicalSlackStatusAfterPick(
+                db,
+                { ingress, ingressId: args.ingressId, reason: pick.reason },
+                pickSignal,
+              );
+            },
+            publish: async () => {
+              await publishChatThreadMessageCreatedSafely({
+                userId: ingress.userId,
+                orgId: ingress.orgId,
+                threadId: ingress.chatThreadId,
+              });
+              await publishThreadListChangedSafely({
+                userId: ingress.userId,
+                orgId: ingress.orgId,
+              });
+            },
           },
-          publish: async () => {
-            await publishChatThreadMessageCreatedSafely({
-              userId: ingress.userId,
-              orgId: ingress.orgId,
-              threadId: ingress.chatThreadId,
-            });
-            await publishThreadListChangedSafely({
-              userId: ingress.userId,
-              orgId: ingress.orgId,
-            });
-          },
-        });
+          signal,
+        );
         return true;
       })(),
       signal,

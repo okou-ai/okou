@@ -1,6 +1,6 @@
 import type { OfficialWorkflowBlueprintBindings } from "@okouai/api-contracts/contracts/official-workflow-catalog";
-import { command, createStore, state, type Command } from "ccstate";
-
+import { command, type Command } from "ccstate";
+import { singleton } from "../../lib/singleton";
 import type { WorkflowMember } from "./workflow-data.service";
 
 export type OfficialWorkflowReconciliationResult =
@@ -38,28 +38,27 @@ type OfficialWorkflowReconciliationCommand = Command<
   [OfficialWorkflowReconciliationArgs, AbortSignal]
 >;
 
-const configuredOfficialWorkflowReconciliationCommand$ = state<
-  OfficialWorkflowReconciliationCommand | undefined
->(undefined);
-// eslint-disable-next-line ccstate/no-create-store -- Pre-2026-09-29 legacy only; no new violations or suppressions. Command registry; replace with an explicit process owner.
-const configurationStore = createStore();
+// This is process-level composition identity, not request-owned signal state.
+class OfficialWorkflowReconciliationRegistry {
+  command: OfficialWorkflowReconciliationCommand | undefined;
+}
+
+const reconciliationRegistry = singleton(() => {
+  return new OfficialWorkflowReconciliationRegistry();
+});
 
 /** Configure Official Workflow reconciliation from the API composition root. */
 export function configureOfficialWorkflowReconciliationCommand(
   commandValue: OfficialWorkflowReconciliationCommand,
 ): void {
-  const configuredCommand = configurationStore.get(
-    configuredOfficialWorkflowReconciliationCommand$,
-  );
+  const registry = reconciliationRegistry();
+  const configuredCommand = registry.command;
   if (configuredCommand !== undefined && configuredCommand !== commandValue) {
     throw new Error(
       "Official Workflow reconciliation command is already configured",
     );
   }
-  configurationStore.set(
-    configuredOfficialWorkflowReconciliationCommand$,
-    commandValue,
-  );
+  registry.command = commandValue;
 }
 
 export const dispatchConfiguredOfficialWorkflowReconciliation$ = command(
@@ -68,9 +67,7 @@ export const dispatchConfiguredOfficialWorkflowReconciliation$ = command(
     args: OfficialWorkflowReconciliationArgs,
     signal: AbortSignal,
   ): Promise<OfficialWorkflowReconciliationResult> => {
-    const commandValue = configurationStore.get(
-      configuredOfficialWorkflowReconciliationCommand$,
-    );
+    const commandValue = reconciliationRegistry().command;
     if (commandValue === undefined) {
       throw new Error(
         "Official Workflow reconciliation command is not configured",

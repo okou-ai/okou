@@ -1605,22 +1605,27 @@ const runAgentForAgentPhone$ = command(
       orgId: args.userLink.orgId,
     });
     signal.throwIfAborted();
-    set(scheduleEnqueuedChatThreadPick$, {
-      chatThreadId: persisted.chatThreadId,
-      afterPick: async (pick, pickSignal) => {
-        const notice = chatQueueWaitNotice(pick.reason);
-        if (notice) {
-          await sendAgentPhoneText(args.event, notice, pickSignal);
-        }
+    set(
+      scheduleEnqueuedChatThreadPick$,
+      {
+        orgId: args.userLink.orgId,
+        chatThreadId: persisted.chatThreadId,
+        afterPick: async (pick, pickSignal) => {
+          const notice = chatQueueWaitNotice(pick.reason);
+          if (notice) {
+            await sendAgentPhoneText(args.event, notice, pickSignal);
+          }
+        },
+        publish: async () => {
+          await publishChatThreadMessageCreatedSafely({
+            userId: args.userLink.userId,
+            orgId: args.userLink.orgId,
+            threadId: persisted.chatThreadId,
+          });
+        },
       },
-      publish: async () => {
-        await publishChatThreadMessageCreatedSafely({
-          userId: args.userLink.userId,
-          orgId: args.userLink.orgId,
-          threadId: persisted.chatThreadId,
-        });
-      },
-    });
+      signal,
+    );
   },
 );
 

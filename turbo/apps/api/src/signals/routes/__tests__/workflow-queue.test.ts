@@ -1,12 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
-
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { modelProvidersByTypeContract } from "@okouai/api-contracts/contracts/model-provider-routes";
 import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
 import { testWorkflowAutomationExecutionContract } from "@okouai/api-contracts/contracts/test-workflow-automation-execution";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
 import { aroundEach, it, describe, beforeEach } from "vitest";
-
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createApp } from "../../../app-factory";
@@ -1465,7 +1463,7 @@ describe("workflow queue", () => {
     );
   });
 
-  it("re-arms a recurring schedule after an unexpected queue assembly failure", async () => {
+  it("preserves a queued schedule after an infrastructure failure until the lease expires", async () => {
     mockNow(Date.UTC(2020, 0, 1));
     const scenario = await setup();
     const webhookAutomation = await createWebhookAutomation(scenario);
@@ -1494,44 +1492,71 @@ describe("workflow queue", () => {
       throw new Error("Expected the busy thread to retain the scheduled input");
     }
 
+    const beforeFailure = await wf.readAutomation(created.body.id);
+
     // The production API cannot cause a database cancellation. Inject that
     // infrastructure fault only for this queued input's first context read,
     // before assembly has loaded any schedule bookkeeping.
     await withWorkflowQueueAssemblyFailureFixture(queued.id, async () => {
-      await completeRunThroughSandbox(scenario, busyRunId);
+      await expect(
+        completeRunThroughSandbox(scenario, busyRunId),
+      ).rejects.toMatchObject({ cause: { code: "57014" } });
     });
 
     const events = await wf.readThreadEvents(webhookAutomation.threadId);
-    expect(events).toContainEqual(
+    expect(events).not.toContainEqual(
       expect.objectContaining({
         eventType: "input.rejected",
-        error: "internal_error",
         revokesEventId: queued.id,
       }),
     );
     await expect(
       pendingAutomationEvents(webhookAutomation.threadId),
-    ).resolves.toHaveLength(0);
+    ).resolves.toStrictEqual([queued]);
     await expect(
       workflowRunIds(webhookAutomation.threadId),
     ).resolves.toStrictEqual([busyRunId]);
     const automation = await wf.readAutomation(created.body.id);
-    expect(automation.enabled).toBeTruthy();
-    expect(automation.nextRunAt).toBe(
-      new Date(firedAt + 3600 * 1000).toISOString(),
-    );
-    if (!automation.nextRunAt) {
-      throw new Error("Expected the rejected recurring schedule to re-arm");
-    }
+    expect(automation.enabled).toBe(beforeFailure.enabled);
+    expect(automation.nextRunAt).toBe(beforeFailure.nextRunAt);
 
-    mockNow(Date.parse(automation.nextRunAt) + 60_000);
-    await executeDueWorkflowAutomations(created.body.id);
+    // A separate organization wake cannot take the failed pick's live lease.
+    await refreshConcurrencyEntitlement(
+      scenario.actor,
+      scenario.customerId,
+      context.signal,
+    );
+    await expect(
+      pendingAutomationEvents(webhookAutomation.threadId),
+    ).resolves.toStrictEqual([queued]);
+
+    // Advance the controllable clock past the lease; the next independent
+    // wake consumes the same durable input, rather than a new schedule tick.
+    mockNow(firedAt + 60_001);
+    await refreshConcurrencyEntitlement(
+      scenario.actor,
+      scenario.customerId,
+      context.signal,
+    );
+    await expect(
+      pendingAutomationEvents(webhookAutomation.threadId),
+    ).resolves.toStrictEqual([]);
     const recoveredRunIds = await workflowRunIds(webhookAutomation.threadId);
     expect(recoveredRunIds).toHaveLength(2);
     const recoveredRunId = recoveredRunIds[1];
     if (!recoveredRunId) {
-      throw new Error("Expected the next recurring tick to launch a run");
+      throw new Error("Expected the retained schedule input to launch a run");
     }
+    const recoveredEvents = await wf.readThreadEvents(
+      webhookAutomation.threadId,
+    );
+    expect(recoveredEvents).toContainEqual(
+      expect.objectContaining({
+        eventType: "input.prompt",
+        revokesEventId: queued.id,
+        runId: recoveredRunId,
+      }),
+    );
     await completeRunThroughSandbox(scenario, recoveredRunId);
   });
 

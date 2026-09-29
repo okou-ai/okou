@@ -16,6 +16,7 @@ import { canonicalChatEventContent } from "./canonical-chat-event-read.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
 import { requireDiscordConversationAccess$ } from "./discord-access.service";
 import type { DiscordDeliveryTarget } from "./discord-chat-callback-payload";
+import type { DiscordChatAccessChecker } from "./discord-chat-route-access.service";
 import {
   resolveIntegrationAdmissionFailurePresentation,
   resolveIntegrationAgentResponsePresentation,
@@ -25,6 +26,7 @@ const L = logger("DiscordChatDelivery");
 
 /** A canonical chat event to post to the Discord conversation it answers. */
 export interface DiscordReplyRequest {
+  readonly checkAccess?: DiscordChatAccessChecker;
   readonly chatEventId: string;
   readonly chatThreadId: string;
   readonly orgId: string;
@@ -41,11 +43,24 @@ export interface DiscordIngressNotice {
 }
 
 interface Destination {
+  readonly checkAccess?: DiscordChatAccessChecker;
   readonly connectionId: string;
   readonly orgId: string;
   readonly userId: string;
   readonly channelId: string;
   readonly routeId: string | null;
+}
+
+async function legacyReplyAccess(
+  args: Parameters<DiscordChatAccessChecker>[0],
+  signal: AbortSignal,
+) {
+  // eslint-disable-next-line ccstate/no-create-store -- Pre-2026-09-29 legacy only; no new violations or suppressions. Reply access check; migrate to the request command graph.
+  return await createStore().set(
+    requireDiscordConversationAccess$,
+    args,
+    signal,
+  );
 }
 
 async function currentDestinationAccess(
@@ -96,9 +111,8 @@ async function currentDestinationAccess(
       return null;
     }
   }
-  // eslint-disable-next-line ccstate/no-create-store -- Pre-2026-09-29 legacy only; no new violations or suppressions. Reply access check; migrate to the request command graph.
-  const access = await createStore().set(
-    requireDiscordConversationAccess$,
+  const checkAccess = destination.checkAccess ?? legacyReplyAccess;
+  const access = await checkAccess(
     {
       orgId: destination.orgId,
       userId: destination.userId,
@@ -241,6 +255,7 @@ async function sendReply(
     db,
     {
       connectionId: request.target.connectionId,
+      checkAccess: request.checkAccess,
       orgId: request.orgId,
       userId: request.userId,
       channelId: request.target.channelId,

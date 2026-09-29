@@ -1,6 +1,5 @@
 import { Client } from "pg";
 import { z } from "zod";
-
 import { closeDbPool } from "../lib/db";
 import { settleIncludingAbort } from "../signals/utils";
 import {
@@ -11,8 +10,8 @@ import {
 /**
  * Cancel the first read of one owned queued automation's context. No API can
  * cause a PostgreSQL cancellation at this boundary. The real server produces
- * the error, and only this event's first query is affected; rejection and
- * schedule settlement use the healthy database afterwards.
+ * the error, and only this event's first query is affected; later independent
+ * wakeups use the healthy database after the picker lease expires.
  */
 export async function withWorkflowQueueAssemblyFailureFixture(
   queueEventId: string,

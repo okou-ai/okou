@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto";
+import { PRIVATE_ARTIFACT_CACHE_CONTROL } from "@okouai/api-contracts/contracts/artifact-cache";
 import { systemStoragePresignedUrlCache } from "@okouai/db/schema/system-storage-presigned-url-cache";
 import { command, computed, type Computed } from "ccstate";
 import { and, eq, inArray, like, lte, sql } from "drizzle-orm";
 import { z } from "zod";
-
-import { joinAll, safeSync } from "../utils";
+import { joinAll, onRejection, safeSync } from "../utils";
 import { executeRawRows } from "../../lib/db-raw-rows";
 import {
   withPgPoolAcquisitionCapture,
@@ -14,8 +14,8 @@ import {
 import { env } from "../../lib/env";
 import type { Db } from "../external/db";
 import {
-  generateArtifactPreviewUrl,
-  generatePresignedGetUrl,
+  presignedGetUrlSignerForBucket,
+  type PresignedGetUrlSigner,
 } from "../external/s3";
 import { now, nowDate, timestampWithoutTimeZone } from "../../lib/time";
 import { PRESIGNED_URL_TTL_SECONDS } from "@okouai/api-contracts/contracts/presigned-urls";
@@ -581,60 +581,50 @@ function objectKeyPrefixCondition(objectKeyPrefix: string | undefined) {
       )} escape '\\'`;
 }
 
-function signCacheValue(args: {
+async function signCacheValue(args: {
+  readonly sign: PresignedGetUrlSigner;
   readonly request: StoragePresignedUrlRequest;
   readonly cacheKey: string;
   readonly ttlSeconds: number;
   readonly issuedAt: Date;
   readonly lastRequestedAt: Date;
-}): Computed<Promise<CacheRowValue>> {
-  return computed(async (get) => {
-    const signed =
-      args.request.scope === "private_artifact_preview"
-        ? await get(
-            generateArtifactPreviewUrl(
-              args.request.bucket,
-              args.request.objectKey,
-              {
-                signingDate: args.issuedAt,
-                ...(args.request.filename !== undefined
-                  ? { filename: args.request.filename }
-                  : {}),
-              },
-            ),
-          )
-        : {
-            url: await get(
-              generatePresignedGetUrl(
-                args.request.bucket,
-                args.request.objectKey,
-                undefined,
-                args.request.publicEndpoint,
-              ),
-            ),
-            expiresAt: expirationFromIssuedAt(
-              args.issuedAt,
-              args.ttlSeconds,
-            ).toISOString(),
-          };
-    const expiresAt = new Date(signed.expiresAt);
-    return {
-      cacheKey: args.cacheKey,
-      scope: args.request.scope,
-      bucket: args.request.bucket,
-      objectKey: args.request.objectKey,
-      storageVersionId: args.request.storageVersionId,
-      resolvedOrgId: args.request.resolvedOrgId,
-      publicEndpoint: args.request.publicEndpoint,
-      ttlSeconds: args.ttlSeconds,
-      presignedUrl: signed.url,
-      expiresAt,
-      // Retain the required legacy column while older API deployments coexist.
-      refreshAfter: expiresAt,
-      lastRequestedAt: args.lastRequestedAt,
-      updatedAt: args.issuedAt,
-    };
-  });
+}): Promise<CacheRowValue> {
+  const privatePreview = args.request.scope === "private_artifact_preview";
+  const signingDate = privatePreview
+    ? new Date(Math.floor(args.issuedAt.getTime() / 1000) * 1000)
+    : undefined;
+  const presignedUrl = await args.sign(
+    args.request.bucket,
+    args.request.objectKey,
+    {
+      filename: privatePreview ? args.request.filename : undefined,
+      signingDate,
+      responseCacheControl:
+        args.request.bucket === env("R2_PRIVATE_ARTIFACTS_BUCKET_NAME")
+          ? PRIVATE_ARTIFACT_CACHE_CONTROL
+          : undefined,
+    },
+  );
+  const expiresAt = expirationFromIssuedAt(
+    signingDate ?? args.issuedAt,
+    privatePreview ? PRESIGNED_URL_TTL_SECONDS : args.ttlSeconds,
+  );
+  return {
+    cacheKey: args.cacheKey,
+    scope: args.request.scope,
+    bucket: args.request.bucket,
+    objectKey: args.request.objectKey,
+    storageVersionId: args.request.storageVersionId,
+    resolvedOrgId: args.request.resolvedOrgId,
+    publicEndpoint: args.request.publicEndpoint,
+    ttlSeconds: args.ttlSeconds,
+    presignedUrl,
+    expiresAt,
+    // Retain the required legacy column while older API deployments coexist.
+    refreshAfter: expiresAt,
+    lastRequestedAt: args.lastRequestedAt,
+    updatedAt: args.issuedAt,
+  };
 }
 
 async function upsertCacheValues(
@@ -1310,6 +1300,183 @@ function appendFreshStoragePresignedUrlResults(args: {
   }
 }
 
+interface PreparedStoragePresignedUrls {
+  readonly results: ReadonlyMap<string, StoragePresignedUrlResult>;
+  readonly freshValues: readonly CacheRowValue[];
+  readonly timing: StorageManifestCacheTiming | undefined;
+}
+
+interface PreparedStoragePresignedUrlRequests {
+  readonly results: Map<string, StoragePresignedUrlResult>;
+  readonly needsFresh: readonly StoragePresignedUrlFreshRequest[];
+  readonly issuedAt: Date;
+  readonly ttlSeconds: number;
+  readonly timing: StorageManifestCacheTiming | undefined;
+}
+
+interface StoragePresignedUrlSigningRequest extends StoragePresignedUrlFreshRequest {
+  readonly sign: PresignedGetUrlSigner;
+}
+
+async function prepareStoragePresignedUrls<TRequest extends object>(args: {
+  readonly db: Db;
+  readonly scope: StoragePresignedUrlCacheScope;
+  readonly requests: readonly TRequest[];
+  readonly ttlSeconds: number;
+  readonly cacheKey: (request: TRequest) => string;
+  readonly normalize: (request: TRequest) => StoragePresignedUrlRequest;
+  readonly issuedAt?: Date;
+  readonly minimumRemainingMs?: number;
+  readonly observation?: StorageManifestCacheObservationContext;
+  readonly prefetchedRows?: StorageManifestPresignedUrlCacheSnapshot;
+}): Promise<PreparedStoragePresignedUrlRequests> {
+  if (args.requests.length === 0) {
+    return {
+      results: new Map(),
+      needsFresh: [],
+      issuedAt: args.issuedAt ?? nowDate(),
+      ttlSeconds: args.ttlSeconds,
+      timing: undefined,
+    };
+  }
+
+  const stats: StorageManifestCacheObservationStats = {
+    requestedCount: args.requests.length,
+    uniqueKeyCount: 0,
+    hitCount: 0,
+    hardExpiredCount: 0,
+    missingCount: 0,
+    freshCount: 0,
+  };
+  const timing =
+    args.observation &&
+    args.scope !== "presentation_template_preview" &&
+    args.scope !== "private_artifact_preview"
+      ? new StorageManifestCacheTiming(args.observation, args.scope, stats)
+      : undefined;
+
+  const resolve = async () => {
+    const prepareRequests = () => {
+      return prepareStoragePresignedUrlRequests({
+        requests: args.requests,
+        scope: args.scope,
+        cacheKey: args.cacheKey,
+        normalize: args.normalize,
+        stats,
+        prefetchedRows: args.prefetchedRows,
+      });
+    };
+    const requestsByCacheKey = timing
+      ? timing.measureSync(
+          "api_dispatch_prepare_storage_manifest_cache_prepare_requests",
+          prepareRequests,
+        )
+      : prepareRequests();
+
+    const cacheKeys = [...requestsByCacheKey.keys()];
+    const rows = await storagePresignedUrlCacheRows({
+      db: args.db,
+      scope: args.scope,
+      cacheKeys,
+      timing,
+      prefetchedRows: args.prefetchedRows,
+    });
+
+    const issuedAt = args.issuedAt ?? nowDate();
+    const results = new Map<string, StoragePresignedUrlResult>();
+    const needsFresh: StoragePresignedUrlFreshRequest[] = [];
+    const classify = () => {
+      classifyStoragePresignedUrlCacheRows({
+        requestsByCacheKey,
+        rows,
+        issuedAt,
+        minimumRemainingMs: args.minimumRemainingMs ?? 0,
+        results,
+        needsFresh,
+        stats,
+      });
+    };
+    if (timing) {
+      timing.measureSync(
+        "api_dispatch_prepare_storage_manifest_cache_classify",
+        classify,
+      );
+    } else {
+      classify();
+    }
+
+    return {
+      results,
+      needsFresh,
+      issuedAt,
+      ttlSeconds: args.ttlSeconds,
+      timing,
+    };
+  };
+  return await onRejection(resolve(), () => {
+    timing?.flush();
+  });
+}
+
+async function signPreparedStoragePresignedUrls(
+  prepared: PreparedStoragePresignedUrlRequests,
+  signingRequests: readonly StoragePresignedUrlSigningRequest[],
+): Promise<PreparedStoragePresignedUrls> {
+  const signMisses = async () => {
+    return await joinAll(
+      signingRequests.map((entry) => {
+        return signCacheValue({
+          ...entry,
+          ttlSeconds: prepared.ttlSeconds,
+          issuedAt: prepared.issuedAt,
+          lastRequestedAt: prepared.issuedAt,
+        });
+      }),
+    );
+  };
+  const freshValues = await onRejection(
+    prepared.timing
+      ? prepared.timing.measure(
+          "api_dispatch_prepare_storage_manifest_cache_sign_misses",
+          signMisses,
+        )
+      : signMisses(),
+    () => {
+      prepared.timing?.flush();
+    },
+  );
+  appendFreshStoragePresignedUrlResults({
+    results: prepared.results,
+    needsFresh: prepared.needsFresh,
+    freshValues,
+  });
+  return { results: prepared.results, freshValues, timing: prepared.timing };
+}
+
+async function persistPreparedStoragePresignedUrls(
+  db: Db,
+  prepared: PreparedStoragePresignedUrls,
+): Promise<ReadonlyMap<string, StoragePresignedUrlResult>> {
+  const persist = async () => {
+    await upsertCacheValues(db, prepared.freshValues);
+  };
+  if (prepared.timing) {
+    await onRejection(
+      prepared.timing.measure(
+        "api_dispatch_prepare_storage_manifest_cache_upsert_misses",
+        persist,
+      ),
+      () => {
+        prepared.timing?.flush();
+      },
+    );
+    prepared.timing.flush();
+  } else {
+    await persist();
+  }
+  return prepared.results;
+}
+
 function resolveStoragePresignedUrls<TRequest extends object>(args: {
   readonly db: Db;
   readonly scope: StoragePresignedUrlCacheScope;
@@ -1323,123 +1490,110 @@ function resolveStoragePresignedUrls<TRequest extends object>(args: {
   readonly prefetchedRows?: StorageManifestPresignedUrlCacheSnapshot;
 }): Computed<Promise<ReadonlyMap<string, StoragePresignedUrlResult>>> {
   return computed(async (get) => {
-    if (args.requests.length === 0) {
-      return new Map();
-    }
-
-    const stats: StorageManifestCacheObservationStats = {
-      requestedCount: args.requests.length,
-      uniqueKeyCount: 0,
-      hitCount: 0,
-      hardExpiredCount: 0,
-      missingCount: 0,
-      freshCount: 0,
-    };
-    const timing =
-      args.observation &&
-      args.scope !== "presentation_template_preview" &&
-      args.scope !== "private_artifact_preview"
-        ? new StorageManifestCacheTiming(args.observation, args.scope, stats)
-        : undefined;
-
-    const resolve = async () => {
-      const prepareRequests = () => {
-        return prepareStoragePresignedUrlRequests({
-          requests: args.requests,
-          scope: args.scope,
-          cacheKey: args.cacheKey,
-          normalize: args.normalize,
-          stats,
-          prefetchedRows: args.prefetchedRows,
-        });
+    const requests = await prepareStoragePresignedUrls(args);
+    const signingRequests = requests.needsFresh.map((entry) => {
+      return {
+        ...entry,
+        sign: get(
+          presignedGetUrlSignerForBucket(
+            entry.request.bucket,
+            entry.request.publicEndpoint,
+          ),
+        ),
       };
-      const requestsByCacheKey = timing
-        ? timing.measureSync(
-            "api_dispatch_prepare_storage_manifest_cache_prepare_requests",
-            prepareRequests,
-          )
-        : prepareRequests();
-
-      const cacheKeys = [...requestsByCacheKey.keys()];
-      const rows = await storagePresignedUrlCacheRows({
-        db: args.db,
-        scope: args.scope,
-        cacheKeys,
-        timing,
-        prefetchedRows: args.prefetchedRows,
-      });
-
-      const issuedAt = args.issuedAt ?? nowDate();
-      const results = new Map<string, StoragePresignedUrlResult>();
-      const needsFresh: StoragePresignedUrlFreshRequest[] = [];
-      const classify = () => {
-        classifyStoragePresignedUrlCacheRows({
-          requestsByCacheKey,
-          rows,
-          issuedAt,
-          minimumRemainingMs: args.minimumRemainingMs ?? 0,
-          results,
-          needsFresh,
-          stats,
-        });
-      };
-      if (timing) {
-        timing.measureSync(
-          "api_dispatch_prepare_storage_manifest_cache_classify",
-          classify,
-        );
-      } else {
-        classify();
-      }
-
-      const signMisses = async () => {
-        return await joinAll(
-          needsFresh.map((entry) => {
-            return get(
-              signCacheValue({
-                request: entry.request,
-                cacheKey: entry.cacheKey,
-                ttlSeconds: args.ttlSeconds,
-                issuedAt,
-                lastRequestedAt: issuedAt,
-              }),
-            );
-          }),
-        );
-      };
-      const freshValues = timing
-        ? await timing.measure(
-            "api_dispatch_prepare_storage_manifest_cache_sign_misses",
-            signMisses,
-          )
-        : await signMisses();
-      const upsertMisses = async () => {
-        await upsertCacheValues(args.db, freshValues);
-      };
-      if (timing) {
-        await timing.measure(
-          "api_dispatch_prepare_storage_manifest_cache_upsert_misses",
-          upsertMisses,
-        );
-      } else {
-        await upsertMisses();
-      }
-
-      appendFreshStoragePresignedUrlResults({
-        results,
-        needsFresh,
-        freshValues,
-      });
-
-      return results;
-    };
-    return timing
-      ? await resolve().finally(() => {
-          timing.flush();
-        })
-      : await resolve();
+    });
+    const prepared = await signPreparedStoragePresignedUrls(
+      requests,
+      signingRequests,
+    );
+    return await persistPreparedStoragePresignedUrls(args.db, prepared);
   });
 }
+
+interface RunStoragePresignedUrlsArgs {
+  readonly db: Db;
+  readonly requests:
+    | {
+        readonly kind: "system";
+        readonly values: readonly SystemStoragePresignedUrlRequest[];
+      }
+    | {
+        readonly kind: "workflow";
+        readonly values: readonly WorkflowSkillStoragePresignedUrlRequest[];
+      }
+    | {
+        readonly kind: "readonly";
+        readonly values: readonly ReadOnlyStoragePresignedUrlRequest[];
+      };
+  readonly observation?: StorageManifestCacheObservationContext;
+  readonly prefetchedRows?: StorageManifestPresignedUrlCacheSnapshot;
+}
+
+function prepareRunStoragePresignedUrls(args: RunStoragePresignedUrlsArgs) {
+  const { requests, ...common } = args;
+  switch (requests.kind) {
+    case "system": {
+      return prepareStoragePresignedUrls({
+        ...common,
+        requests: requests.values,
+        scope: "system_storage",
+        ttlSeconds: SYSTEM_STORAGE_PRESIGNED_URL_TTL_SECONDS,
+        cacheKey: systemStoragePresignedUrlCacheKey,
+        normalize: systemStorageRequest,
+      });
+    }
+    case "workflow": {
+      return prepareStoragePresignedUrls({
+        ...common,
+        requests: requests.values,
+        scope: "workflow_skill_storage",
+        ttlSeconds: WORKFLOW_SKILL_STORAGE_PRESIGNED_URL_TTL_SECONDS,
+        cacheKey: workflowSkillStoragePresignedUrlCacheKey,
+        normalize: workflowSkillStorageRequest,
+      });
+    }
+    case "readonly": {
+      return prepareStoragePresignedUrls({
+        ...common,
+        requests: requests.values,
+        scope: "readonly_storage",
+        ttlSeconds: READ_ONLY_STORAGE_PRESIGNED_URL_TTL_SECONDS,
+        cacheKey: readOnlyStoragePresignedUrlCacheKey,
+        normalize: readOnlyStorageRequest,
+      });
+    }
+  }
+}
+
+/** Run materialization owns cache persistence; reading a storage plan never writes. */
+export const materializeRunStoragePresignedUrls$ = command(
+  async ({ get }, args: RunStoragePresignedUrlsArgs, signal: AbortSignal) => {
+    const requests = await prepareRunStoragePresignedUrls(args);
+    signal.throwIfAborted();
+    const signingRequests = requests.needsFresh.map((entry) => {
+      return {
+        ...entry,
+        sign: get(
+          presignedGetUrlSignerForBucket(
+            entry.request.bucket,
+            entry.request.publicEndpoint,
+          ),
+        ),
+      };
+    });
+    const prepared = await signPreparedStoragePresignedUrls(
+      requests,
+      signingRequests,
+    );
+    signal.throwIfAborted();
+    const results = await persistPreparedStoragePresignedUrls(
+      args.db,
+      prepared,
+    );
+    signal.throwIfAborted();
+    return results;
+  },
+);
 
 export function resolveSystemStoragePresignedUrls(args: {
   readonly db: Db;

@@ -8,7 +8,6 @@ import { discordChatThreadRoutes } from "@okouai/db/schema/discord-chat-thread-r
 import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
 import { discordOrgInstallations } from "@okouai/db/schema/discord-org-installation";
 import { and, asc, eq, gte, inArray, lt, lte, or, sql } from "drizzle-orm";
-
 import {
   discordConversationContext,
   discordMessageContent,
@@ -1174,31 +1173,36 @@ export const processCanonicalDiscordIngress$ = command(
       orgId: ingress.orgId,
     });
     signal.throwIfAborted();
-    set(scheduleEnqueuedChatThreadPick$, {
-      chatThreadId: ingress.chatThreadId,
-      afterPick: async (pick, pickSignal) => {
-        const notice = chatQueueWaitNotice(pick.reason);
-        if (notice) {
-          await sendDiscordIngressNotice(
-            db,
-            {
-              ingressId: args.ingressId,
-              connectionId: ingress.connectionId,
-              channelId: ingress.destinationChannelId,
-              content: notice,
-            },
-            pickSignal,
-          );
-        }
+    set(
+      scheduleEnqueuedChatThreadPick$,
+      {
+        orgId: ingress.orgId,
+        chatThreadId: ingress.chatThreadId,
+        afterPick: async (pick, pickSignal) => {
+          const notice = chatQueueWaitNotice(pick.reason);
+          if (notice) {
+            await sendDiscordIngressNotice(
+              db,
+              {
+                ingressId: args.ingressId,
+                connectionId: ingress.connectionId,
+                channelId: ingress.destinationChannelId,
+                content: notice,
+              },
+              pickSignal,
+            );
+          }
+        },
+        publish: async () => {
+          await publishChatThreadMessageCreatedSafely({
+            userId: ingress.userId,
+            orgId: ingress.orgId,
+            threadId: ingress.chatThreadId,
+          });
+        },
       },
-      publish: async () => {
-        await publishChatThreadMessageCreatedSafely({
-          userId: ingress.userId,
-          orgId: ingress.orgId,
-          threadId: ingress.chatThreadId,
-        });
-      },
-    });
+      signal,
+    );
     return true;
   },
 );

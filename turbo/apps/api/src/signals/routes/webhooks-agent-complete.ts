@@ -1,7 +1,6 @@
 import { command } from "ccstate";
 import { createErrorResponse } from "@okouai/api-contracts/contracts/errors";
 import { webhookCompleteContract } from "@okouai/api-contracts/contracts/webhooks";
-
 import { logger } from "../../lib/log";
 import { authorization$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
@@ -42,7 +41,7 @@ const completeAgentRunRoute$ = command(
 
     const result = await set(completeAgentRun$, { auth, body }, signal);
     if (result.status === 200) {
-      set(scheduleReleasedSlotPicks$, result.releasedSlots);
+      set(scheduleReleasedSlotPicks$, result.releasedSlots, signal);
     }
     signal.throwIfAborted();
 

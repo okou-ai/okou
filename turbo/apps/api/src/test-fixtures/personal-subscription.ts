@@ -1,6 +1,6 @@
 import { createStore } from "ccstate";
 import { now } from "../lib/time";
-import { createTestFixtureAgentRun$ } from "../signals/services/agent-runs-create.service";
+import { createTestFixtureAgentRun$ } from "../signals/services/pick-chat-run.service";
 
 /** Infrastructure exception: current public model-first requests cannot name a
  * concrete account ID. Internal callers (chat continuation, workflows) pin the

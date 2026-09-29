@@ -1,59 +1,38 @@
-import { resolveReasoningEffortForDispatch } from "./chat-reasoning-effort.service";
-import { resolveIntegrationChatThreadAgent } from "./integration-chat-thread-agent.service";
+import type { MemberModelAccountSnapshot } from "./model-provider-account.service";
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { randomBytes } from "node:crypto";
 import { v5 as uuidv5 } from "uuid";
-
-import { command, createStore } from "ccstate";
-import {
-  CHAT_EVENT_USER_MESSAGE_TEXT_TYPES,
-  chatEventCompatibilityRole,
-  type ChatEventType,
-} from "@okouai/api-contracts/contracts/chat-events";
-import { formatRunErrorForExternalSurface } from "@okouai/api-contracts/contracts/errors";
-import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
+import type { ChatThreadSessionResolution } from "./chat-session-continuity.service";
+import type { ChatEventType } from "@okouai/api-contracts/contracts/chat-events";
 import {
   serializeChatFollowupsContent,
   type ChatRecommendedFollowup,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
-import { publicProviderBalanceFailureReason } from "@okouai/api-contracts/contracts/run-balance-errors";
-import {
-  isFeatureEnabled,
-  type FeatureSwitchContext,
-} from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { runOutputMaterializations } from "@okouai/db/schema/run-output-materialization";
+import { formatRunErrorForExternalSurface } from "@okouai/api-contracts/contracts/errors";
 import { visiblePiMemoryCitationText } from "@okouai/api-contracts/contracts/pi-memory-citations";
+import { publicProviderBalanceFailureReason } from "@okouai/api-contracts/contracts/run-balance-errors";
+import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
+import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
+import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
+import { agents } from "@okouai/db/schema/agent";
+import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import {
   chatEvents,
   type ChatEventUserMessage,
 } from "@okouai/db/schema/chat-event";
-import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { agents } from "@okouai/db/schema/agent";
-import {
-  and,
-  asc,
-  desc,
-  eq,
-  inArray,
-  isNotNull,
-  lte,
-  max,
-  not,
-  or,
-  sql,
-} from "drizzle-orm";
+import { runOutputMaterializations } from "@okouai/db/schema/run-output-materialization";
+import { command, createStore } from "ccstate";
+import { and, asc, desc, eq, isNotNull, lte, max, not, sql } from "drizzle-orm";
 import { z } from "zod";
-
+import type { GenerationTemplateIdentity } from "@okouai/core/generation-template-identity";
 import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
-import { AUTONOMY_BUDGET_EXHAUSTED_MESSAGE } from "../../lib/error";
+import type { Tx } from "../../lib/db-types";
 import { logger } from "../../lib/log";
+import { logTemplateUsage } from "../../lib/template-usage-log";
 import { now, nowDate } from "../../lib/time";
 import { waitUntil } from "../context/wait-until";
-import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
+import { writeDb$, type Db } from "../external/db";
 import {
   publishChatThreadDetailChangedSafely,
   publishChatThreadMessageCreatedSafely,
@@ -64,189 +43,132 @@ import {
   recordSandboxOperations,
 } from "../external/sandbox-op-log";
 import {
-  BEFORE_DISPATCH_CANCELLED_ERROR,
-  type DispatchFailedRunCallbacks,
-} from "./agent-run-create.service";
-import type { InternalRunCallbackEnvelope } from "./internal-run-callback";
-import {
-  feishuDeliveryTargetSchema,
-  type FeishuDeliveryTarget,
-} from "./feishu-chat-callback-payload";
-import { formatRunErrorForRunOwner$ } from "./run-error-format.service";
-import {
-  deliverAgentPhoneChatAdmissionFailure,
-  dispatchAgentPhoneChatDeliveryOnce,
-} from "./internal-agentphone-chat-run-callback.service";
-import {
-  deliverSlackChatAdmissionFailure,
-  dispatchSlackChatDeliveryOnce,
-} from "./internal-slack-chat-run-callback.service";
-import {
-  clearCanonicalFeishuThinkingReaction,
-  deliverFeishuChatAdmissionFailure,
-  dispatchFeishuChatDeliveryOnce,
-} from "./internal-feishu-chat-run-callback.service";
-import {
-  deliverTeamsChatAdmissionFailure,
-  dispatchTeamsChatDeliveryOnce,
-} from "./internal-teams-chat-run-callback.service";
-import {
-  sendDiscordChatReply,
-  type DiscordReplyRequest,
-} from "./internal-discord-chat-run-callback.service";
-import {
-  deliverTelegramChatAdmissionFailure,
-  dispatchTelegramChatDeliveryOnce,
-} from "./internal-telegram-chat-run-callback.service";
-import {
-  agentphoneDeliveryTargetSchema,
-  type AgentPhoneDeliveryTarget,
-} from "./agentphone-chat-callback-payload";
-import {
-  teamsDeliveryTargetSchema,
-  type TeamsDeliveryTarget,
-} from "./teams-chat-callback-payload";
-import {
-  discordDeliveryTargetSchema,
-  type DiscordDeliveryTarget,
-} from "./discord-chat-callback-payload";
-import {
-  telegramDeliveryTargetSchema,
-  type TelegramDeliveryTarget,
-} from "./telegram-chat-callback-payload";
-import {
-  clearCanonicalSlackThreadStatusIfIdle,
-  refreshCanonicalSlackThreadStatus,
-  type CanonicalSlackThreadStatusTarget,
-} from "./canonical-slack-thread-status.service";
-import { saveRunSummary, saveRunSummary$ } from "./run-summary.service";
-import { dispatchConfiguredChatRunFinishedEvent$ } from "./chat-run-finished-event-dispatch.service";
-import type { ChatRunFinishedEvent } from "./chat-run-finished-event";
-import {
-  insertAssistantEvents,
-  insertAssistantEvents$,
-  touchChatThreadLastMessageAtIndependently,
-  type InsertAssistantEventsInput,
-  visibleChatEventCondition,
-} from "./chat-event-shared.service";
-import { insertChatEvent } from "./chat-event.service";
-import { loadWebChatIncompleteContext } from "./chat-incomplete-context.service";
-import {
-  agentRunSourceAnnotation,
-  type ChatAgentRunSourceAnnotation,
-  projectUserMessage,
-  requiredUserMessageForEvent,
-} from "./chat-user-message.service";
-import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service";
-import {
-  buildWebChatAppendSystemPrompt,
-  lastRunMessageSeqIds,
-} from "./web-chat-session-prompt.service";
-import {
-  integrationCompletionFallbackEventIdForRun,
-  followupsEventIdForRun,
-} from "./assistant-event-id";
-import {
-  isWebChatContextType,
-  loadNextUnclaimedQueuedUserMessage,
-  queuedUserMessageTriggerSource,
-  type QueuedUserMessageContextType,
-  type QueuedUserMessageTriggerSource,
-  type QueuedUserMessage,
-} from "./chat-queued-event.service";
-import { sendUserPushNotifications } from "./push-notifications.service";
-import {
-  type ChatCompletionContextMessage,
-  generateChatThreadRecommendedFollowupsFromContext,
-  generateChatNotificationSummary,
-  loadChatThreadRecommendedFollowupContext,
-  scheduleChatThreadTitleGeneration,
-} from "./chat-title.service";
-import type {
-  ChatQueueHeadContext,
-  ChatQueueHeadRejection,
-  ChatQueueRunAssembly,
-} from "./chat-queue-run-assembly";
-import { shouldUsePiExecution } from "./pi-sandbox-config";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
-import { formatIntegrationRunError$ } from "./integration-run-errors.service";
-import {
   onRejection,
   settle,
   settleIncludingAbort,
   tapError,
   throwIfAbort,
 } from "../utils";
-import { buildGenerationTemplatesPrompt } from "../../lib/generation-template-prompt";
-import { logTemplateUsage } from "../../lib/template-usage-log";
+import type { DispatchFailedRunCallbacks } from "./pick-chat-run.service";
 import {
-  generationTemplateIdentity,
-  type GenerationTemplateIdentity,
-} from "@okouai/core/generation-template-identity";
-import { resolveChatThreadSession } from "./chat-session-continuity.service";
-import { loadComputerUseHostGrantForAutoSend } from "./chat-computer-use-host.service";
-import { resolveRunChatThreadModelContext } from "./chat-run-event.service";
+  agentphoneDeliveryTargetSchema,
+  type AgentPhoneDeliveryTarget,
+} from "./agentphone-chat-callback-payload";
+import { loadAgentPhoneQueuedLaunchMaterial } from "./agentphone-queued-launch-context.service";
+import {
+  followupsEventIdForRun,
+  integrationCompletionFallbackEventIdForRun,
+} from "./assistant-event-id";
 import { releaseThreadBrowsersForRun$ } from "./browser.service";
+import type { BuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
+import { canonicalChatEventContent } from "./canonical-chat-event-read.service";
+import {
+  clearCanonicalSlackThreadStatusIfIdle,
+  refreshCanonicalSlackThreadStatus,
+  type CanonicalSlackThreadStatusTarget,
+} from "./canonical-slack-thread-status.service";
+import {
+  insertAssistantEvents,
+  insertAssistantEvents$,
+  touchChatThreadLastMessageAtIndependently,
+  type InsertAssistantEventsInput,
+} from "./chat-event-shared.service";
+import { chatEventTypeIn } from "./chat-event-type.service";
+import { insertChatEvent } from "./chat-event.service";
+import type {
+  ChatQueueHeadContext,
+  ChatQueueHeadRejection,
+} from "./chat-queue-run-assembly";
+import type {
+  QueuedUserMessage,
+  QueuedUserMessageContextType,
+  QueuedUserMessageTriggerSource,
+} from "./chat-queued-event.service";
+import type { ChatRunFinishedEvent } from "./chat-run-finished-event";
+import { dispatchConfiguredChatRunFinishedEvent$ } from "./chat-run-finished-event-dispatch.service";
+import {
+  generateChatNotificationSummary,
+  generateChatThreadRecommendedFollowupsFromContext,
+  loadChatThreadRecommendedFollowupContext,
+  scheduleChatThreadTitleGeneration,
+  type ChatCompletionContextMessage,
+} from "./chat-title.service";
+import {
+  projectUserMessage,
+  requiredUserMessageForEvent,
+} from "./chat-user-message.service";
+import {
+  discordDeliveryTargetSchema,
+  type DiscordDeliveryTarget,
+} from "./discord-chat-callback-payload";
+import { loadDiscordQueuedLaunchMaterial } from "./discord-queued-launch-context.service";
+import {
+  requireDiscordBinding$,
+  requireDiscordConversationAccess$,
+} from "./discord-access.service";
+import type { DiscordChatAccessChecker } from "./discord-chat-route-access.service";
+import {
+  scheduleDiscordRunTyping,
+  type DiscordTypingBindingChecker,
+} from "./discord-run-typing.service";
+import { loadUserFeatureSwitchContext } from "./feature-switches.service";
+import {
+  feishuDeliveryTargetSchema,
+  type FeishuDeliveryTarget,
+} from "./feishu-chat-callback-payload";
+import { loadFeishuQueuedLaunchMaterial } from "./feishu-queued-launch-context.service";
+import { formatIntegrationRunError$ } from "./integration-run-errors.service";
+import {
+  deliverAgentPhoneChatAdmissionFailure,
+  dispatchAgentPhoneChatDeliveryOnce,
+} from "./internal-agentphone-chat-run-callback.service";
+import {
+  sendDiscordChatReply,
+  type DiscordReplyRequest,
+} from "./internal-discord-chat-run-callback.service";
+import {
+  clearCanonicalFeishuThinkingReaction,
+  deliverFeishuChatAdmissionFailure,
+  dispatchFeishuChatDeliveryOnce,
+} from "./internal-feishu-chat-run-callback.service";
+import type { InternalRunCallbackEnvelope } from "./internal-run-callback";
+import {
+  deliverSlackChatAdmissionFailure,
+  dispatchSlackChatDeliveryOnce,
+} from "./internal-slack-chat-run-callback.service";
+import {
+  deliverTeamsChatAdmissionFailure,
+  dispatchTeamsChatDeliveryOnce,
+} from "./internal-teams-chat-run-callback.service";
+import {
+  deliverTelegramChatAdmissionFailure,
+  dispatchTelegramChatDeliveryOnce,
+} from "./internal-telegram-chat-run-callback.service";
 import {
   modelProviderWriteTypeForLaunch,
   type ModelFirstPin,
 } from "./model-selection.service";
-import {
-  chatEventTextCondition,
-  chatEventTypeIn,
-} from "./chat-event-type.service";
-import {
-  canonicalChatEventContent,
-  canonicalChatEventUserMessage,
-} from "./canonical-chat-event-read.service";
-import {
-  loadSlackQueuedLaunchMaterial,
-  type SlackQueuedLaunchMaterial,
-} from "./slack-queued-launch-context.service";
-import {
-  loadFeishuQueuedLaunchMaterial,
-  type FeishuQueuedLaunchMaterial,
-} from "./feishu-queued-launch-context.service";
-import {
-  loadTeamsQueuedLaunchMaterial,
-  type TeamsQueuedLaunchMaterial,
-} from "./teams-queued-launch-context.service";
-import {
-  DiscordQueuedLaunchUnavailableError,
-  loadDiscordQueuedLaunchMaterial,
-  type DiscordQueuedLaunchMaterial,
-} from "./discord-queued-launch-context.service";
-import { scheduleDiscordRunTyping } from "./discord-run-typing.service";
-import {
-  loadAgentPhoneQueuedLaunchMaterial,
-  type AgentPhoneQueuedLaunchMaterial,
-} from "./agentphone-queued-launch-context.service";
-import {
-  loadTelegramQueuedLaunchMaterial,
-  type TelegramQueuedLaunchMaterial,
-} from "./telegram-queued-launch-context.service";
-import type { Tx } from "../../lib/db-types";
-import {
-  resolveBuiltInModelRuntimeRoute,
-  type BuiltInModelRuntimeRoute,
-} from "./built-in-model-runtime-route.service";
+import { shouldUsePiExecution } from "./pi-sandbox-config";
 import {
   additionalVolumesForRun,
-  authorizedUserPresentationTemplateIds,
-  selectedUserPresentationTemplateIds,
-  userPresentationTemplateVolumes,
   type PresentationTemplateVolume,
 } from "./presentation-template-data.service";
+import { sendUserPushNotifications } from "./push-notifications.service";
+import { formatRunErrorForRunOwner$ } from "./run-error-format.service";
+import { saveRunSummary, saveRunSummary$ } from "./run-summary.service";
+import { loadSlackQueuedLaunchMaterial } from "./slack-queued-launch-context.service";
 import {
-  authorizedUserTemplates,
-  selectedUserTemplateIds,
-  userTemplateVolumes,
-  type MountedUserTemplate,
-} from "./user-template-data.service";
-import { chatNetworkBodyCaptureRequested } from "./chat-network-body-capture.service";
+  teamsDeliveryTargetSchema,
+  type TeamsDeliveryTarget,
+} from "./teams-chat-callback-payload";
+import { loadTeamsQueuedLaunchMaterial } from "./teams-queued-launch-context.service";
+import {
+  telegramDeliveryTargetSchema,
+  type TelegramDeliveryTarget,
+} from "./telegram-chat-callback-payload";
+import { loadTelegramQueuedLaunchMaterial } from "./telegram-queued-launch-context.service";
 
 const log = logger("callback:chat");
-const RECENT_CHAT_RUN_LIMIT = 10;
 const PRIOR_MESSAGE_CHAR_CAP = 4000;
 type ChatCallbackPreCreateTimingSpanKind = "top_level" | "nested";
 
@@ -442,14 +364,14 @@ interface CompletedChatOutputLoad {
   readonly resultFallback: ResultEventItem | null;
 }
 
-interface PriorRunEvent {
+export interface PriorRunEvent {
   readonly eventType: ChatEventType;
   readonly role: "user" | "assistant";
   readonly content: string | null;
   readonly userMessage: ChatEventUserMessage | null;
 }
 
-interface PriorRun {
+export interface PriorRun {
   readonly runId: string;
   readonly status: string;
   readonly prompt: string;
@@ -461,7 +383,9 @@ interface AgentForAutoSend {
   readonly orgId: string;
 }
 
-interface ChatCallbackDependencies {
+export interface ChatCallbackDependencies {
+  readonly checkDiscordTypingBinding?: DiscordTypingBindingChecker;
+  readonly checkDiscordAccess?: DiscordChatAccessChecker;
   readonly releaseBrowsersForRun: (
     args: { readonly chatThreadId: string },
     signal: AbortSignal,
@@ -611,8 +535,11 @@ interface ChatRunInfo {
   readonly cancellationRecoveryCompleted: boolean | null;
 }
 
-interface CreateQueuedChatRunInput {
+export interface CreateQueuedChatRunInput {
+  readonly memberAccountSnapshot?: MemberModelAccountSnapshot | null;
   readonly expectedThreadAgentId?: string;
+  readonly threadSessionResolution?: ChatThreadSessionResolution;
+  readonly featureSwitchContext?: FeatureSwitchContext;
   readonly orgId: string;
   readonly userId: string;
   readonly agentId: string;
@@ -761,7 +688,7 @@ interface AgentPhoneQueuedMessageAdmissionFailure {
   readonly error: QueuedMessageModelRouteError;
 }
 
-type QueuedMessageAdmissionFailure =
+export type QueuedMessageAdmissionFailure =
   | WebQueuedMessageAdmissionFailure
   | SlackQueuedMessageAdmissionFailure
   | FeishuQueuedMessageAdmissionFailure
@@ -813,7 +740,7 @@ function generateCallbackSecret(): string {
   return randomBytes(32).toString("hex");
 }
 
-function buildQueuedCreateAgentRunArgs(
+export function buildQueuedCreateAgentRunArgs(
   input: CreateQueuedChatRunInput,
   admissionTime: number,
   dispatchFailedCallbacks?: DispatchFailedRunCallbacks,
@@ -830,6 +757,9 @@ function buildQueuedCreateAgentRunArgs(
     apiStartTime: admissionTime,
     chatThreadId: input.threadId,
     expectedThreadAgentId: input.expectedThreadAgentId,
+    preloadedThreadSessionResolution: input.threadSessionResolution,
+    preloadedFeatureSwitchContext: input.featureSwitchContext,
+    preloadedMemberAccountSnapshot: input.memberAccountSnapshot,
     ...(input.connectorSourceId
       ? { connectorSourceId: input.connectorSourceId }
       : {}),
@@ -2149,7 +2079,7 @@ async function runTerminalChatCallbackSideEffects(args: {
   });
 }
 
-function buildAppendSystemPrompt(
+export function buildAppendSystemPrompt(
   integrationPrompt: string,
   incompleteContext: string,
   priorContext: string,
@@ -2238,7 +2168,7 @@ function priorRunsContextLabel(
   }
 }
 
-function buildChatPriorRunsContext(
+export function buildChatPriorRunsContext(
   runs: readonly PriorRun[],
   contextType: QueuedUserMessageContextType,
   triggerSource: QueuedUserMessageTriggerSource,
@@ -2276,103 +2206,6 @@ function buildChatPriorRunsContext(
   ].join("\n");
 }
 
-async function getLatestRunsByThreadId(
-  db: Db,
-  threadId: string,
-  contextType: QueuedUserMessageContextType,
-  limit: number,
-): Promise<PriorRun[]> {
-  const runRows = await db
-    .select({
-      runId: agentRuns.id,
-      status: agentRuns.status,
-      prompt: agentRuns.prompt,
-    })
-    .from(agentRuns)
-    .where(
-      and(
-        eq(agentRuns.chatThreadId, threadId),
-        isWebChatContextType(contextType)
-          ? inArray(agentRuns.triggerSource, ["web", "agent"])
-          : contextType === "feishu"
-            ? inArray(agentRuns.triggerSource, ["feishu", "lark"])
-            : eq(
-                agentRuns.triggerSource,
-                queuedUserMessageTriggerSource(contextType),
-              ),
-        or(
-          sql`${agentRuns.status} IS DISTINCT FROM ${"cancelled"}`,
-          sql`${agentRuns.error} IS DISTINCT FROM ${BEFORE_DISPATCH_CANCELLED_ERROR}`,
-        ),
-      ),
-    )
-    .orderBy(desc(agentRuns.createdAt))
-    .limit(limit);
-
-  const orderedRuns = runRows.reverse();
-  const runIds = orderedRuns.map((run) => {
-    return run.runId;
-  });
-  if (runIds.length === 0) {
-    return [];
-  }
-
-  const eventRows = await db
-    .select({
-      runId: chatEvents.runId,
-      eventType: chatEvents.eventType,
-      content: canonicalChatEventContent(),
-      userMessage: canonicalChatEventUserMessage(),
-      createdAt: chatEvents.createdAt,
-      sequenceNumber: chatEvents.runEventSequenceNumber,
-    })
-    .from(chatEvents)
-    .where(
-      and(
-        eq(chatEvents.chatThreadId, threadId),
-        chatEventTextCondition(),
-        inArray(chatEvents.runId, runIds),
-        visibleChatEventCondition(db),
-        // A web round replays only each run's final answer, not the
-        // narration of its intermediate steps.
-        isWebChatContextType(contextType)
-          ? or(
-              chatEventTypeIn(CHAT_EVENT_USER_MESSAGE_TEXT_TYPES),
-              inArray(
-                chatEvents.seqId,
-                lastRunMessageSeqIds(db, threadId, runIds),
-              ),
-            )
-          : undefined,
-      ),
-    )
-    .orderBy(asc(chatEvents.seqId));
-
-  const eventsByRunId = new Map<string, PriorRunEvent[]>();
-  for (const row of eventRows) {
-    if (row.runId === null) {
-      continue;
-    }
-    const existing = eventsByRunId.get(row.runId) ?? [];
-    existing.push({
-      eventType: row.eventType,
-      role: chatEventCompatibilityRole(row.eventType),
-      content: row.content,
-      userMessage: row.userMessage,
-    });
-    eventsByRunId.set(row.runId, existing);
-  }
-
-  return orderedRuns.map((run) => {
-    return {
-      runId: run.runId,
-      status: run.status,
-      prompt: run.prompt,
-      events: eventsByRunId.get(run.runId) ?? [],
-    };
-  });
-}
-
 async function chatThreadForRunFromDb(
   db: Db,
   runId: string,
@@ -2403,30 +2236,8 @@ async function chatThreadForRunFromDb(
   };
 }
 
-async function buildQueuedPriorContext(args: {
-  readonly db: Db;
-  readonly threadId: string;
-  readonly startNewSession: boolean;
-  readonly incompleteContext: string;
-  readonly contextType: QueuedUserMessageContextType;
-  readonly triggerSource: QueuedUserMessageTriggerSource;
-}): Promise<string> {
-  if (!args.startNewSession || args.incompleteContext.length > 0) {
-    return "";
-  }
-  return buildChatPriorRunsContext(
-    await getLatestRunsByThreadId(
-      args.db,
-      args.threadId,
-      args.contextType,
-      RECENT_CHAT_RUN_LIMIT,
-    ),
-    args.contextType,
-    args.triggerSource,
-  );
-}
-
-interface QueuedMessageModelRoute {
+export interface QueuedMessageModelRoute {
+  readonly memberAccountSnapshot?: MemberModelAccountSnapshot | null;
   readonly modelPin: ModelFirstPin;
   readonly effectiveModelProvider: string | null | undefined;
   readonly builtInModelRuntimeRoute: BuiltInModelRuntimeRoute | undefined;
@@ -2435,7 +2246,7 @@ interface QueuedMessageModelRoute {
   readonly reasoningEffort?: ReasoningEffort | null;
 }
 
-function routeQueuedMessagePiExecution(args: {
+export function routeQueuedMessagePiExecution(args: {
   readonly input: CreateQueuedChatRunInputArgs;
   readonly modelRoute: QueuedMessageModelRoute;
 }) {
@@ -2457,83 +2268,16 @@ function routeQueuedMessagePiExecution(args: {
   };
 }
 
-interface QueuedMessageModelRouteError {
+export interface QueuedMessageModelRouteError {
   readonly code: string;
   readonly message: string;
 }
 
-type QueuedMessageModelRouteResolution =
+export type QueuedMessageModelRouteResolution =
   | { readonly route: QueuedMessageModelRoute }
   | { readonly error: QueuedMessageModelRouteError };
 
-async function resolveQueuedMessageModelRoute(args: {
-  readonly db: Db;
-  readonly threadId: string;
-  readonly eventId: string;
-  readonly userId: string;
-  readonly orgId: string;
-  readonly contextType: QueuedUserMessageContextType;
-  readonly featureSwitchContext: FeatureSwitchContext;
-  readonly timing?: ChatCallbackPreCreateTimingCollector;
-}): Promise<QueuedMessageModelRouteResolution> {
-  const modelContext = await measureChatCallbackPreCreateTiming(
-    args.timing,
-    "api_dispatch_pre_create_agent_chat_callback_auto_send_resolve_model_pin",
-    "nested",
-    () => {
-      return resolveRunChatThreadModelContext({
-        db: args.db,
-        orgId: args.orgId,
-        userId: args.userId,
-        threadId: args.threadId,
-        eventId: args.eventId,
-        featureSwitchContext: args.featureSwitchContext,
-        providerModelSupport: "trust-enqueued",
-      });
-    },
-  );
-  if ("status" in modelContext) {
-    return { error: modelContext.body.error };
-  }
-  if (modelContext.providerAdmission.error) {
-    return { error: modelContext.providerAdmission.error.body.error };
-  }
-  const effectiveModelProvider =
-    modelContext.providerAdmission.effectiveModelProvider;
-  const selectedModel = modelContext.pin.selectedModel;
-  const builtInModelRuntimeRoute =
-    isBuiltInModelProviderType(effectiveModelProvider) && selectedModel
-      ? await resolveBuiltInModelRuntimeRoute(
-          args.db,
-          selectedModel,
-          modelContext.featureSwitchContext,
-        )
-      : undefined;
-  if (
-    isBuiltInModelProviderType(effectiveModelProvider) &&
-    !builtInModelRuntimeRoute
-  ) {
-    return {
-      error: {
-        code: "MODEL_PROVIDER_UNAVAILABLE",
-        message:
-          "Every built-in model route for this model is temporarily unavailable",
-      },
-    };
-  }
-  return {
-    route: {
-      modelPin: modelContext.pin,
-      effectiveModelProvider,
-      builtInModelRuntimeRoute: builtInModelRuntimeRoute ?? undefined,
-      cliAgentType: modelContext.providerAdmission.cliAgentType,
-      codexServiceTier: modelContext.runCodexServiceTier,
-      reasoningEffort: modelContext.reasoningEffort,
-    },
-  };
-}
-
-interface CreateQueuedChatRunInputArgs {
+export interface CreateQueuedChatRunInputArgs {
   readonly expectedThreadAgentId?: string;
   readonly db: Db;
   readonly threadId: string;
@@ -2541,59 +2285,6 @@ interface CreateQueuedChatRunInputArgs {
   readonly agent: AgentForAutoSend;
   readonly queuedMessage: QueuedUserMessage;
   readonly timing?: ChatCallbackPreCreateTimingCollector;
-}
-
-async function loadQueuedMessageSessionContext(
-  args: CreateQueuedChatRunInputArgs,
-  modelRoute: QueuedMessageModelRoute,
-  triggerSource: QueuedUserMessageTriggerSource,
-) {
-  const [startNewSession, loadedIncompleteContext] =
-    await measureChatCallbackPreCreateTiming(
-      args.timing,
-      "api_dispatch_pre_create_agent_chat_callback_auto_send_load_session_state",
-      "nested",
-      async () => {
-        const sessionResolution = await resolveChatThreadSession({
-          db: args.db,
-          threadId: args.threadId,
-          userId: args.userId,
-          orgId: args.agent.orgId,
-          agentId: args.agent.id,
-          expectedThreadAgentId: args.expectedThreadAgentId,
-          route: {
-            selectedModel: modelRoute.modelPin.selectedModel,
-            cliAgentType: modelRoute.cliAgentType,
-          },
-        });
-        const incompleteContext = isWebChatContextType(
-          args.queuedMessage.contextType,
-        )
-          ? await loadWebChatIncompleteContext(args.db, args.threadId)
-          : "";
-        return [
-          sessionResolution.action === "rotated",
-          incompleteContext,
-        ] as const;
-      },
-    );
-  const incompleteContext = startNewSession ? "" : loadedIncompleteContext;
-  const priorContext = await measureChatCallbackPreCreateTiming(
-    args.timing,
-    "api_dispatch_pre_create_agent_chat_callback_auto_send_build_prior_context",
-    "nested",
-    () => {
-      return buildQueuedPriorContext({
-        db: args.db,
-        threadId: args.threadId,
-        startNewSession,
-        incompleteContext,
-        contextType: args.queuedMessage.contextType,
-        triggerSource,
-      });
-    },
-  );
-  return { incompleteContext, priorContext };
 }
 
 type QueuedIntegrationDeliveries = Pick<
@@ -2606,203 +2297,13 @@ type QueuedIntegrationDeliveries = Pick<
   | "agentphoneDelivery"
 >;
 
-interface QueuedLaunchMaterial {
+export interface QueuedLaunchMaterial {
   readonly triggerSource: QueuedUserMessageTriggerSource;
   readonly prompt: string;
   readonly appendSystemPrompt: string;
   readonly connectorSourceId?: string;
   readonly delivery: QueuedIntegrationDeliveries;
   readonly userInfoExtras?: CreateQueuedChatRunInput["userInfoExtras"];
-}
-
-interface QueuedLaunchLoaderArgs {
-  readonly eventId: string;
-  readonly chatThreadId: string;
-  readonly orgId: string;
-  readonly userId: string;
-  // The surface note and `# Agent Tools` must agree on every switch, so both
-  // read the same override-aware context this admission already loaded.
-  readonly featureSwitchContext: FeatureSwitchContext;
-  readonly contextType: QueuedUserMessageContextType;
-  readonly agentRunSource: ChatAgentRunSourceAnnotation | null;
-  readonly userMessageProjection: ReturnType<typeof projectUserMessage>;
-}
-
-type LaunchLoader = (
-  db: Db,
-  args: QueuedLaunchLoaderArgs,
-  signal: AbortSignal,
-) => Promise<QueuedLaunchMaterial | null>;
-
-/**
- * Web is the only trigger source with no context table: the user typed the
- * message, so `chat_events.payload.userMessage` is the durable original fact
- * rather than a display copy of something stored elsewhere. This is the one
- * place a launch loader reads it, and it is deliberate.
- */
-const loadWebQueuedLaunchMaterial: LaunchLoader = (_db, args) => {
-  const triggerSource = args.contextType === "agent_run" ? "agent" : "web";
-  return Promise.resolve({
-    triggerSource,
-    prompt: args.userMessageProjection.agentPrompt,
-    appendSystemPrompt: buildWebChatAppendSystemPrompt({
-      threadId: args.chatThreadId,
-      incompleteContext: "",
-      priorContext: "",
-      context: {
-        generationTemplatePrompt: "",
-        computerUseHostDisplayName: null,
-        triggerSource,
-        agentRunSource: args.agentRunSource,
-        integrationNote: resolveIntegrationNotePrompt({
-          triggerSource,
-          featureSwitchContext: args.featureSwitchContext,
-        }),
-      },
-    }),
-    delivery: {},
-  });
-};
-
-type NativeQueuedLaunchMaterial = (
-  | SlackQueuedLaunchMaterial
-  | FeishuQueuedLaunchMaterial
-  | TeamsQueuedLaunchMaterial
-  | DiscordQueuedLaunchMaterial
-  | AgentPhoneQueuedLaunchMaterial
-  | TelegramQueuedLaunchMaterial
-) & {
-  readonly connectorSourceId?: string;
-};
-
-function launchLoader<Material extends NativeQueuedLaunchMaterial>(
-  load: (
-    db: Db,
-    args: QueuedLaunchLoaderArgs,
-    signal: AbortSignal,
-  ) => Promise<Material | null>,
-  launch: (
-    material: Material,
-  ) => Pick<QueuedLaunchMaterial, "triggerSource" | "delivery">,
-): LaunchLoader {
-  return async (db, args, signal) => {
-    const material = await load(db, args, signal);
-    if (!material) {
-      return null;
-    }
-    return {
-      prompt: material.prompt,
-      appendSystemPrompt: material.appendSystemPrompt,
-      ...launch(material),
-      ...(material.userInfoExtras
-        ? { userInfoExtras: material.userInfoExtras }
-        : {}),
-      ...(material.connectorSourceId
-        ? { connectorSourceId: material.connectorSourceId }
-        : {}),
-    };
-  };
-}
-
-async function resolveQueuedLaunchMaterial(
-  args: CreateQueuedChatRunInputArgs & {
-    readonly userMessageProjection: ReturnType<typeof projectUserMessage>;
-    readonly featureSwitchContext: FeatureSwitchContext;
-  },
-  signal: AbortSignal,
-): Promise<QueuedLaunchMaterial> {
-  const contextType = args.queuedMessage.contextType;
-  let load: LaunchLoader;
-  switch (contextType) {
-    case "web":
-    case "agent_run": {
-      load = loadWebQueuedLaunchMaterial;
-      break;
-    }
-    case "slack": {
-      load = launchLoader(loadSlackQueuedLaunchMaterial, (material) => {
-        return {
-          triggerSource: "slack",
-          delivery: { slackDelivery: material.slackDelivery },
-        };
-      });
-      break;
-    }
-    case "feishu": {
-      load = launchLoader(loadFeishuQueuedLaunchMaterial, (material) => {
-        return {
-          triggerSource: material.triggerSource,
-          delivery: { feishuDelivery: material.feishuDelivery },
-        };
-      });
-      break;
-    }
-    case "teams": {
-      load = launchLoader(loadTeamsQueuedLaunchMaterial, (material) => {
-        return {
-          triggerSource: "teams",
-          delivery: { teamsDelivery: material.teamsDelivery },
-        };
-      });
-      break;
-    }
-    case "discord": {
-      load = launchLoader(loadDiscordQueuedLaunchMaterial, (material) => {
-        return {
-          triggerSource: "discord",
-          delivery: { discordDelivery: material.discordDelivery },
-        };
-      });
-      break;
-    }
-    case "telegram": {
-      load = launchLoader(loadTelegramQueuedLaunchMaterial, (material) => {
-        return {
-          triggerSource: "telegram",
-          delivery: { telegramDelivery: material.telegramDelivery },
-        };
-      });
-      break;
-    }
-    case "agentphone": {
-      load = launchLoader(loadAgentPhoneQueuedLaunchMaterial, (material) => {
-        return {
-          triggerSource: "agentphone",
-          delivery: { agentphoneDelivery: material.agentphoneDelivery },
-        };
-      });
-      break;
-    }
-    case "automation": {
-      return unreachableQueuedMessageContext(contextType);
-    }
-    default: {
-      return unreachableQueuedContextType(contextType);
-    }
-  }
-  const material = await load(
-    args.db,
-    {
-      eventId: args.queuedMessage.id,
-      chatThreadId: args.threadId,
-      orgId: args.agent.orgId,
-      userId: args.userId,
-      featureSwitchContext: args.featureSwitchContext,
-      contextType: args.queuedMessage.contextType,
-      userMessageProjection: args.userMessageProjection,
-      agentRunSource: agentRunSourceAnnotation(args.queuedMessage.userMessage),
-    },
-    signal,
-  );
-  if (material) {
-    return material;
-  }
-  if (contextType === "discord") {
-    throw new DiscordQueuedLaunchUnavailableError();
-  }
-  throw new Error(
-    `${contextType} queue item is missing authorized launch routing`,
-  );
 }
 
 function queuedIntegrationDeliveries(
@@ -2831,7 +2332,7 @@ function requiredQueuedDelivery<Delivery>(
   return delivery;
 }
 
-function queuedMessageAdmissionFailure(
+export function queuedMessageAdmissionFailure(
   args: CreateQueuedChatRunInputArgs,
   launchMaterial: QueuedLaunchMaterial,
   error: QueuedMessageModelRouteError,
@@ -2851,7 +2352,7 @@ function queuedMessageAdmissionFailure(
 }
 
 /** A queued message whose run creation was rejected for a reason other than capacity. */
-function rejectedQueuedRunAdmissionFailure(
+export function rejectedQueuedRunAdmissionFailure(
   input: CreateQueuedChatRunInput,
   error: QueuedMessageModelRouteError,
 ): QueuedMessageAdmissionFailure {
@@ -2958,155 +2459,9 @@ function channelQueuedMessageAdmissionFailure(
   }
 }
 
-function queuedMessagePrompt(args: {
-  readonly launchMaterial: QueuedLaunchMaterial;
-}): string {
-  return args.launchMaterial.prompt;
-}
-
-function queuedIntegrationPrompt(args: {
-  readonly launchMaterial: QueuedLaunchMaterial;
-}): string {
-  return args.launchMaterial.appendSystemPrompt;
-}
-
-function resolveQueuedMessageGenerationTemplatePrompt(args: {
-  readonly input: CreateQueuedChatRunInputArgs;
-  readonly userMessageProjection: ReturnType<typeof projectUserMessage>;
-  readonly mountedUserPresentationTemplateIds: readonly string[];
-  readonly mountedUserTemplates: readonly MountedUserTemplate[];
-}) {
-  return measureChatCallbackPreCreateTiming(
-    args.input.timing,
-    "api_dispatch_pre_create_agent_chat_callback_auto_send_resolve_template_context",
-    "nested",
-    () => {
-      return buildGenerationTemplatesPrompt(
-        args.userMessageProjection.templates,
-        {
-          mountedUserPresentationTemplateIds:
-            args.mountedUserPresentationTemplateIds,
-          mountedUserTemplates: args.mountedUserTemplates,
-        },
-      );
-    },
-  );
-}
-
-/**
- * What a queued message's own selections contribute to the run this dispatch
- * is about to create: the guidance block and the packages that back it.
- *
- * Access is re-checked here rather than trusted from the send that queued the
- * message. The row can be deleted or made private while the message waits, and
- * a volume this user may not read must never be assembled — so the same lookup
- * decides both what is mounted and what the prompt is allowed to mention.
- * An unavailable selection rejects the input instead of silently dropping
- * templates the user explicitly requested.
- */
-async function resolveQueuedMessageTemplateContext(args: {
-  readonly db: ReadonlyDb;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly input: Parameters<
-    typeof resolveQueuedMessageGenerationTemplatePrompt
-  >[0]["input"];
-  readonly userMessageProjection: Parameters<
-    typeof resolveQueuedMessageGenerationTemplatePrompt
-  >[0]["userMessageProjection"];
-  readonly featureSwitchContext: FeatureSwitchContext;
-}): Promise<
-  | {
-      readonly generationTemplatePrompt: string;
-      readonly generationTemplateIdentities: readonly GenerationTemplateIdentity[];
-      readonly presentationTemplateVolumes: readonly PresentationTemplateVolume[];
-    }
-  | {
-      readonly error: {
-        readonly code: "BAD_REQUEST";
-        readonly message: string;
-      };
-    }
-> {
-  const selectedTemplates = args.userMessageProjection.templates;
-  const mountedUserPresentationTemplateIds =
-    await authorizedUserPresentationTemplateIds(args.db, {
-      orgId: args.orgId,
-      userId: args.userId,
-      templateIds: selectedUserPresentationTemplateIds(selectedTemplates),
-    });
-  const mountedUserTemplates = await authorizedUserTemplates(args.db, {
-    orgId: args.orgId,
-    userId: args.userId,
-    templateIds: selectedUserTemplateIds(selectedTemplates),
-    enabled: isFeatureEnabled(
-      FeatureSwitchKey.CustomTemplates,
-      args.featureSwitchContext,
-    ),
-  });
-  const generationTemplates =
-    await resolveQueuedMessageGenerationTemplatePrompt({
-      input: args.input,
-      userMessageProjection: args.userMessageProjection,
-      mountedUserPresentationTemplateIds,
-      mountedUserTemplates,
-    });
-  if (generationTemplates.status === "invalid") {
-    return {
-      error: { code: "BAD_REQUEST", message: generationTemplates.message },
-    };
-  }
-  return {
-    generationTemplatePrompt: generationTemplates.prompt,
-    generationTemplateIdentities: selectedTemplates.map(
-      generationTemplateIdentity,
-    ),
-    // Both catalogs can be selected in one message while the tables are
-    // separate, so the run carries whichever packages it was actually given.
-    presentationTemplateVolumes: [
-      ...userPresentationTemplateVolumes(mountedUserPresentationTemplateIds),
-      ...userTemplateVolumes(mountedUserTemplates),
-    ],
-  };
-}
-
-async function loadQueuedChatRunContext(
-  args: CreateQueuedChatRunInputArgs,
-  signal: AbortSignal,
-) {
-  const featureSwitchContext = await loadUserFeatureSwitchContext(
-    args.db,
-    args.agent.orgId,
-    args.userId,
-  );
-  const modelRouteResolution = await resolveQueuedMessageModelRoute({
-    eventId: args.queuedMessage.id,
-    db: args.db,
-    threadId: args.threadId,
-    userId: args.userId,
-    orgId: args.agent.orgId,
-    contextType: args.queuedMessage.contextType,
-    featureSwitchContext,
-    timing: args.timing,
-  });
-  const userMessageProjection = queuedUserMessageProjection(
-    args.queuedMessage.userMessage,
-  );
-  const launchMaterial = await resolveQueuedLaunchMaterial(
-    { ...args, userMessageProjection, featureSwitchContext },
-    signal,
-  );
-  return {
-    featureSwitchContext,
-    modelRouteResolution,
-    userMessageProjection,
-    launchMaterial,
-  };
-}
-
-function queuedUserMessageProjection(
+export function queuedUserMessageProjection(
   message: QueuedUserMessage["userMessage"],
-) {
+): ReturnType<typeof projectUserMessage> {
   const queuedUserMessage = requiredUserMessageForEvent(
     "input.prompt",
     message,
@@ -3117,7 +2472,7 @@ function queuedUserMessageProjection(
   return projectUserMessage(queuedUserMessage);
 }
 
-function queuedIntegrationLaunchFields(
+export function queuedIntegrationLaunchFields(
   launchMaterial: QueuedLaunchMaterial,
   agentId: string,
 ) {
@@ -3134,147 +2489,6 @@ function queuedIntegrationLaunchFields(
     ...(launchMaterial.connectorSourceId
       ? { connectorSourceId: launchMaterial.connectorSourceId }
       : {}),
-  };
-}
-
-function resolveQueuedMessageComputerUseHostGrant(
-  args: CreateQueuedChatRunInputArgs,
-) {
-  return measureChatCallbackPreCreateTiming(
-    args.timing,
-    "api_dispatch_pre_create_agent_chat_callback_auto_send_resolve_computer_use_host",
-    "nested",
-    () => {
-      return loadComputerUseHostGrantForAutoSend({
-        db: args.db,
-        threadId: args.threadId,
-        orgId: args.agent.orgId,
-        userId: args.userId,
-      });
-    },
-  );
-}
-
-async function buildCreateQueuedChatRunInput(
-  args: CreateQueuedChatRunInputArgs,
-  signal: AbortSignal,
-): Promise<CreateQueuedChatRunInput | QueuedMessageAdmissionFailure> {
-  const {
-    featureSwitchContext,
-    modelRouteResolution,
-    userMessageProjection,
-    launchMaterial,
-  } = await loadQueuedChatRunContext(args, signal);
-  if (args.queuedMessage.autonomyBudget.kind !== "ok") {
-    return queuedMessageAdmissionFailure(args, launchMaterial, {
-      code:
-        args.queuedMessage.autonomyBudget.kind === "exhausted"
-          ? "AUTONOMY_BUDGET_EXHAUSTED"
-          : "AUTONOMY_SOURCE_UNAVAILABLE",
-      message:
-        args.queuedMessage.autonomyBudget.kind === "exhausted"
-          ? AUTONOMY_BUDGET_EXHAUSTED_MESSAGE
-          : args.queuedMessage.autonomyBudget.message,
-    });
-  }
-  if ("error" in modelRouteResolution) {
-    return queuedMessageAdmissionFailure(
-      args,
-      launchMaterial,
-      modelRouteResolution.error,
-    );
-  }
-  const modelRoute = modelRouteResolution.route;
-  // Keep session routing and launch on the same queued-message admission.
-  const { piExecution, routedModel } = routeQueuedMessagePiExecution({
-    input: args,
-    modelRoute,
-  });
-
-  const reasoningEffort = resolveReasoningEffortForDispatch({
-    selectedModel: routedModel.modelPin.selectedModel,
-    effort: routedModel.reasoningEffort ?? undefined,
-    runtimeProviderType:
-      routedModel.builtInModelRuntimeRoute?.providerType ??
-      routedModel.effectiveModelProvider,
-    piExecution,
-  });
-
-  const { incompleteContext, priorContext } =
-    await loadQueuedMessageSessionContext(
-      args,
-      routedModel,
-      launchMaterial.triggerSource,
-    );
-  const templateContext = await resolveQueuedMessageTemplateContext({
-    db: args.db,
-    orgId: args.agent.orgId,
-    userId: args.userId,
-    input: args,
-    userMessageProjection,
-    featureSwitchContext,
-  });
-  if ("error" in templateContext) {
-    return queuedMessageAdmissionFailure(
-      args,
-      launchMaterial,
-      templateContext.error,
-    );
-  }
-  const {
-    generationTemplatePrompt,
-    generationTemplateIdentities,
-    presentationTemplateVolumes,
-  } = templateContext;
-  const computerUseHostGrant =
-    await resolveQueuedMessageComputerUseHostGrant(args);
-  const prompt = queuedMessagePrompt({
-    launchMaterial,
-  });
-  return {
-    orgId: args.agent.orgId,
-    userId: args.userId,
-    agentId: args.agent.id,
-    expectedThreadAgentId: args.expectedThreadAgentId,
-    prompt,
-    appendSystemPrompt: buildAppendSystemPrompt(
-      queuedIntegrationPrompt({
-        launchMaterial,
-      }),
-      incompleteContext,
-      priorContext,
-      generationTemplatePrompt,
-      computerUseHostGrant?.displayName ?? null,
-    ),
-    presentationTemplateVolumes,
-    generationTemplateIdentities,
-    threadId: args.threadId,
-    queuedMessage: args.queuedMessage,
-    ...(args.queuedMessage.requiredOfficialWorkflowIds === undefined
-      ? {}
-      : {
-          requiredOfficialWorkflowIds:
-            args.queuedMessage.requiredOfficialWorkflowIds,
-        }),
-    modelPin: routedModel.modelPin,
-    effectiveModelProvider: routedModel.effectiveModelProvider,
-    builtInModelRuntimeRoute: routedModel.builtInModelRuntimeRoute,
-    cliAgentType: routedModel.cliAgentType,
-    piExecution,
-    codexServiceTier: routedModel.codexServiceTier,
-    reasoningEffort,
-    computerUseHostGrant,
-    triggerSource: launchMaterial.triggerSource,
-    realAgentInPreview: isFeatureEnabled(
-      FeatureSwitchKey.RealAgentInPreview,
-      featureSwitchContext,
-    ),
-    captureNetworkBodies: await chatNetworkBodyCaptureRequested(
-      args.db,
-      args.queuedMessage.id,
-    ),
-    ...queuedIntegrationLaunchFields(launchMaterial, args.agent.id),
-    autonomyBudget: args.queuedMessage.autonomyBudget.autonomyBudget,
   };
 }
 
@@ -3456,8 +2670,9 @@ function unreachableQueuedAdmissionFailure(failure: never): never {
   throw new Error(`Unsupported queued admission failure: ${String(failure)}`);
 }
 
-function recordAutoSentQueuedRunLaunch(
+export function recordAutoSentQueuedRunLaunch(
   args: {
+    readonly checkDiscordTypingBinding?: DiscordTypingBindingChecker;
     readonly db: Db;
     readonly userId: string;
     readonly timing: ChatCallbackPreCreateTimingCollector;
@@ -3489,7 +2704,12 @@ function recordAutoSentQueuedRunLaunch(
     prompt: runInput.prompt,
     includePriorRounds: true,
   });
-  scheduleQueuedLaunchStatus(db, runId, runInput);
+  scheduleQueuedLaunchStatus(
+    db,
+    runId,
+    runInput,
+    args.checkDiscordTypingBinding,
+  );
   args.timing.flush(runId, runInput.triggerSource);
 }
 
@@ -3498,9 +2718,11 @@ function scheduleQueuedLaunchStatus(
   db: Db,
   runId: string,
   runInput: CreateQueuedChatRunInput,
+  checkBinding?: DiscordTypingBindingChecker,
 ): void {
   if (runInput.discordDelivery) {
     scheduleDiscordRunTyping(db, {
+      checkBinding,
       runId,
       chatThreadId: runInput.threadId,
       target: runInput.discordDelivery,
@@ -4260,7 +3482,7 @@ function buildQueuedChatDispatchFailedCallbacks(
   };
 }
 
-function queuedChatDispatchFailedCallbacks(
+export function queuedChatDispatchFailedCallbacks(
   dependencies: ChatCallbackDependencies,
   runInput: CreateQueuedChatRunInput,
   signal: AbortSignal,
@@ -4380,10 +3602,11 @@ function teamsChatDeliveryDependencies(
 
 function discordChatDeliveryDependencies(
   db: Db,
+  checkAccess?: DiscordChatAccessChecker,
 ): Pick<ChatCallbackDependencies, "sendDiscordReply"> {
   return {
     sendDiscordReply: (request, signal) => {
-      return sendDiscordChatReply(db, request, signal);
+      return sendDiscordChatReply(db, { ...request, checkAccess }, signal);
     },
   };
 }
@@ -4520,10 +3743,16 @@ export async function handleChatInternalCallbackWithoutCcstate(
   );
 }
 
-const buildChatCallbackDependencies$ = command(
+export const buildChatCallbackDependencies$ = command(
   ({ set }, input: { readonly db: Db }): ChatCallbackDependencies => {
     const { db } = input;
     const dependencies: ChatCallbackDependencies = {
+      checkDiscordTypingBinding: (args, inputSignal) => {
+        return set(requireDiscordBinding$, args, inputSignal);
+      },
+      checkDiscordAccess: (args, inputSignal) => {
+        return set(requireDiscordConversationAccess$, args, inputSignal);
+      },
       releaseBrowsersForRun: (args, inputSignal) => {
         return set(releaseThreadBrowsersForRun$, args, inputSignal);
       },
@@ -4570,7 +3799,9 @@ const buildChatCallbackDependencies$ = command(
       },
       ...feishuChatDeliveryDependencies(db),
       ...teamsChatDeliveryDependencies(db),
-      ...discordChatDeliveryDependencies(db),
+      ...discordChatDeliveryDependencies(db, (args, inputSignal) => {
+        return set(requireDiscordConversationAccess$, args, inputSignal);
+      }),
       ...telegramChatDeliveryDependencies(db),
       ...agentPhoneChatDeliveryDependencies(db),
     };
@@ -4578,7 +3809,7 @@ const buildChatCallbackDependencies$ = command(
   },
 );
 
-function queuedMessageRejection(
+export function queuedMessageRejection(
   dependencies: ChatCallbackDependencies,
   failure: QueuedMessageAdmissionFailure,
 ): ChatQueueHeadRejection {
@@ -4683,7 +3914,11 @@ const unexpectedQueuedRejectionChannelLoaders: Readonly<
     };
   },
   discord: async ({ db, source, delivery, dependencies }, signal) => {
-    const material = await loadDiscordQueuedLaunchMaterial(db, source, signal);
+    const material = await loadDiscordQueuedLaunchMaterial(
+      db,
+      { ...source, checkAccess: dependencies.checkDiscordAccess },
+      signal,
+    );
     if (!material) {
       return undefined;
     }
@@ -4742,7 +3977,7 @@ interface QueuedPromptRejectionDelivery {
   readonly assistantEventId: string;
 }
 
-async function deliverQueuedPromptRejection(
+export async function deliverQueuedPromptRejection(
   db: Db,
   dependencies: ChatCallbackDependencies,
   args: QueuedPromptRejectionDelivery,
@@ -4812,134 +4047,6 @@ export const deliverUnexpectedQueuedPromptRejection$ = command(
     const db = set(writeDb$);
     const dependencies = set(buildChatCallbackDependencies$, { db });
     await deliverQueuedPromptRejection(db, dependencies, args, signal);
-  },
-);
-
-/**
- * The prompt assembler: build run parameters for a queued `input.prompt`
- * head from its context row (web, agent, or integration), the thread's model
- * route and session, and the message's own selections. A permanent admission
- * failure rejects the head and is delivered back to its integration.
- */
-export const assembleQueuedPromptRun$ = command(
-  async (
-    { set },
-    head: ChatQueueHeadContext,
-    signal: AbortSignal,
-  ): Promise<ChatQueueRunAssembly> => {
-    const db = set(writeDb$);
-    const timing = new ChatCallbackPreCreateTimingCollector();
-    const queuedMessage = await measureChatCallbackPreCreateTiming(
-      timing,
-      "api_dispatch_pre_create_agent_chat_callback_auto_send_lookup_queued_message",
-      "nested",
-      () => {
-        return loadNextUnclaimedQueuedUserMessage(db, head.chatThreadId);
-      },
-    );
-    signal.throwIfAborted();
-    if (queuedMessage?.id !== head.id) {
-      return { kind: "not-ready" };
-    }
-    timing.recordElapsed({
-      actionType:
-        "api_dispatch_pre_create_agent_chat_callback_auto_send_queue_age",
-      spanKind: "nested",
-      startedAt: queuedMessage.createdAt.getTime(),
-      finishedAt: head.apiStartTime,
-    });
-    const agent = await resolveIntegrationChatThreadAgent(db, head);
-    signal.throwIfAborted();
-    const dependencies = set(buildChatCallbackDependencies$, { db });
-    if (!agent) {
-      return {
-        kind: "rejected",
-        rejection: {
-          userId: head.userId,
-          error: {
-            code: "BAD_REQUEST",
-            message: "The organization default agent is unavailable",
-          },
-          deliver: (assistantEventId, deliverySignal) => {
-            return deliverQueuedPromptRejection(
-              db,
-              dependencies,
-              { head, assistantEventId },
-              deliverySignal,
-            );
-          },
-        },
-      };
-    }
-    const prepared = await settle(
-      measureChatCallbackPreCreateTiming(
-        timing,
-        "api_dispatch_pre_create_agent_chat_callback_auto_send_build_input",
-        "top_level",
-        () => {
-          return buildCreateQueuedChatRunInput(
-            {
-              db,
-              threadId: head.chatThreadId,
-              userId: head.userId,
-              agent: { id: agent.agentId, orgId: head.orgId },
-              expectedThreadAgentId: agent.expectedThreadAgentId,
-              queuedMessage,
-              timing,
-            },
-            signal,
-          );
-        },
-      ),
-      signal,
-    );
-    if (!prepared.ok) {
-      if (!(prepared.error instanceof DiscordQueuedLaunchUnavailableError)) {
-        throw prepared.error;
-      }
-      return {
-        kind: "rejected",
-        rejection: {
-          error: {
-            code: "DISCORD_ACCESS_REVOKED",
-            message: prepared.error.message,
-          },
-          userId: head.userId,
-        },
-      };
-    }
-    const runInput = prepared.value;
-    if ("kind" in runInput) {
-      return {
-        kind: "rejected",
-        rejection: queuedMessageRejection(dependencies, runInput),
-      };
-    }
-    return {
-      kind: "assembled",
-      run: {
-        ...buildQueuedCreateAgentRunArgs(
-          runInput,
-          head.apiStartTime,
-          queuedChatDispatchFailedCallbacks(dependencies, runInput, signal),
-        ),
-        persistProducerRunBinding: agent.persistProducerRunBinding,
-      },
-      rejection: (error) => {
-        return queuedMessageRejection(
-          dependencies,
-          rejectedQueuedRunAdmissionFailure(runInput, error),
-        );
-      },
-      launched: (runId) => {
-        recordAutoSentQueuedRunLaunch(
-          { db, userId: head.userId, timing },
-          runId,
-          runInput,
-        );
-        return Promise.resolve();
-      },
-    };
   },
 );
 

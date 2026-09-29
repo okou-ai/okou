@@ -15,7 +15,10 @@ import {
   discordDeliveryTargetSchema,
   type DiscordDeliveryTarget,
 } from "./discord-chat-callback-payload";
-import { loadDiscordChatRouteAccess } from "./discord-chat-route-access.service";
+import {
+  loadDiscordChatRouteAccess,
+  type DiscordChatAccessChecker,
+} from "./discord-chat-route-access.service";
 import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service";
 
 export class DiscordQueuedLaunchUnavailableError extends Error {
@@ -35,6 +38,7 @@ export interface DiscordQueuedLaunchMaterial {
 export async function loadDiscordQueuedLaunchMaterial(
   db: Db,
   args: {
+    readonly checkAccess?: DiscordChatAccessChecker;
     readonly eventId: string;
     readonly chatThreadId: string;
     readonly orgId: string;

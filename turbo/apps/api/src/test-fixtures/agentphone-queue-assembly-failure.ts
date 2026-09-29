@@ -1,6 +1,5 @@
 import { Client } from "pg";
 import { z } from "zod";
-
 import { closeDbPool } from "../lib/db";
 import { settleIncludingAbort } from "../signals/utils";
 import {
@@ -11,7 +10,7 @@ import {
 /**
  * No production API can cancel a PostgreSQL context read. Cancel only the
  * first authorization lookup for this owned queued input, using a real
- * database error; the subsequent rejection and delivery reads remain healthy.
+ * database error; later independent queue reads remain healthy.
  */
 export async function withAgentPhoneQueueAssemblyFailureFixture(
   queueEventId: string,

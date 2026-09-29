@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "chat_threads_agent_session_unique" ON "chat_threads" USING btree ("agent_session_id");

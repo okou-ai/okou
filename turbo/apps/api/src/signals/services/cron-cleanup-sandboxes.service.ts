@@ -415,7 +415,7 @@ const cleanupSingleRun$ = command(
       L.debug("Run already transitioned, skipping timeout", { runId: run.id });
       return undefined;
     }
-    set(scheduleReleasedSlotPicks$, committed.releasedSlots);
+    set(scheduleReleasedSlotPicks$, committed.releasedSlots, signal);
     const budgetExpired =
       committed.previousStatus === "running" && committed.chatThreadId !== null
         ? await expireRunTimeBudgetInput(

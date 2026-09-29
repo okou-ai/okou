@@ -120,7 +120,7 @@ interface NewUsageAllowanceAllocation {
   readonly unitsApplied: number;
 }
 
-interface UsageAllowanceAvailability {
+export interface UsageAllowanceAvailability {
   readonly remainingUnits: number;
   readonly shortRemainingUnits: number;
   readonly weeklyRemainingUnits: number;
@@ -705,8 +705,24 @@ export async function resolveUsageAllowanceAvailability(
   orgId: string,
 ): Promise<UsageAllowanceAvailability | null> {
   const startedAt = performance.now();
+  const snapshot = await readUsageAllowanceAvailabilitySnapshot(db, orgId);
+  return await resolveUsageAllowanceAvailabilityFromSnapshot(
+    db,
+    orgId,
+    snapshot,
+    startedAt,
+  );
+}
+
+/** Refresh an expired entitlement only after the caller has read its snapshot. */
+export async function resolveUsageAllowanceAvailabilityFromSnapshot(
+  db: Db,
+  orgId: string,
+  snapshot: UsageAllowanceAvailability | "allowance_refresh_required" | null,
+  startedAt = performance.now(),
+): Promise<UsageAllowanceAvailability | null> {
   let lockWaitMs = 0;
-  let availability = await readUsageAllowanceAvailabilitySnapshot(db, orgId);
+  let availability = snapshot;
   if (availability === "allowance_refresh_required") {
     availability = await db.transaction(async (tx) => {
       const lockStartedAt = performance.now();

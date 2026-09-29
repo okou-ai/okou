@@ -1,6 +1,5 @@
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
 import { exclusiveDurationBreakdown } from "@okouai/core/exclusive-duration";
-
 import { env } from "../../lib/env";
 import { normalizeBuildCommitSha } from "../../lib/build-info";
 import { logger } from "../../lib/log";
@@ -22,7 +21,6 @@ export type AdmissionLockLeaf =
 export type AdmissionAttemptOutcome =
   | "pending"
   | "rejected"
-  | "thread_session_snapshot_stale"
   | "queue_first_claim_lost"
   | "rolled_back";
 

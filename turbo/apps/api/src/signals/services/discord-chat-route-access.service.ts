@@ -2,10 +2,25 @@ import { createStore } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { discordChatThreadRoutes } from "@okouai/db/schema/discord-chat-thread-route";
 import type { Db } from "../external/db";
-import { requireDiscordConversationAccess$ } from "./discord-access.service";
+import {
+  requireDiscordConversationAccess$,
+  type DiscordConversationAccess,
+} from "./discord-access.service";
 import type { DiscordDeliveryTarget } from "./discord-chat-callback-payload";
 
+export type DiscordChatAccessChecker = (
+  args: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly guildId: string;
+    readonly channelId: string;
+    readonly mode: "view" | "read" | "write";
+  },
+  signal: AbortSignal,
+) => Promise<DiscordConversationAccess>;
+
 interface DiscordChatRouteAccessArgs {
+  readonly checkAccess?: DiscordChatAccessChecker;
   readonly chatThreadId: string;
   readonly orgId: string;
   readonly userId: string;
@@ -14,15 +29,26 @@ interface DiscordChatRouteAccessArgs {
   readonly hasConversationContext: boolean;
 }
 
+async function legacyDiscordConversationAccess(
+  args: Parameters<DiscordChatAccessChecker>[0],
+  signal: AbortSignal,
+): Promise<DiscordConversationAccess> {
+  // eslint-disable-next-line ccstate/no-create-store -- Pre-2026-09-29 legacy only; no new violations or suppressions. Access check; migrate to the request command graph.
+  return await createStore().set(
+    requireDiscordConversationAccess$,
+    args,
+    signal,
+  );
+}
+
 async function loadCurrentConversationAccess(
   args: DiscordChatRouteAccessArgs,
   channelId: string,
   mode: "view" | "read" | "write",
   signal: AbortSignal,
 ) {
-  // eslint-disable-next-line ccstate/no-create-store -- Pre-2026-09-29 legacy only; no new violations or suppressions. Access check; migrate to the request command graph.
-  const access = await createStore().set(
-    requireDiscordConversationAccess$,
+  const checkAccess = args.checkAccess ?? legacyDiscordConversationAccess;
+  const access = await checkAccess(
     {
       orgId: args.orgId,
       userId: args.userId,

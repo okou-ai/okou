@@ -1,7 +1,5 @@
 import { performance } from "node:perf_hooks";
-
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
-
 import { env } from "../../lib/env";
 import { normalizeBuildCommitSha } from "../../lib/build-info";
 import { singleton } from "../../lib/singleton";
@@ -158,6 +156,7 @@ export type ApiDispatchTimingActionType =
   | "api_dispatch_workflow_enqueue_replace_pending_ticks"
   | "api_dispatch_workflow_enqueue_source_transition"
   | "api_dispatch_workflow_event_created_to_consume_start"
+  | "api_dispatch_enqueue_commit_to_consume_start"
   | "api_dispatch_workflow_admission_display_name"
   | "api_dispatch_workflow_admission_transaction"
   | "api_dispatch_workflow_admission_transaction_callback"

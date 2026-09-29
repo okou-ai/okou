@@ -3,11 +3,10 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { HTTPException } from "hono/http-exception";
 import { HttpResponse } from "msw";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { testContext } from "../../../__tests__/test-context";
 import { now } from "../../../lib/time";
-import { holdThreadSessionConversationClearFixture } from "../../../test-fixtures/chat-events";
 import { holdPiContextPreparationStagesFixture } from "../../../test-fixtures/pi-context-preparation";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
@@ -200,88 +199,6 @@ describe("CHAT-02: run-level model overrides", () => {
         }),
       ]);
     });
-
-    it("captures once while a stale thread snapshot retries with the same account", async () => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
-      const captured = await configureSubscriptionPiModel(actor, {
-        accountId: `retry-subscription-${randomUUID()}`,
-      });
-
-      mockPiResourceArchiveDownloads();
-      const objects = mockPiCheckpointObjectStore();
-      const firstPrompt = "establish subscription session before retry";
-      const first = await sendChatRun(actor, {
-        agentId,
-        model: "gpt-5.6-terra",
-        prompt: firstPrompt,
-      });
-      await completeSandboxFirstPiRun({
-        actor,
-        answer: "subscription retry answer",
-        checkpointObjects: objects,
-        claim: await claimChatRun(runnerGroup, first.runId),
-        prompt: firstPrompt,
-        run: first,
-        usagePricingResolution: await createGptUsagePricingResolution(),
-      });
-
-      const conversationClear = await holdThreadSessionConversationClearFixture(
-        {
-          threadId: first.threadId,
-          signal: context.signal,
-        },
-      );
-      onTestFinished(async () => {
-        conversationClear.release();
-        await conversationClear.done;
-      });
-      const preparation = holdPiContextPreparationStagesFixture({
-        userId: actor.userId,
-        orgId: requireOrgId(actor),
-        signal: context.signal,
-      });
-      const waiting = await sendWaitingChatInput(actor, {
-        agentId,
-        threadId: first.threadId,
-        model: "gpt-5.6-terra",
-        prompt: "retry subscription preparation after snapshot change",
-      });
-
-      await Promise.all([
-        preparation.arrival("subscription-account"),
-        preparation.arrival("thread-session"),
-      ]);
-      preparation.release("subscription-account");
-      await preparation.arrival("post-authorization-context");
-      for (const stage of [
-        "post-authorization-context",
-        "thread-session",
-        "connector-contexts",
-        "model-provider",
-        "user-timezone",
-        "image-model",
-        "official-workflow",
-      ] as const) {
-        preparation.release(stage);
-      }
-      await expect
-        .poll(conversationClear.blockedWaiterCount)
-        .toBeGreaterThanOrEqual(1);
-
-      conversationClear.release();
-      await conversationClear.done;
-      const second = await waiting.launchedRun();
-      expect(preparation.arrivalCount("subscription-account")).toBe(1);
-      expect(preparation.arrivalCount("thread-session")).toBe(2);
-      await expect(api.readRun(actor, second.runId)).resolves.toMatchObject({
-        source: {
-          providerType: "codex-oauth-token",
-          account: { id: captured.accountSourceId },
-        },
-      });
-      preparation.releaseAll();
-      await cancelChatRun(actor, second.runId);
-    }, 90_000);
 
     it("keeps an unavailable capture ahead of a speculative thread failure", async () => {
       const f = await prepareSubscriptionThread();

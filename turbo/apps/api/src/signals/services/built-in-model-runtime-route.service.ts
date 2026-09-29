@@ -1,5 +1,4 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-
 import {
   getBuiltInModelRouteCandidates,
   type BuiltInModelRouteProviderType,
@@ -14,7 +13,6 @@ import { builtInModelCandidateCooldown } from "@okouai/db/schema/built-in-model-
 import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import { computed, type Computed } from "ccstate";
 import { and, eq, gt } from "drizzle-orm";
-
 import { singleton } from "../../lib/singleton";
 import { nowDate } from "../../lib/time";
 import { db$, type Db, type ReadonlyDb } from "../external/db";
@@ -222,6 +220,40 @@ export async function resolveBuiltInModelRuntimeRouteWithKeys(
     }
 
     return routeFromTarget(target, { id: keyId });
+  }
+  return null;
+}
+
+/** Choose the same first eligible route from one batched cooldown snapshot. */
+export function builtInModelRuntimeRouteFromSnapshot(args: {
+  readonly selectedModel: string;
+  readonly featureSwitchContext: FeatureSwitchContext;
+  readonly keyIdsByVendor: BuiltInModelKeyIdsByVendor;
+  readonly cooldowns: readonly {
+    readonly modelRuntimeProvider: string;
+    readonly modelRuntimeModel: string;
+  }[];
+}): BuiltInModelRuntimeRoute | null {
+  for (const target of eligibleBuiltInModelRouteCandidates(
+    args.selectedModel,
+    args.featureSwitchContext,
+  )) {
+    if (runtimeRouteUnavailableForTest(target)) {
+      continue;
+    }
+    const id = args.keyIdsByVendor.get(target.vendor);
+    if (
+      id === undefined ||
+      args.cooldowns.some((cooldown) => {
+        return (
+          cooldown.modelRuntimeProvider === target.providerType &&
+          cooldown.modelRuntimeModel === target.upstreamModel
+        );
+      })
+    ) {
+      continue;
+    }
+    return routeFromTarget(target, { id });
   }
   return null;
 }

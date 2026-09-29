@@ -1,17 +1,8 @@
-// INT-03 deep AgentPhone flows: linking through the webhook connect prompt,
-// real run dispatch through runner poll/claim, and completion replies through
-// typed internal callback dispatch. All state is constructed through public
-// APIs; the only mocked surfaces are the AgentPhone provider, Stripe, Clerk,
-// S3, and Axiom boundaries.
-
 import { createHash, randomUUID } from "node:crypto";
-
 import { HttpResponse, http } from "msw";
 import { describe, expect, it, beforeEach } from "vitest";
-
 import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
 import { GET_STARTED_REWARDS_CHANGED_EVENT } from "@okouai/api-contracts/contracts/get-started";
-
 import { testContext } from "../../../__tests__/test-context";
 import { mockEnv } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
@@ -51,6 +42,12 @@ import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { readGetStartedStatus } from "./helpers/get-started";
+
+// INT-03 deep AgentPhone flows: linking through the webhook connect prompt,
+// real run dispatch through runner poll/claim, and completion replies through
+// typed internal callback dispatch. All state is constructed through public
+// APIs; the only mocked surfaces are the AgentPhone provider, Stripe, Clerk,
+// S3, and Axiom boundaries.
 
 const context = testContext();
 interface LinkedAgentPhoneActor {
@@ -1637,7 +1634,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
   });
 
   it.each([false, true])(
-    "settles early assembly failure with current AgentPhone authorization (unlinked: %s)",
+    "preserves input after an infrastructure failure without sending an admission error (unlinked: %s)",
     async (unlink) => {
       const runs = createRunsApi(context);
       const ap = createAgentPhoneBddApi(context);
@@ -1652,7 +1649,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         body: "finish before queue assembly",
       });
       const activeRun = await claimDispatchedRun(runnerGroup);
-      const queuedPrompt = "reject this input before loading delivery";
+      const queuedPrompt = "retain this input when loading delivery fails";
       await ap.postAgentPhoneInboundMessage({
         channel: "sms",
         from: phone,
@@ -1696,16 +1693,20 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       // Infrastructure alone can cancel this SELECT. Target this input's
       // first context read, before the assembler has any delivery target.
       await withAgentPhoneQueueAssemblyFailureFixture(pending.id, async () => {
-        await completeSandboxRun(activeRun.sandboxToken, activeRun.runId, 0);
+        await expect(
+          completeSandboxRun(activeRun.sandboxToken, activeRun.runId, 0),
+        ).rejects.toMatchObject({ cause: { code: "57014" } });
       });
 
       const settled = await chat.listThreadEvents(actor, thread.chatThreadId);
       expect(settled.events).toContainEqual(
         expect.objectContaining({
-          eventType: "input.rejected",
-          revokesEventId: pending.id,
-          error: "internal_error",
+          eventType: "input.prompt",
+          id: pending.id,
         }),
+      );
+      expect(settled.events).not.toContainEqual(
+        expect.objectContaining({ revokesEventId: pending.id }),
       );
       expect(
         settled.events.some((event) => {
@@ -1720,18 +1721,80 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
           replies.map((reply) => {
             return reply.body;
           }),
-        ).toStrictEqual(
-          expect.arrayContaining([
-            "Task completed successfully.",
-            "Oops, something went wrong. Please try again later.",
-          ]),
-        );
-        expect(replies).toHaveLength(2);
+        ).toStrictEqual(["Task completed successfully."]);
       }
       await runs.heartbeatRunner(runnerGroup);
       expect((await runs.pollRunner(runnerGroup)).body.job).toBeNull();
     },
   );
+
+  it("rejects a queued input whose phone link was removed before admission", async () => {
+    const runs = createRunsApi(context);
+    const ap = createAgentPhoneBddApi(context);
+    const chat = createChatFilesBddApi(context);
+    const integrations = createBddIntegrationApi(context);
+    const { actor, phone, runnerGroup, sends } = await entitledLinkedActor();
+
+    await ap.postAgentPhoneInboundMessage({
+      channel: "sms",
+      from: phone,
+      body: "finish before the phone link is removed",
+    });
+    const activeRun = await claimDispatchedRun(runnerGroup);
+    const queuedPrompt = "reject this input after unlinking";
+    await ap.postAgentPhoneInboundMessage({
+      channel: "sms",
+      from: phone,
+      body: queuedPrompt,
+    });
+    await flushWaitUntilForTest();
+
+    const lifecycle = await chat.requestThreadEvents(actor, {}, [200]);
+    if (lifecycle.status !== 200) {
+      throw new Error("Expected AgentPhone thread lifecycle events");
+    }
+    const thread = lifecycle.body.events.find((event) => {
+      return event.kind === "created";
+    });
+    if (!thread) {
+      throw new Error("Expected an AgentPhone chat thread");
+    }
+    const queued = await chat.listThreadEvents(actor, thread.chatThreadId);
+    const pending = queued.events.find((event) => {
+      return (
+        event.eventType === "input.prompt" &&
+        event.userMessage.parts.some((part) => {
+          return part.type === "text" && part.text === queuedPrompt;
+        })
+      );
+    });
+    if (!pending) {
+      throw new Error("Expected the busy thread to retain the queued input");
+    }
+    expect(pending.runId).toBeUndefined();
+    await integrations.requestUnlinkAgentPhone(actor, [204]);
+    const beforeCompletion = sends.messages.length;
+
+    await completeSandboxRun(activeRun.sandboxToken, activeRun.runId, 0);
+
+    const settled = await chat.listThreadEvents(actor, thread.chatThreadId);
+    expect(settled.events).toContainEqual(
+      expect.objectContaining({
+        eventType: "input.rejected",
+        revokesEventId: pending.id,
+        error: "conflict",
+      }),
+    );
+    expect(settled.events).toContainEqual(
+      expect.objectContaining({
+        eventType: "output.error",
+        error: "conflict",
+      }),
+    );
+    expect(sends.messages).toHaveLength(beforeCompletion);
+    await runs.heartbeatRunner(runnerGroup);
+    expect((await runs.pollRunner(runnerGroup)).body.job).toBeNull();
+  });
 
   it("deduplicates repeated provider messages and completion callbacks", async () => {
     mockEnv("APP_URL", "https://app.okou.ai");

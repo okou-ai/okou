@@ -350,9 +350,7 @@ describe("thread-bound Pi Automation execution", () => {
       });
       await expectThreadPiTerminal(actor, threadId, piRunId);
       const piBinding = await readThreadSessionBinding(context, threadId);
-      expect(piBinding.agent_session_id).not.toBe(
-        legacyBinding.agent_session_id,
-      );
+      expect(piBinding.agent_session_id).toBe(legacyBinding.agent_session_id);
       const piHistory = await readPiConversationIdentityFixture(piRunId);
       // An Automation completion never produces memory (EPIC #33892
       // Decision 3): its owned Chat Thread is skipped as a non-interactive

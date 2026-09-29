@@ -574,7 +574,7 @@ describe("CHAT-02: queued chat thread picks", () => {
     await cancelChatRun(actor, launched.runId, claimed.sandboxHeaders);
   }, 90_000);
 
-  it("rejects an unavailable model and continues picking the organization's next thread", async () => {
+  it("rejects one input per thread and continues picking the organization's next thread", async () => {
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
     const { actor, agentId, runnerGroup, providerId } =
       await entitledNativeChatActor();
@@ -602,6 +602,14 @@ describe("CHAT-02: queued chat thread picks", () => {
       model: "claude-opus-5",
     });
     await chat.updateUserModelPreference(actor, "claude-fable-5-1");
+    const successorEventId = randomUUID();
+    const successor = await sendWaitingChatInput(actor, {
+      agentId,
+      threadId: unavailable.threadId,
+      prompt: "wait for the next pass after the rejected head",
+      clientEventId: successorEventId,
+      model: "claude-fable-5-1",
+    });
     const later = await sendWaiting(actor, agentId, "uses the remaining model");
     await api.updateOrgModelPolicies(actor, [nativePolicy]);
 
@@ -624,8 +632,15 @@ describe("CHAT-02: queued chat thread picks", () => {
     await expect(
       threadRunIds(actor, unavailable.threadId),
     ).resolves.toStrictEqual([]);
+    // A null result from rejection advances the organization pass to another
+    // thread. This pass does not consume the rejected head's successor.
+    await expect(
+      runOfInput(actor, successor.threadId, successorEventId),
+    ).resolves.toBeUndefined();
     const picked = await later.launchedRun();
-    await cancelChatRun(actor, picked.runId);
+    await finishRun(runnerGroup, picked.runId);
+    const successorRun = await successor.launchedRun();
+    await cancelChatRun(actor, successorRun.runId);
   }, 90_000);
 
   it("skips a recalled head and launches a later message on the thread", async () => {

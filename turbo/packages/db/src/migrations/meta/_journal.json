@@ -1471,6 +1471,13 @@
       "when": 1790643255359,
       "tag": "1287_drop_image_model_thread_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 1288,
+      "version": "7",
+      "when": 1790665518563,
+      "tag": "1288_chat_thread_canonical_session",
+      "breakpoints": true
     }
   ]
 }

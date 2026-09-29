@@ -1,5 +1,4 @@
 import { command } from "ccstate";
-
 import type { Tx } from "../../lib/db-types";
 import { writeDb$ } from "../external/db";
 import { publishChatThreadMessageCreatedSafely } from "../external/realtime";
@@ -10,7 +9,9 @@ import {
   workflowAutomationQueueEventWriter,
   type PersistWorkflowQueueSourceTransition,
   type WorkflowScheduleClaimPlan,
-} from "./workflow-chat-event-queue.service";
+  type RunWorkflowAutomationNowArgs,
+  type RunWorkflowAutomationResult,
+} from "./pick-chat-run.service";
 import {
   censusWorkflowAdmission,
   measureWorkflowAdmissionStep,
@@ -22,14 +23,27 @@ import {
   scheduleEnqueuedChatThreadPick$,
 } from "./chat-thread-queue-drain.service";
 import { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
+import type { ChatInputEnqueueCommit } from "./chat-input-enqueue-observation";
 import {
   persistedWorkflowAutomationEventPayload,
   workflowAutomationDisplayMessage,
 } from "./workflow-automation-context.service";
-import type {
-  RunWorkflowAutomationNowArgs,
-  RunWorkflowAutomationResult,
-} from "./workflow-automation-launch.service";
+
+const WORKFLOW_ENQUEUE_ACTIONS = {
+  transaction: "api_dispatch_workflow_enqueue_transaction",
+  callback: "api_dispatch_workflow_enqueue_transaction_callback",
+  queue_upsert: "api_dispatch_workflow_enqueue_queue_upsert",
+} as const;
+
+function workflowAdmissionSchedulePath(
+  kind: string,
+  hasScheduleClaim: boolean,
+): WorkflowAdmissionSchedulePath {
+  if (kind !== "schedule") {
+    return "non_schedule";
+  }
+  return hasScheduleClaim ? "journaled_schedule" : "unjournaled_schedule";
+}
 
 /**
  * The producer-owned write that commits with the queue event: claim and bind
@@ -169,13 +183,12 @@ export const runWorkflowAutomationNow$ = command(
     });
     signal.throwIfAborted();
 
-    const schedulePath: WorkflowAdmissionSchedulePath =
-      automation.kind !== "schedule"
-        ? "non_schedule"
-        : scheduleClaim
-          ? "journaled_schedule"
-          : "unjournaled_schedule";
+    const schedulePath = workflowAdmissionSchedulePath(
+      automation.kind,
+      scheduleClaim !== undefined,
+    );
     let admissionOutcome: WorkflowAdmissionOutcome = "failed";
+    let enqueueCommit: ChatInputEnqueueCommit | undefined;
     const enqueued = await flushWorkflowAdmission(
       censusWorkflowAdmission(
         schedulePath,
@@ -187,17 +200,14 @@ export const runWorkflowAutomationNow$ = command(
               enqueueChatInput(db, {
                 chatThreadId,
                 orgId: automation.orgId,
+                onCommitted: (receipt) => {
+                  enqueueCommit = receipt;
+                },
                 appendInput,
                 measureStep: (step, operation) => {
-                  const action = {
-                    transaction: "api_dispatch_workflow_enqueue_transaction",
-                    callback:
-                      "api_dispatch_workflow_enqueue_transaction_callback",
-                    queue_upsert: "api_dispatch_workflow_enqueue_queue_upsert",
-                  } as const;
                   return measureWorkflowAdmissionStep(
                     timing,
-                    action[step],
+                    WORKFLOW_ENQUEUE_ACTIONS[step],
                     operation,
                   );
                 },
@@ -248,16 +258,22 @@ export const runWorkflowAutomationNow$ = command(
     // A superseded occurrence adds no queue item; the claim plan's owner
     // records why.
     if (enqueued) {
-      set(scheduleEnqueuedChatThreadPick$, {
-        chatThreadId,
-        publish: async () => {
-          await publishChatThreadMessageCreatedSafely({
-            userId: automation.ownerUserId,
-            orgId: automation.orgId,
-            threadId: chatThreadId,
-          });
+      set(
+        scheduleEnqueuedChatThreadPick$,
+        {
+          orgId: automation.orgId,
+          chatThreadId,
+          ...(enqueueCommit ? { enqueueCommit } : {}),
+          publish: async () => {
+            await publishChatThreadMessageCreatedSafely({
+              userId: automation.ownerUserId,
+              orgId: automation.orgId,
+              threadId: chatThreadId,
+            });
+          },
         },
-      });
+        signal,
+      );
     }
     return { kind: "enqueued" };
   },

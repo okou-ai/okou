@@ -1,5 +1,7 @@
-import type { DispatchFailedRunCallbacks } from "./agent-run-create.service";
-import type { CreateQueueFirstAgentRunCommandArgs } from "./agent-runs-create.service";
+import type {
+  DispatchFailedRunCallbacks,
+  CreateQueueFirstAgentRunCommandArgs,
+} from "./pick-chat-run.service";
 
 /** Why a head is rejected, and who is told. */
 export interface ChatQueueHeadRejection {

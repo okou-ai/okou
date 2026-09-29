@@ -1,15 +1,13 @@
 import { randomUUID } from "node:crypto";
-
 import { createStore } from "ccstate";
-
 import { now } from "../lib/time";
-import { createAgentRun$ } from "../signals/services/agent-run-create.service";
 import {
+  createAgentRun$,
   clearAgentRunPiExecutionSnapshotHookForTest,
   createTestFixtureAgentRun$,
   setAgentRunPiExecutionSnapshotHookForTest,
   type AgentRunPiExecutionSnapshot,
-} from "../signals/services/agent-runs-create.service";
+} from "../signals/services/pick-chat-run.service";
 import { buildAgentExecutionConfig } from "../signals/services/agent-execution-config";
 import { createDeferredPromise } from "../signals/utils";
 

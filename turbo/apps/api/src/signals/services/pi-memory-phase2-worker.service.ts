@@ -11,7 +11,6 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { piMemoryPhase2Jobs } from "@okouai/db/schema/pi-memory-phase2-job";
 import { command } from "ccstate";
 import { and, asc, eq, isNotNull } from "drizzle-orm";
-
 import { logger } from "../../lib/log";
 import { now, nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
@@ -19,7 +18,7 @@ import { settle } from "../utils";
 import {
   createAgentRun$,
   type PersistProducerRunBinding,
-} from "./agent-run-create.service";
+} from "./pick-chat-run.service";
 import { dispatchRunCallbacks } from "./agent-run-callback.service";
 import {
   PiMemoryPhase2CredentialError,

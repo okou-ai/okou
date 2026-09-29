@@ -18,10 +18,9 @@ import {
   or,
   sql,
 } from "drizzle-orm";
-
 import { CONVERSATION_GUIDANCE } from "../../lib/conversation-guidance";
 import type { Db } from "../external/db";
-import { BEFORE_DISPATCH_CANCELLED_ERROR } from "./agent-run-create.service";
+import { BEFORE_DISPATCH_CANCELLED_ERROR } from "./agent-run-cancellation";
 import type { ChatThreadSessionResolutionAction } from "./chat-session-continuity.service";
 import { loadWebChatIncompleteContext } from "./chat-incomplete-context.service";
 import { visibleChatEventCondition } from "./chat-event-shared.service";

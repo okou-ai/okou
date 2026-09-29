@@ -11,7 +11,10 @@ import { waitUntil } from "../context/wait-until";
 import type { Db, ReadonlyDb } from "../external/db";
 import { discordClient } from "../external/discord-client";
 import { tapError } from "../utils";
-import { requireDiscordBinding$ } from "./discord-access.service";
+import {
+  requireDiscordBinding$,
+  type DiscordBindingAccess,
+} from "./discord-access.service";
 import type { DiscordFailureResponse } from "./discord-api-response";
 import {
   discordDeliveryTargetSchema,
@@ -25,6 +28,15 @@ const L = logger("DiscordRunTyping");
 const discordTypingPayloadSchema = z.object({
   discordDelivery: discordDeliveryTargetSchema,
 });
+
+export type DiscordTypingBindingChecker = (
+  args: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly guildId?: string;
+  },
+  signal: AbortSignal,
+) => Promise<DiscordBindingAccess>;
 
 /**
  * Discord shows a bot as typing for about ten seconds, so an active run asks
@@ -211,6 +223,14 @@ function typingAccessDenied(response: DiscordFailureResponse): null {
   throw new Error(`Discord typing access check failed: ${response.status}`);
 }
 
+async function legacyTypingBinding(
+  args: Parameters<DiscordTypingBindingChecker>[0],
+  signal: AbortSignal,
+): Promise<DiscordBindingAccess> {
+  // eslint-disable-next-line ccstate/no-create-store -- Pre-2026-09-29 legacy only; no new violations or suppressions. Typing access check; migrate to the request command graph.
+  return await createStore().set(requireDiscordBinding$, args, signal);
+}
+
 /**
  * The route, feature, binding and membership checks run on every refresh.
  * Discord permission reads are reused for typing only, within a short window.
@@ -218,6 +238,7 @@ function typingAccessDenied(response: DiscordFailureResponse): null {
 async function currentTypingAccess(
   db: Db,
   args: {
+    readonly checkBinding?: DiscordTypingBindingChecker;
     readonly chatThreadId: string;
     readonly orgId: string;
     readonly userId: string;
@@ -230,9 +251,8 @@ async function currentTypingAccess(
   if (!route) {
     return null;
   }
-  // eslint-disable-next-line ccstate/no-create-store -- Pre-2026-09-29 legacy only; no new violations or suppressions. Typing access check; migrate to the request command graph.
-  const current = await createStore().set(
-    requireDiscordBinding$,
+  const checkBinding = args.checkBinding ?? legacyTypingBinding;
+  const current = await checkBinding(
     { orgId: args.orgId, userId: args.userId, guildId: args.target.guildId },
     signal,
   );
@@ -279,6 +299,7 @@ async function currentTypingAccess(
 async function refreshDiscordRunTyping(
   db: Db,
   args: {
+    readonly checkBinding?: DiscordTypingBindingChecker;
     readonly runId: string;
     readonly chatThreadId: string;
     readonly target: DiscordDeliveryTarget;
@@ -325,6 +346,7 @@ async function refreshDiscordRunTyping(
 export function scheduleDiscordRunTyping(
   db: Db,
   args: {
+    readonly checkBinding?: DiscordTypingBindingChecker;
     readonly runId: string;
     readonly chatThreadId: string;
     readonly target: DiscordDeliveryTarget;

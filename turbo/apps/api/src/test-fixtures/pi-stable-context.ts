@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-
 import type {
   PiStableContextBuildInput,
   PiStableContextProjection,
@@ -16,14 +15,13 @@ import { storages } from "@okouai/db/schema/storage";
 import { createStore } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { onTestFinished } from "vitest";
-
 import { writeDb$, type Db } from "../signals/external/db";
 import {
   clearStableAgentPromptBuildHookForTest,
   clearStableContextCacheIdentityBuildHookForTest,
   setStableAgentPromptBuildHookForTest,
   setStableContextCacheIdentityBuildHookForTest,
-} from "../signals/services/agent-runs-create.service";
+} from "../signals/services/pick-chat-run.service";
 import { piStableContextInputDigest } from "../signals/services/pi-stable-context-digest.service";
 import {
   invalidatePiStableContext,

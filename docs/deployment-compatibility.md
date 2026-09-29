@@ -7204,3 +7204,55 @@ returns the original message instead of creating another. After the one-minute
 replay window the delivery stays uncertain and is never sent again. Explicit
 Discord rate-limit delays are persisted with the delivery attempt; subsequent
 completion requests return the remaining delay without sending early.
+
+## Canonical Chat application sessions
+
+Migration `1288_chat_thread_canonical_session` adds a unique index on
+`chat_threads.agent_session_id`. A thread may have no session before its first
+admitted run, and PostgreSQL continues to allow multiple null bindings. An
+application session may be the current binding of at most one thread. Historical
+sessions no longer referenced by a thread and threadless sessions remain intact;
+no historical run, conversation, checkpoint, or session ID is rewritten.
+
+Before production migration, audit duplicate non-null bindings with:
+
+```sql
+SELECT agent_session_id, count(*)
+FROM chat_threads
+WHERE agent_session_id IS NOT NULL
+GROUP BY agent_session_id
+HAVING count(*) > 1;
+```
+
+The migration rejects duplicates instead of assigning a different owner or
+silently detaching history. Any existing duplicates require an explicit repair
+based on their ownership and run provenance before rollout. The migration uses
+the repository's bounded transactional lock and statement timeouts; a failed
+index build does not authorize a longer timeout or production data changes.
+
+New admission preserves the thread's valid application session ID when its
+agent, runtime, or model family changes. It resets the native conversation
+checkpoint within that same session and replays visible prior turns when native
+history cannot be resumed. The same pending transaction updates session identity
+and storage, binds the run and consumed input, and creates the runner job; its
+last statement claims the unique active-run slot. A stale session snapshot or
+active-run uniqueness conflict rolls back the launch and fails the background
+pick without automatic preparation retries.
+
+Stable identity applies to an existing session owned by the thread's user and
+organization. The existing recovery behavior for a missing, deleted, or
+foreign-owned session binding is retained: admission refuses to resume that
+session, creates a new authorized application session, and repairs the thread's
+current binding in the pending transaction. It does not reuse the foreign ID or
+delete either session's history. The one-to-one guarantee covers valid current
+bindings; it does not claim that an invalid historical binding preserves its ID
+or that a thread has never referenced another detached session.
+
+An outgoing API remains compatible with the added unique index, but it can
+still replace a thread's application session during native-history rotation.
+Stable application identity therefore requires all admission writers to run the
+new implementation. Rolling back the API can restore rotation without corrupting
+retained history or invalidating the index. Native Runner checkpoint and claim
+protocols keep their existing shapes, so a running older Runner can finish the
+run it already owns. This change does not restore the removed thread/session
+foreign keys.

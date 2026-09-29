@@ -39,8 +39,10 @@ import {
   type AutomationEventRunTiming,
 } from "./automation-event-source-timing.service";
 import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
-import type { AutomationRow } from "./workflow-automation-launch.service";
-import type { WorkflowQueueAdmissionTransaction } from "./workflow-chat-event-queue.service";
+import type {
+  AutomationRow,
+  WorkflowQueueAdmissionTransaction,
+} from "./pick-chat-run.service";
 import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
 import { workflowAutomationCanFire } from "./workflow-automation-access.service";
 import { ensureWorkflowUserAutomationThread } from "./workflow-user-automation-thread.service";
