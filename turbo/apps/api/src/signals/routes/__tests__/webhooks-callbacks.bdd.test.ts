@@ -5106,7 +5106,10 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
       });
       const canceledSubscriptions: string[] = [];
       context.mocks.stripe.subscriptions.cancel.mockImplementation(
-        (subscriptionId: string) => {
+        (subscriptionId) => {
+          if (typeof subscriptionId !== "string") {
+            throw new TypeError("Expected a Stripe subscription ID");
+          }
           canceledSubscriptions.push(subscriptionId);
           return Promise.resolve({ id: subscriptionId, status: "canceled" });
         },
