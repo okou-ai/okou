@@ -8,7 +8,7 @@ import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-cred
 import {
   createSshCredential$,
   deleteSshCredential$,
-  listSshCredentials,
+  listSshCredentials$,
   updateSshCredential$,
 } from "../services/ssh-credential.service";
 import { command } from "ccstate";
@@ -17,16 +17,15 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { setResHeader$ } from "../context/hono";
 import { bodyResultOf, pathParamsOf } from "../context/request";
-import { db$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
-import { listSshConnectionObservations } from "../services/ssh-connection-observations.service";
+import { listSshConnectionObservations$ } from "../services/ssh-connection-observations.service";
 import {
   createSshConnection$,
   deleteSshConnection$,
-  listSshConnections,
+  listSshConnections$,
   resetSshConnectionHostKey$,
-  summarizeSshConnections,
+  summarizeSshConnections$,
   updateSshConnection$,
 } from "../services/ssh-connection.service";
 
@@ -59,10 +58,11 @@ const listSshConnectionsInner$ = command(
     set(setResHeader$, "Cache-Control", "no-store");
     const auth = get(organizationAuthContext$);
 
-    const connections = await listSshConnections(
-      get(db$),
+    const connections = await set(
+      listSshConnections$,
       auth.orgId,
       auth.userId,
+      signal,
     );
     signal.throwIfAborted();
     return { status: 200 as const, body: { connections } };
@@ -70,13 +70,14 @@ const listSshConnectionsInner$ = command(
 );
 
 const summarizeSshConnectionsInner$ = command(
-  async ({ get }, signal: AbortSignal) => {
+  async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
 
-    const summary = await summarizeSshConnections(
-      get(db$),
+    const summary = await set(
+      summarizeSshConnections$,
       auth.orgId,
       auth.userId,
+      signal,
     );
     signal.throwIfAborted();
     return { status: 200 as const, body: summary };
@@ -207,10 +208,11 @@ const listSshObservationsInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     set(setResHeader$, "Cache-Control", "no-store");
     const auth = get(organizationAuthContext$);
-    const observations = await listSshConnectionObservations(
-      get(db$),
+    const observations = await set(
+      listSshConnectionObservations$,
       auth.orgId,
       auth.userId,
+      signal,
     );
     signal.throwIfAborted();
     return { status: 200 as const, body: { observations } };
@@ -221,7 +223,7 @@ const listSshCredentialsInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     set(setResHeader$, "Cache-Control", "no-store");
     const owner = get(organizationAuthContext$);
-    const credentials = await listSshCredentials(get(db$), owner);
+    const credentials = await set(listSshCredentials$, owner, signal);
     signal.throwIfAborted();
     return { status: 200 as const, body: { credentials } };
   },

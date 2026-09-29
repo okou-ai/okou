@@ -9,10 +9,9 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { setResHeader$ } from "../context/hono";
 import { clerk$ } from "../external/clerk";
-import { writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
-import { loadUserFeatureSwitchContext } from "../services/feature-switches.service";
-import { listRunVncHosts } from "../services/vnc-access.service";
+import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
+import { listRunVncHosts$ } from "../services/vnc-access.service";
 import { hasCurrentVncMembership } from "../services/vnc-owner-lifecycle.service";
 
 const unavailable = Object.freeze(
@@ -26,11 +25,11 @@ const unavailable = Object.freeze(
 const admission$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "no-store");
   const auth = get(organizationAuthContext$);
-  const db = set(writeDb$);
-  const featureContext = await loadUserFeatureSwitchContext(
-    db,
+  const featureContext = await set(
+    loadUserFeatureSwitchContext$,
     auth.orgId,
     auth.userId,
+    signal,
   );
   signal.throwIfAborted();
   if (!isFeatureEnabled(FeatureSwitchKey.VncAccess, featureContext)) {
@@ -39,19 +38,19 @@ const admission$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!(await hasCurrentVncMembership(get(clerk$), auth, signal))) {
     return null;
   }
-  return db;
+  return true;
 });
 
 const listHosts$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const db = await set(admission$, signal);
-  if (!db) {
+  const admitted = await set(admission$, signal);
+  if (!admitted) {
     return unavailable;
   }
   const auth = get(organizationAuthContext$);
   if (auth.tokenType !== "agent") {
     throw new Error("VNC inventory requires Agent authentication");
   }
-  const result = await listRunVncHosts(db, auth, signal);
+  const result = await set(listRunVncHosts$, auth, signal);
   signal.throwIfAborted();
   return result ? { status: 200 as const, body: result } : unavailable;
 });

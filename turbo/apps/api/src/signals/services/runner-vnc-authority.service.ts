@@ -37,7 +37,7 @@ export async function currentRunnerVncAuthority(
       sshConnectionId: vncConnections.sshConnectionId,
       sshGeneration: sshConnections.generation,
       sshNeedsRebind: sshConnections.needsRebind,
-      sshAllowed: runThreadSshAccess(db),
+      sshAllowed: runThreadSshAccess(),
       x509ServerName: vncConnections.x509ServerName,
       securityType: vncConnections.securityType,
       trustMode: vncConnections.trustMode,
@@ -98,7 +98,7 @@ export async function currentRunnerVncAuthority(
           agentRuns.runnerHeartbeatGeneration,
           input.runnerIdentity.heartbeatGeneration,
         ),
-        runThreadVncAccess(db),
+        runThreadVncAccess(),
       ),
     );
   signal.throwIfAborted();

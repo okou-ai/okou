@@ -268,59 +268,59 @@ async function findOwnerConnection(
   return row;
 }
 
-async function countOwnerConnections(
-  db: Pick<ReadonlyDb, "select">,
-  orgId: string,
-  userId: string,
-): Promise<number> {
-  const [result] = await db
-    .select({ value: count() })
-    .from(sshConnections)
-    .where(
-      and(eq(sshConnections.orgId, orgId), eq(sshConnections.userId, userId)),
-    );
-  if (!result) {
-    throw new Error("SSH connection count query returned no row");
-  }
-  return result.value;
-}
+export const listSshConnections$ = command(
+  async (
+    { set },
+    orgId: string,
+    userId: string,
+    signal: AbortSignal,
+  ): Promise<readonly SshConnectionResponse[]> => {
+    const db = set(writeDb$);
+    const rows = await db
+      .select({
+        connection: sshConnections,
+        credential: {
+          name: sshCredentials.name,
+          username: sshCredentials.username,
+        },
+      })
+      .from(sshConnections)
+      .innerJoin(
+        sshCredentials,
+        eq(sshCredentials.id, sshConnections.credentialId),
+      )
+      .where(
+        and(eq(sshConnections.orgId, orgId), eq(sshConnections.userId, userId)),
+      )
+      .orderBy(asc(sshConnections.createdAt), asc(sshConnections.id));
+    signal.throwIfAborted();
+    return rows.map(({ connection, credential }) => {
+      return toSshConnectionResponse(connection, credential);
+    });
+  },
+);
 
-export async function listSshConnections(
-  db: ReadonlyDb,
-  orgId: string,
-  userId: string,
-): Promise<readonly SshConnectionResponse[]> {
-  const rows = await db
-    .select({
-      connection: sshConnections,
-      credential: {
-        name: sshCredentials.name,
-        username: sshCredentials.username,
-      },
-    })
-    .from(sshConnections)
-    .innerJoin(
-      sshCredentials,
-      eq(sshCredentials.id, sshConnections.credentialId),
-    )
-    .where(
-      and(eq(sshConnections.orgId, orgId), eq(sshConnections.userId, userId)),
-    )
-    .orderBy(asc(sshConnections.createdAt), asc(sshConnections.id));
-  return rows.map(({ connection, credential }) => {
-    return toSshConnectionResponse(connection, credential);
-  });
-}
-
-export async function summarizeSshConnections(
-  db: ReadonlyDb,
-  orgId: string,
-  userId: string,
-): Promise<{ readonly configuredCount: number }> {
-  return {
-    configuredCount: await countOwnerConnections(db, orgId, userId),
-  };
-}
+export const summarizeSshConnections$ = command(
+  async (
+    { set },
+    orgId: string,
+    userId: string,
+    signal: AbortSignal,
+  ): Promise<{ readonly configuredCount: number }> => {
+    const db = set(writeDb$);
+    const [result] = await db
+      .select({ configuredCount: count() })
+      .from(sshConnections)
+      .where(
+        and(eq(sshConnections.orgId, orgId), eq(sshConnections.userId, userId)),
+      );
+    signal.throwIfAborted();
+    if (!result) {
+      throw new Error("SSH connection count query returned no row");
+    }
+    return result;
+  },
+);
 
 interface PreparedSshConnectionCreation extends CreateSshConnectionArgs {
   readonly canonicalHost: string;

@@ -17,7 +17,7 @@ import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { isForeignKeyViolation, isUniqueViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
-import { writeDb$, type ReadonlyDb } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import { encryptStoredSecretValue } from "./crypto.utils";
 import { publishSshClientInvalidation } from "./ssh-client-invalidation.service";
@@ -113,48 +113,56 @@ function response(
     hosts,
   };
 }
-export async function listSshCredentials(
-  db: ReadonlyDb,
-  owner: Owner,
-): Promise<SshCredentialResponse[]> {
-  const rows = await db
-    .select({
-      credential: sshCredentialMetadata,
-      host: { id: sshConnections.id, displayName: sshConnections.displayName },
-    })
-    .from(sshCredentials)
-    .leftJoin(
-      sshConnections,
-      and(
-        eq(sshConnections.credentialId, sshCredentials.id),
-        eq(sshConnections.orgId, sshCredentials.orgId),
-        eq(sshConnections.userId, sshCredentials.userId),
-      ),
-    )
-    .where(
-      and(
-        eq(sshCredentials.orgId, owner.orgId),
-        eq(sshCredentials.userId, owner.userId),
-      ),
-    )
-    .orderBy(
-      asc(sshCredentials.createdAt),
-      asc(sshCredentials.id),
-      asc(sshConnections.id),
-    );
-  const values = new Map<string, SshCredentialResponse>();
-  for (const row of rows) {
-    let value = values.get(row.credential.id);
-    if (!value) {
-      value = response(row.credential, []);
-      values.set(value.id, value);
+export const listSshCredentials$ = command(
+  async (
+    { set },
+    owner: Owner,
+    signal: AbortSignal,
+  ): Promise<SshCredentialResponse[]> => {
+    const db = set(writeDb$);
+    const rows = await db
+      .select({
+        credential: sshCredentialMetadata,
+        host: {
+          id: sshConnections.id,
+          displayName: sshConnections.displayName,
+        },
+      })
+      .from(sshCredentials)
+      .leftJoin(
+        sshConnections,
+        and(
+          eq(sshConnections.credentialId, sshCredentials.id),
+          eq(sshConnections.orgId, sshCredentials.orgId),
+          eq(sshConnections.userId, sshCredentials.userId),
+        ),
+      )
+      .where(
+        and(
+          eq(sshCredentials.orgId, owner.orgId),
+          eq(sshCredentials.userId, owner.userId),
+        ),
+      )
+      .orderBy(
+        asc(sshCredentials.createdAt),
+        asc(sshCredentials.id),
+        asc(sshConnections.id),
+      );
+    signal.throwIfAborted();
+    const values = new Map<string, SshCredentialResponse>();
+    for (const row of rows) {
+      let value = values.get(row.credential.id);
+      if (!value) {
+        value = response(row.credential, []);
+        values.set(value.id, value);
+      }
+      if (row.host) {
+        value.hosts.push(row.host);
+      }
     }
-    if (row.host) {
-      value.hosts.push(row.host);
-    }
-  }
-  return [...values.values()];
-}
+    return [...values.values()];
+  },
+);
 async function encryptAuthentication(
   auth: SshAuthentication,
   context: FeatureSwitchContext,
