@@ -28,10 +28,7 @@ import { checkBillableOperationCredits$ } from "./billable-operation-admission.s
 import { storeGeneratedArtifactObject$ } from "./artifact-storage.service";
 import { recordWebUploadedFile$ } from "./run-uploaded-files.service";
 import { processUsageEventKeys$ } from "./credit-usage.service";
-import {
-  builtInGenerationUsageIdempotencyKey,
-  type BuiltInGenerationUsageIdempotency,
-} from "./built-in-generation-usage-idempotency";
+import { builtInGenerationUsageIdempotencyKey } from "./built-in-generation-usage-idempotency";
 
 const FAL_IMAGE_QUEUE_URL_PREFIX = "https://queue.fal.run";
 const FAL_BILLABLE_UNITS_HEADER = "x-fal-billable-units";
@@ -2559,7 +2556,7 @@ export const recordGeneratedImage$ = command(
         orgId: params.orgId,
         idempotencyKeys: usageRows.map((row) => {
           return builtInGenerationUsageIdempotencyKey({
-            ...params.usageIdempotency,
+            generationId: params.generationId,
             category: row.category,
           });
         }),
