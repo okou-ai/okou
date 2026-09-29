@@ -31,6 +31,7 @@ import {
   setOrgMemberRunModelOutsidePolicyFixture,
   setOrgModelPolicyProviderTypeFixture,
   stagePreAddabilityModelPolicyFixture,
+  stageSoleRetiredDefaultPolicyFixture,
 } from "../../../test-fixtures/org-model-policies";
 import {
   withBuiltInModelRuntimeRouteCandidateUnavailableForTest,
@@ -687,14 +688,14 @@ describe("GET/PUT /api/model-policies", () => {
   it("repairs a workspace whose only historical policy is a retired default", async () => {
     const fixture = seedFixture();
     useSession(fixture);
+    const client = apiClient();
+    await accept(client.list({ headers: authHeaders() }), [200]);
     // No current API can create this previously valid persisted state.
-    await stagePreAddabilityModelPolicyFixture({
+    await stageSoleRetiredDefaultPolicyFixture({
       orgId: fixture.orgId,
       userId: fixture.userId,
       model: "okou-1.0-pro",
-      isDefault: true,
     });
-    const client = apiClient();
 
     const listed = await accept(client.list({ headers: authHeaders() }), [200]);
     expect(listed.body.workspaceDefaultModel).toBe(

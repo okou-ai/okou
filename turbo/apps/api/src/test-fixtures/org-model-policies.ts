@@ -21,14 +21,13 @@ export async function stagePreAddabilityModelPolicyFixture(args: {
   readonly orgId: string;
   readonly userId: string;
   readonly model: SupportedRunModel;
-  readonly isDefault?: boolean;
 }): Promise<void> {
   const inserted = await db()
     .insert(orgModelPolicies)
     .values({
       orgId: args.orgId,
       model: args.model,
-      isDefault: args.isDefault ?? false,
+      isDefault: false,
       defaultProviderType: "built-in",
       credentialScope: "org",
       modelProviderId: null,
@@ -40,6 +39,30 @@ export async function stagePreAddabilityModelPolicyFixture(args: {
   if (inserted.length !== 1) {
     throw new Error("Expected one pre-addability model policy to be inserted");
   }
+}
+
+/** Only a historical writer could leave one retired default and no active policies. */
+export async function stageSoleRetiredDefaultPolicyFixture(args: {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly model: "okou-1.0-pro" | "okou-1.0-max";
+}): Promise<void> {
+  await db().transaction(async (tx) => {
+    await tx
+      .delete(orgModelPolicies)
+      .where(eq(orgModelPolicies.orgId, args.orgId));
+    await tx.insert(orgModelPolicies).values({
+      orgId: args.orgId,
+      model: args.model,
+      isDefault: true,
+      defaultProviderType: "built-in",
+      credentialScope: "org",
+      modelProviderId: null,
+      modelProviderSurfaceId: null,
+      createdByUserId: args.userId,
+      updatedByUserId: args.userId,
+    });
+  });
 }
 
 /** Enable one model in the test database without changing the production catalog. */
