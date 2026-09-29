@@ -597,7 +597,7 @@ async function insertWindow(
     readonly startsAt: Date;
     readonly createdByRunId: string | null;
   },
-): Promise<UsageAllowanceWindowState> {
+): Promise<UsageAllowanceWindow> {
   const [window] = await tx
     .insert(orgUsageAllowanceWindows)
     .values({
@@ -624,7 +624,7 @@ async function insertWindow(
   if (!window) {
     throw new Error("Usage allowance window insert returned no row");
   }
-  return { ...window, initialConsumedUnits: window.consumedUnits };
+  return window;
 }
 
 async function ensureWindowForRun(
