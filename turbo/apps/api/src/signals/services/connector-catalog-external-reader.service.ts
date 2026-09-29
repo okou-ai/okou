@@ -1,3 +1,4 @@
+import { command } from "ccstate";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { ConnectorCatalogSyncFailureCode } from "@okouai/api-contracts/contracts/connector-catalog-diagnostics";
 import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
@@ -29,8 +30,8 @@ import { and, eq } from "drizzle-orm";
 
 import { logger } from "../../lib/log";
 import { singleton, testOverride } from "../../lib/singleton";
-import type { ReadonlyDb } from "../external/db";
-import { onRejection, settle } from "../utils";
+import { writeDb$, type ReadonlyDb } from "../external/db";
+import { onRejection, safeSync, settle } from "../utils";
 import {
   SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
   type ConnectorCatalogArtifact,
@@ -371,6 +372,30 @@ async function readCurrentIdentity(args: {
     : undefined;
 }
 
+function currentCatalogPayloadSelection() {
+  return {
+    catalogRawSize: connectorCatalogActiveSnapshot.catalogRawSize,
+    catalogGzip: connectorCatalogActiveSnapshot.catalogGzip,
+    catalogValidationBackendVersion:
+      connectorCatalogCompatibilityEvaluation.catalogValidationBackendVersion,
+    catalogValidationBuildCommitSha:
+      connectorCatalogCompatibilityEvaluation.catalogValidationBuildCommitSha,
+    executableCapabilityDigest:
+      connectorCatalogCompatibilityEvaluation.executableCapabilityDigest,
+    filteredAuthMethods:
+      connectorCatalogCompatibilityEvaluation.filteredAuthMethods,
+  };
+}
+
+function currentCatalogPayloadCondition(identity: ExternalCatalogIdentity) {
+  return and(
+    eq(connectorCatalogActiveSnapshot.sourceId, identity.sourceId),
+    eq(connectorCatalogActiveSnapshot.schemaVersion, identity.schemaVersion),
+    eq(connectorCatalogActiveSnapshot.catalogVersion, identity.catalogVersion),
+    eq(connectorCatalogActiveSnapshot.catalogDigest, identity.catalogDigest),
+  );
+}
+
 async function readCurrentCatalogPayload(args: {
   readonly db: ReadonlyDb;
   readonly identity: ExternalCatalogIdentity;
@@ -381,40 +406,13 @@ async function readCurrentCatalogPayload(args: {
     "api_dispatch_connector_catalog_query_payload",
     async () => {
       return await args.db
-        .select({
-          catalogRawSize: connectorCatalogActiveSnapshot.catalogRawSize,
-          catalogGzip: connectorCatalogActiveSnapshot.catalogGzip,
-          catalogValidationBackendVersion:
-            connectorCatalogCompatibilityEvaluation.catalogValidationBackendVersion,
-          catalogValidationBuildCommitSha:
-            connectorCatalogCompatibilityEvaluation.catalogValidationBuildCommitSha,
-          executableCapabilityDigest:
-            connectorCatalogCompatibilityEvaluation.executableCapabilityDigest,
-          filteredAuthMethods:
-            connectorCatalogCompatibilityEvaluation.filteredAuthMethods,
-        })
+        .select(currentCatalogPayloadSelection())
         .from(connectorCatalogActiveSnapshot)
         .leftJoin(
           connectorCatalogCompatibilityEvaluation,
           externalCatalogJoin(args.identity.capabilityDigest),
         )
-        .where(
-          and(
-            eq(connectorCatalogActiveSnapshot.sourceId, args.identity.sourceId),
-            eq(
-              connectorCatalogActiveSnapshot.schemaVersion,
-              args.identity.schemaVersion,
-            ),
-            eq(
-              connectorCatalogActiveSnapshot.catalogVersion,
-              args.identity.catalogVersion,
-            ),
-            eq(
-              connectorCatalogActiveSnapshot.catalogDigest,
-              args.identity.catalogDigest,
-            ),
-          ),
-        )
+        .where(currentCatalogPayloadCondition(args.identity))
         .limit(1);
     },
   );
@@ -432,6 +430,23 @@ async function readCurrentCatalog(args: {
     return undefined;
   }
 
+  return materializeCurrentCatalog({
+    row,
+    identity: args.identity,
+    capability: args.capability,
+    ...(args.timing === undefined ? {} : { timing: args.timing }),
+  });
+}
+
+function materializeCurrentCatalog(args: {
+  readonly row: NonNullable<
+    Awaited<ReturnType<typeof readCurrentCatalogPayload>>
+  >;
+  readonly identity: ExternalCatalogIdentity;
+  readonly capability: ExecutableCapabilityState;
+  readonly timing?: ConnectorCatalogLoadTiming;
+}): AcceptedConnectorCatalogSnapshot {
+  const { row } = args;
   const decodeArgs = {
     catalogGzip: row.catalogGzip,
     catalogRawSize: row.catalogRawSize,
@@ -639,6 +654,87 @@ export async function loadAcceptedConnectorCatalogSnapshot(
   }
   return second;
 }
+
+/** Command-owned snapshot reader; payload decoding never receives a DB handle. */
+export const loadAcceptedConnectorCatalogSnapshot$ = command(
+  async (
+    { set },
+    signal: AbortSignal,
+  ): Promise<AcceptedConnectorCatalogSnapshot> => {
+    const db = set(writeDb$);
+    const sourceId = connectorCatalogSource().sourceId;
+    const capability = connectorCatalogExecutableCapabilityState();
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const [identityRow] = await db
+        .select({
+          schemaVersion: connectorCatalogActiveSnapshot.schemaVersion,
+          catalogVersion: connectorCatalogActiveSnapshot.catalogVersion,
+          catalogDigest: connectorCatalogActiveSnapshot.catalogDigest,
+        })
+        .from(connectorCatalogActiveSnapshot)
+        .where(
+          and(
+            eq(connectorCatalogActiveSnapshot.sourceId, sourceId),
+            eq(
+              connectorCatalogActiveSnapshot.schemaVersion,
+              SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
+            ),
+          ),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+      if (!identityRow) {
+        throw new ExternalConnectorCatalogUnavailableError(
+          "missing_current_identity",
+        );
+      }
+      const identity = {
+        ...identityRow,
+        sourceId,
+        capabilityDigest: capability.digest,
+      };
+      const key = identityKey(identity);
+      const cache = preparedCatalogCache();
+      if (cache.completed?.key === key) {
+        return cache.completed.catalog;
+      }
+      const [row] = await db
+        .select(currentCatalogPayloadSelection())
+        .from(connectorCatalogActiveSnapshot)
+        .leftJoin(
+          connectorCatalogCompatibilityEvaluation,
+          externalCatalogJoin(capability.digest),
+        )
+        .where(currentCatalogPayloadCondition(identity))
+        .limit(1);
+      signal.throwIfAborted();
+      if (!row) {
+        continue;
+      }
+      const parsed = safeSync(() => {
+        return materializeCurrentCatalog({ row, identity, capability });
+      });
+      if (!("ok" in parsed)) {
+        const failureCode = connectorCatalogArtifactFailureCode(parsed.error);
+        if (failureCode === undefined) {
+          throw parsed.error;
+        }
+        log.error("Rejected persisted connector catalog snapshot", {
+          ...identityLogFields(identity),
+          failureCode,
+        });
+        throw new ExternalConnectorCatalogUnavailableError(
+          `invalid_artifact:${failureCode}`,
+        );
+      }
+      cache.completed = { key, catalog: parsed.ok };
+      return parsed.ok;
+    }
+    throw new ExternalConnectorCatalogUnavailableError(
+      "missing_active_snapshot_after_retry",
+    );
+  },
+);
 
 /**
  * Applies rollout policy to discovery projections only. Feature switches must

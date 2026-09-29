@@ -32,6 +32,7 @@ import type { ResolvedConnectorActionMethod } from "./connector-action-resolver.
 import {
   getConnectorRuntimeMethod,
   loadConnectorRuntimeSnapshot,
+  loadConnectorRuntimeSnapshot$,
   type ConnectorRuntimeMethod,
   type ConnectorRuntimeSnapshot,
 } from "./connector-catalog-runtime.service";
@@ -41,7 +42,7 @@ import {
   type ReadyConnectorConnectionMutation,
 } from "./connector-connection-write.service";
 import {
-  claimConnectorOAuthState,
+  claimBuiltinConnectorOAuthState$,
   insertConnectorOAuthState,
   type StoredBuiltinOAuthState,
 } from "./connector-oauth-state.service";
@@ -74,7 +75,10 @@ import {
 } from "./mcp-automatic-oauth.service";
 import { configuredOkouMcpOAuthClientMetadata } from "./mcp-oauth-client-metadata.service";
 import { resolveRefreshedOAuthIdentity } from "./mcp-oauth-identity.service";
-import { commitConnectorRuntimeMutation } from "./connector-runtime-wakeup.service";
+import {
+  commitConnectorRuntimeMutation,
+  publishConnectorRuntimeSyncWakeups$,
+} from "./connector-runtime-wakeup.service";
 import { lockConnectorAccountTarget } from "./auth-state-lock.service";
 import {
   publishAutomaticCallbackConnection$,
@@ -219,6 +223,21 @@ async function currentContract(
     authMethodId,
   );
 }
+
+const currentBuiltinAutomaticContract$ = command(
+  async (
+    { set },
+    args: { readonly connectorSlug: string; readonly authMethodId: string },
+    signal: AbortSignal,
+  ): Promise<BuiltinAutomaticContract | null> => {
+    const snapshot = await set(loadConnectorRuntimeSnapshot$, signal);
+    return currentContractFromSnapshot(
+      snapshot,
+      args.connectorSlug,
+      args.authMethodId,
+    );
+  },
+);
 
 async function assertCurrentContract(
   db: Db,
@@ -784,6 +803,14 @@ const finishAutomaticOAuth$ = command(
     if (published.kind !== "connected") {
       return published;
     }
+    await set(
+      publishConnectorRuntimeSyncWakeups$,
+      {
+        scope: { orgId: stored.orgId, userId: stored.userId },
+        targets: [{ kind: "builtin", connectorSlug: stored.connectorSlug }],
+      },
+      signal,
+    );
     return {
       kind: "connected",
       connectorSlug: stored.connectorSlug,
@@ -847,11 +874,11 @@ export const completeBuiltinConnectorAutomatic$ = command(
     ) {
       return { kind: "error", reason: "invalid-state" };
     }
-    const claimed = await claimConnectorOAuthState(
-      db,
+    const claimed = await set(
+      claimBuiltinConnectorOAuthState$,
       {
         state: args.state,
-        target: { kind: "builtin", connectorSlug: candidate.connectorSlug },
+        connectorSlug: candidate.connectorSlug,
       },
       signal,
     );
@@ -900,29 +927,26 @@ export const completeBuiltinConnectorAutomatic$ = command(
     }
     // COMMIT may finish after cancellation; publish its wakeup before the
     // route observes the cancelled request.
+    const contract = await set(
+      currentBuiltinAutomaticContract$,
+      {
+        connectorSlug: stored.connectorSlug,
+        authMethodId: stored.authMethod,
+      },
+      signal,
+    );
     const operation = await settle(
-      commitConnectorRuntimeMutation(
-        set(
-          finishAutomaticOAuth$,
-          {
-            stored,
-            context,
-            contract: await currentContract(
-              db,
-              stored.connectorSlug,
-              stored.authMethod,
-            ),
-            code,
-            codeVerifier,
-            issuer: args.issuer,
-          },
-          signal,
-        ),
-        (result) => {
-          return result.kind === "connected"
-            ? builtinAutomaticWakeup(db, stored, stored.connectorSlug)
-            : undefined;
+      set(
+        finishAutomaticOAuth$,
+        {
+          stored,
+          context,
+          contract,
+          code,
+          codeVerifier,
+          issuer: args.issuer,
         },
+        signal,
       ),
       signal,
     );

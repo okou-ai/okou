@@ -1,3 +1,4 @@
+import { command } from "ccstate";
 import { createHash } from "node:crypto";
 
 import type {
@@ -42,6 +43,7 @@ import {
   getConnectorCatalogResolutionDetail,
   listAcceptedConnectorCatalogAvailableSlugs,
   loadAcceptedConnectorCatalogSnapshot,
+  loadAcceptedConnectorCatalogSnapshot$,
   type AcceptedConnectorCatalogSnapshot,
   type ExternalCatalogIdentity,
 } from "./connector-catalog-external-reader.service";
@@ -1317,6 +1319,19 @@ export async function loadConnectorRuntimeSnapshot(
   db: ReadonlyDb,
 ): Promise<ConnectorRuntimeSnapshot> {
   const acceptedSnapshot = await loadAcceptedConnectorCatalogSnapshot(db);
+  return connectorRuntimeSnapshotFromAccepted(acceptedSnapshot);
+}
+
+export const loadConnectorRuntimeSnapshot$ = command(
+  async ({ set }, signal: AbortSignal): Promise<ConnectorRuntimeSnapshot> => {
+    const accepted = await set(loadAcceptedConnectorCatalogSnapshot$, signal);
+    return connectorRuntimeSnapshotFromAccepted(accepted);
+  },
+);
+
+function connectorRuntimeSnapshotFromAccepted(
+  acceptedSnapshot: AcceptedConnectorCatalogSnapshot,
+): ConnectorRuntimeSnapshot {
   const { state } = connectorRuntimeState(acceptedSnapshot, undefined);
   if (state.snapshot !== undefined) {
     return state.snapshot;

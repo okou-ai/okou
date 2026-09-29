@@ -26,7 +26,7 @@ import {
   upsertBuiltinConnectorTokenConnection$,
 } from "./connector-data.service";
 import {
-  claimConnectorOAuthState,
+  claimBuiltinConnectorOAuthState$,
   insertConnectorOAuthState,
 } from "./connector-oauth-state.service";
 import { getMemberRoleAndUpdateCache$ } from "./auth.service";
@@ -234,12 +234,11 @@ const resolveSlackConnectorCallback$ = command(
     },
     signal: AbortSignal,
   ) => {
-    const db = set(writeDb$);
-    const claimed = await claimConnectorOAuthState(
-      db,
+    const claimed = await set(
+      claimBuiltinConnectorOAuthState$,
       {
         state: args.state,
-        target: { kind: "builtin", connectorSlug: "slack" },
+        connectorSlug: "slack",
       },
       signal,
     );
