@@ -472,6 +472,7 @@ interface ForwardComposerRequest {
   readonly target: ChatForwardTarget;
   readonly forward: ChatForwardContext;
   readonly onOptimisticSend: () => void;
+  readonly onAcceptedSend: () => void;
 }
 
 function createForwardState(closeSelection$: Command<void, []>) {
@@ -489,6 +490,7 @@ function createForwardState(closeSelection$: Command<void, []>) {
           request.target,
           request.forward,
           request.onOptimisticSend,
+          request.onAcceptedSend,
         )
       : null;
   });
