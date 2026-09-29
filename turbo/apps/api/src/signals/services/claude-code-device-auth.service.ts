@@ -1,3 +1,4 @@
+import type { DeviceAuthSessionPublication } from "./model-provider-device-session-publication";
 import { createHash, randomBytes } from "node:crypto";
 
 import { command } from "ccstate";
@@ -388,7 +389,14 @@ const markSessionError$ = command(
           message: args.message,
         }),
       )
-      .where(eq(modelProviderAuthSessions.id, args.sessionId));
+      .where(
+        and(
+          eq(modelProviderAuthSessions.id, args.sessionId),
+          inArray(modelProviderAuthSessions.status, [
+            ...CLAUDE_CODE_DEVICE_AUTH_ACTIVE_STATUSES,
+          ]),
+        ),
+      );
   },
 );
 
@@ -408,7 +416,14 @@ const markSessionExpired$ = command(
           now: nowDate(),
         }),
       )
-      .where(eq(modelProviderAuthSessions.id, args.session.id));
+      .where(
+        and(
+          eq(modelProviderAuthSessions.id, args.session.id),
+          inArray(modelProviderAuthSessions.status, [
+            ...CLAUDE_CODE_DEVICE_AUTH_ACTIVE_STATUSES,
+          ]),
+        ),
+      );
   },
 );
 
@@ -449,7 +464,12 @@ const moveSessionToAwaitingApproval$ = command(
         encryptedProviderState,
         updatedAt: nowDate(),
       })
-      .where(eq(modelProviderAuthSessions.id, args.session.id))
+      .where(
+        and(
+          eq(modelProviderAuthSessions.id, args.session.id),
+          eq(modelProviderAuthSessions.status, "initializing"),
+        ),
+      )
       .returning();
     if (!updated) {
       throw new Error("Failed to update Claude Code device auth session");
@@ -599,7 +619,15 @@ export const startClaudeCodeDeviceAuth$ = command(
       userId: args.userId,
       expiresAt: expiresAt(startedAt),
     });
-    signal.throwIfAborted();
+    if (signal.aborted) {
+      await set(cancelSession$, {
+        sessionId: session.id,
+        orgId: args.orgId,
+        userId: args.userId,
+        message: "Claude Code device auth session was cancelled",
+      });
+      signal.throwIfAborted();
+    }
     const cancelStartedSession = () => {
       detach(
         set(cancelSession$, {
@@ -702,26 +730,6 @@ const claimCompleting$ = command(
   },
 );
 
-const markSessionImported$ = command(
-  async (
-    { set },
-    args: {
-      readonly session: ModelProviderAuthSession;
-    },
-  ) => {
-    const writeDb = set(writeDb$);
-    await writeDb
-      .update(modelProviderAuthSessions)
-      .set(
-        terminalSessionSet({
-          status: "imported",
-          now: nowDate(),
-        }),
-      )
-      .where(eq(modelProviderAuthSessions.id, args.session.id));
-  },
-);
-
 function isSessionExpired(session: ModelProviderAuthSession): boolean {
   return session.expiresAt.getTime() <= nowDate().getTime();
 }
@@ -767,6 +775,7 @@ const importClaudeCodeOAuthToken$ = command(
   async (
     { get, set },
     args: {
+      readonly authSession?: DeviceAuthSessionPublication;
       readonly scope: ClaudeCodeDeviceAuthScope;
       readonly orgId: string;
       readonly userId: string;
@@ -800,6 +809,7 @@ const importClaudeCodeOAuthToken$ = command(
         upsertOrgModelProvider$,
         {
           orgId: args.orgId,
+          authSession: args.authSession,
           type: CLAUDE_CODE_DEVICE_AUTH_CONNECTOR_TYPE,
           secret: args.accessToken,
           metadata,
@@ -831,6 +841,7 @@ const importClaudeCodeOAuthToken$ = command(
         upsertPersonalModelProviderAccount$,
         {
           orgId: args.orgId,
+          authSession: args.authSession,
           userId: args.userId,
           type: CLAUDE_CODE_DEVICE_AUTH_CONNECTOR_TYPE,
           authMethod: null,
@@ -850,6 +861,7 @@ const importClaudeCodeOAuthToken$ = command(
       upsertUserModelProvider$,
       {
         orgId: args.orgId,
+        authSession: args.authSession,
         userId: args.userId,
         type: CLAUDE_CODE_DEVICE_AUTH_CONNECTOR_TYPE,
         secret: args.accessToken,
@@ -1010,6 +1022,11 @@ const importClaimedClaudeCodeDeviceAuth$ = command(
       set(
         importClaudeCodeOAuthToken$,
         {
+          authSession: {
+            id: args.session.id,
+            userId: args.userId,
+            source: "claude-code-device-auth",
+          },
           scope: args.scope,
           orgId: args.orgId,
           userId: args.userId,
@@ -1052,8 +1069,6 @@ const importClaimedClaudeCodeDeviceAuth$ = command(
       };
     }
 
-    await set(markSessionImported$, { session: args.session });
-    signal.throwIfAborted();
     return {
       status: "complete",
       body: imported.value,

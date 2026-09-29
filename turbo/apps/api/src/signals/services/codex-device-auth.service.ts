@@ -1,3 +1,4 @@
+import type { DeviceAuthSessionPublication } from "./model-provider-device-session-publication";
 import { command } from "ccstate";
 import type {
   CodexDeviceAuthMode,
@@ -427,7 +428,14 @@ const markSessionError$ = command(
           message: args.message,
         }),
       )
-      .where(eq(modelProviderAuthSessions.id, args.sessionId));
+      .where(
+        and(
+          eq(modelProviderAuthSessions.id, args.sessionId),
+          inArray(modelProviderAuthSessions.status, [
+            ...CODEX_DEVICE_AUTH_ACTIVE_STATUSES,
+          ]),
+        ),
+      );
   },
 );
 
@@ -447,7 +455,14 @@ const markSessionExpired$ = command(
           now: nowDate(),
         }),
       )
-      .where(eq(modelProviderAuthSessions.id, args.session.id));
+      .where(
+        and(
+          eq(modelProviderAuthSessions.id, args.session.id),
+          inArray(modelProviderAuthSessions.status, [
+            ...CODEX_DEVICE_AUTH_ACTIVE_STATUSES,
+          ]),
+        ),
+      );
   },
 );
 
@@ -487,7 +502,12 @@ const moveSessionToAwaitingApproval$ = command(
         encryptedProviderState,
         updatedAt: nowDate(),
       })
-      .where(eq(modelProviderAuthSessions.id, args.session.id))
+      .where(
+        and(
+          eq(modelProviderAuthSessions.id, args.session.id),
+          eq(modelProviderAuthSessions.status, "initializing"),
+        ),
+      )
       .returning();
     if (!updated) {
       throw new Error("Failed to update Codex device auth session");
@@ -663,7 +683,15 @@ export const startCodexDeviceAuth$ = command(
       userId: args.userId,
       expiresAt: expiresAt(startedAt),
     });
-    signal.throwIfAborted();
+    if (signal.aborted) {
+      await set(cancelSession$, {
+        sessionId: session.id,
+        orgId: args.orgId,
+        userId: args.userId,
+        message: "Codex device auth session was cancelled",
+      });
+      signal.throwIfAborted();
+    }
     const cancelStartedSession = () => {
       detach(
         set(cancelSession$, {
@@ -680,47 +708,62 @@ export const startCodexDeviceAuth$ = command(
     const unregisterAbortCancellation = () => {
       signal.removeEventListener("abort", cancelStartedSession);
     };
-    const userCodeResult = await settle(
-      requestOpenAiDeviceUserCode(signal),
-      signal,
-    ).finally(unregisterAbortCancellation);
-    signal.throwIfAborted();
-    if (!userCodeResult.ok) {
-      const message = unknownErrorMessage(
-        userCodeResult.error,
-        "Codex device code request failed",
+    return await (async (): Promise<CodexDeviceAuthStartResult> => {
+      const userCodeResult = await settle(
+        requestOpenAiDeviceUserCode(signal),
+        signal,
       );
-      await set(markSessionError$, {
-        sessionId: session.id,
-        message,
-      });
       signal.throwIfAborted();
+      if (!userCodeResult.ok) {
+        const message = unknownErrorMessage(
+          userCodeResult.error,
+          "Codex device code request failed",
+        );
+        await set(markSessionError$, {
+          sessionId: session.id,
+          message,
+        });
+        signal.throwIfAborted();
+        return {
+          ok: false,
+          code: "CODEX_DEVICE_AUTH_UNAVAILABLE",
+          message,
+        };
+      }
+
+      const updated = await settle(
+        set(moveSessionToAwaitingApproval$, {
+          session,
+          scope: args.scope,
+          mode: args.mode,
+          modelProviderId: args.modelProviderId,
+          deviceAuthId: userCodeResult.value.deviceAuthId,
+          userCode: userCodeResult.value.userCode,
+        }),
+        signal,
+      );
+      signal.throwIfAborted();
+
+      if (!updated.ok) {
+        return {
+          ok: false,
+          code: "CODEX_DEVICE_AUTH_UNAVAILABLE",
+          message: unknownErrorMessage(
+            updated.error,
+            "Codex device auth session changed",
+          ),
+        };
+      }
       return {
-        ok: false,
-        code: "CODEX_DEVICE_AUTH_UNAVAILABLE",
-        message,
+        ok: true,
+        sessionToken: encodeSession({ version: 1, sessionId: session.id }),
+        scope: args.scope,
+        browserUrl: CODEX_DEVICE_AUTH_VERIFICATION_URL,
+        verificationCode: userCodeResult.value.userCode,
+        expiresIn: remainingTtlSeconds(updated.value.expiresAt, nowDate()),
+        interval: userCodeResult.value.interval,
       };
-    }
-
-    const updated = await set(moveSessionToAwaitingApproval$, {
-      session,
-      scope: args.scope,
-      mode: args.mode,
-      modelProviderId: args.modelProviderId,
-      deviceAuthId: userCodeResult.value.deviceAuthId,
-      userCode: userCodeResult.value.userCode,
-    });
-    signal.throwIfAborted();
-
-    return {
-      ok: true,
-      sessionToken: encodeSession({ version: 1, sessionId: session.id }),
-      scope: args.scope,
-      browserUrl: CODEX_DEVICE_AUTH_VERIFICATION_URL,
-      verificationCode: userCodeResult.value.userCode,
-      expiresIn: remainingTtlSeconds(updated.expiresAt, nowDate()),
-      interval: userCodeResult.value.interval,
-    };
+    })().finally(unregisterAbortCancellation);
   },
 );
 
@@ -765,26 +808,6 @@ const claimCompleting$ = command(
   },
 );
 
-const markSessionImported$ = command(
-  async (
-    { set },
-    args: {
-      readonly session: ModelProviderAuthSession;
-    },
-  ) => {
-    const writeDb = set(writeDb$);
-    await writeDb
-      .update(modelProviderAuthSessions)
-      .set(
-        terminalSessionSet({
-          status: "imported",
-          now: nowDate(),
-        }),
-      )
-      .where(eq(modelProviderAuthSessions.id, args.session.id));
-  },
-);
-
 function isSessionExpired(session: ModelProviderAuthSession): boolean {
   return session.expiresAt.getTime() <= nowDate().getTime();
 }
@@ -803,6 +826,7 @@ function personalAccountMutation(args: {
 }
 
 interface ImportCodexAuthJsonArgs {
+  readonly authSession?: DeviceAuthSessionPublication;
   readonly scope: CodexDeviceAuthScope;
   readonly orgId: string;
   readonly userId: string;
@@ -856,6 +880,7 @@ const importCodexAuthJson$ = command(
             upsertOrgMultiAuthModelProvider$,
             {
               orgId: args.orgId,
+              authSession: args.authSession,
               type: CODEX_DEVICE_AUTH_CONNECTOR_TYPE,
               authMethod: pasteArgs.authMethod,
               secretValues: pasteArgs.secretValues,
@@ -878,6 +903,7 @@ const importCodexAuthJson$ = command(
             upsertPersonalModelProviderAccount$,
             {
               orgId: args.orgId,
+              authSession: args.authSession,
               userId: args.userId,
               type: CODEX_DEVICE_AUTH_CONNECTOR_TYPE,
               authMethod: pasteArgs.authMethod,
@@ -895,6 +921,7 @@ const importCodexAuthJson$ = command(
           upsertUserMultiAuthModelProvider$,
           {
             orgId: args.orgId,
+            authSession: args.authSession,
             userId: args.userId,
             type: CODEX_DEVICE_AUTH_CONNECTOR_TYPE,
             authMethod: pasteArgs.authMethod,
@@ -1161,6 +1188,11 @@ const importClaimedCodexDeviceAuth$ = command(
       set(
         importCodexAuthJson$,
         {
+          authSession: {
+            id: args.session.id,
+            userId: args.userId,
+            source: "codex-device-auth",
+          },
           scope: args.scope,
           orgId: args.orgId,
           userId: args.userId,
@@ -1199,8 +1231,6 @@ const importClaimedCodexDeviceAuth$ = command(
       return imported.value;
     }
 
-    await set(markSessionImported$, { session: args.session });
-    signal.throwIfAborted();
     return {
       status: "complete",
       body: {

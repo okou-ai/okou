@@ -1,3 +1,7 @@
+import {
+  deviceAuthSessionPublicationSql,
+  type DeviceAuthSessionPublication,
+} from "./model-provider-device-session-publication";
 import { randomUUID } from "node:crypto";
 import { command, computed, type Computed } from "ccstate";
 import {
@@ -561,6 +565,7 @@ const persistSingleAuthModelProvider$ = command(
       readonly encryptedValue: string;
       readonly selectedModel?: string;
       readonly metadata?: ModelProviderMetadata;
+      readonly authSession?: DeviceAuthSessionPublication;
     },
     signal: AbortSignal,
   ): Promise<{
@@ -640,6 +645,10 @@ const persistSingleAuthModelProvider$ = command(
         throw new Error("Expected model provider upsert to return a row");
       }
 
+      const consent = deviceAuthSessionPublicationSql(args);
+      if (consent && (await tx.execute(consent)).rowCount !== 1) {
+        throw new Error("Device authorization was cancelled or expired");
+      }
       return { provider, created: !existingProvider };
     });
     signal.throwIfAborted();
@@ -660,6 +669,7 @@ export const upsertUserModelProvider$ = command(
       readonly secret: string;
       readonly selectedModel?: string;
       readonly metadata?: ModelProviderMetadata;
+      readonly authSession?: DeviceAuthSessionPublication;
     },
     signal: AbortSignal,
   ): Promise<
@@ -761,6 +771,7 @@ const persistMultiAuthModelProvider$ = command(
       readonly authMethod: string;
       readonly selectedModel?: string;
       readonly metadata?: ModelProviderMetadata;
+      readonly authSession?: DeviceAuthSessionPublication;
       readonly secretNames: readonly string[];
       readonly encryptedSecrets: readonly EncryptedMultiAuthSecret[];
     },
@@ -860,6 +871,10 @@ const persistMultiAuthModelProvider$ = command(
           "Expected multi-auth model provider upsert to return a row",
         );
       }
+      const consent = deviceAuthSessionPublicationSql(args);
+      if (consent && (await tx.execute(consent)).rowCount !== 1) {
+        throw new Error("Device authorization was cancelled or expired");
+      }
       return { provider, wasCreated: !existingProvider };
     });
     signal.throwIfAborted();
@@ -938,6 +953,7 @@ export const upsertUserMultiAuthModelProvider$ = command(
       readonly secretValues: Record<string, string>;
       readonly selectedModel?: string;
       readonly metadata?: ModelProviderMetadata;
+      readonly authSession?: DeviceAuthSessionPublication;
     },
     signal: AbortSignal,
   ): Promise<
@@ -1018,6 +1034,7 @@ export const upsertOrgModelProvider$ = command(
       readonly secret: string;
       readonly selectedModel?: string;
       readonly metadata?: ModelProviderMetadata;
+      readonly authSession?: DeviceAuthSessionPublication;
     },
     signal: AbortSignal,
   ) => {
@@ -1030,6 +1047,7 @@ export const upsertOrgModelProvider$ = command(
         secret: args.secret,
         selectedModel: args.selectedModel,
         metadata: args.metadata,
+        authSession: args.authSession,
       },
       signal,
     );
@@ -1046,6 +1064,7 @@ export const upsertOrgMultiAuthModelProvider$ = command(
       readonly secretValues: Record<string, string>;
       readonly selectedModel?: string;
       readonly metadata?: ModelProviderMetadata;
+      readonly authSession?: DeviceAuthSessionPublication;
     },
     signal: AbortSignal,
   ) => {
@@ -1059,6 +1078,7 @@ export const upsertOrgMultiAuthModelProvider$ = command(
         secretValues: args.secretValues,
         selectedModel: args.selectedModel,
         metadata: args.metadata,
+        authSession: args.authSession,
       },
       signal,
     );

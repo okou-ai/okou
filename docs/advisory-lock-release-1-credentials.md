@@ -457,3 +457,26 @@ Reinterpreting a timestamp or reconnect flag as a renewable claim would instead
 introduce the prohibited coordination protocol. The current Airtable admission
 and the remaining firewall command migration are explicit R1 gaps; this evidence
 is not approval to retain a permanent lock or add a third release.
+
+### Device authorization cancellation and credential publication
+
+Claude/Codex device-session reads and writes now use commands that acquire
+`writeDb$` internally. Provider HTTP and encryption stay outside SQL. Setup
+can only advance an existing `initializing` session; late error/expiry writes
+cannot replace a terminal status. Cancellation cleanup captures business IDs,
+not a database, and stays registered until setup finishes.
+
+The actual single-secret, multi-auth and personal-account publication commands
+also conditionally complete the same existing device session in the credential
+transaction. Exact organization, acting user, connector, source, `completing`
+status and unexpired lifetime are required. If cancellation won, the whole
+credential publication rolls back; if publication won, subsequent cancellation
+cannot undo or revive that completed consent. Existing status fields are reused;
+no claim, lease, coordination field, trigger or external I/O is introduced.
+
+API tests cancel during the provider token HTTP exchange and verify that org
+and personal credentials remain absent and the session stays cancelled. A
+second test supersedes an in-flight setup through the public start API and
+checks that its late result cannot replace the newer authorization. These tests
+use neither database gates nor internal lock waiters. This closes device-session
+publication only; provider refresh/revocation protocols remain listed separately.

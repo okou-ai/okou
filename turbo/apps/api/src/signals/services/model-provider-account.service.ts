@@ -1,3 +1,7 @@
+import {
+  deviceAuthSessionPublicationSql,
+  type DeviceAuthSessionPublication,
+} from "./model-provider-device-session-publication";
 import { command } from "ccstate";
 import {
   getFrameworkForType,
@@ -410,6 +414,7 @@ function affectedCodexExpiryBindings(
 }
 
 export type UpsertPersonalAccountArgs = {
+  readonly authSession?: DeviceAuthSessionPublication;
   readonly orgId: string;
   readonly userId: string;
   readonly type: PersonalSubscriptionProviderType;
@@ -448,6 +453,7 @@ async function resolveConnectionIdentityMetadata(
 }
 
 interface PreparedPersonalAccountPublication {
+  readonly authSession?: DeviceAuthSessionPublication;
   readonly orgId: string;
   readonly userId: string;
   readonly type: PersonalSubscriptionProviderType;
@@ -687,6 +693,10 @@ const publishPersonalModelProviderAccount$ = command(
             .update(modelProviders)
             .set({ selectedModel, updatedAt: nowDate() })
             .where(eq(modelProviders.id, provider.id));
+        }
+        const consent = deviceAuthSessionPublicationSql(args);
+        if (consent && (await tx.execute(consent)).rowCount !== 1) {
+          throw new Error("Device authorization was cancelled or expired");
         }
         signal.throwIfAborted();
         return {
