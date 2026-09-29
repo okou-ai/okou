@@ -10,7 +10,7 @@ type ChatRunFinishedEventCommand = Command<
 const configuredChatRunFinishedEventCommand$ = state<
   ChatRunFinishedEventCommand | undefined
 >(undefined);
-// eslint-disable-next-line ccstate/no-create-store -- Legacy command registry; replace with an explicit process owner.
+// eslint-disable-next-line ccstate/no-create-store -- Pre-2026-09-29 legacy only; no new violations or suppressions. Command registry; replace with an explicit process owner.
 const configurationStore = createStore();
 
 /** Configure the chat-run-finished implementation from the API composition root. */

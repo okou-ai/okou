@@ -123,7 +123,7 @@ async function downloadInputAttachment(
   }
   // A CDN capability can expire after lookup. A fresh store rechecks binding,
   // membership and both parties' access before refreshing it once.
-  // eslint-disable-next-line ccstate/no-create-store -- Legacy access refresh; preserve revalidation when reusing the request Store.
+  // eslint-disable-next-line ccstate/no-create-store -- Pre-2026-09-29 legacy only; no new violations or suppressions. Access refresh; preserve revalidation when reusing the request Store.
   const access = await createStore().set(
     requireDiscordConversationAccess$,
     {
