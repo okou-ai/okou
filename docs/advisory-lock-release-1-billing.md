@@ -6,6 +6,14 @@ tracks the seven billing acquisition definitions separately from transaction
 propagation. It does **not** declare the whole billing package ready for
 Release 2.
 
+The accepted Stripe target has since changed to
+[local desired state and daily reconciliation](advisory-lock-terminal-state.md#declarative-stripe-subscriptions-and-daily-reconciliation),
+with one new business table allowed if needed. Temporary quantity/schedule drift
+is accepted. Earlier references here to a common remote ordering protocol do
+not require preventing every stale intermediate configuration write; assess
+them against eventual convergence and the retained financial guarantees.
+This records the new target, not an implemented replacement.
+
 ## Implemented protocols
 
 ### Stripe customer publication
@@ -448,38 +456,36 @@ removing their compatibility boundary.
 
 ## Unresolved Release 1 work
 
-Billing Release 1 preparation is **not complete**. The important unresolved
-case is an absolute remote subscription update: operation A computes quantity
-2, operation B computes and publishes quantity 3, and A's already-issued
-request later writes 2. A database CAS after Stripe succeeds cannot undo that
-remote effect, and different Stripe idempotency keys only deduplicate each
-operation individually.
+Billing Release 1 preparation is **not complete**. The accepted replacement is
+durable local desired subscription state and daily reconciliation across the
+shared writers. If an older request writes quantity 2 after a newer request
+wrote 3, that temporary drift is now accepted: subsequent reconciliation must
+read the desired 3 and repair Stripe. A database CAS cannot undo a remote write,
+but preventing that intermediate write is no longer an acceptance requirement.
 
 The [Stripe protocol evidence review](advisory-lock-release-1-stripe-protocol-evidence.md)
-records the investigated item/schedule identity alternatives, verified provider
-contracts, and remaining admission and recovery obligations. In particular,
-Stripe permits replacing an unpaid pending update, and creating a schedule from
-a subscription has no expected previous schedule identity. Neither primitive
-alone establishes the common write protocol.
+records historical item/schedule ordering alternatives and verified provider
+contracts. The former are not prerequisites for this new target. The latter
+still matter to financial effects: configuration repair must not repeatedly
+issue invoices, replace payment actions incorrectly or grant unpaid service.
 
 The current allocation, plan-change, migration and invitation rows have useful
-business identities and recovery states, but this PR does not establish one
-compatible ordering protocol across all of those writers. Concurrency add-on
-change, cancellation and restoration also write the shared schedule; they do not
-have persisted purchase/change identities and previously did not enter the
-`usage_pack_billing` boundary. Their current random schedule idempotency keys are
-not a cross-operation ordering protocol. A complete replacement must include
-these GA writers even if a particular usage-pack UI is staff-only.
+business identities and recovery states. Allocation, plan change, migration,
+invitation, concurrency add-on, cancellation and restoration must all express
+their intended configuration through the same desired-state model. Webhooks
+must keep observed provider facts separate from that intent. A complete
+replacement includes these GA writers even if a usage-pack UI is staff-only;
+the approved business table does not authorize a generic lock or claim table.
 
 Plan purchase creation also cannot use `stripe_subscription_id` as an unchecked
 reservation. The current webhook explicitly rejects replacing an active/trialing
 binding with an incomplete subscription, billing management reads that binding,
 and Stripe `default_incomplete` can immediately activate zero-cost/trial
 subscriptions. Merely publishing a candidate ID before payment would change
-those observable semantics without establishing common admission. It adds no persisted
-field, coordination table or JSON marker to hide that gap. Additional
-implementation belongs to the same Release 1 wave before calling it ready; this
-finding alone is not evidence that a third release is required.
+those observable semantics without establishing common admission. The new
+business-table allowance does not by itself solve duplicate payable purchases.
+Additional implementation belongs to the same Release 1 wave before calling it
+ready; this finding alone is not evidence that a third release is required.
 
 ## Verification boundary
 

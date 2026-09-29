@@ -5,6 +5,17 @@ no persisted coordination fields. Release 1 prepares every writer that Release 2
 may overlap with; removing acquisition expressions alone does not satisfy the
 transaction ownership or external-I/O requirements.
 
+**Stripe target update — September 29:** Ethan approved local desired
+subscription state, once-daily Stripe reconciliation and one new business table
+with its necessary fields if needed. Temporary quantity/schedule drift is
+accepted; global ordering of configuration writes is no longer the target.
+Payment, refund and paid-entitlement correctness remain required. The
+[declarative subscription contract](./advisory-lock-terminal-state.md#declarative-stripe-subscriptions-and-daily-reconciliation)
+supersedes strict-ordering requirements in the inventory below. This is an
+approved implementation direction, not a claim that reconciliation or its
+schema has been implemented. Reassess the remaining Stripe boundaries against
+that contract; do not retain them solely to prevent temporary provider drift.
+
 All implementation work is consolidated into [#37313](https://github.com/okou-ai/okou/pull/37313).
 The source branches are preserved. This document distinguishes implemented
 preparation, outgoing-writer compatibility boundaries, and unfinished work.

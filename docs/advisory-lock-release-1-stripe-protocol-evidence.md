@@ -1,5 +1,25 @@
 # Advisory lock cleanup: Stripe writer protocol evidence
 
+## Scope update: declarative configuration accepted
+
+On September 29, Ethan approved the
+[declarative subscription contract](advisory-lock-terminal-state.md#declarative-stripe-subscriptions-and-daily-reconciliation):
+local desired configuration, once-daily Stripe reconciliation, temporary
+quantity/schedule drift and one new business table if needed. This supersedes
+the strict configuration-ordering requirement used by the investigation below.
+Its item/schedule fencing and common-key proposals are historical alternatives,
+not prerequisites for the accepted target. Per-operation idempotency need not
+order configuration writes when reconciliation restores the latest intent.
+
+The provider facts and financial boundaries remain relevant: reconciliation
+must not create duplicate payable subscriptions, replay charges or grants, or
+treat an intended purchase as paid. Replacing pending invoices or issuing
+proration invoices is a financial effect, not just repairable configuration
+drift. No implementation of the new desired-state table or daily reconciliation
+is claimed by this documentation update.
+
+## Historical strict-ordering investigation
+
 This investigation covers the source at
 `5ff7cf7d3447f05b134dd0cfbd97b9cb80fab8ca` and Stripe's published API contracts
 read on September 29, 2026. It supplements the
