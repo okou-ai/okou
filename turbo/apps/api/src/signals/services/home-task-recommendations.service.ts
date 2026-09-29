@@ -44,7 +44,7 @@ import {
   isLlmConfigured,
   openRouterTokenCounts,
 } from "../external/openrouter";
-import { safeJsonParse, settleIncludingAbort } from "../utils";
+import { onRejection, safeJsonParse, settleIncludingAbort } from "../utils";
 import {
   generateAuxiliary,
   type RecordAuxiliaryGenerationDetail,
@@ -928,94 +928,99 @@ const refreshHomeTaskRecommendationScope$ = command(
       return "skipped";
     }
 
-    return await (async (): Promise<HomeTaskRefreshOutcome> => {
-      const attempt = await settleIncludingAbort(
-        (async () => {
-          const evidence = await set(collectHomeTaskEvidence$, scope, signal);
-          // Source reads may cross remote boundaries. Pin this refresh to the same
-          // immutable Clerk membership and current Agent/feature authority before
-          // any collected content is released to a recommendation provider.
-          if (
-            (await set(currentHomeTaskScopeMembershipId$, scope, signal)) !==
-            membershipId
-          ) {
-            throw new HomeTaskScopeUnavailableError();
-          }
-          if (isHomeTaskEvidenceEmpty(evidence)) {
-            return { kind: "no-evidence" as const, evidence };
-          }
-          if (cached.inputDigest === evidence.digest) {
-            return { kind: "unchanged" as const, evidence };
-          }
-          const language = await set(memberLanguage$, scope);
-          const entries = await generateEntries(evidence, language, signal);
-          if (entries === undefined) {
-            // `generateAuxiliary` deliberately converts provider/output failures to
-            // undefined. Preserve the previous cache and let the refresh enter its
-            // retry cooldown instead of committing an empty set with this digest.
-            throw new Error("Home task recommendation generation failed");
-          }
-          if (
-            (await set(currentHomeTaskScopeMembershipId$, scope, signal)) !==
-            membershipId
-          ) {
-            throw new HomeTaskScopeUnavailableError();
-          }
-          return { kind: "generated" as const, evidence, entries };
-        })(),
-      );
+    return await onRejection(
+      (async (): Promise<HomeTaskRefreshOutcome> => {
+        const attempt = await settleIncludingAbort(
+          (async () => {
+            const evidence = await set(collectHomeTaskEvidence$, scope, signal);
+            // Source reads may cross remote boundaries. Pin this refresh to the same
+            // immutable Clerk membership and current Agent/feature authority before
+            // any collected content is released to a recommendation provider.
+            if (
+              (await set(currentHomeTaskScopeMembershipId$, scope, signal)) !==
+              membershipId
+            ) {
+              throw new HomeTaskScopeUnavailableError();
+            }
+            if (isHomeTaskEvidenceEmpty(evidence)) {
+              return { kind: "no-evidence" as const, evidence };
+            }
+            if (cached.inputDigest === evidence.digest) {
+              return { kind: "unchanged" as const, evidence };
+            }
+            const language = await set(memberLanguage$, scope);
+            const entries = await generateEntries(evidence, language, signal);
+            if (entries === undefined) {
+              // `generateAuxiliary` deliberately converts provider/output failures to
+              // undefined. Preserve the previous cache and let the refresh enter its
+              // retry cooldown instead of committing an empty set with this digest.
+              throw new Error("Home task recommendation generation failed");
+            }
+            if (
+              (await set(currentHomeTaskScopeMembershipId$, scope, signal)) !==
+              membershipId
+            ) {
+              throw new HomeTaskScopeUnavailableError();
+            }
+            return { kind: "generated" as const, evidence, entries };
+          })(),
+        );
 
-      signal.throwIfAborted();
-      if (!attempt.ok) {
-        if (attempt.error instanceof HomeTaskScopeUnavailableError) {
-          const removed = await set(removeHomeTaskScope$, scope);
+        signal.throwIfAborted();
+        if (!attempt.ok) {
+          if (attempt.error instanceof HomeTaskScopeUnavailableError) {
+            const removed = await set(removeHomeTaskScope$, scope);
+            signal.throwIfAborted();
+            return removed ? "removed" : "skipped";
+          }
+          await set(
+            releaseClaim$,
+            scope,
+            claimId,
+            new Date(nowDate().getTime() + FAILURE_COOLDOWN_MS),
+          );
           signal.throwIfAborted();
-          return removed ? "removed" : "skipped";
+          return "failed";
         }
-        await set(
-          releaseClaim$,
-          scope,
-          claimId,
-          new Date(nowDate().getTime() + FAILURE_COOLDOWN_MS),
-        );
-        signal.throwIfAborted();
-        return "failed";
-      }
 
-      const result = attempt.value;
-      const generatedAt = nowDate();
-      if (result.kind === "unchanged") {
-        await set(
-          releaseClaim$,
-          scope,
-          claimId,
-          new Date(generatedAt.getTime() + HOME_TASK_RECOMMENDATION_REFRESH_MS),
-        );
+        const result = attempt.value;
+        const generatedAt = nowDate();
+        if (result.kind === "unchanged") {
+          await set(
+            releaseClaim$,
+            scope,
+            claimId,
+            new Date(
+              generatedAt.getTime() + HOME_TASK_RECOMMENDATION_REFRESH_MS,
+            ),
+          );
+          signal.throwIfAborted();
+          return "unchanged";
+        }
+        const nextEntries = result.kind === "generated" ? result.entries : [];
+        const changed =
+          contentRevision(nextEntries) !== contentRevision(cached.entries);
+        const committed = await set(commitEntries$, scope, claimId, {
+          entries: nextEntries,
+          inputDigest: result.evidence.digest,
+          generatedAt,
+        });
         signal.throwIfAborted();
-        return "unchanged";
-      }
-      const nextEntries = result.kind === "generated" ? result.entries : [];
-      const changed =
-        contentRevision(nextEntries) !== contentRevision(cached.entries);
-      const committed = await set(commitEntries$, scope, claimId, {
-        entries: nextEntries,
-        inputDigest: result.evidence.digest,
-        generatedAt,
-      });
-      signal.throwIfAborted();
-      return committed ? (changed ? "refreshed" : "unchanged") : "skipped";
-    })().finally(async () => {
-      // Cleanup still runs after caller cancellation; the claim predicate makes
-      // this a no-op after a committed or already-released result.
-      if (signal.aborted) {
-        await set(
-          releaseClaim$,
-          scope,
-          claimId,
-          new Date(nowDate().getTime() + FAILURE_COOLDOWN_MS),
-        );
-      }
-    });
+        return committed ? (changed ? "refreshed" : "unchanged") : "skipped";
+      })(),
+      async () => {
+        // Await cleanup before cancellation propagates. The claim predicate makes
+        // this a no-op after a committed or already-released result.
+        if (signal.aborted) {
+          await set(
+            releaseClaim$,
+            scope,
+            claimId,
+            new Date(nowDate().getTime() + FAILURE_COOLDOWN_MS),
+          );
+        }
+      },
+    );
   },
 );
 
