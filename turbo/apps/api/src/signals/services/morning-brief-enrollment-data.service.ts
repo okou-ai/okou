@@ -2,7 +2,7 @@ import {
   morningBriefEnrollments,
   morningBriefRollout,
 } from "@okouai/db/schema/morning-brief-enrollment";
-import { and, eq, inArray, isNull, ne, or } from "drizzle-orm";
+import { and, eq, isNull, ne, or } from "drizzle-orm";
 import type { Tx } from "../../lib/db-types";
 import { nowDate } from "../../lib/time";
 import type { Db, ReadonlyDb } from "../external/db";
@@ -112,26 +112,4 @@ export async function recordMorningBriefChoice(
         updatedAt: currentTime,
       },
     });
-}
-
-/** Completion is what binds the enrollment to the installation it owns. */
-export async function completeMorningBriefEnrollment(
-  db: Db,
-  identity: MorningBriefMemberIdentity,
-  workflowId: string,
-): Promise<void> {
-  await db
-    .update(morningBriefEnrollments)
-    .set({
-      state: "completed",
-      workflowId,
-      lastError: null,
-      updatedAt: nowDate(),
-    })
-    .where(
-      and(
-        morningBriefEnrollmentWhere(identity),
-        inArray(morningBriefEnrollments.state, ["checking", "pending"]),
-      ),
-    );
 }

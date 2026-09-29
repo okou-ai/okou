@@ -17,7 +17,6 @@ import { clerk$ } from "../external/clerk";
 import { settle } from "../utils";
 import { nowDate } from "../../lib/time";
 import {
-  completeMorningBriefEnrollment,
   loadMorningBriefEnrollment,
   morningBriefEnrollmentWhere,
   recordMorningBriefChoice,
@@ -38,7 +37,7 @@ import {
   type MorningBriefMigrationState,
 } from "./morning-brief-migration-state.service";
 import { executeRawRows } from "../../lib/db-raw-rows";
-import { materializeMorningBriefNativeSchedule } from "./morning-brief-native-schedule.service";
+import { completeAndMaterializeMorningBriefEnrollment$ } from "./morning-brief-materialization.service";
 import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import {
   installOfficialWorkflow$,
@@ -407,10 +406,11 @@ const installMorningBriefEnrollment$ = command(
         }
         return { outcome: "skipped", reason: "membership-unavailable" };
       }
-      await completeAndMaterializeMorningBriefEnrollment(
-        db,
+      await set(
+        completeAndMaterializeMorningBriefEnrollment$,
         identity,
         installed.workflowId,
+        signal,
       );
       signal.throwIfAborted();
       return { outcome: "installed", workflowId: installed.workflowId };
@@ -419,10 +419,11 @@ const installMorningBriefEnrollment$ = command(
     const raced = await loadMorningBriefOwnership(db, identity);
     signal.throwIfAborted();
     if (raced.installation?.installationState === "installed") {
-      await completeAndMaterializeMorningBriefEnrollment(
-        db,
+      await set(
+        completeAndMaterializeMorningBriefEnrollment$,
         identity,
         raced.installation.id,
+        signal,
       );
       signal.throwIfAborted();
       return {
@@ -547,10 +548,11 @@ const ensureMorningBriefWhileLocked$ = command(
     );
     signal.throwIfAborted();
     if (installation?.installationState === "installed") {
-      await completeAndMaterializeMorningBriefEnrollment(
-        db,
+      await set(
+        completeAndMaterializeMorningBriefEnrollment$,
         identity,
         installation.id,
+        signal,
       );
       signal.throwIfAborted();
       return {
@@ -645,29 +647,6 @@ export const ensureMorningBriefDefaultEnabled$ = command(
   },
 );
 
-async function completeAndMaterializeMorningBriefEnrollment(
-  db: Db,
-  identity: MorningBriefMemberIdentity,
-  workflowId: string,
-): Promise<void> {
-  await completeMorningBriefEnrollment(db, identity, workflowId);
-  const enrollment = await loadMorningBriefEnrollment(db, identity);
-  if (
-    enrollment?.state !== "completed" ||
-    enrollment.membershipId === null ||
-    enrollment.workflowId !== workflowId
-  ) {
-    return;
-  }
-  const membershipId = enrollment.membershipId;
-  await db.transaction(async (tx) => {
-    await materializeMorningBriefNativeSchedule(tx, identity, {
-      membershipId,
-      at: nowDate(),
-    });
-  });
-}
-
 async function loadMorningBriefAutomationId(
   db: ReadonlyDb,
   workflowId: string,
@@ -736,10 +715,11 @@ const createMorningBriefFromPreference$ = command(
             "Morning Brief could not be installed. Retry the preference update.",
           );
     }
-    await completeAndMaterializeMorningBriefEnrollment(
-      db,
+    await set(
+      completeAndMaterializeMorningBriefEnrollment$,
       identity,
       installed.workflowId,
+      signal,
     );
     signal.throwIfAborted();
     return await loadInstalledPreference(db, args);
@@ -797,10 +777,11 @@ const updateMorningBriefWhileLocked$ = command(
     }
     if (current.preference.enabled === args.enabled) {
       if (args.enabled) {
-        await completeAndMaterializeMorningBriefEnrollment(
-          db,
+        await set(
+          completeAndMaterializeMorningBriefEnrollment$,
           identity,
           current.workflowId,
+          signal,
         );
         signal.throwIfAborted();
       }
@@ -835,10 +816,11 @@ const updateMorningBriefWhileLocked$ = command(
       );
     }
     if (args.enabled) {
-      await completeAndMaterializeMorningBriefEnrollment(
-        db,
+      await set(
+        completeAndMaterializeMorningBriefEnrollment$,
         identity,
         current.workflowId,
+        signal,
       );
       signal.throwIfAborted();
     }

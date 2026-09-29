@@ -6,17 +6,11 @@ import {
   type MorningBriefExecutionTarget,
 } from "@okouai/db/schema/morning-brief-native-schedule";
 import { morningBriefScheduleClaims } from "@okouai/db/schema/morning-brief-schedule-claim";
-import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
 import type { ReadonlyDb } from "../external/db";
 import type { MorningBriefMemberIdentity } from "./morning-brief-enrollment-data.service";
-import {
-  loadMorningBriefMigrationState,
-  type MorningBriefMigrationState,
-  type MorningBriefStateReader,
-} from "./morning-brief-migration-state.service";
 import { calculateNextRun } from "./time-automation";
 
 /**
@@ -56,24 +50,6 @@ type MorningBriefNativeWriter = Tx;
  * operational signal, never proof that the old writers drained.
  */
 const NATIVE_DRAIN_REPORT_AFTER_MS = 60 * 60 * 1000;
-
-/** The materialization refused, with the reason a caller can act on. */
-type MorningBriefMaterializationRefusal =
-  | "not-installed"
-  | "installation-pending"
-  | "installation-inconsistent"
-  | "missing-timezone"
-  | "missing-membership";
-
-type MorningBriefMaterializationResult =
-  | {
-      readonly kind: "materialized";
-      readonly row: MorningBriefNativeScheduleRow;
-    }
-  | {
-      readonly kind: "refused";
-      readonly reason: MorningBriefMaterializationRefusal;
-    };
 
 export function morningBriefScheduleWhere(owner: MorningBriefMemberIdentity) {
   return and(
@@ -320,189 +296,6 @@ function computeNativeNextRunAt(args: {
     return null;
   }
   return calculateNextRun(args.cronExpression, args.timezone, args.from);
-}
-
-async function replaceMorningBriefMembershipGeneration(
-  tx: MorningBriefNativeWriter,
-  owner: MorningBriefMemberIdentity,
-  existing: MorningBriefNativeScheduleRow,
-  args: {
-    readonly membershipId: string;
-    readonly at: Date;
-    readonly installed: Extract<
-      MorningBriefMigrationState,
-      { kind: "installed" }
-    >;
-  },
-): Promise<MorningBriefMaterializationResult> {
-  // A remove/rejoin creates a new immutable Clerk membership id. Replace the
-  // whole owner generation under the schedule lock: old work becomes terminal.
-  await tx
-    .update(morningBriefNativeOccurrences)
-    .set({
-      state: "settled",
-      outcome: "revoked",
-      settledAt: args.at,
-      leaseToken: null,
-      leaseExpiresAt: null,
-      deferredUntil: null,
-      deliveryPending: false,
-      updatedAt: args.at,
-    })
-    .where(
-      and(
-        eq(morningBriefNativeOccurrences.orgId, owner.orgId),
-        eq(morningBriefNativeOccurrences.userId, owner.userId),
-        eq(morningBriefNativeOccurrences.membershipId, existing.membershipId),
-        isNull(morningBriefNativeOccurrences.settledAt),
-      ),
-    );
-  const nextRunAt = computeNativeNextRunAt({
-    enabled: args.installed.automation.enabled,
-    cronExpression: args.installed.automation.cronExpression,
-    timezone: args.installed.automation.timezone,
-    from: args.at,
-  });
-  await restoreLegacyMorningBriefObligation(
-    tx,
-    args.installed.automation.id,
-    nextRunAt,
-  );
-  const [replaced] = await tx
-    .update(morningBriefNativeSchedules)
-    .set({
-      enabled: args.installed.automation.enabled,
-      cronExpression: args.installed.automation.cronExpression,
-      timezone: args.installed.automation.timezone,
-      nextRunAt,
-      scheduleOwner: nextRunAt === null ? null : "legacy",
-      phase: "legacy",
-      target: "legacy",
-      ownerEpoch: existing.ownerEpoch + 1,
-      membershipId: args.membershipId,
-      agentId: args.installed.installation.agentId,
-      chatThreadId: args.installed.chatThreadId,
-      legacyWorkflowId: args.installed.installation.id,
-      legacyAutomationId: args.installed.automation.id,
-      materializedAt: args.at,
-      drainingEpoch: null,
-      drainDeadlineAt: null,
-      drainUnresolvedReason: null,
-      updatedAt: args.at,
-    })
-    .where(
-      and(
-        morningBriefScheduleWhere(owner),
-        eq(morningBriefNativeSchedules.ownerEpoch, existing.ownerEpoch),
-        eq(morningBriefNativeSchedules.membershipId, existing.membershipId),
-      ),
-    )
-    .returning();
-  return replaced === undefined
-    ? { kind: "refused", reason: "not-installed" }
-    : { kind: "materialized", row: replaced };
-}
-
-/**
- * Materialize the durable native row from the member's installed legacy state.
- *
- * The authority is the selected installation and *its automation's* enabled
- * state and schedule — never enrollment completion, never the disposable S3a
- * projection, never a title match. Additional installations stay inventory and
- * are neither adopted nor mutated. A disabled installed choice materializes as
- * disabled, and a disabled row is never given a scheduling obligation.
- *
- * It is idempotent: an existing row is authority and is returned untouched, so
- * re-running the migration can never overwrite a choice made after cutover.
- *
- * The first row is sampled and inserted under the owner key, so the legacy
- * state it publishes is the one no selected writer may still be changing. An
- * owner that already has a row is fenced by that row instead and is not
- * resampled.
- */
-export async function materializeMorningBriefNativeSchedule(
-  tx: MorningBriefNativeWriter,
-  owner: MorningBriefMemberIdentity,
-  args: {
-    /** The membership generation the caller resolved from Clerk. */
-    readonly membershipId: string;
-    readonly at: Date;
-    readonly state?: MorningBriefMigrationState;
-  },
-): Promise<MorningBriefMaterializationResult> {
-  const { membershipId, at } = args;
-  const existing = await lockMorningBriefNativeScheduleForWrite(tx, owner);
-  if (existing?.membershipId === membershipId) {
-    return { kind: "materialized", row: existing };
-  }
-
-  const installed =
-    args.state ??
-    (await loadMorningBriefMigrationState(
-      tx as unknown as MorningBriefStateReader,
-      owner,
-    ));
-  if (installed.kind === "absent") {
-    return { kind: "refused", reason: "not-installed" };
-  }
-  if (installed.kind === "pending") {
-    return { kind: "refused", reason: "installation-pending" };
-  }
-  if (installed.kind === "inconsistent") {
-    return { kind: "refused", reason: "installation-inconsistent" };
-  }
-  if (!isValidTimeZone(installed.automation.timezone)) {
-    return { kind: "refused", reason: "missing-timezone" };
-  }
-
-  if (existing !== undefined) {
-    return await replaceMorningBriefMembershipGeneration(tx, owner, existing, {
-      membershipId,
-      at,
-      installed,
-    });
-  }
-
-  // The first row keeps the legacy owner: materialization is bootstrap, never
-  // a cutover. Only an explicit transition may move the schedule obligation.
-  const [row] = await tx
-    .insert(morningBriefNativeSchedules)
-    .values({
-      orgId: owner.orgId,
-      userId: owner.userId,
-      enabled: installed.automation.enabled,
-      cronExpression: installed.automation.cronExpression,
-      timezone: installed.automation.timezone,
-      nextRunAt: installed.automation.enabled
-        ? installed.automation.nextRunAt
-        : null,
-      scheduleOwner:
-        installed.automation.enabled && installed.automation.nextRunAt !== null
-          ? "legacy"
-          : null,
-      phase: "legacy",
-      target: "legacy",
-      ownerEpoch: 1,
-      membershipId,
-      agentId: installed.installation.agentId,
-      chatThreadId: installed.chatThreadId,
-      legacyWorkflowId: installed.installation.id,
-      legacyAutomationId: installed.automation.id,
-      materializedAt: at,
-      updatedAt: at,
-    })
-    // The owner key already serialized this insert, so the clause is the
-    // table's own last-resort idempotency: any row that exists is authority and
-    // this one must not overwrite any of its fields.
-    .onConflictDoNothing()
-    .returning();
-  if (row !== undefined) {
-    return { kind: "materialized", row };
-  }
-  const raced = await lockMorningBriefNativeSchedule(tx, owner);
-  return raced === undefined
-    ? { kind: "refused", reason: "not-installed" }
-    : { kind: "materialized", row: raced };
 }
 
 /** What a logical-choice writer intends to change. */
@@ -1150,21 +943,4 @@ export async function lockMorningBriefNativeAgentAuthorities(
       morningBriefNativeSchedules.userId,
     )
     .for("update");
-}
-
-/**
- * Hand a future obligation back to the legacy scheduler on rollback.
- *
- * It writes the same instant the native row records, so exactly one owner holds
- * the member's next occurrence after the transaction commits.
- */
-async function restoreLegacyMorningBriefObligation(
-  tx: MorningBriefNativeWriter,
-  automationId: string,
-  nextRunAt: Date | null,
-): Promise<void> {
-  await tx
-    .update(workflowAutomations)
-    .set({ nextRunAt })
-    .where(eq(workflowAutomations.id, automationId));
 }

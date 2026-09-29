@@ -15,13 +15,11 @@ export function morningBriefPreferenceCompatibilitySql(
 }
 
 /** Preserve the enrollment, visible default Agent, then oldest-installation precedence. */
-export function morningBriefTimezoneTargetSql(
+export function morningBriefSelectedWorkflowSql(
   owner: MorningBriefMemberIdentity,
 ) {
-  return sql`SELECT ${workflows.id} AS "workflowId", ${orgMembersMetadata.timezone} AS timezone
+  return sql`SELECT ${workflows.id} AS "workflowId"
     FROM ${workflows}
-    JOIN ${orgMembersMetadata} ON ${orgMembersMetadata.orgId} = ${workflows.orgId}
-      AND ${orgMembersMetadata.userId} = ${workflows.ownerUserId}
     LEFT JOIN ${morningBriefEnrollments} ON ${morningBriefEnrollments.orgId} = ${workflows.orgId}
       AND ${morningBriefEnrollments.userId} = ${workflows.ownerUserId}
     LEFT JOIN ${orgMetadata} ON ${orgMetadata.orgId} = ${workflows.orgId}
@@ -35,4 +33,13 @@ export function morningBriefTimezoneTargetSql(
         AND (${agents.visibility} <> 'private' OR ${agents.owner} = ${owner.userId}) THEN 1
       ELSE 2 END, ${workflows.createdAt}, ${workflows.id}
     LIMIT 1`;
+}
+
+export function morningBriefTimezoneTargetSql(
+  owner: MorningBriefMemberIdentity,
+) {
+  return sql`WITH selected AS (${morningBriefSelectedWorkflowSql(owner)})
+    SELECT selected."workflowId", ${orgMembersMetadata.timezone} AS timezone
+    FROM selected JOIN ${orgMembersMetadata} ON ${orgMembersMetadata.orgId} = ${owner.orgId}
+      AND ${orgMembersMetadata.userId} = ${owner.userId}`;
 }
