@@ -40,7 +40,7 @@ describe("Pi Codex subscription admission", () => {
       f.actor,
       {
         agentId: f.agentId,
-        model: "gpt-5.6-terra",
+        model: "gpt-6-luna",
         prompt: "do not reuse the deleted codex account",
         clientEventId,
       },

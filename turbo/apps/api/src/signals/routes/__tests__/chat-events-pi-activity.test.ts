@@ -185,7 +185,7 @@ describe("CHAT-02: model-first provider policies", () => {
     const usagePricingResolution = await createGptUsagePricingResolution();
     const withOpenRouterRoute = await configureBuiltInPiModelOnOpenRouter(
       actor,
-      "gpt-5.6-terra",
+      "gpt-6-luna",
     );
     await updateFeatureSwitchesForUser(
       context,
@@ -207,7 +207,7 @@ describe("CHAT-02: model-first provider policies", () => {
         {
           agentId,
           prompt,
-          model: "gpt-5.6-terra",
+          model: "gpt-6-luna",
           runOptions: { codexServiceTier: "fast" },
         },
         usagePricingResolution,
@@ -227,37 +227,35 @@ describe("CHAT-02: model-first provider policies", () => {
     });
     expect(claimed.claim.piModelConfig).not.toHaveProperty("api");
     expect(claimed.claim.piLaunchConfig).toMatchObject({ schemaVersion: 2 });
-    const terraEnvironment = claimEnvironment(claimed.claim);
-    expect(terraEnvironment.OKOU_TOKEN).toBeTruthy();
-    expect(terraEnvironment.CLI_PKG_URL).toBeTruthy();
-    const terraInstructions = claimed.claim.appendSystemPrompt;
-    if (!terraInstructions) {
-      throw new Error("Expected Terra Web instructions");
+    const lunaEnvironment = claimEnvironment(claimed.claim);
+    expect(lunaEnvironment.OKOU_TOKEN).toBeTruthy();
+    expect(lunaEnvironment.CLI_PKG_URL).toBeTruthy();
+    const lunaInstructions = claimed.claim.appendSystemPrompt;
+    if (!lunaInstructions) {
+      throw new Error("Expected Luna Web instructions");
     }
-    expect(terraInstructions).toContain(
-      "You are currently running inside: Web",
-    );
-    expect(terraInstructions).toContain("okou web download-file -h");
-    expect(terraInstructions).toContain("Run commands with: `okou <command>`");
-    expect(terraInstructions).not.toMatch(/auto.?memory/iu);
-    const terraStorageManifest = expectCanonicalStorageManifest(
+    expect(lunaInstructions).toContain("You are currently running inside: Web");
+    expect(lunaInstructions).toContain("okou web download-file -h");
+    expect(lunaInstructions).toContain("Run commands with: `okou <command>`");
+    expect(lunaInstructions).not.toMatch(/auto.?memory/iu);
+    const lunaStorageManifest = expectCanonicalStorageManifest(
       claimed.claim.storageManifest,
     );
-    if (!terraStorageManifest) {
-      throw new Error("Expected Terra storage manifest");
+    if (!lunaStorageManifest) {
+      throw new Error("Expected Luna storage manifest");
     }
-    const terraMounts = terraStorageManifest.storageMounts;
-    const terraMemoryMount = terraMounts.find((mount) => {
+    const lunaMounts = lunaStorageManifest.storageMounts;
+    const lunaMemoryMount = lunaMounts.find((mount) => {
       return mount.name === "memory" && mount.mountPath === PI_MEMORY_ROOT;
     });
-    if (!terraMemoryMount) {
+    if (!lunaMemoryMount) {
       throw new Error("Expected the Pi memory mount");
     }
     expect(claimed.claim.prompt).toBe(prompt);
     const sandboxUsageEvent = {
       idempotencyKey: randomUUID(),
       kind: "model" as const,
-      provider: "gpt-5.6-terra",
+      provider: "gpt-6-luna",
       category: "tokens.output.fast",
       quantity: 2,
     };
@@ -379,7 +377,7 @@ describe("CHAT-02: model-first provider policies", () => {
       ],
       api: "openai-responses",
       provider: "openrouter",
-      model: "openai/gpt-5.6-terra",
+      model: "openai/gpt-6-luna",
       usage: {
         input: 0,
         output: 0,
@@ -419,7 +417,7 @@ describe("CHAT-02: model-first provider policies", () => {
       content: [{ type: "text", text: "Sandbox H2 complete" }],
       api: "openai-responses",
       provider: "openrouter",
-      model: "openai/gpt-5.6-terra",
+      model: "openai/gpt-6-luna",
       usage: {
         input: 5,
         output: 3,
@@ -472,16 +470,16 @@ describe("CHAT-02: model-first provider policies", () => {
         content: adHocNote,
       },
     ]);
-    expect(checkpointedMemory.storageId).toBe(terraMemoryMount.storageId);
+    expect(checkpointedMemory.storageId).toBe(lunaMemoryMount.storageId);
     const memoryArtifactSnapshots = [
       {
-        name: terraMemoryMount.name,
+        name: lunaMemoryMount.name,
         version: checkpointedMemory.versionId,
-        mountPath: terraMemoryMount.mountPath,
-        ...(terraMemoryMount.missingRootPolicy === undefined
+        mountPath: lunaMemoryMount.mountPath,
+        ...(lunaMemoryMount.missingRootPolicy === undefined
           ? {}
           : {
-              missingRootPolicy: terraMemoryMount.missingRootPolicy,
+              missingRootPolicy: lunaMemoryMount.missingRootPolicy,
             }),
       },
     ];
@@ -515,7 +513,7 @@ describe("CHAT-02: model-first provider policies", () => {
     // Pi usage is Sandbox-reported only; the duplicate receipt is idempotent.
     await expect(readRunUsageEventsFixture(run.runId)).resolves.toStrictEqual([
       expect.objectContaining({
-        provider: "gpt-5.6-terra",
+        provider: "gpt-6-luna",
         category: "tokens.output.fast",
         quantity: 2,
         status: "processed",
@@ -581,7 +579,7 @@ describe("CHAT-02: model-first provider policies", () => {
       content: [{ type: "text", text: "late replacement H2" }],
       api: "openai-responses",
       provider: "openrouter",
-      model: "openai/gpt-5.6-terra",
+      model: "openai/gpt-6-luna",
       usage: {
         input: 0,
         output: 0,
@@ -929,7 +927,7 @@ describe("CHAT-02: model-first provider policies", () => {
   }
 
   it(
-    "launches OpenRouter Terra in the Sandbox, captures guest tool activity, and checkpoints Pi memory notes",
+    "launches OpenRouter Luna in the Sandbox, captures guest tool activity, and checkpoints Pi memory notes",
     piActivityScenario,
     150_000,
   );

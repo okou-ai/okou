@@ -9,7 +9,7 @@ const MODEL = {
   provider: "openai" as const,
   baseUrl: "https://api.openai.com/v1",
   apiKey: "test-key",
-  model: "gpt-5.6-terra",
+  model: "gpt-6-luna",
   dialect: "openai-responses" as const,
   transport: "sse" as const,
 };

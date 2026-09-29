@@ -95,11 +95,6 @@ const MODEL_RUN_OPTIONS: Readonly<Record<string, ModelRunOptions>> =
         apiSpeedMultiplier: 2.5,
       },
     },
-    "gpt-5.6-terra": {
-      efforts: CODEX_REASONING_EFFORTS,
-      defaultEffort: "max",
-      fast: { ...CODEX_FAST, chatGptSpeedMultiplier: 1.5 },
-    },
     "gpt-5.6-luna": {
       efforts: ["low", "medium", "high", "xhigh", "max"],
       defaultEffort: "max",

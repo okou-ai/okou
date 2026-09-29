@@ -1061,17 +1061,13 @@ describe("CHAT-02: run-level model overrides", () => {
     const fallback = await sendChatRun(actor, {
       agentId,
       prompt: "use a supported model outside workspace policy",
-      model: "gpt-5.6-terra",
+      model: "gpt-6-luna",
     });
-    await expectThreadCreatedModelEvent(
-      actor,
-      fallback.threadId,
-      "gpt-5.6-terra",
-    );
+    await expectThreadCreatedModelEvent(actor, fallback.threadId, "gpt-6-luna");
     await expect(
       chat.readThreadMetadata(actor, fallback.threadId),
     ).resolves.toMatchObject({
-      selectedModel: "gpt-5.6-terra",
+      selectedModel: "gpt-6-luna",
     });
     const claimed = await claimChatRun(runnerGroup, fallback.runId);
     expect(claimEnvironment(claimed.claim).ANTHROPIC_MODEL).toBe(

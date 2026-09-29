@@ -103,7 +103,7 @@ describe("CHAT-02: model-first provider policies", () => {
         ],
         api: "openai-responses",
         provider: "openai",
-        model: "gpt-5.6-terra",
+        model: "gpt-6-luna",
         usage: {
           input: 0,
           output: 0,
@@ -219,7 +219,7 @@ describe("CHAT-02: model-first provider policies", () => {
           agentId,
           threadId: run.threadId,
           prompt: "continue the long session",
-          model: "gpt-5.6-terra",
+          model: "gpt-6-luna",
         },
         queued.usagePricingResolution,
       );
@@ -310,7 +310,7 @@ describe("CHAT-02: model-first provider policies", () => {
               agentId,
               threadId: run.threadId,
               prompt: originalPrompt,
-              model: "gpt-5.6-terra",
+              model: "gpt-6-luna",
             },
             queued.usagePricingResolution,
           );
@@ -373,7 +373,7 @@ describe("CHAT-02: model-first provider policies", () => {
         const sandboxUsage = {
           idempotencyKey: randomUUID(),
           kind: "model" as const,
-          provider: "gpt-5.6-terra",
+          provider: "gpt-6-luna",
           category: "tokens.output",
           quantity: 2,
         };
@@ -422,7 +422,7 @@ describe("CHAT-02: model-first provider policies", () => {
           readRunUsageEventsFixture(run.runId),
         ).resolves.toStrictEqual([
           expect.objectContaining({
-            provider: "gpt-5.6-terra",
+            provider: "gpt-6-luna",
             category: "tokens.output",
             quantity: 2,
             status: "processed",
@@ -497,7 +497,7 @@ describe("CHAT-02: model-first provider policies", () => {
 
     const withOpenRouterRoute = await configureBuiltInPiModelOnOpenRouter(
       actor,
-      "gpt-5.6-terra",
+      "gpt-6-luna",
     );
 
     const checkpointObjects = mockPiCheckpointObjectStore();
@@ -508,7 +508,7 @@ describe("CHAT-02: model-first provider policies", () => {
         {
           agentId,
           prompt: firstPrompt,
-          model: "gpt-5.6-terra",
+          model: "gpt-6-luna",
           runOptions: { codexServiceTier: "fast" },
         },
         usagePricingResolution,
@@ -568,7 +568,7 @@ describe("CHAT-02: model-first provider policies", () => {
           agentId,
           threadId: first.threadId,
           prompt,
-          model: "gpt-5.6-terra",
+          model: "gpt-6-luna",
           runOptions: { codexServiceTier: "fast" },
         },
         usagePricingResolution,
@@ -644,7 +644,7 @@ describe("CHAT-02: model-first provider policies", () => {
           ? `${original}{malformed\n`
           : damage === "mismatched"
             ? original.replace(first.threadId, randomUUID())
-            : `${original}${JSON.stringify({ type: "model_change", id: "cycle", parentId: "cycle", timestamp: "2026-09-05T00:00:00.000Z", provider: "openai", modelId: "gpt-5.6-terra" })}\n`;
+            : `${original}${JSON.stringify({ type: "model_change", id: "cycle", parentId: "cycle", timestamp: "2026-09-05T00:00:00.000Z", provider: "openai", modelId: "gpt-6-luna" })}\n`;
       // A public caller cannot write this historical corruption. Only the
       // stored object fixture sets it; publication is verified through the API.
       const hash = await replacePiSessionHistoryJsonlFixture({
@@ -682,11 +682,7 @@ describe("CHAT-02: model-first provider policies", () => {
     90_000,
   );
 
-  it.each([
-    "deepseek-v4-flash",
-    "deepseek-v4.1-flash",
-    "gpt-5.6-terra",
-  ] as const)(
+  it.each(["deepseek-v4-flash", "deepseek-v4.1-flash", "gpt-6-luna"] as const)(
     "claims %s with Sandbox credentials and bills duplicate Sandbox usage once",
     async (selectedModel) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();

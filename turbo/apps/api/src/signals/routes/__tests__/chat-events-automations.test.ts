@@ -115,7 +115,7 @@ async function extractOwnedThreadPiMemory(
   const startup = await sendChatRun(actor, {
     agentId,
     prompt: "request the daily Pi batch",
-    model: "gpt-5.6-terra",
+    model: "gpt-6-luna",
   });
   await expect(
     readPiMemoryStage1DayFixture(actor.userId),
@@ -155,7 +155,7 @@ async function extractOwnedThreadPiMemory(
 
 describe("thread-bound Pi Automation execution", () => {
   it.each(
-    (["gpt-5.6-terra", "deepseek-v4.1-flash"] as const).flatMap(
+    (["gpt-6-luna", "deepseek-v4.1-flash"] as const).flatMap(
       (selectedModel) => {
         return (["schedule", "event"] as const).map((source) => {
           return { source, selectedModel };
@@ -439,7 +439,7 @@ describe("thread-bound Pi Automation execution", () => {
         userId: actor.userId,
         runId: user.runId,
       });
-      if (selectedModel === "gpt-5.6-terra") {
+      if (selectedModel === "gpt-6-luna") {
         await extractOwnedThreadPiMemory(actor, user.runId, agentId);
       }
       clearMockNow();

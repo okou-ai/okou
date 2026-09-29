@@ -34,7 +34,7 @@ describe("CHAT-02: model-first provider policies", () => {
   it("preserves an ordinary Pi stop checkpoint for referenced Sandbox continuation", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const usagePricingResolution = await createGptUsagePricingResolution();
-    await configureBuiltInPiModel(actor, "gpt-5.6-terra");
+    await configureBuiltInPiModel(actor, "gpt-6-luna");
 
     const objects = mockPiCheckpointObjectStore();
     const answer = "the last complete canonical answer";
@@ -43,7 +43,7 @@ describe("CHAT-02: model-first provider policies", () => {
       actor,
       {
         agentId,
-        model: "gpt-5.6-terra",
+        model: "gpt-6-luna",
         prompt: firstPrompt,
       },
       usagePricingResolution,
@@ -106,7 +106,7 @@ describe("CHAT-02: model-first provider policies", () => {
     const firstPrompt = "establish original subscription history";
     const first = await sendChatRun(actor, {
       agentId,
-      model: "gpt-5.6-terra",
+      model: "gpt-6-luna",
       prompt: firstPrompt,
     });
     const firstClaim = await claimChatRun(runnerGroup, first.runId);
@@ -116,7 +116,7 @@ describe("CHAT-02: model-first provider policies", () => {
       checkpointObjects,
       claim: firstClaim,
       prompt: firstPrompt,
-      responsesModel: { provider: "openai-codex", model: "gpt-5.6-terra" },
+      responsesModel: { provider: "openai-codex", model: "gpt-6-luna" },
       run: first,
       usagePricingResolution,
     });
@@ -124,7 +124,7 @@ describe("CHAT-02: model-first provider policies", () => {
     const run = await sendChatRun(actor, {
       agentId,
       threadId: first.threadId,
-      model: "gpt-5.6-terra",
+      model: "gpt-6-luna",
       prompt,
     });
     const { claim } = await claimChatRun(runnerGroup, run.runId);

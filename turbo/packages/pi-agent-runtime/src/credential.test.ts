@@ -89,7 +89,7 @@ describe("Pi agent credential resolution", () => {
         transport: "sse",
         provider: "openai",
         baseUrl: "https://gateway.example.test/v1",
-        model: "gpt-5.6-terra",
+        model: "gpt-6-luna",
         serviceTier: "priority",
         credentialBindings: [
           {
@@ -112,7 +112,7 @@ describe("Pi agent credential resolution", () => {
       expect(materialized).toEqual({
         provider: "openai",
         baseUrl: "https://gateway.example.test/v1",
-        model: "gpt-5.6-terra",
+        model: "gpt-6-luna",
         serviceTier: "priority",
         dialect: "openai-responses",
         transport: "sse",
@@ -128,7 +128,7 @@ describe("Pi agent credential resolution", () => {
     const config = piModelConfigSchema.parse({
       provider: "openai",
       baseUrl: "https://api.openai.com/v1",
-      model: "gpt-5.6-terra",
+      model: "gpt-6-luna",
       apiKeyEnv: "OPENAI_API_KEY",
       credentialSecretName: "OPENAI_API_KEY",
     });
@@ -149,7 +149,7 @@ describe("Pi agent credential resolution", () => {
     ).resolves.toStrictEqual({
       provider: "openai",
       baseUrl: "https://api.openai.com/v1",
-      model: "gpt-5.6-terra",
+      model: "gpt-6-luna",
       dialect: "openai-responses",
       apiKey: "selected-key",
       transport: "sse",
@@ -166,7 +166,7 @@ describe("Pi agent credential resolution", () => {
         transport: "sse",
         provider: "openai-codex",
         baseUrl: "https://chatgpt.com/backend-api",
-        model: "gpt-5.6-terra",
+        model: "gpt-6-luna",
         thinkingLevel: "low",
         credentialBindings: [
           {
@@ -201,7 +201,7 @@ describe("Pi agent credential resolution", () => {
       ).resolves.toStrictEqual({
         provider: "openai-codex",
         baseUrl: "https://chatgpt.com/backend-api",
-        model: "gpt-5.6-terra",
+        model: "gpt-6-luna",
         thinkingLevel: "low",
         ...(schemaVersion === 3 ? { serviceTier: "fast" } : {}),
         dialect: "openai-codex-responses",

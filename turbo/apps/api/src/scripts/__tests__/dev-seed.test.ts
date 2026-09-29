@@ -141,11 +141,7 @@ describe("usage pricing", () => {
     ]);
   });
 
-  it.each([
-    ["okou-1.0", "gpt-5.6-luna"],
-    ["okou-1.0-pro", "gpt-5.6-sol"],
-    ["okou-1.0-max", "gpt-5.6-sol"],
-  ] as const)(
+  it.each([["okou-1.0", "gpt-5.6-luna"]] as const)(
     "seeds %s from the local %s schedule",
     (okouModel, sourceModel) => {
       const comparableRows = (provider: string) => {

@@ -2,7 +2,7 @@
   "role": "assistant",
   "api": "openai-codex-responses",
   "provider": "openai-codex",
-  "model": "gpt-5.6-terra",
+  "model": "gpt-6-luna",
   "content": [],
   "stopReason": "error",
   "errorMessage": "{\"detail\":\"Rate limit exceeded\"}",

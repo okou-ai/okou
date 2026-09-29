@@ -89,7 +89,7 @@ class TestReportModelProviderUsage:
             ("gpt-5.5", 272_000, ""),
             ("gpt-5.5", 272_001, ".long_context"),
             ("gpt-5.6-sol", 272_001, ".long_context"),
-            ("gpt-5.6-terra", 272_001, ".long_context"),
+            ("gpt-6-luna", 272_001, ".long_context"),
             ("gpt-5.6-luna", 272_001, ".long_context"),
             ("claude-opus-4-6", 300_000, ""),
         ],

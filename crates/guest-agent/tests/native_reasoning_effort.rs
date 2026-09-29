@@ -35,7 +35,7 @@ async fn selected_effort_reaches_new_and_resumed_native_runs() -> TestResult {
         (
             "codex",
             &codex_mock,
-            "gpt-5.6-terra",
+            "gpt-6-luna",
             Some("high"),
             Some("high"),
         ),
@@ -88,7 +88,7 @@ async fn selected_effort_reaches_new_and_resumed_native_runs() -> TestResult {
         (
             "codex",
             &codex_mock,
-            "gpt-5.6-terra",
+            "gpt-6-luna",
             Some("ultra"),
             Some("ultra"),
         ),

@@ -113,7 +113,7 @@ function consolidationArgs(
       provider: "openai",
       baseUrl: "http://127.0.0.1:1/v1",
       apiKey: "unused-test-key",
-      model: "gpt-5.6-terra",
+      model: "gpt-6-luna",
       dialect: "openai-responses",
       transport: "sse",
     },

@@ -2,11 +2,7 @@ import { describe, expect, it } from "vitest";
 import { OKOU_MODEL_METADATA } from "../okou-model-metadata";
 
 describe("Okou model metadata", () => {
-  it.each([
-    ["okou-1.0", "gpt-6-luna", "@preset/okou-1-0", "max", 3],
-    ["okou-1.0-pro", "gpt-6-sol", "@preset/okou-1-0-pro", "low", 2],
-    ["okou-1.0-max", "gpt-6-sol", "@preset/okou-1-0-max", "high", 2],
-  ] as const)(
+  it.each([["okou-1.0", "gpt-6-luna", "@preset/okou-1-0", "max", 3]] as const)(
     "%s projects its backing model's OpenRouter limits into both runtimes",
     (model, backingModel, presetModel, reasoningEffort, codexPriority) => {
       expect(OKOU_MODEL_METADATA[model]).toMatchObject({

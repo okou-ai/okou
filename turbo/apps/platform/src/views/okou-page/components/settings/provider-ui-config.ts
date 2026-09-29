@@ -96,8 +96,6 @@ export function getMediaModelPriceTierLabel(tier: ModelPriceTier): string {
 
 const MODEL_BRAND_ICON: Readonly<Record<SupportedRunModel, ModelProviderType>> =
   Object.freeze({
-    "okou-1.0-max": "built-in",
-    "okou-1.0-pro": "built-in",
     "okou-1.0": "built-in",
     "claude-fable-5-1": "anthropic-api-key",
     "claude-fable-5": "anthropic-api-key",
@@ -114,7 +112,6 @@ const MODEL_BRAND_ICON: Readonly<Record<SupportedRunModel, ModelProviderType>> =
     "gpt-6-sol": "openai-api-key",
     "gpt-6-luna": "openai-api-key",
     "gpt-5.6-sol": "openai-api-key",
-    "gpt-5.6-terra": "openai-api-key",
     "gpt-5.6-luna": "openai-api-key",
     "gpt-5.5": "openai-api-key",
   });

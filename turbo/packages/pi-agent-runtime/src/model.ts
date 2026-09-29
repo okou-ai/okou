@@ -51,40 +51,6 @@ const OKOU_PI_MODEL_COSTS = {
       ],
     },
   },
-  "okou-1.0-pro": {
-    cost: {
-      input: 5,
-      output: 30,
-      cacheRead: 0.5,
-      cacheWrite: 6.25,
-      tiers: [
-        {
-          inputTokensAbove: 272_000,
-          input: 10,
-          output: 45,
-          cacheRead: 1,
-          cacheWrite: 12.5,
-        },
-      ],
-    },
-  },
-  "okou-1.0-max": {
-    cost: {
-      input: 5,
-      output: 30,
-      cacheRead: 0.5,
-      cacheWrite: 6.25,
-      tiers: [
-        {
-          inputTokensAbove: 272_000,
-          input: 10,
-          output: 45,
-          cacheRead: 1,
-          cacheWrite: 12.5,
-        },
-      ],
-    },
-  },
 } as const satisfies Record<
   OkouRunModel,
   {

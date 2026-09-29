@@ -120,11 +120,11 @@ async function createClaimedBuiltInRun(): Promise<ClaimedBuiltInRun> {
 
 describe("POST /api/test/runtime-state/action", () => {
   it("keeps overlapping built-in model-key fixtures independently releasable", async () => {
-    const first = await seedBuiltInModelKey(context, "gpt-5.6-terra");
-    const second = await seedBuiltInModelKey(context, "gpt-5.6-terra");
+    const first = await seedBuiltInModelKey(context, "gpt-6-luna");
+    const second = await seedBuiltInModelKey(context, "gpt-6-luna");
 
-    expect(first.selectedModel).toBe("gpt-5.6-terra");
-    expect(second.selectedModel).toBe("gpt-5.6-terra");
+    expect(first.selectedModel).toBe("gpt-6-luna");
+    expect(second.selectedModel).toBe("gpt-6-luna");
 
     await expect(first.release()).resolves.toBeUndefined();
     await expect(second.release()).resolves.toBeUndefined();
@@ -325,25 +325,25 @@ describe("POST /api/test/runtime-state/action", () => {
         resolveBuiltInModelRouteFixture(context, "gpt-5.6-sol"),
       ).resolves.toBeNull();
       await expect(
-        resolveBuiltInModelRouteFixture(context, "gpt-5.6-terra"),
+        resolveBuiltInModelRouteFixture(context, "gpt-6-luna"),
       ).resolves.toMatchObject({ provider_type: "openai-api-key" });
     });
 
-    const gptTerraPrimary = await withMockNowForTest(startedAt, async () => {
-      return await resolveBuiltInModelRouteFixture(context, "gpt-5.6-terra");
+    const gptLunaPrimary = await withMockNowForTest(startedAt, async () => {
+      return await resolveBuiltInModelRouteFixture(context, "gpt-6-luna");
     });
-    if (!gptTerraPrimary) {
-      throw new Error("Expected a primary GPT Terra route");
+    if (!gptLunaPrimary) {
+      throw new Error("Expected a primary GPT Luna route");
     }
     await setBuiltInCandidateCooldownFixture(
       context,
-      "gpt-5.6-terra",
-      gptTerraPrimary,
+      "gpt-6-luna",
+      gptLunaPrimary,
       routeCooldownUntil,
     );
     await withMockNowForTest(startedAt, async () => {
       await expect(
-        resolveBuiltInModelRouteFixture(context, "gpt-5.6-terra"),
+        resolveBuiltInModelRouteFixture(context, "gpt-6-luna"),
       ).resolves.toMatchObject({ provider_type: "openrouter-codex" });
     });
 
@@ -423,14 +423,14 @@ describe("POST /api/test/runtime-state/action", () => {
   });
 
   it("reads and deletes a built-in candidate cooldown", async () => {
-    const selectedModel = "gpt-5.6-terra";
+    const selectedModel = "gpt-6-luna";
     const startedAt = Date.UTC(2026, 7, 20, 2, 0, 0);
     await seedBuiltInModelCandidateKeys(context, selectedModel);
     const primary = await withMockNowForTest(startedAt, async () => {
       return await resolveBuiltInModelRouteFixture(context, selectedModel);
     });
     if (!primary) {
-      throw new Error("Expected a primary GPT Terra route");
+      throw new Error("Expected a primary GPT Luna route");
     }
 
     await setBuiltInCandidateCooldownFixture(

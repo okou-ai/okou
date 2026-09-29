@@ -10,7 +10,7 @@ import type { Db } from "../external/db";
 import { piMemoryPhase2MaintenanceCallbackPayloadSchema } from "./pi-memory-phase2-maintenance.service";
 
 export const PI_MEMORY_PHASE2_BUILT_IN_MODEL = "deepseek-v4.1-flash";
-export const PI_MEMORY_PHASE2_BYOK_MODEL = "gpt-5.6-terra";
+export const PI_MEMORY_PHASE2_BYOK_MODEL = "gpt-6-luna";
 
 /**
  * Every model a private maintenance run may legitimately carry.
@@ -108,7 +108,6 @@ export async function loadPiMemoryPhase2UsageBinding(
         eq(agentRuns.triggerSource, "agent"),
         isNull(agentRuns.chatThreadId),
         piMemoryPhase2ProviderCondition(),
-        inArray(agentRuns.selectedModel, [...PI_MEMORY_PHASE2_MODELS]),
       ),
     )
     .limit(1);

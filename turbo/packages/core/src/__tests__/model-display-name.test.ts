@@ -5,8 +5,6 @@ import { getModelDisplayName } from "../model-display-name";
 describe("getModelDisplayName", () => {
   it("formats Okou model aliases", () => {
     expect(getModelDisplayName("okou-1.0")).toBe("Auto");
-    expect(getModelDisplayName("okou-1.0-pro")).toBe("Okou 1.0 Pro");
-    expect(getModelDisplayName("okou-1.0-max")).toBe("Okou 1.0 Max");
   });
 
   it("uses friendly labels for OpenAI model IDs", () => {
@@ -17,7 +15,7 @@ describe("getModelDisplayName", () => {
     expect(getModelDisplayName("gpt-6-luna")).toBe("GPT 6 Luna");
     expect(getModelDisplayName("openai/gpt-6-luna")).toBe("GPT 6 Luna");
     expect(getModelDisplayName("gpt-5.6-sol")).toBe("GPT 5.6 Sol");
-    expect(getModelDisplayName("gpt-5.6-terra")).toBe("GPT 5.6 Terra");
+    expect(getModelDisplayName("gpt-6-luna")).toBe("GPT 6 Luna");
     expect(getModelDisplayName("gpt-5.6-luna")).toBe("GPT 5.6 Luna");
     expect(getModelDisplayName("gpt-5.5")).toBe("GPT 5.5");
     expect(getModelDisplayName("openai/gpt-5.5")).toBe("GPT 5.5");

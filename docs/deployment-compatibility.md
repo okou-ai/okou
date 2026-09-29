@@ -28,28 +28,6 @@ rolling back the API temporarily restores the previous command behavior.
 The release-7 section below records the behavior at that historical release,
 not the new command contract.
 
-## Okou 1.0 Pro and Max retirement
-
-The operator closes new organization-policy admission for `okou-1.0-pro`
-and `okou-1.0-max` in `run_model_catalog` before this code is deployed. This
-change adds no migration and leaves the existing policy rows as non-selectable
-tombstones, preserving policy revisions and historical run/billing records.
-`okou-1.0` remains the same runtime route, now displayed as Auto; organization
-defaults are unchanged.
-
-- New API, old client: old model IDs remain parseable, but explicit policy,
-  preference, thread and run selections are rejected as retired. A stale stored
-  member selection inherits the workspace default; a stored thread selection
-  uses the valid workspace route when a new input is captured. Already-queued
-  inputs with retired IDs fail at dispatch, rather than silently changing the
-  model chosen at enqueue time. In-progress runs may finish.
-- New client, old API: the picker filters retired IDs even if an older policy
-  projection still returns the rows. Auto still submits `okou-1.0`.
-- New API and client: policy projections and the picker omit both retired IDs.
-  Historical names, pricing identities and runtime metadata remain readable.
-  Physical cleanup needs a separate compatibility decision after old clients
-  and in-progress runs drain.
-
 ## Image model thread columns and `image_model_updated` dropped
 
 Final step of "Image model becomes a member setting" (#37246, released

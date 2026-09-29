@@ -664,7 +664,7 @@ async function launch(fault: Fault, noDiff = false, cleanupMode?: CleanupMode) {
             ...entry,
             idempotencyKey: randomUUID(),
             kind: "model",
-            provider: "gpt-5.6-terra",
+            provider: "gpt-6-luna",
           };
         }),
       });
@@ -877,7 +877,7 @@ async function launch(fault: Fault, noDiff = false, cleanupMode?: CleanupMode) {
       piLaunchConfig: JSON.stringify(piLaunchConfig),
       piModelConfig: JSON.stringify({
         provider: "openai",
-        model: "gpt-5.6-terra",
+        model: "gpt-6-luna",
         baseUrl: `${baseUrl}/v1`,
         apiKeyEnv: "OPENAI_API_KEY",
         credentialSecretName: "OPENAI_API_KEY",
@@ -1001,7 +1001,7 @@ async function assertUsageReplay(
           return (
             entry.quantity === quantity &&
             entry.runId === run.runId &&
-            entry.provider === "gpt-5.6-terra"
+            entry.provider === "gpt-6-luna"
           );
         }),
     ).toBeTruthy();

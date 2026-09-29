@@ -137,7 +137,7 @@ it("exports real Pi spans through the authenticated relay without connector cred
           provider: "openai",
           baseUrl: `${origin}/v1`,
           apiKey: "test-model-key",
-          model: "gpt-5.6-terra",
+          model: "gpt-6-luna",
           dialect: "openai-responses",
           transport: "sse",
         },

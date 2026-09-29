@@ -597,7 +597,7 @@ function mockPiResourceArchiveDownloads(
   );
 }
 
-type SlackPiModel = "gpt-5.6-terra" | "gpt-5.6-sol" | "gpt-5.6-luna";
+type SlackPiModel = "gpt-6-luna" | "gpt-5.6-sol" | "gpt-5.6-luna";
 
 interface SlackPiActorSetup {
   readonly selectedModel: SlackPiModel;
@@ -625,7 +625,7 @@ async function configureCanonicalSlackPiActor(
     actor,
     {
       type: "openai-api-key",
-      secret: "bdd-slack-terra-api-key",
+      secret: "bdd-slack-luna-api-key",
     },
   );
   await runs.updateOrgModelPolicies(actor, [
@@ -3113,7 +3113,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     });
   });
 
-  it.each(["gpt-5.6-terra", "gpt-5.6-sol", "gpt-5.6-luna"] as const)(
+  it.each(["gpt-6-luna", "gpt-5.6-sol", "gpt-5.6-luna"] as const)(
     "admits canonical Slack %s turns into one Pi session without duplicate ownership",
     async (selectedModel) => {
       const scenario = await establishCanonicalSlackHistory(

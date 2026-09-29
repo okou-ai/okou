@@ -139,21 +139,6 @@ const EXPECTED_ADMITTED_ROUTES = [
   "gpt-5.6-sol | vercel-ai-gateway-codex | vercel-ai-gateway-codex | fast",
   "gpt-5.6-sol | custom-openai-responses | custom-openai-responses | standard",
   "gpt-5.6-sol | custom-openai-responses | custom-openai-responses | fast",
-  "gpt-5.6-terra | built-in | built-in | standard",
-  "gpt-5.6-terra | built-in | openai-api-key | standard",
-  "gpt-5.6-terra | built-in | openai-api-key | fast",
-  "gpt-5.6-terra | built-in | openrouter-codex | standard",
-  "gpt-5.6-terra | built-in | openrouter-codex | fast",
-  "gpt-5.6-terra | openai-api-key | openai-api-key | standard",
-  "gpt-5.6-terra | openai-api-key | openai-api-key | fast",
-  "gpt-5.6-terra | codex-oauth-token | codex-oauth-token | standard",
-  "gpt-5.6-terra | codex-oauth-token | codex-oauth-token | fast",
-  "gpt-5.6-terra | openrouter-codex | openrouter-codex | standard",
-  "gpt-5.6-terra | openrouter-codex | openrouter-codex | fast",
-  "gpt-5.6-terra | vercel-ai-gateway-codex | vercel-ai-gateway-codex | standard",
-  "gpt-5.6-terra | vercel-ai-gateway-codex | vercel-ai-gateway-codex | fast",
-  "gpt-5.6-terra | custom-openai-responses | custom-openai-responses | standard",
-  "gpt-5.6-terra | custom-openai-responses | custom-openai-responses | fast",
   "gpt-5.6-luna | built-in | built-in | standard",
   "gpt-5.6-luna | built-in | openai-api-key | standard",
   "gpt-5.6-luna | built-in | openai-api-key | fast",
@@ -192,9 +177,9 @@ const EXPECTED_ADMITTED_ROUTES = [
 /**
  * The enumeration is driven by `ACTIVE_RUN_MODELS` and their providers, so it
  * shrinks only when a model is retired or a route is removed. The remaining
- * 234 combinations are all evaluated.
+ * 216 combinations are all evaluated.
  */
-const ENUMERATED_COMBINATIONS = 234;
+const ENUMERATED_COMBINATIONS = 216;
 
 interface Combination {
   readonly selectedModel: string;
@@ -292,7 +277,6 @@ describe("Pi admission policy table", () => {
       "gpt-6-sol",
       "gpt-6-luna",
       "gpt-5.6-sol",
-      "gpt-5.6-terra",
       "gpt-5.6-luna",
     ]);
     expect(ACTIVE_RUN_MODELS.filter(isPiDeepSeekModel)).toStrictEqual([

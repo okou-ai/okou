@@ -328,10 +328,9 @@ test.each(STRUCTURED_FAILURE_CASES)(
 );
 
 test("shows only Auto for configured Okou models when the Add Model switch is off", async () => {
-  configureModelPolicies(
-    ["okou-1.0-max", "okou-1.0-pro", "okou-1.0", "gpt-5.6-luna"],
-    { defaultModel: "gpt-5.6-luna" },
-  );
+  configureModelPolicies(["okou-1.0", "gpt-5.6-luna"], {
+    defaultModel: "gpt-5.6-luna",
+  });
   installRunChat({ selectedModel: "gpt-5.6-luna" });
   await setupPage({
     context,
