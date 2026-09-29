@@ -112,7 +112,13 @@ function printTabs(tabs: readonly SafeTab[], json: boolean): void {
 const agentSessionOption = new Option(
   "--agent-session <name>",
   "Attached agent-browser session",
-).argParser(parseAgentSession);
+);
+
+function tabSession(options: TabOptions): string {
+  return options.agentSession === undefined
+    ? DEFAULT_AGENT_BROWSER_SESSION
+    : parseAgentSession(options.agentSession);
+}
 
 const listCommand = new Command()
   .name("list")
@@ -123,27 +129,20 @@ const listCommand = new Command()
   .option("--json", "Print safe machine-readable tab metadata")
   .action(
     withErrorHandler(async (options: TabOptions) => {
-      printTabs(
-        listTabs(options.agentSession ?? DEFAULT_AGENT_BROWSER_SESSION),
-        options.json === true,
-      );
+      printTabs(listTabs(tabSession(options)), options.json === true);
     }),
   );
 
 const selectCommand = new Command()
   .name("select")
   .description("Select a current-session tab without printing its URL or title")
-  .argument(
-    "<tab-id>",
-    "Tab ID from a fresh `okou browser tab list`",
-    parseTabId,
-  )
+  .argument("<tab-id>", "Tab ID from a fresh `okou browser tab list`")
   .addOption(agentSessionOption)
   .option("--json", "Print safe machine-readable selection metadata")
   .action(
     withErrorHandler(async (id: string, options: TabOptions) => {
-      const session = options.agentSession ?? DEFAULT_AGENT_BROWSER_SESSION;
-      runAgentBrowser(session, ["tab", id]);
+      const session = tabSession(options);
+      runAgentBrowser(session, ["tab", parseTabId(id)]);
       const tab = listTabs(session).find((item) => {
         return item.id === id && item.active;
       });

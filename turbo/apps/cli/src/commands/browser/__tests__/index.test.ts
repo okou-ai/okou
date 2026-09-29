@@ -483,6 +483,24 @@ describe("okou browser command", () => {
     expect(output).not.toContain(secret);
   });
 
+  it("does not echo invalid tab IDs or session names in command errors", async () => {
+    const secret = "synthetic-private-param";
+    const invalidArguments = [
+      ["tab", "select", `https://accounts.example.test/?code=${secret}`],
+      ["tab", "list", "--agent-session", `${secret}@`],
+      ["tab", "select", "t1", "--agent-session", `${secret}@`],
+    ];
+    for (const args of invalidArguments) {
+      consoleError.mockClear();
+      await expect(
+        browserCommand.parseAsync(["node", "cli", ...args]),
+      ).rejects.toThrow("process.exit called");
+      expect(consoleError.mock.calls.flat().join("\n")).not.toContain(secret);
+      expect(consoleLog.mock.calls.flat()).toStrictEqual([]);
+      expect(spawnSyncMock).not.toHaveBeenCalled();
+    }
+  });
+
   it("fails closed without revealing malformed tab output or switch errors", async () => {
     const secret = "private-oauth-code";
     spawnSyncMock.mockReturnValueOnce({
