@@ -7143,3 +7143,27 @@ Recheck serving and supported rollback versions before deployment if either
 changes. Do not restore a pre-#37097 Browser writer alongside the keyless API.
 The preceding prepared API and this version use the same existing constraints,
 state comparisons and statement order during rolling overlap.
+
+## Custom account advisory retirement (2026-09-29)
+
+The custom account target acquisition is removed after the preparation from
+#37097 (`405c21452010c37e4ce2facd51c3f1b231646e7d`). Exact custom-account deletion
+no longer calls the advisory interface; shared account selection and lifecycle
+paths now take it only for builtin targets. Existing definition protection,
+ordered account row writes, account uniqueness, selection foreign keys and
+whole-transaction rollback recovery continue to arbitrate custom writes.
+
+Read-only deployment checks on 2026-09-29 found all production API aliases
+(`api.okou.ai`, `api.vm0.ai`, `vm0-api.vm6.ai`, `vm0-api-prod.vm6.ai`) at READY
+Vercel deployment `dpl_Bhc1WpzjbKXqkDEUvDbtH2GZvinQ`, commit
+`020a4d8c4b1d8392a8cdda39b8206d9f643ca555`. Both public build-info endpoints
+returned that commit and version 1.695.0. This version contains #37097; the
+01:12:01 UTC promotion preceded inspection by more than the configured
+300-second API invocation bound. The existing mandatory rollback floor
+`45b537a596a153a91b76c3bc7223187840f52775` also contains #37097.
+
+Recheck supported serving and rollback writers before deployment if that state
+changes. A pre-#37097 custom-account writer cannot coexist with this retirement.
+No App/Runner contract, persisted field or additional deployment floor changes.
+The remaining builtin target lock and transaction-passing account helpers are
+separate Release 1 work, not exceptions to the confirmed final architecture.

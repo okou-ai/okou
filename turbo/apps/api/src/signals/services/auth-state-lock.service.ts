@@ -25,18 +25,16 @@ export async function lockConnectorAccountTarget(
     readonly target: ConnectorAccountTarget;
   },
 ): Promise<void> {
+  // Custom accounts use definition protection, ordered account writes and
+  // selection UNIQUE/FK arbitration prepared in #37097. Builtin accounts still
+  // have outgoing credential/event-source writers that require this key.
   if (args.target.kind === "builtin") {
     await lockBuiltinConnectorState(db, {
       orgId: args.orgId,
       userId: args.userId,
       connectorSlug: args.target.connectorSlug,
     });
-    return;
   }
-  await db.execute(
-    // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-    sql`SELECT pg_advisory_xact_lock(hashtext('connector_state:' || ${args.orgId} || ':' || ${args.userId} || ':custom:' || ${args.target.customConnectorId}))`,
-  );
 }
 
 /**
