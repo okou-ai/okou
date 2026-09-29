@@ -29,16 +29,18 @@ import { deleteDiscordOrgMemberData } from "./discord-owner-cleanup.service";
 import { command } from "ccstate";
 import { writeDb$, type Db } from "../external/db";
 
+interface OrgMemberCleanupInput {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly membershipId?: string;
+}
+
 /** `onSlotsReleased` receives the slots the revoked runs released as soon as
  * the revocation commits, before any other effect of this cleanup. */
 export const cleanupOrgMemberResources$ = command(
   async (
     { set },
-    args: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly membershipId?: string;
-    },
+    args: OrgMemberCleanupInput,
     onSlotsReleased: (slots: readonly ReleasedRunSlot[]) => void,
     signal: AbortSignal,
   ): Promise<void> => {
