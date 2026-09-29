@@ -599,6 +599,13 @@ describe("CHAT-02: generation templates and attachments", () => {
             selection: { illustrationStyleId: style.illustrationStyleId },
           },
         },
+        { type: "text", text: " and describe " },
+        {
+          type: "template",
+          titleSnapshot: "Intro video",
+          template: { type: "intro-video", selection: {} },
+        },
+        { type: "text", text: "\n\nThen caption" },
       ],
     };
 
@@ -609,7 +616,7 @@ describe("CHAT-02: generation templates and attachments", () => {
     });
     const run = await api.readRun(actor, sent.runId);
     expect(run.prompt).toContain(
-      `Animate and introduce then draw with [Template #1: ${style.title} (illustration)]`,
+      `Animate and introduce then draw with [Template #1: ${style.title} (illustration)] and describe \n\nThen caption`,
     );
 
     const systemPrompt = run.appendSystemPrompt ?? "";

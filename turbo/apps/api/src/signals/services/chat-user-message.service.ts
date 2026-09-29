@@ -440,8 +440,8 @@ export function projectUserMessage(
     flushFeedback();
     if (part.type === "text") {
       inlinePrompt +=
-        followsDroppedTemplate && /\s$/u.test(inlinePrompt)
-          ? part.text.trimStart()
+        followsDroppedTemplate && inlinePrompt.endsWith(" ")
+          ? part.text.replace(/^ +/u, "")
           : part.text;
       inlineDisplayText += part.text;
       hasTextContent ||= part.text.trim().length > 0;
