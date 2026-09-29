@@ -423,6 +423,18 @@ export async function prepareChatThreadConnectorSelections(
     }
     const projected = projectedById.get(selection.connectionId);
     if (!projected) {
+      if (args.missingAccountPolicy === "omit") {
+        // Deletion can commit between the ownership read and the projection.
+        // Initial thread creation omits a deleted account at either boundary;
+        // an existing but unavailable account still receives the same error.
+        const current = await loadConnectorTargetOwnerships(db, {
+          connectorIds: [selection.connectionId],
+        });
+        if (!current.has(selection.connectionId)) {
+          byTarget.delete(key);
+          continue;
+        }
+      }
       return {
         kind: "invalid",
         message: "Connector account is unavailable for thread selection",
