@@ -14,9 +14,9 @@ import {
   reconcileGmailWatchesForUser$,
 } from "./gmail-automation-event.service";
 import {
-  ensureGoogleCalendarWatchForUser,
-  reconcileGoogleCalendarWatchesForUser,
-  stageGoogleCalendarWatchTargetForReconfiguration,
+  ensureGoogleCalendarWatchForUser$,
+  reconcileGoogleCalendarWatchesForUser$,
+  stageGoogleCalendarWatchTargetForReconfiguration$,
 } from "./google-calendar-automation-event.service";
 import {
   ensureGoogleFormsWatchForUser$,
@@ -210,9 +210,9 @@ export const reconcileAutomationEventWatches$ = command(
         succeeded &&= reconciled;
         continue;
       }
-      const reconciled = await reconcileGoogleCalendarWatchesForUser(
+      const reconciled = await set(
+        reconcileGoogleCalendarWatchesForUser$,
         {
-          db: db,
           orgId: target.orgId,
           userId: target.userId,
           ...(target.connectorId === null
@@ -249,8 +249,9 @@ export const reconcileAutomationEventWatchInventoryForOwner$ = command(
       signal,
     );
     signal.throwIfAborted();
-    const calendar = await reconcileGoogleCalendarWatchesForUser(
-      { db, orgId: args.orgId, userId: args.userId },
+    const calendar = await set(
+      reconcileGoogleCalendarWatchesForUser$,
+      { orgId: args.orgId, userId: args.userId },
       signal,
     );
     signal.throwIfAborted();
@@ -345,9 +346,9 @@ const ensureNonFormsTarget$ = command(
                 "Connect Google Calendar before using Google Calendar event automations",
             }
           : allowStagedOfficialTarget
-            ? await stageGoogleCalendarWatchTargetForReconfiguration(
+            ? await set(
+                stageGoogleCalendarWatchTargetForReconfiguration$,
                 {
-                  db,
                   orgId: target.orgId,
                   userId: target.userId,
                   connectorId: target.connectorId,
@@ -356,9 +357,9 @@ const ensureNonFormsTarget$ = command(
                 },
                 signal,
               )
-            : await ensureGoogleCalendarWatchForUser(
+            : await set(
+                ensureGoogleCalendarWatchForUser$,
                 {
-                  db,
                   orgId: target.orgId,
                   userId: target.userId,
                   connectorId: target.connectorId,

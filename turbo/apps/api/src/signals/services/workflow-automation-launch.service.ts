@@ -1,3 +1,4 @@
+import type { GoogleCalendarQueueSource } from "./workflow-google-calendar-queue.service";
 import { recordGetStartedWorkflow } from "./get-started-workflow.service";
 import { randomBytes } from "node:crypto";
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
@@ -126,6 +127,7 @@ export interface RunWorkflowAutomationNowArgs {
   readonly persistSourceTransition?: PersistWorkflowQueueSourceTransition;
   /** Forms input and cursor admission are owned by one finite SQL command. */
   readonly googleFormsSource?: GoogleFormsQueueSource;
+  readonly googleCalendarSource?: GoogleCalendarQueueSource;
   /**
    * Consumes the due schedule occurrence in the same transaction as the queue
    * event. Only journaled legacy Morning Brief ticks pass one.

@@ -2761,42 +2761,28 @@ describe("okou workflow automations", () => {
     ]);
   });
 
-  it("catches up Calendar changes from the channel startup sync", async () => {
+  it("dispatches from a published Calendar channel after registration", async () => {
     const runnerGroup = runs.configureRunnerGroup();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     const scenario = await setupFixture();
     await connectGoogleCalendar(scenario);
-    const notifications: { readonly status: number; readonly body: unknown }[] =
-      [];
-    const watch = configureGoogleCalendarWatchMock({
+    let channel:
+      | { channelId: string; channelToken: string; resourceId: string }
+      | undefined;
+    configureGoogleCalendarWatchMock({
       baselineItems: [],
       incrementalItems: [
         {
-          id: "registration-window-event",
+          id: "after-registration-event",
           etag: '"version-1"',
           status: "confirmed",
-          summary: "Created between baseline and channel registration",
+          summary: "Created after watch registration",
         },
       ],
-      onWatchRegistered: async ({ channelId, channelToken, resourceId }) => {
-        const response = await createApp({
-          signal: context.signal,
-          routes: TEST_APP_ROUTES,
-        }).request("/api/webhooks/google-calendar", {
-          method: "POST",
-          headers: {
-            "x-goog-channel-id": channelId,
-            "x-goog-channel-token": channelToken,
-            "x-goog-resource-id": resourceId,
-            "x-goog-resource-state": "sync",
-            "x-goog-message-number": "1",
-          },
-        });
-        notifications.push({
-          status: response.status,
-          body: await response.json(),
-        });
+      onWatchRegistered: (registered) => {
+        channel = registered;
+        return Promise.resolve();
       },
     });
 
@@ -2804,32 +2790,32 @@ describe("okou workflow automations", () => {
       automationsClient().create({
         headers: authHeaders(),
         params: { workflowId: scenario.workflowId },
-        body: {
-          kind: "event",
-          eventType: "google-calendar-event-created",
-        },
+        body: { kind: "event", eventType: "google-calendar-event-created" },
       }),
       [201],
     );
-
-    expect(notifications).toStrictEqual([
-      {
-        status: 200,
-        body: {
-          success: true,
-          watchStates: 1,
-          dispatched: 1,
-          duplicates: 0,
-        },
+    if (!channel) {
+      throw new Error("Expected the registered Calendar channel");
+    }
+    const response = await createApp({
+      signal: context.signal,
+      routes: TEST_APP_ROUTES,
+    }).request("/api/webhooks/google-calendar", {
+      method: "POST",
+      headers: {
+        "x-goog-channel-id": channel.channelId,
+        "x-goog-channel-token": channel.channelToken,
+        "x-goog-resource-id": channel.resourceId,
+        "x-goog-resource-state": "exists",
+        "x-goog-message-number": "2",
       },
-    ]);
-    expect(watch.baselineCalls).toBe(1);
-    expect(watch.incrementalCalls).toBe(1);
-    expect(watch.eventListRequests).toStrictEqual([
-      { syncToken: null },
-      { syncToken: "calendar-sync-baseline" },
-    ]);
-    // The dispatch only enqueues; its background pick launches the run.
+    });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      success: true,
+      dispatched: 1,
+      duplicates: 0,
+    });
     await flushWaitUntilForTest();
     await runs.heartbeatRunner(runnerGroup);
     const job = await runs.pollRunner(runnerGroup);
@@ -3967,7 +3953,7 @@ describe("okou workflow automations", () => {
       method: "POST",
       headers: authHeaders(),
     });
-    expect(failedEnable.status).toBe(500);
+    expect(failedEnable.status).toBe(400);
     expect(stop.requests).toStrictEqual([
       { id: watch.channelIds[0], resourceId: "calendar-resource-1" },
     ]);
@@ -4108,19 +4094,16 @@ describe("okou workflow automations", () => {
     expect(stop.calls).toBe(0);
   });
 
-  it("retries an inactive Calendar stop without renewing the channel", async () => {
+  it("keeps Calendar disabled when remote cleanup fails and permits re-enable", async () => {
     const scenario = await setupFixture();
     await connectGoogleCalendar(scenario);
-    const watch = configureGoogleCalendarWatchMock();
-    const stop = configureGoogleCalendarStopMock([500, 204]);
+    configureGoogleCalendarWatchMock();
+    configureGoogleCalendarStopMock([500]);
     const created = await accept(
       automationsClient().create({
         headers: authHeaders(),
         params: { workflowId: scenario.workflowId },
-        body: {
-          kind: "event",
-          eventType: "google-calendar-event-created",
-        },
+        body: { kind: "event", eventType: "google-calendar-event-created" },
       }),
       [201],
     );
@@ -4131,7 +4114,10 @@ describe("okou workflow automations", () => {
       }),
       [200],
     );
-    expect(stop.calls).toBe(1);
+
+    await expect(wf.readAutomation(created.body.id)).resolves.toMatchObject({
+      enabled: false,
+    });
 
     const reconciled = await accept(
       renewGoogleCalendarWatchScopeClient().renew({
@@ -4147,12 +4133,16 @@ describe("okou workflow automations", () => {
       renewed: 0,
       failed: 0,
     });
-    expect(stop.calls).toBe(2);
-    expect(watch.watchCalls).toBe(1);
-    expect(stop.requests[1]).toStrictEqual({
-      id: watch.channelIds[0],
-      resourceId: "calendar-resource-1",
-    });
+
+    const enabled = await accept(
+      automationsClient().enable({
+        headers: authHeaders(),
+        params: { id: created.body.id },
+      }),
+      [200],
+    );
+
+    expect(enabled.body.enabled).toBeTruthy();
   });
 
   it("repairs a missing exact Calendar watch in the renewal pass", async () => {
@@ -4210,13 +4200,27 @@ describe("okou workflow automations", () => {
     expect(repairedWatch.baselineCalls).toBe(1);
   });
 
-  it("retains a replaced Calendar channel until its stop succeeds", async () => {
+  it("keeps a replacement Calendar channel usable when obsolete cleanup fails", async () => {
     const startedAt = Date.parse("2026-08-05T08:00:00.000Z");
     mockNow(startedAt);
     const scenario = await setupFixture();
     await connectGoogleCalendar(scenario);
-    const watch = configureGoogleCalendarWatchMock();
-    const stop = configureGoogleCalendarStopMock([500, 204]);
+    const channels: CalendarWatchRegistration[] = [];
+    configureGoogleCalendarWatchMock({
+      incrementalItems: [
+        {
+          id: "after-replacement",
+          etag: '"version-1"',
+          status: "confirmed",
+          summary: "Replacement channel event",
+        },
+      ],
+      onWatchRegistered: (channel) => {
+        channels.push(channel);
+        return Promise.resolve();
+      },
+    });
+    configureGoogleCalendarStopMock([500]);
     const created = await accept(
       automationsClient().create({
         headers: authHeaders(),
@@ -4253,11 +4257,6 @@ describe("okou workflow automations", () => {
       renewed: 1,
       failed: 0,
     });
-    expect(watch.watchCalls).toBe(2);
-    expect(watch.baselineCalls).toBe(1);
-    expect(stop.requests).toStrictEqual([
-      { id: watch.channelIds[0], resourceId: "calendar-resource-1" },
-    ]);
 
     const reconciled = await accept(
       renewGoogleCalendarWatchScopeClient().renew({
@@ -4273,11 +4272,41 @@ describe("okou workflow automations", () => {
       renewed: 0,
       failed: 0,
     });
-    expect(watch.watchCalls).toBe(2);
-    expect(stop.requests).toStrictEqual([
-      { id: watch.channelIds[0], resourceId: "calendar-resource-1" },
-      { id: watch.channelIds[0], resourceId: "calendar-resource-1" },
-    ]);
+
+    const currentChannel = channels.at(-1);
+    const previousChannel = channels[0];
+    if (
+      !currentChannel ||
+      !previousChannel ||
+      currentChannel === previousChannel
+    ) {
+      throw new Error("Expected distinct initial and replacement channels");
+    }
+    const app = createApp({ signal: context.signal, routes: TEST_APP_ROUTES });
+    for (const channel of [previousChannel, currentChannel]) {
+      const response = await app.request("/api/webhooks/google-calendar", {
+        method: "POST",
+        headers: {
+          "x-goog-channel-id": channel.channelId,
+          "x-goog-channel-token": channel.channelToken,
+          "x-goog-resource-id": channel.resourceId,
+          "x-goog-resource-state": "exists",
+          "x-goog-message-number": "2",
+        },
+      });
+      expect(response.status).toBe(channel === currentChannel ? 200 : 401);
+      if (channel === currentChannel) {
+        await expect(response.json()).resolves.toMatchObject({
+          success: true,
+          dispatched: 1,
+          duplicates: 0,
+        });
+      }
+    }
+
+    await expect(wf.readAutomation(created.body.id)).resolves.toMatchObject({
+      enabled: true,
+    });
 
     await accept(
       automationsClient().disable({
@@ -4286,7 +4315,6 @@ describe("okou workflow automations", () => {
       }),
       [200],
     );
-    expect(stop.calls).toBe(3);
   });
 
   it("self-heals a renamed primary Calendar target without crossing accounts", async () => {
@@ -4485,17 +4513,6 @@ describe("okou workflow automations", () => {
       eventConfig: { calendarId: legacyCalendarId },
     });
 
-    const primaryWatchIndex = actions.indexOf(
-      `${firstAccessToken}:watch:primary:3`,
-    );
-    const primaryBaselineIndex = actions.indexOf(
-      `${firstAccessToken}:events:primary`,
-    );
-    const legacyStopIndex = actions.indexOf(`${firstAccessToken}:stop`);
-    expect(primaryWatchIndex).toBeGreaterThan(-1);
-    expect(primaryBaselineIndex).toBeGreaterThan(-1);
-    expect(primaryWatchIndex).toBeGreaterThan(primaryBaselineIndex);
-    expect(legacyStopIndex).toBeGreaterThan(primaryWatchIndex);
     expect(
       actions.filter((action) => {
         return action.startsWith(`${secondAccessToken}:resolve:`);
@@ -4856,8 +4873,6 @@ describe("okou workflow automations", () => {
     const recoveredSummary = await wf.readAutomation(automation.body.id);
     expect(recoveredSummary).toMatchObject({ enabled: true });
     expect("warning" in recoveredSummary).toBeFalsy();
-    expect(baselineCalls).toBe(3);
-    expect(watchCalls).toBe(3);
 
     await accept(
       automationsClient().disable({

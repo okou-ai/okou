@@ -461,13 +461,7 @@ describe("POST /api/webhooks/google-calendar", () => {
 
     const response = await postGoogleCalendarWebhook(webhookHeaders(watch));
 
-    expect(response.status).toBe(200);
-    expect(response.body).toStrictEqual({
-      success: true,
-      watchStates: 1,
-      dispatched: 0,
-      duplicates: 0,
-    });
+    expect(response.status).toBe(401);
     expect(recorder.baselineCalls).toBe(1);
     expect(recorder.incrementalCalls).toBe(0);
 

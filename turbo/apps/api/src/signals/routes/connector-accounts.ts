@@ -31,7 +31,7 @@ import {
 } from "../services/connector-data.service";
 import { deleteCustomConnectorAccount$ } from "../services/custom-connector.service";
 import { reconcileGmailWatchesForUser$ } from "../services/gmail-automation-event.service";
-import { reconcileGoogleCalendarWatchesForUser } from "../services/google-calendar-automation-event.service";
+import { reconcileGoogleCalendarWatchesForUser$ } from "../services/google-calendar-automation-event.service";
 import { reconcileGoogleFormsWatchesForUser$ } from "../services/google-forms-automation-event.service";
 import { reconcileGoogleMeetSubscriptionsForUser } from "../services/google-meet-automation-event.service";
 
@@ -286,8 +286,9 @@ const setDefaultInner$ = command(
               signal,
             )
           : body.data.target.connectorSlug === "google-calendar"
-            ? reconcileGoogleCalendarWatchesForUser(
-                { db: writeDb, orgId: auth.orgId, userId: auth.userId },
+            ? set(
+                reconcileGoogleCalendarWatchesForUser$,
+                { orgId: auth.orgId, userId: auth.userId },
                 signal,
               )
             : body.data.target.connectorSlug === "google-forms"

@@ -1,3 +1,4 @@
+import { enqueueGoogleCalendarWorkflowInput$ } from "./workflow-google-calendar-queue.service";
 import { command } from "ccstate";
 
 import type { Tx } from "../../lib/db-types";
@@ -136,13 +137,13 @@ function workflowQueueInputPreparation(
   timing: ApiDispatchTimingCollector,
 ) {
   if (
-    args.googleFormsSource &&
+    (args.googleFormsSource || args.googleCalendarSource) &&
     (args.scheduleClaim ||
       args.persistSourceTransition ||
       args.due.automation.kind === "schedule")
   ) {
     throw new Error(
-      "Google Forms admission cannot carry another source transition",
+      "Provider watch admission cannot carry another source transition",
     );
   }
   return {
@@ -171,6 +172,17 @@ function workflowQueueInputPreparation(
  * trigger waits for a launch, and a launch rejection appears in the thread as
  * `input.rejected`.
  */
+function workflowQueueAdmissionStepAction(
+  step: "transaction" | "callback" | "queue_upsert",
+) {
+  const actions = {
+    transaction: "api_dispatch_workflow_enqueue_transaction",
+    callback: "api_dispatch_workflow_enqueue_transaction_callback",
+    queue_upsert: "api_dispatch_workflow_enqueue_queue_upsert",
+  } as const;
+  return actions[step];
+}
+
 export const runWorkflowAutomationNow$ = command(
   async (
     { set },
@@ -224,32 +236,33 @@ export const runWorkflowAutomationNow$ = command(
                     },
                     signal,
                   )
-                : enqueueChatInput(db, {
-                    chatThreadId,
-                    orgId: automation.orgId,
-                    appendInput,
-                    measureStep: (step, operation) => {
-                      const action = {
-                        transaction:
-                          "api_dispatch_workflow_enqueue_transaction",
-                        callback:
-                          "api_dispatch_workflow_enqueue_transaction_callback",
-                        queue_upsert:
-                          "api_dispatch_workflow_enqueue_queue_upsert",
-                      } as const;
-                      return measureWorkflowAdmissionStep(
+                : args.googleCalendarSource
+                  ? set(
+                      enqueueGoogleCalendarWorkflowInput$,
+                      {
+                        input: preparedInput,
+                        source: args.googleCalendarSource,
+                      },
+                      signal,
+                    )
+                  : enqueueChatInput(db, {
+                      chatThreadId,
+                      orgId: automation.orgId,
+                      appendInput,
+                      measureStep: (step, operation) => {
+                        return measureWorkflowAdmissionStep(
+                          timing,
+                          workflowQueueAdmissionStepAction(step),
+                          operation,
+                        );
+                      },
+                      ...queueAdmissionSourceTransition({
+                        scheduleClaim,
+                        persistSourceTransition,
+                        replacePendingTicks,
                         timing,
-                        action[step],
-                        operation,
-                      );
-                    },
-                    ...queueAdmissionSourceTransition({
-                      scheduleClaim,
-                      persistSourceTransition,
-                      replacePendingTicks,
-                      timing,
+                      }),
                     }),
-                  }),
             );
             if (!attempt.ok) {
               if (attempt.error instanceof ScheduleOccurrenceUnavailableError) {

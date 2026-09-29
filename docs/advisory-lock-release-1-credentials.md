@@ -1,6 +1,6 @@
 # Release 1 credential and provider-watch boundaries
 
-The six advisory acquisition definitions remain. This work prepares selected write paths; it does not establish that Release 1 is complete for the whole credentials/watch package.
+Forms and Calendar lifecycle acquisitions are removed. Other credential/watch coordination remains as described below; these completed paths do not establish that Release 1 is complete for the whole package.
 
 ### Implemented
 
@@ -15,7 +15,7 @@ The six advisory acquisition definitions remain. This work prepares selected wri
 - Ordinary builtin credential refresh captures exact stored inputs before provider I/O. Local publication validates owner, principal, method, storage and credential bytes. A lost refresh publication is rejected as connection-changed, including after a stale terminal failure. An updated token bundle cannot prove that the change came from another refresh rather than a replacement authorization. The stale request therefore cannot reuse the replacement token, mutate the new connection or return unpublished provider output.
 - Shared firewall builtin and model-provider refresh success/failure writes compare the observed existing metadata timestamp and PostgreSQL `xmin`. A successful publication claims that exact owner row before persisting the credential bundle in the same transaction; a changed or deleted row rejects the result without writing output credentials. These tokens are held only for the in-flight request, with no new persisted state. This is conditional-write preparation, not removal of the shared runtime transaction or provider-I/O boundary.
 - Automatic MCP credential resolution retains the exact existing consent binding (`xmin` and its full-precision creation timestamp) and access ciphertext. Both outgoing and R1 reconnect publication replace that binding; token refresh leaves it unchanged. A concurrent expiry request may reuse a sibling refresh only while that same consent binding survives. Comparing only the account metadata timestamp rejects a legitimate sibling refresh, while comparing only changed token ciphertext would wrongly accept replacement authorization. Its refresh publication still claims the exact current account metadata and stored refresh ciphertext before writing output tokens; terminal failure marks only that observed state. Exact DCR registration retirement remains a separate resource-wide invalidation when the provider rejects that client. The legacy Automatic refresh transaction and propagated resolver helper graph still require migration.
-- Calendar baseline pagination and credential preparation move before the local decision transaction. Existing credential bytes and state snapshots fence publication. Cleanup after uncertain finalization rereads authoritative ownership and preserves a currently owned channel. Healthy existing watches remain usable while previous-channel cleanup is pending.
+- Calendar provider pagination, credential preparation and channel registration precede conditional publication in its owning command. The lifecycle advisory key, pending channel and previous-channel recovery protocol are removed. Publication compares the original principal, exact stored credential bytes and observed watch state; cleanup after an uncertain commit rereads current channel ownership. Superseded channels are stopped outside transactions on a best-effort basis, and failed cleanup does not block the current channel. Snapshot writes use at most 250 events per local transaction; pagination and batch iteration remain outside transactions.
 
 - Credential secret/variable authorization predicates are pure SQL builders. Their complete account, owner, auth-method, storage-version and optional revision checks no longer receive a database or transaction from any caller. Calendar watch publication's exact credential predicate is also a pure SQL builder; it receives only the observed account and stored credential bytes.
 
@@ -32,7 +32,7 @@ The six advisory acquisition definitions remain. This work prepares selected wri
 - Builtin OAuth callback, Automatic OAuth refresh and its legacy retirement store, ordinary refresh's legacy helper-owned commit path and its remaining resolver chains still propagate root database or transaction values. Automatic callback including state claim, catalog preparation and post-commit wakeup has a command-owned boundary. Other builtin/custom callback routes still use the legacy state helper; it remains only for those actual callers.
 - Model-provider firewall refresh and personal subscription account settings have not been migrated to the complete final command-owned conditional protocol. They still execute provider/KMS work through the locked helper graph. Ordinary multi-auth and single-secret settings now have direct command-owned SQL.
 - Gmail now has explicit approval for local disable, stopping renewal and remote natural expiry without account-global `users.stop`. Its remote-stop code is removed. Ensure, renewal and watch reconciliation now use owning commands; missing-thread initialization, queue source admission and shared credential callers remain. Calendar also has explicit approval for a remote gap and best-effort candidate cleanup; authority and basic deduplication remain required.
-- Calendar lifecycle preparation/activation/reconciliation still has helper-owned and propagated transaction paths. Current-channel remote stop remains inside the existing decision boundary.
+- Calendar ordinary lifecycle, activation/reconfiguration, reconciliation, credentials, dispatch reads and queue admission now use business-input commands. Its missing workflow-thread initialization and shared create/official/account projection graphs still forward handles, and are unfinished implementation. The separate builtin credential key remains for the shared account protocol, not for gap-free Calendar delivery. Calendar remote-stop preparation for account deletion and principal replacement is now outside the caller transaction; unrelated credential revocation preparation in the shared graph remains unfinished.
 - Forms workflow-thread creation still accepts a transaction. Shared create/official authority preparation and queue model preparation retain legacy database interfaces. Forms account-deletion watch preparation now has its own command outside deletion transactions. The regular Forms watch/configuration/dispatch credential path now uses owning commands. Other event sources still use the legacy workflow queue source callback; this does not claim to migrate those sources.
 
 ### Validation
@@ -366,3 +366,46 @@ successes do not by themselves prove that the later result invalidates the earli
 one; [Microsoft explicitly preserves previously used refresh tokens](https://learn.microsoft.com/en-us/entra/identity-platform/refresh-tokens).
 Do not generalize either behavior to every adapter, introduce a secret-deletion
 claim, or describe the no-new-fields protocol as globally impossible.
+
+### Calendar conditional publication and best-effort cleanup
+
+The final Calendar lifecycle no longer creates an unpublished database channel or
+tracks a previous channel until teardown succeeds. A command observes the source,
+account and current watch, prepares Google pagination/registration outside SQL,
+then publishes one complete channel using existing identities. The account check
+includes owner, principal, method, storage version, exact metadata timestamp and
+stored credential bytes. After refresh the request keeps its original account
+identity and uses only the committed returned revision and token; a later
+replacement authorization cannot be adopted by rereading the connector ID.
+
+Only the current channel authenticates notifications. Snapshot batches lock that
+channel and contain at most 250 events. The initial cursor is published after
+baseline batches; replacement during preparation or batching cannot overwrite a
+new channel. Failure during this sequence may require a fresh baseline and may
+lose triggers, as explicitly accepted. Existing previous-channel columns are
+cleared on publication and are no longer used as a recovery protocol; no schema
+field, trigger or migration is added.
+
+Calendar queue admission receives ordinary source and prepared-event values. Its
+owning command appends canonical input SQL, validates and protects the current
+channel, account owner and enabled automation, then queues the thread. A rejected
+source rolls the input back. It passes no database or transaction to another
+function. Existing processed-event uniqueness provides basic retry deduplication;
+this does not promise exactly-once delivery during a provider failure.
+
+The old Calendar lifecycle writer may still stop a previously observed channel
+or replace a cursor during mixed serving. That can create an accepted notification
+gap; it is no longer a reason to retain the lifecycle advisory key. The retained
+builtin credential acquisition is separate: outgoing account replacement and
+revocation writers still mutate shared account credentials without the complete
+replacement protocol. Removing that key requires the common credential writer
+implementation plus serving, in-flight and rollback compatibility evidence; it
+is not merely a Calendar rollout gate.
+
+API regressions retain normal notification delivery, basic deduplication,
+source/account isolation, disable during registration and recovery to a usable
+replacement. Cleanup failure now verifies that the old channel is rejected and
+the new channel dispatches, without requiring a precise number or order of watch,
+baseline or stop requests. Focused core types, formatting and changed-file lint
+are checked locally; behavior remains subject to the combined PR-head pipeline.
+No local Vitest suite or development server is run.
