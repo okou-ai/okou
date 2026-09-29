@@ -38,6 +38,8 @@ import {
   createBillingSetupCheckout,
 } from "./billing-payment-method.service";
 
+import { concurrencySubscriptionUpdatedAt } from "./concurrency-subscription-write";
+
 const L = logger("BillingDowngrade");
 
 const TIER_RANK = Object.freeze<Record<OrgTier, number>>({
@@ -287,7 +289,7 @@ async function clearConcurrencyChangeSupersededByPlanEnd(
       ...(superseded.scheduled
         ? { scheduledSlots: null, scheduledChangeAt: null }
         : {}),
-      updatedAt: nowDate(),
+      updatedAt: concurrencySubscriptionUpdatedAt(nowDate()),
     })
     .where(
       and(

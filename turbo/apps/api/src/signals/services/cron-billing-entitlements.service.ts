@@ -18,6 +18,7 @@ import {
   sql,
 } from "drizzle-orm";
 
+import { pgTextDecoder } from "../../lib/db-structured-result";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
@@ -64,6 +65,7 @@ import {
   type StripeSubscriptionSnapshotReconciliation,
 } from "./webhooks-stripe.service";
 import type { Tx } from "../../lib/db-types";
+import { concurrencySubscriptionUpdatedAt } from "./concurrency-subscription-write";
 
 const L = logger("CronBillingEntitlements");
 const PAID_TIERS = ["pro", "team", "custom"] as const;
@@ -130,6 +132,7 @@ interface AtomGrantCandidate {
 interface ConcurrencyCandidate {
   readonly orgId: string;
   readonly stripeSubscriptionId: string;
+  readonly updatedAtText: string;
 }
 
 interface UsageAllowanceCandidate {
@@ -1278,7 +1281,7 @@ async function reconcileConcurrencyCandidate(
     cancelAtPeriodEnd:
       subscription.cancel_at_period_end &&
       knownBillingPlanPriceItem(subscription.items.data) === undefined,
-    updatedAt: now,
+    updatedAt: concurrencySubscriptionUpdatedAt(now),
     ...(periodEnd ? { currentPeriodEnd: periodEnd } : {}),
     ...(item ? { stripePriceId: item.price.id } : {}),
     ...(slots ? { slots } : {}),
@@ -1287,6 +1290,10 @@ async function reconcileConcurrencyCandidate(
     eq(
       orgConcurrencySubscriptions.stripeSubscriptionId,
       candidate.stripeSubscriptionId,
+    ),
+    eq(
+      orgConcurrencySubscriptions.updatedAt,
+      sql`${candidate.updatedAtText}::timestamp`,
     ),
     inArray(orgConcurrencySubscriptions.subscriptionStatus, [
       ...CONCURRENCY_SUBSCRIPTION_PAYMENT_FAILED_STATUSES,
@@ -1300,7 +1307,7 @@ async function reconcileConcurrencyCandidate(
         subscriptionStatus: "canceled",
         cancelAtPeriodEnd: false,
         currentPeriodEnd: now,
-        updatedAt: now,
+        updatedAt: concurrencySubscriptionUpdatedAt(now),
       })
       .where(currentCandidate)
       .returning({
@@ -1541,6 +1548,10 @@ async function loadReconcileCandidateRows(
       .select({
         orgId: orgConcurrencySubscriptions.orgId,
         stripeSubscriptionId: orgConcurrencySubscriptions.stripeSubscriptionId,
+        updatedAtText:
+          sql`${orgConcurrencySubscriptions.updatedAt}::text`.mapWith(
+            pgTextDecoder,
+          ),
       })
       .from(orgConcurrencySubscriptions)
       .where(

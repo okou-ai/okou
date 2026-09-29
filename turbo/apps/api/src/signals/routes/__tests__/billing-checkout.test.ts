@@ -677,6 +677,24 @@ async function createConcurrencySubscriptionOrg(args: {
       },
     },
   };
+  context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
+    id: args.subscriptionId,
+    customer: customerId,
+    status: "active",
+    cancel_at_period_end: false,
+    schedule: null,
+    metadata: {},
+    items: {
+      data: [
+        {
+          id: `si_${TEST_PRICE_CONCURRENCY}`,
+          price: { id: TEST_PRICE_CONCURRENCY },
+          quantity: args.slots,
+          current_period_end: periodEndUnix,
+        },
+      ],
+    },
+  });
   context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(event);
   await accept(
     setupApp({ context, routes: webhooksStripeRoutes })(
@@ -751,6 +769,29 @@ async function createMergedConcurrencySubscriptionOrg(args: {
       },
     },
   };
+  context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
+    id: fixture.subscriptionId,
+    customer: fixture.customerId,
+    status: "active",
+    cancel_at_period_end: false,
+    schedule: null,
+    metadata: {},
+    items: {
+      data: [
+        {
+          id: `si_${TEST_PRICE_TEAM}`,
+          price: { id: TEST_PRICE_TEAM },
+          quantity: 1,
+        },
+        {
+          id: `si_${TEST_PRICE_CONCURRENCY}`,
+          price: { id: TEST_PRICE_CONCURRENCY },
+          quantity: args.slots,
+          current_period_end: Math.floor(args.periodEnd.getTime() / 1000),
+        },
+      ],
+    },
+  });
   context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(event);
   await accept(
     setupApp({ context, routes: webhooksStripeRoutes })(
@@ -834,6 +875,29 @@ async function createMergedUsageAllowanceConcurrencySubscriptionOrg(args: {
       },
     },
   };
+  context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
+    id: subscriptionId,
+    customer: customerId,
+    status: "active",
+    cancel_at_period_end: false,
+    schedule: null,
+    metadata: {},
+    items: {
+      data: [
+        {
+          id: allowanceItemId,
+          price: { id: TEST_PRICE_USAGE_ALLOWANCE },
+          quantity: 1,
+        },
+        {
+          id: `si_${TEST_PRICE_CONCURRENCY}`,
+          price: { id: TEST_PRICE_CONCURRENCY },
+          quantity: args.slots,
+          current_period_end: periodEndUnix,
+        },
+      ],
+    },
+  });
   context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(event);
   await accept(
     setupApp({ context, routes: webhooksStripeRoutes })(
@@ -19242,6 +19306,9 @@ describe("POST /api/billing/concurrency-checkout", () => {
         previous_attributes: { cancel_at_period_end: false },
       },
     };
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+      event.data.object,
+    );
     context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(event);
 
     await accept(
@@ -19314,6 +19381,9 @@ describe("POST /api/billing/concurrency-checkout", () => {
         previous_attributes: { cancel_at: null },
       },
     };
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+      event.data.object,
+    );
     context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(event);
 
     await accept(
@@ -19338,6 +19408,72 @@ describe("POST /api/billing/concurrency-checkout", () => {
         cancelAtPeriodEnd: false,
       }),
     );
+  });
+
+  it("keeps authoritative cancellation across stale equal-quantity events and one clock tick", async () => {
+    mockNow(new Date("2035-05-01T00:00:00Z"));
+    onTestFinished(() => {
+      clearMockNow();
+    });
+    const periodEnd = new Date("2035-06-01T00:00:00Z");
+    const fixture = await createConcurrencySubscriptionOrg({
+      subscriptionId: `sub_${randomUUID()}`,
+      slots: 2,
+      periodEnd,
+    });
+    const currentSubscription = {
+      id: fixture.subscriptionId,
+      customer: fixture.customerId,
+      status: "active",
+      cancel_at_period_end: true,
+      schedule: null,
+      metadata: { purpose: "concurrency_subscription" },
+      items: {
+        data: [
+          {
+            id: `si_${randomUUID()}`,
+            price: { id: TEST_PRICE_CONCURRENCY },
+            quantity: 2,
+            current_period_end: Math.floor(periodEnd.getTime() / 1000),
+          },
+        ],
+      },
+    };
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+      currentSubscription,
+    );
+    const client = setupApp({ context, routes: webhooksStripeRoutes })(
+      webhookStripeContract,
+    );
+    // All three deliveries share the same application millisecond. Publication
+    // must preserve PostgreSQL's timestamp precision after each actual write.
+    for (const cancelAtPeriodEnd of [true, false, false]) {
+      const event = {
+        type: "customer.subscription.updated",
+        data: {
+          object: {
+            ...currentSubscription,
+            cancel_at_period_end: cancelAtPeriodEnd,
+          },
+        },
+      };
+      context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(event);
+      await accept(
+        client.post({
+          body: JSON.stringify(event),
+          extraHeaders: { "stripe-signature": "t=1,v1=checkout-test" },
+        }),
+        [200],
+      );
+      const status = await readBillingStatus(fixture);
+      expect(status.concurrencySubscriptions).toStrictEqual([
+        expect.objectContaining({
+          id: fixture.subscriptionId,
+          quantity: 2,
+          cancelAtPeriodEnd: true,
+        }),
+      ]);
+    }
   });
 
   it("ends Plan and concurrency state when the shared subscription is deleted", async () => {
@@ -19432,6 +19568,9 @@ describe("POST /api/billing/concurrency-checkout", () => {
         previous_attributes: { cancel_at_period_end: false },
       },
     };
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+      event.data.object,
+    );
     context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(event);
 
     await accept(
@@ -21643,6 +21782,9 @@ describe("POST /api/billing/concurrency-checkout", () => {
         previous_attributes: { cancel_at_period_end: false },
       },
     };
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+      event.data.object,
+    );
     context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(event);
 
     await accept(
