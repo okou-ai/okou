@@ -3,13 +3,13 @@ import {
   chatThreadMetadataContract,
   chatThreadsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { ApiError } from "../../lib/api-error.ts";
 import { accept } from "../../lib/accept.ts";
 import { authenticatedIdentity$ } from "../auth.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
 import { queryChatEventSharedDatabase$ } from "../shared-database.ts";
 import { onRef, settle } from "../utils.ts";
 import {
+  classifyDeliveryFailure,
   deliveryIntentsChanged$,
   listDeliveryIntents,
   removeDeliveryIntent,
@@ -20,25 +20,6 @@ import {
   type NewThreadDeliveryIntent,
 } from "./chat-delivery-intents.ts";
 import { checkAndRetryPromptDelivery$ } from "./chat-event-signals.ts";
-
-export function newThreadDeliveryFailure(error: unknown): {
-  readonly status: "rejected" | "uncertain";
-  readonly rejection: "authentication" | "rejected" | null;
-} {
-  const rejected =
-    error instanceof ApiError &&
-    error.status >= 400 &&
-    error.status < 500 &&
-    error.status !== 408;
-  return {
-    status: rejected ? "rejected" : "uncertain",
-    rejection: rejected
-      ? error.status === 401
-        ? "authentication"
-        : "rejected"
-      : null,
-  };
-}
 
 function savedNewThreadIntent(
   identity: DeliveryIdentity,
@@ -96,7 +77,7 @@ export const reconcileNewThreadDeliveries$ = command(
         updateDeliveryIntent(
           identity,
           intent.clientEventId,
-          newThreadDeliveryFailure(thread.error),
+          classifyDeliveryFailure(thread.error),
         );
         set(deliveryIntentsChanged$);
         continue;
@@ -197,7 +178,7 @@ export const retryNewThreadDelivery$ = command(
             updateDeliveryIntent(
               identity,
               eventId,
-              newThreadDeliveryFailure(check.error),
+              classifyDeliveryFailure(check.error),
             );
             set(deliveryIntentsChanged$);
             return false;
@@ -241,7 +222,7 @@ export const retryNewThreadDelivery$ = command(
               updateDeliveryIntent(
                 identity,
                 eventId,
-                newThreadDeliveryFailure(create.error),
+                classifyDeliveryFailure(create.error),
               );
               set(deliveryIntentsChanged$);
               return false;
@@ -271,7 +252,7 @@ export const retryNewThreadDelivery$ = command(
           eventId,
           checked.ok
             ? { status: "rejected", rejection: "rejected" }
-            : newThreadDeliveryFailure(checked.error),
+            : classifyDeliveryFailure(checked.error),
         );
         set(deliveryIntentsChanged$);
         return false;
