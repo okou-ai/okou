@@ -1,6 +1,7 @@
 import type { DefaultModelFirstPin } from "./model-selection.service";
 import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { command } from "ccstate";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { discordGatewayReceipts } from "@okouai/db/schema/discord-gateway-receipt";
 import {
@@ -10,12 +11,12 @@ import {
 import { discordChatThreadRoutes } from "@okouai/db/schema/discord-chat-thread-route";
 import { and, eq } from "drizzle-orm";
 
-import type { Db } from "../external/db";
+import { writeDb$, type Db } from "../external/db";
+import { loadNewChatThreadDefaults$ } from "./chat-thread-defaults.service";
 import {
-  appendChatThreadCreatedEvent,
-  insertChatThread,
-} from "./chat-thread-create.service";
-import type { Tx } from "../../lib/db-types";
+  integrationChatThreadValues,
+  integrationThreadCreatedEventSql,
+} from "./integration-chat-thread-publication";
 
 interface DiscordChatThreadRouteKey {
   readonly connectionId: string;
@@ -138,19 +139,6 @@ export async function findDiscordInteractionChatThreadId(
   return route?.chatThreadId;
 }
 
-async function requireDiscordChatThreadRoute(
-  db: Pick<Db, "select" | "update">,
-  key: DiscordChatThreadRouteKey,
-): Promise<DiscordChatThreadRouteBinding> {
-  const route = await loadDiscordChatThreadRoute(db, key);
-  if (!route) {
-    throw new Error(
-      "Failed to resolve Discord chat thread route after conflict",
-    );
-  }
-  return route;
-}
-
 interface CanonicalDiscordChatThreadRouteArgs extends DiscordChatThreadRouteKey {
   readonly orgId: string;
   readonly agentId: string;
@@ -160,134 +148,129 @@ interface CanonicalDiscordChatThreadRouteArgs extends DiscordChatThreadRouteKey 
   readonly initialModel: DefaultModelFirstPin;
 }
 
-/** Read the route already owned by an ingress claim and refresh its destination. */
-async function requireAssignedDiscordChatThreadRoute(
-  db: Pick<Db, "select" | "update">,
-  key: DiscordChatThreadRouteKey,
-  routeId: string,
-): Promise<DiscordChatThreadRouteBinding> {
-  const [assigned] = await db
-    .select()
-    .from(discordChatThreadRoutes)
-    .where(
-      and(
-        eq(discordChatThreadRoutes.id, routeId),
-        eq(discordChatThreadRoutes.connectionId, key.connectionId),
-        eq(discordChatThreadRoutes.userId, key.userId),
-      ),
-    )
-    .limit(1);
-  if (!assigned) {
-    throw new Error("Discord ingress has no assigned route");
-  }
-  return await refreshDiscordDirectMessageRouteDestination(
-    db,
-    assigned,
-    key.channelId,
-  );
-}
-
-export async function ensureCanonicalDiscordChatThreadRoute(
-  db: Db,
-  args: CanonicalDiscordChatThreadRouteArgs,
-): Promise<DiscordChatThreadRouteBinding | undefined> {
-  return await db.transaction(async (tx) => {
-    const [claim] = await tx
-      .select({ routeId: discordChatIngress.routeId })
-      .from(discordChatIngress)
-      .where(
-        and(
-          eq(discordChatIngress.id, args.ingressId),
-          eq(discordChatIngress.connectionId, args.connectionId),
-          eq(discordChatIngress.claimToken, args.claimToken),
-          eq(discordChatIngress.status, "processing"),
-        ),
-      )
-      .for("update")
-      .limit(1);
-    if (!claim) {
-      return undefined;
-    }
-    if (claim.routeId) {
-      return await requireAssignedDiscordChatThreadRoute(
-        tx,
-        args,
-        claim.routeId,
-      );
-    }
-    const existing = await loadDiscordChatThreadRoute(tx, args);
-    if (existing) {
-      await attachIngressRoute(tx, args.ingressId, existing.id);
-      return existing;
-    }
-
-    const { initialModel } = args;
-    if (!initialModel.selectedModel) {
-      throw new Error("A model selection is required");
-    }
-    const thread = await insertChatThread(tx, {
-      orgId: args.orgId,
-      userId: args.userId,
-      agentId: args.agentId,
-      selectedModel: initialModel.selectedModel,
-      codexServiceTier: initialModel.serviceTier === "priority" ? "fast" : null,
-      title: null,
-      lastReadAt: args.currentTime,
-      lastMessageAt: args.currentTime,
-      createdAt: args.currentTime,
-      updatedAt: args.currentTime,
+export const ensureCanonicalDiscordChatThreadRoute$ = command(
+  async (
+    { set },
+    args: CanonicalDiscordChatThreadRouteArgs,
+    signal: AbortSignal,
+  ): Promise<DiscordChatThreadRouteBinding | undefined> => {
+    const db = set(writeDb$);
+    const defaults = await set(loadNewChatThreadDefaults$, args, signal);
+    return await db.transaction(async (tx) => {
+      const [claim] = await tx
+        .select({ routeId: discordChatIngress.routeId })
+        .from(discordChatIngress)
+        .where(
+          and(
+            eq(discordChatIngress.id, args.ingressId),
+            eq(discordChatIngress.connectionId, args.connectionId),
+            eq(discordChatIngress.claimToken, args.claimToken),
+            eq(discordChatIngress.status, "processing"),
+          ),
+        )
+        .for("update")
+        .limit(1);
+      signal.throwIfAborted();
+      if (!claim) {
+        return undefined;
+      }
+      let [route] = await tx
+        .select()
+        .from(discordChatThreadRoutes)
+        .where(
+          claim.routeId
+            ? and(
+                eq(discordChatThreadRoutes.id, claim.routeId),
+                eq(discordChatThreadRoutes.connectionId, args.connectionId),
+                eq(discordChatThreadRoutes.userId, args.userId),
+              )
+            : discordChatThreadRouteWhere(args),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+      if (claim.routeId && !route) {
+        throw new Error("Discord ingress has no assigned route");
+      }
+      if (!route) {
+        const thread = integrationChatThreadValues(
+          args,
+          randomUUID(),
+          defaults,
+        );
+        await tx.insert(chatThreads).values(thread);
+        [route] = await tx
+          .insert(discordChatThreadRoutes)
+          .values({
+            connectionId: args.connectionId,
+            channelId: args.channelId,
+            sessionKey: args.sessionKey,
+            userId: args.userId,
+            chatThreadId: thread.id,
+            createdAt: args.currentTime,
+          })
+          .onConflictDoNothing({
+            target: [
+              discordChatThreadRoutes.connectionId,
+              discordChatThreadRoutes.channelId,
+              discordChatThreadRoutes.sessionKey,
+              discordChatThreadRoutes.userId,
+            ],
+          })
+          .returning();
+        signal.throwIfAborted();
+        if (route) {
+          await tx.execute(
+            integrationThreadCreatedEventSql(args.orgId, thread),
+          );
+        } else {
+          await tx.delete(chatThreads).where(eq(chatThreads.id, thread.id));
+          [route] = await tx
+            .select()
+            .from(discordChatThreadRoutes)
+            .where(discordChatThreadRouteWhere(args))
+            .limit(1);
+          if (!route) {
+            throw new Error(
+              "Failed to resolve Discord chat thread route after conflict",
+            );
+          }
+        }
+      }
+      if (
+        route.sessionKey === INTEGRATION_DM_SESSION_KEY &&
+        (route.channelId !== args.channelId ||
+          (route.destinationChannelId !== null &&
+            route.destinationChannelId !== args.channelId))
+      ) {
+        const [updated] = await tx
+          .update(discordChatThreadRoutes)
+          .set({
+            channelId: args.channelId,
+            destinationChannelId: args.channelId,
+          })
+          .where(
+            and(
+              eq(discordChatThreadRoutes.id, route.id),
+              discordChatThreadRouteWhere(route),
+            ),
+          )
+          .returning();
+        if (!updated) {
+          throw new Error("Failed to update Discord DM route destination");
+        }
+        route = updated;
+      }
+      if (!claim.routeId) {
+        await tx
+          .update(discordChatIngress)
+          .set({ routeId: route.id })
+          .where(eq(discordChatIngress.id, args.ingressId));
+      }
+      signal.throwIfAborted();
+      return route;
     });
-    if (!thread) {
-      throw new Error("Failed to create canonical Discord chat thread");
-    }
-
-    const [route] = await tx
-      .insert(discordChatThreadRoutes)
-      .values({
-        connectionId: args.connectionId,
-        channelId: args.channelId,
-        sessionKey: args.sessionKey,
-        userId: args.userId,
-        chatThreadId: thread.id,
-        createdAt: args.currentTime,
-      })
-      .onConflictDoNothing({
-        target: [
-          discordChatThreadRoutes.connectionId,
-          discordChatThreadRoutes.channelId,
-          discordChatThreadRoutes.sessionKey,
-          discordChatThreadRoutes.userId,
-        ],
-      })
-      .returning({
-        id: discordChatThreadRoutes.id,
-        connectionId: discordChatThreadRoutes.connectionId,
-        channelId: discordChatThreadRoutes.channelId,
-        sessionKey: discordChatThreadRoutes.sessionKey,
-        userId: discordChatThreadRoutes.userId,
-        chatThreadId: discordChatThreadRoutes.chatThreadId,
-        destinationChannelId: discordChatThreadRoutes.destinationChannelId,
-      });
-
-    if (!route) {
-      await tx.delete(chatThreads).where(eq(chatThreads.id, thread.id));
-      const winner = await requireDiscordChatThreadRoute(tx, args);
-      await attachIngressRoute(tx, args.ingressId, winner.id);
-      return winner;
-    }
-
-    await appendChatThreadCreatedEvent(tx, { orgId: args.orgId, thread });
-    await attachIngressRoute(tx, args.ingressId, route.id);
-    return route;
-  });
-}
-
-async function attachIngressRoute(tx: Tx, ingressId: string, routeId: string) {
-  await tx
-    .update(discordChatIngress)
-    .set({ routeId })
-    .where(eq(discordChatIngress.id, ingressId));
-}
+  },
+);
 
 interface DiscordChatIngressAdmission {
   readonly id: string;

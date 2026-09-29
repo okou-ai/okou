@@ -20,7 +20,7 @@ import {
 } from "../external/discord-client";
 import { requireDiscordConversationAccess$ } from "./discord-access.service";
 import {
-  ensureCanonicalDiscordChatThreadRoute,
+  ensureCanonicalDiscordChatThreadRoute$,
   findDiscordChatThreadRoute,
   refreshDiscordDirectMessageRouteDestination,
   type DiscordChatThreadRouteBinding,
@@ -330,18 +330,22 @@ const createDiscordAdmissionRoute$ = command(
       signal.throwIfAborted();
       return undefined;
     }
-    const route = await ensureCanonicalDiscordChatThreadRoute(db, {
-      initialModel: await set(
-        resolveDefaultModelFirstPin$,
-        { orgId: binding.orgId, userId: binding.userId },
-        signal,
-      ),
-      ...routeKey,
-      orgId: binding.orgId,
-      agentId: agent.id,
-      currentTime: context.ingress.createdAt,
-      ...context.claim,
-    });
+    const route = await set(
+      ensureCanonicalDiscordChatThreadRoute$,
+      {
+        initialModel: await set(
+          resolveDefaultModelFirstPin$,
+          { orgId: binding.orgId, userId: binding.userId },
+          signal,
+        ),
+        ...routeKey,
+        orgId: binding.orgId,
+        agentId: agent.id,
+        currentTime: context.ingress.createdAt,
+        ...context.claim,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     return route;
   },

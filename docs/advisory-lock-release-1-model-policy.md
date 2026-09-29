@@ -103,10 +103,28 @@ still uses its existing transaction with ordinary prepared thread values; no
 model-policy command or database-aware model selection helper executes inside
 that inherited transaction.
 
+## Discord canonical route publication
+
+`ensureCanonicalDiscordChatThreadRoute$` receives only the ingress claim,
+connection/channel/user ownership, prepared model pin and final `AbortSignal`.
+It loads member defaults before opening its own transaction. Finite direct SQL
+then verifies the live ingress claim, reuses an assigned/current route, or
+inserts the candidate thread and route. A uniqueness loser deletes only its
+candidate and reads the winning route; only the route winner inserts a created
+chat event. DM destination refresh and ingress attachment commit with that
+route decision. No database handle is passed to a helper or another command.
+
+Existing Discord API cases retain DM reuse after physical-channel movement,
+model/default preferences, ingress replay and connected-user isolation. Scoped
+lint and formatting pass; final combined type and API behavior checks remain
+with the main PR pipeline. Separate legacy receipt/destination helpers are not
+included in this ownership completion.
+
 ## Ownership still unfinished outside this boundary
 
 The existing atomic automation-creation and workflow-copy helpers still pass
-their transaction to the thread/event insertion helper. Discord route/thread/event writers, Slack and Feishu webhook receipt admission,
+their transaction to the thread/event insertion helper. Discord ingress receipt
+and destination helpers, and Slack/Feishu webhook receipt admission,
 Telegram reply-chain publication, and poller
 schedule claim/failure helpers also retain legacy database propagation.
 Moving lazy model selection out of those transactions does not complete their
