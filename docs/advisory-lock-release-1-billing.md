@@ -357,6 +357,17 @@ reconciliation interfaces remain implementation work. The old Plan-local lock
 wrapper now uses the same pure compatibility-key SQL builder as Allocation;
 consolidating that definition does not remove the shared advisory boundary.
 
+Plan confirmation preparation now shares the owning stored-change reader with
+preview recovery. `markPreparedChangeApplying$` locks the existing subscription
+before its Plan change, validates organization/subscription membership, and
+commits preview expiration or the root/child `applying` transition itself. The
+existing resume, pending-payment, completed and expired responses remain intact;
+provider invoice reads occur outside this transaction. The public confirmation
+entry accepts business data, but its later `applyStoredSubscriptionChange(db,
+...)` provider/application graph still forwards the database. Only preparation
+and admission are complete here; finalization and the common remote protocol
+are still unfinished Release 1 implementation.
+
 ## Unresolved Release 1 work
 
 Billing Release 1 preparation is **not complete**. The important unresolved

@@ -62,9 +62,10 @@ import {
   previewUsagePackAllocationChange$,
 } from "../services/usage-pack-allocation-change.service";
 import {
-  confirmUsagePackSubscriptionChange,
+  confirmUsagePackSubscriptionChange$,
   previewUsagePackSubscriptionChange$,
   type UsagePackSubscriptionChangePreviewResult,
+  type UsagePackSubscriptionChangeConfirmResult,
 } from "../services/usage-pack-plan-change.service";
 import {
   confirmUsagePackSubscriptionMigration$,
@@ -95,9 +96,6 @@ const adminRequired = Object.freeze({
 const USAGE_PACK_PLAN_ENDING_MESSAGE =
   "Your Plan is scheduled to end before this usage pack change can take effect. Restore your Plan first, then try again.";
 
-type UsagePackSubscriptionChangeConfirmResult = Awaited<
-  ReturnType<typeof confirmUsagePackSubscriptionChange>
->;
 type UsagePackSubscriptionChangeResult =
   | UsagePackSubscriptionChangePreviewResult
   | UsagePackSubscriptionChangeConfirmResult;
@@ -1449,8 +1447,8 @@ const usagePackSubscriptionChangeConfirmAuthed$ = command(
         paymentMethod = revalidated;
       }
     }
-    const result = await confirmUsagePackSubscriptionChange(
-      db,
+    const result = await set(
+      confirmUsagePackSubscriptionChange$,
       {
         orgId: access.auth.orgId,
         changeId: bodyResult.data.changeId,

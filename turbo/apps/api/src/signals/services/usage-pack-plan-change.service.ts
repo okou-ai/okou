@@ -184,7 +184,7 @@ export type UsagePackSubscriptionChangePreviewResult =
   | { readonly status: "plan_ending" }
   | { readonly status: "conflict" };
 
-type UsagePackSubscriptionChangeConfirmResult =
+export type UsagePackSubscriptionChangeConfirmResult =
   | {
       readonly status: "confirmed";
       readonly response: UsagePackChangeConfirmResponse;
@@ -924,48 +924,21 @@ const resumeOpenSubscriptionChange$ = command(
     if (!resumableChange) {
       return null;
     }
-    const db = set(writeDb$);
-    const [root] = await db
-      .select()
-      .from(usagePackSubscriptionChanges)
-      .where(eq(usagePackSubscriptionChanges.id, resumableChange.id))
-      .limit(1);
-    signal.throwIfAborted();
-    if (!root) {
+    const stored = await set(
+      storedSubscriptionChange$,
+      resumableChange.id,
+      signal,
+    );
+    if (!stored) {
       throw new Error(
         `Open usage pack subscription change ${resumableChange.id} disappeared`,
       );
     }
-    const [allocationChanges, subscriptions, allocations] = await Promise.all([
-      db
-        .select()
-        .from(usagePackAllocationChanges)
-        .where(eq(usagePackAllocationChanges.subscriptionChangeId, root.id)),
-      db
-        .select()
-        .from(usagePackSubscriptions)
-        .where(eq(usagePackSubscriptions.id, root.usagePackSubscriptionId))
-        .limit(1),
-      db
-        .select()
-        .from(usagePackAllocations)
-        .where(
-          eq(
-            usagePackAllocations.usagePackSubscriptionId,
-            root.usagePackSubscriptionId,
-          ),
-        ),
-    ]);
-    signal.throwIfAborted();
-    const subscription = subscriptions[0];
-    if (!subscription) {
-      throw new Error(`Subscription change ${root.id} lost its subscription`);
-    }
-    return storedSubscriptionChangeMatchesRequest(
-      { root, allocationChanges, subscription, allocations },
-      input,
-    )
-      ? { status: "resumed", preview: storedSubscriptionChangePreview(root) }
+    return storedSubscriptionChangeMatchesRequest(stored, input)
+      ? {
+          status: "resumed",
+          preview: storedSubscriptionChangePreview(stored.root),
+        }
       : { status: "conflict" };
   },
 );
@@ -1816,6 +1789,51 @@ async function loadStoredSubscriptionChange(
   return { root, allocationChanges, subscription, allocations };
 }
 
+const storedSubscriptionChange$ = command(
+  async (
+    { set },
+    changeId: string,
+    signal: AbortSignal,
+  ): Promise<StoredSubscriptionChange | null> => {
+    const db = set(writeDb$);
+    const [root] = await db
+      .select()
+      .from(usagePackSubscriptionChanges)
+      .where(eq(usagePackSubscriptionChanges.id, changeId))
+      .limit(1);
+    signal.throwIfAborted();
+    if (!root) {
+      return null;
+    }
+    const [allocationChanges, subscriptions, allocations] = await Promise.all([
+      db
+        .select()
+        .from(usagePackAllocationChanges)
+        .where(eq(usagePackAllocationChanges.subscriptionChangeId, root.id)),
+      db
+        .select()
+        .from(usagePackSubscriptions)
+        .where(eq(usagePackSubscriptions.id, root.usagePackSubscriptionId))
+        .limit(1),
+      db
+        .select()
+        .from(usagePackAllocations)
+        .where(
+          eq(
+            usagePackAllocations.usagePackSubscriptionId,
+            root.usagePackSubscriptionId,
+          ),
+        ),
+    ]);
+    signal.throwIfAborted();
+    const subscription = subscriptions[0];
+    if (!subscription) {
+      throw new Error(`Subscription change ${root.id} lost its subscription`);
+    }
+    return { root, allocationChanges, subscription, allocations };
+  },
+);
+
 function storedSubscriptionChangeMatchesRequest(
   stored: NonNullable<Awaited<ReturnType<typeof loadStoredSubscriptionChange>>>,
   args: {
@@ -2201,66 +2219,94 @@ function expandedLatestInvoice(
     : null;
 }
 
-async function markPreparedChangeApplying(
-  db: Db,
-  orgId: string,
-  changeId: string,
-): Promise<UsagePackSubscriptionChangeRow | null> {
-  return await db.transaction(async (tx) => {
-    await lockUsagePackBillingOrg(tx, orgId);
-    const [root] = await tx
-      .select()
-      .from(usagePackSubscriptionChanges)
-      .where(
-        and(
-          eq(usagePackSubscriptionChanges.id, changeId),
-          eq(usagePackSubscriptionChanges.orgId, orgId),
-        ),
-      )
-      .for("update")
-      .limit(1);
-    if (!root || root.status !== "previewed") {
-      return null;
-    }
-    const at = nowDate();
-    if (root.previewExpiresAt <= at) {
-      await tx
+const markPreparedChangeApplying$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly changeId: string;
+      readonly subscriptionId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<UsagePackSubscriptionChangeRow | null> => {
+    const db = set(writeDb$);
+    const result = await db.transaction(async (tx) => {
+      await tx.execute(usagePackBillingCompatibilityLockSql(args.orgId));
+      const [subscription] = await tx
+        .select({ id: usagePackSubscriptions.id })
+        .from(usagePackSubscriptions)
+        .where(
+          and(
+            eq(usagePackSubscriptions.id, args.subscriptionId),
+            eq(usagePackSubscriptions.orgId, args.orgId),
+          ),
+        )
+        .for("update")
+        .limit(1);
+      if (!subscription) {
+        return null;
+      }
+      const [root] = await tx
+        .select()
+        .from(usagePackSubscriptionChanges)
+        .where(
+          and(
+            eq(usagePackSubscriptionChanges.id, args.changeId),
+            eq(usagePackSubscriptionChanges.orgId, args.orgId),
+            eq(
+              usagePackSubscriptionChanges.usagePackSubscriptionId,
+              subscription.id,
+            ),
+          ),
+        )
+        .for("update")
+        .limit(1);
+      signal.throwIfAborted();
+      if (!root || root.status !== "previewed") {
+        return null;
+      }
+      const at = nowDate();
+      if (root.previewExpiresAt <= at) {
+        await tx
+          .update(usagePackSubscriptionChanges)
+          .set({
+            status: "failed",
+            failureReason: "preview_expired",
+            completedAt: at,
+            updatedAt: at,
+          })
+          .where(eq(usagePackSubscriptionChanges.id, root.id));
+        await tx
+          .update(usagePackAllocationChanges)
+          .set({
+            status: "failed",
+            failureReason: "preview_expired",
+            completedAt: at,
+            updatedAt: at,
+          })
+          .where(eq(usagePackAllocationChanges.subscriptionChangeId, root.id));
+        return null;
+      }
+      const [updated] = await tx
         .update(usagePackSubscriptionChanges)
-        .set({
-          status: "failed",
-          failureReason: "preview_expired",
-          completedAt: at,
-          updatedAt: at,
-        })
-        .where(eq(usagePackSubscriptionChanges.id, root.id));
+        .set({ status: "applying", updatedAt: at })
+        .where(eq(usagePackSubscriptionChanges.id, root.id))
+        .returning();
       await tx
         .update(usagePackAllocationChanges)
-        .set({
-          status: "failed",
-          failureReason: "preview_expired",
-          completedAt: at,
-          updatedAt: at,
-        })
-        .where(eq(usagePackAllocationChanges.subscriptionChangeId, root.id));
-      return null;
-    }
-    const [updated] = await tx
-      .update(usagePackSubscriptionChanges)
-      .set({ status: "applying", updatedAt: at })
-      .where(eq(usagePackSubscriptionChanges.id, root.id))
-      .returning();
-    await tx
-      .update(usagePackAllocationChanges)
-      .set({ status: "applying", updatedAt: at })
-      .where(
-        and(
-          eq(usagePackAllocationChanges.subscriptionChangeId, root.id),
-          eq(usagePackAllocationChanges.status, "previewed"),
-        ),
-      );
-    return updated ?? null;
-  });
-}
+        .set({ status: "applying", updatedAt: at })
+        .where(
+          and(
+            eq(usagePackAllocationChanges.subscriptionChangeId, root.id),
+            eq(usagePackAllocationChanges.status, "previewed"),
+          ),
+        );
+      return updated ?? null;
+    });
+    signal.throwIfAborted();
+    return result;
+  },
+);
 
 async function failApplyingSubscriptionChange(
   db: Db,
@@ -2347,65 +2393,72 @@ type SubscriptionChangeConfirmationPreparation =
       readonly result: UsagePackSubscriptionChangeConfirmResult;
     };
 
-async function prepareSubscriptionChangeConfirmation(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly changeId: string;
-  },
-  signal: AbortSignal,
-): Promise<SubscriptionChangeConfirmationPreparation> {
-  let stored = await loadStoredSubscriptionChange(db, args.changeId);
-  if (!stored || stored.root.orgId !== args.orgId) {
-    return { ready: false, result: { status: "not_found" } };
-  }
-  if (stored.root.status === "failed") {
-    return {
-      ready: false,
-      result:
-        stored.root.failureReason === "preview_expired"
-          ? { status: "expired" }
-          : { status: "conflict" },
-    };
-  }
-  if (stored.root.status === "applying") {
-    if (!stored.subscription.stripeSubscriptionId) {
-      throw new Error("Usage pack subscription disappeared during retry");
+const prepareSubscriptionChangeConfirmation$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly changeId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<SubscriptionChangeConfirmationPreparation> => {
+    let stored = await set(storedSubscriptionChange$, args.changeId, signal);
+    if (!stored || stored.root.orgId !== args.orgId) {
+      return { ready: false, result: { status: "not_found" } };
+    }
+    if (stored.root.status === "failed") {
+      return {
+        ready: false,
+        result:
+          stored.root.failureReason === "preview_expired"
+            ? { status: "expired" }
+            : { status: "conflict" },
+      };
+    }
+    if (stored.root.status === "applying") {
+      if (!stored.subscription.stripeSubscriptionId) {
+        throw new Error("Usage pack subscription disappeared during retry");
+      }
+      return { ready: true, stored };
+    }
+    const existing = await confirmationResponseForStoredChange(
+      stored.root,
+      stored.allocationChanges,
+      signal,
+    );
+    if (existing) {
+      return {
+        ready: false,
+        result: { status: "confirmed", response: existing },
+      };
+    }
+    const applying = await set(
+      markPreparedChangeApplying$,
+      {
+        ...args,
+        subscriptionId: stored.subscription.id,
+      },
+      signal,
+    );
+    if (!applying) {
+      stored = await set(storedSubscriptionChange$, args.changeId, signal);
+      return {
+        ready: false,
+        result:
+          stored?.root.failureReason === "preview_expired"
+            ? { status: "expired" }
+            : { status: "conflict" },
+      };
+    }
+    stored = await set(storedSubscriptionChange$, args.changeId, signal);
+    if (!stored || !stored.subscription.stripeSubscriptionId) {
+      throw new Error(
+        "Usage pack subscription disappeared during confirmation",
+      );
     }
     return { ready: true, stored };
-  }
-  const existing = await confirmationResponseForStoredChange(
-    stored.root,
-    stored.allocationChanges,
-    signal,
-  );
-  if (existing) {
-    return {
-      ready: false,
-      result: { status: "confirmed", response: existing },
-    };
-  }
-  const applying = await markPreparedChangeApplying(
-    db,
-    args.orgId,
-    args.changeId,
-  );
-  if (!applying) {
-    stored = await loadStoredSubscriptionChange(db, args.changeId);
-    return {
-      ready: false,
-      result:
-        stored?.root.failureReason === "preview_expired"
-          ? { status: "expired" }
-          : { status: "conflict" },
-    };
-  }
-  stored = await loadStoredSubscriptionChange(db, args.changeId);
-  if (!stored || !stored.subscription.stripeSubscriptionId) {
-    throw new Error("Usage pack subscription disappeared during confirmation");
-  }
-  return { ready: true, stored };
-}
+  },
+);
 
 function applyImmediatePackageChanges(
   packageQuantities: Map<string, number>,
@@ -3330,30 +3383,35 @@ async function applyStoredSubscriptionChange(
   );
 }
 
-export async function confirmUsagePackSubscriptionChange(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly changeId: string;
-    readonly paymentMethod?: BillingPurchasePaymentMethod;
+export const confirmUsagePackSubscriptionChange$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly changeId: string;
+      readonly paymentMethod?: BillingPurchasePaymentMethod;
+    },
+    signal: AbortSignal,
+  ): Promise<UsagePackSubscriptionChangeConfirmResult> => {
+    const preparation = await set(
+      prepareSubscriptionChangeConfirmation$,
+      args,
+      signal,
+    );
+    if (!preparation.ready) {
+      return preparation.result;
+    }
+    // Confirmation admission is owned above. The existing provider application
+    // graph still forwards a database and remains unfinished Release 1 work.
+    const db = set(writeDb$);
+    return await applyStoredSubscriptionChange(
+      db,
+      preparation.stored,
+      args.paymentMethod,
+      signal,
+    );
   },
-  signal: AbortSignal,
-): Promise<UsagePackSubscriptionChangeConfirmResult> {
-  const preparation = await prepareSubscriptionChangeConfirmation(
-    db,
-    args,
-    signal,
-  );
-  if (!preparation.ready) {
-    return preparation.result;
-  }
-  return await applyStoredSubscriptionChange(
-    db,
-    preparation.stored,
-    args.paymentMethod,
-    signal,
-  );
-}
+);
 
 function invoiceSubscriptionId(
   invoice: UsagePackSubscriptionChangeInvoiceInput,
