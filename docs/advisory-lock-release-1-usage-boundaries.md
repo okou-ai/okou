@@ -95,3 +95,27 @@ The catalog-unavailable result still permits local teardown with a null snapshot
 Organization/user external-cleanup dispatch receives only business identities
 and the final signal. The actual connector deletion, broader run cancellation
 and Storage helper graphs below these entry points remain implementation work.
+
+## Shared-wallet expiration admission: implementation in progress
+
+The first writer preparation uses the wallet row as the common owner. A writer
+checks for a positive expired lot before publishing its grant receipt or changing
+its balance. When the predicate fails, it leaves the transaction, invokes
+`expireOrgCredits$`, and retries from a new current timestamp. Recovery is bounded
+to four attempts; continuing contention fails without publishing a partial grant.
+This is implemented for onboarding, test-organization floors, automatic recharge,
+invoice and checkout credit purchases, one-time campaign purchases, and Atom
+credit-only grants. Unique invoice receipts and their wallet increments still
+commit together. Commands accept business inputs and obtain `writeDb$` themselves.
+
+The expiration command owns the wallet first and then all expired lots in expiry
+and ID order. It clears the lots and clamps the wallet in one SQL statement. This
+whole-expiration transaction is intentionally retained in Release 1: pre-R1
+adders have no expired-remainder predicate and could otherwise add credits between
+two clamps. Release 2 may bound this command only once the complete R1 writer
+graph is prepared and incompatible serving/in-flight/rollback writers are gone.
+
+The first increment does **not** complete that graph: subscription/Atom-plan grants,
+trial extensions, get-started organization rewards, first-paid negative balance
+clearing and shared debits still need the same admission and recovery protocol.
+Their remaining handle propagation is implementation work, not a drain gate.

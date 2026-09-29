@@ -2,12 +2,19 @@ import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
 import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { command } from "ccstate";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
 
 import type { Tx } from "../../lib/db-types";
+import { settle } from "../utils";
+import {
+  OrgCreditExpirationRequired,
+  pendingOrgCreditExpirationQuery,
+  requireNoPendingOrgCreditExpiration,
+} from "./org-credit-expiration";
+import { expireOrgCredits$ } from "./org-credit-expiration.service";
 import {
   orgPlanEntitlementValues,
   writeOrgMetadataWithDefaultPlanEntitlement,
@@ -55,7 +62,7 @@ export async function grantOrgCredits(
 }
 
 /** The grant identity and its balance change commit together before publication. */
-export const grantOnboardingCredits$ = command(
+const commitOnboardingCredits$ = command(
   async ({ set }, orgId: string, signal: AbortSignal): Promise<void> => {
     const db = set(writeDb$);
     await db.transaction(async (tx) => {
@@ -98,6 +105,27 @@ export const grantOnboardingCredits$ = command(
       ) {
         return;
       }
+      const [existingGrant] = await tx
+        .select({ id: creditExpiresRecord.id })
+        .from(creditExpiresRecord)
+        .where(
+          and(
+            eq(creditExpiresRecord.orgId, orgId),
+            eq(creditExpiresRecord.source, ONBOARDING_CREDIT_SOURCE),
+            eq(
+              creditExpiresRecord.stripeInvoiceId,
+              ONBOARDING_CREDIT_IDEMPOTENCY_KEY,
+            ),
+          ),
+        )
+        .limit(1);
+      if (existingGrant) {
+        return;
+      }
+      const [expired] = await tx
+        .select()
+        .from(pendingOrgCreditExpirationQuery(orgId, nowDate()));
+      requireNoPendingOrgCreditExpiration(orgId, expired);
       const [grant] = await tx
         .insert(creditExpiresRecord)
         .values({
@@ -121,5 +149,22 @@ export const grantOnboardingCredits$ = command(
       }
     });
     signal.throwIfAborted();
+  },
+);
+
+export const grantOnboardingCredits$ = command(
+  async ({ set }, orgId: string, signal: AbortSignal): Promise<void> => {
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const result = await settle(set(commitOnboardingCredits$, orgId, signal));
+      signal.throwIfAborted();
+      if (result.ok) {
+        return;
+      }
+      if (!(result.error instanceof OrgCreditExpirationRequired)) {
+        throw result.error;
+      }
+      await set(expireOrgCredits$, orgId, signal);
+    }
+    throw new OrgCreditExpirationRequired(orgId);
   },
 );

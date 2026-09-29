@@ -1,3 +1,4 @@
+import { grantPurchasedOrgCredits$ } from "./org-credit-grant.service";
 import type { OrgTier } from "@okouai/api-contracts/contracts/orgs";
 import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
 import { orgConcurrencyEntitlements } from "@okouai/db/schema/org-concurrency-entitlement";
@@ -1592,143 +1593,99 @@ async function expireCredits(tx: WriteTx, orgId: string): Promise<number> {
   return totalExpired;
 }
 
-async function handleAutoRechargeInvoicePaid(
-  db: Db,
-  invoice: Pick<InvoiceInput, "id" | "metadata">,
-): Promise<PaidWebhookOutcome> {
-  const metadata = invoice.metadata;
-  if (!metadata || metadata.type !== "auto_recharge") {
-    return { handled: false, drainOrgId: null };
-  }
+const handleAutoRechargeInvoicePaid$ = command(
+  async (
+    { set },
+    invoice: Pick<InvoiceInput, "id" | "metadata">,
+    signal: AbortSignal,
+  ): Promise<PaidWebhookOutcome> => {
+    const metadata = invoice.metadata;
+    if (!metadata || metadata.type !== "auto_recharge") {
+      return { handled: false, drainOrgId: null };
+    }
 
-  const orgId = metadata.orgId;
-  const creditsAmount = Number(metadata.creditsAmount);
-  if (!orgId || !creditsAmount || Number.isNaN(creditsAmount)) {
-    L.warn("Auto-recharge invoice has invalid metadata", {
-      invoiceId: invoice.id,
-      metadata,
-    });
-    return { handled: false, drainOrgId: null };
-  }
+    const orgId = metadata.orgId;
+    const creditsAmount = Number(metadata.creditsAmount);
+    if (!orgId || !creditsAmount || Number.isNaN(creditsAmount)) {
+      L.warn("Auto-recharge invoice has invalid metadata", {
+        invoiceId: invoice.id,
+        metadata,
+      });
+      return { handled: false, drainOrgId: null };
+    }
 
-  const grantResult = await db.transaction(
-    async (tx): Promise<"duplicate" | "granted"> => {
-      const inserted = await createExpiresRecord(tx, orgId, {
+    await set(
+      grantPurchasedOrgCredits$,
+      {
+        orgId,
         source: "auto_recharge",
         stripeInvoiceId: invoice.id,
         amount: creditsAmount,
         expiresAt: autoRechargeNeverExpiresAt(),
-      });
+        clearAutoRechargePending: true,
+      },
+      signal,
+    );
+    return { handled: true, drainOrgId: orgId };
+  },
+);
 
-      if (!inserted) {
-        L.debug("Auto-recharge invoice already processed", {
-          orgId,
+const handleCreditPurchaseInvoicePaid$ = command(
+  async (
+    { set },
+    invoice: Pick<InvoiceInput, "id" | "metadata" | "subtotal">,
+    signal: AbortSignal,
+  ): Promise<PaidWebhookOutcome> => {
+    const metadata = invoice.metadata;
+    if (
+      !metadata ||
+      (metadata.type !== "credit_purchase" &&
+        metadata.purpose !== "credit_purchase")
+    ) {
+      return { handled: false, drainOrgId: null };
+    }
+
+    const orgId = metadata.orgId;
+    const creditsAmount = creditsFromAmountCents(invoice.subtotal);
+    if (!orgId || !creditsAmount || Number.isNaN(creditsAmount)) {
+      L.warn("credit_purchase invoice has invalid metadata or subtotal", {
+        invoiceId: invoice.id,
+        hasOrgId: Boolean(orgId),
+        subtotal: invoice.subtotal ?? null,
+        metadata,
+      });
+      return { handled: true, drainOrgId: null };
+    }
+
+    const expiresAt = creditPurchaseExpiresAt(metadata);
+    if (!expiresAt) {
+      L.warn(
+        "credit_purchase invoice has invalid credits expiration metadata",
+        {
           invoiceId: invoice.id,
-        });
-        return "duplicate";
-      }
+          orgId,
+          creditsExpiresAt:
+            metadata[CREDIT_PURCHASE_EXPIRES_AT_METADATA_KEY] ?? null,
+        },
+      );
+      return { handled: true, drainOrgId: null };
+    }
 
-      await grantOrgCredits(tx, orgId, creditsAmount);
-      await tx
-        .update(orgMetadata)
-        .set({ autoRechargePendingAt: null, updatedAt: nowDate() })
-        .where(eq(orgMetadata.orgId, orgId));
-      return "granted";
-    },
-  );
-
-  if (grantResult === "granted") {
-    L.debug("Auto-recharge credits granted", {
-      orgId,
-      creditsAmount,
-      invoiceId: invoice.id,
-    });
-  }
-
-  return { handled: true, drainOrgId: orgId };
-}
-
-async function handleCreditPurchaseInvoicePaid(
-  db: Db,
-  invoice: Pick<InvoiceInput, "id" | "metadata" | "subtotal">,
-): Promise<PaidWebhookOutcome> {
-  const metadata = invoice.metadata;
-  if (
-    !metadata ||
-    (metadata.type !== "credit_purchase" &&
-      metadata.purpose !== "credit_purchase")
-  ) {
-    return { handled: false, drainOrgId: null };
-  }
-
-  const orgId = metadata.orgId;
-  const creditsAmount = creditsFromAmountCents(invoice.subtotal);
-  if (!orgId || !creditsAmount || Number.isNaN(creditsAmount)) {
-    L.warn("credit_purchase invoice has invalid metadata or subtotal", {
-      invoiceId: invoice.id,
-      hasOrgId: Boolean(orgId),
-      subtotal: invoice.subtotal ?? null,
-      metadata,
-    });
-    return { handled: true, drainOrgId: null };
-  }
-
-  const expiresAt = creditPurchaseExpiresAt(metadata);
-  if (!expiresAt) {
-    L.warn("credit_purchase invoice has invalid credits expiration metadata", {
-      invoiceId: invoice.id,
-      orgId,
-      creditsExpiresAt:
-        metadata[CREDIT_PURCHASE_EXPIRES_AT_METADATA_KEY] ?? null,
-    });
-    return { handled: true, drainOrgId: null };
-  }
-
-  await db.transaction(async (tx) => {
-    const inserted = await createExpiresRecord(tx, orgId, {
-      source: "credit_purchase",
-      stripeInvoiceId: invoice.id,
-      amount: creditsAmount,
-      expiresAt,
-    });
-
-    if (!inserted) {
-      L.debug("credit_purchase invoice already processed", {
-        invoiceId: invoice.id,
+    await set(
+      grantPurchasedOrgCredits$,
+      {
         orgId,
-      });
-      return;
-    }
+        source: "credit_purchase",
+        stripeInvoiceId: invoice.id,
+        amount: creditsAmount,
+        expiresAt,
+      },
+      signal,
+    );
 
-    await grantOrgCredits(tx, orgId, creditsAmount);
-  });
-
-  return { handled: true, drainOrgId: orgId };
-}
-
-async function processAtomCreditGrantInvoicePaid(
-  db: Db,
-  invoice: InvoiceInput,
-  details: AtomCreditGrantInvoiceDetails,
-): Promise<void> {
-  await db.transaction(async (tx) => {
-    const inserted = await createExpiresRecord(tx, details.orgId, {
-      source: "credit_purchase",
-      stripeInvoiceId: invoice.id,
-      amount: details.credits,
-      expiresAt: details.creditExpiresAt,
-    });
-    if (!inserted) {
-      L.debug("atom credit grant invoice already processed", {
-        invoiceId: invoice.id,
-        orgId: details.orgId,
-      });
-      return;
-    }
-
-    await grantOrgCredits(tx, details.orgId, details.credits);
-  });
-}
+    return { handled: true, drainOrgId: orgId };
+  },
+);
 
 async function processAtomUsagePackCreditGrantInvoicePaid(
   db: Db,
@@ -1992,193 +1949,216 @@ async function upsertAtomGrantPlanEntitlement(
   });
 }
 
-async function handleAtomGrantInvoicePaid(
-  db: Db,
-  invoice: InvoiceInput,
-): Promise<PaidWebhookOutcome> {
-  if (!isAtomGrantInvoice(invoice)) {
-    return { handled: false, drainOrgId: null };
-  }
+const handleAtomGrantInvoicePaid$ = command(
+  async (
+    { set },
+    invoice: InvoiceInput,
+    signal: AbortSignal,
+  ): Promise<PaidWebhookOutcome> => {
+    const db = set(writeDb$);
+    if (!isAtomGrantInvoice(invoice)) {
+      return { handled: false, drainOrgId: null };
+    }
 
-  const details = atomGrantInvoiceDetails(invoice);
-  if (!details) {
-    return { handled: true, drainOrgId: null };
-  }
+    const details = atomGrantInvoiceDetails(invoice);
+    if (!details) {
+      return { handled: true, drainOrgId: null };
+    }
 
-  if (details.kind === "credits") {
-    await processAtomCreditGrantInvoicePaid(db, invoice, details);
-    L.debug("atom credit grant invoice processed", {
+    if (details.kind === "credits") {
+      await set(
+        grantPurchasedOrgCredits$,
+        {
+          orgId: details.orgId,
+          source: "credit_purchase",
+          stripeInvoiceId: invoice.id,
+          amount: details.credits,
+          expiresAt: details.creditExpiresAt,
+        },
+        signal,
+      );
+      L.debug("atom credit grant invoice processed", {
+        invoiceId: invoice.id,
+        orgId: details.orgId,
+        credits: details.credits,
+        creditExpiresAt: details.creditExpiresAt.toISOString(),
+      });
+      return { handled: true, drainOrgId: details.orgId };
+    }
+
+    if (details.kind === "usagePackCredits") {
+      await processAtomUsagePackCreditGrantInvoicePaid(db, invoice, details);
+      signal.throwIfAborted();
+      L.debug("atom member usage pack credit grant invoice processed", {
+        invoiceId: invoice.id,
+        orgId: details.orgId,
+        userId: details.userId,
+        credits: details.credits,
+        creditsExpiresAt: details.creditsExpiresAt.toISOString(),
+      });
+      return { handled: true, drainOrgId: details.orgId };
+    }
+
+    const processed = await processAtomPlanGrantInvoicePaid(
+      db,
+      invoice,
+      details,
+    );
+    signal.throwIfAborted();
+    if (!processed) {
+      return { handled: true, drainOrgId: null };
+    }
+
+    L.debug("atom grant invoice processed", {
       invoiceId: invoice.id,
       orgId: details.orgId,
-      credits: details.credits,
+      tier: details.tier,
+      grantExpiresAt: details.grantExpiresAt?.toISOString() ?? null,
       creditExpiresAt: details.creditExpiresAt.toISOString(),
+      memberUsagePackCredits: details.memberUsagePack?.credits ?? 0,
+      memberUsagePackUserId: details.memberUsagePack?.userId ?? null,
     });
     return { handled: true, drainOrgId: details.orgId };
-  }
+  },
+);
 
-  if (details.kind === "usagePackCredits") {
-    await processAtomUsagePackCreditGrantInvoicePaid(db, invoice, details);
-    L.debug("atom member usage pack credit grant invoice processed", {
-      invoiceId: invoice.id,
-      orgId: details.orgId,
-      userId: details.userId,
-      credits: details.credits,
-      creditsExpiresAt: details.creditsExpiresAt.toISOString(),
-    });
-    return { handled: true, drainOrgId: details.orgId };
-  }
+const handleOneTimePurchaseCompleted$ = command(
+  async (
+    { set },
+    session: CheckoutSessionInput,
+    paidAt: Date,
+    signal: AbortSignal,
+  ): Promise<string | null> => {
+    const metadata = session.metadata ?? {};
+    const orgId = metadata.orgId;
+    const campaignKey = metadata.campaignKey;
 
-  const processed = await processAtomPlanGrantInvoicePaid(db, invoice, details);
-  if (!processed) {
-    return { handled: true, drainOrgId: null };
-  }
-
-  L.debug("atom grant invoice processed", {
-    invoiceId: invoice.id,
-    orgId: details.orgId,
-    tier: details.tier,
-    grantExpiresAt: details.grantExpiresAt?.toISOString() ?? null,
-    creditExpiresAt: details.creditExpiresAt.toISOString(),
-    memberUsagePackCredits: details.memberUsagePack?.credits ?? 0,
-    memberUsagePackUserId: details.memberUsagePack?.userId ?? null,
-  });
-  return { handled: true, drainOrgId: details.orgId };
-}
-
-async function handleOneTimePurchaseCompleted(
-  db: Db,
-  session: CheckoutSessionInput,
-  paidAt: Date,
-): Promise<string | null> {
-  const metadata = session.metadata ?? {};
-  const orgId = metadata.orgId;
-  const campaignKey = metadata.campaignKey;
-
-  if (!orgId || !campaignKey) {
-    L.warn("one_time_purchase missing metadata", {
-      sessionId: session.id,
-      hasOrgId: Boolean(orgId),
-      hasCampaignKey: Boolean(campaignKey),
-    });
-    return null;
-  }
-
-  const campaign = getCampaign(campaignKey);
-  if (!campaign) {
-    L.warn("one_time_purchase unknown campaign; skipping", {
-      sessionId: session.id,
-      campaignKey,
-    });
-    return null;
-  }
-
-  const expiresAt = new Date(
-    paidAt.getTime() + campaign.expiresDays * 24 * 60 * 60 * 1000,
-  );
-
-  await db.transaction(async (tx) => {
-    const inserted = await createExpiresRecord(tx, orgId, {
-      source: campaign.source,
-      stripeInvoiceId: session.id,
-      amount: campaign.credits,
-      expiresAt,
-    });
-
-    if (!inserted) {
-      L.debug("one_time_purchase already processed", {
+    if (!orgId || !campaignKey) {
+      L.warn("one_time_purchase missing metadata", {
         sessionId: session.id,
-        orgId,
+        hasOrgId: Boolean(orgId),
+        hasCampaignKey: Boolean(campaignKey),
       });
-      return;
+      return null;
     }
 
-    await grantOrgCredits(tx, orgId, campaign.credits);
-  });
-
-  return orgId;
-}
-
-async function handleCreditPurchaseCompleted(
-  db: Db,
-  session: CheckoutSessionInput,
-): Promise<string | null> {
-  if (session.payment_status !== "paid") {
-    L.debug("credit_purchase checkout completed before payment settled", {
-      sessionId: session.id,
-      paymentStatus: session.payment_status ?? null,
-    });
-    return null;
-  }
-
-  const metadata = session.metadata ?? {};
-  const orgId = metadata.orgId;
-  const creditsAmount = creditPurchaseAmount(session);
-
-  if (!orgId || !creditsAmount || Number.isNaN(creditsAmount)) {
-    L.warn("credit_purchase checkout has invalid metadata or amount", {
-      sessionId: session.id,
-      hasOrgId: Boolean(orgId),
-      amountSubtotal: session.amount_subtotal ?? null,
-      amountTotal: session.amount_total ?? null,
-      metadata,
-    });
-    return null;
-  }
-
-  const expiresAt = creditPurchaseExpiresAt(metadata);
-  if (!expiresAt) {
-    L.warn("credit_purchase checkout has invalid credits expiration metadata", {
-      sessionId: session.id,
-      orgId,
-      creditsExpiresAt:
-        metadata[CREDIT_PURCHASE_EXPIRES_AT_METADATA_KEY] ?? null,
-    });
-    return null;
-  }
-
-  await db.transaction(async (tx) => {
-    const inserted = await createExpiresRecord(tx, orgId, {
-      source: "credit_purchase",
-      stripeInvoiceId: session.id,
-      amount: creditsAmount,
-      expiresAt,
-    });
-
-    if (!inserted) {
-      L.debug("credit_purchase checkout already processed", {
+    const campaign = getCampaign(campaignKey);
+    if (!campaign) {
+      L.warn("one_time_purchase unknown campaign; skipping", {
         sessionId: session.id,
-        orgId,
+        campaignKey,
       });
-      return;
+      return null;
     }
 
-    await grantOrgCredits(tx, orgId, creditsAmount);
-  });
+    const expiresAt = new Date(
+      paidAt.getTime() + campaign.expiresDays * 24 * 60 * 60 * 1000,
+    );
 
-  return orgId;
-}
+    await set(
+      grantPurchasedOrgCredits$,
+      {
+        orgId,
+        source: campaign.source,
+        stripeInvoiceId: session.id,
+        amount: campaign.credits,
+        expiresAt,
+      },
+      signal,
+    );
 
-async function handlePaidCheckoutPurpose(
-  db: Db,
-  session: CheckoutSessionInput,
-  purpose: "one_time_purchase",
-  paidAt: Date,
-): Promise<PaidWebhookOutcome> {
-  if (session.metadata?.purpose !== purpose) {
-    return { handled: false, drainOrgId: null };
-  }
+    return orgId;
+  },
+);
 
-  if (session.payment_status !== "paid") {
-    L.debug(`${purpose} checkout completed before payment settled`, {
-      sessionId: session.id,
-      paymentStatus: session.payment_status ?? null,
-    });
-    return { handled: true, drainOrgId: null };
-  }
+const handleCreditPurchaseCompleted$ = command(
+  async (
+    { set },
+    session: CheckoutSessionInput,
+    signal: AbortSignal,
+  ): Promise<string | null> => {
+    if (session.payment_status !== "paid") {
+      L.debug("credit_purchase checkout completed before payment settled", {
+        sessionId: session.id,
+        paymentStatus: session.payment_status ?? null,
+      });
+      return null;
+    }
 
-  const drainOrgId = await handleOneTimePurchaseCompleted(db, session, paidAt);
-  return { handled: true, drainOrgId };
-}
+    const metadata = session.metadata ?? {};
+    const orgId = metadata.orgId;
+    const creditsAmount = creditPurchaseAmount(session);
+
+    if (!orgId || !creditsAmount || Number.isNaN(creditsAmount)) {
+      L.warn("credit_purchase checkout has invalid metadata or amount", {
+        sessionId: session.id,
+        hasOrgId: Boolean(orgId),
+        amountSubtotal: session.amount_subtotal ?? null,
+        amountTotal: session.amount_total ?? null,
+        metadata,
+      });
+      return null;
+    }
+
+    const expiresAt = creditPurchaseExpiresAt(metadata);
+    if (!expiresAt) {
+      L.warn(
+        "credit_purchase checkout has invalid credits expiration metadata",
+        {
+          sessionId: session.id,
+          orgId,
+          creditsExpiresAt:
+            metadata[CREDIT_PURCHASE_EXPIRES_AT_METADATA_KEY] ?? null,
+        },
+      );
+      return null;
+    }
+
+    await set(
+      grantPurchasedOrgCredits$,
+      {
+        orgId,
+        source: "credit_purchase",
+        stripeInvoiceId: session.id,
+        amount: creditsAmount,
+        expiresAt,
+      },
+      signal,
+    );
+
+    return orgId;
+  },
+);
+
+const handlePaidCheckoutPurpose$ = command(
+  async (
+    { set },
+    session: CheckoutSessionInput,
+    purpose: "one_time_purchase",
+    paidAt: Date,
+    signal: AbortSignal,
+  ): Promise<PaidWebhookOutcome> => {
+    if (session.metadata?.purpose !== purpose) {
+      return { handled: false, drainOrgId: null };
+    }
+
+    if (session.payment_status !== "paid") {
+      L.debug(`${purpose} checkout completed before payment settled`, {
+        sessionId: session.id,
+        paymentStatus: session.payment_status ?? null,
+      });
+      return { handled: true, drainOrgId: null };
+    }
+
+    const drainOrgId = await set(
+      handleOneTimePurchaseCompleted$,
+      session,
+      paidAt,
+      signal,
+    );
+    return { handled: true, drainOrgId };
+  },
+);
 
 function checkoutSubscriptionContext(
   session: CheckoutSessionInput,
@@ -3809,93 +3789,107 @@ async function processSubscriptionInvoicePaid(
   return true;
 }
 
-async function handleCheckoutCompleted(
-  db: Db,
-  getClerk: ClerkClientProvider,
-  session: CheckoutSessionInput,
-  paidAt: Date,
-  signal: AbortSignal,
-): Promise<CheckoutCompletedOutcome> {
-  const usagePackInvitation = await handleUsagePackInvitationCheckoutPaid(
-    db,
-    getClerk(),
-    session,
-    paidAt,
-    signal,
-  );
-  if (usagePackInvitation.handled) {
-    return {
-      drainOrgId: null,
-      orgIds: usagePackInvitation.orgId ? [usagePackInvitation.orgId] : [],
+const handleCheckoutCompleted$ = command(
+  async (
+    { get, set },
+    session: CheckoutSessionInput,
+    paidAt: Date,
+    signal: AbortSignal,
+  ): Promise<CheckoutCompletedOutcome> => {
+    const db = set(writeDb$);
+    const getClerk = (): ClerkClient => {
+      return get(clerk$);
     };
-  }
-
-  if (session.metadata?.purpose === "credit_purchase") {
-    const invoiceId = checkoutSessionInvoiceId(session);
-    if (!invoiceId) {
-      const drainOrgId = await handleCreditPurchaseCompleted(db, session);
+    const usagePackInvitation = await handleUsagePackInvitationCheckoutPaid(
+      db,
+      getClerk(),
+      session,
+      paidAt,
+      signal,
+    );
+    signal.throwIfAborted();
+    if (usagePackInvitation.handled) {
       return {
-        drainOrgId,
-        orgIds: drainOrgId === null ? [] : [drainOrgId],
+        drainOrgId: null,
+        orgIds: usagePackInvitation.orgId ? [usagePackInvitation.orgId] : [],
       };
     }
 
-    L.debug("credit_purchase checkout completed; waiting for invoice.paid", {
-      sessionId: session.id,
-      invoiceId,
-      paymentStatus: session.payment_status ?? null,
+    if (session.metadata?.purpose === "credit_purchase") {
+      const invoiceId = checkoutSessionInvoiceId(session);
+      if (!invoiceId) {
+        const drainOrgId = await set(
+          handleCreditPurchaseCompleted$,
+          session,
+          signal,
+        );
+        return {
+          drainOrgId,
+          orgIds: drainOrgId === null ? [] : [drainOrgId],
+        };
+      }
+
+      L.debug("credit_purchase checkout completed; waiting for invoice.paid", {
+        sessionId: session.id,
+        invoiceId,
+        paymentStatus: session.payment_status ?? null,
+      });
+      return { drainOrgId: null, orgIds: [] };
+    }
+
+    const oneTimePurchaseResult = await set(
+      handlePaidCheckoutPurpose$,
+      session,
+      "one_time_purchase",
+      paidAt,
+      signal,
+    );
+    if (oneTimePurchaseResult.handled) {
+      return {
+        drainOrgId: oneTimePurchaseResult.drainOrgId,
+        orgIds:
+          oneTimePurchaseResult.drainOrgId === null
+            ? []
+            : [oneTimePurchaseResult.drainOrgId],
+      };
+    }
+
+    if (session.metadata?.purpose === CONCURRENCY_SUBSCRIPTION_PURPOSE) {
+      return { drainOrgId: null, orgIds: [] };
+    }
+
+    const checkoutContext = checkoutSubscriptionContext(session);
+    if (!checkoutContext) {
+      return { drainOrgId: null, orgIds: [] };
+    }
+    const { customerId, subscriptionId } = checkoutContext;
+
+    const stripe = getStripeClient();
+    const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+    signal.throwIfAborted();
+    const usagePackOutcome = await handleUsagePackCheckoutCompleted(
+      db,
+      session,
+      subscription,
+    );
+    signal.throwIfAborted();
+    const orgIds = await bindSubscriptionToCustomerOrg(db, {
+      customerId,
+      subscription: usagePackOutcome.subscription ?? subscription,
+      source: "checkout.session.completed",
     });
-    return { drainOrgId: null, orgIds: [] };
-  }
-
-  const oneTimePurchaseResult = await handlePaidCheckoutPurpose(
-    db,
-    session,
-    "one_time_purchase",
-    paidAt,
-  );
-  if (oneTimePurchaseResult.handled) {
+    signal.throwIfAborted();
     return {
-      drainOrgId: oneTimePurchaseResult.drainOrgId,
-      orgIds:
-        oneTimePurchaseResult.drainOrgId === null
-          ? []
-          : [oneTimePurchaseResult.drainOrgId],
+      drainOrgId: null,
+      orgIds: [
+        ...new Set([
+          ...orgIds,
+          ...(usagePackOutcome.orgId ? [usagePackOutcome.orgId] : []),
+        ]),
+      ],
     };
-  }
-
-  if (session.metadata?.purpose === CONCURRENCY_SUBSCRIPTION_PURPOSE) {
-    return { drainOrgId: null, orgIds: [] };
-  }
-
-  const checkoutContext = checkoutSubscriptionContext(session);
-  if (!checkoutContext) {
-    return { drainOrgId: null, orgIds: [] };
-  }
-  const { customerId, subscriptionId } = checkoutContext;
-
-  const stripe = getStripeClient();
-  const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-  const usagePackOutcome = await handleUsagePackCheckoutCompleted(
-    db,
-    session,
-    subscription,
-  );
-  const orgIds = await bindSubscriptionToCustomerOrg(db, {
-    customerId,
-    subscription: usagePackOutcome.subscription ?? subscription,
-    source: "checkout.session.completed",
-  });
-  return {
-    drainOrgId: null,
-    orgIds: [
-      ...new Set([
-        ...orgIds,
-        ...(usagePackOutcome.orgId ? [usagePackOutcome.orgId] : []),
-      ]),
-    ],
-  };
-}
+  },
+);
 
 async function handleSubscriptionCreatedLegacy(
   db: Db,
@@ -4057,18 +4051,20 @@ const handleInvoicePaid$ = command(
       return concurrencyResult.drainOrgId ?? usagePackResult.orgId;
     }
     if (!usagePackResult.handled) {
-      const autoRechargeResult = await handleAutoRechargeInvoicePaid(
-        db,
+      const autoRechargeResult = await set(
+        handleAutoRechargeInvoicePaid$,
         invoice,
+        signal,
       );
       signal.throwIfAborted();
       if (autoRechargeResult.handled) {
         return autoRechargeResult.drainOrgId;
       }
 
-      const creditPurchaseResult = await handleCreditPurchaseInvoicePaid(
-        db,
+      const creditPurchaseResult = await set(
+        handleCreditPurchaseInvoicePaid$,
         invoice,
+        signal,
       );
       signal.throwIfAborted();
       if (creditPurchaseResult.handled) {
@@ -4082,7 +4078,11 @@ const handleInvoicePaid$ = command(
     );
     signal.throwIfAborted();
 
-    const atomGrantResult = await handleAtomGrantInvoicePaid(db, invoice);
+    const atomGrantResult = await set(
+      handleAtomGrantInvoicePaid$,
+      invoice,
+      signal,
+    );
     signal.throwIfAborted();
     if (atomGrantResult.handled) {
       return atomGrantResult.drainOrgId;
@@ -5079,7 +5079,7 @@ async function publishBillingChanges(
 
 export const reconcilePaidStripeCheckoutSession$ = command(
   async (
-    { get, set },
+    { set },
     input: {
       readonly session: StripeCheckoutSession;
       readonly paidAt: Date;
@@ -5091,9 +5091,6 @@ export const reconcilePaidStripeCheckoutSession$ = command(
     }
 
     const db = set(writeDb$);
-    const getClerk = (): ClerkClient => {
-      return get(clerk$);
-    };
     const setupResult = await set(
       handleBillingSetupCheckoutCompleted$,
       input.session,
@@ -5101,9 +5098,8 @@ export const reconcilePaidStripeCheckoutSession$ = command(
     );
     const result =
       setupResult ??
-      (await handleCheckoutCompleted(
-        db,
-        getClerk,
+      (await set(
+        handleCheckoutCompleted$,
         input.session,
         input.paidAt,
         signal,
@@ -5200,9 +5196,8 @@ export const handleStripeWebhookEvent$ = command(
         );
         const result =
           setupResult ??
-          (await handleCheckoutCompleted(
-            db,
-            getClerk,
+          (await set(
+            handleCheckoutCompleted$,
             event.object,
             new Date(event.created * 1000),
             signal,
