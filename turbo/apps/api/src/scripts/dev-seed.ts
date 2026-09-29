@@ -419,6 +419,13 @@ export const USAGE_PRICING: readonly (typeof usagePricing.$inferInsert)[] = [
     ["tokens.cache_read", usd(0.3), 1_000_000],
     ["tokens.cache_creation", usd(3.75), 1_000_000],
   ]),
+  // Anthropic Sonnet 5.5 has the same token rates as Sonnet 5 (2026-09-28).
+  ...usageGroup("model", "claude-sonnet-5-5", [
+    ["tokens.input", usd(2), 1_000_000],
+    ["tokens.output", usd(10), 1_000_000],
+    ["tokens.cache_read", usd(0.2), 1_000_000],
+    ["tokens.cache_creation", usd(2.5), 1_000_000],
+  ]),
   ...usageGroup("model", "claude-sonnet-5", [
     ["tokens.input", usd(2), 1_000_000],
     ["tokens.output", usd(10), 1_000_000],

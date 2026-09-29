@@ -34,7 +34,12 @@ export interface PiRuntimeIdentity {
 export const PI_RUNTIME_RESOLVABLE_MODELS = {
   // `claude-fable-5-1` is absent because the Fable frontier line runs on the
   // Claude Code vendor harness, so no admitted route asks Pi to resolve it.
-  anthropic: ["claude-opus-5-5", "claude-opus-5", "claude-sonnet-5"],
+  anthropic: [
+    "claude-opus-5-5",
+    "claude-opus-5",
+    "claude-sonnet-5-5",
+    "claude-sonnet-5",
+  ],
   // `deepseek-flash` and `deepseek-v4.1-flash` exist only as hand-pinned
   // definitions; the pinned upstream DeepSeek catalog does not carry them.
   deepseek: ["deepseek-flash", "deepseek-v4.1-flash", "deepseek-v4-flash"],

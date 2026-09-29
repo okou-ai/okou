@@ -76,6 +76,12 @@ const EXPECTED_ADMITTED_ROUTES = [
   "claude-opus-5 | aws-bedrock | aws-bedrock | fast",
   "claude-opus-5 | custom-anthropic-messages | custom-anthropic-messages | standard",
   "claude-opus-5 | custom-anthropic-messages | custom-anthropic-messages | fast",
+  "claude-sonnet-5-5 | built-in | built-in | standard",
+  "claude-sonnet-5-5 | built-in | built-in | fast",
+  "claude-sonnet-5-5 | built-in | anthropic-api-key | standard",
+  "claude-sonnet-5-5 | built-in | anthropic-api-key | fast",
+  "claude-sonnet-5-5 | anthropic-api-key | anthropic-api-key | standard",
+  "claude-sonnet-5-5 | anthropic-api-key | anthropic-api-key | fast",
   "claude-sonnet-5 | built-in | built-in | standard",
   "claude-sonnet-5 | built-in | built-in | fast",
   "claude-sonnet-5 | built-in | anthropic-api-key | standard",
@@ -190,7 +196,7 @@ const EXPECTED_ADMITTED_ROUTES = [
  * does not shrink when admission narrows: all 240 combinations are still
  * evaluated, and fewer of them are admitted.
  */
-const ENUMERATED_COMBINATIONS = 240;
+const ENUMERATED_COMBINATIONS = 250;
 
 interface Combination {
   readonly selectedModel: string;
@@ -280,6 +286,7 @@ describe("Pi admission policy table", () => {
     expect(ACTIVE_RUN_MODELS.filter(isPiNativeModel)).toStrictEqual([
       "claude-opus-5-5",
       "claude-opus-5",
+      "claude-sonnet-5-5",
       "claude-sonnet-5",
     ]);
     expect(ACTIVE_RUN_MODELS.filter(isPiGptModel)).toStrictEqual([

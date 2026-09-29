@@ -199,6 +199,7 @@ const SUPPORTED_RUN_MODEL_LABELS: Record<SupportedRunModel, string> = {
   "claude-opus-5-5": "Claude Opus 5.5",
   "claude-opus-5": "Claude Opus 5",
   "claude-opus-4-8": "Claude Opus 4.8",
+  "claude-sonnet-5-5": "Claude Sonnet 5.5",
   "claude-sonnet-5": "Claude Sonnet 5",
   "claude-sonnet-4-6": "Claude Sonnet 4.6",
   "deepseek-v4.1-flash": "DeepSeek V4.1 Flash",
@@ -270,7 +271,14 @@ export function getRunModelRouteAccess(
   const knownByokRoute = MODEL_PROVIDER_TYPE_IDS.some((type) => {
     return type === providerType && !isBuiltInModelProviderType(type);
   });
-  return getRunModelAccess(model, restrictedBuiltInModels && !knownByokRoute);
+  // Sonnet 5.5 is restricted for the organization on both managed and BYOK routes.
+  return getRunModelAccess(
+    model,
+    restrictedBuiltInModels &&
+      (normalizeBuiltInModelId(model?.trim().toLowerCase() ?? "") ===
+        "claude-sonnet-5-5" ||
+        !knownByokRoute),
+  );
 }
 
 export function isActiveRunModel(
@@ -395,6 +403,9 @@ export const BUILT_IN_MODEL_TO_PROVIDER = {
         apiModel: "anthropic/claude-opus-5",
       },
     ],
+  },
+  "claude-sonnet-5-5": {
+    candidates: [{ concreteType: "anthropic-api-key" }],
   },
   "claude-sonnet-5": {
     candidates: [
@@ -559,6 +570,7 @@ export const BUILT_IN_MODEL_ALIAS_TO_MODEL = {
   "anthropic/claude-opus-5.5": "claude-opus-5-5",
   "anthropic/claude-opus-5": "claude-opus-5",
   "anthropic/claude-opus-4.8": "claude-opus-4-8",
+  "anthropic/claude-sonnet-5-5": "claude-sonnet-5-5",
   "anthropic/claude-sonnet-5": "claude-sonnet-5",
   "anthropic/claude-sonnet-4.6": "claude-sonnet-4-6",
   "deepseek/deepseek-v4-pro": "deepseek-v4-pro",
@@ -615,12 +627,14 @@ const IMAGE_INPUT_SUPPORTED_MODELS = new Set([
   "claude-opus-5-5",
   "claude-opus-5",
   "claude-opus-4-8",
+  "claude-sonnet-5-5",
   "claude-sonnet-5",
   "claude-sonnet-4-6",
   "anthropic/claude-fable-5.1",
   "anthropic/claude-opus-5.5",
   "anthropic/claude-opus-5",
   "anthropic/claude-opus-4.8",
+  "anthropic/claude-sonnet-5-5",
   "anthropic/claude-sonnet-5",
   "anthropic/claude-opus-4.5",
   "anthropic/claude-sonnet-4.6",
@@ -733,6 +747,7 @@ export const MODEL_PROVIDER_TYPES = {
       "claude-fable-5-1",
       "claude-opus-5-5",
       "claude-opus-5",
+      "claude-sonnet-5-5",
       "claude-sonnet-5",
     ] as string[],
     defaultModel: "claude-sonnet-5",
@@ -1106,6 +1121,7 @@ const MODEL_FIRST_PROVIDER_COMPATIBILITY = {
     "azure-foundry",
     "aws-bedrock",
   ],
+  "claude-sonnet-5-5": ["built-in", "anthropic-api-key"],
   "claude-sonnet-5": [
     "built-in",
     "claude-code-oauth-token",
@@ -1200,6 +1216,7 @@ const CANONICAL_RUN_MODEL_ALIASES: Readonly<Record<string, SupportedRunModel>> =
     "anthropic/claude-opus-5.5": "claude-opus-5-5",
     "anthropic/claude-opus-5": "claude-opus-5",
     "anthropic/claude-opus-4.8": "claude-opus-4-8",
+    "anthropic/claude-sonnet-5-5": "claude-sonnet-5-5",
     "anthropic/claude-sonnet-5": "claude-sonnet-5",
     "anthropic/claude-sonnet-4.6": "claude-sonnet-4-6",
   };

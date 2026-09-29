@@ -78,6 +78,14 @@ export function insufficientCredits() {
   );
 }
 
+export function paidPlanRequired() {
+  return httpError(
+    402,
+    "PRO_REQUIRED",
+    "Claude Sonnet 5.5 requires a paid plan.",
+  );
+}
+
 export function teamRequired(message: string) {
   return httpError(402, "TEAM_REQUIRED", message);
 }
