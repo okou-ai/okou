@@ -19,7 +19,8 @@ import {
   PI_STABLE_CONTEXT_AGENT_INSTRUCTIONS_PUBLICATION_KEY,
 } from "../services/pi-stable-context-generation.service";
 import { prepareAgentInstructionsStorage$ } from "../services/agent-instructions-storage.service";
-import { commitPreparedVolumeServerSide } from "../services/storage-volume-publication.service";
+import { preparedVolumePublicationSql } from "../services/storage-volume-publication-sql";
+import { StorageVersionIdentityConflictError } from "../services/storage-version-registration.service";
 import { agentInstructions } from "../services/agent-instructions.service";
 import type { RouteEntry } from "../route-entry";
 
@@ -173,7 +174,13 @@ const updateAgentInstructionsInner$ = command(
       if (current.name !== preflight.name) {
         throw new Error("Agent name changed during instructions preparation");
       }
-      await commitPreparedVolumeServerSide({ db: tx, volume }, signal);
+      const { rowCount: published } = await tx.execute(
+        preparedVolumePublicationSql(volume, nowDate()),
+      );
+      if (published !== 1) {
+        throw new StorageVersionIdentityConflictError(volume.version.versionId);
+      }
+      signal.throwIfAborted();
       await refreshPiStableContextStorageDemands(tx, stableContextPublication, {
         storageId: volume.version.storageId,
         versionId: volume.version.versionId,

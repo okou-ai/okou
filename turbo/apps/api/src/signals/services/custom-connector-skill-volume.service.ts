@@ -5,9 +5,7 @@ import {
 } from "@okouai/core/storage-names";
 import { synthesizeSkillMd } from "@okouai/core/skill-document";
 
-import type { Db } from "../external/db";
 import {
-  commitPreparedVolumeServerSide,
   prepareVolumeServerSide$,
   type PreparedServerSideVolume,
 } from "./storage-volume-publication.service";
@@ -63,16 +61,3 @@ export const prepareCustomConnectorSkillVolume$ = command(
     return volume;
   },
 );
-
-export async function commitPreparedCustomConnectorSkillStorage(
-  args: {
-    readonly db: Db;
-    readonly volume: PreparedServerSideVolume;
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  await commitPreparedVolumeServerSide(
-    { db: args.db, volume: args.volume },
-    signal,
-  );
-}

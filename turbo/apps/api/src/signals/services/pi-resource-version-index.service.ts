@@ -212,6 +212,7 @@ export async function enqueuePiResourceVersionIndexes(
 export function piResourceProjectionValues(
   projection: PiResourceVersionIndex | undefined,
   archiveSize: number,
+  updatedAt = nowDate(),
 ) {
   const ready =
     projection !== undefined &&
@@ -224,7 +225,7 @@ export function piResourceProjectionValues(
     sourceArchiveSize: archiveSize,
     leaseId: null,
     leaseExpiresAt: null,
-    updatedAt: nowDate(),
+    updatedAt,
   };
 }
 

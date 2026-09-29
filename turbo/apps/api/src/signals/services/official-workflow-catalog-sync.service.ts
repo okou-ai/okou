@@ -1,3 +1,4 @@
+import { preparedVolumePublicationSql } from "./storage-volume-publication-sql";
 import type {
   OfficialWorkflowAcceptedDefinition,
   OfficialWorkflowArtifactReference,
@@ -41,7 +42,6 @@ import {
 import { OFFICIAL_WORKFLOW_SOURCE_CATALOG } from "./official-workflow-catalog-source";
 import { invalidateAllPiStableContexts } from "./pi-stable-context-generation.service";
 import {
-  commitPreparedVolumeServerSide,
   prepareVolumeServerSide$,
   type PreparedServerSideVolume,
 } from "./storage-volume-publication.service";
@@ -793,10 +793,15 @@ async function activateCandidate(
       const registration = await settle(
         (async () => {
           await assertPreparedStorageIdentity(tx, prepared, signal);
-          await commitPreparedVolumeServerSide(
-            { db: tx, volume: prepared.volume },
-            signal,
+          const { rowCount: published } = await tx.execute(
+            preparedVolumePublicationSql(prepared.volume, nowDate()),
           );
+          if (published !== 1) {
+            throw new OfficialWorkflowCatalogRegistrationError(
+              prepared.definition.name,
+            );
+          }
+          signal.throwIfAborted();
           await persistDefinitionRevision(tx, prepared, signal);
         })(),
         signal,

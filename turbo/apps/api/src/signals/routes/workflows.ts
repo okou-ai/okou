@@ -1,3 +1,5 @@
+import { preparedVolumePublicationSql } from "../services/storage-volume-publication-sql";
+import { StorageVersionIdentityConflictError } from "../services/storage-version-registration.service";
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 
@@ -114,7 +116,6 @@ import {
 } from "../services/official-workflow-catalog-read.service";
 import { resolveOfficialWorkflowBlueprintForReconciliation } from "../services/official-workflow-installation.service";
 import {
-  commitPreparedVolumeServerSide,
   prepareVolumeServerSide$,
   type PreparedServerSideVolume,
 } from "../services/storage-volume-publication.service";
@@ -524,10 +525,15 @@ async function createPreparedWorkflow(
       });
       signal.throwIfAborted();
     }
-    await commitPreparedVolumeServerSide(
-      { db: tx, volume: args.volume },
-      signal,
+    const { rowCount: published } = await tx.execute(
+      preparedVolumePublicationSql(args.volume, nowDate()),
     );
+    if (published !== 1) {
+      throw new StorageVersionIdentityConflictError(
+        args.volume.version.versionId,
+      );
+    }
+    signal.throwIfAborted();
     await invalidatePiStableContext(tx, {
       orgId: args.orgId,
       agentId: body.agentId,
@@ -1565,10 +1571,15 @@ async function copyWorkflowDatabaseRows(
         signal,
       );
     }
-    await commitPreparedVolumeServerSide(
-      { db: tx, volume: args.volume },
-      signal,
+    const { rowCount: published } = await tx.execute(
+      preparedVolumePublicationSql(args.volume, nowDate()),
     );
+    if (published !== 1) {
+      throw new StorageVersionIdentityConflictError(
+        args.volume.version.versionId,
+      );
+    }
+    signal.throwIfAborted();
     await invalidatePiStableContext(
       tx,
       {

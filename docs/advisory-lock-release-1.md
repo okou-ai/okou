@@ -491,3 +491,12 @@ sources remain unresolved; no production convergence is assumed. All three
 benchmark/dev Run INSERT sites now use a bounded owning command that captures
 their provisional billing identity explicitly. See the trigger inventory for
 remaining writer-audit, transaction-ownership and reader-convergence limits.
+
+The shared prepared-volume database adapter is removed at all seven publication
+sites: Agent instructions, two Custom connector mutations, Feishu connector
+repair, official Workflow catalog activation, and Workflow create/copy. Each
+site directly executes one pure SQL builder that retains Storage, validates the
+immutable version and commits HEAD plus the prepared Pi index. Preparation and
+R2 verification remain outside publication. This closes that shared propagation
+chain; enclosing OAuth, Pi invalidation and ordinary catalog/Workflow owners
+remain explicitly unfinished rather than being disguised by the SQL builder.

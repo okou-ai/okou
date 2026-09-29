@@ -70,11 +70,10 @@ import {
   type CustomConnectorStoredValue,
 } from "./custom-connector-credential-access.service";
 import { effectiveCustomConnectorPermissionBundleRef } from "./feishu-custom-connector-permissions";
-import {
-  commitPreparedCustomConnectorSkillStorage,
-  prepareCustomConnectorSkillVolume$,
-} from "./custom-connector-skill-volume.service";
+import { prepareCustomConnectorSkillVolume$ } from "./custom-connector-skill-volume.service";
 import type { PreparedServerSideVolume } from "./storage-volume-publication.service";
+import { preparedVolumePublicationSql } from "./storage-volume-publication-sql";
+import { StorageVersionIdentityConflictError } from "./storage-version-registration.service";
 import {
   commitConnectorRuntimeMutation,
   publishConnectorRuntimeSyncWakeups,
@@ -1751,10 +1750,15 @@ const persistCustomConnectorCreate$ = command(
         [{ connectorId: args.connectorId, orgId: args.orgId }],
         async () => {
           if (args.preparedSkill) {
-            await commitPreparedCustomConnectorSkillStorage(
-              { db: tx, volume: args.preparedSkill },
-              signal,
+            const { rowCount: published } = await tx.execute(
+              preparedVolumePublicationSql(args.preparedSkill, nowDate()),
             );
+            if (published !== 1) {
+              throw new StorageVersionIdentityConflictError(
+                args.preparedSkill.version.versionId,
+              );
+            }
+            signal.throwIfAborted();
           }
           const [row] = await tx
             .insert(orgCustomConnectors)
@@ -2102,10 +2106,15 @@ const persistCustomConnectorUpdate$ = command(
         [{ connectorId: args.id, orgId: args.orgId }],
         async () => {
           if (args.preparedSkill) {
-            await commitPreparedCustomConnectorSkillStorage(
-              { db: tx, volume: args.preparedSkill },
-              signal,
+            const { rowCount: published } = await tx.execute(
+              preparedVolumePublicationSql(args.preparedSkill, nowDate()),
             );
+            if (published !== 1) {
+              throw new StorageVersionIdentityConflictError(
+                args.preparedSkill.version.versionId,
+              );
+            }
+            signal.throwIfAborted();
           }
           await deleteReplacedAutomaticOAuthData(tx, args);
           const kindColumns = protocolColumns(args.definition);
