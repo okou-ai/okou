@@ -551,3 +551,25 @@ discovery can still observe a newer payable subscription before that subscriptio
 has any local binding, particularly for Atom grants. The common purchase and
 replacement-identity protocol remains unfinished Release 1 implementation;
 this local guard is not presented as a provider-side fence or a drain-only gate.
+
+## Auto-recharge SQL ownership and stale cleanup
+
+Recharge admission and failed-request cleanup now own their finite SQL in
+commands that obtain `writeDb$`; plan eligibility is loaded through its owning
+command. Stripe invoice creation, payment-method reads and payment remain
+outside SQL, and no database handle escapes into a provider callback.
+
+Cleanup uses the transient PostgreSQL row version returned by admission. A
+failed older provider request cannot clear the pending recharge created after a
+user disables and re-enables auto-recharge. If another wallet write has changed
+the row, cleanup conservatively leaves the pending value; the existing
+ten-minute stale-admission rule remains its recovery path. This does not add a
+persisted field or claim that auto-recharge's existing remote-success/retry
+window is solved.
+
+The API regression disables and re-enables recharge while an earlier Stripe
+response is delayed, then delivers every resulting paid invoice and a replay
+through the signed webhook API. Billing must expose exactly one new grant and
+the corresponding balance. Formatting and scoped lint pass; combined-head types
+and behavior checks belong to the PR pipeline. Shared subscription projection
+and ordinary Plan purchase admission remain unfinished Release 1 work.

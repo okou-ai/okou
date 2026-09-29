@@ -12,6 +12,7 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createRouteMocks } from "./helpers/route-test";
 import { billingAutoRechargeRoutes } from "../billing-auto-recharge";
+import { createDeferredPromise } from "../../utils";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -503,6 +504,92 @@ describe("PUT /api/billing/auto-recharge", () => {
       );
     },
   );
+
+  it("does not reopen a newer recharge when an earlier provider request fails", async () => {
+    const { admin, entitlement } = await createProActor();
+    const before = await billingApi.readBillingStatus(admin);
+    const config = {
+      enabled: true,
+      threshold: before.credits + 1000,
+      amount: before.credits + 6000,
+    };
+    acceptAutoRechargeStripeInvoice(entitlement.customerId);
+    const started = createDeferredPromise<void>(context.signal);
+    const failedResponse = createDeferredPromise<void>(context.signal);
+    context.mocks.stripe.customers.retrieve.mockImplementationOnce(async () => {
+      started.resolve();
+      await failedResponse.promise;
+      throw new Error("The earlier Stripe customer response was lost");
+    });
+    const paidInvoiceIds: string[] = [];
+    context.mocks.stripe.invoices.create.mockImplementation(() => {
+      const invoiceId = `in_auto_recharge_${randomUUID()}`;
+      return Promise.resolve({ id: invoiceId });
+    });
+    context.mocks.stripe.invoices.finalizeInvoice.mockImplementation(
+      (invoiceId: string) => {
+        paidInvoiceIds.push(invoiceId);
+        return Promise.resolve({ id: invoiceId, status: "paid" });
+      },
+    );
+    const earlier = billingApi.updateAutoRecharge(admin, config, [200]);
+    onTestFinished(async () => {
+      if (!failedResponse.settled()) {
+        failedResponse.resolve();
+      }
+      if (!started.settled()) {
+        started.resolve();
+      }
+      await Promise.allSettled([earlier]);
+    });
+    await started.promise;
+    await billingApi.updateAutoRecharge(admin, { enabled: false }, [200]);
+    await billingApi.updateAutoRecharge(admin, config, [200]);
+    failedResponse.resolve();
+    await earlier;
+    await billingApi.updateAutoRecharge(admin, config, [200]);
+    await expect(billingApi.readAutoRecharge(admin)).resolves.toStrictEqual(
+      config,
+    );
+    expect((await billingApi.readBillingStatus(admin)).credits).toBe(
+      before.credits,
+    );
+
+    webhooks.configureStripeWebhookSecret();
+    for (const invoiceId of paidInvoiceIds) {
+      const event = {
+        id: `evt_auto_recharge_${randomUUID()}`,
+        type: "invoice.paid",
+        data: {
+          object: {
+            id: invoiceId,
+            customer: entitlement.customerId,
+            status: "paid",
+            amount_paid: Math.ceil(config.amount / 1000) * 100,
+            metadata: {
+              type: "auto_recharge",
+              orgId: admin.orgId,
+              creditsAmount: String(config.amount),
+            },
+            lines: { has_more: false, data: [] },
+            parent: null,
+          },
+        },
+      };
+      await webhooks.postStripeEvent(event, [200]);
+      await webhooks.postStripeEvent(
+        { ...event, id: `evt_auto_recharge_replay_${randomUUID()}` },
+        [200],
+      );
+    }
+    const after = await billingApi.readBillingStatus(admin);
+    expect(after.credits).toBe(before.credits + config.amount);
+    expect(
+      after.creditGrants.filter((grant) => {
+        return grant.source === "auto_recharge";
+      }),
+    ).toMatchObject([{ amount: config.amount, remaining: config.amount }]);
+  });
 
   it("disables auto-recharge after a public recharge trigger", async () => {
     const { admin, entitlement } = await createProActor();
