@@ -1,3 +1,4 @@
+import { command } from "ccstate";
 import {
   getFrameworkForType,
   getSecretNameForType,
@@ -33,7 +34,7 @@ import { settle } from "../utils";
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
 import { isUniqueViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
-import type { Db } from "../external/db";
+import { writeDb$, type Db } from "../external/db";
 import { publishPersonalModelProvidersChangedSafely } from "../external/realtime";
 import {
   decryptStoredSecretValue,
@@ -817,56 +818,87 @@ async function accountWithProvider(
   return row ?? null;
 }
 
-export async function activatePersonalModelProviderAccount(args: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly id: string;
-}): Promise<
-  | ModelProviderResponse
-  | ReturnType<typeof notFound>
-  | ReturnType<typeof conflict>
-> {
-  const result = await withAccountConflict(() => {
-    return args.db.transaction(async (tx) => {
-      const current = await accountWithProvider(tx, args);
-      if (
-        !current ||
-        !isPersonalSubscriptionProviderType(current.account.type)
-      ) {
-        return notFound("Resource not found");
+export const activatePersonalModelProviderAccount$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly id: string;
+    },
+    signal: AbortSignal,
+  ): Promise<
+    | ModelProviderResponse
+    | ReturnType<typeof notFound>
+    | ReturnType<typeof conflict>
+  > => {
+    const db = set(writeDb$);
+    const mutation = await settle(
+      db.transaction(async (tx) => {
+        const [current] = await tx
+          .select({ account: modelProviderAccounts, provider: modelProviders })
+          .from(modelProviderAccounts)
+          .innerJoin(
+            modelProviders,
+            eq(modelProviderAccounts.modelProviderId, modelProviders.id),
+          )
+          .where(
+            and(
+              eq(modelProviderAccounts.id, args.id),
+              isNull(modelProviderAccounts.disconnectedAt),
+              eq(modelProviderAccounts.orgId, args.orgId),
+              eq(modelProviderAccounts.userId, args.userId),
+            ),
+          )
+          .limit(1);
+        if (
+          !current ||
+          !isPersonalSubscriptionProviderType(current.account.type)
+        ) {
+          return notFound("Resource not found");
+        }
+        await tx
+          .update(modelProviderAccounts)
+          .set({ isActive: false, updatedAt: nowDate() })
+          .where(
+            and(
+              eq(modelProviderAccounts.modelProviderId, current.provider.id),
+              eq(modelProviderAccounts.isActive, true),
+              ne(modelProviderAccounts.id, current.account.id),
+            ),
+          );
+        // The existing one-active unique index arbitrates concurrent activation.
+        const [account] = await tx
+          .update(modelProviderAccounts)
+          .set({ isActive: true, updatedAt: nowDate() })
+          .where(
+            and(
+              eq(modelProviderAccounts.id, current.account.id),
+              isNull(modelProviderAccounts.disconnectedAt),
+            ),
+          )
+          .returning();
+        signal.throwIfAborted();
+        return account
+          ? accountResponse({ account, provider: current.provider })
+          : notFound("Resource not found");
+      }),
+    );
+    signal.throwIfAborted();
+    if (!mutation.ok) {
+      if (isUniqueViolation(mutation.error)) {
+        return conflict(ACCOUNT_CONFLICT_MESSAGE);
       }
-      await tx
-        .update(modelProviderAccounts)
-        .set({ isActive: false, updatedAt: nowDate() })
-        .where(
-          and(
-            eq(modelProviderAccounts.modelProviderId, current.provider.id),
-            eq(modelProviderAccounts.isActive, true),
-            ne(modelProviderAccounts.id, current.account.id),
-          ),
-        );
-      // The one-active partial unique index rejects a concurrent activation.
-      const [account] = await tx
-        .update(modelProviderAccounts)
-        .set({ isActive: true, updatedAt: nowDate() })
-        .where(
-          and(
-            eq(modelProviderAccounts.id, current.account.id),
-            isNull(modelProviderAccounts.disconnectedAt),
-          ),
-        )
-        .returning();
-      return account
-        ? accountResponse({ account, provider: current.provider })
-        : notFound("Resource not found");
-    });
-  });
-  if (!("status" in result)) {
-    await publishPersonalModelProvidersChangedSafely(args.userId);
-  }
-  return result;
-}
+      throw mutation.error;
+    }
+    const result = mutation.value;
+    if (!("status" in result)) {
+      await publishPersonalModelProvidersChangedSafely(args.userId);
+      signal.throwIfAborted();
+    }
+    return result;
+  },
+);
 
 /** Remove the logical provider once no account row, including a retained one,
  * still references it. */

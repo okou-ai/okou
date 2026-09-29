@@ -10,7 +10,7 @@ import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import { writeDb$ } from "../external/db";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import {
-  activatePersonalModelProviderAccount,
+  activatePersonalModelProviderAccount$,
   deletePersonalModelProviderAccount,
   personalModelProviderAccountById,
   personalModelProviderAccountResponseById,
@@ -104,12 +104,15 @@ const activateInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const params = get(
     pathParamsOf(personalModelProviderAccountsByIdContract.activate),
   );
-  const result = await activatePersonalModelProviderAccount({
-    db: set(writeDb$),
-    orgId: auth.orgId,
-    userId: auth.userId,
-    id: params.id,
-  });
+  const result = await set(
+    activatePersonalModelProviderAccount$,
+    {
+      orgId: auth.orgId,
+      userId: auth.userId,
+      id: params.id,
+    },
+    signal,
+  );
   signal.throwIfAborted();
   return "status" in result ? result : { status: 200 as const, body: result };
 });
