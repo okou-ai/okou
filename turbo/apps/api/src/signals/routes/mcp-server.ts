@@ -30,8 +30,8 @@ import { sendMcpChatMessage$ } from "../services/mcp-chat-send.service";
 import { createMcpChatThread$ } from "../services/mcp-chat-creation.service";
 import { updateMcpChatThread$ } from "../services/mcp-chat-thread-update.service";
 import {
-  listMcpAgents,
-  listMcpModels,
+  listMcpAgents$,
+  listMcpModels$,
 } from "../services/mcp-chat-discovery.service";
 import {
   cancelMcpRun$,
@@ -188,10 +188,10 @@ const serveAuthorizedMcp$ = command(
         readScope: MCP_READ_SCOPE,
         scopes: principal.scopes,
         listAgents: (input, readSignal) => {
-          return listMcpAgents(historyRuntime.db, principal, input, readSignal);
+          return set(listMcpAgents$, principal, input, readSignal);
         },
         listModels: (readSignal) => {
-          return listMcpModels(historyRuntime.db, principal, readSignal);
+          return set(listMcpModels$, principal, readSignal);
         },
         createThread: async (input, operationSignal) => {
           return await admitMutation((signal) => {

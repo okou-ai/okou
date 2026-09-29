@@ -17,6 +17,7 @@ import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
+import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { and, asc, eq, gt, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 
@@ -24,23 +25,23 @@ import {
   nullableDriverValueDecoder,
   pgBooleanDecoder,
 } from "../../lib/db-structured-result";
-import type { Tx } from "../../lib/db-types";
 import { env } from "../../lib/env";
 import { now } from "../../lib/time";
-import type { Db } from "../external/db";
+import { command } from "ccstate";
+import { writeDb$ } from "../external/db";
 import { awaitWithSignal, safeJsonParse, settle } from "../utils";
 import { visibleJoinedAgentCondition } from "./agent-data.service";
-import { resolveBuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
+import { resolveBuiltInModelRuntimeRoute$ } from "./built-in-model-runtime-route.service";
 import {
-  loadMemberModelRouteContext,
+  loadModelRouteSources$,
   resolveEffectivePolicyRoute,
   type MemberModelRouteContext,
   type ResolvedModelFirstPolicyRoute,
 } from "./effective-model-route.service";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
+import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import { shouldReplaceExistingDefaultForPlan } from "./model-policy.service";
 import {
-  loadOrgPlanCapabilities,
+  orgPlanCapabilitiesFromRow,
   type OrgPlanCapabilities,
 } from "./org-plan-entitlement-read.service";
 import { checkOrgPlanRunAdmission } from "./run-admission.service";
@@ -58,77 +59,58 @@ const DESCRIPTION_CHARACTER_LIMIT = 500;
 
 class DiscoveryUnavailable extends Error {}
 
-interface ReadBudget {
-  readonly check: () => void;
-  readonly beforeQuery: (tx: Tx) => Promise<void>;
-}
-
-async function discoveryRead<T>(
-  db: Db,
-  signal: AbortSignal,
-  read: (tx: Tx, budget: ReadBudget) => Promise<T>,
-): Promise<McpDiscoveryResult<T>> {
+function discoveryBudget(signal: AbortSignal) {
   signal.throwIfAborted();
   const deadline = performance.now() + READ_TIMEOUT_MS;
   const operationSignal = AbortSignal.any([
     signal,
     AbortSignal.timeout(READ_TIMEOUT_MS),
   ]);
-  const check = () => {
-    operationSignal.throwIfAborted();
-    if (performance.now() >= deadline) {
-      throw new DiscoveryUnavailable(
-        "Discovery exceeded its 15-second read budget. Retry later.",
-      );
-    }
-  };
-  const budget: ReadBudget = {
-    check,
-    beforeQuery: async (tx) => {
-      check();
-      const milliseconds = Math.max(
-        1,
-        Math.min(3000, Math.floor(deadline - performance.now())),
-      );
-      await tx.execute(
-        sql`SELECT set_config('statement_timeout', ${`${milliseconds.toString()}ms`}, true)`,
-      );
-      check();
+  return {
+    deadline,
+    operationSignal,
+    check: () => {
+      operationSignal.throwIfAborted();
+      if (performance.now() >= deadline) {
+        throw new DiscoveryUnavailable(
+          "Discovery exceeded its 15-second read budget. Retry later.",
+        );
+      }
     },
   };
-  // A pool wait or HTTP disconnect bounds the response. The transaction remains
-  // observed and releases its client after the bounded read phase settles.
-  const result = await settle(
-    awaitWithSignal(
-      db.transaction(
-        async (tx) => {
-          await budget.beforeQuery(tx);
-          const data = await read(tx, budget);
-          check();
-          if (
-            Buffer.byteLength(JSON.stringify(data), "utf8") > MAX_RESPONSE_BYTES
-          ) {
-            throw new DiscoveryUnavailable(
-              "Discovery exceeded its response limit. Request fewer results.",
-            );
-          }
-          return data;
-        },
-        { isolationLevel: "repeatable read", accessMode: "read only" },
-      ),
-      operationSignal,
-    ),
-    signal,
+}
+
+function discoveryQueryTimeoutSql(deadline: number) {
+  const milliseconds = Math.max(
+    1,
+    Math.min(3000, Math.floor(deadline - performance.now())),
   );
-  return result.ok
-    ? { kind: "ok", data: result.value }
-    : {
-        kind: "unavailable",
-        message:
-          result.error instanceof DiscoveryUnavailable
-            ? result.error.message
-            : "Discovery is temporarily unavailable. Retry later.",
-      };
+  return sql`SELECT set_config('statement_timeout', ${`${milliseconds.toString()}ms`}, true)`;
+}
+
+function discoveryResult<T>(
+  result:
+    | { readonly ok: true; readonly value: T }
+    | { readonly ok: false; readonly error: unknown },
+): McpDiscoveryResult<T> {
+  if (!result.ok) {
+    return {
+      kind: "unavailable",
+      message:
+        result.error instanceof DiscoveryUnavailable
+          ? result.error.message
+          : "Discovery is temporarily unavailable. Retry later.",
+    };
+  }
+  if (
+    Buffer.byteLength(JSON.stringify(result.value), "utf8") > MAX_RESPONSE_BYTES
+  ) {
+    return {
+      kind: "unavailable",
+      message: "Discovery exceeded its response limit. Request fewer results.",
+    };
+  }
+  return { kind: "ok", data: result.value };
 }
 
 const agentCursorSchema = z.strictObject({
@@ -202,99 +184,150 @@ function decodeAgentCursor(
     : null;
 }
 
-export async function listMcpAgents(
-  db: Db,
+const prepareMcpAgentDiscovery$ = command(
+  async (
+    { set },
+    principal: Principal,
+    input: McpListAgentsInput,
+    cursor: AgentCursor | null,
+    signal: AbortSignal,
+  ) => {
+    const db = set(writeDb$);
+    const budget = discoveryBudget(signal);
+    const rows = await db.transaction(
+      async (tx) => {
+        budget.check();
+        await tx.execute(discoveryQueryTimeoutSql(budget.deadline));
+        const rows = await tx
+          .select({
+            agentId: agents.id,
+            slug: agents.name,
+            displayName: agents.displayName,
+            defaultAgentId: orgMetadata.defaultAgentId,
+            description:
+              sql`left(${agents.description}, ${DESCRIPTION_CHARACTER_LIMIT})`.mapWith(
+                nullableDriverValueDecoder(agents.description),
+              ),
+            descriptionTruncated:
+              sql`coalesce(length(${agents.description}) > ${DESCRIPTION_CHARACTER_LIMIT}, false)`.mapWith(
+                pgBooleanDecoder,
+              ),
+          })
+          .from(agents)
+          .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
+          .where(
+            and(
+              eq(agents.orgId, principal.orgId),
+              visibleJoinedAgentCondition(principal.userId),
+              cursor ? gt(agents.id, cursor.agentId) : undefined,
+            ),
+          )
+          .orderBy(asc(agents.id))
+          .limit(input.limit + 1);
+
+        budget.check();
+        return rows;
+      },
+      { isolationLevel: "repeatable read", accessMode: "read only" },
+    );
+    signal.throwIfAborted();
+    return discoveryAgentPage(rows, principal, input, cursor);
+  },
+);
+
+interface DiscoveryAgentRow {
+  readonly agentId: string;
+  readonly slug: string;
+  readonly displayName: string | null;
+  readonly defaultAgentId: string | null;
+  readonly description: string | null;
+  readonly descriptionTruncated: boolean;
+}
+
+function discoveryAgentPage(
+  rows: readonly DiscoveryAgentRow[],
   principal: Principal,
   input: McpListAgentsInput,
-  signal: AbortSignal,
-): Promise<McpDiscoveryResult<McpListAgentsOutput>> {
-  const cursor = input.cursor
-    ? decodeAgentCursor(input.cursor, principal, input.limit)
-    : null;
-  if (input.cursor && !cursor) {
-    return {
-      kind: "invalid_cursor",
-      message:
-        "The Agent cursor is invalid, expired, or belongs to another user, organization or limit. Restart without cursor.",
+  cursor: AgentCursor | null,
+): McpListAgentsOutput {
+  const page: McpListAgentsOutput["agents"] = [];
+  // Reserve a complete cursor plus envelope so larger descriptions shorten a
+  // page without truncating identities or preventing forward progress.
+  let bytes = 4200;
+  for (const row of rows.slice(0, input.limit)) {
+    const agent = {
+      agentId: row.agentId,
+      name: agentDisplayName(row) ?? row.slug,
+      description: row.description,
+      descriptionTruncated: row.descriptionTruncated,
+      isDefault: row.agentId === row.defaultAgentId,
     };
+    const size = Buffer.byteLength(JSON.stringify(agent), "utf8") + 1;
+    if (bytes + size > MAX_RESPONSE_BYTES) {
+      break;
+    }
+    page.push(agent);
+    bytes += size;
   }
-  return await discoveryRead(
-    db,
-    signal,
-    async (tx, budget): Promise<McpListAgentsOutput> => {
-      const rows = await tx
-        .select({
-          agentId: agents.id,
-          slug: agents.name,
-          displayName: agents.displayName,
-          defaultAgentId: orgMetadata.defaultAgentId,
-          description:
-            sql`left(${agents.description}, ${DESCRIPTION_CHARACTER_LIMIT})`.mapWith(
-              nullableDriverValueDecoder(agents.description),
-            ),
-          descriptionTruncated:
-            sql`coalesce(length(${agents.description}) > ${DESCRIPTION_CHARACTER_LIMIT}, false)`.mapWith(
-              pgBooleanDecoder,
-            ),
-        })
-        .from(agents)
-        .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
-        .where(
-          and(
-            eq(agents.orgId, principal.orgId),
-            visibleJoinedAgentCondition(principal.userId),
-            cursor ? gt(agents.id, cursor.agentId) : undefined,
-          ),
-        )
-        .orderBy(asc(agents.id))
-        .limit(input.limit + 1);
-      budget.check();
-      const page: McpListAgentsOutput["agents"] = [];
-      // Reserve a complete cursor plus envelope so larger descriptions shorten a
-      // page without truncating identities or preventing forward progress.
-      let bytes = 4200;
-      for (const row of rows.slice(0, input.limit)) {
-        budget.check();
-        const agent = {
-          agentId: row.agentId,
-          name: agentDisplayName(row) ?? row.slug,
-          description: row.description,
-          descriptionTruncated: row.descriptionTruncated,
-          isDefault: row.agentId === row.defaultAgentId,
-        };
-        const size = Buffer.byteLength(JSON.stringify(agent), "utf8") + 1;
-        if (bytes + size > MAX_RESPONSE_BYTES) {
-          break;
-        }
-        page.push(agent);
-        bytes += size;
-      }
-      const last = page.at(-1);
-      if (rows.length > 0 && !last) {
-        throw new DiscoveryUnavailable(
-          "Agent metadata exceeds the response limit.",
-        );
-      }
-      const issuedAt = cursor?.issuedAt ?? now();
-      return {
-        agents: page,
-        nextCursor:
-          rows.length > page.length && last
-            ? encodeAgentCursor({
-                version: 1,
-                operation: "list_agents",
-                orgId: principal.orgId,
-                userId: principal.userId,
-                limit: input.limit,
-                issuedAt,
-                expiresAt: issuedAt + CURSOR_TTL_MS,
-                agentId: last.agentId,
-              })
-            : null,
-      };
-    },
-  );
+  const last = page.at(-1);
+  if (rows.length > 0 && !last) {
+    throw new DiscoveryUnavailable(
+      "Agent metadata exceeds the response limit.",
+    );
+  }
+  const issuedAt = cursor?.issuedAt ?? now();
+  return {
+    agents: page,
+    nextCursor:
+      rows.length > page.length && last
+        ? encodeAgentCursor({
+            version: 1,
+            operation: "list_agents",
+            orgId: principal.orgId,
+            userId: principal.userId,
+            limit: input.limit,
+            issuedAt,
+            expiresAt: issuedAt + CURSOR_TTL_MS,
+            agentId: last.agentId,
+          })
+        : null,
+  };
 }
+
+export const listMcpAgents$ = command(
+  async (
+    { set },
+    principal: Principal,
+    input: McpListAgentsInput,
+    signal: AbortSignal,
+  ): Promise<McpDiscoveryResult<McpListAgentsOutput>> => {
+    const cursor = input.cursor
+      ? decodeAgentCursor(input.cursor, principal, input.limit)
+      : null;
+    if (input.cursor && !cursor) {
+      return {
+        kind: "invalid_cursor",
+        message:
+          "The Agent cursor is invalid, expired, or belongs to another user, organization or limit. Restart without cursor.",
+      };
+    }
+    const budget = discoveryBudget(signal);
+    const result = await settle(
+      awaitWithSignal(
+        set(
+          prepareMcpAgentDiscovery$,
+          principal,
+          input,
+          cursor,
+          budget.operationSignal,
+        ),
+        budget.operationSignal,
+      ),
+      signal,
+    );
+    return discoveryResult(result);
+  },
+);
 
 function personalConnectionState(
   route: ResolvedModelFirstPolicyRoute,
@@ -361,162 +394,219 @@ function describeModelAvailability(params: {
   return entry;
 }
 
-async function loadDiscoveryModelPolicies(
-  tx: Tx,
-  orgId: string,
-  capabilities: Pick<
-    OrgPlanCapabilities,
-    "restrictedBuiltInModels" | "supportByok"
-  >,
-) {
-  const policies = await tx
-    .select({
-      model: orgModelPolicies.model,
-      isDefault: orgModelPolicies.isDefault,
-      defaultProviderType: orgModelPolicies.defaultProviderType,
-      credentialScope: orgModelPolicies.credentialScope,
-      modelProviderId: orgModelPolicies.modelProviderId,
-      modelProviderSurfaceId: orgModelPolicies.modelProviderSurfaceId,
-    })
-    .from(orgModelPolicies)
-    .where(
-      and(
-        eq(orgModelPolicies.orgId, orgId),
-        inArray(orgModelPolicies.model, [...ACTIVE_RUN_MODELS]),
-      ),
-    )
-    .limit(ACTIVE_RUN_MODELS.length);
-  if (policies.length === 0) {
-    throw new DiscoveryUnavailable(
-      "No active model policies are configured for this organization. Open model settings before creating a conversation.",
-    );
-  }
-  // Selection repairs defaults after plan changes. A read must not describe
-  // the pre-repair routes as if they were the configuration selection uses.
-  if (
-    shouldReplaceExistingDefaultForPlan(
-      policies.find((policy) => {
-        return policy.isDefault;
-      }),
-      capabilities,
-    )
-  ) {
-    throw new DiscoveryUnavailable(
-      "Model policies need to be synchronized with the current organization plan. Open model settings, then retry discovery.",
-    );
-  }
-  return policies;
-}
-
-export async function listMcpModels(
-  db: Db,
-  principal: Principal,
-  signal: AbortSignal,
-): Promise<McpDiscoveryResult<McpListModelsOutput>> {
-  return await discoveryRead(
-    db,
-    signal,
-    async (tx, budget): Promise<McpListModelsOutput> => {
-      const capabilities = await loadOrgPlanCapabilities(tx, principal.orgId);
-      // Match canonical pin selection: a suspended plan may retain configurable
-      // pins. Availability separately reports the current execution restriction.
-      const routeCapabilities =
-        capabilities?.status === "active"
-          ? capabilities
-          : { restrictedBuiltInModels: false, supportByok: true };
-      await budget.beforeQuery(tx);
-      const policies = await loadDiscoveryModelPolicies(
-        tx,
-        principal.orgId,
-        routeCapabilities,
-      );
-      await budget.beforeQuery(tx);
-      const [preference] = await tx
-        .select({ model: orgMembersMetadata.selectedModel })
-        .from(orgMembersMetadata)
-        .where(
-          and(
-            eq(orgMembersMetadata.orgId, principal.orgId),
-            eq(orgMembersMetadata.userId, principal.userId),
-          ),
-        )
-        .limit(1);
-      await budget.beforeQuery(tx);
-      const member = await loadMemberModelRouteContext(
-        tx,
-        principal.orgId,
-        principal.userId,
-      );
-      await budget.beforeQuery(tx);
-      const featureSwitchContext = await loadUserFeatureSwitchContext(
-        tx,
-        principal.orgId,
-        principal.userId,
-      );
-      const subscriptions = member.subscriptions;
-      budget.check();
-      const models: McpListModelsOutput["models"] = [];
-      const policiesByModel = new Map(
-        policies.map((policy) => {
-          return [policy.model, policy];
-        }),
-      );
-      for (const model of ACTIVE_RUN_MODELS) {
-        const policy = policiesByModel.get(model);
-        if (!policy) {
-          continue;
-        }
-        await budget.beforeQuery(tx);
-        const route = await resolveEffectivePolicyRoute({
-          db: tx,
-          orgId: principal.orgId,
-          policy,
-          member,
-          capabilities: routeCapabilities,
-        });
+const readMcpModelSnapshot$ = command(
+  async ({ set }, principal: Principal, signal: AbortSignal) => {
+    const db = set(writeDb$);
+    const budget = discoveryBudget(signal);
+    return await db.transaction(
+      async (tx) => {
         budget.check();
-        const entry = describeModelAvailability({
-          model,
-          defaultProviderType: policy.defaultProviderType,
-          route,
-          capabilities,
-          subscriptions,
-        });
-        if (
-          entry.availability === "available" &&
-          route &&
-          isBuiltInModelProviderType(route.modelProviderType)
-        ) {
-          await budget.beforeQuery(tx);
-          const runtime = await resolveBuiltInModelRuntimeRoute(
-            tx,
-            model,
-            featureSwitchContext,
-          );
+        await tx.execute(discoveryQueryTimeoutSql(budget.deadline));
+        const [entitlement] = await tx
+          .select({
+            planKey: orgPlanEntitlements.planKey,
+            status: orgPlanEntitlements.status,
+            baseConcurrencyLimit: orgPlanEntitlements.baseConcurrencyLimit,
+            canBuyConcurrency: orgPlanEntitlements.canBuyConcurrency,
+            canBuyCredits: orgPlanEntitlements.canBuyCredits,
+            showUsagePack: orgPlanEntitlements.showUsagePack,
+            autoRechargeAllowed: orgPlanEntitlements.autoRechargeAllowed,
+            supportByok: orgPlanEntitlements.supportByok,
+            restrictedBuiltInModels:
+              orgPlanEntitlements.restrictedBuiltInModels,
+            videoGenerationAllowed: orgPlanEntitlements.videoGenerationAllowed,
+            workflowWebhookAutomationAllowed:
+              orgPlanEntitlements.workflowWebhookTriggerAllowed,
+            audioLifetimeLimit: orgPlanEntitlements.audioLifetimeLimit,
+            audioDailyRateLimit: orgPlanEntitlements.audioDailyRateLimit,
+            audioDailyDurationSeconds:
+              orgPlanEntitlements.audioDailyDurationSeconds,
+          })
+          .from(orgPlanEntitlements)
+          .where(eq(orgPlanEntitlements.orgId, principal.orgId))
+          .limit(1);
+        budget.check();
+        const capabilities = entitlement
+          ? orgPlanCapabilitiesFromRow(entitlement, principal.orgId)
+          : null;
+        if (!entitlement) {
+          await tx.execute(discoveryQueryTimeoutSql(budget.deadline));
+          const [org] = await tx
+            .select({ id: orgMetadata.orgId })
+            .from(orgMetadata)
+            .where(eq(orgMetadata.orgId, principal.orgId))
+            .limit(1);
           budget.check();
-          if (!runtime) {
-            entry.availability = "unavailable";
-            entry.reason =
-              "The built-in model is temporarily unavailable. Retry later or select another model.";
+          if (org) {
+            throw new Error(
+              `Missing org plan entitlement for ${principal.orgId}`,
+            );
           }
         }
-        models.push(entry);
+        await tx.execute(discoveryQueryTimeoutSql(budget.deadline));
+        const policies = await tx
+          .select({
+            model: orgModelPolicies.model,
+            isDefault: orgModelPolicies.isDefault,
+            defaultProviderType: orgModelPolicies.defaultProviderType,
+            credentialScope: orgModelPolicies.credentialScope,
+            modelProviderId: orgModelPolicies.modelProviderId,
+            modelProviderSurfaceId: orgModelPolicies.modelProviderSurfaceId,
+          })
+          .from(orgModelPolicies)
+          .where(
+            and(
+              eq(orgModelPolicies.orgId, principal.orgId),
+              inArray(orgModelPolicies.model, [...ACTIVE_RUN_MODELS]),
+            ),
+          )
+          .limit(ACTIVE_RUN_MODELS.length);
+        budget.check();
+        await tx.execute(discoveryQueryTimeoutSql(budget.deadline));
+        const [preference] = await tx
+          .select({ model: orgMembersMetadata.selectedModel })
+          .from(orgMembersMetadata)
+          .where(
+            and(
+              eq(orgMembersMetadata.orgId, principal.orgId),
+              eq(orgMembersMetadata.userId, principal.userId),
+            ),
+          )
+          .limit(1);
+        budget.check();
+        return { capabilities, policies, preference };
+      },
+      { isolationLevel: "repeatable read", accessMode: "read only" },
+    );
+  },
+);
+
+const prepareMcpModelDiscovery$ = command(
+  async (
+    { set },
+    principal: Principal,
+    signal: AbortSignal,
+  ): Promise<McpListModelsOutput> => {
+    const budget = discoveryBudget(signal);
+    const { capabilities, policies, preference } = await set(
+      readMcpModelSnapshot$,
+      principal,
+      signal,
+    );
+    // Discovery never repairs a lazy policy. Sending a message owns admission.
+    const routeCapabilities =
+      capabilities?.status === "active"
+        ? capabilities
+        : { restrictedBuiltInModels: false, supportByok: true };
+    if (policies.length === 0) {
+      throw new DiscoveryUnavailable(
+        "No active model policies are configured for this organization. Open model settings before creating a conversation.",
+      );
+    }
+    if (
+      shouldReplaceExistingDefaultForPlan(
+        policies.find((policy) => {
+          return policy.isDefault;
+        }),
+        routeCapabilities,
+      )
+    ) {
+      throw new DiscoveryUnavailable(
+        "Model policies need to be synchronized with the current organization plan. Open model settings, then retry discovery.",
+      );
+    }
+    const sources = await set(
+      loadModelRouteSources$,
+      principal.orgId,
+      principal.userId,
+      policies.map((policy) => {
+        return policy.model;
+      }),
+      signal,
+    );
+    const featureSwitchContext = await set(
+      loadUserFeatureSwitchContext$,
+      principal.orgId,
+      principal.userId,
+      signal,
+    );
+    const subscriptions = sources.member.subscriptions;
+    budget.check();
+    const models: McpListModelsOutput["models"] = [];
+    const policiesByModel = new Map(
+      policies.map((policy) => {
+        return [policy.model, policy];
+      }),
+    );
+    for (const model of ACTIVE_RUN_MODELS) {
+      const policy = policiesByModel.get(model);
+      if (!policy) {
+        continue;
       }
-      const preferred = models.find((model) => {
-        return model.id === preference?.model && model.selectable;
+      const route = resolveEffectivePolicyRoute({
+        sources,
+        policy,
+        capabilities: routeCapabilities,
       });
-      const workspaceDefault = models.find((model) => {
-        return policiesByModel.get(model.id)?.isDefault && model.selectable;
+      const entry = describeModelAvailability({
+        model,
+        defaultProviderType: policy.defaultProviderType,
+        route,
+        capabilities,
+        subscriptions,
       });
-      return {
-        models,
-        defaultModel: preferred
-          ? { model: preferred.id, source: "member_default" }
-          : workspaceDefault
-            ? { model: workspaceDefault.id, source: "org_default" }
-            : { model: null, source: null },
-        admission: "checked_on_send",
-      };
-    },
-  );
-}
+      if (
+        entry.availability === "available" &&
+        route &&
+        isBuiltInModelProviderType(route.modelProviderType)
+      ) {
+        const runtime = await set(
+          resolveBuiltInModelRuntimeRoute$,
+          model,
+          featureSwitchContext,
+          signal,
+        );
+        budget.check();
+        if (!runtime) {
+          entry.availability = "unavailable";
+          entry.reason =
+            "The built-in model is temporarily unavailable. Retry later or select another model.";
+        }
+      }
+      models.push(entry);
+    }
+    const preferred = models.find((model) => {
+      return model.id === preference?.model && model.selectable;
+    });
+    const workspaceDefault = models.find((model) => {
+      return policiesByModel.get(model.id)?.isDefault && model.selectable;
+    });
+    return {
+      models,
+      defaultModel: preferred
+        ? { model: preferred.id, source: "member_default" }
+        : workspaceDefault
+          ? { model: workspaceDefault.id, source: "org_default" }
+          : { model: null, source: null },
+      admission: "checked_on_send",
+    };
+  },
+);
+
+export const listMcpModels$ = command(
+  async (
+    { set },
+    principal: Principal,
+    signal: AbortSignal,
+  ): Promise<McpDiscoveryResult<McpListModelsOutput>> => {
+    const budget = discoveryBudget(signal);
+    const result = await settle(
+      awaitWithSignal(
+        set(prepareMcpModelDiscovery$, principal, budget.operationSignal),
+        budget.operationSignal,
+      ),
+      signal,
+    );
+    return discoveryResult(result);
+  },
+);

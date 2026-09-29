@@ -125,3 +125,29 @@ callers. A scoped API core typecheck identified only the parallel owners' pendin
 callsite/export integration at the intermediate branch, which is not a combined
 HEAD pass. The main PR owns final types and behavioral pipeline verification.
 No local Vitest suite or development server was run for this change.
+
+## MCP discovery ownership
+
+`listMcpAgents$` and `listMcpModels$` now receive business inputs and a final
+`AbortSignal`; the MCP transport no longer supplies its database handle to
+these operations. The Agent preparation command obtains `writeDb$` and owns
+its direct, bounded read. Cursor signing and response-size accounting operate
+on committed ordinary rows after that transaction closes.
+
+The model snapshot command directly reads one entitlement, the active policy
+set and one member preference inside its own finite read-only transaction.
+Member/provider sources, feature-switch context and built-in route availability
+are obtained through their owning commands after that transaction commits.
+No transaction is supplied to a query-budget callback or route resolver. The
+response retains the 15-second cancellation budget and 16 KiB size limit;
+SQL in the owned discovery snapshots retains the per-query timeout. Discovery
+still refuses missing or unrepaired policy configuration rather than repairing
+it, and explicitly reports that actual admission is checked when sending.
+
+Existing MCP API tests cover visible/foreign/private Agents, signed cursor
+binding and expiry, default and member model configuration, unavailable
+credentials, plan restrictions and discovery without lazy initialization. This
+ownership change does not remove or weaken those assertions. Scoped lint and
+formatting pass. The isolated worktree's core type check currently fails only
+at other caller migrations to the new model command exports; the combined
+HEAD must pass types and behavior checks in the main PR pipeline.
