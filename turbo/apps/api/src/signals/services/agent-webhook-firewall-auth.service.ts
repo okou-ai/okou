@@ -1,3 +1,4 @@
+import { singleton } from "../../lib/singleton";
 import {
   personalSubscriptionAccountAccessCondition,
   isPersonalSubscriptionProviderType,
@@ -637,6 +638,11 @@ interface ValidatedRefreshOutput {
   readonly value: string;
 }
 
+/** A validated output whose secret ciphertext was prepared before SQL. */
+interface EncryptedRefreshOutput extends ValidatedRefreshOutput {
+  readonly encryptedValue: string | null;
+}
+
 type RefreshOutputTarget =
   | {
       readonly kind: "secret";
@@ -1225,16 +1231,12 @@ async function upsertModelProviderSecretValue(
     readonly orgId: string;
     readonly userId: string;
     readonly name: string;
-    readonly value: string;
+    readonly encryptedValue: string;
     readonly sourceId?: string;
     readonly runId?: string;
-    readonly featureSwitchContext: FeatureSwitchContext;
   },
 ): Promise<void> {
-  const encryptedValue = await encryptStoredSecretValue(
-    args.value,
-    args.featureSwitchContext,
-  );
+  const encryptedValue = args.encryptedValue;
   if (args.sourceId) {
     const [account] = await db
       .select({ id: modelProviderAccounts.id })
@@ -2235,10 +2237,8 @@ async function loadModelProviderRefreshStateRow(
   db: Db,
   args: RefreshAccessTokenArgs,
   context: RefreshTokenContext,
-  lockRow: boolean,
 ): Promise<RefreshStateRow | null> {
   if (args.sourceId) {
-    // The refresh advisory lock serializes account refreshes; no row lock.
     const rows = await db
       .select({
         authMethod: sql`NULL`.mapWith(pgNullDecoder),
@@ -2304,16 +2304,13 @@ async function loadModelProviderRefreshStateRow(
         ),
       ),
     );
-  const rows = lockRow
-    ? await query.for("update").limit(1)
-    : await query.limit(1);
+  const rows = await query.limit(1);
   return rows[0] ?? null;
 }
 
 async function loadConnectorRefreshStateRow(
   db: Db,
   args: RefreshAccessTokenArgs,
-  lockRow: boolean,
 ): Promise<RefreshStateRow | null> {
   const connectorSlug = args.accessSourceKey;
   const connectorId =
@@ -2345,27 +2342,24 @@ async function loadConnectorRefreshStateRow(
         eq(connectors.connectorSlug, connectorSlug),
       ),
     );
-  const rows = lockRow
-    ? await query.for("update").limit(1)
-    : await query.limit(1);
+  const rows = await query.limit(1);
   return rows[0] ?? null;
 }
 
+/**
+ * Reads the owner row version, then its credential inputs/outputs without a
+ * transaction. Publication compares the owner row version, so a concurrent
+ * credential change after this read makes the later CAS lose.
+ */
 async function loadRefreshState(
   db: Db,
   args: RefreshAccessTokenArgs,
   context: RefreshTokenContext,
-  options: { readonly lockRow?: boolean } = {},
 ): Promise<RefreshState | null> {
   const row =
     args.sourceType === "model-provider"
-      ? await loadModelProviderRefreshStateRow(
-          db,
-          args,
-          context,
-          options.lockRow === true,
-        )
-      : await loadConnectorRefreshStateRow(db, args, options.lockRow === true);
+      ? await loadModelProviderRefreshStateRow(db, args, context)
+      : await loadConnectorRefreshStateRow(db, args);
 
   if (!row) {
     return null;
@@ -2434,27 +2428,25 @@ async function persistRefreshOutputValues(
   args: RefreshAccessTokenArgs,
   prepared: PreparedRefreshTokenContext,
   context: RefreshTokenContext,
-  outputs: readonly ValidatedRefreshOutput[],
+  outputs: readonly EncryptedRefreshOutput[],
 ): Promise<Map<string, string>> {
   const returnedSecretValues = new Map<string, string>();
-  for (const { target, value } of outputs) {
+  for (const { target, value, encryptedValue } of outputs) {
     switch (target.kind) {
       case "secret": {
+        if (encryptedValue === null) {
+          throw new Error(`Refresh secret ${target.name} was not encrypted`);
+        }
         if (prepared.sourceType === "model-provider") {
           await upsertModelProviderSecretValue(args.db, {
             orgId: args.orgId,
             userId: context.secretUserId,
             name: target.name,
-            value,
+            encryptedValue,
             sourceId: args.sourceId,
             runId: args.runId,
-            featureSwitchContext: args.featureSwitchContext,
           });
         } else {
-          const encryptedValue = await encryptStoredSecretValue(
-            value,
-            args.featureSwitchContext,
-          );
           await upsertConnectorOwnedSecret(args.db, {
             connectorId: prepared.connectorId,
             storage: prepared.runtimeMethod.method.storage,
@@ -2491,11 +2483,28 @@ async function persistRefreshOutputValues(
   return returnedSecretValues;
 }
 
+async function encryptRefreshOutputs(
+  outputs: readonly ValidatedRefreshOutput[],
+  featureSwitchContext: FeatureSwitchContext,
+): Promise<readonly EncryptedRefreshOutput[]> {
+  const encrypted: EncryptedRefreshOutput[] = [];
+  for (const output of outputs) {
+    encrypted.push({
+      ...output,
+      encryptedValue:
+        output.target.kind === "secret"
+          ? await encryptStoredSecretValue(output.value, featureSwitchContext)
+          : null,
+    });
+  }
+  return encrypted;
+}
+
 async function markRefreshSuccess(
   args: RefreshAccessTokenArgs,
   prepared: PreparedRefreshTokenContext,
   expected: RefreshState,
-  outputs: readonly ValidatedRefreshOutput[],
+  outputs: readonly EncryptedRefreshOutput[],
   refresh: {
     readonly expiresIn?: number;
     readonly scopes?: readonly string[];
@@ -2979,7 +2988,6 @@ async function refreshLockedAccessToken(args: {
       args.refreshArgs.db,
       args.refreshArgs,
       args.prepared.context,
-      { lockRow: true },
     ),
   });
   if (!lockedState) {
@@ -3038,6 +3046,34 @@ async function refreshLockedAccessToken(args: {
     prepared: args.prepared,
     lockedState,
   });
+}
+
+/**
+ * A concurrent refresh or credential change won the owner-row CAS. Serve its
+ * current credential when usable instead of the one this request prepared.
+ */
+async function currentAfterLostRefreshPublication(
+  refreshArgs: RefreshAccessTokenArgs,
+  prepared: PreparedRefreshTokenContext,
+): Promise<RefreshAccessTokenResult> {
+  const current = currentPreparedRefreshState({
+    refreshArgs,
+    prepared,
+    state: await loadRefreshState(
+      refreshArgs.db,
+      refreshArgs,
+      prepared.context,
+    ),
+  });
+  return current &&
+    !current.needsReconnect &&
+    allRuntimeOutputsAvailable({ context: prepared.context, state: current })
+    ? currentRefreshAccessResult({
+        accessSourceKey: refreshArgs.accessSourceKey,
+        context: prepared.context,
+        state: current,
+      })
+    : sourceMissingResult();
 }
 
 async function refreshPreparedLockedAccessToken(args: {
@@ -3117,15 +3153,24 @@ async function refreshPreparedLockedAccessToken(args: {
     return refreshFailedResult("upstream_provider");
   }
 
-  const returnedSecretValues = await markRefreshSuccess(
-    refreshArgs,
-    prepared,
-    lockedState,
+  const encryptedOutputs = await encryptRefreshOutputs(
     outputValidation.outputs,
-    refreshResult.value,
+    refreshArgs.featureSwitchContext,
   );
+  const returnedSecretValues = await refreshArgs.db.transaction(async (tx) => {
+    // Outgoing unconditional credential writers still use this key; the
+    // exact owner-row CAS below is what decides this publication.
+    await lockPreparedRefreshSource(tx, refreshArgs, prepared);
+    return await markRefreshSuccess(
+      { ...refreshArgs, db: tx },
+      prepared,
+      lockedState,
+      encryptedOutputs,
+      refreshResult.value,
+    );
+  });
   if (returnedSecretValues === null) {
-    return sourceMissingResult();
+    return await currentAfterLostRefreshPublication(refreshArgs, prepared);
   }
   if (retryAttempted) {
     L.info("gmail token refresh recovered", {
@@ -3154,6 +3199,51 @@ async function refreshPreparedLockedAccessToken(args: {
   };
 }
 
+/**
+ * Same-process duplicate suppression only: a request for a credential that
+ * this API instance is already refreshing starts after that attempt settles,
+ * then observes its published result. It is not cross-instance coordination
+ * and holds no database state; concurrent refreshes on different instances
+ * remain the accepted ordinary-refresh risk.
+ */
+const sameProcessRefreshes = singleton(() => {
+  return new Map<string, Promise<unknown>>();
+});
+
+function refreshSourceKey(args: RefreshAccessTokenArgs): string {
+  return JSON.stringify([
+    args.sourceType,
+    args.orgId,
+    args.userId,
+    args.accessSourceKey,
+    args.sourceId ?? null,
+    args.metadataKey ?? null,
+  ]);
+}
+
+async function runAfterSameProcessRefresh<T>(
+  key: string,
+  refresh: () => Promise<T>,
+): Promise<T> {
+  const refreshes = sameProcessRefreshes();
+  const previous = refreshes.get(key);
+  const current = (async () => {
+    if (previous) {
+      await settleIncludingAbort(previous);
+    }
+    return await refresh();
+  })();
+  refreshes.set(key, current);
+  const settled = await settleIncludingAbort(current);
+  if (refreshes.get(key) === current) {
+    refreshes.delete(key);
+  }
+  if (!settled.ok) {
+    throw settled.error;
+  }
+  return settled.value;
+}
+
 async function refreshAccessTokenForSource(
   args: RefreshAccessTokenArgs,
 ): Promise<RefreshAccessTokenResult> {
@@ -3168,17 +3258,21 @@ async function refreshAccessTokenForSource(
     ? args.forceRefreshStartedAtMicros
     : await currentDatabaseTimestampMicros(args.db);
   const initialState = await loadRefreshState(args.db, args, prepared.context);
-  const result = await args.db.transaction(async (tx) => {
-    await lockPreparedRefreshSource(tx, args, prepared);
-    return await refreshLockedAccessToken({
-      refreshArgs: { ...args, db: tx },
-      prepared,
-      initialState,
-      requestStartedAtMicros,
-    });
-  });
-  // The reconnect projection is local metadata. Publish after the refresh
-  // transaction, never while holding the credential lifecycle locks.
+  // Ordinary refresh: provider HTTP and KMS run outside any transaction and
+  // the result publishes through an exact owner-row CAS. A rare concurrent
+  // refresh may consume a one-use provider token; that risk is accepted.
+  const result = await runAfterSameProcessRefresh(
+    refreshSourceKey(args),
+    () => {
+      return refreshLockedAccessToken({
+        refreshArgs: args,
+        prepared,
+        initialState,
+        requestStartedAtMicros,
+      });
+    },
+  );
+  // The reconnect projection is local metadata published after the refresh.
   if (
     prepared.sourceType === "model-provider" &&
     ((result.ok && result.status === "refreshed") ||

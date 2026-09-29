@@ -42,7 +42,7 @@ Forms and Calendar lifecycle acquisitions are removed. Other credential/watch co
 ### Remaining implementation work
 
 - Builtin OAuth callback, Automatic OAuth refresh and its legacy retirement store, ordinary refresh's legacy helper-owned commit path and its remaining resolver chains still propagate root database or transaction values. Automatic callback including state claim, catalog preparation and post-commit wakeup has a command-owned boundary. Other builtin/custom callback routes still use the legacy state helper; it remains only for those actual callers.
-- Model-provider firewall refresh has not been migrated to the complete final command-owned conditional protocol; it still executes provider/KMS work through the locked helper graph. Personal account activation/upsert and ordinary multi-auth/single-secret settings now own their SQL. Retained-account cleanup now uses a pure finite SQL builder; the terminal Run owner still has inherited transaction-aware callers. These remaining outer graphs are implementation work rather than an outgoing-writer gate.
+- Firewall refresh (builtin connector and model provider) now follows the ordinary refresh decision: the owner row and credential inputs are read without a transaction or row lock, provider HTTP and KMS encryption run outside SQL, and publication is one short transaction that takes the outgoing-writer compatibility key and then decides by the exact owner-row `xmin`/`updated_at` CAS. A CAS loser serves the winner's usable credential. Same-process duplicate requests start after the in-flight attempt settles (an in-memory map, no persisted or cross-instance state). Its helpers still receive a database handle; that propagation is unfinished. Personal account activation/upsert and ordinary multi-auth/single-secret settings now own their SQL. Retained-account cleanup now uses a pure finite SQL builder; the terminal Run owner still has inherited transaction-aware callers. These remaining outer graphs are implementation work rather than an outgoing-writer gate.
 - Gmail now has explicit approval for local disable, stopping renewal and remote natural expiry without account-global `users.stop`. Its remote-stop code is removed. Ensure, renewal, watch reconciliation and missing-thread initialization now use owning commands; shared credential callers remain. Gmail queue source admission now has an owning command, described below. Calendar also has explicit approval for a remote gap and best-effort candidate cleanup; authority and basic deduplication remain required.
 - Calendar ordinary lifecycle, activation/reconfiguration, reconciliation, credentials, dispatch reads and queue admission now use business-input commands. Its missing workflow-thread initialization and generic event creation are command-owned. Official publication, shared account projection and the remaining specialized creation graphs still forward handles and are unfinished implementation. The separate builtin credential key remains for the shared account protocol, not for gap-free Calendar delivery. Calendar remote-stop preparation for account deletion and principal replacement is now outside the caller transaction; unrelated credential revocation preparation in the shared graph remains unfinished.
 - Forms missing-thread creation, generic event insertion and queue model preparation now use owning commands. Shared official publication, enable publication and specialized creation retain separate inherited transaction work. Forms account-deletion watch preparation has its own command outside deletion transactions. The regular Forms watch/configuration/dispatch credential path uses owning commands. Forms, Calendar, Gmail, Meet, Notion and Stripe queue sources now use explicit business-value admission commands rather than transaction callbacks; their broader account and credential lifecycles remain separately scoped.
@@ -376,10 +376,14 @@ same stored token and a connected public account. No SQL gate or lock waiter
 constructs the interleaving. The test is committed for the combined PR pipeline;
 local verification is limited to types/lint/format under the parent owner.
 
-This completes only the transient failure writer protocol. A single-use
-`invalid_grant` loser racing a successful publisher, provider-side reuse
-revocation, the shared firewall's provider-I/O transaction and propagated
-handles are still R1 implementation work. Outgoing transient-failure writers
+This completes only the transient failure writer protocol. The shared
+firewall no longer holds a transaction across provider I/O. Under the ordinary
+refresh decision, a cross-instance concurrent refresh of a rotating token can
+still make one request receive `invalid_grant` and publish reconnect state
+before the successful request publishes; the successful request then loses its
+CAS and the user reconnects. This is the same accepted concurrent-refresh risk
+class as Airtable revocation; same-process suppression narrows it. Propagated
+handles remain R1 implementation work. Outgoing transient-failure writers
 also retain their prior timestamp behavior until the normal compatibility gate.
 
 ### Concrete mixed-writer refresh gap
@@ -498,10 +502,9 @@ write. There is no advisory lock, no atomic pre-consumption before HTTP and no
 lease, timestamp or marker coordination. The explicitly accepted risk is that a
 rare concurrent refresh can arrive after Airtable's reuse grace period, revoke
 the whole authorization, and require the user to reconnect. This closes the
-Airtable product question; it is no longer an R1 decision gap. The general
-firewall refresh command migration (provider HTTP/KMS still inside the legacy
-locked graph) remains ordinary R1 implementation work, not an Airtable-specific
-protocol.
+Airtable product question; it is no longer an R1 decision gap. The firewall
+refresh now uses this ordinary flow (provider HTTP/KMS outside SQL, short CAS
+publication); its remaining handle propagation is ordinary R1 work.
 
 ### Device authorization cancellation and credential publication
 
