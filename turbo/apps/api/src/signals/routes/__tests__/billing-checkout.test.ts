@@ -15794,6 +15794,7 @@ describe("usage pack allocation management", () => {
       clearMockNow();
     });
     const fixture = await purchaseDeferredReplaySubscription();
+    const creditsBeforeInvitation = await readDeferredReplayCredits(fixture);
     const email = `concurrent-invitation-${randomUUID()}@example.test`;
     const invitationId = `inv_${randomUUID()}`;
     const acceptedUserId = `user_${randomUUID()}`;
@@ -15819,12 +15820,9 @@ describe("usage pack allocation management", () => {
       payInvitationPurchase(purchase, invitationId),
     ]);
     const pendingCredits = await readDeferredReplayCredits(fixture);
-    expect(pendingCredits).toMatchObject({
-      hasUsagePack: true,
-      purchasedCredits: 10_000,
-      bonusCredits: 200,
-      totalCredits: 10_200,
-    });
+    // A paid but unaccepted invitation must not change any available credits.
+    // This public checkout fixture starts with a full-period owner package.
+    expect(pendingCredits).toStrictEqual(creditsBeforeInvitation);
     expect(pendingCredits.memberCredits).not.toContainEqual(
       expect.objectContaining({ memberId: acceptedUserId }),
     );
