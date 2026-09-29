@@ -65,23 +65,21 @@ export interface McpAutomaticOAuthDcrClientStore {
   >;
 }
 
-/** Owner adapters enforce registration identity, encryption and transaction locks. */
+/** Owner adapters publish prepared registrations against their existing identity. */
 export interface McpAutomaticOAuthDcrStore extends McpAutomaticOAuthDcrClientStore {
   readByIssuer(
     issuer: string,
   ): Promise<McpAutomaticOAuthDcrRegistration | null>;
-  withLock<T>(
-    operation: (store: McpAutomaticOAuthDcrStore) => Promise<T>,
-  ): Promise<T>;
   hasLinkedAccounts(registrationId: string): Promise<boolean>;
   retire(registrationId: string): Promise<void>;
-  create(
+  publish(
     registration: Omit<
       McpAutomaticOAuthDcrRegistration,
       "id" | "hasClientSecret"
     > & {
       readonly clientSecret: string | undefined;
     },
+    expectedRegistrationId: string | null,
     signal: AbortSignal,
   ): Promise<McpAutomaticOAuthDcrRegistration>;
 }
@@ -683,6 +681,7 @@ async function createDcrRegistration(
   args: {
     readonly dcrStore: McpAutomaticOAuthDcrStore;
     readonly issuer: string;
+    readonly expectedRegistrationId: string | null;
     readonly redirectUri: string;
     readonly scope: string | undefined;
     readonly metadata: AuthorizationServerMetadata;
@@ -709,7 +708,7 @@ async function createDcrRegistration(
   });
   signal.throwIfAborted();
   const times = dcrRegistrationTimes(client);
-  return await args.dcrStore.create(
+  return await args.dcrStore.publish(
     {
       issuer: args.issuer,
       clientId: client.client_id,
@@ -720,6 +719,7 @@ async function createDcrRegistration(
       issuedAt: times.issuedAt,
       expiresAt: times.expiresAt,
     },
+    args.expectedRegistrationId,
     signal,
   );
 }
@@ -761,44 +761,43 @@ async function resolveAutomaticOAuthClient(
       "MCP OAuth server requires a Custom OAuth app",
     );
   }
-  return await args.dcrStore.withLock(async (store) => {
-    const lockedExisting = await store.readByIssuer(args.issuer);
-    if (
-      lockedExisting &&
-      reusableDcrRegistration({
-        registration: lockedExisting,
-        redirectUri: args.redirectUri,
-        scope: args.scope,
-        metadata: args.metadata,
-      })
-    ) {
-      return dcrSelection(lockedExisting);
-    }
-    if (lockedExisting) {
-      const hasLinkedAccounts = await store.hasLinkedAccounts(
-        lockedExisting.id,
-      );
-      const expired =
-        lockedExisting.expiresAt !== null &&
-        lockedExisting.expiresAt <= nowDate();
-      if (hasLinkedAccounts && !expired) {
-        throw new McpAutomaticOAuthError(
-          { kind: "incompatible", reason: "registration-conflict" },
-          "Existing MCP OAuth registration is not compatible with the requested scopes",
-        );
-      }
-      await store.retire(lockedExisting.id);
-    }
-    const created = await createDcrRegistration(
-      {
-        ...args,
-        dcrStore: store,
-        clientMetadata: args.dcrClientMetadata,
-      },
-      signal,
+  if (existing) {
+    const hasLinkedAccounts = await args.dcrStore.hasLinkedAccounts(
+      existing.id,
     );
-    return dcrSelection(created);
-  });
+    const expired =
+      existing.expiresAt !== null && existing.expiresAt <= nowDate();
+    if (hasLinkedAccounts && !expired) {
+      throw new McpAutomaticOAuthError(
+        { kind: "incompatible", reason: "registration-conflict" },
+        "Existing MCP OAuth registration is not compatible with the requested scopes",
+      );
+    }
+  }
+  // Remote registration is independent preparation. The store conditionally
+  // publishes against the observed registration and returns the actual winner.
+  const published = await createDcrRegistration(
+    {
+      ...args,
+      expectedRegistrationId: existing?.id ?? null,
+      clientMetadata: args.dcrClientMetadata,
+    },
+    signal,
+  );
+  if (
+    !reusableDcrRegistration({
+      registration: published,
+      redirectUri: args.redirectUri,
+      scope: args.scope,
+      metadata: args.metadata,
+    })
+  ) {
+    throw new McpAutomaticOAuthError(
+      { kind: "incompatible", reason: "registration-conflict" },
+      "Concurrent MCP OAuth registration is not compatible with the requested scopes",
+    );
+  }
+  return dcrSelection(published);
 }
 
 export type McpAutomaticOAuthContext = {

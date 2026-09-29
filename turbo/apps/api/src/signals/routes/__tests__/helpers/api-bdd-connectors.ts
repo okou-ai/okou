@@ -398,6 +398,7 @@ interface AutomaticMcpOAuthProviderOptions {
     | "client_secret_basic"
     | "client_secret_post";
   readonly synchronizeAuthorizationServerDiscovery?: boolean;
+  readonly uniqueDcrClients?: boolean;
   readonly dcrFailureStatus?: number;
   readonly dcrFailureDescription?: string;
   readonly dcrClientIdIssuedAt?: number | null;
@@ -728,7 +729,9 @@ export function mockAutomaticMcpOAuthProvider(
       }
       return HttpResponse.json({
         ...body,
-        client_id: "automatic-dcr-client",
+        client_id: options.uniqueDcrClients
+          ? `automatic-dcr-client-${registrationBodies.length}`
+          : "automatic-dcr-client",
         ...(tokenEndpointAuthMethod === "none"
           ? {}
           : { client_secret: "automatic-dcr-secret" }),

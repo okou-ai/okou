@@ -9,9 +9,10 @@ import {
   decryptStoredSecretValue,
   encryptStoredSecretValue,
 } from "./crypto.utils";
-import type {
-  McpAutomaticOAuthDcrRegistration,
-  McpAutomaticOAuthDcrStore,
+import {
+  McpAutomaticOAuthError,
+  type McpAutomaticOAuthDcrRegistration,
+  type McpAutomaticOAuthDcrStore,
 } from "./mcp-automatic-oauth.service";
 
 export interface BuiltinConnectorAutomaticContractOwner {
@@ -136,11 +137,136 @@ async function retireRegistration(
     );
 }
 
-export function builtinConnectorAutomaticDcrStore(args: {
+interface BuiltinDcrStoreArgs {
   readonly db: Db;
   readonly owner: BuiltinConnectorAutomaticContractOwner;
-  readonly assertCurrentContract: (db: Db) => Promise<void>;
-}): McpAutomaticOAuthDcrStore {
+  readonly assertCurrentContract: () => Promise<void>;
+}
+
+async function publishBuiltinDcrRegistration(
+  args: BuiltinDcrStoreArgs,
+  value: Parameters<McpAutomaticOAuthDcrStore["publish"]>[0],
+  expectedRegistrationId: string | null,
+  signal: AbortSignal,
+): Promise<Awaited<ReturnType<McpAutomaticOAuthDcrStore["publish"]>>> {
+  const { db, owner } = args;
+  const encryptedClientSecret =
+    value.clientSecret === undefined
+      ? null
+      : await encryptStoredSecretValue(value.clientSecret);
+  signal.throwIfAborted();
+  await args.assertCurrentContract();
+  const candidate = {
+    ...owner,
+    issuer: value.issuer,
+    clientId: value.clientId,
+    encryptedClientSecret,
+    tokenEndpointAuthMethod: value.tokenEndpointAuthMethod,
+    registeredScopes: [...value.registeredScopes],
+    redirectUri: value.redirectUri,
+    issuedAt: value.issuedAt,
+    expiresAt: value.expiresAt,
+  };
+  const issuerCondition = and(
+    ownerCondition(owner),
+    eq(builtinConnectorDcrRegistrations.issuer, value.issuer),
+  );
+  return await db.transaction(async (tx) => {
+    // Outgoing Automatic OAuth writers still rely on lifecycle coordination.
+    // Remove only after those writers drain and rollback targets implement
+    // conditional publication and exact registration retirement.
+    await lockBuiltinConnectorAutomaticLifecycle(tx, owner);
+    const [current] = await tx
+      .select()
+      .from(builtinConnectorDcrRegistrations)
+      .where(issuerCondition)
+      .for("update")
+      .limit(1);
+    if (current && current.id !== expectedRegistrationId) {
+      return registration(current);
+    }
+    if (current) {
+      const bindingCondition = eq(
+        builtinConnectorAccountOauthBindings.dcrRegistrationId,
+        current.id,
+      );
+      const accountOwners = await tx
+        .selectDistinct({
+          userId: builtinConnectorAccountOauthBindings.userId,
+        })
+        .from(builtinConnectorAccountOauthBindings)
+        .where(bindingCondition)
+        .orderBy(builtinConnectorAccountOauthBindings.userId);
+      if (
+        accountOwners.length > 0 &&
+        (current.expiresAt === null || current.expiresAt > nowDate())
+      ) {
+        throw new McpAutomaticOAuthError(
+          { kind: "incompatible", reason: "registration-conflict" },
+          "Existing MCP OAuth registration acquired a linked account during preparation",
+        );
+      }
+      for (const accountOwner of accountOwners) {
+        await lockConnectorAccountTarget(tx, {
+          orgId: owner.orgId,
+          userId: accountOwner.userId,
+          target: { kind: "builtin", connectorSlug: owner.connectorSlug },
+        });
+      }
+      await tx
+        .update(connectors)
+        .set({
+          needsReconnect: true,
+          reconnectReason: "authorization_expired_or_revoked",
+          updatedAt: nowDate(),
+        })
+        .where(
+          inArray(
+            connectors.id,
+            tx
+              .select({
+                id: builtinConnectorAccountOauthBindings.connectorAccountId,
+              })
+              .from(builtinConnectorAccountOauthBindings)
+              .where(bindingCondition),
+          ),
+        );
+      await tx
+        .delete(builtinConnectorAccountOauthBindings)
+        .where(bindingCondition);
+      await tx
+        .delete(builtinConnectorDcrRegistrations)
+        .where(
+          and(
+            ownerCondition(owner),
+            eq(builtinConnectorDcrRegistrations.id, current.id),
+          ),
+        );
+    }
+    const [inserted] = await tx
+      .insert(builtinConnectorDcrRegistrations)
+      .values(candidate)
+      .onConflictDoNothing()
+      .returning();
+    const [winner] = inserted
+      ? [inserted]
+      : await tx
+          .select()
+          .from(builtinConnectorDcrRegistrations)
+          .where(issuerCondition)
+          .limit(1);
+    if (!winner) {
+      throw new Error(
+        "Failed to persist builtin MCP OAuth client registration",
+      );
+    }
+    return registration(winner);
+  });
+}
+
+export function builtinConnectorAutomaticDcrStore(
+  args: BuiltinDcrStoreArgs,
+): McpAutomaticOAuthDcrStore {
   const { db, owner } = args;
   return {
     async readByIssuer(issuer) {
@@ -178,15 +304,6 @@ export function builtinConnectorAutomaticDcrStore(args: {
             : await decryptStoredSecretValue(row.encryptedClientSecret),
       };
     },
-    async withLock(operation) {
-      return await db.transaction(async (tx) => {
-        await lockBuiltinConnectorAutomaticLifecycle(tx, owner);
-        await args.assertCurrentContract(tx);
-        return await operation(
-          builtinConnectorAutomaticDcrStore({ ...args, db: tx }),
-        );
-      });
-    },
     async hasLinkedAccounts(id) {
       const [account] = await db
         .select({ id: builtinConnectorAccountOauthBindings.connectorAccountId })
@@ -198,32 +315,13 @@ export function builtinConnectorAutomaticDcrStore(args: {
     async retire(id) {
       await retireRegistration(db, owner, id);
     },
-    async create(value, signal) {
-      const encryptedClientSecret =
-        value.clientSecret === undefined
-          ? null
-          : await encryptStoredSecretValue(value.clientSecret);
-      signal.throwIfAborted();
-      const [row] = await db
-        .insert(builtinConnectorDcrRegistrations)
-        .values({
-          ...owner,
-          issuer: value.issuer,
-          clientId: value.clientId,
-          encryptedClientSecret,
-          tokenEndpointAuthMethod: value.tokenEndpointAuthMethod,
-          registeredScopes: [...value.registeredScopes],
-          redirectUri: value.redirectUri,
-          issuedAt: value.issuedAt,
-          expiresAt: value.expiresAt,
-        })
-        .returning();
-      if (!row) {
-        throw new Error(
-          "Failed to persist builtin MCP OAuth client registration",
-        );
-      }
-      return registration(row);
+    async publish(value, expectedRegistrationId, signal) {
+      return await publishBuiltinDcrRegistration(
+        args,
+        value,
+        expectedRegistrationId,
+        signal,
+      );
     },
   };
 }
