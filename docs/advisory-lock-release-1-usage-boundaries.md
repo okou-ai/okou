@@ -72,3 +72,10 @@ The transaction-bearing preparation APIs `prepareVolumeServerSideWithDb$` and `w
 No persistent fields, generic lock service, lease, saga or new coordination table were added. The internal Model policy row-lock/blocked-transaction and manufactured-unrepaired-state tests were removed; API initialization races, stale snapshot rejection, model/preference preservation and OAuth configuration preservation remain. The provider-routing test now constructs policy state through the public API. Artificial settlement rollback injection was removed while concurrent retry, exact grants/lots/balances, allowance consumption and public receipt assertions remain.
 
 No full local Vitest suite or local development server was run. Targeted static checks and the combined PR pipeline are the verification boundary. Release 1 is not ready while the concrete current-writer protocol and ownership gaps above remain, even if the current CI run passes.
+
+Clerk connector-revocation preparation now obtains its own database for account
+selection and calls the accepted-catalog command with no database argument.
+The catalog-unavailable result still permits local teardown with a null snapshot.
+Organization/user external-cleanup dispatch receives only business identities
+and the final signal. The actual connector deletion, broader run cancellation
+and Storage helper graphs below these entry points remain implementation work.
