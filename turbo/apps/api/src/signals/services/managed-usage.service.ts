@@ -1,7 +1,13 @@
-import type { ProcessOrgUsageEventsResult } from "./credit-usage-pricing";
+import {
+  managedUsageReceiptCredits,
+  managedRunQuery,
+  managedValues,
+  receiptQuery,
+  type ManagedUsageRecordArgs,
+  type ManagedUsageResource,
+} from "./managed-usage-record";
 import { randomUUID } from "node:crypto";
 
-import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { usageEvent } from "@okouai/db/schema/usage-event";
@@ -19,16 +25,10 @@ import {
   type UsagePricingResolution,
 } from "../context/usage-pricing-resolution";
 import { writeDb$, type Db } from "../external/db";
-import type { Tx } from "../../lib/db-types";
-import {
-  processOrgUsageEvents$,
-  processOrgUsageEventsInLockedTransaction,
-} from "./credit-usage.service";
+import { processOrgUsageEvents$ } from "./credit-usage.service";
 import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import { resolveActiveRunCreditAdmission } from "./run-admission.service";
 import {
-  lockOrgCredits,
-  type PreparedUsageAllowanceRefresh,
   readUsageAllowanceAvailabilitySnapshot,
   resolveUsageAllowanceAvailability,
 } from "./usage-allowance.service";
@@ -42,25 +42,6 @@ export interface ManagedUsageErrorResponse {
       readonly code: string;
     };
   };
-}
-
-interface ManagedUsageResource {
-  readonly kind: string;
-  readonly provider: string;
-  readonly category: string;
-  readonly quantity?: number;
-}
-
-interface ManagedUsageActor {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly runId?: string;
-}
-
-export interface ManagedUsagePricingSnapshot {
-  readonly unitPrice: number;
-  readonly unitSize: number;
-  readonly creditsLimit: number;
 }
 
 function errorBody(message: string, code: string) {
@@ -113,34 +94,6 @@ export interface ManagedUsageCreditCheckArgs {
   readonly reservedCredits?: number;
   readonly enforceBalance?: boolean;
 }
-
-export interface ManagedUsageRecordArgs {
-  readonly actor: ManagedUsageActor;
-  readonly resource: ManagedUsageResource;
-  readonly label: string;
-  readonly idempotencyKey?: string;
-  readonly pricingSnapshot?: ManagedUsagePricingSnapshot;
-}
-
-export interface ManagedUsageRecordResult {
-  readonly creditsCharged: number;
-  readonly effects: ProcessOrgUsageEventsResult;
-}
-
-type ManagedUsageReceipt = Pick<
-  typeof usageEvent.$inferSelect,
-  | "orgId"
-  | "userId"
-  | "kind"
-  | "provider"
-  | "category"
-  | "quantity"
-  | "pricingUnitPrice"
-  | "pricingUnitSize"
-  | "pricingCreditsLimit"
-  | "billingError"
-  | "creditsCharged"
->;
 
 interface ManagedUsageUncoveredBalance {
   readonly requiredCredits: bigint;
@@ -322,166 +275,33 @@ export const checkManagedCredits$ = command(
   },
 );
 
-function managedUsageReceiptCredits(
-  args: ManagedUsageRecordArgs,
-  processed: ManagedUsageReceipt | undefined,
-): number {
-  const pricingSnapshot = args.pricingSnapshot ?? {
-    unitPrice: null,
-    unitSize: null,
-    creditsLimit: null,
-  };
-  if (
-    processed &&
-    (processed.orgId !== args.actor.orgId ||
-      processed.userId !== args.actor.userId ||
-      processed.kind !== args.resource.kind ||
-      processed.provider !== args.resource.provider ||
-      processed.category !== args.resource.category ||
-      processed.quantity !== (args.resource.quantity ?? 1) ||
-      processed.pricingUnitPrice !== pricingSnapshot.unitPrice ||
-      processed.pricingUnitSize !== pricingSnapshot.unitSize ||
-      processed.pricingCreditsLimit !== pricingSnapshot.creditsLimit)
-  ) {
-    throw new Error(`${args.label} usage idempotency key collision`);
-  }
-  if (!processed || processed.creditsCharged === null) {
-    throw new Error(`Failed to process ${args.label} usage event`);
-  }
-  if (processed.billingError !== null) {
-    throw new Error(
-      `Failed to bill ${args.label} usage event: ${processed.billingError}`,
-    );
-  }
-  return processed.creditsCharged;
-}
-
-interface ManagedUsageEventIdentity {
-  readonly usageEventId: string | undefined;
-  readonly idempotencyKey: string;
-}
-
-async function insertManagedUsageEvent(
-  writeDb: Db,
-  args: ManagedUsageRecordArgs,
-  signal: AbortSignal,
-): Promise<ManagedUsageEventIdentity> {
-  const [run] = args.actor.runId
-    ? await writeDb
-        .select({ id: agentRuns.id })
-        .from(agentRuns)
-        .where(
-          and(
-            eq(agentRuns.id, args.actor.runId),
-            eq(agentRuns.orgId, args.actor.orgId),
-            eq(agentRuns.userId, args.actor.userId),
-          ),
-        )
-    : [];
-  signal.throwIfAborted();
-
-  const idempotencyKey = args.idempotencyKey ?? randomUUID();
-  const [inserted] = await writeDb
-    .insert(usageEvent)
-    .values({
-      runId: run?.id ?? null,
-      // The live lookup may lose a deleted run; retain the supplied identity
-      // without changing this slice's existing settlement path.
-      billingRunId: args.actor.runId,
-      billingContext: args.actor.runId ? "missing_run" : "runless",
-      idempotencyKey,
-      orgId: args.actor.orgId,
-      userId: args.actor.userId,
-      kind: args.resource.kind,
-      provider: args.resource.provider,
-      category: args.resource.category,
-      quantity: args.resource.quantity ?? 1,
-      pricingUnitPrice: args.pricingSnapshot?.unitPrice,
-      pricingUnitSize: args.pricingSnapshot?.unitSize,
-      pricingCreditsLimit: args.pricingSnapshot?.creditsLimit,
-    })
-    .onConflictDoNothing({ target: usageEvent.idempotencyKey })
-    .returning({ id: usageEvent.id });
-  signal.throwIfAborted();
-  return { usageEventId: inserted?.id, idempotencyKey };
-}
-
-async function readManagedUsageReceipt(
-  writeDb: Db,
-  identity: ManagedUsageEventIdentity,
-  signal: AbortSignal,
-): Promise<ManagedUsageReceipt | undefined> {
-  const [processed] = await writeDb
-    .select({
-      orgId: usageEvent.orgId,
-      userId: usageEvent.userId,
-      kind: usageEvent.kind,
-      provider: usageEvent.provider,
-      category: usageEvent.category,
-      quantity: usageEvent.quantity,
-      pricingUnitPrice: usageEvent.pricingUnitPrice,
-      pricingUnitSize: usageEvent.pricingUnitSize,
-      pricingCreditsLimit: usageEvent.pricingCreditsLimit,
-      billingError: usageEvent.billingError,
-      creditsCharged: usageEvent.creditsCharged,
-    })
-    .from(usageEvent)
-    .where(
-      identity.usageEventId
-        ? eq(usageEvent.id, identity.usageEventId)
-        : eq(usageEvent.idempotencyKey, identity.idempotencyKey),
-    );
-  signal.throwIfAborted();
-  return processed;
-}
-
-// The caller holds shared compaction protection before locking its job row.
-export async function recordManagedUsageInCompactionLockedTransaction(
-  tx: Tx,
-  args: ManagedUsageRecordArgs & {
-    readonly allowanceRefresh?: PreparedUsageAllowanceRefresh;
-  },
-  pricingResolution: UsagePricingResolution,
-  signal: AbortSignal,
-): Promise<ManagedUsageRecordResult> {
-  await lockOrgCredits(tx, args.actor.orgId, "settlement");
-  signal.throwIfAborted();
-  const identity = await insertManagedUsageEvent(tx, args, signal);
-  signal.throwIfAborted();
-  const effects = await processOrgUsageEventsInLockedTransaction(
-    tx,
-    args.actor.orgId,
-    pricingResolution,
-    {
-      startedAt: performance.now(),
-      // Settlement timing excludes earlier waits in this larger transaction.
-      lockWaitMs: 0,
-      orgLockWaitMs: 0,
-      refresh: args.allowanceRefresh,
-    },
-    signal,
-  );
-  signal.throwIfAborted();
-  const processed = await readManagedUsageReceipt(tx, identity, signal);
-  signal.throwIfAborted();
-  return {
-    creditsCharged: managedUsageReceiptCredits(args, processed),
-    effects,
-  };
-}
-
 export const recordManagedUsage$ = command(
   async (
     { set },
     args: ManagedUsageRecordArgs,
     signal: AbortSignal,
   ): Promise<number> => {
-    const writeDb = set(writeDb$);
-    const identity = await insertManagedUsageEvent(writeDb, args, signal);
+    const db = set(writeDb$);
+    const identity = {
+      ...args,
+      idempotencyKey: args.idempotencyKey ?? randomUUID(),
+    };
+    await db.transaction(async (tx) => {
+      const [run] = args.actor.runId
+        ? await tx.select().from(managedRunQuery(args))
+        : [];
+      await tx
+        .insert(usageEvent)
+        .values(managedValues(identity, run))
+        .onConflictDoNothing({ target: usageEvent.idempotencyKey });
+      signal.throwIfAborted();
+    });
     signal.throwIfAborted();
     await set(processOrgUsageEvents$, args.actor.orgId, signal);
     signal.throwIfAborted();
-    const processed = await readManagedUsageReceipt(writeDb, identity, signal);
+    const [processed] = await db
+      .select()
+      .from(receiptQuery(identity.idempotencyKey));
     signal.throwIfAborted();
     return managedUsageReceiptCredits(args, processed);
   },

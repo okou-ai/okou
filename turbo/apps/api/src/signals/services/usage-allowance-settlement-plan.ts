@@ -60,6 +60,11 @@ type AllowanceWindow = Pick<
   typeof orgUsageAllowanceWindows.$inferSelect,
   "id" | "kind" | "startsAt" | "expiresAt" | "unitLimit" | "consumedUnits"
 >;
+interface NewAllowanceWindow extends AllowanceWindow {
+  readonly orgId: string;
+  readonly entitlementId: string;
+  readonly createdByRunId: string | null;
+}
 interface Candidate {
   readonly usageEventId: string;
   readonly runId: string | null;
@@ -71,7 +76,7 @@ export interface AllowanceSettlementPlan {
   readonly applied: Map<string, number>;
 }
 
-export function allowanceAllocationQuery(events: readonly PricedUsageEvent[]) {
+export function allocationQuery(events: readonly PricedUsageEvent[]) {
   return new QueryBuilder()
     .select({
       usageEventId: usageAllowanceAllocations.usageEventId,
@@ -95,7 +100,7 @@ export function allowanceAllocationQuery(events: readonly PricedUsageEvent[]) {
 
 // Keep the existing live-Run anchor fallback until the complete attribution
 // inventory proves pending_anchor_gaps: 0; neither age nor this refactor does.
-export function allowanceAnchorQuery(
+export function anchorQuery(
   orgId: string,
   events: readonly PricedUsageEvent[],
 ) {
@@ -157,10 +162,7 @@ export function planAllowanceCandidates(
   };
 }
 
-export function allowanceWindowsQuery(
-  orgId: string,
-  plan: AllowanceSettlementPlan,
-) {
+export function windowQuery(orgId: string, plan: AllowanceSettlementPlan) {
   const times = plan.candidates.map((candidate) => {
     return candidate.at.getTime();
   });
@@ -303,7 +305,7 @@ export function planNewAllowanceWindows(
   const windows = existing.map((window) => {
     return { ...window };
   });
-  const inserted: (typeof orgUsageAllowanceWindows.$inferInsert)[] = [];
+  const inserted: NewAllowanceWindow[] = [];
   if (entitlement) {
     const candidates = [...plan.candidates].sort((left, right) => {
       return left.at.getTime() - right.at.getTime();
@@ -412,7 +414,7 @@ export function allowanceConsumptionSql(
     WHERE ${orgUsageAllowanceWindows.id} = consumption.id`;
 }
 
-export function allowanceEntitlementQuery(orgId: string) {
+export function entitlementQuery(orgId: string) {
   return new QueryBuilder()
     .select(allowanceEntitlementSelection())
     .from(orgUsageAllowanceEntitlements)
@@ -421,14 +423,17 @@ export function allowanceEntitlementQuery(orgId: string) {
     .as("settlement_entitlement");
 }
 
-export function planAllowanceWrites(args: {
-  readonly orgId: string;
-  readonly plan: AllowanceSettlementPlan;
-  readonly windows: readonly AllowanceWindow[];
-  readonly entitlement: AllowanceEntitlement | undefined;
-  readonly refresh: PreparedUsageAllowanceRefresh | undefined;
-  readonly at: Date;
-}) {
+export function planAllowanceWrites(
+  scope: {
+    readonly orgId: string;
+    readonly at: Date;
+    readonly refresh: PreparedUsageAllowanceRefresh | undefined;
+  },
+  plan: AllowanceSettlementPlan,
+  windows: readonly AllowanceWindow[],
+  entitlement: AllowanceEntitlement | undefined,
+) {
+  const args = { ...scope, plan, windows, entitlement };
   const current = args.entitlement;
   const active =
     current &&
@@ -457,9 +462,101 @@ export function planAllowanceWrites(args: {
     args.plan,
     issued.windows,
   );
-  return {
-    ...consumed,
-    inserted: issued.inserted,
-    entitlementUpdate: prepared.update,
-  };
+  const refreshSql =
+    prepared.update && current
+      ? [
+          sql`UPDATE ${orgUsageAllowanceEntitlements}
+    SET status = ${prepared.update.status}, expires_at = ${prepared.update.expiresAt.toISOString()}::timestamp,
+      updated_at = ${args.at.toISOString()}::timestamp WHERE ${orgUsageAllowanceEntitlements.id} = ${current.id}`,
+        ]
+      : [];
+  // A fixed, finite SQL batch. The caller executes these statements directly
+  // inside its transaction; this planner never receives a database handle.
+  const mutations = [
+    ...refreshSql,
+    insertWindowsSql(issued.inserted),
+    allowanceConsumptionSql(consumed.changes, args.at),
+    insertAllocationsSql(args.orgId, consumed.allocations),
+  ];
+  return { applied: consumed.applied, mutations };
+}
+
+function insertWindowsSql(rows: readonly NewAllowanceWindow[]) {
+  return sql`INSERT INTO ${orgUsageAllowanceWindows} (id, org_id, entitlement_id, kind, starts_at, expires_at, unit_limit, consumed_units, created_by_run_id)
+    SELECT id, org_id, entitlement_id, kind, starts_at, expires_at, unit_limit, 0, run_id
+    FROM unnest(${sql.param(
+      rows.map((row) => {
+        return row.id;
+      }),
+    )}::uuid[],
+      ${sql.param(
+        rows.map((row) => {
+          return row.orgId;
+        }),
+      )}::text[],
+      ${sql.param(
+        rows.map((row) => {
+          return row.entitlementId;
+        }),
+      )}::uuid[],
+      ${sql.param(
+        rows.map((row) => {
+          return row.kind;
+        }),
+      )}::varchar[],
+      ${sql.param(
+        rows.map((row) => {
+          return row.startsAt.toISOString();
+        }),
+      )}::timestamp[],
+      ${sql.param(
+        rows.map((row) => {
+          return row.expiresAt.toISOString();
+        }),
+      )}::timestamp[],
+      ${sql.param(
+        rows.map((row) => {
+          return row.unitLimit;
+        }),
+      )}::bigint[],
+      ${sql.param(
+        rows.map((row) => {
+          return row.createdByRunId;
+        }),
+      )}::uuid[])
+    AS issued(id, org_id, entitlement_id, kind, starts_at, expires_at, unit_limit, run_id)`;
+}
+
+function insertAllocationsSql(
+  orgId: string,
+  rows: readonly (typeof usageAllowanceAllocations.$inferInsert)[],
+) {
+  return sql`INSERT INTO ${usageAllowanceAllocations} (usage_event_id, org_id, run_id, short_window_id, weekly_window_id, units_applied)
+    SELECT usage_id, ${orgId}, run_id, short_id, weekly_id, units
+    FROM unnest(${sql.param(
+      rows.map((row) => {
+        return row.usageEventId;
+      }),
+    )}::uuid[],
+      ${sql.param(
+        rows.map((row) => {
+          return row.runId ?? null;
+        }),
+      )}::uuid[],
+      ${sql.param(
+        rows.map((row) => {
+          return row.shortWindowId;
+        }),
+      )}::uuid[],
+      ${sql.param(
+        rows.map((row) => {
+          return row.weeklyWindowId;
+        }),
+      )}::uuid[],
+      ${sql.param(
+        rows.map((row) => {
+          return row.unitsApplied;
+        }),
+      )}::bigint[])
+    AS allocations(usage_id, run_id, short_id, weekly_id, units)`;
 }

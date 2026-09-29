@@ -1,15 +1,22 @@
-import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
+import { socialDataJobs } from "@okouai/db/schema/social-data-job";
 import {
-  orgUsageAllowanceEntitlements,
-  orgUsageAllowanceWindows,
-  usageAllowanceAllocations,
-} from "@okouai/db/schema/org-usage-allowance";
+  managedRunQuery,
+  managedValues,
+  receiptQuery,
+} from "./managed-usage-record";
+import {
+  socialJobQuery,
+  socialClaimUnavailable,
+  socialUsageArgs,
+  socialWhere,
+  socialValues,
+  type SocialSettlementClaim,
+} from "./social-data-settlement-plan";
+import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
+import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { usagePricing } from "@okouai/db/schema/usage-pricing";
 import { command } from "ccstate";
-import { eq } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import { usagePricingResolution$ } from "../context/usage-pricing-resolution";
@@ -25,97 +32,89 @@ import {
   expiryLotsQuery,
   planExpiryLotDeductions,
   expiryLotDeductionsSql,
-  settlementDebitValues,
-  settlementMetadataQuery,
+  orgDebitPlan,
+  walletQuery,
   completeSettlementReceipt,
   settlementDefaultPlan,
   settlementReceipt,
-  pendingUsageRunParentsQuery,
+  pendingParentsQuery,
 } from "./credit-usage-settlement-plan";
 import {
-  allowanceEntitlementQuery,
-  allowanceAllocationQuery,
-  allowanceAnchorQuery,
+  entitlementQuery,
+  allocationQuery,
+  anchorQuery,
   planAllowanceCandidates,
-  allowanceWindowsQuery,
+  windowQuery,
   planAllowanceWrites,
-  allowanceConsumptionSql,
 } from "./usage-allowance-settlement-plan";
 import { usageEventCompactionLockSql } from "./usage-event-compaction-lock.service";
 import {
   orgCreditCompatibilityLockSql,
-  prepareUsageAllowanceRefresh$,
+  type PreparedUsageAllowanceRefresh,
 } from "./usage-allowance.service";
+
+interface UsageSettlementArgs {
+  readonly orgId: string;
+  readonly refresh?: PreparedUsageAllowanceRefresh;
+  readonly social?: SocialSettlementClaim;
+}
 
 /** All financial rows commit together; only plain values leave this command. */
 export const settleOrgUsage$ = command(
-  async ({ get, set }, orgId: string, signal: AbortSignal) => {
+  async ({ get, set }, args: UsageSettlementArgs, signal: AbortSignal) => {
+    const { orgId, refresh } = args;
     const db = set(writeDb$);
     const resolution = get(usagePricingResolution$);
-    const refresh = await set(
-      prepareUsageAllowanceRefresh$,
-      { orgId, requirePendingUsage: true },
-      signal,
-    );
     const startedAt = performance.now();
     const work = { ...initialSettlementObservation() };
     const result = await db.transaction(async (tx) => {
       const at = nowDate();
       await tx.execute(usageEventCompactionLockSql("shared"));
       work.lockWaitMs = Math.round(performance.now() - startedAt);
+      const [job] = args.social
+        ? await tx.select().from(socialJobQuery(orgId, args.social))
+        : [];
+      if (socialClaimUnavailable(args.social, job)) {
+        return null;
+      }
+      const managed = socialUsageArgs(job);
       await tx.execute(orgCreditCompatibilityLockSql(orgId));
-      const [metadata] = await tx.select().from(settlementMetadataQuery(orgId));
-      const [entitlement] = await tx
-        .select()
-        .from(allowanceEntitlementQuery(orgId));
+      const [run] = managed
+        ? await tx.select().from(managedRunQuery(managed))
+        : [];
+      if (managed) {
+        await tx
+          .insert(usageEvent)
+          .values(managedValues(managed, run))
+          .onConflictDoNothing({ target: usageEvent.idempotencyKey });
+      }
+      const [wallet] = await tx.select().from(walletQuery(orgId));
+      const [entitlement] = await tx.select().from(entitlementQuery(orgId));
       work.orgLockWaitMs =
         Math.round(performance.now() - startedAt) - work.lockWaitMs;
       // Parent ownership precedes usage and its allocation FK rows, matching
       // deletion and compaction. It is compatible with Run status updates.
-      const parents = await tx
-        .select()
-        .from(pendingUsageRunParentsQuery(orgId));
-      const events = await tx
-        .update(usageEvent)
-        .set({ status: "processed", creditsCharged: 0, processedAt: at })
-        .where(pendingUsageClaimCondition(orgId, parents))
-        .returning();
+      const parents = await tx.select().from(pendingParentsQuery(orgId));
+      const events =
+        !job || managed
+          ? await tx
+              .update(usageEvent)
+              .set({ status: "processed", creditsCharged: 0, processedAt: at })
+              .where(pendingUsageClaimCondition(orgId, parents))
+              .returning()
+          : [];
       work.pendingEvents = events.length;
       const pricing = events.length ? await tx.select().from(usagePricing) : [];
       work.pricingRows = pricing.length;
       const priced = priceUsageEvents(events, pricing, orgId, resolution);
-      const allocations = await tx
-        .select()
-        .from(allowanceAllocationQuery(priced));
-      const anchors = await tx
-        .select()
-        .from(allowanceAnchorQuery(orgId, priced));
+      const allocations = await tx.select().from(allocationQuery(priced));
+      const anchors = await tx.select().from(anchorQuery(orgId, priced));
       const plan = planAllowanceCandidates(priced, allocations, anchors);
-      const windows = await tx
-        .select()
-        .from(allowanceWindowsQuery(orgId, plan));
-      const allowance = planAllowanceWrites({
-        orgId,
-        plan,
-        windows,
-        entitlement,
-        refresh,
-        at,
-      });
-      if (allowance.entitlementUpdate && entitlement) {
-        await tx
-          .update(orgUsageAllowanceEntitlements)
-          .set(allowance.entitlementUpdate)
-          .where(eq(orgUsageAllowanceEntitlements.id, entitlement.id));
-      }
-      if (allowance.inserted.length) {
-        await tx.insert(orgUsageAllowanceWindows).values(allowance.inserted);
-      }
-      await tx.execute(allowanceConsumptionSql(allowance.changes, at));
-      if (allowance.allocations.length) {
-        await tx
-          .insert(usageAllowanceAllocations)
-          .values(allowance.allocations);
+      const windows = await tx.select().from(windowQuery(orgId, plan));
+      const scope = { orgId, refresh, at };
+      const allowance = planAllowanceWrites(scope, plan, windows, entitlement);
+      for (const mutation of allowance.mutations) {
+        await tx.execute(mutation);
       }
       const charges = planUsageCharges(priced, allowance.applied);
       const values = settledEventValues(charges, at);
@@ -139,18 +138,18 @@ export const settleOrgUsage$ = command(
       await tx.execute(expiryLotDeductionsSql(expiry.updates));
       work.expiredRows = expiry.expiredRows;
       work.expiryRows = expiry.expiryRows;
-      let afterCredits = metadata?.credits ?? 0;
+      let afterCredits = wallet?.credits ?? 0;
       if (deduction.sharedCredits > 0) {
-        await tx
-          .insert(orgMetadataCanonicalWrites)
-          .values({ orgId, credits: 0 })
-          .onConflictDoNothing();
+        const debit = orgDebitPlan(
+          orgId,
+          deduction.sharedCredits,
+          expiry.expired,
+          at,
+        );
         const [debited] = await tx
-          .update(orgMetadata)
-          .set(
-            settlementDebitValues(deduction.sharedCredits, expiry.expired, at),
-          )
-          .where(eq(orgMetadata.orgId, orgId))
+          .insert(orgMetadataCanonicalWrites)
+          .values(debit.values)
+          .onConflictDoUpdate(debit.conflict)
           .returning();
         if (!debited) {
           throw new Error("Organization debit returned no metadata row");
@@ -164,18 +163,27 @@ export const settleOrgUsage$ = command(
         }
         afterCredits = debited.credits;
       }
+      if (args.social && job) {
+        const [receipt] = managed
+          ? await tx.select().from(receiptQuery(job.usageIdempotencyKey))
+          : [];
+        await tx
+          .update(socialDataJobs)
+          .set(socialValues(managed, receipt, at))
+          .where(socialWhere(args.social));
+      }
       signal.throwIfAborted();
       return settlementReceipt({
         orgId,
         events: priced,
         sharedCredits: deduction.sharedCredits,
-        beforeCredits: metadata?.credits ?? 0,
+        beforeCredits: wallet?.credits ?? 0,
         afterCredits,
         expired: expiry.expired,
         work,
       });
     });
     signal.throwIfAborted();
-    return completeSettlementReceipt(result, startedAt);
+    return result ? completeSettlementReceipt(result, startedAt) : null;
   },
 );

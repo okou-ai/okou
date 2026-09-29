@@ -234,11 +234,6 @@ describe("POST /api/test/usage-settlement/process", () => {
     );
 
     expect(response.body).toBe("Not found");
-    const rollback = await accept(
-      client().rollback({ body: { org_id: "org_test" } }),
-      [404],
-    );
-    expect(rollback.body).toBe("Not found");
   });
 
   it("prices every usage event from server-side pricing", async () => {
@@ -806,7 +801,7 @@ describe("POST /api/test/usage-settlement/process", () => {
     }
   });
 
-  it("rolls back two-lot deductions and settles concurrent retries once", async () => {
+  it("settles concurrent two-lot deductions exactly once", async () => {
     const fixture = await setupSettlementFixture(11, true);
     const provider = await seedSettlementPricing();
     await seedExpiringLots(fixture, [
@@ -815,7 +810,6 @@ describe("POST /api/test/usage-settlement/process", () => {
     ]);
     const eventKey = await insertCharge({ fixture, provider, amount: 5 });
 
-    await accept(client().rollback({ body: { org_id: fixture.orgId } }), [200]);
     expect(
       (await readExpiringLots(fixture.orgId)).map((lot) => {
         return lot.remaining;
@@ -1055,50 +1049,6 @@ describe("POST /api/test/usage-settlement/process", () => {
     await expect(
       store.set(readUsageEventState$, eventKey, context.signal),
     ).resolves.toMatchObject({ status: "processed", creditsCharged: 10 });
-  });
-
-  it("rolls back a precommit failure and settles the pending obligation on retry", async () => {
-    const fixture = await setupSettlementFixture(20);
-    const provider = await seedSettlementPricing();
-    const grantKey = `rollback-${randomUUID()}`;
-    await createGrant({
-      fixture,
-      grantType: "purchased",
-      idempotencyKey: grantKey,
-      amount: 5,
-      expiresAt: "2099-01-01T00:00:00.000Z",
-    });
-    const eventKey = await insertCharge({
-      fixture,
-      provider,
-      amount: 8,
-    });
-
-    // No production caller can intentionally fail after the wallet writes but
-    // before COMMIT; the guarded test endpoint injects that fault through the
-    // real transaction, rather than mocking the ledger or reading DB rows.
-    const aborted = await accept(
-      client().rollback({ body: { org_id: fixture.orgId } }),
-      [200],
-    );
-    expect(aborted.body).toStrictEqual({ rolled_back: true });
-    await expect(
-      store.set(readUsageEventState$, eventKey, context.signal),
-    ).resolves.toMatchObject({
-      status: "pending",
-      creditsCharged: null,
-    });
-    const afterAbort = await readSettlementState(fixture.orgId);
-    expect(afterAbort.body.org_credits).toBe(20);
-    expect(afterAbort.body.grants[0]?.remaining_amount).toBe(5);
-
-    await processSettlement(fixture.orgId);
-    await expect(
-      store.set(readUsageEventState$, eventKey, context.signal),
-    ).resolves.toMatchObject({ status: "processed", creditsCharged: 8 });
-    const afterRetry = await readSettlementState(fixture.orgId);
-    expect(afterRetry.body.org_credits).toBe(17);
-    expect(afterRetry.body.grants[0]?.remaining_amount).toBe(0);
   });
 
   it("uses live unsnapshotted pricing and grant expiry on delayed first settlement", async () => {

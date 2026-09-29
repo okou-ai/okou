@@ -1,3 +1,4 @@
+import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
@@ -311,7 +312,7 @@ export function settlementReceipt(args: {
   };
 }
 
-export function pendingUsageRunParentsQuery(orgId: string) {
+export function pendingParentsQuery(orgId: string) {
   const builder = new QueryBuilder();
   return builder
     .select({ id: agentRuns.id })
@@ -338,7 +339,7 @@ export function pendingUsageRunParentsQuery(orgId: string) {
     .as("settlement_run_parents");
 }
 
-export function settlementMetadataQuery(orgId: string) {
+export function walletQuery(orgId: string) {
   return new QueryBuilder()
     .select({ orgId: orgMetadata.orgId, credits: orgMetadata.credits })
     .from(orgMetadata)
@@ -387,4 +388,19 @@ export function pendingUsageClaimCondition(
       ),
     ),
   );
+}
+
+export function orgDebitPlan(
+  orgId: string,
+  amount: number,
+  expired: number,
+  at: Date,
+) {
+  return {
+    values: { orgId, credits: -amount },
+    conflict: {
+      target: orgMetadataCanonicalWrites.orgId,
+      set: settlementDebitValues(amount, expired, at),
+    },
+  };
 }
