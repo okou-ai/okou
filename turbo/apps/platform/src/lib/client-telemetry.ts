@@ -345,7 +345,6 @@ export function recordClientAuthFailure(request: {
         _time: new Date(timestamp).toISOString(),
         level: "info",
         source: "client",
-        message: "App API authentication failed",
         fields: {
           type: "temporary_auth_failure",
           runtime: runtimeName(),
