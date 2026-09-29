@@ -106,12 +106,11 @@ function ComposerModelPanelBody({
     configurable && isCodexFastModeModel(selectedPolicy.model);
   return (
     <>
-      <div className="flex h-7 shrink-0 items-center px-2 text-xs text-muted-foreground">
-        {chatModelsLabel}
-      </div>
       {/*
-       * Only the model list scrolls; the heading above and the effort rows
-       * below stay put. The list shrinks before the popover outgrows
+       * Only the model list scrolls; the effort rows below stay put. The list
+       * needs no visible heading: the trigger already names the model, and the
+       * radio group and popover carry the "Chat models" label for assistive
+       * tech. The list shrinks before the popover outgrows
        * `--available-height`, and `-mr-1` lands the overlay track on the
        * popover's own edge instead of over the rows, the way shadcn's Base UI
        * Scroll Area places it.
