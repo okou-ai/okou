@@ -175,7 +175,7 @@ export function windowQuery(orgId: string, plan: AllowanceSettlementPlan) {
       consumedUnits: orgUsageAllowanceWindows.consumedUnits,
     })
     .from(orgUsageAllowanceWindows)
-    .where(inArray(orgUsageAllowanceWindows.id, selected))
+    .where(sql`${orgUsageAllowanceWindows.id} IN (${selected})`)
     .orderBy(
       sql`CASE WHEN ${orgUsageAllowanceWindows.kind} = 'short' THEN 0 ELSE 1 END`,
       asc(orgUsageAllowanceWindows.id),
