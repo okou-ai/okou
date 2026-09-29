@@ -8375,7 +8375,7 @@ describe("Official Workflow Run admission", () => {
             context,
             webhookAutomation.id,
           );
-          expect(webhookRun?.runId).toEqual(expect.any(String));
+          expect(webhookRun?.runId).toStrictEqual(expect.any(String));
           if (!webhookRun) {
             throw new Error("Expected Official webhook Automation Run");
           }
