@@ -1,7 +1,20 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { command } from "ccstate";
-import { and, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
+import {
+  and,
+  eq,
+  exists,
+  getTableColumns,
+  inArray,
+  isNotNull,
+  isNull,
+  or,
+  sql,
+} from "drizzle-orm";
 import { z } from "zod";
+import { connectors } from "@okouai/db/schema/connector";
+import { secrets } from "@okouai/db/schema/secret";
+import { variables } from "@okouai/db/schema/variable";
 import {
   googleCalendarEventCancelledEventConfigSchema,
   googleCalendarEventCreatedEventConfigSchema,
@@ -20,6 +33,7 @@ import {
 } from "@okouai/db/schema/workflow";
 import { apiBackendUrl } from "../../lib/api-backend-url";
 import type { Tx } from "../../lib/db-types";
+import { pgTextDecoder } from "../../lib/db-structured-result";
 import { logger } from "../../lib/log";
 import { testOverride } from "../../lib/singleton";
 import { webUrl } from "../../lib/web-url";
@@ -32,7 +46,7 @@ import { loadConnectorRuntimeSnapshot } from "./connector-catalog-runtime.servic
 import {
   builtinConnectorCredentialRuntimeValueRef,
   loadBuiltinConnectorCredentialConnection,
-  loadBuiltinConnectorCredentialValues,
+  type BuiltinConnectorCredentialConnection,
   refreshBuiltinConnectorCredentialAccess,
 } from "./builtin-connector-credential-runtime.service";
 import {
@@ -52,6 +66,12 @@ import {
   reprojectGoogleCalendarAutomationsForOwner,
 } from "./google-calendar-automation-account.service";
 
+import {
+  builtinConnectorCredentialSecretReadCondition,
+  builtinConnectorCredentialVariableReadCondition,
+} from "./builtin-connector-credential-access.service";
+import { decryptStoredSecretValue } from "./crypto.utils";
+
 const log = logger("api:google-calendar-automation-event");
 
 const GOOGLE_CALENDAR_ACCESS_TOKEN_ENVIRONMENT_NAME = "GOOGLE_CALENDAR_TOKEN";
@@ -66,6 +86,14 @@ interface GoogleCalendarAccess {
   readonly connectorId: string;
   readonly emailAddress: string | null;
   readonly accessToken: string;
+  readonly credential: GoogleCalendarCredentialObservation;
+}
+
+interface GoogleCalendarCredentialObservation {
+  readonly connection: BuiltinConnectorCredentialConnection;
+  readonly kind: "secret" | "variable";
+  readonly name: string;
+  readonly storedValue: string;
 }
 
 type GoogleCalendarAccessResult =
@@ -177,6 +205,9 @@ const calendarEventsListResponseSchema = z.object({
 type GoogleCalendarEvent = z.infer<typeof calendarEventSchema>;
 type GoogleCalendarWatchStateRow =
   typeof googleCalendarWatchStates.$inferSelect;
+type ObservedGoogleCalendarWatchState = GoogleCalendarWatchStateRow & {
+  readonly observedState: string;
+};
 type GoogleCalendarEventSnapshotRow =
   typeof googleCalendarEventSnapshots.$inferSelect;
 type GoogleCalendarChangeType = "created" | "updated" | "cancelled";
@@ -365,6 +396,103 @@ export async function normalizeGoogleCalendarIdForConnector(
   );
 }
 
+async function loadGoogleCalendarCredentialObservation(args: {
+  readonly db: Db;
+  readonly connection: BuiltinConnectorCredentialConnection;
+  readonly valueRef: string;
+}): Promise<GoogleCalendarCredentialObservation | null> {
+  const { connection } = args;
+  const currentState = eq(
+    sql`${connectors.updatedAt}::text`,
+    connection.stateRevision,
+  );
+  if (args.valueRef.startsWith("$secrets.")) {
+    const name = args.valueRef.slice("$secrets.".length);
+    const [row] = await args.db
+      .select({ storedValue: secrets.encryptedValue })
+      .from(secrets)
+      .innerJoin(connectors, eq(connectors.id, secrets.connectorId))
+      .where(
+        and(
+          currentState,
+          builtinConnectorCredentialSecretReadCondition({
+            db: args.db,
+            groups: [{ access: connection.access, names: [name] }],
+          }),
+        ),
+      )
+      .limit(1);
+    return row ? { ...row, connection, kind: "secret", name } : null;
+  }
+  if (args.valueRef.startsWith("$vars.")) {
+    const name = args.valueRef.slice("$vars.".length);
+    const [row] = await args.db
+      .select({ storedValue: variables.value })
+      .from(variables)
+      .innerJoin(connectors, eq(connectors.id, variables.connectorId))
+      .where(
+        and(
+          currentState,
+          builtinConnectorCredentialVariableReadCondition({
+            db: args.db,
+            groups: [{ access: connection.access, names: [name] }],
+          }),
+        ),
+      )
+      .limit(1);
+    return row ? { ...row, connection, kind: "variable", name } : null;
+  }
+  throw new Error("Invalid Google Calendar credential reference");
+}
+
+function googleCalendarCredentialCondition(
+  db: Db,
+  access: GoogleCalendarAccess,
+) {
+  const { connection, kind, name, storedValue } = access.credential;
+  const credential =
+    kind === "secret"
+      ? exists(
+          db
+            .select({ id: secrets.id })
+            .from(secrets)
+            .where(
+              and(
+                eq(secrets.connectorId, connection.connectorId),
+                eq(secrets.name, name),
+                eq(secrets.encryptedValue, storedValue),
+                eq(secrets.orgId, connection.access.orgId),
+                eq(secrets.userId, connection.access.userId),
+              ),
+            ),
+        )
+      : exists(
+          db
+            .select({ id: variables.id })
+            .from(variables)
+            .where(
+              and(
+                eq(variables.connectorId, connection.connectorId),
+                eq(variables.name, name),
+                eq(variables.value, storedValue),
+                eq(variables.orgId, connection.access.orgId),
+                eq(variables.userId, connection.access.userId),
+              ),
+            ),
+        );
+  return and(
+    eq(connectors.id, connection.connectorId),
+    eq(connectors.orgId, connection.access.orgId),
+    eq(connectors.userId, connection.access.userId),
+    eq(connectors.connectorSlug, "google-calendar"),
+    eq(connectors.authMethod, connection.runtimeMethod.authMethodId),
+    eq(connectors.storageVersion, connection.storageVersion),
+    eq(connectors.needsReconnect, false),
+    eq(sql`${connectors.updatedAt}::text`, connection.stateRevision),
+    credential,
+  );
+}
+
 async function resolveGoogleCalendarAccess(
   args: {
     readonly db: Db;
@@ -413,14 +541,19 @@ async function resolveGoogleCalendarAccess(
         "Reconnect Google Calendar before using Google Calendar event automations",
     };
   }
-  const values = await loadBuiltinConnectorCredentialValues({
+  const credential = await loadGoogleCalendarCredentialObservation({
     connection,
     db: args.db,
-    valueRefs: [accessTokenValueRef],
+    valueRef: accessTokenValueRef,
   });
+  const accessToken =
+    credential === null
+      ? null
+      : credential.kind === "secret"
+        ? await decryptStoredSecretValue(credential.storedValue)
+        : credential.storedValue;
   signal.throwIfAborted();
-  const accessToken = values.get(accessTokenValueRef);
-  if (!accessToken) {
+  if (!accessToken || !credential) {
     return {
       kind: "bad_request",
       message:
@@ -437,6 +570,7 @@ async function resolveGoogleCalendarAccess(
         connectorId: connection.connectorId,
         emailAddress: connection.externalEmail,
         accessToken,
+        credential,
       },
     };
   }
@@ -464,14 +598,12 @@ async function resolveGoogleCalendarAccess(
         "Reconnect Google Calendar before using Google Calendar event automations",
     };
   }
-  return {
-    kind: "ok",
-    access: {
-      connectorId: connection.connectorId,
-      emailAddress: connection.externalEmail,
-      accessToken: refreshed.accessToken,
-    },
-  };
+  // Read the committed token and its exact identity after a successful refresh.
+  // The refreshed result can otherwise be paired with a later replacement row.
+  return await resolveGoogleCalendarAccess(
+    { ...args, refreshExpiredToken: false },
+    signal,
+  );
 }
 
 export async function googleCalendarAutomationTargetMatchesConnector(
@@ -1224,9 +1356,14 @@ async function loadCalendarWatchState(
     readonly calendarId: string;
   },
   signal: AbortSignal,
-): Promise<GoogleCalendarWatchStateRow | null> {
+): Promise<ObservedGoogleCalendarWatchState | null> {
   const [state] = await args.db
-    .select()
+    .select({
+      ...getTableColumns(googleCalendarWatchStates),
+      observedState: sql`to_jsonb(${googleCalendarWatchStates})::text`.mapWith(
+        pgTextDecoder,
+      ),
+    })
     .from(googleCalendarWatchStates)
     .where(
       and(
@@ -1452,6 +1589,12 @@ async function transitionCalendarWatchToActionRequired(
   }
 }
 
+function calendarWatchRequiresBaseline(
+  state: GoogleCalendarWatchStateRow,
+): boolean {
+  return state.syncToken === null || state.actionRequiredReason !== null;
+}
+
 async function prepareCalendarWatch(
   args: {
     readonly db: Db;
@@ -1460,7 +1603,7 @@ async function prepareCalendarWatch(
     readonly access: GoogleCalendarAccess;
     readonly calendarId: string;
     readonly previousState: GoogleCalendarWatchStateRow | null;
-    readonly resetBaseline: boolean;
+    readonly baseline: CalendarEventsListOk | null;
   },
   signal: AbortSignal,
 ): Promise<
@@ -1481,18 +1624,13 @@ async function prepareCalendarWatch(
     };
   }
 
-  const baselineResult = await establishCalendarWatchBaseline(args, signal);
-  if (baselineResult.kind !== "ok") {
-    return baselineResult;
-  }
-
   const channelId = randomUUID();
   const channelToken = mintChannelToken();
   const currentTime = nowDate();
   const state = await persistPendingCalendarWatch(
     {
       ...args,
-      baseline: baselineResult.baseline,
+      baseline: args.baseline,
       channelId,
       channelToken,
       currentTime,
@@ -1503,7 +1641,7 @@ async function prepareCalendarWatch(
     {
       db: args.db,
       stateId: state.id,
-      baseline: baselineResult.baseline,
+      baseline: args.baseline,
       currentTime,
     },
     signal,
@@ -2023,6 +2161,54 @@ type StageGoogleCalendarWatchTargetResult =
     }
   | Exclude<EnsureGoogleCalendarWatchResult, { readonly kind: "ok" }>;
 
+async function prepareGoogleCalendarEnsureBaseline(
+  args: EnsureGoogleCalendarWatchInternalArgs,
+  access: GoogleCalendarAccess,
+  calendarId: string,
+  signal: AbortSignal,
+): Promise<
+  | {
+      readonly kind: "ok";
+      readonly observed: ObservedGoogleCalendarWatchState | null;
+      readonly baseline: CalendarEventsListOk | null;
+    }
+  | { readonly kind: "unchanged" }
+  | { readonly kind: "bad_request"; readonly message: string }
+> {
+  if (
+    !args.allowStagedTarget &&
+    !(await hasEnabledGoogleCalendarConsumer({ ...args, calendarId }, signal))
+  ) {
+    return { kind: "unchanged" };
+  }
+  const observed = await loadCalendarWatchState(
+    { ...args, calendarId },
+    signal,
+  );
+  if (
+    observed &&
+    (previousCalendarChannel(observed) || observed.resourceId.length === 0)
+  ) {
+    return {
+      kind: "bad_request",
+      message: "Google Calendar watch setup or cleanup is still pending",
+    };
+  }
+  const result = await establishCalendarWatchBaseline(
+    {
+      access,
+      calendarId,
+      resetBaseline:
+        observed === null ||
+        args.forceRefresh === true ||
+        observed.syncToken === null ||
+        observed.actionRequiredReason !== null,
+    },
+    signal,
+  );
+  return result.kind === "ok" ? { ...result, observed } : result;
+}
+
 async function ensureGoogleCalendarWatchForUserInternal(
   args: EnsureGoogleCalendarWatchInternalArgs,
   signal: AbortSignal,
@@ -2034,6 +2220,23 @@ async function ensureGoogleCalendarWatchForUserInternal(
     return accessResult;
   }
 
+  const baselineResult = await prepareGoogleCalendarEnsureBaseline(
+    args,
+    accessResult.access,
+    calendarId,
+    signal,
+  );
+  if (baselineResult.kind === "unchanged") {
+    return { kind: "ok" };
+  }
+  if (baselineResult.kind !== "ok") {
+    return baselineResult;
+  }
+
+  const credentialCondition = googleCalendarCredentialCondition(
+    args.db,
+    accessResult.access,
+  );
   const prepared = await args.db.transaction(async (tx) => {
     // Principal replacement owns the account lock before it snapshots and
     // removes watches, so every new watch target must follow the same order.
@@ -2042,16 +2245,22 @@ async function ensureGoogleCalendarWatchForUserInternal(
       userId: args.userId,
       target: { kind: "builtin", connectorSlug: "google-calendar" },
     });
-    const lockedAccessResult = await resolveGoogleCalendarAccess(
-      { ...args, db: tx, refreshExpiredToken: false },
-      signal,
-    );
-    if (lockedAccessResult.kind !== "ok") {
-      return lockedAccessResult;
+    const [currentCredential] = await tx
+      .select({ id: connectors.id })
+      .from(connectors)
+      .where(credentialCondition)
+      .for("update")
+      .limit(1);
+    if (!currentCredential) {
+      return {
+        kind: "bad_request",
+        message:
+          "Google Calendar connection changed during baseline preparation",
+      } as const;
     }
     await lockGoogleCalendarLifecycle(
       tx,
-      lockedAccessResult.access.connectorId,
+      accessResult.access.connectorId,
       calendarId,
     );
     signal.throwIfAborted();
@@ -2073,7 +2282,7 @@ async function ensureGoogleCalendarWatchForUserInternal(
     const existing = await loadCalendarWatchState(
       {
         db: tx,
-        connectorId: lockedAccessResult.access.connectorId,
+        connectorId: accessResult.access.connectorId,
         calendarId,
       },
       signal,
@@ -2087,24 +2296,30 @@ async function ensureGoogleCalendarWatchForUserInternal(
       return { kind: "unchanged" } as const;
     }
 
+    if (
+      (existing?.observedState ?? null) !==
+      (baselineResult.observed?.observedState ?? null)
+    ) {
+      return {
+        kind: "bad_request",
+        message:
+          "Google Calendar watch target changed during baseline preparation",
+      } as const;
+    }
     const watch = await prepareCalendarWatch(
       {
         db: tx,
         orgId: args.orgId,
         userId: args.userId,
-        access: lockedAccessResult.access,
+        access: accessResult.access,
         calendarId,
         previousState: existing,
-        resetBaseline:
-          existing === null ||
-          args.forceRefresh === true ||
-          existing.syncToken === null ||
-          existing.actionRequiredReason !== null,
+        baseline: baselineResult.baseline,
       },
       signal,
     );
     return watch.kind === "prepared"
-      ? { ...watch, access: lockedAccessResult.access }
+      ? { ...watch, access: accessResult.access }
       : watch;
   });
   if (prepared.kind === "unchanged") {
@@ -2114,13 +2329,25 @@ async function ensureGoogleCalendarWatchForUserInternal(
     return prepared;
   }
 
-  const registered = await activatePreparedCalendarWatch({
+  return await activateEnsuredCalendarWatch({
     db: args.db,
     access: prepared.access,
     calendarId,
     prepared: prepared.prepared,
     allowStagedTarget: args.allowStagedTarget,
+    reportProviderFailure: args.reportProviderFailure,
   });
+}
+
+async function activateEnsuredCalendarWatch(args: {
+  readonly db: Db;
+  readonly access: GoogleCalendarAccess;
+  readonly calendarId: string;
+  readonly prepared: PreparedGoogleCalendarWatch;
+  readonly allowStagedTarget: boolean | undefined;
+  readonly reportProviderFailure: boolean | undefined;
+}): Promise<EnsureGoogleCalendarWatchResult> {
+  const registered = await activatePreparedCalendarWatch(args);
   if (registered.kind === "ok") {
     log.debug("Workflow watch lifecycle reconciled", {
       provider: "google_calendar",
@@ -2440,6 +2667,7 @@ async function prepareCalendarWatchRenewal(
     readonly db: Db;
     readonly state: GoogleCalendarWatchStateRow;
     readonly access: GoogleCalendarAccess;
+    readonly baseline: CalendarEventsListOk | null;
   },
   signal: AbortSignal,
 ): Promise<GoogleCalendarWatchReconcileDecision> {
@@ -2451,9 +2679,7 @@ async function prepareCalendarWatchRenewal(
       access: args.access,
       calendarId: args.state.calendarId,
       previousState: args.state,
-      resetBaseline:
-        args.state.syncToken === null ||
-        args.state.actionRequiredReason !== null,
+      baseline: args.baseline,
     },
     signal,
   );
@@ -2525,20 +2751,11 @@ async function decideGoogleCalendarWatchReconciliation(
     readonly calendarId: string;
     readonly forceStop?: boolean;
     readonly renewBefore?: Date;
+    readonly preparation: GoogleCalendarReconciliationPreparation;
   },
   signal: AbortSignal,
 ): Promise<GoogleCalendarWatchReconcileDecision> {
-  const observedState = await loadCalendarWatchState(
-    {
-      db: args.db,
-      connectorId: args.connectorId,
-      calendarId: args.calendarId,
-    },
-    signal,
-  );
-  if (!observedState) {
-    return { kind: "unchanged" };
-  }
+  const observedState = args.preparation.state;
   // Keep the account -> lifecycle lock order consistent with connector
   // replacement and deletion cleanup.
   await lockConnectorAccountTarget(args.db, {
@@ -2556,7 +2773,7 @@ async function decideGoogleCalendarWatchReconciliation(
     },
     signal,
   );
-  if (!state) {
+  if (!state || state.observedState !== observedState.observedState) {
     return { kind: "unchanged" };
   }
 
@@ -2582,30 +2799,37 @@ async function decideGoogleCalendarWatchReconciliation(
     return { kind: "unchanged" };
   }
 
-  const access = await resolveGoogleCalendarAccess(
-    {
-      db: args.db,
-      orgId: state.orgId,
-      userId: state.userId,
-      connectorId: state.connectorId,
-    },
-    signal,
-  );
+  const access = args.preparation.access;
+  const [currentCredential] = access
+    ? await args.db
+        .select({ id: connectors.id })
+        .from(connectors)
+        .where(args.preparation.credentialCondition)
+        .for("update")
+        .limit(1)
+    : [];
   signal.throwIfAborted();
-  if (access.kind !== "ok") {
+  if (!access || !currentCredential) {
     if (!hasConsumer) {
       await markCalendarWatchNeedsRewatch(args.db, state.id);
     }
     return { kind: "failed" };
   }
 
-  let currentState = state;
+  if (
+    hasConsumer &&
+    calendarWatchRequiresBaseline(state) &&
+    args.preparation.baseline === null
+  ) {
+    return { kind: "unchanged" };
+  }
+  let currentState: GoogleCalendarWatchStateRow = state;
   if (previous) {
     const cleanup = await cleanupPreviousCalendarChannel({
       db: args.db,
       state,
       previous,
-      accessToken: access.access.accessToken,
+      accessToken: access.accessToken,
       hasConsumer,
       renewalDue,
     });
@@ -2624,7 +2848,7 @@ async function decideGoogleCalendarWatchReconciliation(
   ) {
     return {
       kind: "action_required",
-      access: access.access,
+      access: access,
       state: currentState,
       episode: actionRequiredEpisode,
     };
@@ -2635,14 +2859,15 @@ async function decideGoogleCalendarWatchReconciliation(
         {
           db: args.db,
           state: currentState,
-          access: access.access,
+          access: access,
+          baseline: args.preparation.baseline,
         },
         signal,
       )
     : await stopCurrentCalendarWatch({
         db: args.db,
         state: currentState,
-        accessToken: access.access.accessToken,
+        accessToken: access.accessToken,
       });
 }
 
@@ -2791,6 +3016,96 @@ async function reconcileConfirmedMissingCalendarWatch(
   return { kind: "failed" };
 }
 
+interface GoogleCalendarReconciliationPreparation {
+  readonly state: ObservedGoogleCalendarWatchState;
+  readonly access: GoogleCalendarAccess | null;
+  readonly baseline: CalendarEventsListOk | null;
+  readonly credentialCondition: ReturnType<
+    typeof googleCalendarCredentialCondition
+  >;
+}
+
+async function prepareGoogleCalendarReconciliation(
+  args: {
+    readonly db: Db;
+    readonly connectorId: string;
+    readonly calendarId: string;
+    readonly forceStop?: boolean;
+    readonly renewBefore?: Date;
+  },
+  signal: AbortSignal,
+): Promise<
+  | {
+      readonly kind: "ready";
+      readonly preparation: GoogleCalendarReconciliationPreparation;
+    }
+  | { readonly kind: "unchanged" | "failed" }
+> {
+  const state = await loadCalendarWatchState(args, signal);
+  if (!state) {
+    return { kind: "unchanged" };
+  }
+  const hasConsumer =
+    !args.forceStop &&
+    (await hasEnabledGoogleCalendarConsumer(
+      {
+        db: args.db,
+        orgId: state.orgId,
+        userId: state.userId,
+        connectorId: state.connectorId,
+        calendarId: state.calendarId,
+      },
+      signal,
+    ));
+  const renewalDue = calendarWatchRenewalDue({
+    state,
+    hasConsumer,
+    renewBefore: args.renewBefore,
+  });
+  if (hasConsumer && !renewalDue && !previousCalendarChannel(state)) {
+    return { kind: "unchanged" };
+  }
+  const resolved = await resolveGoogleCalendarAccess(
+    {
+      db: args.db,
+      orgId: state.orgId,
+      userId: state.userId,
+      connectorId: state.connectorId,
+    },
+    signal,
+  );
+  const access = resolved.kind === "ok" ? resolved.access : null;
+  const result =
+    access && hasConsumer && renewalDue
+      ? await establishCalendarWatchBaseline(
+          {
+            access,
+            calendarId: state.calendarId,
+            resetBaseline:
+              state.syncToken === null || state.actionRequiredReason !== null,
+          },
+          signal,
+        )
+      : { kind: "ok" as const, baseline: null };
+  if (result.kind !== "ok") {
+    log.warn("Google Calendar baseline preparation failed", {
+      watchStateId: state.id,
+    });
+    return { kind: "failed" };
+  }
+  return {
+    kind: "ready",
+    preparation: {
+      state,
+      access,
+      baseline: result.baseline,
+      credentialCondition: access
+        ? googleCalendarCredentialCondition(args.db, access)
+        : undefined,
+    },
+  };
+}
+
 async function reconcileGoogleCalendarWatchState(
   args: {
     readonly db: Db;
@@ -2801,11 +3116,16 @@ async function reconcileGoogleCalendarWatchState(
   },
   signal: AbortSignal,
 ): Promise<GoogleCalendarWatchReconcileResult> {
+  const preparation = await prepareGoogleCalendarReconciliation(args, signal);
+  if (preparation.kind !== "ready") {
+    return preparation;
+  }
   const decision = await args.db.transaction(async (tx) => {
     return await decideGoogleCalendarWatchReconciliation(
       {
         ...args,
         db: tx,
+        preparation: preparation.preparation,
       },
       signal,
     );
