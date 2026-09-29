@@ -17,8 +17,8 @@ The initial implementation baseline was main
 `5b458cc9df60ce0c3ffc7e1783ec3d36be9634e1`: 28 production acquisition definitions,
 one catalog fixture acquisition, and one attribution operator acquisition.
 Historical migration SQL is counted separately. The integration branch also
-includes main `712de8a` (including the browser preferences, thread-image schema
-contraction and retired VNC grant cleanup).
+includes main `0921863`, preserving the browser preferences, thread-image
+schema contraction, retired VNC grant cleanup and current generation identity.
 
 Browser and custom account preparation from #37097 was verified against live
 production aliases, public API build-info, the configured invocation bound, and
@@ -66,7 +66,7 @@ the baseline. A definition can serve multiple runtime callers.
 | Credits/allowance — `usage-allowance.service.ts`                                        | Standalone and Social settlement own all financial SQL; the Social receipt commits with ledger, allowance, grants and wallet. Managed/billable/Social availability refresh prepares Stripe outside a local entitlement command and publishes against its observed row.                  | Outgoing SELECT-pending / unconditional-by-ID processed updates can otherwise double-charge. Retain the key until every supported settlement/refresh writer is prepared. Standalone/Social financial transaction APIs were removed. Run/model-selection/PI/firewall availability chains and the broader Clerk cleanup transaction ownership remain unfinished; see the usage boundary inventory.                                                                                                                                                                                                                                                                  |
 | Compaction shared — `usage-event-compaction-lock.service.ts`                            | Compaction and settlement take Run parents before raw ledger, then hourly aggregates. Clerk lifecycle now takes Social jobs, Agent/Session/Run parents, entitlement, raw and hourly rows in the common order.                                                                           | Outgoing deleters/compactors use the old order. The common Clerk/settlement ordering is implemented. Core Clerk lifecycle deletion now owns direct SQL, including conversation/blob accounting. Surrounding run cancellation, Storage and connector-cleanup helpers remain implementation work, in addition to the outgoing-writer gate.                                                                                                                                                                                                                                                                                                                          |
 | Compaction exclusive — same file                                                        | Compaction owns exact rows, uses SKIP LOCKED, and publishes aggregates from the rows actually acquired in one command-local transaction. Pure raw-result decoding no longer needs the transaction argument.                                                                             | Same old-writer ordering gate. A lexical SQL reduction alone does not prove every raw/hourly writer migrated.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| SSH owner — `ssh-credential.service.ts`                                                 | Credential and host create/update/delete/reset commits are business-argument commands with direct local SQL; KMS precedes commit and invalidation follows. Rotation, attachment and rebinding own the existing member row before access config, host and credential writes.             | Outgoing rotation/attachment writers do not share that member-row protocol, so retain the owner key until serving/in-flight/rollback compatibility is established. Shared Cloudflare/read adapters are still part of the separate full-API interface sweep. No permanent KEEP exception.                                                                                                                                                                                                                                                                                                                                                                          |
+| SSH owner — `ssh-credential.service.ts`                                                 | Credential and host create/update/delete/reset commits are business-argument commands with direct local SQL; KMS precedes commit and invalidation follows. Rotation, attachment and rebinding own the existing member row before access config, host and credential writes.             | Outgoing rotation/attachment writers do not share that member-row protocol, so retain the owner key until serving/in-flight/rollback compatibility is established. Cloudflare mutations now also own finite command SQL, with KMS before commit and invalidation afterward. Read adapters remain in the separate full-API interface sweep. No permanent KEEP exception.                                                                                                                                                                                                                                                                                           |
 | VNC scope shared/exclusive and owner — `vnc-owner-lifecycle.service.ts` (3 definitions) | **Removed.** Existing member-row `created_at` identity, command-local credential/host writes, and cleanup in the same member lifecycle.                                                                                                                                                 | Create/admission/cleanup reject a member identity removed during external preflight. Full API types and focused lint passed on the source revision; combined-head pipeline remains required. Shared initial-chat transaction interfaces remain unfinished. No new field or non-GA compatibility fallback.                                                                                                                                                                                                                                                                                                                                                         |
 
 ## Fixtures, operator and final schema
@@ -92,6 +92,11 @@ the baseline. A definition can serve multiple runtime callers.
   contract also forbids database triggers: this implementation must be replaced
   by explicit command-owned cursor lifecycle SQL and an appropriate mixed-writer
   transition. The two triggers are not an accepted permanent design.
+- Migration `1291_retire_cloudflare_scope_change_trigger` removes the redundant
+  scope-change trigger and function. Every historical conversion writer already
+  owns the config and detaches incompatible hosts. The SSH binding trigger stays
+  for foundation-era readers without `FOR SHARE`; its separate deployment gate
+  is recorded in the trigger inventory. No schema column changes.
 - Attribution and allowance reader fallbacks remain. A full live data-convergence
   census has not established their removal conditions; tool age and CI references
   are not convergence evidence.
@@ -101,8 +106,9 @@ the baseline. A definition can serve multiple runtime callers.
 The zero-trigger terminal constraint from `4fa8844` applies to all application
 triggers, including nine that predate this PR. The
 [trigger retirement inventory](./advisory-lock-release-1-trigger-boundaries.md)
-records all eleven current definitions: seven billing attribution, two
-SSH/Cloudflare and two Forms. Their explicit writer replacements remain an
+records the eleven-definition baseline and migration 1291, which retires the
+redundant Cloudflare scope-change guard. Ten definitions remain: seven billing
+attribution, one SSH binding and two Forms. Their explicit writer replacements remain an
 acceptance requirement; the existing schema-test constant named
 `EXPECTED_PERMANENT_TRIGGERS` does not grant a permanent exception.
 
@@ -224,7 +230,11 @@ of these syntax counts.
 The `25209f4` Forms follow-up makes repair publication update only the watch
 binding on cursor conflict. Explicit disable owns automation/cursor SQL in one
 command; official source changes and compensation now explicitly reset the
-appropriate cursor in their existing atomic commit. The remaining enable and
+appropriate cursor in their existing atomic commit. `fc1e3a4` carries exact
+automation snapshots through preparation, publication and compensation: a
+delayed prior enable cannot bind a new baseline, delete a newer automation or
+roll back a later enable. Official staged source changes publish their cursor
+with the final conditional source update. The remaining enable and
 official reconciliation handle propagation is still implementation work.
 Migration 1290 is temporary compatibility for the inspected outgoing unconditional
 cursor writers, subject to the implementation and deployment gates in the
@@ -236,8 +246,14 @@ idempotency keys; background catch-up pages between transactions. The commit
 rechecks event and pricing snapshots before atomic financial writes. Standalone
 pricing is prepared outside SQL, and conflicts roll back before bounded
 re-preparation. Social retains its receipt and reservation release in the same
-commit. Grant/expiry-lot access and the remaining Social preparation are still
-unfinished bounds; the event limit alone does not certify a short transaction.
+commit. Social managed/fixed-price preparation now also precedes the transaction and
+its job snapshot is revalidated. Allowance reads select only the latest covering
+short/weekly windows for the finite event anchors. Grant preparation pages
+outside the commit and selects the actual purchased-before-bonus debit prefix,
+with input and earlier-grant validation at commit. The required prefix can still
+be large; expired-lot clamping remains one atomic operation and is an unfinished
+bound. Splitting that clamp changes results when a purchase interleaves. The
+event limit alone does not certify a short transaction.
 
 Individual source branch checks are evidence for those revisions only. The
 combined head must pass its own relevant static checks, types, API tests and

@@ -1292,13 +1292,6 @@ const EXPECTED_PERMANENT_TRIGGERS = [
   },
   {
     definition:
-      "CREATE TRIGGER cloudflare_access_scope_change_guard BEFORE UPDATE OF scope, user_id, org_id ON public.cloudflare_access_configs FOR EACH ROW EXECUTE FUNCTION reject_cloudflare_access_scope_change()",
-    schemaName: "public",
-    tableName: "cloudflare_access_configs",
-    triggerName: "cloudflare_access_scope_change_guard",
-  },
-  {
-    definition:
       "CREATE TRIGGER google_forms_cursor_rebind_preserves_progress BEFORE UPDATE OF watch_state_id ON public.google_forms_automation_cursors FOR EACH ROW EXECUTE FUNCTION preserve_google_forms_cursor_on_rebind()",
     schemaName: "public",
     tableName: "google_forms_automation_cursors",
@@ -1374,13 +1367,6 @@ const EXPECTED_PERMANENT_FUNCTIONS = [
   {
     bodyHash: "78a8128b76b3379792960174c17b9bf1",
     functionName: "validate_ssh_cloudflare_access_binding",
-    identityArguments: "",
-    kind: "f",
-    schemaName: "public",
-  },
-  {
-    bodyHash: "9a32858723d6facc53fb33925484a8f3",
-    functionName: "reject_cloudflare_access_scope_change",
     identityArguments: "",
     kind: "f",
     schemaName: "public",

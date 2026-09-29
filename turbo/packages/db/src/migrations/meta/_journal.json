@@ -1492,6 +1492,13 @@
       "when": 1790658470974,
       "tag": "1290_google_forms_cursor_lifecycle",
       "breakpoints": true
+    },
+    {
+      "idx": 1291,
+      "version": "7",
+      "when": 1790664755521,
+      "tag": "1291_retire_cloudflare_scope_change_trigger",
+      "breakpoints": true
     }
   ]
 }
