@@ -17,10 +17,11 @@ The initial implementation baseline was main
 `5b458cc9df60ce0c3ffc7e1783ec3d36be9634e1`: 28 production acquisition definitions,
 one catalog fixture acquisition, and one attribution operator acquisition.
 Historical migration SQL is counted separately. The integration branch also
-includes main `8d7d64c` (including the release-only update after `bf7c3d6`), preserving browser preferences, thread-image schema
+includes main `2135875`, preserving browser preferences, thread-image schema
 contraction, retired Agent SSH/VNC grants, current generation identity, the
 Okou Pro/Max retirement and default-policy repair, and the rule prohibiting new
-database triggers.
+database triggers. Integration `/model` controls retain main's routed-thread-only
+behavior and no longer change a member default or recreate a retired session.
 
 Browser and custom account preparation from #37097 was verified against live
 production aliases, public API build-info, the configured invocation bound, and
@@ -453,7 +454,7 @@ to hide these gaps.
 The current implementation also owns lazy Model Policy initialization and routing
 preparation, chat metadata mutation, MCP discovery/creation/thread projection,
 workflow lazy thread publication, all six integration route/thread/event writers,
-Discord receipt admission, and ordinary/integration/Stripe queue admission. Pure
+Discord/Slack/Feishu receipt admission, and ordinary/integration/Stripe queue admission. Pure
 SQL builders and ordinary route snapshots replace database-bearing adapters in
 those paths. Workflow launch bookkeeping now returns ordinary data rather than a
 closure retaining its database. Usage-pack migration publication owns direct

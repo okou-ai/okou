@@ -736,11 +736,13 @@ function feishuModelCommandOptions(
   options: readonly FeishuModelOption[],
   currentSelectedModel: string | null,
 ) {
-  return options.map((option) => ({
-    commandValue: option.model,
-    label: `${option.label}${option.isDefault ? " (workspace default)" : ""}`,
-    current: currentSelectedModel === option.model,
-  }));
+  return options.map((option) => {
+    return {
+      commandValue: option.model,
+      label: `${option.label}${option.isDefault ? " (workspace default)" : ""}`,
+      current: currentSelectedModel === option.model,
+    };
+  });
 }
 
 function findFeishuModelOption(
@@ -748,11 +750,12 @@ function findFeishuModelOption(
   input: string,
 ) {
   const normalized = input.toLowerCase();
-  return options.find(
-    (option) =>
+  return options.find((option) => {
+    return (
       option.model.toLowerCase() === normalized ||
-      option.label.toLowerCase() === normalized,
-  );
+      option.label.toLowerCase() === normalized
+    );
+  });
 }
 
 const handleModelCommand$ = command(

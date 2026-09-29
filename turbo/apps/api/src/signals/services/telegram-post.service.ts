@@ -1,4 +1,3 @@
-import type { OrgModelPolicy } from "@okouai/api-contracts/contracts/model-providers";
 import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
 import { enqueueIntegrationChatInput$ } from "./integration-chat-queue.service";
 import { resolveEnqueuedChatInputModel$ } from "./chat-input-model.service";
@@ -14,6 +13,7 @@ import {
   isSupportedRunModel,
   normalizeRunModelId,
   type SupportedRunModel,
+  type OrgModelPolicy,
 } from "@okouai/api-contracts/contracts/model-providers";
 import {
   OFFICIAL_TELEGRAM_BOT_ID,

@@ -61,6 +61,9 @@ export const readIntegrationChatThreadModel$ = command(
       signal,
     );
     signal.throwIfAborted();
+    if ("status" in model) {
+      throw new Error(model.body.error.message);
+    }
     return model.selectedModel;
   },
 );

@@ -126,12 +126,25 @@ lint and formatting pass; final combined type and API behavior checks remain
 with the main PR pipeline. Separate legacy discovery/destination helpers are not
 included in this ownership completion.
 
+## Slack and Feishu receipt publication
+
+`admitCanonicalSlackChatEvent$` and `admitFeishuChatEvent$` own their finite SQL
+transactions with ordinary event/source inputs and a final signal. Existing
+unique receipts, replay results, atomic retry increments and foreign-source
+rejection remain. Feishu's outer admission command no longer accepts a database
+or processor callback; it schedules the existing processor after the receipt
+commit. Surrounding provider/configuration and callback delivery remain separate.
+
+Main `2135875` limits integration `/model` controls to existing routed threads.
+That behavior is retained while its newly introduced thread-model reader uses
+an owning command and ordinary model-selection inputs. These controls do not
+change the member's default or revive retired conversation-reset commands.
+
 ## Ownership still unfinished outside this boundary
 
 The existing atomic automation-creation and workflow-copy helpers still pass
 their transaction to the thread/event insertion helper. Discord discovery and
-destination helpers, and Slack/Feishu webhook receipt admission,
-Telegram reply-chain publication, and poller
+destination helpers, Telegram reply-chain publication, and poller
 schedule claim/failure helpers also retain legacy database propagation.
 Moving lazy model selection out of those transactions does not complete their
 remaining write protocols. They must be migrated explicitly; serving drain,
@@ -158,8 +171,6 @@ compatibility key:
 - `executeDueWorkflowAutomationsImpl$` still forwards its database through due-row
   reads, expiry/classification and claim helpers. `launchClaimedDueRow$` passes it
   to `journaledScheduleExecution`, whose failure callback retains the handle.
-- Slack's `admitCanonicalSlackChatEvent` and Feishu's `admitFeishuChatEvent` still
-  open transactions in ordinary database-accepting functions.
 - Telegram reply-chain and callback delivery still pass handles through
   `persistTelegramReplyChainRoute`, route/context/owner reads, footer preparation
   and `storeTelegramBotMessage`.
