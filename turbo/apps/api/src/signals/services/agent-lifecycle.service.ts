@@ -19,10 +19,8 @@ import {
   logCommittedConversationDeletion,
   releaseDeletedConversationReferences,
 } from "./conversation-history-deletion.service";
-import {
-  deleteOrgUsageData,
-  deleteUserUsageData,
-} from "./usage-event-cleanup.service";
+import { usageCleanupTargets } from "./usage-event-cleanup.service";
+import { usageEventCompactionLockSql } from "./usage-event-compaction-lock.service";
 import { revokeMorningBriefDeliveryOwnership } from "./morning-brief-delivery.service";
 
 type ClerkDeletionScope =
@@ -190,10 +188,13 @@ async function deleteClerkUserLifecycleData(
   userId: string,
 ): Promise<void> {
   const receipt = await db.transaction(async (tx) => {
-    // Compaction -> ledger/entitlements -> sessions/Run. The helper uses a
-    // savepoint on this same connection; both deletion stages commit
-    // atomically and retain their locks through that commit.
-    await deleteUserUsageData(tx, userId);
+    // This legacy lifecycle owner still owns the complete atomic deletion.
+    // Keep its compatibility barrier while its remaining conversation helpers
+    // and parent/ledger ordering are migrated; there is no nested usage tx.
+    await tx.execute(usageEventCompactionLockSql());
+    for (const target of usageCleanupTargets({ scope: "user", id: userId })) {
+      await tx.delete(target.table).where(target.condition);
+    }
     const userSessions = tx
       .select({ id: agentSessions.id })
       .from(agentSessions)
@@ -246,10 +247,15 @@ async function deleteClerkOrganizationLifecycleData(
   orgId: string,
 ): Promise<void> {
   const receipt = await db.transaction(async (tx) => {
-    // Compaction -> ledger/entitlements -> parents/Run. The helper uses a
-    // savepoint on this same connection; both deletion stages commit
-    // atomically and retain their locks through that commit.
-    await deleteOrgUsageData(tx, orgId);
+    // Keep the compatibility barrier until this lifecycle owner's remaining
+    // conversation helpers and parent/ledger ordering are migrated together.
+    await tx.execute(usageEventCompactionLockSql());
+    for (const target of usageCleanupTargets({
+      scope: "organization",
+      id: orgId,
+    })) {
+      await tx.delete(target.table).where(target.condition);
+    }
     const agentScope = eq(agents.orgId, orgId);
     const ownedAgents = await tx
       .select({ id: agents.id })

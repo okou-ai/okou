@@ -43,10 +43,7 @@ import { writeDb$, type Db } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import { compactUsageEvents$ } from "../services/cron-compact-usage-events.service";
 import { normalizeRunMetadata } from "../services/agent-run-metadata-write.service";
-import {
-  deleteOrgUsageData,
-  deleteUserUsageData,
-} from "../services/usage-event-cleanup.service";
+import { deleteUsageData$ } from "../services/usage-event-cleanup.service";
 import {
   isTestEndpointAllowed,
   testEndpointNotFoundResponse,
@@ -141,8 +138,6 @@ type UsageStateEventMaterializationAction = UsageStateAction<
   | "materialize-hourly-usage"
   | "read-usage-storage-counts"
 >;
-
-type UsageStateCleanupAction = UsageStateAction<"delete-usage-data">;
 
 const MODEL_TOKEN_CATEGORIES = [
   "tokens.input",
@@ -958,18 +953,6 @@ async function readUsageEventState(
   return event;
 }
 
-async function deleteUsageData(
-  db: Db,
-  scope: "organization" | "user",
-  id: string,
-): Promise<void> {
-  if (scope === "organization") {
-    await deleteOrgUsageData(db, id);
-    return;
-  }
-  await deleteUserUsageData(db, id);
-}
-
 async function mutateUsageStateFixtureState(
   db: Db,
   body: UsageStateFixtureAction,
@@ -1244,23 +1227,9 @@ async function mutateUsageStateEventMaterializationState(
   }
 }
 
-async function mutateUsageStateCleanupState(
-  db: Db,
-  body: UsageStateCleanupAction,
-  signal: AbortSignal,
-) {
-  switch (body.action) {
-    case "delete-usage-data": {
-      await deleteUsageData(db, body.scope, body.id);
-      signal.throwIfAborted();
-      return { status: 200 as const, body: { ok: true as const } };
-    }
-  }
-}
-
 async function mutateUsageState(
   db: Db,
-  body: TestUsageStateActionBody,
+  body: Exclude<TestUsageStateActionBody, { action: "delete-usage-data" }>,
   signal: AbortSignal,
 ) {
   switch (body.action) {
@@ -1288,9 +1257,6 @@ async function mutateUsageState(
     case "read-usage-storage-counts": {
       return await mutateUsageStateEventMaterializationState(db, body, signal);
     }
-    case "delete-usage-data": {
-      return await mutateUsageStateCleanupState(db, body, signal);
-    }
   }
 }
 
@@ -1305,6 +1271,15 @@ const mutateUsageState$ = command(async ({ get, set }, signal: AbortSignal) => {
     return bodyResult.response;
   }
 
+  if (bodyResult.data.action === "delete-usage-data") {
+    await set(
+      deleteUsageData$,
+      { scope: bodyResult.data.scope, id: bodyResult.data.id },
+      signal,
+    );
+    signal.throwIfAborted();
+    return { status: 200 as const, body: { ok: true as const } };
+  }
   return await mutateUsageState(set(writeDb$), bodyResult.data, signal);
 });
 
