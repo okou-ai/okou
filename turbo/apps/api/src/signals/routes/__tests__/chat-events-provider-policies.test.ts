@@ -16,10 +16,7 @@ import {
   acquireBddBuiltInModelKey,
   releaseBddBuiltInModelKey,
 } from "../../../test-fixtures/chat-events";
-import {
-  setOrgModelPolicyProviderTypeFixture,
-  stageUnrepairedOrgModelPolicyFixture,
-} from "../../../test-fixtures/org-model-policies";
+import { setOrgModelPolicyProviderTypeFixture } from "../../../test-fixtures/org-model-policies";
 import {
   deleteOrgPlanEntitlementFixture,
   upsertOrgPlanEntitlementFixture,
@@ -449,19 +446,24 @@ describe("CHAT-02: model-first provider policies", () => {
     await cancelChatRun(actor, picked.runId);
   }, 90_000);
 
-  it("routes from the authoritative policies seeded by the same send", async () => {
+  it("routes from the authoritative workspace default after policy changes", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     await seedBuiltInModelKey(DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL);
-    await stageUnrepairedOrgModelPolicyFixture({
-      orgId: requireOrgId(actor),
-      state: "unseeded",
-    });
+    await api.updateOrgModelPolicies(actor, [
+      {
+        model: DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
+        isDefault: true,
+        defaultProviderType: "built-in",
+        credentialScope: "org",
+        modelProviderId: null,
+      },
+    ]);
     await preparePiResourceHandoff(actor, agentId);
 
     const run = await sendChatRun(actor, {
       agentId,
-      prompt: "route from the repaired policy snapshot",
+      prompt: "route from the updated workspace default",
     });
     await expect(
       chat.readThreadMetadata(actor, run.threadId),
