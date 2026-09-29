@@ -1,5 +1,3 @@
-import { createHash } from "node:crypto";
-
 import { OAuth2Client } from "google-auth-library";
 import { command } from "ccstate";
 import {
@@ -580,28 +578,6 @@ export async function prepareGoogleFormsResponseEventConfigForPersist(
   };
 }
 
-function googleFormsLifecycleLockKey(
-  connectorId: string,
-  formId: string,
-): string {
-  const scopeHash = createHash("sha256")
-    .update(`${connectorId}\n${formId}`)
-    .digest("hex");
-  return `workflow_watch:google_forms:${scopeHash}`;
-}
-
-// Outgoing API writers publish and delete by ID after remote I/O. Keep this
-// short publication lock until those API versions have drained and are no
-// longer rollback targets; Release 2 uses the snapshot predicates below.
-function googleFormsLifecycleLockStatement(
-  connectorId: string,
-  formId: string,
-) {
-  const lockKey = googleFormsLifecycleLockKey(connectorId, formId);
-  // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-  return sql`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
-}
-
 export const hasEnabledGoogleFormsConsumer$ = command(
   async (
     { set },
@@ -1066,9 +1042,6 @@ const publishGoogleFormsWatch$ = command(
   > => {
     const db = set(writeDb$);
     return await db.transaction(async (tx) => {
-      await tx.execute(
-        googleFormsLifecycleLockStatement(args.connectorId, args.formId),
-      );
       signal.throwIfAborted();
       // Connector deletion takes its row before FK source invalidation. Take
       // that parent lock before the automation to keep publication in this order.
@@ -1448,48 +1421,40 @@ const stopGoogleFormsWatchState$ = command(
       signal.throwIfAborted();
       return { kind: "failed" };
     }
-    return await db.transaction(async (tx) => {
-      await tx.execute(
-        googleFormsLifecycleLockStatement(
-          args.state.connectorId,
-          args.state.formId,
-        ),
-      );
-      // A newly enabled consumer keeps its cursor. Reconciliation repairs any
-      // remote gap caused by the completed stop request.
-      const [removed] = await tx
-        .delete(googleFormsWatchStates)
-        .where(
-          and(
-            googleFormsWatchSnapshotCondition(args.state),
-            notExists(
-              tx
-                .select({ id: workflowAutomations.id })
-                .from(workflowAutomations)
-                .where(
-                  and(
-                    eq(workflowAutomations.ownerUserId, args.state.userId),
-                    eq(workflowAutomations.orgId, args.state.orgId),
-                    eq(workflowAutomations.enabled, true),
-                    eq(workflowAutomations.kind, "event"),
-                    eq(
-                      workflowAutomations.eventType,
-                      "google-forms-response-submitted",
-                    ),
-                    eq(
-                      workflowAutomations.eventConnectorId,
-                      args.state.connectorId,
-                    ),
-                    sql`${workflowAutomations.eventConfig} ->> 'connectorId' = ${args.state.connectorId}`,
-                    sql`${workflowAutomations.eventConfig} -> 'form' ->> 'id' = ${args.state.formId}`,
+    // Reconciliation restores delivery if a concurrent consumer sees a remote gap.
+    const [removed] = await db
+      .delete(googleFormsWatchStates)
+      .where(
+        and(
+          googleFormsWatchSnapshotCondition(args.state),
+          notExists(
+            db
+              .select({ id: workflowAutomations.id })
+              .from(workflowAutomations)
+              .where(
+                and(
+                  eq(workflowAutomations.ownerUserId, args.state.userId),
+                  eq(workflowAutomations.orgId, args.state.orgId),
+                  eq(workflowAutomations.enabled, true),
+                  eq(workflowAutomations.kind, "event"),
+                  eq(
+                    workflowAutomations.eventType,
+                    "google-forms-response-submitted",
                   ),
+                  eq(
+                    workflowAutomations.eventConnectorId,
+                    args.state.connectorId,
+                  ),
+                  sql`${workflowAutomations.eventConfig} ->> 'connectorId' = ${args.state.connectorId}`,
+                  sql`${workflowAutomations.eventConfig} -> 'form' ->> 'id' = ${args.state.formId}`,
                 ),
-            ),
+              ),
           ),
-        )
-        .returning({ id: googleFormsWatchStates.id });
-      return { kind: removed ? "stopped" : "unchanged" };
-    });
+        ),
+      )
+      .returning({ id: googleFormsWatchStates.id });
+    signal.throwIfAborted();
+    return { kind: removed ? "stopped" : "unchanged" };
   },
 );
 
@@ -1596,27 +1561,23 @@ const reconcileGoogleFormsWatchState$ = command(
       return { kind: "failed" };
     }
     const watch = renewed.value;
-    return await db.transaction(async (tx) => {
-      await tx.execute(
-        googleFormsLifecycleLockStatement(state.connectorId, state.formId),
-      );
-      const currentTime = nowDate();
-      const [updated] = await tx
-        .update(googleFormsWatchStates)
-        .set({
-          watchId: watch.id,
-          expireTime: watchExpireTime(watch),
-          lastRenewedAt: currentTime,
-          needsRewatch: false,
-          updatedAt: sql`clock_timestamp()`,
-        })
-        .where(googleFormsWatchSnapshotCondition(state))
-        .returning({ id: googleFormsWatchStates.id });
-      if (!updated) {
-        return { kind: "unchanged" };
-      }
-      return { kind: watch.id === state.watchId ? "renewed" : "created" };
-    });
+    const currentTime = nowDate();
+    const [updated] = await db
+      .update(googleFormsWatchStates)
+      .set({
+        watchId: watch.id,
+        expireTime: watchExpireTime(watch),
+        lastRenewedAt: currentTime,
+        needsRewatch: false,
+        updatedAt: sql`clock_timestamp()`,
+      })
+      .where(googleFormsWatchSnapshotCondition(state))
+      .returning({ id: googleFormsWatchStates.id });
+    signal.throwIfAborted();
+    if (!updated) {
+      return { kind: "unchanged" };
+    }
+    return { kind: watch.id === state.watchId ? "renewed" : "created" };
   },
 );
 

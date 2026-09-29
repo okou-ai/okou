@@ -186,7 +186,13 @@ shared creation and queue thread initialization still propagate handles; generic
 account deletion, selection and credential callers retain their legacy outer
 transaction graphs. Cross-kind official transitions, initial materialization and
 other providers' finalization paths still need command ownership migration.
-These are implementation gaps, not outgoing-writer drain conditions. Existing
-credential/watch compatibility keys must be reviewed against their actual old
-writers before R2 removal; accepted Forms trigger loss does not authorize stale
-credential publication or a Gmail behavior change.
+These are implementation gaps, not outgoing-writer drain conditions. The Forms lifecycle advisory key is removed in R1: outgoing stop/reseed can
+produce only the now-accepted temporary watch/baseline gap, and neither operation
+reactivates an automation. R1 publication and admission still check the current
+automation/account source. Renew and stop use single conditional statements,
+without a transaction wrapper. Builtin credential coordination is separate: old
+refresh publication and invalid-grant handling write by account identity after
+provider work without the common stale-authorization predicate. Its removal
+requires the credential protocol and outgoing-writer gates, not cursor replay.
+Accepted Forms trigger loss does not authorize stale credential publication or a
+Gmail behavior change.
