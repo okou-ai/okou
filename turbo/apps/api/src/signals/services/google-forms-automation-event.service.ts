@@ -61,7 +61,6 @@ import {
 import { workflowAutomationCanFire } from "./workflow-automation-access.service";
 import { connectors } from "@okouai/db/schema/connector";
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
-import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import type { AutomationRow } from "./workflow-automation-launch.service";
 import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
 import { ensureWorkflowUserAutomationThread } from "./workflow-user-automation-thread.service";
@@ -1336,17 +1335,6 @@ const activateGoogleFormsAutomationWatch$ = command(
       await tx.execute(
         googleFormsLifecycleLockStatement(args.connectorId, args.formId),
       );
-      const [membership] = await tx
-        .select({ id: orgMembersCache.userId })
-        .from(orgMembersCache)
-        .where(
-          and(
-            eq(orgMembersCache.orgId, args.orgId),
-            eq(orgMembersCache.userId, args.userId),
-          ),
-        )
-        .for("key share")
-        .limit(1);
       const [account] = await tx
         .select({ id: connectors.id })
         .from(connectors)
@@ -1364,7 +1352,7 @@ const activateGoogleFormsAutomationWatch$ = command(
         .where(targetCondition)
         .for("update")
         .limit(1);
-      if (!membership || !account || !target) {
+      if (!account || !target) {
         return {
           kind: "superseded",
           message:
