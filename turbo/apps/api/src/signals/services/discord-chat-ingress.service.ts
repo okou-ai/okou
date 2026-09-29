@@ -317,73 +317,81 @@ export async function hasCanonicalDiscordMessageReceipt(
   return Boolean(receipt);
 }
 
-export async function admitCanonicalDiscordChatEvent(
-  db: Db,
-  args: {
-    readonly applicationId: string;
-    readonly connectionId: string;
-    readonly messageId: string;
-    readonly eventId: string;
-    readonly payload: string;
-    readonly currentTime: Date;
-  },
-): Promise<DiscordChatIngressAdmission | undefined> {
-  return await db.transaction(async (tx) => {
-    // This identity-only digest survives connection/chat deletion. Raw payloads
-    // still cascade, while a lost ACK cannot launch the same message again
-    // after reconnecting or deleting its canonical chat.
-    const [receipt] = await tx
-      .insert(discordGatewayReceipts)
-      .values({
-        eventDigest: discordMessageReceiptDigest(
-          args.applicationId,
-          args.messageId,
-        ),
-        createdAt: args.currentTime,
-      })
-      .onConflictDoNothing()
-      .returning({ eventDigest: discordGatewayReceipts.eventDigest });
-    if (!receipt) {
-      return undefined;
-    }
-    const [inserted] = await tx
-      .insert(discordChatIngress)
-      .values({
-        connectionId: args.connectionId,
-        messageId: args.messageId,
-        eventId: args.eventId,
-        payload: args.payload,
-        status: "pending",
-        createdAt: args.currentTime,
-        updatedAt: args.currentTime,
-      })
-      .onConflictDoNothing({ target: discordChatIngress.messageId })
-      .returning({
-        id: discordChatIngress.id,
-        connectionId: discordChatIngress.connectionId,
-        status: discordChatIngress.status,
-      });
-    if (inserted) {
-      return { ...inserted, inserted: true };
-    }
+export const admitCanonicalDiscordChatEvent$ = command(
+  async (
+    { set },
+    args: {
+      readonly applicationId: string;
+      readonly connectionId: string;
+      readonly messageId: string;
+      readonly eventId: string;
+      readonly payload: string;
+      readonly currentTime: Date;
+    },
+    signal: AbortSignal,
+  ): Promise<DiscordChatIngressAdmission | undefined> => {
+    const db = set(writeDb$);
+    const eventDigest = discordMessageReceiptDigest(
+      args.applicationId,
+      args.messageId,
+    );
+    return await db.transaction(async (tx) => {
+      // This identity-only digest survives connection/chat deletion. Raw payloads
+      // still cascade, while a lost ACK cannot launch the same message again
+      // after reconnecting or deleting its canonical chat.
+      const [receipt] = await tx
+        .insert(discordGatewayReceipts)
+        .values({
+          eventDigest,
+          createdAt: args.currentTime,
+        })
+        .onConflictDoNothing()
+        .returning({ eventDigest: discordGatewayReceipts.eventDigest });
+      signal.throwIfAborted();
+      if (!receipt) {
+        return undefined;
+      }
+      const [inserted] = await tx
+        .insert(discordChatIngress)
+        .values({
+          connectionId: args.connectionId,
+          messageId: args.messageId,
+          eventId: args.eventId,
+          payload: args.payload,
+          status: "pending",
+          createdAt: args.currentTime,
+          updatedAt: args.currentTime,
+        })
+        .onConflictDoNothing({ target: discordChatIngress.messageId })
+        .returning({
+          id: discordChatIngress.id,
+          connectionId: discordChatIngress.connectionId,
+          status: discordChatIngress.status,
+        });
+      signal.throwIfAborted();
+      if (inserted) {
+        return { ...inserted, inserted: true };
+      }
 
-    const [existing] = await tx
-      .select({
-        id: discordChatIngress.id,
-        connectionId: discordChatIngress.connectionId,
-        status: discordChatIngress.status,
-      })
-      .from(discordChatIngress)
-      .where(eq(discordChatIngress.messageId, args.messageId))
-      .limit(1);
-    if (!existing) {
-      throw new Error("Failed to resolve canonical Discord ingress event");
-    }
-    if (existing.connectionId !== args.connectionId) {
-      throw new Error(
-        "Discord message ID is already bound to another connection",
-      );
-    }
-    return { ...existing, inserted: false };
-  });
-}
+      const [existing] = await tx
+        .select({
+          id: discordChatIngress.id,
+          connectionId: discordChatIngress.connectionId,
+          status: discordChatIngress.status,
+        })
+        .from(discordChatIngress)
+        .where(eq(discordChatIngress.messageId, args.messageId))
+        .limit(1);
+      signal.throwIfAborted();
+      if (!existing) {
+        throw new Error("Failed to resolve canonical Discord ingress event");
+      }
+      if (existing.connectionId !== args.connectionId) {
+        throw new Error(
+          "Discord message ID is already bound to another connection",
+        );
+      }
+      return { ...existing, inserted: false };
+    });
+  },
+);

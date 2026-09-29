@@ -114,17 +114,23 @@ candidate and reads the winning route; only the route winner inserts a created
 chat event. DM destination refresh and ingress attachment commit with that
 route decision. No database handle is passed to a helper or another command.
 
+`admitCanonicalDiscordChatEvent$` also owns the finite receipt/ingress commit.
+The gateway supplies only verified event identity, connection, payload, time
+and final signal. The existing durable message digest and ingress uniqueness
+remain unchanged, including duplicate admission after chat/connection deletion
+and rejection of a message already owned by another connection.
+
 Existing Discord API cases retain DM reuse after physical-channel movement,
 model/default preferences, ingress replay and connected-user isolation. Scoped
 lint and formatting pass; final combined type and API behavior checks remain
-with the main PR pipeline. Separate legacy receipt/destination helpers are not
+with the main PR pipeline. Separate legacy discovery/destination helpers are not
 included in this ownership completion.
 
 ## Ownership still unfinished outside this boundary
 
 The existing atomic automation-creation and workflow-copy helpers still pass
-their transaction to the thread/event insertion helper. Discord ingress receipt
-and destination helpers, and Slack/Feishu webhook receipt admission,
+their transaction to the thread/event insertion helper. Discord discovery and
+destination helpers, and Slack/Feishu webhook receipt admission,
 Telegram reply-chain publication, and poller
 schedule claim/failure helpers also retain legacy database propagation.
 Moving lazy model selection out of those transactions does not complete their
