@@ -110,7 +110,7 @@ scope is intentional evidence, not a whole-package completion claim:
   successful authorization callbacks.
 - `2181ec9`, `055e94f`: Forms consumer/retry operations and their external callers
   use no-Db command inputs. The lifecycle and projection publication commands own
-  finite SQL. Queue persistence and automation-thread creation still forward `tx`.
+  finite SQL. Subsequent commit `7d062d3` moves Forms queue persistence into its own direct-SQL command; shared automation-thread creation still forwards `tx`.
 - `ea7187c`: Storage upload, reconciliation and deletion commands own their SQL;
   archive preparation/upload/verification occur outside those commits. Agent
   instructions publication rechecks permissions and identity. Other catalog,
@@ -215,10 +215,10 @@ migration pipeline. Full local Vitest and local development servers are not run.
 No PR auto-review, merge queue, merge to main, production promotion or deployment
 approval is included in this implementation authorization.
 
-The known baseline pnpm audit failures involve unchanged Desktop transitive
-`fast-uri` and `ip-address` advisories. Keep those separate from actual changed
-API test failures. Do not discard a failing API invariant or call it flaky
-without finding its causal interleaving.
+The merged main includes the Desktop transitive audit fixes from #37327.
+Do not carry the earlier dependency-audit failure forward as a current result.
+Likewise, do not discard a failing API invariant or call it flaky without
+finding its causal interleaving.
 
 ## Consolidation provenance
 
