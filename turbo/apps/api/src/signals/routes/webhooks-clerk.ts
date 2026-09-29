@@ -1,4 +1,5 @@
 import { acceptGetStartedInvitation$ } from "../services/get-started-invitation-acceptance.service";
+import { initializeMemberMemory$ } from "../services/member-memory-initialization.service";
 import { webhookClerkContract } from "@okouai/api-contracts/contracts/webhooks";
 import { orgCache } from "@okouai/db/schema/org-cache";
 import { command } from "ccstate";
@@ -664,6 +665,10 @@ const postClerkWebhook$ = command(
           { ...identity, acceptedAt: identity.createdAt },
           signal,
         );
+      }
+      if (identity) {
+        await set(initializeMemberMemory$, identity, signal);
+        signal.throwIfAborted();
       }
       return await set(
         handleOrganizationMembershipCreatedWebhook$,

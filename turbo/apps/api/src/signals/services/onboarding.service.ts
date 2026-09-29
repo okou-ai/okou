@@ -1,4 +1,5 @@
 import { command, computed, type Computed } from "ccstate";
+import { initializeMemberMemory$ } from "./member-memory-initialization.service";
 import type {
   OnboardingIndustry,
   OnboardingStatusResponse,
@@ -364,6 +365,15 @@ export const completeOnboarding$ = command(
     args: CompleteOnboardingArgs,
     signal: AbortSignal,
   ): Promise<CompleteOnboardingResponse> => {
+    await set(
+      initializeMemberMemory$,
+      {
+        orgId: args.orgId,
+        userId: args.member.userId,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
     if (!args.isAdmin) {
       return await set(completeMemberOnboarding$, args, signal);
     }
