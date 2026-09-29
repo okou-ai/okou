@@ -292,9 +292,16 @@ ON "table" ("created_at");
 
 ## Permanent triggers and functions
 
-When a migration adds a trigger or function, update
-`EXPECTED_PERMANENT_TRIGGERS` or `EXPECTED_PERMANENT_FUNCTIONS` in
-`scripts/test-migration-consistency-schema.ts` in the same change. Trigger keys
+New database triggers are rejected by
+[`api/no-database-trigger`](../../../docs/eslint/no-database-trigger.md) in SQL
+migrations and production TypeScript. Existing shipped trigger migrations have
+explicit ESLint exceptions; do not extend those exceptions for new behavior.
+Keep write orchestration in application transactions and invariants in database
+constraints.
+
+When a migration changes or removes an existing trigger or function, or adds a
+function, update `EXPECTED_PERMANENT_TRIGGERS` or `EXPECTED_PERMANENT_FUNCTIONS`
+in `scripts/test-migration-consistency-schema.ts` in the same change. Trigger keys
 include the complete `pg_get_triggerdef` output, and function keys include the
 MD5 of the function body. Changing trigger timing, the function it executes, an
 `UPDATE OF` column list, or a function body therefore makes the permanent
