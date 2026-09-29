@@ -1856,6 +1856,20 @@
       "title": "連接器",
       "useDefault": "使用預設"
     },
+    "delivery": {
+      "acceptedPending": "訊息已被接收，等待在聊天記錄中確認。",
+      "checkAndRetry": "檢查並重試",
+      "checking": "正在檢查…",
+      "notSentAuth": "訊息未傳送。請重新登入，檢查傳送狀態後再重試。",
+      "notSentSaved": "訊息未傳送。文字和已上傳檔案的參照已儲存在此瀏覽器中。",
+      "retryUnsupported": "此瀏覽器無法安全地跨分頁重試傳送訊息。",
+      "saveFailed": "訊息未傳送：此瀏覽器無法儲存復原副本。請釋出儲存空間後重試。",
+      "sending": "正在傳送訊息…",
+      "sendingInOtherTab": "此訊息正在另一個分頁中傳送。請再次檢查後再重試。",
+      "unconfirmed": "尚未確認訊息是否送達。請先向伺服器核實，再重試。",
+      "unconfirmedToast": "無法確認訊息是否送達。請先檢查已儲存的訊息，再重試。",
+      "webLocksRequired": "安全重試需要支援 Web Locks 的瀏覽器。"
+    },
     "documentTitle": "聊天",
     "errors": {
       "genericTitle": "這次執行沒能完成",
@@ -1942,6 +1956,13 @@
       "back": "返回",
       "composerPlaceholder": "新增留言",
       "content": "內容",
+      "delivery": {
+        "confirmed": "已確認轉發成功。",
+        "notSentAuth": "轉發未傳送。請重新登入後再檢查傳送狀態。訊息已儲存在此瀏覽器中。",
+        "notSentSaved": "轉發未傳送。訊息已儲存在此瀏覽器中。",
+        "sending": "正在轉發訊息…",
+        "unconfirmed": "尚未確認轉發是否送達。請先向伺服器核實，再重試。"
+      },
       "description": "把選中的內容發給某個智能體或聊天，繼續處理。",
       "noResults": "未找到智能體或聊天",
       "search": "搜尋智能體和聊天…",

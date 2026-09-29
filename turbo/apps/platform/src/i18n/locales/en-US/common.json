@@ -1863,6 +1863,20 @@
       "title": "Connectors",
       "useDefault": "Use default"
     },
+    "delivery": {
+      "acceptedPending": "Message accepted; waiting for confirmation in the chat history.",
+      "checkAndRetry": "Check and retry",
+      "checking": "Checking…",
+      "notSentAuth": "Message not sent. Sign in again, then check delivery before retrying.",
+      "notSentSaved": "Message not sent. Your text and uploaded file references are saved in this browser.",
+      "retryUnsupported": "This browser cannot safely retry messages across tabs.",
+      "saveFailed": "Message not sent: this browser could not save a recovery copy. Free up storage and try again.",
+      "sending": "Sending message…",
+      "sendingInOtherTab": "This message is being sent in another tab. Check again before retrying.",
+      "unconfirmed": "Delivery unconfirmed. Check the server before retrying.",
+      "unconfirmedToast": "Message delivery could not be confirmed. Check the saved message before retrying.",
+      "webLocksRequired": "Safe retry requires a browser with Web Locks support."
+    },
     "documentTitle": "Chat",
     "errors": {
       "genericTitle": "This run couldn't finish",
@@ -1949,6 +1963,13 @@
       "back": "Back",
       "composerPlaceholder": "Add a message",
       "content": "Content",
+      "delivery": {
+        "confirmed": "Forward confirmed.",
+        "notSentAuth": "Forward not sent. Sign in again before checking delivery. Your message is saved in this browser.",
+        "notSentSaved": "Forward not sent. Your message is saved in this browser.",
+        "sending": "Sending forwarded message…",
+        "unconfirmed": "Forward delivery unconfirmed. Check the server before retrying."
+      },
       "description": "Send selected content to an agent or chat to continue working on it.",
       "noResults": "No agents or chats found",
       "search": "Search agents and chats...",

@@ -1856,6 +1856,20 @@
       "title": "Konektor",
       "useDefault": "Gunakan default"
     },
+    "delivery": {
+      "acceptedPending": "Pesan diterima; menunggu konfirmasi dalam riwayat chat.",
+      "checkAndRetry": "Periksa dan coba lagi",
+      "checking": "Memeriksa…",
+      "notSentAuth": "Pesan tidak terkirim. Masuk kembali, periksa status pengiriman, lalu coba lagi.",
+      "notSentSaved": "Pesan tidak terkirim. Teks dan referensi file yang diunggah tersimpan di browser ini.",
+      "retryUnsupported": "Browser ini tidak dapat mengulangi pengiriman pesan dengan aman di beberapa tab.",
+      "saveFailed": "Pesan tidak terkirim: browser ini tidak dapat menyimpan salinan pemulihan. Kosongkan ruang penyimpanan lalu coba lagi.",
+      "sending": "Mengirim pesan…",
+      "sendingInOtherTab": "Pesan ini sedang dikirim di tab lain. Periksa lagi sebelum mencoba ulang.",
+      "unconfirmed": "Pengiriman belum terkonfirmasi. Periksa server sebelum mencoba ulang.",
+      "unconfirmedToast": "Pengiriman pesan tidak dapat dikonfirmasi. Periksa pesan yang tersimpan sebelum mencoba ulang.",
+      "webLocksRequired": "Percobaan ulang yang aman memerlukan browser yang mendukung Web Locks."
+    },
     "documentTitle": "Chat",
     "errors": {
       "genericTitle": "Proses ini tidak dapat diselesaikan",
@@ -1942,6 +1956,13 @@
       "back": "Kembali",
       "composerPlaceholder": "Tambahkan pesan",
       "content": "Konten",
+      "delivery": {
+        "confirmed": "Penerusan terkonfirmasi.",
+        "notSentAuth": "Penerusan tidak terkirim. Masuk kembali sebelum memeriksa pengiriman. Pesan Anda tersimpan di browser ini.",
+        "notSentSaved": "Penerusan tidak terkirim. Pesan Anda tersimpan di browser ini.",
+        "sending": "Mengirim pesan yang diteruskan…",
+        "unconfirmed": "Pengiriman pesan terusan belum terkonfirmasi. Periksa server sebelum mencoba ulang."
+      },
       "description": "Kirim konten yang dipilih ke agen atau chat untuk melanjutkan pengerjaannya.",
       "noResults": "Agen atau chat tidak ditemukan",
       "search": "Cari agen dan chat...",

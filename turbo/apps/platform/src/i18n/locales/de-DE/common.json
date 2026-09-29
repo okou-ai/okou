@@ -1863,6 +1863,20 @@
       "title": "Integrationen",
       "useDefault": "Standard verwenden"
     },
+    "delivery": {
+      "acceptedPending": "Nachricht angenommen; die Bestätigung im Chatverlauf steht noch aus.",
+      "checkAndRetry": "Prüfen und erneut versuchen",
+      "checking": "Wird geprüft…",
+      "notSentAuth": "Nachricht nicht gesendet. Melden Sie sich erneut an, prüfen Sie die Zustellung und versuchen Sie es dann noch einmal.",
+      "notSentSaved": "Nachricht nicht gesendet. Ihr Text und die Verweise auf hochgeladene Dateien sind in diesem Browser gespeichert.",
+      "retryUnsupported": "Dieser Browser kann Nachrichten nicht sicher über mehrere Tabs hinweg erneut senden.",
+      "saveFailed": "Nachricht nicht gesendet: Dieser Browser konnte keine Sicherungskopie speichern. Geben Sie Speicherplatz frei und versuchen Sie es erneut.",
+      "sending": "Nachricht wird gesendet…",
+      "sendingInOtherTab": "Diese Nachricht wird in einem anderen Tab gesendet. Prüfen Sie den Status erneut, bevor Sie es noch einmal versuchen.",
+      "unconfirmed": "Zustellung nicht bestätigt. Prüfen Sie den Serverstatus, bevor Sie es erneut versuchen.",
+      "unconfirmedToast": "Die Zustellung der Nachricht konnte nicht bestätigt werden. Prüfen Sie die gespeicherte Nachricht, bevor Sie es erneut versuchen.",
+      "webLocksRequired": "Für einen sicheren erneuten Versuch ist ein Browser mit Web-Locks-Unterstützung erforderlich."
+    },
     "documentTitle": "Chat",
     "errors": {
       "genericTitle": "Dieser Lauf konnte nicht abgeschlossen werden",
@@ -1949,6 +1963,13 @@
       "back": "Zurück",
       "composerPlaceholder": "Nachricht hinzufügen",
       "content": "Inhalt",
+      "delivery": {
+        "confirmed": "Weiterleitung bestätigt.",
+        "notSentAuth": "Weiterleitung nicht gesendet. Melden Sie sich erneut an, bevor Sie die Zustellung prüfen. Ihre Nachricht ist in diesem Browser gespeichert.",
+        "notSentSaved": "Weiterleitung nicht gesendet. Ihre Nachricht ist in diesem Browser gespeichert.",
+        "sending": "Weitergeleitete Nachricht wird gesendet…",
+        "unconfirmed": "Zustellung der Weiterleitung nicht bestätigt. Prüfen Sie den Serverstatus, bevor Sie es erneut versuchen."
+      },
       "description": "Sende ausgewählte Inhalte an einen Agenten oder Chat, um daran weiterzuarbeiten.",
       "noResults": "Keine Agenten oder Chats gefunden",
       "search": "Agenten und Chats suchen...",
