@@ -4329,6 +4329,36 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     );
     const afterTrialCheckout = await billing.readBillingStatus(actor);
     expect(afterTrialCheckout.credits).toBe(20_000);
+
+    // Once the existing credits have expired, a later trial extension cannot
+    // revive them. All state changes still enter through signed Stripe events.
+    mockNow(trialEnd3 * 1000 + 1000);
+    const laterTrialEnd = epochSeconds(10);
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+      proSubscription({
+        id: subscriptionId,
+        customerId,
+        status: "trialing",
+        trialEnd: laterTrialEnd,
+      }),
+    );
+    const extensionEvent = stripeEvent({
+      type: "invoice.paid",
+      object: {
+        id: `in_bdd_expired_trial_${suffix}`,
+        customer: customerId,
+        metadata: {},
+        parent: { subscription_details: { subscription: subscriptionId } },
+        lines: subscriptionLines(epochSeconds(30)),
+      },
+    });
+    await api.postStripeEvent(extensionEvent, [200]);
+    const afterExpiredExtension = await billing.readBillingStatus(actor);
+    expect(afterExpiredExtension.credits).toBe(0);
+    expect(afterExpiredExtension.creditGrants).toHaveLength(0);
+    expect(afterExpiredExtension.subscriptionStatus).toBe("trialing");
+    await api.postStripeEvent(extensionEvent, [200]);
+    expect((await billing.readBillingStatus(actor)).credits).toBe(0);
   });
 
   it("upgrades to team, picks queued chat threads, and cancels the replaced pro subscription", async () => {

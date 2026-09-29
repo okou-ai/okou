@@ -1,3 +1,7 @@
+import {
+  atomicOrgCreditExpirationSql,
+  orgCreditInvoiceGrantSql,
+} from "./org-credit-expiration";
 import { grantPurchasedOrgCredits$ } from "./org-credit-grant.service";
 import type { OrgTier } from "@okouai/api-contracts/contracts/orgs";
 import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
@@ -65,7 +69,6 @@ import {
   orgPlanEntitlementOrgIdForStripeSubscription,
   upsertOrgPlanEntitlement,
   writeOrgMetadataWithPlanEntitlements,
-  writeOrgMetadataWithDefaultPlanEntitlement,
 } from "./org-plan-entitlements.service";
 import type { Tx } from "../../lib/db-types";
 import {
@@ -1423,61 +1426,6 @@ function addBillingChangedOrgIds(
   }
 }
 
-async function grantOrgCredits(
-  tx: WriteTx,
-  orgId: string,
-  amount: number,
-): Promise<void> {
-  await writeOrgMetadataWithDefaultPlanEntitlement(
-    tx,
-    orgId,
-    async (writeTx) => {
-      return await writeTx
-        .insert(orgMetadataCanonicalWrites)
-        .values({
-          orgId,
-          credits: amount,
-          createdAt: sql`now()`,
-          updatedAt: sql`now()`,
-        })
-        .onConflictDoUpdate({
-          target: orgMetadataCanonicalWrites.orgId,
-          set: {
-            credits: sql`${orgMetadata.credits} + ${amount}`,
-            updatedAt: sql`now()`,
-          },
-        })
-        .returning({ orgId: orgMetadata.orgId, tier: orgMetadata.tier });
-    },
-  );
-}
-
-async function createExpiresRecord(
-  tx: WriteTx,
-  orgId: string,
-  params: {
-    readonly source: string;
-    readonly stripeInvoiceId: string;
-    readonly amount: number;
-    readonly expiresAt: Date;
-  },
-): Promise<boolean> {
-  const rows = await tx
-    .insert(creditExpiresRecord)
-    .values({
-      orgId,
-      source: params.source,
-      stripeInvoiceId: params.stripeInvoiceId,
-      amount: params.amount,
-      remaining: params.amount,
-      expiresAt: params.expiresAt,
-    })
-    .onConflictDoNothing()
-    .returning({ id: creditExpiresRecord.id });
-
-  return rows.length > 0;
-}
-
 async function lockInvoicePaidOrg(
   tx: WriteTx,
   orgId: string,
@@ -1522,75 +1470,9 @@ async function existingTrialPlanCredits(
         eq(creditExpiresRecord.amount, args.credits),
       ),
     )
-    .for("update");
+    .limit(1);
 
   return rows.length > 0;
-}
-
-async function refreshTrialPlanCredits(
-  tx: WriteTx,
-  args: {
-    readonly orgId: string;
-    readonly credits: number;
-    readonly expiresAt: Date;
-  },
-): Promise<void> {
-  await tx
-    .update(creditExpiresRecord)
-    .set({ expiresAt: args.expiresAt })
-    .where(
-      and(
-        eq(creditExpiresRecord.orgId, args.orgId),
-        eq(creditExpiresRecord.source, "subscription_renewal"),
-        eq(creditExpiresRecord.amount, args.credits),
-        gt(creditExpiresRecord.remaining, 0),
-      ),
-    );
-}
-
-async function expireCredits(tx: WriteTx, orgId: string): Promise<number> {
-  const expired = await tx
-    .select({
-      id: creditExpiresRecord.id,
-      remaining: creditExpiresRecord.remaining,
-    })
-    .from(creditExpiresRecord)
-    .where(
-      and(
-        eq(creditExpiresRecord.orgId, orgId),
-        lte(creditExpiresRecord.expiresAt, nowDate()),
-        gt(creditExpiresRecord.remaining, 0),
-      ),
-    )
-    .for("update");
-
-  if (expired.length === 0) {
-    return 0;
-  }
-
-  const totalExpired = expired.reduce((sum, record) => {
-    return sum + record.remaining;
-  }, 0);
-
-  for (const record of expired) {
-    await tx
-      .update(creditExpiresRecord)
-      .set({ remaining: 0 })
-      .where(eq(creditExpiresRecord.id, record.id));
-  }
-
-  if (totalExpired > 0) {
-    await tx
-      .update(orgMetadata)
-      .set({
-        credits: sql`GREATEST(${orgMetadata.credits} - ${totalExpired}, 0)`,
-        updatedAt: nowDate(),
-      })
-      .where(eq(orgMetadata.orgId, orgId));
-  }
-
-  L.debug("expired credits settled", { orgId, totalExpired });
-  return totalExpired;
 }
 
 const handleAutoRechargeInvoicePaid$ = command(
@@ -1802,16 +1684,28 @@ async function insertStripeCustomerOrgMetadata(
   return rows.length > 0;
 }
 
+interface PlanInvoicePublication {
+  readonly processed: boolean;
+  readonly cancelReplaced?: string | null;
+}
+
+function planInvoicePublication(
+  processed: boolean,
+  cancelReplaced?: string | null,
+): PlanInvoicePublication {
+  return { processed, cancelReplaced };
+}
+
 async function processAtomPlanGrantInvoicePaid(
   db: Db,
   invoice: InvoiceInput,
   details: AtomPlanGrantInvoiceDetails,
-): Promise<boolean> {
+): Promise<PlanInvoicePublication> {
   return await db.transaction(async (tx) => {
     await insertStripeCustomerOrgMetadata(tx, details);
     const lockedOrg = await lockInvoicePaidOrg(tx, details.orgId);
     if (!lockedOrg) {
-      return false;
+      return planInvoicePublication(false);
     }
     if (lockedOrg.lastProcessedInvoiceId === invoice.id) {
       if (
@@ -1822,17 +1716,11 @@ async function processAtomPlanGrantInvoicePaid(
         await upsertAtomGrantPlanEntitlement(tx, invoice, details);
       }
       await grantAtomRedeemMemberUsagePack(tx, invoice, details);
-      await cancelReplacedSubscriptionsAfterAtomGrant({
-        orgId: details.orgId,
-        customerId: details.customerId,
-        invoiceId: invoice.id,
-        knownOldSubscriptionId: lockedOrg.stripeSubscriptionId,
-      });
       L.debug("atom grant invoice already processed", {
         invoiceId: invoice.id,
         orgId: details.orgId,
       });
-      return true;
+      return planInvoicePublication(true, lockedOrg.stripeSubscriptionId);
     }
     if (
       atomUsagePackGrantWouldNotExtendEntitlement({
@@ -1842,7 +1730,7 @@ async function processAtomPlanGrantInvoicePaid(
       })
     ) {
       await grantAtomRedeemMemberUsagePack(tx, invoice, details);
-      return true;
+      return planInvoicePublication(true);
     }
     if (
       atomGrantWouldReplaceWithSameOrLowerTier({
@@ -1851,18 +1739,26 @@ async function processAtomPlanGrantInvoicePaid(
       })
     ) {
       rejectAtomGrantTierReplacement({ invoice, details, lockedOrg });
-      return false;
+      return planInvoicePublication(false);
     }
 
     if (details.credits > 0) {
-      await expireCredits(tx, details.orgId);
-      const inserted = await createExpiresRecord(tx, details.orgId, {
-        source: "subscription_renewal",
-        stripeInvoiceId: invoice.id,
-        amount: details.credits,
-        expiresAt: details.creditExpiresAt,
-      });
-      if (!inserted) {
+      await tx.execute(atomicOrgCreditExpirationSql(details.orgId, nowDate()));
+      const atomCreditGrantCount = (
+        await tx.execute(
+          orgCreditInvoiceGrantSql(
+            details.orgId,
+            {
+              source: "subscription_renewal",
+              stripeInvoiceId: invoice.id,
+              amount: details.credits,
+              expiresAt: details.creditExpiresAt,
+            },
+            nowDate(),
+          ),
+        )
+      ).rowCount;
+      if (atomCreditGrantCount !== 1) {
         if (
           lockedOrg.tier === details.tier &&
           lockedOrg.subscriptionStatus === ATOM_GRANT_SUBSCRIPTION_STATUS &&
@@ -1870,20 +1766,12 @@ async function processAtomPlanGrantInvoicePaid(
         ) {
           await upsertAtomGrantPlanEntitlement(tx, invoice, details);
         }
-        await cancelReplacedSubscriptionsAfterAtomGrant({
-          orgId: details.orgId,
-          customerId: details.customerId,
-          invoiceId: invoice.id,
-          knownOldSubscriptionId: lockedOrg.stripeSubscriptionId,
-        });
         L.debug("atom grant invoice credits already processed", {
           invoiceId: invoice.id,
           orgId: details.orgId,
         });
-        return true;
+        return planInvoicePublication(true, lockedOrg.stripeSubscriptionId);
       }
-
-      await grantOrgCredits(tx, details.orgId, details.credits);
     }
     await writeOrgMetadataWithPlanEntitlements(tx, {
       writeOrgMetadata: async (writeTx) => {
@@ -1915,13 +1803,7 @@ async function processAtomPlanGrantInvoicePaid(
       },
     });
     await grantAtomRedeemMemberUsagePack(tx, invoice, details);
-    await cancelReplacedSubscriptionsAfterAtomGrant({
-      orgId: details.orgId,
-      customerId: details.customerId,
-      invoiceId: invoice.id,
-      knownOldSubscriptionId: lockedOrg.stripeSubscriptionId,
-    });
-    return true;
+    return planInvoicePublication(true, lockedOrg.stripeSubscriptionId);
   });
 }
 
@@ -2005,7 +1887,16 @@ const handleAtomGrantInvoicePaid$ = command(
       details,
     );
     signal.throwIfAborted();
-    if (!processed) {
+    if (processed.cancelReplaced !== undefined) {
+      await cancelReplacedSubscriptionsAfterAtomGrant({
+        orgId: details.orgId,
+        customerId: details.customerId,
+        invoiceId: invoice.id,
+        knownOldSubscriptionId: processed.cancelReplaced,
+      });
+      signal.throwIfAborted();
+    }
+    if (!processed.processed) {
       return { handled: true, drainOrgId: null };
     }
 
@@ -3611,20 +3502,12 @@ async function processNoCreditSubscriptionInvoicePaid(
     readonly replacedSubscriptionId: string | null;
   },
 ): Promise<void> {
-  await expireCredits(tx, args.orgId);
+  await tx.execute(atomicOrgCreditExpirationSql(args.orgId, nowDate()));
   await updateSubscriptionInvoiceMetadata(tx, {
     orgId: args.orgId,
     invoiceId: args.invoice.id,
     subscriptionId: args.subscriptionId,
     details: args.details,
-  });
-  await cancelReplacedPlanSubscriptionsAfterInvoice({
-    orgId: args.orgId,
-    customerId: args.customerId,
-    invoiceId: args.invoice.id,
-    newSubscriptionId: args.subscriptionId,
-    targetTier: args.details.tier,
-    knownOldSubscriptionId: args.replacedSubscriptionId,
   });
 }
 
@@ -3647,14 +3530,6 @@ async function reconcileAlreadyProcessedSubscriptionInvoice(
       details: args.details,
     });
   }
-  await cancelReplacedPlanSubscriptionsAfterInvoice({
-    orgId: args.orgId,
-    customerId: args.customerId,
-    invoiceId: args.invoiceId,
-    newSubscriptionId: args.subscriptionId,
-    targetTier: args.details.tier,
-    knownOldSubscriptionId: args.replacedSubscriptionId,
-  });
   L.debug("invoice.paid already processed by concurrent delivery", {
     invoiceId: args.invoiceId,
     orgId: args.orgId,
@@ -3670,10 +3545,10 @@ async function processSubscriptionInvoicePaid(
     readonly orgId: string;
     readonly details: SubscriptionInvoiceDetails;
   },
-): Promise<boolean> {
+): Promise<PlanInvoicePublication> {
   const lockedOrg = await lockInvoicePaidOrg(tx, args.orgId);
   if (!lockedOrg) {
-    return false;
+    return planInvoicePublication(false);
   }
   const replacedSubscriptionId = replacedPlanSubscriptionId({
     currentSubscriptionId: lockedOrg.stripeSubscriptionId,
@@ -3690,7 +3565,7 @@ async function processSubscriptionInvoicePaid(
       lockedOrg,
       replacedSubscriptionId,
     });
-    return true;
+    return planInvoicePublication(true, replacedSubscriptionId);
   }
 
   if (
@@ -3713,7 +3588,7 @@ async function processSubscriptionInvoicePaid(
         targetTier: args.details.tier,
       }),
     });
-    return false;
+    return planInvoicePublication(false);
   }
 
   if (args.details.credits === 0) {
@@ -3721,7 +3596,7 @@ async function processSubscriptionInvoicePaid(
       ...args,
       replacedSubscriptionId,
     });
-    return true;
+    return planInvoicePublication(true, replacedSubscriptionId);
   }
 
   const trialingExistingSubscription =
@@ -3734,29 +3609,44 @@ async function processSubscriptionInvoicePaid(
     }));
 
   if (trialingExistingSubscription) {
-    await refreshTrialPlanCredits(tx, {
-      orgId: args.orgId,
-      credits: args.details.credits,
-      expiresAt: args.details.expiresAt,
-    });
+    // Existing positive expiry is authoritative: extending a trial cannot revive
+    // remainder already due for expiration or interleave with a partial clamp.
+    await tx.execute(atomicOrgCreditExpirationSql(args.orgId, nowDate()));
+    await tx
+      .update(creditExpiresRecord)
+      .set({ expiresAt: args.details.expiresAt })
+      .where(
+        and(
+          eq(creditExpiresRecord.orgId, args.orgId),
+          eq(creditExpiresRecord.source, "subscription_renewal"),
+          eq(creditExpiresRecord.amount, args.details.credits),
+          gt(creditExpiresRecord.remaining, 0),
+        ),
+      );
     await updateSubscriptionInvoiceMetadata(tx, {
       orgId: args.orgId,
       invoiceId: args.invoice.id,
       subscriptionId: args.subscriptionId,
       details: args.details,
     });
-    return true;
+    return planInvoicePublication(true);
   }
 
-  await expireCredits(tx, args.orgId);
+  await tx.execute(atomicOrgCreditExpirationSql(args.orgId, nowDate()));
 
-  const inserted = await createExpiresRecord(tx, args.orgId, {
-    source: "subscription_renewal",
-    stripeInvoiceId: args.invoice.id,
-    amount: args.details.credits,
-    expiresAt: args.details.expiresAt,
-  });
-  if (!inserted) {
+  const inserted = await tx.execute(
+    orgCreditInvoiceGrantSql(
+      args.orgId,
+      {
+        source: "subscription_renewal",
+        stripeInvoiceId: args.invoice.id,
+        amount: args.details.credits,
+        expiresAt: args.details.expiresAt,
+      },
+      nowDate(),
+    ),
+  );
+  if (inserted.rowCount !== 1) {
     if (subscriptionPlanEntitlementIsCurrent(lockedOrg, args)) {
       await upsertSubscriptionPlanEntitlement(tx, {
         orgId: args.orgId,
@@ -3768,25 +3658,16 @@ async function processSubscriptionInvoicePaid(
       invoiceId: args.invoice.id,
       orgId: args.orgId,
     });
-    return true;
+    return planInvoicePublication(true);
   }
 
-  await grantOrgCredits(tx, args.orgId, args.details.credits);
   await updateSubscriptionInvoiceMetadata(tx, {
     orgId: args.orgId,
     invoiceId: args.invoice.id,
     subscriptionId: args.subscriptionId,
     details: args.details,
   });
-  await cancelReplacedPlanSubscriptionsAfterInvoice({
-    orgId: args.orgId,
-    customerId: args.customerId,
-    invoiceId: args.invoice.id,
-    newSubscriptionId: args.subscriptionId,
-    targetTier: args.details.tier,
-    knownOldSubscriptionId: replacedSubscriptionId,
-  });
-  return true;
+  return planInvoicePublication(true, replacedSubscriptionId);
 }
 
 const handleCheckoutCompleted$ = command(
@@ -3990,7 +3871,17 @@ async function handlePlanSubscriptionInvoicePaid(
       details,
     });
   });
-  return processed
+  if (processed.cancelReplaced !== undefined) {
+    await cancelReplacedPlanSubscriptionsAfterInvoice({
+      orgId: org.orgId,
+      customerId,
+      invoiceId: invoice.id,
+      newSubscriptionId: subscriptionId,
+      targetTier: details.tier,
+      knownOldSubscriptionId: processed.cancelReplaced,
+    });
+  }
+  return processed.processed
     ? org.orgId
     : (concurrencyResult.drainOrgId ?? fallbackDrainOrgId);
 }

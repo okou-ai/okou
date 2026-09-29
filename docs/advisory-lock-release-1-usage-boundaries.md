@@ -32,7 +32,7 @@ Member-grant preparation now pages outside the transaction over the existing spe
 
 Active organization lots now use the same demand-derived preparation: page outside the transaction in expiration/UUID order, then reduce the selected prefix to the current shared debit after allowance and member grants. Commit requires the selected row versions, rejects a prefix that expired during preparation, and checks for newly available earlier live lots. Every lot mutation is an atomic decrement. A zero shared debit reads or expires no organization lots, preserving the existing grant-funded behavior. A shared debit now checks for expired remainder under wallet ownership, rolls back the entire attempted receipt/allowance/grant write when needed, completes expiration through its own command, and prepares the batch again. Its financial transaction owns only the prepared live prefix. A zero shared debit skips this admission/recovery path. Atom-grant expiration in billing reconciliation now has a business-only command with direct SQL and the same wallet-before-expiration-lots ownership order. Its legacy downgrade projection still forwards a database/transaction and remains implementation work. The pre-Release-1 cron owns lots before the wallet and has no advisory guard, so the retained credit key cannot prevent its mixed-version deadlock; database deadlock detection rolls that attempt back and a subsequent reconciliation pass must complete it. These R1 settlement and Atom-expiration writers now share the order required for R2.
 
-**This does not yet make all financial work bounded.** The dedicated R1 expiration command still owns all expired applicable rows. The bounded current allowance reads and final allocation remain inside the transaction to preserve atomicity; their placement is not an unfinished boundary. Splitting expired lots into independent committed batches is unsafe with the current balance clamp. For example, a wallet of 5 with two expired lots of 50 and an overlapping purchase of 150 can become 100 if one expiration commits before the purchase and one after it. Expiring all lots before the purchase yields 150; purchasing first and expiring atomically yields 55. The split result matches neither permitted serial ordering. No such batching was added. A bounded replacement therefore needs a proven common protocol for every shared-credit addition, expiration, refund and consumption writer, preserving existing negative-balance and first-expiring-first-out behavior. Merely truncating selected lots, consolidating ledger rows without auditing their references, or awaiting outgoing API drain is insufficient. This is unfinished Release 1 implementation, not a Release 2 deferral. A possible two-release protocol is to prepare every future balance-adder, refund and consumer in Release 1 to refuse or finish expired remainder under wallet ownership before proceeding; Release 1 must retain atomic full expiration while pre-Release-1 writers coexist. Only after those current-writer guards are implemented and old writers drain could Release 2 safely enable bounded expiration commits. That complete writer graph is not implemented by this prefix change.
+**This does not yet make all financial work bounded.** The dedicated R1 expiration command still owns all expired applicable rows. The bounded current allowance reads and final allocation remain inside the transaction to preserve atomicity; their placement is not an unfinished boundary. Splitting expired lots into independent committed batches is unsafe with the current balance clamp. For example, a wallet of 5 with two expired lots of 50 and an overlapping purchase of 150 can become 100 if one expiration commits before the purchase and one after it. Expiring all lots before the purchase yields 150; purchasing first and expiring atomically yields 55. The split result matches neither permitted serial ordering. No such batching was added. A bounded replacement therefore needs a proven common protocol for every shared-credit addition, expiration, refund and consumption writer, preserving existing negative-balance and first-expiring-first-out behavior. Merely truncating selected lots, consolidating ledger rows without auditing their references, or awaiting outgoing API drain is insufficient. This is unfinished Release 1 implementation, not a Release 2 deferral. A possible two-release protocol is to prepare every future balance-adder, refund and consumer in Release 1 to refuse or finish expired remainder under wallet ownership before proceeding; Release 1 must retain atomic full expiration while pre-Release-1 writers coexist. Only after those current-writer guards are implemented and old writers drain could Release 2 safely enable bounded expiration commits. The current continuation implements the wallet monetary prerequisites below; plan and fulfillment command ownership is still unfinished.
 
 The public API regression creates 101 pending connector events through the authenticated Runner usage webhook, obtains the current Maps receipt without draining that backlog, then catches up and repeats settlement. It asserts 32 credits for the current operation, 133 after catch-up, and an unchanged final usage response on retry. Existing purchased-before-bonus, member isolation, delayed-expiry, exact lot/wallet and duplicate receipt assertions remain. No lock waiter, trigger or artificial transaction gate is used. API behavior and types require verification on the final integrated PR HEAD.
 
@@ -115,10 +115,7 @@ adders have no expired-remainder predicate and could otherwise add credits betwe
 two clamps. Release 2 may bound this command only once the complete R1 writer
 graph is prepared and incompatible serving/in-flight/rollback writers are gone.
 
-The first increment does **not** complete that graph: subscription/Atom-plan grants,
-trial extensions, get-started organization rewards, and first-paid negative balance
-clearing still need the same admission and recovery protocol.
-Their remaining handle propagation is implementation work, not a drain gate.
+This monetary preparation does **not** complete the ownership graph: subscription/Atom-plan grants and first-paid fulfillment still forward transaction handles through metadata, member-grant and pending-snapshot helpers. Those boundaries remain implementation work, not a drain gate.
 
 Slack is the only organization-scoped get-started reward. Its installation writer
 now owns the installation, claim, organization lot and wallet increment in one
@@ -138,3 +135,27 @@ are rolled back together if shared expiration is required, including Social's
 managed receipt/reservation publication. A fresh attempt re-prepares event, price,
 allowance, grant and live-lot evidence. Already processed receipts and operations
 fully covered by allowance/member grants do not cause expiration.
+
+Plan renewal and Atom-plan credits now execute the common atomic expiration SQL
+under the wallet row already owned by invoice publication. A single data-modifying
+CTE inserts the unique invoice lot and increments the wallet only for that receipt.
+The old `grantOrgCredits`, `createExpiresRecord`, `expireCredits` and trial-expiry
+transaction helpers are removed. Trial extension finishes expired remainder before
+changing positive lots; already expired trial credits cannot be revived. The API
+trial-invoice regression extends the trial after its old expiry and replays that
+event, asserting zero credits and no resurrected grant.
+
+First-paid debt clearing owns the wallet before evaluating current paid-grant and
+fulfillment evidence. Only eligible negative debt triggers whole expiration and
+clearing; a member grant that does not clear debt does not expire shared credits.
+Refunds affect member-owned grants/refund records, not the shared organization
+wallet. Trial shortening already owns the wallet through its metadata update and
+only decreases expiry; subsequent monetary writers observe any resulting remainder.
+The preview/test state seed routes are test-only writers, not supported production
+balance writers. They remain a separate fixture command-ownership cleanup.
+
+Plan/Atom replacement cancellations now run after local financial commit, using
+only the committed previous subscription ID. Existing replay paths still retry the
+provider cancellation. Plan entitlement, pending-snapshot and member-grant helper
+propagation remains explicitly unfinished despite these monetary improvements.
+R1 is not certified ready by this note.

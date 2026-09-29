@@ -1,3 +1,4 @@
+import { atomicOrgCreditExpirationSql } from "./org-credit-expiration";
 import type { EmptyUsagePackCancellation } from "./billing-downgrade.service";
 import {
   type BillingPurchaseConfirmResponse,
@@ -2910,6 +2911,11 @@ async function clearNegativeOrgCreditsForFirstPaidUpgrade(
   subscription: UsagePackSubscriptionRow,
   invoiceId: string,
 ): Promise<void> {
+  await tx
+    .select({ orgId: orgMetadata.orgId })
+    .from(orgMetadata)
+    .where(eq(orgMetadata.orgId, subscription.orgId))
+    .for("update");
   // Free onboarding grants also store an idempotency key in stripeInvoiceId.
   const priorPaidCreditGrant = tx
     .select({ id: creditExpiresRecord.id })
@@ -2939,6 +2945,22 @@ async function clearNegativeOrgCreditsForFirstPaidUpgrade(
       ),
     )
     .where(eq(usagePackSubscriptions.orgId, subscription.orgId));
+  const debtWhere = and(
+    eq(orgMetadata.orgId, subscription.orgId),
+    lt(orgMetadata.credits, 0),
+    isNull(orgMetadata.lastProcessedInvoiceId),
+    notExists(priorPaidCreditGrant),
+    notExists(priorFulfillment),
+  );
+  const [debt] = await tx
+    .select({ orgId: orgMetadata.orgId })
+    .from(orgMetadata)
+    .where(debtWhere)
+    .for("update");
+  if (!debt) {
+    return;
+  }
+  await tx.execute(atomicOrgCreditExpirationSql(subscription.orgId, nowDate()));
   const cleared = await tx
     .update(orgMetadata)
     .set({ credits: 0, updatedAt: nowDate() })

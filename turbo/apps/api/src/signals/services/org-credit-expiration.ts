@@ -64,3 +64,22 @@ export function atomicOrgCreditExpirationSql(orgId: string, at: Date) {
   FROM total
   WHERE ${orgMetadata.orgId} = ${orgId} AND total.amount > 0`;
 }
+
+/** Existing invoice identity and its arithmetic balance increment commit together. */
+export function orgCreditInvoiceGrantSql(
+  orgId: string,
+  grant: {
+    readonly source: string;
+    readonly stripeInvoiceId: string;
+    readonly amount: number;
+    readonly expiresAt: Date;
+  },
+  at: Date,
+) {
+  return sql`WITH receipt AS (
+    INSERT INTO ${creditExpiresRecord} (org_id, source, stripe_invoice_id, amount, remaining, expires_at)
+    VALUES (${orgId}, ${grant.source}, ${grant.stripeInvoiceId}, ${grant.amount}, ${grant.amount}, ${sql.param(grant.expiresAt, creditExpiresRecord.expiresAt)})
+    ON CONFLICT DO NOTHING RETURNING id
+  ) UPDATE ${orgMetadata} SET credits = credits + ${grant.amount}, updated_at = ${sql.param(at, orgMetadata.updatedAt)}
+    WHERE ${orgMetadata.orgId} = ${orgId} AND EXISTS (SELECT 1 FROM receipt)`;
+}
