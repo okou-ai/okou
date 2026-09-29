@@ -40,7 +40,18 @@ Two narrow database invariants close that gap together:
 
 The functions `preserve_google_forms_cursor_on_rebind` and `invalidate_google_forms_cursor_for_source_change` contain no advisory acquisition, external effect or new stored coordination state. Automation deletion still cascades; connector deletion invalidates the source through its existing SET NULL relationship. Cursor invalidation and response admission both lock the automation before its cursor, while cursor rebinding performs no additional reads.
 
-These are lasting business invariants, not a lease or temporary test gate. Their immediate compatibility purpose is to constrain already deployed unconditional repair writers. R2 may remove the outgoing advisory coordination after the supported-writer and rollback gates; removing these invariants is a separate decision requiring every supported writer to preserve binding progress and explicit-disable/source-reset semantics without them. Merging R1 or waiting a fixed interval does not establish that condition.
+The updated terminal contract excludes application-defined database triggers.
+These two triggers describe the current implementation, not an accepted final
+design. Their immediate purpose is to constrain already deployed unconditional
+repair writers. Replace their business behavior with explicit command-owned SQL:
+repair/rebinding preserves existing progress, while an explicit disable or source
+change updates the automation and deletes its cursor in one local transaction.
+The supported writers must implement that distinction before the triggers can
+be absent safely. Rework the R1/R2 transition together with the existing FK and
+provider-I/O boundaries; simply deleting migration 1290 would reopen the mixed
+writer gap. Any temporary trigger must have a bounded removal gate and be gone
+at the terminal state. Merging R1 or waiting a fixed interval does not establish
+the relevant serving, in-flight and rollback gates.
 
 ### Validation
 

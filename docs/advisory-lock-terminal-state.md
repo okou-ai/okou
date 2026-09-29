@@ -32,6 +32,12 @@ these 28 definitions, not the complete retirement scope.
    lease, operation, or publication fields to implement the plan. Do not
    circumvent this constraint with a new coordination table or new coordination
    fields hidden inside JSON.
+5. **No application-defined database triggers remain in the final schema.**
+   Do not move coordination, cursor lifecycle, projections, or other business
+   writes into trigger functions. Express those transitions explicitly in the
+   owning command's SQL and keep necessary related writes in its local short
+   transaction. Mixed-version compatibility does not make a trigger part of
+   the accepted terminal design.
 
 Adding or adjusting an index or constraint over existing fields is compatible
 with this target when the actual business contract requires it. Normal SQL
@@ -267,6 +273,8 @@ Completion requires:
   zero transaction objects escaping their local transaction callback.
 - Zero external I/O or workflow-spanning work inside those transactions.
 - Zero new persisted fields introduced by this cleanup.
+- Zero application-defined database triggers in the final schema; their business
+  transitions are explicit in command-owned SQL.
 - User-visible behavior verified through production APIs, including relevant
   concurrent requests, duplicate outcomes, amounts, permissions, and cleanup.
 

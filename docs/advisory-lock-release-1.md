@@ -87,8 +87,11 @@ the baseline. A definition can serve multiple runtime callers.
   from that retained cursor. Migration `1290_google_forms_cursor_lifecycle`
   constrains outgoing and R1 rebinds to retain progress and invalidates cursors
   on actual source replacement/explicit disable. The two function/trigger
-  definitions are included in the permanent schema inventory. Neither migration
-  adds stored coordination data or executable advisory SQL.
+  definitions are included in the current schema inventory. Neither migration
+  adds stored coordination data or executable advisory SQL. The updated terminal
+  contract also forbids database triggers: this implementation must be replaced
+  by explicit command-owned cursor lifecycle SQL and an appropriate mixed-writer
+  transition. The two triggers are not an accepted permanent design.
 - Attribution and allowance reader fallbacks remain. A full live data-convergence
   census has not established their removal conditions; tool age and CI references
   are not convergence evidence.
