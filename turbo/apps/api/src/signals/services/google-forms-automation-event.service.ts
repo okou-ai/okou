@@ -1691,7 +1691,7 @@ const reconcileGoogleFormsWatchState$ = command(
   },
 );
 
-const reprojectGoogleFormsAutomationOwnership$ = command(
+export const reprojectGoogleFormsAutomationOwnership$ = command(
   async (
     { set },
     args: { readonly orgId: string; readonly userId: string },

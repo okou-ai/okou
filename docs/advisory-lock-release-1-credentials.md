@@ -200,13 +200,13 @@ The thread-deletion and credential-storage operations still belong to legacy cal
 
 ### Ordinary Forms re-enable publishes one complete interval
 
-An ordinary disabled Forms automation now stays disabled throughout remote watch and response-baseline preparation. `activateGoogleFormsAutomationWatch$` accepts only business values, obtains `writeDb$` itself, and owns the short transaction. It uses the existing account and Forms lifecycle compatibility keys, verifies the current account selection and exact disabled automation observation, publishes or reuses the watch, and enables the automation together with deletion of any prior cursor and insertion of the prepared baseline. Its SQL and transaction handles never leave the command; shared helpers only build values or SQL predicates. Provider calls and post-commit realtime are outside the transaction.
+An ordinary disabled Forms automation now stays disabled throughout remote watch and response-baseline preparation. `publishGoogleFormsAutomationInterval$` accepts only business values, obtains `writeDb$` itself, and owns the short transaction. It uses the existing account and Forms lifecycle compatibility keys, verifies the current account selection and exact disabled automation observation, publishes or reuses the watch, and enables the automation together with deletion of any prior cursor and insertion of the prepared baseline. Its SQL and transaction handles never leave the command; shared helpers only build values or SQL predicates. Provider calls and post-commit realtime are outside the transaction.
 
 Outgoing reconciliation can hold the Forms lifecycle key while an expired credential refresh acquires the account key. Activation therefore tries the same existing lifecycle key without waiting after acquiring the account key. Contention returns the existing conflict outcome before any business SQL in the activation transaction and releases the account key on transaction completion; it does not clear a cursor, run compensation or loop while locked. This prevents the new activation branch from forming the opposite two-key wait cycle. It adds no new key or persisted state and does not certify every remaining legacy caller's order. Both compatibility acquisitions must disappear at the zero-advisory terminal state.
 
 This closes the old repair INSERT/reopen gap for this path: an outgoing request that inserts before activation cannot dispatch while the row is disabled, and activation replaces that old cursor in its commit. An outgoing request arriving after activation conflicts with the new cursor; the temporary migration 1290 binding trigger preserves its baseline. An outgoing stop that removes the initially observed watch causes remote re-preparation with the original captured seed, never another newest-response seed. Failed or superseded preparation never restores or deletes a newer enabled interval. The API regression observes `enabled: false` at the provider HTTP boundary and still verifies that a nested real enable wins over both a late success and a provider failure.
 
-This scope is ordinary disabled-to-enabled activation. Already-enabled source/account replacement and official reconfiguration still require a complete common interval protocol and command ownership review. The new ordinary activation account reader owns its own SQL and accepts only business inputs. The outer enable command still passes its database to `ensureEventAutomationCanBeEnabled$`, whose credential helper chain also receives it; the complete enable caller graph is therefore unfinished. Credential acquisition, shared create and queue/thread transaction graphs likewise remain implementation work. The triggers remain temporary, with both the R1 writer-completeness gate and the previously documented incompatible outgoing/rollback gate; they are not part of the terminal design.
+Ordinary disabled-to-enabled activation and selected-account publication use the interval command. Official reconfiguration still requires a complete command ownership review. Ordinary Forms enable now uses an owning authority reader, business-only watch commands and an owning post-commit summary command. Its outer enable path no longer passes a handle to `ensureEventAutomationCanBeEnabled$`; that validation runs only for GitHub event types. Credential acquisition, shared create and queue/thread transaction graphs likewise remain implementation work. The triggers remain temporary, with both the R1 writer-completeness gate and the previously documented incompatible outgoing/rollback gate; they are not part of the terminal design.
 
 Departure cleanup also updates already-disabled ordinary automation rows. This invalidates the in-memory snapshot of remote preparation started before cleanup, instead of leaving a disabled candidate able to publish after revocation. Final activation rechecks account and automation authority. It does not require membership-cache existence: verified Clerk session authentication does not populate that optional cache, so treating it as mandatory would reject legitimate session requests. The authority fence for preparation already in flight is the cleanup update of the observed automation row, not an inferred cache record.
 
@@ -247,7 +247,26 @@ No database gates or internal state assertions are used.
 This closes the selected-account interval and row-order gap in the current Forms
 projection writer. The shared account transaction callers still pass handles to
 the legacy multi-provider projection adapter; their command ownership is a
-separate implementation task. Ordinary already-enabled generic enable and official
-source reconfiguration are also still distinct caller-boundary work. Migration
+separate implementation task. Official source reconfiguration remains distinct caller-boundary work. Migration
 1290 remains necessary for outgoing unconditional repair upserts and source writers;
 this change does not claim that its complete retirement gate is met.
+
+### Ordinary enable command ownership
+
+`readWorkflowAutomationEnableTarget$` now reads the automation, visible workflow
+and agent authority with its own SQL and returns ordinary values. The shared
+visibility predicate retains private-workflow and agent permission boundaries.
+Ordinary Forms enable no longer enters the generic transaction-aware account
+projection or finalization helpers. An already enabled automation first reconciles
+its selected account through the same staging command, then uses exact observed
+publication: an unchanged source keeps cursor progress, while a changed/unbound
+source receives its prepared baseline together with the source binding. The final
+summary command reads its thread binding itself and publishes realtime only after
+commit. These commands accept no database or transaction handles.
+
+Existing user API coverage checks that enabling an already enabled automation does
+not skip pending responses; the selected-account race and provider failure cases
+also exercise the shared interval publisher. Focused ESLint, plain Oxlint,
+Prettier and whitespace checks pass. The root owner runs combined types and the
+PR pipeline. This does not complete the shared credential resolver or official,
+Morning Brief and other providers' legacy finalization paths.

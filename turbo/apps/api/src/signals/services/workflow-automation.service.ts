@@ -108,6 +108,7 @@ import { resolveGoogleFormsAutomationConnectorId } from "./google-forms-automati
 import {
   ensureGoogleFormsWatchForUser$,
   readGoogleFormsActivationAccount$,
+  reprojectGoogleFormsAutomationOwnership$,
   hasEnabledGoogleFormsConsumer$,
   prepareGoogleFormsResponseEventConfigForPersist,
 } from "./google-forms-automation-event.service";
@@ -1064,26 +1065,6 @@ async function loadAgent(
  */
 function canUseAgent(agent: UsableAgent, member: WorkflowMember): boolean {
   return agent.visibility === "public" || agent.owner === member.userId;
-}
-/**
- * Resolve the workflow's single owning agent for an automation. Under 1:N the agent
- * is derived from `workflows.agent_id`, not from the automation row.
- */
-async function loadAutomationWorkflowAgentId(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly workflowId: string;
-  },
-): Promise<string | null> {
-  const [workflow] = await db
-    .select({ agentId: workflows.agentId })
-    .from(workflows)
-    .where(
-      and(eq(workflows.orgId, args.orgId), eq(workflows.id, args.workflowId)),
-    )
-    .limit(1);
-  return workflow?.agentId ?? null;
 }
 async function loadAutomationWorkflowRunTarget(
   db: ReadonlyDb,
@@ -5114,9 +5095,8 @@ export const deleteWorkflowAutomation$ = command(
 
 const ensureEventAutomationCanBeEnabled$ = command(
   async (
-    _,
+    { set },
     args: {
-      readonly db: Db;
       readonly orgId: string;
       readonly member: WorkflowMember;
       readonly automation: AutomationRow;
@@ -5124,11 +5104,14 @@ const ensureEventAutomationCanBeEnabled$ = command(
     signal: AbortSignal,
   ): Promise<AutomationActionFailure | null> => {
     if (supportedGithubEventType(args.automation.eventType)) {
-      const preparedConfig = await prepareGithubAutomationEventConfig(args.db, {
-        orgId: args.orgId,
-        eventType: args.automation.eventType,
-        eventConfig: args.automation.eventConfig,
-      });
+      const preparedConfig = await prepareGithubAutomationEventConfig(
+        set(writeDb$),
+        {
+          orgId: args.orgId,
+          eventType: args.automation.eventType,
+          eventConfig: args.automation.eventConfig,
+        },
+      );
       signal.throwIfAborted();
       return preparedConfig.kind === "ok" ? null : preparedConfig;
     }
@@ -5990,6 +5973,42 @@ async function finalizeAndPublishEnabledWorkflowAutomation(
   signal.throwIfAborted();
   return { kind: "ok", summary };
 }
+const publishEnabledGoogleFormsSummary$ = command(
+  async (
+    { set },
+    args: { readonly row: AutomationRow; readonly memberUserId: string },
+    signal: AbortSignal,
+  ): Promise<AutomationResult> => {
+    const { row } = args;
+    const db = set(writeDb$);
+    const [binding] = await db
+      .select({ chatThreadId: workflowUserAutomationThreads.chatThreadId })
+      .from(workflowUserAutomationThreads)
+      .where(
+        and(
+          eq(workflowUserAutomationThreads.orgId, row.orgId),
+          eq(workflowUserAutomationThreads.userId, row.ownerUserId),
+          eq(workflowUserAutomationThreads.workflowId, row.workflowId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    const chatThreadId = binding?.chatThreadId ?? null;
+    await publishThreadBoundWorkflowAutomationChanged(
+      args.memberUserId,
+      chatThreadId,
+    );
+    signal.throwIfAborted();
+    const summary = eventRowToSummary(row, chatThreadId);
+    if (!summary) {
+      throw new Error(
+        "Google Forms activation returned an invalid event source",
+      );
+    }
+    return { kind: "ok", summary };
+  },
+);
+
 const activateInactiveGoogleFormsAutomation$ = command(
   async (
     { set },
@@ -6003,6 +6022,7 @@ const activateInactiveGoogleFormsAutomation$ = command(
   ): Promise<AutomationResult> => {
     const connectorId = await set(
       readGoogleFormsActivationAccount$,
+      reprojectGoogleFormsAutomationOwnership$,
       {
         orgId: args.previousAutomation.orgId,
         userId: args.previousAutomation.ownerUserId,
@@ -6054,33 +6074,103 @@ const activateInactiveGoogleFormsAutomation$ = command(
         "Google Forms activation did not commit an enabled automation",
       );
     }
-    const row = prepared.enabledAutomation;
+    return await set(
+      publishEnabledGoogleFormsSummary$,
+      { row: prepared.enabledAutomation, memberUserId: args.memberUserId },
+      signal,
+    );
+  },
+);
+
+const refreshEnabledGoogleFormsAutomation$ = command(
+  async (
+    { set },
+    args: { readonly automation: AutomationRow; readonly memberUserId: string },
+    signal: AbortSignal,
+  ): Promise<AutomationResult> => {
+    const owner = {
+      orgId: args.automation.orgId,
+      userId: args.automation.ownerUserId,
+    };
+    await set(reprojectGoogleFormsAutomationOwnership$, owner, signal);
     const db = set(writeDb$);
-    const [binding] = await db
-      .select({ chatThreadId: workflowUserAutomationThreads.chatThreadId })
-      .from(workflowUserAutomationThreads)
+    const [current] = await db
+      .select(workflowAutomationColumns())
+      .from(workflowAutomations)
       .where(
         and(
-          eq(workflowUserAutomationThreads.orgId, row.orgId),
-          eq(workflowUserAutomationThreads.userId, row.ownerUserId),
-          eq(workflowUserAutomationThreads.workflowId, row.workflowId),
+          eq(workflowAutomations.id, args.automation.id),
+          eq(workflowAutomations.orgId, owner.orgId),
+          eq(workflowAutomations.ownerUserId, owner.userId),
+          eq(workflowAutomations.enabled, true),
+          eq(workflowAutomations.eventType, "google-forms-response-submitted"),
+          isNull(workflowAutomations.officialBlueprintKey),
         ),
       )
       .limit(1);
     signal.throwIfAborted();
-    const chatThreadId = binding?.chatThreadId ?? null;
-    await publishThreadBoundWorkflowAutomationChanged(
-      args.memberUserId,
-      chatThreadId,
-    );
-    signal.throwIfAborted();
-    const summary = eventRowToSummary(row, chatThreadId);
-    if (!summary) {
-      throw new Error(
-        "Google Forms activation returned an invalid event source",
-      );
+    if (!current) {
+      return {
+        kind: "conflict",
+        message: "Google Forms automation changed; retry the request",
+      };
     }
-    return { kind: "ok", summary };
+    const connectorId = await set(
+      readGoogleFormsActivationAccount$,
+      {
+        ...owner,
+        workflowId: current.workflowId,
+      },
+      signal,
+    );
+    if (connectorId === null) {
+      return {
+        kind: "bad-request",
+        message:
+          "Connect Google Forms before using Google Forms response automations",
+      };
+    }
+    const eventConfig = {
+      ...googleFormsResponseSubmittedEventConfigSchema.parse(
+        current.eventConfig,
+      ),
+      connectorId,
+    };
+    const prepared = await set(
+      ensureGoogleFormsWatchForUser$,
+      {
+        ...owner,
+        connectorId,
+        formId: eventConfig.form.id,
+        resetAutomationId: current.id,
+        automationSnapshot: workflowAutomationSnapshot(current),
+        ...(current.eventConnectorId === null
+          ? {
+              interval: {
+                kind: "account-replacement" as const,
+                automationId: current.id,
+                workflowId: current.workflowId,
+                eventConfig,
+              },
+            }
+          : {}),
+      },
+      signal,
+    );
+    if (prepared.kind !== "ok") {
+      return {
+        kind: prepared.kind === "superseded" ? "conflict" : "bad-request",
+        message: prepared.message,
+      };
+    }
+    return await set(
+      publishEnabledGoogleFormsSummary$,
+      {
+        row: prepared.enabledAutomation ?? current,
+        memberUserId: args.memberUserId,
+      },
+      signal,
+    );
   },
 );
 
@@ -6156,9 +6246,18 @@ const persistAndReconcileEnabledWorkflowAutomation$ = command(
   ): Promise<AutomationResult> => {
     if (
       args.automation.eventType === "google-forms-response-submitted" &&
-      !args.automation.enabled &&
       args.automation.officialBlueprintKey === null
     ) {
+      if (args.automation.enabled) {
+        return await set(
+          refreshEnabledGoogleFormsAutomation$,
+          {
+            automation: args.automation,
+            memberUserId: args.memberUserId,
+          },
+          signal,
+        );
+      }
       return await set(
         activateInactiveGoogleFormsAutomation$,
         {
@@ -6256,14 +6355,66 @@ const validateStripeFeature$ = command(
   },
 );
 
+const readWorkflowAutomationEnableTarget$ = command(
+  async (
+    { set },
+    args: AutomationActionInput,
+    signal: AbortSignal,
+  ): Promise<OwnedAutomation | AutomationActionFailure> => {
+    const db = set(writeDb$);
+    const [row] = await db
+      .select({
+        automation: workflowAutomationColumns(),
+        agent: {
+          id: agents.id,
+          owner: agents.owner,
+          visibility: agents.visibility,
+        },
+      })
+      .from(workflowAutomations)
+      .innerJoin(workflows, eq(workflows.id, workflowAutomations.workflowId))
+      .innerJoin(agents, eq(agents.id, workflows.agentId))
+      .where(
+        and(
+          eq(workflowAutomations.id, args.automationId),
+          eq(workflowAutomations.orgId, args.orgId),
+          eq(workflows.orgId, args.orgId),
+          eq(agents.orgId, args.orgId),
+          visibleWorkflowCondition(args.member),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (
+      !row ||
+      (row.automation.kind === "event" &&
+        !supportedAutomationEventType(row.automation.eventType))
+    ) {
+      return { kind: "not-found" };
+    }
+    if (row.automation.ownerUserId !== args.member.userId) {
+      return {
+        kind: "forbidden",
+        message: "Only the automation owner can manage this automation",
+      };
+    }
+    if (!canUseAgent(row.agent, args.member)) {
+      return {
+        kind: "forbidden",
+        message: "You do not have access to the workflow's agent",
+      };
+    }
+    return { automation: row.automation };
+  },
+);
+
 export const enableWorkflowAutomation$ = command(
   async (
     { set },
     args: AutomationActionInput,
     signal: AbortSignal,
   ): Promise<AutomationResult> => {
-    const writeDb = set(writeDb$);
-    const owned = await loadOwnedAutomation(writeDb, args);
+    const owned = await set(readWorkflowAutomationEnableTarget$, args, signal);
     signal.throwIfAborted();
     if ("kind" in owned) {
       return owned;
@@ -6286,32 +6437,6 @@ export const enableWorkflowAutomation$ = command(
     if (stripeFailure) {
       return stripeFailure;
     }
-    // Re-confirm the workflow's owning agent can still be used before re-enabling.
-    const agentId = await loadAutomationWorkflowAgentId(writeDb, {
-      orgId: args.orgId,
-      workflowId: automation.workflowId,
-    });
-    signal.throwIfAborted();
-    if (agentId === null) {
-      return { kind: "not-found" };
-    }
-    const agent = await loadAgent(writeDb, {
-      orgId: args.orgId,
-      agentId,
-    });
-    signal.throwIfAborted();
-    if (!agent) {
-      return {
-        kind: "conflict",
-        message: "Cannot enable: the workflow's agent no longer exists.",
-      };
-    }
-    if (!canUseAgent(agent, args.member)) {
-      return {
-        kind: "forbidden",
-        message: "You do not have access to the workflow's agent",
-      };
-    }
     const now = nowDate();
     const nextRunAt =
       automation.kind === "schedule"
@@ -6322,11 +6447,10 @@ export const enableWorkflowAutomation$ = command(
             automation.lastRunAt,
           )
         : automation.nextRunAt;
-    if (automation.kind === "event") {
+    if (supportedGithubEventType(automation.eventType)) {
       const failure = await set(
         ensureEventAutomationCanBeEnabled$,
         {
-          db: writeDb,
           orgId: args.orgId,
           member: args.member,
           automation,
@@ -6353,7 +6477,7 @@ export const enableWorkflowAutomation$ = command(
     signal.throwIfAborted();
     if (morningBriefRow !== undefined) {
       return await finalizeAndPublishEnabledWorkflowAutomation(
-        writeDb,
+        set(writeDb$),
         {
           previousAutomation: automation,
           enabledAutomation: morningBriefRow,
