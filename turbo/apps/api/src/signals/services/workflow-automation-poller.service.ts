@@ -18,7 +18,6 @@ import {
   scheduleTriggerContext,
   type DueWorkflowAutomation,
   type AutomationRow,
-  type RunWorkflowAutomationNowArgs,
   type RunWorkflowAutomationResult,
 } from "./workflow-automation-launch.service";
 import {
@@ -37,7 +36,7 @@ import {
 } from "./workflow-schedule-failure.service";
 import { workflowAutomationCanFire } from "./workflow-automation-access.service";
 import { buildWorkflowScheduleAutomationBrief } from "./workflow-automation-brief.service";
-import { ensureWorkflowUserAutomationThread } from "./workflow-user-automation-thread.service";
+import { ensureWorkflowUserAutomationThread$ } from "./workflow-user-automation-thread.service";
 import {
   deferWorkflowSchedule,
   skipExpiredWorkflowSchedule,
@@ -74,41 +73,41 @@ interface DueWorkflowAutomationRow {
   readonly userTimezone: string | null;
 }
 
-async function startDueWorkflowAutomation(
-  args: {
-    readonly startRun: (
-      input: RunWorkflowAutomationNowArgs,
-      signal: AbortSignal,
-    ) => Promise<RunWorkflowAutomationResult>;
-    readonly due: DueWorkflowAutomation;
-    readonly row: DueWorkflowAutomationRow;
-    readonly currentTime: Date;
-    readonly scheduleContext: ReturnType<typeof scheduleTriggerContext>;
-    readonly scheduleClaim: WorkflowScheduleClaimPlan | undefined;
-  },
-  signal: AbortSignal,
-): Promise<RunWorkflowAutomationResult> {
-  const { automation } = args.due;
-  return await args.startRun(
-    {
-      due: args.due,
-      automationContext: args.scheduleContext,
-      apiStartTime: now(),
-      ...(args.scheduleClaim ? { scheduleClaim: args.scheduleClaim } : {}),
-      triggerBrief:
-        buildWorkflowScheduleAutomationBrief({
-          createdAt: args.currentTime,
-          scheduleType: automation.scheduleType,
-          cronExpression: automation.cronExpression,
-          intervalSeconds: automation.intervalSeconds,
-          atTime: automation.atTime,
-          automationTimezone: automation.timezone,
-          userTimezone: args.row.userTimezone,
-        }) ?? undefined,
+const startDueWorkflowAutomation$ = command(
+  async (
+    { set },
+    args: {
+      readonly due: DueWorkflowAutomation;
+      readonly row: DueWorkflowAutomationRow;
+      readonly currentTime: Date;
+      readonly scheduleContext: ReturnType<typeof scheduleTriggerContext>;
+      readonly scheduleClaim: WorkflowScheduleClaimPlan | undefined;
     },
-    signal,
-  );
-}
+    signal: AbortSignal,
+  ): Promise<RunWorkflowAutomationResult> => {
+    const { automation } = args.due;
+    return await set(
+      runWorkflowAutomationNow$,
+      {
+        due: args.due,
+        automationContext: args.scheduleContext,
+        apiStartTime: now(),
+        ...(args.scheduleClaim ? { scheduleClaim: args.scheduleClaim } : {}),
+        triggerBrief:
+          buildWorkflowScheduleAutomationBrief({
+            createdAt: args.currentTime,
+            scheduleType: automation.scheduleType,
+            cronExpression: automation.cronExpression,
+            intervalSeconds: automation.intervalSeconds,
+            atTime: automation.atTime,
+            automationTimezone: automation.timezone,
+            userTimezone: args.row.userTimezone,
+          }) ?? undefined,
+      },
+      signal,
+    );
+  },
+);
 
 async function hasOrgMembership(
   db: Db,
@@ -298,26 +297,6 @@ function journaledScheduleExecution(
       );
     },
   };
-}
-
-async function ensureDueWorkflowAutomationChatThread(
-  db: Db,
-  row: DueWorkflowAutomationRow,
-  currentTime: Date,
-): Promise<string> {
-  if (row.chatThreadId) {
-    return row.chatThreadId;
-  }
-  return await db.transaction(async (tx) => {
-    return await ensureWorkflowUserAutomationThread(tx, {
-      orgId: row.automation.orgId,
-      userId: row.automation.ownerUserId,
-      workflowId: row.automation.workflowId,
-      agentId: row.agentId,
-      workflowTitle: row.workflowDisplayName ?? row.workflowName,
-      currentTime,
-    });
-  });
 }
 
 type DueMode =
@@ -544,13 +523,8 @@ async function retireDepartedOwner(
 }
 
 type WorkflowPollerArgs = {
-  readonly db: Db;
   readonly automationId?: string;
   readonly workflowId?: string;
-  readonly startRun: (
-    input: RunWorkflowAutomationNowArgs,
-    signal: AbortSignal,
-  ) => Promise<RunWorkflowAutomationResult>;
 };
 
 type PollCounters = { executed: number; skipped: number; expired: number };
@@ -590,218 +564,233 @@ async function loadDueWorkflowRows(
   return rows;
 }
 
-async function launchClaimedDueRow(
-  args: {
-    readonly poller: WorkflowPollerArgs;
-    readonly row: DueWorkflowAutomationRow;
-    readonly claimed: AutomationRow;
-    readonly scheduledAnchorAt: Date | null;
-    readonly journaled: boolean;
-    readonly currentTime: Date;
-    readonly expiryEnabled: boolean;
-    readonly counters: PollCounters;
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  const { poller, row, claimed, currentTime, counters } = args;
-  const execution = journaledScheduleExecution(
-    {
-      db: poller.db,
-      automation: claimed,
-      scheduledAnchorAt: args.journaled ? args.scheduledAnchorAt : null,
-      claimedAt: currentTime,
+const launchClaimedDueRow$ = command(
+  async (
+    { set },
+    args: {
+      readonly row: DueWorkflowAutomationRow;
+      readonly claimed: AutomationRow;
+      readonly scheduledAnchorAt: Date | null;
+      readonly journaled: boolean;
+      readonly currentTime: Date;
+      readonly expiryEnabled: boolean;
+      readonly counters: PollCounters;
     },
-    signal,
-  );
-  const chatThreadId = await tapError(
-    ensureDueWorkflowAutomationChatThread(poller.db, row, currentTime),
-    async (error) => {
-      await execution.recordFailure(error);
-      counters.skipped++;
-    },
-  );
-  signal.throwIfAborted();
-  if (!chatThreadId) {
-    return;
-  }
-  const due: DueWorkflowAutomation = {
-    automation: claimed,
-    agentId: row.agentId,
-    chatThreadId,
-  };
-  const scheduleContext = scheduleTriggerContext({
-    automation: claimed,
-    workflowName: row.workflowName,
-    firedAt: currentTime,
-  });
-  const result = await tapError(
-    startDueWorkflowAutomation(
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    const { row, claimed, currentTime, counters } = args;
+    const execution = journaledScheduleExecution(
       {
-        startRun: poller.startRun,
-        due,
-        row,
-        currentTime,
-        scheduleContext,
-        scheduleClaim: execution.scheduleClaim,
-      },
-      signal,
-    ),
-    async (error) => {
-      await execution.recordFailure(error);
-      counters.skipped++;
-    },
-  );
-  signal.throwIfAborted();
-  if (!result) {
-    return;
-  }
-  if (execution.unclaimed()) {
-    if (args.expiryEnabled && args.scheduledAnchorAt) {
-      await deferWorkflowSchedule(poller.db, {
-        automationId: row.automation.id,
-        anchor: args.scheduledAnchorAt,
-        at: nowDate(),
-        reason: "unavailable",
-      });
-    }
-    counters.skipped++;
-    return;
-  }
-  counters.executed++;
-}
-
-async function executeDueWorkflowAutomations(
-  args: WorkflowPollerArgs,
-  signal: AbortSignal,
-): Promise<ExecuteResult> {
-  const currentTime = nowDate();
-  const expiryEnabled = scheduleExpiryEnabled();
-  const rows = await loadDueWorkflowRows(
-    args.db,
-    {
-      currentTime,
-      automationId: args.automationId,
-      workflowId: args.workflowId,
-      expiryEnabled,
-    },
-    signal,
-  );
-  const counters: PollCounters = { executed: 0, skipped: 0, expired: 0 };
-  const skipIfExpired = async (
-    row: DueWorkflowAutomationRow,
-  ): Promise<boolean> => {
-    const anchor = row.automation.nextRunAt;
-    if (
-      !expiryEnabled ||
-      anchor === null ||
-      !scheduleExpired(anchor, nowDate())
-    ) {
-      return false;
-    }
-    const at = nowDate();
-    const outcome = await skipExpiredWorkflowSchedule(args.db, {
-      automationId: row.automation.id,
-      anchor,
-      at,
-    });
-    if (outcome === "held") {
-      await deferWorkflowSchedule(args.db, {
-        automationId: row.automation.id,
-        anchor,
-        at,
-        reason: "held",
-      });
-    }
-    signal.throwIfAborted();
-    if (outcome === "skipped") {
-      counters.expired++;
-    }
-    counters.skipped++;
-    return true;
-  };
-
-  const expiryContext = { db: args.db, currentTime, expiryEnabled };
-  for (const row of rows) {
-    if (await retireDepartedOwner(expiryContext, row, signal)) {
-      counters.skipped++;
-      continue;
-    }
-    // Retire an expired slot before the potentially expensive pause check.
-    if (await skipIfExpired(row)) {
-      continue;
-    }
-    if (
-      !(await dueWorkflowAutomationIsFireable(
-        args.db,
-        row,
-        currentTime,
-        signal,
-      ))
-    ) {
-      if (await skipIfExpired(row)) {
-        continue;
-      }
-      if (expiryEnabled && row.automation.nextRunAt) {
-        await deferWorkflowSchedule(args.db, {
-          automationId: row.automation.id,
-          anchor: row.automation.nextRunAt,
-          at: nowDate(),
-          reason: "not_fireable",
-        });
-      }
-      counters.skipped++;
-      continue;
-    }
-    if (await skipIfExpired(row)) {
-      continue;
-    }
-
-    // The journaled path keeps the pre-claim `next_run_at` and consumes it
-    // inside the queue admission transaction, so its preparation runs before
-    // anything touches the schedule.
-    const scheduledAnchorAt = row.automation.nextRunAt;
-    const journaled =
-      scheduledAnchorAt !== null &&
-      (await isCanonicalMorningBriefAutomation(args.db, row.automation));
-    signal.throwIfAborted();
-
-    const claimed = journaled
-      ? row.automation
-      : await claimAutomation(args.db, row.automation, currentTime);
-    signal.throwIfAborted();
-    if (!claimed) {
-      if (!(await skipIfExpired(row))) {
-        counters.skipped++;
-      }
-      continue;
-    }
-
-    await launchClaimedDueRow(
-      {
-        poller: args,
-        row,
-        claimed,
-        scheduledAnchorAt,
-        journaled,
-        currentTime,
-        expiryEnabled,
-        counters,
+        db: db,
+        automation: claimed,
+        scheduledAnchorAt: args.journaled ? args.scheduledAnchorAt : null,
+        claimedAt: currentTime,
       },
       signal,
     );
-  }
-
-  log.debug("execute-workflow-automations tick complete", {
-    dueCount: rows.length,
-    ...counters,
-  });
-  if (counters.expired > 0) {
-    log.warn("Expired unclaimed workflow schedule anchors", {
-      expired: counters.expired,
+    const chatThreadId = await tapError(
+      row.chatThreadId
+        ? Promise.resolve(row.chatThreadId)
+        : set(
+            ensureWorkflowUserAutomationThread$,
+            {
+              orgId: row.automation.orgId,
+              userId: row.automation.ownerUserId,
+              workflowId: row.automation.workflowId,
+              agentId: row.agentId,
+              workflowTitle: row.workflowDisplayName ?? row.workflowName,
+              currentTime,
+            },
+            signal,
+          ),
+      async (error) => {
+        await execution.recordFailure(error);
+        counters.skipped++;
+      },
+    );
+    signal.throwIfAborted();
+    if (!chatThreadId) {
+      return;
+    }
+    const due: DueWorkflowAutomation = {
+      automation: claimed,
+      agentId: row.agentId,
+      chatThreadId,
+    };
+    const scheduleContext = scheduleTriggerContext({
+      automation: claimed,
+      workflowName: row.workflowName,
+      firedAt: currentTime,
     });
-  }
-  return { executed: counters.executed, skipped: counters.skipped };
-}
+    const result = await tapError(
+      set(
+        startDueWorkflowAutomation$,
+        {
+          due,
+          row,
+          currentTime,
+          scheduleContext,
+          scheduleClaim: execution.scheduleClaim,
+        },
+        signal,
+      ),
+      async (error) => {
+        await execution.recordFailure(error);
+        counters.skipped++;
+      },
+    );
+    signal.throwIfAborted();
+    if (!result) {
+      return;
+    }
+    if (execution.unclaimed()) {
+      if (args.expiryEnabled && args.scheduledAnchorAt) {
+        await deferWorkflowSchedule(db, {
+          automationId: row.automation.id,
+          anchor: args.scheduledAnchorAt,
+          at: nowDate(),
+          reason: "unavailable",
+        });
+      }
+      counters.skipped++;
+      return;
+    }
+    counters.executed++;
+  },
+);
+
+const executeDueWorkflowAutomationsImpl$ = command(
+  async (
+    { set },
+    args: WorkflowPollerArgs,
+    signal: AbortSignal,
+  ): Promise<ExecuteResult> => {
+    const db = set(writeDb$);
+    const currentTime = nowDate();
+    const expiryEnabled = scheduleExpiryEnabled();
+    const rows = await loadDueWorkflowRows(
+      db,
+      {
+        currentTime,
+        automationId: args.automationId,
+        workflowId: args.workflowId,
+        expiryEnabled,
+      },
+      signal,
+    );
+    const counters: PollCounters = { executed: 0, skipped: 0, expired: 0 };
+    const skipIfExpired = async (
+      row: DueWorkflowAutomationRow,
+    ): Promise<boolean> => {
+      const anchor = row.automation.nextRunAt;
+      if (
+        !expiryEnabled ||
+        anchor === null ||
+        !scheduleExpired(anchor, nowDate())
+      ) {
+        return false;
+      }
+      const at = nowDate();
+      const outcome = await skipExpiredWorkflowSchedule(db, {
+        automationId: row.automation.id,
+        anchor,
+        at,
+      });
+      if (outcome === "held") {
+        await deferWorkflowSchedule(db, {
+          automationId: row.automation.id,
+          anchor,
+          at,
+          reason: "held",
+        });
+      }
+      signal.throwIfAborted();
+      if (outcome === "skipped") {
+        counters.expired++;
+      }
+      counters.skipped++;
+      return true;
+    };
+
+    const expiryContext = { db: db, currentTime, expiryEnabled };
+    for (const row of rows) {
+      if (await retireDepartedOwner(expiryContext, row, signal)) {
+        counters.skipped++;
+        continue;
+      }
+      // Retire an expired slot before the potentially expensive pause check.
+      if (await skipIfExpired(row)) {
+        continue;
+      }
+      if (
+        !(await dueWorkflowAutomationIsFireable(db, row, currentTime, signal))
+      ) {
+        if (await skipIfExpired(row)) {
+          continue;
+        }
+        if (expiryEnabled && row.automation.nextRunAt) {
+          await deferWorkflowSchedule(db, {
+            automationId: row.automation.id,
+            anchor: row.automation.nextRunAt,
+            at: nowDate(),
+            reason: "not_fireable",
+          });
+        }
+        counters.skipped++;
+        continue;
+      }
+      if (await skipIfExpired(row)) {
+        continue;
+      }
+
+      // The journaled path keeps the pre-claim `next_run_at` and consumes it
+      // inside the queue admission transaction, so its preparation runs before
+      // anything touches the schedule.
+      const scheduledAnchorAt = row.automation.nextRunAt;
+      const journaled =
+        scheduledAnchorAt !== null &&
+        (await isCanonicalMorningBriefAutomation(db, row.automation));
+      signal.throwIfAborted();
+
+      const claimed = journaled
+        ? row.automation
+        : await claimAutomation(db, row.automation, currentTime);
+      signal.throwIfAborted();
+      if (!claimed) {
+        if (!(await skipIfExpired(row))) {
+          counters.skipped++;
+        }
+        continue;
+      }
+
+      await set(
+        launchClaimedDueRow$,
+        {
+          row,
+          claimed,
+          scheduledAnchorAt,
+          journaled,
+          currentTime,
+          expiryEnabled,
+          counters,
+        },
+        signal,
+      );
+    }
+
+    log.debug("execute-workflow-automations tick complete", {
+      dueCount: rows.length,
+      ...counters,
+    });
+    if (counters.expired > 0) {
+      log.warn("Expired unclaimed workflow schedule anchors", {
+        expired: counters.expired,
+      });
+    }
+    return { executed: counters.executed, skipped: counters.skipped };
+  },
+);
 
 /**
  * Time poller over `workflow_automations`, run from the
@@ -813,15 +802,7 @@ async function executeDueWorkflowAutomations(
  */
 export const executeDueWorkflowAutomations$ = command(
   async ({ set }, signal: AbortSignal): Promise<ExecuteResult> => {
-    return await executeDueWorkflowAutomations(
-      {
-        db: set(writeDb$),
-        startRun: (input, childSignal) => {
-          return set(runWorkflowAutomationNow$, input, childSignal);
-        },
-      },
-      signal,
-    );
+    return await set(executeDueWorkflowAutomationsImpl$, {}, signal);
   },
 );
 
@@ -829,13 +810,10 @@ export const executeDueWorkflowAutomations$ = command(
 // suite's concurrently due automations. Production ticks remain unscoped.
 export const executeDueWorkflowAutomationsForWorkflow$ = command(
   async ({ set }, workflowId: string, signal: AbortSignal) => {
-    return await executeDueWorkflowAutomations(
+    return await set(
+      executeDueWorkflowAutomationsImpl$,
       {
-        db: set(writeDb$),
         workflowId,
-        startRun: (input, childSignal) => {
-          return set(runWorkflowAutomationNow$, input, childSignal);
-        },
       },
       signal,
     );
@@ -848,13 +826,10 @@ export const executeDueWorkflowAutomationsForAutomation$ = command(
     automationId: string,
     signal: AbortSignal,
   ): Promise<ExecuteResult> => {
-    return await executeDueWorkflowAutomations(
+    return await set(
+      executeDueWorkflowAutomationsImpl$,
       {
-        db: set(writeDb$),
         automationId,
-        startRun: (input, childSignal) => {
-          return set(runWorkflowAutomationNow$, input, childSignal);
-        },
       },
       signal,
     );

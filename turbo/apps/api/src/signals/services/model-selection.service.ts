@@ -57,11 +57,6 @@ export interface DefaultModelFirstPin extends ModelFirstPin {
 
 /** One selection's ordinary immutable observations. No database provenance or loaders. */
 interface ModelRoutingFacts {
-  readonly identity: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly selectedModel: string | null;
-  };
   readonly orgPlanCapabilities: OrgPlanCapabilities | null;
   readonly policies: readonly OrgModelPolicyRow[];
   readonly sources: ModelRouteSources;
@@ -162,11 +157,6 @@ const prepareModelRoutingFacts$ = command(
       abortSignal,
     );
     return {
-      identity: {
-        orgId: params.orgId,
-        userId: params.userId,
-        selectedModel: params.selectedModel,
-      },
       orgPlanCapabilities: policyFacts.orgPlanCapabilities,
       policies: policyFacts.policies,
       sources,

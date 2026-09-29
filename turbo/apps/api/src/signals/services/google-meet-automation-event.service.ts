@@ -39,7 +39,7 @@ import {
 import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
 import type { AutomationRow } from "./workflow-automation-launch.service";
 import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
-import { ensureWorkflowUserAutomationThread } from "./workflow-user-automation-thread.service";
+import { ensureWorkflowUserAutomationThread$ } from "./workflow-user-automation-thread.service";
 import { lockBuiltinConnectorState } from "./auth-state-lock.service";
 import { reprojectGoogleMeetAutomationsForOwner } from "./google-meet-automation-account.service";
 
@@ -1635,84 +1635,89 @@ async function handleWorkspaceLifecycleEvent(
   signal.throwIfAborted();
 }
 
-async function loadGoogleMeetEventAutomations(
-  args: {
-    readonly db: Db;
-    readonly state: GoogleWorkspaceSubscriptionStateRow;
-  },
-  signal: AbortSignal,
-): Promise<GoogleMeetEventAutomationRow[]> {
-  const automationRows = await args.db
-    .select({
-      automation: workflowAutomationColumns(),
-      agentId: workflows.agentId,
-      workflowName: workflows.name,
-      workflowDisplayName: workflows.displayName,
-      chatThreadId: workflowUserAutomationThreads.chatThreadId,
-    })
-    .from(workflowAutomations)
-    .innerJoin(workflows, eq(workflowAutomations.workflowId, workflows.id))
-    .leftJoin(
-      workflowUserAutomationThreads,
-      and(
-        eq(workflowUserAutomationThreads.orgId, workflowAutomations.orgId),
-        eq(
-          workflowUserAutomationThreads.userId,
-          workflowAutomations.ownerUserId,
+const loadGoogleMeetEventAutomations$ = command(
+  async (
+    { set },
+    args: {
+      readonly state: GoogleWorkspaceSubscriptionStateRow;
+    },
+    signal: AbortSignal,
+  ): Promise<GoogleMeetEventAutomationRow[]> => {
+    const db = set(writeDb$);
+    const automationRows = await db
+      .select({
+        automation: workflowAutomationColumns(),
+        agentId: workflows.agentId,
+        workflowName: workflows.name,
+        workflowDisplayName: workflows.displayName,
+        chatThreadId: workflowUserAutomationThreads.chatThreadId,
+      })
+      .from(workflowAutomations)
+      .innerJoin(workflows, eq(workflowAutomations.workflowId, workflows.id))
+      .leftJoin(
+        workflowUserAutomationThreads,
+        and(
+          eq(workflowUserAutomationThreads.orgId, workflowAutomations.orgId),
+          eq(
+            workflowUserAutomationThreads.userId,
+            workflowAutomations.ownerUserId,
+          ),
+          eq(
+            workflowUserAutomationThreads.workflowId,
+            workflowAutomations.workflowId,
+          ),
         ),
-        eq(
-          workflowUserAutomationThreads.workflowId,
-          workflowAutomations.workflowId,
+      )
+      .where(
+        and(
+          eq(workflowAutomations.orgId, args.state.orgId),
+          eq(workflowAutomations.ownerUserId, args.state.userId),
+          eq(workflowAutomations.enabled, true),
+          eq(workflowAutomations.kind, "event"),
+          eq(
+            workflowAutomations.eventType,
+            GOOGLE_MEET_TRANSCRIPT_GENERATED_EVENT_TYPE,
+          ),
+          eq(workflowAutomations.eventConnectorId, args.state.connectorId),
         ),
-      ),
-    )
-    .where(
-      and(
-        eq(workflowAutomations.orgId, args.state.orgId),
-        eq(workflowAutomations.ownerUserId, args.state.userId),
-        eq(workflowAutomations.enabled, true),
-        eq(workflowAutomations.kind, "event"),
-        eq(
-          workflowAutomations.eventType,
-          GOOGLE_MEET_TRANSCRIPT_GENERATED_EVENT_TYPE,
-        ),
-        eq(workflowAutomations.eventConnectorId, args.state.connectorId),
-      ),
-    );
-  signal.throwIfAborted();
-
-  const currentTime = nowDate();
-  const automations: GoogleMeetEventAutomationRow[] = [];
-  for (const row of automationRows) {
-    const config = googleMeetTranscriptGeneratedEventConfigSchema.safeParse(
-      row.automation.eventConfig,
-    );
-    if (!config.success || config.data.scope.type !== "organizer_user") {
-      continue;
-    }
-    const chatThreadId =
-      row.chatThreadId ??
-      (await args.db.transaction(async (tx) => {
-        return await ensureWorkflowUserAutomationThread(tx, {
-          orgId: row.automation.orgId,
-          userId: row.automation.ownerUserId,
-          workflowId: row.automation.workflowId,
-          agentId: row.agentId,
-          workflowTitle: row.workflowDisplayName ?? row.workflowName,
-          currentTime,
-        });
-      }));
+      );
     signal.throwIfAborted();
-    automations.push({
-      automation: row.automation,
-      agentId: row.agentId,
-      workflowName: row.workflowName,
-      workflowTitle: row.workflowDisplayName ?? row.workflowName,
-      chatThreadId,
-    });
-  }
-  return automations;
-}
+
+    const currentTime = nowDate();
+    const automations: GoogleMeetEventAutomationRow[] = [];
+    for (const row of automationRows) {
+      const config = googleMeetTranscriptGeneratedEventConfigSchema.safeParse(
+        row.automation.eventConfig,
+      );
+      if (!config.success || config.data.scope.type !== "organizer_user") {
+        continue;
+      }
+      const chatThreadId =
+        row.chatThreadId ??
+        (await set(
+          ensureWorkflowUserAutomationThread$,
+          {
+            orgId: row.automation.orgId,
+            userId: row.automation.ownerUserId,
+            workflowId: row.automation.workflowId,
+            agentId: row.agentId,
+            workflowTitle: row.workflowDisplayName ?? row.workflowName,
+            currentTime,
+          },
+          signal,
+        ));
+      signal.throwIfAborted();
+      automations.push({
+        automation: row.automation,
+        agentId: row.agentId,
+        workflowName: row.workflowName,
+        workflowTitle: row.workflowDisplayName ?? row.workflowName,
+        chatThreadId,
+      });
+    }
+    return automations;
+  },
+);
 
 async function insertWorkspaceProcessedEvent(
   args: {
@@ -1778,6 +1783,7 @@ function googleMeetTriggerContext(args: {
 async function dispatchGoogleMeetTranscriptEventForState(
   args: {
     readonly db: Db;
+    readonly automations: readonly GoogleMeetEventAutomationRow[];
     readonly state: GoogleWorkspaceSubscriptionStateRow;
     readonly decoded: DecodedWorkspacePubSubPush;
     readonly event: GoogleMeetTranscriptEventContext;
@@ -1797,18 +1803,7 @@ async function dispatchGoogleMeetTranscriptEventForState(
     }
   | { readonly kind: "run_error"; readonly message: string }
 > {
-  const automations = await args.sourceTiming.measure(
-    "api_dispatch_pre_create_agent_automation_event_load_automations",
-    async () => {
-      return await loadGoogleMeetEventAutomations(
-        {
-          db: args.db,
-          state: args.state,
-        },
-        signal,
-      );
-    },
-  );
+  const automations = args.automations;
   let dispatched = 0;
   let duplicates = 0;
 
@@ -1976,9 +1971,15 @@ export const dispatchGoogleWorkspaceEventsPubSubPush$ = command(
       return { kind: "ok", watchStates: 0, dispatched: 0, duplicates: 0 };
     }
 
+    const automations = await set(
+      loadGoogleMeetEventAutomations$,
+      { state },
+      signal,
+    );
     const result = await dispatchGoogleMeetTranscriptEventForState(
       {
         db,
+        automations,
         state,
         decoded,
         event: event.context,

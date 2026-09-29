@@ -51,7 +51,7 @@ import type { DiscordCommandName } from "../../lib/discord-command-definition";
 import { requireDiscordConversationAccess$ } from "./discord-access.service";
 import { findDiscordInteractionChatThreadId } from "./discord-chat-ingress.service";
 import { updateIntegrationChatThreadModel$ } from "./integration-chat-thread-model.service";
-import { resolveDefaultModelFirstPin } from "./model-selection.service";
+import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
 import { listOrgModelPolicies$ } from "./model-policy.service";
 import { updateUserModelPreferenceInDb } from "./user-data.service";
 import { writeDb$ } from "../external/db";
@@ -364,10 +364,10 @@ const discordModelPicker$ = command(
       );
     }
     // Preselect the model a new Discord conversation would actually run.
-    const route = await resolveDefaultModelFirstPin(
-      set(writeDb$),
-      args.binding.orgId,
-      args.binding.userId,
+    const route = await set(
+      resolveDefaultModelFirstPin$,
+      { orgId: args.binding.orgId, userId: args.binding.userId },
+      signal,
     );
     signal.throwIfAborted();
     return discordAccountPicker({

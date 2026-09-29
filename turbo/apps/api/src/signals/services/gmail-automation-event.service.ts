@@ -41,7 +41,7 @@ import type { AutomationRow } from "./workflow-automation-launch.service";
 import { GmailAutomationSourceChangedError } from "./workflow-gmail-queue.service";
 import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
 import { workflowAutomationCanFire$ } from "./workflow-automation-access.service";
-import { ensureWorkflowUserAutomationThread } from "./workflow-user-automation-thread.service";
+import { ensureWorkflowUserAutomationThread$ } from "./workflow-user-automation-thread.service";
 import { builtinConnectorStateLockStatement } from "./auth-state-lock.service";
 import {
   loadBuiltinConnectorCredentialConnection$,
@@ -1588,16 +1588,18 @@ const loadGmailEventAutomations$ = command(
       }
       const chatThreadId =
         row.chatThreadId ??
-        (await db.transaction(async (tx) => {
-          return await ensureWorkflowUserAutomationThread(tx, {
+        (await set(
+          ensureWorkflowUserAutomationThread$,
+          {
             orgId: row.automation.orgId,
             userId: row.automation.ownerUserId,
             workflowId: row.automation.workflowId,
             agentId: row.agentId,
             workflowTitle: row.workflowDisplayName ?? row.workflowName,
             currentTime,
-          });
-        }));
+          },
+          signal,
+        ));
       signal.throwIfAborted();
       automations.push({
         automation: row.automation,

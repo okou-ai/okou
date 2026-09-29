@@ -26,7 +26,7 @@ import type { ChatRunFinishedEvent } from "./chat-run-finished-event";
 import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
 import { scheduleEnqueuedChatThreadPick$ } from "./chat-thread-queue-drain.service";
 import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
-import { ensureWorkflowUserAutomationThread } from "./workflow-user-automation-thread.service";
+import { ensureWorkflowUserAutomationThread$ } from "./workflow-user-automation-thread.service";
 import { insertChatEvent } from "./chat-event.service";
 import { touchChatThreadLastMessageAtIndependently } from "./chat-event-shared.service";
 import { attemptChatEventSideEffect } from "./chat-event-write-side-effects.service";
@@ -325,16 +325,18 @@ export const dispatchChatRunFinishedAutomationEvents$ = command(
 
       const chatThreadId =
         row.chatThreadId ??
-        (await db.transaction(async (tx) => {
-          return await ensureWorkflowUserAutomationThread(tx, {
+        (await set(
+          ensureWorkflowUserAutomationThread$,
+          {
             orgId: row.automation.orgId,
             userId: row.automation.ownerUserId,
             workflowId: row.automation.workflowId,
             agentId: row.agentId,
             workflowTitle: row.workflowDisplayName ?? row.workflowName,
             currentTime,
-          });
-        }));
+          },
+          signal,
+        ));
       signal.throwIfAborted();
 
       if (sourceAutonomyBudget === 0) {

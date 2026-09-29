@@ -164,6 +164,9 @@ import {
 } from "./workflow-data.service";
 import {
   ensureWorkflowUserAutomationThread,
+  ensureWorkflowUserAutomationThread$,
+  prepareWorkflowUserAutomationThread$,
+  type WorkflowThreadPreparation,
   loadWorkflowUserAutomationThreadId,
 } from "./workflow-user-automation-thread.service";
 import { lockWorkflowWebhookAutomationTierEligibleForOrg } from "./workflow-webhook-automation-entitlement.service";
@@ -310,6 +313,7 @@ type WorkflowAutomationRunNowResult =
   | AutomationActionFailure;
 
 interface CreateEventAutomationWorkflowContext {
+  readonly threadPreparation: WorkflowThreadPreparation;
   readonly db: Db;
   readonly workflowId: string;
   readonly agentId: string;
@@ -1677,6 +1681,7 @@ function automationCreateInputIsStripeInvoicePaid(
 }
 
 type InsertEventAutomationArgs = {
+  readonly threadPreparation: WorkflowThreadPreparation;
   readonly input:
     | CreateChatRunFinishedEventAutomationInput
     | CreateGmailEventAutomationInput
@@ -1778,6 +1783,7 @@ async function insertEventAutomation(
       workflowId: args.workflowId,
       agentId: args.agentId,
       workflowTitle: args.workflowTitle,
+      preparation: args.threadPreparation,
       currentTime: args.currentTime,
     });
     if (
@@ -1861,6 +1867,7 @@ async function prepareWebhookCredentials(
 async function insertWebhookEventAutomation(
   db: Db,
   args: {
+    readonly threadPreparation: WorkflowThreadPreparation;
     readonly input: CreateWebhookEventAutomationInput;
     readonly workflowId: string;
     readonly agentId: string;
@@ -1903,6 +1910,7 @@ async function insertWebhookEventAutomation(
       workflowId: args.workflowId,
       agentId: args.agentId,
       workflowTitle: access.workflow.displayName ?? access.workflow.name,
+      preparation: args.threadPreparation,
       currentTime: args.currentTime,
     });
 
@@ -2206,6 +2214,7 @@ const createGmailEventAutomationForWorkflow$ = command(
       workflowId: args.context.workflowId,
       agentId: args.context.agentId,
       workflowTitle: args.context.workflowTitle,
+      threadPreparation: args.context.threadPreparation,
       automationId: args.context.automationId,
       currentTime: nowDate(),
     });
@@ -2339,6 +2348,7 @@ async function createWebhookEventAutomationForWorkflow(
     args.context.db,
     {
       input: args.input,
+      threadPreparation: args.context.threadPreparation,
       workflowId: args.context.workflowId,
       agentId: args.context.agentId,
       automationId: args.context.automationId,
@@ -2378,6 +2388,7 @@ async function createGithubWorkflowRunEventAutomationForWorkflow(
     workflowId: args.context.workflowId,
     agentId: args.context.agentId,
     workflowTitle: args.context.workflowTitle,
+    threadPreparation: args.context.threadPreparation,
     automationId: args.context.automationId,
     currentTime: nowDate(),
   });
@@ -2414,6 +2425,7 @@ async function createGithubWebhookEventAutomationForWorkflow(
     workflowId: args.context.workflowId,
     agentId: args.context.agentId,
     workflowTitle: args.context.workflowTitle,
+    threadPreparation: args.context.threadPreparation,
     automationId: args.context.automationId,
     currentTime: nowDate(),
   });
@@ -2506,6 +2518,7 @@ const createGoogleCalendarEventAutomationForWorkflow$ = command(
       workflowId: args.context.workflowId,
       agentId: args.context.agentId,
       workflowTitle: args.context.workflowTitle,
+      threadPreparation: args.context.threadPreparation,
       automationId: args.context.automationId,
       currentTime: nowDate(),
       expectedEventConnectorId: eventConnectorId,
@@ -2701,6 +2714,7 @@ const createGoogleFormsEventAutomationForWorkflow$ = command(
         workflowId: args.context.workflowId,
         agentId: args.context.agentId,
         workflowTitle: args.context.workflowTitle,
+        threadPreparation: args.context.threadPreparation,
         automationId: args.context.automationId,
         currentTime: nowDate(),
         captureWatchSnapshot: true,
@@ -2799,6 +2813,7 @@ const createGoogleMeetEventAutomationForWorkflow$ = command(
       workflowId: args.context.workflowId,
       agentId: args.context.agentId,
       workflowTitle: args.context.workflowTitle,
+      threadPreparation: args.context.threadPreparation,
       automationId: args.context.automationId,
       currentTime: nowDate(),
       ...(args.input.enabled && connectorId !== null
@@ -3032,6 +3047,7 @@ async function persistCreatedNotionAutomation(
     workflowId: args.context.workflowId,
     agentId: args.context.agentId,
     workflowTitle: args.context.workflowTitle,
+    threadPreparation: args.context.threadPreparation,
     automationId: args.context.automationId,
     currentTime: nowDate(),
     expectedEventConnectorId: args.eventConnectorId,
@@ -3066,6 +3082,7 @@ async function createStripeInvoicePaidEventAutomationForWorkflow(
       workflowId: args.context.workflowId,
       agentId: args.context.agentId,
       workflowTitle: args.context.workflowTitle,
+      preparation: args.context.threadPreparation,
       currentTime,
     });
     const readiness = await resolveStripeInvoicePaidAutomationBinding(
@@ -3150,6 +3167,7 @@ async function createChatRunFinishedEventAutomationForWorkflow(
   args: {
     readonly context: {
       readonly db: Db;
+      readonly threadPreparation: WorkflowThreadPreparation;
       readonly workflowId: string;
       readonly agentId: string;
       readonly workflowTitle: string;
@@ -3195,6 +3213,7 @@ async function createChatRunFinishedEventAutomationForWorkflow(
     workflowId: args.context.workflowId,
     agentId: args.context.agentId,
     workflowTitle: args.context.workflowTitle,
+    threadPreparation: args.context.threadPreparation,
     automationId: args.context.automationId,
     currentTime: nowDate(),
   });
@@ -3215,21 +3234,39 @@ const createEventAutomationForWorkflow$ = command(
     signal: AbortSignal,
   ): Promise<AutomationResult> => {
     const { input } = args;
+    const threadPreparation = await set(
+      prepareWorkflowUserAutomationThread$,
+      {
+        orgId: input.orgId,
+        userId: input.member.userId,
+        workflowId: args.workflowId,
+        workflowTitle: args.workflowTitle,
+      },
+      signal,
+    );
+    const context = { ...args, threadPreparation };
+    const commandContext = {
+      threadPreparation,
+      workflowId: args.workflowId,
+      agentId: args.agentId,
+      workflowTitle: args.workflowTitle,
+      automationId: args.automationId,
+    };
     if (automationCreateInputIsChatRunFinished(input)) {
       return await createChatRunFinishedEventAutomationForWorkflow(
         {
-          context: args,
+          context,
           input,
         },
         signal,
       );
     }
     if (input.eventType === "webhook-received") {
-      const createArgs = { context: args, input };
+      const createArgs = { context, input };
       return await createWebhookEventAutomationForWorkflow(createArgs, signal);
     }
     if (input.eventType === "github-workflow-run-completed") {
-      const createArgs = { context: args, input };
+      const createArgs = { context, input };
       return await createGithubWorkflowRunEventAutomationForWorkflow(
         createArgs,
         signal,
@@ -3238,23 +3275,18 @@ const createEventAutomationForWorkflow$ = command(
     if (automationCreateInputIsGithubWebhook(input)) {
       return await createGithubWebhookEventAutomationForWorkflow(
         {
-          context: args,
+          context,
           input,
         },
         signal,
       );
     }
     if (automationCreateInputIsGoogleCalendar(input)) {
-      const createArgs = { context: args, input };
+      const createArgs = { context, input };
       return await set(
         createGoogleCalendarEventAutomationForWorkflow$,
         {
-          context: {
-            workflowId: createArgs.context.workflowId,
-            agentId: createArgs.context.agentId,
-            workflowTitle: createArgs.context.workflowTitle,
-            automationId: createArgs.context.automationId,
-          },
+          context: commandContext,
           input: createArgs.input,
         },
         signal,
@@ -3264,28 +3296,18 @@ const createEventAutomationForWorkflow$ = command(
       return await set(
         createGoogleFormsEventAutomationForWorkflow$,
         {
-          context: {
-            workflowId: args.workflowId,
-            agentId: args.agentId,
-            workflowTitle: args.workflowTitle,
-            automationId: args.automationId,
-          },
+          context: commandContext,
           input,
         },
         signal,
       );
     }
     if (automationCreateInputIsGoogleMeet(input)) {
-      const createArgs = { context: args, input };
+      const createArgs = { context, input };
       return await set(
         createGoogleMeetEventAutomationForWorkflow$,
         {
-          context: {
-            workflowId: createArgs.context.workflowId,
-            agentId: createArgs.context.agentId,
-            workflowTitle: createArgs.context.workflowTitle,
-            automationId: createArgs.context.automationId,
-          },
+          context: commandContext,
           input: createArgs.input,
         },
         signal,
@@ -3294,7 +3316,7 @@ const createEventAutomationForWorkflow$ = command(
     if (automationCreateInputIsNotion(input)) {
       return await createNotionEventAutomationForWorkflow(
         {
-          context: args,
+          context,
           input,
         },
         signal,
@@ -3303,7 +3325,7 @@ const createEventAutomationForWorkflow$ = command(
     if (automationCreateInputIsStripeInvoicePaid(input)) {
       const result = await set(
         createStripeInvoicePaidEventAutomation$,
-        { context: args, input },
+        { context, input },
         signal,
       );
       signal.throwIfAborted();
@@ -3313,12 +3335,7 @@ const createEventAutomationForWorkflow$ = command(
       return await set(
         createGmailEventAutomationForWorkflow$,
         {
-          context: {
-            workflowId: args.workflowId,
-            agentId: args.agentId,
-            workflowTitle: args.workflowTitle,
-            automationId: args.automationId,
-          },
+          context: commandContext,
           input,
         },
         signal,
@@ -5153,16 +5170,18 @@ export const runOwnedWorkflowAutomationNow$ = command(
       automation,
     );
     signal.throwIfAborted();
-    const chatThreadId = await writeDb.transaction(async (tx) => {
-      return await ensureWorkflowUserAutomationThread(tx, {
+    const chatThreadId = await set(
+      ensureWorkflowUserAutomationThread$,
+      {
         orgId: automation.orgId,
         userId: automation.ownerUserId,
         workflowId: automation.workflowId,
         agentId: target.agentId,
         workflowTitle: target.workflowTitle,
         currentTime,
-      });
-    });
+      },
+      signal,
+    );
     signal.throwIfAborted();
 
     const manualContext = manualTriggerContext({

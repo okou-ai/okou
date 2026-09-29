@@ -58,37 +58,58 @@ ownership rules. Removing that key requires evidence that incompatible APIs
 are no longer serving, their in-flight work has drained, and retained rollback
 targets use the prepared protocol.
 
-That compatibility requirement does **not** cover the remaining structural
-work. Lazy `ensureOrgModelPolicyFacts` still opens a helper-owned transaction
-and forwards handles. Read and response projection helpers also still receive
-database handles. These are implementation gaps, not changes that deployment
-or elapsed time completes.
+## Completed lazy initialization and ordinary routing snapshots
 
-The remaining caller graph was traced at `213f0fa`; it is not a signature count:
+`ensureOrgModelPolicyFacts$` now owns the lazy seed/default-repair transaction.
+The command accepts the organization, user, an optional already-observed plan,
+and the final optional `AbortSignal`. It obtains `writeDb$` locally. The slow
+path inserts only the unique default-slot candidate, takes ordered provider,
+connection and surface parents, verifies ownership of the complete current
+policy set, re-reads the entitlement, and directly commits the finite repair
+SQL. The bounded three-attempt ownership check remains. Main's retired-model
+repair, restricted-plan default, and preservation of administrator-customized
+sets remain in the pure write plan.
 
-- `model-selection.service.ts:prepareModelRoutingFacts` reaches lazy repair from
-  default and explicit model selection. It also stores the database under the
-  private `modelRoutingFactsSource` Symbol; `resolveValidPolicyRoute` retrieves
-  it for the effective-route helper. An immutable wrapper does not make that
-  handle an ordinary business result.
-- Default selection is called by chat-thread creation, chat-input resolution,
-  Discord interaction, welcome-thread creation and `chat-thread-model.service.ts`.
-  The latter is reused by the shared workflow/thread graph. Migrating only the
-  policy-list endpoint would leave these lazy writers behind.
-- `listOrgModelPolicies$` and replacement's response path still call the ordinary
-  `listOrgModelPolicies(db, ...)` helper, which invokes lazy initialization before
-  route/member/catalog reads. The replacement commit's direct SQL does not
-  complete the subsequent response graph.
-- Lazy repair itself must move the default-slot insertion, ordered parent/set
-  ownership, fresh entitlement read and default/seed writes into its command.
-  The current bounded ownership retry and main's retired-model/default repair
-  must survive that change. Read projection needs ordinary snapshots, including
-  the member account data currently loaded through a database-capturing adapter.
+Policy read projection, default and explicit selection, and input-model capture
+now use business-input commands. `loadModelRouteSources$` returns ordinary
+member-account, organization-provider and surface observations. Effective route
+resolution is pure: the private database `Symbol`, deferred personal-account
+loader, and database-capturing metadata closure have been removed. Personal
+metadata is read only when the selected models can use a personal subscription.
+The policy response uses the same route snapshots and command-owned catalog,
+feature-switch and runtime-cooldown reads. No credentials are decrypted or
+captured by this metadata preparation.
 
-These callers need coordinated conversion to business-input commands and plain
-snapshots. Replacing `Db` with a callback, renaming a helper, or introducing a
-second store would preserve the same violation. The retained advisory key does
-not authorize those interfaces.
+The caller graph includes chat creation/input/run selection, metadata updates,
+MCP discovery/creation/projection, Discord interaction and welcome threads,
+integration thread creation, and workflow trigger preparation. Integration
+thread writers receive a plain prepared default pin and validate a required
+selection only when they actually create a thread; reusing an existing route
+does not require a valid new-thread default. Their remaining thread/event
+transaction helpers are separate ownership work, not a model-policy fallback.
+
+`ensureWorkflowUserAutomationThread$` prepares its default pin, localized title
+and member defaults before opening its own finite transaction. It directly
+locks the agent/workflow parents, owns the existing unique binding, inserts a
+thread and its created event, and publishes the binding together. Trigger,
+manual-run and poller lazy creation use this command. Atomic automation creation
+still uses its existing transaction with ordinary prepared thread values; no
+model-policy command or database-aware model selection helper executes inside
+that inherited transaction.
+
+## Ownership still unfinished outside this boundary
+
+The existing atomic automation-creation helpers still pass their transaction to
+the thread/event insertion helper. Integration route/thread/event writers and
+poller schedule claim/failure helpers also retain legacy database propagation.
+Moving lazy model selection out of those transactions does not complete their
+remaining write protocols. They must be migrated explicitly; serving drain,
+elapsed time and the retained model-policy advisory key do not do this work.
+
+The existing database-aware built-in runtime and plan read helpers remain for
+other callers outside this migrated graph. New model-policy and selection paths
+use their command-owned variants. Their remaining consumers belong to the full
+API transaction-ownership inventory.
 
 ## Verification
 
@@ -99,6 +120,8 @@ restrictions, and relocating member preferences. The four retired tests that
 controlled internal row locks or compared artificially unrepaired database
 snapshots are not restored.
 
-Focused formatting, plain Oxlint, and ESLint pass for this change. Combined
-HEAD type checks and behavioral tests are owned by the main PR pipeline; no
-local Vitest suite or development server was run for this change.
+Focused formatting, plain Oxlint and ESLint cover the changed commands and
+callers. A scoped API core typecheck identified only the parallel owners' pending
+callsite/export integration at the intermediate branch, which is not a combined
+HEAD pass. The main PR owns final types and behavioral pipeline verification.
+No local Vitest suite or development server was run for this change.

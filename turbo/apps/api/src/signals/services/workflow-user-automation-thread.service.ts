@@ -12,19 +12,30 @@ import {
 } from "@okouai/db/schema/workflow";
 import { and, eq, inArray } from "drizzle-orm";
 
-import type { ReadonlyDb } from "../external/db";
+import { command } from "ccstate";
+import { randomUUID } from "node:crypto";
 import {
-  chatThreadModelPinColumns,
-  resolveRequiredDefaultChatThreadModelPin,
-} from "./chat-thread-model.service";
-import type { ChatThreadEventTransaction } from "./chat-thread-event.service";
+  modelSettingsSchema,
+  type ModelSettings,
+} from "@okouai/api-contracts/contracts/model-reasoning-effort";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
+import { writeDb$, type ReadonlyDb } from "../external/db";
+import {
+  resolveDefaultModelFirstPin$,
+  type DefaultModelFirstPin,
+} from "./model-selection.service";
+import { chatThreadModelPinColumns } from "./chat-thread-model.service";
+import {
+  chatThreadEventInsertSql,
+  type ChatThreadEventTransaction,
+} from "./chat-thread-event.service";
 import {
   appendChatThreadCreatedEvent,
   insertChatThread,
 } from "./chat-thread-create.service";
 import {
-  readAcceptedOfficialWorkflowDefinition,
-  readAcceptedOfficialWorkflowRevision,
+  readAcceptedOfficialWorkflowCatalog$,
+  readAcceptedOfficialWorkflowRevision$,
 } from "./official-workflow-catalog-read.service";
 
 const OFFICIAL_WORKFLOW_THREAD_TITLES: Readonly<
@@ -46,68 +57,82 @@ const OFFICIAL_WORKFLOW_THREAD_TITLES: Readonly<
   },
 };
 
-async function loadOfficialWorkflowDisplayName(
-  db: ReadonlyDb,
-  definitionName: string,
-): Promise<string | null> {
-  const definition = await readAcceptedOfficialWorkflowDefinition(
-    db,
-    definitionName,
-  );
-  if (!definition) {
-    return null;
-  }
-  const revision = await readAcceptedOfficialWorkflowRevision(db, {
-    name: definition.name,
-    revision: definition.revision,
-  });
-  return revision?.definition.workflow.displayName ?? null;
+export interface WorkflowThreadPreparation {
+  readonly initialModel: DefaultModelFirstPin;
+  readonly title: string;
+  readonly modelSettings: ModelSettings;
+  readonly cloudBrowserEnabled: boolean;
 }
 
-async function resolveAutomationChatThreadTitle(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly workflowId: string;
-    readonly workflowTitle: string;
+export const prepareWorkflowUserAutomationThread$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly workflowId: string;
+      readonly workflowTitle: string;
+    },
+    signal: AbortSignal,
+  ): Promise<WorkflowThreadPreparation> => {
+    const db = set(writeDb$);
+    const [context] = await db
+      .select({
+        officialDefinitionName: workflows.officialDefinitionName,
+        locale: orgMembersMetadata.locale,
+        modelSettings: orgMembersMetadata.modelSettings,
+        cloudBrowserEnabled: orgMembersMetadata.cloudBrowserEnabledByDefault,
+      })
+      .from(workflows)
+      .leftJoin(
+        orgMembersMetadata,
+        and(
+          eq(orgMembersMetadata.orgId, args.orgId),
+          eq(orgMembersMetadata.userId, args.userId),
+        ),
+      )
+      .where(
+        and(eq(workflows.orgId, args.orgId), eq(workflows.id, args.workflowId)),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    let title = args.workflowTitle;
+    if (context?.officialDefinitionName) {
+      const locale = userLocaleSchema.parse(context.locale ?? "en-US");
+      const localized =
+        OFFICIAL_WORKFLOW_THREAD_TITLES[context.officialDefinitionName]?.[
+          locale
+        ];
+      if (localized) {
+        title = localized;
+      } else {
+        const catalog = await set(readAcceptedOfficialWorkflowCatalog$, signal);
+        const definition = catalog?.payload.definitions.find((candidate) => {
+          return candidate.name === context.officialDefinitionName;
+        });
+        if (definition) {
+          const revision = await set(
+            readAcceptedOfficialWorkflowRevision$,
+            { name: definition.name, revision: definition.revision },
+            signal,
+          );
+          title = revision?.definition.workflow.displayName ?? title;
+        }
+      }
+    }
+    const initialModel = await set(
+      resolveDefaultModelFirstPin$,
+      { orgId: args.orgId, userId: args.userId },
+      signal,
+    );
+    return {
+      initialModel,
+      title,
+      modelSettings: modelSettingsSchema.parse(context?.modelSettings ?? {}),
+      cloudBrowserEnabled: context?.cloudBrowserEnabled ?? true,
+    };
   },
-): Promise<string> {
-  const [context] = await db
-    .select({
-      officialDefinitionName: workflows.officialDefinitionName,
-      locale: orgMembersMetadata.locale,
-    })
-    .from(workflows)
-    .leftJoin(
-      orgMembersMetadata,
-      and(
-        eq(orgMembersMetadata.orgId, args.orgId),
-        eq(orgMembersMetadata.userId, args.userId),
-      ),
-    )
-    .where(
-      and(eq(workflows.orgId, args.orgId), eq(workflows.id, args.workflowId)),
-    )
-    .limit(1);
-  if (!context?.officialDefinitionName) {
-    return args.workflowTitle;
-  }
-
-  const locale = userLocaleSchema.parse(context.locale ?? "en-US");
-  const localizedTitle =
-    OFFICIAL_WORKFLOW_THREAD_TITLES[context.officialDefinitionName]?.[locale];
-  if (localizedTitle) {
-    return localizedTitle;
-  }
-
-  return (
-    (await loadOfficialWorkflowDisplayName(
-      db,
-      context.officialDefinitionName,
-    )) ?? args.workflowTitle
-  );
-}
+);
 
 interface WorkflowUserAutomationThreadOwner {
   readonly orgId: string;
@@ -246,18 +271,21 @@ async function createAutomationChatThread(
     readonly agentId: string;
     readonly title: string;
     readonly currentTime: Date;
+    readonly preparation: WorkflowThreadPreparation;
   },
 ): Promise<string> {
-  const pin = await resolveRequiredDefaultChatThreadModelPin(db, {
-    orgId: args.orgId,
-    userId: args.userId,
-  });
+  const pin = args.preparation.initialModel;
+  if (!pin.selectedModel) {
+    throw new Error("A model selection is required");
+  }
   const pinColumns = chatThreadModelPinColumns(pin);
   const thread = await insertChatThread(db, {
     orgId: args.orgId,
     userId: args.userId,
     agentId: args.agentId,
     title: args.title,
+    modelSettings: args.preparation.modelSettings,
+    cloudBrowserEnabled: args.preparation.cloudBrowserEnabled,
     modelProviderId: pinColumns.modelProviderId,
     modelProviderType: pinColumns.modelProviderType,
     modelProviderCredentialScope: pinColumns.modelProviderCredentialScope,
@@ -283,6 +311,7 @@ export async function ensureWorkflowUserAutomationThread(
     readonly agentId: string;
     readonly workflowTitle: string;
     readonly currentTime: Date;
+    readonly preparation: WorkflowThreadPreparation;
   },
 ): Promise<string> {
   // Acquire the parent FK locks before the binding and shared event sequence.
@@ -334,17 +363,13 @@ export async function ensureWorkflowUserAutomationThread(
     return binding.chatThreadId;
   }
 
-  const title = await resolveAutomationChatThreadTitle(db, {
-    orgId: args.orgId,
-    userId: args.userId,
-    workflowId: args.workflowId,
-    workflowTitle: args.workflowTitle,
-  });
+  const title = args.preparation.title;
   const chatThreadId = await createAutomationChatThread(db, {
     userId: args.userId,
     orgId: args.orgId,
     agentId: args.agentId,
     title,
+    preparation: args.preparation,
     currentTime: args.currentTime,
   });
   const [updated] = await db
@@ -357,3 +382,122 @@ export async function ensureWorkflowUserAutomationThread(
   }
   return updated.chatThreadId;
 }
+
+interface WorkflowThreadOwner extends WorkflowUserAutomationThreadOwner {
+  readonly agentId: string;
+  readonly workflowTitle: string;
+  readonly currentTime: Date;
+}
+
+function preparedWorkflowThreadValues(
+  args: WorkflowThreadOwner,
+  preparation: WorkflowThreadPreparation,
+) {
+  const pin = preparation.initialModel;
+  if (!pin.selectedModel) {
+    throw new Error("A model selection is required");
+  }
+  return {
+    id: randomUUID(),
+    userId: args.userId,
+    agentId: args.agentId,
+    title: preparation.title,
+    selectedModel: pin.selectedModel,
+    codexServiceTier: pin.serviceTier === "priority" ? ("fast" as const) : null,
+    modelSettings: preparation.modelSettings,
+    cloudBrowserEnabled: preparation.cloudBrowserEnabled,
+    lastMessageAt: args.currentTime,
+    createdAt: args.currentTime,
+    updatedAt: args.currentTime,
+  };
+}
+
+/** Lazy trigger repair owns its complete binding, thread and event publication. */
+export const ensureWorkflowUserAutomationThread$ = command(
+  async (
+    { set },
+    args: WorkflowThreadOwner,
+    signal: AbortSignal,
+  ): Promise<string> => {
+    const preparation = await set(
+      prepareWorkflowUserAutomationThread$,
+      args,
+      signal,
+    );
+    const db = set(writeDb$);
+    const result = await db.transaction(async (tx) => {
+      await tx
+        .select({ id: agents.id })
+        .from(agents)
+        .where(and(eq(agents.orgId, args.orgId), eq(agents.id, args.agentId)))
+        .for("key share");
+      await tx
+        .select({ id: workflows.id })
+        .from(workflows)
+        .where(
+          and(
+            eq(workflows.orgId, args.orgId),
+            eq(workflows.id, args.workflowId),
+            eq(workflows.agentId, args.agentId),
+          ),
+        )
+        .for("key share");
+      await tx
+        .insert(workflowUserAutomationThreads)
+        .values({
+          orgId: args.orgId,
+          userId: args.userId,
+          workflowId: args.workflowId,
+          createdAt: args.currentTime,
+          updatedAt: args.currentTime,
+        })
+        .onConflictDoNothing({
+          target: [
+            workflowUserAutomationThreads.orgId,
+            workflowUserAutomationThreads.userId,
+            workflowUserAutomationThreads.workflowId,
+          ],
+        });
+      const [binding] = await tx
+        .select({ chatThreadId: workflowUserAutomationThreads.chatThreadId })
+        .from(workflowUserAutomationThreads)
+        .where(workflowUserAutomationThreadOwnerCondition(args))
+        .limit(1)
+        .for("update");
+      if (binding?.chatThreadId) {
+        return binding.chatThreadId;
+      }
+      const values = preparedWorkflowThreadValues(args, preparation);
+      await tx.insert(chatThreads).values(values);
+      await tx.execute(
+        chatThreadEventInsertSql({
+          kind: "created",
+          orgId: args.orgId,
+          userId: args.userId,
+          agentId: args.agentId,
+          chatThreadId: values.id,
+          title: values.title,
+          selectedModel: values.selectedModel,
+          modelSettings: values.modelSettings,
+          cloudBrowserEnabled: values.cloudBrowserEnabled,
+          serviceTier: values.codexServiceTier === "fast" ? "priority" : null,
+          createdAt: values.createdAt,
+        }),
+      );
+      const [updated] = await tx
+        .update(workflowUserAutomationThreads)
+        .set({ chatThreadId: values.id, updatedAt: args.currentTime })
+        .where(workflowUserAutomationThreadOwnerCondition(args))
+        .returning({
+          chatThreadId: workflowUserAutomationThreads.chatThreadId,
+        });
+      if (!updated?.chatThreadId) {
+        throw new Error("Failed to persist workflow automation chat thread");
+      }
+      signal.throwIfAborted();
+      return updated.chatThreadId;
+    });
+    signal.throwIfAborted();
+    return result;
+  },
+);

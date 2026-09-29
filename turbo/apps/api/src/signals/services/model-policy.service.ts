@@ -1007,20 +1007,15 @@ const readOrgModelPolicies$ = command(
     orgId: string,
     userId: string,
     keyIdsByVendor: BuiltInModelKeyIdsByVendor,
-    abortSignal: AbortSignal,
+    signal: AbortSignal,
   ): Promise<OrgModelPoliciesResponse> => {
-    await set(
-      ensureOrgModelPolicyFacts$,
-      orgId,
-      userId,
-      undefined,
-      abortSignal,
-    );
+    await set(ensureOrgModelPolicyFacts$, orgId, userId, undefined, signal);
     const db = set(writeDb$);
     const persistedRows = await db
       .select()
       .from(orgModelPolicies)
       .where(eq(orgModelPolicies.orgId, orgId));
+    signal.throwIfAborted();
     const rows = sortRowsByCatalog(
       persistedRows.filter((row) => {
         return (
@@ -1042,12 +1037,12 @@ const readOrgModelPolicies$ = command(
           rows.map((row) => {
             return row.model;
           }),
-          abortSignal,
+          signal,
         ),
-        set(loadUserFeatureSwitchContext$, orgId, userId, abortSignal),
-        set(loadOrgPlanCapabilities$, orgId, abortSignal),
+        set(loadUserFeatureSwitchContext$, orgId, userId, signal),
+        set(loadOrgPlanCapabilities$, orgId, signal),
       ]);
-    abortSignal.throwIfAborted();
+    signal.throwIfAborted();
     const modelsAllowedForNewPolicy = new Set(
       catalog.flatMap((row) => {
         const model = parseSupportedModel(row.model);
@@ -1076,7 +1071,7 @@ const readOrgModelPolicies$ = command(
             policy.model,
             featureSwitchContext,
             keyIdsByVendor,
-            abortSignal,
+            signal,
           )
         : null;
       policies.push(
@@ -1203,16 +1198,16 @@ export const listOrgModelPolicies$ = command(
   async (
     { get, set },
     params: { readonly orgId: string; readonly userId: string },
-    abortSignal: AbortSignal,
+    signal: AbortSignal,
   ): Promise<OrgModelPoliciesResponse> => {
     const response = await set(
       readOrgModelPolicies$,
       params.orgId,
       params.userId,
       await get(builtInModelKeyIdsByVendor$),
-      abortSignal,
+      signal,
     );
-    abortSignal.throwIfAborted();
+    signal.throwIfAborted();
     return response;
   },
 );
@@ -1434,10 +1429,10 @@ const commitOrgModelPolicyReplacement$ = command(
   async (
     { set },
     params: ModelPolicyReplacement,
-    abortSignal: AbortSignal,
+    signal: AbortSignal,
   ): Promise<void> => {
     const db = set(writeDb$);
-    abortSignal.throwIfAborted();
+    signal.throwIfAborted();
     await db.transaction(async (tx) => {
       await tx.execute(modelPolicyWriterLockSql(params.orgId));
       const owner = eq(orgModelPolicies.orgId, params.orgId);
@@ -1517,7 +1512,7 @@ const commitOrgModelPolicyReplacement$ = command(
         entitlement,
         catalog,
       });
-      abortSignal.throwIfAborted();
+      signal.throwIfAborted();
       await tx
         .insert(orgModelPolicies)
         .values(plan.insertValues)
@@ -1555,9 +1550,9 @@ const commitOrgModelPolicyReplacement$ = command(
           .set(update.values)
           .where(update.condition);
       }
-      abortSignal.throwIfAborted();
+      signal.throwIfAborted();
     });
-    abortSignal.throwIfAborted();
+    signal.throwIfAborted();
   },
 );
 
@@ -1567,7 +1562,7 @@ export const updateOrgModelPolicies$ = command(
     params: Omit<ModelPolicyReplacement, "revision"> & {
       readonly revision?: string;
     },
-    abortSignal: AbortSignal,
+    signal: AbortSignal,
   ): Promise<ServiceResult<OrgModelPoliciesResponse>> => {
     if (!params.revision) {
       return policyRefreshConflict();
@@ -1576,9 +1571,9 @@ export const updateOrgModelPolicies$ = command(
       set(
         commitOrgModelPolicyReplacement$,
         { ...params, revision: params.revision },
-        abortSignal,
+        signal,
       ),
-      abortSignal,
+      signal,
     );
     if (!written.ok) {
       if (written.error instanceof RejectedModelPolicyUpdate) {
@@ -1591,9 +1586,9 @@ export const updateOrgModelPolicies$ = command(
       params.orgId,
       params.userId,
       await get(builtInModelKeyIdsByVendor$),
-      abortSignal,
+      signal,
     );
-    abortSignal.throwIfAborted();
+    signal.throwIfAborted();
     return ok(response);
   },
 );

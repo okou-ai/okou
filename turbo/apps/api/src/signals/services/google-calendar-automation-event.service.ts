@@ -54,7 +54,7 @@ import type { AutomationRow } from "./workflow-automation-launch.service";
 import { GoogleCalendarSourceTransitionChangedError } from "./workflow-google-calendar-queue.service";
 import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
 import { workflowAutomationCanFire$ } from "./workflow-automation-access.service";
-import { ensureWorkflowUserAutomationThread } from "./workflow-user-automation-thread.service";
+import { ensureWorkflowUserAutomationThread$ } from "./workflow-user-automation-thread.service";
 import {
   GOOGLE_CALENDAR_PRIMARY_ID,
   GOOGLE_CALENDAR_EVENT_TYPES,
@@ -2856,16 +2856,18 @@ const loadGoogleCalendarEventAutomations$ = command(
       }
       const chatThreadId =
         row.chatThreadId ??
-        (await db.transaction(async (tx) => {
-          return await ensureWorkflowUserAutomationThread(tx, {
+        (await set(
+          ensureWorkflowUserAutomationThread$,
+          {
             orgId: row.automation.orgId,
             userId: row.automation.ownerUserId,
             workflowId: row.automation.workflowId,
             agentId: row.agentId,
             workflowTitle: row.workflowDisplayName ?? row.workflowName,
             currentTime,
-          });
-        }));
+          },
+          signal,
+        ));
       signal.throwIfAborted();
       automations.push({
         automation: row.automation,

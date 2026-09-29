@@ -13,7 +13,7 @@ import { visibleJoinedAgentCondition } from "./agent-data.service";
 import { insertChatEvent } from "./chat-event.service";
 import { createChatThreadInTransaction } from "./chat-thread.service";
 import { chatThreadModelPinColumns } from "./chat-thread-model.service";
-import { resolveDefaultModelFirstPin } from "./model-selection.service";
+import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
 import { userPreferences } from "./user-data.service";
 
 interface WelcomeThreadAction {
@@ -84,7 +84,11 @@ export const createWelcomeChatThread$ = command(
       );
     }
 
-    const pin = await resolveDefaultModelFirstPin(db, args.orgId, args.userId);
+    const pin = await set(
+      resolveDefaultModelFirstPin$,
+      { orgId: args.orgId, userId: args.userId },
+      signal,
+    );
     signal.throwIfAborted();
     const preferences = await get(userPreferences(args));
     signal.throwIfAborted();

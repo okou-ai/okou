@@ -62,7 +62,7 @@ import { connectors } from "@okouai/db/schema/connector";
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import type { AutomationRow } from "./workflow-automation-launch.service";
 import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
-import { ensureWorkflowUserAutomationThread } from "./workflow-user-automation-thread.service";
+import { ensureWorkflowUserAutomationThread$ } from "./workflow-user-automation-thread.service";
 import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
 
 const log = logger("api:google-forms-automation-event");
@@ -1995,16 +1995,18 @@ const loadGoogleFormsEventAutomations$ = command(
       }
       const chatThreadId =
         row.chatThreadId ??
-        (await db.transaction(async (tx) => {
-          return await ensureWorkflowUserAutomationThread(tx, {
+        (await set(
+          ensureWorkflowUserAutomationThread$,
+          {
             orgId: row.automation.orgId,
             userId: row.automation.ownerUserId,
             workflowId: row.automation.workflowId,
             agentId: row.agentId,
             workflowTitle: row.workflowDisplayName ?? row.workflowName,
             currentTime: nowDate(),
-          });
-        }));
+          },
+          signal,
+        ));
       result.push({
         automation: row.automation,
         agentId: row.agentId,
