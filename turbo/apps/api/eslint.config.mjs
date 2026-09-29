@@ -257,6 +257,19 @@ export default [
     rules: { "api/no-new-advisory-lock": "error" },
   },
   {
+    files: ["src/**/*.ts", "scripts/**/*.ts"],
+    ignores: [
+      "**/__tests__/**",
+      "**/test-fixtures/**",
+      "**/*.test.ts",
+      "**/*.spec.ts",
+      "**/test-*.ts",
+      "scripts/chat-event-context/acceptance.ts",
+      "scripts/chat-event-auxiliary/acceptance.ts",
+    ],
+    rules: { "api/no-database-trigger": "error" },
+  },
+  {
     files: ["src/**/*.ts"],
     ignores: [
       // A request owns one Store, including its background commands.

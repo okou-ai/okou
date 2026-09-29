@@ -1,4 +1,4 @@
-import { createStore } from "ccstate";
+import { command } from "ccstate";
 import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
@@ -11,10 +11,7 @@ import { waitUntil } from "../context/wait-until";
 import type { Db, ReadonlyDb } from "../external/db";
 import { discordClient } from "../external/discord-client";
 import { tapError } from "../utils";
-import {
-  requireDiscordBinding$,
-  type DiscordBindingAccess,
-} from "./discord-access.service";
+import { requireDiscordBinding$ } from "./discord-access.service";
 import type { DiscordFailureResponse } from "./discord-api-response";
 import {
   discordDeliveryTargetSchema,
@@ -28,15 +25,6 @@ const L = logger("DiscordRunTyping");
 const discordTypingPayloadSchema = z.object({
   discordDelivery: discordDeliveryTargetSchema,
 });
-
-export type DiscordTypingBindingChecker = (
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly guildId?: string;
-  },
-  signal: AbortSignal,
-) => Promise<DiscordBindingAccess>;
 
 /**
  * Discord shows a bot as typing for about ten seconds, so an active run asks
@@ -164,13 +152,12 @@ async function sendTypingOnce(
 }
 
 function scheduleTyping(
-  work: (signal: AbortSignal) => Promise<void>,
+  work: Promise<void>,
   fields: Record<string, string>,
 ): void {
   // Status is cosmetic: it must never delay or fail admission or delivery.
-  const backgroundSignal = new AbortController().signal;
   waitUntil(
-    tapError(work(backgroundSignal), (error) => {
+    tapError(work, (error) => {
       L.warn("Failed to refresh Discord typing indicator", {
         ...fields,
         error,
@@ -184,12 +171,10 @@ export function scheduleDiscordAdmissionTyping(args: {
   readonly botToken: string;
   readonly channelId: string;
 }): void {
-  scheduleTyping(
-    (signal) => {
-      return sendTypingOnce(args, signal);
-    },
-    { channelId: args.channelId },
-  );
+  const backgroundSignal = new AbortController().signal;
+  scheduleTyping(sendTypingOnce(args, backgroundSignal), {
+    channelId: args.channelId,
+  });
 }
 
 async function activeRunOwner(
@@ -223,142 +208,142 @@ function typingAccessDenied(response: DiscordFailureResponse): null {
   throw new Error(`Discord typing access check failed: ${response.status}`);
 }
 
-async function legacyTypingBinding(
-  args: Parameters<DiscordTypingBindingChecker>[0],
-  signal: AbortSignal,
-): Promise<DiscordBindingAccess> {
-  // eslint-disable-next-line ccstate/no-create-store -- Pre-2026-09-29 legacy only; no new violations or suppressions. Typing access check; migrate to the request command graph.
-  return await createStore().set(requireDiscordBinding$, args, signal);
-}
-
 /**
  * The route, feature, binding and membership checks run on every refresh.
  * Discord permission reads are reused for typing only, within a short window.
  */
-async function currentTypingAccess(
-  db: Db,
-  args: {
-    readonly checkBinding?: DiscordTypingBindingChecker;
-    readonly chatThreadId: string;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly target: DiscordDeliveryTarget;
-  },
-  signal: AbortSignal,
-): Promise<{ readonly botToken: string; readonly accessKey: string } | null> {
-  const route = await findDiscordChatRoute(db, args);
-  signal.throwIfAborted();
-  if (!route) {
-    return null;
-  }
-  const checkBinding = args.checkBinding ?? legacyTypingBinding;
-  const current = await checkBinding(
-    { orgId: args.orgId, userId: args.userId, guildId: args.target.guildId },
-    signal,
-  );
-  signal.throwIfAborted();
-  if (current.kind === "denied") {
-    return typingAccessDenied(current.response);
-  }
-  if (
-    current.binding.connectionId !== args.target.connectionId ||
-    current.binding.discordUserId !== args.target.discordUserId
-  ) {
-    return null;
-  }
-  const accessKey = [
-    current.binding.connectionId,
-    current.binding.discordUserId,
-    args.target.guildId,
-    args.target.channelId,
-  ].join(":");
-  if (liveEntry(typingAccessTable(), accessKey)) {
+const currentTypingAccess$ = command(
+  async (
+    { set },
+    db: Db,
+    args: {
+      readonly chatThreadId: string;
+      readonly orgId: string;
+      readonly userId: string;
+      readonly target: DiscordDeliveryTarget;
+    },
+    signal: AbortSignal,
+  ): Promise<{
+    readonly botToken: string;
+    readonly accessKey: string;
+  } | null> => {
+    const route = await findDiscordChatRoute(db, args);
+    signal.throwIfAborted();
+    if (!route) {
+      return null;
+    }
+    const current = await set(
+      requireDiscordBinding$,
+      { orgId: args.orgId, userId: args.userId, guildId: args.target.guildId },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (current.kind === "denied") {
+      return typingAccessDenied(current.response);
+    }
+    if (
+      current.binding.connectionId !== args.target.connectionId ||
+      current.binding.discordUserId !== args.target.discordUserId
+    ) {
+      return null;
+    }
+    const accessKey = [
+      current.binding.connectionId,
+      current.binding.discordUserId,
+      args.target.guildId,
+      args.target.channelId,
+    ].join(":");
+    if (liveEntry(typingAccessTable(), accessKey)) {
+      return { botToken: current.botToken, accessKey };
+    }
+    const access = await resolveDiscordProviderAccess(
+      {
+        ...current.binding,
+        botToken: current.botToken,
+        channelId: args.target.channelId,
+        mode: "write",
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (access.kind === "denied") {
+      return typingAccessDenied(access.response);
+    }
+    setBoundedEntry(
+      typingAccessTable(),
+      accessKey,
+      now() + TYPING_ACCESS_REUSE_MS,
+    );
     return { botToken: current.botToken, accessKey };
-  }
-  const access = await resolveDiscordProviderAccess(
-    {
-      ...current.binding,
-      botToken: current.botToken,
-      channelId: args.target.channelId,
-      mode: "write",
-    },
-    signal,
-  );
-  signal.throwIfAborted();
-  if (access.kind === "denied") {
-    return typingAccessDenied(access.response);
-  }
-  setBoundedEntry(
-    typingAccessTable(),
-    accessKey,
-    now() + TYPING_ACCESS_REUSE_MS,
-  );
-  return { botToken: current.botToken, accessKey };
-}
-
-async function refreshDiscordRunTyping(
-  db: Db,
-  args: {
-    readonly checkBinding?: DiscordTypingBindingChecker;
-    readonly runId: string;
-    readonly chatThreadId: string;
-    readonly target: DiscordDeliveryTarget;
   },
-  signal: AbortSignal,
-): Promise<void> {
-  if (typingHeld(args.target.channelId)) {
-    return;
-  }
-  const run = await activeRunOwner(db, args);
-  signal.throwIfAborted();
-  if (!run) {
-    return;
-  }
-  const access = await currentTypingAccess(
-    db,
-    { ...args, orgId: run.orgId, userId: run.userId },
-    signal,
-  );
-  if (!access) {
-    return;
-  }
-  // Provider checks take time; a reply may have been delivered meanwhile.
-  const stillActive = await activeRunOwner(db, args);
-  signal.throwIfAborted();
-  if (!stillActive) {
-    return;
-  }
-  await sendTypingOnce(
-    {
-      botToken: access.botToken,
-      channelId: args.target.channelId,
-      accessKey: access.accessKey,
+);
+
+const refreshDiscordRunTyping$ = command(
+  async (
+    { set },
+    db: Db,
+    args: {
+      readonly runId: string;
+      readonly chatThreadId: string;
+      readonly target: DiscordDeliveryTarget;
     },
-    signal,
-  );
-}
+    signal: AbortSignal,
+  ): Promise<void> => {
+    if (typingHeld(args.target.channelId)) {
+      return;
+    }
+    const run = await activeRunOwner(db, args);
+    signal.throwIfAborted();
+    if (!run) {
+      return;
+    }
+    const access = await set(
+      currentTypingAccess$,
+      db,
+      { ...args, orgId: run.orgId, userId: run.userId },
+      signal,
+    );
+    if (!access) {
+      return;
+    }
+    // Provider checks take time; a reply may have been delivered meanwhile.
+    const stillActive = await activeRunOwner(db, args);
+    signal.throwIfAborted();
+    if (!stillActive) {
+      return;
+    }
+    await sendTypingOnce(
+      {
+        botToken: access.botToken,
+        channelId: args.target.channelId,
+        accessKey: access.accessKey,
+      },
+      signal,
+    );
+  },
+);
 
 /**
  * Detached typing for a Discord-triggered run that is still active. Every
  * attempt revalidates the route, binding and feature; destination permission
  * reads are reused for typing within {@link TYPING_ACCESS_REUSE_MS}.
  */
-export function scheduleDiscordRunTyping(
-  db: Db,
-  args: {
-    readonly checkBinding?: DiscordTypingBindingChecker;
-    readonly runId: string;
-    readonly chatThreadId: string;
-    readonly target: DiscordDeliveryTarget;
-  },
-): void {
-  scheduleTyping(
-    (signal) => {
-      return refreshDiscordRunTyping(db, args, signal);
+export const scheduleDiscordRunTyping$ = command(
+  (
+    { set },
+    db: Db,
+    args: {
+      readonly runId: string;
+      readonly chatThreadId: string;
+      readonly target: DiscordDeliveryTarget;
     },
-    { runId: args.runId },
-  );
-}
+  ): void => {
+    const backgroundSignal = new AbortController().signal;
+    scheduleTyping(set(refreshDiscordRunTyping$, db, args, backgroundSignal), {
+      runId: args.runId,
+    });
+  },
+);
 
 /** Whether the Runner heartbeat should use the Discord typing cadence. */
 export async function hasDiscordTypingTargetForRun(

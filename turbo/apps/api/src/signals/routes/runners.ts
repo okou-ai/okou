@@ -109,7 +109,7 @@ import { resolvePiModelConfigForClaim } from "../services/pi-model-config-claim-
 import { reportBuiltInModelProviderFailure } from "../services/built-in-model-provider-failure.service";
 import {
   declareSteeredInput,
-  loadNextSteerableInput,
+  loadNextSteerableInput$,
 } from "../services/active-input-delivery.service";
 import { notifyRunningChatRunOfPendingInput } from "../services/chat-thread-queue-drain.service";
 import { loadConnectorRuntimeSnapshot } from "../services/connector-catalog-runtime.service";
@@ -2981,7 +2981,8 @@ const nextSteerableInputInner$ = command(
     if (auth.tokenType !== "sandbox" || auth.runId !== runId) {
       return forbidden("Steering is not available");
     }
-    const result = await loadNextSteerableInput(
+    const result = await set(
+      loadNextSteerableInput$,
       set(writeDb$),
       { runId, userId: auth.userId, orgId: auth.orgId },
       signal,

@@ -1,3 +1,4 @@
+import { command } from "ccstate";
 import { ACTIVE_INPUT_CONTROL_PAYLOAD_MAX_BYTES } from "@okouai/api-contracts/contracts/runners";
 import {
   chatEvents,
@@ -14,7 +15,7 @@ import { loadFeishuQueuedLaunchMaterial } from "./feishu-queued-launch-context.s
 import { loadSlackQueuedLaunchMaterial } from "./slack-queued-launch-context.service";
 import {
   DiscordQueuedLaunchUnavailableError,
-  loadDiscordQueuedLaunchMaterial,
+  loadDiscordQueuedLaunchMaterial$,
 } from "./discord-queued-launch-context.service";
 import { loadTeamsQueuedLaunchMaterial } from "./teams-queued-launch-context.service";
 import { loadTelegramQueuedLaunchMaterial } from "./telegram-queued-launch-context.service";
@@ -117,44 +118,49 @@ export type ActiveInputSourceRow = Awaited<
  * source, so template usage is reported when it is declared steered
  * through `activeInputTemplateIdentities`, not here.
  */
-export async function materializeActiveInputSource(
-  db: Db,
-  source: ActiveInputSourceRow,
-  auth: { readonly orgId: string; readonly userId: string },
-  signal: AbortSignal,
-): Promise<string> {
-  if (
-    !source.userMessage ||
-    (source.eventType !== "input.prompt" && source.eventType !== "input.budget")
-  ) {
-    throw new Error("Pending active input cannot be materialized");
-  }
-  if (source.contextType === null) {
-    throw new Error("Pending active input is missing its context type");
-  }
-  const featureSwitchContext = await loadUserFeatureSwitchContext(
-    db,
-    auth.orgId,
-    auth.userId,
-  );
-  signal.throwIfAborted();
-  return await materializeActiveInputPrompt(
-    db,
-    {
-      event: {
-        id: source.id,
-        chatThreadId: source.chatThreadId,
-        eventType: source.eventType,
-        contextType: source.contextType,
-        userMessage: source.userMessage,
+export const materializeActiveInputSource$ = command(
+  async (
+    { set },
+    db: Db,
+    source: ActiveInputSourceRow,
+    auth: { readonly orgId: string; readonly userId: string },
+    signal: AbortSignal,
+  ): Promise<string> => {
+    if (
+      !source.userMessage ||
+      (source.eventType !== "input.prompt" &&
+        source.eventType !== "input.budget")
+    ) {
+      throw new Error("Pending active input cannot be materialized");
+    }
+    if (source.contextType === null) {
+      throw new Error("Pending active input is missing its context type");
+    }
+    const featureSwitchContext = await loadUserFeatureSwitchContext(
+      db,
+      auth.orgId,
+      auth.userId,
+    );
+    signal.throwIfAborted();
+    return await set(
+      materializeActiveInputPrompt$,
+      db,
+      {
+        event: {
+          id: source.id,
+          chatThreadId: source.chatThreadId,
+          eventType: source.eventType,
+          contextType: source.contextType,
+          userMessage: source.userMessage,
+        },
+        orgId: auth.orgId,
+        userId: auth.userId,
+        featureSwitchContext,
       },
-      orgId: auth.orgId,
-      userId: auth.userId,
-      featureSwitchContext,
-    },
-    signal,
-  );
-}
+      signal,
+    );
+  },
+);
 
 function activeInputGenerationTemplates(userMessage: ChatEventUserMessage) {
   const projection = projectUserMessage(userMessage);
@@ -189,101 +195,114 @@ function isContextBackedContextType(
   });
 }
 
-async function loadIntegrationPromptMaterial(
-  db: Db,
-  event: ActiveInputPromptEvent,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly featureSwitchContext: FeatureSwitchContext;
+const loadIntegrationPromptMaterial$ = command(
+  async (
+    { set },
+    db: Db,
+    event: ActiveInputPromptEvent,
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly featureSwitchContext: FeatureSwitchContext;
+    },
+    signal: AbortSignal,
+  ): Promise<IntegrationPromptMaterial | null> => {
+    const loaderArgs = {
+      eventId: event.id,
+      chatThreadId: event.chatThreadId,
+      orgId: args.orgId,
+      userId: args.userId,
+      featureSwitchContext: args.featureSwitchContext,
+    };
+    switch (event.contextType) {
+      case "slack": {
+        return await loadSlackQueuedLaunchMaterial(db, loaderArgs);
+      }
+      case "feishu": {
+        return await loadFeishuQueuedLaunchMaterial(db, loaderArgs);
+      }
+      case "discord": {
+        return await set(
+          loadDiscordQueuedLaunchMaterial$,
+          db,
+          loaderArgs,
+          signal,
+        );
+      }
+      case "teams": {
+        return await loadTeamsQueuedLaunchMaterial(db, loaderArgs);
+      }
+      case "telegram": {
+        return await loadTelegramQueuedLaunchMaterial(db, loaderArgs);
+      }
+      case "agentphone": {
+        return await loadAgentPhoneQueuedLaunchMaterial(db, loaderArgs);
+      }
+      case "web":
+      case "automation":
+      case "agent_run": {
+        return null;
+      }
+      default: {
+        return unreachableActiveInputContextType(event.contextType);
+      }
+    }
   },
-  signal: AbortSignal,
-): Promise<IntegrationPromptMaterial | null> {
-  const loaderArgs = {
-    eventId: event.id,
-    chatThreadId: event.chatThreadId,
-    orgId: args.orgId,
-    userId: args.userId,
-    featureSwitchContext: args.featureSwitchContext,
-  };
-  switch (event.contextType) {
-    case "slack": {
-      return await loadSlackQueuedLaunchMaterial(db, loaderArgs);
-    }
-    case "feishu": {
-      return await loadFeishuQueuedLaunchMaterial(db, loaderArgs);
-    }
-    case "discord": {
-      return await loadDiscordQueuedLaunchMaterial(db, loaderArgs, signal);
-    }
-    case "teams": {
-      return await loadTeamsQueuedLaunchMaterial(db, loaderArgs);
-    }
-    case "telegram": {
-      return await loadTelegramQueuedLaunchMaterial(db, loaderArgs);
-    }
-    case "agentphone": {
-      return await loadAgentPhoneQueuedLaunchMaterial(db, loaderArgs);
-    }
-    case "web":
-    case "automation":
-    case "agent_run": {
-      return null;
-    }
-    default: {
-      return unreachableActiveInputContextType(event.contextType);
-    }
-  }
-}
+);
 
 function unreachableActiveInputContextType(contextType: never): never {
   throw new Error(`Unsupported active input context type: ${contextType}`);
 }
 
 /** Materialize one pending input prompt into the same text capability as a run prompt. */
-async function materializeActiveInputPrompt(
-  db: Db,
-  args: {
-    readonly event: ActiveInputPromptEvent;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly featureSwitchContext: FeatureSwitchContext;
-  },
-  signal: AbortSignal,
-): Promise<string> {
-  const userMessage = requiredUserMessageForEvent(
-    args.event.eventType,
-    args.event.userMessage,
-  );
-  if (!userMessage) {
-    throw new Error("Active input event is missing userMessage");
-  }
-  const integration = await loadIntegrationPromptMaterial(
-    db,
-    args.event,
-    args,
-    signal,
-  );
-  if (args.event.contextType === "discord" && !integration) {
-    throw new DiscordQueuedLaunchUnavailableError();
-  }
-  if (isContextBackedContextType(args.event.contextType) && !integration) {
-    throw new Error(
-      `${args.event.contextType} active input is missing launch material`,
+const materializeActiveInputPrompt$ = command(
+  async (
+    { set },
+    db: Db,
+    args: {
+      readonly event: ActiveInputPromptEvent;
+      readonly orgId: string;
+      readonly userId: string;
+      readonly featureSwitchContext: FeatureSwitchContext;
+    },
+    signal: AbortSignal,
+  ): Promise<string> => {
+    const userMessage = requiredUserMessageForEvent(
+      args.event.eventType,
+      args.event.userMessage,
     );
-  }
-  const { projection, templates } = activeInputGenerationTemplates(userMessage);
-  const prompt = integration?.prompt ?? projection.agentPrompt;
-  const parts = [
-    integration?.appendSystemPrompt ?? "",
-    templates.prompt,
-    prompt,
-  ].filter((part) => {
-    return part.length > 0;
-  });
-  const materialized = parts.join("\n\n");
-  if (materialized.length === 0) {
-    throw new Error("Active input event materialized to an empty prompt");
-  }
-  return materialized;
-}
+    if (!userMessage) {
+      throw new Error("Active input event is missing userMessage");
+    }
+    const integration = await set(
+      loadIntegrationPromptMaterial$,
+      db,
+      args.event,
+      args,
+      signal,
+    );
+    if (args.event.contextType === "discord" && !integration) {
+      throw new DiscordQueuedLaunchUnavailableError();
+    }
+    if (isContextBackedContextType(args.event.contextType) && !integration) {
+      throw new Error(
+        `${args.event.contextType} active input is missing launch material`,
+      );
+    }
+    const { projection, templates } =
+      activeInputGenerationTemplates(userMessage);
+    const prompt = integration?.prompt ?? projection.agentPrompt;
+    const parts = [
+      integration?.appendSystemPrompt ?? "",
+      templates.prompt,
+      prompt,
+    ].filter((part) => {
+      return part.length > 0;
+    });
+    const materialized = parts.join("\n\n");
+    if (materialized.length === 0) {
+      throw new Error("Active input event materialized to an empty prompt");
+    }
+    return materialized;
+  },
+);

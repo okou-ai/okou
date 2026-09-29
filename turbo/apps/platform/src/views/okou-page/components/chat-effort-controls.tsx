@@ -191,7 +191,7 @@ export function ChatEffortSettings({
 }
 
 /**
- * Show Fast's speed and usage before the user enables it, including as the
+ * Show Fast's cost before the user enables it, including as the
  * switch's accessible description.
  */
 export function ChatFastSetting({

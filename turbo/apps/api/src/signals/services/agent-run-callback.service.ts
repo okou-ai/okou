@@ -12,29 +12,18 @@ import { now, nowDate } from "../../lib/time";
 import { settle } from "../utils";
 import { decryptPersistentSecretValue } from "./crypto.utils";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
-import {
-  handleChatInternalCallback$,
-  handleChatInternalCallbackWithoutCcstate,
-} from "./internal-chat-run-callback.service";
-import {
-  handleFeishuOrgInternalCallback$,
-  handleFeishuOrgInternalCallbackWithoutCcstate,
-} from "./internal-feishu-org-run-callback.service";
+import { handleChatInternalCallback$ } from "./internal-chat-run-callback.service";
+import { handleFeishuOrgInternalCallback$ } from "./internal-feishu-org-run-callback.service";
 import {
   internalRunCallbackKindForRecord,
   type InternalRunCallbackDispatchResult,
   type InternalRunCallbackEnvelope,
   type InternalRunCallbackKind,
 } from "./internal-run-callback";
-import {
-  handleWorkflowAutomationInternalCallback,
-  handleWorkflowAutomationInternalCallback$,
-} from "./workflow-automation-run-callback.service";
-import {
-  handleWorkflowAutomationResultEmailInternalCallback,
-  handleWorkflowAutomationResultEmailInternalCallback$,
-} from "./internal-workflow-automation-result-email-callback.service";
+import { handleWorkflowAutomationInternalCallback$ } from "./workflow-automation-run-callback.service";
+import { handleWorkflowAutomationResultEmailInternalCallback$ } from "./internal-workflow-automation-result-email-callback.service";
 import { handlePiMemoryPhase2MaintenanceCallback } from "./pi-memory-phase2-maintenance.service";
+import type { DispatchFailedRunCallbacks } from "./pick-chat-run.service";
 
 const L = logger("AgentRunCallback");
 
@@ -264,84 +253,6 @@ const dispatchSingleInternalCallback$ = command(
   },
 );
 
-export async function dispatchRunCallbacks(
-  db: Db,
-  runId: string,
-  status: TerminalCallbackStatus,
-  result?: Record<string, unknown>,
-  error?: string,
-): Promise<DispatchResult[]> {
-  const [run] = await db
-    .select({
-      orgId: agentRuns.orgId,
-      userId: agentRuns.userId,
-      failureReason: agentRuns.failureReason,
-      modelProvider: agentRuns.modelProvider,
-    })
-    .from(agentRuns)
-    .where(eq(agentRuns.id, runId))
-    .limit(1);
-  if (!run) {
-    return [];
-  }
-  const featureSwitchContext = await loadUserFeatureSwitchContext(
-    db,
-    run.orgId,
-    run.userId,
-  );
-  const callbacks = await db
-    .select({
-      id: agentRunCallbacks.id,
-      url: agentRunCallbacks.url,
-      internalKind: agentRunCallbacks.internalKind,
-      encryptedSecret: agentRunCallbacks.encryptedSecret,
-      payload: agentRunCallbacks.payload,
-    })
-    .from(agentRunCallbacks)
-    .where(
-      and(
-        eq(agentRunCallbacks.runId, runId),
-        or(
-          eq(agentRunCallbacks.status, "pending"),
-          eq(agentRunCallbacks.status, "failed"),
-        ),
-        or(
-          isNull(agentRunCallbacks.internalKind),
-          notInArray(agentRunCallbacks.internalKind, [
-            ...INLINE_ONLY_INTEGRATION_DELIVERY_CALLBACK_KINDS,
-          ]),
-        ),
-      ),
-    );
-
-  const results: DispatchResult[] = [];
-  for (const callback of callbacks) {
-    const dispatchResult = await dispatchSingleCallback({
-      db,
-      callback,
-      runId,
-      status,
-      result,
-      error,
-      featureSwitchContext,
-      balanceContext: {
-        failureReason: run.failureReason,
-        modelProvider: run.modelProvider,
-      },
-    });
-    results.push(dispatchResult);
-  }
-  return results;
-}
-
-export async function dispatchFailedRunCallbacks(
-  db: Db,
-  runId: string,
-  error: string,
-): Promise<void> {
-  await dispatchRunCallbacks(db, runId, "failed", undefined, error);
-}
-
 export async function failPendingInlineOnlyDeliveryCallbacksForDeletedThread(
   db: Db,
   runId: string,
@@ -468,139 +379,18 @@ export const dispatchRunCallbacks$ = command(
   },
 );
 
-async function dispatchSingleCallback(
-  input: DispatchSingleCallbackInput,
-): Promise<DispatchResult> {
-  const internalKind = internalRunCallbackKindForRecord(input.callback);
-  if (internalKind) {
-    return await dispatchInternalCallback(input);
-  }
-  return await dispatchHttpCallback(input);
-}
-
-async function dispatchInternalCallback(
-  input: DispatchSingleCallbackInput,
-): Promise<DispatchResult> {
-  const internalKind = internalRunCallbackKindForRecord(input.callback);
-  if (!internalKind) {
-    const errorMessage = "Unknown internal callback kind";
-    await markCallbackFailed(input.db, input.callback.id, errorMessage);
-    return {
-      callbackId: input.callback.id,
-      success: false,
-      error: errorMessage,
-    };
-  }
-
-  await markCallbackAttemptStarted(input.db, input.callback.id);
-  const callbackId = input.callback.id;
-  const responseResult = await settle(
-    dispatchInternalCallbackWithoutCcstate(input, internalKind),
-  );
-
-  if (!responseResult.ok) {
-    const errorMessage =
-      responseResult.error instanceof Error
-        ? responseResult.error.message
-        : "Unknown error";
-    await markCallbackFailed(input.db, callbackId, errorMessage);
-    L.error("Internal callback dispatch threw", {
-      callbackId,
-      runId: input.runId,
-      error: responseResult.error,
-    });
-    return { callbackId, success: false, error: errorMessage };
-  }
-
-  if (!responseResult.value.success) {
-    await markCallbackFailed(input.db, callbackId, responseResult.value.error);
-    L.warn("Internal callback dispatch failed", {
-      callbackId,
-      runId: input.runId,
-      error: responseResult.value.error,
-    });
-    return {
-      callbackId,
-      success: false,
-      error: responseResult.value.error,
-    };
-  }
-
-  await markCallbackDelivered(input.db, callbackId);
-  return { callbackId, success: true };
-}
-
-async function dispatchInternalCallbackWithoutCcstate(
-  input: DispatchSingleCallbackInput,
-  kind: InternalRunCallbackKind,
-): Promise<InternalRunCallbackDispatchResult> {
-  switch (kind) {
-    case "agentphone:chat": {
-      return {
-        success: false,
-        error: "AgentPhone chat delivery callbacks are inline-only",
-      };
-    }
-    case "chat": {
-      return await handleChatInternalCallbackWithoutCcstate(
-        input.db,
-        callbackEnvelope(input),
-      );
-    }
-    case "feishu:org": {
-      return await handleFeishuOrgInternalCallbackWithoutCcstate(
-        input.db,
-        callbackEnvelope(input),
-      );
-    }
-    case "slack:chat": {
-      return {
-        success: false,
-        error: "Slack chat delivery callbacks are inline-only",
-      };
-    }
-    case "feishu:chat": {
-      return {
-        success: false,
-        error: "Feishu chat delivery callbacks are inline-only",
-      };
-    }
-    case "teams:chat": {
-      return {
-        success: false,
-        error: "Teams chat delivery callbacks are inline-only",
-      };
-    }
-    case "telegram:chat": {
-      return {
-        success: false,
-        error: "Telegram chat delivery callbacks are inline-only",
-      };
-    }
-    case "workflow-automation:cron":
-    case "workflow-automation:loop": {
-      return await handleWorkflowAutomationInternalCallback(input.db, {
-        kind,
-        callback: callbackEnvelope(input),
-      });
-    }
-    case "workflow-automation:result-email": {
-      return await handleWorkflowAutomationResultEmailInternalCallback(
-        input.db,
-        callbackEnvelope(input),
-      );
-    }
-    case "pi-memory:phase2": {
-      return await handlePiMemoryPhase2MaintenanceCallback(
-        input.db,
-        callbackEnvelope(input),
-      );
-    }
-  }
-}
+export const dispatchFailedRunCallbacks$: DispatchFailedRunCallbacks = command(
+  async ({ set }, { db, runId, error }, signal): Promise<void> => {
+    await set(
+      dispatchRunCallbacks$,
+      { db, runId, status: "failed", error },
+      signal,
+    );
+  },
+);
 
 function callbackEnvelope(
-  input: DispatchInternalRunCallbackInput | DispatchSingleCallbackInput,
+  input: DispatchInternalRunCallbackInput,
 ): InternalRunCallbackEnvelope {
   const base = {
     callbackId: input.callback.id,

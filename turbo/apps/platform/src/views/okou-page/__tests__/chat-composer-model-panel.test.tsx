@@ -108,12 +108,10 @@ test("Pick only chat models, with effort and Fast in the same panel", async () =
   expect(within(panel).queryByText("Max")).toBeNull();
   expect(within(panel).getByText("Fewer credits")).toBeVisible();
   expect(within(panel).getByText("More credits")).toBeVisible();
-  expect(
-    within(panel).getByText("Faster responses · 2× credits"),
-  ).toBeVisible();
+  expect(within(panel).getByText("2× credit cost")).toBeInTheDocument();
   expect(
     within(panel).getByRole("switch", { name: "Fast mode" }),
-  ).toHaveAccessibleDescription("Faster responses · 2× credits");
+  ).toHaveAccessibleDescription("2× credit cost");
   // Only the model list scrolls; effort and Fast stay pinned below it.
   const viewport = models.closest('[data-slot="scroll-area-viewport"]');
   expect(viewport).not.toBeNull();

@@ -1236,6 +1236,7 @@ type PermanentFunction = {
 const EXPECTED_PERMANENT_TRIGGERS = [
   {
     definition:
+      // eslint-disable-next-line api/no-database-trigger -- Legacy trigger created before 2026-09-29; new database triggers are prohibited.
       "CREATE TRIGGER capture_billing_run_attribution BEFORE INSERT ON public.agent_runs FOR EACH ROW EXECUTE FUNCTION capture_billing_run_attribution()",
     schemaName: "public",
     tableName: "agent_runs",
@@ -1243,6 +1244,7 @@ const EXPECTED_PERMANENT_TRIGGERS = [
   },
   {
     definition:
+      // eslint-disable-next-line api/no-database-trigger -- Legacy trigger created before 2026-09-29; new database triggers are prohibited.
       "CREATE TRIGGER billing_run_attribution_immutable BEFORE UPDATE ON public.billing_run_attribution FOR EACH ROW EXECUTE FUNCTION reject_billing_attribution_update()",
     schemaName: "public",
     tableName: "billing_run_attribution",
@@ -1250,6 +1252,7 @@ const EXPECTED_PERMANENT_TRIGGERS = [
   },
   {
     definition:
+      // eslint-disable-next-line api/no-database-trigger -- Legacy trigger created before 2026-09-29; new database triggers are prohibited.
       "CREATE TRIGGER capture_usage_billing_attribution BEFORE INSERT OR UPDATE OF billing_run_id, billing_anchor_at, billing_context, org_id, user_id ON public.usage_event FOR EACH ROW EXECUTE FUNCTION capture_usage_billing_attribution()",
     schemaName: "public",
     tableName: "usage_event",
@@ -1257,6 +1260,7 @@ const EXPECTED_PERMANENT_TRIGGERS = [
   },
   {
     definition:
+      // eslint-disable-next-line api/no-database-trigger -- Legacy trigger created before 2026-09-29; new database triggers are prohibited.
       "CREATE TRIGGER capture_hourly_billing_attribution BEFORE INSERT OR UPDATE OF billing_run_id, billing_anchor_at, billing_context, org_id, user_id ON public.usage_event_hourly_rollup FOR EACH ROW EXECUTE FUNCTION capture_usage_billing_attribution()",
     schemaName: "public",
     tableName: "usage_event_hourly_rollup",
@@ -1264,6 +1268,7 @@ const EXPECTED_PERMANENT_TRIGGERS = [
   },
   {
     definition:
+      // eslint-disable-next-line api/no-database-trigger -- Legacy trigger created before 2026-09-29; new database triggers are prohibited.
       "CREATE TRIGGER capture_generation_billing_identity BEFORE INSERT OR UPDATE OF billing_run_id, billing_context ON public.built_in_generation_jobs FOR EACH ROW EXECUTE FUNCTION capture_generation_billing_identity()",
     schemaName: "public",
     tableName: "built_in_generation_jobs",
@@ -1271,6 +1276,7 @@ const EXPECTED_PERMANENT_TRIGGERS = [
   },
   {
     definition:
+      // eslint-disable-next-line api/no-database-trigger -- Legacy trigger created before 2026-09-29; new database triggers are prohibited.
       "CREATE TRIGGER mark_raw_billing_usage_observed AFTER INSERT OR UPDATE OF billing_run_id, billing_context ON public.usage_event FOR EACH ROW EXECUTE FUNCTION mark_billing_usage_observed()",
     schemaName: "public",
     tableName: "usage_event",
@@ -1278,6 +1284,7 @@ const EXPECTED_PERMANENT_TRIGGERS = [
   },
   {
     definition:
+      // eslint-disable-next-line api/no-database-trigger -- Legacy trigger created before 2026-09-29; new database triggers are prohibited.
       "CREATE TRIGGER mark_hourly_billing_usage_observed AFTER INSERT OR UPDATE OF billing_run_id, billing_context ON public.usage_event_hourly_rollup FOR EACH ROW EXECUTE FUNCTION mark_billing_usage_observed()",
     schemaName: "public",
     tableName: "usage_event_hourly_rollup",
@@ -1285,6 +1292,7 @@ const EXPECTED_PERMANENT_TRIGGERS = [
   },
   {
     definition:
+      // eslint-disable-next-line api/no-database-trigger -- Legacy trigger created before 2026-09-29; new database triggers are prohibited.
       "CREATE TRIGGER ssh_cloudflare_access_binding_guard BEFORE INSERT OR UPDATE OF cloudflare_access_id, org_id, user_id ON public.ssh_connections FOR EACH ROW EXECUTE FUNCTION validate_ssh_cloudflare_access_binding()",
     schemaName: "public",
     tableName: "ssh_connections",
@@ -1292,6 +1300,7 @@ const EXPECTED_PERMANENT_TRIGGERS = [
   },
   {
     definition:
+      // eslint-disable-next-line api/no-database-trigger -- Legacy trigger created before 2026-09-29; new database triggers are prohibited.
       "CREATE TRIGGER cloudflare_access_scope_change_guard BEFORE UPDATE OF scope, user_id, org_id ON public.cloudflare_access_configs FOR EACH ROW EXECUTE FUNCTION reject_cloudflare_access_scope_change()",
     schemaName: "public",
     tableName: "cloudflare_access_configs",

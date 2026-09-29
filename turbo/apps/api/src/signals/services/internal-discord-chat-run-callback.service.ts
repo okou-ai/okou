@@ -1,4 +1,4 @@
-import { createStore } from "ccstate";
+import { command } from "ccstate";
 import { and, countDistinct, eq } from "drizzle-orm";
 import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
@@ -16,7 +16,6 @@ import { canonicalChatEventContent } from "./canonical-chat-event-read.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
 import { requireDiscordConversationAccess$ } from "./discord-access.service";
 import type { DiscordDeliveryTarget } from "./discord-chat-callback-payload";
-import type { DiscordChatAccessChecker } from "./discord-chat-route-access.service";
 import {
   resolveIntegrationAdmissionFailurePresentation,
   resolveIntegrationAgentResponsePresentation,
@@ -26,7 +25,6 @@ const L = logger("DiscordChatDelivery");
 
 /** A canonical chat event to post to the Discord conversation it answers. */
 export interface DiscordReplyRequest {
-  readonly checkAccess?: DiscordChatAccessChecker;
   readonly chatEventId: string;
   readonly chatThreadId: string;
   readonly orgId: string;
@@ -43,7 +41,6 @@ export interface DiscordIngressNotice {
 }
 
 interface Destination {
-  readonly checkAccess?: DiscordChatAccessChecker;
   readonly connectionId: string;
   readonly orgId: string;
   readonly userId: string;
@@ -51,95 +48,81 @@ interface Destination {
   readonly routeId: string | null;
 }
 
-async function legacyReplyAccess(
-  args: Parameters<DiscordChatAccessChecker>[0],
-  signal: AbortSignal,
-) {
-  // eslint-disable-next-line ccstate/no-create-store -- Pre-2026-09-29 legacy only; no new violations or suppressions. Reply access check; migrate to the request command graph.
-  return await createStore().set(
-    requireDiscordConversationAccess$,
-    args,
-    signal,
-  );
-}
-
-async function currentDestinationAccess(
-  db: Db,
-  destination: Destination,
-  signal: AbortSignal,
-) {
-  const [connection] = await db
-    .select({
-      guildId: discordOrgConnections.guildId,
-      discordUserId: discordOrgConnections.discordUserId,
-    })
-    .from(discordOrgConnections)
-    .innerJoin(
-      discordOrgInstallations,
-      eq(discordOrgInstallations.guildId, discordOrgConnections.guildId),
-    )
-    .where(
-      and(
-        eq(discordOrgConnections.id, destination.connectionId),
-        eq(discordOrgConnections.userId, destination.userId),
-        eq(discordOrgInstallations.orgId, destination.orgId),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  if (!connection) {
-    return null;
-  }
-  if (destination.routeId !== null) {
-    const [route] = await db
-      .select({ id: discordChatThreadRoutes.id })
-      .from(discordChatThreadRoutes)
+const currentDestinationAccess$ = command(
+  async ({ set }, db: Db, destination: Destination, signal: AbortSignal) => {
+    const [connection] = await db
+      .select({
+        guildId: discordOrgConnections.guildId,
+        discordUserId: discordOrgConnections.discordUserId,
+      })
+      .from(discordOrgConnections)
+      .innerJoin(
+        discordOrgInstallations,
+        eq(discordOrgInstallations.guildId, discordOrgConnections.guildId),
+      )
       .where(
         and(
-          eq(discordChatThreadRoutes.id, destination.routeId),
-          eq(discordChatThreadRoutes.connectionId, destination.connectionId),
-          eq(discordChatThreadRoutes.userId, destination.userId),
-          eq(
-            discordChatThreadRoutes.destinationChannelId,
-            destination.channelId,
-          ),
+          eq(discordOrgConnections.id, destination.connectionId),
+          eq(discordOrgConnections.userId, destination.userId),
+          eq(discordOrgInstallations.orgId, destination.orgId),
         ),
       )
       .limit(1);
     signal.throwIfAborted();
-    if (!route) {
+    if (!connection) {
       return null;
     }
-  }
-  const checkAccess = destination.checkAccess ?? legacyReplyAccess;
-  const access = await checkAccess(
-    {
-      orgId: destination.orgId,
-      userId: destination.userId,
-      guildId: connection.guildId,
-      channelId: destination.channelId,
-      mode: "write",
-    },
-    signal,
-  );
-  signal.throwIfAborted();
-  if (access.kind === "denied") {
-    // Lost access suppresses the send; any other denial is a failed send.
-    if (access.response.status === 403 || access.response.status === 404) {
-      return null;
+    if (destination.routeId !== null) {
+      const [route] = await db
+        .select({ id: discordChatThreadRoutes.id })
+        .from(discordChatThreadRoutes)
+        .where(
+          and(
+            eq(discordChatThreadRoutes.id, destination.routeId),
+            eq(discordChatThreadRoutes.connectionId, destination.connectionId),
+            eq(discordChatThreadRoutes.userId, destination.userId),
+            eq(
+              discordChatThreadRoutes.destinationChannelId,
+              destination.channelId,
+            ),
+          ),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+      if (!route) {
+        return null;
+      }
     }
-    throw new Error(
-      `Discord delivery access check failed: ${access.response.status}`,
+    const access = await set(
+      requireDiscordConversationAccess$,
+      {
+        orgId: destination.orgId,
+        userId: destination.userId,
+        guildId: connection.guildId,
+        channelId: destination.channelId,
+        mode: "write",
+      },
+      signal,
     );
-  }
-  if (
-    access.binding.connectionId !== destination.connectionId ||
-    access.binding.discordUserId !== connection.discordUserId
-  ) {
-    return null;
-  }
-  return access;
-}
+    signal.throwIfAborted();
+    if (access.kind === "denied") {
+      // Lost access suppresses the send; any other denial is a failed send.
+      if (access.response.status === 403 || access.response.status === 404) {
+        return null;
+      }
+      throw new Error(
+        `Discord delivery access check failed: ${access.response.status}`,
+      );
+    }
+    if (
+      access.binding.connectionId !== destination.connectionId ||
+      access.binding.discordUserId !== connection.discordUserId
+    ) {
+      return null;
+    }
+    return access;
+  },
+);
 
 async function replyContent(
   db: Db,
@@ -246,110 +229,126 @@ async function postParts(
   }
 }
 
-async function sendReply(
-  db: Db,
-  request: DiscordReplyRequest,
-  signal: AbortSignal,
-): Promise<void> {
-  const access = await currentDestinationAccess(
-    db,
-    {
-      connectionId: request.target.connectionId,
-      checkAccess: request.checkAccess,
-      orgId: request.orgId,
-      userId: request.userId,
-      channelId: request.target.channelId,
-      routeId: request.target.routeId,
-    },
-    signal,
-  );
-  if (!access) {
-    return;
-  }
-  const content = await replyContent(db, request, access.binding, signal);
-  await postParts(access.botToken, request.target.channelId, content, signal);
-}
+const sendReply$ = command(
+  async (
+    { set },
+    db: Db,
+    request: DiscordReplyRequest,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const access = await set(
+      currentDestinationAccess$,
+      db,
+      {
+        connectionId: request.target.connectionId,
+        orgId: request.orgId,
+        userId: request.userId,
+        channelId: request.target.channelId,
+        routeId: request.target.routeId,
+      },
+      signal,
+    );
+    if (!access) {
+      return;
+    }
+    const content = await replyContent(db, request, access.binding, signal);
+    await postParts(access.botToken, request.target.channelId, content, signal);
+  },
+);
 
 /**
  * Fire and forget: call after the transaction that created the event commits,
  * and only from the attempt that created it, so replays never post twice.
  * Failures are logged and never propagate to the caller.
  */
-export async function sendDiscordChatReply(
-  db: Db,
-  request: DiscordReplyRequest,
-  signal: AbortSignal,
-): Promise<void> {
-  const sent = await settle(sendReply(db, request, signal), signal);
-  if (!sent.ok) {
-    L.warn("Discord reply was not delivered", {
-      chatEventId: request.chatEventId,
-      error: sent.error,
-    });
-  }
-}
+export const sendDiscordChatReply$ = command(
+  async (
+    { set },
+    db: Db,
+    request: DiscordReplyRequest,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const sent = await settle(set(sendReply$, db, request, signal), signal);
+    if (!sent.ok) {
+      L.warn("Discord reply was not delivered", {
+        chatEventId: request.chatEventId,
+        error: sent.error,
+      });
+    }
+  },
+);
 
-async function sendIngressNotice(
-  db: Db,
-  notice: DiscordIngressNotice,
-  signal: AbortSignal,
-): Promise<void> {
-  const [owner] = await db
-    .select({
-      userId: discordOrgConnections.userId,
-      orgId: discordOrgInstallations.orgId,
-    })
-    .from(discordChatIngress)
-    .innerJoin(
-      discordOrgConnections,
-      eq(discordOrgConnections.id, discordChatIngress.connectionId),
-    )
-    .innerJoin(
-      discordOrgInstallations,
-      eq(discordOrgInstallations.guildId, discordOrgConnections.guildId),
-    )
-    .where(
-      and(
-        eq(discordChatIngress.id, notice.ingressId),
-        eq(discordChatIngress.connectionId, notice.connectionId),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  if (!owner) {
-    return;
-  }
-  const access = await currentDestinationAccess(
-    db,
-    {
-      connectionId: notice.connectionId,
-      orgId: owner.orgId,
-      userId: owner.userId,
-      channelId: notice.channelId,
-      routeId: null,
-    },
-    signal,
-  );
-  if (!access) {
-    return;
-  }
-  await postParts(access.botToken, notice.channelId, notice.content, signal);
-}
+const sendIngressNotice$ = command(
+  async (
+    { set },
+    db: Db,
+    notice: DiscordIngressNotice,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const [owner] = await db
+      .select({
+        userId: discordOrgConnections.userId,
+        orgId: discordOrgInstallations.orgId,
+      })
+      .from(discordChatIngress)
+      .innerJoin(
+        discordOrgConnections,
+        eq(discordOrgConnections.id, discordChatIngress.connectionId),
+      )
+      .innerJoin(
+        discordOrgInstallations,
+        eq(discordOrgInstallations.guildId, discordOrgConnections.guildId),
+      )
+      .where(
+        and(
+          eq(discordChatIngress.id, notice.ingressId),
+          eq(discordChatIngress.connectionId, notice.connectionId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!owner) {
+      return;
+    }
+    const access = await set(
+      currentDestinationAccess$,
+      db,
+      {
+        connectionId: notice.connectionId,
+        orgId: owner.orgId,
+        userId: owner.userId,
+        channelId: notice.channelId,
+        routeId: null,
+      },
+      signal,
+    );
+    if (!access) {
+      return;
+    }
+    await postParts(access.botToken, notice.channelId, notice.content, signal);
+  },
+);
 
 /**
  * Fire and forget: call once, after the ingress became terminal or its input
  * was enqueued. Failures are logged and never propagate to the caller.
  */
-export async function sendDiscordIngressNotice(
-  db: Db,
-  notice: DiscordIngressNotice,
-  signal: AbortSignal,
-): Promise<void> {
-  const sent = await settle(sendIngressNotice(db, notice, signal), signal);
-  if (!sent.ok) {
-    L.warn("Discord ingress notice was not delivered", {
-      ingressId: notice.ingressId,
-      error: sent.error,
-    });
-  }
-}
+export const sendDiscordIngressNotice$ = command(
+  async (
+    { set },
+    db: Db,
+    notice: DiscordIngressNotice,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const sent = await settle(
+      set(sendIngressNotice$, db, notice, signal),
+      signal,
+    );
+    if (!sent.ok) {
+      L.warn("Discord ingress notice was not delivered", {
+        ingressId: notice.ingressId,
+        error: sent.error,
+      });
+    }
+  },
+);

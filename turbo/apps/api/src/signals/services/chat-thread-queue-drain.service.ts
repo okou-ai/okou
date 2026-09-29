@@ -1,4 +1,4 @@
-import { command } from "ccstate";
+import { command, type Command } from "ccstate";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
@@ -205,55 +205,73 @@ async function enqueuedChatQueueWaitReason(
  * touch) and then `publish` (the UI realtime event) run last, also when the
  * pick fails. No entry awaits the pick.
  */
-export const scheduleEnqueuedChatThreadPick$ = command(
-  (
-    { set },
-    input: {
-      readonly orgId: string;
-      readonly chatThreadId: string;
-      readonly enqueueCommit?: ChatInputEnqueueCommit;
-      readonly afterPick?: (
-        pick: ChatQueuePick,
-        signal: AbortSignal,
-      ) => Promise<void>;
-      readonly touch?: () => Promise<void>;
-      readonly publish?: () => Promise<void>;
+export function createEnqueuedChatThreadPickScheduler<AfterPickInput>(
+  afterPick$: Command<
+    Promise<void>,
+    [AfterPickInput, ChatQueuePick, AbortSignal]
+  >,
+) {
+  return command(
+    (
+      { set },
+      input: {
+        readonly orgId: string;
+        readonly chatThreadId: string;
+        readonly enqueueCommit?: ChatInputEnqueueCommit;
+        readonly afterPick?: AfterPickInput;
+        readonly touch?: () => Promise<void>;
+        readonly publish?: () => Promise<void>;
+      },
+      signal: AbortSignal,
+    ): void => {
+      const receipt = input.enqueueCommit;
+      if (receipt) {
+        set(chatInputEnqueueCommits$, (previous) => {
+          return new Map(previous).set(receipt.eventId, receipt.committedAt);
+        });
+      }
+      const { pick$ } = createPickObjects(input.orgId, input.chatThreadId);
+      waitUntil(
+        (async () => {
+          const picked = await settle(
+            (async () => {
+              const runId = await set(pick$, signal);
+              if (input.afterPick !== undefined) {
+                const pick: ChatQueuePick = runId
+                  ? { reason: "launched", orgId: input.orgId, runId }
+                  : await enqueuedChatQueueWaitReason(set(writeDb$), input);
+                signal.throwIfAborted();
+                await set(afterPick$, input.afterPick, pick, signal);
+              }
+            })(),
+          );
+          await input.touch?.();
+          await input.publish?.();
+          if (!picked.ok) {
+            throw picked.error;
+          }
+        })(),
+      );
+      waitUntil(
+        notifyRunningChatRunOfPendingInput(set(writeDb$), input.chatThreadId),
+      );
     },
+  );
+}
+
+const runEnqueuedChatThreadAfterPick$ = command(
+  (
+    _context,
+    afterPick: (pick: ChatQueuePick, signal: AbortSignal) => Promise<void>,
+    pick: ChatQueuePick,
     signal: AbortSignal,
-  ): void => {
-    const receipt = input.enqueueCommit;
-    if (receipt) {
-      set(chatInputEnqueueCommits$, (previous) => {
-        return new Map(previous).set(receipt.eventId, receipt.committedAt);
-      });
-    }
-    const { pick$ } = createPickObjects(input.orgId, input.chatThreadId);
-    waitUntil(
-      (async () => {
-        const picked = await settle(
-          (async () => {
-            const runId = await set(pick$, signal);
-            if (input.afterPick) {
-              const pick: ChatQueuePick = runId
-                ? { reason: "launched", orgId: input.orgId, runId }
-                : await enqueuedChatQueueWaitReason(set(writeDb$), input);
-              signal.throwIfAborted();
-              await input.afterPick(pick, signal);
-            }
-          })(),
-        );
-        await input.touch?.();
-        await input.publish?.();
-        if (!picked.ok) {
-          throw picked.error;
-        }
-      })(),
-    );
-    waitUntil(
-      notifyRunningChatRunOfPendingInput(set(writeDb$), input.chatThreadId),
-    );
+  ) => {
+    return afterPick(pick, signal);
   },
 );
+
+export const scheduleEnqueuedChatThreadPick$ =
+  createEnqueuedChatThreadPickScheduler(runEnqueuedChatThreadAfterPick$);
 
 /** Keyset page size for passes over queued threads and organizations. */
 const PICK_PAGE_SIZE = 100;

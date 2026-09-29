@@ -4940,16 +4940,8 @@
         },
         "fast": "Cepat",
         "fastImpact": {
-          "apiCost": "{{multiplier}}× biaya token API",
-          "apiSpeed": "Hingga {{multiplier}}× kecepatan model",
-          "chatGptUsage": "{{multiplier}}× penggunaan ChatGPT",
-          "compactSummary": "Respons lebih cepat · {{multiplier}}× kredit",
-          "fasterResponses": "Respons model lebih cepat",
-          "modelSpeed": "{{multiplier}}× kecepatan model",
-          "okouCredits": "{{multiplier}}× kredit model Okou",
-          "providerSpeed": "Kecepatan bergantung pada penyedia",
-          "providerUsage": "Penggunaan bergantung pada penyedia",
-          "summary": "{{speed}} · {{usage}}"
+          "creditCost": "{{multiplier}}× biaya kredit",
+          "providerUsage": "Penggunaan bergantung pada penyedia"
         },
         "fastMode": "Mode cepat",
         "generationPriceTiers": {

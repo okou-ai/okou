@@ -1,14 +1,14 @@
-import type { MemberModelAccountSnapshot } from "./model-provider-account.service";
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { randomBytes } from "node:crypto";
 import { v5 as uuidv5 } from "uuid";
 import type { ChatThreadSessionResolution } from "./chat-session-continuity.service";
+import type { MemberModelAccountSnapshot } from "./model-provider-account.service";
+
 import type { ChatEventType } from "@okouai/api-contracts/contracts/chat-events";
 import {
   serializeChatFollowupsContent,
   type ChatRecommendedFollowup,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { formatRunErrorForExternalSurface } from "@okouai/api-contracts/contracts/errors";
 import { visiblePiMemoryCitationText } from "@okouai/api-contracts/contracts/pi-memory-citations";
 import { publicProviderBalanceFailureReason } from "@okouai/api-contracts/contracts/run-balance-errors";
 import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
@@ -22,9 +22,10 @@ import {
   type ChatEventUserMessage,
 } from "@okouai/db/schema/chat-event";
 import { runOutputMaterializations } from "@okouai/db/schema/run-output-materialization";
-import { command, createStore } from "ccstate";
+import { command } from "ccstate";
 import { and, asc, desc, eq, isNotNull, lte, max, not, sql } from "drizzle-orm";
 import { z } from "zod";
+
 import type { GenerationTemplateIdentity } from "@okouai/core/generation-template-identity";
 import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
 import type { Tx } from "../../lib/db-types";
@@ -49,7 +50,6 @@ import {
   tapError,
   throwIfAbort,
 } from "../utils";
-import type { DispatchFailedRunCallbacks } from "./pick-chat-run.service";
 import {
   agentphoneDeliveryTargetSchema,
   type AgentPhoneDeliveryTarget,
@@ -65,10 +65,8 @@ import { canonicalChatEventContent } from "./canonical-chat-event-read.service";
 import {
   clearCanonicalSlackThreadStatusIfIdle,
   refreshCanonicalSlackThreadStatus,
-  type CanonicalSlackThreadStatusTarget,
 } from "./canonical-slack-thread-status.service";
 import {
-  insertAssistantEvents,
   insertAssistantEvents$,
   touchChatThreadLastMessageAtIndependently,
   type InsertAssistantEventsInput,
@@ -101,29 +99,20 @@ import {
   discordDeliveryTargetSchema,
   type DiscordDeliveryTarget,
 } from "./discord-chat-callback-payload";
-import { loadDiscordQueuedLaunchMaterial } from "./discord-queued-launch-context.service";
-import {
-  requireDiscordBinding$,
-  requireDiscordConversationAccess$,
-} from "./discord-access.service";
-import type { DiscordChatAccessChecker } from "./discord-chat-route-access.service";
-import {
-  scheduleDiscordRunTyping,
-  type DiscordTypingBindingChecker,
-} from "./discord-run-typing.service";
+import { loadDiscordQueuedLaunchMaterial$ } from "./discord-queued-launch-context.service";
+import { scheduleDiscordRunTyping$ } from "./discord-run-typing.service";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import {
   feishuDeliveryTargetSchema,
   type FeishuDeliveryTarget,
 } from "./feishu-chat-callback-payload";
 import { loadFeishuQueuedLaunchMaterial } from "./feishu-queued-launch-context.service";
-import { formatIntegrationRunError$ } from "./integration-run-errors.service";
 import {
   deliverAgentPhoneChatAdmissionFailure,
   dispatchAgentPhoneChatDeliveryOnce,
 } from "./internal-agentphone-chat-run-callback.service";
 import {
-  sendDiscordChatReply,
+  sendDiscordChatReply$,
   type DiscordReplyRequest,
 } from "./internal-discord-chat-run-callback.service";
 import {
@@ -149,13 +138,14 @@ import {
   type ModelFirstPin,
 } from "./model-selection.service";
 import { shouldUsePiExecution } from "./pi-sandbox-config";
+import type { DispatchFailedRunCallbacks } from "./pick-chat-run.service";
 import {
   additionalVolumesForRun,
   type PresentationTemplateVolume,
 } from "./presentation-template-data.service";
 import { sendUserPushNotifications } from "./push-notifications.service";
 import { formatRunErrorForRunOwner$ } from "./run-error-format.service";
-import { saveRunSummary, saveRunSummary$ } from "./run-summary.service";
+import { saveRunSummary$ } from "./run-summary.service";
 import { loadSlackQueuedLaunchMaterial } from "./slack-queued-launch-context.service";
 import {
   teamsDeliveryTargetSchema,
@@ -383,141 +373,6 @@ interface AgentForAutoSend {
   readonly orgId: string;
 }
 
-export interface ChatCallbackDependencies {
-  readonly checkDiscordTypingBinding?: DiscordTypingBindingChecker;
-  readonly checkDiscordAccess?: DiscordChatAccessChecker;
-  readonly releaseBrowsersForRun: (
-    args: { readonly chatThreadId: string },
-    signal: AbortSignal,
-  ) => Promise<{ readonly released: number }>;
-  readonly insertAssistantItems: (
-    args: AssistantEventInsertArgs,
-    signal: AbortSignal,
-  ) => Promise<void>;
-  readonly saveRunSummary: (
-    runId: string,
-    prompt: string,
-    resultText: string,
-    signal: AbortSignal,
-  ) => Promise<void>;
-  readonly dispatchChatRunFinishedAutomations: (
-    event: ChatRunFinishedEvent,
-    signal: AbortSignal,
-  ) => Promise<void>;
-  readonly formatRunError: (
-    args: {
-      readonly chatThreadId: string;
-      readonly runId: string;
-      readonly errorMessage: string;
-    },
-    signal: AbortSignal,
-  ) => Promise<string>;
-  readonly dispatchSlackDelivery: (
-    callbackId: string,
-    signal: AbortSignal,
-  ) => Promise<void>;
-  readonly clearSlackThreadStatusIfIdle: (
-    target: CanonicalSlackThreadStatusTarget,
-    signal: AbortSignal,
-  ) => Promise<boolean>;
-  readonly refreshSlackThreadStatus: (
-    target: CanonicalSlackThreadStatusTarget,
-    signal: AbortSignal,
-  ) => Promise<boolean>;
-  readonly formatIntegrationRunError: (
-    args: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly code: string;
-      readonly message: string;
-    },
-    signal: AbortSignal,
-  ) => Promise<string>;
-  readonly deliverSlackAdmissionFailure: (
-    args: {
-      readonly chatThreadId: string;
-      readonly userId: string;
-      readonly orgId: string;
-      readonly agentId: string;
-      readonly channelId: string;
-      readonly threadTs: string;
-      readonly routeThreadTs?: string;
-      readonly chatEventId: string;
-    },
-    signal: AbortSignal,
-  ) => Promise<void>;
-  readonly dispatchFeishuDelivery: (
-    callbackId: string,
-    signal: AbortSignal,
-  ) => Promise<void>;
-  readonly deliverFeishuAdmissionFailure: (
-    args: {
-      readonly chatThreadId: string;
-      readonly userId: string;
-      readonly orgId: string;
-      readonly target: FeishuDeliveryTarget;
-      readonly chatEventId: string;
-    },
-    signal: AbortSignal,
-  ) => Promise<void>;
-  readonly clearFeishuThinkingReaction: (
-    target: FeishuDeliveryTarget,
-    signal: AbortSignal,
-  ) => Promise<void>;
-  readonly dispatchTeamsDelivery: (
-    callbackId: string,
-    signal: AbortSignal,
-  ) => Promise<void>;
-  readonly deliverTeamsAdmissionFailure: (
-    args: {
-      readonly chatThreadId: string;
-      readonly userId: string;
-      readonly orgId: string;
-      readonly agentId: string;
-      readonly target: TeamsDeliveryTarget;
-      readonly chatEventId: string;
-    },
-    signal: AbortSignal,
-  ) => Promise<void>;
-  /** Fire and forget; it logs its own failures and never throws. */
-  readonly sendDiscordReply: (
-    request: DiscordReplyRequest,
-    signal: AbortSignal,
-  ) => Promise<void>;
-  readonly dispatchTelegramDelivery: (
-    callbackId: string,
-    status: "completed" | "failed",
-    signal: AbortSignal,
-  ) => Promise<void>;
-  readonly deliverTelegramAdmissionFailure: (
-    args: {
-      readonly chatThreadId: string;
-      readonly userId: string;
-      readonly orgId: string;
-      readonly agentId: string;
-      readonly target: TelegramDeliveryTarget;
-      readonly chatEventId: string;
-    },
-    signal: AbortSignal,
-  ) => Promise<void>;
-  readonly dispatchAgentPhoneDelivery: (
-    callbackId: string,
-    status: "completed" | "failed",
-    signal: AbortSignal,
-  ) => Promise<void>;
-  readonly deliverAgentPhoneAdmissionFailure: (
-    args: {
-      readonly chatThreadId: string;
-      readonly userId: string;
-      readonly orgId: string;
-      readonly agentId: string;
-      readonly target: AgentPhoneDeliveryTarget;
-      readonly chatEventId: string;
-    },
-    signal: AbortSignal,
-  ) => Promise<void>;
-}
-
 interface ChatThreadForRunRow {
   readonly chatThreadId: string;
   readonly userId: string;
@@ -537,9 +392,9 @@ interface ChatRunInfo {
 
 export interface CreateQueuedChatRunInput {
   readonly memberAccountSnapshot?: MemberModelAccountSnapshot | null;
-  readonly expectedThreadAgentId?: string;
   readonly threadSessionResolution?: ChatThreadSessionResolution;
   readonly featureSwitchContext?: FeatureSwitchContext;
+  readonly expectedThreadAgentId?: string;
   readonly orgId: string;
   readonly userId: string;
   readonly agentId: string;
@@ -732,8 +587,19 @@ interface TerminalChatCallbackWork {
   readonly discordReply?: DiscordReplyRequest;
   readonly telegramDeliveryCallbackId?: string;
   readonly agentphoneDeliveryCallbackId?: string;
-  readonly retryableSideEffects?: (signal: AbortSignal) => Promise<void>;
-  readonly deferredSideEffects?: (signal: AbortSignal) => Promise<void>;
+  readonly runFinishedEvent?: ChatRunFinishedEvent;
+  readonly deferredSideEffects?:
+    | {
+        readonly status: "completed";
+        readonly run: ChatRunInfo;
+        readonly lastResultText: string | null;
+        readonly followupContext: readonly ChatCompletionContextMessage[];
+      }
+    | {
+        readonly status: "failed";
+        readonly run: ChatRunInfo;
+        readonly displayErrorMessage: string;
+      };
 }
 
 function generateCallbackSecret(): string {
@@ -1239,7 +1105,7 @@ interface AssistantErrorEventArgs {
   readonly lifecycleEvent: "failed" | "cancelled";
   readonly failureReason: RunFailureReasonToken | null;
   readonly hasCancellationRecoveryState: boolean;
-  readonly getFormattedError: () => Promise<string>;
+  readonly displayErrorMessage: string;
   readonly slackDelivery?: SlackDeliveryTarget;
   readonly feishuDelivery?: FeishuDeliveryTarget;
   readonly teamsDelivery?: TeamsDeliveryTarget;
@@ -1350,7 +1216,7 @@ async function insertAssistantErrorEvent(
   args: AssistantErrorEventArgs,
   signal: AbortSignal,
 ): Promise<FailedChatCallbackResult> {
-  const displayErrorMessage = await args.getFormattedError();
+  const { displayErrorMessage } = args;
   signal.throwIfAborted();
   const inserted = await insertAssistantErrorEventTransaction(
     args.db,
@@ -1759,294 +1625,342 @@ async function loadRecommendedFollowupContextForCompletedRun(args: {
   );
 }
 
-async function materializeCompletedChatResult(
-  args: {
-    readonly output: CompletedChatOutputLoad;
-    readonly preferResultFallback: boolean;
-    readonly timing: ChatCallbackPreCreateTimingCollector;
-    readonly insertAssistantItems: (
-      items: readonly AssistantEventItem[],
-    ) => Promise<void>;
-  },
-  signal: AbortSignal,
-): Promise<string | null> {
-  const { assistantItemsToInsert, latestAssistant, resultFallback } =
-    args.output;
-  if (assistantItemsToInsert.length > 0) {
-    await measureChatCallbackPreCreateTiming(
-      args.timing,
-      "api_dispatch_pre_create_agent_chat_callback_insert_assistant_items",
-      "nested",
-      () => {
-        return args.insertAssistantItems(assistantItemsToInsert);
-      },
-    );
-    signal.throwIfAborted();
-  }
-  let lastResultText = latestAssistant?.content ?? null;
-  const latestAssistantSequence = latestAssistant?.sequenceNumber ?? null;
-
-  const shouldInsertResultFallback =
-    resultFallback !== null &&
-    (lastResultText === null ||
-      (args.preferResultFallback &&
-        resultFallback.sequenceNumber >
-          (latestAssistantSequence ?? Number.NEGATIVE_INFINITY) &&
-        resultFallback.content !== lastResultText));
-  if (shouldInsertResultFallback) {
-    await measureChatCallbackPreCreateTiming(
-      args.timing,
-      "api_dispatch_pre_create_agent_chat_callback_insert_assistant_items",
-      "nested",
-      () => {
-        return args.insertAssistantItems([resultFallback]);
-      },
-    );
-    signal.throwIfAborted();
-    lastResultText = resultFallback.content;
-  }
-  return lastResultText;
-}
-
-async function handleCompletedChatCallback(
-  args: {
-    readonly db: Db;
-    readonly runId: string;
-    readonly run: ChatRunInfo;
-    readonly chatThread: ChatThreadForRunRow;
-    readonly timing: ChatCallbackPreCreateTimingCollector;
-    readonly slackDelivery?: SlackDeliveryTarget;
-    readonly feishuDelivery?: FeishuDeliveryTarget;
-    readonly teamsDelivery?: TeamsDeliveryTarget;
-    readonly discordDelivery?: DiscordDeliveryTarget;
-    readonly telegramDelivery?: TelegramDeliveryTarget;
-    readonly agentphoneDelivery?: AgentPhoneDeliveryTarget;
-    readonly sourceCallbackId: string;
-    readonly insertAssistantItems: (
-      items: readonly AssistantEventItem[],
-    ) => Promise<void>;
-  },
-  signal: AbortSignal,
-): Promise<CompletedChatCallbackResult> {
-  const output = await loadCompletedChatOutput(
-    {
-      db: args.db,
-      runId: args.runId,
-      lastEventSequence: args.run.lastEventSequence,
-      timing: args.timing,
+const materializeCompletedChatResult$ = command(
+  async (
+    { set },
+    args: {
+      readonly runId: string;
+      readonly chatThread: ChatThreadForRunRow;
+      readonly output: CompletedChatOutputLoad;
+      readonly preferResultFallback: boolean;
+      readonly timing: ChatCallbackPreCreateTimingCollector;
     },
-    signal,
-  );
-  signal.throwIfAborted();
+    signal: AbortSignal,
+  ): Promise<string | null> => {
+    const { assistantItemsToInsert, latestAssistant, resultFallback } =
+      args.output;
+    if (assistantItemsToInsert.length > 0) {
+      await measureChatCallbackPreCreateTiming(
+        args.timing,
+        "api_dispatch_pre_create_agent_chat_callback_insert_assistant_items",
+        "nested",
+        () => {
+          return set(
+            insertAssistantEvents$,
+            assistantEventInsertInput({
+              runId: args.runId,
+              threadId: args.chatThread.chatThreadId,
+              userId: args.chatThread.userId,
+              orgId: args.chatThread.orgId,
+              items: assistantItemsToInsert,
+            }),
+            signal,
+          );
+        },
+      );
+      signal.throwIfAborted();
+    }
+    let lastResultText = latestAssistant?.content ?? null;
+    const latestAssistantSequence = latestAssistant?.sequenceNumber ?? null;
 
-  const lastResultText = await materializeCompletedChatResult(
-    {
-      output,
-      preferResultFallback:
-        args.slackDelivery !== undefined ||
-        args.teamsDelivery !== undefined ||
-        args.discordDelivery !== undefined ||
-        args.telegramDelivery !== undefined ||
-        args.agentphoneDelivery !== undefined,
-      timing: args.timing,
-      insertAssistantItems: args.insertAssistantItems,
+    const shouldInsertResultFallback =
+      resultFallback !== null &&
+      (lastResultText === null ||
+        (args.preferResultFallback &&
+          resultFallback.sequenceNumber >
+            (latestAssistantSequence ?? Number.NEGATIVE_INFINITY) &&
+          resultFallback.content !== lastResultText));
+    if (shouldInsertResultFallback) {
+      await measureChatCallbackPreCreateTiming(
+        args.timing,
+        "api_dispatch_pre_create_agent_chat_callback_insert_assistant_items",
+        "nested",
+        () => {
+          return set(
+            insertAssistantEvents$,
+            assistantEventInsertInput({
+              runId: args.runId,
+              threadId: args.chatThread.chatThreadId,
+              userId: args.chatThread.userId,
+              orgId: args.chatThread.orgId,
+              items: [resultFallback],
+            }),
+            signal,
+          );
+        },
+      );
+      signal.throwIfAborted();
+      lastResultText = resultFallback.content;
+    }
+    return lastResultText;
+  },
+);
+
+const handleCompletedChatCallback$ = command(
+  async (
+    { set },
+    args: {
+      readonly db: Db;
+      readonly runId: string;
+      readonly run: ChatRunInfo;
+      readonly chatThread: ChatThreadForRunRow;
+      readonly timing: ChatCallbackPreCreateTimingCollector;
+      readonly slackDelivery?: SlackDeliveryTarget;
+      readonly feishuDelivery?: FeishuDeliveryTarget;
+      readonly teamsDelivery?: TeamsDeliveryTarget;
+      readonly discordDelivery?: DiscordDeliveryTarget;
+      readonly telegramDelivery?: TelegramDeliveryTarget;
+      readonly agentphoneDelivery?: AgentPhoneDeliveryTarget;
+      readonly sourceCallbackId: string;
     },
-    signal,
-  );
-  signal.throwIfAborted();
-
-  waitUntil(
-    tapError(recordLastEventToComplete(args.db, args.runId), (error) => {
-      log.warn("Failed to record last_event_to_complete", {
+    signal: AbortSignal,
+  ): Promise<CompletedChatCallbackResult> => {
+    const output = await loadCompletedChatOutput(
+      {
+        db: args.db,
         runId: args.runId,
-        error,
-      });
-    }),
-  );
+        lastEventSequence: args.run.lastEventSequence,
+        timing: args.timing,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
 
-  const inserted = await measureChatCallbackPreCreateTiming(
-    args.timing,
-    "api_dispatch_pre_create_agent_chat_callback_insert_lifecycle_marker",
-    "nested",
-    () => {
-      return insertRunLifecycleMarker(
+    const lastResultText = await set(
+      materializeCompletedChatResult$,
+      {
+        runId: args.runId,
+        chatThread: args.chatThread,
+        output,
+        preferResultFallback:
+          args.slackDelivery !== undefined ||
+          args.teamsDelivery !== undefined ||
+          args.discordDelivery !== undefined ||
+          args.telegramDelivery !== undefined ||
+          args.agentphoneDelivery !== undefined,
+        timing: args.timing,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+
+    waitUntil(
+      tapError(recordLastEventToComplete(args.db, args.runId), (error) => {
+        log.warn("Failed to record last_event_to_complete", {
+          runId: args.runId,
+          error,
+        });
+      }),
+    );
+
+    const inserted = await measureChatCallbackPreCreateTiming(
+      args.timing,
+      "api_dispatch_pre_create_agent_chat_callback_insert_lifecycle_marker",
+      "nested",
+      () => {
+        return insertRunLifecycleMarker(
+          {
+            db: args.db,
+            runId: args.runId,
+            threadId: args.chatThread.chatThreadId,
+            userId: args.chatThread.userId,
+            orgId: args.chatThread.orgId,
+            event: "completed",
+            slackDelivery: args.slackDelivery,
+            feishuDelivery: args.feishuDelivery,
+            teamsDelivery: args.teamsDelivery,
+            discordDelivery: args.discordDelivery,
+            telegramDelivery: args.telegramDelivery,
+            agentphoneDelivery: args.agentphoneDelivery,
+            sourceCallbackId: args.sourceCallbackId,
+          },
+          signal,
+        );
+      },
+    );
+    signal.throwIfAborted();
+    if (inserted.outcome === "duplicate") {
+      return inserted;
+    }
+
+    const followupContext = await measureChatCallbackPreCreateTiming(
+      args.timing,
+      "api_dispatch_pre_create_agent_chat_callback_load_followup_context",
+      "nested",
+      () => {
+        return loadRecommendedFollowupContextForCompletedRun({
+          db: args.db,
+          threadId: args.chatThread.chatThreadId,
+        });
+      },
+    );
+    signal.throwIfAborted();
+
+    return {
+      lastResultText,
+      followupContext,
+      outcome: inserted.outcome,
+      slackDeliveryCallbackId: inserted.slackDeliveryCallbackId,
+      feishuDeliveryCallbackId: inserted.feishuDeliveryCallbackId,
+      teamsDeliveryCallbackId: inserted.teamsDeliveryCallbackId,
+      discordReply: inserted.discordReply,
+      telegramDeliveryCallbackId: inserted.telegramDeliveryCallbackId,
+      agentphoneDeliveryCallbackId: inserted.agentphoneDeliveryCallbackId,
+    };
+  },
+);
+
+const runCompletedChatCallbackSideEffects$ = command(
+  async (
+    { set },
+    args: {
+      readonly db: Db;
+      readonly runId: string;
+      readonly run: ChatRunInfo;
+      readonly chatThread: ChatThreadForRunRow;
+      readonly lastResultText: string | null;
+      readonly followupContext: readonly ChatCompletionContextMessage[];
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    // The post-processing steps are mutually independent. Run them after queued
+    // auto-send so LLM/push latency does not delay the next run.
+    const saveSummaryStep = set(
+      saveRunSummary$,
+      {
+        runId: args.runId,
+        triggerSource: "chat",
+        prompt: args.run.prompt,
+        resultText: args.lastResultText ?? "",
+      },
+      signal,
+    );
+
+    const followupsStep = (async () => {
+      signal.throwIfAborted();
+      const followups = await generateRecommendedFollowupsForCompletedRun(
         {
+          followupContext: args.followupContext,
+          threadId: args.chatThread.chatThreadId,
+        },
+        signal,
+      );
+      if (followups) {
+        await insertRecommendedFollowupsEvent({
           db: args.db,
           runId: args.runId,
           threadId: args.chatThread.chatThreadId,
           userId: args.chatThread.userId,
           orgId: args.chatThread.orgId,
-          event: "completed",
-          slackDelivery: args.slackDelivery,
-          feishuDelivery: args.feishuDelivery,
-          teamsDelivery: args.teamsDelivery,
-          discordDelivery: args.discordDelivery,
-          telegramDelivery: args.telegramDelivery,
-          agentphoneDelivery: args.agentphoneDelivery,
-          sourceCallbackId: args.sourceCallbackId,
-        },
-        signal,
-      );
-    },
-  );
-  signal.throwIfAborted();
-  if (inserted.outcome === "duplicate") {
-    return inserted;
-  }
+          followups,
+        });
+      }
+    })();
 
-  const followupContext = await measureChatCallbackPreCreateTiming(
-    args.timing,
-    "api_dispatch_pre_create_agent_chat_callback_load_followup_context",
-    "nested",
-    () => {
-      return loadRecommendedFollowupContextForCompletedRun({
+    const pushStep = (async () => {
+      let summary: string | null = null;
+      if (args.lastResultText) {
+        summary = await generateChatNotificationSummary(
+          {
+            prompt: args.run.prompt,
+            resultText: args.lastResultText,
+            runId: args.runId,
+          },
+          signal,
+        );
+      }
+
+      signal.throwIfAborted();
+      await sendUserPushNotifications({
         db: args.db,
-        threadId: args.chatThread.chatThreadId,
+        userId: args.chatThread.userId,
+        notification: {
+          title: args.run.prompt.slice(0, 60),
+          body: summary ?? "Your task is complete",
+          url: `/chats/${args.chatThread.chatThreadId}`,
+        },
       });
-    },
-  );
-  signal.throwIfAborted();
+    })();
 
-  return {
-    lastResultText,
-    followupContext,
-    outcome: inserted.outcome,
-    slackDeliveryCallbackId: inserted.slackDeliveryCallbackId,
-    feishuDeliveryCallbackId: inserted.feishuDeliveryCallbackId,
-    teamsDeliveryCallbackId: inserted.teamsDeliveryCallbackId,
-    discordReply: inserted.discordReply,
-    telegramDeliveryCallbackId: inserted.telegramDeliveryCallbackId,
-    agentphoneDeliveryCallbackId: inserted.agentphoneDeliveryCallbackId,
-  };
-}
-
-async function runCompletedChatCallbackSideEffects(
-  args: {
-    readonly db: Db;
-    readonly runId: string;
-    readonly run: ChatRunInfo;
-    readonly chatThread: ChatThreadForRunRow;
-    readonly lastResultText: string | null;
-    readonly followupContext: readonly ChatCompletionContextMessage[];
-    readonly saveRunSummary: (resultText: string) => Promise<void>;
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  // The post-processing steps are mutually independent. Run them after queued
-  // auto-send so LLM/push latency does not delay the next run.
-  const saveSummaryStep = args.saveRunSummary(args.lastResultText ?? "");
-
-  const followupsStep = (async () => {
+    const results = await Promise.allSettled([
+      saveSummaryStep,
+      followupsStep,
+      pushStep,
+    ]);
     signal.throwIfAborted();
-    const followups = await generateRecommendedFollowupsForCompletedRun(
+    const errors = results.flatMap((result) => {
+      if (result.status === "fulfilled") {
+        return [];
+      }
+      throwIfAbort(result.reason);
+      return [result.reason];
+    });
+    if (errors.length > 0) {
+      throw new AggregateError(
+        errors,
+        "Completed chat callback side effects failed",
+      );
+    }
+  },
+);
+
+const handleFailedChatCallback$ = command(
+  async (
+    { set },
+    args: {
+      readonly db: Db;
+      readonly runId: string;
+      readonly chatThread: ChatThreadForRunRow;
+      readonly errorMessage: string;
+      readonly failureReason: RunFailureReasonToken | null;
+      readonly hasCancellationRecoveryState: boolean;
+      readonly slackDelivery?: SlackDeliveryTarget;
+      readonly feishuDelivery?: FeishuDeliveryTarget;
+      readonly teamsDelivery?: TeamsDeliveryTarget;
+      readonly discordDelivery?: DiscordDeliveryTarget;
+      readonly telegramDelivery?: TelegramDeliveryTarget;
+      readonly agentphoneDelivery?: AgentPhoneDeliveryTarget;
+      readonly sourceCallbackId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<FailedChatCallbackResult> => {
+    const lifecycleEvent =
+      args.errorMessage.trim().toLowerCase() === "run cancelled"
+        ? "cancelled"
+        : "failed";
+    const displayErrorMessage = await set(
+      formatRunErrorForRunOwner$,
       {
-        followupContext: args.followupContext,
-        threadId: args.chatThread.chatThreadId,
+        chatThreadId: args.chatThread.chatThreadId,
+        runId: args.runId,
+        errorMessage: args.errorMessage,
       },
       signal,
     );
-    if (followups) {
-      await insertRecommendedFollowupsEvent({
+    signal.throwIfAborted();
+    return await insertAssistantErrorEvent(
+      {
         db: args.db,
         runId: args.runId,
         threadId: args.chatThread.chatThreadId,
         userId: args.chatThread.userId,
         orgId: args.chatThread.orgId,
-        followups,
-      });
-    }
-  })();
-
-  const pushStep = (async () => {
-    let summary: string | null = null;
-    if (args.lastResultText) {
-      summary = await generateChatNotificationSummary(
-        {
-          prompt: args.run.prompt,
-          resultText: args.lastResultText,
-          runId: args.runId,
-        },
-        signal,
-      );
-    }
-
-    signal.throwIfAborted();
-    await sendUserPushNotifications({
-      db: args.db,
-      userId: args.chatThread.userId,
-      notification: {
-        title: args.run.prompt.slice(0, 60),
-        body: summary ?? "Your task is complete",
-        url: `/chats/${args.chatThread.chatThreadId}`,
+        lifecycleEvent,
+        failureReason: args.failureReason,
+        hasCancellationRecoveryState: args.hasCancellationRecoveryState,
+        displayErrorMessage,
+        slackDelivery: args.slackDelivery,
+        feishuDelivery: args.feishuDelivery,
+        teamsDelivery: args.teamsDelivery,
+        discordDelivery: args.discordDelivery,
+        telegramDelivery: args.telegramDelivery,
+        agentphoneDelivery: args.agentphoneDelivery,
+        sourceCallbackId: args.sourceCallbackId,
       },
-    });
-  })();
-
-  const results = await Promise.allSettled([
-    saveSummaryStep,
-    followupsStep,
-    pushStep,
-  ]);
-  const errors = results.flatMap((result) => {
-    if (result.status === "fulfilled") {
-      return [];
-    }
-    throwIfAbort(result.reason);
-    return [result.reason];
-  });
-  if (errors.length > 0) {
-    throw new AggregateError(
-      errors,
-      "Completed chat callback side effects failed",
+      signal,
     );
-  }
-}
-
-async function handleFailedChatCallback(
-  args: {
-    readonly db: Db;
-    readonly runId: string;
-    readonly chatThread: ChatThreadForRunRow;
-    readonly errorMessage: string;
-    readonly failureReason: RunFailureReasonToken | null;
-    readonly hasCancellationRecoveryState: boolean;
-    readonly getFormattedError: () => Promise<string>;
-    readonly slackDelivery?: SlackDeliveryTarget;
-    readonly feishuDelivery?: FeishuDeliveryTarget;
-    readonly teamsDelivery?: TeamsDeliveryTarget;
-    readonly discordDelivery?: DiscordDeliveryTarget;
-    readonly telegramDelivery?: TelegramDeliveryTarget;
-    readonly agentphoneDelivery?: AgentPhoneDeliveryTarget;
-    readonly sourceCallbackId: string;
   },
-  signal: AbortSignal,
-): Promise<FailedChatCallbackResult> {
-  const lifecycleEvent =
-    args.errorMessage.trim().toLowerCase() === "run cancelled"
-      ? "cancelled"
-      : "failed";
-  return await insertAssistantErrorEvent(
-    {
-      db: args.db,
-      runId: args.runId,
-      threadId: args.chatThread.chatThreadId,
-      userId: args.chatThread.userId,
-      orgId: args.chatThread.orgId,
-      lifecycleEvent,
-      failureReason: args.failureReason,
-      hasCancellationRecoveryState: args.hasCancellationRecoveryState,
-      getFormattedError: args.getFormattedError,
-      slackDelivery: args.slackDelivery,
-      feishuDelivery: args.feishuDelivery,
-      teamsDelivery: args.teamsDelivery,
-      discordDelivery: args.discordDelivery,
-      telegramDelivery: args.telegramDelivery,
-      agentphoneDelivery: args.agentphoneDelivery,
-      sourceCallbackId: args.sourceCallbackId,
-    },
-    signal,
-  );
-}
+);
 
 async function runFailedChatCallbackSideEffects(args: {
   readonly db: Db;
@@ -2068,9 +1982,9 @@ async function runFailedChatCallbackSideEffects(args: {
 async function runTerminalChatCallbackSideEffects(args: {
   readonly runId: string;
   readonly status: "completed" | "failed";
-  readonly run: () => Promise<void>;
+  readonly operation: Promise<void>;
 }): Promise<void> {
-  await tapError(args.run(), (error) => {
+  await tapError(args.operation, (error) => {
     log.warn("Failed to process terminal chat callback side effects", {
       runId: args.runId,
       status: args.status,
@@ -2492,53 +2406,42 @@ export function queuedIntegrationLaunchFields(
   };
 }
 
-interface QueuedAdmissionFailureChannel {
-  readonly name: string;
-  readonly deliver: (chatEventId: string, signal: AbortSignal) => Promise<void>;
-  readonly clearThinking?: (signal: AbortSignal) => Promise<void>;
+interface QueuedAdmissionFailureDelivery {
+  readonly chatThreadId: string;
+  readonly userId: string;
+  readonly orgId: string;
 }
 
-interface QueuedAdmissionFailureDeliverers {
-  readonly deliverSlack: ChatCallbackDependencies["deliverSlackAdmissionFailure"];
-  readonly deliverFeishu: ChatCallbackDependencies["deliverFeishuAdmissionFailure"];
-  readonly clearFeishuThinking: ChatCallbackDependencies["clearFeishuThinkingReaction"];
-  readonly deliverTeams: ChatCallbackDependencies["deliverTeamsAdmissionFailure"];
-  readonly deliverDiscord: ChatCallbackDependencies["sendDiscordReply"];
-  readonly deliverTelegram: ChatCallbackDependencies["deliverTelegramAdmissionFailure"];
-  readonly deliverAgentPhone: ChatCallbackDependencies["deliverAgentPhoneAdmissionFailure"];
-}
+type QueuedAdmissionFailureChannel = QueuedAdmissionFailureDelivery &
+  (
+    | {
+        readonly kind: "Slack";
+        readonly agentId: string;
+        readonly target: SlackDeliveryTarget;
+      }
+    | { readonly kind: "Feishu"; readonly target: FeishuDeliveryTarget }
+    | {
+        readonly kind: "Teams";
+        readonly agentId: string;
+        readonly target: TeamsDeliveryTarget;
+      }
+    | { readonly kind: "Discord"; readonly target: DiscordDeliveryTarget }
+    | {
+        readonly kind: "Telegram";
+        readonly agentId: string;
+        readonly target: TelegramDeliveryTarget;
+      }
+    | {
+        readonly kind: "AgentPhone";
+        readonly agentId: string;
+        readonly target: AgentPhoneDeliveryTarget;
+      }
+  );
 
-function discordQueuedAdmissionFailureChannel(
-  failure: DiscordQueuedMessageAdmissionFailure,
-  deliver: QueuedAdmissionFailureDeliverers["deliverDiscord"],
-): QueuedAdmissionFailureChannel {
-  return {
-    name: "Discord",
-    deliver: (chatEventId, signal) => {
-      return deliver(
-        {
-          chatThreadId: failure.threadId,
-          userId: failure.userId,
-          orgId: failure.orgId,
-          target: failure.discordDelivery,
-          chatEventId,
-        },
-        signal,
-      );
-    },
-  };
-}
-
-/**
- * Channel table for admission-failure delivery. Web admissions have no
- * integration delivery, so they resolve to `undefined`.
- */
+/** Web admissions have no integration delivery. */
 function queuedAdmissionFailureChannel(
-  args: QueuedAdmissionFailureDeliverers & {
-    readonly failure: QueuedMessageAdmissionFailure;
-  },
+  failure: QueuedMessageAdmissionFailure,
 ): QueuedAdmissionFailureChannel | undefined {
-  const failure = args.failure;
   const base = {
     chatThreadId: failure.threadId,
     userId: failure.userId,
@@ -2550,87 +2453,40 @@ function queuedAdmissionFailureChannel(
     }
     case "slack_admission_failure": {
       return {
-        name: "Slack",
-        deliver: (chatEventId, signal) => {
-          return args.deliverSlack(
-            {
-              ...base,
-              agentId: failure.agentId,
-              channelId: failure.slackDelivery.channelId,
-              threadTs: failure.slackDelivery.threadTs,
-              ...(failure.slackDelivery.routeThreadTs
-                ? { routeThreadTs: failure.slackDelivery.routeThreadTs }
-                : {}),
-              chatEventId,
-            },
-            signal,
-          );
-        },
+        ...base,
+        kind: "Slack",
+        agentId: failure.agentId,
+        target: failure.slackDelivery,
       };
     }
     case "feishu_admission_failure": {
-      return {
-        name: "Feishu",
-        deliver: (chatEventId, signal) => {
-          return args.deliverFeishu(
-            { ...base, target: failure.feishuDelivery, chatEventId },
-            signal,
-          );
-        },
-        clearThinking: (signal) => {
-          return args.clearFeishuThinking(failure.feishuDelivery, signal);
-        },
-      };
+      return { ...base, kind: "Feishu", target: failure.feishuDelivery };
     }
     case "teams_admission_failure": {
       return {
-        name: "Teams",
-        deliver: (chatEventId, signal) => {
-          return args.deliverTeams(
-            {
-              ...base,
-              agentId: failure.agentId,
-              target: failure.teamsDelivery,
-              chatEventId,
-            },
-            signal,
-          );
-        },
+        ...base,
+        kind: "Teams",
+        agentId: failure.agentId,
+        target: failure.teamsDelivery,
       };
     }
     case "discord_admission_failure": {
-      return discordQueuedAdmissionFailureChannel(failure, args.deliverDiscord);
+      return { ...base, kind: "Discord", target: failure.discordDelivery };
     }
     case "telegram_admission_failure": {
       return {
-        name: "Telegram",
-        deliver: (chatEventId, signal) => {
-          return args.deliverTelegram(
-            {
-              ...base,
-              agentId: failure.agentId,
-              target: failure.telegramDelivery,
-              chatEventId,
-            },
-            signal,
-          );
-        },
+        ...base,
+        kind: "Telegram",
+        agentId: failure.agentId,
+        target: failure.telegramDelivery,
       };
     }
     case "agentphone_admission_failure": {
       return {
-        name: "AgentPhone",
-        deliver: (chatEventId, signal) => {
-          return args.deliverAgentPhone(
-            {
-              ...base,
-              agentId: failure.agentId,
-              target: failure.agentphoneDelivery,
-              chatEventId,
-            },
-            signal,
-          );
-        },
+        ...base,
+        kind: "AgentPhone",
+        agentId: failure.agentId,
+        target: failure.agentphoneDelivery,
       };
     }
     default: {
@@ -2639,96 +2495,155 @@ function queuedAdmissionFailureChannel(
   }
 }
 
-async function deliverQueuedAdmissionFailureToChannel(
-  args: {
-    readonly channel: QueuedAdmissionFailureChannel;
-    readonly threadId: string;
-    readonly chatEventId: string;
+const sendQueuedAdmissionFailure$ = command(
+  async (
+    { set },
+    channel: QueuedAdmissionFailureChannel,
+    chatEventId: string,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    const base = {
+      db,
+      chatThreadId: channel.chatThreadId,
+      orgId: channel.orgId,
+      userId: channel.userId,
+      chatEventId,
+    };
+    switch (channel.kind) {
+      case "Slack": {
+        await deliverSlackChatAdmissionFailure(
+          { ...base, agentId: channel.agentId, ...channel.target },
+          signal,
+        );
+        return;
+      }
+      case "Feishu": {
+        await deliverFeishuChatAdmissionFailure(
+          { ...base, target: channel.target },
+          signal,
+        );
+        return;
+      }
+      case "Teams": {
+        await deliverTeamsChatAdmissionFailure(
+          { ...base, agentId: channel.agentId, target: channel.target },
+          signal,
+        );
+        return;
+      }
+      case "Discord": {
+        await set(
+          sendDiscordChatReply$,
+          db,
+          { ...base, target: channel.target },
+          signal,
+        );
+        return;
+      }
+      case "Telegram": {
+        await deliverTelegramChatAdmissionFailure(
+          { ...base, target: channel.target },
+          signal,
+        );
+        return;
+      }
+      case "AgentPhone": {
+        await deliverAgentPhoneChatAdmissionFailure(
+          { ...base, agentId: channel.agentId, target: channel.target },
+          signal,
+        );
+        return;
+      }
+    }
   },
-  signal: AbortSignal,
-): Promise<void> {
-  const channel = args.channel;
-  await tapError(channel.deliver(args.chatEventId, signal), (error) => {
-    log.warn(`Failed to deliver canonical ${channel.name} admission error`, {
-      threadId: args.threadId,
-      error,
-    });
-  });
-  const clearThinking = channel.clearThinking;
-  if (!clearThinking) {
-    return;
-  }
-  await tapError(clearThinking(signal), (error) => {
-    log.warn(`Failed to clear ${channel.name} admission thinking reaction`, {
-      threadId: args.threadId,
-      error,
-    });
-  });
-}
+);
+
+const deliverQueuedAdmissionFailureToChannel$ = command(
+  async (
+    { set },
+    channel: QueuedAdmissionFailureChannel,
+    chatEventId: string,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    await tapError(
+      set(sendQueuedAdmissionFailure$, channel, chatEventId, signal),
+      (error) => {
+        log.warn(
+          `Failed to deliver canonical ${channel.kind} admission error`,
+          {
+            threadId: channel.chatThreadId,
+            error,
+          },
+        );
+      },
+    );
+    signal.throwIfAborted();
+    if (channel.kind !== "Feishu") {
+      return;
+    }
+    await tapError(
+      clearCanonicalFeishuThinkingReaction(
+        set(writeDb$),
+        channel.target,
+        signal,
+      ),
+      (error) => {
+        log.warn(
+          `Failed to clear ${channel.kind} admission thinking reaction`,
+          {
+            threadId: channel.chatThreadId,
+            error,
+          },
+        );
+      },
+    );
+  },
+);
 
 function unreachableQueuedAdmissionFailure(failure: never): never {
   throw new Error(`Unsupported queued admission failure: ${String(failure)}`);
 }
 
-export function recordAutoSentQueuedRunLaunch(
-  args: {
-    readonly checkDiscordTypingBinding?: DiscordTypingBindingChecker;
-    readonly db: Db;
-    readonly userId: string;
-    readonly timing: ChatCallbackPreCreateTimingCollector;
-  },
-  runId: string,
-  runInput: CreateQueuedChatRunInput,
-): void {
-  const { db, userId } = args;
-  const threadId = runInput.threadId;
-  // The run exists, which is what makes this a use. Building the input does
-  // not: the create can still leave the message queued for a later attempt
-  // that reports the same message again.
-  logTemplateUsage(
-    {
-      dispatchPath: "queued-claim",
-      orgId: runInput.orgId,
-      userId,
-      chatThreadId: threadId,
-    },
-    runInput.generationTemplateIdentities,
-  );
-  // Ingress channels never touch the web send route, so this is where their
-  // threads get an eager title instead of waiting for the run to finish.
-  scheduleChatThreadTitleGeneration({
-    db,
-    threadId,
-    userId,
-    orgId: runInput.orgId,
-    prompt: runInput.prompt,
-    includePriorRounds: true,
-  });
-  scheduleQueuedLaunchStatus(
-    db,
-    runId,
-    runInput,
-    args.checkDiscordTypingBinding,
-  );
-  args.timing.flush(runId, runInput.triggerSource);
+export interface QueuedPromptLaunchContext {
+  readonly userId: string;
+  readonly timing: ChatCallbackPreCreateTimingCollector;
+  readonly runInput: CreateQueuedChatRunInput;
 }
 
-/** A launched queued input shows processing status before its Runner starts. */
-function scheduleQueuedLaunchStatus(
-  db: Db,
-  runId: string,
-  runInput: CreateQueuedChatRunInput,
-  checkBinding?: DiscordTypingBindingChecker,
-): void {
-  if (runInput.discordDelivery) {
-    scheduleDiscordRunTyping(db, {
-      checkBinding,
-      runId,
-      chatThreadId: runInput.threadId,
-      target: runInput.discordDelivery,
+export const recordQueuedPromptRunLaunch$ = command(
+  ({ set }, args: QueuedPromptLaunchContext, runId: string): void => {
+    const db = set(writeDb$);
+    const { userId, runInput } = args;
+    const threadId = runInput.threadId;
+    // Only a launched run counts as template use; an unclaimed head may retry.
+    logTemplateUsage(
+      {
+        dispatchPath: "queued-claim",
+        orgId: runInput.orgId,
+        userId,
+        chatThreadId: threadId,
+      },
+      runInput.generationTemplateIdentities,
+    );
+    scheduleChatThreadTitleGeneration({
+      db,
+      threadId,
+      userId,
+      orgId: runInput.orgId,
+      prompt: runInput.prompt,
+      includePriorRounds: true,
     });
-  }
-}
+    if (runInput.discordDelivery) {
+      set(scheduleDiscordRunTyping$, db, {
+        runId,
+        chatThreadId: threadId,
+        target: runInput.discordDelivery,
+      });
+    }
+    args.timing.flush(runId, runInput.triggerSource);
+  },
+);
 
 async function readTerminalChatCallbackRun(db: Db, runId: string) {
   const [run] = await db
@@ -2794,218 +2709,147 @@ async function loadTerminalChatCallback(
   return { run, chatThread };
 }
 
-async function prepareCompletedTerminalChatCallbackWork(
-  args: {
-    readonly db: Db;
-    readonly runId: string;
-    readonly run: ChatRunInfo;
-    readonly chatThread: ChatThreadForRunRow;
-    readonly dependencies: ChatCallbackDependencies;
-    readonly timing: ChatCallbackPreCreateTimingCollector;
-    readonly slackDelivery?: SlackDeliveryTarget;
-    readonly feishuDelivery?: FeishuDeliveryTarget;
-    readonly teamsDelivery?: TeamsDeliveryTarget;
-    readonly discordDelivery?: DiscordDeliveryTarget;
-    readonly telegramDelivery?: TelegramDeliveryTarget;
-    readonly agentphoneDelivery?: AgentPhoneDeliveryTarget;
-    readonly sourceCallbackId: string;
-  },
-  signal: AbortSignal,
-): Promise<TerminalChatCallbackWork> {
-  const prepared = await measureChatCallbackPreCreateTiming(
-    args.timing,
-    "api_dispatch_pre_create_agent_chat_callback_prepare_completed",
-    "top_level",
-    async () => {
-      const completed = await handleCompletedChatCallback(
-        {
-          db: args.db,
-          runId: args.runId,
-          run: args.run,
-          chatThread: args.chatThread,
-          timing: args.timing,
-          slackDelivery: args.slackDelivery,
-          feishuDelivery: args.feishuDelivery,
-          teamsDelivery: args.teamsDelivery,
-          discordDelivery: args.discordDelivery,
-          telegramDelivery: args.telegramDelivery,
-          agentphoneDelivery: args.agentphoneDelivery,
-          sourceCallbackId: args.sourceCallbackId,
-          insertAssistantItems: async (items) => {
-            await args.dependencies.insertAssistantItems(
-              {
-                runId: args.runId,
-                threadId: args.chatThread.chatThreadId,
-                userId: args.chatThread.userId,
-                orgId: args.chatThread.orgId,
-                items,
-              },
-              signal,
-            );
-          },
-        },
-        signal,
-      );
+const prepareCompletedTerminalChatCallbackWork$ = command(
+  async (
+    { set },
+    args: {
+      readonly db: Db;
+      readonly runId: string;
+      readonly run: ChatRunInfo;
+      readonly chatThread: ChatThreadForRunRow;
+      readonly timing: ChatCallbackPreCreateTimingCollector;
+      readonly slackDelivery?: SlackDeliveryTarget;
+      readonly feishuDelivery?: FeishuDeliveryTarget;
+      readonly teamsDelivery?: TeamsDeliveryTarget;
+      readonly discordDelivery?: DiscordDeliveryTarget;
+      readonly telegramDelivery?: TelegramDeliveryTarget;
+      readonly agentphoneDelivery?: AgentPhoneDeliveryTarget;
+      readonly sourceCallbackId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<TerminalChatCallbackWork> => {
+    const completed = await measureChatCallbackPreCreateTiming(
+      args.timing,
+      "api_dispatch_pre_create_agent_chat_callback_prepare_completed",
+      "top_level",
+      () => {
+        return set(handleCompletedChatCallback$, args, signal);
+      },
+    );
+    signal.throwIfAborted();
+    if (completed.outcome !== "written" && completed.outcome !== "replayed") {
       return completed;
-    },
-  );
-  const completed = prepared;
-  if (completed.outcome !== "written" && completed.outcome !== "replayed") {
-    return completed;
-  }
+    }
 
-  return {
-    outcome: completed.outcome,
-    slackDeliveryCallbackId: completed.slackDeliveryCallbackId,
-    feishuDeliveryCallbackId: completed.feishuDeliveryCallbackId,
-    teamsDeliveryCallbackId: completed.teamsDeliveryCallbackId,
-    discordReply: completed.discordReply,
-    telegramDeliveryCallbackId: completed.telegramDeliveryCallbackId,
-    agentphoneDeliveryCallbackId: completed.agentphoneDeliveryCallbackId,
-    retryableSideEffects: (retrySignal) => {
-      return args.dependencies.dispatchChatRunFinishedAutomations(
-        {
-          chatThreadId: args.chatThread.chatThreadId,
-          runId: args.runId,
-          sourceCallbackId: args.sourceCallbackId,
-          runStatus: "completed",
-          lastResultText: completed.lastResultText,
-          sourceAgentId: args.chatThread.agentId,
-          sourceThreadTitle: args.chatThread.title,
-        },
-        retrySignal,
-      );
-    },
-    deferredSideEffects: (deferredSignal) => {
-      return runCompletedChatCallbackSideEffects(
-        {
-          db: args.db,
-          runId: args.runId,
-          run: args.run,
-          chatThread: args.chatThread,
-          lastResultText: completed.lastResultText,
-          followupContext: completed.followupContext,
-          saveRunSummary: (resultText) => {
-            return args.dependencies.saveRunSummary(
-              args.runId,
-              args.run.prompt,
-              resultText,
-              deferredSignal,
-            );
-          },
-        },
-        deferredSignal,
-      );
-    },
-  };
-}
-
-async function prepareFailedTerminalChatCallbackWork(
-  args: {
-    readonly db: Db;
-    readonly runId: string;
-    readonly run: ChatRunInfo;
-    readonly chatThread: ChatThreadForRunRow;
-    readonly errorMessage: string;
-    readonly dependencies: ChatCallbackDependencies;
-    readonly timing: ChatCallbackPreCreateTimingCollector;
-    readonly slackDelivery?: SlackDeliveryTarget;
-    readonly feishuDelivery?: FeishuDeliveryTarget;
-    readonly teamsDelivery?: TeamsDeliveryTarget;
-    readonly discordDelivery?: DiscordDeliveryTarget;
-    readonly telegramDelivery?: TelegramDeliveryTarget;
-    readonly agentphoneDelivery?: AgentPhoneDeliveryTarget;
-    readonly sourceCallbackId: string;
-  },
-  signal: AbortSignal,
-): Promise<TerminalChatCallbackWork> {
-  const failed = await measureChatCallbackPreCreateTiming(
-    args.timing,
-    "api_dispatch_pre_create_agent_chat_callback_prepare_failed",
-    "top_level",
-    () => {
-      return handleFailedChatCallback(
-        {
-          db: args.db,
-          runId: args.runId,
-          chatThread: args.chatThread,
-          errorMessage: args.errorMessage,
-          failureReason:
-            args.run.failureReason === "provider_insufficient_credits"
-              ? (publicProviderBalanceFailureReason(args.run.modelProvider) ??
-                null)
-              : args.run.failureReason,
-          hasCancellationRecoveryState:
-            args.run.cancellationRecoveryCompleted !== null,
-          getFormattedError: () => {
-            return args.dependencies.formatRunError(
-              {
-                chatThreadId: args.chatThread.chatThreadId,
-                runId: args.runId,
-                errorMessage: args.errorMessage,
-              },
-              signal,
-            );
-          },
-          slackDelivery: args.slackDelivery,
-          feishuDelivery: args.feishuDelivery,
-          teamsDelivery: args.teamsDelivery,
-          discordDelivery: args.discordDelivery,
-          telegramDelivery: args.telegramDelivery,
-          agentphoneDelivery: args.agentphoneDelivery,
-          sourceCallbackId: args.sourceCallbackId,
-        },
-        signal,
-      );
-    },
-  );
-  if (failed.outcome !== "written" && failed.outcome !== "replayed") {
-    return failed;
-  }
-
-  return {
-    outcome: failed.outcome,
-    slackDeliveryCallbackId: failed.slackDeliveryCallbackId,
-    feishuDeliveryCallbackId: failed.feishuDeliveryCallbackId,
-    teamsDeliveryCallbackId: failed.teamsDeliveryCallbackId,
-    discordReply: failed.discordReply,
-    telegramDeliveryCallbackId: failed.telegramDeliveryCallbackId,
-    agentphoneDeliveryCallbackId: failed.agentphoneDeliveryCallbackId,
-    retryableSideEffects: (retrySignal) => {
-      return args.dependencies.dispatchChatRunFinishedAutomations(
-        {
-          chatThreadId: args.chatThread.chatThreadId,
-          runId: args.runId,
-          sourceCallbackId: args.sourceCallbackId,
-          runStatus:
-            args.errorMessage.trim().toLowerCase() === "run cancelled"
-              ? "cancelled"
-              : "failed",
-          // Failed runs surface their error separately; patterns only ever
-          // match assistant output, so terminal errors carry no matchable text.
-          lastResultText: null,
-          sourceAgentId: args.chatThread.agentId,
-          sourceThreadTitle: args.chatThread.title,
-        },
-        retrySignal,
-      );
-    },
-    deferredSideEffects: () => {
-      return runFailedChatCallbackSideEffects({
-        db: args.db,
+    return {
+      outcome: completed.outcome,
+      slackDeliveryCallbackId: completed.slackDeliveryCallbackId,
+      feishuDeliveryCallbackId: completed.feishuDeliveryCallbackId,
+      teamsDeliveryCallbackId: completed.teamsDeliveryCallbackId,
+      discordReply: completed.discordReply,
+      telegramDeliveryCallbackId: completed.telegramDeliveryCallbackId,
+      agentphoneDeliveryCallbackId: completed.agentphoneDeliveryCallbackId,
+      runFinishedEvent: {
+        chatThreadId: args.chatThread.chatThreadId,
+        runId: args.runId,
+        sourceCallbackId: args.sourceCallbackId,
+        runStatus: "completed",
+        lastResultText: completed.lastResultText,
+        sourceAgentId: args.chatThread.agentId,
+        sourceThreadTitle: args.chatThread.title,
+      },
+      deferredSideEffects: {
+        status: "completed",
         run: args.run,
-        chatThread: args.chatThread,
-        displayErrorMessage: failed.displayErrorMessage,
-      });
+        lastResultText: completed.lastResultText,
+        followupContext: completed.followupContext,
+      },
+    };
+  },
+);
+
+const prepareFailedTerminalChatCallbackWork$ = command(
+  async (
+    { set },
+    args: {
+      readonly db: Db;
+      readonly runId: string;
+      readonly run: ChatRunInfo;
+      readonly chatThread: ChatThreadForRunRow;
+      readonly errorMessage: string;
+      readonly timing: ChatCallbackPreCreateTimingCollector;
+      readonly slackDelivery?: SlackDeliveryTarget;
+      readonly feishuDelivery?: FeishuDeliveryTarget;
+      readonly teamsDelivery?: TeamsDeliveryTarget;
+      readonly discordDelivery?: DiscordDeliveryTarget;
+      readonly telegramDelivery?: TelegramDeliveryTarget;
+      readonly agentphoneDelivery?: AgentPhoneDeliveryTarget;
+      readonly sourceCallbackId: string;
     },
-  };
-}
+    signal: AbortSignal,
+  ): Promise<TerminalChatCallbackWork> => {
+    const failed = await measureChatCallbackPreCreateTiming(
+      args.timing,
+      "api_dispatch_pre_create_agent_chat_callback_prepare_failed",
+      "top_level",
+      () => {
+        return set(
+          handleFailedChatCallback$,
+          {
+            ...args,
+            failureReason:
+              args.run.failureReason === "provider_insufficient_credits"
+                ? (publicProviderBalanceFailureReason(args.run.modelProvider) ??
+                  null)
+                : args.run.failureReason,
+            hasCancellationRecoveryState:
+              args.run.cancellationRecoveryCompleted !== null,
+          },
+          signal,
+        );
+      },
+    );
+    signal.throwIfAborted();
+    if (failed.outcome !== "written" && failed.outcome !== "replayed") {
+      return failed;
+    }
+
+    return {
+      outcome: failed.outcome,
+      slackDeliveryCallbackId: failed.slackDeliveryCallbackId,
+      feishuDeliveryCallbackId: failed.feishuDeliveryCallbackId,
+      teamsDeliveryCallbackId: failed.teamsDeliveryCallbackId,
+      discordReply: failed.discordReply,
+      telegramDeliveryCallbackId: failed.telegramDeliveryCallbackId,
+      agentphoneDeliveryCallbackId: failed.agentphoneDeliveryCallbackId,
+      runFinishedEvent: {
+        chatThreadId: args.chatThread.chatThreadId,
+        runId: args.runId,
+        sourceCallbackId: args.sourceCallbackId,
+        runStatus:
+          args.errorMessage.trim().toLowerCase() === "run cancelled"
+            ? "cancelled"
+            : "failed",
+        // Failed runs surface their error separately; patterns only ever
+        // match assistant output, so terminal errors carry no matchable text.
+        lastResultText: null,
+        sourceAgentId: args.chatThread.agentId,
+        sourceThreadTitle: args.chatThread.title,
+      },
+      deferredSideEffects: {
+        status: "failed",
+        run: args.run,
+        displayErrorMessage: failed.displayErrorMessage,
+      },
+    };
+  },
+);
 
 async function clearSlackThreadStatusAfterTerminalCallback(
   args: {
+    readonly db: Db;
     readonly chatThreadId: string;
     readonly slackDelivery: SlackDeliveryTarget | undefined;
-    readonly dependencies: ChatCallbackDependencies;
   },
   signal: AbortSignal,
 ): Promise<void> {
@@ -3013,7 +2857,8 @@ async function clearSlackThreadStatusAfterTerminalCallback(
     return;
   }
   await tapError(
-    args.dependencies.clearSlackThreadStatusIfIdle(
+    clearCanonicalSlackThreadStatusIfIdle(
+      args.db,
       {
         chatThreadId: args.chatThreadId,
         channelId: args.slackDelivery.channelId,
@@ -3036,8 +2881,8 @@ async function clearSlackThreadStatusAfterTerminalCallback(
 
 async function clearFeishuThinkingAfterTerminalCallback(
   args: {
+    readonly db: Db;
     readonly feishuDelivery: FeishuDeliveryTarget | undefined;
-    readonly dependencies: ChatCallbackDependencies;
   },
   signal: AbortSignal,
 ): Promise<void> {
@@ -3045,7 +2890,7 @@ async function clearFeishuThinkingAfterTerminalCallback(
     return;
   }
   await tapError(
-    args.dependencies.clearFeishuThinkingReaction(args.feishuDelivery, signal),
+    clearCanonicalFeishuThinkingReaction(args.db, args.feishuDelivery, signal),
     (error) => {
       log.warn("Failed to clear canonical Feishu thinking reaction", {
         messageId: args.feishuDelivery?.messageId,
@@ -3086,108 +2931,118 @@ async function handleTerminalChatCallbackPreparationFailure(
   throw args.error;
 }
 
-async function dispatchCanonicalDeliveryCallbacks(
-  args: {
-    readonly runId: string;
-    readonly status: "completed" | "failed";
-    readonly slackDeliveryCallbackId: string | undefined;
-    readonly feishuDeliveryCallbackId: string | undefined;
-    readonly teamsDeliveryCallbackId: string | undefined;
-    readonly discordReply: DiscordReplyRequest | undefined;
-    readonly telegramDeliveryCallbackId: string | undefined;
-    readonly agentphoneDeliveryCallbackId: string | undefined;
-    readonly dependencies: ChatCallbackDependencies;
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  const channels: readonly {
-    readonly name: string;
-    readonly callbackId: string | undefined;
-    readonly dispatch: (
-      callbackId: string,
-      signal: AbortSignal,
-    ) => Promise<void>;
-  }[] = [
-    {
-      name: "Slack",
-      callbackId: args.slackDeliveryCallbackId,
-      dispatch: (callbackId, dispatchSignal) => {
-        return args.dependencies.dispatchSlackDelivery(
-          callbackId,
-          dispatchSignal,
-        );
-      },
+const dispatchCanonicalDeliveryCallbacks$ = command(
+  async (
+    { set },
+    args: {
+      readonly db: Db;
+      readonly runId: string;
+      readonly status: "completed" | "failed";
+      readonly slackDeliveryCallbackId: string | undefined;
+      readonly feishuDeliveryCallbackId: string | undefined;
+      readonly teamsDeliveryCallbackId: string | undefined;
+      readonly discordReply: DiscordReplyRequest | undefined;
+      readonly telegramDeliveryCallbackId: string | undefined;
+      readonly agentphoneDeliveryCallbackId: string | undefined;
     },
-    {
-      name: "Feishu",
-      callbackId: args.feishuDeliveryCallbackId,
-      dispatch: (callbackId, dispatchSignal) => {
-        return args.dependencies.dispatchFeishuDelivery(
-          callbackId,
-          dispatchSignal,
-        );
-      },
-    },
-    {
-      name: "Teams",
-      callbackId: args.teamsDeliveryCallbackId,
-      dispatch: (callbackId, dispatchSignal) => {
-        return args.dependencies.dispatchTeamsDelivery(
-          callbackId,
-          dispatchSignal,
-        );
-      },
-    },
-    {
-      name: "Telegram",
-      callbackId: args.telegramDeliveryCallbackId,
-      dispatch: (callbackId, dispatchSignal) => {
-        return args.dependencies.dispatchTelegramDelivery(
-          callbackId,
-          args.status,
-          dispatchSignal,
-        );
-      },
-    },
-    {
-      name: "AgentPhone",
-      callbackId: args.agentphoneDeliveryCallbackId,
-      dispatch: (callbackId, dispatchSignal) => {
-        return args.dependencies.dispatchAgentPhoneDelivery(
-          callbackId,
-          args.status,
-          dispatchSignal,
-        );
-      },
-    },
-  ];
-  for (const channel of channels) {
-    const callbackId = channel.callbackId;
-    if (!callbackId) {
-      continue;
-    }
-    const delivery = await settle(channel.dispatch(callbackId, signal), signal);
-    if (!delivery.ok) {
-      log.error(
-        `Failed to finalize canonical ${channel.name} delivery callback`,
-        {
-          runId: args.runId,
-          callbackId,
-          error: delivery.error,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const channels: readonly {
+      readonly name: string;
+      readonly callbackId: string | undefined;
+      readonly dispatch: (
+        callbackId: string,
+        signal: AbortSignal,
+      ) => Promise<void>;
+    }[] = [
+      {
+        name: "Slack",
+        callbackId: args.slackDeliveryCallbackId,
+        dispatch: (callbackId, dispatchSignal) => {
+          return dispatchSlackChatDeliveryOnce(
+            args.db,
+            callbackId,
+            dispatchSignal,
+          );
         },
+      },
+      {
+        name: "Feishu",
+        callbackId: args.feishuDeliveryCallbackId,
+        dispatch: (callbackId, dispatchSignal) => {
+          return dispatchFeishuChatDeliveryOnce(
+            args.db,
+            callbackId,
+            dispatchSignal,
+          );
+        },
+      },
+      {
+        name: "Teams",
+        callbackId: args.teamsDeliveryCallbackId,
+        dispatch: (callbackId, dispatchSignal) => {
+          return dispatchTeamsChatDeliveryOnce(
+            args.db,
+            callbackId,
+            dispatchSignal,
+          );
+        },
+      },
+      {
+        name: "Telegram",
+        callbackId: args.telegramDeliveryCallbackId,
+        dispatch: (callbackId, dispatchSignal) => {
+          return dispatchTelegramChatDeliveryOnce(
+            args.db,
+            callbackId,
+            args.status,
+            dispatchSignal,
+          );
+        },
+      },
+      {
+        name: "AgentPhone",
+        callbackId: args.agentphoneDeliveryCallbackId,
+        dispatch: (callbackId, dispatchSignal) => {
+          return dispatchAgentPhoneChatDeliveryOnce(
+            args.db,
+            callbackId,
+            args.status,
+            dispatchSignal,
+          );
+        },
+      },
+    ];
+    for (const channel of channels) {
+      const callbackId = channel.callbackId;
+      if (!callbackId) {
+        continue;
+      }
+      const delivery = await settle(
+        channel.dispatch(callbackId, signal),
+        signal,
       );
+      if (!delivery.ok) {
+        log.error(
+          `Failed to finalize canonical ${channel.name} delivery callback`,
+          {
+            runId: args.runId,
+            callbackId,
+            error: delivery.error,
+          },
+        );
+      }
     }
-  }
-  if (args.discordReply) {
-    await args.dependencies.sendDiscordReply(args.discordReply, signal);
-  }
-}
+    if (args.discordReply) {
+      await set(sendDiscordChatReply$, args.db, args.discordReply, signal);
+    }
+  },
+);
 
 interface TerminalChatCallbackArgs {
   readonly db: Db;
   readonly callback: InternalRunCallbackEnvelope;
   readonly payload: ChatCallbackPayload;
-  readonly dependencies: ChatCallbackDependencies;
 }
 
 function terminalIntegrationDeliveries(
@@ -3211,28 +3066,32 @@ function terminalIntegrationDeliveries(
   };
 }
 
-async function releaseManagedBrowsersForTerminalCallback(
-  args: TerminalChatCallbackArgs,
-  signal: AbortSignal,
-): Promise<void> {
-  // The window stays live after the run so the user can keep using it; this only
-  // restarts its idle lease. Browser resources outlive thread deletion, so use
-  // the callback payload rather than loading the thread first.
-  const released = await settle(
-    args.dependencies.releaseBrowsersForRun(
-      { chatThreadId: args.payload.threadId },
+const releaseManagedBrowsersForTerminalCallback$ = command(
+  async (
+    { set },
+    args: TerminalChatCallbackArgs,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    // The window stays live after the run so the user can keep using it; this only
+    // restarts its idle lease. Browser resources outlive thread deletion, so use
+    // the callback payload rather than loading the thread first.
+    const released = await settle(
+      set(
+        releaseThreadBrowsersForRun$,
+        { chatThreadId: args.payload.threadId },
+        signal,
+      ),
       signal,
-    ),
-    signal,
-  );
-  if (!released.ok) {
-    log.error("Failed to extend managed browser leases for terminal run", {
-      runId: args.callback.runId,
-      chatThreadId: args.payload.threadId,
-      error: released.error,
-    });
-  }
-}
+    );
+    if (!released.ok) {
+      log.error("Failed to extend managed browser leases for terminal run", {
+        runId: args.callback.runId,
+        chatThreadId: args.payload.threadId,
+        error: released.error,
+      });
+    }
+  },
+);
 
 async function clearTerminalIntegrationStatus(
   args: TerminalChatCallbackArgs,
@@ -3241,84 +3100,111 @@ async function clearTerminalIntegrationStatus(
 ): Promise<void> {
   await clearSlackThreadStatusAfterTerminalCallback(
     {
+      db: args.db,
       chatThreadId,
       slackDelivery: args.payload.slackDelivery,
-      dependencies: args.dependencies,
     },
     signal,
   );
   await clearFeishuThinkingAfterTerminalCallback(
     {
+      db: args.db,
       feishuDelivery: args.payload.feishuDelivery,
-      dependencies: args.dependencies,
     },
     signal,
   );
 }
 
-async function finishTerminalChatCallbackAfterProjection(
-  args: {
-    readonly callback: TerminalChatCallbackArgs;
-    readonly runId: string;
-    readonly callbackStatus: "completed" | "failed";
-    readonly work: TerminalChatCallbackWork;
-    readonly chatThread: ChatThreadForRunRow;
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  await dispatchCanonicalDeliveryCallbacks(
-    {
-      runId: args.runId,
-      status: args.callbackStatus,
-      slackDeliveryCallbackId: args.work.slackDeliveryCallbackId,
-      feishuDeliveryCallbackId: args.work.feishuDeliveryCallbackId,
-      teamsDeliveryCallbackId: args.work.teamsDeliveryCallbackId,
-      discordReply: args.work.discordReply,
-      telegramDeliveryCallbackId: args.work.telegramDeliveryCallbackId,
-      agentphoneDeliveryCallbackId: args.work.agentphoneDeliveryCallbackId,
-      dependencies: args.callback.dependencies,
+const finishTerminalChatCallbackAfterProjection$ = command(
+  async (
+    { set },
+    args: {
+      readonly callback: TerminalChatCallbackArgs;
+      readonly runId: string;
+      readonly callbackStatus: "completed" | "failed";
+      readonly work: TerminalChatCallbackWork;
+      readonly chatThread: ChatThreadForRunRow;
     },
-    signal,
-  );
-
-  // Integration status clears keep their established detached owner: they
-  // must neither hold the completion ACK nor be cancelled with its request.
-  // The thread's queue is woken by whoever releases the run's active slot.
-  waitUntil(
-    clearTerminalIntegrationStatus(
-      args.callback,
-      args.chatThread.chatThreadId,
-      new AbortController().signal,
-    ),
-  );
-
-  // A committed marker must not acknowledge an unfinished automation. Throw
-  // back to the existing callback owner so its failed/pending row can retry.
-  await args.work.retryableSideEffects?.(signal);
-  signal.throwIfAborted();
-
-  // Scheduling is the last step, so a replay after an earlier attempt threw
-  // must schedule it. The source callback has no attempt claim: a replay can
-  // also follow an attempt that reached this point but failed its final
-  // acknowledgement, or overlap a concurrent redrive. That residual is
-  // at-least-once for summary, follow-up generation and push.
-  const deferredSideEffects = args.work.deferredSideEffects;
-  if (
-    deferredSideEffects &&
-    (args.work.outcome === "written" || args.work.outcome === "replayed")
-  ) {
-    const backgroundSignal = new AbortController().signal;
-    waitUntil(
-      runTerminalChatCallbackSideEffects({
+    signal: AbortSignal,
+  ): Promise<void> => {
+    await set(
+      dispatchCanonicalDeliveryCallbacks$,
+      {
+        db: args.callback.db,
         runId: args.runId,
         status: args.callbackStatus,
-        run: () => {
-          return deferredSideEffects(backgroundSignal);
-        },
-      }),
+        slackDeliveryCallbackId: args.work.slackDeliveryCallbackId,
+        feishuDeliveryCallbackId: args.work.feishuDeliveryCallbackId,
+        teamsDeliveryCallbackId: args.work.teamsDeliveryCallbackId,
+        discordReply: args.work.discordReply,
+        telegramDeliveryCallbackId: args.work.telegramDeliveryCallbackId,
+        agentphoneDeliveryCallbackId: args.work.agentphoneDeliveryCallbackId,
+      },
+      signal,
     );
-  }
-}
+
+    // Integration status clears keep their established detached owner: they
+    // must neither hold the completion ACK nor be cancelled with its request.
+    // The thread's queue is woken by whoever releases the run's active slot.
+    waitUntil(
+      clearTerminalIntegrationStatus(
+        args.callback,
+        args.chatThread.chatThreadId,
+        new AbortController().signal,
+      ),
+    );
+
+    // A committed marker must not acknowledge an unfinished automation. Throw
+    // back to the existing callback owner so its failed/pending row can retry.
+    if (args.work.runFinishedEvent) {
+      await set(
+        dispatchConfiguredChatRunFinishedEvent$,
+        args.work.runFinishedEvent,
+        signal,
+      );
+    }
+    signal.throwIfAborted();
+
+    // Scheduling is the last step, so a replay after an earlier attempt threw
+    // must schedule it. The source callback has no attempt claim: a replay can
+    // also follow an attempt that reached this point but failed its final
+    // acknowledgement, or overlap a concurrent redrive. That residual is
+    // at-least-once for summary, follow-up generation and push.
+    const deferredSideEffects = args.work.deferredSideEffects;
+    if (
+      deferredSideEffects &&
+      (args.work.outcome === "written" || args.work.outcome === "replayed")
+    ) {
+      const backgroundSignal = new AbortController().signal;
+      waitUntil(
+        runTerminalChatCallbackSideEffects({
+          runId: args.runId,
+          status: args.callbackStatus,
+          operation:
+            deferredSideEffects.status === "completed"
+              ? set(
+                  runCompletedChatCallbackSideEffects$,
+                  {
+                    db: args.callback.db,
+                    runId: args.runId,
+                    chatThread: args.chatThread,
+                    run: deferredSideEffects.run,
+                    lastResultText: deferredSideEffects.lastResultText,
+                    followupContext: deferredSideEffects.followupContext,
+                  },
+                  backgroundSignal,
+                )
+              : runFailedChatCallbackSideEffects({
+                  db: args.callback.db,
+                  run: deferredSideEffects.run,
+                  chatThread: args.chatThread,
+                  displayErrorMessage: deferredSideEffects.displayErrorMessage,
+                }),
+        }),
+      );
+    }
+  },
+);
 
 async function terminalChatCallbackSourceId(
   args: TerminalChatCallbackArgs,
@@ -3335,96 +3221,100 @@ async function terminalChatCallbackSourceId(
   ).id;
 }
 
-async function processTerminalChatCallback(
-  args: TerminalChatCallbackArgs,
-  signal: AbortSignal,
-): Promise<void> {
-  const { runId, status: callbackStatus } = args.callback;
-  if (callbackStatus === "progress") {
-    return;
-  }
-  const timing = new ChatCallbackPreCreateTimingCollector();
+const processTerminalChatCallback$ = command(
+  async (
+    { set },
+    args: TerminalChatCallbackArgs,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const { runId, status: callbackStatus } = args.callback;
+    if (callbackStatus === "progress") {
+      return;
+    }
+    const timing = new ChatCallbackPreCreateTimingCollector();
 
-  await releaseManagedBrowsersForTerminalCallback(args, signal);
+    await set(releaseManagedBrowsersForTerminalCallback$, args, signal);
 
-  let persistedThreadId: string | undefined;
-  const prepared = await settle(
-    (async () => {
-      const loaded = await measureChatCallbackPreCreateTiming(
-        timing,
-        "api_dispatch_pre_create_agent_chat_callback_load_terminal",
-        "top_level",
-        async () => {
-          const existing = await readTerminalChatCallbackRun(args.db, runId);
-          signal.throwIfAborted();
-          if (!existing?.threadId || existing.triggerSource === null) {
-            return null;
-          }
-          // Retain only a content-free persisted locator across capture failure.
-          persistedThreadId = existing.threadId;
-          return await loadTerminalChatCallback(
-            {
-              db: args.db,
-              runId,
-              callbackStatus,
-              payloadThreadId: args.payload.threadId,
-            },
-            signal,
-          );
-        },
+    let persistedThreadId: string | undefined;
+    const prepared = await settle(
+      (async () => {
+        const loaded = await measureChatCallbackPreCreateTiming(
+          timing,
+          "api_dispatch_pre_create_agent_chat_callback_load_terminal",
+          "top_level",
+          async () => {
+            const existing = await readTerminalChatCallbackRun(args.db, runId);
+            signal.throwIfAborted();
+            if (!existing?.threadId || existing.triggerSource === null) {
+              return null;
+            }
+            // Retain only a content-free persisted locator across capture failure.
+            persistedThreadId = existing.threadId;
+            return await loadTerminalChatCallback(
+              {
+                db: args.db,
+                runId,
+                callbackStatus,
+                payloadThreadId: args.payload.threadId,
+              },
+              signal,
+            );
+          },
+        );
+        if (!loaded) {
+          return null;
+        }
+        const { run, chatThread } = loaded;
+        const sourceCallbackId = await terminalChatCallbackSourceId(args);
+        signal.throwIfAborted();
+        const preparation = {
+          db: args.db,
+          runId,
+          run,
+          chatThread,
+          timing,
+          ...terminalIntegrationDeliveries(args.payload),
+          sourceCallbackId,
+        };
+        const work = await (callbackStatus === "completed"
+          ? set(prepareCompletedTerminalChatCallbackWork$, preparation, signal)
+          : set(
+              prepareFailedTerminalChatCallbackWork$,
+              {
+                ...preparation,
+                errorMessage: terminalCallbackErrorMessage(
+                  args.callback.error,
+                  run.error,
+                ),
+              },
+              signal,
+            ));
+        return { work, chatThread };
+      })(),
+      signal,
+    );
+    if (!prepared.ok) {
+      return await handleTerminalChatCallbackPreparationFailure(
+        { callback: args, error: prepared.error, persistedThreadId },
+        signal,
       );
-      if (!loaded) {
-        return null;
-      }
-      const { run, chatThread } = loaded;
-      const sourceCallbackId = await terminalChatCallbackSourceId(args);
-      signal.throwIfAborted();
-      const preparation = {
-        db: args.db,
-        runId,
-        run,
-        chatThread,
-        dependencies: args.dependencies,
-        timing,
-        ...terminalIntegrationDeliveries(args.payload),
-        sourceCallbackId,
-      };
-      const work = await (callbackStatus === "completed"
-        ? prepareCompletedTerminalChatCallbackWork(preparation, signal)
-        : prepareFailedTerminalChatCallbackWork(
-            {
-              ...preparation,
-              errorMessage: terminalCallbackErrorMessage(
-                args.callback.error,
-                run.error,
-              ),
-            },
-            signal,
-          ));
-      return { work, chatThread };
-    })(),
-    signal,
-  );
-  if (!prepared.ok) {
-    return await handleTerminalChatCallbackPreparationFailure(
-      { callback: args, error: prepared.error, persistedThreadId },
+    }
+    if (!prepared.value) {
+      await clearTerminalIntegrationStatus(
+        args,
+        persistedThreadId ?? args.payload.threadId,
+        signal,
+      );
+      return;
+    }
+    const { work, chatThread } = prepared.value;
+    await set(
+      finishTerminalChatCallbackAfterProjection$,
+      { callback: args, runId, callbackStatus, work, chatThread },
       signal,
     );
-  }
-  if (!prepared.value) {
-    await clearTerminalIntegrationStatus(
-      args,
-      persistedThreadId ?? args.payload.threadId,
-      signal,
-    );
-    return;
-  }
-  const { work, chatThread } = prepared.value;
-  await finishTerminalChatCallbackAfterProjection(
-    { callback: args, runId, callbackStatus, work, chatThread },
-    signal,
-  );
-}
+  },
+);
 
 async function claimedUserMessageExistsForRun(
   db: Db,
@@ -3444,609 +3334,265 @@ async function claimedUserMessageExistsForRun(
   return event !== undefined;
 }
 
-function buildQueuedChatDispatchFailedCallbacks(
-  args: {
-    readonly dependencies: ChatCallbackDependencies;
-    readonly runInput: CreateQueuedChatRunInput;
-  },
-  signal: AbortSignal,
-): DispatchFailedRunCallbacks {
-  return async (db, runId, error) => {
-    if (!(await claimedUserMessageExistsForRun(db, runId))) {
+export const dispatchQueuedChatFailedRunCallbacks$: DispatchFailedRunCallbacks =
+  command(async ({ set }, input, signal) => {
+    if (!(await claimedUserMessageExistsForRun(input.db, input.runId))) {
       return;
     }
-    const payload = {
-      threadId: args.runInput.threadId,
-      agentId: args.runInput.agentId,
-      slackDelivery: args.runInput.slackDelivery,
-      feishuDelivery: args.runInput.feishuDelivery,
-      teamsDelivery: args.runInput.teamsDelivery,
-      discordDelivery: args.runInput.discordDelivery,
-      telegramDelivery: args.runInput.telegramDelivery,
-      agentphoneDelivery: args.runInput.agentphoneDelivery,
-    };
-    await processTerminalChatCallback(
+    signal.throwIfAborted();
+    const callback = input.callbacks.find((item) => {
+      return "internalKind" in item && item.internalKind === "chat";
+    });
+    if (!callback || !("internalKind" in callback)) {
+      throw new Error("Queued chat launch is missing its callback payload");
+    }
+    const parsed = chatCallbackPayloadSchema.safeParse(callback.payload);
+    if (!parsed.success) {
+      throw new Error("Queued chat launch is missing its callback payload");
+    }
+    const payload = parsed.data;
+    await set(
+      processTerminalChatCallback$,
       {
-        db,
+        db: input.db,
         callback: {
-          runId,
+          runId: input.runId,
           status: "failed",
-          error,
+          error: input.error,
           payload,
         },
         payload,
-        dependencies: args.dependencies,
       },
       signal,
     );
-  };
-}
+  });
 
-export function queuedChatDispatchFailedCallbacks(
-  dependencies: ChatCallbackDependencies,
-  runInput: CreateQueuedChatRunInput,
-  signal: AbortSignal,
-): DispatchFailedRunCallbacks {
-  return buildQueuedChatDispatchFailedCallbacks(
-    { dependencies, runInput },
-    signal,
-  );
-}
-
-async function handleChatInternalCallback(
-  args: {
-    readonly db: Db;
-    readonly callback: InternalRunCallbackEnvelope;
-    readonly dependencies: ChatCallbackDependencies;
-  },
-  signal: AbortSignal,
-): Promise<
-  | { readonly success: true }
-  | { readonly success: false; readonly error: string }
-> {
-  const payload = chatCallbackPayloadSchema.safeParse(args.callback.payload);
-  if (!payload.success) {
-    return {
-      success: false,
-      error: "Invalid or missing payload",
-    };
-  }
-
-  if (args.callback.status === "progress") {
-    if (payload.data.discordDelivery) {
-      scheduleDiscordRunTyping(args.db, {
-        runId: args.callback.runId,
-        chatThreadId: payload.data.threadId,
-        target: payload.data.discordDelivery,
-      });
+const processChatInternalCallback$ = command(
+  async (
+    { set },
+    args: {
+      readonly db: Db;
+      readonly callback: InternalRunCallbackEnvelope;
+    },
+    signal: AbortSignal,
+  ): Promise<
+    | { readonly success: true }
+    | { readonly success: false; readonly error: string }
+  > => {
+    const payload = chatCallbackPayloadSchema.safeParse(args.callback.payload);
+    if (!payload.success) {
+      return {
+        success: false,
+        error: "Invalid or missing payload",
+      };
     }
-    if (payload.data.slackDelivery) {
-      const backgroundSignal = new AbortController().signal;
-      waitUntil(
-        tapError(
-          args.dependencies.refreshSlackThreadStatus(
-            {
-              chatThreadId: payload.data.threadId,
-              channelId: payload.data.slackDelivery.channelId,
-              threadTs: payload.data.slackDelivery.threadTs,
-              ...(payload.data.slackDelivery.routeThreadTs
-                ? {
-                    routeThreadTs: payload.data.slackDelivery.routeThreadTs,
-                  }
-                : {}),
+
+    if (args.callback.status === "progress") {
+      if (payload.data.discordDelivery) {
+        set(scheduleDiscordRunTyping$, args.db, {
+          runId: args.callback.runId,
+          chatThreadId: payload.data.threadId,
+          target: payload.data.discordDelivery,
+        });
+      }
+      if (payload.data.slackDelivery) {
+        const backgroundSignal = new AbortController().signal;
+        waitUntil(
+          tapError(
+            refreshCanonicalSlackThreadStatus(
+              args.db,
+              {
+                chatThreadId: payload.data.threadId,
+                channelId: payload.data.slackDelivery.channelId,
+                threadTs: payload.data.slackDelivery.threadTs,
+                ...(payload.data.slackDelivery.routeThreadTs
+                  ? {
+                      routeThreadTs: payload.data.slackDelivery.routeThreadTs,
+                    }
+                  : {}),
+              },
+              backgroundSignal,
+            ),
+            (error) => {
+              log.warn("Failed to refresh canonical Slack thread status", {
+                runId: args.callback.runId,
+                error,
+              });
             },
-            backgroundSignal,
           ),
-          (error) => {
-            log.warn("Failed to refresh canonical Slack thread status", {
-              runId: args.callback.runId,
-              error,
-            });
-          },
-        ),
-      );
+        );
+      }
+      return { success: true };
     }
-    return { success: true };
-  }
 
-  signal.throwIfAborted();
-  const processingInput = {
-    db: args.db,
-    callback: args.callback,
-    payload: payload.data,
-    dependencies: args.dependencies,
-  };
-  // Keep required terminal work within the persisted source callback's retry
-  // lifetime. Each event, delivery registration and automation commits alone.
-  await processTerminalChatCallback(processingInput, signal);
-
-  return { success: true };
-}
-
-function feishuChatDeliveryDependencies(
-  db: Db,
-): Pick<
-  ChatCallbackDependencies,
-  | "deliverFeishuAdmissionFailure"
-  | "dispatchFeishuDelivery"
-  | "clearFeishuThinkingReaction"
-> {
-  return {
-    deliverFeishuAdmissionFailure: (params, signal) => {
-      return deliverFeishuChatAdmissionFailure({ db, ...params }, signal);
-    },
-    dispatchFeishuDelivery: (callbackId, signal) => {
-      return dispatchFeishuChatDeliveryOnce(db, callbackId, signal);
-    },
-    clearFeishuThinkingReaction: (target, signal) => {
-      return clearCanonicalFeishuThinkingReaction(db, target, signal);
-    },
-  };
-}
-
-function teamsChatDeliveryDependencies(
-  db: Db,
-): Pick<
-  ChatCallbackDependencies,
-  "deliverTeamsAdmissionFailure" | "dispatchTeamsDelivery"
-> {
-  return {
-    deliverTeamsAdmissionFailure: (params, signal) => {
-      return deliverTeamsChatAdmissionFailure({ db, ...params }, signal);
-    },
-    dispatchTeamsDelivery: (callbackId, signal) => {
-      return dispatchTeamsChatDeliveryOnce(db, callbackId, signal);
-    },
-  };
-}
-
-function discordChatDeliveryDependencies(
-  db: Db,
-  checkAccess?: DiscordChatAccessChecker,
-): Pick<ChatCallbackDependencies, "sendDiscordReply"> {
-  return {
-    sendDiscordReply: (request, signal) => {
-      return sendDiscordChatReply(db, { ...request, checkAccess }, signal);
-    },
-  };
-}
-
-function telegramChatDeliveryDependencies(
-  db: Db,
-): Pick<
-  ChatCallbackDependencies,
-  "deliverTelegramAdmissionFailure" | "dispatchTelegramDelivery"
-> {
-  return {
-    deliverTelegramAdmissionFailure: (params, signal) => {
-      return deliverTelegramChatAdmissionFailure(
-        {
-          db,
-          ...params,
-        },
-        signal,
-      );
-    },
-    dispatchTelegramDelivery: (callbackId, status, signal) => {
-      return dispatchTelegramChatDeliveryOnce(db, callbackId, status, signal);
-    },
-  };
-}
-
-function agentPhoneChatDeliveryDependencies(
-  db: Db,
-): Pick<
-  ChatCallbackDependencies,
-  "deliverAgentPhoneAdmissionFailure" | "dispatchAgentPhoneDelivery"
-> {
-  return {
-    deliverAgentPhoneAdmissionFailure: (params, signal) => {
-      return deliverAgentPhoneChatAdmissionFailure(
-        {
-          db,
-          ...params,
-        },
-        signal,
-      );
-    },
-    dispatchAgentPhoneDelivery: (callbackId, status, signal) => {
-      return dispatchAgentPhoneChatDeliveryOnce(db, callbackId, status, signal);
-    },
-  };
-}
-
-export async function handleChatInternalCallbackWithoutCcstate(
-  db: Db,
-  callback: InternalRunCallbackEnvelope,
-  signal = new AbortController().signal,
-): Promise<
-  | { readonly success: true }
-  | { readonly success: false; readonly error: string }
-> {
-  return await handleChatInternalCallback(
-    {
-      db,
-      callback,
-      dependencies: {
-        releaseBrowsersForRun: (args, inputSignal) => {
-          // eslint-disable-next-line ccstate/no-create-store -- Pre-2026-09-29 legacy only; no new violations or suppressions. Browser cleanup; migrate to the request command graph.
-          return createStore().set(
-            releaseThreadBrowsersForRun$,
-            args,
-            inputSignal,
-          );
-        },
-        insertAssistantItems: async (args, inputSignal) => {
-          await insertAssistantEvents(
-            db,
-            assistantEventInsertInput(args),
-            inputSignal,
-          );
-        },
-        saveRunSummary: (runId, prompt, resultText, inputSignal) => {
-          return saveRunSummary(
-            db,
-            { runId, triggerSource: "chat", prompt, resultText },
-            inputSignal,
-          );
-        },
-        dispatchChatRunFinishedAutomations: (event, inputSignal) => {
-          // eslint-disable-next-line ccstate/no-create-store -- Pre-2026-09-29 legacy only; no new violations or suppressions. Run-finished dispatch; migrate to the request command graph.
-          return createStore().set(
-            dispatchConfiguredChatRunFinishedEvent$,
-            event,
-            inputSignal,
-          );
-        },
-        formatRunError: (params) => {
-          return Promise.resolve(
-            formatRunErrorForExternalSurface({
-              code: "INTERNAL_SERVER_ERROR",
-              message: params.errorMessage,
-            }),
-          );
-        },
-        dispatchSlackDelivery: (callbackId, inputSignal) => {
-          return dispatchSlackChatDeliveryOnce(db, callbackId, inputSignal);
-        },
-        clearSlackThreadStatusIfIdle: (target, inputSignal) => {
-          return clearCanonicalSlackThreadStatusIfIdle(db, target, inputSignal);
-        },
-        refreshSlackThreadStatus: (target, inputSignal) => {
-          return refreshCanonicalSlackThreadStatus(db, target, inputSignal);
-        },
-        formatIntegrationRunError: (params) => {
-          return Promise.resolve(
-            formatRunErrorForExternalSurface({
-              code: params.code,
-              message: params.message,
-            }),
-          );
-        },
-        deliverSlackAdmissionFailure: (params, inputSignal) => {
-          return deliverSlackChatAdmissionFailure(
-            {
-              db,
-              ...params,
-            },
-            inputSignal,
-          );
-        },
-        ...feishuChatDeliveryDependencies(db),
-        ...teamsChatDeliveryDependencies(db),
-        ...discordChatDeliveryDependencies(db),
-        ...telegramChatDeliveryDependencies(db),
-        ...agentPhoneChatDeliveryDependencies(db),
-      },
-    },
-    signal,
-  );
-}
-
-export const buildChatCallbackDependencies$ = command(
-  ({ set }, input: { readonly db: Db }): ChatCallbackDependencies => {
-    const { db } = input;
-    const dependencies: ChatCallbackDependencies = {
-      checkDiscordTypingBinding: (args, inputSignal) => {
-        return set(requireDiscordBinding$, args, inputSignal);
-      },
-      checkDiscordAccess: (args, inputSignal) => {
-        return set(requireDiscordConversationAccess$, args, inputSignal);
-      },
-      releaseBrowsersForRun: (args, inputSignal) => {
-        return set(releaseThreadBrowsersForRun$, args, inputSignal);
-      },
-      insertAssistantItems: async (args, inputSignal) => {
-        await set(
-          insertAssistantEvents$,
-          assistantEventInsertInput(args),
-          inputSignal,
-        );
-      },
-      dispatchChatRunFinishedAutomations: (event, inputSignal) => {
-        return set(dispatchConfiguredChatRunFinishedEvent$, event, inputSignal);
-      },
-      saveRunSummary: (runId, prompt, resultText, inputSignal) => {
-        return set(
-          saveRunSummary$,
-          {
-            runId,
-            triggerSource: "chat",
-            prompt,
-            resultText,
-          },
-          inputSignal,
-        );
-      },
-      formatRunError: (params, inputSignal) => {
-        return set(formatRunErrorForRunOwner$, params, inputSignal);
-      },
-      dispatchSlackDelivery: (callbackId, inputSignal) => {
-        return dispatchSlackChatDeliveryOnce(db, callbackId, inputSignal);
-      },
-      clearSlackThreadStatusIfIdle: (target, inputSignal) => {
-        return clearCanonicalSlackThreadStatusIfIdle(db, target, inputSignal);
-      },
-      refreshSlackThreadStatus: (target, inputSignal) => {
-        return refreshCanonicalSlackThreadStatus(db, target, inputSignal);
-      },
-      formatIntegrationRunError: (params, inputSignal) => {
-        return set(formatIntegrationRunError$, params, inputSignal);
-      },
-      deliverSlackAdmissionFailure: (params, inputSignal) => {
-        const admissionArgs = { db, ...params };
-        return deliverSlackChatAdmissionFailure(admissionArgs, inputSignal);
-      },
-      ...feishuChatDeliveryDependencies(db),
-      ...teamsChatDeliveryDependencies(db),
-      ...discordChatDeliveryDependencies(db, (args, inputSignal) => {
-        return set(requireDiscordConversationAccess$, args, inputSignal);
-      }),
-      ...telegramChatDeliveryDependencies(db),
-      ...agentPhoneChatDeliveryDependencies(db),
+    signal.throwIfAborted();
+    const processingInput = {
+      db: args.db,
+      callback: args.callback,
+      payload: payload.data,
     };
-    return dependencies;
+    // Keep required terminal work within the persisted source callback's retry
+    // lifetime. Each event, delivery registration and automation commits alone.
+    await set(processTerminalChatCallback$, processingInput, signal);
+
+    return { success: true };
   },
 );
 
 export function queuedMessageRejection(
-  dependencies: ChatCallbackDependencies,
   failure: QueuedMessageAdmissionFailure,
 ): ChatQueueHeadRejection {
-  const channel = queuedAdmissionFailureChannel({
-    deliverSlack: dependencies.deliverSlackAdmissionFailure,
-    deliverFeishu: dependencies.deliverFeishuAdmissionFailure,
-    clearFeishuThinking: dependencies.clearFeishuThinkingReaction,
-    deliverTeams: dependencies.deliverTeamsAdmissionFailure,
-    deliverDiscord: dependencies.sendDiscordReply,
-    deliverTelegram: dependencies.deliverTelegramAdmissionFailure,
-    deliverAgentPhone: dependencies.deliverAgentPhoneAdmissionFailure,
-    failure,
-  });
+  const channel = queuedAdmissionFailureChannel(failure);
   return {
     error: failure.error,
     userId: failure.userId,
-    ...(channel
-      ? {
-          deliver: (assistantEventId: string, signal: AbortSignal) => {
-            return deliverQueuedAdmissionFailureToChannel(
-              {
-                channel,
-                threadId: failure.threadId,
-                chatEventId: assistantEventId,
-              },
-              signal,
-            );
-          },
-        }
-      : {}),
+    ...(channel ? { delivery: { kind: "channel" as const, channel } } : {}),
   };
 }
 
-type UnexpectedQueuedRejectionChannelLoader = (
-  args: {
-    readonly db: Db;
-    readonly source: Parameters<typeof loadSlackQueuedLaunchMaterial>[1];
-    readonly delivery: Pick<
-      ChatQueueHeadContext,
-      "chatThreadId" | "orgId" | "userId" | "agentId"
-    >;
-    readonly dependencies: ChatCallbackDependencies;
-  },
-  signal: AbortSignal,
-) => Promise<QueuedAdmissionFailureChannel | undefined>;
+type QueuedRejectionHead = Pick<
+  ChatQueueHeadContext,
+  "id" | "chatThreadId" | "orgId" | "userId" | "agentId" | "contextType"
+>;
 
-const unexpectedQueuedRejectionChannelLoaders: Readonly<
-  Record<
-    "slack" | "feishu" | "teams" | "discord" | "telegram" | "agentphone",
-    UnexpectedQueuedRejectionChannelLoader
-  >
-> = {
-  slack: async ({ db, source, delivery, dependencies }) => {
-    const material = await loadSlackQueuedLaunchMaterial(db, source);
-    if (!material) {
+/** Data for a static delivery command; it never captures a Store. */
+export type QueuedPromptRejectionTarget =
+  | { readonly kind: "source"; readonly head: QueuedRejectionHead }
+  | {
+      readonly kind: "channel";
+      readonly channel: QueuedAdmissionFailureChannel;
+    };
+
+const loadQueuedRejectionChannel$ = command(
+  async (
+    { set },
+    head: QueuedRejectionHead,
+    signal: AbortSignal,
+  ): Promise<QueuedAdmissionFailureChannel | undefined> => {
+    const contextType = head.contextType;
+    if (
+      contextType !== "slack" &&
+      contextType !== "feishu" &&
+      contextType !== "teams" &&
+      contextType !== "discord" &&
+      contextType !== "telegram" &&
+      contextType !== "agentphone"
+    ) {
       return undefined;
     }
-    return {
-      name: "Slack",
-      deliver: (chatEventId, signal) => {
-        return dependencies.deliverSlackAdmissionFailure(
-          { ...delivery, ...material.slackDelivery, chatEventId },
-          signal,
-        );
-      },
-    };
-  },
-  feishu: async ({ db, source, delivery, dependencies }) => {
-    const material = await loadFeishuQueuedLaunchMaterial(db, source);
-    if (!material) {
-      return undefined;
-    }
-    return {
-      name: "Feishu",
-      deliver: (chatEventId, signal) => {
-        return dependencies.deliverFeishuAdmissionFailure(
-          { ...delivery, target: material.feishuDelivery, chatEventId },
-          signal,
-        );
-      },
-      clearThinking: (signal) => {
-        return dependencies.clearFeishuThinkingReaction(
-          material.feishuDelivery,
-          signal,
-        );
-      },
-    };
-  },
-  teams: async ({ db, source, delivery, dependencies }) => {
-    const material = await loadTeamsQueuedLaunchMaterial(db, source);
-    if (!material) {
-      return undefined;
-    }
-    return {
-      name: "Teams",
-      deliver: (chatEventId, signal) => {
-        return dependencies.deliverTeamsAdmissionFailure(
-          { ...delivery, target: material.teamsDelivery, chatEventId },
-          signal,
-        );
-      },
-    };
-  },
-  discord: async ({ db, source, delivery, dependencies }, signal) => {
-    const material = await loadDiscordQueuedLaunchMaterial(
+    const db = set(writeDb$);
+    const featureSwitchContext = await loadUserFeatureSwitchContext(
       db,
-      { ...source, checkAccess: dependencies.checkDiscordAccess },
-      signal,
+      head.orgId,
+      head.userId,
     );
-    if (!material) {
-      return undefined;
-    }
-    return {
-      name: "Discord",
-      deliver: (chatEventId, deliverySignal) => {
-        return dependencies.sendDiscordReply(
-          { ...delivery, target: material.discordDelivery, chatEventId },
-          deliverySignal,
-        );
-      },
+    signal.throwIfAborted();
+    const source = {
+      eventId: head.id,
+      chatThreadId: head.chatThreadId,
+      orgId: head.orgId,
+      userId: head.userId,
+      featureSwitchContext,
     };
-  },
-  telegram: async ({ db, source, delivery, dependencies }) => {
-    const material = await loadTelegramQueuedLaunchMaterial(db, source);
-    if (!material) {
-      return undefined;
-    }
-    return {
-      name: "Telegram",
-      deliver: (chatEventId, signal) => {
-        return dependencies.deliverTelegramAdmissionFailure(
-          { ...delivery, target: material.telegramDelivery, chatEventId },
+    const delivery = {
+      chatThreadId: head.chatThreadId,
+      orgId: head.orgId,
+      userId: head.userId,
+      agentId: head.agentId,
+    };
+    switch (contextType) {
+      case "slack": {
+        const material = await loadSlackQueuedLaunchMaterial(db, source);
+        signal.throwIfAborted();
+        return material
+          ? { ...delivery, kind: "Slack", target: material.slackDelivery }
+          : undefined;
+      }
+      case "feishu": {
+        const material = await loadFeishuQueuedLaunchMaterial(db, source);
+        signal.throwIfAborted();
+        return material
+          ? { ...delivery, kind: "Feishu", target: material.feishuDelivery }
+          : undefined;
+      }
+      case "teams": {
+        const material = await loadTeamsQueuedLaunchMaterial(db, source);
+        signal.throwIfAborted();
+        return material
+          ? { ...delivery, kind: "Teams", target: material.teamsDelivery }
+          : undefined;
+      }
+      case "discord": {
+        const material = await set(
+          loadDiscordQueuedLaunchMaterial$,
+          db,
+          source,
           signal,
         );
-      },
-    };
+        return material
+          ? { ...delivery, kind: "Discord", target: material.discordDelivery }
+          : undefined;
+      }
+      case "telegram": {
+        const material = await loadTelegramQueuedLaunchMaterial(db, source);
+        signal.throwIfAborted();
+        return material
+          ? { ...delivery, kind: "Telegram", target: material.telegramDelivery }
+          : undefined;
+      }
+      case "agentphone": {
+        const material = await loadAgentPhoneQueuedLaunchMaterial(db, source);
+        signal.throwIfAborted();
+        return material
+          ? {
+              ...delivery,
+              kind: "AgentPhone",
+              target: material.agentphoneDelivery,
+            }
+          : undefined;
+      }
+    }
   },
-  agentphone: async ({ db, source, delivery, dependencies }) => {
-    const material = await loadAgentPhoneQueuedLaunchMaterial(db, source);
-    if (!material) {
-      return undefined;
+);
+
+export const deliverQueuedPromptRejection$ = command(
+  async (
+    { set },
+    target: QueuedPromptRejectionTarget,
+    assistantEventId: string,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const channel =
+      target.kind === "source"
+        ? await set(loadQueuedRejectionChannel$, target.head, signal)
+        : target.channel;
+    if (channel) {
+      await set(
+        deliverQueuedAdmissionFailureToChannel$,
+        channel,
+        assistantEventId,
+        signal,
+      );
     }
-    return {
-      name: "AgentPhone",
-      deliver: (chatEventId, signal) => {
-        return dependencies.deliverAgentPhoneAdmissionFailure(
-          { ...delivery, target: material.agentphoneDelivery, chatEventId },
-          signal,
-        );
-      },
-    };
   },
-};
+);
 
-/**
- * An unexpected assembly failure can precede the assembler's delivery target.
- * Recover only its authorized source routing from the original event after
- * rejection has committed; none of the model or run assembly is repeated.
- */
-interface QueuedPromptRejectionDelivery {
-  readonly head: Pick<
-    ChatQueueHeadContext,
-    "id" | "chatThreadId" | "orgId" | "userId" | "agentId" | "contextType"
-  >;
-  readonly assistantEventId: string;
-}
-
-export async function deliverQueuedPromptRejection(
-  db: Db,
-  dependencies: ChatCallbackDependencies,
-  args: QueuedPromptRejectionDelivery,
-  signal: AbortSignal,
-): Promise<void> {
-  const { head } = args;
-  const contextType = head.contextType;
-  switch (contextType) {
-    case "slack":
-    case "feishu":
-    case "teams":
-    case "discord":
-    case "telegram":
-    case "agentphone": {
-      break;
-    }
-    default: {
-      return;
-    }
-  }
-  const featureSwitchContext = await loadUserFeatureSwitchContext(
-    db,
-    head.orgId,
-    head.userId,
-  );
-  signal.throwIfAborted();
-  const channel = await unexpectedQueuedRejectionChannelLoaders[contextType](
-    {
-      db,
-      dependencies,
-      source: {
-        eventId: head.id,
-        chatThreadId: head.chatThreadId,
-        orgId: head.orgId,
-        userId: head.userId,
-        featureSwitchContext,
-      },
-      delivery: {
-        chatThreadId: head.chatThreadId,
-        orgId: head.orgId,
-        userId: head.userId,
-        agentId: head.agentId,
-      },
-    },
-    signal,
-  );
-  if (!channel) {
-    return;
-  }
-  signal.throwIfAborted();
-  await deliverQueuedAdmissionFailureToChannel(
-    {
-      channel,
-      threadId: head.chatThreadId,
-      chatEventId: args.assistantEventId,
-    },
-    signal,
-  );
-}
-
+/** Recover authorized source routing only after an unexpected rejection commits. */
 export const deliverUnexpectedQueuedPromptRejection$ = command(
   async (
     { set },
-    args: QueuedPromptRejectionDelivery,
+    args: {
+      readonly head: QueuedRejectionHead;
+      readonly assistantEventId: string;
+    },
     signal: AbortSignal,
   ): Promise<void> => {
-    const db = set(writeDb$);
-    const dependencies = set(buildChatCallbackDependencies$, { db });
-    await deliverQueuedPromptRejection(db, dependencies, args, signal);
+    await set(
+      deliverQueuedPromptRejection$,
+      { kind: "source", head: args.head },
+      args.assistantEventId,
+      signal,
+    );
   },
 );
 
@@ -4060,12 +3606,11 @@ export const handleChatInternalCallback$ = command(
     | { readonly success: false; readonly error: string }
   > => {
     const db = set(writeDb$);
-    const dependencies = set(buildChatCallbackDependencies$, { db });
-    return await handleChatInternalCallback(
+    return await set(
+      processChatInternalCallback$,
       {
         db,
         callback: input.callback,
-        dependencies,
       },
       signal,
     );

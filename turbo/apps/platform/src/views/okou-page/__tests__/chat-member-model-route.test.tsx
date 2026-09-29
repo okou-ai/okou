@@ -130,10 +130,7 @@ test("Uses the effective subscription for reasoning and Fast guidance", async ()
   ).toBeChecked();
   expect(within(settings).getByText("Lower usage")).toBeVisible();
   expect(within(settings).getByText("Higher usage")).toBeVisible();
-  expect(
-    within(settings).getByText("1.5× model speed · 2.5× ChatGPT usage"),
-  ).toBeVisible();
-  expect(within(settings).queryByText(/credits/u)).not.toBeInTheDocument();
+  expect(within(settings).getByText("2.5× credit cost")).toBeInTheDocument();
 });
 
 test("Reconnects the current personal candidate despite an organization API route", async () => {

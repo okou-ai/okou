@@ -271,7 +271,14 @@ import {
   measurePiPreparationSync,
   startPiPreparationObservation,
 } from "@okouai/pi-agent-runtime/api";
-import { command, computed, state, type Computed, type State } from "ccstate";
+import {
+  command,
+  computed,
+  state,
+  type Command,
+  type Computed,
+  type State,
+} from "ccstate";
 import {
   and,
   asc,
@@ -379,7 +386,7 @@ import {
 import { buildAgentIdentityPrompt } from "./agent-identity-prompt.service";
 import { activatePendingRun$ } from "./agent-run-activation.service";
 import type { PendingRunActivation } from "./agent-run-activation.types";
-import { dispatchFailedRunCallbacks } from "./agent-run-callback.service";
+import { dispatchFailedRunCallbacks$ } from "./agent-run-callback.service";
 import {
   normalizeRunMetadata,
   type RunMetadataValues,
@@ -557,19 +564,18 @@ import { historyGenerationRunIdForStoredExecutionContext } from "./history-gener
 import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service";
 import { formatIntegrationRunError$ } from "./integration-run-errors.service";
 import {
-  buildChatCallbackDependencies$,
   buildChatPriorRunsContext,
   buildQueuedCreateAgentRunArgs,
   ChatCallbackPreCreateTimingCollector,
-  deliverQueuedPromptRejection,
+  deliverQueuedPromptRejection$,
   deliverUnexpectedQueuedPromptRejection$,
   buildAppendSystemPrompt as pickChatRunPromptBuildAppendSystemPrompt,
-  queuedChatDispatchFailedCallbacks,
+  dispatchQueuedChatFailedRunCallbacks$,
   queuedIntegrationLaunchFields,
   queuedMessageAdmissionFailure,
   queuedMessageRejection,
   queuedUserMessageProjection,
-  recordAutoSentQueuedRunLaunch,
+  recordQueuedPromptRunLaunch$,
   rejectedQueuedRunAdmissionFailure,
   routeQueuedMessagePiExecution,
   type CreateQueuedChatRunInput,
@@ -1093,7 +1099,7 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
           chatThreadId: claim.chatThreadId,
           orgId,
           head: event,
-          dispatchFailedCallbacks: dispatchFailedRunCallbacks,
+          dispatchFailedCallbacks: dispatchFailedRunCallbacks$,
         },
         signal,
       );
@@ -5490,11 +5496,17 @@ type CreateRunErrorResult = Exclude<
   { readonly status: 201 }
 >;
 
-export type DispatchFailedRunCallbacks = (
-  db: Db,
-  runId: string,
-  error: string,
-) => Promise<void>;
+export interface DispatchFailedRunCallbackInput {
+  readonly db: Db;
+  readonly runId: string;
+  readonly error: string;
+  readonly callbacks: NonNullable<CreateAgentRunArgs["callbacks"]>;
+}
+
+export type DispatchFailedRunCallbacks = Command<
+  Promise<void>,
+  [DispatchFailedRunCallbackInput, AbortSignal]
+>;
 
 /**
  * A run producer's own write that must commit atomically with the Run insert.
@@ -16199,7 +16211,7 @@ function failedDirectLaunchRows(
 // contract. Queue-first preparation failures must leave the input untouched.
 const commitFailedDirectLaunch$ = command(
   async (
-    _store,
+    { set },
     args: FailedDirectLaunchInput,
     signal: AbortSignal,
   ): Promise<CreateRunSuccessResult | CreateRunErrorResult> => {
@@ -16253,7 +16265,16 @@ const commitFailedDirectLaunch$ = command(
     }
     if (input.args.dispatchFailedCallbacks) {
       await tapError(
-        input.args.dispatchFailedCallbacks(input.db, identity.runId, message),
+        set(
+          input.args.dispatchFailedCallbacks,
+          {
+            db: input.db,
+            runId: identity.runId,
+            error: message,
+            callbacks: input.args.callbacks ?? [],
+          },
+          signal,
+        ),
         (error) => {
           L.error("Failed to dispatch failed-run callbacks", {
             runId: identity.runId,
@@ -20401,7 +20422,7 @@ function createQueuedAutomationAssembler(
         kind: "assembled",
         run: assembled.run,
         rejection,
-        launched: assembled.launched,
+        launched: { kind: "automation", record: assembled.launched },
       };
     },
   );
@@ -23920,9 +23941,7 @@ type PromptAssemblerDependencies = {
 };
 
 function missingQueuedAgentRejection(
-  db: Db,
   head: ChatQueueHeadContext,
-  dependencies: Parameters<typeof deliverQueuedPromptRejection>[1],
 ): ChatQueueRunAssembly {
   return {
     kind: "rejected",
@@ -23932,14 +23951,7 @@ function missingQueuedAgentRejection(
         code: "BAD_REQUEST",
         message: "The organization default agent is unavailable",
       },
-      deliver: (assistantEventId, deliverySignal) => {
-        return deliverQueuedPromptRejection(
-          db,
-          dependencies,
-          { head, assistantEventId },
-          deliverySignal,
-        );
-      },
+      delivery: { kind: "source", head },
     },
   };
 }
@@ -24012,9 +24024,8 @@ function createPromptAssembleQueuedPromptRun({
         startedAt: queued.createdAt.getTime(),
         finishedAt: head.apiStartTime,
       });
-      const dependencies = set(buildChatCallbackDependencies$, { db });
       if (!agent) {
-        return missingQueuedAgentRejection(db, head, dependencies);
+        return missingQueuedAgentRejection(head);
       }
       set(internalModel$, set(resolvePromptModel$, signal));
       if (head.contextType === "discord") {
@@ -24041,7 +24052,7 @@ function createPromptAssembleQueuedPromptRun({
       if ("kind" in runInput) {
         return {
           kind: "rejected",
-          rejection: queuedMessageRejection(dependencies, runInput),
+          rejection: queuedMessageRejection(runInput),
         };
       }
       return {
@@ -24050,28 +24061,18 @@ function createPromptAssembleQueuedPromptRun({
           ...buildQueuedCreateAgentRunArgs(
             runInput,
             head.apiStartTime,
-            queuedChatDispatchFailedCallbacks(dependencies, runInput, signal),
+            dispatchQueuedChatFailedRunCallbacks$,
           ),
           persistProducerRunBinding: agent.persistProducerRunBinding,
         },
         rejection: (error) => {
           return queuedMessageRejection(
-            dependencies,
             rejectedQueuedRunAdmissionFailure(runInput, error),
           );
         },
-        launched: (runId) => {
-          recordAutoSentQueuedRunLaunch(
-            {
-              db,
-              userId: head.userId,
-              timing,
-              checkDiscordTypingBinding: dependencies.checkDiscordTypingBinding,
-            },
-            runId,
-            runInput,
-          );
-          return Promise.resolve();
+        launched: {
+          kind: "prompt",
+          context: { userId: head.userId, timing, runInput },
         },
       };
     },
@@ -24595,21 +24596,24 @@ const rejectChatQueueHead$ = command(
     signal.throwIfAborted();
     await publishChatQueueHeadConsumed(head);
     signal.throwIfAborted();
-    const deliver =
-      rejection.deliver ??
-      (rejection.error.code === "INTERNAL_ERROR"
-        ? (assistantEventId: string, deliverySignal: AbortSignal) => {
-            return set(
-              deliverUnexpectedQueuedPromptRejection$,
-              { head, assistantEventId },
-              deliverySignal,
-            );
-          }
-        : undefined);
-    if (!deliver) {
+    const delivery = rejection.delivery
+      ? set(
+          deliverQueuedPromptRejection$,
+          rejection.delivery,
+          rejected.assistantEventId,
+          signal,
+        )
+      : rejection.error.code === "INTERNAL_ERROR"
+        ? set(
+            deliverUnexpectedQueuedPromptRejection$,
+            { head, assistantEventId: rejected.assistantEventId },
+            signal,
+          )
+        : undefined;
+    if (!delivery) {
       return;
     }
-    await tapError(deliver(rejected.assistantEventId, signal), (error) => {
+    await tapError(delivery, (error) => {
       log.warn("Failed to deliver queued input rejection", {
         chatThreadId: head.chatThreadId,
         eventId: head.id,
@@ -24761,7 +24765,15 @@ function createChatQueueConsumerObjects() {
         { activation: pending.activation, activationScheduledAt: now() },
         signal,
       );
-      await pending.assembly.launched(pending.runId, signal);
+      if (pending.assembly.launched.kind === "prompt") {
+        set(
+          recordQueuedPromptRunLaunch$,
+          pending.assembly.launched.context,
+          pending.runId,
+        );
+      } else {
+        await pending.assembly.launched.record(pending.runId, signal);
+      }
       await publishChatQueueHeadConsumed(pending.head);
       signal.throwIfAborted();
     },
