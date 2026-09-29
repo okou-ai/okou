@@ -166,6 +166,12 @@ import {
   revealWorkflowWebhookSecretFields,
 } from "./workflow-webhook-automation.service";
 
+import {
+  workflowAutomationSnapshot,
+  workflowAutomationSnapshotCondition,
+  type WorkflowAutomationSnapshot,
+} from "./workflow-automation-snapshot";
+
 type AutomationRow = typeof workflowAutomations.$inferSelect;
 type WorkflowRow = typeof workflows.$inferSelect;
 
@@ -1702,6 +1708,13 @@ type InsertEventAutomationArgs = {
 };
 async function insertEventAutomation(
   db: Db,
+  args: InsertEventAutomationArgs & { readonly captureWatchSnapshot: true },
+): Promise<{
+  readonly summary: WorkflowAutomationSummary;
+  readonly snapshot: WorkflowAutomationSnapshot;
+}>;
+async function insertEventAutomation(
+  db: Db,
   args: InsertEventAutomationArgs & {
     readonly expectedEventConnectorId: string;
   },
@@ -1714,8 +1727,16 @@ async function insertEventAutomation(
   db: Db,
   args: InsertEventAutomationArgs & {
     readonly expectedEventConnectorId?: string;
+    readonly captureWatchSnapshot?: boolean;
   },
-): Promise<WorkflowAutomationSummary | null> {
+): Promise<
+  | WorkflowAutomationSummary
+  | null
+  | {
+      readonly summary: WorkflowAutomationSummary;
+      readonly snapshot: WorkflowAutomationSnapshot;
+    }
+> {
   return await db.transaction(async (tx) => {
     const connectorSlug = automationCreateInputIsGmail(args.input)
       ? "gmail"
@@ -1797,7 +1818,16 @@ async function insertEventAutomation(
     if (!row) {
       throw new Error("Failed to create workflow automation");
     }
-    return await rowToSummary(tx, row, { chatThreadId });
+    const summary = await rowToSummary(tx, row, { chatThreadId });
+    return args.captureWatchSnapshot === true
+      ? {
+          summary,
+          snapshot: {
+            observedUpdatedAt: row.observedUpdatedAt,
+            observedXmin: row.observedXmin,
+          },
+        }
+      : summary;
   });
 }
 
@@ -2549,6 +2579,61 @@ function googleFormsSummaryWithWarning(
   }
   return warning === undefined ? summary : { ...summary, warning };
 }
+const deleteUnpublishedGoogleFormsAutomation$ = command(
+  async (
+    { set },
+    args: {
+      readonly automationId: string;
+      readonly snapshot: WorkflowAutomationSnapshot;
+    },
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    await db.transaction(async (tx) => {
+      await tx
+        .delete(workflowAutomations)
+        .where(
+          and(
+            eq(workflowAutomations.id, args.automationId),
+            workflowAutomationSnapshotCondition(args.snapshot),
+          ),
+        );
+    });
+  },
+);
+const cleanFailedGoogleFormsAutomation$ = command(
+  async (
+    { set },
+    args: {
+      readonly automationId: string;
+      readonly snapshot: WorkflowAutomationSnapshot;
+      readonly hadConsumer: boolean;
+      readonly orgId: string;
+      readonly userId: string;
+      readonly eventConfig: GoogleFormsResponseSubmittedEventConfig;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    await set(deleteUnpublishedGoogleFormsAutomation$, args);
+    signal.throwIfAborted();
+    if (!args.hadConsumer) {
+      await set(
+        reconcileAutomationEventWatches$,
+        {
+          automations: [
+            {
+              orgId: args.orgId,
+              ownerUserId: args.userId,
+              eventType: "google-forms-response-submitted",
+              eventConfig: args.eventConfig,
+              eventConnectorId: args.eventConfig.connectorId,
+            },
+          ],
+        },
+        signal,
+      );
+    }
+  },
+);
 const createGoogleFormsEventAutomationForWorkflow$ = command(
   async (
     { set },
@@ -2612,6 +2697,7 @@ const createGoogleFormsEventAutomationForWorkflow$ = command(
         workflowTitle: args.context.workflowTitle,
         automationId: args.context.automationId,
         currentTime: nowDate(),
+        captureWatchSnapshot: true,
       }),
       signal,
     );
@@ -2624,7 +2710,7 @@ const createGoogleFormsEventAutomationForWorkflow$ = command(
       }
       throw inserted.error;
     }
-    const summary = inserted.value;
+    const { summary, snapshot } = inserted.value;
     const resultSummary = googleFormsSummaryWithWarning(
       summary,
       prepared.warning,
@@ -2641,41 +2727,37 @@ const createGoogleFormsEventAutomationForWorkflow$ = command(
           formId: prepared.eventConfig.form.id,
           connectorId: prepared.eventConfig.connectorId,
           resetAutomationId: summary.id,
+          automationSnapshot: snapshot,
           seedCursor: prepared.seedCursor,
         },
         signal,
       ),
       async () => {
-        await db
-          .delete(workflowAutomations)
-          .where(eq(workflowAutomations.id, summary.id));
+        await set(deleteUnpublishedGoogleFormsAutomation$, {
+          automationId: summary.id,
+          snapshot,
+        });
       },
     );
     signal.throwIfAborted();
     if (watchResult.kind === "ok") {
       return { kind: "ok", summary: resultSummary };
     }
-    // eslint-disable-next-line api/signal-check-await -- Finish the paired watch cleanup after deleting the local automation.
-    await db
-      .delete(workflowAutomations)
-      .where(eq(workflowAutomations.id, summary.id));
-    if (!hadConsumer) {
-      await set(
-        reconcileAutomationEventWatches$,
-        {
-          automations: [
-            {
-              orgId: args.input.orgId,
-              ownerUserId: args.input.member.userId,
-              eventType: args.input.eventType,
-              eventConfig: prepared.eventConfig,
-              eventConnectorId: prepared.eventConfig.connectorId,
-            },
-          ],
-        },
-        signal,
-      );
+    if (watchResult.kind === "superseded") {
+      return { kind: "conflict", message: watchResult.message };
     }
+    await set(
+      cleanFailedGoogleFormsAutomation$,
+      {
+        automationId: summary.id,
+        snapshot,
+        hadConsumer,
+        orgId: args.input.orgId,
+        userId: args.input.member.userId,
+        eventConfig: prepared.eventConfig,
+      },
+      signal,
+    );
     return { kind: "bad-request", message: watchResult.message };
   },
 );
@@ -3943,46 +4025,6 @@ async function prepareOfficialGoogleFormsEvent(
     : prepared;
 }
 
-function preserveGoogleFormsCursorForSameTarget(
-  currentConfig: unknown,
-  result: OfficialAutomationEventPreparationResult,
-): OfficialAutomationEventPreparationResult {
-  if (result.kind !== "ok") {
-    return result;
-  }
-  const current =
-    googleFormsResponseSubmittedEventConfigSchema.safeParse(currentConfig);
-  const next = googleFormsResponseSubmittedEventConfigSchema.safeParse(
-    result.preparation.eventConfig,
-  );
-  if (
-    !current.success ||
-    !next.success ||
-    current.data.connectorId !== next.data.connectorId ||
-    current.data.form.id !== next.data.form.id
-  ) {
-    return result;
-  }
-  const eventConnectorId = result.preparation.eventConnectorId;
-  return eventConnectorId === undefined
-    ? preparedOfficialEvent(result.preparation.eventConfig)
-    : preparedOfficialEvent(result.preparation.eventConfig, {
-        eventConnectorId,
-      });
-}
-
-async function prepareOfficialGoogleFormsReconfiguration(
-  db: Db,
-  input: CreateGoogleFormsEventAutomationInput,
-  currentConfig: unknown,
-  signal: AbortSignal,
-): Promise<OfficialAutomationEventPreparationResult> {
-  return preserveGoogleFormsCursorForSameTarget(
-    currentConfig,
-    await prepareOfficialGoogleFormsEvent(db, input, signal),
-  );
-}
-
 async function prepareOfficialGoogleMeetEvent(
   db: Db,
   input: CreateGoogleMeetEventAutomationInput,
@@ -4074,14 +4116,7 @@ export const prepareOfficialAutomationReconfiguration$ = command(
       return await prepareOfficialGoogleCalendarEvent(db, input, signal);
     }
     if (automationCreateInputIsGoogleForms(input)) {
-      return await prepareOfficialGoogleFormsReconfiguration(
-        db,
-        input,
-        automation.eventType === input.eventType
-          ? automation.eventConfig
-          : undefined,
-        signal,
-      );
+      return await prepareOfficialGoogleFormsEvent(db, input, signal);
     }
     if (automationCreateInputIsGoogleMeet(input)) {
       return await prepareOfficialGoogleMeetEvent(db, input, signal);
@@ -5240,12 +5275,16 @@ const ensureEnabledAutomationEventWatch$ = command(
           formId: config.form.id,
           connectorId: config.connectorId,
           resetAutomationId: args.automation.id,
+          automationSnapshot: workflowAutomationSnapshot(args.automation),
         },
         signal,
       );
       return result.kind === "ok"
         ? null
-        : { kind: "bad-request", message: result.message };
+        : {
+            kind: result.kind === "superseded" ? "conflict" : "bad-request",
+            message: result.message,
+          };
     }
     if (!supportedGoogleCalendarEventType(args.automation.eventType)) {
       return null;
@@ -5278,81 +5317,66 @@ const ensureEnabledAutomationEventWatch$ = command(
   },
 );
 
-function sameOptionalAutomationDate(
-  left: Date | null,
-  right: Date | null,
-): boolean {
-  return left === null || right === null
-    ? left === right
-    : left.getTime() === right.getTime();
-}
-
-async function restoreDisabledWorkflowAutomation(
-  db: Db,
-  previousAutomation: AutomationRow,
-  enabledAutomation: AutomationRow,
-): Promise<void> {
-  const officialReconciliationStatus =
-    previousAutomation.officialBlueprintKey === null
-      ? null
-      : previousAutomation.officialReconciliationStatus;
-  if (
-    previousAutomation.officialBlueprintKey !== null &&
-    officialReconciliationStatus === null
-  ) {
-    throw new Error("Official Workflow automation state is incomplete");
-  }
-  if (officialReconciliationStatus === null) {
-    await db
-      .update(workflowAutomations)
-      .set({
-        enabled: previousAutomation.enabled,
-        nextRunAt: previousAutomation.nextRunAt,
-        updatedAt: nowDate(),
-      })
-      .where(eq(workflowAutomations.id, previousAutomation.id));
-    return;
-  }
-  await db.transaction(async (tx) => {
-    const [current] = await tx
-      .select(workflowAutomationColumns())
-      .from(workflowAutomations)
-      .where(eq(workflowAutomations.id, previousAutomation.id))
-      .for("update")
-      .limit(1);
-    if (!current || current.officialReconciliationStatus !== "reconciling") {
-      return;
-    }
-    const stateUnchanged =
-      current.enabled === enabledAutomation.enabled &&
-      sameOptionalAutomationDate(
-        current.nextRunAt,
-        enabledAutomation.nextRunAt,
-      ) &&
-      current.officialIntendedEnabled ===
-        enabledAutomation.officialIntendedEnabled;
-    await tx
-      .update(workflowAutomations)
-      .set({
-        ...(stateUnchanged
-          ? {
-              enabled: previousAutomation.enabled,
-              nextRunAt: previousAutomation.nextRunAt,
-              officialIntendedEnabled:
-                previousAutomation.officialIntendedEnabled,
-            }
-          : {}),
-        officialReconciliationStatus,
-        updatedAt: nowDate(),
-      })
-      .where(
-        and(
-          eq(workflowAutomations.id, previousAutomation.id),
-          eq(workflowAutomations.officialReconciliationStatus, "reconciling"),
-        ),
+const restoreDisabledWorkflowAutomation$ = command(
+  async (
+    { set },
+    args: {
+      readonly previousAutomation: AutomationRow;
+      readonly enabledAutomation: AutomationRow;
+    },
+  ): Promise<void> => {
+    const { previousAutomation, enabledAutomation } = args;
+    const snapshot = workflowAutomationSnapshot(enabledAutomation);
+    if (snapshot === undefined) {
+      throw new Error(
+        "Automation enable compensation requires its committed snapshot",
       );
-  });
-}
+    }
+    const officialReconciliationStatus =
+      previousAutomation.officialBlueprintKey === null
+        ? null
+        : previousAutomation.officialReconciliationStatus;
+    if (
+      previousAutomation.officialBlueprintKey !== null &&
+      officialReconciliationStatus === null
+    ) {
+      throw new Error("Official Workflow automation state is incomplete");
+    }
+    const db = set(writeDb$);
+    await db.transaction(async (tx) => {
+      const [restored] = await tx
+        .update(workflowAutomations)
+        .set({
+          enabled: previousAutomation.enabled,
+          nextRunAt: previousAutomation.nextRunAt,
+          ...(officialReconciliationStatus === null
+            ? {}
+            : {
+                officialIntendedEnabled:
+                  previousAutomation.officialIntendedEnabled,
+                officialReconciliationStatus,
+              }),
+          updatedAt: nowDate(),
+        })
+        .where(
+          and(
+            eq(workflowAutomations.id, previousAutomation.id),
+            workflowAutomationSnapshotCondition(snapshot),
+          ),
+        )
+        .returning({ id: workflowAutomations.id });
+      if (
+        restored &&
+        previousAutomation.eventType === "google-forms-response-submitted" &&
+        !previousAutomation.enabled
+      ) {
+        await tx
+          .delete(googleFormsAutomationCursors)
+          .where(eq(googleFormsAutomationCursors.automationId, restored.id));
+      }
+    });
+  },
+);
 
 function officialAutomationReconfigurationFailure(
   automation: AutomationRow,
@@ -5392,6 +5416,9 @@ async function finalizeEnabledOfficialAutomation(
       and(
         eq(workflowAutomations.id, enabledAutomation.id),
         eq(workflowAutomations.officialReconciliationStatus, "reconciling"),
+        workflowAutomationSnapshotCondition(
+          workflowAutomationSnapshot(enabledAutomation),
+        ),
       ),
     )
     .returning(workflowAutomationColumns());
@@ -5418,11 +5445,10 @@ const ensureEnabledAutomationEventWatchWithRollback$ = command(
       const cleanupSignal = new AbortController().signal;
       await onRejection(
         (async () => {
-          await restoreDisabledWorkflowAutomation(
-            db,
-            args.previousAutomation,
-            args.enabledAutomation,
-          );
+          await set(restoreDisabledWorkflowAutomation$, {
+            previousAutomation: args.previousAutomation,
+            enabledAutomation: args.enabledAutomation,
+          });
           await set(
             reconcileAutomationEventWatches$,
             {
@@ -5445,6 +5471,9 @@ const ensureEnabledAutomationEventWatchWithRollback$ = command(
               and(
                 eq(workflowAutomations.id, args.previousAutomation.id),
                 isNotNull(workflowAutomations.officialBlueprintKey),
+                workflowAutomationSnapshotCondition(
+                  workflowAutomationSnapshot(args.enabledAutomation),
+                ),
               ),
             );
         },
@@ -5460,7 +5489,7 @@ const ensureEnabledAutomationEventWatchWithRollback$ = command(
           },
           signal,
         );
-        if (failure) {
+        if (failure && failure.kind !== "conflict") {
           await rollback();
         }
         signal.throwIfAborted();

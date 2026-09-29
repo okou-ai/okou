@@ -582,6 +582,120 @@ describe("Google Forms Pub/Sub webhook", () => {
     ]);
   });
 
+  it.each([
+    { outcome: "delayed response", status: 409 },
+    { outcome: "provider failure", status: 400 },
+  ])(
+    "preserves a newer enable interval after an older $outcome",
+    async ({ outcome, status }) => {
+      const { automationId, chatThreadId, formsApi } =
+        await setupGoogleFormsAutomation();
+      await accept(
+        automationsClient().disable({
+          headers: authHeaders(),
+          params: { id: automationId },
+        }),
+        [200],
+      );
+      const resumedCursor = "2026-08-05T10:15:00.123456Z";
+      const resumedResponseTime = "2026-08-05T10:16:00.123456Z";
+      let replacedInterval = false;
+      server.use(
+        http.get(
+          "https://forms.googleapis.com/v1/forms/:formId/responses",
+          async ({ request }) => {
+            const filter = new URL(request.url).searchParams.get("filter");
+            if (filter !== null) {
+              expect(filter).toBe(`timestamp > ${resumedCursor}`);
+              return HttpResponse.json({
+                responses: [
+                  {
+                    responseId: "response-after-newer-enable",
+                    createTime: resumedResponseTime,
+                    lastSubmittedTime: resumedResponseTime,
+                    respondentEmail: "newer-enable@example.test",
+                  },
+                ],
+              });
+            }
+            if (!replacedInterval) {
+              replacedInterval = true;
+              // A real user changes the lifecycle while the provider request is in flight.
+              await accept(
+                automationsClient().disable({
+                  headers: authHeaders(),
+                  params: { id: automationId },
+                }),
+                [200],
+              );
+              await accept(
+                automationsClient().enable({
+                  headers: authHeaders(),
+                  params: { id: automationId },
+                }),
+                [200],
+              );
+              return outcome === "provider failure"
+                ? HttpResponse.json(
+                    { error: { message: "Provider unavailable" } },
+                    { status: 503 },
+                  )
+                : HttpResponse.json({
+                    responses: [
+                      {
+                        responseId: "old-interval",
+                        createTime: SEED_CURSOR,
+                        lastSubmittedTime: SEED_CURSOR,
+                      },
+                    ],
+                  });
+            }
+            return HttpResponse.json({
+              responses: [
+                {
+                  responseId: "during-disable",
+                  createTime: resumedCursor,
+                  lastSubmittedTime: resumedCursor,
+                },
+              ],
+            });
+          },
+        ),
+      );
+      const oldRequest = await automationsClient().enable({
+        headers: authHeaders(),
+        params: { id: automationId },
+      });
+      expect(oldRequest.status).toBe(status);
+      const current = await accept(
+        automationsClient().get({
+          headers: authHeaders(),
+          params: { id: automationId },
+        }),
+        [200],
+      );
+      expect(current.body.enabled).toBeTruthy();
+      const watchId = formsApi.watchIds.at(-1);
+      if (!watchId) {
+        throw new Error("Expected the replacement watch");
+      }
+      await expect(
+        postWebhook(formsPushBody("after-newer-enable", watchId)),
+      ).resolves.toMatchObject({ status: 200, body: { dispatched: 1 } });
+      await flushWaitUntilForTest();
+      const events = await workflows.readThreadEvents(chatThreadId);
+      expect(
+        events
+          .filter((event) => {
+            return event.eventType === "input.automation";
+          })
+          .map(chatEventDisplayText),
+      ).toStrictEqual([
+        `A new response from newer-enable@example.test was submitted to Google Form "${FORM_TITLE}".`,
+      ]);
+    },
+  );
+
   it("does not enqueue a response after the automation is disabled during retrieval", async () => {
     const { automationId, chatThreadId, formsApi } =
       await setupGoogleFormsAutomation();

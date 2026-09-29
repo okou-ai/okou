@@ -6,7 +6,7 @@ The six advisory acquisition definitions remain. This work prepares selected wri
 
 - Forms remote watch preparation, renewal, remote inventory, response pagination and catch-up run outside new local publication transactions. Publication uses the existing watch identity and exact PostgreSQL state revision. Renewal and stop use conditional snapshot predicates. The cron inspects remotely missing watches even when the local expiry is healthy, preserves the cursor during replacement and catches up responses.
 - Forms publication handles an outgoing stop deleting a state after the initial read: it prepares a replacement and publishes the original in-memory seed cursor, rather than returning success without a watch or fetching a second newest-response seed.
-- Forms lifecycle/projection transactions execute their own SQL. New consumer reads and retry writes are commands with no database argument. Advisory statement builders accept only ordinary values.
+- Forms watch publication, state renewal/removal and account reprojection commands execute their own SQL. New consumer reads and retry writes are commands with no database argument. Advisory statement builders accept only ordinary values. Shared workflow creation, enable and official reconfiguration ownership remains listed below as implementation work.
 - Forms queue admission receives an ordinary source observation and prepared input. `enqueueGoogleFormsWorkflowInput$` owns the local transaction and directly inserts the context, appends through the canonical pure SQL builder, validates source identity, records deduplication, advances the cursor and marks the thread queued. It passes no database or transaction to a helper, callback or another command. Its append-before-source-lock order matches outgoing writers, and source rejection rolls back the entire input. Model selection and message preparation now occur before queue transactions.
 - The Forms cursor's existing watch_state_id becomes nullable with ON DELETE SET NULL. R1 repair reattaches detached cursor rows by automation ID and preserves their timestamp. R1 repair publication updates only the watch binding on conflict and never overwrites the existing cursor. Temporary database cursor/source compatibility triggers additionally protect outgoing repair upserts; they are not the accepted terminal design. Explicit disable or source replacement invalidates the old cursor, allowing a subsequent enable to seed a new baseline. No persisted column or coordination table is added.
 - DCR registrations are prepared remotely and encrypted before publication. Custom and builtin publication commands own finite SQL, compare the observed registration and return a compatible current winner. New preparation reads own database access. Builtin publication also locks and checks the existing accepted catalog identity, so catalog changes during remote preparation reject stale publication.
@@ -69,8 +69,8 @@ R1 now expresses cursor lifetime in application SQL:
 
 The removal gate has two distinct parts. First, finish and verify the complete
 R1 cursor-writer inventory and the remaining command boundaries, including the
-late enable/disable/re-enable publication interleaving and compensation. This
-is implementation work, not a deployment wait. Second, incompatible pre-R1
+remaining shared create/enable and official reconciliation command ownership.
+This is implementation work, not a deployment wait. Second, incompatible pre-R1
 repair/source writers must no longer serve or remain in flight, and rollback
 targets must contain the new explicit protocol. In particular, the inspected
 outgoing repair performs an unconditional `last_seen_submitted_time` overwrite
@@ -79,34 +79,48 @@ would restore the previously identified response-loss window. Only after both
 parts hold may R2 drop these triggers/functions while R1 and R2 mix. No extra
 release wave is inferred from this remaining work.
 
-#### Remaining publication interval witness
+#### Publication interval and compensation ownership
 
-The following interleaving is statically constructible; it has not been
-runtime-reproduced in this round. Ensure A prepares a seed for an enabled
-source. Disable B commits and deletes that cursor. Enable C restores the same
-connector/form and has not yet published its new baseline. A's current target
-predicate sees enabled=true and the same configuration, so it can insert its
-older seed into the now-missing cursor. Binding-only conflict updates do not
-protect this INSERT case, and migration 1290's UPDATE trigger does not protect
-it either. The old interval can consequently include responses from the
-explicitly disabled period.
+Create and enable now retain an in-memory observation of the exact automation
+row returned by their INSERT/UPDATE: full-precision `updated_at::text` plus
+PostgreSQL `xmin`. Repair captures the same observation together with its
+retained cursor. Publication locks and checks this observation before writing
+watch state or a cursor. An enable/disable/re-enable ABA, even within one
+JavaScript timestamp millisecond, rejects the old preparation as superseded.
+The user API returns conflict and requires fresh preparation; it never reports
+successful creation with a missing cursor.
 
-The fix must capture the automation's full-precision `updated_at` and `xmin`
-before preparation, then fence publication to that observed delivery interval.
-Its lost-ownership result must also be propagated through the existing callers:
-`createGoogleFormsEventAutomationForWorkflow$` currently deletes the automation
-by ID on watch failure, and the ordinary branch of
-`restoreDisabledWorkflowAutomation` updates by ID during enable rollback.
-Returning an ordinary preparation error from a new snapshot fence would let
-those callers delete or restore a newer winner. They need conditional cleanup
-or an explicit superseded result that skips cleanup of the newer interval,
-with fresh preparation owned by the current caller. Neither returning a false
-success nor adding a CAS only at publication completes this protocol. This is
-unfinished R1 work and must be fixed before the trigger removal gate is met.
+Create's failed or cancelled watch preparation deletes only its observed
+candidate row. Enable compensation is now a command with business arguments,
+its own `writeDb$` and direct conditional SQL. It cannot restore a newer enable,
+and it deletes a cursor only when it actually restores an explicitly disabled
+interval. Official enable finalization and reconfiguration compensation also
+compare the observation returned by their owning write. No observation is
+persisted as a field or embedded in configuration JSON.
+
+Official structure transitions prepare the remote Forms watch before committing
+the desired source. This staging step does not insert a cursor for a source that
+is not committed yet. The structure transaction changes the source and binds
+its prepared cursor together; its SQL builder accepts only ordinary values.
+Existing progress still wins on conflict. Same-source reconfiguration keeps
+the prepared baseline as a fallback for a missing cursor instead of stripping
+it before publication; a retained cursor is never overwritten.
+
+The new API regressions replace the enabled interval through real disable and
+enable requests while the provider's response request is in flight. They cover
+both a delayed successful response and a provider failure. They require the
+new interval to remain enabled, stale success to return conflict, and dispatch
+to start after the new interval's cursor. This is not a runtime test of an
+outgoing API binary, nor completion of the remaining legacy command graph.
+Shared create/enable/account preparation and official reconciliation still
+propagate database handles and need their own command-boundary work. The
+compatibility triggers cannot be removed on the strength of this fence alone;
+the full writer inventory and supported outgoing/rollback evidence remain
+required.
 
 ### Validation
 
-Focused ESLint/Oxlint/format checks pass for committed source changes. DCR final command publication core types and Calendar core types pass; the integrated PR must validate the latest combined head and schema migration. The command-owned accepted-catalog reader retains the current identity/cache check, exact payload identity query and one bounded retry when activation changes the sole current row. It reuses the same attestation and compatibility validation as legacy readers. The Forms schema snapshot changes only google_forms_automation_cursors; the subsequent custom migration adds the two cursor invariant functions/triggers. API tests cover remote-watch repair/catch-up, pending responses after an already enabled automation rebinds the same watch, DCR concurrent authorizations using a shared published client with usable callbacks, and explicit Forms disable/re-enable behavior. A response retrieval calls the real disable API before returning provider data, then asserts that no automation input was enqueued. Existing API coverage also exercises source account switches, connector deletion/re-add and same-target official reconfiguration. The mixed-version claim additionally relies on the inspected outgoing SQL writing `watch_state_id` in every cursor upsert; the tests do not pretend to execute an outgoing API build. No local Vitest suite or development server was run.
+The Forms interval fence, compensation, structure publication and two new API regressions pass the full API type-check command, focused ESLint, plain Oxlint and formatting. Behavioral execution remains with the combined PR pipeline. Focused ESLint/Oxlint/format checks pass for the earlier committed source changes. DCR final command publication core types and Calendar core types pass; the integrated PR must validate the latest combined head and schema migration. The command-owned accepted-catalog reader retains the current identity/cache check, exact payload identity query and one bounded retry when activation changes the sole current row. It reuses the same attestation and compatibility validation as legacy readers. The Forms schema snapshot changes only google_forms_automation_cursors; the subsequent custom migration adds the two cursor invariant functions/triggers. API tests cover remote-watch repair/catch-up, pending responses after an already enabled automation rebinds the same watch, DCR concurrent authorizations using a shared published client with usable callbacks, and explicit Forms disable/re-enable behavior. A response retrieval calls the real disable API before returning provider data, then asserts that no automation input was enqueued. Existing API coverage also exercises source account switches, connector deletion/re-add and same-target official reconfiguration. The mixed-version claim additionally relies on the inspected outgoing SQL writing `watch_state_id` in every cursor upsert; the tests do not pretend to execute an outgoing API build. No local Vitest suite or development server was run.
 
 Repository error handling classifies Codex refresh_token_reused and refresh_token_invalidated as terminal. The inspected code/tests do not prove that submitting a concurrent duplicate refresh invalidates an already successful winner's whole token family. That claim must not be used as a demonstrated impossibility argument.
 

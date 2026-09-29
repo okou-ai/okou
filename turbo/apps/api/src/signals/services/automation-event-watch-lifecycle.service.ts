@@ -8,6 +8,7 @@ import {
 import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { and, eq, isNotNull } from "drizzle-orm";
 import { writeDb$, type Db } from "../external/db";
+import { workflowAutomationSnapshot } from "./workflow-automation-snapshot";
 import {
   ensureGmailWatchForUser,
   reconcileGmailWatchesForUser,
@@ -393,10 +394,11 @@ const ensureGoogleFormsTarget$ = command(
         formId: args.target.formId,
         connectorId: args.target.connectorId,
         allowStagedOfficialTarget: args.allowStagedOfficialTarget,
-        ...(args.seedCursor === undefined
+        ...(args.seedCursor === undefined || args.allowStagedOfficialTarget
           ? {}
           : {
               resetAutomationId: args.automation.id,
+              automationSnapshot: workflowAutomationSnapshot(args.automation),
               seedCursor: args.seedCursor,
             }),
       },

@@ -35,7 +35,12 @@ import {
   reconcileAutomationEventWatchReconfiguration$,
 } from "./automation-event-watch-lifecycle.service";
 import { lockConnectorAccountTarget } from "./auth-state-lock.service";
-import { googleFormsCursorMustReset } from "./google-forms-cursor-lifecycle";
+import {
+  googleFormsCursorMustReset,
+  googleFormsCursorPublicationStatement,
+} from "./google-forms-cursor-lifecycle";
+import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
+import { observedWorkflowAutomationCondition } from "./workflow-automation-snapshot";
 import { notionConfigWithConnectorId } from "./notion-automation-account.service";
 import {
   lockAcceptedOfficialWorkflowCatalog,
@@ -491,7 +496,7 @@ async function loadReconciliationContext(
   }
   const [automations, identities] = await Promise.all([
     db
-      .select()
+      .select(workflowAutomationColumns())
       .from(workflowAutomations)
       .where(eq(workflowAutomations.workflowId, args.workflowId))
       .orderBy(asc(workflowAutomations.officialBlueprintKey)),
@@ -693,9 +698,9 @@ async function persistReconfigurationPatch(
       return null;
     }
     const [current] = await tx
-      .select()
+      .select(workflowAutomationColumns())
       .from(workflowAutomations)
-      .where(eq(workflowAutomations.id, args.expected.id))
+      .where(observedWorkflowAutomationCondition(args.expected))
       .for("update")
       .limit(1);
     if (
@@ -734,7 +739,7 @@ async function persistReconfigurationPatch(
       .update(workflowAutomations)
       .set({ ...refreshed, ...morningBrief.automation })
       .where(eq(workflowAutomations.id, current.id))
-      .returning();
+      .returning(workflowAutomationColumns());
     if (!updated) {
       throw new Error("Official Workflow automation disappeared");
     }
@@ -816,6 +821,25 @@ function restoredStripeEventConfig(
       };
 }
 
+function restoredAutomationAccountFields(
+  projection: Awaited<
+    ReturnType<typeof lockOfficialAutomationAccountProjection>
+  >,
+  previous: OfficialAutomationRow,
+  eventConfig: OfficialAutomationRow["eventConfig"],
+) {
+  const notion = restoredNotionEventConfig(projection, previous);
+  return {
+    ...(projection.kind === "locked"
+      ? {
+          eventConnectorId: projection.eventConnectorId,
+          ...(notion === null ? {} : { eventConfig: notion }),
+        }
+      : {}),
+    ...restoredStripeEventConfig(projection, eventConfig),
+  };
+}
+
 const restoreFailedReconfiguration$ = command(
   async (
     { set },
@@ -857,9 +881,9 @@ const restoreFailedReconfiguration$ = command(
         return null;
       }
       const [current] = await tx
-        .select()
+        .select(workflowAutomationColumns())
         .from(workflowAutomations)
-        .where(eq(workflowAutomations.id, args.persisted.previous.id))
+        .where(observedWorkflowAutomationCondition(args.persisted.current))
         .for("update")
         .limit(1);
       if (
@@ -869,10 +893,6 @@ const restoreFailedReconfiguration$ = command(
       ) {
         return null;
       }
-      const restoredNotionConfig = restoredNotionEventConfig(
-        accountProjection,
-        args.persisted.previous,
-      );
       const currentTime = nowDate();
       const restorePatch = officialAutomationRestorePatch(
         args.persisted.previous,
@@ -896,16 +916,9 @@ const restoreFailedReconfiguration$ = command(
         .set({
           ...restorePatch,
           ...morningBrief.automation,
-          ...(accountProjection.kind === "locked"
-            ? {
-                eventConnectorId: accountProjection.eventConnectorId,
-                ...(restoredNotionConfig === null
-                  ? {}
-                  : { eventConfig: restoredNotionConfig }),
-              }
-            : {}),
-          ...restoredStripeEventConfig(
+          ...restoredAutomationAccountFields(
             accountProjection,
+            args.persisted.previous,
             restorePatch.eventConfig,
           ),
           enabled:
@@ -919,7 +932,7 @@ const restoreFailedReconfiguration$ = command(
           officialReconciliationStatus: "failed",
         })
         .where(eq(workflowAutomations.id, current.id))
-        .returning();
+        .returning(workflowAutomationColumns());
       if (!row) {
         return null;
       }
@@ -986,9 +999,9 @@ async function finalizeReconfiguration(
       return false;
     }
     const [current] = await tx
-      .select()
+      .select(workflowAutomationColumns())
       .from(workflowAutomations)
-      .where(eq(workflowAutomations.id, args.persisted.current.id))
+      .where(observedWorkflowAutomationCondition(args.persisted.current))
       .for("update")
       .limit(1);
     if (
@@ -1008,7 +1021,7 @@ async function finalizeReconfiguration(
         updatedAt: currentTime,
       })
       .where(eq(workflowAutomations.id, current.id))
-      .returning();
+      .returning(workflowAutomationColumns());
     if (!finalized) {
       return false;
     }
@@ -1091,9 +1104,9 @@ const pauseForReconfiguration$ = command(
         return null;
       }
       const [current] = await tx
-        .select()
+        .select(workflowAutomationColumns())
         .from(workflowAutomations)
-        .where(eq(workflowAutomations.id, args.automation.id))
+        .where(observedWorkflowAutomationCondition(args.automation))
         .for("update")
         .limit(1);
       if (!current || !sameAutomationBaseline(args.automation, current)) {
@@ -1123,7 +1136,7 @@ const pauseForReconfiguration$ = command(
           updatedAt: currentTime,
         })
         .where(eq(workflowAutomations.id, current.id))
-        .returning();
+        .returning(workflowAutomationColumns());
       if (!paused) {
         return null;
       }
@@ -1360,9 +1373,9 @@ async function stageAutomationStructureTransition(
       return null;
     }
     const [current] = await tx
-      .select()
+      .select(workflowAutomationColumns())
       .from(workflowAutomations)
-      .where(eq(workflowAutomations.id, args.automation.id))
+      .where(observedWorkflowAutomationCondition(args.automation))
       .for("update")
       .limit(1);
     if (
@@ -1398,7 +1411,7 @@ async function stageAutomationStructureTransition(
         updatedAt: currentTime,
       })
       .where(eq(workflowAutomations.id, current.id))
-      .returning();
+      .returning(workflowAutomationColumns());
     if (!staged) {
       throw new Error("Official Workflow automation disappeared");
     }
@@ -1626,7 +1639,7 @@ async function commitAutomationStructureTransition(
       officialReconciliationStatus: "current",
     })
     .where(eq(workflowAutomations.id, current.id))
-    .returning();
+    .returning(workflowAutomationColumns());
   if (!finalized) {
     throw new Error("Official Workflow automation disappeared");
   }
@@ -1634,6 +1647,19 @@ async function commitAutomationStructureTransition(
     await tx
       .delete(googleFormsAutomationCursors)
       .where(eq(googleFormsAutomationCursors.automationId, current.id));
+  }
+  const cursorPublication = googleFormsCursorPublicationStatement(
+    finalized,
+    args.preparation?.googleFormsSeedCursor ?? null,
+    currentTime,
+  );
+  if (cursorPublication !== null) {
+    const published = await tx.execute(cursorPublication);
+    if (published.rowCount !== 1) {
+      throw new Error(
+        "Google Forms structure watch disappeared before publication",
+      );
+    }
   }
   await upsertActiveIdentity(tx, finalized, currentTime);
   await tx
@@ -1698,9 +1724,9 @@ async function finalizeAutomationStructureTransition(
       return { kind: "superseded" };
     }
     const [current] = await tx
-      .select()
+      .select(workflowAutomationColumns())
       .from(workflowAutomations)
-      .where(eq(workflowAutomations.id, args.persisted.current.id))
+      .where(observedWorkflowAutomationCondition(args.persisted.current))
       .for("update")
       .limit(1);
     if (
@@ -2068,7 +2094,7 @@ async function markActiveAutomationFailed(
       return false;
     }
     const [current] = await tx
-      .select()
+      .select(workflowAutomationColumns())
       .from(workflowAutomations)
       .where(eq(workflowAutomations.id, args.automationId))
       .for("update")
@@ -2091,7 +2117,7 @@ async function markActiveAutomationFailed(
         updatedAt: currentTime,
       })
       .where(eq(workflowAutomations.id, current.id))
-      .returning();
+      .returning(workflowAutomationColumns());
     if (!failed) {
       return false;
     }
@@ -2472,7 +2498,7 @@ const removeDormantCreationOrphan$ = command(
         return { kind: "blocked" as const };
       }
       const [automation] = await tx
-        .select()
+        .select(workflowAutomationColumns())
         .from(workflowAutomations)
         .where(eq(workflowAutomations.id, args.reservationId))
         .for("update")
@@ -2599,7 +2625,7 @@ async function lockDormantMaterializationRows(
   >;
 } | null> {
   const [automation] = await db
-    .select()
+    .select(workflowAutomationColumns())
     .from(workflowAutomations)
     .where(eq(workflowAutomations.id, args.automationId))
     .for("update")
@@ -2818,7 +2844,7 @@ const discardDormantMaterialization$ = command(
           updatedAt: currentTime,
         })
         .where(eq(workflowAutomations.id, previous.id))
-        .returning();
+        .returning(workflowAutomationColumns());
       if (!current) {
         return null;
       }
@@ -3245,9 +3271,9 @@ async function pauseRemovedAutomationConfiguration(
       return undefined;
     }
     const [current] = await tx
-      .select()
+      .select(workflowAutomationColumns())
       .from(workflowAutomations)
-      .where(eq(workflowAutomations.id, args.automation.id))
+      .where(observedWorkflowAutomationCondition(args.automation))
       .for("update")
       .limit(1);
     if (!current || !sameAutomationBaseline(args.automation, current)) {
@@ -3275,7 +3301,7 @@ async function pauseRemovedAutomationConfiguration(
         updatedAt: currentTime,
       })
       .where(eq(workflowAutomations.id, current.id))
-      .returning();
+      .returning(workflowAutomationColumns());
     return row
       ? {
           previous: current,
@@ -3337,7 +3363,7 @@ async function deleteRemovedAutomationConfiguration(
       return false;
     }
     const [current] = await tx
-      .select()
+      .select(workflowAutomationColumns())
       .from(workflowAutomations)
       .where(eq(workflowAutomations.id, paused.current.id))
       .for("update")
