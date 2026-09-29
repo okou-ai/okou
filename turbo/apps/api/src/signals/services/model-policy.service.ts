@@ -33,6 +33,7 @@ import {
   getRunModelRouteAccess,
   RETIRED_RUN_MODEL_MESSAGE,
   type ModelProviderCredentialScope,
+  type OrgModelMode,
   type OrgModelPoliciesResponse,
   type OrgModelPolicy,
   type OrgModelPolicyRouteStatus,
@@ -50,6 +51,7 @@ import {
   modelProviderSurfaces,
 } from "@okouai/db/schema/model-provider-gateway";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
 import { runModelCatalog } from "@okouai/db/schema/run-model-catalog";
 import {
@@ -1211,12 +1213,18 @@ async function listOrgModelPolicies(
     }),
   );
   const workspaceDefault = selectWorkspaceDefaultPolicy(policies);
+  const [org] = await db
+    .select({ modelMode: orgMetadata.modelMode })
+    .from(orgMetadata)
+    .where(eq(orgMetadata.orgId, orgId))
+    .limit(1);
   const okouModelsEnabled = isFeatureEnabled(
     FeatureSwitchKey.OkouModels,
     featureSwitchContext,
   );
 
   return {
+    modelMode: org?.modelMode === "auto" ? "auto" : "custom",
     policies,
     revision: policyRevision(persistedRows),
     // Permanent since the personal subscription priority rollout completed.
@@ -1333,8 +1341,8 @@ export async function initializeOnboardingOrgModelPolicies(
   db: Db,
   orgId: string,
   userId: string,
-  provider: OnboardingSubscriptionProvider,
-): Promise<void> {
+  provider: OnboardingSubscriptionProvider | null,
+): Promise<boolean> {
   await lockPolicyWrites(db, orgId);
   const existing = await loadRows(db, orgId, true);
   const standardSeed = getDefaultOrgModelPolicySeed();
@@ -1364,10 +1372,17 @@ export async function initializeOnboardingOrgModelPolicies(
     );
   });
   if (existing.length > 0 && !hasOnlyStandardSeed) {
-    return;
+    return false;
   }
 
-  const seed = ONBOARDING_MODEL_POLICY_SEEDS[provider];
+  const seed =
+    provider === null
+      ? {
+          models: ["okou-1.0"] as const,
+          defaultModel: "okou-1.0" as const,
+          providerType: "built-in" as const,
+        }
+      : ONBOARDING_MODEL_POLICY_SEEDS[provider];
   await persistOrgModelPolicyUpdates({
     db,
     orgId,
@@ -1378,13 +1393,31 @@ export async function initializeOnboardingOrgModelPolicies(
         model,
         isDefault: model === seed.defaultModel,
         defaultProviderType: seed.providerType,
-        credentialScope: "member",
+        credentialScope: provider === null ? "org" : "member",
         modelProviderId: null,
         modelProviderSurfaceId: null,
       };
     }),
   });
+  return true;
 }
+
+export const updateOrgModelMode$ = command(
+  async (
+    { set },
+    params: { readonly orgId: string; readonly mode: OrgModelMode },
+    signal: AbortSignal,
+  ): Promise<OrgModelMode | null> => {
+    const db = set(writeDb$);
+    const [row] = await db
+      .update(orgMetadata)
+      .set({ modelMode: params.mode, updatedAt: nowDate() })
+      .where(eq(orgMetadata.orgId, params.orgId))
+      .returning({ modelMode: orgMetadata.modelMode });
+    signal.throwIfAborted();
+    return row?.modelMode === "auto" ? "auto" : row ? "custom" : null;
+  },
+);
 
 export const listOrgModelPolicies$ = command(
   async (

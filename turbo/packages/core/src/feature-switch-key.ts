@@ -76,4 +76,5 @@ export enum FeatureSwitchKey {
   AgentResponsibilitySetup = "agentResponsibilitySetup",
   HostedSiteDelete = "hostedSiteDelete",
   ComposerModelPanel = "composerModelPanel",
+  AutoModel = "autoModel",
 }

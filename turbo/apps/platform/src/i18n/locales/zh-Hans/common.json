@@ -4820,6 +4820,16 @@
         "upgradePro": "升级Pro后可用",
         "upgradeToPro": "升级到Pro"
       },
+      "autoMode": {
+        "active": "当前组织只可使用 Okou 1.0。个人模型连接会保留，但不会被使用。",
+        "cancel": "取消",
+        "confirm": "切换至 Auto Model",
+        "confirmDescription": "这将删除组织内所有自定义模型策略，仅保留 Okou 1.0。Model Provider 配置、成员的 BYOK 和个人订阅不会删除，但在 Auto Model 下不会使用。切回 Custom 后，被删除的策略不会自动恢复。",
+        "confirmTitle": "将此组织切换至 Auto Model？",
+        "description": "仅使用 Okou 1.0；关闭后可自定义模型。",
+        "failed": "切换模型模式失败。请刷新设置后重试。",
+        "title": "Auto Model"
+      },
       "deviceAuth": {
         "claude": {
           "approvalOpenError": "授权页面打不开。请手动打开链接，再把授权码粘贴到这里。",

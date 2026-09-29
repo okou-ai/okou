@@ -86,6 +86,31 @@ async function setupPanel(
   return await screen.findByRole("textbox", { name: "Message" });
 }
 
+test("Auto Model hides the composer picker only for members with its UI switch", async () => {
+  installRunChat({ selectedModel: "okou-1.0" });
+  configurePolicies(["okou-1.0"]);
+  context.mocks.data.orgModelMode("auto");
+  await setupPage({
+    context,
+    path: NEW_CHAT_PATH,
+    featureSwitches: {
+      [FeatureSwitchKey.ChatPreference]: true,
+      [FeatureSwitchKey.AutoModel]: true,
+    },
+  });
+  await screen.findByRole("textbox", { name: "Message" });
+  await waitFor(() => {
+    expect(
+      queryAllByRoleFast("button").some((button) => {
+        return (
+          button.getAttribute("aria-label")?.includes("Okou 1.0") ||
+          button.textContent?.includes("Okou 1.0")
+        );
+      }),
+    ).toBeFalsy();
+  });
+});
+
 test("Pick only chat models, with effort and Fast in the same panel", async () => {
   await setupPanel(["gpt-5.6-sol", "claude-sonnet-5"]);
   const panel = await openPanel("GPT 5.6 Sol, Max");

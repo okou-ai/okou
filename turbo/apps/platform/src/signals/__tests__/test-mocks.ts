@@ -63,7 +63,10 @@ import { setMockTelegramIntegration } from "../../mocks/handlers/api-integration
 import { setMockOnboardingStatus } from "../../mocks/handlers/api-onboarding.ts";
 import { setMockOrg } from "../../mocks/handlers/api-org.ts";
 import { setMockOrgMembers } from "../../mocks/handlers/api-org-members.ts";
-import { setMockOrgModelPolicies } from "../../mocks/handlers/api-org-model-policies.ts";
+import {
+  setMockOrgModelMode,
+  setMockOrgModelPolicies,
+} from "../../mocks/handlers/api-org-model-policies.ts";
 import { setMockOrgModelProviders } from "../../mocks/handlers/api-org-model-providers.ts";
 import { setMockPersonalModelProviders } from "../../mocks/handlers/api-personal-model-providers.ts";
 import { setMockUserModelPreference } from "../../mocks/handlers/api-user-model-preference.ts";
@@ -387,6 +390,9 @@ export function createTestMocks(getSignal: () => AbortSignal) {
         ...args: Parameters<typeof setMockOrgModelPolicies>
       ) => {
         setMockOrgModelPolicies(...args);
+      },
+      orgModelMode: (...args: Parameters<typeof setMockOrgModelMode>) => {
+        setMockOrgModelMode(...args);
       },
       personalModelProviders: (
         ...args: Parameters<typeof setMockPersonalModelProviders>

@@ -1733,7 +1733,12 @@ export const updateOrgModelPolicySchema = z.object({
 
 export type UpdateOrgModelPolicy = z.infer<typeof updateOrgModelPolicySchema>;
 
+export const orgModelModeSchema = z.enum(["auto", "custom"]);
+export type OrgModelMode = z.infer<typeof orgModelModeSchema>;
+
 export const orgModelPoliciesResponseSchema = z.object({
+  // Optional during the API/App rolling deployment; older APIs omit the mode.
+  modelMode: orgModelModeSchema.optional(),
   revision: z.string(),
   writePreconditionRequired: z.boolean(),
   policies: z.array(orgModelPolicySchema),

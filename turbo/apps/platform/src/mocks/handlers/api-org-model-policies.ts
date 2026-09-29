@@ -5,6 +5,7 @@ import {
   isBuiltInModelProviderType,
   getDefaultOrgModelPolicySeed,
   type OrgModelPolicy,
+  type OrgModelMode,
   type OrgModelPoliciesResponse,
   type UpdateOrgModelPolicy,
 } from "@okouai/api-contracts/contracts/model-providers";
@@ -38,6 +39,7 @@ function makeDefaultPolicies(): OrgModelPolicy[] {
 }
 
 let mockOrgModelPolicies: OrgModelPolicy[] = makeDefaultPolicies();
+let mockOrgModelMode: OrgModelMode = "custom";
 
 function response(): OrgModelPoliciesResponse {
   const policies = [...mockOrgModelPolicies];
@@ -51,6 +53,7 @@ function response(): OrgModelPoliciesResponse {
     }),
   );
   return {
+    modelMode: mockOrgModelMode,
     revision: policies
       .map((policy) => {
         return `${policy.id}:${policy.updatedAt}`;
@@ -73,6 +76,11 @@ function response(): OrgModelPoliciesResponse {
 
 export function resetMockOrgModelPolicies(): void {
   mockOrgModelPolicies = makeDefaultPolicies();
+  mockOrgModelMode = "custom";
+}
+
+export function setMockOrgModelMode(mode: OrgModelMode): void {
+  mockOrgModelMode = mode;
 }
 
 export function setMockOrgModelPolicies(policies: OrgModelPolicy[]): void {
@@ -106,6 +114,11 @@ function applyUpdate(policy: UpdateOrgModelPolicy): OrgModelPolicy {
 export const apiOrgModelPoliciesHandlers = [
   mockApi(modelPoliciesMainContract.list, ({ respond }) => {
     return respond(200, response());
+  }),
+
+  mockApi(modelPoliciesMainContract.updateMode, ({ body, respond }) => {
+    mockOrgModelMode = body.mode;
+    return respond(200, { mode: body.mode });
   }),
 
   mockApi(modelPoliciesMainContract.update, ({ body, respond }) => {

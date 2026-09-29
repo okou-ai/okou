@@ -4902,6 +4902,16 @@
         "upgradePro": "Actualizar a Pro para usarlo",
         "upgradeToPro": "Actualizar a Pro"
       },
+      "autoMode": {
+        "active": "Solo Okou 1.0 está disponible en este espacio de trabajo. Las conexiones personales se conservan, pero no se utilizan.",
+        "cancel": "Cancelar",
+        "confirm": "Cambiar a Auto Model",
+        "confirmDescription": "Se eliminarán todas las políticas de modelos personalizadas y solo quedará Okou 1.0. Se conservarán las configuraciones de Model Provider, el BYOK de los miembros y las suscripciones personales, pero no se utilizarán en Auto Model. Las políticas eliminadas no se restaurarán al volver a Custom.",
+        "confirmTitle": "¿Cambiar este espacio de trabajo a Auto Model?",
+        "description": "Usa solo Okou 1.0 o desactívalo para personalizar los modelos.",
+        "failed": "No se pudo cambiar el modo de modelos. Actualiza la configuración e inténtalo de nuevo.",
+        "title": "Auto Model"
+      },
       "deviceAuth": {
         "claude": {
           "approvalOpenError": "La página de aprobación no se pudo abrir. Usa el enlace manualmente y pega el código aquí.",

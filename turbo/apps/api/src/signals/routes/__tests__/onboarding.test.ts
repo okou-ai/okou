@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 import {
   onboardingCompleteContract,
@@ -314,6 +316,60 @@ describe("POST /api/onboarding/complete", () => {
     expect(policies.body.workspaceDefaultModel).toBe(
       DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
     );
+  });
+
+  it("seeds only Okou 1.0 for an Auto-enabled admin who skips subscriptions", async () => {
+    const actor = orgActor();
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.AutoModel]: true,
+    });
+    mocks.clerk.session(actor.userId, actor.orgId, actor.role);
+    await accept(
+      onboardingCompleteClient().complete({
+        headers: authHeaders(),
+        body: {},
+      }),
+      [200],
+    );
+    const response = await accept(
+      modelPoliciesClient().list({ headers: authHeaders() }),
+      [200],
+    );
+    expect(response.body.modelMode).toBe("auto");
+    expect(response.body.policies).toEqual([
+      expect.objectContaining({
+        model: "okou-1.0",
+        isDefault: true,
+        defaultProviderType: "built-in",
+        credentialScope: "org",
+      }),
+    ]);
+  });
+
+  it("keeps subscription onboarding in Custom for an Auto-enabled admin", async () => {
+    const actor = orgActor();
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.AutoModel]: true,
+    });
+    mocks.clerk.session(actor.userId, actor.orgId, actor.role);
+    await accept(
+      onboardingCompleteClient().complete({
+        headers: authHeaders(),
+        query: { modelProvider: "codex" },
+        body: {},
+      }),
+      [200],
+    );
+    const response = await accept(
+      modelPoliciesClient().list({ headers: authHeaders() }),
+      [200],
+    );
+    expect(response.body.modelMode).toBe("custom");
+    expect(
+      response.body.policies.map((policy) => {
+        return policy.model;
+      }),
+    ).toEqual(["gpt-6-astra", "gpt-6-sol", "gpt-6-luna"]);
   });
 
   it.each([

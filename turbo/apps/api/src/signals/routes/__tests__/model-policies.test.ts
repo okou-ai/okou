@@ -208,6 +208,74 @@ async function listSeededLimitedFreePolicies(): Promise<{
 }
 
 describe("GET/PUT /api/model-policies", () => {
+  it("keeps the org mode separate from policies and exposes Auto policies to members without the switch", async () => {
+    const fixture = seedFixture();
+    useSession(fixture);
+    const client = apiClient();
+    const initial = await accept(
+      client.list({ headers: authHeaders() }),
+      [200],
+    );
+    expect(initial.body.modelMode).toBe("custom");
+
+    const unavailable = await client.updateMode({
+      headers: authHeaders(),
+      body: { mode: "auto" },
+    });
+    expect(unavailable.status).toBe(403);
+    await updateFeatureSwitchesForUser(context, fixture, {
+      [FeatureSwitchKey.AutoModel]: true,
+    });
+    useSession(fixture);
+
+    await accept(
+      client.update({
+        headers: authHeaders(),
+        body: {
+          revision: initial.body.revision,
+          policies: [makeBuiltInPolicy("okou-1.0", true)],
+        },
+      }),
+      [200],
+    );
+    const changed = await accept(
+      client.list({ headers: authHeaders() }),
+      [200],
+    );
+    expect(changed.body.modelMode).toBe("custom");
+    expect(
+      changed.body.policies.map((policy) => {
+        return policy.model;
+      }),
+    ).toEqual(["okou-1.0"]);
+
+    await accept(
+      client.updateMode({
+        headers: authHeaders(),
+        body: { mode: "auto" },
+      }),
+      [200],
+    );
+    const memberFixture = { ...fixture, userId: `user_${randomUUID()}` };
+    useSession(memberFixture, "org:member");
+    const member = await accept(client.list({ headers: authHeaders() }), [200]);
+    expect(member.body.modelMode).toBe("auto");
+    expect(member.body.workspaceDefaultModel).toBe("okou-1.0");
+    expect(
+      member.body.policies.map((policy) => {
+        return policy.model;
+      }),
+    ).toEqual(["okou-1.0"]);
+    expect(
+      (
+        await client.updateMode({
+          headers: authHeaders(),
+          body: { mode: "custom" },
+        })
+      ).status,
+    ).toBe(403);
+  });
+
   it("filters only the Add Model projection with a personal switch", async () => {
     const fixture = await seedFixture();
     useSession(fixture);

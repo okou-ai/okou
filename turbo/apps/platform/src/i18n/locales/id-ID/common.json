@@ -4820,6 +4820,16 @@
         "upgradePro": "Upgrade ke Pro untuk menggunakan",
         "upgradeToPro": "Upgrade ke Pro"
       },
+      "autoMode": {
+        "active": "Hanya Okou 1.0 yang tersedia di ruang kerja ini. Koneksi model pribadi disimpan tetapi tidak digunakan.",
+        "cancel": "Batal",
+        "confirm": "Beralih ke Auto Model",
+        "confirmDescription": "Semua kebijakan model kustom akan dihapus dan hanya Okou 1.0 yang tersisa. Konfigurasi Model Provider, BYOK anggota, dan langganan pribadi tetap disimpan tetapi tidak digunakan dalam Auto Model. Kebijakan yang dihapus tidak kembali saat beralih ke Custom.",
+        "confirmTitle": "Beralih ke Auto Model untuk ruang kerja ini?",
+        "description": "Gunakan hanya Okou 1.0, atau nonaktifkan untuk menyesuaikan model.",
+        "failed": "Mode model tidak dapat diubah. Segarkan pengaturan dan coba lagi.",
+        "title": "Auto Model"
+      },
       "deviceAuth": {
         "claude": {
           "approvalOpenError": "Halaman persetujuan tidak dapat dibuka. Gunakan tautan secara manual dan tempelkan kode di sini.",

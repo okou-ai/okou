@@ -4838,6 +4838,16 @@
         "upgradePro": "Aktualisieren Sie Pro, um es zu verwenden",
         "upgradeToPro": "Upgrade auf Pro"
       },
+      "autoMode": {
+        "active": "In diesem Workspace ist nur Okou 1.0 verfügbar. Persönliche Modellverbindungen bleiben gespeichert, werden aber nicht verwendet.",
+        "cancel": "Abbrechen",
+        "confirm": "Zu Auto Model wechseln",
+        "confirmDescription": "Alle benutzerdefinierten Modellrichtlinien werden gelöscht; nur Okou 1.0 bleibt. Model-Provider-Konfigurationen, BYOK der Mitglieder und persönliche Abonnements bleiben erhalten, werden in Auto Model aber nicht verwendet. Gelöschte Richtlinien kehren beim Wechsel zu Custom nicht zurück.",
+        "confirmTitle": "Diesen Workspace auf Auto Model umstellen?",
+        "description": "Nur Okou 1.0 verwenden; zum Anpassen der Modelle deaktivieren.",
+        "failed": "Der Modellmodus konnte nicht geändert werden. Einstellungen aktualisieren und erneut versuchen.",
+        "title": "Auto Model"
+      },
       "deviceAuth": {
         "claude": {
           "approvalOpenError": "Die Genehmigungsseite konnte nicht geöffnet werden. Verwenden Sie den Link manuell und fügen Sie den Code hier ein.",

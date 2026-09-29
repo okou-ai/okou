@@ -111,6 +111,7 @@ import {
 import { ProviderIcon } from "../settings/provider-icons.tsx";
 import { ProBadge } from "../model-provider-picker.tsx";
 import { SettingsSectionHeading } from "../settings/settings-section-heading.tsx";
+import { OrgModelModeControl } from "./org-model-mode-control.tsx";
 
 function isOAuthMemberType(type: ModelProviderType): boolean {
   return type === "claude-code-oauth-token" || type === "codex-oauth-token";
@@ -1800,6 +1801,24 @@ export function OrgModelPoliciesSection() {
     return null;
   }
 
+  if (data.modelMode === "auto") {
+    return (
+      <section className="flex flex-col gap-4">
+        <OrgModelModeControl data={data} />
+        {data.policies.map((policy) => {
+          return (
+            <div
+              key={policy.id}
+              className="rounded-xl border border-surface-border bg-card p-5"
+            >
+              {policy.modelLabel}
+            </div>
+          );
+        })}
+      </section>
+    );
+  }
+
   const policies = data.policies;
   const visiblePolicies = policies.filter((policy) => {
     return ACTIVE_RUN_MODELS.includes(policy.model);
@@ -1854,6 +1873,7 @@ export function OrgModelPoliciesSection() {
 
   return (
     <section className="flex flex-col gap-6">
+      <OrgModelModeControl data={data} />
       <DefaultModelRow
         policies={visiblePolicies}
         workspaceDefaultModel={data.workspaceDefaultModel}

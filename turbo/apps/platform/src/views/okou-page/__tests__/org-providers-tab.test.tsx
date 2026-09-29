@@ -1,4 +1,5 @@
 import userEvent from "@testing-library/user-event";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
 import {
   ACTIVE_RUN_MODELS,
@@ -34,6 +35,38 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
 
 const context = testContext();
+
+test("switches to Auto Model after confirmation and keeps provider settings", async () => {
+  mockAdminOrg();
+  context.mocks.data.orgModelProviders([anthropicApiKeyProvider()]);
+  await setupPage({
+    context,
+    path: "/agents?settings=model",
+    featureSwitches: { [FeatureSwitchKey.AutoModel]: true },
+  });
+  const toggle = await screen.findByRole("switch", { name: "Auto Model" });
+  expect(toggle).not.toBeChecked();
+  click(toggle);
+  const confirmation = await screen.findByRole("dialog", {
+    name: "Switch this workspace to Auto Model?",
+  });
+  expect(
+    within(confirmation).getByText(/Model Provider configurations/),
+  ).toBeVisible();
+  click(routeButtonByName("Switch to Auto Model", confirmation));
+  await waitFor(() => {
+    expect(toggle).toBeChecked();
+  });
+  expect(screen.getByText("Okou 1.0")).toBeVisible();
+  expect(
+    queryAllByRoleFast("button").some((button) => {
+      return button.textContent?.trim() === "Add model";
+    }),
+  ).toBeFalsy();
+  expect(
+    screen.getByRole("heading", { name: "Provider connections" }),
+  ).toBeVisible();
+});
 
 function routeButtonByName(
   name: string | RegExp,

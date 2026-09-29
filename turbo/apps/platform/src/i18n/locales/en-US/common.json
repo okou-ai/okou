@@ -4830,6 +4830,16 @@
         "upgradePro": "Upgrade Pro to use",
         "upgradeToPro": "Upgrade to Pro"
       },
+      "autoMode": {
+        "active": "Only Okou 1.0 is available to this workspace. Personal model connections are saved but not used.",
+        "cancel": "Cancel",
+        "confirm": "Switch to Auto Model",
+        "confirmDescription": "This deletes all custom model policies and leaves only Okou 1.0. Model Provider configurations and members' BYOK and subscriptions are kept, but are not used in Auto Model. Deleted policies will not return when you switch back to Custom.",
+        "confirmTitle": "Switch this workspace to Auto Model?",
+        "description": "Use only Okou 1.0, or switch off to customize models.",
+        "failed": "Could not change the model mode. Refresh settings and try again.",
+        "title": "Auto Model"
+      },
       "deviceAuth": {
         "claude": {
           "approvalOpenError": "The approval page could not be opened. Use the link manually and paste the code here.",
