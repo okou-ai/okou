@@ -6022,7 +6022,6 @@ const activateInactiveGoogleFormsAutomation$ = command(
   ): Promise<AutomationResult> => {
     const connectorId = await set(
       readGoogleFormsActivationAccount$,
-      reprojectGoogleFormsAutomationOwnership$,
       {
         orgId: args.previousAutomation.orgId,
         userId: args.previousAutomation.ownerUserId,
