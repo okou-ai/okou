@@ -21,6 +21,16 @@ function NewThreadDeliveryItem({
   const [retryState, retry] = useLoadableSet(retryNewThreadDelivery$);
   const signal = useGet(rootSignal$);
   const phase = intent.phase === "create" ? "Chat creation" : "First message";
+  const savedText =
+    intent.body.userMessage?.parts
+      .flatMap((part) => {
+        return part.type === "text" ? [part.text] : [];
+      })
+      .join("\n") ?? intent.body.prompt;
+  const filenames =
+    intent.body.userMessage?.parts.flatMap((part) => {
+      return part.type === "file" ? [part.filenameSnapshot] : [];
+    }) ?? [];
   const status =
     intent.status === "rejected"
       ? intent.rejection === "authentication"
@@ -68,6 +78,19 @@ function NewThreadDeliveryItem({
       {!navigator.locks &&
       (intent.status === "rejected" || intent.status === "uncertain") ? (
         <span>Safe retry requires a browser with Web Locks support.</span>
+      ) : null}
+      {intent.status === "rejected" || intent.status === "uncertain" ? (
+        <details className="w-full min-w-0">
+          <summary className="cursor-pointer underline">
+            Review saved message
+          </summary>
+          <p className="mt-1 whitespace-pre-wrap break-words">{savedText}</p>
+          {filenames.length > 0 ? (
+            <p className="mt-1 break-words">
+              Uploaded files: {filenames.join(", ")}
+            </p>
+          ) : null}
+        </details>
       ) : null}
     </div>
   );

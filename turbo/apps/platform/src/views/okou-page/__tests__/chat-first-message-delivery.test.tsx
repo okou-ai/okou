@@ -180,7 +180,11 @@ test("A rejected thread creation keeps the first message available without posti
   await waitFor(() => {
     expect(screen.getByText(/Chat creation rejected/u)).toBeInTheDocument();
   });
-  expect(screen.getByText("Do not lose the first message")).toBeInTheDocument();
+  expect(
+    screen.getAllByText("Do not lose the first message").some((element) => {
+      return !element.closest("[data-new-thread-delivery-id]");
+    }),
+  ).toBe(true);
   expect(sentPrompt).toBe(false);
 });
 
@@ -214,7 +218,11 @@ test("A rejected first prompt is distinct from a successful thread creation", as
   await waitFor(() => {
     expect(screen.getByText(/First message rejected/u)).toBeInTheDocument();
   });
-  expect(screen.getByText("Recover the first prompt")).toBeInTheDocument();
+  expect(
+    screen.getAllByText("Recover the first prompt").some((element) => {
+      return !element.closest("[data-new-thread-delivery-id]");
+    }),
+  ).toBe(true);
 });
 
 test("A remote draft-clear error cannot strand the prompt after thread creation", async () => {
@@ -669,6 +677,8 @@ test("Uploaded file references survive prompt rejection in the original recovery
   });
   expect(saved.createBody.model).toBeDefined();
   expect(saved.body.prompt).toBe("Read my brief");
+  await user.click(screen.getByText("Review saved message"));
+  expect(screen.getByText("Uploaded files: brief.txt")).toBeVisible();
 });
 
 test("Unavailable recovery storage prevents first-message side effects", async () => {
