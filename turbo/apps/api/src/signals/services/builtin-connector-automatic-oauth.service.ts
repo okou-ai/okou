@@ -1133,7 +1133,8 @@ async function markReconnect(
 async function handleAutomaticRefreshFailure(
   context: {
     readonly db: Db;
-    readonly store: ReturnType<typeof dcrStore>;
+    readonly orgId: string;
+    readonly contract: BuiltinAutomaticContract;
     readonly binding: AutomaticRefreshBinding;
     readonly account: ObservedAutomaticAccount;
     readonly observedRefreshToken: {
@@ -1148,7 +1149,17 @@ async function handleAutomaticRefreshFailure(
     isAutomaticOAuthInvalidClient(error) &&
     binding.registrationMethod === "dcr"
   ) {
-    await context.store.retire(binding.dcrRegistration.id);
+    // Retirement locks every linked owner's accounts; it must run in its own
+    // transaction after the lifecycle key, as ordinary account writers do.
+    await context.db.transaction(async (tx) => {
+      await lockBuiltinConnectorAutomaticLifecycle(
+        tx,
+        contractOwner(context.orgId, context.contract),
+      );
+      await dcrStore(tx, context.orgId, context.contract).retire(
+        binding.dcrRegistration.id,
+      );
+    });
     return { kind: "unavailable", reason: "reconnect" };
   }
   if (
@@ -1215,7 +1226,8 @@ async function refreshAutomaticOutsideTransaction(
     return await handleAutomaticRefreshFailure(
       {
         db: args.db,
-        store,
+        orgId: args.orgId,
+        contract,
         binding,
         account,
         observedRefreshToken,

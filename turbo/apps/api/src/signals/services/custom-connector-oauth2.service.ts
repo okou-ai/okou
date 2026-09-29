@@ -11,6 +11,7 @@ import { feishuPlatformFromTokenUrl } from "@okouai/core/feishu-platform";
 import { Buffer } from "node:buffer";
 import { createHash, randomBytes } from "node:crypto";
 
+import { runAfterSameProcessRefresh } from "./same-process-refresh";
 import { command } from "ccstate";
 import { and, eq, exists, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -2013,10 +2014,10 @@ async function handleAutomaticOAuthRefreshFailure(args: {
     isAutomaticOAuthInvalidClient(args.error) &&
     args.binding.registrationMethod === "dcr"
   ) {
-    await retireCustomConnectorDcrRegistration(
-      args.db,
-      args.binding.dcrRegistration.id,
-    );
+    const registrationId = args.binding.dcrRegistration.id;
+    await args.db.transaction(async (tx) => {
+      await retireCustomConnectorDcrRegistration(tx, registrationId);
+    });
     return { kind: "reconnect-required" };
   }
   if (
@@ -2091,7 +2092,12 @@ async function refreshAutomaticOAuthAccessToken(
     binding.dcrRegistration.expiresAt !== null &&
     binding.dcrRegistration.expiresAt <= nowDate()
   ) {
-    await retireCustomConnectorDcrRegistration(db, binding.dcrRegistration.id);
+    await db.transaction(async (tx) => {
+      await retireCustomConnectorDcrRegistration(
+        tx,
+        binding.dcrRegistration.id,
+      );
+    });
     return { kind: "reconnect-required" };
   }
   const refreshToken = await decryptStoredSecretValue(
@@ -2247,11 +2253,15 @@ export async function resolveCurrentCustomConnectorOAuth2AccessToken(
     connector.authMode === "automatic"
       ? resolveAutomaticCustomConnectorOAuth2AccessToken
       : resolveCustomConnectorOAuth2AccessToken;
-  return await resolve(
-    {
-      ...args,
-      connector,
+  return await runAfterSameProcessRefresh(
+    JSON.stringify([
+      "custom-oauth",
+      args.orgId,
+      args.userId,
+      args.memberConnectorId,
+    ]),
+    () => {
+      return resolve({ ...args, connector }, signal);
     },
-    signal,
   );
 }
