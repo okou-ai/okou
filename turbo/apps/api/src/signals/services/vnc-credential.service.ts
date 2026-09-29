@@ -246,10 +246,12 @@ export const createVncCredential$ = command(
     if (!transaction.ok) {
       return set(
         resolveVncCreationConflict$,
-        args.owner,
-        "credential",
-        args.id,
-        transaction.error,
+        {
+          owner: args.owner,
+          resource: "credential",
+          id: args.id,
+          error: transaction.error,
+        },
         signal,
       );
     }

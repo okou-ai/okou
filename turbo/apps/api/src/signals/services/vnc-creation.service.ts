@@ -40,12 +40,15 @@ export const inspectVncCreationId$ = command(
 export const resolveVncCreationConflict$ = command(
   async (
     { set },
-    owner: VncOwner,
-    resource: VncCreationResource,
-    id: string,
-    error: unknown,
+    args: {
+      readonly owner: VncOwner;
+      readonly resource: VncCreationResource;
+      readonly id: string;
+      readonly error: unknown;
+    },
     signal: AbortSignal,
   ): Promise<VncResult<undefined>> => {
+    const { owner, resource, id, error } = args;
     const table = resource === "connection" ? vncConnections : vncCredentials;
     if (!isUniqueViolation(error, `${getTableName(table)}_pkey`)) {
       throw error;

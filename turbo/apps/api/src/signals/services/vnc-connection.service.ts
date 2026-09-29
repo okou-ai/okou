@@ -235,6 +235,24 @@ function validSelectedCredentialProfile(
   );
 }
 
+function credentialDatabaseValues(credential: CredentialMetadata | null) {
+  return {
+    credentialId: credential?.id ?? null,
+    authMethod: credential?.authMethod ?? ("none" as const),
+  };
+}
+
+function validUpdatedCredentialProfile(
+  currentCredentialId: string | null,
+  credential: UpdateVncConnectionRequest["credential"],
+  securityType: Metadata["securityType"],
+) {
+  const credentialless = securityType === "x509_none";
+  return credential === undefined
+    ? credentialless === (currentCredentialId === null)
+    : credentialless === "type" in credential;
+}
+
 interface CreateVncConnectionArgs {
   readonly memberCreatedAt: string;
   readonly owner: VncOwner;
@@ -394,8 +412,7 @@ export const createVncConnection$ = command(
             host: host.value,
             port: args.body.port,
             ...transport.value,
-            credentialId: credential?.id ?? null,
-            authMethod: credential?.authMethod ?? "none",
+            ...credentialDatabaseValues(credential),
             ...security.value,
           })
           .returning(metadata);
@@ -409,10 +426,12 @@ export const createVncConnection$ = command(
     if (!transaction.ok) {
       return set(
         resolveVncCreationConflict$,
-        args.owner,
-        "connection",
-        args.body.id,
-        transaction.error,
+        {
+          owner: args.owner,
+          resource: "connection",
+          id: args.body.id,
+          error: transaction.error,
+        },
         signal,
       );
     }
@@ -502,12 +521,12 @@ function resolveVncConnectionUpdate(
   if (!route.ok) {
     return route;
   }
-  const credentialless = securityType === "x509_none";
   if (
-    (args.body.credential !== undefined &&
-      credentialless !== "type" in args.body.credential) ||
-    (credentialless !== (current.credentialId === null) &&
-      args.body.credential === undefined)
+    !validUpdatedCredentialProfile(
+      current.credentialId,
+      args.body.credential,
+      securityType,
+    )
   ) {
     return vncFailure("profileMismatch");
   }
@@ -624,8 +643,7 @@ export const updateVncConnection$ = command(
           host: newHost,
           port: newPort,
           ...transport.value,
-          credentialId: credential?.id ?? null,
-          authMethod: credential?.authMethod ?? "none",
+          ...credentialDatabaseValues(credential),
           ...security?.value,
           generation: current.generation + 1,
           updatedAt: nowDate(),
