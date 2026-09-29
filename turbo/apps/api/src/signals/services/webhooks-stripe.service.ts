@@ -1268,13 +1268,21 @@ async function handleUsageAllowanceInvoicePaid(
           ),
         )
         .returning({ orgId: orgUsageAllowanceEntitlements.orgId });
-      await expireActiveUsageAllowanceWindows(tx, {
-        orgIds: rows.map((row) => {
-          return row.orgId;
-        }),
-        at: canceledAt,
-        updatedAt: canceledAt,
-      });
+      await tx
+        .update(orgUsageAllowanceWindows)
+        .set(expiredAllowanceWindowValues(canceledAt))
+        .where(
+          and(
+            inArray(
+              orgUsageAllowanceWindows.orgId,
+              rows.map((row) => {
+                return row.orgId;
+              }),
+            ),
+            lte(orgUsageAllowanceWindows.startsAt, canceledAt),
+            gt(orgUsageAllowanceWindows.expiresAt, canceledAt),
+          ),
+        );
     });
     return { handled: true, drainOrgId: details.orgId };
   }
@@ -4259,6 +4267,13 @@ function allowanceSubscriptionPublication(
   };
 }
 
+function expiredAllowanceWindowValues(at: Date) {
+  return {
+    expiresAt: sql`GREATEST(${timestampWithoutTimeZone(at)}::timestamp, ${orgUsageAllowanceWindows.startsAt} + INTERVAL '1 millisecond')`,
+    updatedAt: at,
+  };
+}
+
 function currentAllowanceWindowsWhere(orgId: string, at: Date) {
   return and(
     eq(orgUsageAllowanceWindows.orgId, orgId),
@@ -4328,10 +4343,7 @@ const publishUsageAllowanceSubscription$ = command(
       if (publication.terminal) {
         await tx
           .update(orgUsageAllowanceWindows)
-          .set({
-            expiresAt: sql`GREATEST(${timestampWithoutTimeZone(at)}::timestamp, ${orgUsageAllowanceWindows.startsAt} + INTERVAL '1 millisecond')`,
-            updatedAt: at,
-          })
+          .set(expiredAllowanceWindowValues(at))
           .where(
             and(windowScope, inArray(orgUsageAllowanceWindows.id, windowIds)),
           );
@@ -4830,13 +4842,21 @@ async function handleSubscriptionDeletedLegacy(
         eq(orgUsageAllowanceEntitlements.stripeSubscriptionId, subscription.id),
       )
       .returning({ orgId: orgUsageAllowanceEntitlements.orgId });
-    await expireActiveUsageAllowanceWindows(tx, {
-      orgIds: rows.map((row) => {
-        return row.orgId;
-      }),
-      at: canceledAt,
-      updatedAt: canceledAt,
-    });
+    await tx
+      .update(orgUsageAllowanceWindows)
+      .set(expiredAllowanceWindowValues(canceledAt))
+      .where(
+        and(
+          inArray(
+            orgUsageAllowanceWindows.orgId,
+            rows.map((row) => {
+              return row.orgId;
+            }),
+          ),
+          lte(orgUsageAllowanceWindows.startsAt, canceledAt),
+          gt(orgUsageAllowanceWindows.expiresAt, canceledAt),
+        ),
+      );
     return rows;
   });
   const concurrencyRows = await db
