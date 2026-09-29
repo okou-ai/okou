@@ -27,15 +27,13 @@ and its function, leaving ten application triggers in the proposed R1 schema.
 Retirement of these seven triggers still requires **unfinished replacement
 protocols**, not only outgoing-version drain. Both Run creation paths in
 `agent-run-create.service.ts` still depend on trigger-side attribution
-publication. The Social settlement insertion still uses `managedValues` in
-`managed-usage-record.ts`, which supplies `missing_run` for an existing Run and
-relies on the trigger to complete the context and anchor. OpenRouter, image
+publication. OpenRouter, image
 usage, voice, Runner telemetry, Pi Stage 1, hourly compaction and operator
 linkage also need a complete explicit capture/observation audit. Existing
 attribution readers and the retained convergence fallbacks do not replace
 these writes.
 
-Two bounded producer changes are implemented:
+Three bounded producer changes are implemented:
 
 - `createImageGenerationJob$` supplies both `billing_run_id` and its explicit
   `run`/`runless` context in the existing single job INSERT. Status, provider
@@ -53,10 +51,16 @@ Two bounded producer changes are implemented:
   row validates original organization/user/start/source and only fills unknown
   thread grouping, preserving captured identity and observed history. A
   duplicate event does not add a second usage receipt or charge.
+- Social's `commitUsageBatch$` now directly performs the same canonical capture
+  before wallet ownership. A bounded SQL publication inserts the receipt and
+  sets observed only for an inserted event with `run` context. Job claim, usage,
+  credit and allowance settlement, and reservation release remain in the same
+  transaction. Replayed idempotency keys do not insert or observe another event.
+  Builders receive ordinary values only; no transaction or database handle is
+  passed out of the command. The existing Social API settlement tests remain.
 
 The standalone managed path commits before financial settlement as before;
-Social's combined financial commit is a different writer and is not claimed
-complete by this change. No billing trigger is removed. Existing public API
+Social keeps its combined financial commit. No billing trigger is removed. Existing public API
 coverage for managed Run billing display, runless allowance consumption and
 image webhook completion remains; behavioral verification belongs to the
 integrated PR pipeline.

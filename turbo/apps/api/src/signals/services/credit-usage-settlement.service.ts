@@ -24,11 +24,17 @@ import {
   settlementPricingQuery,
 } from "./credit-usage-batch";
 import { socialDataJobs } from "@okouai/db/schema/social-data-job";
+import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
+import { receiptQuery } from "./managed-usage-record";
 import {
-  managedRunQuery,
-  managedValues,
-  receiptQuery,
-} from "./managed-usage-record";
+  managedAttributionQuery,
+  managedAttributionWrite,
+  managedBillingRunQuery,
+} from "./managed-usage-attribution";
+import {
+  capturedManagedAttribution,
+  managedUsagePublicationSql,
+} from "./managed-usage-publication";
 import {
   socialJobQuery,
   socialClaimUnavailable,
@@ -46,7 +52,7 @@ import { writeDb$ } from "../external/db";
 import { usagePricingResolution$ } from "../context/usage-pricing-resolution";
 import {
   claimUsageWhere,
-  initialSettlementObservation,
+  settlementObservation,
   emptySettlementReceipt,
   hasNoStandaloneUsage,
   planUsageCharges,
@@ -92,8 +98,7 @@ const commitUsageBatch$ = command(
   async ({ set }, args: SettlementBatchArgs, signal: AbortSignal) => {
     const { orgId, refresh, batch } = args;
     const db = set(writeDb$);
-    const startedAt = performance.now();
-    const work = { ...initialSettlementObservation() };
+    const { startedAt, work } = settlementObservation(performance.now());
     const result = await db.transaction(async (tx) => {
       await tx.execute(usageEventCompactionLockSql("shared"));
       work.lockWaitMs = Math.round(performance.now() - startedAt);
@@ -106,14 +111,23 @@ const commitUsageBatch$ = command(
       const social = checkedSocialSettlementPlan(batch.social, job);
       const managed = social.usage;
       await tx.execute(orgCreditCompatibilityLockSql(orgId));
-      const [run] = managed
-        ? await tx.select().from(managedRunQuery(managed))
-        : [];
       if (managed) {
-        await tx
-          .insert(usageEvent)
-          .values(managedValues(managed, run))
-          .onConflictDoNothing({ target: usageEvent.idempotencyKey });
+        const [run] = await tx
+          .select()
+          .from(managedBillingRunQuery(managed.actor.runId));
+        let [attribution] = await tx
+          .select()
+          .from(managedAttributionQuery(managed.actor.runId));
+        if (run && !attribution) {
+          const capture = managedAttributionWrite(managed, run);
+          const [captured] = await tx
+            .insert(billingRunAttribution)
+            .values(capture.values)
+            .onConflictDoUpdate(capture.conflict)
+            .returning({ runId: billingRunAttribution.runId });
+          attribution = capturedManagedAttribution(run, captured);
+        }
+        await tx.execute(managedUsagePublicationSql(managed, run, attribution));
       }
       // Parent ownership precedes usage and its allocation FK rows, matching
       // deletion, launch activation and compaction. Own parents before the
@@ -125,8 +139,8 @@ const commitUsageBatch$ = command(
       const [wallet] = await tx.select().from(walletQuery(orgId));
       const [entitlement] = await tx.select().from(entitlementQuery(orgId));
       const at = nowDate();
-      work.orgLockWaitMs =
-        Math.round(performance.now() - startedAt) - work.lockWaitMs;
+      const acquiredAt = Math.round(performance.now() - startedAt);
+      work.orgLockWaitMs = acquiredAt - work.lockWaitMs;
       const events = social.processPending
         ? await tx
             .update(usageEvent)
@@ -134,11 +148,7 @@ const commitUsageBatch$ = command(
             .where(claimUsageWhere(orgId, parents, batch.events, key))
             .returning()
         : [];
-      requireCompleteUsageClaim(
-        batch.events.length,
-        events.length,
-        args.social !== undefined,
-      );
+      requireCompleteUsageClaim(batch.events.length, events.length, !!job);
       work.pendingEvents = events.length;
       if (hasNoStandaloneUsage(events, args.social)) {
         return emptySettlementReceipt(work);
@@ -182,7 +192,6 @@ const commitUsageBatch$ = command(
       await tx.execute(expiryLotDeductionsSql(expiry.updates));
       work.expiredRows = expiry.expiredRows;
       work.expiryRows = expiry.expiryRows;
-      const receiptState = { amount, wallet, expiry, work };
       let afterCredits = wallet?.credits ?? 0;
       if (amount > 0) {
         const debit = orgDebitPlan(orgId, amount, expiry.expired, at);
@@ -211,10 +220,8 @@ const commitUsageBatch$ = command(
           .where(socialWhere(args.social));
       }
       signal.throwIfAborted();
-      return settlementReceipt(orgId, priced, {
-        ...receiptState,
-        afterCredits,
-      });
+      const committed = { amount, wallet, expiry, work, afterCredits };
+      return settlementReceipt(orgId, priced, committed);
     });
     signal.throwIfAborted();
     return { result, startedAt };

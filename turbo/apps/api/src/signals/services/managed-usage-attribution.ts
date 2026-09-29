@@ -8,7 +8,7 @@ import {
   type ManagedUsageRecordArgs,
 } from "./managed-usage-record";
 
-interface BillingRun {
+export interface BillingRun {
   readonly id: string;
   readonly orgId: string;
   readonly userId: string;
@@ -17,14 +17,14 @@ interface BillingRun {
   readonly threadId: string | null;
 }
 
-interface BillingAttribution {
+export interface BillingAttribution {
   readonly runId: string;
   readonly orgId: string;
   readonly userId: string;
   readonly startedAt: string;
 }
 
-export function managedBillingRunQuery(runId: string) {
+export function managedBillingRunQuery(runId: string | undefined) {
   return new QueryBuilder()
     .select({
       id: agentRuns.id,
@@ -37,12 +37,12 @@ export function managedBillingRunQuery(runId: string) {
       threadId: agentRuns.chatThreadId,
     })
     .from(agentRuns)
-    .where(eq(agentRuns.id, runId))
+    .where(runId ? eq(agentRuns.id, runId) : sql`false`)
     .for("key share")
     .as("managed_billing_run");
 }
 
-export function managedAttributionQuery(runId: string) {
+export function managedAttributionQuery(runId: string | undefined) {
   return new QueryBuilder()
     .select({
       runId: billingRunAttribution.runId,
@@ -54,7 +54,7 @@ export function managedAttributionQuery(runId: string) {
         .as("started_at"),
     })
     .from(billingRunAttribution)
-    .where(eq(billingRunAttribution.runId, runId))
+    .where(runId ? eq(billingRunAttribution.runId, runId) : sql`false`)
     .for("update")
     .as("managed_billing_attribution");
 }

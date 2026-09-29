@@ -20,7 +20,7 @@ import type {
   SettlementWorkObservation,
 } from "./credit-usage-pricing";
 
-export function initialSettlementObservation(): SettlementWorkObservation {
+function initialSettlementObservation(): SettlementWorkObservation {
   return {
     lockWaitMs: 0,
     orgLockWaitMs: 0,
@@ -32,6 +32,10 @@ export function initialSettlementObservation(): SettlementWorkObservation {
     expiredRows: 0,
     expiryRows: 0,
   };
+}
+
+export function settlementObservation(startedAt: number) {
+  return { startedAt, work: initialSettlementObservation() };
 }
 
 export function planUsageCharges(

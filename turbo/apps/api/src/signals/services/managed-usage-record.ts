@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { usageEvent } from "@okouai/db/schema/usage-event";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 export interface ManagedUsageResource {
   readonly kind: string;
@@ -77,24 +76,6 @@ export function managedUsageReceiptCredits(
     );
   }
   return processed.creditsCharged;
-}
-
-export function managedRunQuery(args: ManagedUsageRecordArgs) {
-  return new QueryBuilder()
-    .select({ id: agentRuns.id })
-    .from(agentRuns)
-    .where(
-      and(
-        eq(
-          agentRuns.id,
-          args.actor.runId ?? "00000000-0000-0000-0000-000000000000",
-        ),
-        eq(agentRuns.orgId, args.actor.orgId),
-        eq(agentRuns.userId, args.actor.userId),
-      ),
-    )
-    .for("key share")
-    .as("managed_usage_run");
 }
 
 export function managedValues(
