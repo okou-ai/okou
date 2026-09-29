@@ -58,7 +58,11 @@ import {
   type CancelRunResult,
 } from "./run-cancel.service";
 import { isCodexFastServiceTierSupported } from "./model-selection.service";
-import { loadNewChatThreadModelSettings } from "./chat-thread-model-settings.service";
+import { loadNewChatThreadDefaults } from "./chat-thread-defaults.service";
+import {
+  appendChatThreadCreatedEvent,
+  insertChatThread,
+} from "./chat-thread-create.service";
 import { touchSentChatThreadSort } from "./chat-event-shared.service";
 import { attemptChatEventSideEffect } from "./chat-event-write-side-effects.service";
 import {
@@ -827,9 +831,10 @@ async function resolveNewSendThread(
           orgPlanCapabilities,
         )
       : null;
+  const defaults = await loadNewChatThreadDefaults(db, member);
   const runSettings = requestedThreadRunSettings(args.body, {
     selectedModel: initialModel?.selectedModel ?? null,
-    modelSettings: await loadNewChatThreadModelSettings(db, member),
+    modelSettings: defaults.modelSettings,
     codexServiceTier: initialModel?.serviceTier === "priority" ? "fast" : null,
   });
   if ("status" in runSettings) {
@@ -839,7 +844,12 @@ async function resolveNewSendThread(
     db,
     ...member,
     body: args.body,
-    current: { computerUseHostId: null, cloudBrowserEnabled: false },
+    current: {
+      computerUseHostId: null,
+      cloudBrowserEnabled:
+        args.body.computerUseHostId === undefined &&
+        defaults.cloudBrowserEnabled,
+    },
   });
   if ("status" in computerAccess) {
     return computerAccess;
@@ -862,43 +872,28 @@ async function insertNewSendThread(
   args: NormalSendArgs,
   thread: NewSendThread,
 ): Promise<boolean> {
-  const [created] = await tx
-    .insert(chatThreads)
-    .values({
-      id: thread.threadId,
-      userId: args.userId,
-      agentId: args.body.agentId,
-      title: null,
-      modelProviderId: null,
-      modelProviderType: null,
-      modelProviderCredentialScope: null,
-      selectedModel: thread.runSettings.selectedModel,
-      codexServiceTier: thread.runSettings.codexServiceTier,
-      modelSettings: thread.runSettings.modelSettings,
-      computerUseHostId: thread.computerAccess.computerUseHostId,
-      cloudBrowserEnabled: thread.computerAccess.cloudBrowserEnabled,
-    })
-    .onConflictDoNothing({ target: chatThreads.id })
-    .returning({ id: chatThreads.id, createdAt: chatThreads.createdAt });
+  const created = await insertChatThread(tx, {
+    orgId: args.orgId,
+    id: thread.threadId,
+    userId: args.userId,
+    agentId: args.body.agentId,
+    title: null,
+    modelProviderId: null,
+    modelProviderType: null,
+    modelProviderCredentialScope: null,
+    selectedModel: thread.runSettings.selectedModel,
+    codexServiceTier: thread.runSettings.codexServiceTier,
+    modelSettings: thread.runSettings.modelSettings,
+    computerUseHostId: thread.computerAccess.computerUseHostId,
+    cloudBrowserEnabled: thread.computerAccess.cloudBrowserEnabled,
+  });
   if (!created) {
     return false;
   }
-  await appendChatThreadEvent(tx, {
-    kind: "created",
-    userId: args.userId,
+  await appendChatThreadCreatedEvent(tx, {
     orgId: args.orgId,
-    chatThreadId: created.id,
-    agentId: args.body.agentId,
     eventId: args.body.chatThreadEventId,
-    title: null,
-    selectedModel: thread.runSettings.selectedModel,
-    modelSettings: thread.runSettings.modelSettings,
-    serviceTier: chatThreadServiceTierFromCodex(
-      thread.runSettings.codexServiceTier,
-    ),
-    computerUseHostId: thread.computerAccess.computerUseHostId,
-    cloudBrowserEnabled: thread.computerAccess.cloudBrowserEnabled,
-    createdAt: created.createdAt,
+    thread: created,
   });
   return true;
 }

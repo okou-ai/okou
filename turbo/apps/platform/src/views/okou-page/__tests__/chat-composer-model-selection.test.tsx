@@ -513,7 +513,6 @@ test("Choose effort for a new chat and keep Fast independent", async () => {
     reasoningEffort?: string | null;
     serviceTier?: string | null;
     imageModel?: string;
-    videoModel?: string;
   }[] = [];
   installRunChat({
     selectedModel: "gpt-5.6-sol",
@@ -562,7 +561,6 @@ test("Choose effort for a new chat and keep Fast independent", async () => {
   });
   // Media models are a member setting; a new thread carries no pin.
   expect(creates[0]?.imageModel).toBeUndefined();
-  expect(creates[0]?.videoModel).toBeUndefined();
 });
 
 test("Select the default effort on an existing thread without changing Fast", async () => {

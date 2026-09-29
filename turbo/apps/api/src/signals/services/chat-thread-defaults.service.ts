@@ -7,13 +7,21 @@ import { and, eq } from "drizzle-orm";
 
 import type { ReadonlyDb } from "../external/db";
 
-/** Snapshot the member's complete sparse map when a chat thread is created. */
-export async function loadNewChatThreadModelSettings(
+interface NewChatThreadDefaults {
+  readonly modelSettings: ModelSettings;
+  readonly cloudBrowserEnabled: boolean;
+}
+
+/** Snapshot the member's Chat preferences only when a thread is created. */
+export async function loadNewChatThreadDefaults(
   db: Pick<ReadonlyDb, "select">,
   args: { readonly orgId: string; readonly userId: string },
-): Promise<ModelSettings> {
+): Promise<NewChatThreadDefaults> {
   const [member] = await db
-    .select({ modelSettings: orgMembersMetadata.modelSettings })
+    .select({
+      modelSettings: orgMembersMetadata.modelSettings,
+      cloudBrowserEnabled: orgMembersMetadata.cloudBrowserEnabledByDefault,
+    })
     .from(orgMembersMetadata)
     .where(
       and(
@@ -22,5 +30,8 @@ export async function loadNewChatThreadModelSettings(
       ),
     )
     .limit(1);
-  return modelSettingsSchema.parse(member?.modelSettings ?? {});
+  return {
+    modelSettings: modelSettingsSchema.parse(member?.modelSettings ?? {}),
+    cloudBrowserEnabled: member?.cloudBrowserEnabled ?? true,
+  };
 }

@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  IMAGE_MODEL_PRICE_TIER,
-  VIDEO_MODEL_PRICE_TIER,
-} from "../media-model-price-tiers";
+import { IMAGE_MODEL_PRICE_TIER } from "../media-model-price-tiers";
 
 describe("media model price tiers", () => {
   it("exposes a price tier for every image model", () => {
@@ -22,19 +19,6 @@ describe("media model price tiers", () => {
       "seedream-5-0-lite-260128": "$$",
       "fal-ai/nano-banana-2": "$$$",
       "google/nano-banana-2-lite": "$$",
-    });
-  });
-
-  it("exposes a price tier for every video model", () => {
-    expect(VIDEO_MODEL_PRICE_TIER).toEqual({
-      "dreamina-seedance-2-5-260628": "$$$",
-      "dreamina-seedance-2-0-260128": "$$",
-      "dreamina-seedance-2-0-fast-260128": "$$",
-      "dreamina-seedance-2-0-mini-260615": "$",
-      "seedance-1-5-pro-251215": "$",
-      "fal-ai/veo3.1/fast": "$$",
-      "fal-ai/kling-video/v3/4k/text-to-video": "$$$$",
-      "MiniMax-H3": "$$",
     });
   });
 });

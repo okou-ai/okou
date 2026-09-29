@@ -57,8 +57,6 @@ on:
         required: false
       GOOGLE_ADS_LOGIN_CUSTOMER_ID:
         required: false
-      HEYGEN_API_KEY:
-        required: false
       LANGFUSE_PUBLIC_KEY:
         required: false
       LANGFUSE_SECRET_KEY:

@@ -50,11 +50,6 @@ function usd(amount: number): number {
   return Math.round(amount * USD_TO_CREDITS);
 }
 
-/** Video price with a 25% markup (20% gross margin): provider cost / 0.8. */
-function videoUsd(providerCost: number): number {
-  return Math.round((providerCost * USD_TO_CREDITS) / 0.8);
-}
-
 type UsagePricingRow = readonly [
   category: string,
   unitPrice: number,
@@ -694,60 +689,6 @@ export const USAGE_PRICING: readonly (typeof usagePricing.$inferInsert)[] = [
   // and always returns 1K images (1024x1024 = 1120 tokens): $0.042 per image.
   ...usageGroup("image", "google/nano-banana-2-lite", [
     ["output_image", usd(0.042), 1],
-  ]),
-
-  // Video generation uses a 25% markup (20% gross margin): cost / 0.8.
-  ...usageGroup("video", "dreamina-seedance-2-5-260628", [
-    ["output_video_tokens.480p_720p.no_video", videoUsd(10.7), 1_000_000],
-    ["output_video_tokens.480p_720p.with_video", videoUsd(6.4), 1_000_000],
-    ["output_video_tokens.1080p.no_video", videoUsd(11.7), 1_000_000],
-    ["output_video_tokens.1080p.with_video", videoUsd(7), 1_000_000],
-  ]),
-  ...usageGroup("video", "dreamina-seedance-2-0-260128", [
-    ["output_video_tokens.480p_720p.no_video", videoUsd(7), 1_000_000],
-    ["output_video_tokens.480p_720p.with_video", videoUsd(4.3), 1_000_000],
-    ["output_video_tokens.1080p.no_video", videoUsd(7.7), 1_000_000],
-    ["output_video_tokens.1080p.with_video", videoUsd(4.7), 1_000_000],
-  ]),
-  ...usageGroup("video", "dreamina-seedance-2-0-fast-260128", [
-    ["output_video_tokens.480p_720p.no_video", videoUsd(5.6), 1_000_000],
-    ["output_video_tokens.480p_720p.with_video", videoUsd(3.3), 1_000_000],
-  ]),
-  ...usageGroup("video", "dreamina-seedance-2-0-mini-260615", [
-    ["output_video_tokens.480p_720p.no_video", videoUsd(3.5), 1_000_000],
-    ["output_video_tokens.480p_720p.with_video", videoUsd(2.1), 1_000_000],
-  ]),
-  ...usageGroup("video", "seedance-1-5-pro-251215", [
-    ["output_video_tokens.audio", videoUsd(2.4), 1_000_000],
-    ["output_video_tokens.silent", videoUsd(1.2), 1_000_000],
-  ]),
-  ...usageGroup("video", "MiniMax-H3", [
-    ["output_video_seconds.768p", videoUsd(0.08), 1],
-    ["output_video_seconds.2k", videoUsd(0.13), 1],
-    ["input_video_seconds.768p", videoUsd(0.08), 1],
-    ["input_video_seconds.2k", videoUsd(0.13), 1],
-    ["input_image.additional", videoUsd(0.04), 1],
-  ]),
-  ...usageGroup("video", "fal-ai/veo3.1/fast", [
-    ["output_video_seconds.audio", videoUsd(0.15), 1],
-    ["output_video_seconds.silent", videoUsd(0.1), 1],
-    ["output_video_seconds.audio.4k", videoUsd(0.35), 1],
-    ["output_video_seconds.silent.4k", videoUsd(0.3), 1],
-  ]),
-  ...usageGroup("video", "fal-ai/kling-video/v3/4k/text-to-video", [
-    ["output_video_seconds.audio.4k", videoUsd(0.42), 1],
-    ["output_video_seconds.silent.4k", videoUsd(0.42), 1],
-  ]),
-  // JoggAI Professional API cost: $399 / 800 credits, with one provider
-  // credit consumed per started two minutes of talking-avatar output.
-  // https://www.jogg.ai/api-pricing/
-  ...usageGroup("video", "joggai-talking-avatar", [
-    ["output_video_joggai_credits", videoUsd(399 / 800), 1],
-  ]),
-  // OpenAI GPT-4o mini TTS — https://platform.openai.com/docs/pricing
-  // $0.015/minute raw provider cost = 15 credits/minute.
-  ...usageGroup("audio", "gpt-4o-mini-tts", [
-    ["output_audio_seconds", usd(0.015), 60],
   ]),
 ];
 
