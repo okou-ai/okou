@@ -5860,6 +5860,7 @@ export function registerFeishuIntegrationTests(
           orgId: actor.orgId,
           orgRole: "org:member",
         });
+        await authOrgApi.completeOnboarding(secondActor);
         await enableFeishuIntegration(platform, secondActor, {
           [FeatureSwitchKey.OkouDebug]: true,
         });
@@ -6293,6 +6294,7 @@ export function registerFeishuIntegrationTests(
           orgId: fixture.actor.orgId,
           orgRole: "org:member",
         });
+        await authOrgApi.completeOnboarding(secondActor);
         await enableFeishuIntegration(platform, secondActor, {
           [FeatureSwitchKey.OkouDebug]: true,
         });
