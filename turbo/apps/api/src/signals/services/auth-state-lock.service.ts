@@ -48,6 +48,15 @@ export async function lockConnectorAccountTarget(
  * lock. Settings and refresh only lock provider/account/secret state after it;
  * their run-reference checks are MVCC reads, never run row locks.
  */
+export function modelProviderStateLockStatement(args: {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly type: string;
+}) {
+  // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
+  return sql`SELECT pg_advisory_xact_lock(hashtext('model_provider_state:' || ${args.orgId} || ':' || ${args.userId} || ':' || ${args.type}))`;
+}
+
 export async function lockModelProviderState(
   db: Db,
   args: {
@@ -56,8 +65,5 @@ export async function lockModelProviderState(
     readonly type: string;
   },
 ): Promise<void> {
-  await db.execute(
-    // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-    sql`SELECT pg_advisory_xact_lock(hashtext('model_provider_state:' || ${args.orgId} || ':' || ${args.userId} || ':' || ${args.type}))`,
-  );
+  await db.execute(modelProviderStateLockStatement(args));
 }

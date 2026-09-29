@@ -1,6 +1,6 @@
 import { command, computed } from "ccstate";
 import { randomUUID } from "node:crypto";
-import { and, eq, notExists, notInArray } from "drizzle-orm";
+import { and, eq, inArray, notExists, notInArray } from "drizzle-orm";
 import {
   getFrameworkForType,
   getBuiltInConcreteProviderType,
@@ -22,7 +22,7 @@ import {
 import { modelProviders } from "@okouai/db/schema/model-provider";
 import { secrets } from "@okouai/db/schema/secret";
 import { badRequestMessage, notFound } from "../../lib/error";
-import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { publishModelPoliciesChangedForOrgSafely } from "../external/realtime";
 import { nowDate } from "../../lib/time";
 import { safeSync } from "../utils";
@@ -252,29 +252,10 @@ function secretName(connectionId: string): string {
   return `MODEL_PROVIDER_GATEWAY_${connectionId.replaceAll("-", "").toUpperCase()}`;
 }
 
-async function loadConnection(
-  db: Db | ReadonlyDb,
-  orgId: string,
-  connectionId: string,
-): Promise<ModelProviderConnectionResponse | null> {
-  const [connection] = await db
-    .select()
-    .from(modelProviderConnections)
-    .where(
-      and(
-        eq(modelProviderConnections.id, connectionId),
-        eq(modelProviderConnections.orgId, orgId),
-      ),
-    )
-    .limit(1);
-  if (!connection) {
-    return null;
-  }
-  const surfaces = await db
-    .select()
-    .from(modelProviderSurfaces)
-    .where(eq(modelProviderSurfaces.connectionId, connection.id))
-    .orderBy(modelProviderSurfaces.protocol);
+function connectionResponse(
+  connection: typeof modelProviderConnections.$inferSelect,
+  surfaces: readonly (typeof modelProviderSurfaces.$inferSelect)[],
+): ModelProviderConnectionResponse {
   return {
     id: connection.id,
     displayName: connection.displayName,
@@ -298,23 +279,68 @@ async function loadConnection(
   };
 }
 
+const loadConnection$ = command(
+  async (
+    { set },
+    args: { readonly orgId: string; readonly connectionId: string },
+    signal: AbortSignal,
+  ): Promise<ModelProviderConnectionResponse | null> => {
+    const db = set(writeDb$);
+    const [connection] = await db
+      .select()
+      .from(modelProviderConnections)
+      .where(
+        and(
+          eq(modelProviderConnections.id, args.connectionId),
+          eq(modelProviderConnections.orgId, args.orgId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!connection) {
+      return null;
+    }
+    const surfaces = await db
+      .select()
+      .from(modelProviderSurfaces)
+      .where(eq(modelProviderSurfaces.connectionId, connection.id))
+      .orderBy(modelProviderSurfaces.protocol);
+    signal.throwIfAborted();
+    return connectionResponse(connection, surfaces);
+  },
+);
+
 export const modelProviderConnectionsForOrg = (orgId: string) => {
   return computed(async (get) => {
     const db = get(db$);
     const connections = await db
-      .select({ id: modelProviderConnections.id })
+      .select()
       .from(modelProviderConnections)
       .where(eq(modelProviderConnections.orgId, orgId))
       .orderBy(modelProviderConnections.displayName);
+    const surfaces =
+      connections.length === 0
+        ? []
+        : await db
+            .select()
+            .from(modelProviderSurfaces)
+            .where(
+              inArray(
+                modelProviderSurfaces.connectionId,
+                connections.map((connection) => {
+                  return connection.id;
+                }),
+              ),
+            )
+            .orderBy(modelProviderSurfaces.protocol);
     return {
-      connections: (
-        await Promise.all(
-          connections.map((connection) => {
-            return loadConnection(db, orgId, connection.id);
+      connections: connections.map((connection) => {
+        return connectionResponse(
+          connection,
+          surfaces.filter((surface) => {
+            return surface.connectionId === connection.id;
           }),
-        )
-      ).filter((connection): connection is ModelProviderConnectionResponse => {
-        return connection !== null;
+        );
       }),
     };
   });
@@ -366,7 +392,11 @@ export const createModelProviderConnection$ = command(
       );
     });
     signal.throwIfAborted();
-    const created = await loadConnection(db, args.orgId, connectionId);
+    const created = await set(
+      loadConnection$,
+      { orgId: args.orgId, connectionId },
+      signal,
+    );
     signal.throwIfAborted();
     if (!created) {
       throw new Error("Expected custom model provider connection insert");
@@ -453,7 +483,11 @@ export const updateModelProviderConnection$ = command(
     if (!result) {
       return notFound("Resource not found");
     }
-    const updated = await loadConnection(db, args.orgId, args.connectionId);
+    const updated = await set(
+      loadConnection$,
+      { orgId: args.orgId, connectionId: args.connectionId },
+      signal,
+    );
     signal.throwIfAborted();
     if (!updated) {
       throw new Error("Expected custom model provider connection update");

@@ -974,6 +974,38 @@ describe("POST /api/model-providers", () => {
     );
   });
 
+  it("rejects secrets outside the selected provider auth method", async () => {
+    const fixture = uniqueOrgUser("zmp-unknown-multi-secret");
+    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
+    const client = setupApp({ context, routes: modelProvidersRoutes })(
+      modelProvidersMainContract,
+    );
+    const response = await accept(
+      client.upsert({
+        headers: { authorization: "Bearer clerk-session" },
+        body: {
+          type: "aws-bedrock",
+          authMethod: "access-keys",
+          secrets: {
+            AWS_ACCESS_KEY_ID: "test-access-key",
+            AWS_SECRET_ACCESS_KEY: "test-secret-key",
+            AWS_REGION: "us-east-1",
+            ANTHROPIC_API_KEY: "unrelated-provider-secret",
+          },
+        },
+      }),
+      [400],
+    );
+    expect(response.body.error.message).toBe(
+      "Unsupported secrets for access-keys: ANTHROPIC_API_KEY",
+    );
+    const list = await accept(
+      client.list({ headers: { authorization: "Bearer clerk-session" } }),
+      [200],
+    );
+    expect(list.body.modelProviders).toStrictEqual([]);
+  });
+
   it("rejects invalid multi-auth shape for single-secret providers", async () => {
     const fixture = uniqueOrgUser("zmp-upsert-bad-multi");
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
