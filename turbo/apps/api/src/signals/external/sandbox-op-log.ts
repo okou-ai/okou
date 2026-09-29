@@ -96,9 +96,7 @@ export async function recordMcpClientNameLookup(args: {
     recordApiOperationTimings([
       {
         actionType: "mcp_client_display_name_lookup",
-        durationMs: Number.isFinite(elapsed)
-          ? Math.min(Number.MAX_SAFE_INTEGER, Math.max(0, elapsed))
-          : 0,
+        durationMs: Math.min(Number.MAX_SAFE_INTEGER, Math.max(0, elapsed)),
         success: args.outcome === "validated",
         dimensions: {
           lookup_outcome: args.outcome,
