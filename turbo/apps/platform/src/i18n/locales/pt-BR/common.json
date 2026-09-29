@@ -1894,6 +1894,20 @@
       "title": "Conectores",
       "useDefault": "Usar padrão"
     },
+    "delivery": {
+      "acceptedPending": "Mensagem aceita; aguardando confirmação no histórico do chat.",
+      "checkAndRetry": "Verificar e tentar novamente",
+      "checking": "Verificando…",
+      "notSentAuth": "Mensagem não enviada. Entre novamente, verifique a entrega e tente de novo.",
+      "notSentSaved": "Mensagem não enviada. Seu texto e as referências aos arquivos enviados estão salvos neste navegador.",
+      "retryUnsupported": "Este navegador não permite tentar reenviar mensagens entre abas com segurança.",
+      "saveFailed": "Mensagem não enviada: este navegador não conseguiu salvar uma cópia de recuperação. Libere espaço e tente novamente.",
+      "sending": "Enviando mensagem…",
+      "sendingInOtherTab": "Esta mensagem está sendo enviada em outra aba. Verifique novamente antes de tentar de novo.",
+      "unconfirmed": "Entrega não confirmada. Consulte o servidor antes de tentar novamente.",
+      "unconfirmedToast": "Não foi possível confirmar a entrega da mensagem. Verifique a mensagem salva antes de tentar novamente.",
+      "webLocksRequired": "Para tentar novamente com segurança, é preciso um navegador compatível com Web Locks."
+    },
     "documentTitle": "Conversa",
     "errors": {
       "genericTitle": "Não foi possível concluir esta execução",
@@ -1981,6 +1995,13 @@
       "back": "Voltar",
       "composerPlaceholder": "Adicionar uma mensagem",
       "content": "Conteúdo",
+      "delivery": {
+        "confirmed": "Encaminhamento confirmado.",
+        "notSentAuth": "Encaminhamento não enviado. Entre novamente antes de verificar a entrega. Sua mensagem está salva neste navegador.",
+        "notSentSaved": "Encaminhamento não enviado. Sua mensagem está salva neste navegador.",
+        "sending": "Enviando mensagem encaminhada…",
+        "unconfirmed": "Entrega do encaminhamento não confirmada. Consulte o servidor antes de tentar novamente."
+      },
       "description": "Envie o conteúdo selecionado para um agente ou uma conversa e continue trabalhando nele.",
       "noResults": "Nenhum agente ou conversa foi encontrado",
       "search": "Buscar agentes e conversas...",

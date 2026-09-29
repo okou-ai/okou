@@ -3306,7 +3306,9 @@ function createPerformSendMessage(deps: SendMessageDeps) {
         await set(markDeliveryIntentUncertain$, intent.clientEventId, signal);
         signal.throwIfAborted();
         toast.error(
-          "Message delivery could not be confirmed. Check the saved message before retrying.",
+          i18n.t(($) => {
+            return $.chat.delivery.unconfirmedToast;
+          }),
         );
         return false;
       }
@@ -3458,7 +3460,9 @@ function createQueueMessage(deps: SendMessageDeps) {
         await set(markDeliveryIntentUncertain$, intent.clientEventId, signal);
         signal.throwIfAborted();
         toast.error(
-          "Message delivery could not be confirmed. Check the saved message before retrying.",
+          i18n.t(($) => {
+            return $.chat.delivery.unconfirmedToast;
+          }),
         );
         return false;
       }

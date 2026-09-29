@@ -240,6 +240,7 @@ function ForwardDeliveryNotice({
   readonly selection: ChatForwardSelection;
   readonly onDismiss: () => void;
 }) {
+  const { t } = useTranslation();
   const intents = useLastResolved(deliveryIntents$);
   const [checking, checkAndRetry] = useLoadableSet(
     checkAndRetryPromptDelivery$,
@@ -267,11 +268,19 @@ function ForwardDeliveryNotice({
   const message =
     pending.status === "rejected"
       ? pending.rejection === "authentication"
-        ? "Forward not sent. Sign in again before checking delivery. Your message is saved in this browser."
-        : "Forward not sent. Your message is saved in this browser."
+        ? t(($) => {
+            return $.chat.forward.delivery.notSentAuth;
+          })
+        : t(($) => {
+            return $.chat.forward.delivery.notSentSaved;
+          })
       : pending.status === "uncertain"
-        ? "Forward delivery unconfirmed. Check the server before retrying."
-        : "Sending forwarded message…";
+        ? t(($) => {
+            return $.chat.forward.delivery.unconfirmed;
+          })
+        : t(($) => {
+            return $.chat.forward.delivery.sending;
+          });
   return (
     <div
       role={pending.status === "rejected" ? "alert" : "status"}
@@ -294,19 +303,31 @@ function ForwardDeliveryNotice({
                 );
                 if (accepted) {
                   onDismiss();
-                  toast.success("Forward confirmed.");
+                  toast.success(
+                    t(($) => {
+                      return $.chat.forward.delivery.confirmed;
+                    }),
+                  );
                 }
               })(),
               Reason.DomCallback,
             );
           }}
         >
-          {checking.state === "loading" ? "Checking…" : "Check and retry"}
+          {checking.state === "loading"
+            ? t(($) => {
+                return $.chat.delivery.checking;
+              })
+            : t(($) => {
+                return $.chat.delivery.checkAndRetry;
+              })}
         </Button>
       ) : null}
       {!navigator.locks ? (
         <p className="mt-1 text-xs text-muted-foreground">
-          Safe retry requires a browser with Web Locks support.
+          {t(($) => {
+            return $.chat.delivery.webLocksRequired;
+          })}
         </p>
       ) : null}
     </div>

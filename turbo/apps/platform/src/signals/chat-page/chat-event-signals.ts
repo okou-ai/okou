@@ -1,5 +1,6 @@
 import { command, type Command, type Computed } from "ccstate";
 import { toast } from "@okouai/ui/components/ui/sonner";
+import { i18n } from "../../i18n/index.ts";
 import { authenticatedIdentity$ } from "../auth.ts";
 import { queryChatEventSharedDatabase$ } from "../shared-database.ts";
 import {
@@ -164,7 +165,9 @@ function createPrepareInputChatEvent(threadId: string) {
       };
       if (!saveDeliveryIntent(identity, intent)) {
         toast.error(
-          "Message not sent: this browser could not save a recovery copy. Free up storage and try again.",
+          i18n.t(($) => {
+            return $.chat.delivery.saveFailed;
+          }),
         );
         return null;
       }
@@ -411,7 +414,11 @@ export const checkAndRetryPromptDelivery$ = command(
     const identity = await get(authenticatedIdentity$);
     signal.throwIfAborted();
     if (!navigator.locks) {
-      toast.error("This browser cannot safely retry messages across tabs.");
+      toast.error(
+        i18n.t(($) => {
+          return $.chat.delivery.retryUnsupported;
+        }),
+      );
       return false;
     }
     const locked = await settle(
@@ -497,7 +504,9 @@ export const checkAndRetryPromptDelivery$ = command(
     signal.throwIfAborted();
     if (!locked.ok || locked.value === null) {
       toast.error(
-        "This message is being sent in another tab. Check again before retrying.",
+        i18n.t(($) => {
+          return $.chat.delivery.sendingInOtherTab;
+        }),
       );
       return false;
     }

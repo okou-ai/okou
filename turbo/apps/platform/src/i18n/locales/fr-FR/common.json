@@ -1894,6 +1894,20 @@
       "title": "Connecteurs",
       "useDefault": "Utiliser le compte par défaut"
     },
+    "delivery": {
+      "acceptedPending": "Message accepté ; en attente de confirmation dans l’historique du chat.",
+      "checkAndRetry": "Vérifier et réessayer",
+      "checking": "Vérification…",
+      "notSentAuth": "Message non envoyé. Reconnectez-vous, vérifiez l’envoi, puis réessayez.",
+      "notSentSaved": "Message non envoyé. Votre texte et les références aux fichiers importés sont enregistrés dans ce navigateur.",
+      "retryUnsupported": "Ce navigateur ne permet pas de réessayer l’envoi de messages en toute sécurité entre plusieurs onglets.",
+      "saveFailed": "Message non envoyé : ce navigateur n’a pas pu enregistrer de copie de récupération. Libérez de l’espace, puis réessayez.",
+      "sending": "Envoi du message…",
+      "sendingInOtherTab": "Ce message est en cours d’envoi dans un autre onglet. Vérifiez à nouveau avant de réessayer.",
+      "unconfirmed": "Envoi non confirmé. Vérifiez auprès du serveur avant de réessayer.",
+      "unconfirmedToast": "Impossible de confirmer l’envoi du message. Vérifiez le message enregistré avant de réessayer.",
+      "webLocksRequired": "Pour réessayer en toute sécurité, utilisez un navigateur compatible avec Web Locks."
+    },
     "documentTitle": "Discussion",
     "errors": {
       "genericTitle": "Cette exécution n’a pas pu se terminer",
@@ -1981,6 +1995,13 @@
       "back": "Retour",
       "composerPlaceholder": "Ajouter un message",
       "content": "Contenu",
+      "delivery": {
+        "confirmed": "Transfert confirmé.",
+        "notSentAuth": "Transfert non envoyé. Reconnectez-vous avant de vérifier l’envoi. Votre message est enregistré dans ce navigateur.",
+        "notSentSaved": "Transfert non envoyé. Votre message est enregistré dans ce navigateur.",
+        "sending": "Envoi du message transféré…",
+        "unconfirmed": "Envoi du transfert non confirmé. Vérifiez auprès du serveur avant de réessayer."
+      },
       "description": "Envoyez le contenu sélectionné à un agent ou un chat pour continuer à travailler dessus.",
       "noResults": "Aucun agent ni chat trouvé",
       "search": "Rechercher des agents et des chats...",

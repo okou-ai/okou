@@ -1854,6 +1854,20 @@
       "title": "连接器",
       "useDefault": "使用默认"
     },
+    "delivery": {
+      "acceptedPending": "消息已被接收，等待在聊天记录中确认。",
+      "checkAndRetry": "检查并重试",
+      "checking": "正在检查…",
+      "notSentAuth": "消息未发送。请重新登录，检查发送状态后再重试。",
+      "notSentSaved": "消息未发送。文本和已上传文件的引用已保存在此浏览器中。",
+      "retryUnsupported": "此浏览器无法安全地跨标签页重试发送消息。",
+      "saveFailed": "消息未发送：此浏览器无法保存恢复副本。请释放存储空间后重试。",
+      "sending": "正在发送消息…",
+      "sendingInOtherTab": "此消息正在另一个标签页中发送。请再次检查后再重试。",
+      "unconfirmed": "尚未确认消息是否送达。请先向服务器核实，再重试。",
+      "unconfirmedToast": "无法确认消息是否送达。请先检查已保存的消息，再重试。",
+      "webLocksRequired": "安全重试需要支持 Web Locks 的浏览器。"
+    },
     "documentTitle": "聊天",
     "errors": {
       "genericTitle": "这次运行没能完成",
@@ -1938,6 +1952,13 @@
       "back": "返回",
       "composerPlaceholder": "添加留言",
       "content": "内容",
+      "delivery": {
+        "confirmed": "已确认转发成功。",
+        "notSentAuth": "转发未发送。请重新登录后再检查发送状态。消息已保存在此浏览器中。",
+        "notSentSaved": "转发未发送。消息已保存在此浏览器中。",
+        "sending": "正在转发消息…",
+        "unconfirmed": "尚未确认转发是否送达。请先向服务器核实，再重试。"
+      },
       "description": "把选中的内容发给某个智能体或聊天，继续处理。",
       "noResults": "未找到智能体或聊天",
       "search": "搜索智能体和聊天…",

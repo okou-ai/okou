@@ -7684,6 +7684,7 @@ function MessageDeliveryStatus({
   eventId: string;
   thread: ChatPanelSignals;
 }) {
+  const { t } = useTranslation();
   const intents = useLastResolved(thread.deliveryIntents$);
   const delivery = intents?.find((item) => {
     return item.clientEventId === eventId;
@@ -7701,18 +7702,28 @@ function MessageDeliveryStatus({
   if (delivery.status === "prepared") {
     return (
       <p role="status" className="text-xs text-muted-foreground">
-        Sending message…
+        {t(($) => {
+          return $.chat.delivery.sending;
+        })}
       </p>
     );
   }
   const label =
     delivery.status === "rejected"
       ? delivery.rejection === "authentication"
-        ? "Message not sent. Sign in again, then check delivery before retrying."
-        : "Message not sent. Your text and uploaded file references are saved in this browser."
+        ? t(($) => {
+            return $.chat.delivery.notSentAuth;
+          })
+        : t(($) => {
+            return $.chat.delivery.notSentSaved;
+          })
       : delivery.status === "uncertain"
-        ? "Delivery unconfirmed. Check the server before retrying."
-        : "Message accepted; waiting for confirmation in the chat history.";
+        ? t(($) => {
+            return $.chat.delivery.unconfirmed;
+          })
+        : t(($) => {
+            return $.chat.delivery.acceptedPending;
+          });
   return (
     <div
       role={delivery.status === "rejected" ? "alert" : "status"}
@@ -7728,10 +7739,20 @@ function MessageDeliveryStatus({
           detach(retry(eventId, signal), Reason.DomCallback);
         }}
       >
-        {retryState.state === "loading" ? "Checking…" : "Check and retry"}
+        {retryState.state === "loading"
+          ? t(($) => {
+              return $.chat.delivery.checking;
+            })
+          : t(($) => {
+              return $.chat.delivery.checkAndRetry;
+            })}
       </Button>
       {!navigator.locks ? (
-        <span>Safe retry requires a browser with Web Locks support.</span>
+        <span>
+          {t(($) => {
+            return $.chat.delivery.webLocksRequired;
+          })}
+        </span>
       ) : null}
     </div>
   );

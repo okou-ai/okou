@@ -1894,6 +1894,20 @@
       "title": "Conectores",
       "useDefault": "Usar predeterminada"
     },
+    "delivery": {
+      "acceptedPending": "Mensaje aceptado; esperando confirmación en el historial del chat.",
+      "checkAndRetry": "Comprobar y reintentar",
+      "checking": "Comprobando…",
+      "notSentAuth": "Mensaje no enviado. Vuelve a iniciar sesión, comprueba la entrega y reintenta.",
+      "notSentSaved": "Mensaje no enviado. Tu texto y las referencias a los archivos subidos están guardados en este navegador.",
+      "retryUnsupported": "Este navegador no puede reintentar el envío de mensajes de forma segura entre pestañas.",
+      "saveFailed": "Mensaje no enviado: este navegador no pudo guardar una copia de recuperación. Libera espacio e inténtalo de nuevo.",
+      "sending": "Enviando mensaje…",
+      "sendingInOtherTab": "Este mensaje se está enviando en otra pestaña. Vuelve a comprobarlo antes de reintentar.",
+      "unconfirmed": "Entrega sin confirmar. Consulta el servidor antes de reintentar.",
+      "unconfirmedToast": "No se pudo confirmar la entrega del mensaje. Comprueba el mensaje guardado antes de reintentar.",
+      "webLocksRequired": "Para reintentar con seguridad, se necesita un navegador compatible con Web Locks."
+    },
     "documentTitle": "Chat",
     "errors": {
       "genericTitle": "No se pudo completar esta ejecución",
@@ -1981,6 +1995,13 @@
       "back": "Atrás",
       "composerPlaceholder": "Añadir un mensaje",
       "content": "Contenido",
+      "delivery": {
+        "confirmed": "Reenvío confirmado.",
+        "notSentAuth": "Reenvío no enviado. Vuelve a iniciar sesión antes de comprobar la entrega. Tu mensaje está guardado en este navegador.",
+        "notSentSaved": "Reenvío no enviado. Tu mensaje está guardado en este navegador.",
+        "sending": "Enviando mensaje reenviado…",
+        "unconfirmed": "Entrega del reenvío sin confirmar. Consulta el servidor antes de reintentar."
+      },
       "description": "Envía el contenido seleccionado a un agente o una conversación para seguir trabajando en él.",
       "noResults": "No se encontraron agentes ni conversaciones",
       "search": "Buscar agentes y conversaciones...",

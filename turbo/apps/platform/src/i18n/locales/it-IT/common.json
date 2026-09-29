@@ -1894,6 +1894,20 @@
       "title": "Connettori",
       "useDefault": "Usa predefinito"
     },
+    "delivery": {
+      "acceptedPending": "Messaggio accettato; in attesa di conferma nella cronologia della chat.",
+      "checkAndRetry": "Controlla e riprova",
+      "checking": "Controllo in corso…",
+      "notSentAuth": "Messaggio non inviato. Accedi di nuovo, verifica la consegna e poi riprova.",
+      "notSentSaved": "Messaggio non inviato. Il testo e i riferimenti ai file caricati sono salvati in questo browser.",
+      "retryUnsupported": "Questo browser non può ritentare l’invio dei messaggi in modo sicuro tra più schede.",
+      "saveFailed": "Messaggio non inviato: questo browser non è riuscito a salvare una copia di recupero. Libera spazio e riprova.",
+      "sending": "Invio del messaggio…",
+      "sendingInOtherTab": "Questo messaggio è in fase di invio in un’altra scheda. Verifica di nuovo prima di riprovare.",
+      "unconfirmed": "Consegna non confermata. Verifica con il server prima di riprovare.",
+      "unconfirmedToast": "Impossibile confermare la consegna del messaggio. Controlla il messaggio salvato prima di riprovare.",
+      "webLocksRequired": "Per riprovare in sicurezza è necessario un browser che supporti Web Locks."
+    },
     "documentTitle": "Chat",
     "errors": {
       "genericTitle": "Non è stato possibile completare questa esecuzione",
@@ -1981,6 +1995,13 @@
       "back": "Indietro",
       "composerPlaceholder": "Aggiungi un messaggio",
       "content": "Contenuto",
+      "delivery": {
+        "confirmed": "Inoltro confermato.",
+        "notSentAuth": "Inoltro non inviato. Accedi di nuovo prima di verificare la consegna. Il messaggio è salvato in questo browser.",
+        "notSentSaved": "Inoltro non inviato. Il messaggio è salvato in questo browser.",
+        "sending": "Invio del messaggio inoltrato…",
+        "unconfirmed": "Consegna dell’inoltro non confermata. Verifica con il server prima di riprovare."
+      },
       "description": "Invia il contenuto selezionato a un agente o a una chat per continuare a lavorarci.",
       "noResults": "Nessun agente o chat trovato",
       "search": "Cerca agenti e chat...",
