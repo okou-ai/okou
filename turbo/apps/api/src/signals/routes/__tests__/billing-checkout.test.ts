@@ -21372,7 +21372,7 @@ describe("POST /api/billing/concurrency-checkout", () => {
     });
   });
 
-  it("cancels an active concurrency subscription at period end", async () => {
+  it("converges concurrent cancellation of an active concurrency subscription", async () => {
     const subscriptionId = `sub_${randomUUID()}`;
     const periodEnd = new Date("2099-05-20T00:00:00Z");
     const fixture = await createConcurrencySubscriptionOrg({
@@ -21390,19 +21390,40 @@ describe("POST /api/billing/concurrency-checkout", () => {
       routes: billingConcurrencySubscriptionRoutes,
     })(billingConcurrencySubscriptionContract);
 
-    const response = await accept(
-      client.cancel({
-        params: { subscriptionId },
-        body: {},
-        headers: { authorization: "Bearer clerk-session" },
+    const responses = await Promise.all(
+      [0, 1].map(() => {
+        return accept(
+          client.cancel({
+            params: { subscriptionId },
+            body: {},
+            headers: { authorization: "Bearer clerk-session" },
+          }),
+          [200, 409],
+        );
       }),
-      [200],
     );
 
-    expect(response.body).toStrictEqual({
-      success: true,
-      currentPeriodEnd: periodEnd.toISOString(),
-    });
+    expect(
+      responses.some((response) => {
+        return response.status === 200;
+      }),
+    ).toBeTruthy();
+    for (const response of responses) {
+      expect(response.body).toStrictEqual(
+        response.status === 200
+          ? {
+              success: true,
+              currentPeriodEnd: periodEnd.toISOString(),
+            }
+          : {
+              error: {
+                message:
+                  "Billing changed while updating concurrency; refresh and try again",
+                code: "CONFLICT",
+              },
+            },
+      );
+    }
     expect(context.mocks.stripe.subscriptions.update).toHaveBeenCalledWith(
       subscriptionId,
       { cancel_at_period_end: true },
@@ -21412,6 +21433,7 @@ describe("POST /api/billing/concurrency-checkout", () => {
       expect.arrayContaining([
         expect.objectContaining({
           id: subscriptionId,
+          quantity: 2,
           cancelAtPeriodEnd: true,
         }),
       ]),

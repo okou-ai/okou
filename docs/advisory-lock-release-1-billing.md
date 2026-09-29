@@ -73,6 +73,27 @@ implementation still propagates a database internally and remains unfinished.
 These changes prevent stale local publication. They do not establish ordering
 between remote cancellation, restoration and schedule writers.
 
+### Concurrency change, cancellation and restoration publication
+
+All database access in `billing-concurrency-subscription.service.ts` now belongs
+to commands with business arguments. Active subscription and schedule ownership
+reads obtain their own database and return ordinary values; no database handle
+is passed through provider preparation or restoration helpers.
+
+Change, cancellation and restoration publish only while the complete original
+concurrency row and its transient PostgreSQL `xmin` still match. A rejected
+publication returns an API conflict without overwriting the newer row. The
+snapshot only spans this one read/provider-call/publication operation; it is
+not stored as a business revision. It also distinguishes a deleted and
+reinserted row whose values happen to match. Provider calls remain outside SQL
+transactions. Concurrent cancellation coverage accepts either serialized success
+or a conditional-publication conflict and checks the final public subscription
+quantity and cancellation state.
+
+This completes local conditional publication for these three entry points. It
+does not fence already-issued Stripe updates or establish shared schedule
+ordering; those remote guarantees remain part of the unresolved protocol below.
+
 ### Invitation purchase transitions
 
 The invitation-creation, refund, and acceptance-activation claims use conditional
@@ -155,6 +176,10 @@ This is a call-chain inventory, not a count of matching type signatures:
   `applyBillingSetupPaymentMethod(db, ...)` and setup-dispatch database arguments
   are removed; owning commands read the finite local state and call provider
   operations outside transactions. Downgrade internals remain separate work.
+- **Concurrency change, cancellation and restoration:** read/preparation
+  interfaces accept no database. Each publication is direct conditional SQL in
+  its owning command, after external provider work. No transaction spans that
+  provider work, and the row snapshot remains ordinary operation-local data.
 - **Allocation and plan changes:** preview/claim/finalization, migration, pending
   snapshot, credit-grant and schedule helpers still accept transactions. Their
   Stripe calls, pagination and callback ownership must be separated from the

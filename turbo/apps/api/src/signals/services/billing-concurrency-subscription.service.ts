@@ -16,7 +16,8 @@ import {
   usagePackAllocationChanges,
   usagePackSubscriptionChanges,
 } from "@okouai/db/schema/usage-pack-subscription";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
+import { pgTextDecoder } from "../../lib/db-structured-result";
 
 import {
   getStripeClient,
@@ -37,10 +38,11 @@ import {
   type StripeSubscriptionUpdateItemParam,
 } from "../external/stripe-client";
 import { nowDate } from "../../lib/time";
-import { db$, writeDb$, type ReadonlyDb } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import {
-  activeConcurrencySubscriptions,
+  activeConcurrencySubscriptionPredicate,
+  type ActiveConcurrencySubscription,
   isConcurrencyPriceId,
 } from "./org-concurrency-entitlements.service";
 import { completeBillingOperationInvoice } from "./billing-operation-invoice.service";
@@ -89,7 +91,11 @@ type CancelConcurrencySubscriptionResult =
     }
   | {
       readonly ok: false;
-      readonly reason: "not_found" | "pending_update" | "plan_ending";
+      readonly reason:
+        | "not_found"
+        | "pending_update"
+        | "plan_ending"
+        | "billing_changed";
     };
 
 type PreviewConcurrencySubscriptionChangeResult =
@@ -116,6 +122,7 @@ type ChangeConcurrencySubscriptionResult =
   | {
       readonly ok: false;
       readonly reason:
+        | "billing_changed"
         | "not_found"
         | "canceling"
         | "invalid_quantity"
@@ -134,58 +141,90 @@ type StripeConcurrencySubscriptionChangeResult =
       readonly reason: "invalid_quantity" | "pending_update" | "plan_ending";
     };
 
-async function findActiveConcurrencySubscription(
-  db: ReadonlyDb,
-  args: ConcurrencySubscriptionArgs,
-): Promise<
-  Awaited<ReturnType<typeof activeConcurrencySubscriptions>>[number] | null
-> {
-  const subscriptions = await activeConcurrencySubscriptions(
-    db,
-    args.orgId,
-    nowDate(),
-  );
-  return (
-    subscriptions.find((candidate) => {
-      return candidate.id === args.subscriptionId;
-    }) ?? null
-  );
-}
+const findActiveConcurrencySubscription$ = command(
+  async (
+    { set },
+    args: ConcurrencySubscriptionArgs,
+    signal: AbortSignal,
+  ): Promise<
+    | (ActiveConcurrencySubscription & {
+        readonly billingSnapshot: string;
+        readonly rowVersion: string;
+      })
+    | null
+  > => {
+    const db = set(writeDb$);
+    const [subscription] = await db
+      .select({
+        id: orgConcurrencySubscriptions.stripeSubscriptionId,
+        quantity: orgConcurrencySubscriptions.slots,
+        currentPeriodEnd: orgConcurrencySubscriptions.currentPeriodEnd,
+        cancelAtPeriodEnd: orgConcurrencySubscriptions.cancelAtPeriodEnd,
+        scheduledQuantity: orgConcurrencySubscriptions.scheduledSlots,
+        scheduledChangeAt: orgConcurrencySubscriptions.scheduledChangeAt,
+        billingSnapshot: sql`${orgConcurrencySubscriptions}::text`.mapWith(
+          pgTextDecoder,
+        ),
+        rowVersion: sql`${orgConcurrencySubscriptions}.xmin::text`.mapWith(
+          pgTextDecoder,
+        ),
+      })
+      .from(orgConcurrencySubscriptions)
+      .where(
+        and(
+          activeConcurrencySubscriptionPredicate(args.orgId, nowDate()),
+          eq(
+            orgConcurrencySubscriptions.stripeSubscriptionId,
+            args.subscriptionId,
+          ),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return subscription && subscription.quantity > 0 ? subscription : null;
+  },
+);
 
 type SharedBillingSubscriptionKind = "plan" | "allowance" | null;
 
-async function sharedBillingSubscriptionKind(
-  db: ReadonlyDb,
-  args: ConcurrencySubscriptionArgs,
-): Promise<SharedBillingSubscriptionKind> {
-  const [plan] = await db
-    .select({ orgId: orgPlanEntitlements.orgId })
-    .from(orgPlanEntitlements)
-    .where(
-      and(
-        eq(orgPlanEntitlements.orgId, args.orgId),
-        eq(orgPlanEntitlements.stripeSubscriptionId, args.subscriptionId),
-      ),
-    )
-    .limit(1);
-  if (plan) {
-    return "plan";
-  }
-  const [allowance] = await db
-    .select({ orgId: orgUsageAllowanceEntitlements.orgId })
-    .from(orgUsageAllowanceEntitlements)
-    .where(
-      and(
-        eq(orgUsageAllowanceEntitlements.orgId, args.orgId),
-        eq(
-          orgUsageAllowanceEntitlements.stripeSubscriptionId,
-          args.subscriptionId,
+const sharedBillingSubscriptionKind$ = command(
+  async (
+    { set },
+    args: ConcurrencySubscriptionArgs,
+    signal: AbortSignal,
+  ): Promise<SharedBillingSubscriptionKind> => {
+    const db = set(writeDb$);
+    const [plan] = await db
+      .select({ orgId: orgPlanEntitlements.orgId })
+      .from(orgPlanEntitlements)
+      .where(
+        and(
+          eq(orgPlanEntitlements.orgId, args.orgId),
+          eq(orgPlanEntitlements.stripeSubscriptionId, args.subscriptionId),
         ),
-      ),
-    )
-    .limit(1);
-  return allowance ? "allowance" : null;
-}
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (plan) {
+      return "plan";
+    }
+    const [allowance] = await db
+      .select({ orgId: orgUsageAllowanceEntitlements.orgId })
+      .from(orgUsageAllowanceEntitlements)
+      .where(
+        and(
+          eq(orgUsageAllowanceEntitlements.orgId, args.orgId),
+          eq(
+            orgUsageAllowanceEntitlements.stripeSubscriptionId,
+            args.subscriptionId,
+          ),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return allowance ? "allowance" : null;
+  },
+);
 
 function concurrencySubscriptionItem(
   items: readonly StripeSubscriptionItem[],
@@ -228,78 +267,87 @@ function stripeObjectId(value: StripeRef | undefined): string | null {
 
 type ConcurrencyScheduleOwner = "plan" | "shared" | null;
 
-async function concurrencyScheduleOwner(
-  db: ReadonlyDb,
-  orgId: string,
-  subscriptionId: string,
-  schedule: StripeSubscriptionSchedule,
-): Promise<ConcurrencyScheduleOwner> {
-  const [usagePackChange] = await db
-    .select({
-      subscriptionChangeId: usagePackAllocationChanges.subscriptionChangeId,
-      sourceTier: usagePackSubscriptionChanges.sourceTier,
-      targetTier: usagePackSubscriptionChanges.targetTier,
-    })
-    .from(usagePackAllocationChanges)
-    .leftJoin(
-      usagePackSubscriptionChanges,
-      eq(
-        usagePackSubscriptionChanges.id,
-        usagePackAllocationChanges.subscriptionChangeId,
-      ),
-    )
-    .where(
-      and(
-        eq(usagePackAllocationChanges.orgId, orgId),
-        eq(usagePackAllocationChanges.stripeScheduleId, schedule.id),
-        eq(usagePackAllocationChanges.status, "scheduled"),
-      ),
-    )
-    .limit(1);
-  if (usagePackChange) {
-    return usagePackChange.subscriptionChangeId !== null &&
-      usagePackChange.sourceTier !== usagePackChange.targetTier
-      ? "plan"
-      : "shared";
-  }
-
-  const [sharedSubscription] = await db
-    .select({
-      planPriceId: orgPlanEntitlements.stripePriceId,
-      allowanceOrgId: orgUsageAllowanceEntitlements.orgId,
-      pendingPlanScheduleId: orgMetadata.pendingSubscriptionScheduleId,
-    })
-    .from(orgPlanEntitlements)
-    .leftJoin(
-      orgUsageAllowanceEntitlements,
-      and(
-        eq(orgUsageAllowanceEntitlements.orgId, orgPlanEntitlements.orgId),
+const concurrencyScheduleOwner$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly subscriptionId: string;
+      readonly schedule: StripeSubscriptionSchedule;
+    },
+    signal: AbortSignal,
+  ): Promise<ConcurrencyScheduleOwner> => {
+    const { orgId, subscriptionId, schedule } = args;
+    const db = set(writeDb$);
+    const [usagePackChange] = await db
+      .select({
+        subscriptionChangeId: usagePackAllocationChanges.subscriptionChangeId,
+        sourceTier: usagePackSubscriptionChanges.sourceTier,
+        targetTier: usagePackSubscriptionChanges.targetTier,
+      })
+      .from(usagePackAllocationChanges)
+      .leftJoin(
+        usagePackSubscriptionChanges,
         eq(
-          orgUsageAllowanceEntitlements.stripeSubscriptionId,
-          orgPlanEntitlements.stripeSubscriptionId,
+          usagePackSubscriptionChanges.id,
+          usagePackAllocationChanges.subscriptionChangeId,
         ),
-      ),
-    )
-    .leftJoin(orgMetadata, eq(orgMetadata.orgId, orgPlanEntitlements.orgId))
-    .where(
-      and(
-        eq(orgPlanEntitlements.orgId, orgId),
-        eq(orgPlanEntitlements.stripeSubscriptionId, subscriptionId),
-      ),
-    )
-    .limit(1);
-  if (
-    !sharedSubscription?.planPriceId ||
-    (!sharedSubscription.allowanceOrgId &&
-      schedule.end_behavior !== "cancel" &&
-      sharedSubscription.pendingPlanScheduleId !== schedule.id)
-  ) {
-    return null;
-  }
-  return schedulePreservesPlanItem(schedule, sharedSubscription.planPriceId)
-    ? "shared"
-    : "plan";
-}
+      )
+      .where(
+        and(
+          eq(usagePackAllocationChanges.orgId, orgId),
+          eq(usagePackAllocationChanges.stripeScheduleId, schedule.id),
+          eq(usagePackAllocationChanges.status, "scheduled"),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (usagePackChange) {
+      return usagePackChange.subscriptionChangeId !== null &&
+        usagePackChange.sourceTier !== usagePackChange.targetTier
+        ? "plan"
+        : "shared";
+    }
+
+    const [sharedSubscription] = await db
+      .select({
+        planPriceId: orgPlanEntitlements.stripePriceId,
+        allowanceOrgId: orgUsageAllowanceEntitlements.orgId,
+        pendingPlanScheduleId: orgMetadata.pendingSubscriptionScheduleId,
+      })
+      .from(orgPlanEntitlements)
+      .leftJoin(
+        orgUsageAllowanceEntitlements,
+        and(
+          eq(orgUsageAllowanceEntitlements.orgId, orgPlanEntitlements.orgId),
+          eq(
+            orgUsageAllowanceEntitlements.stripeSubscriptionId,
+            orgPlanEntitlements.stripeSubscriptionId,
+          ),
+        ),
+      )
+      .leftJoin(orgMetadata, eq(orgMetadata.orgId, orgPlanEntitlements.orgId))
+      .where(
+        and(
+          eq(orgPlanEntitlements.orgId, orgId),
+          eq(orgPlanEntitlements.stripeSubscriptionId, subscriptionId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (
+      !sharedSubscription?.planPriceId ||
+      (!sharedSubscription.allowanceOrgId &&
+        schedule.end_behavior !== "cancel" &&
+        sharedSubscription.pendingPlanScheduleId !== schedule.id)
+    ) {
+      return null;
+    }
+    return schedulePreservesPlanItem(schedule, sharedSubscription.planPriceId)
+      ? "shared"
+      : "plan";
+  },
+);
 
 function subscriptionPhaseItems(
   subscription: StripeSubscription,
@@ -405,34 +453,42 @@ function scheduleFinalEnd(schedule: StripeSubscriptionSchedule): number {
   return finalEnd;
 }
 
-async function planConcurrencyEnd(
-  db: ReadonlyDb,
-  orgId: string,
-  schedule: StripeSubscriptionSchedule,
-): Promise<number | null> {
-  if (schedule.end_behavior === "cancel") {
-    return scheduleFinalEnd(schedule);
-  }
+const planConcurrencyEnd$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly schedule: StripeSubscriptionSchedule;
+    },
+    signal: AbortSignal,
+  ): Promise<number | null> => {
+    const { orgId, schedule } = args;
+    if (schedule.end_behavior === "cancel") {
+      return scheduleFinalEnd(schedule);
+    }
 
-  const [org] = await db
-    .select({
-      pendingScheduleId: orgMetadata.pendingSubscriptionScheduleId,
-      pendingTargetTier: orgMetadata.pendingSubscriptionTargetTier,
-      pendingChangeAt: orgMetadata.pendingSubscriptionChangeAt,
-    })
-    .from(orgMetadata)
-    .where(eq(orgMetadata.orgId, orgId))
-    .limit(1);
-  if (
-    org?.pendingScheduleId !== schedule.id ||
-    (org.pendingTargetTier !== "pro" &&
-      org.pendingTargetTier !== "limited-free-1") ||
-    org.pendingChangeAt === null
-  ) {
-    return null;
-  }
-  return Math.floor(org.pendingChangeAt.getTime() / 1000);
-}
+    const db = set(writeDb$);
+    const [org] = await db
+      .select({
+        pendingScheduleId: orgMetadata.pendingSubscriptionScheduleId,
+        pendingTargetTier: orgMetadata.pendingSubscriptionTargetTier,
+        pendingChangeAt: orgMetadata.pendingSubscriptionChangeAt,
+      })
+      .from(orgMetadata)
+      .where(eq(orgMetadata.orgId, orgId))
+      .limit(1);
+    signal.throwIfAborted();
+    if (
+      org?.pendingScheduleId !== schedule.id ||
+      (org.pendingTargetTier !== "pro" &&
+        org.pendingTargetTier !== "limited-free-1") ||
+      org.pendingChangeAt === null
+    ) {
+      return null;
+    }
+    return Math.floor(org.pendingChangeAt.getTime() / 1000);
+  },
+);
 
 function currentAndFutureSchedulePhases(
   schedule: StripeSubscriptionSchedule,
@@ -1049,7 +1105,7 @@ async function scheduleConcurrencyOnSharedSchedule(
 
 export const addStripeConcurrencySubscriptionItem$ = command(
   async (
-    { get },
+    { set },
     args: AddStripeConcurrencySubscriptionItemArgs,
     signal: AbortSignal,
   ): Promise<StripeConcurrencySubscriptionChangeResult> => {
@@ -1094,9 +1150,8 @@ export const addStripeConcurrencySubscriptionItem$ = command(
         subscription,
       };
     }
-    const schedulePreparation = await prepareConcurrencySchedule(
-      get(db$),
-      stripe,
+    const schedulePreparation = await set(
+      prepareConcurrencySchedule$,
       {
         orgId: args.orgId,
         subscription,
@@ -1556,46 +1611,55 @@ function planEndsBeforeDeferredConcurrencyChange(
   );
 }
 
-async function prepareConcurrencySchedule(
-  db: ReadonlyDb,
-  stripe: StripeClient,
-  args: {
-    readonly orgId: string;
-    readonly subscription: StripeSubscription;
-    readonly hasScheduledConcurrencyChange: boolean;
-  },
-  signal: AbortSignal,
-): Promise<PreparedConcurrencySchedule> {
-  const scheduleId = stripeObjectId(args.subscription.schedule);
-  if (!scheduleId) {
-    return { ok: true, kind: "none" };
-  }
-  const schedule = await stripe.subscriptionSchedules.retrieve(scheduleId);
-  signal.throwIfAborted();
-  const owner = await concurrencyScheduleOwner(
-    db,
-    args.orgId,
-    args.subscription.id,
-    schedule,
-  );
-  signal.throwIfAborted();
-  if (owner === "plan") {
-    const endsAt = await planConcurrencyEnd(db, args.orgId, schedule);
+const prepareConcurrencySchedule$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly subscription: StripeSubscription;
+      readonly hasScheduledConcurrencyChange: boolean;
+    },
+    signal: AbortSignal,
+  ): Promise<PreparedConcurrencySchedule> => {
+    const stripe = getStripeClient();
+    const scheduleId = stripeObjectId(args.subscription.schedule);
+    if (!scheduleId) {
+      return { ok: true, kind: "none" };
+    }
+    const schedule = await stripe.subscriptionSchedules.retrieve(scheduleId);
     signal.throwIfAborted();
-    return endsAt === null
-      ? { ok: false }
-      : { ok: true, kind: "plan", id: scheduleId, schedule, endsAt };
-  }
-  if (owner === "shared") {
-    return { ok: true, kind: "shared", id: scheduleId, schedule };
-  }
-  if (args.hasScheduledConcurrencyChange) {
-    return { ok: true, kind: "concurrency", id: scheduleId, schedule };
-  }
-  return subscriptionScheduleHasNoFutureChanges(args.subscription, schedule)
-    ? { ok: true, kind: "neutral", id: scheduleId }
-    : { ok: false };
-}
+    const owner = await set(
+      concurrencyScheduleOwner$,
+      {
+        orgId: args.orgId,
+        subscriptionId: args.subscription.id,
+        schedule,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (owner === "plan") {
+      const endsAt = await set(
+        planConcurrencyEnd$,
+        { orgId: args.orgId, schedule },
+        signal,
+      );
+      signal.throwIfAborted();
+      return endsAt === null
+        ? { ok: false }
+        : { ok: true, kind: "plan", id: scheduleId, schedule, endsAt };
+    }
+    if (owner === "shared") {
+      return { ok: true, kind: "shared", id: scheduleId, schedule };
+    }
+    if (args.hasScheduledConcurrencyChange) {
+      return { ok: true, kind: "concurrency", id: scheduleId, schedule };
+    }
+    return subscriptionScheduleHasNoFutureChanges(args.subscription, schedule)
+      ? { ok: true, kind: "neutral", id: scheduleId }
+      : { ok: false };
+  },
+);
 
 async function schedulePreparedConcurrencyReduction(
   args: {
@@ -1735,7 +1799,7 @@ async function previewConcurrencyIncrease(
 
 export const previewStripeConcurrencySubscriptionChange$ = command(
   async (
-    { get },
+    { set },
     args: StripeConcurrencySubscriptionPreviewArgs,
     signal: AbortSignal,
   ): Promise<PreviewConcurrencySubscriptionChangeResult> => {
@@ -1758,9 +1822,8 @@ export const previewStripeConcurrencySubscriptionChange$ = command(
     ) {
       return { ok: false, reason: "invalid_quantity" };
     }
-    const schedulePreparation = await prepareConcurrencySchedule(
-      get(db$),
-      stripe,
+    const schedulePreparation = await set(
+      prepareConcurrencySchedule$,
       {
         orgId: args.orgId,
         subscription,
@@ -1982,7 +2045,7 @@ async function applyConcurrencyToPreparedSchedule(
 
 const applyStripeConcurrencySubscriptionChange$ = command(
   async (
-    { get },
+    { set },
     args: StripeConcurrencySubscriptionChangeArgs,
     signal: AbortSignal,
   ): Promise<StripeConcurrencySubscriptionChangeResult> => {
@@ -2013,9 +2076,8 @@ const applyStripeConcurrencySubscriptionChange$ = command(
     if (pendingChange) {
       return pendingChange;
     }
-    const schedulePreparation = await prepareConcurrencySchedule(
-      get(db$),
-      stripe,
+    const schedulePreparation = await set(
+      prepareConcurrencySchedule$,
       {
         orgId: args.orgId,
         subscription,
@@ -2105,13 +2167,14 @@ const applyStripeConcurrencySubscriptionChange$ = command(
 
 export const previewConcurrencySubscriptionChange$ = command(
   async (
-    { get, set },
+    { set },
     args: ConcurrencySubscriptionChangeArgs,
     signal: AbortSignal,
   ): Promise<PreviewConcurrencySubscriptionChangeResult> => {
-    const subscription = await findActiveConcurrencySubscription(
-      get(db$),
+    const subscription = await set(
+      findActiveConcurrencySubscription$,
       args,
+      signal,
     );
     signal.throwIfAborted();
     if (!subscription) {
@@ -2134,13 +2197,14 @@ export const previewConcurrencySubscriptionChange$ = command(
 
 export const changeConcurrencySubscription$ = command(
   async (
-    { get, set },
+    { set },
     args: ConfirmedConcurrencySubscriptionChangeArgs,
     signal: AbortSignal,
   ): Promise<ChangeConcurrencySubscriptionResult> => {
-    const subscription = await findActiveConcurrencySubscription(
-      get(db$),
+    const subscription = await set(
+      findActiveConcurrencySubscription$,
       args,
+      signal,
     );
     signal.throwIfAborted();
     if (!subscription) {
@@ -2171,7 +2235,7 @@ export const changeConcurrencySubscription$ = command(
         args.quantity < subscription.quantity &&
         result.response.effectiveAt !== undefined;
       const db = set(writeDb$);
-      await db
+      const [published] = await db
         .update(orgConcurrencySubscriptions)
         .set({
           scheduledSlots: scheduled ? args.quantity : null,
@@ -2188,9 +2252,15 @@ export const changeConcurrencySubscription$ = command(
               orgConcurrencySubscriptions.stripeSubscriptionId,
               args.subscriptionId,
             ),
+            sql`${orgConcurrencySubscriptions}::text = ${subscription.billingSnapshot}`,
+            sql`${orgConcurrencySubscriptions}.xmin::text = ${subscription.rowVersion}`,
           ),
-        );
+        )
+        .returning({ id: orgConcurrencySubscriptions.stripeSubscriptionId });
       signal.throwIfAborted();
+      if (!published) {
+        return { ok: false, reason: "billing_changed" };
+      }
     }
     return result;
   },
@@ -2198,28 +2268,27 @@ export const changeConcurrencySubscription$ = command(
 
 export const cancelConcurrencySubscription$ = command(
   async (
-    { get, set },
+    { set },
     args: ConcurrencySubscriptionArgs,
     signal: AbortSignal,
   ): Promise<CancelConcurrencySubscriptionResult> => {
-    const subscription = await findActiveConcurrencySubscription(
-      get(db$),
+    const subscription = await set(
+      findActiveConcurrencySubscription$,
       args,
+      signal,
     );
     signal.throwIfAborted();
     if (!subscription) {
       return { ok: false, reason: "not_found" };
     }
     const stripe = getStripeClient();
-    const db = get(db$);
-    if ((await sharedBillingSubscriptionKind(db, args)) !== null) {
+    if ((await set(sharedBillingSubscriptionKind$, args, signal)) !== null) {
       const stripeSubscription = await stripe.subscriptions.retrieve(
         args.subscriptionId,
       );
       signal.throwIfAborted();
-      const schedulePreparation = await prepareConcurrencySchedule(
-        db,
-        stripe,
+      const schedulePreparation = await set(
+        prepareConcurrencySchedule$,
         {
           orgId: args.orgId,
           subscription: stripeSubscription,
@@ -2274,7 +2343,8 @@ export const cancelConcurrencySubscription$ = command(
     }
     signal.throwIfAborted();
 
-    await set(writeDb$)
+    const db = set(writeDb$);
+    const [published] = await db
       .update(orgConcurrencySubscriptions)
       .set({
         cancelAtPeriodEnd: true,
@@ -2289,9 +2359,15 @@ export const cancelConcurrencySubscription$ = command(
             orgConcurrencySubscriptions.stripeSubscriptionId,
             args.subscriptionId,
           ),
+          sql`${orgConcurrencySubscriptions}::text = ${subscription.billingSnapshot}`,
+          sql`${orgConcurrencySubscriptions}.xmin::text = ${subscription.rowVersion}`,
         ),
-      );
+      )
+      .returning({ id: orgConcurrencySubscriptions.stripeSubscriptionId });
     signal.throwIfAborted();
+    if (!published) {
+      return { ok: false, reason: "billing_changed" };
+    }
 
     return {
       ok: true,
@@ -2306,104 +2382,116 @@ type RestoreConcurrencyStripeResult =
   | "pending_update"
   | "plan_ending";
 
-async function restoreScheduledConcurrencyChange(
-  stripe: StripeClient,
-  db: ReadonlyDb,
-  args: ConcurrencySubscriptionArgs & {
-    readonly quantity: number;
-    readonly shared: boolean;
-    readonly restoreSubscriptionCancellation: boolean;
-  },
-  signal: AbortSignal,
-): Promise<RestoreConcurrencyStripeResult> {
-  const stripeSubscription = await stripe.subscriptions.retrieve(
-    args.subscriptionId,
-  );
-  signal.throwIfAborted();
-  const item = concurrencySubscriptionItem(stripeSubscription.items.data);
-  if (!item) {
-    return "not_found";
-  }
-
-  const scheduleId = stripeObjectId(stripeSubscription.schedule);
-  if (!scheduleId) {
-    if (item.quantity !== args.quantity) {
+const restoreScheduledConcurrencyChange$ = command(
+  async (
+    { set },
+    args: ConcurrencySubscriptionArgs & {
+      readonly quantity: number;
+      readonly shared: boolean;
+      readonly restoreSubscriptionCancellation: boolean;
+    },
+    signal: AbortSignal,
+  ): Promise<RestoreConcurrencyStripeResult> => {
+    const stripe = getStripeClient();
+    const stripeSubscription = await stripe.subscriptions.retrieve(
+      args.subscriptionId,
+    );
+    signal.throwIfAborted();
+    const item = concurrencySubscriptionItem(stripeSubscription.items.data);
+    if (!item) {
       return "not_found";
     }
-    if (args.restoreSubscriptionCancellation) {
-      await stripe.subscriptions.update(args.subscriptionId, {
-        cancel_at_period_end: false,
+
+    const scheduleId = stripeObjectId(stripeSubscription.schedule);
+    if (!scheduleId) {
+      if (item.quantity !== args.quantity) {
+        return "not_found";
+      }
+      if (args.restoreSubscriptionCancellation) {
+        await stripe.subscriptions.update(args.subscriptionId, {
+          cancel_at_period_end: false,
+        });
+        signal.throwIfAborted();
+      }
+      return "restored";
+    }
+    if (!args.shared) {
+      await stripe.subscriptionSchedules.release(scheduleId, {
+        preserve_cancel_date: true,
+      });
+      signal.throwIfAborted();
+      return "restored";
+    }
+
+    const schedule = await stripe.subscriptionSchedules.retrieve(scheduleId);
+    signal.throwIfAborted();
+    const owner = await set(
+      concurrencyScheduleOwner$,
+      {
+        orgId: args.orgId,
+        subscriptionId: stripeSubscription.id,
+        schedule,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (owner === "plan") {
+      const planEndsAt = await set(
+        planConcurrencyEnd$,
+        { orgId: args.orgId, schedule },
+        signal,
+      );
+      signal.throwIfAborted();
+      if (planEndsAt === null) {
+        return "plan_ending";
+      }
+      await applyConcurrencyToAttachedSchedule(
+        stripe,
+        {
+          subscription: stripeSubscription,
+          scheduleId,
+          schedule,
+          priceId: item.priceId,
+          targetQuantity: args.quantity,
+          prorationBehavior: "none",
+          planEndsAt,
+        },
+        signal,
+      );
+      return "restored";
+    }
+    if (owner === "shared") {
+      await applyConcurrencyToAttachedSchedule(
+        stripe,
+        {
+          subscription: stripeSubscription,
+          scheduleId,
+          schedule,
+          priceId: item.priceId,
+          targetQuantity: args.quantity,
+          prorationBehavior: "none",
+        },
+        signal,
+      );
+    } else {
+      await stripe.subscriptionSchedules.release(scheduleId, {
+        preserve_cancel_date: true,
       });
     }
     return "restored";
-  }
-  if (!args.shared) {
-    await stripe.subscriptionSchedules.release(scheduleId, {
-      preserve_cancel_date: true,
-    });
-    return "restored";
-  }
-
-  const schedule = await stripe.subscriptionSchedules.retrieve(scheduleId);
-  signal.throwIfAborted();
-  const owner = await concurrencyScheduleOwner(
-    db,
-    args.orgId,
-    stripeSubscription.id,
-    schedule,
-  );
-  signal.throwIfAborted();
-  if (owner === "plan") {
-    const planEndsAt = await planConcurrencyEnd(db, args.orgId, schedule);
-    signal.throwIfAborted();
-    if (planEndsAt === null) {
-      return "plan_ending";
-    }
-    await applyConcurrencyToAttachedSchedule(
-      stripe,
-      {
-        subscription: stripeSubscription,
-        scheduleId,
-        schedule,
-        priceId: item.priceId,
-        targetQuantity: args.quantity,
-        prorationBehavior: "none",
-        planEndsAt,
-      },
-      signal,
-    );
-    return "restored";
-  }
-  if (owner === "shared") {
-    await applyConcurrencyToAttachedSchedule(
-      stripe,
-      {
-        subscription: stripeSubscription,
-        scheduleId,
-        schedule,
-        priceId: item.priceId,
-        targetQuantity: args.quantity,
-        prorationBehavior: "none",
-      },
-      signal,
-    );
-  } else {
-    await stripe.subscriptionSchedules.release(scheduleId, {
-      preserve_cancel_date: true,
-    });
-  }
-  return "restored";
-}
+  },
+);
 
 export const restoreConcurrencySubscription$ = command(
   async (
-    { get, set },
+    { set },
     args: ConcurrencySubscriptionArgs,
     signal: AbortSignal,
   ): Promise<CancelConcurrencySubscriptionResult> => {
-    const subscription = await findActiveConcurrencySubscription(
-      get(db$),
+    const subscription = await set(
+      findActiveConcurrencySubscription$,
       args,
+      signal,
     );
     signal.throwIfAborted();
     if (
@@ -2415,13 +2503,11 @@ export const restoreConcurrencySubscription$ = command(
     }
 
     const stripe = getStripeClient();
-    const db = get(db$);
-    const sharedKind = await sharedBillingSubscriptionKind(db, args);
+    const sharedKind = await set(sharedBillingSubscriptionKind$, args, signal);
     signal.throwIfAborted();
     if (sharedKind !== null || subscription.scheduledQuantity !== null) {
-      const stripeResult = await restoreScheduledConcurrencyChange(
-        stripe,
-        db,
+      const stripeResult = await set(
+        restoreScheduledConcurrencyChange$,
         {
           ...args,
           quantity: subscription.quantity,
@@ -2443,7 +2529,8 @@ export const restoreConcurrencySubscription$ = command(
     }
     signal.throwIfAborted();
 
-    await set(writeDb$)
+    const db = set(writeDb$);
+    const [published] = await db
       .update(orgConcurrencySubscriptions)
       .set({
         cancelAtPeriodEnd: false,
@@ -2458,9 +2545,15 @@ export const restoreConcurrencySubscription$ = command(
             orgConcurrencySubscriptions.stripeSubscriptionId,
             args.subscriptionId,
           ),
+          sql`${orgConcurrencySubscriptions}::text = ${subscription.billingSnapshot}`,
+          sql`${orgConcurrencySubscriptions}.xmin::text = ${subscription.rowVersion}`,
         ),
-      );
+      )
+      .returning({ id: orgConcurrencySubscriptions.stripeSubscriptionId });
     signal.throwIfAborted();
+    if (!published) {
+      return { ok: false, reason: "billing_changed" };
+    }
 
     return {
       ok: true,

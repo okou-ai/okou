@@ -76,7 +76,10 @@ function activePaidThroughCutoff(at: Date): Date {
   return new Date(at.getTime() - CONCURRENCY_PAYMENT_FAILURE_GRACE_MS);
 }
 
-function activeConcurrencySubscriptionPredicate(orgId: string, at: Date) {
+export function activeConcurrencySubscriptionPredicate(
+  orgId: string,
+  at: Date,
+) {
   return and(
     eq(orgConcurrencySubscriptions.orgId, orgId),
     inArray(orgConcurrencySubscriptions.subscriptionStatus, [
