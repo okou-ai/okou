@@ -4,7 +4,7 @@ import { systemStoragePresignedUrlCache } from "@okouai/db/schema/system-storage
 import { command, computed, type Computed } from "ccstate";
 import { and, eq, inArray, like, lte, sql } from "drizzle-orm";
 import { z } from "zod";
-import { joinAll, onRejection, safeSync } from "../utils";
+import { onRejection, safeSync } from "../utils";
 import { executeRawRows } from "../../lib/db-raw-rows";
 import {
   withPgPoolAcquisitionCapture,
@@ -977,186 +977,183 @@ function storageManifestExceedsObjectKeyLowerBound(
   return false;
 }
 
-async function lookupMixedStorageManifestPresignedUrlCacheRows(
-  db: Db,
-  pairs: readonly StorageManifestPresignedUrlCacheLookupPair[],
-) {
-  const scopes = pairs.map((pair) => {
-    return pair.scope;
-  });
-  const cacheKeys = pairs.map((pair) => {
-    return pair.cacheKey;
-  });
-  return await db
-    .select({
-      scope: systemStoragePresignedUrlCache.scope,
-      cacheKey: systemStoragePresignedUrlCache.cacheKey,
-      presignedUrl: systemStoragePresignedUrlCache.presignedUrl,
-      expiresAt: systemStoragePresignedUrlCache.expiresAt,
-    })
-    .from(systemStoragePresignedUrlCache)
-    .innerJoin(
-      sql`unnest(
-        ${sql.param(scopes)}::varchar(64)[],
-        ${sql.param(cacheKeys)}::varchar(64)[]
-      ) AS requested(scope, cache_key)`,
-      and(
-        eq(systemStoragePresignedUrlCache.scope, sql`requested.scope`),
-        eq(systemStoragePresignedUrlCache.cacheKey, sql`requested.cache_key`),
-      ),
-    );
-}
-
-async function measureMixedStorageManifestPresignedUrlCacheRows(args: {
-  readonly db: Db;
-  readonly pairs: readonly StorageManifestPresignedUrlCacheLookupPair[];
-  readonly requestedCount: number;
-  readonly logicalLookupCount: number;
-  readonly observation:
-    | StorageManifestCacheMixedLookupObservationContext
-    | undefined;
-}) {
-  const acquisitionCapture: PgPoolAcquisitionCapture = { acquisitions: [] };
-  return await measureApiDispatchTiming(
-    args.observation?.timing,
-    "api_dispatch_prepare_storage_manifest_cache_mixed_lookup",
-    "nested",
-    async () => {
-      const lookup = async () => {
-        return await lookupMixedStorageManifestPresignedUrlCacheRows(
-          args.db,
-          args.pairs,
-        );
-      };
-      const rows = args.observation
-        ? withPgPoolAcquisitionCapture(acquisitionCapture, lookup)
-        : lookup();
-      return await rows.finally(() => {
-        for (const acquisition of acquisitionCapture.acquisitions) {
-          args.observation?.timing.recordDuration(
-            "api_dispatch_prepare_storage_manifest_cache_pool_acquire",
-            "nested",
-            acquisition.durationMs,
-            now(),
-            {
-              storage_manifest_branch: args.observation?.branch ?? "unobserved",
-              storage_manifest_cache_scope: "all_scopes",
-              storage_manifest_cache_lookup_kind: "mixed",
-              storage_manifest_cache_pool_acquire_path: acquisition.path,
-              storage_manifest_cache_requested_count_bucket:
-                storageManifestCacheCountBucket(args.requestedCount),
-              storage_manifest_cache_unique_key_count_bucket:
-                storageManifestCacheCountBucket(args.pairs.length),
-            },
-          );
-        }
-      });
-    },
-    () => {
-      return {
-        storage_manifest_branch: args.observation?.branch ?? "unobserved",
-        storage_manifest_cache_scope: "all_scopes",
-        storage_manifest_cache_requested_count_bucket:
-          storageManifestCacheCountBucket(args.requestedCount),
-        storage_manifest_cache_unique_key_count_bucket:
-          storageManifestCacheCountBucket(args.pairs.length),
-        storage_manifest_cache_logical_lookup_count_bucket:
-          storageManifestCacheCountBucket(args.logicalLookupCount),
-        storage_manifest_cache_pool_acquire_count_bucket:
-          storageManifestCacheCountBucket(
-            acquisitionCapture.acquisitions.length,
-          ),
-      };
-    },
-  );
-}
-
-export function prefetchStorageManifestPresignedUrlCacheRows(args: {
+interface StorageManifestPresignedUrlCacheReadInput {
   readonly db: Db;
   readonly input: StorageManifestPresignedUrlCachePrefetchInput;
+  readonly groups: readonly RunStoragePresignedUrlsArgs["requests"][];
   readonly observation?: StorageManifestCacheMixedLookupObservationContext;
-}): Computed<Promise<StorageManifestPresignedUrlCacheSnapshot | undefined>> {
-  return computed(async () => {
-    const requestedCount =
-      args.input.systemRequests.length +
-      args.input.workflowSkillRequests.length +
-      args.input.readOnlyRequests.length;
-    if (args.input.logicalLookupCount < 2) {
-      recordStorageManifestPrefetchDecision({
-        observation: args.observation,
-        decision: "insufficient_groups",
-        requestedCount,
-        logicalLookupCount: args.input.logicalLookupCount,
-      });
-      return undefined;
-    }
-    if (
-      requestedCount > STORAGE_MANIFEST_PRESIGNED_URL_MIXED_LOOKUP_MAX_REQUESTS
-    ) {
-      recordStorageManifestPrefetchDecision({
-        observation: args.observation,
-        decision: "over_request_limit",
-        requestedCount,
-        logicalLookupCount: args.input.logicalLookupCount,
-      });
-      return undefined;
-    }
-    if (
-      requestedCount > STORAGE_MANIFEST_PRESIGNED_URL_MIXED_LOOKUP_MAX_PAIRS &&
-      storageManifestExceedsObjectKeyLowerBound(args.input)
-    ) {
-      recordStorageManifestPrefetchDecision({
-        observation: args.observation,
-        decision: "over_object_key_lower_bound",
-        requestedCount,
-        logicalLookupCount: args.input.logicalLookupCount,
-        uniquePairCount: args.observation
-          ? storageManifestPresignedUrlUniquePairCount(args.input)
-          : undefined,
-      });
-      return undefined;
-    }
-    const { pairs, cacheKeysByRequest } =
-      storageManifestPresignedUrlCacheLookupPairs(
-        args.input,
-        requestedCount > STORAGE_MANIFEST_PRESIGNED_URL_MIXED_LOOKUP_MAX_PAIRS,
-      );
-    if (pairs.length === 0) {
-      recordStorageManifestPrefetchDecision({
-        observation: args.observation,
-        decision: "no_pairs",
-        requestedCount,
-        logicalLookupCount: args.input.logicalLookupCount,
-        uniquePairCount: pairs.length,
-      });
-      return undefined;
-    }
-    if (pairs.length > STORAGE_MANIFEST_PRESIGNED_URL_MIXED_LOOKUP_MAX_PAIRS) {
-      recordStorageManifestPrefetchDecision({
-        observation: args.observation,
-        decision: "over_unique_pair_limit",
-        requestedCount,
-        logicalLookupCount: args.input.logicalLookupCount,
-        uniquePairCount: pairs.length,
-      });
-      return undefined;
-    }
+}
 
+function planStorageManifestMixedLookup(
+  args: StorageManifestPresignedUrlCacheReadInput,
+) {
+  const requestedCount =
+    args.input.systemRequests.length +
+    args.input.workflowSkillRequests.length +
+    args.input.readOnlyRequests.length;
+  if (args.input.logicalLookupCount < 2) {
     recordStorageManifestPrefetchDecision({
       observation: args.observation,
-      decision: "mixed_lookup_selected",
+      decision: "insufficient_groups",
+      requestedCount,
+      logicalLookupCount: args.input.logicalLookupCount,
+    });
+    return undefined;
+  }
+  if (
+    requestedCount > STORAGE_MANIFEST_PRESIGNED_URL_MIXED_LOOKUP_MAX_REQUESTS
+  ) {
+    recordStorageManifestPrefetchDecision({
+      observation: args.observation,
+      decision: "over_request_limit",
+      requestedCount,
+      logicalLookupCount: args.input.logicalLookupCount,
+    });
+    return undefined;
+  }
+  if (
+    requestedCount > STORAGE_MANIFEST_PRESIGNED_URL_MIXED_LOOKUP_MAX_PAIRS &&
+    storageManifestExceedsObjectKeyLowerBound(args.input)
+  ) {
+    recordStorageManifestPrefetchDecision({
+      observation: args.observation,
+      decision: "over_object_key_lower_bound",
+      requestedCount,
+      logicalLookupCount: args.input.logicalLookupCount,
+      uniquePairCount: args.observation
+        ? storageManifestPresignedUrlUniquePairCount(args.input)
+        : undefined,
+    });
+    return undefined;
+  }
+  const { pairs, cacheKeysByRequest } =
+    storageManifestPresignedUrlCacheLookupPairs(
+      args.input,
+      requestedCount > STORAGE_MANIFEST_PRESIGNED_URL_MIXED_LOOKUP_MAX_PAIRS,
+    );
+  if (pairs.length === 0) {
+    recordStorageManifestPrefetchDecision({
+      observation: args.observation,
+      decision: "no_pairs",
       requestedCount,
       logicalLookupCount: args.input.logicalLookupCount,
       uniquePairCount: pairs.length,
     });
-
-    const rows = await measureMixedStorageManifestPresignedUrlCacheRows({
-      db: args.db,
-      pairs,
+    return undefined;
+  }
+  if (pairs.length > STORAGE_MANIFEST_PRESIGNED_URL_MIXED_LOOKUP_MAX_PAIRS) {
+    recordStorageManifestPrefetchDecision({
+      observation: args.observation,
+      decision: "over_unique_pair_limit",
       requestedCount,
       logicalLookupCount: args.input.logicalLookupCount,
-      observation: args.observation,
+      uniquePairCount: pairs.length,
     });
+    return undefined;
+  }
+
+  recordStorageManifestPrefetchDecision({
+    observation: args.observation,
+    decision: "mixed_lookup_selected",
+    requestedCount,
+    logicalLookupCount: args.input.logicalLookupCount,
+    uniquePairCount: pairs.length,
+  });
+  return { pairs, cacheKeysByRequest, requestedCount };
+}
+
+function createMixedStorageManifestPresignedUrlCacheRows(
+  input$: Computed<
+    Promise<StorageManifestPresignedUrlCacheReadInput | undefined>
+  >,
+) {
+  return computed(async (get) => {
+    const args = await get(input$);
+    if (!args) {
+      return undefined;
+    }
+    const lookup = planStorageManifestMixedLookup(args);
+    if (!lookup) {
+      return undefined;
+    }
+    const { requestedCount, pairs, cacheKeysByRequest } = lookup;
+    const acquisitionCapture: PgPoolAcquisitionCapture = { acquisitions: [] };
+    const scopes = pairs.map((pair) => {
+      return pair.scope;
+    });
+    const cacheKeys = pairs.map((pair) => {
+      return pair.cacheKey;
+    });
+    const rows = await measureApiDispatchTiming(
+      args.observation?.timing,
+      "api_dispatch_prepare_storage_manifest_cache_mixed_lookup",
+      "nested",
+      async () => {
+        const lookup = async () => {
+          return await args.db
+            .select({
+              scope: systemStoragePresignedUrlCache.scope,
+              cacheKey: systemStoragePresignedUrlCache.cacheKey,
+              presignedUrl: systemStoragePresignedUrlCache.presignedUrl,
+              expiresAt: systemStoragePresignedUrlCache.expiresAt,
+            })
+            .from(systemStoragePresignedUrlCache)
+            .innerJoin(
+              sql`unnest(
+                ${sql.param(scopes)}::varchar(64)[],
+                ${sql.param(cacheKeys)}::varchar(64)[]
+              ) AS requested(scope, cache_key)`,
+              and(
+                eq(systemStoragePresignedUrlCache.scope, sql`requested.scope`),
+                eq(
+                  systemStoragePresignedUrlCache.cacheKey,
+                  sql`requested.cache_key`,
+                ),
+              ),
+            );
+        };
+        const query = args.observation
+          ? withPgPoolAcquisitionCapture(acquisitionCapture, lookup)
+          : lookup();
+        return await query.finally(() => {
+          for (const acquisition of acquisitionCapture.acquisitions) {
+            args.observation?.timing.recordDuration(
+              "api_dispatch_prepare_storage_manifest_cache_pool_acquire",
+              "nested",
+              acquisition.durationMs,
+              now(),
+              {
+                storage_manifest_branch:
+                  args.observation?.branch ?? "unobserved",
+                storage_manifest_cache_scope: "all_scopes",
+                storage_manifest_cache_lookup_kind: "mixed",
+                storage_manifest_cache_pool_acquire_path: acquisition.path,
+                storage_manifest_cache_requested_count_bucket:
+                  storageManifestCacheCountBucket(requestedCount),
+                storage_manifest_cache_unique_key_count_bucket:
+                  storageManifestCacheCountBucket(pairs.length),
+              },
+            );
+          }
+        });
+      },
+      () => {
+        return {
+          storage_manifest_branch: args.observation?.branch ?? "unobserved",
+          storage_manifest_cache_scope: "all_scopes",
+          storage_manifest_cache_requested_count_bucket:
+            storageManifestCacheCountBucket(requestedCount),
+          storage_manifest_cache_unique_key_count_bucket:
+            storageManifestCacheCountBucket(pairs.length),
+          storage_manifest_cache_logical_lookup_count_bucket:
+            storageManifestCacheCountBucket(args.input.logicalLookupCount),
+          storage_manifest_cache_pool_acquire_count_bucket:
+            storageManifestCacheCountBucket(
+              acquisitionCapture.acquisitions.length,
+            ),
+        };
+      },
+    );
 
     const rowsByScope = new Map<
       StorageManifestPresignedUrlCacheScope,
@@ -1172,6 +1169,81 @@ export function prefetchStorageManifestPresignedUrlCacheRows(args: {
         presignedUrl: row.presignedUrl,
         expiresAt: row.expiresAt,
       });
+      rowsByScope.set(scope, rowsByCacheKey);
+    }
+    return { rowsByScope, cacheKeysByRequest };
+  });
+}
+
+/** Construct cache readers once; later storage initialization only changes input. */
+export function createStorageManifestPresignedUrlCacheRows(
+  input$: Computed<
+    Promise<StorageManifestPresignedUrlCacheReadInput | undefined>
+  >,
+): Computed<Promise<StorageManifestPresignedUrlCacheSnapshot | undefined>> {
+  const mixedRows$ = createMixedStorageManifestPresignedUrlCacheRows(input$);
+  return computed(async (get) => {
+    const [args, mixedRows] = await Promise.all([get(input$), get(mixedRows$)]);
+    if (!args || mixedRows) {
+      return mixedRows;
+    }
+    const { cacheKeysByRequest } = storageManifestPresignedUrlCacheLookupPairs(
+      args.input,
+      false,
+    );
+    // The mixed lookup has the same bounds as before. Outside those bounds,
+    // preserve the existing logical batches instead of expanding one query per URL.
+    const batches = await Promise.all(
+      args.groups.map(async (group) => {
+        const scope: StorageManifestPresignedUrlCacheScope =
+          group.kind === "system"
+            ? "system_storage"
+            : group.kind === "workflow"
+              ? "workflow_skill_storage"
+              : "readonly_storage";
+        const cacheKeys = [
+          ...new Set(
+            group.values.map((request) => {
+              const identity = cacheKeysByRequest.get(request);
+              if (!identity) {
+                throw new Error(
+                  "Storage cache request is outside the captured batch",
+                );
+              }
+              return identity.cacheKey;
+            }),
+          ),
+        ];
+        const rows =
+          cacheKeys.length === 0
+            ? []
+            : await args.db
+                .select({
+                  cacheKey: systemStoragePresignedUrlCache.cacheKey,
+                  presignedUrl: systemStoragePresignedUrlCache.presignedUrl,
+                  expiresAt: systemStoragePresignedUrlCache.expiresAt,
+                })
+                .from(systemStoragePresignedUrlCache)
+                .where(
+                  and(
+                    eq(systemStoragePresignedUrlCache.scope, scope),
+                    inArray(systemStoragePresignedUrlCache.cacheKey, cacheKeys),
+                  ),
+                );
+        return { scope, rows };
+      }),
+    );
+    const rowsByScope = new Map<
+      StorageManifestPresignedUrlCacheScope,
+      Map<string, SelectedStoragePresignedUrlCacheRow>
+    >();
+    for (const { scope, rows } of batches) {
+      const rowsByCacheKey =
+        rowsByScope.get(scope) ??
+        new Map<string, SelectedStoragePresignedUrlCacheRow>();
+      for (const row of rows) {
+        rowsByCacheKey.set(row.cacheKey, row);
+      }
       rowsByScope.set(scope, rowsByCacheKey);
     }
     return { rowsByScope, cacheKeysByRequest };
@@ -1423,7 +1495,7 @@ async function signPreparedStoragePresignedUrls(
   signingRequests: readonly StoragePresignedUrlSigningRequest[],
 ): Promise<PreparedStoragePresignedUrls> {
   const signMisses = async () => {
-    return await joinAll(
+    return await Promise.all(
       signingRequests.map((entry) => {
         return signCacheValue({
           ...entry,
@@ -1526,7 +1598,7 @@ interface RunStoragePresignedUrlsArgs {
         readonly values: readonly ReadOnlyStoragePresignedUrlRequest[];
       };
   readonly observation?: StorageManifestCacheObservationContext;
-  readonly prefetchedRows?: StorageManifestPresignedUrlCacheSnapshot;
+  readonly prefetchedRows: StorageManifestPresignedUrlCacheSnapshot;
 }
 
 function prepareRunStoragePresignedUrls(args: RunStoragePresignedUrlsArgs) {

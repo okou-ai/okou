@@ -7,6 +7,7 @@ import {
   connectorCatalogSyncState,
 } from "@okouai/db/schema/connector-catalog";
 import { and, count, eq, inArray } from "drizzle-orm";
+import { computed, type Computed } from "ccstate";
 
 import { testOverride } from "../../lib/singleton";
 import type { Db, ReadonlyDb } from "../external/db";
@@ -32,6 +33,8 @@ import {
 } from "@okouai/connectors/connector-catalog/runtime-projection";
 import { connectorCatalogExecutableCapabilityState } from "./connector-catalog-compatibility.service";
 import { connectorCatalogSource } from "./connector-catalog-source";
+import type { ConnectorCatalogLoadTiming } from "./connector-catalog-load-timing.service";
+import type { ExternalCatalogIdentity } from "./connector-catalog-external-reader.service";
 import {
   connectorCatalogValidationAuthorityIsCurrent,
   currentConnectorCatalogValidatorIdentity,
@@ -246,6 +249,25 @@ async function readProjectionIdentity(
   // Route integration tests use this seam to replace the active identity after
   // the read, making a concurrent publication deterministic without timing sleeps.
   await projectionIdentityReadHook.get()?.();
+  return resolveProjectionIdentity({
+    sourceId,
+    capabilityDigest,
+    validator,
+    row,
+  });
+}
+
+function resolveProjectionIdentity({
+  sourceId,
+  capabilityDigest,
+  validator,
+  row,
+}: {
+  readonly sourceId: string;
+  readonly capabilityDigest: string;
+  readonly validator: ConnectorCatalogValidatorIdentity;
+  readonly row: Awaited<ReturnType<typeof queryProjectionIdentity>>;
+}): ConnectorCatalogRuntimeProjectionIdentityRead {
   if (
     row === undefined ||
     row.projectionSetId === null ||
@@ -319,6 +341,144 @@ async function readProjectionIdentity(
       ),
     },
   };
+}
+
+interface CapturedConnectorCatalogIdentity {
+  readonly identity: ExternalCatalogIdentity | undefined;
+  readonly projection: ConnectorCatalogRuntimeProjectionIdentityRead;
+}
+
+interface ConnectorCatalogIdentityInput {
+  readonly db: ReadonlyDb;
+  readonly timing: ConnectorCatalogLoadTiming;
+}
+
+/** Construct separately for the captured identity and the conditional fresh read. */
+export function createConnectorCatalogIdentityObject(
+  input$: Computed<
+    | ConnectorCatalogIdentityInput
+    | undefined
+    | Promise<ConnectorCatalogIdentityInput | undefined>
+  >,
+) {
+  return computed(
+    async (get): Promise<CapturedConnectorCatalogIdentity | undefined> => {
+      const input = await get(input$);
+      if (input === undefined) {
+        return undefined;
+      }
+      const sourceId = connectorCatalogSource().sourceId;
+      const capabilityDigest =
+        connectorCatalogExecutableCapabilityState().digest;
+      const validator = currentConnectorCatalogValidatorIdentity();
+      const row = await input.timing.measure(
+        "api_dispatch_connector_catalog_query_projection_identity",
+        async () => {
+          const [row] = await input.db
+            .select({
+              projectionSetId: connectorCatalogRuntimeProjectionSets.id,
+              schemaVersion: connectorCatalogActiveSnapshot.schemaVersion,
+              catalogVersion: connectorCatalogActiveSnapshot.catalogVersion,
+              catalogDigest: connectorCatalogActiveSnapshot.catalogDigest,
+              projectionVersion:
+                connectorCatalogRuntimeProjectionSets.projectionVersion,
+              connectorCount:
+                connectorCatalogRuntimeProjectionSets.connectorCount,
+              projectionValidationBackendVersion:
+                connectorCatalogRuntimeProjectionSets.catalogValidationBackendVersion,
+              projectionValidationBuildCommitSha:
+                connectorCatalogRuntimeProjectionSets.catalogValidationBuildCommitSha,
+              evaluatedCapabilityDigest:
+                connectorCatalogCompatibilityEvaluation.executableCapabilityDigest,
+              compatibilityValidationBackendVersion:
+                connectorCatalogCompatibilityEvaluation.catalogValidationBackendVersion,
+              compatibilityValidationBuildCommitSha:
+                connectorCatalogCompatibilityEvaluation.catalogValidationBuildCommitSha,
+              filteredAuthMethods:
+                connectorCatalogCompatibilityEvaluation.filteredAuthMethods,
+            })
+            .from(connectorCatalogActiveSnapshot)
+            .leftJoin(
+              connectorCatalogRuntimeProjectionSets,
+              and(
+                eq(
+                  connectorCatalogRuntimeProjectionSets.sourceId,
+                  connectorCatalogActiveSnapshot.sourceId,
+                ),
+                eq(
+                  connectorCatalogRuntimeProjectionSets.schemaVersion,
+                  connectorCatalogActiveSnapshot.schemaVersion,
+                ),
+                eq(
+                  connectorCatalogRuntimeProjectionSets.catalogVersion,
+                  connectorCatalogActiveSnapshot.catalogVersion,
+                ),
+                eq(
+                  connectorCatalogRuntimeProjectionSets.catalogDigest,
+                  connectorCatalogActiveSnapshot.catalogDigest,
+                ),
+              ),
+            )
+            .leftJoin(
+              connectorCatalogCompatibilityEvaluation,
+              and(
+                eq(
+                  connectorCatalogCompatibilityEvaluation.sourceId,
+                  connectorCatalogActiveSnapshot.sourceId,
+                ),
+                eq(
+                  connectorCatalogCompatibilityEvaluation.schemaVersion,
+                  connectorCatalogActiveSnapshot.schemaVersion,
+                ),
+                eq(
+                  connectorCatalogCompatibilityEvaluation.catalogVersion,
+                  connectorCatalogActiveSnapshot.catalogVersion,
+                ),
+                eq(
+                  connectorCatalogCompatibilityEvaluation.catalogDigest,
+                  connectorCatalogActiveSnapshot.catalogDigest,
+                ),
+                eq(
+                  connectorCatalogCompatibilityEvaluation.executableCapabilityDigest,
+                  capabilityDigest,
+                ),
+              ),
+            )
+            .where(
+              and(
+                eq(connectorCatalogActiveSnapshot.sourceId, sourceId),
+                eq(
+                  connectorCatalogActiveSnapshot.schemaVersion,
+                  SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
+                ),
+              ),
+            )
+            .limit(1);
+          return row;
+        },
+      );
+      // Keep the route seam after the actual read, including conditional revalidation.
+      await projectionIdentityReadHook.get()?.();
+      return {
+        identity:
+          row === undefined
+            ? undefined
+            : {
+                sourceId,
+                schemaVersion: row.schemaVersion,
+                catalogVersion: row.catalogVersion,
+                catalogDigest: row.catalogDigest,
+                capabilityDigest,
+              },
+        projection: resolveProjectionIdentity({
+          sourceId,
+          capabilityDigest,
+          validator,
+          row,
+        }),
+      };
+    },
+  );
 }
 
 export async function readConnectorCatalogRuntimeProjectionIdentity(

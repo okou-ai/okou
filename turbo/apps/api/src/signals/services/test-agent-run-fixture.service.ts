@@ -3,24 +3,21 @@ import { now } from "../../lib/time";
 import { activatePendingRun$ } from "./agent-run-activation.service";
 import {
   createSelectedAgentRunObjects,
-  createAgentRunExecutionObjects,
   isRouteError,
   isQueueFirstRunClaimLost,
   type CreateAgentRunCommandArgs,
 } from "./agent-run-execution.service";
 
-const { prepareSelectedAgentRun$ } = createSelectedAgentRunObjects();
-const { prepareAgentRun$, completeAgentRun$ } =
-  createAgentRunExecutionObjects();
+const { prepareSelectedAgentRun$, completeAgentRun$ } =
+  createSelectedAgentRunObjects();
 
 /** Test-only direct entry, composed from the same execution graph as chat. */
 export const createTestFixtureAgentRun$ = command(
   async ({ set }, args: CreateAgentRunCommandArgs, signal: AbortSignal) => {
-    const selected = await set(prepareSelectedAgentRun$, args, signal);
-    if (isRouteError(selected)) {
-      return selected;
+    const prepared = await set(prepareSelectedAgentRun$, args, signal);
+    if (!prepared) {
+      throw new Error("Direct fixture preparation returned no input");
     }
-    const prepared = await set(prepareAgentRun$, selected, signal);
     if (isRouteError(prepared)) {
       return prepared;
     }
@@ -28,7 +25,7 @@ export const createTestFixtureAgentRun$ = command(
       completeAgentRun$,
       {
         prepared,
-        finalAppendSystemPrompt: selected.args.body.appendSystemPrompt,
+        finalAppendSystemPrompt: prepared.args.body.appendSystemPrompt,
       },
       signal,
     );

@@ -1471,7 +1471,7 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     ).toHaveLength(0);
   });
 
-  it("keeps a catalog rejection above concurrent abort and provider failure", async () => {
+  it("fails on provider rejection without waiting for catalog validation", async () => {
     const api = createRunsApi(context);
     mockEnv(
       "R2_USER_STORAGES_BUCKET_NAME",
@@ -1493,27 +1493,35 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     });
     await invalidateApiTestConnectorCatalogCompatibility();
 
-    const requestController = new AbortController();
-    const abortError = new Error("runtime context priority abort");
-    abortError.name = "AbortError";
-    const providerError = new Error("model provider below catalog failure");
-    let providerDecryptCalls = 0;
-    useSecretKmsClientForTests({
-      decryptError: providerError,
-      onDecrypt: () => {
-        providerDecryptCalls += 1;
-        requestController.abort(abortError);
-      },
+    const catalogStarted = createDeferredPromise<void>(context.signal);
+    const releaseCatalog = createDeferredPromise<void>(context.signal);
+    const catalogFinished = createDeferredPromise<void>(context.signal);
+    onTestFinished(() => {
+      if (!releaseCatalog.settled()) {
+        releaseCatalog.resolve(undefined);
+      }
+      clearApiTestConnectorCatalogRuntimeProjectionIdentityReplacements();
     });
-    const cancellableApi = createRunsApi({
-      ...context,
-      signal: requestController.signal,
+    setApiTestConnectorCatalogRuntimeProjectionIdentityReadHook(async () => {
+      if (!catalogStarted.settled()) {
+        catalogStarted.resolve(undefined);
+      }
+      await releaseCatalog.promise;
+      if (!catalogFinished.settled()) {
+        catalogFinished.resolve(undefined);
+      }
     });
+    const providerError = new Error("first model provider failure");
+    const kms = useSecretKmsProbe(undefined, async () => {
+      await catalogStarted.promise;
+      throw providerError;
+    });
+    const failedPrompt = `fail fast during runtime preparation ${randomUUID()}`;
     await expect(
-      cancellableApi.createDirectRun(actor, {
+      api.createDirectRun(actor, {
         ...agentBackedDirectRunBody({
           agentId,
-          prompt: "prefer catalog failure during runtime preparation",
+          prompt: failedPrompt,
         }),
         modelProviderType: "aws-bedrock",
         connectorScope: {
@@ -1521,9 +1529,20 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
           allowedCustomConnectorIds: [],
         },
       }),
-    ).rejects.toThrow("Accepted external connector catalog is unavailable");
-    expect(providerDecryptCalls).toBeGreaterThan(0);
-    expect(requestController.signal.reason).toBe(abortError);
+    ).rejects.toBe(providerError);
+    expect(kms.decryptCalls).toBeGreaterThan(0);
+    expect(releaseCatalog.settled()).toBeFalsy();
+    releaseCatalog.resolve(undefined);
+    await catalogFinished.promise;
+    const runs = await api.listAgentRuns(actor, {
+      status: "queued,pending,running,completed,failed,timeout,cancelled",
+      limit: 100,
+    });
+    expect(
+      runs.runs.filter((run) => {
+        return run.prompt === failedPrompt;
+      }),
+    ).toStrictEqual([]);
   });
 
   it("reuses scoped runtime entries and materializes sibling connectors", async () => {
@@ -1909,7 +1928,7 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     ).toHaveLength(0);
   });
 
-  it("overlaps storage presigning with context encryption while preserving storage errors", async () => {
+  it("returns a context encryption failure while storage presigning is still pending", async () => {
     const api = createRunsApi(context);
     const storages = createStoragesBddApi(context);
     const { actor, agentId } = await entitledRunActor();
@@ -1931,23 +1950,34 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     });
 
     const kmsStarted = createDeferredPromise<void>(context.signal);
+    const storageStarted = createDeferredPromise<void>(context.signal);
+    const releaseStorage = createDeferredPromise<void>(context.signal);
+    const storageFinished = createDeferredPromise<void>(context.signal);
     onTestFinished(() => {
+      if (!releaseStorage.settled()) {
+        releaseStorage.resolve(undefined);
+      }
+    });
+    const storageError = new Error("later storage manifest presign failure");
+    const contextError = new Error(
+      "first execution context encryption failure",
+    );
+    context.mocks.s3.getSignedUrl.mockImplementation(async () => {
+      if (!storageStarted.settled()) {
+        storageStarted.resolve(undefined);
+      }
+      await releaseStorage.promise;
+      if (!storageFinished.settled()) {
+        storageFinished.resolve(undefined);
+      }
+      throw storageError;
+    });
+    useSecretKmsProbe(async () => {
       if (!kmsStarted.settled()) {
         kmsStarted.resolve(undefined);
       }
-    });
-    const storageError = new Error("storage manifest presign failed");
-    context.mocks.s3.getSignedUrl.mockImplementation(async () => {
-      await kmsStarted.promise;
-      throw storageError;
-    });
-    useSecretKmsClientForTests({
-      failAfterGenerateDataKeys: 0,
-      onGenerateDataKey: () => {
-        if (!kmsStarted.settled()) {
-          kmsStarted.resolve(undefined);
-        }
-      },
+      await storageStarted.promise;
+      throw contextError;
     });
 
     const failed = await api.createRun(actor, {
@@ -1965,14 +1995,18 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
 
     expect(kmsStarted.settled()).toBeTruthy();
     expect(failed.status).toBe("failed");
-    expect(failed.error).toBe(storageError.message);
+    expect(failed.error).toBe(contextError.message);
+    expect(storageStarted.settled()).toBeTruthy();
+    expect(releaseStorage.settled()).toBeFalsy();
+    releaseStorage.resolve(undefined);
+    await storageFinished.promise;
     const stored = await api.readRun(actor, failed.runId);
     expect(stored.status).toBe("failed");
-    expect(stored.error).toBe(storageError.message);
+    expect(stored.error).toBe(contextError.message);
     await api.requestClaimRunnerJob(true, failed.runId, [404]);
   });
 
-  it("overlaps large request and session storage preparation while preserving request errors", async () => {
+  it("returns a session storage failure while large request storage is still pending", async () => {
     const api = createRunsApi(context);
     const storages = createStoragesBddApi(context);
     const webhooks = createWebhookCallbackApi(context);
@@ -2062,6 +2096,7 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     const requestPresignStarted = createDeferredPromise<void>(context.signal);
     const sessionPresignStarted = createDeferredPromise<void>(context.signal);
     const releaseRequestPresign = createDeferredPromise<void>(context.signal);
+    const requestPresignFinished = createDeferredPromise<void>(context.signal);
     onTestFinished(() => {
       if (!releaseRequestPresign.settled()) {
         releaseRequestPresign.resolve(undefined);
@@ -2077,6 +2112,9 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
             requestPresignStarted.resolve(undefined);
           }
           await releaseRequestPresign.promise;
+          if (!requestPresignFinished.settled()) {
+            requestPresignFinished.resolve(undefined);
+          }
           throw requestError;
         }
         if (key === sessionArchiveKey) {
@@ -2109,11 +2147,16 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       requestPresignStarted.promise,
       sessionPresignStarted.promise,
     ]);
-    releaseRequestPresign.resolve(undefined);
-
     const failed = await continuedRunPromise;
     expect(failed.status).toBe("failed");
-    expect(failed.error).toBe(requestError.message);
+    expect(failed.error).toBe(sessionError.message);
+    expect(releaseRequestPresign.settled()).toBeFalsy();
+    releaseRequestPresign.resolve(undefined);
+    await requestPresignFinished.promise;
+    const stored = await api.readRun(actor, failed.runId);
+    expect(stored.status).toBe("failed");
+    expect(stored.error).toBe(sessionError.message);
+    await api.requestClaimRunnerJob(true, failed.runId, [404]);
 
     context.mocks.s3.getSignedUrl.mockImplementation(
       (_client: unknown, command: unknown) => {

@@ -4,14 +4,7 @@
  * Chat picking and background launch compose these capabilities separately.
  */
 import { state, computed, command, type State, type Computed } from "ccstate";
-import {
-  settle,
-  joinAllInOrder,
-  joinAll,
-  onRejection,
-  tapError,
-  safeSync,
-} from "../utils";
+import { settle, onRejection, tapError, safeSync } from "../utils";
 import {
   conflict,
   badRequestMessage,
@@ -55,7 +48,7 @@ import {
   type StorageManifestCacheEntryKind,
   type StorageManifestCacheBranch,
   materializeRunStoragePresignedUrls$,
-  prefetchStorageManifestPresignedUrlCacheRows,
+  createStorageManifestPresignedUrlCacheRows,
   type ReadOnlyStoragePresignedUrlRequest,
   type StorageManifestPresignedUrlCacheSnapshot,
   type SystemStoragePresignedUrlRequest,
@@ -353,7 +346,7 @@ import { recordSandboxOperation } from "../external/sandbox-op-log";
 import { ingestToAxiom, getDatasetName } from "../external/axiom";
 import {
   type ConnectorRuntimeSelection,
-  loadConnectorRuntimeSelection,
+  createConnectorRuntimeSelectionObjects,
   getConnectorRuntimeConnector,
   type ConnectorRuntimeMethod,
 } from "./connector-catalog-runtime.service";
@@ -775,7 +768,6 @@ interface AgentRunStoragePlan {
   readonly requested: ResolvedStorageEntries;
   readonly sessionWriteback: ResolvedStorageEntries | undefined;
   readonly missingArtifacts: readonly ContextArtifact[];
-  readonly initializedStorageIndex$: Computed<Promise<StorageIndex>>;
 }
 
 interface MaterializedAgentRunStorage {
@@ -1969,7 +1961,7 @@ async function insertInitialArtifactVersion(args: {
 async function initializeEmptyArtifactStorage(
   args: EnsureArtifactStorageArgs,
   storage: ArtifactStorageRow,
-): Promise<void> {
+): Promise<string | null> {
   args.stats?.recordArtifactEnsureMissingHeadVersion();
   const versionId = computeContentHashFromHashes(storage.id, []);
   const s3Key = `${storage.s3Prefix}/${versionId}`;
@@ -1986,6 +1978,13 @@ async function initializeEmptyArtifactStorage(
   if (initializedHead) {
     args.stats?.recordArtifactEnsureInitializedEmptyVersion();
   }
+  return initializedHead ? versionId : null;
+}
+
+interface InitializedArtifactRoot {
+  readonly lookup: StorageLookup;
+  readonly storage: ArtifactStorageRow;
+  readonly initializedVersionId: string | null;
 }
 
 const ensureArtifactStorage$ = command(
@@ -1993,7 +1992,7 @@ const ensureArtifactStorage$ = command(
     _context,
     args: EnsureArtifactStorageArgs,
     signal: AbortSignal,
-  ): Promise<void> => {
+  ): Promise<InitializedArtifactRoot> => {
     const lookup = artifactStorageLookup(args.orgId, args.userId, args.name);
     const storage = await findOrCreateArtifactStorage(args, lookup);
     signal.throwIfAborted();
@@ -2003,10 +2002,14 @@ const ensureArtifactStorage$ = command(
     if (storage.headVersionId) {
       await recordInitializedArtifactFastPath(args);
       signal.throwIfAborted();
-      return;
+      return { lookup, storage, initializedVersionId: null };
     }
-    await initializeEmptyArtifactStorage(args, storage);
+    const initializedVersionId = await initializeEmptyArtifactStorage(
+      args,
+      storage,
+    );
     signal.throwIfAborted();
+    return { lookup, storage, initializedVersionId };
   },
 );
 
@@ -2728,9 +2731,7 @@ const buildStorageEntriesFromPlans$ = command(
       readonly bucket: string;
       readonly plans: readonly ResolvedManifestStoragePlan[];
       readonly requests: StorageManifestPresignedUrlRequests;
-      readonly prefetchedRows:
-        | StorageManifestPresignedUrlCacheSnapshot
-        | undefined;
+      readonly prefetchedRows: StorageManifestPresignedUrlCacheSnapshot;
       readonly timing?: ApiDispatchTimingCollector;
       readonly branch: StorageManifestCacheBranch;
       readonly entryKind: Extract<
@@ -2785,7 +2786,7 @@ const buildStorageEntriesFromPlans$ = command(
     );
 
     const joinResults = async () => {
-      return await joinAll([
+      return await Promise.all([
         systemUrlsByCacheKeyPromise,
         workflowSkillUrlsByCacheKeyPromise,
         readOnlyUrlsByCacheKeyPromise,
@@ -3052,16 +3053,16 @@ const ensureStorageManifestArtifacts$ = command(
       readonly stats?: StorageManifestBuildStats;
     },
     signal: AbortSignal,
-  ): Promise<void> => {
+  ): Promise<readonly InitializedArtifactRoot[]> => {
     const artifactEnsureTiming = new StorageManifestArtifactEnsureTiming(
       args.timing,
     );
-    await measureApiDispatchTiming(
+    return await measureApiDispatchTiming(
       args.timing,
       "api_dispatch_prepare_storage_manifest_ensure_artifacts",
       "nested",
       async () => {
-        await joinAll(
+        const initializedRoots = await Promise.all(
           args.artifacts.map((artifact) => {
             return set(
               ensureArtifactStorage$,
@@ -3078,6 +3079,7 @@ const ensureStorageManifestArtifacts$ = command(
           }),
         );
         artifactEnsureTiming.flush();
+        return initializedRoots;
       },
       () => {
         return args.stats?.artifactEnsureDimensions();
@@ -3205,13 +3207,13 @@ async function resolveStorageManifestEntryPlans(args: {
   readonly phaseTimings: StorageManifestEntryPhaseTimings;
 }): Promise<ResolvedStorageManifestEntryPlans> {
   const input = args.input;
-  const [composePlans, additionalPlans, artifactInputs] = await joinAll([
+  const [composePlans, additionalPlans, artifactInputs] = await Promise.all([
     measureApiDispatchTiming(
       input.timing,
       "api_dispatch_prepare_storage_manifest_build_compose_entries",
       "nested",
       async () => {
-        return await joinAll(
+        return await Promise.all(
           input.composeVolumes.map((volume) => {
             return buildComposeStorageEntry({
               db: input.db,
@@ -3230,7 +3232,7 @@ async function resolveStorageManifestEntryPlans(args: {
       "api_dispatch_prepare_storage_manifest_build_additional_entries",
       "nested",
       async () => {
-        return await joinAll(
+        return await Promise.all(
           (input.additionalVolumes ?? []).map((volume, index) => {
             return buildAdditionalStorageEntry({
               db: input.db,
@@ -3253,7 +3255,7 @@ async function resolveStorageManifestEntryPlans(args: {
       "api_dispatch_prepare_storage_manifest_build_artifact_entries",
       "nested",
       async () => {
-        return await joinAll(
+        return await Promise.all(
           input.artifacts.map((artifact) => {
             return args.phaseTimings.artifact.measureResolve(() => {
               return resolveArtifactStorageInput({
@@ -3288,7 +3290,7 @@ interface PrefetchedStorageManifestPresignedUrls {
   readonly composeRequests: StorageManifestPresignedUrlRequests;
   readonly additionalRequests: StorageManifestPresignedUrlRequests;
   readonly artifactRequests: readonly ReadOnlyStoragePresignedUrlRequest[];
-  readonly prefetchedRows: StorageManifestPresignedUrlCacheSnapshot | undefined;
+  readonly prefetchedRows: StorageManifestPresignedUrlCacheSnapshot;
 }
 
 function finalStorageManifestPlans(
@@ -3314,76 +3316,95 @@ function finalStorageManifestPlans(
   };
 }
 
-function prefetchStorageManifestPresignedUrlsForPlans(args: {
-  readonly db: Db;
-  readonly bucket: string;
-  readonly timing: ApiDispatchTimingCollector | undefined;
-  readonly branch: StorageManifestCacheBranch;
-  readonly composePlans: readonly ResolvedManifestStoragePlan[];
-  readonly additionalPlans: readonly ResolvedManifestStoragePlan[];
-  readonly artifactInputs: readonly ResolvedManifestArtifactInput[];
-}): Computed<Promise<PrefetchedStorageManifestPresignedUrls>> {
-  return computed(async (get) => {
+function createStoragePresignedUrlObjects(
+  entries$: Computed<Promise<ResolvedStorageEntries | undefined>>,
+) {
+  const storageRequests$ = computed(async (get) => {
+    const entries = await get(entries$);
+    if (!entries) {
+      return undefined;
+    }
+    const { composePlans, additionalPlans } = finalStorageManifestPlans(
+      entries.resolved,
+    );
     const composeRequests = storageManifestPresignedUrlRequests({
-      bucket: args.bucket,
-      plans: args.composePlans,
+      bucket: entries.input.bucket,
+      plans: composePlans,
     });
     const additionalRequests = storageManifestPresignedUrlRequests({
-      bucket: args.bucket,
-      plans: args.additionalPlans,
+      bucket: entries.input.bucket,
+      plans: additionalPlans,
     });
-    const artifactRequests = args.artifactInputs.flatMap((input) => {
-      return input.resolved.fileCount === 0
-        ? []
-        : [
-            readOnlyStoragePresignedUrlRequest({
-              bucket: args.bucket,
-              resolved: input.resolved,
-            }),
-          ];
-    });
-    const logicalLookupCount = [
-      composeRequests.systemRequests,
-      composeRequests.workflowSkillRequests,
-      composeRequests.readOnlyRequests,
-      additionalRequests.systemRequests,
-      additionalRequests.workflowSkillRequests,
-      additionalRequests.readOnlyRequests,
-      artifactRequests,
-    ].filter((requests) => {
-      return requests.length > 0;
-    }).length;
-    const prefetchedRows = await get(
-      prefetchStorageManifestPresignedUrlCacheRows({
-        db: args.db,
-        input: {
-          systemRequests: [
-            ...composeRequests.systemRequests,
-            ...additionalRequests.systemRequests,
-          ],
-          workflowSkillRequests: [
-            ...composeRequests.workflowSkillRequests,
-            ...additionalRequests.workflowSkillRequests,
-          ],
-          readOnlyRequests: [
-            ...composeRequests.readOnlyRequests,
-            ...additionalRequests.readOnlyRequests,
-            ...artifactRequests,
-          ],
-          logicalLookupCount,
-        },
-        observation: args.timing
-          ? { timing: args.timing, branch: args.branch }
-          : undefined,
-      }),
+    const artifactRequests = entries.resolved.artifactInputs.flatMap(
+      (input) => {
+        return input.resolved.fileCount === 0
+          ? []
+          : [
+              readOnlyStoragePresignedUrlRequest({
+                bucket: entries.input.bucket,
+                resolved: input.resolved,
+              }),
+            ];
+      },
     );
+    return { composeRequests, additionalRequests, artifactRequests };
+  });
+  const presignedCacheInput$ = computed(async (get) => {
+    const [entries, requests] = await Promise.all([
+      get(entries$),
+      get(storageRequests$),
+    ]);
+    if (!entries || !requests) {
+      return undefined;
+    }
+    const { composeRequests, additionalRequests, artifactRequests } = requests;
+    const groups = [
+      { kind: "system" as const, values: composeRequests.systemRequests },
+      {
+        kind: "workflow" as const,
+        values: composeRequests.workflowSkillRequests,
+      },
+      { kind: "readonly" as const, values: composeRequests.readOnlyRequests },
+      { kind: "system" as const, values: additionalRequests.systemRequests },
+      {
+        kind: "workflow" as const,
+        values: additionalRequests.workflowSkillRequests,
+      },
+      {
+        kind: "readonly" as const,
+        values: additionalRequests.readOnlyRequests,
+      },
+      { kind: "readonly" as const, values: artifactRequests },
+    ].filter((group) => {
+      return group.values.length > 0;
+    });
     return {
-      composeRequests,
-      additionalRequests,
-      artifactRequests,
-      prefetchedRows,
+      db: entries.input.db,
+      input: {
+        systemRequests: [
+          ...composeRequests.systemRequests,
+          ...additionalRequests.systemRequests,
+        ],
+        workflowSkillRequests: [
+          ...composeRequests.workflowSkillRequests,
+          ...additionalRequests.workflowSkillRequests,
+        ],
+        readOnlyRequests: [
+          ...composeRequests.readOnlyRequests,
+          ...additionalRequests.readOnlyRequests,
+          ...artifactRequests,
+        ],
+        logicalLookupCount: groups.length,
+      },
+      groups,
+      observation: entries.input.timing
+        ? { timing: entries.input.timing, branch: entries.branch }
+        : undefined,
     };
   });
+  const presignedCacheRows$ =
+    createStorageManifestPresignedUrlCacheRows(presignedCacheInput$);
+  return { storageRequests$, presignedCacheRows$ };
 }
 
 function preparedWritebackStorageEntries(args: {
@@ -3413,12 +3434,13 @@ function preparedWritebackStorageEntries(args: {
 
 const generatePreparedStorageEntriesFromPlans$ = command(
   async (
-    { get, set },
+    { set },
     args: {
       readonly input: BuildStorageManifestEntriesArgs;
       readonly branch: StorageManifestCacheBranch;
       readonly phaseTimings: StorageManifestEntryPhaseTimings;
       readonly resolved: ResolvedStorageManifestEntryPlans;
+      readonly presigned: PrefetchedStorageManifestPresignedUrls;
     },
     signal: AbortSignal,
   ): Promise<PreparedStorageEntries> => {
@@ -3431,21 +3453,11 @@ const generatePreparedStorageEntriesFromPlans$ = command(
       additionalRequests,
       artifactRequests,
       prefetchedRows,
-    } = await get(
-      prefetchStorageManifestPresignedUrlsForPlans({
-        db: args.input.db,
-        bucket: args.input.bucket,
-        timing: args.input.timing,
-        branch: args.branch,
-        composePlans: finalComposePlans,
-        additionalPlans: finalAdditionalPlans,
-        artifactInputs: args.resolved.artifactInputs,
-      }),
-    );
+    } = args.presigned;
     signal.throwIfAborted();
 
-    const [composeEntries, additionalEntries, writebackEntries] = await joinAll(
-      [
+    const [composeEntries, additionalEntries, writebackEntries] =
+      await Promise.all([
         args.phaseTimings.compose.measureGenerate(() => {
           return set(
             buildStorageEntriesFromPlans$,
@@ -3517,8 +3529,7 @@ const generatePreparedStorageEntriesFromPlans$ = command(
                 }),
               );
         }),
-      ],
-    );
+      ]);
     signal.throwIfAborted();
 
     return {
@@ -3550,15 +3561,23 @@ async function resolveStorageEntries(
 const materializeStorageEntries$ = command(
   async (
     { set },
-    plan: ResolvedStorageEntries,
+    args: {
+      readonly plan: ResolvedStorageEntries;
+      readonly presigned: PrefetchedStorageManifestPresignedUrls;
+    },
     signal: AbortSignal,
   ): Promise<PreparedStorageEntries> => {
+    const { plan, presigned } = args;
     return await measureApiDispatchTiming(
       plan.input.timing,
       "api_dispatch_prepare_storage_manifest_build_entries",
       "nested",
       () => {
-        return set(generatePreparedStorageEntriesFromPlans$, plan, signal);
+        return set(
+          generatePreparedStorageEntriesFromPlans$,
+          { ...plan, presigned },
+          signal,
+        );
       },
       () => {
         return plan.input.stats?.buildEntriesDimensions();
@@ -4031,39 +4050,6 @@ function createStorageSelectionObject(
   });
 }
 
-function createInitializedStorageIndexObject(
-  selection$: Computed<Promise<AgentRunStorageSelection>>,
-  missingArtifacts$: Computed<Promise<readonly ContextArtifact[]>>,
-) {
-  const initializedIndexInput$ = computed(
-    async (get): Promise<StorageIndexInput> => {
-      const [selection, missingArtifacts] = await Promise.all([
-        get(selection$),
-        get(missingArtifacts$),
-      ]);
-      return {
-        db: selection.args.db,
-        timing: selection.args.timing,
-        requests:
-          selection.kind === "captured"
-            ? []
-            : missingArtifacts.map((artifact) => {
-                return {
-                  lookup: artifactStorageLookup(
-                    selection.args.runtimeOrgId,
-                    selection.args.userId,
-                    artifact.name,
-                  ),
-                  version: artifact.version,
-                };
-              }),
-      };
-    },
-  );
-  // This node is only read by materialization, after all missing roots have been initialized.
-  return createStorageIndexObject(initializedIndexInput$);
-}
-
 function createStorageEntryObjects(
   selection$: Computed<Promise<AgentRunStorageSelection>>,
   storageIndex$: Computed<Promise<StorageIndex>>,
@@ -4143,10 +4129,6 @@ function createStorageEntryObjects(
       stats: selection.args.stats,
     });
   });
-  const initializedStorageIndex$ = createInitializedStorageIndexObject(
-    selection$,
-    missingArtifacts$,
-  );
   const storagePlan$ = computed(async (get): Promise<AgentRunStoragePlan> => {
     const selection = await get(selection$);
     return await measureApiDispatchTiming(
@@ -4155,27 +4137,199 @@ function createStorageEntryObjects(
       "nested",
       async () => {
         const [requested, sessionWriteback, missingArtifacts] =
-          await joinAllInOrder([
+          await Promise.all([
             get(requestedEntries$),
             get(sessionWritebackEntries$),
             get(missingArtifacts$),
           ]);
-        return {
-          requested,
-          sessionWriteback,
-          missingArtifacts,
-          initializedStorageIndex$,
-        };
+        return { requested, sessionWriteback, missingArtifacts };
       },
     );
   });
-  return { storagePlan$ };
+  return { storagePlan$, sessionWritebackEntries$ };
 }
 
-/** Construct once with the request's input node; later picks only change its input. */
+interface InitializedStorageRoots {
+  readonly plan: AgentRunStoragePlan;
+  readonly roots: readonly InitializedArtifactRoot[];
+}
+
+function createInitializedStorageObjects(
+  storagePlan$: Computed<Promise<AgentRunStoragePlan>>,
+  internalInitializedRoots$: State<InitializedStorageRoots | null>,
+) {
+  const initializedIndexInput$ = computed(
+    async (get): Promise<StorageIndexInput> => {
+      const plan = await get(storagePlan$);
+      const initialized = get(internalInitializedRoots$);
+      const artifactsByName = new Map(
+        plan.missingArtifacts.map((artifact) => {
+          return [artifact.name, artifact];
+        }),
+      );
+      return {
+        db: plan.requested.input.db,
+        timing: plan.requested.input.timing,
+        requests:
+          initialized?.plan === plan
+            ? initialized.roots.map((root) => {
+                return {
+                  lookup: root.lookup,
+                  version: artifactsByName.get(root.lookup.name)?.version,
+                };
+              })
+            : [],
+      };
+    },
+  );
+  const initializedStorageIndex$ = createStorageIndexObject(
+    initializedIndexInput$,
+  );
+  const requestedEntries$ = computed(
+    async (get): Promise<ResolvedStorageEntries> => {
+      const plan = await get(storagePlan$);
+      if (plan.missingArtifacts.length === 0) {
+        return plan.requested;
+      }
+      const initialized = get(internalInitializedRoots$);
+      if (initialized?.plan !== plan) {
+        throw new Error(
+          "Missing storage roots have not been initialized for this preparation",
+        );
+      }
+      const initializedIndex = await get(initializedStorageIndex$);
+      const input = plan.requested.input;
+      const storageIndex = new Map([
+        ...input.storageIndex,
+        ...initializedIndex,
+      ]);
+      const initializedArtifacts = await Promise.all(
+        plan.missingArtifacts.map((artifact) => {
+          return resolveArtifactStorageInput({
+            db: input.db,
+            index: storageIndex,
+            runtimeOrgId: input.runtimeOrgId,
+            userId: input.userId,
+            artifact,
+            source: "artifact",
+          });
+        }),
+      );
+      const artifactsByName = new Map(
+        [
+          ...plan.requested.resolved.artifactInputs,
+          ...initializedArtifacts,
+        ].map((artifact) => {
+          return [artifact.artifact.name, artifact];
+        }),
+      );
+      input.stats?.recordResolvedEntry(
+        "artifact",
+        "artifact",
+        initializedArtifacts.length,
+      );
+      return {
+        ...plan.requested,
+        input: { ...input, storageIndex },
+        resolved: {
+          ...plan.requested.resolved,
+          artifactInputs: input.artifacts.map((artifact) => {
+            const resolved = artifactsByName.get(artifact.name);
+            if (!resolved) {
+              throw new Error(
+                `Artifact storage "${artifact.name}" was not materialized`,
+              );
+            }
+            return resolved;
+          }),
+        },
+      };
+    },
+  );
+  return { requestedEntries$ };
+}
+
+function createStorageEntryMaterializationCommand(
+  entries$: Computed<Promise<ResolvedStorageEntries | undefined>>,
+) {
+  const { storageRequests$, presignedCacheRows$ } =
+    createStoragePresignedUrlObjects(entries$);
+  return command(
+    async (
+      { get, set },
+      signal: AbortSignal,
+    ): Promise<PreparedStorageEntries | undefined> => {
+      const [plan, requests, prefetchedRows] = await Promise.all([
+        get(entries$),
+        get(storageRequests$),
+        get(presignedCacheRows$),
+      ]);
+      signal.throwIfAborted();
+      if (!plan || !requests) {
+        return undefined;
+      }
+      if (!prefetchedRows) {
+        throw new Error(
+          "Storage cache snapshot is missing from the prepared entry graph",
+        );
+      }
+      return await set(
+        materializeStorageEntries$,
+        { plan, presigned: { ...requests, prefetchedRows } },
+        signal,
+      );
+    },
+  );
+}
+
+function createRequestedStorageMaterializationCommand(
+  requestedEntries$: Computed<Promise<ResolvedStorageEntries>>,
+  materializeRequestedEntries$: ReturnType<
+    typeof createStorageEntryMaterializationCommand
+  >,
+  internalInitializedRoots$: State<InitializedStorageRoots | null>,
+) {
+  return command(
+    async ({ get, set }, plan: AgentRunStoragePlan, signal: AbortSignal) => {
+      if (plan.requested.branch === "requested") {
+        for (const _artifact of plan.requested.resolved.artifactInputs) {
+          plan.requested.input.stats?.recordArtifactEnsureAlreadyInitialized();
+        }
+      }
+      if (plan.missingArtifacts.length > 0) {
+        const input = plan.requested.input;
+        const roots = await set(
+          ensureStorageManifestArtifacts$,
+          {
+            db: input.db,
+            runtimeOrgId: input.runtimeOrgId,
+            userId: input.userId,
+            artifacts: plan.missingArtifacts,
+            timing: input.timing,
+            stats: input.stats,
+          },
+          signal,
+        );
+        set(internalInitializedRoots$, { plan, roots });
+      }
+      const [requestedPlan, requested] = await Promise.all([
+        get(requestedEntries$),
+        set(materializeRequestedEntries$, signal),
+      ]);
+      signal.throwIfAborted();
+      if (!requested) {
+        throw new Error("Requested storage entries were not materialized");
+      }
+      return { requestedPlan, requested };
+    },
+  );
+}
+
+/** Construct once; only the captured input and actual initialized roots can invalidate reads. */
 function createAgentRunStorageObjects(
   input$: Computed<AgentRunStorageInput | Promise<AgentRunStorageInput>>,
 ) {
+  const internalInitializedRoots$ = state<InitializedStorageRoots | null>(null);
   const selection$ = createStorageSelectionObject(input$);
   const indexInput$ = computed(async (get): Promise<StorageIndexInput> => {
     const selection = await get(selection$);
@@ -4186,132 +4340,72 @@ function createAgentRunStorageObjects(
     };
   });
   const storageIndex$ = createStorageIndexObject(indexInput$);
-  const { storagePlan$ } = createStorageEntryObjects(selection$, storageIndex$);
-  return { storagePlan$, materializeStorage$: materializeAgentRunStorage$ };
-}
-
-const initializeMissingStorageArtifacts$ = command(
-  async (
-    { get, set },
-    plan: AgentRunStoragePlan,
-    signal: AbortSignal,
-  ): Promise<ResolvedStorageEntries> => {
-    if (plan.missingArtifacts.length === 0) {
-      return plan.requested;
-    }
-    const { input } = plan.requested;
-    await set(
-      ensureStorageManifestArtifacts$,
-      {
-        db: input.db,
-        runtimeOrgId: input.runtimeOrgId,
-        userId: input.userId,
-        artifacts: plan.missingArtifacts,
-        timing: input.timing,
-        stats: input.stats,
-      },
-      signal,
+  const { storagePlan$, sessionWritebackEntries$ } = createStorageEntryObjects(
+    selection$,
+    storageIndex$,
+  );
+  const { requestedEntries$ } = createInitializedStorageObjects(
+    storagePlan$,
+    internalInitializedRoots$,
+  );
+  const materializeRequestedEntries$ =
+    createStorageEntryMaterializationCommand(requestedEntries$);
+  const materializeSessionEntries$ = createStorageEntryMaterializationCommand(
+    sessionWritebackEntries$,
+  );
+  const materializeRequestedStorage$ =
+    createRequestedStorageMaterializationCommand(
+      requestedEntries$,
+      materializeRequestedEntries$,
+      internalInitializedRoots$,
     );
-    const initializedIndex = await get(plan.initializedStorageIndex$);
+  const resetStorage$ = command(({ set }, signal: AbortSignal) => {
     signal.throwIfAborted();
-    const storageIndex = new Map([...input.storageIndex, ...initializedIndex]);
-    const initializedArtifacts = await joinAll(
-      plan.missingArtifacts.map((artifact) => {
-        return resolveArtifactStorageInput({
-          db: input.db,
-          index: storageIndex,
-          runtimeOrgId: input.runtimeOrgId,
-          userId: input.userId,
-          artifact,
-          source: "artifact",
-        });
-      }),
-    );
-    signal.throwIfAborted();
-    const artifactsByName = new Map(
-      [...plan.requested.resolved.artifactInputs, ...initializedArtifacts].map(
-        (artifact) => {
-          return [artifact.artifact.name, artifact];
-        },
-      ),
-    );
-    input.stats?.recordResolvedEntry(
-      "artifact",
-      "artifact",
-      initializedArtifacts.length,
-    );
-    return {
-      ...plan.requested,
-      input: { ...input, storageIndex },
-      resolved: {
-        ...plan.requested.resolved,
-        artifactInputs: input.artifacts.map((artifact) => {
-          const resolved = artifactsByName.get(artifact.name);
-          if (!resolved) {
-            throw new Error(
-              `Artifact storage "${artifact.name}" was not materialized`,
-            );
-          }
-          return resolved;
+    set(internalInitializedRoots$, null);
+  });
+  const materializeAgentRunStorage$ = command(
+    async (
+      { set },
+      plan: AgentRunStoragePlan,
+      signal: AbortSignal,
+    ): Promise<MaterializedAgentRunStorage> => {
+      const [{ requestedPlan, requested }, sessionWriteback] =
+        await Promise.all([
+          set(materializeRequestedStorage$, plan, signal),
+          set(materializeSessionEntries$, signal),
+        ]);
+      signal.throwIfAborted();
+      const metadataEntries =
+        plan.sessionWriteback === undefined
+          ? storageEntriesMetadata(requestedPlan)
+          : combinePreparedStorageEntries({
+              requested: storageEntriesMetadata(requestedPlan),
+              sessionWriteback: storageEntriesMetadata(plan.sessionWriteback),
+            });
+      const [metadata, prepared] = await Promise.all([
+        finalizePreparedStorage({ entries: metadataEntries }),
+        finalizePreparedStorage({
+          entries:
+            sessionWriteback === undefined
+              ? requested
+              : combinePreparedStorageEntries({ requested, sessionWriteback }),
+          timing: requestedPlan.input.timing,
+          stats: requestedPlan.input.stats,
         }),
-      },
-    };
-  },
-);
-
-/** Initializes missing roots and persists presigned URL misses before pending commit. */
-const materializeAgentRunStorage$ = command(
-  async (
-    { set },
-    plan: AgentRunStoragePlan,
-    signal: AbortSignal,
-  ): Promise<MaterializedAgentRunStorage> => {
-    if (plan.requested.branch === "requested") {
-      for (const _artifact of plan.requested.resolved.artifactInputs) {
-        plan.requested.input.stats?.recordArtifactEnsureAlreadyInitialized();
-      }
-    }
-    const requestedPlan = await set(
-      initializeMissingStorageArtifacts$,
-      plan,
-      signal,
-    );
-    const [requested, sessionWriteback] = await joinAllInOrder([
-      set(materializeStorageEntries$, requestedPlan, signal),
-      plan.sessionWriteback === undefined
-        ? Promise.resolve(undefined)
-        : set(materializeStorageEntries$, plan.sessionWriteback, signal),
-    ]);
-    signal.throwIfAborted();
-    const metadataEntries =
-      plan.sessionWriteback === undefined
-        ? storageEntriesMetadata(requestedPlan)
-        : combinePreparedStorageEntries({
-            requested: storageEntriesMetadata(requestedPlan),
-            sessionWriteback: storageEntriesMetadata(plan.sessionWriteback),
-          });
-    const [metadata, prepared] = await Promise.all([
-      finalizePreparedStorage({ entries: metadataEntries }),
-      finalizePreparedStorage({
-        entries:
-          sessionWriteback === undefined
-            ? requested
-            : combinePreparedStorageEntries({ requested, sessionWriteback }),
-        timing: requestedPlan.input.timing,
-        stats: requestedPlan.input.stats,
-      }),
-    ]);
-    signal.throwIfAborted();
-    return {
-      resolved: {
-        metadata,
-        requested: requestedPlan,
-        sessionWriteback: plan.sessionWriteback,
-      },
-      prepared,
-    };
-  },
-);
+      ]);
+      signal.throwIfAborted();
+      return {
+        resolved: {
+          metadata,
+          requested: requestedPlan,
+          sessionWriteback: plan.sessionWriteback,
+        },
+        prepared,
+      };
+    },
+  );
+  return { storagePlan$, resetStorage$, materializeAgentRunStorage$ };
+}
 
 // Execution context, launch preparation and pending atomic commit.
 
@@ -5047,9 +5141,6 @@ interface ScopedRunEnvironmentSnapshot extends PersistedRunEnvironmentSnapshot {
 
 interface RunEnvironmentReadInput extends RunResourceScope {
   readonly secretNames: readonly string[];
-  readonly preloadedSnapshot?: PromiseSettledResult<
-    ScopedRunEnvironmentSnapshot | CreateRunErrorResult
-  >;
 }
 
 const persistedRunEnvironmentRowKindDecoder = zodEnumDriverValueDecoder(
@@ -5422,13 +5513,6 @@ function createRunFrameworkObject(
     if (isRouteError(content)) {
       return content;
     }
-    const snapshot = input.preloadedModelPreparation;
-    if (snapshot !== undefined) {
-      if (!matchingRunModelPreparation(input.args, snapshot)) {
-        throw new Error("Preloaded model provider snapshot scope mismatch");
-      }
-      return settledRunContextValue(snapshot.framework);
-    }
     const validation = validateCompose(content, undefined, undefined, {
       validateEnvironmentReferences: false,
     });
@@ -5646,7 +5730,10 @@ function withPinnedPiContinuationMemory(
 }
 
 function artifactsForRun(args: {
-  readonly resolved: ResolvedRunExecution;
+  readonly resolved: Pick<
+    ResolvedRunExecution,
+    "agentSessionId" | "content" | "artifacts" | "previousRunStorageMounts"
+  >;
   readonly framework: SupportedFramework;
   readonly piSandbox: PiModelConfig | undefined;
   readonly includeAutoMemory: boolean;
@@ -6921,11 +7008,11 @@ async function resolveModelProviderEnvironment(
 }
 
 function createRunEnvironmentObject(
-  input$: Computed<PrepareRunContextInput>,
+  input$: RunContextInputObject,
   { content$ }: Pick<ReturnType<typeof createRunIdentityObjects>, "content$">,
 ) {
   const readInput$ = computed(async (get) => {
-    const input = get(input$);
+    const input = await get(input$);
     const content = await get(content$);
     if (isRouteError(content)) {
       return content;
@@ -6935,7 +7022,6 @@ function createRunEnvironmentObject(
       orgId: input.args.orgId,
       userId: input.args.userId,
       secretNames: runEnvironmentSecretNames(content),
-      preloadedSnapshot: input.preloadedEnvironment,
     };
   });
   return createRunEnvironmentSnapshotObject(readInput$);
@@ -6968,23 +7054,6 @@ function createRunEnvironmentSnapshotObject(
       return args;
     }
     const { db, secretNames: secretNamesToLoad } = args;
-    if (args.preloadedSnapshot !== undefined) {
-      const preloadedSnapshot = settledRunContextValue(args.preloadedSnapshot);
-      if (isRouteError(preloadedSnapshot)) {
-        return preloadedSnapshot;
-      }
-      if (
-        preloadedSnapshot.orgId !== args.orgId ||
-        preloadedSnapshot.userId !== args.userId ||
-        preloadedSnapshot.secretNames.length !== secretNamesToLoad.length ||
-        preloadedSnapshot.secretNames.some((name, index) => {
-          return name !== secretNamesToLoad[index];
-        })
-      ) {
-        throw new Error("Preloaded environment snapshot scope mismatch");
-      }
-      return preloadedSnapshot;
-    }
     const variableQuery = db
       .select({
         kind: sql`'variable'`
@@ -8515,12 +8584,12 @@ interface RunAgentObservation {
 }
 
 function createRunAgentObservationObject(
-  input$: Computed<PrepareRunContextInput>,
-  options$: Computed<ReturnType<typeof agentRunResolutionOptions>>,
+  input$: RunContextInputObject,
+  options$: AsyncRead<ReturnType<typeof agentRunResolutionOptions>>,
 ) {
   return computed(async (get): Promise<RunAgentObservation | undefined> => {
-    const input = get(input$);
-    const options = get(options$);
+    const input = await get(input$);
+    const options = await get(options$);
     const body = initialRunBody(input.args);
     if (
       options.testOnlyResolveDirectRun ||
@@ -8637,13 +8706,13 @@ function resolvedSessionStorage(session: {
 }
 
 function createRunSessionSnapshotObject(
-  input$: Computed<PrepareRunContextInput>,
-  options$: Computed<ReturnType<typeof agentRunResolutionOptions>>,
+  input$: RunContextInputObject,
+  options$: AsyncRead<ReturnType<typeof agentRunResolutionOptions>>,
 ) {
   return computed(
     async (get): Promise<ChatThreadExecutionSnapshot | undefined> => {
-      const input = get(input$);
-      const options = get(options$);
+      const input = await get(input$);
+      const options = await get(options$);
       const agentSessionId = initialRunBody(input.args).sessionId;
       if (
         options.testOnlyResolveDirectRun ||
@@ -9046,6 +9115,26 @@ async function prepareRunCallbackRows(args: {
       run_callback_http_count_bucket: countBucket(
         callbacks.length - internalCallbackCount,
       ),
+    },
+  );
+}
+
+function createPrepareCallbacksCommand(
+  callbackInputs$?: SelectedAgentRunGraphSources["callbackInputs$"],
+) {
+  return command(
+    async (
+      { get },
+      args: Parameters<typeof prepareRunCallbackRows>[0],
+      signal: AbortSignal,
+    ): Promise<readonly AgentRunCallbackInsert[]> => {
+      const callbacks = callbackInputs$
+        ? await get(callbackInputs$)
+        : args.callbacks;
+      signal.throwIfAborted();
+      const rows = await prepareRunCallbackRows({ ...args, callbacks });
+      signal.throwIfAborted();
+      return rows;
     },
   );
 }
@@ -9471,30 +9560,17 @@ async function buildStoredExecutionContextDraft(args: {
   };
 }
 
-async function resolveBuiltStoredExecutionContext(
-  preparedStoragePromise: Promise<PreparedAgentRunStorage>,
-  builtContextDraftPromise: Promise<BuiltStoredExecutionContextDraft>,
-): Promise<BuiltStoredExecutionContext> {
-  const [preparedStorageResult, builtContextDraftResult] =
-    await Promise.allSettled([
-      preparedStoragePromise,
-      builtContextDraftPromise,
-    ]);
-  if (preparedStorageResult.status === "rejected") {
-    throw preparedStorageResult.reason;
-  }
-  if (builtContextDraftResult.status === "rejected") {
-    throw builtContextDraftResult.reason;
-  }
+function resolveBuiltStoredExecutionContext(
+  preparedStorage: PreparedAgentRunStorage,
+  builtContextDraft: BuiltStoredExecutionContextDraft,
+): BuiltStoredExecutionContext {
   return {
-    ...builtContextDraftResult.value,
-    persistedStorageMounts: [
-      ...preparedStorageResult.value.persistedStorageMounts,
-    ],
-    runContextStorage: preparedStorageResult.value.runContextStorage,
+    ...builtContextDraft,
+    persistedStorageMounts: [...preparedStorage.persistedStorageMounts],
+    runContextStorage: preparedStorage.runContextStorage,
     context: {
-      ...builtContextDraftResult.value.context,
-      storageMounts: [...preparedStorageResult.value.storageMounts],
+      ...builtContextDraft.context,
+      storageMounts: [...preparedStorage.storageMounts],
     },
   };
 }
@@ -10115,19 +10191,11 @@ const preparePiLaunchResources$ = command(
                 );
             return { memoryRecall };
           })();
-          const [resumeResult, memoryResult] = await Promise.allSettled([
+          const [resumeSession, { memoryRecall }] = await Promise.all([
             resumeSessionPromise,
             memoryPromise,
           ]);
-          if (resumeResult.status === "rejected") {
-            throw resumeResult.reason;
-          }
-          if (memoryResult.status === "rejected") {
-            throw memoryResult.reason;
-          }
           signal.throwIfAborted();
-          const resumeSession = resumeResult.value;
-          const { memoryRecall } = memoryResult.value;
           return measurePiPreparationSync(
             observe,
             "launch_identity",
@@ -10225,30 +10293,6 @@ function okouTokenEnvironment(body: CreateRunBody): Record<string, string> {
     throw new Error("The Okou run token is missing from the run context");
   }
   return { OKOU_TOKEN: okouToken };
-}
-
-async function joinLaunchPreparation(
-  builtContextPromise: Promise<BuiltStoredExecutionContext>,
-  piResourcesPromise: Promise<PreparedPiLaunchResources | undefined>,
-  signal: AbortSignal,
-): Promise<{
-  readonly builtContext: BuiltStoredExecutionContext;
-  readonly piResources: PreparedPiLaunchResources | undefined;
-}> {
-  // Keep Storage, context, then Pi error precedence after every owned branch
-  // has settled, including dependencies that do not support cancellation.
-  const [contextResult, piResult] = await Promise.allSettled([
-    builtContextPromise,
-    piResourcesPromise,
-  ]);
-  if (contextResult.status === "rejected") {
-    throw contextResult.reason;
-  }
-  if (piResult.status === "rejected") {
-    throw piResult.reason;
-  }
-  signal.throwIfAborted();
-  return { builtContext: contextResult.value, piResources: piResult.value };
 }
 
 function runnerStorageInput(
@@ -10384,77 +10428,76 @@ function finalizedRunnerLaunch({
 interface StorageMaterializationInput {
   readonly db: Db;
   readonly args: BuildRunnerJobPayloadInput;
+  readonly storageManifestStats: StorageManifestBuildStats;
 }
 
-function prepareRunnerStorageInput({ db, args }: StorageMaterializationInput) {
-  const checkpointArtifacts =
-    args.artifactMissingRootPolicy === undefined
-      ? args.artifacts
-      : args.artifacts.map((artifact) => {
-          return {
-            ...artifact,
-            missingRootPolicy: args.artifactMissingRootPolicy,
-          };
-        });
+function runnerCheckpointArtifacts(args: BuildRunnerJobPayloadInput) {
+  return args.artifactMissingRootPolicy === undefined
+    ? args.artifacts
+    : args.artifacts.map((artifact) => {
+        return {
+          ...artifact,
+          missingRootPolicy: args.artifactMissingRootPolicy,
+        };
+      });
+}
+
+function prepareRunnerStorageInput(input: StorageMaterializationInput) {
+  const { db, args, storageManifestStats } = input;
   const body = preparedRunnerJobBody(args);
   return {
     db,
     args,
-    checkpointArtifacts,
+    storageManifestStats,
     body,
+    checkpointArtifacts: runnerCheckpointArtifacts(args),
     group: preparedRunnerGroup(args.resolved.content),
     platformEnvironment: args.includeOkouTokenSecret
       ? { ...args.platformEnvironment, ...okouTokenEnvironment(body) }
       : args.platformEnvironment,
-    storageManifestStats: new StorageManifestBuildStats(),
   };
 }
 
-interface PreparedStorageMaterialization {
-  readonly input: ReturnType<typeof prepareRunnerStorageInput>;
-  readonly plan: AgentRunStoragePlan;
-  readonly contextDraft: Promise<BuiltStoredExecutionContextDraft>;
-}
+const prepareStorageInput$ = command(
+  async (
+    _store,
+    input: StorageMaterializationInput,
+    signal: AbortSignal,
+  ): Promise<ReturnType<typeof prepareRunnerStorageInput>> => {
+    signal.throwIfAborted();
+    // Token generation is owned by this command; the storage read graph only
+    // needs the original vars and volume versions, never the random token.
+    return await Promise.resolve(prepareRunnerStorageInput(input));
+  },
+);
 
 function createStoragePreparationObjects(
   internalInput$: State<StorageMaterializationInput | null>,
 ) {
-  const preparationInput$ = computed((get) => {
+  const storageInput$ = computed((get) => {
     const input = get(internalInput$);
     if (!input) {
       throw new Error("Storage preparation input is not installed");
     }
-    return prepareRunnerStorageInput(input);
-  });
-  const storageInput$ = computed((get) => {
-    const { db, args, checkpointArtifacts, body, storageManifestStats } =
-      get(preparationInput$);
     return runnerStorageInput(
-      db,
-      args,
-      checkpointArtifacts,
-      body,
-      storageManifestStats,
+      input.db,
+      input.args,
+      runnerCheckpointArtifacts(input.args),
+      input.args.body,
+      input.storageManifestStats,
     );
   });
-  const { storagePlan$ } = createAgentRunStorageObjects(storageInput$);
-  const storagePreparation$ = computed(
-    async (
-      get,
-    ): Promise<Omit<PreparedStorageMaterialization, "contextDraft">> => {
-      return { input: get(preparationInput$), plan: await get(storagePlan$) };
-    },
-  );
-  return { storagePreparation$, preparationInput$ };
+  return createAgentRunStorageObjects(storageInput$);
 }
 
 const prepareStoredContextDraft$ = command(
   async (
     _store,
-    input: ReturnType<typeof prepareRunnerStorageInput>,
+    inputPromise: Promise<ReturnType<typeof prepareRunnerStorageInput>>,
     signal: AbortSignal,
   ): Promise<BuiltStoredExecutionContextDraft> => {
-    const { args, body, platformEnvironment } = input;
+    const { args, body, platformEnvironment } = await inputPromise;
+    signal.throwIfAborted();
     // KMS key generation belongs to this explicit resource command, not a
     // computed read. It can run alongside the independent storage plan.
     const context = await measureApiDispatchTiming(
@@ -10478,26 +10521,33 @@ const prepareStoredContextDraft$ = command(
   },
 );
 
-function createMaterializeStorageCommand() {
-  const materializeStorage$ = command(
+interface MaterializedRunnerStorage {
+  readonly input: ReturnType<typeof prepareRunnerStorageInput>;
+  readonly preparedStorage: MaterializedAgentRunStorage;
+  readonly piResources: PreparedPiLaunchResources | undefined;
+}
+
+function createMaterializeStorageCommand(
+  storagePlan$: Computed<Promise<AgentRunStoragePlan>>,
+  materializeAgentRunStorage$: ReturnType<
+    typeof createAgentRunStorageObjects
+  >["materializeAgentRunStorage$"],
+) {
+  return command(
     async (
-      { set },
-      prepared: PreparedStorageMaterialization,
+      { get, set },
+      inputPromise: Promise<ReturnType<typeof prepareRunnerStorageInput>>,
       signal: AbortSignal,
-    ): Promise<PreparedRunnerLaunch> => {
-      const {
-        plan,
-        contextDraft,
-        input: {
-          db,
-          args,
-          checkpointArtifacts,
-          body,
-          group,
-          storageManifestStats,
-        },
-      } = prepared;
-      const preparedStoragePromise = measureApiDispatchTiming(
+    ): Promise<MaterializedRunnerStorage> => {
+      const [input, plan] = await Promise.all([
+        inputPromise,
+        get(storagePlan$),
+      ]);
+      signal.throwIfAborted();
+      const { db, args } = input;
+      const storageManifestStats =
+        plan.requested.input.stats ?? input.storageManifestStats;
+      const preparedStorage = await measureApiDispatchTiming(
         args.timing,
         "api_dispatch_prepare_storage_manifest",
         "nested",
@@ -10508,68 +10558,64 @@ function createMaterializeStorageCommand() {
           return storageManifestStats.overallDimensions();
         },
       );
-      const preparedStorage = await preparedStoragePromise;
       signal.throwIfAborted();
-      const builtContextPromise = resolveBuiltStoredExecutionContext(
-        Promise.resolve(preparedStorage.prepared),
-        contextDraft,
-      );
-      const piResourcesPromise = args.deferredPiResources
-        ? Promise.resolve(args.deferredPiResources)
-        : set(
-            preparePiLaunchResources$,
-            {
-              db,
-              orgId: args.orgId,
-              userId: args.userId,
-              // The launching Run's own switch context, never the caller's.
-              piMemoryEnabled: isFeatureEnabled(
-                FeatureSwitchKey.PiMemory,
-                args.featureSwitchContext,
-              ),
-              runId: args.run.id,
-              resumeSession:
-                args.resolved.resumeSessionIdentity?.cliAgentType === "pi"
-                  ? args.resolved.resumeSession
-                  : undefined,
-              storagePlan: Promise.resolve(preparedStorage.resolved),
-              previousRunStorageMounts: args.resolved.previousRunStorageMounts,
-              piSandbox: args.piSandbox,
-              chatThreadId: args.chatThreadId,
-              piLaunchConfig: args.piLaunchConfig,
-              timing: args.timing,
-            },
-            signal,
-          );
-      const { builtContext, piResources } = await joinLaunchPreparation(
-        builtContextPromise,
-        piResourcesPromise,
-        signal,
-      );
-      return finalizedRunnerLaunch({
-        args,
-        group,
-        body,
-        checkpointArtifacts,
-        builtContext,
-        piResources,
-      });
+      const piResources =
+        args.deferredPiResources ??
+        (await set(
+          preparePiLaunchResources$,
+          {
+            db,
+            orgId: args.orgId,
+            userId: args.userId,
+            piMemoryEnabled: isFeatureEnabled(
+              FeatureSwitchKey.PiMemory,
+              args.featureSwitchContext,
+            ),
+            runId: args.run.id,
+            resumeSession:
+              args.resolved.resumeSessionIdentity?.cliAgentType === "pi"
+                ? args.resolved.resumeSession
+                : undefined,
+            storagePlan: Promise.resolve(preparedStorage.resolved),
+            previousRunStorageMounts: args.resolved.previousRunStorageMounts,
+            piSandbox: args.piSandbox,
+            chatThreadId: args.chatThreadId,
+            piLaunchConfig: args.piLaunchConfig,
+            timing: args.timing,
+          },
+          signal,
+        ));
+      return { input, preparedStorage, piResources };
     },
   );
-  return materializeStorage$;
 }
 
-function createStorageMaterializationObjects() {
+function createStorageMaterializationObjects(
+  storage?: ReturnType<typeof createAgentRunStorageObjects>,
+) {
   const internalStorageInput$ = state<StorageMaterializationInput | null>(null);
-  const { storagePreparation$, preparationInput$ } =
-    createStoragePreparationObjects(internalStorageInput$);
-  const materializeStorage$ = createMaterializeStorageCommand();
-  return {
-    internalStorageInput$,
-    preparationInput$,
-    storagePreparation$,
-    materializeStorage$,
-  };
+  const { storagePlan$, resetStorage$, materializeAgentRunStorage$ } =
+    storage ?? createStoragePreparationObjects(internalStorageInput$);
+  const initializeStorageInput$ = command(
+    (
+      { set },
+      args: Omit<StorageMaterializationInput, "storageManifestStats">,
+      signal: AbortSignal,
+    ) => {
+      set(resetStorage$, signal);
+      const input = {
+        ...args,
+        storageManifestStats: new StorageManifestBuildStats(),
+      };
+      set(internalStorageInput$, input);
+      return input;
+    },
+  );
+  const materializeStorage$ = createMaterializeStorageCommand(
+    storagePlan$,
+    materializeAgentRunStorage$,
+  );
+  return { initializeStorageInput$, storagePlan$, materializeStorage$ };
 }
 
 function preparedLaunchRowsArgs(args: {
@@ -11716,14 +11762,14 @@ async function buildResolvedRunBody(args: {
   readonly persistedEnvironment: PersistedRunEnvironmentSnapshot;
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly canonicalOkouRuntime: boolean;
-  readonly preloadedEnvironment?: RunBodyEnvironment;
+  readonly resolvedEnvironment?: RunBodyEnvironment;
 }): Promise<CreateRunBody> {
   const runVars =
     args.initialBody.vars !== undefined
       ? args.initialBody.vars
       : args.resolved.vars;
   const environment =
-    args.preloadedEnvironment ??
+    args.resolvedEnvironment ??
     (await resolveRunBodyEnvironment({
       content: args.resolved.content,
       runVars,
@@ -11743,15 +11789,6 @@ async function buildResolvedRunBody(args: {
 }
 
 type RunBodyEnvironment = Pick<CreateRunBody, "vars" | "secrets">;
-
-interface PreloadedRunBodyEnvironment {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly agentId: string;
-  readonly result: PromiseSettledResult<
-    RunBodyEnvironment | CreateRunErrorResult
-  >;
-}
 
 async function resolveRunBodyEnvironment(args: {
   readonly content: agentRunCreateAgentExecutionConfig;
@@ -11852,14 +11889,14 @@ async function buildPreparedPermissionManifest(args: {
 }
 
 function preparedRunAdditionalVolumes(args: {
-  readonly createArgs: CreateAgentRunArgs;
+  readonly createArgs: Pick<CreateAgentRunArgs, "injectSkillVolumes">;
   readonly systemSkillStorageResolution: SystemSkillStorageResolution;
   readonly connectorScope: EffectiveConnectorScope;
   readonly connectorCatalogSelection: RunConnectorCatalogSelection;
   readonly customConnectorContext: CustomConnectorRuntimeContext;
   readonly skillsRoot: string;
-  readonly body: CreateRunBody;
-  readonly resolved: ResolvedRunExecution;
+  readonly body: Pick<CreateRunBody, "additionalVolumes">;
+  readonly resolved: Pick<ResolvedRunExecution, "additionalVolumes">;
   readonly officialWorkflowRun: OfficialWorkflowRunObservation | undefined;
 }): PreparedAdditionalVolumes {
   const bodyAdditionalVolumes = args.body.additionalVolumes;
@@ -12034,28 +12071,6 @@ function piConfigurationRouteError(
   throw error;
 }
 
-async function materializeResolvedPiProvider(
-  createArgs: RunModelProviderArgs,
-  modelProviderResult: PromiseSettledResult<
-    Awaited<ReturnType<typeof resolvePreparedRunModelProvider>>
-  >,
-): Promise<ResolvedModelProviderEnvironment | null | CreateRunErrorResult> {
-  if (modelProviderResult.status === "rejected") {
-    return piConfigurationRouteError(modelProviderResult.reason);
-  }
-  const resolvedModelProvider = modelProviderResult.value;
-  if (isRouteError(resolvedModelProvider)) {
-    return resolvedModelProvider;
-  }
-  const materializedProvider = await settle(
-    materializePreparedPiProvider(createArgs, resolvedModelProvider),
-  );
-  if (!materializedProvider.ok) {
-    return piConfigurationRouteError(materializedProvider.error);
-  }
-  return materializedProvider.value;
-}
-
 interface RunPreparedConnectorInputs {
   readonly db: Db;
   readonly connectorScope: EffectiveConnectorScope;
@@ -12209,16 +12224,15 @@ function createRunPreparedConnectorObjects(
 }
 
 function prepareRunOutputMetadata(args: {
-  readonly createArgs: CreateAgentRunArgs;
+  readonly createArgs: Pick<CreateAgentRunArgs, "injectSkillVolumes">;
   readonly systemSkillStorageResolution: SystemSkillStorageResolution;
   readonly connectorScope: EffectiveConnectorScope;
   readonly connectorCatalogSelection: RunConnectorCatalogSelection;
   readonly customConnectorContext: CustomConnectorRuntimeContext;
   readonly framework: SupportedFramework;
   readonly piSandbox: PiModelConfig | undefined;
-  readonly featureSwitchContext: FeatureSwitchContext;
-  readonly body: CreateRunBody;
-  readonly resolved: ResolvedRunExecution;
+  readonly body: Pick<CreateRunBody, "artifacts" | "additionalVolumes">;
+  readonly resolved: RunStorageExecution;
   readonly officialWorkflowRun: OfficialWorkflowRunObservation | undefined;
 }): {
   readonly artifacts: readonly AgentRunCreateContextArtifact[];
@@ -12277,21 +12291,11 @@ interface PrepareRunContextInput {
   readonly db: Db;
   readonly args: CreateAgentRunArgs;
   readonly timing: ApiDispatchTimingCollector;
-  readonly preloadedFeatureSwitchContext: FeatureSwitchContext | undefined;
-  readonly preloadedUserTimezone: string | null | undefined;
-  readonly preloadedConnectorCatalogSnapshot:
-    | ConnectorRuntimeSelection
-    | undefined;
-  readonly preloadedDisabledPaidTools?: PromiseSettledResult<DisabledPaidToolsSnapshot>;
-  readonly preloadedMember?: PromiseSettledResult<RunMemberSnapshot>;
-  readonly preloadedEnvironment?: PromiseSettledResult<
-    ScopedRunEnvironmentSnapshot | CreateRunErrorResult
-  >;
-  readonly preloadedConnectorPreparation?: PreloadedRunConnectorSnapshot;
-  readonly preloadedModelPreparation?: PreloadedRunModelPreparation;
-  readonly preloadedOfficialWorkflowPreparation?: PreloadedOfficialWorkflowPreparation;
-  readonly preloadedBodyEnvironment?: PreloadedRunBodyEnvironment;
 }
+type RunContextInputObject = Computed<
+  PrepareRunContextInput | Promise<PrepareRunContextInput>
+>;
+type AsyncRead<T> = Computed<T | Promise<T>>;
 
 interface DisabledPaidToolsSnapshot {
   readonly orgId: string;
@@ -12310,13 +12314,8 @@ interface RunMemberSnapshot {
     | undefined;
 }
 
-interface RunMemberReadInput extends RunResourceScope {
-  readonly preloadedSnapshot?: PromiseSettledResult<RunMemberSnapshot>;
-}
-
-interface RunDisabledPaidToolsReadInput extends RunResourceScope {
-  readonly preloadedSnapshot?: PromiseSettledResult<DisabledPaidToolsSnapshot>;
-}
+type RunMemberReadInput = RunResourceScope;
+type RunDisabledPaidToolsReadInput = RunResourceScope;
 
 function resolveCompatibleDirectResumeSession(args: {
   readonly resolved: ResolvedRunExecution;
@@ -12329,33 +12328,35 @@ function resolveCompatibleDirectResumeSession(args: {
 }
 
 /** Construct the complete read graph once; each input invalidates its own snapshot. */
-function createRunIdentityObjects(input$: Computed<PrepareRunContextInput>) {
-  const featureSwitchContext$ = computed(async (get) => {
-    const input = get(input$);
-    if (input.preloadedFeatureSwitchContext) {
-      return input.preloadedFeatureSwitchContext;
-    }
-    const { orgId, userId } = input.args;
-    const rows = await input.db
-      .select({
-        userId: userFeatureSwitches.userId,
-        switches: userFeatureSwitches.switches,
-      })
-      .from(userFeatureSwitches)
-      .where(
-        and(
-          eq(userFeatureSwitches.orgId, orgId),
-          inArray(userFeatureSwitches.userId, [userId, ORG_SENTINEL_USER_ID]),
-        ),
-      );
-    return {
-      orgId,
-      userId,
-      overrides: userFeatureSwitchOverridesFromRows(rows, userId),
-    };
-  });
-  const resolutionOptions$ = computed((get) => {
-    return agentRunResolutionOptions(get(input$).args);
+function createRunIdentityObjects(
+  input$: RunContextInputObject,
+  shared?: SelectedRunReadObjects,
+) {
+  const featureSwitchContext$ =
+    shared?.featureSwitchContext$ ??
+    computed(async (get) => {
+      const input = await get(input$);
+      const { orgId, userId } = input.args;
+      const rows = await input.db
+        .select({
+          userId: userFeatureSwitches.userId,
+          switches: userFeatureSwitches.switches,
+        })
+        .from(userFeatureSwitches)
+        .where(
+          and(
+            eq(userFeatureSwitches.orgId, orgId),
+            inArray(userFeatureSwitches.userId, [userId, ORG_SENTINEL_USER_ID]),
+          ),
+        );
+      return {
+        orgId,
+        userId,
+        overrides: userFeatureSwitchOverridesFromRows(rows, userId),
+      };
+    });
+  const resolutionOptions$ = computed(async (get) => {
+    return agentRunResolutionOptions((await get(input$)).args);
   });
   const agentObservation$ = createRunAgentObservationObject(
     input$,
@@ -12366,7 +12367,7 @@ function createRunIdentityObjects(input$: Computed<PrepareRunContextInput>) {
     resolutionOptions$,
   );
   const execution$ = computed(async (get) => {
-    const input = get(input$);
+    const input = await get(input$);
     const [agentObservation, sessionSnapshot] = await Promise.all([
       get(agentObservation$),
       get(sessionSnapshot$),
@@ -12377,7 +12378,7 @@ function createRunIdentityObjects(input$: Computed<PrepareRunContextInput>) {
       input.args.userId,
       input.args.orgId,
       {
-        ...get(resolutionOptions$),
+        ...(await get(resolutionOptions$)),
         agentObservation,
         sessionSnapshot,
         timing: input.timing,
@@ -12385,7 +12386,7 @@ function createRunIdentityObjects(input$: Computed<PrepareRunContextInput>) {
     );
   });
   const content$ = computed(async (get) => {
-    const plan = get(resolutionOptions$).productAgentExecutionPlan;
+    const plan = (await get(resolutionOptions$)).productAgentExecutionPlan;
     if (plan) {
       return plan.content;
     }
@@ -12398,24 +12399,32 @@ function createRunIdentityObjects(input$: Computed<PrepareRunContextInput>) {
 }
 
 function createRunBodyObjects(
-  input$: Computed<PrepareRunContextInput>,
+  input$: RunContextInputObject,
   {
     featureSwitchContext$,
     execution$,
     content$,
   }: ReturnType<typeof createRunIdentityObjects>,
+  shared?: SelectedRunReadObjects,
 ) {
-  const environment$ = createRunEnvironmentObject(input$, {
-    content$,
-  });
+  const environment$ =
+    shared?.environment$ ??
+    createRunEnvironmentObject(input$, {
+      content$,
+    });
   const body$ = computed(async (get) => {
-    const input = get(input$);
-    const [resolved, persistedEnvironment, featureSwitchContext] =
-      await Promise.all([
-        get(execution$),
-        get(environment$),
-        get(featureSwitchContext$),
-      ]);
+    const input = await get(input$);
+    const [
+      resolved,
+      persistedEnvironment,
+      featureSwitchContext,
+      resolvedEnvironment,
+    ] = await Promise.all([
+      get(execution$),
+      get(environment$),
+      get(featureSwitchContext$),
+      shared ? get(shared.bodyEnvironment$) : undefined,
+    ]);
     if (isRouteError(resolved)) {
       return resolved;
     }
@@ -12425,24 +12434,11 @@ function createRunBodyObjects(
     if (resolved.orgId !== input.args.orgId) {
       return notFound("Resource not found");
     }
-    const environment = input.preloadedBodyEnvironment;
     if (
-      environment !== undefined &&
-      (environment.orgId !== input.args.orgId ||
-        environment.userId !== input.args.userId ||
-        environment.agentId !== resolved.agentId)
+      resolvedEnvironment !== undefined &&
+      isRouteError(resolvedEnvironment)
     ) {
-      throw new Error("Preloaded body environment scope mismatch");
-    }
-    const preloadedEnvironment =
-      environment === undefined
-        ? undefined
-        : settledRunContextValue(environment.result);
-    if (
-      preloadedEnvironment !== undefined &&
-      isRouteError(preloadedEnvironment)
-    ) {
-      return preloadedEnvironment;
+      return resolvedEnvironment;
     }
     return await buildResolvedRunBody({
       initialBody: initialRunBody(input.args),
@@ -12450,13 +12446,14 @@ function createRunBodyObjects(
       persistedEnvironment,
       featureSwitchContext,
       canonicalOkouRuntime: input.args.includeOkouTokenSecret === true,
-      preloadedEnvironment,
+      resolvedEnvironment,
     });
   });
-  const framework$ = createRunFrameworkObject(input$, content$);
+  const framework$ =
+    shared?.framework$ ?? createRunFrameworkObject(input$, content$);
   const bodyContext$ = computed(
     async (get): Promise<PreparedRunBodyContext | CreateRunErrorResult> => {
-      const input = get(input$);
+      const input = await get(input$);
       const [resolved, body, requestedFramework, featureSwitchContext] =
         await Promise.all([
           get(execution$),
@@ -12791,7 +12788,6 @@ interface RunModelProviderReadInput {
   readonly db: Db;
   readonly timing: ApiDispatchTimingCollector;
   readonly args: RunModelProviderArgs;
-  readonly preloadedModelPreparation?: PreloadedRunModelPreparation;
 }
 
 type RunModelProviderInputObject = Computed<
@@ -12799,19 +12795,6 @@ type RunModelProviderInputObject = Computed<
   | CreateRunErrorResult
   | Promise<RunModelProviderReadInput | CreateRunErrorResult>
 >;
-
-type PreparedRunModelProvider =
-  | ResolvedModelProviderEnvironment
-  | null
-  | CreateRunErrorResult;
-
-interface PreloadedRunModelPreparation {
-  readonly args: RunModelProviderArgs;
-  readonly framework: PromiseSettledResult<
-    SupportedFramework | CreateRunErrorResult
-  >;
-  readonly result: PromiseSettledResult<PreparedRunModelProvider>;
-}
 
 function createPinnedProviderReadContext(
   input$: RunModelProviderInputObject,
@@ -13325,7 +13308,7 @@ function createRunModelProviderObjects(
     if (isRouteError(context)) {
       return context;
     }
-    const [result] = await Promise.allSettled([
+    const providerResult = await settle(
       context.input.args.queueFirstAssociation
         ? get(queuedModelRoute$)
         : resolvePreparedRunModelProvider({
@@ -13338,55 +13321,30 @@ function createRunModelProviderObjects(
               featureSwitchContext: context.featureSwitchContext,
             },
           }),
-    ]);
-    return await materializeResolvedPiProvider(context.input.args, result);
+    );
+    if (!providerResult.ok) {
+      return piConfigurationRouteError(providerResult.error);
+    }
+    const provider = providerResult.value;
+    if (isRouteError(provider)) {
+      return provider;
+    }
+    const materialized = await settle(
+      materializePreparedPiProvider(context.input.args, provider),
+    );
+    return materialized.ok
+      ? materialized.value
+      : piConfigurationRouteError(materialized.error);
   });
   return { modelRoute$ };
-}
-
-function matchingRunModelPreparation(
-  args: RunModelProviderArgs,
-  snapshot: PreloadedRunModelPreparation,
-): boolean {
-  const captured = snapshot.args;
-  return (
-    captured.orgId === args.orgId &&
-    captured.userId === args.userId &&
-    captured.modelProviderId === args.modelProviderId &&
-    captured.modelProviderCredentialScope ===
-      args.modelProviderCredentialScope &&
-    captured.modelProviderType === args.modelProviderType &&
-    captured.selectedModelOverride === args.selectedModelOverride &&
-    captured.builtInModelRuntimeRoute === args.builtInModelRuntimeRoute &&
-    captured.capturedPersonalSubscriptionAccount ===
-      args.capturedPersonalSubscriptionAccount &&
-    captured.piExecution === args.piExecution &&
-    captured.retainedRunId === args.retainedRunId &&
-    captured.codexServiceTier === args.codexServiceTier &&
-    captured.agentRunMetadata?.reasoningEffort ===
-      args.agentRunMetadata?.reasoningEffort &&
-    captured.queueFirstAssociation === args.queueFirstAssociation
-  );
 }
 
 function createRunModelObject(
-  input$: Computed<PrepareRunContextInput>,
+  input$: RunContextInputObject,
   body: ReturnType<typeof createRunBodyObjects>,
   identity: ReturnType<typeof createRunIdentityObjects>,
 ) {
-  const live = createRunModelProviderObjects(input$, body, identity);
-  const modelRoute$ = computed(async (get) => {
-    const input = get(input$);
-    const snapshot = input.preloadedModelPreparation;
-    if (snapshot === undefined) {
-      return await get(live.modelRoute$);
-    }
-    if (!matchingRunModelPreparation(input.args, snapshot)) {
-      throw new Error("Preloaded model provider snapshot scope mismatch");
-    }
-    return settledRunContextValue(snapshot.result);
-  });
-  return { modelRoute$ };
+  return createRunModelProviderObjects(input$, body, identity);
 }
 
 interface RunConnectorSelection {
@@ -13410,29 +13368,12 @@ interface RunConnectorReadInput {
     | "connectorSourceId"
     | "includeOkouTokenSecret"
   >;
-  readonly preloadedConnectorCatalogSnapshot?: ConnectorRuntimeSelection;
 }
 
 interface RunConnectorContextSnapshot {
   readonly storedConnectorSnapshot: StoredConnectorMaterializationSnapshot | null;
   readonly storedConnectorMetadataContext: BuiltinConnectorRuntimeContext;
   readonly customConnectorContext: CustomConnectorRuntimeContext;
-}
-
-interface PreloadedRunConnectorSnapshot {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly chatThreadId: string | undefined;
-  readonly connectorSourceId: string | undefined;
-  readonly selection: PromiseSettledResult<
-    RunConnectorSelection | CreateRunErrorResult
-  >;
-  readonly context: PromiseSettledResult<
-    RunConnectorContextSnapshot | CreateRunErrorResult
-  >;
-  readonly preparedContext?: PromiseSettledResult<
-    PreparedConnectorContext | CreateRunErrorResult
-  >;
 }
 
 type RunConnectorSelectionObject = Computed<
@@ -13461,15 +13402,11 @@ type RunConnectorPreparationObject = Computed<
 >;
 
 function createRunConnectorCatalogObjects(
-  input$: Computed<RunConnectorReadInput>,
+  input$: AsyncRead<RunConnectorReadInput>,
   scope$: RunConnectorScopeObject,
   definitionRows$: RunCustomConnectorDefinitionRowsObject,
 ) {
   const metadataSlugs$ = computed(async (get) => {
-    const input = get(input$);
-    if (input.preloadedConnectorCatalogSnapshot !== undefined) {
-      return [];
-    }
     const rows = await get(definitionRows$);
     return [
       ...new Set(
@@ -13485,30 +13422,34 @@ function createRunConnectorCatalogObjects(
       ),
     ].sort();
   });
+  const catalogInput$ = computed(async (get) => {
+    const { db, timing } = await get(input$);
+    return { db, timing };
+  });
+  const requestedSlugs$ = computed(async (get) => {
+    const [scope, metadataConnectorSlugs] = await Promise.all([
+      get(scope$),
+      get(metadataSlugs$),
+    ]);
+    return {
+      requestedConnectorSlugs: scope.allowedConnectorSlugs,
+      metadataConnectorSlugs,
+    };
+  });
+  const { connectorCatalog$ } = createConnectorRuntimeSelectionObjects(
+    catalogInput$,
+    requestedSlugs$,
+  );
   const catalog$ = computed(
     async (get): Promise<RunConnectorCatalogSelection> => {
-      const input = get(input$);
-      const scope = await get(scope$);
+      const [input, scope] = await Promise.all([get(input$), get(scope$)]);
       return await input.timing.measure(
         "api_dispatch_prepare_context_select_connector_catalog",
         "nested",
         async () => {
-          if (isEmptyRunConnectorScope(scope)) {
-            return { kind: "empty" };
-          }
-          if (input.preloadedConnectorCatalogSnapshot !== undefined) {
-            return {
-              kind: "scoped",
-              selection: input.preloadedConnectorCatalogSnapshot,
-            };
-          }
-          const metadataConnectorSlugs = await get(metadataSlugs$);
-          const selection = await loadConnectorRuntimeSelection(input.db, {
-            timing: input.timing,
-            requestedConnectorSlugs: scope.allowedConnectorSlugs,
-            metadataConnectorSlugs,
-          });
-          return { kind: "scoped", selection };
+          return isEmptyRunConnectorScope(scope)
+            ? { kind: "empty" }
+            : { kind: "scoped", selection: await get(connectorCatalog$) };
         },
       );
     },
@@ -13604,10 +13545,10 @@ function runThreadConnectorCandidates(
 }
 
 function createRunOwnedConnectorThreadObject(
-  input$: Computed<RunConnectorReadInput>,
+  input$: AsyncRead<RunConnectorReadInput>,
 ) {
   return computed(async (get) => {
-    const { db, args } = get(input$);
+    const { db, args } = await get(input$);
     if (args.chatThreadId === undefined) {
       return null;
     }
@@ -13630,13 +13571,13 @@ function createRunOwnedConnectorThreadObject(
 }
 
 function createRunThreadSelectionRowObject(
-  input$: Computed<RunConnectorReadInput>,
+  input$: AsyncRead<RunConnectorReadInput>,
   scope$: RunConnectorScopeObject,
   ownedThread$: ReturnType<typeof createRunOwnedConnectorThreadObject>,
 ) {
   return computed(
     async (get): Promise<readonly ConnectorAccountSelection[]> => {
-      const { db, args } = get(input$);
+      const { db, args } = await get(input$);
       const [thread, scope] = await Promise.all([
         get(ownedThread$),
         get(scope$),
@@ -13673,12 +13614,12 @@ function createRunThreadSelectionRowObject(
 }
 
 function createRunConnectorAccountRowsObject(
-  input$: Computed<RunConnectorReadInput>,
+  input$: AsyncRead<RunConnectorReadInput>,
   scope$: RunConnectorScopeObject,
   selections$: ReturnType<typeof createRunThreadSelectionRowObject>,
 ) {
   return computed(async (get) => {
-    const { db, args } = get(input$);
+    const { db, args } = await get(input$);
     const scope = await get(scope$);
     const selections = await get(selections$);
     const sourceIds = [
@@ -13746,7 +13687,7 @@ function createRunConnectorAccountRowsObject(
 }
 
 function createRunThreadConnectorSelectionObjects(
-  input$: Computed<RunConnectorReadInput>,
+  input$: AsyncRead<RunConnectorReadInput>,
   scope$: RunConnectorScopeObject,
 ) {
   const ownedThread$ = createRunOwnedConnectorThreadObject(input$);
@@ -13766,7 +13707,7 @@ function createRunThreadConnectorSelectionObjects(
     ): Promise<
       ThreadConnectorSelectionIds | CreateRunErrorResult | undefined
     > => {
-      const { args } = get(input$);
+      const { args } = await get(input$);
       if (args.chatThreadId === undefined) {
         return undefined;
       }
@@ -13829,12 +13770,12 @@ function createRunThreadConnectorSelectionObjects(
 }
 
 function createRunConnectorPreparationObject(
-  input$: Computed<RunConnectorReadInput>,
+  input$: AsyncRead<RunConnectorReadInput>,
   connectorSelection$: RunConnectorSelectionObject,
 ) {
   return computed(
     async (get): Promise<RunConnectorPreparation | CreateRunErrorResult> => {
-      const input = get(input$);
+      const input = await get(input$);
       const selection = await get(connectorSelection$);
       if (isRouteError(selection)) {
         return selection;
@@ -13975,12 +13916,12 @@ type RunConnectorAccountCandidatesObject = ReturnType<
 >["accountCandidates$"];
 
 function createRunStoredConnectorSelectionViewObject(
-  input$: Computed<RunConnectorReadInput>,
+  input$: AsyncRead<RunConnectorReadInput>,
   scope$: RunConnectorScopeObject,
   accountCandidates$: RunConnectorAccountCandidatesObject,
 ) {
   return computed(async (get) => {
-    const { db, args } = get(input$);
+    const { db, args } = await get(input$);
     const candidates = await get(accountCandidates$);
     const connectorIds = (await get(scope$)).allowedConnectorSlugs.flatMap(
       (connectorSlug) => {
@@ -14027,7 +13968,7 @@ function createRunStoredConnectorSelectionViewObject(
 }
 
 function createRunStoredConnectorRowObject(
-  input$: Computed<RunConnectorReadInput>,
+  input$: AsyncRead<RunConnectorReadInput>,
   scope$: RunConnectorScopeObject,
   accountCandidates$: RunConnectorAccountCandidatesObject,
 ) {
@@ -14040,7 +13981,7 @@ function createRunStoredConnectorRowObject(
     async (
       get,
     ): Promise<readonly StoredConnectorMaterializationSnapshotRow[]> => {
-      const { db, args, timing } = get(input$);
+      const { db, args, timing } = await get(input$);
       const selectedConnectors = await get(selectedConnectors$);
       if (!selectedConnectors) {
         return [];
@@ -14150,7 +14091,7 @@ function createRunStoredConnectorRowObject(
 }
 
 function createRunStoredConnectorSnapshotObject(
-  input$: Computed<RunConnectorReadInput>,
+  input$: AsyncRead<RunConnectorReadInput>,
   preparation$: RunConnectorPreparationObject,
   rows$: ReturnType<typeof createRunStoredConnectorRowObject>,
   accountCandidates$: RunConnectorAccountCandidatesObject,
@@ -14206,18 +14147,18 @@ function createRunStoredConnectorSnapshotObject(
             scopeSource: args.scopeSource,
           }),
         },
-        get(input$).timing,
+        (await get(input$)).timing,
       );
     },
   );
 }
 
 function createRunCustomConnectorDefinitionRowsObject(
-  input$: Computed<RunConnectorReadInput>,
+  input$: AsyncRead<RunConnectorReadInput>,
   scope$: RunConnectorScopeObject,
 ) {
   return computed(async (get) => {
-    const { db, args, timing } = get(input$);
+    const { db, args, timing } = await get(input$);
     const ids = (await get(scope$)).allowedCustomConnectorIds;
     if (ids.length === 0) {
       return [];
@@ -14316,12 +14257,12 @@ function runCustomConnectorConnectionColumns() {
 }
 
 function createRunCustomConnectorConnectionViewObject(
-  input$: Computed<RunConnectorReadInput>,
+  input$: AsyncRead<RunConnectorReadInput>,
   scope$: RunConnectorScopeObject,
   accountCandidates$: RunConnectorAccountCandidatesObject,
 ) {
   return computed(async (get) => {
-    const { db, args } = get(input$);
+    const { db, args } = await get(input$);
     const candidates = await get(accountCandidates$);
     const connectorIds = (await get(scope$)).allowedCustomConnectorIds;
     const memberConnectorIds = connectorIds.flatMap((customConnectorId) => {
@@ -14385,11 +14326,11 @@ function createRunCustomConnectorConnectionViewObject(
 }
 
 function createRunCustomConnectorValueViewObject(
-  input$: Computed<RunConnectorReadInput>,
+  input$: AsyncRead<RunConnectorReadInput>,
   connections$: ReturnType<typeof createRunCustomConnectorConnectionViewObject>,
 ) {
   return computed(async (get) => {
-    const { db, args } = get(input$);
+    const { db, args } = await get(input$);
     const connections = await get(connections$);
     if (!connections) {
       return null;
@@ -14457,7 +14398,7 @@ function createRunCustomConnectorValueViewObject(
 }
 
 function createRunCustomConnectorStoredRowsObject(
-  input$: Computed<RunConnectorReadInput>,
+  input$: AsyncRead<RunConnectorReadInput>,
   scope$: RunConnectorScopeObject,
   accountCandidates$: RunConnectorAccountCandidatesObject,
 ) {
@@ -14469,7 +14410,7 @@ function createRunCustomConnectorStoredRowsObject(
   const values$ = createRunCustomConnectorValueViewObject(input$, connections$);
   return computed(
     async (get): Promise<readonly CustomConnectorRuntimeStorageRow[]> => {
-      const { db, timing } = get(input$);
+      const { db, timing } = await get(input$);
       const [connections, values] = await Promise.all([
         get(connections$),
         get(values$),
@@ -14602,7 +14543,7 @@ function createRunCustomConnectorPermissionBundlesObject(
 }
 
 function createRunCustomConnectorContextObject(
-  input$: Computed<RunConnectorReadInput>,
+  input$: AsyncRead<RunConnectorReadInput>,
   preparation$: RunConnectorPreparationObject,
   {
     definitionRows$,
@@ -14683,7 +14624,9 @@ function createRunCustomConnectorContextObject(
           };
         }),
       );
-      return await get(input$).timing.measure(
+      return await (
+        await get(input$)
+      ).timing.measure(
         "api_dispatch_prepare_context_build_custom_connector_firewalls",
         "nested",
         async () => {
@@ -14701,7 +14644,7 @@ function createRunCustomConnectorContextObject(
 }
 
 function createRunConnectorSelectionObject(
-  input$: Computed<RunConnectorReadInput>,
+  input$: AsyncRead<RunConnectorReadInput>,
   scope$: RunConnectorScopeObject,
   definitionRows$: RunCustomConnectorDefinitionRowsObject,
   threadSelections$: ReturnType<
@@ -14736,7 +14679,7 @@ function createRunConnectorSelectionObject(
 }
 
 function createRunConnectorReadObjects(
-  input$: Computed<RunConnectorReadInput>,
+  input$: AsyncRead<RunConnectorReadInput>,
   {
     featureSwitchContext$,
   }: Pick<ReturnType<typeof createRunIdentityObjects>, "featureSwitchContext$">,
@@ -14786,7 +14729,7 @@ function createRunConnectorReadObjects(
     async (
       get,
     ): Promise<RunConnectorContextSnapshot | CreateRunErrorResult> => {
-      const input = get(input$);
+      const input = await get(input$);
       const scope = await get(scope$);
       return await input.timing.measure(
         "api_dispatch_prepare_context_load_connector_contexts",
@@ -14825,72 +14768,40 @@ function createRunConnectorReadObjects(
 }
 
 function createRunConnectorSelectionObjects(
-  input$: Computed<PrepareRunContextInput>,
+  input$: RunContextInputObject,
   identity: ReturnType<typeof createRunIdentityObjects>,
 ) {
-  const scope$ = computed((get) => {
-    return connectorScopeFromCreateArgs(get(input$).args);
+  const scope$ = computed(async (get) => {
+    return connectorScopeFromCreateArgs((await get(input$)).args);
   });
-  const live = createRunConnectorReadObjects(input$, identity, scope$);
-  const preloaded$ = computed((get) => {
-    const { args, preloadedConnectorPreparation: snapshot } = get(input$);
-    if (
-      snapshot !== undefined &&
-      (snapshot.orgId !== args.orgId ||
-        snapshot.userId !== args.userId ||
-        snapshot.chatThreadId !== args.chatThreadId ||
-        snapshot.connectorSourceId !== args.connectorSourceId)
-    ) {
-      throw new Error("Preloaded connector snapshot scope mismatch");
-    }
-    return snapshot;
-  });
-  const connectorSelection$ = computed(async (get) => {
-    const snapshot = get(preloaded$);
-    return snapshot === undefined
-      ? await get(live.connectorSelection$)
-      : settledRunContextValue(snapshot.selection);
-  });
-  const connectorSnapshot$ = computed(async (get) => {
-    const snapshot = get(preloaded$);
-    return snapshot === undefined
-      ? await get(live.connectorSnapshot$)
-      : settledRunContextValue(snapshot.context);
-  });
-  return { connectorSelection$, connectorSnapshot$ };
-}
-
-function settledRunContextValue<T>(result: PromiseSettledResult<T>): T {
-  if (result.status === "rejected") {
-    throw result.reason;
-  }
-  return result.value;
+  return createRunConnectorReadObjects(input$, identity, scope$);
 }
 
 function createRunRuntimeObjects(
-  input$: Computed<PrepareRunContextInput>,
+  input$: RunContextInputObject,
   { bodyContext$ }: ReturnType<typeof createRunBodyObjects>,
   { modelRoute$ }: ReturnType<typeof createRunModelObject>,
   {
     connectorSelection$,
     connectorSnapshot$,
   }: ReturnType<typeof createRunConnectorSelectionObjects>,
+  shared?: SelectedRunReadObjects,
 ) {
   const connectorInputs$ = computed(
     async (get): Promise<RunPreparedConnectorInputs | CreateRunErrorResult> => {
-      const input = get(input$);
+      const input = await get(input$);
       const [bodyResult, modelResult, selectionResult, snapshotResult] =
-        await Promise.allSettled([
+        await Promise.all([
           get(bodyContext$),
           get(modelRoute$),
           get(connectorSelection$),
           get(connectorSnapshot$),
         ]);
-      // Read in parallel, then preserve catalog authority before provider errors.
-      const selection = settledRunContextValue(selectionResult);
-      const bodyContext = settledRunContextValue(bodyResult);
-      const modelProvider = settledRunContextValue(modelResult);
-      const snapshot = settledRunContextValue(snapshotResult);
+
+      const selection = selectionResult;
+      const bodyContext = bodyResult;
+      const modelProvider = modelResult;
+      const snapshot = snapshotResult;
       if (isRouteError(bodyContext)) {
         return bodyContext;
       }
@@ -14916,13 +14827,8 @@ function createRunRuntimeObjects(
       };
     },
   );
-  const live = createRunPreparedConnectorObjects(connectorInputs$);
-  const connectorContext$ = computed(async (get) => {
-    const snapshot = get(input$).preloadedConnectorPreparation;
-    return snapshot?.preparedContext === undefined
-      ? await get(live.connectorContext$)
-      : settledRunContextValue(snapshot.preparedContext);
-  });
+  const { connectorContext$ } =
+    shared ?? createRunPreparedConnectorObjects(connectorInputs$);
   const runtimeContext$ = computed(
     async (get): Promise<PreparedRuntimeContext | CreateRunErrorResult> => {
       const [
@@ -14931,18 +14837,18 @@ function createRunRuntimeObjects(
         selectionResult,
         snapshotResult,
         connectorResult,
-      ] = await Promise.allSettled([
+      ] = await Promise.all([
         get(bodyContext$),
         get(modelRoute$),
         get(connectorSelection$),
         get(connectorSnapshot$),
         get(connectorContext$),
       ]);
-      const selection = settledRunContextValue(selectionResult);
-      const bodyContext = settledRunContextValue(bodyResult);
-      const modelProvider = settledRunContextValue(modelResult);
-      const snapshot = settledRunContextValue(snapshotResult);
-      const connectors = settledRunContextValue(connectorResult);
+      const selection = selectionResult;
+      const bodyContext = bodyResult;
+      const modelProvider = modelResult;
+      const snapshot = snapshotResult;
+      const connectors = connectorResult;
       if (isRouteError(bodyContext)) {
         return bodyContext;
       }
@@ -14981,26 +14887,25 @@ function createRunRuntimeObjects(
   return { runtimeContext$ };
 }
 
-function createRunMemberObjects(input$: Computed<PrepareRunContextInput>) {
-  const readInput$ = computed((get) => {
-    const { db, args, preloadedMember } = get(input$);
-    return {
-      db,
-      orgId: args.orgId,
-      userId: args.userId,
-      preloadedSnapshot: preloadedMember,
-    };
+function createRunMemberObjects(
+  input$: RunContextInputObject,
+  shared?: SelectedRunReadObjects,
+) {
+  const readInput$ = computed(async (get) => {
+    const { db, args } = await get(input$);
+    return { db, orgId: args.orgId, userId: args.userId };
   });
-  const memberSnapshot$ = createRunMemberSnapshotObject(readInput$);
+  const memberSnapshot$ =
+    shared?.member$ ?? createRunMemberSnapshotObject(readInput$);
   const userTimezone$ = computed(async (get) => {
-    const input = get(input$);
+    const input = await get(input$);
     await observeRunContextParallelStage("user-timezone", input.args);
-    return input.preloadedUserTimezone !== undefined
-      ? (input.preloadedUserTimezone ?? undefined)
+    return shared
+      ? get(shared.userTimezone$)
       : ((await get(memberSnapshot$)).member?.timezone ?? undefined);
   });
   const imageModel$ = computed(async (get) => {
-    const input = get(input$);
+    const input = await get(input$);
     await observeRunContextParallelStage("image-model", input.args);
     const stored = (await get(memberSnapshot$)).member?.selectedImageModel;
     return isImageModelId(stored) ? stored : DEFAULT_IMAGE_MODEL;
@@ -15008,20 +14913,10 @@ function createRunMemberObjects(input$: Computed<PrepareRunContextInput>) {
   return { userTimezone$, imageModel$ };
 }
 
-function createRunMemberSnapshotObject(input$: Computed<RunMemberReadInput>) {
+function createRunMemberSnapshotObject(input$: AsyncRead<RunMemberReadInput>) {
   return computed(async (get): Promise<RunMemberSnapshot> => {
-    const args = get(input$);
+    const args = await get(input$);
     const { db } = args;
-    if (args.preloadedSnapshot !== undefined) {
-      const preloadedSnapshot = settledRunContextValue(args.preloadedSnapshot);
-      if (
-        preloadedSnapshot.orgId !== args.orgId ||
-        preloadedSnapshot.userId !== args.userId
-      ) {
-        throw new Error("Preloaded member snapshot scope mismatch");
-      }
-      return preloadedSnapshot;
-    }
     const [member] = await db
       .select({
         timezone: orgMembersMetadata.timezone,
@@ -15066,15 +14961,6 @@ type PreparedOfficialWorkflow =
   | CreateRunErrorResult
   | undefined;
 
-interface PreloadedOfficialWorkflowPreparation {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly workflows: readonly RunWorkflowRef[];
-  readonly requiredWorkflowIds: readonly string[];
-  readonly modelPreparation: PreloadedRunModelPreparation | undefined;
-  readonly result: PromiseSettledResult<PreparedOfficialWorkflow>;
-}
-
 function createRunWorkflowReadObject(
   input$: Computed<RunWorkflowReadInput | Promise<RunWorkflowReadInput>>,
   modelState$: Computed<Promise<RunWorkflowModelState>>,
@@ -15117,65 +15003,32 @@ function createRunWorkflowReadObject(
   });
   const officialWorkflow$ = computed(
     async (get): Promise<PreparedOfficialWorkflow> => {
-      const [modelResult, observation] = await Promise.allSettled([
-        get(modelState$),
-        get(observation$),
-      ]);
-      const model = settledRunContextValue(modelResult);
-      if (isRouteError(model)) {
-        return model;
+      const result = await settle(
+        Promise.all([get(modelState$), get(observation$)]),
+      );
+      if (!result.ok) {
+        if (result.error instanceof OfficialWorkflowRunAdmissionError) {
+          return conflict(result.error.message);
+        }
+        throw result.error;
       }
-      if (observation.status === "fulfilled") {
-        return observation.value;
-      }
-      if (observation.reason instanceof OfficialWorkflowRunAdmissionError) {
-        return conflict(observation.reason.message);
-      }
-      throw observation.reason;
+      const [model, observation] = result.value;
+      return isRouteError(model) ? model : observation;
     },
   );
   return { officialWorkflow$ };
 }
 
-function matchingOfficialWorkflowPreparation(
-  args: CreateAgentRunArgs,
-  snapshot: PreloadedOfficialWorkflowPreparation,
-): boolean {
-  const workflows = args.injectSkillVolumes?.workflows ?? [];
-  const required = args.requiredOfficialWorkflowIds ?? [];
-  return (
-    snapshot.orgId === args.orgId &&
-    snapshot.userId === args.userId &&
-    snapshot.workflows.length === workflows.length &&
-    snapshot.workflows.every((workflow, index) => {
-      const current = workflows[index];
-      return (
-        current?.workflowId === workflow.workflowId &&
-        current.name === workflow.name &&
-        current.officialDefinitionName === workflow.officialDefinitionName
-      );
-    }) &&
-    snapshot.requiredWorkflowIds.length === required.length &&
-    snapshot.requiredWorkflowIds.every((id, index) => {
-      return id === required[index];
-    }) &&
-    snapshot.modelPreparation !== undefined &&
-    matchingRunModelPreparation(args, snapshot.modelPreparation)
-  );
-}
-
 function createRunWorkflowObject(
-  input$: Computed<PrepareRunContextInput>,
+  input$: RunContextInputObject,
   { framework$ }: ReturnType<typeof createRunBodyObjects>,
   { modelRoute$ }: ReturnType<typeof createRunModelObject>,
 ) {
   const modelState$ = computed(async (get): Promise<RunWorkflowModelState> => {
-    const [frameworkResult, modelResult] = await Promise.allSettled([
+    const [requestedFramework, modelProvider] = await Promise.all([
       get(framework$),
       get(modelRoute$),
     ]);
-    const requestedFramework = settledRunContextValue(frameworkResult);
-    const modelProvider = settledRunContextValue(modelResult);
     if (isRouteError(requestedFramework)) {
       return requestedFramework;
     }
@@ -15184,33 +15037,16 @@ function createRunWorkflowObject(
     }
     return { requestedFramework, modelProvider };
   });
-  const live = createRunWorkflowReadObject(input$, modelState$);
-  const officialWorkflow$ = computed(
-    async (get): Promise<PreparedOfficialWorkflow> => {
-      const { args, preloadedOfficialWorkflowPreparation: snapshot } =
-        get(input$);
-      if (snapshot === undefined) {
-        return await get(live.officialWorkflow$);
-      }
-      if (!matchingOfficialWorkflowPreparation(args, snapshot)) {
-        throw new Error("Preloaded Official Workflow snapshot scope mismatch");
-      }
-      return settledRunContextValue(snapshot.result);
-    },
-  );
-  return { officialWorkflow$ };
+  return createRunWorkflowReadObject(input$, modelState$);
 }
 
-function createRunDisabledPaidToolsObject(
-  input$: Computed<PrepareRunContextInput>,
-) {
-  const readInput$ = computed((get) => {
-    const { db, args, preloadedDisabledPaidTools } = get(input$);
+function createRunDisabledPaidToolsObject(input$: RunContextInputObject) {
+  const readInput$ = computed(async (get) => {
+    const { db, args } = await get(input$);
     return {
       db,
       orgId: args.orgId,
       userId: args.userId,
-      preloadedSnapshot: preloadedDisabledPaidTools,
     };
   });
   const snapshot$ = createRunDisabledPaidToolsSnapshotObject(readInput$);
@@ -15220,21 +15056,11 @@ function createRunDisabledPaidToolsObject(
 }
 
 function createRunDisabledPaidToolsSnapshotObject(
-  input$: Computed<RunDisabledPaidToolsReadInput>,
+  input$: AsyncRead<RunDisabledPaidToolsReadInput>,
 ) {
   return computed(async (get): Promise<DisabledPaidToolsSnapshot> => {
-    const args = get(input$);
+    const args = await get(input$);
     const { db } = args;
-    if (args.preloadedSnapshot !== undefined) {
-      const preloadedSnapshot = settledRunContextValue(args.preloadedSnapshot);
-      if (
-        preloadedSnapshot.orgId !== args.orgId ||
-        preloadedSnapshot.userId !== args.userId
-      ) {
-        throw new Error("Preloaded paid-tools snapshot scope mismatch");
-      }
-      return preloadedSnapshot;
-    }
     const rows = await db
       .select({ toolId: userDisabledPaidTools.toolId })
       .from(userDisabledPaidTools)
@@ -15306,7 +15132,6 @@ function composePreparedRunContext({
     customConnectorContext: runtimeContext.customConnectorContext,
     framework: runtimeContext.framework,
     piSandbox,
-    featureSwitchContext: bodyContext.featureSwitchContext,
     body,
     resolved,
     officialWorkflowRun,
@@ -15341,20 +15166,35 @@ function composePreparedRunContext({
   };
 }
 
-function createRunContextObjects(input$: Computed<PrepareRunContextInput>) {
-  const identity = createRunIdentityObjects(input$);
-  const body = createRunBodyObjects(input$, identity);
-  const model = createRunModelObject(input$, body, identity);
-  const selection = createRunConnectorSelectionObjects(input$, identity);
-  const runtime = createRunRuntimeObjects(input$, body, model, selection);
-  const { userTimezone$, imageModel$ } = createRunMemberObjects(input$);
-  const disabledPaidTools$ = createRunDisabledPaidToolsObject(input$);
-  const { officialWorkflow$ } = createRunWorkflowObject(input$, body, model);
+function createRunContextObjects(
+  input$: RunContextInputObject,
+  shared?: SelectedRunReadObjects,
+) {
+  const identity = createRunIdentityObjects(input$, shared);
+  const body = createRunBodyObjects(input$, identity, shared);
+  const model = shared ?? createRunModelObject(input$, body, identity);
+  const selection =
+    shared ?? createRunConnectorSelectionObjects(input$, identity);
+  const runtime = createRunRuntimeObjects(
+    input$,
+    body,
+    model,
+    selection,
+    shared,
+  );
+  const { userTimezone$, imageModel$ } = createRunMemberObjects(input$, shared);
+  const disabledPaidTools$ = shared
+    ? computed(async (get) => {
+        return (await get(shared.disabledPaidTools$)).toolIds;
+      })
+    : createRunDisabledPaidToolsObject(input$);
+  const { officialWorkflow$ } =
+    shared ?? createRunWorkflowObject(input$, body, model);
   const { bodyContext$ } = body;
   const { runtimeContext$ } = runtime;
   const runContext$ = computed(
     async (get): Promise<PreparedRunContext | CreateRunErrorResult> => {
-      const { args } = get(input$);
+      const { args } = await get(input$);
       const gate = enforceCaptureNetworkBodiesGate(
         args.orgId,
         initialRunBody(args).captureNetworkBodies,
@@ -15369,7 +15209,7 @@ function createRunContextObjects(input$: Computed<PrepareRunContextInput>) {
         imageResult,
         workflowResult,
         paidToolsResult,
-      ] = await Promise.allSettled([
+      ] = await Promise.all([
         get(bodyContext$),
         get(runtimeContext$),
         get(userTimezone$),
@@ -15377,12 +15217,12 @@ function createRunContextObjects(input$: Computed<PrepareRunContextInput>) {
         get(officialWorkflow$),
         get(disabledPaidTools$),
       ]);
-      const bodyContext = settledRunContextValue(bodyResult);
-      const runtimeContext = settledRunContextValue(runtimeResult);
-      const userTimezone = settledRunContextValue(timezoneResult);
-      const selectedImageModel = settledRunContextValue(imageResult);
-      const officialWorkflowRun = settledRunContextValue(workflowResult);
-      const disabledPaidTools = settledRunContextValue(paidToolsResult);
+      const bodyContext = bodyResult;
+      const runtimeContext = runtimeResult;
+      const userTimezone = timezoneResult;
+      const selectedImageModel = imageResult;
+      const officialWorkflowRun = workflowResult;
+      const disabledPaidTools = paidToolsResult;
       if (isRouteError(bodyContext)) {
         return bodyContext;
       }
@@ -15723,72 +15563,89 @@ const commitFailedDirectLaunch$ = command(
   },
 );
 
-function createLaunchObjects() {
-  const {
-    internalStorageInput$,
-    preparationInput$,
-    storagePreparation$,
-    materializeStorage$,
-  } = createStorageMaterializationObjects();
+function finalizedMaterializedLaunch(
+  storage: MaterializedRunnerStorage,
+  contextDraft: BuiltStoredExecutionContextDraft,
+): PreparedRunnerLaunch {
+  const { args, group, body, checkpointArtifacts } = storage.input;
+  return finalizedRunnerLaunch({
+    args,
+    group,
+    body,
+    checkpointArtifacts,
+    builtContext: resolveBuiltStoredExecutionContext(
+      storage.preparedStorage.prepared,
+      contextDraft,
+    ),
+    piResources: storage.piResources,
+  });
+}
+
+function createLaunchObjects(
+  storage?: ReturnType<typeof createAgentRunStorageObjects>,
+  callbackInputs$?: SelectedAgentRunGraphSources["callbackInputs$"],
+) {
+  const prepareCallbacks$ = createPrepareCallbacksCommand(callbackInputs$);
+  const { initializeStorageInput$, materializeStorage$ } =
+    createStorageMaterializationObjects(storage);
   const createAtomicLaunchRun$ = command(
     async (
-      { get, set },
+      { set },
       input: AtomicLaunchRunInput,
       signal: AbortSignal,
     ): Promise<QueueFirstAgentRunResult> => {
       const identity = prepareLaunchRunIdentity({
         resolved: input.context.resolved,
       });
-
-      const callbackRows = await prepareRunCallbackRows({
-        runId: identity.runId,
-        callbacks: input.args.callbacks,
-        featureSwitchContext: input.context.featureSwitchContext,
-        timing: input.timing,
-      });
-      signal.throwIfAborted();
-
+      const storageInput = set(
+        initializeStorageInput$,
+        {
+          db: input.db,
+          args: atomicLaunchPayloadInput({
+            createArgs: input.args,
+            context: input.context,
+            run: {
+              id: identity.runId,
+              sessionId: identity.sessionId,
+              shouldCreateSession: identity.shouldCreateSession,
+            },
+            timing: input.timing,
+          }),
+        },
+        signal,
+      );
+      const contextInput = set(prepareStorageInput$, storageInput, signal);
+      // Reading the fixed storage plan begins before callback encryption; each
+      // command waits only for its actual prerequisites.
+      const storage = set(materializeStorage$, contextInput, signal);
+      const callbacks = set(
+        prepareCallbacks$,
+        {
+          runId: identity.runId,
+          callbacks: input.args.callbacks,
+          featureSwitchContext: input.context.featureSwitchContext,
+          timing: input.timing,
+        },
+        signal,
+      );
+      const contextDraft = set(
+        prepareStoredContextDraft$,
+        contextInput,
+        signal,
+      );
+      const joinedResources = Promise.all([storage, callbacks, contextDraft]);
       const launchResult = await settle(
         input.timing.measure(
           "api_dispatch_build_runner_job_payload",
           "top_level",
           async () => {
-            set(internalStorageInput$, {
-              db: input.db,
-              args: atomicLaunchPayloadInput({
-                createArgs: input.args,
-                context: input.context,
-                run: {
-                  id: identity.runId,
-                  sessionId: identity.sessionId,
-                  shouldCreateSession: identity.shouldCreateSession,
-                },
-                timing: input.timing,
-              }),
-            });
-            const preparationInput = get(preparationInput$);
-            const contextDraft = set(
-              prepareStoredContextDraft$,
-              preparationInput,
-              signal,
-            );
-            const materialized = (async () => {
-              const storage = await get(storagePreparation$);
-              signal.throwIfAborted();
-              return await set(
-                materializeStorage$,
-                { ...storage, contextDraft },
-                signal,
-              );
-            })();
-            const [storageResult, contextResult] = await Promise.allSettled([
-              materialized,
-              contextDraft,
-            ]);
+            const [materializedStorage, callbackRows, draft] =
+              await joinedResources;
             signal.throwIfAborted();
-            const launch = settledRunContextValue(storageResult);
-            settledRunContextValue(contextResult);
-            return launch;
+            return {
+              callbackRows,
+              launch: finalizedMaterializedLaunch(materializedStorage, draft),
+            };
           },
           {
             pi_launch_resources:
@@ -15805,19 +15662,22 @@ function createLaunchObjects() {
         ) {
           return conflict(OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE);
         }
-        if (!input.args.queueFirstAssociation) {
-          return await set(
-            commitFailedDirectLaunch$,
-            { input, identity, callbackRows, error: launchResult.error },
-            signal,
-          );
+        if (input.args.queueFirstAssociation) {
+          throw launchResult.error;
         }
-        throw launchResult.error;
+        // Legacy non-chat failed runs require their callback rows atomically.
+        // Reuse the already-started encryption; chat failures never wait here.
+        const callbackRows = await callbacks;
+        signal.throwIfAborted();
+        return await set(
+          commitFailedDirectLaunch$,
+          { input, identity, callbackRows, error: launchResult.error },
+          signal,
+        );
       }
-      const launch = launchResult.value;
+      const { callbackRows, launch } = launchResult.value;
       signal.throwIfAborted();
       input.phaseTiming.checkpoint("api_dispatch_phase_prepare_launch", now());
-
       return await set(
         createRun$,
         { input, identity, callbackRows, launch },
@@ -15841,19 +15701,6 @@ interface PrepareAgentRunArgs {
   readonly timing: ApiDispatchTimingCollector;
   readonly phaseTiming: ApiDispatchPhaseCollector;
   readonly checkOrgPlanStatusBeforeContext: boolean;
-  readonly preloadedFeatureSwitchContext?: FeatureSwitchContext;
-  // Undefined means not preloaded; null is an authoritative missing value.
-  readonly preloadedUserTimezone?: string | null;
-  readonly preloadedConnectorCatalogSnapshot?: ConnectorRuntimeSelection;
-  readonly preloadedDisabledPaidTools?: PromiseSettledResult<DisabledPaidToolsSnapshot>;
-  readonly preloadedMember?: PromiseSettledResult<RunMemberSnapshot>;
-  readonly preloadedEnvironment?: PromiseSettledResult<
-    ScopedRunEnvironmentSnapshot | CreateRunErrorResult
-  >;
-  readonly preloadedConnectorPreparation?: PreloadedRunConnectorSnapshot;
-  readonly preloadedModelPreparation?: PreloadedRunModelPreparation;
-  readonly preloadedOfficialWorkflowPreparation?: PreloadedOfficialWorkflowPreparation;
-  readonly preloadedBodyEnvironment?: PreloadedRunBodyEnvironment;
 }
 
 interface CompleteAgentRunArgs {
@@ -15946,23 +15793,7 @@ function createPrepareAgentRunCommand(
         }
       }
 
-      const contextInput: PrepareRunContextInput = {
-        db,
-        args,
-        timing,
-        preloadedFeatureSwitchContext: input.preloadedFeatureSwitchContext,
-        preloadedUserTimezone: input.preloadedUserTimezone,
-        preloadedConnectorCatalogSnapshot:
-          input.preloadedConnectorCatalogSnapshot,
-        preloadedDisabledPaidTools: input.preloadedDisabledPaidTools,
-        preloadedMember: input.preloadedMember,
-        preloadedEnvironment: input.preloadedEnvironment,
-        preloadedConnectorPreparation: input.preloadedConnectorPreparation,
-        preloadedModelPreparation: input.preloadedModelPreparation,
-        preloadedOfficialWorkflowPreparation:
-          input.preloadedOfficialWorkflowPreparation,
-        preloadedBodyEnvironment: input.preloadedBodyEnvironment,
-      };
+      const contextInput: PrepareRunContextInput = { db, args, timing };
       set(internalContextInput$, contextInput);
       const context = await timing.measure(
         "api_dispatch_prepare_run_context",
@@ -15972,7 +15803,7 @@ function createPrepareAgentRunCommand(
         },
       );
       signal.throwIfAborted();
-      if (isRouteError(context)) {
+      if ("status" in context) {
         if (
           context.body.error.code === "PROVIDER_UNAVAILABLE" &&
           args.enforceBuiltInCredits &&
@@ -16203,7 +16034,6 @@ export interface CreateAgentRunCommandArgs {
   readonly chatThreadId?: string;
   readonly connectorSourceId?: string;
   readonly threadSessionRoute?: ChatThreadSessionRoute;
-  readonly preloadedThreadSessionResolution?: ChatThreadSessionResolution;
   /** A producer may atomically move an integration thread to this run's agent. */
   readonly expectedThreadAgentId?: string;
   readonly webChatSessionPromptContext?: WebChatSessionPromptContext;
@@ -16223,8 +16053,6 @@ export interface CreateAgentRunCommandArgs {
   readonly piExecution: boolean;
   readonly timing?: ApiDispatchTimingCollector;
   readonly agentRunPreCreateSource?: AgentRunPreCreateSource;
-  readonly preloadedFeatureSwitchContext?: FeatureSwitchContext;
-  readonly preloadedMemberAccountSnapshot?: MemberModelAccountSnapshot | null;
   readonly authorizedRequestObservation?: AuthorizedAgentRunRequestObservation;
 }
 
@@ -16589,7 +16417,7 @@ interface AgentRunAfterBootstrap extends RunBootstrapContext {
   readonly authorizedRequestObservation?: AuthorizedAgentRunRequestObservation;
   readonly timing: ApiDispatchTimingCollector;
   readonly cloudBrowserEnabled: boolean | undefined;
-  readonly command: AnyCreateAgentRunCommandArgs;
+  readonly command: AgentRunIdentityCommand;
   readonly threadSessionResolution?: ChatThreadSessionResolution;
   readonly capturedPersonalSubscriptionAccount?: CapturedPersonalSubscriptionAccount;
 }
@@ -17084,7 +16912,7 @@ function materializeRunBootstrapContext(
     readonly userId: string;
     readonly orgId: string;
   },
-  preloadedFeatureSwitchContext?: FeatureSwitchContext,
+  observedFeatureSwitchContext?: FeatureSwitchContext,
 ): RunBootstrapContext {
   let userInfo: UserInfo = {
     name: null,
@@ -17179,7 +17007,7 @@ function materializeRunBootstrapContext(
     scope: args,
     userInfo,
     rows: featureSwitchRows,
-    preloaded: preloadedFeatureSwitchContext,
+    preloaded: observedFeatureSwitchContext,
   });
 
   return {
@@ -17193,24 +17021,54 @@ function materializeRunBootstrapContext(
   };
 }
 
+export type AgentRunSelectionInput = Omit<
+  AnyCreateAgentRunCommandArgs,
+  "body" | "appendSystemPrompt" | "callbacks"
+> & {
+  readonly body: Omit<AgentRunCreateBody, "prompt">;
+  readonly queueFirstAssociation?: CreateQueueFirstAgentRunCommandArgs["queueFirstAssociation"];
+};
+export interface AgentRunIdentityInput {
+  readonly db: Db;
+  readonly timing: ApiDispatchTimingCollector;
+  readonly auth: CreateAgentRunCommandArgs["auth"];
+  readonly agentId: string;
+  readonly apiStartTime: number;
+  readonly chatThreadId?: string;
+  readonly expectedThreadAgentId?: string;
+  readonly queueFirstAssociation?: CreateQueueFirstAgentRunCommandArgs["queueFirstAssociation"];
+}
+export interface AgentRunSelectionGraphInput {
+  readonly command: AgentRunSelectionInput;
+  readonly db: Db;
+  readonly timing: ApiDispatchTimingCollector;
+}
+export interface SelectedAgentRunGraphSources {
+  readonly identityInput$: AsyncRead<AgentRunIdentityInput | null>;
+  readonly selectionInput$: AsyncRead<AgentRunSelectionGraphInput | null>;
+  readonly threadSession$?: AsyncRead<ChatThreadSessionResolution | undefined>;
+  readonly command$: AsyncRead<AnyCreateAgentRunCommandArgs | null>;
+  readonly featureSwitchContext$?: AsyncRead<FeatureSwitchContext | undefined>;
+  readonly callbackInputs$?: AsyncRead<CreateAgentRunCommandArgs["callbacks"]>;
+  readonly connectorSourceId$?: AsyncRead<string | null | undefined>;
+  readonly memberAccountSnapshot$?: AsyncRead<
+    MemberModelAccountSnapshot | null | undefined
+  >;
+  readonly storageBody$?: AsyncRead<
+    Pick<CreateAgentRunCommandArgs["body"], "additionalVolumes">
+  >;
+}
+type AgentRunIdentityCommand = Omit<AgentRunSelectionInput, "piExecution"> & {
+  readonly piExecution?: boolean;
+};
 interface AgentRunGraphInput {
-  readonly command: AnyCreateAgentRunCommandArgs;
+  readonly command: AgentRunIdentityCommand;
   readonly db: Db;
   readonly timing: ApiDispatchTimingCollector;
 }
 
-function matchingPreloadedFeatureSwitchContext(
-  args: AnyCreateAgentRunCommandArgs,
-): FeatureSwitchContext | undefined {
-  const context = args.preloadedFeatureSwitchContext;
-  return context?.userId === args.auth.userId &&
-    context.orgId === args.auth.orgId
-    ? context
-    : undefined;
-}
-
 function matchingAuthorizedRequestObservation(
-  args: AnyCreateAgentRunCommandArgs,
+  args: AgentRunIdentityCommand,
   agentId: string,
 ): AuthorizedAgentRunRequestObservation | undefined {
   const observation = args.authorizedRequestObservation;
@@ -17229,28 +17087,31 @@ function matchingAuthorizedRequestObservation(
 }
 
 function createPreCreateInternalInput() {
-  const internalInput$ = state<AgentRunGraphInput | null>(null);
-  return internalInput$;
+  return state<{
+    readonly db: Db;
+    readonly timing: ApiDispatchTimingCollector;
+    readonly command: AnyCreateAgentRunCommandArgs;
+  } | null>(null);
 }
 
 function createPreCreateInput(
   internalInput$: ReturnType<typeof createPreCreateInternalInput>,
+  source$?: AsyncRead<AgentRunSelectionGraphInput | null>,
 ) {
-  const input$ = computed((get) => {
-    const input = get(internalInput$);
+  return computed(async (get): Promise<AgentRunGraphInput> => {
+    const input = source$ ? await get(source$) : get(internalInput$);
     if (!input) {
       throw new Error("Agent preparation has no selected input");
     }
     return input;
   });
-  return input$;
 }
 
 function createPreCreateAgentId(
   input$: ReturnType<typeof createPreCreateInput>,
 ) {
   const agentId$ = computed(async (get) => {
-    const { command: args, db, timing } = get(input$);
+    const { command: args, db, timing } = await get(input$);
     return await measureAgentRunPreCreate(
       timing,
       "api_dispatch_pre_create_agent_resolve_agent_id",
@@ -17284,7 +17145,7 @@ function createPreCreateRequestObservation(
   agentId$: ReturnType<typeof createPreCreateAgentId>,
 ) {
   const requestObservation$ = computed(async (get) => {
-    const { command } = get(input$);
+    const { command } = await get(input$);
     const agentId = await get(agentId$);
     return agentId
       ? matchingAuthorizedRequestObservation(command, agentId)
@@ -17294,17 +17155,11 @@ function createPreCreateRequestObservation(
 }
 
 function createPreCreateFeatureSwitchObservation(
-  input$: ReturnType<typeof createPreCreateInput>,
   requestObservation$: ReturnType<typeof createPreCreateRequestObservation>,
 ) {
-  const featureSwitchObservation$ = computed(async (get) => {
-    const { command } = get(input$);
-    return (
-      (await get(requestObservation$))?.featureSwitchContext ??
-      matchingPreloadedFeatureSwitchContext(command)
-    );
+  return computed(async (get) => {
+    return (await get(requestObservation$))?.featureSwitchContext;
   });
-  return featureSwitchObservation$;
 }
 
 function createPreCreateAgent(
@@ -17313,7 +17168,7 @@ function createPreCreateAgent(
   requestObservation$: ReturnType<typeof createPreCreateRequestObservation>,
 ) {
   const agent$ = computed(async (get): Promise<AgentRunRecord | null> => {
-    const { db, timing } = get(input$);
+    const { db, timing } = await get(input$);
     const [agentId, observation] = await Promise.all([
       get(agentId$),
       get(requestObservation$),
@@ -17362,7 +17217,7 @@ function createPreCreateBootstrapQueryArgs(
   agent$: ReturnType<typeof createPreCreateAgent>,
 ) {
   const bootstrapQueryArgs$ = computed(async (get) => {
-    const { command } = get(input$);
+    const { command } = await get(input$);
     const agent = await get(agent$);
     if (!agent) {
       throw new Error("Agent disappeared after preparation authorization");
@@ -17380,13 +17235,11 @@ function createPreCreateBootstrapQueryArgs(
 function createPreCreateBootstrapMetadataRows(
   input$: ReturnType<typeof createPreCreateInput>,
   bootstrapQueryArgs$: ReturnType<typeof createPreCreateBootstrapQueryArgs>,
-  featureSwitchObservation$: ReturnType<
-    typeof createPreCreateFeatureSwitchObservation
-  >,
+  featureSwitchObservation$: AsyncRead<FeatureSwitchContext | undefined>,
 ) {
   const bootstrapMetadataRows$ = computed(
     async (get): Promise<BootstrapMetadataQueryRow[]> => {
-      const { db } = get(input$);
+      const { db } = await get(input$);
       const [args, featureContext] = await Promise.all([
         get(bootstrapQueryArgs$),
         get(featureSwitchObservation$),
@@ -17510,7 +17363,7 @@ function createPreCreateWorkflowRows(
 ) {
   const workflowRows$ = computed(
     async (get): Promise<RunWorkflowSourceRow[]> => {
-      const { db } = get(input$);
+      const { db } = await get(input$);
       const args = await get(bootstrapQueryArgs$);
       return await db
         .select({
@@ -17550,7 +17403,7 @@ function createPreCreateBootstrapRows(
 ) {
   const bootstrapRows$ = computed(
     async (get): Promise<RunBootstrapSnapshotRows> => {
-      const { timing } = get(input$);
+      const { timing } = await get(input$);
       let snapshot: RunBootstrapSnapshotRows | undefined;
       return await measureAgentRunPreCreate(
         timing,
@@ -17577,12 +17430,10 @@ function createPreCreateBootstrapMetadata(
   bootstrapMetadataRows$: ReturnType<
     typeof createPreCreateBootstrapMetadataRows
   >,
-  featureSwitchObservation$: ReturnType<
-    typeof createPreCreateFeatureSwitchObservation
-  >,
+  featureSwitchObservation$: AsyncRead<FeatureSwitchContext | undefined>,
 ) {
   return computed(async (get) => {
-    const { command } = get(input$);
+    const { command } = await get(input$);
     const [metadataRows, featureContext] = await Promise.all([
       get(bootstrapMetadataRows$),
       get(featureSwitchObservation$),
@@ -17601,7 +17452,7 @@ function createPreCreateBootstrap(
   bootstrapMetadata$: ReturnType<typeof createPreCreateBootstrapMetadata>,
 ) {
   const bootstrap$ = computed(async (get) => {
-    const { command, timing } = get(input$);
+    const { command, timing } = await get(input$);
     const [rows, metadata] = await Promise.all([
       get(bootstrapRows$),
       get(bootstrapMetadata$),
@@ -17628,12 +17479,13 @@ function createPreCreateBootstrap(
   return bootstrap$;
 }
 
-function preloadedPersonalSubscriptionAccountCandidates(args: {
-  readonly command: AnyCreateAgentRunCommandArgs;
+function personalSubscriptionAccountCandidates(args: {
+  readonly command: AgentRunIdentityCommand;
   readonly providerType: string;
   readonly modelProviderId: string | null;
+  readonly snapshot?: MemberModelAccountSnapshot | null;
 }) {
-  const snapshot = args.command.preloadedMemberAccountSnapshot;
+  const snapshot = args.snapshot;
   if (
     !snapshot ||
     snapshot.orgId !== args.command.auth.orgId ||
@@ -17660,18 +17512,19 @@ function preloadedPersonalSubscriptionAccountCandidates(args: {
 
 function createPreCreateSubscriptionAccount(
   input$: ReturnType<typeof createPreCreateInput>,
+  snapshot$?: AsyncRead<MemberModelAccountSnapshot | null | undefined>,
 ) {
   const subscriptionAccount$ = computed(
     async (
       get,
     ): Promise<
       | {
-          readonly command: AnyCreateAgentRunCommandArgs;
+          readonly command: AgentRunIdentityCommand;
           readonly capturedPersonalSubscriptionAccount?: CapturedPersonalSubscriptionAccount;
         }
       | ReturnType<typeof conflict>
     > => {
-      const { command, db, timing } = get(input$);
+      const { command, db, timing } = await get(input$);
       const pin = command.agentRunModelPin;
       if (
         !pin ||
@@ -17689,10 +17542,11 @@ function createPreCreateSubscriptionAccount(
         timing,
         "api_dispatch_pre_create_agent_capture_subscription_account",
         async () => {
-          const preloaded = preloadedPersonalSubscriptionAccountCandidates({
+          const preloaded = personalSubscriptionAccountCandidates({
             command,
             providerType,
             modelProviderId: pin.modelProviderId,
+            snapshot: snapshot$ ? await get(snapshot$) : undefined,
           });
           const accountCandidates =
             preloaded ??
@@ -17752,8 +17606,15 @@ function createPreCreateSubscriptionAccount(
   return subscriptionAccount$;
 }
 
+function selectedRunPiExecution(command: AgentRunIdentityCommand): boolean {
+  if (command.piExecution === undefined) {
+    throw new Error("Selected model execution eligibility is unavailable");
+  }
+  return command.piExecution;
+}
+
 function selectedRunModelProviderArgs(
-  command: AnyCreateAgentRunCommandArgs,
+  command: AgentRunIdentityCommand,
   agent: AgentRunRecord,
   capturedPersonalSubscriptionAccount:
     | CapturedPersonalSubscriptionAccount
@@ -17771,7 +17632,7 @@ function selectedRunModelProviderArgs(
       command.selectedModelOverride ??
       optionalAgentSetting(agent.selectedModel),
     builtInModelRuntimeRoute: command.builtInModelRuntimeRoute,
-    piExecution: command.piExecution,
+    piExecution: selectedRunPiExecution(command),
     codexServiceTier: command.codexServiceTier === "fast" ? "fast" : undefined,
     agentRunMetadata: { reasoningEffort: command.reasoningEffort },
     ...("queueFirstAssociation" in command
@@ -17788,7 +17649,7 @@ function createPreCreateModelObjects(
 ) {
   const providerInput$ = computed(
     async (get): Promise<RunModelProviderReadInput | CreateRunErrorResult> => {
-      const input = get(input$);
+      const input = await get(input$);
       const [agent, account] = await Promise.all([
         get(agent$),
         get(subscriptionAccount$),
@@ -17826,31 +17687,23 @@ function createPreCreateModelObjects(
     { framework$ },
     { content$, featureSwitchContext$ },
   );
-  const modelPreparation$ = computed(
-    async (get): Promise<PreloadedRunModelPreparation | undefined> => {
-      const [input, framework, result] = await Promise.allSettled([
-        get(providerInput$),
-        get(framework$),
-        get(modelRoute$),
-      ]);
-      const providerInput = settledRunContextValue(input);
-      if (isRouteError(providerInput)) {
-        return undefined;
-      }
-      return { args: providerInput.args, framework, result };
-    },
-  );
-  return { modelPreparation$ };
+  return {
+    providerInput$,
+    content$,
+    featureSwitchContext$,
+    framework$,
+    modelRoute$,
+  };
 }
 
 function createPreCreateOfficialWorkflowObjects(
   input$: ReturnType<typeof createPreCreateInput>,
   workflowRows$: ReturnType<typeof createPreCreateWorkflowRows>,
-  { modelPreparation$ }: ReturnType<typeof createPreCreateModelObjects>,
+  { framework$, modelRoute$ }: ReturnType<typeof createPreCreateModelObjects>,
 ) {
   const workflowInput$ = computed(
     async (get): Promise<RunWorkflowReadInput> => {
-      const { db, command } = get(input$);
+      const { db, command } = await get(input$);
       const workflows = workflowsForRunFromRows(
         await get(workflowRows$),
         command.auth.userId,
@@ -17862,7 +17715,7 @@ function createPreCreateOfficialWorkflowObjects(
           userId: command.auth.userId,
           injectSkillVolumes: { workflows },
           requiredOfficialWorkflowIds: command.requiredOfficialWorkflowIds,
-          piExecution: command.piExecution,
+          piExecution: selectedRunPiExecution(command),
           codexServiceTier: command.codexServiceTier,
           agentRunMetadata: { reasoningEffort: command.reasoningEffort },
         },
@@ -17870,12 +17723,10 @@ function createPreCreateOfficialWorkflowObjects(
     },
   );
   const modelState$ = computed(async (get): Promise<RunWorkflowModelState> => {
-    const model = await get(modelPreparation$);
-    if (model === undefined) {
-      return undefined;
-    }
-    const requestedFramework = settledRunContextValue(model.framework);
-    const modelProvider = settledRunContextValue(model.result);
+    const [requestedFramework, modelProvider] = await Promise.all([
+      get(framework$),
+      get(modelRoute$),
+    ]);
     if (isRouteError(requestedFramework)) {
       return requestedFramework;
     }
@@ -17888,49 +17739,39 @@ function createPreCreateOfficialWorkflowObjects(
     workflowInput$,
     modelState$,
   );
-  const officialWorkflowPreparation$ = computed(
-    async (get): Promise<PreloadedOfficialWorkflowPreparation> => {
-      const [input, model, result] = await Promise.allSettled([
-        get(workflowInput$),
-        get(modelPreparation$),
-        get(officialWorkflow$),
-      ]);
-      const { args } = settledRunContextValue(input);
-      return {
-        orgId: args.orgId,
-        userId: args.userId,
-        workflows: args.injectSkillVolumes?.workflows ?? [],
-        requiredWorkflowIds: args.requiredOfficialWorkflowIds ?? [],
-        modelPreparation: settledRunContextValue(model),
-        result,
-      };
-    },
-  );
-  return { officialWorkflowPreparation$ };
+  return { officialWorkflow$ };
 }
 
 function createPreCreateConnectorCatalog(
   input$: ReturnType<typeof createPreCreateInput>,
   bootstrapMetadata$: ReturnType<typeof createPreCreateBootstrapMetadata>,
 ) {
+  const catalogInput$ = computed(async (get) => {
+    const { db, timing } = await get(input$);
+    return { db, timing };
+  });
+  const requestedSlugs$ = computed(async (get) => {
+    const bootstrap = await get(bootstrapMetadata$);
+    return {
+      requestedConnectorSlugs: bootstrap.allowedConnectorSlugs,
+      metadataConnectorSlugs: bootstrap.connectorCatalogMetadataSlugs,
+    };
+  });
+  const { connectorCatalog$: selectedCatalog$ } =
+    createConnectorRuntimeSelectionObjects(catalogInput$, requestedSlugs$);
   const connectorCatalog$ = computed(
     async (get): Promise<RunConnectorCatalogSelection> => {
-      const { db, timing, command } = get(input$);
-      const bootstrap = await get(bootstrapMetadata$);
+      const [{ command }, bootstrap] = await Promise.all([
+        get(input$),
+        get(bootstrapMetadata$),
+      ]);
       await observeAgentRunPreCreateParallelStage(
         "post-authorization-context",
         { command },
       );
       return isEmptyRunConnectorScope(bootstrap)
         ? { kind: "empty" }
-        : {
-            kind: "scoped",
-            selection: await loadConnectorRuntimeSelection(db, {
-              timing,
-              requestedConnectorSlugs: bootstrap.allowedConnectorSlugs,
-              metadataConnectorSlugs: bootstrap.connectorCatalogMetadataSlugs,
-            }),
-          };
+        : { kind: "scoped", selection: await get(selectedCatalog$) };
     },
   );
   return connectorCatalog$;
@@ -17942,7 +17783,7 @@ function createPreCreatePermissionPolicies(
   connectorCatalog$: ReturnType<typeof createPreCreateConnectorCatalog>,
 ) {
   const permissionPolicies$ = computed(async (get) => {
-    const { timing } = get(input$);
+    const { timing } = await get(input$);
     const [bootstrap, catalog] = await Promise.all([
       get(bootstrapMetadata$),
       get(connectorCatalog$),
@@ -17973,7 +17814,7 @@ function createPreCreateThreadSession(
 ) {
   const threadSession$ = computed(
     async (get): Promise<ChatThreadSessionResolution | undefined> => {
-      const { command, db, timing } = get(input$);
+      const { command, db, timing } = await get(input$);
       if (!command.chatThreadId) {
         return undefined;
       }
@@ -17984,9 +17825,6 @@ function createPreCreateThreadSession(
       await observeAgentRunPreCreateParallelStage("thread-session", {
         command,
       });
-      if (command.preloadedThreadSessionResolution) {
-        return command.preloadedThreadSessionResolution;
-      }
       const threadId = command.chatThreadId;
       const route = command.threadSessionRoute;
       if (!route) {
@@ -18052,12 +17890,16 @@ function createPreCreateThreadSession(
 }
 
 function createPreCreateSessionPrompt(
-  input$: ReturnType<typeof createPreCreateInput>,
-  threadSession$: ReturnType<typeof createPreCreateThreadSession>,
+  input$: AsyncRead<{
+    readonly command: AnyCreateAgentRunCommandArgs;
+    readonly db: Db;
+    readonly timing: ApiDispatchTimingCollector;
+  }>,
+  threadSession$: AsyncRead<ChatThreadSessionResolution | undefined>,
 ) {
   const promptInput$ = computed(
     async (get): Promise<WebChatSessionPromptInput | undefined> => {
-      const { command, db } = get(input$);
+      const { command, db } = await get(input$);
       const resolution = await get(threadSession$);
       if (
         !command.chatThreadId ||
@@ -18076,7 +17918,7 @@ function createPreCreateSessionPrompt(
   );
   const { prompt$ } = createWebChatSessionPromptObjects(promptInput$);
   return computed(async (get) => {
-    const { command, timing } = get(input$);
+    const { command, timing } = await get(input$);
     const input = await get(promptInput$);
     if (!input) {
       return command.appendSystemPrompt;
@@ -18112,7 +17954,7 @@ function createPreCreatePostAuthorization({
     async (
       get,
     ): Promise<AgentRunAfterPreCreate | ReturnType<typeof conflict>> => {
-      const { timing } = get(input$);
+      const { timing } = await get(input$);
       const [
         bootstrapResult,
         agentResult,
@@ -18120,7 +17962,7 @@ function createPreCreatePostAuthorization({
         catalogResult,
         policiesResult,
         observationResult,
-      ] = await Promise.allSettled([
+      ] = await Promise.all([
         get(bootstrap$),
         get(agent$),
         get(subscriptionAccount$),
@@ -18128,15 +17970,15 @@ function createPreCreatePostAuthorization({
         get(permissionPolicies$),
         get(requestObservation$),
       ]);
-      const bootstrap = settledRunContextValue(bootstrapResult);
-      const agent = settledRunContextValue(agentResult);
-      const account = settledRunContextValue(accountResult);
+      const bootstrap = bootstrapResult;
+      const agent = agentResult;
+      const account = accountResult;
       if ("status" in account) {
         return account;
       }
-      const catalog = settledRunContextValue(catalogResult);
-      const policies = settledRunContextValue(policiesResult);
-      const observation = settledRunContextValue(observationResult);
+      const catalog = catalogResult;
+      const policies = policiesResult;
+      const observation = observationResult;
       if (!agent) {
         throw new Error("Agent disappeared after preparation authorization");
       }
@@ -18162,44 +18004,43 @@ function createPreCreatePostAuthorization({
 
 function createPreCreatePreparedInput(
   postAuthorization$: ReturnType<typeof createPreCreatePostAuthorization>,
-  threadSession$: ReturnType<typeof createPreCreateThreadSession>,
-  sessionPrompt$: ReturnType<typeof createPreCreateSessionPrompt>,
+  threadSession$: AsyncRead<ChatThreadSessionResolution | undefined>,
+  sessionPrompt$: AsyncRead<string | undefined>,
+  command$: AsyncRead<AnyCreateAgentRunCommandArgs | null>,
 ) {
-  const preparedInput$ = computed(
-    async (
-      get,
-    ): Promise<AgentRunAfterPreCreate | ReturnType<typeof conflict>> => {
-      // Account unavailability remains authoritative over speculative session errors.
-      const [postAuthorization, session] = await Promise.allSettled([
+  return computed(async (get) => {
+    const [input, resolution, appendSystemPrompt, fullCommand] =
+      await Promise.all([
         get(postAuthorization$),
-        Promise.all([get(threadSession$), get(sessionPrompt$)]),
+        get(threadSession$),
+        get(sessionPrompt$),
+        get(command$),
       ]);
-      if (postAuthorization.status === "rejected") {
-        throw postAuthorization.reason;
-      }
-      if ("status" in postAuthorization.value) {
-        return postAuthorization.value;
-      }
-      if (session.status === "rejected") {
-        throw session.reason;
-      }
-      const [resolution, appendSystemPrompt] = session.value;
-      const input = postAuthorization.value;
-      const body: AgentRunCreateBody = { ...input.command.body };
-      if (resolution?.sessionId) {
-        body.sessionId = resolution.sessionId;
-      } else if (input.command.chatThreadId) {
-        delete body.sessionId;
-      }
-      return {
-        ...input,
-        command: { ...input.command, body, appendSystemPrompt },
-        threadSessionResolution: resolution,
-        cloudBrowserEnabled: resolution?.cloudBrowserEnabled,
-      };
-    },
-  );
-  return preparedInput$;
+    if (!fullCommand) {
+      return null;
+    }
+    if ("status" in input) {
+      return input;
+    }
+    const body: AgentRunCreateBody = { ...fullCommand.body };
+    if (resolution?.sessionId) {
+      body.sessionId = resolution.sessionId;
+    } else if (fullCommand.chatThreadId) {
+      delete body.sessionId;
+    }
+    return {
+      ...input,
+      command: {
+        ...fullCommand,
+        modelProviderId: input.command.modelProviderId,
+        agentRunModelPin: input.command.agentRunModelPin,
+        body,
+        appendSystemPrompt,
+      },
+      threadSessionResolution: resolution,
+      cloudBrowserEnabled: resolution?.cloudBrowserEnabled,
+    };
+  });
 }
 
 function createPreCreateRunArgs(
@@ -18207,7 +18048,7 @@ function createPreCreateRunArgs(
 ) {
   const runArgs$ = computed(async (get) => {
     const input = await get(preparedInput$);
-    if ("status" in input) {
+    if (!input || "status" in input) {
       return input;
     }
     return {
@@ -18228,21 +18069,26 @@ function createPreCreateConnectorObjects(
   input$: ReturnType<typeof createPreCreateInput>,
   bootstrapMetadata$: ReturnType<typeof createPreCreateBootstrapMetadata>,
   connectorCatalog$: ReturnType<typeof createPreCreateConnectorCatalog>,
+  connectorSourceId$?: AsyncRead<string | null | undefined>,
 ) {
-  const connectorInput$ = computed((get): RunConnectorReadInput => {
-    const { db, command, timing } = get(input$);
-    return {
-      db,
-      timing,
-      args: {
-        orgId: command.auth.orgId,
-        userId: command.auth.userId,
-        chatThreadId: command.chatThreadId,
-        connectorSourceId: command.connectorSourceId,
-        includeOkouTokenSecret: true,
-      },
-    };
-  });
+  const connectorInput$ = computed(
+    async (get): Promise<RunConnectorReadInput> => {
+      const { db, command, timing } = await get(input$);
+      return {
+        db,
+        timing,
+        args: {
+          orgId: command.auth.orgId,
+          userId: command.auth.userId,
+          chatThreadId: command.chatThreadId,
+          connectorSourceId: connectorSourceId$
+            ? ((await get(connectorSourceId$)) ?? undefined)
+            : command.connectorSourceId,
+          includeOkouTokenSecret: true,
+        },
+      };
+    },
+  );
   const scope$ = computed(async (get): Promise<EffectiveConnectorScope> => {
     const metadata = await get(bootstrapMetadata$);
     return {
@@ -18262,36 +18108,19 @@ function createPreCreateConnectorObjects(
       scope$,
       connectorCatalog$,
     );
-  const connectorPreparation$ = computed(
-    async (get): Promise<PreloadedRunConnectorSnapshot> => {
-      const { args } = get(connectorInput$);
-      const [selection, context] = await Promise.allSettled([
-        get(connectorSelection$),
-        get(connectorSnapshot$),
-      ]);
-      return {
-        orgId: args.orgId,
-        userId: args.userId,
-        chatThreadId: args.chatThreadId,
-        connectorSourceId: args.connectorSourceId,
-        selection,
-        context,
-      };
-    },
-  );
-  return { connectorPreparation$ };
+  return { connectorSelection$, connectorSnapshot$ };
 }
 
 function createPreCreateResourceObjects(
   input$: ReturnType<typeof createPreCreateInput>,
   agent$: ReturnType<typeof createPreCreateAgent>,
 ) {
-  const scope$ = computed((get) => {
-    const { db, command } = get(input$);
+  const scope$ = computed(async (get) => {
+    const { db, command } = await get(input$);
     return { db, orgId: command.auth.orgId, userId: command.auth.userId };
   });
   const environmentInput$ = computed(async (get) => {
-    const scope = get(scope$);
+    const scope = await get(scope$);
     const agent = await get(agent$);
     if (!agent) {
       throw new Error("Agent disappeared after preparation authorization");
@@ -18311,7 +18140,6 @@ function createPreCreateResourceObjects(
 }
 
 function createPreCreateBodyEnvironmentObject({
-  input$,
   agent$,
   bootstrapMetadata$,
   resources,
@@ -18344,34 +18172,10 @@ function createPreCreateBodyEnvironmentObject({
       canonicalOkouRuntime: true,
     });
   });
-  return computed(async (get): Promise<PreloadedRunBodyEnvironment> => {
-    const { command } = get(input$);
-    const [agentResult, result] = await Promise.allSettled([
-      get(agent$),
-      get(environment$),
-    ]);
-    const agent = settledRunContextValue(agentResult);
-    if (!agent) {
-      throw new Error("Agent disappeared after preparation authorization");
-    }
-    return {
-      orgId: command.auth.orgId,
-      userId: command.auth.userId,
-      agentId: agent.id,
-      result,
-    };
-  });
+  return environment$;
 }
 
-function createPreCreatePreparedConnectorObjects({
-  input$,
-  agent$,
-  bootstrapMetadata$,
-  permissionPolicies$,
-  connectorPreparation$,
-  modelPreparation$,
-  bodyEnvironment$,
-}: {
+function createPreCreatePreparedConnectorObjects(args: {
   readonly input$: ReturnType<typeof createPreCreateInput>;
   readonly agent$: ReturnType<typeof createPreCreateAgent>;
   readonly bootstrapMetadata$: ReturnType<
@@ -18380,35 +18184,33 @@ function createPreCreatePreparedConnectorObjects({
   readonly permissionPolicies$: ReturnType<
     typeof createPreCreatePermissionPolicies
   >;
-  readonly connectorPreparation$: ReturnType<
-    typeof createPreCreateConnectorObjects
-  >["connectorPreparation$"];
-  readonly modelPreparation$: ReturnType<
-    typeof createPreCreateModelObjects
-  >["modelPreparation$"];
+  readonly connectors: ReturnType<typeof createPreCreateConnectorObjects>;
+  readonly model: ReturnType<typeof createPreCreateModelObjects>;
   readonly bodyEnvironment$: ReturnType<
     typeof createPreCreateBodyEnvironmentObject
   >;
 }) {
   const inputs$ = computed(
     async (get): Promise<RunPreparedConnectorInputs | CreateRunErrorResult> => {
-      const { db, timing } = get(input$);
-      const [connectors, model, environment, policies, metadata, agent] =
-        await Promise.all([
-          get(connectorPreparation$),
-          get(modelPreparation$),
-          get(bodyEnvironment$),
-          get(permissionPolicies$),
-          get(bootstrapMetadata$),
-          get(agent$),
-        ]);
-      const selection = settledRunContextValue(connectors.selection);
-      const body = settledRunContextValue(environment.result);
-      if (!model || !agent) {
-        throw new Error("Authorized selected run preparation is missing");
-      }
-      const modelProvider = settledRunContextValue(model.result);
-      const snapshot = settledRunContextValue(connectors.context);
+      const [
+        input,
+        selection,
+        snapshot,
+        modelProvider,
+        body,
+        policies,
+        metadata,
+        agent,
+      ] = await Promise.all([
+        get(args.input$),
+        get(args.connectors.connectorSelection$),
+        get(args.connectors.connectorSnapshot$),
+        get(args.model.modelRoute$),
+        get(args.bodyEnvironment$),
+        get(args.permissionPolicies$),
+        get(args.bootstrapMetadata$),
+        get(args.agent$),
+      ]);
       if (isRouteError(body)) {
         return body;
       }
@@ -18421,9 +18223,12 @@ function createPreCreatePreparedConnectorObjects({
       if (isRouteError(snapshot)) {
         return snapshot;
       }
+      if (!agent) {
+        throw new Error("Authorized selected run preparation is missing");
+      }
       return {
-        db,
-        timing,
+        db: input.db,
+        timing: input.timing,
         connectorScope: selection.connectorScope,
         connectorCatalogSelection: selection.connectorCatalogSelection,
         body: { ...body, permissionPolicies: policies ?? undefined },
@@ -18434,18 +18239,13 @@ function createPreCreatePreparedConnectorObjects({
       };
     },
   );
-  const { connectorContext$ } = createRunPreparedConnectorObjects(inputs$);
-  return computed(async (get): Promise<PreloadedRunConnectorSnapshot> => {
-    const [snapshotResult, preparedContext] = await Promise.allSettled([
-      get(connectorPreparation$),
-      get(connectorContext$),
-    ]);
-    return { ...settledRunContextValue(snapshotResult), preparedContext };
-  });
+  return createRunPreparedConnectorObjects(inputs$);
 }
 
 function createPreCreateExecutionObjects(args: {
+  readonly connectorSourceId$?: AsyncRead<string | null | undefined>;
   readonly input$: ReturnType<typeof createPreCreateInput>;
+  readonly identityInput$: ReturnType<typeof createPreCreateInput>;
   readonly agent$: ReturnType<typeof createPreCreateAgent>;
   readonly bootstrapMetadata$: ReturnType<
     typeof createPreCreateBootstrapMetadata
@@ -18463,6 +18263,7 @@ function createPreCreateExecutionObjects(args: {
 }) {
   const {
     input$,
+    identityInput$,
     agent$,
     bootstrapMetadata$,
     subscriptionAccount$,
@@ -18470,7 +18271,7 @@ function createPreCreateExecutionObjects(args: {
     permissionPolicies$,
     workflowRows$,
   } = args;
-  const resources = createPreCreateResourceObjects(input$, agent$);
+  const resources = createPreCreateResourceObjects(identityInput$, agent$);
   const model = createPreCreateModelObjects(
     input$,
     agent$,
@@ -18478,218 +18279,209 @@ function createPreCreateExecutionObjects(args: {
     subscriptionAccount$,
   );
   const connectors = createPreCreateConnectorObjects(
-    input$,
+    identityInput$,
     bootstrapMetadata$,
     connectorCatalog$,
+    args.connectorSourceId$,
   );
   const bodyEnvironment$ = createPreCreateBodyEnvironmentObject({
-    input$,
+    input$: identityInput$,
     agent$,
     bootstrapMetadata$,
     resources,
   });
-  const connectorPreparation$ = createPreCreatePreparedConnectorObjects({
-    input$,
+  const prepared = createPreCreatePreparedConnectorObjects({
+    input$: identityInput$,
     agent$,
     bootstrapMetadata$,
     permissionPolicies$,
-    ...connectors,
-    ...model,
+    connectors,
+    model,
     bodyEnvironment$,
   });
+  const workflow = createPreCreateOfficialWorkflowObjects(
+    input$,
+    workflowRows$,
+    model,
+  );
+  const userTimezone$ = computed(async (get) => {
+    return (await get(bootstrapMetadata$)).userInfo.timezone ?? undefined;
+  });
   return {
-    resources,
-    preparation: {
-      ...model,
-      bodyEnvironment$,
-      connectorPreparation$,
-      ...createPreCreateOfficialWorkflowObjects(input$, workflowRows$, model),
-    },
+    ...resources,
+    ...model,
+    ...connectors,
+    ...prepared,
+    ...workflow,
+    bodyEnvironment$,
+    userTimezone$,
   };
 }
-
-function createPrepareSelectedAgentRunCommand(
-  runArgs$: ReturnType<typeof createPreCreateRunArgs>,
-  authorizeSelectedAgentRun$: ReturnType<
-    typeof createAuthorizeSelectedAgentRunCommand
-  >,
-  resources: ReturnType<typeof createPreCreateResourceObjects>,
-  preparation: ReturnType<
-    typeof createPreCreateExecutionObjects
-  >["preparation"],
-) {
-  return command(
-    async (
-      { get, set },
-      args: AnyCreateAgentRunCommandArgs,
-      signal: AbortSignal,
-    ): Promise<PrepareAgentRunArgs | CreateRunErrorResult> => {
-      const authorization = await set(authorizeSelectedAgentRun$, args, signal);
-      if (authorization) {
-        return authorization;
-      }
-      const [
-        selectedResult,
-        paidToolsResult,
-        memberResult,
-        environmentResult,
-        connectorResult,
-        modelResult,
-        bodyEnvironmentResult,
-        officialWorkflowResult,
-      ] = await Promise.allSettled([
-        get(runArgs$),
-        get(resources.disabledPaidTools$),
-        get(resources.member$),
-        get(resources.environment$),
-        get(preparation.connectorPreparation$),
-        get(preparation.modelPreparation$),
-        get(preparation.bodyEnvironment$),
-        get(preparation.officialWorkflowPreparation$),
-      ]);
-      signal.throwIfAborted();
-      const selected = settledRunContextValue(selectedResult);
-      if ("status" in selected) {
-        return selected;
-      }
-      const { input, args: runArgs } = selected;
-      const phaseTiming = new ApiDispatchPhaseCollector(
-        input.command.apiStartTime,
-      );
-      input.timing.recordElapsed(
-        "api_dispatch_pre_create_agent_run",
-        "top_level",
-        input.command.apiStartTime,
-      );
-      phaseTiming.checkpoint("api_dispatch_phase_pre_create", now());
-      return {
-        args: runArgs,
-        timing: input.timing,
-        phaseTiming,
-        checkOrgPlanStatusBeforeContext: false,
-        preloadedFeatureSwitchContext: input.featureSwitchContext,
-        preloadedUserTimezone: input.userInfo.timezone,
-        preloadedDisabledPaidTools: paidToolsResult,
-        preloadedMember: memberResult,
-        preloadedEnvironment: environmentResult,
-        preloadedConnectorPreparation: settledRunContextValue(connectorResult),
-        preloadedModelPreparation: settledRunContextValue(modelResult),
-        preloadedBodyEnvironment: settledRunContextValue(bodyEnvironmentResult),
-        preloadedOfficialWorkflowPreparation: settledRunContextValue(
-          officialWorkflowResult,
-        ),
-        ...(input.connectorCatalogSelection.kind === "scoped"
-          ? {
-              preloadedConnectorCatalogSnapshot:
-                input.connectorCatalogSelection.selection,
-            }
-          : {}),
-      };
-    },
-  );
+interface SelectedRunReadObjects {
+  readonly featureSwitchContext$: Computed<Promise<FeatureSwitchContext>>;
+  readonly environment$: Computed<
+    Promise<ScopedRunEnvironmentSnapshot | CreateRunErrorResult>
+  >;
+  readonly bodyEnvironment$: Computed<
+    Promise<RunBodyEnvironment | CreateRunErrorResult>
+  >;
+  readonly framework$: Computed<
+    Promise<SupportedFramework | CreateRunErrorResult>
+  >;
+  readonly modelRoute$: Computed<
+    Promise<ResolvedModelProviderEnvironment | null | CreateRunErrorResult>
+  >;
+  readonly connectorSelection$: RunConnectorSelectionObject;
+  readonly connectorSnapshot$: Computed<
+    Promise<RunConnectorContextSnapshot | CreateRunErrorResult>
+  >;
+  readonly connectorContext$: Computed<
+    Promise<PreparedConnectorContext | CreateRunErrorResult>
+  >;
+  readonly officialWorkflow$: Computed<Promise<PreparedOfficialWorkflow>>;
+  readonly member$: Computed<Promise<RunMemberSnapshot>>;
+  readonly disabledPaidTools$: Computed<Promise<DisabledPaidToolsSnapshot>>;
+  readonly userTimezone$: Computed<Promise<string | undefined>>;
 }
 
 function createAuthorizeSelectedAgentRunCommand(
-  internalInput$: ReturnType<typeof createPreCreateInternalInput>,
+  identityInput$: ReturnType<typeof createPreCreateInput>,
   agentId$: ReturnType<typeof createPreCreateAgentId>,
   agent$: ReturnType<typeof createPreCreateAgent>,
 ) {
-  const authorizeSelectedAgentRun$ = command(
-    async (
-      { get, set },
-      args: AnyCreateAgentRunCommandArgs,
-      signal: AbortSignal,
-    ) => {
-      assertThreadBoundAgentRunHasQueueAssociation(args);
-      set(internalInput$, {
-        command: args,
-        db: set(writeDb$),
-        timing: serviceEntryTiming({
-          apiStartTime: args.apiStartTime,
-          timing: args.timing,
-        }),
-      });
-      const agentId = await get(agentId$);
-      signal.throwIfAborted();
-      if (!agentId) {
-        return args.body.sessionId
-          ? notFound("Session not found")
-          : badRequestMessage("Missing agentId or sessionId");
-      }
-      const agent = await get(agent$);
-      signal.throwIfAborted();
-      if (!agent || agent.orgId !== args.auth.orgId) {
-        return notFound("Agent not found");
-      }
-      if (agent.visibility === "private" && agent.owner !== args.auth.userId) {
-        return agentRunsCreateForbidden(
-          "Only the private agent owner can run this agent",
-        );
-      }
-      await observeAgentRunPiExecutionSnapshot({
-        userId: args.auth.userId,
-        orgId: args.auth.orgId,
-        chatThreadId: args.chatThreadId,
-        piExecution: args.piExecution,
-        threadSessionCliAgentType: args.threadSessionRoute?.cliAgentType,
-      });
-      signal.throwIfAborted();
-      return undefined;
-    },
-  );
-  return authorizeSelectedAgentRun$;
+  return command(async ({ get }, signal: AbortSignal) => {
+    const [{ command: args }, agentId, agent] = await Promise.all([
+      get(identityInput$),
+      get(agentId$),
+      get(agent$),
+    ]);
+    signal.throwIfAborted();
+    if (!agentId) {
+      return args.body.sessionId
+        ? notFound("Session not found")
+        : badRequestMessage("Missing agentId or sessionId");
+    }
+    if (!agent || agent.orgId !== args.auth.orgId) {
+      return notFound("Agent not found");
+    }
+    if (agent.visibility === "private" && agent.owner !== args.auth.userId) {
+      return agentRunsCreateForbidden(
+        "Only the private agent owner can run this agent",
+      );
+    }
+    return undefined;
+  });
 }
 
-export function createSelectedAgentRunObjects() {
-  const internalInput$ = createPreCreateInternalInput();
-  const input$ = createPreCreateInput(internalInput$);
-  const agentId$ = createPreCreateAgentId(input$);
+function createSelectedIdentityInput(
+  input$: ReturnType<typeof createPreCreateInput>,
+  sources?: SelectedAgentRunGraphSources,
+) {
+  const identityInput$ = sources
+    ? computed(async (get): Promise<AgentRunGraphInput> => {
+        const input = await get(sources.identityInput$);
+        if (!input) {
+          throw new Error("Run identity is unavailable");
+        }
+        return {
+          db: input.db,
+          timing: input.timing,
+          command: {
+            auth: input.auth,
+            apiStartTime: input.apiStartTime,
+            body: { agentId: input.agentId },
+            chatThreadId: input.chatThreadId,
+            expectedThreadAgentId: input.expectedThreadAgentId,
+            queueFirstAssociation: input.queueFirstAssociation,
+          },
+        };
+      })
+    : input$;
+  return identityInput$;
+}
+
+function createSelectedAgentRunReadGraph(
+  internalInput$: ReturnType<typeof createPreCreateInternalInput>,
+  sources?: SelectedAgentRunGraphSources,
+) {
+  const input$ = createPreCreateInput(internalInput$, sources?.selectionInput$);
+  const identityInput$ = createSelectedIdentityInput(input$, sources);
+  const command$ =
+    sources?.command$ ??
+    computed((get) => {
+      return get(internalInput$)?.command ?? null;
+    });
+  const agentId$ = createPreCreateAgentId(identityInput$);
   const requestObservation$ = createPreCreateRequestObservation(
-    input$,
+    identityInput$,
     agentId$,
   );
-  const featureSwitchObservation$ = createPreCreateFeatureSwitchObservation(
-    input$,
+  const featureSwitchObservation$ =
+    sources?.featureSwitchContext$ ??
+    createPreCreateFeatureSwitchObservation(requestObservation$);
+  const agent$ = createPreCreateAgent(
+    identityInput$,
+    agentId$,
     requestObservation$,
   );
-  const agent$ = createPreCreateAgent(input$, agentId$, requestObservation$);
-  const bootstrapQueryArgs$ = createPreCreateBootstrapQueryArgs(input$, agent$);
+  const bootstrapQueryArgs$ = createPreCreateBootstrapQueryArgs(
+    identityInput$,
+    agent$,
+  );
   const bootstrapMetadataRows$ = createPreCreateBootstrapMetadataRows(
-    input$,
+    identityInput$,
     bootstrapQueryArgs$,
     featureSwitchObservation$,
   );
   const workflowRows$ = createPreCreateWorkflowRows(
-    input$,
+    identityInput$,
     bootstrapQueryArgs$,
   );
   const bootstrapRows$ = createPreCreateBootstrapRows(
-    input$,
+    identityInput$,
     bootstrapMetadataRows$,
     workflowRows$,
   );
   const bootstrapMetadata$ = createPreCreateBootstrapMetadata(
-    input$,
+    identityInput$,
     bootstrapMetadataRows$,
     featureSwitchObservation$,
   );
   const bootstrap$ = createPreCreateBootstrap(
-    input$,
+    identityInput$,
     bootstrapRows$,
     bootstrapMetadata$,
   );
-  const subscriptionAccount$ = createPreCreateSubscriptionAccount(input$);
-  const connectorCatalog$ = createPreCreateConnectorCatalog(
+  const subscriptionAccount$ = createPreCreateSubscriptionAccount(
     input$,
+    sources?.memberAccountSnapshot$,
+  );
+  const connectorCatalog$ = createPreCreateConnectorCatalog(
+    identityInput$,
     bootstrapMetadata$,
   );
   const permissionPolicies$ = createPreCreatePermissionPolicies(
-    input$,
+    identityInput$,
     bootstrapMetadata$,
     connectorCatalog$,
   );
-  const threadSession$ = createPreCreateThreadSession(input$, agent$);
-  const sessionPrompt$ = createPreCreateSessionPrompt(input$, threadSession$);
+  const threadSession$ =
+    sources?.threadSession$ ?? createPreCreateThreadSession(input$, agent$);
+  const fullInput$ = computed(async (get) => {
+    const [input, fullCommand] = await Promise.all([
+      get(input$),
+      get(command$),
+    ]);
+    if (!fullCommand) {
+      throw new Error("Final run input is unavailable");
+    }
+    return { ...input, command: fullCommand };
+  });
+  const sessionPrompt$ = sources
+    ? computed(async (get) => {
+        return (await get(command$))?.appendSystemPrompt;
+      })
+    : createPreCreateSessionPrompt(fullInput$, threadSession$);
   const postAuthorization$ = createPreCreatePostAuthorization({
     input$,
     bootstrap$,
@@ -18703,15 +18495,13 @@ export function createSelectedAgentRunObjects() {
     postAuthorization$,
     threadSession$,
     sessionPrompt$,
+    command$,
   );
   const runArgs$ = createPreCreateRunArgs(preparedInput$);
-  const authorizeSelectedAgentRun$ = createAuthorizeSelectedAgentRunCommand(
-    internalInput$,
-    agentId$,
-    agent$,
-  );
-  const execution = createPreCreateExecutionObjects({
+  const shared = createPreCreateExecutionObjects({
+    connectorSourceId$: sources?.connectorSourceId$,
     input$,
+    identityInput$,
     agent$,
     bootstrapMetadata$,
     subscriptionAccount$,
@@ -18719,11 +18509,420 @@ export function createSelectedAgentRunObjects() {
     permissionPolicies$,
     workflowRows$,
   });
-  const prepareSelectedAgentRun$ = createPrepareSelectedAgentRunCommand(
+  return {
+    input$,
+    identityInput$,
+    agentId$,
+    agent$,
+    threadSession$,
     runArgs$,
-    authorizeSelectedAgentRun$,
-    execution.resources,
-    execution.preparation,
+    bootstrap$,
+    shared,
+    bootstrapMetadata$,
+  };
+}
+
+type RunStorageExecution = Pick<
+  ResolvedRunExecution,
+  | "orgId"
+  | "content"
+  | "artifacts"
+  | "agentSessionId"
+  | "persistedStorageMounts"
+  | "previousRunStorageMounts"
+  | "additionalVolumes"
+>;
+
+function selectedRunStorageExecution(
+  agent: AgentRunRecord,
+  session: ChatThreadSessionResolution | undefined,
+): RunStorageExecution | CreateRunErrorResult {
+  const common = {
+    orgId: agent.orgId,
+    content: buildAgentExecutionConfig(agent.name),
+  };
+  if (!session?.sessionId) {
+    return { ...common, artifacts: [] };
+  }
+  const snapshot = session.executionSnapshot;
+  if (!snapshot) {
+    return notFound("Agent session not found");
+  }
+  if (!snapshot.agent) {
+    return notFound("Agent not found");
+  }
+  return {
+    ...common,
+    ...resolvedSessionStorage(snapshot.session),
+    agentSessionId: session.sessionId,
+    previousRunStorageMounts: session.resetNativeSession
+      ? undefined
+      : (snapshot.previousRun?.storageMounts ?? undefined),
+  };
+}
+
+function createSelectedStorageInputObject(
+  graph: ReturnType<typeof createSelectedAgentRunReadGraph>,
+  storageBody$: NonNullable<SelectedAgentRunGraphSources["storageBody$"]>,
+) {
+  return computed(
+    async (get): Promise<AgentRunStorageInput | CreateRunErrorResult> => {
+      const [
+        input,
+        agent,
+        session,
+        requestedFramework,
+        modelProvider,
+        selection,
+        snapshot,
+        officialWorkflowRun,
+        environment,
+        bootstrap,
+        body,
+      ] = await Promise.all([
+        get(graph.input$),
+        get(graph.agent$),
+        get(graph.threadSession$),
+        get(graph.shared.framework$),
+        get(graph.shared.modelRoute$),
+        get(graph.shared.connectorSelection$),
+        get(graph.shared.connectorSnapshot$),
+        get(graph.shared.officialWorkflow$),
+        get(graph.shared.environment$),
+        get(graph.bootstrap$),
+        get(storageBody$),
+      ]);
+      if (!agent) {
+        throw new Error("Agent disappeared after preparation authorization");
+      }
+      if (isRouteError(requestedFramework)) {
+        return requestedFramework;
+      }
+      if (isRouteError(modelProvider)) {
+        return modelProvider;
+      }
+      if (isRouteError(selection)) {
+        return selection;
+      }
+      if (isRouteError(snapshot)) {
+        return snapshot;
+      }
+      if (isRouteError(officialWorkflowRun)) {
+        return officialWorkflowRun;
+      }
+      if (isRouteError(environment)) {
+        return environment;
+      }
+      const resolved = selectedRunStorageExecution(agent, session);
+      if (isRouteError(resolved)) {
+        return resolved;
+      }
+      const framework = modelProvider
+        ? modelProviderFramework(modelProvider)
+        : requestedFramework;
+      const piSandbox = resolvePreparedPiModelConfig({
+        createArgs: {
+          piExecution: selectedRunPiExecution(input.command),
+          codexServiceTier: input.command.codexServiceTier,
+          agentRunMetadata: { reasoningEffort: input.command.reasoningEffort },
+        },
+        modelProvider,
+      });
+      const metadata = prepareRunOutputMetadata({
+        createArgs: { injectSkillVolumes: { workflows: bootstrap.workflows } },
+        systemSkillStorageResolution: get(systemSkillStorageResolution$),
+        connectorScope: selection.connectorScope,
+        connectorCatalogSelection: selection.connectorCatalogSelection,
+        customConnectorContext: snapshot.customConnectorContext,
+        framework,
+        piSandbox,
+        body,
+        resolved,
+        officialWorkflowRun,
+      });
+      return {
+        kind: "requested",
+        args: {
+          db: input.db,
+          content: resolved.content,
+          vars: withoutLegacyAgentRunEnvironmentEntries(
+            buildMergedVariables({
+              persistedEnvironment: environment,
+              runVars: selectedAgentRunVariables(agent.id),
+            }),
+          ),
+          agentOrgId: resolved.orgId,
+          runtimeOrgId: input.command.auth.orgId,
+          userId: input.command.auth.userId,
+          artifacts: metadata.artifacts,
+          // Selected product inputs do not override compose versions. Session
+          // writeback versions remain in the same captured mount snapshot.
+          volumeVersionOverrides: undefined,
+          additionalVolumes: metadata.additionalVolumes,
+          additionalVolumeSources: metadata.additionalVolumeSources,
+          framework: piSandbox === undefined ? framework : "pi",
+          persistedStorageMounts: resolved.persistedStorageMounts,
+          timing: input.timing,
+          stats: new StorageManifestBuildStats(),
+        },
+      };
+    },
   );
-  return { runArgs$, bootstrap$, threadSession$, prepareSelectedAgentRun$ };
+}
+
+function createSelectedStorageObjects(
+  graph: ReturnType<typeof createSelectedAgentRunReadGraph>,
+  storageBody$: NonNullable<SelectedAgentRunGraphSources["storageBody$"]>,
+) {
+  const selectedStorageInput$ = createSelectedStorageInputObject(
+    graph,
+    storageBody$,
+  );
+  const storageInput$ = computed(async (get): Promise<AgentRunStorageInput> => {
+    const input = await get(selectedStorageInput$);
+    if (isRouteError(input)) {
+      throw new Error("Rejected storage input cannot be materialized");
+    }
+    return input;
+  });
+  const storage = createAgentRunStorageObjects(storageInput$);
+  const storagePlan$ = computed(async (get) => {
+    const input = await get(selectedStorageInput$);
+    return isRouteError(input) ? input : get(storage.storagePlan$);
+  });
+  return { storage, storagePlan$ };
+}
+
+function createSelectedRunContextObjects(
+  graph: ReturnType<typeof createSelectedAgentRunReadGraph>,
+) {
+  const { input$, runArgs$, shared } = graph;
+  const contextInput$ = computed(
+    async (get): Promise<PrepareRunContextInput> => {
+      const selected = await get(runArgs$);
+      if (!selected || "status" in selected) {
+        throw new Error("Run context requires an authorized ready input");
+      }
+      const previewAutomationBypass = get(previewAutomationBypass$);
+      const args = previewAutomationBypass
+        ? {
+            ...selected.args,
+            platformEnvironment: {
+              ...selected.args.platformEnvironment,
+              [VERCEL_AUTOMATION_BYPASS_ENV]: previewAutomationBypass,
+            },
+          }
+        : selected.args;
+      return {
+        db: (await get(input$)).db,
+        args,
+        timing: selected.input.timing,
+      };
+    },
+  );
+  const preparedContext = createRunContextObjects(contextInput$, shared);
+  const runContext$ = computed(async (get) => {
+    const selected = await get(runArgs$);
+    if (!selected || "status" in selected) {
+      return selected;
+    }
+    return get(preparedContext.runContext$);
+  });
+  return { contextInput$, runContext$ };
+}
+
+function createObserveSelectedExecutionCommand(
+  input$: ReturnType<typeof createPreCreateInput>,
+) {
+  return command(async ({ get }, signal: AbortSignal) => {
+    const { command: selected } = await get(input$);
+    signal.throwIfAborted();
+    await observeAgentRunPiExecutionSnapshot({
+      userId: selected.auth.userId,
+      orgId: selected.auth.orgId,
+      chatThreadId: selected.chatThreadId,
+      piExecution: selectedRunPiExecution(selected),
+      threadSessionCliAgentType: selected.threadSessionRoute?.cliAgentType,
+    });
+    signal.throwIfAborted();
+  });
+}
+
+function createPrepareReadySelectedRunCommand(
+  graph: ReturnType<typeof createSelectedAgentRunReadGraph>,
+  context: ReturnType<typeof createSelectedRunContextObjects>,
+  sources?: SelectedAgentRunGraphSources,
+  earlyStorage?: ReturnType<typeof createSelectedStorageObjects>,
+) {
+  const { input$, runArgs$, shared } = graph;
+  const { contextInput$, runContext$ } = context;
+  const observeExecution$ = createObserveSelectedExecutionCommand(input$);
+  return command(
+    async (
+      { get, set },
+      signal: AbortSignal,
+    ): Promise<PreparedAgentRun | CreateRunErrorResult | null> => {
+      if (sources && !(await get(sources.selectionInput$))) {
+        signal.throwIfAborted();
+        return null;
+      }
+      signal.throwIfAborted();
+      const { timing: preparationTiming, command: selectedInput } =
+        await get(input$);
+      signal.throwIfAborted();
+      const phaseTiming = new ApiDispatchPhaseCollector(
+        selectedInput.apiStartTime,
+      );
+      preparationTiming.recordElapsed(
+        "api_dispatch_pre_create_agent_run",
+        "top_level",
+        selectedInput.apiStartTime,
+      );
+      phaseTiming.checkpoint("api_dispatch_phase_pre_create", now());
+      const [selected, context, storagePlan] = await preparationTiming.measure(
+        "api_dispatch_prepare_run_context",
+        "top_level",
+        async () => {
+          return await Promise.all([
+            get(runArgs$),
+            get(runContext$),
+            earlyStorage ? get(earlyStorage.storagePlan$) : undefined,
+            get(shared.modelRoute$),
+            get(shared.connectorContext$),
+            get(shared.officialWorkflow$),
+            set(observeExecution$, signal),
+          ]);
+        },
+      );
+      signal.throwIfAborted();
+      if (!selected || "status" in selected) {
+        return selected;
+      }
+      if (!context) {
+        return null;
+      }
+      const contextInput = await get(contextInput$);
+      signal.throwIfAborted();
+      const { args, timing } = contextInput;
+      if ("status" in context) {
+        if (
+          context.body.error.code === "PROVIDER_UNAVAILABLE" &&
+          args.enforceBuiltInCredits &&
+          isBuiltInModelProviderType(args.modelProviderType)
+        ) {
+          const failure = await set(
+            checkUnavailableProviderCredits$,
+            args,
+            signal,
+          );
+          if (failure) {
+            return failure;
+          }
+        }
+        return context;
+      }
+      if (storagePlan && isRouteError(storagePlan)) {
+        return storagePlan;
+      }
+      phaseTiming.checkpoint("api_dispatch_phase_prepare_context", now());
+      return { args, context, contextInput, timing, phaseTiming };
+    },
+  );
+}
+
+function createPrepareQueuedAgentRunCommand(
+  graph: ReturnType<typeof createSelectedAgentRunReadGraph>,
+  context: ReturnType<typeof createSelectedRunContextObjects>,
+  sources?: SelectedAgentRunGraphSources,
+  earlyStorage?: ReturnType<typeof createSelectedStorageObjects>,
+) {
+  const { identityInput$, agentId$, agent$, shared } = graph;
+  const authorize$ = createAuthorizeSelectedAgentRunCommand(
+    identityInput$,
+    agentId$,
+    agent$,
+  );
+  const prepareReady$ = createPrepareReadySelectedRunCommand(
+    graph,
+    context,
+    sources,
+    earlyStorage,
+  );
+  return command(
+    async (
+      { get, set },
+      signal: AbortSignal,
+    ): Promise<PreparedAgentRun | CreateRunErrorResult | null> => {
+      if (earlyStorage) {
+        set(earlyStorage.storage.resetStorage$, signal);
+      }
+      if (sources && !(await get(sources.identityInput$))) {
+        signal.throwIfAborted();
+        return null;
+      }
+      signal.throwIfAborted();
+      const authorization = await set(authorize$, signal);
+      if (authorization) {
+        return authorization;
+      }
+      const [prepared] = await Promise.all([
+        set(prepareReady$, signal),
+        get(shared.member$),
+        get(shared.disabledPaidTools$),
+        get(shared.environment$),
+        get(shared.connectorSelection$),
+        get(shared.connectorSnapshot$),
+      ]);
+      signal.throwIfAborted();
+      return prepared;
+    },
+  );
+}
+
+export function createSelectedAgentRunObjects(
+  sources?: SelectedAgentRunGraphSources,
+) {
+  const internalInput$ = createPreCreateInternalInput();
+  const graph = createSelectedAgentRunReadGraph(internalInput$, sources);
+  const earlyStorage = sources?.storageBody$
+    ? createSelectedStorageObjects(graph, sources.storageBody$)
+    : undefined;
+  const context = createSelectedRunContextObjects(graph);
+  const prepareQueuedAgentRun$ = createPrepareQueuedAgentRunCommand(
+    graph,
+    context,
+    sources,
+    earlyStorage,
+  );
+  const prepareSelectedAgentRun$ = command(
+    async (
+      { set },
+      args: AnyCreateAgentRunCommandArgs,
+      signal: AbortSignal,
+    ) => {
+      assertThreadBoundAgentRunHasQueueAssociation(args);
+      set(internalInput$, {
+        command: args,
+        db: set(writeDb$),
+        timing: serviceEntryTiming(args),
+      });
+      return await set(prepareQueuedAgentRun$, signal);
+    },
+  );
+  const { createAtomicLaunchRun$ } = createLaunchObjects(
+    earlyStorage?.storage,
+    sources?.callbackInputs$,
+  );
+  const completeAgentRun$ = createCompleteAgentRunCommand(
+    createAtomicLaunchRun$,
+  );
+  return {
+    runArgs$: graph.runArgs$,
+    bootstrap$: graph.bootstrap$,
+    threadSession$: graph.threadSession$,
+    runContext$: context.runContext$,
+    prepareQueuedAgentRun$,
+    prepareSelectedAgentRun$,
+    completeAgentRun$,
+  };
 }

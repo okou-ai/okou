@@ -10,7 +10,7 @@ import { testContext } from "../../../__tests__/test-context";
 import { mockEnv } from "../../../lib/env";
 import { holdPiContextPreparationStagesFixture } from "../../../test-fixtures/pi-context-preparation";
 import { withStableAgentPromptBuildCountFixture } from "../../../test-fixtures/pi-stable-context";
-import { clearAllDetached } from "../../utils";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import {
   createChatEventsFixture,
   requireOrgId,
@@ -95,7 +95,7 @@ describe("CHAT-02: model-first provider policies", () => {
     await cancelChatRun(actor, run.runId, claimed.sandboxHeaders);
   }, 30_000);
 
-  it("preserves the input after simultaneous preparation failures without post-admission effects", async () => {
+  it("preserves the input after the first preparation failure without waiting for another branch", async () => {
     const { actor, agentId } = await entitledChatActor();
     const orgId = requireOrgId(actor);
     await configureBuiltInPiModel(actor, "gpt-5.6-terra");
@@ -108,7 +108,8 @@ describe("CHAT-02: model-first provider policies", () => {
       signal: context.signal,
     });
     const clientEventId = randomUUID();
-    const prompt = "reject simultaneous legacy preparation failures";
+    const prompt =
+      "fail fast on session preparation while authorization is pending";
     // The send only enqueues; preparation runs in the background pick.
     const sent = await chat.requestSendEvent(
       actor,
@@ -133,8 +134,11 @@ describe("CHAT-02: model-first provider policies", () => {
       preparation.arrival("thread-session"),
     ]);
     const sessionError = jsonHttpException(422, "session preparation failed");
+    const failedPick = expect(flushWaitUntilForTest()).rejects.toBe(
+      sessionError,
+    );
     preparation.reject("thread-session", sessionError);
-    await preparation.departure("thread-session");
+    await failedPick;
     const authorizationError = jsonHttpException(
       409,
       "authorization preparation failed",
@@ -142,7 +146,6 @@ describe("CHAT-02: model-first provider policies", () => {
     preparation.reject("post-authorization-context", authorizationError);
     await preparation.departure("post-authorization-context");
     preparation.releaseAll();
-    await expect(clearAllDetached()).rejects.toBe(authorizationError);
     const events = await chat.listThreadEvents(actor, thread.id);
     // An infrastructure failure keeps the original input pending.
     expect(events.events).toStrictEqual([

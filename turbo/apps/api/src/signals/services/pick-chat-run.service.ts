@@ -34,7 +34,7 @@ import {
   cappedBaseConcurrencyLimit,
 } from "./org-concurrency-entitlements.service";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
-import { randomUUID, randomBytes } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import {
   chatEvents,
   chatEventRunlessInputPredicate,
@@ -253,6 +253,7 @@ import {
   queuedMessageAdmissionFailure,
   queuedMessageRejection,
   buildQueuedCreateAgentRunArgs,
+  queuedChatRunCallbackInputs,
   dispatchQueuedChatFailedRunCallbacks$,
   rejectedQueuedRunAdmissionFailure,
   deliverQueuedPromptRejection$,
@@ -305,6 +306,7 @@ import { BEFORE_DISPATCH_CANCELLED_ERROR } from "./agent-run-cancellation";
 import {
   selectedUserPresentationTemplateIds,
   userPresentationTemplateVolumes,
+  additionalVolumesForRun,
 } from "./presentation-template-data.service";
 import { presentationTemplates } from "@okouai/db/schema/presentation-template";
 import {
@@ -328,10 +330,12 @@ import { settleRejectedAutomationInput } from "./workflow-schedule-failure.servi
 import { chatInputEnqueueCommits$ } from "./chat-input-enqueue-observation";
 import { recordWorkflowAdmissionDuration } from "./workflow-queue-admission-timing.service";
 import { activatePendingRun$ } from "./agent-run-activation.service";
+import { observeAgentRunPreCreateParallelStage } from "./agent-run-preparation-hooks";
 import {
   createSelectedAgentRunObjects,
-  createAgentRunExecutionObjects,
+  type SelectedAgentRunGraphSources,
   type CreateQueueFirstAgentRunCommandArgs,
+  type AgentRunSelectionInput,
   isRouteError,
   isQueueFirstRunClaimLost,
 } from "./agent-run-execution.service";
@@ -696,45 +700,10 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
 }
 
 /** The chat entry owns preparation, pending commit, and queue-claim validation. */
-function createAgentRunObjects() {
-  const { prepareSelectedAgentRun$ } = createSelectedAgentRunObjects();
-  const { prepareAgentRun$, completeAgentRun$ } =
-    createAgentRunExecutionObjects();
-  const createQueueFirstAgentRun$ = command(
-    async (
-      { set },
-      args: CreateQueueFirstAgentRunCommandArgs,
-      signal: AbortSignal,
-    ) => {
-      const selected = await set(prepareSelectedAgentRun$, args, signal);
-      if (isRouteError(selected)) {
-        return selected;
-      }
-      const prepared = await set(prepareAgentRun$, selected, signal);
-      if (isRouteError(prepared)) {
-        return prepared;
-      }
-      const result = await set(
-        completeAgentRun$,
-        {
-          prepared,
-          finalAppendSystemPrompt: selected.args.body.appendSystemPrompt,
-        },
-        signal,
-      );
-      if (isQueueFirstRunClaimLost(result)) {
-        return result;
-      }
-      if (result.status !== 201) {
-        return result;
-      }
-      if (!result.queueFirstClaim) {
-        throw new Error("Queue-first run committed without claim metadata");
-      }
-      return { ...result, queueFirstClaim: result.queueFirstClaim };
-    },
-  );
-  return { createQueueFirstAgentRun$ };
+function createAgentRunObjects(sources: SelectedAgentRunGraphSources) {
+  const { prepareQueuedAgentRun$, completeAgentRun$ } =
+    createSelectedAgentRunObjects(sources);
+  return { prepareQueuedAgentRun$, completeAgentRun$ };
 }
 
 type RunErrorResponse = {
@@ -753,7 +722,6 @@ type ActivePreviousRunPolicy = "block" | "allow";
 
 interface InternalRunCallbackInput {
   readonly internalKind: InternalRunCallbackKind;
-  readonly secret: string;
   readonly payload: unknown;
 }
 
@@ -816,10 +784,6 @@ type ComputerUseHostGrant = {
   readonly displayName: string;
 } | null;
 
-function generateCallbackSecret(): string {
-  return randomBytes(32).toString("hex");
-}
-
 function isActivePreviousRunStatus(status: string): boolean {
   return status === "pending" || status === "running";
 }
@@ -852,7 +816,6 @@ function buildWorkflowAutomationCallbacks(
     if (automation.scheduleType === "loop") {
       callbacks.push({
         internalKind: "workflow-automation:loop",
-        secret: generateCallbackSecret(),
         payload: {
           automationId: automation.id,
         },
@@ -860,7 +823,6 @@ function buildWorkflowAutomationCallbacks(
     } else {
       callbacks.push({
         internalKind: "workflow-automation:cron",
-        secret: generateCallbackSecret(),
         payload: {
           automationId: automation.id,
           timezone: automation.timezone,
@@ -874,7 +836,6 @@ function buildWorkflowAutomationCallbacks(
   if (automation.officialResultEmailEnabled === true) {
     callbacks.push({
       internalKind: "workflow-automation:result-email",
-      secret: generateCallbackSecret(),
       payload: {
         automationId: automation.id,
         workflowName,
@@ -883,7 +844,6 @@ function buildWorkflowAutomationCallbacks(
   }
   callbacks.push({
     internalKind: "chat",
-    secret: generateCallbackSecret(),
     payload: { threadId: chatThreadId, agentId },
   });
   return callbacks;
@@ -1109,7 +1069,9 @@ function workflowAutomationAgentRunAuth(automation: {
  * computed nodes, and the reward write has an explicit command boundary.
  */
 function createAutomationLaunchReadiness() {
-  const internalInput$ = state<AssembleWorkflowAutomationRunArgs | null>(null);
+  const internalInput$ = state<
+    (AssembleWorkflowAutomationRunArgs & { readonly db: Db }) | null
+  >(null);
   const input$ = computed((get) => {
     const input = get(internalInput$);
     if (!input) {
@@ -1331,43 +1293,146 @@ function createAutomationLaunchEffects() {
   return { resolveAutomationModel$, recordQueuedWorkflowReward$ };
 }
 
+function automationSelectionCommand(
+  args: AssembleWorkflowAutomationRunArgs,
+  model: Extract<ModelContext, { readonly ok: true }>,
+  timing: ApiDispatchTimingCollector,
+): AgentRunSelectionInput &
+  Pick<
+    CreateQueueFirstAgentRunCommandArgs,
+    "chatThreadId" | "queueFirstAssociation" | "agentRunModelPin"
+  > {
+  const { automation, agentId, chatThreadId } = args.due;
+  return {
+    auth: workflowAutomationAgentRunAuth(automation),
+    body: {
+      agentId,
+      ...workflowModelProviderBody(model.effectiveModelProvider),
+    },
+    apiStartTime: args.apiStartTime,
+    triggerSource: args.triggerSource ?? "automation-schedule",
+    chatThreadId,
+    connectorSourceId: args.connectorSourceId,
+    modelProviderId: model.modelPin.modelProviderId ?? undefined,
+    modelProviderCredentialScope:
+      model.modelPin.modelProviderCredentialScope ?? undefined,
+    selectedModelOverride: model.modelPin.selectedModel ?? undefined,
+    builtInModelRuntimeRoute: model.builtInModelRuntimeRoute,
+    threadSessionRoute: workflowThreadSessionRoute(model),
+    codexServiceTier: model.codexServiceTier,
+    reasoningEffort: model.reasoningEffort,
+    ...(automation.officialBlueprintKey === null
+      ? {}
+      : { requiredOfficialWorkflowIds: [automation.workflowId] }),
+    queueFirstAssociation: {
+      threadId: chatThreadId,
+      eventId: args.queueEventId,
+    },
+    agentRunModelPin: {
+      modelProvider: model.effectiveModelProvider ?? null,
+      modelProviderId: model.modelPin.modelProviderId,
+      modelProviderCredentialScope: model.modelPin.modelProviderCredentialScope,
+      selectedModel: model.modelPin.selectedModel,
+    },
+    piExecution: model.piExecution,
+    dispatchFailedCallbacks: args.dispatchFailedCallbacks,
+    timing,
+  };
+}
+
 function createWorkflowAutomationLaunchObjects() {
   const sources = createAutomationLaunchReadiness();
-  const { internalInput$, readiness$ } = sources;
+  const { internalInput$, input$, readiness$ } = sources;
   const { computerUseHostGrant$, runInput$ } =
     createAutomationLaunchMaterials(sources);
   const { resolveAutomationModel$, recordQueuedWorkflowReward$ } =
     createAutomationLaunchEffects();
+  const internalTiming$ = state<ApiDispatchTimingCollector | null>(null);
+  const internalModel$ = state<Promise<ModelContext> | null>(null);
+  const internalAssembly$ = state<Promise<
+    AssembledWorkflowAutomationRun | RunFailure
+  > | null>(null);
+  const timing$ = computed((get) => {
+    const timing = get(internalTiming$);
+    if (!timing) {
+      throw new Error("Automation timing is missing its selected input");
+    }
+    return timing;
+  });
+  const model$ = computed(async (get) => {
+    const model = get(internalModel$);
+    if (!model) {
+      throw new Error("Automation model command has not started");
+    }
+    return await model;
+  });
+  const identityInput$ = computed(async (get) => {
+    const args = get(input$);
+    if (await get(readiness$)) {
+      return null;
+    }
+    return {
+      db: args.db,
+      timing: get(timing$),
+      auth: workflowAutomationAgentRunAuth(args.due.automation),
+      apiStartTime: args.apiStartTime,
+      agentId: args.due.agentId,
+      chatThreadId: args.due.chatThreadId,
+      queueFirstAssociation: {
+        threadId: args.due.chatThreadId,
+        eventId: args.queueEventId,
+      },
+    };
+  });
+  const selectionInput$ = computed(async (get) => {
+    const [identity, model] = await Promise.all([
+      get(identityInput$),
+      get(model$),
+    ]);
+    return identity && model.ok
+      ? {
+          db: identity.db,
+          timing: identity.timing,
+          command: automationSelectionCommand(
+            get(input$),
+            model,
+            identity.timing,
+          ),
+        }
+      : null;
+  });
+  const prepareAutomationModel$ = command(
+    async ({ get, set }, signal: AbortSignal): Promise<ModelContext> => {
+      const failure = await get(readiness$);
+      signal.throwIfAborted();
+      return failure
+        ? { ok: false, failure }
+        : await set(resolveAutomationModel$, get(input$), get(timing$), signal);
+    },
+  );
   const assembleWorkflowAutomationRun$ = command(
     async (
       { get, set },
-      args: AssembleWorkflowAutomationRunArgs,
       signal: AbortSignal,
     ): Promise<AssembledWorkflowAutomationRun | RunFailure> => {
-      set(internalInput$, args);
-      const { automation, agentId, chatThreadId } = args.due;
-      const timing = workflowAutomationTiming(args);
-      const readinessFailure = await get(readiness$);
+      const args = get(input$);
+      const timing = get(timing$);
+      const [selection, model, computerUseHostGrant, runInput] =
+        await Promise.all([
+          get(selectionInput$),
+          get(model$),
+          get(computerUseHostGrant$),
+          get(runInput$),
+        ]);
       signal.throwIfAborted();
-      if (readinessFailure) {
-        return readinessFailure;
+      if (!model.ok) {
+        return model.failure;
       }
-      const [modelContext, computerUseHostGrant, runInput] = await Promise.all([
-        set(resolveAutomationModel$, args, timing, signal),
-        get(computerUseHostGrant$),
-        get(runInput$),
-      ]);
-      signal.throwIfAborted();
-      if (!modelContext.ok) {
-        return modelContext.failure;
+      if (!selection) {
+        throw new Error(
+          "A valid automation model is missing execution identity",
+        );
       }
-      const {
-        modelPin,
-        effectiveModelProvider,
-        builtInModelRuntimeRoute,
-        codexServiceTier,
-        reasoningEffort,
-      } = modelContext;
       timing.recordElapsed(
         "api_dispatch_pre_create_agent_workflow_automation_create_run",
         "nested",
@@ -1378,56 +1443,18 @@ function createWorkflowAutomationLaunchObjects() {
       return {
         kind: "assembled",
         run: {
-          auth: workflowAutomationAgentRunAuth(automation),
-          body: {
-            prompt: runInput.prompt,
-            agentId,
-            ...workflowModelProviderBody(effectiveModelProvider),
-          },
-          apiStartTime: args.apiStartTime,
-          triggerSource: args.triggerSource ?? "automation-schedule",
-          chatThreadId,
-          ...(args.connectorSourceId
-            ? { connectorSourceId: args.connectorSourceId }
-            : {}),
+          ...selection.command,
+          body: { ...selection.command.body, prompt: runInput.prompt },
           computerUseHostId: computerUseHostGrant?.hostId,
-          modelProviderId: modelPin.modelProviderId ?? undefined,
-          preloadedMemberAccountSnapshot: modelContext.memberAccountSnapshot,
-          modelProviderCredentialScope:
-            modelPin.modelProviderCredentialScope ?? undefined,
-          selectedModelOverride: modelPin.selectedModel ?? undefined,
-          ...(builtInModelRuntimeRoute ? { builtInModelRuntimeRoute } : {}),
-          threadSessionRoute: workflowThreadSessionRoute(modelContext),
-          codexServiceTier,
-          reasoningEffort,
           appendSystemPrompt: runInput.appendSystemPrompt,
           callbacks: runInput.callbacks,
           agentRunMetadata: runInput.agentRunMetadata,
-          ...(automation.officialBlueprintKey === null
-            ? {}
-            : { requiredOfficialWorkflowIds: [automation.workflowId] }),
-          queueFirstAssociation: {
-            threadId: chatThreadId,
-            eventId: args.queueEventId,
-          },
-          agentRunModelPin: {
-            modelProvider: effectiveModelProvider ?? null,
-            modelProviderId: modelPin.modelProviderId,
-            modelProviderCredentialScope: modelPin.modelProviderCredentialScope,
-            selectedModel: modelPin.selectedModel,
-          },
-          piExecution: modelContext.piExecution,
-          dispatchFailedCallbacks: args.dispatchFailedCallbacks,
-          // A journaled Morning Brief occurrence records its Run in the same
-          // transaction that inserts it, before any Run callback can look the
-          // claim up; other automations match no journal row.
           persistProducerRunBinding: (tx, run) => {
             return bindMorningBriefScheduleClaimRun(tx, {
               queueEventId: args.queueEventId,
               runId: run.runId,
             });
           },
-          timing,
         },
         launched: async (runId, launchedSignal) => {
           await recordWorkflowAutomationRunStart(
@@ -1438,7 +1465,32 @@ function createWorkflowAutomationLaunchObjects() {
       };
     },
   );
-  return { assembleWorkflowAutomationRun$ };
+  const initializeWorkflowAutomationRun$ = command(
+    ({ set }, args: AssembleWorkflowAutomationRunArgs, signal: AbortSignal) => {
+      set(internalInput$, { ...args, db: set(writeDb$) });
+      set(internalTiming$, workflowAutomationTiming(args));
+      set(internalModel$, set(prepareAutomationModel$, signal));
+      set(internalAssembly$, set(assembleWorkflowAutomationRun$, signal));
+    },
+  );
+  const assembly$ = computed(async (get) => {
+    const assembly = get(internalAssembly$);
+    if (!assembly) {
+      throw new Error("Automation assembly command has not started");
+    }
+    return await assembly;
+  });
+  const memberAccountSnapshot$ = computed(async (get) => {
+    const model = await get(model$);
+    return model.ok ? model.memberAccountSnapshot : null;
+  });
+  return {
+    initializeWorkflowAutomationRun$,
+    assembly$,
+    identityInput$,
+    selectionInput$,
+    memberAccountSnapshot$,
+  };
 }
 
 interface QueuedAutomationEvent {
@@ -1715,19 +1767,20 @@ function createQueuedAutomationAssembler(
   material: ReturnType<typeof createQueuedAutomationMaterial>,
   reconciliation: ReturnType<typeof createQueuedAutomationReconciliation>,
 ) {
-  const { assembleWorkflowAutomationRun$ } =
-    createWorkflowAutomationLaunchObjects();
+  const launch = createWorkflowAutomationLaunchObjects();
   const { internalHead$, event$, target$ } = sources;
   const { sourceAutonomyBudget$, autonomyBudget$ } = budget;
   const { launchMaterial$ } = material;
   const { reconcileOfficialWorkflow$ } = reconciliation;
-  const assembleQueuedAutomationRun$ = command(
+  const internalEarlyAssembly$ = state<ChatQueueRunAssembly | null>(null);
+  const initializeQueuedAutomation$ = command(
     async (
       { get, set },
       head: ChatQueueHeadContext,
       signal: AbortSignal,
-    ): Promise<ChatQueueRunAssembly> => {
+    ): Promise<void> => {
       set(internalHead$, head);
+      set(internalEarlyAssembly$, null);
       const unreadable = (message: string): ChatQueueRunAssembly => {
         return {
           kind: "rejected",
@@ -1743,11 +1796,16 @@ function createQueuedAutomationAssembler(
         get(sourceAutonomyBudget$),
       ]);
       signal.throwIfAborted();
-      if (!event) {
-        return unreadable("Workflow queue event payload is unreadable");
-      }
-      if (!loadedTarget) {
-        return unreadable("Workflow automation no longer exists");
+      if (!event || !loadedTarget) {
+        set(
+          internalEarlyAssembly$,
+          unreadable(
+            !event
+              ? "Workflow queue event payload is unreadable"
+              : "Workflow automation no longer exists",
+          ),
+        );
+        return;
       }
       if (loadedTarget.automation.officialBlueprintKey !== null) {
         const reconciled = await set(
@@ -1756,16 +1814,17 @@ function createQueuedAutomationAssembler(
           signal,
         );
         if (reconciled.kind !== "current") {
-          return {
+          set(internalEarlyAssembly$, {
             kind: "rejected",
             rejection: {
               error: {
                 code: "CONFLICT",
                 message: reconciliationConflictMessage(reconciled),
               },
-              userId: loadedTarget.automation.ownerUserId ?? head.userId,
+              userId: loadedTarget.automation.ownerUserId,
             },
-          };
+          });
+          return;
         }
       }
       const [target, material, autonomyBudget] = await Promise.all([
@@ -1775,37 +1834,43 @@ function createQueuedAutomationAssembler(
       ]);
       signal.throwIfAborted();
       if (!target) {
-        return {
+        set(internalEarlyAssembly$, {
           kind: "rejected",
           rejection: {
+            userId: loadedTarget.automation.ownerUserId,
             error: {
               code: "CONFLICT",
               message: "Official Workflow automation no longer exists",
             },
-            userId: loadedTarget.automation.ownerUserId ?? head.userId,
           },
-        };
+        });
+        return;
       }
-      const rejection = (error: {
-        readonly code: string;
-        readonly message: string;
-      }): ChatQueueHeadRejection => {
-        return { error, userId: target.automation.ownerUserId ?? head.userId };
-      };
-      const conflict = (message: string): ChatQueueRunAssembly => {
-        return {
-          kind: "rejected",
-          rejection: rejection({ code: "CONFLICT", message }),
-        };
-      };
       if (!material) {
-        return conflict("Workflow queue event payload is unreadable");
+        set(internalEarlyAssembly$, {
+          kind: "rejected",
+          rejection: {
+            userId: target.automation.ownerUserId,
+            error: {
+              code: "CONFLICT",
+              message: "Workflow queue event payload is unreadable",
+            },
+          },
+        });
+        return;
       }
       if (autonomyBudget.kind === "invalid") {
-        return { kind: "rejected", rejection: rejection(autonomyBudget.error) };
+        set(internalEarlyAssembly$, {
+          kind: "rejected",
+          rejection: {
+            userId: target.automation.ownerUserId,
+            error: autonomyBudget.error,
+          },
+        });
+        return;
       }
-      const assembled = await set(
-        assembleWorkflowAutomationRun$,
+      set(
+        launch.initializeWorkflowAutomationRun$,
         queuedAutomationLaunchArguments({
           head,
           event,
@@ -1815,24 +1880,89 @@ function createQueuedAutomationAssembler(
         }),
         signal,
       );
-      if (assembled.kind === "conflict") {
-        return conflict(assembled.message);
-      }
-      if (assembled.kind === "run_error") {
-        return {
-          kind: "rejected",
-          rejection: rejection(assembled.response.body.error),
-        };
-      }
-      return {
-        kind: "assembled",
-        run: assembled.run,
-        rejection,
-        launched: { kind: "automation", record: assembled.launched },
-      };
     },
   );
-  return { assembleQueuedAutomationRun$ };
+  const assembly$ = computed(async (get): Promise<ChatQueueRunAssembly> => {
+    const early = get(internalEarlyAssembly$);
+    if (early) {
+      return early;
+    }
+    const [assembled, target] = await Promise.all([
+      get(launch.assembly$),
+      get(target$),
+    ]);
+    if (!target) {
+      throw new Error(
+        "Automation target disappeared within its captured revision",
+      );
+    }
+    const rejection = (error: {
+      readonly code: string;
+      readonly message: string;
+    }) => {
+      return { error, userId: target.automation.ownerUserId };
+    };
+    if (assembled.kind !== "assembled") {
+      return {
+        kind: "rejected",
+        rejection: rejection(
+          assembled.kind === "conflict"
+            ? { code: "CONFLICT", message: assembled.message }
+            : assembled.response.body.error,
+        ),
+      };
+    }
+    return {
+      kind: "assembled",
+      run: assembled.run,
+      rejection,
+      launched: { kind: "automation", record: assembled.launched },
+    };
+  });
+  const identityInput$ = computed(async (get) => {
+    return get(internalEarlyAssembly$)
+      ? null
+      : await get(launch.identityInput$);
+  });
+  const selectionInput$ = computed(async (get) => {
+    return get(internalEarlyAssembly$)
+      ? null
+      : await get(launch.selectionInput$);
+  });
+  const memberAccountSnapshot$ = computed(async (get) => {
+    return get(internalEarlyAssembly$)
+      ? null
+      : await get(launch.memberAccountSnapshot$);
+  });
+  const callbackInputs$ = computed(async (get) => {
+    if (get(internalEarlyAssembly$)) {
+      return undefined;
+    }
+    return (await get(launchMaterial$))?.callbacks;
+  });
+  const storageBody$ = computed(() => {
+    return {};
+  });
+  const connectorSourceId$ = computed(async (get) => {
+    return get(internalEarlyAssembly$)
+      ? undefined
+      : ((await get(event$))?.connectorSourceId ?? undefined);
+  });
+  const command$ = computed(async (get) => {
+    const assembly = await get(assembly$);
+    return assembly.kind === "assembled" ? assembly.run : null;
+  });
+  return {
+    initializeQueuedAutomation$,
+    assembly$,
+    identityInput$,
+    selectionInput$,
+    memberAccountSnapshot$,
+    callbackInputs$,
+    storageBody$,
+    connectorSourceId$,
+    command$,
+  };
 }
 
 function createQueuedAutomationRunObjects() {
@@ -3433,6 +3563,7 @@ interface QueuedPromptGraphInput {
   readonly db: Db;
   readonly head: ChatQueueHeadContext;
   readonly timing: ChatCallbackPreCreateTimingCollector;
+  readonly runTiming: ApiDispatchTimingCollector;
 }
 
 interface QueuedPromptAgent {
@@ -4586,6 +4717,11 @@ function createPromptSession(
       input: args,
       modelRoute: model.route,
     });
+    await observeAgentRunPreCreateParallelStage("thread-session", {
+      command: {
+        auth: { userId: args.userId, orgId: args.agent.orgId },
+      },
+    });
     const [thread] = await args.db
       .select(chatThreadSessionSelection())
       .from(chatThreads)
@@ -5401,28 +5537,40 @@ function createPromptAssembleQueuedPromptRun({
   resolvePromptDiscordMaterial$,
   runInput$,
 }: PromptAssemblerDependencies) {
-  const assembleQueuedPromptRun$ = command(
+  const internalEarlyAssembly$ = state<ChatQueueRunAssembly | null>(null);
+  const initializeQueuedPrompt$ = command(
     async (
       { get, set },
       head: ChatQueueHeadContext,
       signal: AbortSignal,
-    ): Promise<ChatQueueRunAssembly> => {
+    ): Promise<void> => {
       const db = set(writeDb$);
       const timing = new ChatCallbackPreCreateTimingCollector();
-      set(internalInput$, { db, head, timing });
+      set(internalInput$, {
+        db,
+        head,
+        timing,
+        runTiming: new ApiDispatchTimingCollector(),
+      });
       set(internalModel$, null);
       set(internalDiscordMaterial$, null);
+      set(internalEarlyAssembly$, null);
       const selected = await settle(
         Promise.all([get(queuedMessage$), get(agent$)]),
         signal,
       );
       signal.throwIfAborted();
       if (!selected.ok) {
-        return queuedPromptPreparationRejection(selected.error, head);
+        set(
+          internalEarlyAssembly$,
+          queuedPromptPreparationRejection(selected.error, head),
+        );
+        return;
       }
       const [queued, agent] = selected.value;
       if (queued?.id !== head.id) {
-        return { kind: "not-ready" };
+        set(internalEarlyAssembly$, { kind: "not-ready" });
+        return;
       }
       timing.recordElapsed({
         actionType:
@@ -5432,7 +5580,8 @@ function createPromptAssembleQueuedPromptRun({
         finishedAt: head.apiStartTime,
       });
       if (!agent) {
-        return missingQueuedAgentRejection(head);
+        set(internalEarlyAssembly$, missingQueuedAgentRejection(head));
+        return;
       }
       set(internalModel$, set(resolvePromptModel$, signal));
       if (head.contextType === "discord") {
@@ -5441,50 +5590,64 @@ function createPromptAssembleQueuedPromptRun({
           set(resolvePromptDiscordMaterial$, signal),
         );
       }
-      const prepared = await settle(
-        timing.measure(
-          "api_dispatch_pre_create_agent_chat_callback_auto_send_build_input",
-          "top_level",
-          () => {
-            return get(runInput$);
-          },
-        ),
-        signal,
-      );
-      signal.throwIfAborted();
-      if (!prepared.ok) {
-        return queuedPromptPreparationRejection(prepared.error, head);
-      }
-      const runInput = prepared.value;
-      if ("kind" in runInput) {
-        return {
-          kind: "rejected",
-          rejection: queuedMessageRejection(runInput),
-        };
-      }
-      return {
-        kind: "assembled",
-        run: {
-          ...buildQueuedCreateAgentRunArgs(
-            runInput,
-            head.apiStartTime,
-            dispatchQueuedChatFailedRunCallbacks$,
-          ),
-          persistProducerRunBinding: agent.persistProducerRunBinding,
-        },
-        rejection: (error) => {
-          return queuedMessageRejection(
-            rejectedQueuedRunAdmissionFailure(runInput, error),
-          );
-        },
-        launched: {
-          kind: "prompt",
-          context: { userId: head.userId, timing, runInput },
-        },
-      };
     },
   );
-  return assembleQueuedPromptRun$;
+  const assembly$ = computed(async (get): Promise<ChatQueueRunAssembly> => {
+    const early = get(internalEarlyAssembly$);
+    if (early) {
+      return early;
+    }
+    const input = get(internalInput$);
+    if (!input) {
+      throw new Error("Prompt preparation has no selected input");
+    }
+    const { head, timing } = input;
+    const prepared = await settle(
+      timing.measure(
+        "api_dispatch_pre_create_agent_chat_callback_auto_send_build_input",
+        "top_level",
+        () => {
+          return get(runInput$);
+        },
+      ),
+    );
+    if (!prepared.ok) {
+      return queuedPromptPreparationRejection(prepared.error, head);
+    }
+    const runInput = prepared.value;
+    if ("kind" in runInput) {
+      return {
+        kind: "rejected",
+        rejection: queuedMessageRejection(runInput),
+      };
+    }
+    const agent = await get(agent$);
+    if (!agent) {
+      return missingQueuedAgentRejection(head);
+    }
+    return {
+      kind: "assembled",
+      run: {
+        ...buildQueuedCreateAgentRunArgs(
+          runInput,
+          head.apiStartTime,
+          dispatchQueuedChatFailedRunCallbacks$,
+        ),
+        persistProducerRunBinding: agent.persistProducerRunBinding,
+        timing: input.runTiming,
+      },
+      rejection: (error) => {
+        return queuedMessageRejection(
+          rejectedQueuedRunAdmissionFailure(runInput, error),
+        );
+      },
+      launched: {
+        kind: "prompt",
+        context: { userId: head.userId, timing, runInput },
+      },
+    };
+  });
+  return { initializeQueuedPrompt$, assembly$, internalEarlyAssembly$ };
 }
 
 function createPromptStage0() {
@@ -5711,7 +5874,7 @@ function createPromptStage3({
       discordRoute$,
       checkPromptDiscordAccess$,
     );
-  const assembleQueuedPromptRun$ = createPromptAssembleQueuedPromptRun({
+  const assembly = createPromptAssembleQueuedPromptRun({
     internalInput$,
     internalModel$,
     internalDiscordMaterial$,
@@ -5731,7 +5894,7 @@ function createPromptStage3({
     resolvePromptModel$,
     checkPromptDiscordAccess$,
     resolvePromptDiscordMaterial$,
-    assembleQueuedPromptRun$,
+    ...assembly,
   };
 }
 
@@ -5749,7 +5912,170 @@ function createQueuedPromptRunObjects() {
     ...stage1,
     ...stage2,
   });
-  return { assembleQueuedPromptRun$: stage3.assembleQueuedPromptRun$ };
+  const identityInput$ = computed(async (get) => {
+    if (get(stage3.internalEarlyAssembly$)) {
+      return null;
+    }
+    const { db, head, runTiming: timing } = get(stage0.input$);
+    const args = await get(stage0.args$);
+    return {
+      db,
+      timing,
+      auth: {
+        tokenType: "session" as const,
+        userId: args.userId,
+        orgId: args.agent.orgId,
+        orgRole: "member" as const,
+      },
+      apiStartTime: head.apiStartTime,
+      agentId: args.agent.id,
+      chatThreadId: args.threadId,
+      expectedThreadAgentId: args.expectedThreadAgentId,
+      queueFirstAssociation: {
+        threadId: args.threadId,
+        eventId: args.queuedMessage.id,
+      },
+    };
+  });
+  const selectionInput$ = computed(async (get) => {
+    const identity = await get(identityInput$);
+    if (!identity) {
+      return null;
+    }
+    const [args, model] = await Promise.all([
+      get(stage0.args$),
+      get(stage2.model$),
+    ]);
+    if ("error" in model || args.queuedMessage.autonomyBudget.kind !== "ok") {
+      return null;
+    }
+    const { piExecution, routedModel } = routeQueuedMessagePiExecution({
+      input: args,
+      modelRoute: model.route,
+    });
+    return {
+      db: identity.db,
+      timing: identity.timing,
+      command: {
+        auth: identity.auth,
+        apiStartTime: identity.apiStartTime,
+        body: {
+          agentId: identity.agentId,
+          ...workflowModelProviderBody(routedModel.effectiveModelProvider),
+        },
+        chatThreadId: args.threadId,
+        expectedThreadAgentId: args.expectedThreadAgentId,
+        queueFirstAssociation: identity.queueFirstAssociation,
+        agentRunModelPin: {
+          modelProvider: routedModel.effectiveModelProvider ?? null,
+          modelProviderId: routedModel.modelPin.modelProviderId,
+          modelProviderCredentialScope:
+            routedModel.modelPin.modelProviderCredentialScope,
+          selectedModel: routedModel.modelPin.selectedModel,
+        },
+        modelProviderId: routedModel.modelPin.modelProviderId ?? undefined,
+        modelProviderCredentialScope:
+          routedModel.modelPin.modelProviderCredentialScope ?? undefined,
+        selectedModelOverride: routedModel.modelPin.selectedModel ?? undefined,
+        builtInModelRuntimeRoute: routedModel.builtInModelRuntimeRoute,
+        threadSessionRoute: {
+          selectedModel: routedModel.modelPin.selectedModel,
+          cliAgentType: routedModel.cliAgentType,
+        },
+        codexServiceTier: routedModel.codexServiceTier,
+        reasoningEffort: resolveReasoningEffortForDispatch({
+          selectedModel: routedModel.modelPin.selectedModel,
+          effort: routedModel.reasoningEffort ?? undefined,
+          runtimeProviderType:
+            routedModel.builtInModelRuntimeRoute?.providerType ??
+            routedModel.effectiveModelProvider,
+          piExecution,
+        }),
+        requiredOfficialWorkflowIds:
+          args.queuedMessage.requiredOfficialWorkflowIds,
+        piExecution,
+        timing: identity.timing,
+      },
+    };
+  });
+  const threadSession$ = computed(async (get) => {
+    if (get(stage3.internalEarlyAssembly$)) {
+      return undefined;
+    }
+    return (await get(stage2.session$)) ?? undefined;
+  });
+  const command$ = computed(async (get) => {
+    const assembly = await get(stage3.assembly$);
+    return assembly.kind === "assembled" ? assembly.run : null;
+  });
+  const featureSwitchContext$ = computed(async (get) => {
+    return get(stage3.internalEarlyAssembly$)
+      ? undefined
+      : await get(stage0.features$);
+  });
+  const memberAccountSnapshot$ = computed(async (get) => {
+    if (get(stage3.internalEarlyAssembly$)) {
+      return null;
+    }
+    const model = await get(stage2.model$);
+    return "error" in model ? null : model.route.memberAccountSnapshot;
+  });
+  const availableMaterial$ = computed(async (get) => {
+    if (get(stage3.internalEarlyAssembly$)) {
+      return null;
+    }
+    const material = await settle(get(stage2.material$));
+    if (!material.ok) {
+      // The assembly owns rejection of an invalid source. Other failures still
+      // propagate, and no resource inputs exist for a rejected source.
+      queuedPromptPreparationRejection(material.error, get(stage0.input$).head);
+      return null;
+    }
+    return material.value;
+  });
+  const callbackInputs$ = computed(async (get) => {
+    if (get(stage3.internalEarlyAssembly$)) {
+      return undefined;
+    }
+    const [args, material] = await Promise.all([
+      get(stage0.args$),
+      get(availableMaterial$),
+    ]);
+    if (!material) {
+      return undefined;
+    }
+    return queuedChatRunCallbackInputs({
+      threadId: args.threadId,
+      agentId: args.agent.id,
+      queuedMessage: args.queuedMessage,
+      ...queuedIntegrationLaunchFields(material, args.agent.id),
+    });
+  });
+  const connectorSourceId$ = computed(async (get) => {
+    return (await get(availableMaterial$))?.connectorSourceId;
+  });
+  const storageBody$ = computed(async (get) => {
+    if (get(stage3.internalEarlyAssembly$)) {
+      return {};
+    }
+    const templates = await get(stage3.templates$);
+    return "error" in templates
+      ? {}
+      : additionalVolumesForRun(templates.presentationTemplateVolumes);
+  });
+  return {
+    initializeQueuedPrompt$: stage3.initializeQueuedPrompt$,
+    assembly$: stage3.assembly$,
+    identityInput$,
+    selectionInput$,
+    threadSession$,
+    command$,
+    featureSwitchContext$,
+    memberAccountSnapshot$,
+    callbackInputs$,
+    storageBody$,
+    connectorSourceId$,
+  };
 }
 
 // Explicit input rejection, pending consumption and activation.
@@ -6035,9 +6361,10 @@ function createConsumeHeadCommand(
   internalInput$: ReturnType<typeof createQueueConsumptionInput>,
   headContext$: ReturnType<typeof createQueueHeadContextObject>,
 ) {
-  const { createQueueFirstAgentRun$ } = createAgentRunObjects();
-  const { assembleQueuedAutomationRun$ } = createQueuedAutomationRunObjects();
-  const { assembleQueuedPromptRun$ } = createQueuedPromptRunObjects();
+  const automation = createQueuedAutomationRunObjects();
+  const prompt = createQueuedPromptRunObjects();
+  const promptExecution = createAgentRunObjects(prompt);
+  const automationExecution = createAgentRunObjects(automation);
   const consumeChatQueueHead$ = command(
     async (
       { get, set },
@@ -6059,13 +6386,27 @@ function createConsumeHeadCommand(
         dispatchFailedCallbacks: input.dispatchFailedCallbacks,
         ...loaded,
       };
-      const assembly = await set(
+      await set(
         head.contextType === "automation"
-          ? assembleQueuedAutomationRun$
-          : assembleQueuedPromptRun$,
+          ? automation.initializeQueuedAutomation$
+          : prompt.initializeQueuedPrompt$,
         head,
         signal,
       );
+      const [assembly, prepared] = await Promise.all([
+        get(
+          head.contextType === "automation"
+            ? automation.assembly$
+            : prompt.assembly$,
+        ),
+        set(
+          head.contextType === "automation"
+            ? automationExecution.prepareQueuedAgentRun$
+            : promptExecution.prepareQueuedAgentRun$,
+          signal,
+        ),
+      ]);
+      signal.throwIfAborted();
       if (assembly.kind === "not-ready") {
         await set(
           rejectChatQueueHead$,
@@ -6087,6 +6428,19 @@ function createConsumeHeadCommand(
         await set(
           rejectChatQueueHead$,
           { head, rejection: assembly.rejection },
+          signal,
+        );
+        return { kind: "passed" };
+      }
+      if (!prepared) {
+        throw new Error(
+          "An assembled queued input has no execution preparation",
+        );
+      }
+      if (isRouteError(prepared)) {
+        await set(
+          rejectChatQueueHead$,
+          { head, rejection: assembly.rejection(prepared.body.error) },
           signal,
         );
         return { kind: "passed" };
@@ -6113,8 +6467,13 @@ function createConsumeHeadCommand(
         signal.throwIfAborted();
       }
       const result = await set(
-        createQueueFirstAgentRun$,
-        { ...assembly.run, timing },
+        head.contextType === "automation"
+          ? automationExecution.completeAgentRun$
+          : promptExecution.completeAgentRun$,
+        {
+          prepared,
+          finalAppendSystemPrompt: prepared.args.body.appendSystemPrompt,
+        },
         signal,
       );
       if (isQueueFirstRunClaimLost(result)) {
@@ -6127,6 +6486,9 @@ function createConsumeHeadCommand(
           signal,
         );
         return { kind: "passed" };
+      }
+      if (!result.queueFirstClaim) {
+        throw new Error("Queue-first run committed without claim metadata");
       }
       if (!result.pendingActivation) {
         throw new Error("Pending run is missing activation metadata");

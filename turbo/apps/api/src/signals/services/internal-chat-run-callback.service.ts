@@ -1,5 +1,4 @@
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
-import { randomBytes } from "node:crypto";
 import { v5 as uuidv5 } from "uuid";
 import type { ChatThreadSessionResolution } from "./chat-session-continuity.service";
 import type { MemberModelAccountSnapshot } from "./model-provider-account.service";
@@ -602,8 +601,55 @@ interface TerminalChatCallbackWork {
       };
 }
 
-function generateCallbackSecret(): string {
-  return randomBytes(32).toString("hex");
+export function queuedChatRunCallbackInputs(
+  input: Pick<
+    CreateQueuedChatRunInput,
+    | "threadId"
+    | "agentId"
+    | "queuedMessage"
+    | "slackDelivery"
+    | "feishuDelivery"
+    | "teamsDelivery"
+    | "discordDelivery"
+    | "telegramDelivery"
+    | "agentphoneDelivery"
+  >,
+) {
+  return [
+    {
+      internalKind: "chat" as const,
+      payload: {
+        threadId: input.threadId,
+        agentId: input.agentId,
+        queuedMessageId: input.queuedMessage.id,
+        slackDelivery: input.slackDelivery,
+        feishuDelivery: input.feishuDelivery,
+        teamsDelivery: input.teamsDelivery,
+        discordDelivery: input.discordDelivery,
+        telegramDelivery: input.telegramDelivery,
+        agentphoneDelivery: input.agentphoneDelivery,
+      },
+    },
+    ...(input.feishuDelivery
+      ? [
+          {
+            internalKind: "feishu:org" as const,
+            payload: {
+              installationId: input.feishuDelivery.installationId,
+              chatId: input.feishuDelivery.chatId,
+              messageId: input.feishuDelivery.messageId,
+              connectionId: input.feishuDelivery.connectionId,
+              sessionKey: input.feishuDelivery.threadId,
+              agentId: input.agentId,
+              reactionId: input.feishuDelivery.reactionId,
+              replyInThread: input.feishuDelivery.replyInThread,
+              files: input.feishuDelivery.files,
+              canonicalChatDelivery: true,
+            },
+          },
+        ]
+      : []),
+  ];
 }
 
 export function buildQueuedCreateAgentRunArgs(
@@ -623,9 +669,6 @@ export function buildQueuedCreateAgentRunArgs(
     apiStartTime: admissionTime,
     chatThreadId: input.threadId,
     expectedThreadAgentId: input.expectedThreadAgentId,
-    preloadedThreadSessionResolution: input.threadSessionResolution,
-    preloadedFeatureSwitchContext: input.featureSwitchContext,
-    preloadedMemberAccountSnapshot: input.memberAccountSnapshot,
     ...(input.connectorSourceId
       ? { connectorSourceId: input.connectorSourceId }
       : {}),
@@ -636,43 +679,7 @@ export function buildQueuedCreateAgentRunArgs(
     selectedModelOverride: input.modelPin.selectedModel ?? undefined,
     codexServiceTier: input.codexServiceTier,
     reasoningEffort: input.reasoningEffort,
-    callbacks: [
-      {
-        internalKind: "chat" as const,
-        secret: generateCallbackSecret(),
-        payload: {
-          threadId: input.threadId,
-          agentId: input.agentId,
-          queuedMessageId: input.queuedMessage.id,
-          slackDelivery: input.slackDelivery,
-          feishuDelivery: input.feishuDelivery,
-          teamsDelivery: input.teamsDelivery,
-          discordDelivery: input.discordDelivery,
-          telegramDelivery: input.telegramDelivery,
-          agentphoneDelivery: input.agentphoneDelivery,
-        },
-      },
-      ...(input.feishuDelivery
-        ? [
-            {
-              internalKind: "feishu:org" as const,
-              secret: generateCallbackSecret(),
-              payload: {
-                installationId: input.feishuDelivery.installationId,
-                chatId: input.feishuDelivery.chatId,
-                messageId: input.feishuDelivery.messageId,
-                connectionId: input.feishuDelivery.connectionId,
-                sessionKey: input.feishuDelivery.threadId,
-                agentId: input.agentId,
-                reactionId: input.feishuDelivery.reactionId,
-                replyInThread: input.feishuDelivery.replyInThread,
-                files: input.feishuDelivery.files,
-                canonicalChatDelivery: true,
-              },
-            },
-          ]
-        : []),
-    ],
+    callbacks: queuedChatRunCallbackInputs(input),
     triggerSource: input.triggerSource,
     agentRunPreCreateSource: "chat_callback_auto_send" as const,
     appendSystemPrompt: input.appendSystemPrompt,

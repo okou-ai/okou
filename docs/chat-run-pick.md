@@ -26,10 +26,11 @@ do not wrap the former asynchronous S3 helper chain. After agent authorization,
 member settings, paid-tool settings and persisted environment reads start beside
 bootstrap preparation. Provider preparation and connector account/credential
 reads depend on the metadata they consume, without waiting for unrelated
-workflow or session results. Captured results and failures are passed to the
-final execution graph without repeating those queries. Error priority is applied
-at the final join, so speculative provider failure cannot hide a thread-selection
-failure.
+workflow or session results. The selected claim and input drive a fixed read
+graph; downstream nodes consume their actual dependencies rather than results
+copied between preparation commands. Independent reads use `Promise.all` and
+propagate the first rejection. There is no prescribed priority among concurrent
+infrastructure failures, no settled-result staging and no error fallback.
 
 ## One pick and one organization pass
 
@@ -81,24 +82,36 @@ transaction. Existing roots take the read path. Discord access, rejection
 delivery and typing notifications receive the request dispatcher instead of
 creating a Store inside the pick's work.
 
-Storage planning precedes its materialization command; KMS context encryption
-runs alongside that plan and materialization. Both branches are joined even if
-one fails, preserving storage-error priority without an unowned rejected Promise.
+Storage planning is part of the read graph. After authorization and admission,
+callback preparation, storage materialization and stored-context encryption start
+from their own required inputs and join with `Promise.all`. The first failure
+propagates without waiting for unrelated branches or selecting a preferred error.
+Already-started branches keep the request's signal and remain owned by the join;
+`Promise.all` itself does not cancel them. No lease cleanup or retry is added.
+
+Storage plan, request and presigned-cache nodes are constructed with the factory.
+Initializing a missing root records the actual created root in private state;
+downstream storage reads update from that result without reloading the pick or
+selecting another thread. Each new pick clears those initialization results.
 Pi memory summary resolution stays in the resource command because it can enqueue
 or requeue a missing/invalid projection, and a missing memory root's final identity
 is available only after initialization.
 
 Configured connector account fallback is selection among different authorized
-accounts; it does not retry failed queries. Runtime catalog selection captures
-one projection generation and fetches each uncached connector once. Missing rows
-trigger one count and identity check in parallel. A changed generation fails
-preparation; it is never adopted by a second attempt. An unchanged incomplete or
-invalid projection can use the complete snapshot only at the captured source,
-schema, catalog version/digest and capability digest.
+accounts; it does not retry failed queries. Runtime catalog selection uses fixed
+identity, requested-slug, projection-row, count, fresh-identity and complete-
+snapshot computed nodes with typed SQL. Identity and requested slugs are joined
+with `Promise.all`; each uncached connector is read once in the existing batch.
+Only missing projection rows trigger the count and fresh-identity queries, which
+run in parallel. The fresh identity uses a separate query rather than rereading
+a memoized node. A changed generation fails preparation and is never adopted by
+a second attempt. Explicitly absent, incomplete or incompatible projections can
+use a complete snapshot only at the captured source, schema, catalog
+version/digest and capability digest; query errors never select that branch.
 
-The runtime path uses `loadAcceptedConnectorCatalogSnapshotOnce`, including when
-no usable projection was initially present. Its payload read retains artifact
-and compatibility validation and fails if that captured snapshot disappears.
+The full payload node retains immutable accepted-snapshot caching plus artifact
+and compatibility validation. The same initial identity also binds the full read
+when no usable projection was present. A missing captured payload fails directly.
 The discovery/slug readers, runner firewall catalog and legacy complete runtime
 snapshot callers retain their existing `loadAcceptedConnectorCatalogSnapshot`
 compatibility behavior. Catalog publication locks remain unchanged.
@@ -136,7 +149,7 @@ observation of a successful enqueue commit to consumption start, only when the
 same Store has the receipt for that exact input event. Its
 `capture_scope=request_observed_commit` dimension makes the boundary explicit.
 Older queue heads and later cron requests have no receipt and emit no substitute
-measurement. The existing input-created-to-consume duration remains queue age;
+measurement. Concurrent preparation spans overlap; their durations must not be added as sequential stages. The context span measures the joined preparation work, and the pre-create/context completion checkpoints no longer imply a serial query pipeline. The existing input-created-to-consume duration remains queue age;
 it overlaps enqueue time and must not be added to S1.
 
 Storage planning finishes before the materialization command. The nested

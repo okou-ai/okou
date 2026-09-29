@@ -22,7 +22,6 @@ import {
 } from "../../../test-fixtures/connector-catalog";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import {
-  clearAllDetached,
   collectAllDetachedErrorsForTest,
   createDeferredPromise,
 } from "../../utils";
@@ -257,7 +256,7 @@ describe("CHAT-02: thread connector account selection", () => {
     await cancelChatRun(fixture.actor, run.runId, claimed.sandboxHeaders);
   });
 
-  it.each(["projection", "complete catalog"] as const)(
+  it.each(["projection", "complete catalog", "unready projection"] as const)(
     "keeps the input queued when its captured %s is replaced during preparation",
     async (readPath) => {
       const fixture = await selectedThreadConnectorFixture(
@@ -267,13 +266,22 @@ describe("CHAT-02: thread connector account selection", () => {
       // satisfying the read whose database snapshot will be replaced below.
       await installApiTestConnectorCatalog({
         catalogVersion: `api-test-captured-runtime-${randomUUID()}`,
-        runtimeProjection: true,
+        runtimeProjection: readPath !== "unready projection",
       });
+      const captured = createDeferredPromise<void>(context.signal);
+      const releaseReplacement = createDeferredPromise<void>(context.signal);
       onTestFinished(() => {
+        if (!releaseReplacement.settled()) {
+          releaseReplacement.resolve(undefined);
+        }
         clearApiTestConnectorCatalogExternalReaderIdentityReplacements();
         clearApiTestConnectorCatalogRuntimeProjectionIdentityReplacements();
       });
       const replaceCapturedCatalog = async () => {
+        if (!captured.settled()) {
+          captured.resolve(undefined);
+        }
+        await releaseReplacement.promise;
         clearApiTestConnectorCatalogExternalReaderIdentityReplacements();
         clearApiTestConnectorCatalogRuntimeProjectionIdentityReplacements();
         await installApiTestConnectorCatalog({
@@ -281,7 +289,7 @@ describe("CHAT-02: thread connector account selection", () => {
           runtimeProjection: true,
         });
       };
-      if (readPath === "projection") {
+      if (readPath !== "complete catalog") {
         setApiTestConnectorCatalogRuntimeProjectionIdentityReadHook(
           replaceCapturedCatalog,
         );
@@ -304,15 +312,17 @@ describe("CHAT-02: thread connector account selection", () => {
         [201],
       );
       expect(sent.body).toMatchObject({ runId: null });
-      if (readPath === "projection") {
-        await expect(clearAllDetached()).rejects.toThrow(
-          "Connector catalog changed during runtime selection",
-        );
-      } else {
-        await expect(clearAllDetached()).rejects.toMatchObject({
-          code: "CONNECTOR_CATALOG_UNAVAILABLE:captured_identity_unavailable",
-        });
-      }
+      await captured.promise;
+      const failedPick =
+        readPath === "projection"
+          ? expect(flushWaitUntilForTest()).rejects.toThrow(
+              "Connector catalog changed during runtime selection",
+            )
+          : expect(flushWaitUntilForTest()).rejects.toMatchObject({
+              code: "CONNECTOR_CATALOG_UNAVAILABLE:captured_identity_unavailable",
+            });
+      releaseReplacement.resolve(undefined);
+      await failedPick;
       const messages = await chat.listThreadEvents(
         fixture.actor,
         fixture.threadId,
@@ -455,28 +465,42 @@ describe("CHAT-02: thread connector account selection", () => {
     await cancelChatRun(fixture.actor, run.runId, claimed.sandboxHeaders);
   });
 
-  it("preserves the input when thread selection and provider resolution fail at pick", async () => {
+  it("fails fast on provider rejection while thread selection is still pending", async () => {
     const fixture = await selectedThreadConnectorFixture(
-      "Runtime context thread priority thread",
+      "Runtime context fail-fast thread",
     );
     await configureRuntimeContextGateway(fixture.actor);
-    const providerFailureStarted = createDeferredPromise<void>(context.signal);
+    const providerStarted = createDeferredPromise<void>(context.signal);
+    const threadStarted = createDeferredPromise<void>(context.signal);
+    const releaseProvider = createDeferredPromise<void>(context.signal);
+    const releaseThread = createDeferredPromise<void>(context.signal);
+    const threadFinished = createDeferredPromise<void>(context.signal);
     onTestFinished(() => {
-      if (!providerFailureStarted.settled()) {
-        providerFailureStarted.resolve(undefined);
+      if (!releaseProvider.settled()) {
+        releaseProvider.resolve(undefined);
+      }
+      if (!releaseThread.settled()) {
+        releaseThread.resolve(undefined);
       }
     });
-    const threadError = new Error("runtime thread selection priority failure");
-    const providerError = new Error("model provider below thread failure");
+    const threadError = new Error("later thread selection failure");
+    const providerError = new Error("first model provider failure");
     onRunConnectorAccountsReadFixture(async () => {
-      await providerFailureStarted.promise;
+      if (!threadStarted.settled()) {
+        threadStarted.resolve(undefined);
+      }
+      await releaseThread.promise;
+      if (!threadFinished.settled()) {
+        threadFinished.resolve(undefined);
+      }
       throw threadError;
     });
-    const kms = useSecretKmsProbe(undefined, () => {
-      if (!providerFailureStarted.settled()) {
-        providerFailureStarted.resolve(undefined);
+    const kms = useSecretKmsProbe(undefined, async () => {
+      if (!providerStarted.settled()) {
+        providerStarted.resolve(undefined);
       }
-      return Promise.reject(providerError);
+      await releaseProvider.promise;
+      throw providerError;
     });
     const clientEventId = randomUUID();
     const sent = await chat.requestSendEvent(
@@ -484,7 +508,7 @@ describe("CHAT-02: thread connector account selection", () => {
       {
         agentId: fixture.agentId,
         threadId: fixture.threadId,
-        prompt: "Prefer thread selection over provider failure",
+        prompt: "Preserve input after the first preparation failure",
         clientEventId,
       },
       [201],
@@ -493,10 +517,17 @@ describe("CHAT-02: thread connector account selection", () => {
       runId: null,
       threadId: fixture.threadId,
     });
-    // Thread selection keeps its error priority when both branches fail before
-    // admission; the input remains queued and no rejected run is fabricated.
-    await expect(clearAllDetached()).rejects.toBe(threadError);
-    expect(providerFailureStarted.settled()).toBeTruthy();
+    await Promise.all([providerStarted.promise, threadStarted.promise]);
+    const failedPick = expect(flushWaitUntilForTest()).rejects.toBe(
+      providerError,
+    );
+    releaseProvider.resolve(undefined);
+    await failedPick;
+    // The background pick returns its first failure while the other started
+    // branch remains owned by Promise.all and has not been released yet.
+    expect(releaseThread.settled()).toBeFalsy();
+    releaseThread.resolve(undefined);
+    await threadFinished.promise;
     expect(kms.decryptCalls).toBeGreaterThan(0);
     const messages = await chat.listThreadEvents(
       fixture.actor,

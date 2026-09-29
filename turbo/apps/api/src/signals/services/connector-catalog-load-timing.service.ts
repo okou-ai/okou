@@ -221,9 +221,17 @@ export class ConnectorCatalogLoadTiming {
 
   constructor(
     private readonly collector: ApiDispatchTimingCollector | undefined,
-    private readonly requestedConnectorCount: number | undefined,
-    private readonly metadataConnectorCount: number | undefined = undefined,
+    private requestedConnectorCount: number | undefined,
+    private metadataConnectorCount: number | undefined = undefined,
   ) {}
+
+  recordRequestedConnectorCounts(args: {
+    readonly requestedConnectorCount: number;
+    readonly metadataConnectorCount: number;
+  }): void {
+    this.requestedConnectorCount = args.requestedConnectorCount;
+    this.metadataConnectorCount = args.metadataConnectorCount;
+  }
 
   recordAcceptedCacheOutcome(
     outcome: AcceptedConnectorCatalogCacheOutcome,
