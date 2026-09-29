@@ -4687,6 +4687,8 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
           {
             price: { id: "price_bdd_concurrency" },
             quantity: 3,
+            current_period_start: epochSeconds(0),
+            current_period_end: periodEnd,
           },
         ],
       },
