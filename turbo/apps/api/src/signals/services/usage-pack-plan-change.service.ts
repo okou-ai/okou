@@ -1,3 +1,4 @@
+import { command } from "ccstate";
 import { retireMarketingMetadata } from "../../lib/marketing-metadata";
 import type { UsagePackDeferredSchedule } from "@okouai/db/jsonb-contracts/usage-pack-deferred-schedule";
 import type {
@@ -28,7 +29,7 @@ import {
 } from "drizzle-orm";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import type { Db } from "../external/db";
+import { writeDb$, type Db } from "../external/db";
 import {
   getStripeClient,
   type StripeInvoice,
@@ -53,6 +54,7 @@ import {
   fulfillUsagePackSubscriptionChangeInvoice,
   reconcileUsagePackAllocationChangeSubscription,
   usagePackInvoiceFulfillmentExists,
+  usagePackBillingCompatibilityLockSql,
   type UsagePackChangeInvoiceInput,
 } from "./usage-pack-allocation-change.service";
 import type { BillingReconciliationScope } from "./billing-reconciliation-scope";
@@ -171,7 +173,7 @@ interface PersistSubscriptionChangePreviewArgs {
 
 type UsagePackSubscriptionChangeInvoiceInput = UsagePackChangeInvoiceInput;
 
-type UsagePackSubscriptionChangePreviewResult =
+export type UsagePackSubscriptionChangePreviewResult =
   | {
       readonly status: "ready";
       readonly preview: UsagePackSubscriptionChangePreviewResponse;
@@ -200,93 +202,99 @@ type UsagePackSubscriptionChangeInvoiceOutcome =
       readonly subscription: StripeSubscription;
     };
 
-async function loadUsagePackSubscriptionChangeContext(
-  db: Pick<Db, "select">,
-  orgId: string,
-): Promise<UsagePackSubscriptionChangeContext | null> {
-  const [subscription] = await db
-    .select()
-    .from(usagePackSubscriptions)
-    .where(
-      and(
-        eq(usagePackSubscriptions.orgId, orgId),
-        isNotNull(usagePackSubscriptions.stripeSubscriptionId),
-        notInArray(usagePackSubscriptions.subscriptionStatus, [
-          ...TERMINAL_SUBSCRIPTION_STATUSES,
-        ]),
-      ),
-    )
-    .orderBy(desc(usagePackSubscriptions.updatedAt))
-    .limit(1);
-  if (!subscription) {
-    return null;
-  }
-  const [allocations, openAllocationChanges, openSubscriptionChanges, orgs] =
-    await Promise.all([
-      db
-        .select()
-        .from(usagePackAllocations)
-        .where(
-          eq(usagePackAllocations.usagePackSubscriptionId, subscription.id),
+const usagePackSubscriptionPreviewContext$ = command(
+  async (
+    { set },
+    orgId: string,
+    signal: AbortSignal,
+  ): Promise<UsagePackSubscriptionChangeContext | null> => {
+    const db = set(writeDb$);
+    const [subscription] = await db
+      .select()
+      .from(usagePackSubscriptions)
+      .where(
+        and(
+          eq(usagePackSubscriptions.orgId, orgId),
+          isNotNull(usagePackSubscriptions.stripeSubscriptionId),
+          notInArray(usagePackSubscriptions.subscriptionStatus, [
+            ...TERMINAL_SUBSCRIPTION_STATUSES,
+          ]),
         ),
-      db
-        .select()
-        .from(usagePackAllocationChanges)
-        .where(
-          and(
-            eq(
-              usagePackAllocationChanges.usagePackSubscriptionId,
-              subscription.id,
-            ),
-            inArray(usagePackAllocationChanges.status, [
-              ...OPEN_ALLOCATION_CHANGE_STATUSES,
-            ]),
-            or(
-              isNull(usagePackAllocationChanges.subscriptionChangeId),
-              ne(usagePackAllocationChanges.status, "previewed"),
+      )
+      .orderBy(desc(usagePackSubscriptions.updatedAt))
+      .limit(1);
+    signal.throwIfAborted();
+    if (!subscription) {
+      return null;
+    }
+    const [allocations, openAllocationChanges, openSubscriptionChanges, orgs] =
+      await Promise.all([
+        db
+          .select()
+          .from(usagePackAllocations)
+          .where(
+            eq(usagePackAllocations.usagePackSubscriptionId, subscription.id),
+          ),
+        db
+          .select()
+          .from(usagePackAllocationChanges)
+          .where(
+            and(
+              eq(
+                usagePackAllocationChanges.usagePackSubscriptionId,
+                subscription.id,
+              ),
+              inArray(usagePackAllocationChanges.status, [
+                ...OPEN_ALLOCATION_CHANGE_STATUSES,
+              ]),
+              or(
+                isNull(usagePackAllocationChanges.subscriptionChangeId),
+                ne(usagePackAllocationChanges.status, "previewed"),
+              ),
             ),
           ),
-        ),
-      db
-        .select({
-          id: usagePackSubscriptionChanges.id,
-          status: usagePackSubscriptionChanges.status,
-        })
-        .from(usagePackSubscriptionChanges)
-        .where(
-          and(
-            eq(
-              usagePackSubscriptionChanges.usagePackSubscriptionId,
-              subscription.id,
+        db
+          .select({
+            id: usagePackSubscriptionChanges.id,
+            status: usagePackSubscriptionChanges.status,
+          })
+          .from(usagePackSubscriptionChanges)
+          .where(
+            and(
+              eq(
+                usagePackSubscriptionChanges.usagePackSubscriptionId,
+                subscription.id,
+              ),
+              inArray(usagePackSubscriptionChanges.status, [
+                ...OPEN_SUBSCRIPTION_CHANGE_STATUSES,
+              ]),
             ),
-            inArray(usagePackSubscriptionChanges.status, [
-              ...OPEN_SUBSCRIPTION_CHANGE_STATUSES,
-            ]),
-          ),
-        )
-        .limit(1),
-      db
-        .select({
-          pendingPlanScheduleId: orgMetadata.pendingSubscriptionScheduleId,
-          pendingPlanTargetTier: orgMetadata.pendingSubscriptionTargetTier,
-        })
-        .from(orgMetadata)
-        .where(eq(orgMetadata.orgId, orgId))
-        .limit(1),
-    ]);
-  const org = orgs[0];
-  if (!org) {
-    throw new Error("Usage pack subscription lost its organization");
-  }
-  return {
-    subscription,
-    allocations,
-    openAllocationChanges,
-    openSubscriptionChanges,
-    pendingPlanScheduleId: org.pendingPlanScheduleId,
-    pendingPlanTargetTier: org.pendingPlanTargetTier,
-  };
-}
+          )
+          .limit(1),
+        db
+          .select({
+            pendingPlanScheduleId: orgMetadata.pendingSubscriptionScheduleId,
+            pendingPlanTargetTier: orgMetadata.pendingSubscriptionTargetTier,
+          })
+          .from(orgMetadata)
+          .where(eq(orgMetadata.orgId, orgId))
+          .limit(1),
+      ]);
+    signal.throwIfAborted();
+    const org = orgs[0];
+    if (!org) {
+      throw new Error("Usage pack subscription lost its organization");
+    }
+    return {
+      subscription,
+      allocations,
+      openAllocationChanges,
+      openSubscriptionChanges,
+      pendingPlanScheduleId: org.pendingPlanScheduleId,
+      pendingPlanTargetTier: org.pendingPlanTargetTier,
+    };
+  },
+);
 
 function stripeObjectId(
   value: string | { readonly id: string } | null | undefined,
@@ -898,35 +906,69 @@ function prepareExistingSchedule(args: {
   return { status: "ready", scheduleId };
 }
 
-async function resumeOpenSubscriptionChange(
-  db: Db,
-  context: UsagePackSubscriptionChangeContext,
-  args: {
-    readonly targetTier: UsagePackTier;
-    readonly memberUsagePacks: readonly MemberUsagePack[];
-  },
-  signal: AbortSignal,
-): Promise<SubscriptionChangePreparation | null> {
-  const resumableChange = context.openSubscriptionChanges.find((change) => {
-    return change.status !== "previewed";
-  });
-  if (!resumableChange) {
-    return null;
-  }
-  const stored = await loadStoredSubscriptionChange(db, resumableChange.id);
-  signal.throwIfAborted();
-  if (!stored) {
-    throw new Error(
-      `Open usage pack subscription change ${resumableChange.id} disappeared`,
+const resumeOpenSubscriptionChange$ = command(
+  async (
+    { set },
+    input: {
+      readonly context: UsagePackSubscriptionChangeContext;
+      readonly targetTier: UsagePackTier;
+      readonly memberUsagePacks: readonly MemberUsagePack[];
+    },
+    signal: AbortSignal,
+  ): Promise<SubscriptionChangePreparation | null> => {
+    const resumableChange = input.context.openSubscriptionChanges.find(
+      (change) => {
+        return change.status !== "previewed";
+      },
     );
-  }
-  return storedSubscriptionChangeMatchesRequest(stored, args)
-    ? {
-        status: "resumed",
-        preview: storedSubscriptionChangePreview(stored.root),
-      }
-    : { status: "conflict" };
-}
+    if (!resumableChange) {
+      return null;
+    }
+    const db = set(writeDb$);
+    const [root] = await db
+      .select()
+      .from(usagePackSubscriptionChanges)
+      .where(eq(usagePackSubscriptionChanges.id, resumableChange.id))
+      .limit(1);
+    signal.throwIfAborted();
+    if (!root) {
+      throw new Error(
+        `Open usage pack subscription change ${resumableChange.id} disappeared`,
+      );
+    }
+    const [allocationChanges, subscriptions, allocations] = await Promise.all([
+      db
+        .select()
+        .from(usagePackAllocationChanges)
+        .where(eq(usagePackAllocationChanges.subscriptionChangeId, root.id)),
+      db
+        .select()
+        .from(usagePackSubscriptions)
+        .where(eq(usagePackSubscriptions.id, root.usagePackSubscriptionId))
+        .limit(1),
+      db
+        .select()
+        .from(usagePackAllocations)
+        .where(
+          eq(
+            usagePackAllocations.usagePackSubscriptionId,
+            root.usagePackSubscriptionId,
+          ),
+        ),
+    ]);
+    signal.throwIfAborted();
+    const subscription = subscriptions[0];
+    if (!subscription) {
+      throw new Error(`Subscription change ${root.id} lost its subscription`);
+    }
+    return storedSubscriptionChangeMatchesRequest(
+      { root, allocationChanges, subscription, allocations },
+      input,
+    )
+      ? { status: "resumed", preview: storedSubscriptionChangePreview(root) }
+      : { status: "conflict" };
+  },
+);
 
 type AttachedSchedulePreparation =
   | {
@@ -967,298 +1009,187 @@ async function prepareAttachedUsagePackSchedule(
   return allowed ? { status: "ready", schedule } : { status: "conflict" };
 }
 
-async function prepareSubscriptionChange(
-  args: {
-    readonly db: Db;
-    readonly orgId: string;
-    readonly targetTier: UsagePackTier;
-    readonly memberUsagePacks: readonly MemberUsagePack[];
-  },
-  signal: AbortSignal,
-): Promise<SubscriptionChangePreparation> {
-  const context = await loadUsagePackSubscriptionChangeContext(
-    args.db,
-    args.orgId,
-  );
-  if (!context || !context.subscription.stripeSubscriptionId) {
-    return { status: "not_found" };
-  }
-  const resumed = await resumeOpenSubscriptionChange(
-    args.db,
-    context,
-    args,
-    signal,
-  );
-  if (resumed) {
-    return resumed;
-  }
-  const allocationChanges = prepareAllocationChanges(
-    args.memberUsagePacks,
-    activeMemberAllocations(context.allocations),
-  );
-  if (!allocationChanges) {
-    return { status: "invalid_members" };
-  }
-  const sameConfiguration =
-    context.subscription.tier === args.targetTier &&
-    allocationChanges.length === 0;
-  const hasImmediateChanges =
-    planIsUpgrade(context.subscription.tier, args.targetTier) ||
-    allocationChanges.some((change) => {
-      return change.kind === "addition" || change.kind === "upgrade";
-    });
-  const hasScheduledChanges =
-    planIsDowngrade(context.subscription.tier, args.targetTier) ||
-    allocationChanges.some((change) => {
-      return change.kind === "downgrade" || change.kind === "removal";
-    });
-  if (context.subscription.cancelAtPeriodEnd && hasScheduledChanges) {
-    return { status: "plan_ending" };
-  }
-  const ownedPlanScheduleId =
-    planIsDowngrade(context.subscription.tier, args.targetTier) &&
-    context.pendingPlanTargetTier === args.targetTier
-      ? context.pendingPlanScheduleId
-      : null;
-  const existingSchedule = prepareExistingSchedule({
-    openAllocationChanges: context.openAllocationChanges,
-    ownedPlanScheduleId,
-    sameConfiguration,
-  });
-  if (existingSchedule.status !== "ready") {
-    return { status: existingSchedule.status };
-  }
-  const existingScheduleId = existingSchedule.scheduleId;
-  const targetPlanPriceId =
-    context.subscription.tier === args.targetTier
-      ? context.subscription.stripePlanPriceId
-      : activeUsagePackPlanPriceId(args.targetTier);
-  if (!targetPlanPriceId) {
-    throw new Error(
-      `${args.targetTier} usage pack plan Price is not configured`,
-    );
-  }
-  const stripe = getStripeClient();
-  const subscription = await stripe.subscriptions.retrieve(
-    context.subscription.stripeSubscriptionId,
-    { expand: ["latest_invoice"] },
-  );
-  signal.throwIfAborted();
-  const stripeConflictStatus = stripeSubscriptionChangeConflictStatus(
-    subscription,
-    hasScheduledChanges,
-  );
-  if (stripeConflictStatus) {
-    return { status: stripeConflictStatus };
-  }
-  const attachedSchedule = await prepareAttachedUsagePackSchedule(
-    { subscription, existingScheduleId, hasImmediateChanges },
-    signal,
-  );
-  if (attachedSchedule.status === "conflict") {
-    return attachedSchedule;
-  }
-  const planItem = validateStripeSubscription(context, subscription);
-  const period = usagePackPeriod(subscription);
-  const requestedTimestamp = Math.floor(nowDate().getTime() / 1000);
-  const prorationTimestamp = Math.min(
-    Math.max(requestedTimestamp, period.start),
-    period.end - 1,
-  );
-  return {
-    status: "ready",
-    prepared: {
-      context,
-      subscription,
-      planItem,
-      targetPlanPriceId,
-      allocationChanges,
-      period,
-      prorationTimestamp,
-      hasImmediateChanges,
-      hasScheduledChanges,
-      existingScheduleId,
-      attachedSchedule: attachedSchedule.schedule,
+const prepareSubscriptionChange$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly targetTier: UsagePackTier;
+      readonly memberUsagePacks: readonly MemberUsagePack[];
     },
-  };
-}
+    signal: AbortSignal,
+  ): Promise<SubscriptionChangePreparation> => {
+    const context = await set(
+      usagePackSubscriptionPreviewContext$,
+      args.orgId,
+      signal,
+    );
+    if (!context || !context.subscription.stripeSubscriptionId) {
+      return { status: "not_found" };
+    }
+    const resumed = await set(
+      resumeOpenSubscriptionChange$,
+      { context, ...args },
+      signal,
+    );
+    if (resumed) {
+      return resumed;
+    }
+    const allocationChanges = prepareAllocationChanges(
+      args.memberUsagePacks,
+      activeMemberAllocations(context.allocations),
+    );
+    if (!allocationChanges) {
+      return { status: "invalid_members" };
+    }
+    const sameConfiguration =
+      context.subscription.tier === args.targetTier &&
+      allocationChanges.length === 0;
+    const hasImmediateChanges =
+      planIsUpgrade(context.subscription.tier, args.targetTier) ||
+      allocationChanges.some((change) => {
+        return change.kind === "addition" || change.kind === "upgrade";
+      });
+    const hasScheduledChanges =
+      planIsDowngrade(context.subscription.tier, args.targetTier) ||
+      allocationChanges.some((change) => {
+        return change.kind === "downgrade" || change.kind === "removal";
+      });
+    if (context.subscription.cancelAtPeriodEnd && hasScheduledChanges) {
+      return { status: "plan_ending" };
+    }
+    const ownedPlanScheduleId =
+      planIsDowngrade(context.subscription.tier, args.targetTier) &&
+      context.pendingPlanTargetTier === args.targetTier
+        ? context.pendingPlanScheduleId
+        : null;
+    const existingSchedule = prepareExistingSchedule({
+      openAllocationChanges: context.openAllocationChanges,
+      ownedPlanScheduleId,
+      sameConfiguration,
+    });
+    if (existingSchedule.status !== "ready") {
+      return { status: existingSchedule.status };
+    }
+    const existingScheduleId = existingSchedule.scheduleId;
+    const targetPlanPriceId =
+      context.subscription.tier === args.targetTier
+        ? context.subscription.stripePlanPriceId
+        : activeUsagePackPlanPriceId(args.targetTier);
+    if (!targetPlanPriceId) {
+      throw new Error(
+        `${args.targetTier} usage pack plan Price is not configured`,
+      );
+    }
+    const stripe = getStripeClient();
+    const subscription = await stripe.subscriptions.retrieve(
+      context.subscription.stripeSubscriptionId,
+      { expand: ["latest_invoice"] },
+    );
+    signal.throwIfAborted();
+    const stripeConflictStatus = stripeSubscriptionChangeConflictStatus(
+      subscription,
+      hasScheduledChanges,
+    );
+    if (stripeConflictStatus) {
+      return { status: stripeConflictStatus };
+    }
+    const attachedSchedule = await prepareAttachedUsagePackSchedule(
+      { subscription, existingScheduleId, hasImmediateChanges },
+      signal,
+    );
+    if (attachedSchedule.status === "conflict") {
+      return attachedSchedule;
+    }
+    const planItem = validateStripeSubscription(context, subscription);
+    const period = usagePackPeriod(subscription);
+    const requestedTimestamp = Math.floor(nowDate().getTime() / 1000);
+    const prorationTimestamp = Math.min(
+      Math.max(requestedTimestamp, period.start),
+      period.end - 1,
+    );
+    return {
+      status: "ready",
+      prepared: {
+        context,
+        subscription,
+        planItem,
+        targetPlanPriceId,
+        allocationChanges,
+        period,
+        prorationTimestamp,
+        hasImmediateChanges,
+        hasScheduledChanges,
+        existingScheduleId,
+        attachedSchedule: attachedSchedule.schedule,
+      },
+    };
+  },
+);
 
 async function lockUsagePackBillingOrg(
   tx: Pick<WriteTx, "execute">,
   orgId: string,
 ): Promise<void> {
-  await tx.execute(
-    // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-    sql`SELECT pg_advisory_xact_lock(hashtextextended(${`usage_pack_billing:${orgId}`}, 0))`,
-  );
+  await tx.execute(usagePackBillingCompatibilityLockSql(orgId));
 }
 
-async function failExpiredPreviews(
-  tx: WriteTx,
-  orgId: string,
-  at: Date,
-): Promise<void> {
-  const expiredRoots = await tx
-    .update(usagePackSubscriptionChanges)
-    .set({
-      status: "failed",
-      failureReason: "preview_expired",
-      completedAt: at,
-      updatedAt: at,
-    })
-    .where(
-      and(
-        eq(usagePackSubscriptionChanges.orgId, orgId),
-        eq(usagePackSubscriptionChanges.status, "previewed"),
-        lte(usagePackSubscriptionChanges.previewExpiresAt, at),
-      ),
+function retirePlanPreviewSql(orgId: string, at: Date) {
+  // Retire a real expired/superseded Plan intent and its child previews together.
+  // The publication command executes this after locking their subscription root.
+  const timestamp = at.toISOString();
+  return sql`
+    WITH retired AS (
+      UPDATE ${usagePackSubscriptionChanges}
+      SET status = 'failed',
+          failure_reason = CASE WHEN preview_expires_at <= ${timestamp}
+            THEN 'preview_expired' ELSE 'preview_superseded' END,
+          completed_at = ${timestamp}, updated_at = ${timestamp}
+      WHERE org_id = ${orgId} AND status = 'previewed'
+      RETURNING id, failure_reason
     )
-    .returning({ id: usagePackSubscriptionChanges.id });
-  if (expiredRoots.length > 0) {
-    await tx
-      .update(usagePackAllocationChanges)
-      .set({
-        status: "failed",
-        failureReason: "preview_expired",
-        completedAt: at,
-        updatedAt: at,
-      })
-      .where(
-        inArray(
-          usagePackAllocationChanges.subscriptionChangeId,
-          expiredRoots.map((root) => {
-            return root.id;
-          }),
-        ),
-      );
-  }
-  await tx
-    .update(usagePackAllocationChanges)
-    .set({
-      status: "failed",
-      failureReason: "preview_expired",
-      completedAt: at,
-      updatedAt: at,
-    })
-    .where(
-      and(
-        eq(usagePackAllocationChanges.orgId, orgId),
-        eq(usagePackAllocationChanges.status, "previewed"),
-        lte(usagePackAllocationChanges.previewExpiresAt, at),
-      ),
-    );
+    UPDATE ${usagePackAllocationChanges} AS allocation_change
+    SET status = 'failed',
+        failure_reason = COALESCE(
+          (SELECT retired.failure_reason FROM retired
+           WHERE retired.id = allocation_change.subscription_change_id),
+          'preview_expired'),
+        completed_at = ${timestamp}, updated_at = ${timestamp}
+    WHERE EXISTS (SELECT 1 FROM retired
+                  WHERE retired.id = allocation_change.subscription_change_id)
+       OR (allocation_change.org_id = ${orgId}
+           AND allocation_change.status = 'previewed'
+           AND allocation_change.preview_expires_at <= ${timestamp})
+  `;
 }
 
-async function supersedePreviewedSubscriptionChanges(
-  tx: WriteTx,
-  orgId: string,
-  at: Date,
-): Promise<void> {
-  const superseded = await tx
-    .update(usagePackSubscriptionChanges)
-    .set({
-      status: "failed",
-      failureReason: "preview_superseded",
-      completedAt: at,
-      updatedAt: at,
-    })
-    .where(
-      and(
-        eq(usagePackSubscriptionChanges.orgId, orgId),
-        eq(usagePackSubscriptionChanges.status, "previewed"),
-      ),
-    )
-    .returning({ id: usagePackSubscriptionChanges.id });
-  if (superseded.length === 0) {
-    return;
-  }
-  await tx
-    .update(usagePackAllocationChanges)
-    .set({
-      status: "failed",
-      failureReason: "preview_superseded",
-      completedAt: at,
-      updatedAt: at,
-    })
-    .where(
-      inArray(
-        usagePackAllocationChanges.subscriptionChangeId,
-        superseded.map((root) => {
-          return root.id;
-        }),
-      ),
-    );
-}
-
-async function subscriptionChangeSnapshotMatches(
-  tx: WriteTx,
+function subscriptionPreviewSnapshotMatches(
   prepared: PreparedSubscriptionChange,
-): Promise<boolean | "plan_ending"> {
+  current: {
+    readonly subscription: UsagePackSubscriptionRow;
+    readonly org: typeof orgMetadata.$inferSelect | undefined;
+    readonly openAllocation: readonly UsagePackAllocationChangeRow[];
+    readonly openSubscription: readonly UsagePackSubscriptionChangeRow[];
+    readonly allocations: readonly UsagePackAllocationRow[];
+  },
+): boolean | "plan_ending" {
   const { context } = prepared;
-  const [lockedSubscription] = await tx
-    .select()
-    .from(usagePackSubscriptions)
-    .where(eq(usagePackSubscriptions.id, context.subscription.id))
-    .for("update")
-    .limit(1);
+  const { subscription, org, openAllocation, openSubscription, allocations } =
+    current;
   if (
-    !lockedSubscription ||
-    lockedSubscription.tier !== context.subscription.tier ||
-    lockedSubscription.stripePlanPriceId !==
-      context.subscription.stripePlanPriceId
+    subscription.tier !== context.subscription.tier ||
+    subscription.stripePlanPriceId !== context.subscription.stripePlanPriceId
   ) {
     return false;
   }
-  if (prepared.hasScheduledChanges && lockedSubscription.cancelAtPeriodEnd) {
+  if (prepared.hasScheduledChanges && subscription.cancelAtPeriodEnd) {
     return "plan_ending";
   }
-  const [openAllocation, openSubscription, orgs] = await Promise.all([
-    tx
-      .select()
-      .from(usagePackAllocationChanges)
-      .where(
-        and(
-          eq(
-            usagePackAllocationChanges.usagePackSubscriptionId,
-            context.subscription.id,
-          ),
-          inArray(usagePackAllocationChanges.status, [
-            ...OPEN_ALLOCATION_CHANGE_STATUSES,
-          ]),
-        ),
-      ),
-    tx
-      .select({ id: usagePackSubscriptionChanges.id })
-      .from(usagePackSubscriptionChanges)
-      .where(
-        and(
-          eq(
-            usagePackSubscriptionChanges.usagePackSubscriptionId,
-            context.subscription.id,
-          ),
-          inArray(usagePackSubscriptionChanges.status, [
-            ...OPEN_SUBSCRIPTION_CHANGE_STATUSES,
-          ]),
-        ),
-      )
-      .limit(1),
-    tx
-      .select({
-        tier: orgMetadata.tier,
-        pendingPlanScheduleId: orgMetadata.pendingSubscriptionScheduleId,
-        pendingPlanTargetTier: orgMetadata.pendingSubscriptionTargetTier,
-      })
-      .from(orgMetadata)
-      .where(eq(orgMetadata.orgId, context.subscription.orgId))
-      .for("update")
-      .limit(1),
-  ]);
-  const org = orgs[0];
   if (
     !org ||
     org.tier !== context.subscription.tier ||
-    org.pendingPlanScheduleId !== context.pendingPlanScheduleId ||
-    org.pendingPlanTargetTier !== context.pendingPlanTargetTier
+    org.pendingSubscriptionScheduleId !== context.pendingPlanScheduleId ||
+    org.pendingSubscriptionTargetTier !== context.pendingPlanTargetTier
   ) {
     return false;
   }
@@ -1280,17 +1211,11 @@ async function subscriptionChangeSnapshotMatches(
         );
       })
     : openAllocation.length === 0;
-  if (!openAllocationMatches || openSubscription.length > 0) {
-    return false;
-  }
-  const lockedAllocations = await tx
-    .select()
-    .from(usagePackAllocations)
-    .where(
-      eq(usagePackAllocations.usagePackSubscriptionId, context.subscription.id),
-    )
-    .for("update");
-  return allocationSnapshotsMatch(context.allocations, lockedAllocations);
+  return (
+    openAllocationMatches &&
+    openSubscription.length === 0 &&
+    allocationSnapshotsMatch(context.allocations, allocations)
+  );
 }
 
 function allocationChangePreviewValue(
@@ -1332,76 +1257,130 @@ function allocationChangePreviewValue(
   };
 }
 
-async function insertSubscriptionChangePreview(
-  tx: WriteTx,
+function subscriptionChangePreviewValues(
   args: PersistSubscriptionChangePreviewArgs,
-): Promise<UsagePackSubscriptionChangeRow> {
+): typeof usagePackSubscriptionChanges.$inferInsert {
   const { context } = args.prepared;
-  const [root] = await tx
-    .insert(usagePackSubscriptionChanges)
-    .values({
-      usagePackSubscriptionId: context.subscription.id,
-      orgId: context.subscription.orgId,
-      sourceTier: context.subscription.tier,
-      targetTier: args.targetTier,
-      prorationTimestamp: args.prepared.prorationTimestamp,
-      immediateAmountCents: args.immediateAmountCents,
-      nextRecurringAmountCents: args.nextRecurringAmountCents,
-      currency: args.currency,
-      previewExpiresAt: args.expiresAt,
-      effectiveAt: args.effectiveAt,
-      createdAt: args.createdAt,
-      updatedAt: args.createdAt,
-    })
-    .returning();
-  if (!root) {
-    throw new Error("Failed to persist usage pack subscription preview");
-  }
-  if (args.prepared.allocationChanges.length > 0) {
-    await tx.insert(usagePackAllocationChanges).values(
-      args.prepared.allocationChanges.map((change) => {
-        return allocationChangePreviewValue(change, root.id, args);
-      }),
-    );
-  }
-  return root;
+  return {
+    usagePackSubscriptionId: context.subscription.id,
+    orgId: context.subscription.orgId,
+    sourceTier: context.subscription.tier,
+    targetTier: args.targetTier,
+    prorationTimestamp: args.prepared.prorationTimestamp,
+    immediateAmountCents: args.immediateAmountCents,
+    nextRecurringAmountCents: args.nextRecurringAmountCents,
+    currency: args.currency,
+    previewExpiresAt: args.expiresAt,
+    effectiveAt: args.effectiveAt,
+    createdAt: args.createdAt,
+    updatedAt: args.createdAt,
+  };
 }
 
-async function persistSubscriptionChangePreview(
-  db: Db,
-  args: PersistSubscriptionChangePreviewArgs,
-): Promise<UsagePackSubscriptionChangeRow | "plan_ending" | null> {
-  return await db.transaction(async (tx) => {
+const persistSubscriptionChangePreview$ = command(
+  async (
+    { set },
+    args: PersistSubscriptionChangePreviewArgs,
+    signal: AbortSignal,
+  ): Promise<UsagePackSubscriptionChangeRow | "plan_ending" | null> => {
+    const db = set(writeDb$);
     const { context } = args.prepared;
-    await lockUsagePackBillingOrg(tx, context.subscription.orgId);
-    // Match standalone allocation-preview admission: parent before child writes.
-    const [root] = await tx
-      .select({ id: usagePackSubscriptions.id })
-      .from(usagePackSubscriptions)
-      .where(
-        and(
-          eq(usagePackSubscriptions.id, context.subscription.id),
-          eq(usagePackSubscriptions.orgId, context.subscription.orgId),
-        ),
-      )
-      .for("update")
-      .limit(1);
-    if (!root) {
-      return null;
-    }
-    await failExpiredPreviews(tx, context.subscription.orgId, args.createdAt);
-    await supersedePreviewedSubscriptionChanges(
-      tx,
-      context.subscription.orgId,
-      args.createdAt,
-    );
-    const snapshot = await subscriptionChangeSnapshotMatches(tx, args.prepared);
-    if (snapshot !== true) {
-      return snapshot === "plan_ending" ? snapshot : null;
-    }
-    return await insertSubscriptionChangePreview(tx, args);
-  });
-}
+    const result = await db.transaction(async (tx) => {
+      await tx.execute(
+        usagePackBillingCompatibilityLockSql(context.subscription.orgId),
+      );
+      const [subscription] = await tx
+        .select()
+        .from(usagePackSubscriptions)
+        .where(
+          and(
+            eq(usagePackSubscriptions.id, context.subscription.id),
+            eq(usagePackSubscriptions.orgId, context.subscription.orgId),
+          ),
+        )
+        .for("update")
+        .limit(1);
+      if (!subscription) {
+        return null;
+      }
+      await tx.execute(
+        retirePlanPreviewSql(context.subscription.orgId, args.createdAt),
+      );
+      const [openAllocation, openSubscription, orgs] = await Promise.all([
+        tx
+          .select()
+          .from(usagePackAllocationChanges)
+          .where(
+            and(
+              eq(
+                usagePackAllocationChanges.usagePackSubscriptionId,
+                subscription.id,
+              ),
+              inArray(usagePackAllocationChanges.status, [
+                ...OPEN_ALLOCATION_CHANGE_STATUSES,
+              ]),
+            ),
+          ),
+        tx
+          .select()
+          .from(usagePackSubscriptionChanges)
+          .where(
+            and(
+              eq(
+                usagePackSubscriptionChanges.usagePackSubscriptionId,
+                subscription.id,
+              ),
+              inArray(usagePackSubscriptionChanges.status, [
+                ...OPEN_SUBSCRIPTION_CHANGE_STATUSES,
+              ]),
+            ),
+          )
+          .limit(1),
+        tx
+          .select()
+          .from(orgMetadata)
+          .where(eq(orgMetadata.orgId, subscription.orgId))
+          .for("update")
+          .limit(1),
+      ]);
+      const allocations = await tx
+        .select()
+        .from(usagePackAllocations)
+        .where(
+          eq(usagePackAllocations.usagePackSubscriptionId, subscription.id),
+        )
+        .for("update");
+      signal.throwIfAborted();
+      const snapshot = subscriptionPreviewSnapshotMatches(args.prepared, {
+        subscription,
+        org: orgs[0],
+        openAllocation,
+        openSubscription,
+        allocations,
+      });
+      if (snapshot !== true) {
+        return snapshot === "plan_ending" ? snapshot : null;
+      }
+      const [root] = await tx
+        .insert(usagePackSubscriptionChanges)
+        .values(subscriptionChangePreviewValues(args))
+        .returning();
+      if (!root) {
+        throw new Error("Failed to persist usage pack subscription preview");
+      }
+      if (args.prepared.allocationChanges.length > 0) {
+        await tx.insert(usagePackAllocationChanges).values(
+          args.prepared.allocationChanges.map((change) => {
+            return allocationChangePreviewValue(change, root.id, args);
+          }),
+        );
+      }
+      return root;
+    });
+    signal.throwIfAborted();
+    return result;
+  },
+);
 
 async function immediateUsagePackUpgradeCreditGrant(
   prepared: PreparedSubscriptionChange,
@@ -1522,123 +1501,135 @@ async function previewSubscriptionChangeInvoices(
   return { recurringPreview, immediatePreview };
 }
 
-export async function previewUsagePackSubscriptionChange(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly targetTier: UsagePackTier;
-    readonly memberUsagePacks: readonly MemberUsagePack[];
-  },
-  signal: AbortSignal,
-): Promise<UsagePackSubscriptionChangePreviewResult> {
-  const result = await prepareSubscriptionChange({ db, ...args }, signal);
-  if (result.status === "resumed") {
-    return { status: "ready", preview: result.preview };
-  }
-  if (result.status !== "ready") {
-    return result;
-  }
-  const { prepared } = result;
-  const immediatePackageQuantities = adjustedPackageQuantities(
-    prepared.context.allocations,
-    prepared.allocationChanges,
-    (change) => {
-      return change.kind === "addition" || change.kind === "upgrade";
+export const previewUsagePackSubscriptionChange$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly targetTier: UsagePackTier;
+      readonly memberUsagePacks: readonly MemberUsagePack[];
     },
-  );
-  const finalPackageQuantities = adjustedPackageQuantities(
-    prepared.context.allocations,
-    prepared.allocationChanges,
-    () => {
-      return true;
-    },
-  );
-  const immediatePlanPriceId = planIsUpgrade(
-    prepared.context.subscription.tier,
-    args.targetTier,
-  )
-    ? prepared.targetPlanPriceId
-    : prepared.context.subscription.stripePlanPriceId;
-  const immediateItems = subscriptionUpdateItems(
-    prepared.subscription,
-    prepared.planItem,
-    immediatePlanPriceId,
-    immediatePackageQuantities,
-  );
-  const finalItems = subscriptionUpdateItems(
-    prepared.subscription,
-    prepared.planItem,
-    prepared.targetPlanPriceId,
-    finalPackageQuantities,
-  );
-  const [invoicePreviews, immediateCreditGrant] = await Promise.all([
-    previewSubscriptionChangeInvoices(
+    signal: AbortSignal,
+  ): Promise<UsagePackSubscriptionChangePreviewResult> => {
+    const result = await set(prepareSubscriptionChange$, args, signal);
+    if (result.status === "resumed") {
+      return { status: "ready", preview: result.preview };
+    }
+    if (result.status !== "ready") {
+      return result;
+    }
+    const { prepared } = result;
+    const immediatePackageQuantities = adjustedPackageQuantities(
+      prepared.context.allocations,
+      prepared.allocationChanges,
+      (change) => {
+        return change.kind === "addition" || change.kind === "upgrade";
+      },
+    );
+    const finalPackageQuantities = adjustedPackageQuantities(
+      prepared.context.allocations,
+      prepared.allocationChanges,
+      () => {
+        return true;
+      },
+    );
+    const immediatePlanPriceId = planIsUpgrade(
+      prepared.context.subscription.tier,
+      args.targetTier,
+    )
+      ? prepared.targetPlanPriceId
+      : prepared.context.subscription.stripePlanPriceId;
+    const immediateItems = subscriptionUpdateItems(
+      prepared.subscription,
+      prepared.planItem,
+      immediatePlanPriceId,
+      immediatePackageQuantities,
+    );
+    const finalItems = subscriptionUpdateItems(
+      prepared.subscription,
+      prepared.planItem,
+      prepared.targetPlanPriceId,
+      finalPackageQuantities,
+    );
+    const [invoicePreviews, immediateCreditGrant] = await Promise.all([
+      previewSubscriptionChangeInvoices(
+        {
+          prepared,
+          immediateItems,
+          finalItems,
+          immediatePackageQuantities,
+          finalPackageQuantities,
+        },
+        signal,
+      ),
+      immediateUsagePackUpgradeCreditGrant(prepared),
+    ]);
+    signal.throwIfAborted();
+    const { recurringPreview, immediatePreview } = invoicePreviews;
+    const currency = recurringPreview?.currency ?? immediatePreview?.currency;
+    if (!currency) {
+      throw new Error("Stripe subscription preview has no currency");
+    }
+    if (
+      recurringPreview &&
+      immediatePreview &&
+      recurringPreview.currency !== immediatePreview.currency
+    ) {
+      throw new Error(
+        "Stripe subscription previews returned different currencies",
+      );
+    }
+    const createdAt = nowDate();
+    const expiresAt = new Date(createdAt.getTime() + PREVIEW_TTL_MS);
+    const effectiveAt = subscriptionChangeEffectiveAt(
+      prepared,
+      args.targetTier,
+    );
+    const immediateAmountCents = immediatePreview
+      ? immediateProrationAmount(immediatePreview, prepared.prorationTimestamp)
+      : 0;
+    const nextRecurringAmountCents = recurringPreview
+      ? recurringAmount(recurringPreview)
+      : 0;
+    const change = await set(
+      persistSubscriptionChangePreview$,
       {
         prepared,
-        immediateItems,
-        finalItems,
-        immediatePackageQuantities,
-        finalPackageQuantities,
+        targetTier: args.targetTier,
+        immediateAmountCents,
+        nextRecurringAmountCents,
+        currency,
+        createdAt,
+        expiresAt,
+        effectiveAt,
       },
       signal,
-    ),
-    immediateUsagePackUpgradeCreditGrant(prepared),
-  ]);
-  const { recurringPreview, immediatePreview } = invoicePreviews;
-  const currency = recurringPreview?.currency ?? immediatePreview?.currency;
-  if (!currency) {
-    throw new Error("Stripe subscription preview has no currency");
-  }
-  if (
-    recurringPreview &&
-    immediatePreview &&
-    recurringPreview.currency !== immediatePreview.currency
-  ) {
-    throw new Error(
-      "Stripe subscription previews returned different currencies",
     );
-  }
-  const createdAt = nowDate();
-  const expiresAt = new Date(createdAt.getTime() + PREVIEW_TTL_MS);
-  const effectiveAt = subscriptionChangeEffectiveAt(prepared, args.targetTier);
-  const immediateAmountCents = immediatePreview
-    ? immediateProrationAmount(immediatePreview, prepared.prorationTimestamp)
-    : 0;
-  const nextRecurringAmountCents = recurringPreview
-    ? recurringAmount(recurringPreview)
-    : 0;
-  const change = await persistSubscriptionChangePreview(db, {
-    prepared,
-    targetTier: args.targetTier,
-    immediateAmountCents,
-    nextRecurringAmountCents,
-    currency,
-    createdAt,
-    expiresAt,
-    effectiveAt,
-  });
-  if (change === "plan_ending") {
-    return { status: "plan_ending" };
-  }
-  if (!change) {
-    return { status: "conflict" };
-  }
-  return {
-    status: "ready",
-    preview: {
-      changeId: change.id,
-      sourceTier: change.sourceTier,
-      targetTier: change.targetTier,
-      immediateAmountCents,
-      immediateCreditGrant,
-      nextRecurringAmountCents,
-      currency,
-      effectiveAt: effectiveAt.toISOString(),
-      prorationDate: new Date(prepared.prorationTimestamp * 1000).toISOString(),
-      expiresAt: expiresAt.toISOString(),
-    },
-  };
-}
+    if (change === "plan_ending") {
+      return { status: "plan_ending" };
+    }
+    if (!change) {
+      return { status: "conflict" };
+    }
+    return {
+      status: "ready",
+      preview: {
+        changeId: change.id,
+        sourceTier: change.sourceTier,
+        targetTier: change.targetTier,
+        immediateAmountCents,
+        immediateCreditGrant,
+        nextRecurringAmountCents,
+        currency,
+        effectiveAt: effectiveAt.toISOString(),
+        prorationDate: new Date(
+          prepared.prorationTimestamp * 1000,
+        ).toISOString(),
+        expiresAt: expiresAt.toISOString(),
+      },
+    };
+  },
+);
 
 function subscriptionPhaseItems(
   subscription: StripeSubscription,

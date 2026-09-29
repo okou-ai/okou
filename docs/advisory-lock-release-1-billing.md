@@ -294,10 +294,12 @@ This is a call-chain inventory, not a count of matching type signatures:
   interfaces accept no database. Each publication is direct conditional SQL in
   its owning command, after external provider work. No transaction spans that
   provider work, and the row snapshot remains ordinary operation-local data.
-- **Allocation and plan changes:** preview/claim/finalization, migration, pending
-  snapshot, credit-grant and schedule helpers still accept transactions. Their
-  Stripe calls, pagination and callback ownership must be separated from the
-  actual bounded SQL commits. File overlap does not establish a merge order.
+- **Allocation and plan changes:** the allocation and Plan preview service
+  chains now dispatch business-input commands for their direct SQL reads and
+  publication. The route's shared access/payment-preview graph, confirmation,
+  finalization, migration, pending-snapshot, credit-grant and schedule helpers
+  still pass databases or transactions. Their remaining Stripe calls, pagination
+  and callback ownership must be separated from bounded SQL commits.
 - **Invitation:** transaction propagation to `loadPurchase` and
   `supersedeCompetingPendingCheckout` is removed from the changed transitions.
   The latter helper is retired and its conditional arbitration SQL is local.
@@ -340,9 +342,20 @@ repair that pre-existing stale-preview window. The shared advisory acquisition
 also still covers other outgoing allocation, Plan, invitation and migration
 writers whose parent/child order and remote protocol remain unfinished. Its
 removal therefore needs both the remaining common protocol implementation and
-verified retirement of those incompatible writers. Plan preview persistence
-still uses a database-aware helper and transaction-aware validation/insertion;
-its command ownership remains implementation work rather than a drain-only gate.
+verified retirement of those incompatible writers.
+
+Plan preview preparation and resume now read through owning business-input
+commands. `persistSubscriptionChangePreview$` owns the parent lock, direct
+snapshot reads, preview retirement and root/child insertion in one short
+transaction. Its retirement SQL builder accepts only an organization ID and time;
+its validation and insert-value builders accept ordinary rows. No database or
+transaction is forwarded. The retirement statement preserves the existing
+expired-versus-superseded reasons for both the Plan intent and its child rows.
+Stripe subscription/schedule reads, invoice previews and credit-price preparation
+finish before publication begins. Other Plan confirmation, finalization and
+reconciliation interfaces remain implementation work. The old Plan-local lock
+wrapper now uses the same pure compatibility-key SQL builder as Allocation;
+consolidating that definition does not remove the shared advisory boundary.
 
 ## Unresolved Release 1 work
 
