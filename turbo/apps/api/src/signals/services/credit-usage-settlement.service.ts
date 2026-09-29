@@ -1,6 +1,8 @@
+import { settle } from "../utils";
 import { prepareUsageSettlementBatch$ } from "./credit-usage-batch-prepare.service";
 import {
   requireCompleteUsageClaim,
+  UsageSettlementSnapshotConflict,
   requiredSettlementDebit,
   type PreparedUsageBatch,
   preparedSettlementPrices,
@@ -17,7 +19,7 @@ import {
 import {
   socialJobQuery,
   socialClaimUnavailable,
-  socialSettlementPlan,
+  checkedSocialSettlementPlan,
   socialWhere,
   socialValues,
   type SocialSettlementClaim,
@@ -76,10 +78,9 @@ interface SettlementBatchArgs extends UsageSettlementArgs {
 
 /** All financial rows commit together; only plain values leave this command. */
 const commitUsageBatch$ = command(
-  async ({ get, set }, args: SettlementBatchArgs, signal: AbortSignal) => {
+  async ({ set }, args: SettlementBatchArgs, signal: AbortSignal) => {
     const { orgId, refresh, batch } = args;
     const db = set(writeDb$);
-    const resolution = get(usagePricingResolution$);
     const startedAt = performance.now();
     const work = { ...initialSettlementObservation() };
     const result = await db.transaction(async (tx) => {
@@ -92,7 +93,10 @@ const commitUsageBatch$ = command(
       if (socialClaimUnavailable(args.social, job)) {
         return null;
       }
-      const { usage: managed, processPending } = socialSettlementPlan(job);
+      const { usage: managed, processPending } = checkedSocialSettlementPlan(
+        batch.social,
+        job,
+      );
       await tx.execute(orgCreditCompatibilityLockSql(orgId));
       const [run] = managed
         ? await tx.select().from(managedRunQuery(managed))
@@ -135,7 +139,7 @@ const commitUsageBatch$ = command(
         .from(settlementPricingQuery(batch.pricingKeys));
       requireSettlementPricingSnapshot(batch.pricing, currentPricing);
       work.pricingRows = batch.prices.length;
-      const priced = preparedSettlementPrices(args, batch, events, resolution);
+      const priced = preparedSettlementPrices(args, batch, events);
       const allocations = await tx.select().from(allocationQuery(priced));
       const anchors = await tx.select().from(anchorQuery(orgId, priced));
       const plan = planAllowanceCandidates(priced, allocations, anchors);
@@ -194,13 +198,11 @@ const commitUsageBatch$ = command(
           .where(socialWhere(args.social));
       }
       signal.throwIfAborted();
-      return settlementReceipt({
-        orgId,
-        events: priced,
-        sharedCredits: amount,
-        beforeCredits: wallet?.credits ?? 0,
+      return settlementReceipt(orgId, priced, {
+        amount,
+        wallet,
         afterCredits,
-        expired: expiry.expired,
+        expiry,
         work,
       });
     });
@@ -211,19 +213,30 @@ const commitUsageBatch$ = command(
 
 export const settleOrgUsage$ = command(
   async ({ get, set }, args: UsageSettlementArgs, signal: AbortSignal) => {
-    const batch = await set(prepareUsageSettlementBatch$, args, signal);
-    const { result, startedAt } = await set(
-      commitUsageBatch$,
-      { ...args, batch },
-      signal,
-    );
-    if (result?.work.pendingEvents && !args.social) {
-      reportCommittedSettlementPricing(
-        args.orgId,
-        batch,
-        get(usagePricingResolution$),
+    for (let attempt = 0; ; attempt++) {
+      const batch = await set(prepareUsageSettlementBatch$, args, signal);
+      const outcome = await settle(
+        set(commitUsageBatch$, { ...args, batch }, signal),
       );
+      signal.throwIfAborted();
+      if (!outcome.ok) {
+        if (
+          outcome.error instanceof UsageSettlementSnapshotConflict &&
+          attempt < 3
+        ) {
+          continue;
+        }
+        throw outcome.error;
+      }
+      const { result, startedAt } = outcome.value;
+      if (result?.work.pendingEvents && !args.social) {
+        reportCommittedSettlementPricing(
+          args.orgId,
+          batch,
+          get(usagePricingResolution$),
+        );
+      }
+      return result ? completeSettlementReceipt(result, startedAt) : null;
     }
-    return result ? completeSettlementReceipt(result, startedAt) : null;
   },
 );

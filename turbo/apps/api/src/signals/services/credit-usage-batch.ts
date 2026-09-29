@@ -1,3 +1,4 @@
+import type { PreparedSocialSettlement } from "./social-data-settlement-plan";
 import {
   priceUsageEvents,
   type PricedUsageEvent,
@@ -123,12 +124,18 @@ export function preparedSettlementPrices(
   batch: {
     readonly prices: readonly (typeof usagePricing.$inferSelect)[];
     readonly priced: PricedUsageEvent[];
+    readonly social?: PreparedSocialSettlement;
   },
   events: readonly UsageEventRecord[],
-  resolution: UsagePricingResolution,
 ) {
   return args.social
-    ? priceUsageEvents(events, batch.prices, args.orgId, resolution)
+    ? events.map((record) => {
+        return {
+          record,
+          grossCredits: batch.social?.grossCredits ?? 0,
+          billingError: null,
+        };
+      })
     : batch.priced;
 }
 export function reportCommittedSettlementPricing(
@@ -143,6 +150,7 @@ export function reportCommittedSettlementPricing(
 }
 
 export interface PreparedUsageBatch {
+  readonly social?: PreparedSocialSettlement;
   readonly events: PendingUsageSnapshot[];
   readonly pricing: PricingSnapshot[];
   readonly pricingKeys: ReturnType<typeof settlementPricingKeys>;

@@ -9,6 +9,8 @@ import { usagePricingResolution$ } from "../context/usage-pricing-resolution";
 import { writeDb$ } from "../external/db";
 import {
   socialWhere,
+  socialJobSelection,
+  prepareSocialSettlement,
   type SocialSettlementClaim,
 } from "./social-data-settlement-plan";
 import {
@@ -30,7 +32,7 @@ export const prepareUsageSettlementBatch$ = command(
     const db = set(writeDb$);
     const [job] = args.social
       ? await db
-          .select({ key: socialDataJobs.usageIdempotencyKey })
+          .select(socialJobSelection())
           .from(socialDataJobs)
           .where(
             and(eq(socialDataJobs.orgId, args.orgId), socialWhere(args.social)),
@@ -40,7 +42,7 @@ export const prepareUsageSettlementBatch$ = command(
     signal.throwIfAborted();
     const keys = args.social
       ? job
-        ? [job.key]
+        ? [job.usageIdempotencyKey]
         : []
       : (args.idempotencyKeys ?? []);
     if (keys.length > USAGE_SETTLEMENT_BATCH_SIZE) {
@@ -82,6 +84,7 @@ export const prepareUsageSettlementBatch$ = command(
     });
     return {
       events,
+      social: prepareSocialSettlement(job),
       pricing,
       pricingKeys,
       prices,

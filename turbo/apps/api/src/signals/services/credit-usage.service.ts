@@ -1,15 +1,12 @@
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { and, asc, eq, gt } from "drizzle-orm";
 import { writeDb$ } from "../external/db";
-import {
-  USAGE_SETTLEMENT_BATCH_SIZE,
-  UsageSettlementSnapshotConflict,
-} from "./credit-usage-batch";
+import { USAGE_SETTLEMENT_BATCH_SIZE } from "./credit-usage-batch";
 import { command } from "ccstate";
 import { recordBillingOperationTimings } from "../external/sandbox-op-log";
 import { settleOrgUsage$ } from "./credit-usage-settlement.service";
 import { logger } from "../../lib/log";
-import { safeSync, tapError, settle } from "../utils";
+import { safeSync, tapError } from "../utils";
 import { maybeEmitRunUsageEvent$ } from "./chat-usage-event.service";
 import { enqueueCreditLowBalanceAlert$ } from "./credit-low-balance-alert.service";
 import { triggerAutoRecharge$ } from "./credit-recharge.service";
@@ -134,8 +131,11 @@ export const processUsageEventKeys$ = command(
     },
     signal: AbortSignal,
   ): Promise<void> => {
-    let attempts = 0;
-    for (let offset = 0; offset < args.idempotencyKeys.length; ) {
+    for (
+      let offset = 0;
+      offset < args.idempotencyKeys.length;
+      offset += USAGE_SETTLEMENT_BATCH_SIZE
+    ) {
       const idempotencyKeys = args.idempotencyKeys.slice(
         offset,
         offset + USAGE_SETTLEMENT_BATCH_SIZE,
@@ -145,26 +145,11 @@ export const processUsageEventKeys$ = command(
         { orgId: args.orgId, requirePendingUsage: true },
         signal,
       );
-      const outcome = await settle(
-        set(
-          settleOrgUsage$,
-          { orgId: args.orgId, idempotencyKeys, refresh },
-          signal,
-        ),
+      const result = await set(
+        settleOrgUsage$,
+        { orgId: args.orgId, idempotencyKeys, refresh },
+        signal,
       );
-      signal.throwIfAborted();
-      if (!outcome.ok) {
-        if (
-          outcome.error instanceof UsageSettlementSnapshotConflict &&
-          attempts++ < 3
-        ) {
-          continue;
-        }
-        throw outcome.error;
-      }
-      attempts = 0;
-      offset += USAGE_SETTLEMENT_BATCH_SIZE;
-      const result = outcome.value;
       if (result) {
         await set(
           completeProcessedOrgUsage$,

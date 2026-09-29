@@ -1,6 +1,8 @@
 import { socialDataJobs } from "@okouai/db/schema/social-data-job";
 import { usageEvent } from "@okouai/db/schema/usage-event";
-import { and, eq } from "drizzle-orm";
+import { and, eq, getTableColumns, sql } from "drizzle-orm";
+import { pgTextDecoder } from "../../lib/db-structured-result";
+import { UsageSettlementSnapshotConflict } from "./credit-usage-batch";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import {
   managedUsageReceiptCredits,
@@ -18,9 +20,15 @@ export function socialWhere(claim: SocialSettlementClaim) {
     eq(socialDataJobs.claimExpiresAt, claim.expiresAt),
   );
 }
+export function socialJobSelection() {
+  return {
+    ...getTableColumns(socialDataJobs),
+    xmin: sql`${socialDataJobs}.xmin::text`.mapWith(pgTextDecoder).as("xmin"),
+  };
+}
 export function socialJobQuery(orgId: string, claim: SocialSettlementClaim) {
   return new QueryBuilder()
-    .select()
+    .select(socialJobSelection())
     .from(socialDataJobs)
     .where(and(eq(socialDataJobs.orgId, orgId), socialWhere(claim)))
     .for("update")
@@ -82,4 +90,51 @@ export function socialClaimUnavailable(
 export function socialSettlementPlan(job: Job | undefined) {
   const usage = socialUsageArgs(job);
   return { usage, processPending: job === undefined || usage !== undefined };
+}
+
+export interface PreparedSocialSettlement {
+  readonly jobId: string;
+  readonly xmin: string;
+  readonly plan: ReturnType<typeof socialSettlementPlan>;
+  readonly grossCredits: number;
+}
+export function prepareSocialSettlement(
+  job: (Job & { readonly xmin: string }) | undefined,
+): PreparedSocialSettlement | undefined {
+  if (!job || job.creditsCharged !== null) {
+    return undefined;
+  }
+  const plan = socialSettlementPlan(job);
+  const price = plan.usage?.pricingSnapshot;
+  const quantity = BigInt(plan.usage?.resource.quantity ?? 0);
+  const credits = price
+    ? (quantity * BigInt(price.unitPrice) + BigInt(price.unitSize) - 1n) /
+      BigInt(price.unitSize)
+    : 0n;
+  return {
+    jobId: job.id,
+    xmin: job.xmin,
+    plan,
+    grossCredits: price
+      ? Number(
+          credits < BigInt(price.creditsLimit)
+            ? credits
+            : BigInt(price.creditsLimit),
+        )
+      : 0,
+  };
+}
+export function checkedSocialSettlementPlan(
+  prepared: PreparedSocialSettlement | undefined,
+  job: (Job & { readonly xmin: string }) | undefined,
+) {
+  if (!job) {
+    return socialSettlementPlan(undefined);
+  }
+  if (!prepared || prepared.jobId !== job.id || prepared.xmin !== job.xmin) {
+    throw new UsageSettlementSnapshotConflict(
+      "Social settlement changed during preparation",
+    );
+  }
+  return prepared.plan;
 }

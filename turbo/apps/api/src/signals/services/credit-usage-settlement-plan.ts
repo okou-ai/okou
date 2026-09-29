@@ -266,31 +266,34 @@ export function settlementDefaultPlan(
     : null;
 }
 
-export function settlementReceipt(args: {
-  readonly orgId: string;
-  readonly events: readonly PricedUsageEvent[];
-  readonly sharedCredits: number;
-  readonly beforeCredits: number;
-  readonly expired: number;
-  readonly afterCredits: number;
-  readonly work: SettlementWorkObservation;
-}): ProcessOrgUsageEventsResult {
+export function settlementReceipt(
+  orgId: string,
+  events: readonly PricedUsageEvent[],
+  args: {
+    readonly amount: number;
+    readonly wallet: { readonly credits: number } | undefined;
+    readonly expiry: { readonly expired: number };
+    readonly afterCredits: number;
+    readonly work: SettlementWorkObservation;
+  },
+): ProcessOrgUsageEventsResult {
   const threshold = LOW_CREDIT_EMAIL_ALERT_THRESHOLD_CREDITS;
   return {
-    sharedCreditsCharged: args.sharedCredits,
+    sharedCreditsCharged: args.amount,
     runIds: [
       ...new Set(
-        args.events.flatMap((event) => {
+        events.flatMap((event) => {
           return event.record.runId ? [event.record.runId] : [];
         }),
       ),
     ],
     lowBalanceAlert:
-      args.sharedCredits > 0 &&
-      Math.max(args.beforeCredits - args.expired, 0) > threshold &&
+      args.amount > 0 &&
+      Math.max((args.wallet?.credits ?? 0) - args.expiry.expired, 0) >
+        threshold &&
       args.afterCredits <= threshold
         ? {
-            orgId: args.orgId,
+            orgId,
             remainingCredits: args.afterCredits,
             thresholdCredits: threshold,
           }
