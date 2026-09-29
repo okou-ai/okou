@@ -4907,6 +4907,74 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     expect(suspended.hasSubscription).toBeFalsy();
   });
 
+  it("redelivers replacement cancellation after the paid grant commits without granting twice", async () => {
+    const bdd = createBddApi(context);
+    const runs = createRunsApi(context);
+    const billing = createBillingMediaApi(context);
+    const actor = bdd.user();
+    const granted = await runs.grantProEntitlement(actor);
+    const teamSubscriptionId = `sub_team_cancel_retry_${randomUUID()}`;
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
+      ...proSubscription({
+        id: teamSubscriptionId,
+        customerId: granted.customerId,
+      }),
+      items: { data: [{ price: { id: "price_bdd_team" } }] },
+    });
+    context.mocks.stripe.subscriptions.list.mockResolvedValue({
+      data: [
+        proSubscription({
+          id: granted.subscriptionId,
+          customerId: granted.customerId,
+        }),
+      ],
+    });
+    context.mocks.stripe.subscriptions.cancel.mockRejectedValueOnce(
+      new Error("Temporary Stripe cancellation failure"),
+    );
+    const event = stripeEvent({
+      type: "invoice.paid",
+      object: {
+        id: `in_team_cancel_retry_${randomUUID()}`,
+        customer: granted.customerId,
+        metadata: {},
+        parent: { subscription_details: { subscription: teamSubscriptionId } },
+        lines: subscriptionLines(epochSeconds(30), "price_bdd_team"),
+      },
+    });
+    await api.postStripeEvent(event, [500]);
+    const committed = await billing.readBillingStatus(actor);
+    expect(committed.tier).toBe("team");
+    expect(committed.credits).toBe(140_000);
+    expect(
+      committed.creditGrants.filter((grant) => {
+        return grant.amount === 120_000;
+      }),
+    ).toHaveLength(1);
+
+    context.mocks.stripe.subscriptions.cancel.mockResolvedValue({
+      id: granted.subscriptionId,
+      status: "canceled",
+    });
+    await api.postStripeEvent(event, [200]);
+    await api.postStripeEvent(event, [200]);
+    const redelivered = await billing.readBillingStatus(actor);
+    expect(redelivered.credits).toBe(140_000);
+    expect(redelivered.creditGrants).toStrictEqual(committed.creditGrants);
+
+    await api.postStripeEvent(
+      stripeEvent({
+        type: "customer.subscription.deleted",
+        object: { id: granted.subscriptionId, metadata: {} },
+      }),
+      [200],
+    );
+    const afterReplacedCancellation = await billing.readBillingStatus(actor);
+    expect(afterReplacedCancellation.tier).toBe("team");
+    expect(afterReplacedCancellation.hasSubscription).toBeTruthy();
+    expect(afterReplacedCancellation.credits).toBe(140_000);
+  });
+
   it("grants concurrency slots from Stripe subscription and picks queued chat threads until full", async () => {
     const bdd = createBddApi(context);
     const runs = createRunsApi(context);
