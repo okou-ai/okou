@@ -217,7 +217,32 @@ function createSharedDatabaseEventSignals({
       signal.throwIfAborted();
     },
   );
-  return { load$, sync$ };
+  const refresh$ = command(
+    async ({ get, set }, signal: AbortSignal): Promise<void> => {
+      const dataKey = await get(dataKey$);
+      signal.throwIfAborted();
+      // An explicit control reconciliation must reach the server even if the
+      // local cache contains unrelated newer rows.
+      const rows = await set(
+        queryChatEventSharedDatabase$,
+        {
+          dataKey,
+          afterSeqId: get(persistentChatEvents$).at(-1)?.seqId ?? null,
+          consistency: "catch-up",
+        },
+        signal,
+      );
+      signal.throwIfAborted();
+      await set(
+        mergePersistentEvents$,
+        rows.map((row) => {
+          return chatEventFromRow(row);
+        }),
+        signal,
+      );
+    },
+  );
+  return { load$, sync$, refresh$ };
 }
 
 export function createChatEventStorageSignals({
@@ -305,5 +330,6 @@ export function createChatEventStorageSignals({
     initializeIndexedDbEvents$,
     appendOptimisticEvent$,
     syncRemoteEvents$,
+    refreshRemoteEvents$: sharedDatabase.refresh$,
   };
 }

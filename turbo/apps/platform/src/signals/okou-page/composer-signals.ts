@@ -30,6 +30,7 @@ import type { ModelProviderSelection } from "../../views/okou-page/components/mo
 import type { DraftSignals, ChatAttachment } from "./chat-draft.ts";
 import { createComposerFeedbackModel } from "./chat-feedback.ts";
 import type { ChatEvent } from "../chat-page/chat-event-types.ts";
+import type { ControlChatEventSignals } from "../chat-page/control-chat-events.ts";
 import {
   deriveRunIndicatorStateFromChatEvents,
   lastAssistantCancelledFromGroups,
@@ -268,6 +269,7 @@ export interface ComposerSignals {
   readonly computer: ComposerComputerSignals;
   readonly submission: ComposerSubmissionSignals;
   readonly queue: ComposerQueueSignals;
+  readonly controls?: Pick<ControlChatEventSignals, "status$" | "refresh$">;
   readonly template: ComposerTemplateSignals;
   readonly imageAnnotation: ImageAnnotationSignals;
   readonly setImageAnnotationLifecycleRef$: Command<
@@ -305,6 +307,7 @@ interface CreateComposerSignalsOptions {
     [ComposerSubmissionAction, ComposerSubmission, AbortSignal]
   >;
   readonly cancelRun$: Command<Promise<void>, [AbortSignal]>;
+  readonly controls?: ComposerSignals["controls"];
   readonly cancellationRecoveryPending$: ComposerQueueSignals["cancellationRecoveryPending$"];
   readonly removeQueuedMessage$: ComposerQueueSignals["removeQueuedMessage$"];
   readonly removeAutomationEvent$: ComposerQueueSignals["removeAutomationEvent$"];
@@ -689,6 +692,7 @@ export function createComposerSignals(
       ...submission,
       sending$: eventSignals.sending$,
     },
+    ...(options.controls ? { controls: options.controls } : {}),
     queue: {
       pendingEvents$: eventSignals.pendingEvents$,
       cancellationRecoveryPending$: options.cancellationRecoveryPending$,

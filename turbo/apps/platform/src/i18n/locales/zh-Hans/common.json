@@ -1856,6 +1856,15 @@
       "title": "连接器",
       "useDefault": "使用默认"
     },
+    "controlDelivery": {
+      "accepted": "{{action}}请求已受理；等待服务器事件确认后更新对话。",
+      "pending": "正在请求{{action}}……等待服务器确认。",
+      "refresh": "刷新对话",
+      "rejected": "{{action}}请求被拒绝，本次请求未更改对话。再次操作前请刷新并核对当前状态。",
+      "remove": "移除排队项",
+      "stop": "停止运行",
+      "uncertain": "无法确认{{action}}是否成功，操作可能已生效。请刷新并核对服务器状态，确认前不要重复操作。"
+    },
     "documentTitle": "聊天",
     "errors": {
       "genericTitle": "这次运行没能完成",

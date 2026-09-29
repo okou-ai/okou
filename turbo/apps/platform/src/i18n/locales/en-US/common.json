@@ -1863,6 +1863,15 @@
       "title": "Connectors",
       "useDefault": "Use default"
     },
+    "controlDelivery": {
+      "accepted": "{{action}} was accepted. Waiting for the server event before updating the conversation.",
+      "pending": "Requesting {{action}}… Waiting for server confirmation.",
+      "refresh": "Refresh conversation",
+      "rejected": "{{action}} was rejected. The conversation has not been changed by this request. Refresh to check the current state before acting again.",
+      "remove": "Remove queued item",
+      "stop": "Stop run",
+      "uncertain": "Couldn't confirm {{action}}. It may have happened. Refresh to check the server state; do not repeat the action until confirmed."
+    },
     "documentTitle": "Chat",
     "errors": {
       "genericTitle": "This run couldn't finish",

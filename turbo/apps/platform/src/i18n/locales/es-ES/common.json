@@ -1897,6 +1897,15 @@
       "title": "Conectores",
       "useDefault": "Usar predeterminada"
     },
+    "controlDelivery": {
+      "accepted": "Se aceptó {{action}}. La conversación se actualizará cuando se confirme el evento del servidor.",
+      "pending": "Solicitando {{action}}… Esperando la confirmación del servidor.",
+      "refresh": "Actualizar conversación",
+      "rejected": "Se rechazó {{action}}. Esta solicitud no cambió la conversación. Actualízala y comprueba su estado antes de volver a actuar.",
+      "remove": "Quitar elemento en espera",
+      "stop": "Detener ejecución",
+      "uncertain": "No se pudo confirmar {{action}}. Es posible que se haya realizado. Actualiza el estado del servidor y no repitas la acción sin confirmación."
+    },
     "documentTitle": "Chat",
     "errors": {
       "genericTitle": "No se pudo completar esta ejecución",

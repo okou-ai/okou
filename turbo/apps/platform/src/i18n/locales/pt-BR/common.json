@@ -1897,6 +1897,15 @@
       "title": "Conectores",
       "useDefault": "Usar padrão"
     },
+    "controlDelivery": {
+      "accepted": "{{action}} foi aceito. A conversa será atualizada após a confirmação do evento pelo servidor.",
+      "pending": "Solicitando {{action}}… Aguardando confirmação do servidor.",
+      "refresh": "Atualizar conversa",
+      "rejected": "{{action}} foi rejeitado. Esta solicitação não alterou a conversa. Atualize e confira o estado antes de tentar novamente.",
+      "remove": "Remover item em espera",
+      "stop": "Parar execução",
+      "uncertain": "Não foi possível confirmar {{action}}. A ação pode ter ocorrido. Atualize o estado do servidor e não repita a ação sem confirmação."
+    },
     "documentTitle": "Conversa",
     "errors": {
       "genericTitle": "Não foi possível concluir esta execução",
