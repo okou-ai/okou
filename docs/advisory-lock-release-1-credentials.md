@@ -615,3 +615,34 @@ deduplication, account switching during a provider read, permission failure,
 reconnect and deletion/re-add behavior. Scoped ESLint, Oxlint, formatting and
 diff checks pass; runtime behavior and combined types remain the root owner's
 same-HEAD pipeline responsibility. No local Vitest or dev server is used.
+
+### Google Meet webhook ownership
+
+The actual Pub/Sub webhook entry now uses owning commands for subscription
+lookup, lifecycle-notice updates, current source projection, processed receipts,
+superseded-receipt cleanup and workflow launch. The old `startRun` callback and
+webhook database bridge are removed. OIDC verification stays outside SQL;
+source timing crosses command boundaries as ordinary timestamps, not a callback
+or database-capturing object. Final queue admission still checks the current
+subscription, account, enabled automation and exact source identity.
+
+Projection enumeration runs outside transactions. Each repair transaction owns
+one automation, reads its current selected/default account with the pure scalar
+builder, and conditionally updates its source. It retains the same existing
+builtin key-before-automation order. Provider subscription operations are not
+introduced into that transaction.
+
+This closes webhook dispatch, not the whole Meet lifecycle.
+`reconcileGoogleMeetSubscriptionLifecycle` still forwards its transaction into
+`hasEnabledGoogleMeetConsumer`, credential resolution and
+`ensureGoogleMeetTranscriptGeneratedSubscriptionUnderLock`; creation, renewal,
+reactivation and cleanup still include provider work inside that inherited
+boundary. `deletePreparedGoogleMeetSubscriptionWithLifecycleLock`, connector
+inventory and shared account reprojection have their own remaining handle
+propagation. These are explicit R1 implementation gaps, independent of the
+completed notification receipt path or eventual outgoing-writer drain.
+
+Existing user API coverage retains authenticated normal delivery, duplicate
+notifications, disabled consumers, source changes and lazy thread creation.
+Scoped ESLint, Oxlint, formatting and diff checks pass. Combined-head types and
+behavioral CI remain required; no local Vitest or development server is run.
