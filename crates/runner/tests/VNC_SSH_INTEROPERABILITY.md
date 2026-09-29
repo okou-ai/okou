@@ -226,16 +226,22 @@ printf 'ssh_loopback=127.0.0.1:%s host_key=%s/%s\n' \
 sudo install -m 755 "$VNC_RUNNER_TEST_BINARY" "$VNC_ACCEPT_DIR/runner-tests"
 sudo install -m 644 crates/rfb-client/tests/fixtures/tigervnc.py \
   "$VNC_ACCEPT_DIR/tigervnc.py"
-sudo chown -R "$VNC_ACCEPT_USER:$VNC_ACCEPT_USER" "$VNC_ACCEPT_DIR"
+# The test account only needs a private work directory and its client key.
+# Keep sshd_config, sshd.pid, sshd.log and the host key unwritable by it.
+sudo install -d -m 700 -o "$VNC_ACCEPT_USER" -g "$VNC_ACCEPT_USER" \
+  "$VNC_ACCEPT_DIR/test"
+sudo install -m 600 -o "$VNC_ACCEPT_USER" -g "$VNC_ACCEPT_USER" \
+  "$VNC_ACCEPT_DIR/client_key" "$VNC_ACCEPT_DIR/test/client_key"
+chmod 711 "$VNC_ACCEPT_DIR"
 
 sudo -u "$VNC_ACCEPT_USER" env \
   HOME="/home/$VNC_ACCEPT_USER" \
-  TMPDIR="$VNC_ACCEPT_DIR" \
+  TMPDIR="$VNC_ACCEPT_DIR/test" \
   VNC_OPENSSH_VERSION="$VNC_OPENSSH_VERSION" \
   VNC_OPENSSH_PORT="$VNC_OPENSSH_PORT" \
   VNC_OPENSSH_USERNAME="$VNC_ACCEPT_USER" \
   VNC_OPENSSH_PASSWORD="$VNC_ACCEPT_PASSWORD" \
-  VNC_OPENSSH_PRIVATE_KEY="$VNC_ACCEPT_DIR/client_key" \
+  VNC_OPENSSH_PRIVATE_KEY="$VNC_ACCEPT_DIR/test/client_key" \
   VNC_OPENSSH_HOST_KEY_ALGORITHM="$VNC_OPENSSH_HOST_KEY_ALGORITHM" \
   VNC_OPENSSH_HOST_KEY_FINGERPRINT="$VNC_OPENSSH_HOST_KEY_FINGERPRINT" \
   RFB_TIGERVNC_FIXTURE="$VNC_ACCEPT_DIR/tigervnc.py" \
