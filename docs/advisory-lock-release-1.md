@@ -140,10 +140,11 @@ scope is intentional evidence, not a whole-package completion claim:
   before financial commits; the direct-SQL display command validates the archive
   pointer and exact entitlement predicates abort stale financial work. The
   remaining settlement/allowance/cleanup SQL graph is explicitly unfinished.
-- The custom prefix namespace owner now initializes metadata and its default
-  entitlement together in `ensureCustomConnectorOrgMetadata$`, using direct SQL
-  and preserving existing paid entitlements. This repairs the combined API
-  regression that returned 500 when creating a chat after a custom connector.
+- The shared-prefix implementation removes namespace arbitration and its
+  incidental organization initialization. Connector creation therefore cannot
+  create the partial organization/entitlement state that caused the earlier
+  chat-creation regression. Normal onboarding retains its complete initialization;
+  target selection continues to reject ambiguous or unauthorized identities.
 - `c332058`: rejected Model Policy updates now roll back default-row preparation
   before returning their original conflict/validation response. Public API
   revision/initialization coverage remains; later continuation removes the
@@ -202,8 +203,8 @@ Browser's eight scopes and bootstrap publication/grant scopes have been reviewed
 semantically. Usage compaction uses direct execute with a pure decoder. Shared
 Storage, billing, credential and workflow helpers still expose transaction
 propagation; an all-API end-state claim would be false. The combined syntax snapshot after
-`305699e` contains 427 construction sites: 303 directly transferred, 44
-ordinary-helper-owned, and 80 command-local candidates. These counts do not
+`5b28ebe` contains 431 construction sites: 271 directly transferred, 41
+ordinary-helper-owned, and 119 command-local candidates. These counts do not
 cover every root-Db flow or establish semantic safety. In particular, 422 is
 the historical baseline, not a current complete propagation inventory.
 
