@@ -205,17 +205,48 @@ describe("shared SDK ingestion", () => {
       );
     };
     const expectGrainMax = (expected: number) => {
-      expect(context.mocks.axiom.sdkIngest).toHaveBeenCalledWith(
-        "vm0-sandbox-op-log-dev",
-        expect.arrayContaining([
-          expect.objectContaining({
-            source: "api",
-            operation_domain: "billing",
-            op_type: "api_billing_usage_compaction_batch",
-            success: true,
-            max_grain_source_rows: expected,
-          }),
-        ]),
+      const batchEvents = context.mocks.axiom.sdkIngest.mock.calls
+        .filter(([dataset]) => {
+          return dataset === "vm0-sandbox-op-log-dev";
+        })
+        .flatMap(([, events]) => {
+          return Array.isArray(events) ? events : [];
+        })
+        .filter((event): event is Record<string, unknown> => {
+          return (
+            typeof event === "object" &&
+            event !== null &&
+            event.op_type === "api_billing_usage_compaction_batch"
+          );
+        });
+      expect(batchEvents).toHaveLength(1);
+      expect(batchEvents[0]).toMatchObject({
+        source: "api",
+        operation_domain: "billing",
+        op_type: "api_billing_usage_compaction_batch",
+        success: true,
+        max_grain_source_rows: expected,
+      });
+      expect(Object.keys(batchEvents[0] ?? {}).sort()).toStrictEqual(
+        [
+          "_time",
+          "source",
+          "operation_domain",
+          "op_type",
+          "duration_ms",
+          "success",
+          "raw_seed_limit",
+          "seeded_raw_rows",
+          "selected_grains",
+          "raw_rows_deleted",
+          "hourly_rows_deleted",
+          "hourly_rows_inserted",
+          "billing_error_held_rows",
+          "logical_input_rows",
+          "max_grain_source_rows",
+          "logical_compression_ratio",
+          "has_more",
+        ].sort(),
       );
     };
 
