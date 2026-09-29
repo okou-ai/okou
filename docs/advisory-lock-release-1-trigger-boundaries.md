@@ -11,8 +11,9 @@ application triggers**, backed by nine distinct trigger functions. PostgreSQL's
 internal constraint triggers are excluded. This is checked-in schema evidence,
 not a live production catalog query. The test constant's historical name is not
 approval to retain these objects in the terminal schema. Migration
-`1291_retire_cloudflare_scope_change_trigger` removes one redundant trigger
-and its function, leaving ten application triggers in the proposed R1 schema.
+`1289_retire_cloudflare_scope_change_trigger` removes one redundant trigger
+and its function. With the two unshipped Forms triggers withdrawn, eight
+application triggers remain in the proposed R1 schema.
 
 ## Existing billing attribution triggers
 
@@ -101,7 +102,7 @@ scan or the age of the old migrations cannot establish that gate.
 | Table and trigger                                                | Current business guarantee                                                                                                                | Replacement work                                                                                                    |
 | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | `ssh_connections.ssh_cloudflare_access_binding_guard`            | A shared config read rejects a personal Cloudflare config owned by another user. The separate foreign key protects organization identity. | R1 writers implement the predicate; retirement still needs the historical writer gate below.                        |
-| `cloudflare_access_configs.cloudflare_access_scope_change_guard` | Rejects incompatible scope/owner changes while hosts still reference the config.                                                          | All conversion writers already implement this invariant. Migration 1291 retires it while the binding guard remains. |
+| `cloudflare_access_configs.cloudflare_access_scope_change_guard` | Rejects incompatible scope/owner changes while hosts still reference the config.                                                          | All conversion writers already implement this invariant. Migration 1289 retires it while the binding guard remains. |
 
 Migration 1203 creates both; 1222 updates scope-change behavior. The source audit
 at `29f6115` distinguishes these two boundaries rather than assuming they share
@@ -175,47 +176,43 @@ trigger-side shared config lock and rechecks ownership after a conversion.
 Thus removing only `cloudflare_access_scope_change_guard` and
 `reject_cloudflare_access_scope_change` does not require the foundation API to
 disappear first. Preserve the same-org foreign key and scope/owner check
-constraint. Migration `1291_retire_cloudflare_scope_change_trigger` retires this redundant
+constraint. Migration `1289_retire_cloudflare_scope_change_trigger` retires this redundant
 trigger/function and updates the expected schema inventory. Its metadata was
 generated with Drizzle; migrations 1203/1222 stay unchanged.
 The historical `test-cloudflare-access.ts` migration test applies selected old
 migrations in an isolated schema; its old-schema assertions are not production
 writers or evidence for retaining the final trigger.
 
-## Forms compatibility triggers
+## Forms trigger proposal withdrawn
 
-Migration 1290 adds `google_forms_cursor_rebind_preserves_progress` on
-`google_forms_automation_cursors` and `google_forms_cursor_source_lifecycle` on
-`workflow_automations`. Neither is an accepted permanent design. The
-[credential/watch inventory](./advisory-lock-release-1-credentials.md) records
-the evolving explicit command implementation and outstanding writers.
+The accepted Forms behavior now permits missed triggers during watch failure or
+repair. Newest-response repair is allowed, so outgoing unconditional cursor
+reseeding is no longer grounds for adding progress-preserving triggers.
 
-The concrete mixed-version risk is an outgoing repair that reads the newest
-remote response and unconditionally upserts that timestamp after R1 preserved
-the earlier cursor. An outgoing explicit disable/source change has the opposite
-requirement: end the old consumption interval. Removing the triggers while
-those writers remain supported would reopen the gap created by the changed
-cursor/watch foreign key. Do not simply drop migration 1290 while keeping the
-same lock-free preparation order.
+The unshipped `1289_google_forms_cursor_detachment` and
+`1290_google_forms_cursor_lifecycle` are withdrawn together with their generated
+metadata and the two trigger/function inventory entries. The original non-null
+`ON DELETE CASCADE` cursor/watch relationship remains unchanged. Main `c26098d`
+and the observed production deployment tree `c501c3b7` exclude these PR-only
+migrations; #37313 is still open and unmerged. Existing migration history through
+1287 is untouched. Drizzle regenerates the remaining purge and Cloudflare custom
+migrations without a Forms schema change.
 
-R1 must first express repair/rebind, initial/reopened baseline, explicit disable
-and source replacement in its own SQL. The transition must then retain only the
-FK/lifecycle/provider boundary actually needed by the inspected outgoing code.
-If the temporary triggers remain in R1, their R2 removal gate includes every
-supported writer implementing that distinction, no pre-R1 serving/in-flight
-requests, and a compatible rollback target. Remove both triggers and their
-trigger functions in that transition; no business write may depend on them in
-the terminal schema.
+Application SQL still checks active authority, selected source and normal
+uniqueness. Late provider preparation cannot revive a disabled or revoked
+source. The dedicated detachment, retained-seed recovery, synthetic catch-up and
+second activation lock are removed. Remaining command-boundary migration is
+implementation work, but there is no Forms trigger retirement gate to defer to R2.
 
 ## Verification and readiness
 
 Existing API tests must continue to verify attribution amounts/anchors,
-cross-owner SSH access rejection, Forms repair catch-up, duplicate notification
+cross-owner SSH access rejection, Forms recovery for later notifications, duplicate notification
 deduplication and explicit disable/restart behavior. No lock waiter, temporary
 test trigger or artificial database gate is a substitute. The migration schema
 inventory must change alongside the eventual retirement migration.
 
-The ten remaining application triggers are explicit acceptance obligations.
-Billing replacements remain unfinished; Forms still requires its complete
-writer inventory and compatibility gate; the SSH binding trigger has the
-specific historical dependency above. No trigger is a permanent exemption.
+The eight remaining application triggers are explicit acceptance obligations.
+Billing replacements remain unfinished; the SSH binding trigger has the
+specific historical dependency above. Forms introduces no trigger. No trigger
+is a permanent exemption.

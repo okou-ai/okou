@@ -58,14 +58,14 @@ export const googleFormsAutomationCursors = pgTable(
         },
         { onDelete: "cascade" },
       ),
-    // Keep progress when an outgoing writer deletes the physical watch.
-    // Reconciliation attaches the cursor to its replacement by automation ID.
-    watchStateId: uuid("watch_state_id").references(
-      () => {
-        return googleFormsWatchStates.id;
-      },
-      { onDelete: "set null" },
-    ),
+    watchStateId: uuid("watch_state_id")
+      .notNull()
+      .references(
+        () => {
+          return googleFormsWatchStates.id;
+        },
+        { onDelete: "cascade" },
+      ),
     // Google emits microsecond-precision RFC3339 values. Keep them byte-for-byte
     // so the next responses.list filter never regresses the cursor.
     lastSeenSubmittedTime: text("last_seen_submitted_time").notNull(),

@@ -24,7 +24,7 @@ export async function resolveGoogleFormsAutomationConnectorId(
   });
 }
 
-/** Invalidate a changed business source before preparing its new watch interval. */
+/** Publish the selected business source and discard an incompatible cursor. */
 export function googleFormsAccountProjectionStatement(args: {
   readonly orgId: string;
   readonly userId: string;
@@ -32,7 +32,6 @@ export function googleFormsAccountProjectionStatement(args: {
   return sql`
     WITH candidates AS MATERIALIZED (
       SELECT ${workflowAutomations.id} AS id,
-        ${workflowAutomations.enabled} AS enabled,
         ${workflowAutomations.eventConnectorId} AS connector_id,
         ${workflowAutomations.eventConfig} AS event_config,
         CASE WHEN ${chatThreadConnectorSelections.connectorSlug} IS NOT NULL
@@ -59,11 +58,7 @@ export function googleFormsAccountProjectionStatement(args: {
       FOR UPDATE OF ${workflowAutomations}
     ), projection AS (
       SELECT id,
-        CASE WHEN enabled AND (
-          connector_id IS NULL OR desired_connector_id IS NULL
-          OR event_config ->> 'connectorId' IS DISTINCT FROM desired_connector_id::text
-          OR connector_id IS DISTINCT FROM desired_connector_id
-        ) THEN NULL::uuid ELSE desired_connector_id END AS connector_id,
+        desired_connector_id AS connector_id,
         CASE WHEN desired_connector_id IS NOT NULL
           AND event_config ->> 'connectorId' IS DISTINCT FROM desired_connector_id::text
           THEN jsonb_set(event_config, '{connectorId}', to_jsonb(desired_connector_id::text))

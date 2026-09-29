@@ -172,7 +172,6 @@ interface ReconciliationContext {
 interface PersistedReconfiguration {
   readonly previous: OfficialAutomationRow;
   readonly current: OfficialAutomationRow;
-  readonly googleFormsCursor: string | undefined;
   readonly morningBriefFence: MorningBriefLegacyWriterFence | undefined;
 }
 
@@ -723,11 +722,6 @@ async function persistReconfigurationPatch(
     if (!accountProjectionMatchesPatch(accountProjection, args.patch)) {
       return null;
     }
-    const [formsCursor] = await tx
-      .select({ cursor: googleFormsAutomationCursors.lastSeenSubmittedTime })
-      .from(googleFormsAutomationCursors)
-      .where(eq(googleFormsAutomationCursors.automationId, current.id))
-      .limit(1);
     const currentTime = nowDate();
     const enabled = current.officialIntendedEnabled === true || current.enabled;
     const refreshed = refreshOfficialAutomationPatch(
@@ -763,7 +757,6 @@ async function persistReconfigurationPatch(
     return {
       previous: current,
       current: updated,
-      googleFormsCursor: formsCursor?.cursor,
       morningBriefFence: isMorningBriefReconciliation({
         definitionName: args.definitionName,
         blueprintKey: args.blueprint.key,
@@ -802,15 +795,7 @@ const reconcileRestoredAutomationWatch$ = command(
       {
         previous: [persisted.current],
         current: [restored],
-        googleForms:
-          persisted.googleFormsCursor === undefined
-            ? []
-            : [
-                {
-                  automationId: restored.id,
-                  seedCursor: persisted.googleFormsCursor,
-                },
-              ],
+        googleForms: [],
       },
       signal,
     );
@@ -1184,7 +1169,7 @@ const pauseForReconfiguration$ = command(
         orgId: args.orgId,
         userId: args.userId,
         definitionName: args.definitionName,
-        persisted: { ...persisted, googleFormsCursor: undefined },
+        persisted,
       });
       signal.throwIfAborted();
       return retryReconciliation(
@@ -1395,11 +1380,6 @@ async function stageAutomationStructureTransition(
     ) {
       return null;
     }
-    const [formsCursor] = await tx
-      .select({ cursor: googleFormsAutomationCursors.lastSeenSubmittedTime })
-      .from(googleFormsAutomationCursors)
-      .where(eq(googleFormsAutomationCursors.automationId, current.id))
-      .limit(1);
     const currentTime = nowDate();
     const morningBrief = await prepareMorningBriefLegacyReconciliationMutation(
       tx,
@@ -1430,7 +1410,6 @@ async function stageAutomationStructureTransition(
     return {
       previous: current,
       current: staged,
-      googleFormsCursor: formsCursor?.cursor,
       morningBriefFence: isMorningBriefReconciliation({
         definitionName: args.definitionName,
         blueprintKey: args.blueprint.key,
@@ -3498,7 +3477,7 @@ const removeAutomationConfiguration$ = command(
         orgId: args.orgId,
         userId: args.userId,
         definitionName: args.definition.name,
-        persisted: { ...paused, googleFormsCursor: undefined },
+        persisted: paused,
       });
       signal.throwIfAborted();
       return {
@@ -3520,7 +3499,7 @@ const removeAutomationConfiguration$ = command(
         orgId: args.orgId,
         userId: args.userId,
         definitionName: args.definition.name,
-        persisted: { ...paused, googleFormsCursor: undefined },
+        persisted: paused,
       });
       signal.throwIfAborted();
       return {

@@ -403,7 +403,7 @@ async function setupGoogleFormsAutomation() {
 }
 
 describe("Google Forms Pub/Sub webhook", () => {
-  it("repairs a remotely missing healthy watch and catches up from its retained cursor", async () => {
+  it("repairs a remotely missing watch and accepts later notifications", async () => {
     const { actor, chatThreadId, formsApi } =
       await setupGoogleFormsAutomation();
     if (!actor.orgId) {
@@ -413,7 +413,6 @@ describe("Google Forms Pub/Sub webhook", () => {
     if (!previousWatchId) {
       throw new Error("Expected a Google Forms watch");
     }
-    // Simulate an external deletion while the local watch still expires in 2099.
     formsApi.remoteWatchIds.clear();
     const renewal = setupApp({
       context,
@@ -423,34 +422,29 @@ describe("Google Forms Pub/Sub webhook", () => {
       renewal.renew({ body: { org_id: actor.orgId, user_id: actor.userId } }),
       [200],
     );
-    expect(repair.body).toStrictEqual({ success: true, renewed: 1, failed: 0 });
-    expect(formsApi.responseFilters[0]).toBe(`timestamp > ${SEED_CURSOR}`);
+    expect(repair.body).toMatchObject({ success: true, failed: 0 });
+    const replacementWatchId = formsApi.watchIds.at(-1);
+    if (!replacementWatchId || replacementWatchId === previousWatchId) {
+      throw new Error("Expected a repaired Google Forms watch");
+    }
+    await expect(
+      postWebhook(formsPushBody("after-watch-repair", replacementWatchId)),
+    ).resolves.toMatchObject({ status: 200, body: { dispatched: 1 } });
+    await expect(
+      postWebhook(
+        formsPushBody("after-watch-repair-retry", replacementWatchId),
+      ),
+    ).resolves.toMatchObject({ status: 200, body: { dispatched: 0 } });
     await flushWaitUntilForTest();
-    const firstEvents = await workflows.readThreadEvents(chatThreadId);
+    const events = await workflows.readThreadEvents(chatThreadId);
     expect(
-      firstEvents.filter((event) => {
+      events.filter((event) => {
         return event.eventType === "input.automation";
       }),
     ).toHaveLength(1);
-    const retry = await accept(
-      renewal.renew({ body: { org_id: actor.orgId, user_id: actor.userId } }),
-      [200],
-    );
-    expect(retry.body).toStrictEqual({ success: true, renewed: 0, failed: 0 });
-    expect(formsApi.responseFilters.at(-1)).toBe(
-      `timestamp > ${RESPONSE_SUBMITTED_TIME}`,
-    );
-    await flushWaitUntilForTest();
-    const retryEvents = await workflows.readThreadEvents(chatThreadId);
-    expect(
-      retryEvents.filter((event) => {
-        return event.eventType === "input.automation";
-      }),
-    ).toHaveLength(1);
-    const previous = await postWebhook(
-      formsPushBody("retired-watch-after-repair", previousWatchId),
-    );
-    expect(previous).toMatchObject({
+    await expect(
+      postWebhook(formsPushBody("retired-watch-after-repair", previousWatchId)),
+    ).resolves.toMatchObject({
       status: 200,
       body: { watchStates: 0, dispatched: 0 },
     });
@@ -1242,7 +1236,7 @@ describe("Google Forms Pub/Sub webhook", () => {
   });
 
   it.each(["superseded", "provider failure"])(
-    "publishes a complete selected-account interval after %s",
+    "keeps the current selected account usable after %s",
     async (outcome) => {
       const {
         first,
@@ -1331,7 +1325,7 @@ describe("Google Forms Pub/Sub webhook", () => {
       );
       await selectAccount(secondConnector.id);
       if (outcome === "provider failure") {
-        // Repeating the same public choice repairs its missing projection;
+        // Repeating the same public choice repairs its missing watch/cursor;
         // recovery does not require changing the account again.
         await selectAccount(secondConnector.id);
       }

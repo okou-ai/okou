@@ -87,7 +87,9 @@ export function googleFormsCursorPublicationStatement(
       AND ${googleFormsWatchStates.connectorId} = ${config.connectorId}::uuid
       AND ${googleFormsWatchStates.formId} = ${config.form.id}
     ON CONFLICT (automation_id) DO UPDATE
-      SET watch_state_id = excluded.watch_state_id, updated_at = excluded.updated_at
+      SET watch_state_id = excluded.watch_state_id,
+        last_seen_submitted_time = excluded.last_seen_submitted_time,
+        updated_at = excluded.updated_at
     RETURNING automation_id
   `;
 }

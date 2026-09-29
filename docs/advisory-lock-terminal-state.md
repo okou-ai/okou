@@ -140,12 +140,16 @@ operation preserves each actual guarantee. A final database CAS cannot undo a
 remote request that has already taken effect.
 
 Where the product accepts temporary inconsistency, use the existing repair
-path. For Google Forms, the intended direction is to tolerate a temporary watch
-gap and repair it through reconciliation. The existing renewal cron must be
-able to discover missing remote watches even when local state appears healthy,
-retain the consumption cursor, and catch up readable responses. Increasing the
-cron frequency alone is insufficient. This tradeoff does not automatically
-apply to billing or credential rotation.
+path. Google Forms may miss triggers during a watch failure, replacement or
+repair window. Reconciliation must restore a usable watch, including discovering
+remote deletion while local expiry appears healthy; it may start from the newest
+response as a fresh baseline. Continuous cursor retention and replay of responses
+from that failure window are not acceptance requirements. Do not add detachment,
+catch-up, compensation or database-trigger protocols solely to prevent that loss.
+Normal notifications, basic deduplication, explicit disable, source/account and
+permission checks remain required. Late preparation must not revive a disabled
+or revoked automation. This tradeoff does not apply to Gmail, billing or
+credential rotation.
 
 ## Bootstrap reference design
 

@@ -1475,29 +1475,15 @@
     {
       "idx": 1288,
       "version": "7",
-      "when": 1790657138157,
+      "when": 1790670371892,
       "tag": "1288_retire_provisional_billing_purge",
       "breakpoints": true
     },
     {
       "idx": 1289,
       "version": "7",
-      "when": 1790657147885,
-      "tag": "1289_google_forms_cursor_detachment",
-      "breakpoints": true
-    },
-    {
-      "idx": 1290,
-      "version": "7",
-      "when": 1790658470974,
-      "tag": "1290_google_forms_cursor_lifecycle",
-      "breakpoints": true
-    },
-    {
-      "idx": 1291,
-      "version": "7",
-      "when": 1790664755521,
-      "tag": "1291_retire_cloudflare_scope_change_trigger",
+      "when": 1790670386144,
+      "tag": "1289_retire_cloudflare_scope_change_trigger",
       "breakpoints": true
     }
   ]

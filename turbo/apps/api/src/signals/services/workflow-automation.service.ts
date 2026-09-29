@@ -6051,8 +6051,7 @@ const activateInactiveGoogleFormsAutomation$ = command(
         connectorId: eventConfig.connectorId,
         resetAutomationId: args.previousAutomation.id,
         automationSnapshot: workflowAutomationSnapshot(args.previousAutomation),
-        interval: {
-          kind: "activation",
+        activation: {
           automationId: args.previousAutomation.id,
           workflowId: args.previousAutomation.workflowId,
           eventConfig,
@@ -6143,16 +6142,6 @@ const refreshEnabledGoogleFormsAutomation$ = command(
         formId: eventConfig.form.id,
         resetAutomationId: current.id,
         automationSnapshot: workflowAutomationSnapshot(current),
-        ...(current.eventConnectorId === null
-          ? {
-              interval: {
-                kind: "account-replacement" as const,
-                automationId: current.id,
-                workflowId: current.workflowId,
-                eventConfig,
-              },
-            }
-          : {}),
       },
       signal,
     );
