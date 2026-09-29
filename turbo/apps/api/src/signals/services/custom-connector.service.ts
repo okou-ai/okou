@@ -1,7 +1,7 @@
 import { command, computed, type Computed } from "ccstate";
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
-import { and, eq, gte, inArray, lt, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, lt } from "drizzle-orm";
 import {
   isIntegrationManagedCustomConnector,
   isIntegrationManagedCustomConnectorProviderAdapter,
@@ -23,9 +23,6 @@ import {
   type CustomConnectorValueInput,
   type UpdateCustomConnectorBody,
 } from "@okouai/api-contracts/contracts/custom-connectors";
-import { orgTierSchema } from "@okouai/api-contracts/contracts/orgs";
-import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
-import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
 import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
   canonicalizeFirewallBaseUrl,
@@ -41,7 +38,6 @@ import {
 import { customConnectorAccountOauthBindings } from "@okouai/db/schema/custom-connector-account-oauth-binding";
 import { orgCustomConnectorDcrRegistrations } from "@okouai/db/schema/org-custom-connector-dcr-registration";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 
 import { clerk$ } from "../external/clerk";
 import { db$, writeDb$, type ReadonlyDb } from "../external/db";
@@ -98,7 +94,6 @@ import {
 import type { Tx } from "../../lib/db-types";
 import { writeCustomConnectorOAuthState } from "./custom-connector-oauth-write.service";
 import { invalidatePiStableContextsForOrg } from "./pi-stable-context-generation.service";
-import { orgPlanEntitlementValues } from "./org-plan-entitlements.service";
 
 const L = logger("CustomConnectorService");
 
@@ -1727,78 +1722,6 @@ function randomShortId(): string {
   return randomUUID().replace(/-/g, "").slice(0, 6);
 }
 
-function customConnectorPrefixCompatibilityStatement(orgId: string) {
-  // Outgoing writers do not yet own the organization row. R2 removes this
-  // statement only after those writers and incompatible rollback targets drain.
-  // eslint-disable-next-line api/no-new-advisory-lock -- Existing prefix coordination, retained for outgoing-writer compatibility.
-  return sql`SELECT pg_advisory_xact_lock(hashtextextended(${`custom_connector_prefixes:${orgId}`}, 0))`;
-}
-
-function findCustomConnectorPrefixConflict(
-  existingConnectors: readonly {
-    readonly id: string;
-    readonly displayName: string;
-    readonly prefixTemplates: unknown;
-  }[],
-  args: {
-    readonly prefixTemplates: readonly string[];
-    readonly excludeConnectorId?: string;
-  },
-): BadRequestResponse | null {
-  const requestedPrefixes = new Map(
-    args.prefixTemplates.map((prefix) => {
-      return [customConnectorPrefixTemplateIdentity(prefix), prefix] as const;
-    }),
-  );
-
-  for (const connector of existingConnectors) {
-    if (connector.id === args.excludeConnectorId) {
-      continue;
-    }
-    const prefixTemplates = stringArray(connector.prefixTemplates);
-    for (const prefix of prefixTemplates) {
-      const requestedPrefix = requestedPrefixes.get(
-        customConnectorPrefixTemplateIdentity(prefix),
-      );
-      if (requestedPrefix) {
-        return badRequestMessage(
-          `Prefix "${requestedPrefix}" is already used by custom connector "${connector.displayName}"`,
-        );
-      }
-    }
-  }
-  return null;
-}
-
-const ensureCustomConnectorOrgMetadata$ = command(
-  async ({ set }, orgId: string, signal: AbortSignal): Promise<void> => {
-    const db = set(writeDb$);
-    await db.transaction(async (tx) => {
-      const [inserted] = await tx
-        .insert(orgMetadataCanonicalWrites)
-        .values({ orgId: orgId })
-        .onConflictDoNothing()
-        .returning({ orgId: orgMetadata.orgId, tier: orgMetadata.tier });
-      if (inserted) {
-        await tx
-          .insert(orgPlanEntitlements)
-          .values(
-            orgPlanEntitlementValues(
-              {
-                orgId: inserted.orgId,
-                tier: orgTierSchema.parse(inserted.tier),
-                source: "org_metadata_migration",
-              },
-              { stripeSubscriptionId: null, sourceMetadata: {} },
-            ),
-          )
-          .onConflictDoNothing({ target: orgPlanEntitlements.orgId });
-      }
-    });
-    signal.throwIfAborted();
-  },
-);
-
 const persistCustomConnectorCreate$ = command(
   async (
     { set },
@@ -1821,41 +1744,8 @@ const persistCustomConnectorCreate$ = command(
       }
     | BadRequestResponse
   > => {
-    if (args.definition.kind === "http") {
-      await set(ensureCustomConnectorOrgMetadata$, args.orgId, signal);
-      signal.throwIfAborted();
-    }
     const db = set(writeDb$);
     return await db.transaction(async (tx) => {
-      if (args.definition.kind === "http") {
-        await tx.execute(
-          customConnectorPrefixCompatibilityStatement(args.orgId),
-        );
-        // This existing business parent also arbitrates an initially empty prefix
-        // set. Read the namespace only after ownership is acquired at READ COMMITTED.
-        await tx
-          .select({ orgId: orgMetadata.orgId })
-          .from(orgMetadata)
-          .where(eq(orgMetadata.orgId, args.orgId))
-          .for("no key update");
-        const existingConnectors = await tx
-          .select({
-            id: orgCustomConnectors.id,
-            displayName: orgCustomConnectors.displayName,
-            prefixTemplates: orgCustomConnectors.prefixTemplates,
-          })
-          .from(orgCustomConnectors)
-          .where(eq(orgCustomConnectors.orgId, args.orgId));
-        const prefixConflict = findCustomConnectorPrefixConflict(
-          existingConnectors,
-          {
-            prefixTemplates: args.definition.prefixTemplates,
-          },
-        );
-        if (prefixConflict) {
-          return prefixConflict;
-        }
-      }
       return await writeCustomConnectorOAuthState(
         tx,
         [{ connectorId: args.connectorId, orgId: args.orgId }],
@@ -2168,42 +2058,8 @@ const persistCustomConnectorUpdate$ = command(
     | BadRequestResponse
     | null
   > => {
-    if (args.definition.kind === "http") {
-      await set(ensureCustomConnectorOrgMetadata$, args.orgId, signal);
-      signal.throwIfAborted();
-    }
     const db = set(writeDb$);
     return await db.transaction(async (tx) => {
-      if (args.definition.kind === "http") {
-        await tx.execute(
-          customConnectorPrefixCompatibilityStatement(args.orgId),
-        );
-        // This existing business parent also arbitrates an initially empty prefix
-        // set. Read the namespace only after ownership is acquired at READ COMMITTED.
-        await tx
-          .select({ orgId: orgMetadata.orgId })
-          .from(orgMetadata)
-          .where(eq(orgMetadata.orgId, args.orgId))
-          .for("no key update");
-        const existingConnectors = await tx
-          .select({
-            id: orgCustomConnectors.id,
-            displayName: orgCustomConnectors.displayName,
-            prefixTemplates: orgCustomConnectors.prefixTemplates,
-          })
-          .from(orgCustomConnectors)
-          .where(eq(orgCustomConnectors.orgId, args.orgId));
-        const prefixConflict = findCustomConnectorPrefixConflict(
-          existingConnectors,
-          {
-            prefixTemplates: args.definition.prefixTemplates,
-            excludeConnectorId: args.id,
-          },
-        );
-        if (prefixConflict) {
-          return prefixConflict;
-        }
-      }
       const [locked] = await tx
         .select({ id: orgCustomConnectors.id })
         .from(orgCustomConnectors)

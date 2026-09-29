@@ -2302,39 +2302,6 @@ describe("CONN-02: external-code authorization", () => {
 });
 
 describe("CONN-03: custom connectors and connector-owned secrets", () => {
-  it("publishes only one definition for concurrent equivalent prefixes", async () => {
-    const admin = createBddApi(context).user({ orgRole: "org:admin" });
-    const prefix = `https://${randomUUID()}.prefix-race.test/v1/`;
-    const responses = await Promise.all(
-      ["first", "second"].map((name) => {
-        return connectorsApi.requestCreateCustomConnector(
-          admin,
-          manualHttpCustomConnectorCreateBody({
-            displayName: `Prefix ${name}`,
-            prefixTemplates: [prefix],
-          }),
-          [201, 400],
-        );
-      }),
-    );
-    expect(
-      responses
-        .map((response) => {
-          return response.status;
-        })
-        .sort(),
-    ).toStrictEqual([201, 400]);
-    const definitions = await connectorsApi.listCustomConnectors(admin);
-    expect(
-      definitions.filter((definition) => {
-        return (
-          definition.kind === "http" &&
-          definition.prefixTemplates.includes(prefix)
-        );
-      }),
-    ).toHaveLength(1);
-  });
-
   it("rejects credentialless manual auth across definition write boundaries", async () => {
     const admin = createBddApi(context).user({ orgRole: "org:admin" });
     const rand = randomUUID().replace(/-/g, "").slice(0, 8);
@@ -7539,7 +7506,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     ).resolves.toMatchObject({ versionId: updatedHead.versionId });
   });
 
-  it("rejects prefix collisions introduced by edits", async () => {
+  it("allows an edited definition to share a prefix without changing identity", async () => {
     const admin = createBddApi(context).user();
     const original = await connectorsApi.createCustomConnector(admin, {
       ...customConnectorBody(uniqueSlug("bdd-prefix-original")),
@@ -7554,7 +7521,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       throw new Error("Expected the original connector to have a prefix");
     }
 
-    const collision = await connectorsApi.requestUpdateCustomConnector(
+    const updated = await connectorsApi.requestUpdateCustomConnector(
       admin,
       editable.id,
       {
@@ -7565,21 +7532,23 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         queryInjections: editable.queryInjections,
         authMode: editable.authMode,
       },
-      [400],
+      [200],
     );
-    expectApiError(collision.body);
-    expect(collision.body.error.message).toContain(`"${original.displayName}"`);
+    expect(updated.body).toMatchObject({
+      id: editable.id,
+      slug: editable.slug,
+    });
     expect(
       (await connectorsApi.listCustomConnectors(admin)).find((connector) => {
         return connector.id === editable.id;
       })?.prefixTemplates,
-    ).toStrictEqual(editable.prefixTemplates);
+    ).toStrictEqual(original.prefixTemplates);
 
     await connectorsApi.deleteCustomConnector(admin, original.id);
     await connectorsApi.deleteCustomConnector(admin, editable.id);
   });
 
-  it("serializes concurrent creates for the same normalized prefix", async () => {
+  it("publishes independent identities for concurrent equivalent prefixes", async () => {
     const admin = createBddApi(context).user();
     const rand = randomUUID().replace(/-/g, "").slice(0, 8);
     const prefix = `https://concurrent-${rand}.example.test/v1/`;
@@ -7591,7 +7560,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
           displayName: "BDD Concurrent Prefix A",
           prefixTemplates: [prefix],
         },
-        [201, 400],
+        [201],
       ),
       connectorsApi.requestCreateCustomConnector(
         admin,
@@ -7600,7 +7569,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
           displayName: "BDD Concurrent Prefix B",
           prefixTemplates: [prefix.slice(0, -1)],
         },
-        [201, 400],
+        [201],
       ),
     ]);
 
@@ -7610,20 +7579,35 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
           return response.status;
         })
         .sort(),
-    ).toStrictEqual([201, 400]);
-    const created = responses.find((response) => {
-      return response.status === 201;
+    ).toStrictEqual([201, 201]);
+    const created = responses.map((response) => {
+      if (response.status !== 201) {
+        throw new Error("Expected both connector definitions to be created");
+      }
+      return response.body;
     });
-    const rejected = responses.find((response) => {
-      return response.status === 400;
-    });
-    if (created?.status !== 201 || rejected?.status !== 400) {
-      throw new Error("Expected one created and one rejected connector");
+    expect(
+      new Set(
+        created.map((definition) => {
+          return definition.id;
+        }),
+      ).size,
+    ).toBe(2);
+    expect(
+      new Set(
+        created.map((definition) => {
+          return definition.slug;
+        }),
+      ).size,
+    ).toBe(2);
+    expect(
+      created.map((definition) => {
+        return definition.prefixTemplates;
+      }),
+    ).toStrictEqual([[prefix], [prefix]]);
+    for (const definition of created) {
+      await connectorsApi.deleteCustomConnector(admin, definition.id);
     }
-    expectApiError(rejected.body);
-    expect(rejected.body.error.message).toContain("is already used");
-
-    await connectorsApi.deleteCustomConnector(admin, created.body.id);
   });
 
   it("scopes custom connector deletion to org admins and same-org ids", async () => {

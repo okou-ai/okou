@@ -1165,6 +1165,87 @@ describe("POST /api/connectors/diagnostics/check", () => {
   });
 
   describe("run-admitted custom connector diagnostics", () => {
+    it("requires an explicit identity for shared custom prefixes and retains deletion isolation", async () => {
+      const actor = bdd.user();
+      bdd.acceptAgentStorageWrites();
+      await bdd.readOnboardingStatus(actor);
+      const prefix = `https://${randomUUID()}.shared-custom.test/v1/`;
+      const definitions = [];
+      for (const label of ["First", "Second"]) {
+        const definition = await connectorsApi.createCustomConnector(
+          actor,
+          manualHttpCustomConnectorCreateBody({
+            displayName: `Shared ${label}`,
+            prefixTemplates: [prefix],
+          }),
+        );
+        await trackCustomFixture(
+          Promise.resolve({ actor, connectorId: definition.id }),
+        );
+        await connectorsApi.setCustomConnectorValues(actor, definition.id, [
+          {
+            key: "secret",
+            kind: "secret",
+            value: `shared-${label}-credential`,
+          },
+        ]);
+        definitions.push(definition);
+      }
+      const [first, second] = definitions;
+      if (!first || !second) {
+        throw new Error("Expected two independently published definitions");
+      }
+      const { runId } = await createOwnedRun(actor, {
+        customConnectorIds: definitions.map((definition) => {
+          return definition.id;
+        }),
+      });
+      const token = okouToken(actor, runId, [
+        "connector:read",
+        "agent-run:read",
+      ]);
+      const request = {
+        mode: "url" as const,
+        method: "GET",
+        url: `${prefix}items`,
+      };
+      const ambiguous = await checkWithToken(token, {
+        ...request,
+        includeCustomConnectors: true,
+      });
+      expect(ambiguous.body).toMatchObject({ outcome: "ambiguous" });
+      for (const definition of definitions) {
+        const selected = await checkWithToken(token, {
+          ...request,
+          target: { kind: "custom", customConnectorId: definition.id },
+        });
+        expect(selected.body).toMatchObject({
+          outcome: "resolved",
+          connector: {
+            target: { kind: "custom", customConnectorId: definition.id },
+          },
+        });
+        expect(JSON.stringify(selected.body)).not.toContain("-credential");
+      }
+      await connectorsApi.deleteCustomConnector(actor, first.id);
+      const removed = await checkWithToken(token, {
+        ...request,
+        target: { kind: "custom", customConnectorId: first.id },
+      });
+      expect(removed.body).toMatchObject({
+        outcome: "target-unavailable",
+        target: { kind: "custom", customConnectorId: first.id },
+      });
+      const retained = await checkWithToken(token, {
+        ...request,
+        target: { kind: "custom", customConnectorId: second.id },
+      });
+      expect(retained.body).toMatchObject({
+        outcome: "resolved",
+        connector: { target: { kind: "custom", customConnectorId: second.id } },
+      });
+    });
+
     async function prepareScenario() {
       const actor = bdd.user();
       await seedAdminMembership(actor);
