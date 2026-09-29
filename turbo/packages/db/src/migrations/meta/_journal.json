@@ -1478,6 +1478,13 @@
       "when": 1790661618887,
       "tag": "1288_drop_retired_agent_grant_tables",
       "breakpoints": true
+    },
+    {
+      "idx": 1289,
+      "version": "7",
+      "when": 1790677953790,
+      "tag": "1289_thick_bruce_banner",
+      "breakpoints": true
     }
   ]
 }

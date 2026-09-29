@@ -7,7 +7,13 @@ the thread's effective access to the exact SSH host and shared Run-owned SSH aut
 chooses native shared or exclusive mode for each session; the VNC server enforces
 its connection policy.
 
-Live VNC inventory, private resolve, and check require the Run's chat thread and that thread's effective permission for the exact VNC host. SSH-backed hosts also require effective permission for the referenced SSH host. A Run without a chat thread is denied. Legacy Agent-grant rows remain stored temporarily for rolling-deployment compatibility, but do not authorize runtime VNC access.
+Live VNC inventory, private resolve, and check require the Run's chat thread
+and that thread's effective permission for the exact VNC host. SSH-backed hosts
+also require effective permission for the referenced SSH host. A Run without a
+chat thread is denied. Retired Agent-grant rows do not authorize runtime VNC
+access. Migration `1288_drop_retired_agent_grant_tables` removes their physical
+tables after the last old API readers have drained; that migration is not a
+production receipt until deployed.
 
 ## Inventory and retired grants
 
@@ -164,12 +170,10 @@ no 30-second lease or promise to disconnect an idle session within that interval
 Per-operation enforcement and real-server multi-client behavior must be verified
 before activation. This API slice alone does not enforce a live Runner socket.
 
-Owner cleanup still removes retained historical grants, including rows without
-connections, while older API instances drain. It locks grant-owning Agent
-parents in stable order before business rows so concurrent Agent deletion
-cannot invert its Run-to-grant cascade order. Current host configuration writes
-retain cleanup and owner admission. KMS and Clerk calls never run under these
-locks.
+Current host configuration writes retain owner admission and cleanup without
+reading or writing the retired grant tables. The earlier code-only cleanup
+removed their last readers before the separate physical table drop. KMS and
+Clerk calls never run under VNC configuration row locks.
 
 ## Deployment
 
@@ -206,9 +210,13 @@ backward-compatibility nor production activation is an acceptance gate for
 this still-off profile.
 
 The original grant-table rollout required serving and rollback APIs to support
-grant cleanup before grants were created. Current APIs no longer create grants;
-retain the table and cleanup until older serving instances drain, then follow
-#37272 for schema removal. Preserving pre-cutover rollback is not required by
-#36360. VNC product activation remains a separate decision after #34780
+grant cleanup before grants were created. Current APIs no longer create or read
+those grants. Migration `1288_drop_retired_agent_grant_tables` is their separate
+physical table drop after the code-only cleanup and old invocation drain; API
+rollback across that drop is restricted as described in
+[deployment compatibility](deployment-compatibility.md). The X509None
+credentialless profile migration `1289_thick_bruce_banner` follows 1288 and
+must be applied before exposing the upgraded API. VNC product activation
+remains a separate decision after #34780
 verifies real-server sessions, current checks and socket teardown; #34781/#34782
 own CLI, owner UI and end-to-end mode selection.
