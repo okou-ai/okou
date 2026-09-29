@@ -296,6 +296,33 @@ async function recordConnectorUsage(
   );
 }
 
+function creditPurchaseEvent(
+  actor: ApiTestUser,
+  subtotal: number,
+  expiresAt: Date,
+) {
+  return {
+    id: `evt_expiry_${randomUUID()}`,
+    type: "invoice.paid",
+    created: Math.floor(nowDate().getTime() / 1000),
+    data: {
+      object: {
+        id: `in_expiry_${randomUUID()}`,
+        customer: null,
+        subtotal,
+        metadata: {
+          type: "credit_purchase",
+          purpose: "credit_purchase",
+          orgId: actor.orgId,
+          creditsAmountMode: "amount_subtotal",
+          creditsExpiresAt: expiresAt.toISOString(),
+        },
+        parent: null,
+      },
+    },
+  };
+}
+
 /** The webhook accepts at most 100 events per request. */
 async function recordConnectorBacklog(
   actor: ApiTestUser,
@@ -1173,6 +1200,95 @@ describe("GET /api/usage/record", () => {
     await billing.processOrgUsageEvents(fixture.actor, pricing.resolution);
     const retried = await billing.readUsageRecord(fixture.actor, "7d");
     expect(retried.body).toStrictEqual(caughtUp.body);
+  });
+
+  it("finishes expired remainder before a new purchase and preserves duplicate receipts", async () => {
+    const fixture = await entitledRecordActor();
+    webhooks.configureStripeBillingEnv();
+    const provider = uniqueProvider("expired-wallet-purchase");
+    const pricing = await createUsagePricingFixture({
+      configured: [
+        {
+          kind: "connector",
+          provider,
+          category: "api_request",
+          unitPrice: 1,
+          unitSize: 1,
+        },
+      ],
+    });
+    onTestFinished(pricing.cleanup);
+    const run = await createUnthreadedRun(fixture.actor, {
+      prompt: "Wallet expiry admission",
+      triggerSource: "test",
+    });
+    await webhooks.requestAgentUsageEvent(
+      {
+        runId: run.runId,
+        events: [
+          {
+            idempotencyKey: randomUUID(),
+            kind: "connector",
+            provider,
+            category: "api_request",
+            quantity: 20_095,
+          },
+        ],
+      },
+      sandboxHeaders(fixture.actor, run.runId),
+      [200],
+    );
+    await billing.processOrgUsageEvents(fixture.actor, pricing.resolution);
+    expect((await billing.readBillingStatus(fixture.actor)).credits).toBe(-95);
+
+    // Two 50-credit purchases leave a wallet of 5, but 100 tracked credits.
+    // The preceding debt is a real processed usage event, not an internal row edit.
+    const expiresAt = new Date(nowDate().getTime() + DAY_MS);
+    for (const subtotal of [5, 5]) {
+      await webhooks.postStripeEvent(
+        creditPurchaseEvent(fixture.actor, subtotal, expiresAt),
+        [200],
+      );
+    }
+    expect((await billing.readBillingStatus(fixture.actor)).credits).toBe(5);
+    mockNow(new Date(expiresAt.getTime() + 1000));
+    const purchase = creditPurchaseEvent(
+      fixture.actor,
+      15,
+      new Date(expiresAt.getTime() + 30 * DAY_MS),
+    );
+    await Promise.all([
+      webhooks.postStripeEvent(purchase, [200]),
+      webhooks.postStripeEvent(purchase, [200]),
+    ]);
+    const afterPurchase = await billing.readBillingStatus(fixture.actor);
+    expect(afterPurchase.credits).toBe(150);
+    expect(afterPurchase.creditGrants).toStrictEqual([
+      expect.objectContaining({
+        source: "credit_purchase",
+        amount: 150,
+        remaining: 150,
+      }),
+    ]);
+    await webhooks.requestAgentUsageEvent(
+      {
+        runId: run.runId,
+        events: [
+          {
+            idempotencyKey: randomUUID(),
+            kind: "connector",
+            provider,
+            category: "api_request",
+            quantity: 1,
+          },
+        ],
+      },
+      sandboxHeaders(fixture.actor, run.runId),
+      [200],
+    );
+    await billing.processOrgUsageEvents(fixture.actor, pricing.resolution);
+    await webhooks.postStripeEvent(purchase, [200]);
+    expect((await billing.readBillingStatus(fixture.actor)).credits).toBe(149);
   });
 
   it("returns an empty null-period response for free billing period usage", async () => {
