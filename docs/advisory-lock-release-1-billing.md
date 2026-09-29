@@ -143,6 +143,25 @@ This completes local conditional publication for these three entry points. It
 does not fence already-issued Stripe updates or establish shared schedule
 ordering; those remote guarantees remain part of the unresolved protocol below.
 
+### Invitation preview ownership
+
+The purchase-preview route now dispatches business-input commands for its plan
+admission and current subscription reads. Preview preparation owns its local
+subscription and reusable-purchase reads; the proration preview command owns its
+subscription/allocation/change snapshot. Only ordinary rows and values reach the
+Stripe preparation helper. Clerk membership lookup, invoice-preview pagination,
+Price reads, and credit calculations all run outside SQL transactions.
+
+`insertPendingInvitationPurchase$` owns the finite commit that supersedes an
+unbound unpaid preview and inserts the new purchase under the existing normalized
+email unique index. The command obtains its own database and passes neither the
+database nor transaction to a helper. The existing API coverage for concurrent
+previews, preview replacement, payment amount/tax and unpaid billing behavior is
+retained. This completes the preview entrance; confirmation, payment activation,
+refund and the shared remote projection protocol below remain separate unfinished
+work. In particular, the old database-aware allocation-preview wrapper remains
+for confirmation and is not counted as terminal command ownership.
+
 ### Invitation purchase transitions
 
 The invitation-creation, refund, and acceptance-activation claims use conditional
@@ -182,7 +201,7 @@ the transaction cannot commit two open purchases or lose a committed receipt.
 
 | Acquisition                                       | Release 1 result                                                                   | Why a retained boundary cannot yet be deleted                                                                                                            | Release 2 removal gate                                                                                                                                                     |
 | ------------------------------------------------- | ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `stripe_customer_<org>`                           | Provider idempotency and conditional publication implemented; retained acquisition | Outgoing creation has no idempotency key and unconditionally overwrites the binding                                                                      | Verified API drain and compatible rollback targets; then move Stripe preparation outside the owning command's local commit                                                 |
+| `stripe_customer_<org>`                           | Provider idempotency and conditional publication implemented; retained acquisition | Outgoing creation has no idempotency key and unconditionally overwrites the binding                                                                      | Verified API drain and compatible rollback targets; then delete the finite publication acquisition                                                                         |
 | `billing_purchase:<org>`                          | Retained; replacement protocol is not complete in this PR                          | Stateless Plan previews have different purchase IDs; two creations can both become payable. Pending usage-pack snapshot writers also share this boundary | Complete a common creation/arbitration protocol for every Plan and usage-pack writer, then verify API drain and rollback compatibility                                     |
 | `stripe_concurrency_subscription:<subscription>`  | Conditional projection protocol implemented; retained acquisition                  | Outgoing handlers publish unconditional projections; all new writers advance the existing timestamp and new reconciliation results use exact-value CAS   | Verify API drain and compatible rollback targets, then move provider reads outside the local commit; see the concurrency projection inventory                              |
 | `usage_pack_billing:<org>` in allocation service  | Retained; replacement protocol is not complete in this PR                          | Allocation, migration, invitation activation/refund, and deferred schedule workflows issue absolute Stripe quantity/schedule updates                     | Demonstrate ordering and recovery across all existing operation identities, with remote work outside local commits; then verify mixed R1/R2 writers and rollback targets   |
@@ -201,7 +220,8 @@ This is a call-chain inventory, not a count of matching type signatures:
 - **Customer:** the command owns the metadata insert/CAS and entitlement insert.
   `writeOrgMetadataWithDefaultPlanEntitlement(tx, ..., callback)` is removed from
   this path. The reused entitlement builder accepts ordinary values only.
-  Stripe I/O remains inside the compatibility boundary described above.
+  Provider candidate creation is outside that transaction; only finite publication
+  retains the old acquisition. Failure recovery rereads the published binding.
 - **Purchase admission:** `confirmPlanPurchase$` now owns its transaction and
   SQL directly; `confirmPlanPurchaseTransaction` and its transaction argument
   are removed. The old admission boundary and Stripe I/O remain while the

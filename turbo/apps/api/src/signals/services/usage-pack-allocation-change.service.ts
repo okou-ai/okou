@@ -28,9 +28,10 @@ import {
   or,
   sql,
 } from "drizzle-orm";
+import { command } from "ccstate";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import type { Db } from "../external/db";
+import { writeDb$, type Db } from "../external/db";
 import {
   getStripeClient,
   type StripeClient,
@@ -1422,19 +1423,17 @@ export interface UsagePackAllocationAdditionChargePreview extends UsagePackAlloc
   }[];
 }
 
-export async function previewUsagePackAllocationAddition(
-  db: Pick<Db, "select">,
-  args: {
-    readonly usagePackSubscriptionId: string;
-    readonly stripePriceId: string;
-    readonly prorationTimestamp?: number;
-  },
+interface UsagePackAllocationAdditionArgs {
+  readonly usagePackSubscriptionId: string;
+  readonly stripePriceId: string;
+  readonly prorationTimestamp?: number;
+}
+
+async function previewUsagePackAllocationAdditionForContext(
+  context: UsagePackChangeContext | null,
+  args: UsagePackAllocationAdditionArgs,
   signal: AbortSignal,
 ): Promise<UsagePackAllocationAdditionChargePreview> {
-  const context = await loadUsagePackChangeContextBySubscriptionId(
-    db,
-    args.usagePackSubscriptionId,
-  );
   const stripeSubscriptionId = context?.subscription.stripeSubscriptionId;
   if (!context || !stripeSubscriptionId) {
     throw new Error("Usage pack subscription is not ready");
@@ -1501,6 +1500,72 @@ export async function previewUsagePackAllocationAddition(
     prorationTimestamp,
   };
 }
+
+export async function previewUsagePackAllocationAddition(
+  db: Pick<Db, "select">,
+  args: UsagePackAllocationAdditionArgs,
+  signal: AbortSignal,
+): Promise<UsagePackAllocationAdditionChargePreview> {
+  const context = await loadUsagePackChangeContextBySubscriptionId(
+    db,
+    args.usagePackSubscriptionId,
+  );
+  return await previewUsagePackAllocationAdditionForContext(
+    context,
+    args,
+    signal,
+  );
+}
+
+export const previewUsagePackAllocationAddition$ = command(
+  async (
+    { set },
+    args: UsagePackAllocationAdditionArgs,
+    signal: AbortSignal,
+  ): Promise<UsagePackAllocationAdditionChargePreview> => {
+    const db = set(writeDb$);
+    const [subscription] = await db
+      .select()
+      .from(usagePackSubscriptions)
+      .where(eq(usagePackSubscriptions.id, args.usagePackSubscriptionId))
+      .limit(1);
+    signal.throwIfAborted();
+    if (!subscription) {
+      throw new Error("Usage pack subscription is not ready");
+    }
+    const [allocations, changes] = await Promise.all([
+      db
+        .select()
+        .from(usagePackAllocations)
+        .where(
+          eq(
+            usagePackAllocations.usagePackSubscriptionId,
+            args.usagePackSubscriptionId,
+          ),
+        ),
+      db
+        .select()
+        .from(usagePackAllocationChanges)
+        .where(
+          and(
+            eq(
+              usagePackAllocationChanges.usagePackSubscriptionId,
+              args.usagePackSubscriptionId,
+            ),
+            inArray(usagePackAllocationChanges.status, [
+              ...OPEN_CHANGE_STATUSES,
+            ]),
+          ),
+        ),
+    ]);
+    signal.throwIfAborted();
+    return await previewUsagePackAllocationAdditionForContext(
+      { subscription, allocations, changes },
+      args,
+      signal,
+    );
+  },
+);
 
 async function syncUsagePackProjection(
   subscription: UsagePackChangeSubscriptionInput,
