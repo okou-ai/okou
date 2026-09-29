@@ -1,3 +1,4 @@
+import { enqueueGmailWorkflowInput$ } from "./workflow-gmail-queue.service";
 import { enqueueGoogleCalendarWorkflowInput$ } from "./workflow-google-calendar-queue.service";
 import { command } from "ccstate";
 
@@ -137,7 +138,7 @@ function workflowQueueInputPreparation(
   timing: ApiDispatchTimingCollector,
 ) {
   if (
-    (args.googleFormsSource || args.googleCalendarSource) &&
+    (args.googleFormsSource || args.googleCalendarSource || args.gmailSource) &&
     (args.scheduleClaim ||
       args.persistSourceTransition ||
       args.due.automation.kind === "schedule")
@@ -183,6 +184,21 @@ function workflowQueueAdmissionStepAction(
   return actions[step];
 }
 
+function workflowQueueEntryTiming(
+  supplied: ApiDispatchTimingCollector | undefined,
+  apiStartTime: RunWorkflowAutomationNowArgs["apiStartTime"],
+) {
+  const timing = supplied ?? new ApiDispatchTimingCollector();
+  if (!supplied) {
+    timing.recordElapsed(
+      "api_dispatch_pre_create_agent_workflow_automation_entrypoint_gap",
+      "nested",
+      apiStartTime,
+    );
+  }
+  return timing;
+}
+
 export const runWorkflowAutomationNow$ = command(
   async (
     { set },
@@ -191,14 +207,7 @@ export const runWorkflowAutomationNow$ = command(
   ): Promise<RunWorkflowAutomationResult> => {
     const db = set(writeDb$);
     const { automation, chatThreadId } = args.due;
-    const timing = args.timing ?? new ApiDispatchTimingCollector();
-    if (!args.timing) {
-      timing.recordElapsed(
-        "api_dispatch_pre_create_agent_workflow_automation_entrypoint_gap",
-        "nested",
-        args.apiStartTime,
-      );
-    }
+    const timing = workflowQueueEntryTiming(args.timing, args.apiStartTime);
 
     const { scheduleClaim, persistSourceTransition } = args;
     const replacePendingTicks =
@@ -245,24 +254,30 @@ export const runWorkflowAutomationNow$ = command(
                       },
                       signal,
                     )
-                  : enqueueChatInput(db, {
-                      chatThreadId,
-                      orgId: automation.orgId,
-                      appendInput,
-                      measureStep: (step, operation) => {
-                        return measureWorkflowAdmissionStep(
+                  : args.gmailSource
+                    ? set(
+                        enqueueGmailWorkflowInput$,
+                        { input: preparedInput, source: args.gmailSource },
+                        signal,
+                      )
+                    : enqueueChatInput(db, {
+                        chatThreadId,
+                        orgId: automation.orgId,
+                        appendInput,
+                        measureStep: (step, operation) => {
+                          return measureWorkflowAdmissionStep(
+                            timing,
+                            workflowQueueAdmissionStepAction(step),
+                            operation,
+                          );
+                        },
+                        ...queueAdmissionSourceTransition({
+                          scheduleClaim,
+                          persistSourceTransition,
+                          replacePendingTicks,
                           timing,
-                          workflowQueueAdmissionStepAction(step),
-                          operation,
-                        );
-                      },
-                      ...queueAdmissionSourceTransition({
-                        scheduleClaim,
-                        persistSourceTransition,
-                        replacePendingTicks,
-                        timing,
+                        }),
                       }),
-                    }),
             );
             if (!attempt.ok) {
               if (attempt.error instanceof ScheduleOccurrenceUnavailableError) {

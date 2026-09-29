@@ -38,14 +38,11 @@ import {
 } from "./automation-event-source-timing.service";
 import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
 import type { AutomationRow } from "./workflow-automation-launch.service";
-import type { WorkflowQueueAdmissionTransaction } from "./workflow-chat-event-queue.service";
+import { GmailAutomationSourceChangedError } from "./workflow-gmail-queue.service";
 import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
 import { workflowAutomationCanFire$ } from "./workflow-automation-access.service";
 import { ensureWorkflowUserAutomationThread } from "./workflow-user-automation-thread.service";
-import {
-  builtinConnectorStateLockStatement,
-  lockConnectorAccountTarget,
-} from "./auth-state-lock.service";
+import { builtinConnectorStateLockStatement } from "./auth-state-lock.service";
 import {
   loadBuiltinConnectorCredentialConnection$,
   loadBuiltinConnectorCredentialValues$,
@@ -1474,58 +1471,6 @@ const gmailRunStarterOverride = testOverride<
   return undefined;
 });
 
-class GmailAutomationSourceChangedError extends Error {
-  constructor() {
-    super("Gmail automation source changed before durable queue admission");
-    this.name = "GmailAutomationSourceChangedError";
-  }
-}
-
-async function persistCurrentGmailAutomationSource(
-  tx: WorkflowQueueAdmissionTransaction,
-  args: {
-    readonly automationId: string;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly connectorSourceId: string;
-    readonly watchStateId: string;
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  await lockConnectorAccountTarget(tx, {
-    orgId: args.orgId,
-    userId: args.userId,
-    target: { kind: "builtin", connectorSlug: "gmail" },
-  });
-  const [currentState] = await tx
-    .select({ id: gmailWatchStates.id })
-    .from(gmailWatchStates)
-    .where(
-      and(
-        eq(gmailWatchStates.id, args.watchStateId),
-        eq(gmailWatchStates.connectorId, args.connectorSourceId),
-      ),
-    )
-    .for("key share")
-    .limit(1);
-  const [current] = await tx
-    .select({ id: workflowAutomations.id })
-    .from(workflowAutomations)
-    .where(
-      and(
-        eq(workflowAutomations.id, args.automationId),
-        eq(workflowAutomations.enabled, true),
-        eq(workflowAutomations.eventConnectorId, args.connectorSourceId),
-      ),
-    )
-    .for("update")
-    .limit(1);
-  signal.throwIfAborted();
-  if (!currentState || !current) {
-    throw new GmailAutomationSourceChangedError();
-  }
-}
-
 type GmailDispatchStateResult =
   | {
       readonly kind: "ok";
@@ -2427,18 +2372,14 @@ const startGmailWorkflowRun$ = command(
           apiStartTime: args.apiStartTime,
           triggerSource: "automation-event",
           triggerBrief: runInput.triggerBrief,
-          persistSourceTransition: async (tx) => {
-            await persistCurrentGmailAutomationSource(
-              tx,
-              {
-                automationId: args.automation.automation.id,
-                orgId: args.automation.automation.orgId,
-                userId: args.automation.automation.ownerUserId,
-                connectorSourceId: args.connectorSourceId,
-                watchStateId: args.watchStateId,
-              },
-              signal,
-            );
+          gmailSource: {
+            automationId: args.automation.automation.id,
+            orgId: args.automation.automation.orgId,
+            userId: args.automation.automation.ownerUserId,
+            connectorId: args.connectorSourceId,
+            watchStateId: args.watchStateId,
+            emailAddress: args.decoded.emailAddress,
+            eventConfig: args.automation.automation.eventConfig,
           },
           timing: args.timing.collectorForRunStart(),
         },

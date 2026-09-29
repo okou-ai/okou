@@ -39,7 +39,7 @@ Forms and Calendar lifecycle acquisitions are removed. Other credential/watch co
 
 - Builtin OAuth callback, Automatic OAuth refresh and its legacy retirement store, ordinary refresh's legacy helper-owned commit path and its remaining resolver chains still propagate root database or transaction values. Automatic callback including state claim, catalog preparation and post-commit wakeup has a command-owned boundary. Other builtin/custom callback routes still use the legacy state helper; it remains only for those actual callers.
 - Model-provider firewall refresh has not been migrated to the complete final command-owned conditional protocol; it still executes provider/KMS work through the locked helper graph. Personal account activation/upsert and ordinary multi-auth/single-secret settings now own their SQL. Retained-account cleanup still propagates database handles. They remain implementation work rather than an outgoing-writer gate.
-- Gmail now has explicit approval for local disable, stopping renewal and remote natural expiry without account-global `users.stop`. Its remote-stop code is removed. Ensure, renewal and watch reconciliation now use owning commands; missing-thread initialization, queue source admission and shared credential callers remain. Calendar also has explicit approval for a remote gap and best-effort candidate cleanup; authority and basic deduplication remain required.
+- Gmail now has explicit approval for local disable, stopping renewal and remote natural expiry without account-global `users.stop`. Its remote-stop code is removed. Ensure, renewal and watch reconciliation now use owning commands; missing-thread initialization and shared credential callers remain. Gmail queue source admission now has an owning command, described below. Calendar also has explicit approval for a remote gap and best-effort candidate cleanup; authority and basic deduplication remain required.
 - Calendar ordinary lifecycle, activation/reconfiguration, reconciliation, credentials, dispatch reads and queue admission now use business-input commands. Its missing workflow-thread initialization and shared create/official/account projection graphs still forward handles, and are unfinished implementation. The separate builtin credential key remains for the shared account protocol, not for gap-free Calendar delivery. Calendar remote-stop preparation for account deletion and principal replacement is now outside the caller transaction; unrelated credential revocation preparation in the shared graph remains unfinished.
 - Forms workflow-thread creation still accepts a transaction. Shared create/official authority preparation and queue model preparation retain legacy database interfaces. Forms account-deletion watch preparation now has its own command outside deletion transactions. The regular Forms watch/configuration/dispatch credential path now uses owning commands. Other event sources still use the legacy workflow queue source callback; this does not claim to migrate those sources.
 
@@ -480,3 +480,19 @@ second test supersedes an in-flight setup through the public start API and
 checks that its late result cannot replace the newer authorization. These tests
 use neither database gates nor internal lock waiters. This closes device-session
 publication only; provider refresh/revocation protocols remain listed separately.
+
+### Gmail queue publication ownership
+
+`enqueueGmailWorkflowInput$` accepts only a prepared input and ordinary source
+identity. It obtains `writeDb$`, owns the finite transaction, inserts context and
+the canonical event, rechecks mailbox/watch/account identity and the enabled
+automation configuration, and publishes queue readiness. A changed source rolls
+back the event. The command directly executes SQL; the former transaction-bearing
+source callback is removed. Its existing builtin credential key and append-before-
+source ordering still match outgoing queue writers. Thread creation and the
+shared model-preparation graph are distinct unfinished boundaries.
+
+The usage-hint thread-deletion race was traced through both callers: their
+existing `tapError` boundary isolates a missing-thread append after financial
+commit while retaining cancellation. No hint retry, parent lock or transaction
+was added for that accepted best-effort output.

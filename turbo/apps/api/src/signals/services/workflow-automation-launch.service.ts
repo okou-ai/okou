@@ -1,3 +1,4 @@
+import type { GmailQueueSource } from "./workflow-gmail-queue.service";
 import type { GoogleCalendarQueueSource } from "./workflow-google-calendar-queue.service";
 import { recordGetStartedWorkflow } from "./get-started-workflow.service";
 import { randomBytes } from "node:crypto";
@@ -128,6 +129,7 @@ export interface RunWorkflowAutomationNowArgs {
   /** Forms input and cursor admission are owned by one finite SQL command. */
   readonly googleFormsSource?: GoogleFormsQueueSource;
   readonly googleCalendarSource?: GoogleCalendarQueueSource;
+  readonly gmailSource?: GmailQueueSource;
   /**
    * Consumes the due schedule occurrence in the same transaction as the queue
    * event. Only journaled legacy Morning Brief ticks pass one.
