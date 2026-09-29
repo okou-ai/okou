@@ -5082,7 +5082,7 @@ describe("Official Workflow installations", () => {
             return workflow.name === definitionName;
           }),
         ).toBeFalsy();
-        expect(stopCalls).toBeGreaterThan(0);
+        expect(stopCalls).toBe(0);
       } else {
         blockNextWatch = false;
         const installed = await accept(
@@ -5536,7 +5536,6 @@ describe("Official Workflow installations", () => {
         return;
       }
 
-      const stopCallsBeforeAgentDeletion = stopCalls;
       await bdd.deleteAgent(actor, agentId);
       agentDeleted = true;
       await accept(
@@ -5546,7 +5545,7 @@ describe("Official Workflow installations", () => {
         }),
         [404],
       );
-      expect(stopCalls).toBeGreaterThan(stopCallsBeforeAgentDeletion);
+      expect(stopCalls).toBe(0);
     },
   );
 
@@ -6842,7 +6841,7 @@ describe("Official Workflow installations", () => {
             [200],
           );
           expect(compensated.body.workflow.automations).toHaveLength(0);
-          expect(preparedScenario.stopCalls).toBe(1);
+          expect(preparedScenario.stopCalls).toBe(0);
           expect(preparedScenario.watchCalls).toBe(0);
           const compensatedState =
             await readOfficialWorkflowReconciliationState({
@@ -7401,7 +7400,7 @@ describe("Official Workflow installations", () => {
       }),
     ]);
     expect(watchCalls).toBe(1);
-    expect(stopCalls).toBe(1);
+    expect(stopCalls).toBe(0);
 
     await syncCatalog(
       catalog([
@@ -7442,7 +7441,7 @@ describe("Official Workflow installations", () => {
       }),
     ]);
     expect(watchCalls).toBe(4);
-    expect(stopCalls).toBe(2);
+    expect(stopCalls).toBe(0);
     await expect(
       readLatestWorkflowAutomationRunFixture(context, automationId),
     ).resolves.toMatchObject({ runId: historicalRunId });
@@ -7475,7 +7474,7 @@ describe("Official Workflow installations", () => {
       }),
     ]);
     expect(watchCalls).toBe(5);
-    expect(stopCalls).toBe(2);
+    expect(stopCalls).toBe(0);
     await expect(
       readLatestWorkflowAutomationRunFixture(context, automationId),
     ).resolves.toMatchObject({ runId: historicalRunId });
@@ -7977,7 +7976,7 @@ describe("Official Workflow installations", () => {
     );
     expect(removed.body.workflow.automations).toStrictEqual([]);
     expect(watchCalls).toBeGreaterThan(1);
-    expect(stopCalls).toBeGreaterThan(1);
+    expect(stopCalls).toBe(0);
   });
 });
 

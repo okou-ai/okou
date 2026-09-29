@@ -86,12 +86,7 @@ import {
   type ConnectorRuntimeSelection,
   type ConnectorRuntimeSnapshot,
 } from "./connector-catalog-runtime.service";
-import {
-  prepareGmailWatchStopForConnector,
-  reconcileGmailWatchesForUser,
-  stopPreparedGmailWatch,
-  type PendingGmailWatchStop,
-} from "./gmail-automation-event.service";
+import { reconcileGmailWatchesForUser } from "./gmail-automation-event.service";
 import {
   prepareGoogleCalendarWatchStopWithAccountTargetLocked,
   reconcileGoogleCalendarWatchesForUser,
@@ -1094,7 +1089,6 @@ interface DeleteBuiltinConnectorLocalStateArgs {
 }
 
 interface PendingConnectorAutomationCleanup {
-  readonly pendingGmailWatchStop: PendingGmailWatchStop | null;
   readonly pendingGoogleCalendarWatchStop: PendingGoogleCalendarWatchStop | null;
   readonly pendingGoogleFormsWatchStop: PendingGoogleFormsWatchStop | null;
   readonly pendingGoogleMeetSubscriptionDelete: PendingGoogleMeetSubscriptionDelete | null;
@@ -1112,10 +1106,6 @@ async function prepareConnectorAutomationCleanup(
     userId: args.userId,
     connectorId,
   };
-  const pendingGmailWatchStop =
-    args.connectorSlug === "gmail"
-      ? await prepareGmailWatchStopForConnector(cleanupArgs, signal)
-      : null;
   const pendingGoogleCalendarWatchStop =
     args.connectorSlug === "google-calendar"
       ? await prepareGoogleCalendarWatchStopWithAccountTargetLocked(
@@ -1135,7 +1125,6 @@ async function prepareConnectorAutomationCleanup(
         )
       : null;
   return {
-    pendingGmailWatchStop,
     pendingGoogleCalendarWatchStop,
     pendingGoogleFormsWatchStop,
     pendingGoogleMeetSubscriptionDelete,
@@ -1165,7 +1154,6 @@ async function deleteBuiltinConnectorAccountLocalState(
     return {
       kind: account.kind,
       pendingTokenRevoke: null,
-      pendingGmailWatchStop: null,
       pendingGoogleCalendarWatchStop: null,
       pendingGoogleMeetSubscriptionDelete: null,
       pendingGoogleFormsWatchStop: null,
@@ -1185,7 +1173,6 @@ async function deleteBuiltinConnectorAccountLocalState(
     return {
       kind: deletion.kind,
       pendingTokenRevoke: null,
-      pendingGmailWatchStop: null,
       pendingGoogleCalendarWatchStop: null,
       pendingGoogleMeetSubscriptionDelete: null,
       pendingGoogleFormsWatchStop: null,
@@ -1246,23 +1233,6 @@ async function stopPendingConnectorAutomationCleanup(
   signal: AbortSignal,
 ): Promise<unknown> {
   let capturedAbort: unknown = null;
-  if (pending.pendingGmailWatchStop !== null) {
-    const stopped = await settleIncludingAbort(
-      bestEffort(
-        stopPreparedGmailWatch(
-          { db, pending: pending.pendingGmailWatchStop },
-          signal,
-        ),
-        signal,
-      ),
-    );
-    if (signal.aborted) {
-      capturedAbort ??= signal.reason;
-    }
-    if (!stopped.ok) {
-      capturedAbort ??= stopped.error;
-    }
-  }
   capturedAbort ??= await stopPendingGoogleCalendarAutomationCleanup(
     pending.pendingGoogleCalendarWatchStop,
     signal,

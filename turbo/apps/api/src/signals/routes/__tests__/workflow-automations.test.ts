@@ -3631,7 +3631,7 @@ describe("okou workflow automations", () => {
       }),
       [204],
     );
-    expect(stop.calls).toBe(1);
+    expect(stop.calls).toBe(0);
 
     const enabled = await accept(
       automationsClient().enable({
@@ -3715,7 +3715,7 @@ describe("okou workflow automations", () => {
       }),
       [200],
     );
-    expect(stop.calls).toBe(1);
+    expect(stop.calls).toBe(0);
   });
 
   it("renews a shared Gmail mailbox through another healthy identity", async () => {
@@ -5019,27 +5019,14 @@ describe("okou workflow automations", () => {
     ]);
   });
 
-  it("serializes last-consumer disable with re-enable", async () => {
+  it("disables and re-enables Gmail locally without stopping the mailbox", async () => {
     const scenario = await setupFixture();
     await connectGmail(
       scenario,
       `concurrent-lifecycle-${scenario.fixture.userId}@example.com`,
     );
-    const watch = configureGmailWatchMock(["history-1", "history-2"]);
-    const stopStarted = createDeferredPromise<void>(context.signal);
-    const releaseStop = createDeferredPromise<void>(context.signal);
-    let stopCalls = 0;
-    server.use(
-      http.post(
-        "https://gmail.googleapis.com/gmail/v1/users/me/stop",
-        async () => {
-          stopCalls += 1;
-          stopStarted.resolve(undefined);
-          await releaseStop.promise;
-          return new HttpResponse(null, { status: 204 });
-        },
-      ),
-    );
+    configureGmailWatchMock(["history-1", "history-2"]);
+    const stop = configureGmailStopMock();
 
     const created = await accept(
       automationsClient().create({
@@ -5054,28 +5041,25 @@ describe("okou workflow automations", () => {
       [201],
     );
 
-    const disabling = accept(
+    await accept(
       automationsClient().disable({
         headers: authHeaders(),
         params: { id: created.body.id },
       }),
       [200],
     );
-    await stopStarted.promise;
-    const enabling = accept(
+    await expect(wf.readAutomation(created.body.id)).resolves.toMatchObject({
+      enabled: false,
+    });
+    const enabled = await accept(
       automationsClient().enable({
         headers: authHeaders(),
         params: { id: created.body.id },
       }),
       [200],
     );
-    releaseStop.resolve(undefined);
-
-    await disabling;
-    const enabled = await enabling;
     expect(enabled.body.enabled).toBeTruthy();
-    expect(stopCalls).toBe(1);
-    expect(watch.calls).toBe(2);
+    expect(stop.calls).toBe(0);
     await expect(wf.readAutomation(created.body.id)).resolves.toMatchObject({
       enabled: true,
     });
@@ -5108,7 +5092,7 @@ describe("okou workflow automations", () => {
       }),
       [204],
     );
-    expect(stop.calls).toBe(1);
+    expect(stop.calls).toBe(0);
 
     const agentScenario = await setupFixture();
     await connectGmail(
@@ -5129,10 +5113,10 @@ describe("okou workflow automations", () => {
     );
     await bdd.deleteAgent(agentScenario.actor, agentScenario.agentId);
     expect(watch.calls).toBe(2);
-    expect(stop.calls).toBe(2);
+    expect(stop.calls).toBe(0);
   });
 
-  it("stops a provider watch before connector credentials are removed", async () => {
+  it("removes connector credentials without stopping the Gmail mailbox", async () => {
     const scenario = await setupFixture();
     await connectGmail(
       scenario,
@@ -5157,7 +5141,7 @@ describe("okou workflow automations", () => {
       scenario.actor,
       "gmail",
     );
-    expect(stop.calls).toBe(1);
+    expect(stop.calls).toBe(0);
   });
 
   it("creates and updates Gmail label applied automations by label name", async () => {

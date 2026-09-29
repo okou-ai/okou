@@ -23,7 +23,7 @@ The six advisory acquisition definitions remain. This work prepares selected wri
 
 - Builtin OAuth callback, Automatic OAuth refresh and its legacy retirement store, ordinary refresh's legacy helper-owned commit path and its nine resolver chains still propagate root database or transaction values. Automatic callback including state claim, catalog preparation and post-commit wakeup has a command-owned boundary. Other builtin/custom callback routes still use the legacy state helper; it remains only for those actual callers.
 - Model-provider firewall refresh, settings and account paths have not been migrated to the complete final command-owned conditional protocol. They still execute provider/KMS work through the locked helper graph.
-- Gmail now has explicit approval for local disable, stopping renewal and remote natural expiry without account-global `users.stop`. Its implementation is separate from Forms and remains tracked until the actual caller graph is changed. Calendar also has explicit approval for a remote gap and best-effort candidate cleanup; authority and basic deduplication remain required.
+- Gmail now has explicit approval for local disable, stopping renewal and remote natural expiry without account-global `users.stop`. Its remote-stop code is removed; ensure/renew and the remaining caller graph still require command migration. Calendar also has explicit approval for a remote gap and best-effort candidate cleanup; authority and basic deduplication remain required.
 - Calendar lifecycle preparation/activation/reconciliation still has helper-owned and propagated transaction paths. Current-channel remote stop remains inside the existing decision boundary.
 - Forms workflow-thread creation still accepts a transaction. Shared create/official authority preparation, account-deletion watch cleanup and queue model preparation retain legacy database interfaces. The regular Forms watch/configuration/dispatch credential path now uses owning commands. Other event sources still use the legacy workflow queue source callback; this does not claim to migrate those sources.
 
@@ -194,8 +194,7 @@ without a transaction wrapper. Builtin credential coordination is separate: old
 refresh publication and invalid-grant handling write by account identity after
 provider work without the common stale-authorization predicate. Its removal
 requires the credential protocol and outgoing-writer gates, not cursor replay.
-Accepted Forms trigger loss does not authorize stale credential publication or a
-Gmail behavior change.
+Accepted watch tradeoffs do not authorize stale credential publication.
 
 ### Forms credential and dispatch command follow-up
 
@@ -222,3 +221,34 @@ checks. Missing-thread initialization still calls the legacy thread transaction
 helper, so that specific graph remains unfinished. The account-deletion cleanup
 path also still uses its legacy credential preparation until its complete owning
 command migration; it is not hidden by the regular-path conversion.
+
+### Gmail local stop and natural expiry
+
+No production path calls Gmail `users.stop`. Ordinary last-consumer cleanup now
+removes only inactive local watch rows and stops renewing them. Account deletion
+no longer decrypts or refreshes Gmail credentials to prepare an account-wide
+remote stop, and no post-commit stop request can terminate another consumer's
+newer watch. The provider may continue sending notifications until expiry.
+Local dispatch already checks enabled consumers and current account authority;
+inactive notifications cannot start a run.
+
+Local cleanup additionally uses `NOT EXISTS` over current enabled consumers,
+so a stale inactive-state read cannot delete the state of a newly enabled
+consumer. Other identities sharing the physical mailbox retain their own local
+state and may continue renewal. The basic processed-event uniqueness remains.
+The obsolete stop-token preparation, sorted scope-stop transaction and remote
+stop retry logic are removed. No fields or replacement coordination are added.
+
+API tests remove the remote-stop pause fixture and the old mandatory stop-count
+assertions. They verify disable/re-enable and account deletion without `users.stop`,
+no credential refresh/history fetch after last-consumer disable, and a second
+identity still consuming after the first disables. Source selection, revocation,
+message dispatch and retry deduplication remain covered. The normal source test
+no longer mutates an internal projection to simulate an old API before asserting
+its public result.
+
+This implements the accepted stop behavior; it does not finish Gmail's legacy
+ensure, renewal, dispatch, account projection or shared credential command graph.
+Those helper transactions still include external work and must be migrated before
+R1 is ready. Their remaining lifecycle lock is not justified by the removed
+`users.stop` behavior, nor by a product decision still being pending.

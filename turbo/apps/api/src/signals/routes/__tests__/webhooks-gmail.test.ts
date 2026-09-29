@@ -42,10 +42,7 @@ import {
   chatEventDisplayText,
 } from "./helpers/chat-event";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import {
-  clearWorkflowAutomationEventConnectorAsPreviousApi,
-  seedBuiltInModelKey,
-} from "./helpers/runtime-state";
+import { seedBuiltInModelKey } from "./helpers/runtime-state";
 import { createRouteMocks } from "./helpers/route-test";
 import { chatThreadRoutes } from "../chat-threads";
 import { connectorAccountRoutes } from "../connector-accounts";
@@ -195,10 +192,7 @@ function configureGmailWatchMock(
   return recorder;
 }
 
-function configureGmailWatchLifecycleMock(args?: {
-  readonly onStop?: () => void;
-  readonly waitForStop?: () => Promise<void> | null;
-}): GmailWatchLifecycleRecorder {
+function configureGmailWatchLifecycleMock(): GmailWatchLifecycleRecorder {
   const recorder: GmailWatchLifecycleRecorder = {
     watchedTokens: [],
     stopCalls: 0,
@@ -220,18 +214,10 @@ function configureGmailWatchLifecycleMock(args?: {
         });
       },
     ),
-    http.post(
-      "https://gmail.googleapis.com/gmail/v1/users/me/stop",
-      async () => {
-        recorder.stopCalls += 1;
-        args?.onStop?.();
-        const waitForStop = args?.waitForStop?.();
-        if (waitForStop) {
-          await waitForStop;
-        }
-        return HttpResponse.json({ error: "retry cleanup" }, { status: 500 });
-      },
-    ),
+    http.post("https://gmail.googleapis.com/gmail/v1/users/me/stop", () => {
+      recorder.stopCalls += 1;
+      return HttpResponse.json({ error: "retry cleanup" }, { status: 500 });
+    }),
   );
   return recorder;
 }
@@ -1073,7 +1059,7 @@ describe("POST /api/webhooks/gmail", () => {
       }),
       [200],
     );
-    expect(refreshCalls).toBe(1);
+    expect(refreshCalls).toBe(0);
     mockNow(connectedAt);
 
     const response = await postGmailWebhook(
@@ -1087,12 +1073,12 @@ describe("POST /api/webhooks/gmail", () => {
     expectResponseStatus(response, 200);
     expect(response.body).toStrictEqual({
       success: true,
-      watchStates: 1,
+      watchStates: 0,
       dispatched: 0,
       duplicates: 0,
     });
     expect(historyCalls).toBe(0);
-    expect(refreshCalls).toBe(1);
+    expect(refreshCalls).toBe(0);
 
     server.use(
       http.post("https://gmail.googleapis.com/gmail/v1/users/me/stop", () => {
@@ -1195,7 +1181,7 @@ describe("POST /api/webhooks/gmail", () => {
     );
   });
 
-  it("preserves existing Gmail cursors when another identity starts watching the mailbox", async () => {
+  it("keeps another Gmail identity consuming when one identity disables", async () => {
     const gmailEmail = uniqueGmailEmail();
     configureGmailEnv();
     const watch = configureGmailWatchMock(["100", "200"]);
@@ -1203,7 +1189,7 @@ describe("POST /api/webhooks/gmail", () => {
       `gmail-first-${randomUUID()}@example.test`,
     );
     await connectGmail(first.actor, gmailEmail);
-    await accept(
+    const firstAutomation = await accept(
       automationsClient().create({
         headers: authHeaders(first.actor),
         params: { workflowId: first.workflowId },
@@ -1267,6 +1253,24 @@ describe("POST /api/webhooks/gmail", () => {
       duplicates: 0,
     });
     expect(startHistoryIds.sort()).toStrictEqual(["100", "200"]);
+    await accept(
+      automationsClient().disable({
+        headers: authHeaders(first.actor),
+        params: { id: firstAutomation.body.id },
+      }),
+      [200],
+    );
+    startHistoryIds.length = 0;
+    const remaining = await postGmailWebhook(
+      gmailPushBody({
+        emailAddress: gmailEmail,
+        historyId: 202,
+        messageId: "after-other-identity-disabled",
+      }),
+    );
+    expectResponseStatus(remaining, 200);
+    expect(remaining.body).toMatchObject({ watchStates: 1, dispatched: 0 });
+    expect(startHistoryIds).toStrictEqual(["201"]);
   });
 
   it("dispatches matching new inbound messages and de-duplicates retries", async () => {
@@ -1325,10 +1329,6 @@ describe("POST /api/webhooks/gmail", () => {
       }),
       [200],
     );
-    await clearWorkflowAutomationEventConnectorAsPreviousApi(
-      context,
-      created.body.id,
-    );
 
     const oldSource = await postGmailWebhook(
       gmailPushBody({
@@ -1338,9 +1338,8 @@ describe("POST /api/webhooks/gmail", () => {
       }),
     );
     expectResponseStatus(oldSource, 200);
-    expect(oldSource.body).toStrictEqual({
+    expect(oldSource.body).toMatchObject({
       success: true,
-      watchStates: 1,
       dispatched: 0,
       duplicates: 0,
     });
@@ -1503,7 +1502,7 @@ describe("POST /api/webhooks/gmail", () => {
       "Bearer gmail-access-token",
       "Bearer gmail-second-access-token",
     ]);
-    expect(recorder.stopCalls).toBe(1);
+    expect(recorder.stopCalls).toBe(0);
     const reprojectedLabelAutomation = await readAutomation(
       actor,
       accountScopedLabelAutomation.body.id,
@@ -1591,7 +1590,7 @@ describe("POST /api/webhooks/gmail", () => {
       "Bearer gmail-access-token",
       "Bearer gmail-second-access-token",
     ]);
-    expect(recorder.stopCalls).toBe(1);
+    expect(recorder.stopCalls).toBe(0);
 
     await accept(
       chatThreadConnectorSelectionsClient().clear({
@@ -1606,7 +1605,7 @@ describe("POST /api/webhooks/gmail", () => {
       "Bearer gmail-second-access-token",
       "Bearer gmail-access-token",
     ]);
-    expect(recorder.stopCalls).toBe(2);
+    expect(recorder.stopCalls).toBe(0);
     const clearedSelections = await accept(
       chatThreadConnectorSelectionsClient().get({
         headers: authHeaders(actor),
@@ -1630,21 +1629,12 @@ describe("POST /api/webhooks/gmail", () => {
       "Bearer gmail-access-token",
       "Bearer gmail-second-access-token",
     ]);
-    expect(recorder.stopCalls).toBe(3);
+    expect(recorder.stopCalls).toBe(0);
   });
 
-  it("commits Gmail default-account deletion before provider cleanup", async () => {
+  it("deletes a Gmail default account without an account-wide remote stop", async () => {
     configureGmailEnv();
-    let signalStopStarted: (() => void) | null = null;
-    let waitForStopRelease: Promise<void> | null = null;
-    const recorder = configureGmailWatchLifecycleMock({
-      onStop: () => {
-        signalStopStarted?.();
-      },
-      waitForStop: () => {
-        return waitForStopRelease;
-      },
-    });
+    const recorder = configureGmailWatchLifecycleMock();
     const { actor, workflowId, firstConnectorId, secondConnectorId } =
       await setupMultiAccountGmailFixture();
     await accept(
@@ -1668,35 +1658,24 @@ describe("POST /api/webhooks/gmail", () => {
       [200],
     );
 
-    const stopStarted = createDeferredPromise<void>(context.signal);
-    const stopRelease = createDeferredPromise<void>(context.signal);
-    onTestFinished(() => {
-      if (!stopRelease.settled()) {
-        stopRelease.resolve();
-      }
-    });
-    signalStopStarted = () => {
-      stopStarted.resolve();
-    };
-    waitForStopRelease = stopRelease.promise;
-    const deleteDefaultRequest = connectorAccountsClient().delete({
-      headers: authHeaders(actor),
-      params: { connectionId: secondConnectorId },
-      body: { target: { kind: "builtin", connectorSlug: "gmail" } },
-    });
-    await stopStarted.promise;
-    const accountsWhileProviderStopIsPending =
-      await connectorsApi.listBuiltinConnectorAccounts(actor, "gmail");
+    const deletedDefault = await accept(
+      connectorAccountsClient().delete({
+        headers: authHeaders(actor),
+        params: { connectionId: secondConnectorId },
+        body: { target: { kind: "builtin", connectorSlug: "gmail" } },
+      }),
+      [200],
+    );
+    const accounts = await connectorsApi.listBuiltinConnectorAccounts(
+      actor,
+      "gmail",
+    );
     expect(
-      accountsWhileProviderStopIsPending.map((account) => {
+      accounts.map((account) => {
         return { id: account.id, isDefault: account.isDefault };
       }),
     ).toStrictEqual([{ id: firstConnectorId, isDefault: true }]);
-    stopRelease.resolve();
-    signalStopStarted = null;
-    waitForStopRelease = null;
 
-    const deletedDefault = await accept(deleteDefaultRequest, [200]);
     expect(deletedDefault.body).toStrictEqual({
       deletedConnectionId: secondConnectorId,
       resolvedSelectionCount: 0,
@@ -1707,7 +1686,7 @@ describe("POST /api/webhooks/gmail", () => {
       "Bearer gmail-second-access-token",
       "Bearer gmail-access-token",
     ]);
-    expect(recorder.stopCalls).toBe(2);
+    expect(recorder.stopCalls).toBe(0);
   });
 
   it("restores a Gmail watch after the last account is replaced", async () => {
@@ -1760,7 +1739,7 @@ describe("POST /api/webhooks/gmail", () => {
       "Bearer gmail-access-token",
       "Bearer gmail-replacement-access-token",
     ]);
-    expect(recorder.stopCalls).toBe(1);
+    expect(recorder.stopCalls).toBe(0);
     const accounts = await connectorsApi.listBuiltinConnectorAccounts(
       actor,
       "gmail",

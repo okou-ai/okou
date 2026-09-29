@@ -2,7 +2,7 @@ import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
 import { OAuth2Client } from "google-auth-library";
 import { command } from "ccstate";
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, notExists, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   gmailLabelAppliedEventConfigSchema,
@@ -170,14 +170,6 @@ interface GmailAccess {
   readonly connectorId: string;
   readonly emailAddress: string | null;
   readonly accessToken: string;
-}
-
-export interface PendingGmailWatchStop {
-  readonly accessToken: string;
-  readonly scopes: readonly {
-    readonly emailAddress: string;
-    readonly topicName: string;
-  }[];
 }
 
 type GmailAccessResult =
@@ -413,39 +405,6 @@ async function gmailFetchJson<T>(
   return { kind: "ok", value: schema.parse(await response.json()) };
 }
 
-async function gmailFetchNoContent(
-  args: {
-    readonly accessToken: string;
-    readonly url: string;
-    readonly init: RequestInit;
-  },
-  signal: AbortSignal,
-): Promise<GmailFetchResult<null>> {
-  const response = await tapError(
-    fetch(args.url, {
-      ...args.init,
-      signal,
-      headers: {
-        Authorization: `Bearer ${args.accessToken}`,
-        "Content-Type": "application/json",
-        ...args.init.headers,
-      },
-    }),
-  );
-  signal.throwIfAborted();
-  if (!response) {
-    return { kind: "error", status: 0, message: "Gmail request failed" };
-  }
-  if (!response.ok) {
-    return {
-      kind: "error",
-      status: response.status,
-      message: await response.text(),
-    };
-  }
-  return { kind: "ok", value: null };
-}
-
 async function fetchGmailProfile(
   accessToken: string,
   signal: AbortSignal,
@@ -560,22 +519,6 @@ async function watchGmailMailbox(
   );
 }
 
-async function stopGmailMailbox(
-  args: {
-    readonly accessToken: string;
-  },
-  signal: AbortSignal,
-): Promise<GmailFetchResult<null>> {
-  return await gmailFetchNoContent(
-    {
-      accessToken: args.accessToken,
-      url: `${GMAIL_API_BASE}/stop`,
-      init: { method: "POST", body: JSON.stringify({}) },
-    },
-    signal,
-  );
-}
-
 function normalizeGmailAddress(emailAddress: string): string {
   return emailAddress.trim().toLowerCase();
 }
@@ -656,7 +599,6 @@ async function partitionGmailStatesByConsumer(
   args: {
     readonly db: Db;
     readonly states: readonly GmailWatchStateRow[];
-    readonly excludedConnectorId?: string;
   },
   signal: AbortSignal,
 ): Promise<{
@@ -666,17 +608,15 @@ async function partitionGmailStatesByConsumer(
   const active: GmailWatchStateRow[] = [];
   const inactive: GmailWatchStateRow[] = [];
   for (const state of args.states) {
-    const hasConsumer =
-      state.connectorId !== args.excludedConnectorId &&
-      (await hasEnabledGmailConsumer(
-        {
-          db: args.db,
-          orgId: state.orgId,
-          userId: state.userId,
-          connectorId: state.connectorId,
-        },
-        signal,
-      ));
+    const hasConsumer = await hasEnabledGmailConsumer(
+      {
+        db: args.db,
+        orgId: state.orgId,
+        userId: state.userId,
+        connectorId: state.connectorId,
+      },
+      signal,
+    );
     (hasConsumer ? active : inactive).push(state);
   }
   return { active, inactive };
@@ -698,11 +638,31 @@ async function deleteGmailWatchStates(
     return;
   }
   await db.delete(gmailWatchStates).where(
-    inArray(
-      gmailWatchStates.id,
-      states.map((state) => {
-        return state.id;
-      }),
+    and(
+      inArray(
+        gmailWatchStates.id,
+        states.map((state) => {
+          return state.id;
+        }),
+      ),
+      notExists(
+        db
+          .select({ id: workflowAutomations.id })
+          .from(workflowAutomations)
+          .where(
+            and(
+              eq(workflowAutomations.orgId, gmailWatchStates.orgId),
+              eq(workflowAutomations.ownerUserId, gmailWatchStates.userId),
+              eq(
+                workflowAutomations.eventConnectorId,
+                gmailWatchStates.connectorId,
+              ),
+              eq(workflowAutomations.enabled, true),
+              eq(workflowAutomations.kind, "event"),
+              inArray(workflowAutomations.eventType, [...GMAIL_EVENT_TYPES]),
+            ),
+          ),
+      ),
     ),
   );
 }
@@ -927,8 +887,6 @@ export async function ensureGmailWatchForUser(
 interface GmailPhysicalScopeInput {
   readonly emailAddress: string;
   readonly topicName: string;
-  readonly excludedConnectorId?: string;
-  readonly preferredConnectorId?: string;
   readonly renewBefore?: Date;
 }
 
@@ -940,21 +898,10 @@ async function resolveGmailAccessFromStates(
   args: {
     readonly db: Db;
     readonly states: readonly GmailWatchStateRow[];
-    readonly preferredConnectorId?: string;
   },
   signal: AbortSignal,
 ): Promise<GmailAccess | null> {
-  const candidates = args.preferredConnectorId
-    ? [
-        ...args.states.filter((state) => {
-          return state.connectorId === args.preferredConnectorId;
-        }),
-        ...args.states.filter((state) => {
-          return state.connectorId !== args.preferredConnectorId;
-        }),
-      ]
-    : args.states;
-  for (const state of candidates) {
+  for (const state of args.states) {
     const result = await resolveGmailAccess(
       {
         db: args.db,
@@ -1058,69 +1005,12 @@ async function reconcileActiveGmailStates(
   return { kind: "renewed" };
 }
 
-async function markGmailStatesForRetry(
-  db: Db,
-  states: readonly GmailWatchStateRow[],
-): Promise<void> {
-  await db
-    .update(gmailWatchStates)
-    .set({ needsRewatch: true, updatedAt: nowDate() })
-    .where(
-      inArray(
-        gmailWatchStates.id,
-        states.map((state) => {
-          return state.id;
-        }),
-      ),
-    );
-}
-
 async function stopInactiveGmailStates(
-  args: {
-    readonly db: Db;
-    readonly states: readonly GmailWatchStateRow[];
-    readonly preferredConnectorId?: string;
-  },
+  args: { readonly db: Db; readonly states: readonly GmailWatchStateRow[] },
   signal: AbortSignal,
 ): Promise<GmailWatchReconcileResult> {
-  const access = await resolveGmailAccessFromStates(
-    {
-      db: args.db,
-      states: args.states,
-      ...(args.preferredConnectorId === undefined
-        ? {}
-        : { preferredConnectorId: args.preferredConnectorId }),
-    },
-    signal,
-  );
-  if (!access) {
-    await markGmailStatesForRetry(args.db, args.states);
-    return { kind: "failed" };
-  }
-
-  const stopped = await stopGmailMailbox(
-    {
-      accessToken: access.accessToken,
-    },
-    signal,
-  );
-  signal.throwIfAborted();
-  if (stopped.kind !== "ok") {
-    await markGmailStatesForRetry(args.db, args.states);
-    log.warn("Workflow watch lifecycle reconciliation failed", {
-      provider: "gmail",
-      action: "stop",
-      result: "provider_error",
-      status: stopped.status,
-    });
-    return { kind: "failed" };
-  }
   await deleteGmailWatchStates(args.db, args.states);
-  log.debug("Workflow watch lifecycle reconciled", {
-    provider: "gmail",
-    action: "stop",
-    result: "ok",
-  });
+  signal.throwIfAborted();
   return { kind: "stopped" };
 }
 
@@ -1144,9 +1034,6 @@ async function reconcileGmailPhysicalScopeLocked(
     {
       db,
       states,
-      ...(args.excludedConnectorId === undefined
-        ? {}
-        : { excludedConnectorId: args.excludedConnectorId }),
     },
     signal,
   );
@@ -1168,9 +1055,6 @@ async function reconcileGmailPhysicalScopeLocked(
     {
       db,
       states,
-      ...(args.preferredConnectorId === undefined
-        ? {}
-        : { preferredConnectorId: args.preferredConnectorId }),
     },
     signal,
   );
@@ -1306,132 +1190,16 @@ export async function reconcileGmailWatchesForUser(
     );
   signal.throwIfAborted();
   for (const scope of gmailPhysicalScopes(states)) {
-    const preferredConnectorId = states.find((state) => {
-      return (
-        normalizeGmailAddress(state.emailAddress) ===
-          normalizeGmailAddress(scope.emailAddress) &&
-        state.topicName === scope.topicName
-      );
-    })?.connectorId;
     const result = await reconcileGmailPhysicalScope(
       {
         db: args.db,
         ...scope,
-        ...(preferredConnectorId === undefined ? {} : { preferredConnectorId }),
       },
       signal,
     );
     succeeded &&= result.kind !== "failed";
   }
   return succeeded;
-}
-
-export async function prepareGmailWatchStopForConnector(
-  args: {
-    readonly db: Db;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly connectorId: string;
-  },
-  signal: AbortSignal,
-): Promise<PendingGmailWatchStop | null> {
-  const states = await args.db
-    .select()
-    .from(gmailWatchStates)
-    .where(
-      and(
-        eq(gmailWatchStates.orgId, args.orgId),
-        eq(gmailWatchStates.userId, args.userId),
-        eq(gmailWatchStates.connectorId, args.connectorId),
-      ),
-    );
-  signal.throwIfAborted();
-  const scopes = gmailPhysicalScopes(states);
-  let shouldStop = states.length > 0;
-  for (const scope of scopes) {
-    const physicalStates = await loadGmailPhysicalWatchStates(
-      { db: args.db, ...scope },
-      signal,
-    );
-    const { active } = await partitionGmailStatesByConsumer(
-      {
-        db: args.db,
-        states: physicalStates,
-        excludedConnectorId: args.connectorId,
-      },
-      signal,
-    );
-    if (active.length > 0) {
-      shouldStop = false;
-      break;
-    }
-  }
-  if (!shouldStop) {
-    return null;
-  }
-  const access = await resolveGmailAccess(
-    { ...args, refreshExpiredToken: false },
-    signal,
-  );
-  signal.throwIfAborted();
-  return access.kind === "ok"
-    ? { accessToken: access.access.accessToken, scopes }
-    : null;
-}
-
-export async function stopPreparedGmailWatch(
-  args: { readonly db: Db; readonly pending: PendingGmailWatchStop },
-  signal: AbortSignal,
-): Promise<void> {
-  await args.db.transaction(async (tx) => {
-    const scopes = [...args.pending.scopes].sort((left, right) => {
-      return `${normalizeGmailAddress(left.emailAddress)}\n${left.topicName}`.localeCompare(
-        `${normalizeGmailAddress(right.emailAddress)}\n${right.topicName}`,
-      );
-    });
-    for (const scope of scopes) {
-      await lockGmailLifecycle(tx, scope.emailAddress, scope.topicName);
-    }
-    signal.throwIfAborted();
-
-    const states: GmailWatchStateRow[] = [];
-    for (const scope of scopes) {
-      states.push(
-        ...(await loadGmailPhysicalWatchStates({ db: tx, ...scope }, signal)),
-      );
-    }
-    const { active } = await partitionGmailStatesByConsumer(
-      { db: tx, states },
-      signal,
-    );
-    if (active.length > 0) {
-      return;
-    }
-
-    const stopped = await stopGmailMailbox(
-      { accessToken: args.pending.accessToken },
-      signal,
-    );
-    signal.throwIfAborted();
-    if (stopped.kind !== "ok") {
-      if (states.length > 0) {
-        await markGmailStatesForRetry(tx, states);
-      }
-      log.warn("Workflow watch lifecycle reconciliation failed", {
-        provider: "gmail",
-        action: "stop_after_disconnect",
-        result: "provider_error",
-        status: stopped.status,
-      });
-      return;
-    }
-    await deleteGmailWatchStates(tx, states);
-    log.debug("Workflow watch lifecycle reconciled", {
-      provider: "gmail",
-      action: "stop_after_disconnect",
-      result: "ok",
-    });
-  });
 }
 
 async function listGmailHistory(
