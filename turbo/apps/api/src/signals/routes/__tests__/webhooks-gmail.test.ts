@@ -1752,6 +1752,7 @@ describe("POST /api/webhooks/gmail", () => {
 
   it("dispatches label applied events after refreshing a recreated label id", async () => {
     const gmailEmail = uniqueGmailEmail();
+    const runnerGroup = runsApi.configureRunnerGroup();
     configureGmailEnv();
     configureGmailWatchMock();
     configureGmailLabelsMockSequence([
@@ -1809,6 +1810,14 @@ describe("POST /api/webhooks/gmail", () => {
       duplicates: 0,
     });
     await flushWaitUntilForTest();
+    const [activeRunId] = await workflowRunIds(actor, chatThreadId);
+    if (!activeRunId) {
+      throw new Error(
+        "Expected the first recreated-label event to start a run",
+      );
+    }
+    await completeRunThroughSandbox(runnerGroup, activeRunId);
+    await expect(workflowRunIds(actor, chatThreadId)).resolves.toHaveLength(2);
     const inputs = await workflowAutomationDisplayTexts(actor, chatThreadId);
     expect(
       inputs.filter((text) => {
