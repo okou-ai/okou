@@ -19427,6 +19427,66 @@ describe("POST /api/billing/concurrency-checkout", () => {
     );
   });
 
+  it("does not activate a deleted concurrency subscription from a delayed first invoice", async () => {
+    const fixture = await createSubscriptionOrg({ tier: "team" });
+    const subscriptionId = `sub_${randomUUID()}`;
+    const periodEnd = currentSecond() + 30 * 86_400;
+    context.mocks.stripe.subscriptions.retrieve.mockRejectedValue(
+      new StripeSDK.errors.StripeInvalidRequestError({
+        type: "invalid_request_error",
+        code: "resource_missing",
+        message: `No such subscription: ${subscriptionId}`,
+      }),
+    );
+    const event = {
+      type: "invoice.paid",
+      data: {
+        object: {
+          id: `in_${randomUUID()}`,
+          customer: fixture.customerId,
+          metadata: { purpose: "concurrency_subscription" },
+          parent: {
+            subscription_details: {
+              subscription: subscriptionId,
+              metadata: { purpose: "concurrency_subscription" },
+            },
+          },
+          lines: {
+            has_more: false,
+            data: [
+              {
+                id: `il_${randomUUID()}`,
+                quantity: 3,
+                price: { id: TEST_PRICE_CONCURRENCY },
+                parent: { type: "subscription_item_details" },
+                period: {
+                  start: periodEnd - 30 * 86_400,
+                  end: periodEnd,
+                },
+              },
+            ],
+          },
+        },
+      },
+    };
+    const client = setupApp({ context, routes: webhooksStripeRoutes })(
+      webhookStripeContract,
+    );
+    for (let delivery = 0; delivery < 2; delivery++) {
+      context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(event);
+      await accept(
+        client.post({
+          body: JSON.stringify(event),
+          extraHeaders: { "stripe-signature": "t=1,v1=delayed-paid-invoice" },
+        }),
+        [200],
+      );
+    }
+    const status = await readBillingStatus(fixture);
+    expect(status.concurrencySubscriptions).toStrictEqual([]);
+    expect(status.tier).toBe("team");
+  });
+
   it("keeps authoritative cancellation across stale equal-quantity events and one clock tick", async () => {
     mockNow(new Date("2035-05-01T00:00:00Z"));
     onTestFinished(() => {

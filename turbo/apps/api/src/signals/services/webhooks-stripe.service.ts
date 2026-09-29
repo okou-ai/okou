@@ -2979,6 +2979,17 @@ async function handleConcurrencyInvoicePaid(
     // Paid invoice lines are immutable evidence, not the current renewable
     // subscription state. Delayed first invoices must not revive canceled plans.
     const state = await retrieveConcurrencySubscriptionState(subscriptionId);
+    // Payment evidence remains valid even after the renewable subscription or
+    // concurrency item disappears. Record its immutable invoice identity without
+    // reviving a current projection from that historical payment.
+    const insertedRows =
+      values.length === 0
+        ? []
+        : await tx
+            .insert(orgConcurrencyEntitlements)
+            .values(values)
+            .onConflictDoNothing()
+            .returning({ id: orgConcurrencyEntitlements.id });
     if (!state) {
       if (existing) {
         const [retired] = await tx
@@ -3001,14 +3012,6 @@ async function handleConcurrencyInvoicePaid(
       }
       return null;
     }
-    const insertedRows =
-      values.length === 0
-        ? []
-        : await tx
-            .insert(orgConcurrencyEntitlements)
-            .values(values)
-            .onConflictDoNothing()
-            .returning({ id: orgConcurrencyEntitlements.id });
     const projection = {
       orgId: orgId,
       stripePriceId: state.stripePriceId,

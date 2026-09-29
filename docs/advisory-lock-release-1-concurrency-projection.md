@@ -39,7 +39,9 @@ Likewise, a delayed first paid invoice is immutable payment evidence, not an
 authoritative current subscription snapshot. Missing Stripe subscriptions or
 removed concurrency items retire an existing projection conditionally; they
 do not revive it from the old invoice/event. Immutable invoice-line grant
-identities remain unchanged.
+identities remain unchanged, and a valid paid line is still recorded when the
+renewable subscription has since disappeared. Current subscription retirement
+does not erase historical payment evidence.
 
 ## Transaction ownership and rollout
 
