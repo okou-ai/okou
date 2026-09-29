@@ -64,6 +64,21 @@ optional.
   removal after at least 24 hours. Different operation keys do not order their
   requests; one permanent key cannot represent successive different purchases.
 
+- [Error types](https://docs.stripe.com/api/errors) define `idempotency_error`
+  as reuse of a key with a different **API endpoint and parameters**. A common
+  key can therefore arbitrate competing creation endpoints, not just requests
+  to one endpoint. This is stronger than separate operation-specific keys.
+- [Advanced error handling](https://docs.stripe.com/error-low-level#server-errors)
+  says a cached `500` is **indeterminate**, may have side effects, and may later
+  produce objects/webhooks during Stripe's reconciliation. Changing to a new key
+  is explicitly discouraged. A local read that still shows the old item set is
+  not proof that the failed provider mutation cannot subsequently take effect.
+- [Pending updates with schedules](https://docs.stripe.com/billing/subscriptions/pending-updates#subscription-schedules)
+  states that a schedule phase change discards a pending update and voids its
+  invoice. The schedule-update API has no `payment_behavior=pending_if_incomplete`
+  option. Moving immediate upgrades directly to schedule updates must not grant
+  unpaid service or silently remove supported payment-action behavior.
+
 These findings came from public documentation and the installed Stripe SDK
 types. No live Stripe mutation or test-mode purchase was performed. A local
 provider fixture that implements the desired fence would not establish the
@@ -115,6 +130,69 @@ purchases. Reinterpreting paid entitlement rows, inserting fictitious package
 changes, or keeping a schedule solely as a mutex would not close that gap under
 the agreed constraints.
 
+## Common idempotency key from the current item set
+
+The stronger candidate uses the same key `K(I0)` for every writer observing the
+same real subscription item IDs `I0`, regardless of its desired quantity. A
+successful mutation replaces those items, so subsequent writers use `K(I1)`.
+While payment is pending and `I0` remains unchanged, another writer's different
+parameters are rejected instead of replacing the pending invoice. This part
+addresses the ordinary two-writer race; it is not equivalent to unrelated
+per-operation idempotency keys.
+
+A complete implementation still has to resolve the following concrete cases:
+
+1. **A deferred change need not replace current items.** Updating only a future
+   schedule phase leaves `I0` unchanged. The same key then rejects the next
+   legitimate different change, even after the first change succeeded. Reusing
+   the current item set without an identity-advancement rule is not a usable
+   succession protocol.
+2. **Advancing items before a separate schedule write exposes a new key too
+   early.** A replaces `I0` with `I1`, but its update of active schedule `S0` is
+   delayed. B can use `K(I1)` and publish a newer phase on that same schedule.
+   A's later schedule update can overwrite it. This is a static no-failure
+   interleaving for the item-first variant. Binding subsequent writes to a
+   retired schedule identity is still required.
+3. **Advancing items last requires a recovery owner.** Applying the phase under
+   `K(I0)` and then replacing the unchanged current items is a possible
+   alternative, not disproven by the previous ordering. A crash between those
+   steps leaves `I0` and the cached first request. Recovery must know the actual
+   business operation and original request, determine its outcome, finish only
+   that operation, and prevent another caller from interpreting an idempotent
+   replay as ownership of a different intent. Current concurrency projection
+   rows do not persist that immediate-operation identity or request. A fresh
+   random key or an invented metadata claim is not the missing recovery rule.
+4. **An unpaid pending update can expire without replacing items.** Stripe's
+   documented expiry can be 23 hours. A canceled/expired invoice leaves `I0`,
+   while `K(I0)` can still replay the original response or reject different
+   parameters. Paying the same still-open invoice is ordinary recovery; a new
+   legitimate change after expiry needs its own verified identity transition.
+5. **Cached `500` and key eviction are different boundaries.** The provider's
+   indeterminate-error contract rules out treating a cached error plus one
+   unchanged-item read as a safe rollback. Separately, a reused key can execute
+   again after eviction: item replacement can reject old item IDs only if the
+   combined delete/add endpoint validates all missing old IDs before any side
+   effect. Generic “validation before execution” documentation does not
+   establish that endpoint-specific atomicity by itself. Schedule writes have
+   no old-item parameter, so they additionally need a terminal schedule fence.
+
+The API build config declares a 300-second maximum function duration, and
+this checkout uses Stripe SDK 20.4.1's default 80-second HTTP timeout. Those facts
+are relevant to request lifetime; this review does **not** invent a known API
+request lasting 24 hours. They also do not prove provider-side cancellation or
+bound later Stripe reconciliation after an indeterminate error. A final protocol
+must state which recovery calls can replay old operations and how their captured
+business identities remain valid.
+
+These are implementation obligations for the common-key candidate, not a proof
+that the agreed terminal state is impossible. Existing remote-success/local-
+failure windows do not justify retaining a lock. A replacement must neither
+silently impose a day-long billing freeze after a failed operation nor advance a
+key from an unrelated timestamp. Charging a separate invoice before publishing
+recurring state is another possible design, but preserving payment action,
+discounts, tax, proration, refunds, and all existing callers has not been
+implemented or validated. It is not treated as an approved business change.
+
 ## Ordinary Plan purchase admission
 
 `confirmPlanPurchase$` currently checks Stripe subscriptions and the local
@@ -123,8 +201,10 @@ those reads outside the transaction without a replacement lets two distinct
 previews both create payable subscriptions. Their current idempotency keys
 contain distinct `purchaseId` values.
 
-A common key based only on organization, customer, and source subscription also
-needs a real next-purchase rule: those values may remain unchanged after a
+The documented endpoint-and-parameters check permits a common key across
+`subscriptions.create` and `checkout.sessions.create`; endpoint scope alone is
+not a blocker. A common key based only on organization, customer, and source
+subscription still needs a real next-purchase rule: those values may remain unchanged after a
 decline, cancellation, or expired attempt. Reusing the key with different
 parameters is rejected; advancing it from an unrelated row update or arbitrary
 time window permits another request while the first outcome is still unknown.
