@@ -1,6 +1,7 @@
 # Advisory lock cleanup: billing Release 1 preparation
 
-This inventory is based on `5b458cc9` and the billing changes in this PR. It
+This inventory is based on `5b458cc9` and the billing work integrated into the
+single Release 1 PR #37313. It
 tracks the seven billing acquisition definitions separately from transaction
 propagation. It does **not** declare the whole billing package ready for
 Release 2.
@@ -64,15 +65,15 @@ the transaction cannot commit two open purchases or lose a committed receipt.
 
 ## Acquisition inventory and remaining gates
 
-| Acquisition                                       | Release 1 result                                                                   | Why a retained boundary cannot yet be deleted                                                                                                                                                               | Release 2 removal gate                                                                                                                                                     |
-| ------------------------------------------------- | ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `stripe_customer_<org>`                           | Provider idempotency and conditional publication implemented; retained acquisition | Outgoing creation has no idempotency key and unconditionally overwrites the binding                                                                                                                         | Verified API drain and compatible rollback targets; then move Stripe preparation outside the owning command's local commit                                                 |
-| `billing_purchase:<org>`                          | Retained; replacement protocol is not complete in this PR                          | Stateless Plan previews have different purchase IDs; two creations can both become payable. Pending usage-pack snapshot writers also share this boundary                                                    | Complete a common creation/arbitration protocol for every Plan and usage-pack writer, then verify API drain and rollback compatibility                                     |
-| `stripe_concurrency_subscription:<subscription>`  | Retained; replacement protocol is not complete in this PR                          | Both invoice and subscription-update handlers reread Stripe under this lock and publish mutable subscription projections; deletion and other concurrency writers also require a complete stale-result audit | All projection writers must reject stale provider results without relying on this lock, then verify API drain and rollback compatibility                                   |
-| `usage_pack_billing:<org>` in allocation service  | Retained; replacement protocol is not complete in this PR                          | Allocation, migration, invitation activation/refund, and deferred schedule workflows issue absolute Stripe quantity/schedule updates                                                                        | Demonstrate ordering and recovery across all existing operation identities, with remote work outside local commits; then verify mixed R1/R2 writers and rollback targets   |
-| `usage_pack_billing:<org>` in plan-change service | Retained; replacement protocol is not complete in this PR                          | Plan changes and allocation changes share the same remote subscription and can overwrite each other's current or renewal quantities                                                                         | Same common projection protocol as allocation; an independent per-change idempotency key is insufficient                                                                   |
-| `usage_pack_invitation:<purchase>`                | Conditional claims and guarded result writes implemented; retained acquisition     | Outgoing purchase writers still read state and subsequently update by ID; activation/refund also enters the unresolved shared projection workflow                                                           | Finish all purchase write/cleanup predicates and the shared projection protocol, remove transaction propagation, then verify outgoing API drain and rollback compatibility |
-| `usage_pack_invitation_email:<org>:<email>`       | Removed                                                                            | Existing business unique index arbitrates both old and new writers                                                                                                                                          | No additional release gate                                                                                                                                                 |
+| Acquisition                                       | Release 1 result                                                                   | Why a retained boundary cannot yet be deleted                                                                                                            | Release 2 removal gate                                                                                                                                                     |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `stripe_customer_<org>`                           | Provider idempotency and conditional publication implemented; retained acquisition | Outgoing creation has no idempotency key and unconditionally overwrites the binding                                                                      | Verified API drain and compatible rollback targets; then move Stripe preparation outside the owning command's local commit                                                 |
+| `billing_purchase:<org>`                          | Retained; replacement protocol is not complete in this PR                          | Stateless Plan previews have different purchase IDs; two creations can both become payable. Pending usage-pack snapshot writers also share this boundary | Complete a common creation/arbitration protocol for every Plan and usage-pack writer, then verify API drain and rollback compatibility                                     |
+| `stripe_concurrency_subscription:<subscription>`  | Conditional projection protocol implemented; retained acquisition                  | Outgoing handlers publish unconditional projections; all new writers advance the existing timestamp and new reconciliation results use exact-value CAS   | Verify API drain and compatible rollback targets, then move provider reads outside the local commit; see the concurrency projection inventory                              |
+| `usage_pack_billing:<org>` in allocation service  | Retained; replacement protocol is not complete in this PR                          | Allocation, migration, invitation activation/refund, and deferred schedule workflows issue absolute Stripe quantity/schedule updates                     | Demonstrate ordering and recovery across all existing operation identities, with remote work outside local commits; then verify mixed R1/R2 writers and rollback targets   |
+| `usage_pack_billing:<org>` in plan-change service | Retained; replacement protocol is not complete in this PR                          | Plan changes and allocation changes share the same remote subscription and can overwrite each other's current or renewal quantities                      | Same common projection protocol as allocation; an independent per-change idempotency key is insufficient                                                                   |
+| `usage_pack_invitation:<purchase>`                | Conditional claims and guarded result writes implemented; retained acquisition     | Outgoing purchase writers still read state and subsequently update by ID; activation/refund also enters the unresolved shared projection workflow        | Finish all purchase write/cleanup predicates and the shared projection protocol, remove transaction propagation, then verify outgoing API drain and rollback compatibility |
+| `usage_pack_invitation_email:<org>:<email>`       | Removed                                                                            | Existing business unique index arbitrates both old and new writers                                                                                       | No additional release gate                                                                                                                                                 |
 
 There are **six remaining billing acquisition definitions** after this PR. The
 two `usage_pack_billing` definitions use the same key family and must be assessed
@@ -86,14 +87,17 @@ This is a call-chain inventory, not a count of matching type signatures:
   `writeOrgMetadataWithDefaultPlanEntitlement(tx, ..., callback)` is removed from
   this path. The reused entitlement builder accepts ordinary values only.
   Stripe I/O remains inside the compatibility boundary described above.
-- **Purchase admission:** `confirmPlanPurchase$` still delegates a transaction to
-  `confirmPlanPurchaseTransaction`; `writeUsagePackPendingSnapshots` still owns
-  a transaction-aware callback and propagates it to snapshot guard helpers.
-  These interfaces and their remote purchase work require implementation, not
-  just lock deletion.
-- **Concurrency subscription projection:** the webhook handlers still pass a
-  transaction to the lock and projection helpers. Stripe retrieval inside the
-  transaction remains unresolved.
+- **Purchase admission:** `confirmPlanPurchase$` now owns its transaction and
+  SQL directly; `confirmPlanPurchaseTransaction` and its transaction argument
+  are removed. The old admission boundary and Stripe I/O remain while the
+  common cross-preview protocol is unresolved. `writeUsagePackPendingSnapshots`
+  still owns a transaction-aware callback and propagates it to snapshot guard
+  helpers; those interfaces require implementation, not just lock deletion.
+- **Concurrency subscription projection:** the propagated upsert helper is
+  removed. All production writes advance the existing timestamp, and webhook/
+  cron results publish against the exact pre-read value. Only the temporary
+  acquisition helper and Stripe-read compatibility boundary remain. See
+  [the projection protocol and removal gate](advisory-lock-release-1-concurrency-projection.md).
 - **Allocation and plan changes:** preview/claim/finalization, migration, pending
   snapshot, credit-grant and schedule helpers still accept transactions. Their
   Stripe calls, pagination and callback ownership must be separated from the
@@ -101,8 +105,10 @@ This is a call-chain inventory, not a count of matching type signatures:
 - **Invitation:** transaction propagation to `loadPurchase` and
   `supersedeCompetingPendingCheckout` is removed from the changed transitions.
   The latter helper is retired and its conditional arbitration SQL is local.
-  Remaining propagation includes `lockPurchase`, `lockUsagePackBillingOrg`,
-  `ensureAcceptedInvitationSnapshot`, projection helpers and
+  `ensureAcceptedInvitationSnapshot(tx, ...)` is also removed; its recovery
+  insert is local to acceptance. Allocation assignment and activation reject
+  retired or reassigned rows. Remaining propagation includes `lockPurchase`,
+  `lockUsagePackBillingOrg`, projection helpers and
   `createUsagePackCreditGrant`. Activation and refund projection still hold an
   outer transaction across Stripe. This is not terminal transaction ownership.
 
