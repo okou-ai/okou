@@ -1084,7 +1084,10 @@ test("Keep existing gateway controls while a failed list refresh is pending", as
         refreshStarted.resolve();
         await releaseRefresh.promise;
         return respond(500, {
-          error: { code: "INTERNAL_ERROR", message: "Gateway list unavailable" },
+          error: {
+            code: "INTERNAL_ERROR",
+            message: "Gateway list unavailable",
+          },
         });
       }
       return respond(200, { connections: [connection] });
@@ -1115,7 +1118,9 @@ test("Keep existing gateway controls while a failed list refresh is pending", as
     expect(
       screen.getByTestId("model-provider-connections-list"),
     ).toBeInTheDocument();
-    expect(within(section).getByLabelText("Gateway actions")).toBeInTheDocument();
+    expect(
+      within(section).getByLabelText("Gateway actions"),
+    ).toBeInTheDocument();
   } finally {
     releaseRefresh.resolve();
   }
