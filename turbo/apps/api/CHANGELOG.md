@@ -8,6 +8,23 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.695.2](https://github.com/okou-ai/okou/compare/api-v1.695.1...api-v1.695.2) (2026-09-29)
+
+
+### Bug Fixes
+
+* add temporary app auth failure diagnostics ([#37314](https://github.com/okou-ai/okou/issues/37314)) ([a0069c7](https://github.com/okou-ai/okou/commit/a0069c7083eca42aca3fbbf1736a422ff5d700c5))
+* **api:** honor chat browser preferences across integrations ([#37322](https://github.com/okou-ai/okou/issues/37322)) ([bc6b9e2](https://github.com/okou-ai/okou/commit/bc6b9e289164db462af6be097b39387d806af2f8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.720.3
+    * @okouai/db bumped to 1.313.2
+    * @okouai/pi-agent-runtime bumped to 1.41.6
+
 ## [1.695.1](https://github.com/okou-ai/okou/compare/api-v1.695.0...api-v1.695.1) (2026-09-29)
 
 

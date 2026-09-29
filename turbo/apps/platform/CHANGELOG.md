@@ -11,6 +11,20 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.984.3](https://github.com/okou-ai/okou/compare/app-v0.984.2...app-v0.984.3) (2026-09-29)
+
+
+### Bug Fixes
+
+* add temporary app auth failure diagnostics ([#37314](https://github.com/okou-ai/okou/issues/37314)) ([a0069c7](https://github.com/okou-ai/okou/commit/a0069c7083eca42aca3fbbf1736a422ff5d700c5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.720.3
+
 ## [0.984.2](https://github.com/okou-ai/okou/compare/app-v0.984.1...app-v0.984.2) (2026-09-29)
 
 
