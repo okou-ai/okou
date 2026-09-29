@@ -1245,109 +1245,28 @@ async function listOrgModelPolicies(
   };
 }
 
-async function persistOrgModelPolicyUpdates(params: {
-  readonly db: Db;
+/** Ordinary snapshots only: onboarding must not overwrite an administrator's set. */
+export function onboardingModelPolicyWritePlan(params: {
   readonly orgId: string;
   readonly userId: string;
-  readonly policies: UpdateOrgModelPolicy[];
+  readonly provider: OnboardingSubscriptionProvider;
+  readonly existing: readonly OrgModelPolicyRow[];
+  readonly initializeSeed: boolean;
   readonly now: Date;
-}): Promise<void> {
-  const tx = params.db;
-  await tx
-    .insert(orgModelPolicies)
-    .values(
-      replacementPolicyValues(
-        {
-          orgId: params.orgId,
-          userId: params.userId,
-          policies: params.policies,
-        },
-        params.now,
-      ),
-    )
-    .onConflictDoNothing({
-      target: [orgModelPolicies.orgId, orgModelPolicies.model],
-    });
-
-  const removedRows = await tx
-    .delete(orgModelPolicies)
-    .where(
-      and(
-        eq(orgModelPolicies.orgId, params.orgId),
-        inArray(orgModelPolicies.model, [...ACTIVE_RUN_MODELS]),
-        notInArray(
-          orgModelPolicies.model,
-          params.policies.map((policy) => {
-            return policy.model;
-          }),
-        ),
-      ),
-    )
-    .returning({ model: orgModelPolicies.model });
-
-  const removedModels = removedRows.map((row) => {
-    return row.model;
-  });
-  const defaultPolicy = params.policies.find((policy) => {
-    return policy.isDefault;
-  });
-  if (removedModels.length > 0 && defaultPolicy) {
-    await tx
-      .update(orgMembersMetadata)
-      .set({
-        selectedModel: defaultPolicy.model,
-        serviceTier: null,
-        updatedAt: params.now,
-      })
-      .where(
-        and(
-          eq(orgMembersMetadata.orgId, params.orgId),
-          inArray(orgMembersMetadata.selectedModel, removedModels),
-        ),
-      );
-  }
-
-  await tx
-    .update(orgModelPolicies)
-    .set({ isDefault: false })
-    .where(eq(orgModelPolicies.orgId, params.orgId));
-
-  for (const policy of params.policies) {
-    await tx
-      .update(orgModelPolicies)
-      .set(policyUpdateValues(policy, params.userId, params.now))
-      .where(
-        and(
-          eq(orgModelPolicies.orgId, params.orgId),
-          eq(orgModelPolicies.model, policy.model),
-        ),
-      );
-  }
-}
-
-/** Apply the onboarding choice only before an organization customizes its model policies. */
-export async function initializeOnboardingOrgModelPolicies(
-  db: Db,
-  orgId: string,
-  userId: string,
-  provider: OnboardingSubscriptionProvider,
-): Promise<void> {
-  const ownership = await lockPolicyWrites(db, orgId, userId);
-  const existing = await loadRows(db, orgId, true);
+}) {
   const standardSeed = getDefaultOrgModelPolicySeed();
-  // An older API may have written this untouched seed before onboarding finishes.
-  // Remove after old API writers drain and no incomplete org retains that seed;
-  // track the removal in #36167.
+  // Outgoing APIs can still have the previous untouched seed. Its data and
+  // deployment convergence is tracked separately in #36167.
   const previousSeed = standardSeed.map((seed) => {
     return seed.model === "gpt-6-luna"
       ? { ...seed, model: "gpt-5.6-luna" as const }
       : seed;
   });
-  const hasOnlyStandardSeed = [standardSeed, previousSeed].some((seedRows) => {
+  const untouched = [standardSeed, previousSeed].some((seedRows) => {
     return (
-      existing.length === seedRows.length &&
+      params.existing.length === seedRows.length &&
       seedRows.every((seed) => {
-        const row = existing.find((candidate) => {
+        const row = params.existing.find((candidate) => {
           return candidate.model === seed.model;
         });
         return (
@@ -1360,31 +1279,59 @@ export async function initializeOnboardingOrgModelPolicies(
       })
     );
   });
-  if (
-    existing.length > 0 &&
-    !ownership.initializeSeed &&
-    !hasOnlyStandardSeed
-  ) {
-    return;
+  if (params.existing.length > 0 && !params.initializeSeed && !untouched) {
+    return null;
   }
-
-  const seed = ONBOARDING_MODEL_POLICY_SEEDS[provider];
-  await persistOrgModelPolicyUpdates({
-    db,
-    orgId,
-    userId,
-    now: nowDate(),
-    policies: seed.models.map((model) => {
+  const seed = ONBOARDING_MODEL_POLICY_SEEDS[params.provider];
+  const policies: UpdateOrgModelPolicy[] = seed.models.map((model) => {
+    return {
+      model,
+      isDefault: model === seed.defaultModel,
+      defaultProviderType: seed.providerType,
+      credentialScope: "member",
+      modelProviderId: null,
+      modelProviderSurfaceId: null,
+    };
+  });
+  return {
+    insertValues: replacementPolicyValues({ ...params, policies }, params.now),
+    removalCondition: and(
+      eq(orgModelPolicies.orgId, params.orgId),
+      inArray(orgModelPolicies.model, [...ACTIVE_RUN_MODELS]),
+      notInArray(
+        orgModelPolicies.model,
+        policies.map((policy) => {
+          return policy.model;
+        }),
+      ),
+    ),
+    defaultModel: seed.defaultModel,
+    updates: policies.map((policy) => {
       return {
-        model,
-        isDefault: model === seed.defaultModel,
-        defaultProviderType: seed.providerType,
-        credentialScope: "member",
-        modelProviderId: null,
-        modelProviderSurfaceId: null,
+        values: policyUpdateValues(policy, params.userId, params.now),
+        condition: and(
+          eq(orgModelPolicies.orgId, params.orgId),
+          eq(orgModelPolicies.model, policy.model),
+        ),
       };
     }),
-  });
+  };
+}
+
+/** Parent-before-policy order, shared as SQL values without a database handle. */
+export function modelPolicyParentLockSql(orgId: string) {
+  return [
+    sql`SELECT ${modelProviders.id} FROM ${modelProviders}
+      WHERE ${modelProviders.orgId} = ${orgId} AND ${modelProviders.userId} = ${ORG_SENTINEL_USER_ID}
+      ORDER BY ${modelProviders.id} FOR SHARE`,
+    sql`SELECT ${modelProviderConnections.id} FROM ${modelProviderConnections}
+      WHERE ${modelProviderConnections.orgId} = ${orgId}
+      ORDER BY ${modelProviderConnections.id} FOR SHARE`,
+    sql`SELECT ${modelProviderSurfaces.id} FROM ${modelProviderSurfaces}
+      INNER JOIN ${modelProviderConnections} ON ${modelProviderSurfaces.connectionId} = ${modelProviderConnections.id}
+      WHERE ${modelProviderConnections.orgId} = ${orgId}
+      ORDER BY ${modelProviderSurfaces.id} FOR SHARE OF ${modelProviderSurfaces}`,
+  ];
 }
 
 export const listOrgModelPolicies$ = command(
@@ -1424,7 +1371,7 @@ function policyRefreshConflict(): Extract<
   };
 }
 
-function policySeedValues(orgId: string, userId: string) {
+export function policySeedValues(orgId: string, userId: string) {
   const seed = getDefaultOrgModelPolicySeed().find((policy) => {
     return policy.isDefault;
   });
@@ -1471,7 +1418,7 @@ function policyUpdateValues(
   };
 }
 
-function policySetOwned(
+export function policySetOwned(
   locked: readonly OrgModelPolicyRow[],
   current: readonly OrgModelPolicyRow[],
 ) {
@@ -1515,7 +1462,7 @@ function policyWriteCapabilities(
   );
 }
 
-function modelPolicyWriterLockSql(orgId: string) {
+export function modelPolicyWriterLockSql(orgId: string) {
   // Outgoing writers do not yet fence the complete current policy set. Remove
   // the legacy key only when they no longer serve, drain, or remain rollback targets.
   // eslint-disable-next-line api/no-new-advisory-lock -- Existing R1 acquisition; pure SQL builder only.

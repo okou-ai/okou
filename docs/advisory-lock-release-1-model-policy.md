@@ -35,6 +35,20 @@ There is no external I/O, new persistent field, or new coordination table in
 this transaction. The shared entitlement status-to-runtime mapping is a pure
 function, reused by the read path and replacement validation.
 
+## Completed onboarding publication
+
+`onboarding-completion.command.ts:markOrgOnboardingComplete$` accepts ordinary
+organization/member/answer values and the final `AbortSignal`. It owns the
+metadata completion, insert-only entitlement bootstrap, and untouched model
+policy initialization in one finite direct-SQL transaction. The existing
+metadata completion predicate admits only the first completion; model seeding
+still preserves any administrator-customized policy set. Ordered provider
+parents and complete policy-set ownership match replacement publication.
+The reusable policy helpers return only values, predicates, or SQL statements;
+they never receive or execute a database handle. Member completion and timezone
+fallback now also own their SQL commands, and Morning Brief provisioning runs
+after the onboarding transaction has committed.
+
 ## Compatibility and unfinished ownership
 
 The existing `model-policy:<orgId>` advisory key remains for outgoing seed and
@@ -46,10 +60,8 @@ targets use the prepared protocol.
 
 That compatibility requirement does **not** cover the remaining structural
 work. Lazy `ensureOrgModelPolicyFacts` still opens a helper-owned transaction
-and forwards handles. Onboarding completion still forwards its transaction
-into policy initialization; its policy and onboarding metadata changes must
-stay atomic when ownership is moved into a business-input command. Read and
-response projection helpers also still receive database handles. These are
+and forwards handles. Read and response projection helpers also still receive
+database handles. These are
 implementation gaps, not changes that deployment or elapsed time completes.
 
 ## Verification
