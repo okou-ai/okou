@@ -1695,7 +1695,7 @@ function copiedWorkflowVolumeInput(
   return {
     orgId,
     storageName: getCustomSkillStorageName(targetWorkflowId),
-    piResourceIndex: true,
+    piResourceIndex: true as const,
     files: copiedWorkflowVolumeFiles(source.sourceWorkflow, source.files),
   };
 }
