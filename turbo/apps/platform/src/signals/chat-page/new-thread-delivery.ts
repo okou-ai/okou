@@ -1,8 +1,10 @@
 import { command } from "ccstate";
+import { toast } from "@okouai/ui/components/ui/sonner";
 import {
   chatThreadMetadataContract,
   chatThreadsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
+import { ApiError } from "../../lib/api-error.ts";
 import { accept } from "../../lib/accept.ts";
 import { authenticatedIdentity$ } from "../auth.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
@@ -20,6 +22,17 @@ import {
   type NewThreadDeliveryIntent,
 } from "./chat-delivery-intents.ts";
 import { checkAndRetryPromptDelivery$ } from "./chat-event-signals.ts";
+
+/** A failed metadata lookup does not prove that an earlier create or send failed. */
+function unverifiedLookupFailure(error: unknown) {
+  return {
+    status: "uncertain" as const,
+    rejection:
+      error instanceof ApiError && error.status === 401
+        ? ("authentication" as const)
+        : null,
+  };
+}
 
 function savedNewThreadIntent(
   identity: DeliveryIdentity,
@@ -74,23 +87,32 @@ export const reconcileNewThreadDeliveries$ = command(
       );
       signal.throwIfAborted();
       if (!thread.ok) {
-        updateDeliveryIntent(
-          identity,
-          intent.clientEventId,
-          classifyDeliveryFailure(thread.error),
-        );
-        set(deliveryIntentsChanged$);
+        if (intent.status === "prepared" || intent.status === "uncertain") {
+          updateDeliveryIntent(
+            identity,
+            intent.clientEventId,
+            unverifiedLookupFailure(thread.error),
+          );
+          set(deliveryIntentsChanged$);
+        }
         continue;
       }
-      if (
-        thread.value === "conflict" ||
-        (thread.value === "absent" && intent.phase === "prompt")
-      ) {
+      if (thread.value === "conflict") {
         updateDeliveryIntent(identity, intent.clientEventId, {
           status: "rejected",
           rejection: "rejected",
         });
         set(deliveryIntentsChanged$);
+        continue;
+      }
+      if (thread.value === "absent" && intent.phase === "prompt") {
+        if (intent.status !== "rejected") {
+          updateDeliveryIntent(identity, intent.clientEventId, {
+            status: "uncertain",
+            rejection: null,
+          });
+          set(deliveryIntentsChanged$);
+        }
         continue;
       }
       if (thread.value === "absent") {
@@ -175,12 +197,14 @@ export const retryNewThreadDelivery$ = command(
           );
           signal.throwIfAborted();
           if (!check.ok) {
-            updateDeliveryIntent(
-              identity,
-              eventId,
-              classifyDeliveryFailure(check.error),
-            );
-            set(deliveryIntentsChanged$);
+            if (latest.status !== "rejected") {
+              updateDeliveryIntent(
+                identity,
+                eventId,
+                unverifiedLookupFailure(check.error),
+              );
+              set(deliveryIntentsChanged$);
+            }
             return false;
           }
           if (check.value === "conflict") {
@@ -246,15 +270,30 @@ export const retryNewThreadDelivery$ = command(
         checkCreatedThread(get(apiClient$), current, signal),
       );
       signal.throwIfAborted();
-      if (!checked.ok || checked.value !== "present") {
-        updateDeliveryIntent(
-          identity,
-          eventId,
-          checked.ok
-            ? { status: "rejected", rejection: "rejected" }
-            : classifyDeliveryFailure(checked.error),
+      if (!checked.ok) {
+        if (current.status !== "rejected" && current.status !== "accepted") {
+          updateDeliveryIntent(
+            identity,
+            eventId,
+            unverifiedLookupFailure(checked.error),
+          );
+          set(deliveryIntentsChanged$);
+        }
+        return false;
+      }
+      if (checked.value !== "present") {
+        if (checked.value === "conflict" || current.status !== "rejected") {
+          updateDeliveryIntent(identity, eventId, {
+            status: checked.value === "conflict" ? "rejected" : "uncertain",
+            rejection: checked.value === "conflict" ? "rejected" : null,
+          });
+          set(deliveryIntentsChanged$);
+        }
+        toast.error(
+          checked.value === "absent"
+            ? "This chat is no longer available. Review your saved message instead of retrying."
+            : "This chat cannot be retried with the saved agent.",
         );
-        set(deliveryIntentsChanged$);
         return false;
       }
     }

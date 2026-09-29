@@ -514,6 +514,50 @@ test("An ambiguous create response reconciles an existing server thread before p
   expect(savedFirstMessage().createEventId).toBe(saved.createEventId);
 });
 
+test("A failed metadata lookup cannot mislabel an ambiguous create as rejected", async () => {
+  let promptCount = 0;
+  installRunChat({
+    onSendRequest() {
+      promptCount++;
+    },
+  });
+  context.mocks.http.post("*/api/chat-threads", () => {
+    return HttpResponse.error();
+  });
+  await setupPage({ context, path: NEW_CHAT_PATH });
+  await readyChat();
+  await fill(
+    screen.getByRole("textbox", { name: "Message" }),
+    "Look up before judging delivery",
+  );
+  click(await findEnabledButton("Send"));
+  await waitFor(() => {
+    expect(screen.getByText(/Chat creation unconfirmed/u)).toBeInTheDocument();
+  });
+  context.mocks.api(chatThreadMetadataContract.get, ({ respond }) => {
+    return respond(403, {
+      error: { code: "FORBIDDEN", message: "Metadata unavailable" },
+    });
+  });
+  await context.store.set(reconcileNewThreadDeliveries$, context.signal);
+  expect(savedFirstMessage().status).toBe("uncertain");
+  expect(savedFirstMessage().rejection).toBeNull();
+  context.mocks.api(chatThreadMetadataContract.get, ({ respond }) => {
+    return respond(401, {
+      error: { code: "UNAUTHORIZED", message: "Sign in required" },
+    });
+  });
+  await context.store.set(reconcileNewThreadDeliveries$, context.signal);
+  expect(savedFirstMessage().status).toBe("uncertain");
+  expect(savedFirstMessage().rejection).toBe("authentication");
+  await waitFor(() => {
+    expect(
+      screen.getByText(/Chat creation unconfirmed. Sign in/u),
+    ).toBeInTheDocument();
+  });
+  expect(promptCount).toBe(0);
+});
+
 test("A lost prompt response retries the original event ID after checking the server", async () => {
   enableTestWebLocks();
   let firstEventId: string | undefined;
