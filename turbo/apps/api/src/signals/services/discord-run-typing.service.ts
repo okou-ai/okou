@@ -230,6 +230,7 @@ async function currentTypingAccess(
   if (!route) {
     return null;
   }
+  // eslint-disable-next-line ccstate/no-create-store -- Pre-2026-09-29 legacy only; no new violations or suppressions. Typing access check; migrate to the request command graph.
   const current = await createStore().set(
     requireDiscordBinding$,
     { orgId: args.orgId, userId: args.userId, guildId: args.target.guildId },

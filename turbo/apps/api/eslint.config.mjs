@@ -260,6 +260,28 @@ export default [
   {
     files: ["src/**/*.ts"],
     ignores: [
+      // A request owns one Store, including its background commands.
+      "src/signals/context/route.ts",
+      "src/**/__tests__/**",
+      "src/**/__benches__/**",
+      "src/**/test/**",
+      "src/**/tests/**",
+      "src/**/mocks/**",
+      "src/**/test-fixtures/**",
+      "src/**/*.test.ts",
+      "src/**/*.spec.ts",
+      "src/**/*.bench.ts",
+      "src/**/test-context.ts",
+      "src/signals/routes/test-*.ts",
+      "src/scripts/**",
+    ],
+    rules: {
+      "ccstate/no-create-store": "error",
+    },
+  },
+  {
+    files: ["src/**/*.ts"],
+    ignores: [
       "src/**/__tests__/**",
       "src/**/test/**",
       "src/**/tests/**",

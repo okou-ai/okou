@@ -68,7 +68,8 @@ export async function runEventHistory(
     const events =
       initialClaim !== undefined && initialClaim.seqId > before.lastSeqId
         ? undefined
-        : await createStore().get(
+        : // eslint-disable-next-line ccstate/no-create-store -- Pre-2026-09-29 legacy only; no new violations or suppressions. History reader; migrate to the request command graph.
+          await createStore().get(
             readCurrentChatEventHistoryAtSnapshot(
               { db, bucket: env("R2_USER_STORAGES_BUCKET_NAME") },
               threadId,

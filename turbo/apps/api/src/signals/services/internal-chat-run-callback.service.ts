@@ -4446,6 +4446,7 @@ export async function handleChatInternalCallbackWithoutCcstate(
       callback,
       dependencies: {
         releaseBrowsersForRun: (args, inputSignal) => {
+          // eslint-disable-next-line ccstate/no-create-store -- Pre-2026-09-29 legacy only; no new violations or suppressions. Browser cleanup; migrate to the request command graph.
           return createStore().set(
             releaseThreadBrowsersForRun$,
             args,
@@ -4467,6 +4468,7 @@ export async function handleChatInternalCallbackWithoutCcstate(
           );
         },
         dispatchChatRunFinishedAutomations: (event, inputSignal) => {
+          // eslint-disable-next-line ccstate/no-create-store -- Pre-2026-09-29 legacy only; no new violations or suppressions. Run-finished dispatch; migrate to the request command graph.
           return createStore().set(
             dispatchConfiguredChatRunFinishedEvent$,
             event,

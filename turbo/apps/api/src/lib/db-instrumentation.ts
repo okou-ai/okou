@@ -74,6 +74,7 @@ interface InstrumentedPgStreamOptions {
 
 const systemLookup: LookupFunction = dnsLookup;
 const secondaryLookupInFlight$ = state(false);
+// eslint-disable-next-line ccstate/no-create-store -- Pre-2026-09-29 legacy only; no new violations or suppressions. DNS budget; replace with an explicit process owner.
 const lookupHedgeStore = createStore();
 
 class PoolQuerySpan {

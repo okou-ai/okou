@@ -201,6 +201,7 @@ export async function handleWorkflowAutomationResultEmailInternalCallback(
     return { success: true, skipped: true };
   }
 
+  // eslint-disable-next-line ccstate/no-create-store -- Pre-2026-09-29 legacy only; no new violations or suppressions. Clerk lookup; read this dependency in the request command graph.
   const clerk = createStore().get(clerk$);
   const userEmail = await getUserEmail(db, clerk, run.userId);
   signal.throwIfAborted();
