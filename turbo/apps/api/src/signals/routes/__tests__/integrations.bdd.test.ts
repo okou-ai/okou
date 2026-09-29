@@ -4614,7 +4614,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     );
     expect(context.mocks.slack.views.open).not.toHaveBeenCalled();
 
-    await integrations.updateUserModelPreference(actor, "gpt-6-luna");
+    await integrations.updateUserModelPreference(actor, "okou-1.0");
     const modelResponse = await integrations.postSlackCommand({
       teamId,
       userId: slackUserId,

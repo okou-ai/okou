@@ -33,6 +33,7 @@ import { onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { setCustomOrgModelModeIfPresentFixture } from "../../../test-fixtures/org-metadata";
 import { createDeferredPromise } from "../../utils";
 import { mockNow, now } from "../../../lib/time";
 import { mockOptionalEnv } from "../../../lib/env";
@@ -530,6 +531,10 @@ describe("workflows", () => {
   it("runs a workflow slash command with workflow timing attribution", async () => {
     const actor = user({ orgRole: "org:admin" });
     await api.grantProEntitlement(actor);
+    if (!actor.orgId) {
+      throw new Error("Expected workflow organization");
+    }
+    await setCustomOrgModelModeIfPresentFixture(actor.orgId);
     const provider = await miscApi.upsertOrgModelProvider(
       actor,
       { type: "openai-api-key", secret: "workflow-openai-key" },
