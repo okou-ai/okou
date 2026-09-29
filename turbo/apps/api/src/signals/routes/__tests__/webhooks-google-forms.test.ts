@@ -907,6 +907,9 @@ describe("Google Forms Pub/Sub webhook", () => {
           },
         },
       };
+      // Google verifies this provider-issued JWT against wall-clock time,
+      // while only the application's OAuth expiry clock advances below.
+      const googleIdToken = signedGoogleIdToken();
       mockNow(startedAt + 2 * 60 * 60 * 1000);
       const headers = fw.sandboxHeaders(actor, runId);
       const refreshedForms = configureFormsApi(["forms-refresh-success"]);
@@ -935,6 +938,7 @@ describe("Google Forms Pub/Sub webhook", () => {
           } else {
             const failed = await postWebhook(
               formsPushBody("during-refresh-outage", watchId),
+              googleIdToken,
             );
             expect(failed).toMatchObject({
               status: 200,
@@ -962,6 +966,7 @@ describe("Google Forms Pub/Sub webhook", () => {
       }
       const retry = await postWebhook(
         formsPushBody("after-refresh-outage", watchId),
+        googleIdToken,
       );
       expect(retry).toMatchObject({ status: 200, body: { duplicates: 1 } });
       expect(refreshedForms.authorizationHeaders).toContain(
