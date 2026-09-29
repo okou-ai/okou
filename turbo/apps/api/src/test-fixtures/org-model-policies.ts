@@ -21,13 +21,14 @@ export async function stagePreAddabilityModelPolicyFixture(args: {
   readonly orgId: string;
   readonly userId: string;
   readonly model: SupportedRunModel;
+  readonly isDefault?: boolean;
 }): Promise<void> {
   const inserted = await db()
     .insert(orgModelPolicies)
     .values({
       orgId: args.orgId,
       model: args.model,
-      isDefault: false,
+      isDefault: args.isDefault ?? false,
       defaultProviderType: "built-in",
       credentialScope: "org",
       modelProviderId: null,

@@ -573,22 +573,18 @@ async function ensureOrgModelPoliciesLocked(
       activePolicies.find((policy) => {
         return policy.model === seedDefaultModel;
       }) ?? sortRowsByCatalog(activePolicies)[0];
-    if (fallbackDefault) {
-      await setDefaultModelPolicy(
-        db,
-        orgId,
-        userId,
-        parseSupportedModel(fallbackDefault.model) ?? seedDefaultModel,
-        {},
-      );
-      return {
-        orgPlanCapabilities,
-        policies: sortRowsByCatalog(await loadRows(db, orgId)),
-      };
-    }
+    await setDefaultModelPolicy(
+      db,
+      orgId,
+      userId,
+      fallbackDefault
+        ? (parseSupportedModel(fallbackDefault.model) ?? seedDefaultModel)
+        : seedDefaultModel,
+      { resetRouteToBuiltIn: !fallbackDefault },
+    );
     return {
       orgPlanCapabilities,
-      policies: sortRowsByCatalog(existing),
+      policies: sortRowsByCatalog(await loadRows(db, orgId)),
     };
   }
 

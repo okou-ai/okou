@@ -684,6 +684,44 @@ describe("GET/PUT /api/model-policies", () => {
     );
   });
 
+  it("repairs a workspace whose only historical policy is a retired default", async () => {
+    const fixture = seedFixture();
+    useSession(fixture);
+    // No current API can create this previously valid persisted state.
+    await stagePreAddabilityModelPolicyFixture({
+      orgId: fixture.orgId,
+      userId: fixture.userId,
+      model: "okou-1.0-pro",
+      isDefault: true,
+    });
+    const client = apiClient();
+
+    const listed = await accept(client.list({ headers: authHeaders() }), [200]);
+    expect(listed.body.workspaceDefaultModel).toBe(
+      DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
+    );
+    expect(listed.body.policies).toStrictEqual([
+      expect.objectContaining({
+        model: DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
+        isDefault: true,
+      }),
+    ]);
+
+    const updated = await accept(
+      client.update({
+        headers: authHeaders(),
+        body: {
+          revision: listed.body.revision,
+          policies: toUpdate(listed.body),
+        },
+      }),
+      [200],
+    );
+    expect(updated.body.workspaceDefaultModel).toBe(
+      DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
+    );
+  });
+
   it("returns 401 for unauthenticated reads and writes", async () => {
     const client = apiClient();
 
