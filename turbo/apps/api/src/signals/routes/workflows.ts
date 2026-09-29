@@ -59,6 +59,9 @@ import { loadWorkflowOwnerProfile } from "../services/workflow-owner-profile.ser
 import { workflowDetail } from "../services/workflow-detail.service";
 import {
   ensureWorkflowUserAutomationThread,
+  ensureWorkflowUserAutomationThread$,
+  prepareWorkflowUserAutomationThread$,
+  type WorkflowThreadPreparation,
   loadWorkflowUserAutomationThreadId,
 } from "../services/workflow-user-automation-thread.service";
 import { updateWorkflow$ } from "../services/workflow-update.service";
@@ -1497,6 +1500,7 @@ async function copyWorkflowDatabaseRows(
   db: Db,
   args: WorkflowCopyInput & {
     readonly targetWorkflowId: string;
+    readonly threadPreparation: WorkflowThreadPreparation;
     readonly currentTime: Date;
     readonly inheritedAutonomyBudget: number | undefined;
     readonly source: WorkflowCopySource;
@@ -1592,6 +1596,7 @@ async function copyWorkflowDatabaseRows(
         orgId: args.orgId,
         userId: args.userId,
         workflowId: args.targetWorkflowId,
+        preparation: args.threadPreparation,
         agentId: args.targetAgentId,
         workflowTitle: sourceWorkflow.displayName ?? sourceWorkflow.name,
         currentTime: args.currentTime,
@@ -1682,6 +1687,37 @@ const reconcileCopiedWorkflowAutomationWatches$ = command(
     }
   },
 );
+function copiedWorkflowVolumeInput(
+  orgId: string,
+  targetWorkflowId: string,
+  source: WorkflowCopySource,
+) {
+  return {
+    orgId,
+    storageName: getCustomSkillStorageName(targetWorkflowId),
+    piResourceIndex: true,
+    files: copiedWorkflowVolumeFiles(source.sourceWorkflow, source.files),
+  };
+}
+
+function copiedWorkflowResponse(
+  visible: Awaited<ReturnType<typeof loadVisibleWorkflowById>>,
+  member: WorkflowMember,
+  workflowId: string,
+) {
+  if (!visible) {
+    throw new Error(`Copied workflow not found: ${workflowId}`);
+  }
+  return {
+    status: 201 as const,
+    body: workflowSummary({
+      workflow: visible.workflow,
+      agent: visible.agent,
+      member,
+    }),
+  };
+}
+
 const publishCopiedWorkflow$ = command(
   async (
     { set },
@@ -1719,23 +1755,30 @@ const publishCopiedWorkflow$ = command(
       signal,
     );
     const targetWorkflowId = randomUUID();
+    const threadPreparation = await set(
+      prepareWorkflowUserAutomationThread$,
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+        workflowId: targetWorkflowId,
+        workflowTitle:
+          snapshot.source.sourceWorkflow.displayName ??
+          snapshot.source.sourceWorkflow.name,
+      },
+      signal,
+    );
     const cleanup = { orgId: args.orgId, workflowId: targetWorkflowId };
     return await onRejection(
       (async () => {
         const volume = await set(
           prepareVolumeServerSide$,
-          {
-            orgId: args.orgId,
-            storageName: getCustomSkillStorageName(targetWorkflowId),
-            piResourceIndex: true,
-            files: copiedWorkflowVolumeFiles(
-              snapshot.source.sourceWorkflow,
-              snapshot.source.files,
-            ),
-          },
+          copiedWorkflowVolumeInput(
+            args.orgId,
+            targetWorkflowId,
+            snapshot.source,
+          ),
           signal,
         );
-        signal.throwIfAborted();
         const publication = await settle(
           copyWorkflowDatabaseRows(
             args.db,
@@ -1748,6 +1791,7 @@ const publishCopiedWorkflow$ = command(
               sourceStorage: args.sourceStorage,
               targetAgentId: args.targetAgentId,
               targetWorkflowId,
+              threadPreparation,
               currentTime: args.currentTime,
               inheritedAutonomyBudget: args.inheritedAutonomyBudget,
               source: snapshot.source,
@@ -1795,17 +1839,7 @@ const publishCopiedWorkflow$ = command(
           workflowId: targetWorkflowId,
         });
         signal.throwIfAborted();
-        if (!visible) {
-          throw new Error(`Copied workflow not found: ${targetWorkflowId}`);
-        }
-        return {
-          status: 201 as const,
-          body: workflowSummary({
-            workflow: visible.workflow,
-            agent: visible.agent,
-            member: args.member,
-          }),
-        };
+        return copiedWorkflowResponse(visible, args.member, targetWorkflowId);
       })(),
       async () => {
         await set(cleanupUnpublishedWorkflow$, cleanup);
@@ -1953,16 +1987,18 @@ const prepareWorkflowChatThreadInner$ = command(
     }
 
     const currentTime = nowDate();
-    const chatThreadId = await writeDb.transaction(async (tx) => {
-      return await ensureWorkflowUserAutomationThread(tx, {
+    const chatThreadId = await set(
+      ensureWorkflowUserAutomationThread$,
+      {
         orgId: auth.orgId,
         userId: auth.userId,
         workflowId: workflow.id,
         agentId: agent.id,
         workflowTitle: workflow.displayName ?? workflow.name,
         currentTime,
-      });
-    });
+      },
+      signal,
+    );
     signal.throwIfAborted();
 
     return {
@@ -2021,16 +2057,18 @@ const runWorkflowInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       "api_dispatch_pre_create_agent_workflow_slash_ensure_thread",
       "nested",
       async () => {
-        return await writeDb.transaction(async (tx) => {
-          return await ensureWorkflowUserAutomationThread(tx, {
+        return await set(
+          ensureWorkflowUserAutomationThread$,
+          {
             orgId: auth.orgId,
             userId: auth.userId,
             workflowId: workflow.id,
             agentId: agent.id,
             workflowTitle: workflow.displayName ?? workflow.name,
             currentTime,
-          });
-        });
+          },
+          signal,
+        );
       },
     ));
   signal.throwIfAborted();

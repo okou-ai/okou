@@ -76,29 +76,36 @@ export const prepareWorkflowUserAutomationThread$ = command(
     signal: AbortSignal,
   ): Promise<WorkflowThreadPreparation> => {
     const db = set(writeDb$);
-    const [context] = await db
-      .select({
-        officialDefinitionName: workflows.officialDefinitionName,
-        locale: orgMembersMetadata.locale,
-        modelSettings: orgMembersMetadata.modelSettings,
-        cloudBrowserEnabled: orgMembersMetadata.cloudBrowserEnabledByDefault,
-      })
-      .from(workflows)
-      .leftJoin(
-        orgMembersMetadata,
-        and(
-          eq(orgMembersMetadata.orgId, args.orgId),
-          eq(orgMembersMetadata.userId, args.userId),
-        ),
-      )
-      .where(
-        and(eq(workflows.orgId, args.orgId), eq(workflows.id, args.workflowId)),
-      )
-      .limit(1);
+    const [[context], [member]] = await Promise.all([
+      db
+        .select({ officialDefinitionName: workflows.officialDefinitionName })
+        .from(workflows)
+        .where(
+          and(
+            eq(workflows.orgId, args.orgId),
+            eq(workflows.id, args.workflowId),
+          ),
+        )
+        .limit(1),
+      db
+        .select({
+          locale: orgMembersMetadata.locale,
+          modelSettings: orgMembersMetadata.modelSettings,
+          cloudBrowserEnabled: orgMembersMetadata.cloudBrowserEnabledByDefault,
+        })
+        .from(orgMembersMetadata)
+        .where(
+          and(
+            eq(orgMembersMetadata.orgId, args.orgId),
+            eq(orgMembersMetadata.userId, args.userId),
+          ),
+        )
+        .limit(1),
+    ]);
     signal.throwIfAborted();
     let title = args.workflowTitle;
     if (context?.officialDefinitionName) {
-      const locale = userLocaleSchema.parse(context.locale ?? "en-US");
+      const locale = userLocaleSchema.parse(member?.locale ?? "en-US");
       const localized =
         OFFICIAL_WORKFLOW_THREAD_TITLES[context.officialDefinitionName]?.[
           locale
@@ -128,8 +135,8 @@ export const prepareWorkflowUserAutomationThread$ = command(
     return {
       initialModel,
       title,
-      modelSettings: modelSettingsSchema.parse(context?.modelSettings ?? {}),
-      cloudBrowserEnabled: context?.cloudBrowserEnabled ?? true,
+      modelSettings: modelSettingsSchema.parse(member?.modelSettings ?? {}),
+      cloudBrowserEnabled: member?.cloudBrowserEnabled ?? true,
     };
   },
 );
