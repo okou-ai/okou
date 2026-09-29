@@ -355,21 +355,17 @@ const mintOptimisticThreadWithEvent$ = command(
   },
 );
 
-async function createChatThread(
-  args: {
-    readonly createClient: ApiClientFactory;
-    readonly agentId: string;
-    readonly title: string | undefined;
-    readonly clientThreadId: string;
-    readonly eventId: string;
-    readonly modelSelection: ModelProviderSelection;
-    readonly models: AvailableRunModelsResponse;
-    readonly catalog: ModelCatalog;
-    readonly connectorSelections?: readonly ConnectorAccountSelection[];
-    readonly initialRemoteAccessOverrides?: readonly InitialRemoteAccessOverride[];
-  },
-  signal: AbortSignal,
-): Promise<void> {
+function newThreadCreateBody(args: {
+  readonly agentId: string;
+  readonly title: string | undefined;
+  readonly clientThreadId: string;
+  readonly eventId: string;
+  readonly modelSelection: ModelProviderSelection;
+  readonly models: AvailableRunModelsResponse;
+  readonly catalog: ModelCatalog;
+  readonly connectorSelections?: readonly ConnectorAccountSelection[];
+  readonly initialRemoteAccessOverrides?: readonly InitialRemoteAccessOverride[];
+}) {
   const { selectedModel } = args.modelSelection;
   const selectedEffort = requestedNewThreadReasoningEffort(
     args.modelSelection,
@@ -378,30 +374,35 @@ async function createChatThread(
     }),
     args.catalog,
   );
-  const client = args.createClient(chatThreadsContract);
+  return {
+    agentId: args.agentId,
+    clientThreadId: args.clientThreadId,
+    eventId: args.eventId,
+    model: selectedModel,
+    serviceTier: apiServiceTierFromSelection(args.modelSelection),
+    ...(selectedEffort === undefined
+      ? {}
+      : { reasoningEffort: selectedEffort }),
+    ...(args.title ? { title: args.title } : {}),
+    ...(args.connectorSelections?.length
+      ? { connectorSelections: [...args.connectorSelections] }
+      : {}),
+    ...(args.initialRemoteAccessOverrides?.length
+      ? {
+          initialRemoteAccessOverrides: [...args.initialRemoteAccessOverrides],
+        }
+      : {}),
+  };
+}
+
+async function createChatThread(
+  createClient: ApiClientFactory,
+  body: ReturnType<typeof newThreadCreateBody>,
+  signal: AbortSignal,
+): Promise<void> {
   await accept(
-    client.create({
-      body: {
-        agentId: args.agentId,
-        clientThreadId: args.clientThreadId,
-        eventId: args.eventId,
-        model: selectedModel,
-        serviceTier: apiServiceTierFromSelection(args.modelSelection),
-        ...(selectedEffort === undefined
-          ? {}
-          : { reasoningEffort: selectedEffort }),
-        ...(args.title ? { title: args.title } : {}),
-        ...(args.connectorSelections?.length
-          ? { connectorSelections: [...args.connectorSelections] }
-          : {}),
-        ...(args.initialRemoteAccessOverrides?.length
-          ? {
-              initialRemoteAccessOverrides: [
-                ...args.initialRemoteAccessOverrides,
-              ],
-            }
-          : {}),
-      },
+    createClient(chatThreadsContract).create({
+      body,
       fetchOptions: { signal },
     }),
     [201],
@@ -454,8 +455,8 @@ const startNewChatThreadCreate$ = command(
     L.debug("startNewChatThreadCreate$ POST chat-threads start", { threadId });
     const createResult = (async (): Promise<void> => {
       await createChatThread(
-        {
-          createClient,
+        createClient,
+        newThreadCreateBody({
           agentId,
           title: undefined,
           clientThreadId: threadId,
@@ -463,7 +464,7 @@ const startNewChatThreadCreate$ = command(
           modelSelection,
           models,
           catalog,
-        },
+        }),
         signal,
       );
       L.debug("startNewChatThreadCreate$ POST chat-threads 201", { threadId });
@@ -496,12 +497,13 @@ export const createNewChatThread$ = command(
 
 /** The thread row, created alongside the send it is about to carry. */
 async function createNewThreadRecord(
-  args: Parameters<typeof createChatThread>[0],
+  createClient: ApiClientFactory,
+  body: ReturnType<typeof newThreadCreateBody>,
   signal: AbortSignal,
 ): Promise<void> {
-  await createChatThread(args, signal);
+  await createChatThread(createClient, body, signal);
   L.debug("sendNewThreadMessage$ POST chat-threads 201", {
-    threadId: args.clientThreadId,
+    threadId: body.clientThreadId,
   });
   signal.throwIfAborted();
 }
@@ -542,6 +544,30 @@ const sendNewThreadMessage$ = command(
     const threadId = crypto.randomUUID();
     const clientEventId = crypto.randomUUID();
     const chatThreadEventId = crypto.randomUUID();
+    const createBody = newThreadCreateBody({
+      agentId,
+      title: undefined,
+      clientThreadId: threadId,
+      eventId: chatThreadEventId,
+      modelSelection: resolvedModelSelection,
+      models: resolved.models,
+      catalog: resolved.catalog,
+      connectorSelections: request.connectorSelections,
+      initialRemoteAccessOverrides: request.initialRemoteAccessOverrides,
+    });
+    const sendBody = newThreadSendBody({
+      agentId,
+      threadId,
+      clientEventId,
+      prepared,
+      modelSelection: resolvedModelSelection,
+      realAgentInPreviewEnabled:
+        features[FeatureSwitchKey.RealAgentInPreview] ?? false,
+      userMessage: annotatedUserMessage,
+      computerUseHostId,
+      cloudBrowserEnabled,
+      sourceRunId: request.forward?.runId,
+    });
     set(
       appendOptimisticChatEvent$,
       createOptimisticChatEventEntry(
@@ -578,33 +604,10 @@ const sendNewThreadMessage$ = command(
     const createClient = get(apiClient$);
     L.debug("sendNewThreadMessage$ POST chat-threads start", { threadId });
     const createResult = createNewThreadRecord(
-      {
-        createClient,
-        agentId,
-        title: undefined,
-        clientThreadId: threadId,
-        eventId: chatThreadEventId,
-        modelSelection: resolvedModelSelection,
-        models: resolved.models,
-        catalog: resolved.catalog,
-        connectorSelections: request.connectorSelections,
-        initialRemoteAccessOverrides: request.initialRemoteAccessOverrides,
-      },
+      createClient,
+      createBody,
       signal,
     );
-    const sendBody = newThreadSendBody({
-      agentId,
-      threadId,
-      clientEventId,
-      prepared,
-      modelSelection: resolvedModelSelection,
-      realAgentInPreviewEnabled:
-        features[FeatureSwitchKey.RealAgentInPreview] ?? false,
-      userMessage: annotatedUserMessage,
-      computerUseHostId,
-      cloudBrowserEnabled,
-      sourceRunId: request.forward?.runId,
-    });
     const sendResult = (async (): Promise<void> => {
       await Promise.all([clearDraftResult, createResult]);
       signal.throwIfAborted();
