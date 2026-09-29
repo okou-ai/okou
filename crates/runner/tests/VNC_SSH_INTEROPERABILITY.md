@@ -131,14 +131,20 @@ cleanup_vnc_acceptance() {
         [[ "$command_line" == *"$VNC_ACCEPT_DIR/sshd_config"* ]] || break
         sleep 0.1
       done
-      command_line="$(sudo ps -p "$VNC_SSHD_PID" -o args= 2>/dev/null || true)"
-      if [[ "$command_line" == *"$VNC_ACCEPT_DIR/sshd_config"* ]]; then
-        sudo kill -KILL "$VNC_SSHD_PID" 2>/dev/null || result=1
-      fi
+      # If the isolated daemon does not exit, retain its files for manual
+      # inspection instead of force-killing a PID that could have been reused.
     elif [ -n "$command_line" ]; then
       echo "refusing to kill an unrelated sshd PID" >&2
       preserve_scratch=1
       result=1
+    fi
+    if [ -d "/proc/$VNC_SSHD_PID" ]; then
+      command_line="$(sudo ps -p "$VNC_SSHD_PID" -o args= 2>/dev/null || true)"
+      if [[ "$command_line" == *"$VNC_ACCEPT_DIR/sshd_config"* || -z "$command_line" ]]; then
+        echo "cannot confirm isolated sshd has exited; retain scratch" >&2
+        preserve_scratch=1
+        result=1
+      fi
     fi
   elif [ -n "$VNC_SSHD_PID" ]; then
     echo "invalid isolated sshd PID; inspect before manual cleanup" >&2
@@ -152,7 +158,7 @@ cleanup_vnc_acceptance() {
         -d "$VNC_ACCEPT_DIR" && ! -L "$VNC_ACCEPT_DIR" ]]; then
     sudo rm -rf -- "$VNC_ACCEPT_DIR" || result=1
   fi
-  if [ -e "$VNC_ACCEPT_DIR" ] || { (( VNC_ACCEPT_CREATED )) && id "$VNC_ACCEPT_USER" >/dev/null 2>&1; }; then
+  if [ -e "$VNC_ACCEPT_DIR" ] || id "$VNC_ACCEPT_USER" >/dev/null 2>&1; then
     echo "acceptance resources remain; inspect and clean them manually" >&2
     result=1
   fi
@@ -215,6 +221,8 @@ test "$VNC_SSHD_READY" = 1
 
 VNC_OPENSSH_HOST_KEY_ALGORITHM="$(awk '{print $1}' "$VNC_ACCEPT_DIR/host_key.pub")"
 VNC_OPENSSH_HOST_KEY_FINGERPRINT="$(ssh-keygen -lf "$VNC_ACCEPT_DIR/host_key.pub" -E sha256 | awk '{print $2}')"
+printf 'ssh_loopback=127.0.0.1:%s host_key=%s/%s\n' \
+  "$VNC_OPENSSH_PORT" "$VNC_OPENSSH_HOST_KEY_ALGORITHM" "$VNC_OPENSSH_HOST_KEY_FINGERPRINT"
 sudo install -m 755 "$VNC_RUNNER_TEST_BINARY" "$VNC_ACCEPT_DIR/runner-tests"
 sudo install -m 644 crates/rfb-client/tests/fixtures/tigervnc.py \
   "$VNC_ACCEPT_DIR/tigervnc.py"
@@ -248,7 +256,8 @@ Record all of the following against the exact PR head:
 
 - commit and test-binary SHA-256;
 - `dpkg-query` versions for both installed OpenSSH packages and pinned TigerVNC;
-- the four matrix cases and their start/status/capture/close result;
+- the four matrix cases and their start/status/capture/close result, including
+  each `matrix_case_destination` RFB port;
 - the pinned host-key algorithm/fingerprint and non-secret loopback topology;
 - certificate identity `localhost` and exact forwarded RFB port;
 - test exit status;

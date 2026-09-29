@@ -1,5 +1,5 @@
 //! Explicit independent OpenSSH plus TigerVNC acceptance.
-//! See `tests/VNC_SSH_INTEROPERABILITY.md`.
+//! See `crates/runner/tests/VNC_SSH_INTEROPERABILITY.md`.
 
 use runner_rpc_proto::stream::{Frame, Reader};
 use serde_json::{Value, json};
@@ -75,7 +75,7 @@ impl TigerVnc {
             .stderr(Stdio::inherit())
             .kill_on_drop(true)
             .spawn()
-            .expect("run the isolated setup in tests/VNC_SSH_INTEROPERABILITY.md");
+            .expect("run the isolated setup in crates/runner/tests/VNC_SSH_INTEROPERABILITY.md");
         let input = child.stdin.take().unwrap();
         let output = BufReader::new(child.stdout.take().unwrap());
         let mut fixture = Self {
@@ -240,6 +240,11 @@ async fn run_case(password: bool, security: Security) {
         }),
     };
     let vnc_port = fixture.ready["port"].as_u64().unwrap();
+    eprintln!(
+        "matrix_case_destination: ssh={} vnc={} rfb=127.0.0.1:{vnc_port} tls_identity=localhost",
+        if password { "password" } else { "public-key" },
+        security.api_name()
+    );
     let ca_bundle = std::fs::read_to_string(fixture.ready["ca_pem"].as_str().unwrap()).unwrap();
     let vnc_resolve = harness
         .api
