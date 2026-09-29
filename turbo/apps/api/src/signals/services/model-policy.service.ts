@@ -55,6 +55,7 @@ import { runModelCatalog } from "@okouai/db/schema/run-model-catalog";
 import { conflict, insufficientCredits } from "../../lib/error";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
+import { settle } from "../utils";
 import {
   loadOrgPlanCapabilities,
   type OrgPlanCapabilities,
@@ -88,6 +89,14 @@ type ServiceResult<T> =
         | ReturnType<typeof insufficientCredits>
         | ReturnType<typeof conflict>;
     };
+
+class RejectedModelPolicyUpdate extends Error {
+  constructor(
+    readonly result: Extract<ServiceResult<never>, { readonly ok: false }>,
+  ) {
+    super("Model policy update rejected");
+  }
+}
 
 const ORG_SENTINEL_USER_ID = "__org__";
 
@@ -1474,52 +1483,58 @@ export const updateOrgModelPolicies$ = command(
     if (!params.revision) {
       return refreshConflict();
     }
-    const written = await db.transaction(async (tx) => {
-      await lockPolicyWrites(tx, params.orgId, params.userId);
-      signal.throwIfAborted();
-      const existing = await loadRows(tx, params.orgId, true);
-      if (
-        params.revision !== undefined &&
-        params.revision !== policyRevision(existing)
-      ) {
-        return refreshConflict();
-      }
-      const policies = resolveOmittedModelProviderSurfaceIds(
-        params.policies,
-        existing,
-      );
-      const capabilities = await orgModelCapabilities(tx, params.orgId);
-      const modelsAllowedForNewPolicy = await loadModelsAllowedForNewOrgPolicy(
-        tx,
-        true,
-      );
-      const validation = await validateUpdatePolicies(
-        tx,
-        params.orgId,
-        policies,
-        {
-          capabilities,
-          existingRows: existing,
-          modelsAllowedForNewPolicy,
-        },
-      );
-      signal.throwIfAborted();
-      if (!validation.ok) {
-        return validation;
-      }
-      await persistOrgModelPolicyUpdates({
-        db: tx,
-        orgId: params.orgId,
-        userId: params.userId,
-        policies: validation.data,
-        now: nowDate(),
-      });
-      signal.throwIfAborted();
-      return ok(undefined);
-    });
+    // Empty-set ownership can insert the real default row. Every rejected
+    // update must roll that preparation back instead of committing a repair.
+    const written = await settle(
+      db.transaction(async (tx) => {
+        await lockPolicyWrites(tx, params.orgId, params.userId);
+        signal.throwIfAborted();
+        const existing = await loadRows(tx, params.orgId, true);
+        if (
+          params.revision !== undefined &&
+          params.revision !== policyRevision(existing)
+        ) {
+          throw new RejectedModelPolicyUpdate(refreshConflict());
+        }
+        const policies = resolveOmittedModelProviderSurfaceIds(
+          params.policies,
+          existing,
+        );
+        const capabilities = await orgModelCapabilities(tx, params.orgId);
+        const modelsAllowedForNewPolicy =
+          await loadModelsAllowedForNewOrgPolicy(tx, true);
+        const validation = await validateUpdatePolicies(
+          tx,
+          params.orgId,
+          policies,
+          {
+            capabilities,
+            existingRows: existing,
+            modelsAllowedForNewPolicy,
+          },
+        );
+        signal.throwIfAborted();
+        if (!validation.ok) {
+          throw new RejectedModelPolicyUpdate(validation);
+        }
+        await persistOrgModelPolicyUpdates({
+          db: tx,
+          orgId: params.orgId,
+          userId: params.userId,
+          policies: validation.data,
+          now: nowDate(),
+        });
+        signal.throwIfAborted();
+        return ok(undefined);
+      }),
+      signal,
+    );
     signal.throwIfAborted();
     if (!written.ok) {
-      return written;
+      if (written.error instanceof RejectedModelPolicyUpdate) {
+        return written.error.result;
+      }
+      throw written.error;
     }
 
     const response = await listOrgModelPolicies(
