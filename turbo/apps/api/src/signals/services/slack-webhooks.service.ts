@@ -1,3 +1,4 @@
+import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
 import { command, computed, type Computed } from "ccstate";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
@@ -731,6 +732,11 @@ const resolveConnectedSlackAgentRouteAdmission$ = command(
     }
 
     const route = await ensureCanonicalSlackChatThreadRoute(args.db, {
+      initialModel: await set(
+        resolveDefaultModelFirstPin$,
+        { orgId: args.orgId, userId: args.connection.userId },
+        signal,
+      ),
       ...routeKey,
       orgId: args.orgId,
       agentId: effectiveCompose.composeId,

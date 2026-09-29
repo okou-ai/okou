@@ -110,12 +110,19 @@ export const workflowAutomationCanFire$ = command(
     args: {
       readonly automation: WorkflowAutomationRow;
       readonly agentId: string;
+      readonly allowClaimedOnceScheduleAutomation?: boolean;
     },
     signal: AbortSignal,
   ): Promise<boolean> => {
     const { automation } = args;
+    const claimedOnceSchedule =
+      args.allowClaimedOnceScheduleAutomation === true &&
+      automation.kind === "schedule" &&
+      automation.scheduleType === "once" &&
+      automation.nextRunAt === null &&
+      automation.lastRunAt !== null;
     if (
-      !automation.enabled ||
+      (!automation.enabled && !claimedOnceSchedule) ||
       (automation.officialBlueprintKey !== null &&
         automation.officialReconciliationStatus !== "current")
     ) {

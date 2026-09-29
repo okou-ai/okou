@@ -11,14 +11,14 @@ import { and, eq, inArray } from "drizzle-orm";
 import { AUTONOMY_BUDGET_EXHAUSTED_MESSAGE } from "../../lib/error";
 import type { Tx } from "../../lib/db-types";
 import { writeDb$, type Db } from "../external/db";
-import { nowDate } from "../../lib/time";
+import { now, nowDate } from "../../lib/time";
 import type { PreparedChatEventRow } from "./chat-event-append.service";
 import {
   childAutonomyBudget,
   loadRunAutonomyBudget,
 } from "./autonomy-budget.service";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
-import type { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
+import { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
 import { listPendingChatInputs } from "./chat-event-queue.service";
 import {
   insertChatEvent,
@@ -46,6 +46,7 @@ import type {
 import {
   assembleWorkflowAutomationRun,
   resolveWorkflowAutomationModelContext$,
+  checkQueuedWorkflowLaunchReadiness$,
   type WorkflowModelContext,
 } from "./workflow-automation-launch.service";
 import { buildWorkflowAutomationQueuedLaunchMaterial } from "./workflow-automation-queued-launch-context.service";
@@ -496,6 +497,7 @@ async function assembleAutomationRunForTarget(
     readonly event: QueuedAutomationEvent;
     readonly target: LaunchTarget;
     readonly modelContext: WorkflowModelContext;
+    readonly timing: ApiDispatchTimingCollector;
     readonly rejection: (error: {
       readonly code: string;
       readonly message: string;
@@ -543,6 +545,7 @@ async function assembleAutomationRunForTarget(
       },
       queueEventId: event.id,
       modelContext: args.modelContext,
+      timing: args.timing,
       apiStartTime: head.apiStartTime,
       prompt: material.prompt,
       triggerBrief: event.triggerBrief ?? undefined,
@@ -648,6 +651,44 @@ export const assembleQueuedAutomationRun$ = command(
       }
       target = reconciledTarget;
     }
+    const material = buildWorkflowAutomationQueuedLaunchMaterial({
+      workflowName: event.workflowName,
+      eventType: event.eventType,
+      eventPayload: event.eventPayload,
+      automation: target.automation,
+      agentId: target.agentId,
+      chatThreadId: event.chatThreadId,
+    });
+    if (!material) {
+      return conflict("Workflow queue event payload is unreadable");
+    }
+    const timing = new ApiDispatchTimingCollector();
+    timing.recordElapsed(
+      "api_dispatch_pre_create_agent_workflow_automation_entrypoint_gap",
+      "nested",
+      head.apiStartTime,
+    );
+    const readiness = await set(
+      checkQueuedWorkflowLaunchReadiness$,
+      {
+        automation: target.automation,
+        agentId: target.agentId,
+        activePreviousRunPolicy: material.activePreviousRunPolicy,
+        timing,
+        allowClaimedOnceScheduleAutomation:
+          material.allowClaimedOnceScheduleAutomation,
+      },
+      signal,
+    );
+    if (readiness) {
+      return readiness.kind === "conflict"
+        ? conflict(readiness.message)
+        : {
+            kind: "rejected",
+            rejection: rejection(readiness.response.body.error),
+          };
+    }
+    const modelStartedAt = now();
     const modelContext = await set(
       resolveWorkflowAutomationModelContext$,
       {
@@ -658,9 +699,14 @@ export const assembleQueuedAutomationRun$ = command(
       },
       signal,
     );
+    timing.recordElapsed(
+      "api_dispatch_pre_create_agent_workflow_automation_resolve_model_context",
+      "nested",
+      modelStartedAt,
+    );
     return await assembleAutomationRunForTarget(
       db,
-      { head, event, target, rejection, modelContext },
+      { head, event, target, rejection, modelContext, timing },
       signal,
     );
   },

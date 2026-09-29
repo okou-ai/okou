@@ -1,3 +1,4 @@
+import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
 import { command } from "ccstate";
 import { and, eq, isNull, or } from "drizzle-orm";
 import { discordGatewayEnvelopeSchema } from "@okouai/api-contracts/contracts/discord-gateway";
@@ -330,6 +331,11 @@ const createDiscordAdmissionRoute$ = command(
       return undefined;
     }
     const route = await ensureCanonicalDiscordChatThreadRoute(db, {
+      initialModel: await set(
+        resolveDefaultModelFirstPin$,
+        { orgId: binding.orgId, userId: binding.userId },
+        signal,
+      ),
       ...routeKey,
       orgId: binding.orgId,
       agentId: agent.id,

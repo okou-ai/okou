@@ -1,3 +1,4 @@
+import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
 import { enqueueIntegrationChatInput$ } from "./integration-chat-queue.service";
 import { resolveEnqueuedChatInputModel$ } from "./chat-input-model.service";
 import { touchNativeChatThread } from "./native-chat-event-write.service";
@@ -1361,6 +1362,11 @@ const persistAgentPhoneChatMessage$ = command(
   ): Promise<PersistedAgentPhoneChatMessage> => {
     const currentTime = new Date(args.apiStartTime);
     const route = await ensureAgentPhoneChatThreadRoute(args.db, {
+      initialModel: await set(
+        resolveDefaultModelFirstPin$,
+        { orgId: args.userLink.orgId, userId: args.userLink.userId },
+        signal,
+      ),
       agentphoneUserLinkId: args.userLink.id,
       rootMessageId: args.rootMessageId,
       conversationId: args.event.conversationId,

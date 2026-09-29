@@ -1,3 +1,4 @@
+import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
 import { enqueueIntegrationChatInput$ } from "./integration-chat-queue.service";
 import { resolveEnqueuedChatInputModel$ } from "./chat-input-model.service";
 import { touchNativeChatThread } from "./native-chat-event-write.service";
@@ -381,6 +382,11 @@ const persistCanonicalFeishuIngress$ = command(
   ): Promise<PersistedCanonicalFeishuIngress> => {
     const routeThreadId = feishuRouteThreadId(args.message);
     const route = await ensureFeishuChatThreadRoute(args.db, {
+      initialModel: await set(
+        resolveDefaultModelFirstPin$,
+        { orgId: args.installation.orgId, userId: args.connection.userId },
+        signal,
+      ),
       connectionId: args.connection.id,
       chatId: args.message.chatId,
       threadId: routeThreadId,

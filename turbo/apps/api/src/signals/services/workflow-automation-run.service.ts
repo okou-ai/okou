@@ -145,7 +145,8 @@ function workflowQueueInputPreparation(
       args.googleCalendarSource ||
       args.gmailSource ||
       args.googleMeetSource ||
-      args.notionSource) &&
+      args.notionSource ||
+      args.queueReceipt) &&
     (args.scheduleClaim ||
       args.persistSourceTransition ||
       args.due.automation.kind === "schedule")

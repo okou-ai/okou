@@ -86,7 +86,7 @@ export const enqueueIntegrationChatInput$ = command(
             chatThreadId,
             createdAt,
           })
-          .onConflictDoNothing();
+          .onConflictDoNothing({ target: chatDiscordContext.id });
       } else if (context.type === "slack") {
         await tx
           .insert(chatSlackContext)

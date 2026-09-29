@@ -1,3 +1,7 @@
+import {
+  resolveDefaultModelFirstPin$,
+  type DefaultModelFirstPin,
+} from "./model-selection.service";
 import { enqueueIntegrationChatInput$ } from "./integration-chat-queue.service";
 import { resolveEnqueuedChatInputModel$ } from "./chat-input-model.service";
 import { touchNativeChatThread } from "./native-chat-event-write.service";
@@ -1177,8 +1181,10 @@ async function resolveTelegramChatMessageThread(
     readonly rootMessageId: string | undefined;
   },
   currentTime: Date,
+  initialModel: DefaultModelFirstPin,
 ) {
   const threadArgs = {
+    initialModel,
     userId: args.source.userLink.userId,
     orgId: args.source.orgId,
     agentId: args.source.composeId,
@@ -1226,7 +1232,15 @@ const persistTelegramChatMessage$ = command(
     if (existingMessage) {
       return { inserted: false };
     }
-    const binding = await resolveTelegramChatMessageThread(args, currentTime);
+    const binding = await resolveTelegramChatMessageThread(
+      args,
+      currentTime,
+      await set(
+        resolveDefaultModelFirstPin$,
+        { orgId: args.source.orgId, userId: args.source.userLink.userId },
+        signal,
+      ),
+    );
     signal.throwIfAborted();
 
     const file = extractTelegramFileForContext(args.source.message);
