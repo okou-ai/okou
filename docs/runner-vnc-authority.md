@@ -7,7 +7,13 @@ the thread's effective access to the exact SSH host and shared Run-owned SSH aut
 chooses native shared or exclusive mode for each session; the VNC server enforces
 its connection policy.
 
-Live VNC inventory, private resolve, and check require the Run's chat thread and that thread's effective permission for the exact VNC host. SSH-backed hosts also require effective permission for the referenced SSH host. A Run without a chat thread is denied. Legacy Agent-grant rows remain stored temporarily for rolling-deployment compatibility, but do not authorize runtime VNC access.
+Live VNC inventory, private resolve, and check require the Run's chat thread
+and that thread's effective permission for the exact VNC host. SSH-backed hosts
+also require effective permission for the referenced SSH host. A Run without a
+chat thread is denied. Retired Agent-grant rows do not authorize runtime VNC
+access. Migration `1288_drop_retired_agent_grant_tables` removes their physical
+tables after the last old API readers have drained; that migration is not a
+production receipt until deployed.
 
 ## Inventory and retired grants
 
@@ -39,7 +45,9 @@ credentials do not authorize these routes. Fleet-secret protection remains a
 trust assumption; the shared credential itself does not identify a machine.
 
 Every call joins the current same-owner Run/session/visible Agent/VNC
-connection and credential and checks current chat-thread host access. SSH rows
+connection and checks current chat-thread host access. Credential-backed rows
+must also resolve their same-owner saved VNC credential; an explicitly selected
+X509None row instead has no VNC credential to join or decrypt. SSH rows
 additionally require effective access to the same-owner referenced SSH connection. Requests contain
 saved IDs, not endpoint or owner overrides.
 Private handlers set `Cache-Control: no-store` before authentication and body
@@ -49,7 +57,8 @@ Unavailable authority returns the opaque `unavailable` outcome. Invalid input is
 
 `resolve` requires `connectionId` and `supportedProfiles`, a bounded list of
 exact authentication/security/transport tuples. Current Runners advertise the
-X509Vnc and X509Plain pairs separately for `direct` and `ssh`, plus the distinct
+X509None (`none` / `x509_none`), X509Vnc and X509Plain pairs separately
+for `direct` and `ssh`, plus the distinct
 Mac classic-password `vnc_password` / `apple_vnc_password` pair and Apple DH,
 Apple Direct SRP and Apple RSA/SRP pairs only for `ssh`. Every advertised tuple
 names its `transportType`. An empty list or a saved tuple absent from the list
@@ -57,7 +66,11 @@ returns `unsupported_profile` only after VNC authorization and before KMS. An
 SSH row is also checked for its chat-thread SSH access before any credential handoff.
 Unknown methods, profiles and cross-paired combinations are rejected. Future
 engine support must add a new exact pair instead of broadening a saved policy or
-creating an implicit downgrade path. The Mac classic-password profile selects
+creating an implicit downgrade path. X509None verifies the VNC server certificate
+and encrypts the session, but does not authenticate the VNC client. Other clients
+that can reach its listener may control the desktop. An SSH route identifies the
+selected SSH hop, not the isolation of that listener; the owner must explicitly
+choose this profile and control the endpoint's exposure. The Mac classic-password profile selects
 bare RFB type 2 only through verified SSH ending on the Mac, with a literal
 `127.0.0.1` or `::1` RFB destination. Its
 1–8-byte password does not authenticate the server or encrypt the desktop;
@@ -86,9 +99,9 @@ variant containing host, port, server name, typed authentication/security, VNC
 generation and explicit transport snapshot. The separate variant keeps the old
 sensitive decoder shape unchanged and makes omission unambiguous. VNC generation
 changes on credential rotation, rebinding or connection edits.
-KMS decryption runs outside locks, followed by another current-authority check
-before handoff. A committed generation change during decryption discards the stale
-snapshot.
+Credential-backed profiles decrypt through KMS outside locks. X509None skips
+VNC credential lookup and KMS entirely. Both paths repeat current-authority
+checks before handoff; a committed generation change discards the stale snapshot.
 
 `check` takes `connectionId`, `runnerIdentity`, `expectedGeneration` and, for a
 capable Runner, `expectedTransport`. It
@@ -106,9 +119,10 @@ pending resolve. Absence is unavailable, and a different generation is stale.
 This identity model does not add SSH's Run-lifetime credential cache or notification
 transport; the current checks and #34780 runtime responsibilities below still apply.
 
-Generated Rust resolve DTOs use a zeroizing, UTF-8 byte-bounded
-`SecretUtf8Text<1023>` and deliberately omit Debug, Clone and Serialize. The
-runtime then constructs the selected engine authentication type: classic VNC
+For credential-backed profiles, generated Rust resolve DTOs use a zeroizing,
+UTF-8 byte-bounded `SecretUtf8Text<1023>` and deliberately omit Debug, Clone
+and Serialize. X509None has no secret-bearing authentication field. The runtime
+then constructs the selected engine authentication type: classic VNC
 enforces 1–8 printable ASCII bytes, while Plain enforces its username and
 password bounds without trimming spaces. Raw responses, decode/provider errors,
 secrets and server-controlled text must never become guest output, logs or
@@ -156,12 +170,10 @@ no 30-second lease or promise to disconnect an idle session within that interval
 Per-operation enforcement and real-server multi-client behavior must be verified
 before activation. This API slice alone does not enforce a live Runner socket.
 
-Owner cleanup still removes retained historical grants, including rows without
-connections, while older API instances drain. It locks grant-owning Agent
-parents in stable order before business rows so concurrent Agent deletion
-cannot invert its Run-to-grant cascade order. Current host configuration writes
-retain cleanup and owner admission. KMS and Clerk calls never run under these
-locks.
+Current host configuration writes retain owner admission and cleanup without
+reading or writing the retired grant tables. The earlier code-only cleanup
+removed their last readers before the separate physical table drop. KMS and
+Clerk calls never run under VNC configuration row locks.
 
 ## Deployment
 
@@ -198,9 +210,13 @@ backward-compatibility nor production activation is an acceptance gate for
 this still-off profile.
 
 The original grant-table rollout required serving and rollback APIs to support
-grant cleanup before grants were created. Current APIs no longer create grants;
-retain the table and cleanup until older serving instances drain, then follow
-#37272 for schema removal. Preserving pre-cutover rollback is not required by
-#36360. VNC product activation remains a separate decision after #34780
+grant cleanup before grants were created. Current APIs no longer create or read
+those grants. Migration `1288_drop_retired_agent_grant_tables` is their separate
+physical table drop after the code-only cleanup and old invocation drain; API
+rollback across that drop is restricted as described in
+[deployment compatibility](deployment-compatibility.md). The X509None
+credentialless profile migration `1289_thick_bruce_banner` follows 1288 and
+must be applied before exposing the upgraded API. VNC product activation
+remains a separate decision after #34780
 verifies real-server sessions, current checks and socket teardown; #34781/#34782
 own CLI, owner UI and end-to-end mode selection.

@@ -47,6 +47,9 @@ export const vncTypeBindings = [
         rustTypeName: "ResolveRequestSupportedProfileAuthMethod",
         rustDoc: ["Authentication method advertised by this Runner."],
         variants: {
+          none: [
+            "No inner RFB client authentication; require explicit saved X509None.",
+          ],
           vnc_password: ["Classic VNC password authentication."],
           username_password: ["Plain username/password authentication."],
           apple_dh_username_password: [
@@ -64,6 +67,7 @@ export const vncTypeBindings = [
         rustTypeName: "ResolveRequestSupportedProfileSecurityType",
         rustDoc: ["Security profile advertised by this Runner."],
         variants: {
+          x509_none: ["VeNCrypt X509None; no inner client authentication."],
           x509_vnc: ["VeNCrypt X509Vnc."],
           x509_plain: ["VeNCrypt X509Plain."],
           apple_vnc_password: [
@@ -113,7 +117,9 @@ export const vncTypeBindings = [
           transport: [
             "Explicit direct or generation-bound SSH transport snapshot.",
           ],
-          authentication: ["Credential for the explicitly saved method."],
+          authentication: [
+            "Exact saved method, with no credential for X509None.",
+          ],
           security: [
             "Explicit saved transport and trust policy; never downgrade.",
           ],
@@ -166,6 +172,7 @@ export const vncTypeBindings = [
           ],
         },
         variants: {
+          none: ["No inner client authentication or secret."],
           vnc_password: ["Classic VNC password challenge response."],
           username_password: [
             "Username/password authentication inside verified TLS.",
@@ -188,6 +195,7 @@ export const vncTypeBindings = [
         ],
         fields: { trust: ["Required verified TLS trust policy."] },
         variants: {
+          x509_none: ["Verified TLS without inner RFB client authentication."],
           x509_vnc: ["VeNCrypt X509Vnc with verified TLS."],
           x509_plain: ["VeNCrypt X509Plain with verified TLS."],
           apple_vnc_password: [

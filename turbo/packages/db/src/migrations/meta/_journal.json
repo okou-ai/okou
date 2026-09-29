@@ -1482,8 +1482,15 @@
     {
       "idx": 1289,
       "version": "7",
-      "when": 1790678810787,
-      "tag": "1289_chat_thread_canonical_session",
+      "when": 1790677953790,
+      "tag": "1289_thick_bruce_banner",
+      "breakpoints": true
+    },
+    {
+      "idx": 1290,
+      "version": "7",
+      "when": 1790688121296,
+      "tag": "1290_chat_thread_canonical_session",
       "breakpoints": true
     }
   ]

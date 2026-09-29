@@ -6336,6 +6336,43 @@ discriminators. Roll back the Runner before the API; once a Runner can advertise
 X509Plain, retain the widened API request/response contract for the lifetime of
 that process.
 
+## VNC X509None owner-selected rollout (default off)
+
+Migration `1289_thick_bruce_banner` follows the separate 1288 retired-grant
+contraction. It makes `vnc_connections.credential_id` nullable only for the
+exact `none` / `x509_none` profile; existing credential-backed rows and the
+retained direct-route default keep their meaning. Apply it before promoting an
+API that can write credentialless rows. Its ordering does not waive the
+separate pre-deployment gate for the 1288 grant-table drop above.
+
+- Old App with new API: existing credential-backed responses retain their shape.
+  An App predating this profile cannot be relied upon to read or edit new
+  credentialless metadata. Do not admit X509None rows while such clients need
+  to manage the owner's VNC hosts; a cached old App needs a refresh after the
+  compatible App is available.
+- New App with old API: the default-off switch keeps this owner flow hidden.
+  If staff enable it across a mixed deployment, the old API rejects X509None
+  selections and cannot return the new response shape; there is no fallback to
+  a credential-backed profile.
+- Old Runner with new API: its advertised profile list lacks the exact
+  `none` / `x509_none` tuple, so resolving such a saved row returns
+  `unsupported_profile` before KMS or a session. Existing profiles retain their
+  existing behavior.
+- New Runner with old API: it advertises the added direct and SSH tuples even
+  when resolving an older connection. The old strict `supportedProfiles`
+  request schema rejects that list, so **all** VNC resolves on that pairing
+  fail closed. Promote the compatible API before the new Runner; do not retry
+  with an old profile list or infer a downgrade.
+
+Before any X509None row is admitted, every serving API reader and intended API
+rollback target must understand the nullable credential and the new response
+variant; deploy the compatible App for owners who may encounter that row. An
+older API's credential inner join omits such rows, so rolling back below that
+reader after an X509None row exists is unsafe even if `VncAccess` is disabled
+again. A later rollback below the reader floor needs a separate verified data
+and drain decision. No merge, migration, CI result or this compatibility
+assessment activates `VncAccess` or certifies an Agent/server acceptance run.
+
 ## Testing Expectations
 
 Tests should cover cross-version behavior when a change touches a deployment
@@ -7242,7 +7279,7 @@ completion requests return the remaining delay without sending early.
 
 ## Canonical Chat application sessions
 
-Migration `1289_chat_thread_canonical_session` adds a unique index on
+Migration `1290_chat_thread_canonical_session` adds a unique index on
 `chat_threads.agent_session_id`. A thread may have no session before its first
 admitted run, and PostgreSQL continues to allow multiple null bindings. An
 application session may be the current binding of at most one thread. Historical

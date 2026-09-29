@@ -143,15 +143,16 @@ function useSaveBlocked(dialog: VncDialogState) {
   }
   if (dialog.kind === "create" || dialog.kind === "edit") {
     const credentialBlocked =
-      credentials.state !== "hasData" ||
-      credentials.data === null ||
-      (editor.selection !== "new" &&
-        !credentials.data.some((credential) => {
-          return (
-            credential.id === editor.selection &&
-            vncCredentialMatchesProfile(credential, editor.profile)
-          );
-        }));
+      editor.profile !== "x509_none" &&
+      (credentials.state !== "hasData" ||
+        credentials.data === null ||
+        (editor.selection !== "new" &&
+          !credentials.data.some((credential) => {
+            return (
+              credential.id === editor.selection &&
+              vncCredentialMatchesProfile(credential, editor.profile)
+            );
+          })));
     const transportBlocked =
       editor.transport === "ssh" &&
       (sshConnections.state !== "hasData" ||
@@ -280,7 +281,9 @@ function VncForm({
                   <VncEndpointFields connection={dialog.connection} />
                   <VncTlsFields disabled={disabled} />
                 </fieldset>
-                <VncCredentialSelection disabled={disabled} />
+                {editor.profile !== "x509_none" && (
+                  <VncCredentialSelection disabled={disabled} />
+                )}
               </>
             ) : (
               <VncCredentialFields

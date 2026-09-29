@@ -250,6 +250,20 @@ export function VncEndpointFields({
   );
 }
 
+export function VncX509NoneWarning() {
+  const { t } = useTranslation();
+  return (
+    <p
+      role="alert"
+      className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+    >
+      {t(($) => {
+        return $.vnc.security.x509NoneHelp;
+      })}
+    </p>
+  );
+}
+
 export function VncSecurityProfileField({
   profile,
   disabled,
@@ -260,6 +274,12 @@ export function VncSecurityProfileField({
   const { t } = useTranslation();
   const chooseProfile = useSet(chooseVncProfile$);
   const profileItems = [
+    {
+      value: "x509_none",
+      label: t(($) => {
+        return $.vnc.security.x509None;
+      }),
+    },
     {
       value: "x509_vnc",
       label: t(($) => {
@@ -309,6 +329,7 @@ export function VncSecurityProfileField({
         value={profile}
         onValueChange={(value, details) => {
           if (
+            value !== "x509_none" &&
             value !== "x509_vnc" &&
             value !== "x509_plain" &&
             value !== "apple_vnc_password" &&
@@ -336,31 +357,35 @@ export function VncSecurityProfileField({
           })}
         </SelectContent>
       </Select>
-      <p className="text-sm text-muted-foreground">
-        {profile === "apple_vnc_password"
-          ? t(($) => {
-              return $.vnc.security.appleVncPasswordHelp;
-            })
-          : profile === "apple_dh"
+      {profile === "x509_none" ? (
+        <VncX509NoneWarning />
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          {profile === "apple_vnc_password"
             ? t(($) => {
-                return $.vnc.security.appleDhHelp;
+                return $.vnc.security.appleVncPasswordHelp;
               })
-            : profile === "apple_srp"
+            : profile === "apple_dh"
               ? t(($) => {
-                  return $.vnc.security.appleSrpHelp;
+                  return $.vnc.security.appleDhHelp;
                 })
-              : profile === "apple_rsa_srp"
+              : profile === "apple_srp"
                 ? t(($) => {
-                    return $.vnc.security.appleRsaSrpHelp;
+                    return $.vnc.security.appleSrpHelp;
                   })
-                : profile === "x509_vnc"
+                : profile === "apple_rsa_srp"
                   ? t(($) => {
-                      return $.vnc.security.x509VncHelp;
+                      return $.vnc.security.appleRsaSrpHelp;
                     })
-                  : t(($) => {
-                      return $.vnc.security.x509PlainHelp;
-                    })}
-      </p>
+                  : profile === "x509_vnc"
+                    ? t(($) => {
+                        return $.vnc.security.x509VncHelp;
+                      })
+                    : t(($) => {
+                        return $.vnc.security.x509PlainHelp;
+                      })}
+        </p>
+      )}
     </>
   );
 }
@@ -928,8 +953,10 @@ export function VncCredentialFields({
 }) {
   const { t } = useTranslation();
   const editor = useGet(vncEditor$);
+  const selectedMethod = vncAuthMethodForProfile(editor.profile);
   const method =
-    credential?.authMethod ?? vncAuthMethodForProfile(editor.profile);
+    credential?.authMethod ??
+    (selectedMethod === "none" ? "vnc_password" : selectedMethod);
   return (
     <div className="grid gap-4">
       <label className="grid gap-2 text-sm">

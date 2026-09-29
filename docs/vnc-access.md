@@ -5,20 +5,31 @@ VNC is an independent remote-access capability alongside SSH. The
 staff. Owner configuration, chat host selection, metadata inventory and
 private Runner authority are described in
 [Runner VNC authority](runner-vnc-authority.md).
-The Runner, owner configuration and Agent inventory support the exact X509Vnc,
-X509Plain, SSH-protected Apple classic password, Apple DH, Apple Direct SRP
-and Apple RSA/SRP profiles.
+The Runner, owner configuration and Agent inventory support the exact X509None,
+X509Vnc, X509Plain, SSH-protected Apple classic password, Apple DH, Apple Direct
+SRP and Apple RSA/SRP profiles. X509None requires an explicit owner selection:
+its TLS certificate verifies the **server** and encrypts the stream, but it
+provides **no VNC client authentication**. Any other client with access to the
+VNC listener may control the desktop. An SSH route authenticates the selected
+SSH hop only; it cannot establish isolation of the downstream VNC listener.
+The owner must choose and manage the destination's exposure accordingly.
 The feature remains unavailable until a separate activation decision.
 
 ## Supported profiles and rollout state
 
-| Boundary                                 | X509Vnc                                                                   | X509Plain                                                                 | Activation meaning                     |
-| ---------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------- | -------------------------------------- |
-| Rust RFB engine                          | Supported and independently exercised against the pinned TigerVNC fixture | Supported and independently exercised against the pinned TigerVNC fixture | Protocol evidence only                 |
-| Private API and current Runner           | Exact `vnc_password` / `x509_vnc` pair                                    | Exact `username_password` / `x509_plain` pair                             | Runtime capability, not owner exposure |
-| Owner API, app and Agent inventory       | Exposed                                                                   | Exposed                                                                   | Available only behind `VncAccess`      |
-| Runner without the advertised exact pair | Supported                                                                 | `unsupported_profile` before KMS                                          | Fail closed; no downgrade              |
-| Production switch                        | Disabled                                                                  | Disabled                                                                  | Separate activation decision           |
+| Boundary                           | X509None                                     | X509Vnc                                      | X509Plain                                     | Activation meaning                     |
+| ---------------------------------- | -------------------------------------------- | -------------------------------------------- | --------------------------------------------- | -------------------------------------- |
+| Rust RFB engine                    | Independently exercised with pinned TigerVNC | Independently exercised with pinned TigerVNC | Independently exercised with pinned TigerVNC  | Protocol evidence only                 |
+| Private API and current Runner     | Exact `none` / `x509_none` pair              | Exact `vnc_password` / `x509_vnc` pair       | Exact `username_password` / `x509_plain` pair | Runtime capability, not owner exposure |
+| Owner API, app and Agent inventory | Exposed only by explicit selection           | Exposed                                      | Exposed                                       | Available only behind `VncAccess`      |
+| Older X509Vnc-only Runner          | `unsupported_profile` before KMS             | Supported                                    | `unsupported_profile` before KMS              | Fail closed; no downgrade              |
+| Production switch                  | Disabled                                     | Disabled                                     | Disabled                                      | Separate activation decision           |
+
+X509None is also an exact `none` / `x509_none` pair for direct and saved-SSH
+routes. The RFB engine has TigerVNC fixture coverage. Owner/API/Runner support
+requires an upgraded Runner that advertises the exact pair and a migration
+allowing a null credential only for X509None; an older Runner rejects it without
+downgrading. This is not evidence of a production Agent/server acceptance run.
 
 Acceptance must name the exact server and Runner versions and distinguish
 engine-only evidence, controlled Runner integration and a real Agent session.
@@ -105,17 +116,18 @@ exposes `username` only for `username_password`,
 ciphertext. Credentials can be shared by multiple saved connections belonging
 to the same user and organization.
 
-Hosts contain a canonical DNS name or IP address, a port (default 5900), a
-credential selection and explicit `security`. Owner configuration accepts
+Hosts contain a canonical DNS name or IP address, a port (default 5900),
+explicit `security` and, for password-backed profiles, a credential selection.
+Owner configuration accepts `{ type: "x509_none", trust }`,
 `{ type: "x509_vnc", trust }` and `{ type: "x509_plain", trust }`; trust is
 either `{ mode: "system" }` or `{ mode: "custom_ca", caBundle: "..." }`.
-Either X509 security variant may also carry `serverName`, a separately
+Each X509 security variant may also carry `serverName`, a separately
 canonicalized DNS name or IP identity for certificate verification. Omitting it
 means use the saved VNC host; it never replaces the socket destination. Apple
 security variants do not accept `serverName` or an X.509 trust policy.
-The exact stored pairs are `vnc_password` / `x509_vnc`,
-`vnc_password` / `apple_vnc_password`, `username_password` / `x509_plain`, and
-`apple_dh_username_password` / `apple_dh`,
+The exact stored pairs are `none` / `x509_none` (without a credential),
+`vnc_password` / `x509_vnc`, `vnc_password` / `apple_vnc_password`,
+`username_password` / `x509_plain`, `apple_dh_username_password` / `apple_dh`,
 `apple_srp_username_password` / `apple_srp`, and
 `apple_rsa_srp_username_password` / `apple_rsa_srp`. None of the Apple profiles
 has an X.509 trust bundle or certificate identity; their routes are restricted as
@@ -137,11 +149,13 @@ Runners omit transport, which means direct-only; an authorized SSH row returns
 `unsupported_profile` before VNC credential decryption and never falls back to
 public TCP.
 
-Connection creation accepts either `credential: { id }` or
-`credential: { create: { name, authentication } }`. Inline credential and host
-creation commit atomically. Each saved connection has its own UUID; multiple
-connections can share the same canonical host and port, including the same
-credential. This permits independent login and security configurations, matching
+Connection creation accepts `credential: { type: "none" }` only with
+`security: { type: "x509_none", trust, ... }`; other profiles require either
+`credential: { id }` or `credential: { create: { name, authentication } }`.
+X509None metadata contains `{ credential: { type: "none" } }` rather than
+`credentialId` or `credentialName`. Inline credential and host creation commit
+atomically. Each saved connection has its own UUID; multiple connections can
+share the same canonical host and port, including the same credential. This permits independent login and security configurations, matching
 SSH. Updates and deletion address one saved UUID rather than every matching
 endpoint. Failed writes and creation retries cannot leave an orphaned inline
 credential.
@@ -156,7 +170,8 @@ reject stale versions; the caller must refresh metadata before deciding whether
 to resubmit. Credential authentication changes within the same method advance
 every referencing connection's generation. A referenced credential cannot
 change methods; change a connection's profile by atomically selecting a
-compatible credential and security type. Referenced credentials cannot be deleted
+compatible credential and security type, or by explicitly selecting
+`{ type: "none" }` together with X509None. Referenced credentials cannot be deleted
 until their hosts are rebound or deleted. Deleting a host retains its reusable
 credential.
 
@@ -175,12 +190,18 @@ The **RFB destination host** and **RFB destination port** identify the socket
 the VNC client opens. For an SSH route, they are resolved and reached from the
 selected SSH server, not from the Runner. The SSH server must therefore have
 network access to that destination. SSH authenticates and encrypts only the
-Runner-to-SSH-server hop; the selected VeNCrypt profile independently protects
-and authenticates the onward RFB connection. Switching routes preserves the
-draft endpoint, security, credential and SSH selection instead of rewriting
+Runner-to-SSH-server hop. On the onward RFB connection, X509None verifies the
+server and encrypts the session without authenticating the VNC client;
+X509Vnc and X509Plain also authenticate the client. Switching routes preserves
+the draft endpoint, security, credential and SSH selection instead of rewriting
 them.
 
-Select a saved VNC credential or create one. The certificate-verified choices are
+Select a saved VNC credential or create one for password-backed profiles.
+X509None has no VNC credential; the owner must explicitly select it, and the
+settings UI displays the no-client-authentication warning both while editing
+and on the saved connection. It retains certificate verification (system or
+custom CA), does not allow a certificate bypass, and is never an implicit
+fallback when another authentication method fails. The certificate-verified choices are
 VeNCrypt X509Vnc (certificate-verified TLS plus a classic VNC password) or
 VeNCrypt X509Plain (certificate-verified TLS plus username/password
 authentication); Mac VNC has separate SSH-only Apple classic VNC password,
@@ -190,7 +211,10 @@ passwords must contain 1–8 printable ASCII characters.
 X509Plain usernames accept 1–255 UTF-8 bytes and passwords accept 1–1023 UTF-8
 bytes. Spaces are significant and embedded NUL is rejected. Changing profiles
 clears draft authentication material and only exact compatible credentials are
-selectable. The app does not offer unsupported authentication profiles or an
+selectable. Moving between X509None and a password-backed profile requires an
+explicit credential change; older Runners lacking the exact `none` / `x509_none`
+capability return `unsupported_profile` before any credential lookup or KMS
+operation. The app does not offer unsupported authentication profiles or an
 insecure certificate bypass.
 
 Choose system certificate authorities or paste the public CA certificates
@@ -411,6 +435,17 @@ support or a production-data rollback exercise. It still requires all serving
 API readers to understand the new discriminators before a type 33 row can be
 stored; a revision that cannot read these rows is not a safe rollback target
 once they exist. This migration does not activate `VncAccess`.
+
+The X509None profile migration `1289_thick_bruce_banner` follows the separate
+1288 grant-table contraction. It allows a null credential only for the exact
+`none` / `x509_none` pair; existing saved rows retain their meaning. Deploy the
+compatible API before the new Runner: an old strict API rejects the new
+Runner's advertised pairs even for legacy connections. Old Runners reject
+X509None rows before KMS. An old App cannot be relied upon to manage the new
+credentialless response, and the old API's credential inner join omits these
+rows. Once one exists, disabling the switch does not make an old API a safe
+rollback target. The exact old/new App, API and Runner matrix and the separate
+1288 deployment gate are in [deployment compatibility](deployment-compatibility.md#vnc-x509none-owner-selected-rollout-default-off).
 
 The configuration API remains unavailable until the feature is explicitly
 enabled; merging this change does not enable it, authorize an out-of-band

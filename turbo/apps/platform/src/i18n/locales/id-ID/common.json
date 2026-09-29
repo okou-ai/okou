@@ -5775,6 +5775,8 @@
       "serverNameHint": "mis. desktop.internal.example.com",
       "system": "Otoritas sertifikat sistem",
       "title": "Kepercayaan sertifikat server",
+      "x509None": "Terenkripsi tanpa kata sandi VNC (X509None)",
+      "x509NoneHelp": "TLS memverifikasi server dan mengenkripsi sesi, tetapi tidak mengautentikasi Anda ke server VNC. Orang lain yang dapat menjangkau server tersebut mungkin dapat mengendalikan desktop. SSH hanya melindungi jalur ke host SSH yang dipilih, bukan akses klien lain atau penerusan lanjutan. Pilih hanya untuk tujuan yang Anda kendalikan.",
       "x509Plain": "Nama pengguna dan kata sandi terenkripsi (X509Plain)",
       "x509PlainHelp": "Memerlukan VeNCrypt X509Plain. TLS memverifikasi server sebelum mengirim nama pengguna dan kata sandi.",
       "x509Vnc": "VNC terenkripsi (X509Vnc)",

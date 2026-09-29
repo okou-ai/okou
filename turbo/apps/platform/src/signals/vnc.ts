@@ -141,10 +141,13 @@ export interface VncDialogState {
 }
 const dialog$ = state<VncDialogState | null>(null);
 export type VncProfile = VncSecurity["type"];
-export type VncAuthMethod = VncCredentialResponse["authMethod"];
+export type VncAuthMethod = VncCredentialResponse["authMethod"] | "none";
 
 export function vncAuthMethodForProfile(profile: VncProfile): VncAuthMethod {
   switch (profile) {
+    case "x509_none": {
+      return "none";
+    }
     case "x509_vnc":
     case "apple_vnc_password": {
       return "vnc_password";
@@ -166,7 +169,9 @@ export function vncAuthMethodForProfile(profile: VncProfile): VncAuthMethod {
   throw new Error("Unsupported VNC profile");
 }
 
-function vncProfileForAuthMethod(method: VncAuthMethod): VncProfile {
+function vncProfileForAuthMethod(
+  method: VncCredentialResponse["authMethod"],
+): VncProfile {
   switch (method) {
     case "vnc_password": {
       return "x509_vnc";
@@ -192,7 +197,10 @@ export function vncCredentialMatchesProfile(
   credential: VncCredentialResponse,
   profile: VncProfile,
 ) {
-  return credential.authMethod === vncAuthMethodForProfile(profile);
+  return (
+    profile !== "x509_none" &&
+    credential.authMethod === vncAuthMethodForProfile(profile)
+  );
 }
 
 type SshRoutedVncConnection = Extract<
@@ -282,7 +290,8 @@ export const chooseVncProfile$ = command(
   ({ get, set }, profile: string | null) => {
     if (
       !get(editorLocked$) &&
-      (profile === "x509_vnc" ||
+      (profile === "x509_none" ||
+        profile === "x509_vnc" ||
         profile === "x509_plain" ||
         profile === "apple_vnc_password" ||
         profile === "apple_dh" ||
@@ -436,7 +445,12 @@ function initialVncEditor(
   const sshConnectionId = connection ? vncSshConnectionId(connection) : null;
   const profile = initialVncProfile(connection, credential);
   return {
-    selection: connection?.credentialId ?? (kind === "create" ? "" : "new"),
+    selection:
+      connection && "credentialId" in connection
+        ? connection.credentialId
+        : kind === "create"
+          ? ""
+          : "new",
     profile,
     trust:
       connection && "trust" in connection.security
@@ -529,6 +543,9 @@ function textField(form: HTMLFormElement, name: string): string {
 function credentialFields(form: HTMLFormElement, profile: VncProfile) {
   const name = textField(form, "credentialName");
   switch (profile) {
+    case "x509_none": {
+      throw new Error("X509None has no credential to create");
+    }
     case "x509_vnc":
     case "apple_vnc_password": {
       return {
@@ -622,9 +639,11 @@ function connectionFields(form: HTMLFormElement, editor: Editor) {
         ? { type: "ssh" as const, connectionId: editor.sshConnectionId }
         : { type: "direct" as const },
     credential:
-      editor.selection === "new"
-        ? { create: credentialFields(form, editor.profile) }
-        : { id: editor.selection },
+      editor.profile === "x509_none"
+        ? { type: "none" as const }
+        : editor.selection === "new"
+          ? { create: credentialFields(form, editor.profile) }
+          : { id: editor.selection },
     security: isAppleVncProfile(editor.profile)
       ? { type: editor.profile }
       : {
