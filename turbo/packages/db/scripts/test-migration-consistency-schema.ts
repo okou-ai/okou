@@ -1245,14 +1245,6 @@ const EXPECTED_PERMANENT_TRIGGERS = [
   {
     definition:
       // eslint-disable-next-line api/no-database-trigger -- Legacy trigger created before 2026-09-29; new database triggers are prohibited.
-      "CREATE TRIGGER billing_run_attribution_immutable BEFORE UPDATE ON public.billing_run_attribution FOR EACH ROW EXECUTE FUNCTION reject_billing_attribution_update()",
-    schemaName: "public",
-    tableName: "billing_run_attribution",
-    triggerName: "billing_run_attribution_immutable",
-  },
-  {
-    definition:
-      // eslint-disable-next-line api/no-database-trigger -- Legacy trigger created before 2026-09-29; new database triggers are prohibited.
       "CREATE TRIGGER capture_usage_billing_attribution BEFORE INSERT OR UPDATE OF billing_run_id, billing_anchor_at, billing_context, org_id, user_id ON public.usage_event FOR EACH ROW EXECUTE FUNCTION capture_usage_billing_attribution()",
     schemaName: "public",
     tableName: "usage_event",
@@ -1327,13 +1319,6 @@ const EXPECTED_PERMANENT_FUNCTIONS = [
     bodyHash: "8699ee12596b337ac2df0a58e1ec6d59",
     functionName: "ensure_billing_run_thread",
     identityArguments: "billing_id uuid, original_thread uuid",
-    kind: "f",
-    schemaName: "public",
-  },
-  {
-    bodyHash: "a1cded319d3a0e285807a877e8d85b74",
-    functionName: "reject_billing_attribution_update",
-    identityArguments: "",
     kind: "f",
     schemaName: "public",
   },

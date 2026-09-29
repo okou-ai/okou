@@ -96,6 +96,13 @@ the baseline. A definition can serve multiple runtime callers.
   census has not established their removal conditions; tool age and CI references
   are not convergence evidence.
 
+Migration `1291_retire_billing_attribution_mutation_guard` also removes the
+redundant canonical attribution mutation guard. Outgoing capture functions and
+the retained operator already compare immutable identity, fill only unknown
+thread grouping, and never regress observation. The writer-by-writer evidence
+is in the trigger retirement inventory; the six billing capture/observation
+triggers retain their separate implementation and compatibility requirements.
+
 ## Correction follow-up and acceptance gaps
 
 The zero-trigger terminal constraint from `4fa8844` applies to all application
@@ -103,7 +110,7 @@ triggers, including nine that predate this PR. The
 [trigger retirement inventory](./advisory-lock-release-1-trigger-boundaries.md)
 records the historical eleven-definition proposal. The two unshipped Forms
 triggers are withdrawn, and migration 1290 retires the redundant Cloudflare
-scope-change guard. Eight definitions remain: seven billing attribution and one
+scope-change guard. Seven definitions remain: six billing attribution and one
 SSH binding. Their explicit writer replacements remain an
 acceptance requirement; the existing schema-test constant named
 `EXPECTED_PERMANENT_TRIGGERS` does not grant a permanent exception.

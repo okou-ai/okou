@@ -13,19 +13,22 @@ not a live production catalog query. The test constant's historical name is not
 approval to retain these objects in the terminal schema. Migration
 `1290_retire_cloudflare_scope_change_trigger` removes one redundant trigger
 and its function. With the two unshipped Forms triggers withdrawn, eight
-application triggers remain in the proposed R1 schema.
+application triggers remained before the independent canonical mutation-guard
+retirement below. Migration `1291_retire_billing_attribution_mutation_guard`
+removes that redundant trigger and function; seven application triggers remain
+in the proposed R1 schema.
 
 ## Existing billing attribution triggers
 
-| Table and trigger                                                                                                  | Current business guarantee                                                                                           | Replacement work                                                                                                                    |
-| ------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `agent_runs.capture_billing_run_attribution`                                                                       | Captures the original organization, user, run start, source and thread identity.                                     | Both Run insertion paths now publish attribution atomically with the Run; their broader launch transaction ownership is unfinished. |
-| `billing_run_attribution.billing_run_attribution_immutable`                                                        | Rejects changed attribution, regressing `usage_observed`, or replacement of an established thread identity.          | Every mutation must use the same identity predicates and monotone observed transition.                                              |
-| `usage_event.capture_usage_billing_attribution` and `usage_event_hourly_rollup.capture_hourly_billing_attribution` | Resolves run identity, context and original allowance anchor, including Pi Stage 1, and rejects inconsistent owners. | Raw and rollup writers must explicitly resolve and validate these ordinary business values in their owning commit.                  |
-| `built_in_generation_jobs.capture_generation_billing_identity`                                                     | Establishes immutable run/runless generation attribution.                                                            | Generation creation now supplies its identity explicitly; outgoing and operator writers still require a complete retirement audit.  |
-| `usage_event.mark_raw_billing_usage_observed` and `usage_event_hourly_rollup.mark_hourly_billing_usage_observed`   | Marks attribution as having observed usage, protecting its retention.                                                | Raw insertion and compaction must include the monotone attribution update in their atomic writes.                                   |
+| Table and trigger                                                                                                  | Current business guarantee                                                                                           | Replacement work                                                                                                                     |
+| ------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `agent_runs.capture_billing_run_attribution`                                                                       | Captures the original organization, user, run start, source and thread identity.                                     | Both Run insertion paths now publish attribution atomically with the Run; their broader launch transaction ownership is unfinished.  |
+| `billing_run_attribution.billing_run_attribution_immutable`                                                        | Rejects changed attribution, regressing `usage_observed`, or replacement of an established thread identity.          | Removed by migration 1291: every supported mutation already preserves these identities and monotone observation; see evidence below. |
+| `usage_event.capture_usage_billing_attribution` and `usage_event_hourly_rollup.capture_hourly_billing_attribution` | Resolves run identity, context and original allowance anchor, including Pi Stage 1, and rejects inconsistent owners. | Raw and rollup writers must explicitly resolve and validate these ordinary business values in their owning commit.                   |
+| `built_in_generation_jobs.capture_generation_billing_identity`                                                     | Establishes immutable run/runless generation attribution.                                                            | Generation creation now supplies its identity explicitly; outgoing and operator writers still require a complete retirement audit.   |
+| `usage_event.mark_raw_billing_usage_observed` and `usage_event_hourly_rollup.mark_hourly_billing_usage_observed`   | Marks attribution as having observed usage, protecting its retention.                                                | Raw insertion and compaction must include the monotone attribution update in their atomic writes.                                    |
 
-Retirement of these seven triggers still requires **unfinished replacement
+Retirement of the six remaining billing triggers still requires **unfinished replacement
 protocols**, not only outgoing-version drain. The complete caller/retention
 audit remains open. Existing
 attribution readers and the retained convergence fallbacks do not replace
@@ -96,7 +99,7 @@ The following producer changes are implemented:
   but does not complete ownership of its worker and provider caller graph.
 
 The standalone managed path commits before financial settlement as before;
-Social keeps its combined financial commit. No billing trigger is removed. Existing public API
+Social keeps its combined financial commit. Only the redundant canonical mutation guard is removed; capture and observation triggers remain. Existing public API
 coverage for managed Run billing display, runless allowance consumption and
 image webhook completion remains; behavioral verification belongs to the
 integrated PR pipeline.
@@ -113,6 +116,43 @@ owner. Preserve the historical migrations. Once all R1 writers
 explicitly maintain the guarantees, use serving, in-flight and rollback evidence
 to retire current trigger/function definitions in a new migration. A source
 scan or the age of the old migrations cannot establish that gate.
+
+## Canonical mutation guard: independent retirement evidence
+
+Migration `1291_retire_billing_attribution_mutation_guard` removes
+`billing_run_attribution_immutable` and `reject_billing_attribution_update`.
+It does not remove any capture, observation or attribution reader fallback.
+
+The outgoing API at main `13a2692` does not issue direct canonical attribution
+INSERT/UPDATE statements. Its trigger-driven writers use these historical SQL
+functions, whose current definitions remain installed:
+
+- `ensure_billing_run_attribution` (1119, replaced by 1193) only updates the same
+  Run ID on conflict after exact organization, user, original start and source
+  comparison. A mismatch raises instead of replacing captured identity.
+- `ensure_billing_run_thread` and the thread fill in `ensure_billing_run_attribution`
+  (1193) update only `thread_context = 'unknown'`. Neither rewrites a known thread
+  or its original captured time.
+- `mark_billing_usage_observed` (1119) only changes false to true.
+- The retained `billing-attribution` operator's Run phase already compares the
+  same immutable owner/start/source values and only fills unknown thread identity.
+  Its R1 raw/hourly phase adds explicit false-to-true observation.
+
+R1's two Run inserts and canonical usage producers use
+`billingRunAttributionWrite`, which preserves known thread identity and rejects
+an owner/start/source conflict. Their usage publications, Social, X and compaction
+only set observation true. No API business input can assign `captured_at`, regress
+observation, change canonical ownership, or replace an established thread.
+Deletion remains deletion, not an identity transfer. A repository-wide writer
+trace found no additional production mutation of this table; historical
+migrations remain unchanged.
+
+These predicates are already shared with outgoing writers, so this guard does
+not need a new preparation release or an API drain. The six capture/observation
+triggers still cover outgoing writers and require their own complete replacement
+audit and release gate. Existing user API tests continue to protect amounts,
+retained grouping, cross-owner rejection and compaction; the permanent schema
+inventory verifies that the retired guard/function are absent.
 
 ## Existing SSH and Cloudflare triggers
 
@@ -229,7 +269,7 @@ deduplication and explicit disable/restart behavior. No lock waiter, temporary
 test trigger or artificial database gate is a substitute. The migration schema
 inventory must change alongside the eventual retirement migration.
 
-The eight remaining application triggers are explicit acceptance obligations.
+The seven remaining application triggers are explicit acceptance obligations.
 Billing replacements remain unfinished; the SSH binding trigger has the
 specific historical dependency above. Forms introduces no trigger. No trigger
 is a permanent exemption.
