@@ -21,9 +21,14 @@ The timestamp is read as PostgreSQL text and compared back as `timestamp`.
 Converting it through JavaScript `Date` would truncate microseconds and make
 valid comparisons fail. Every production writer advances the existing
 modification timestamp using the greater of the application time and its
-previous value plus one microsecond. Same-clock writes, clock skew, and a
-change back to the previous visible state therefore still invalidate an
-older read. There is no additional field, table, persisted token, or JSON
+previous value plus one microsecond. The snapshot also compares PostgreSQL's
+existing `xmin` system value, so outgoing writers that do not yet advance the
+timestamp cannot evade the guard through same-clock updates. `xmin` is held
+only in memory for this finite provider read and publication; it is not stored
+or used as a lasting business version. A committed delete/reinsert has a new
+row version too. Intermediate updates within one uncommitted legacy transaction
+are not visible to this command's snapshot. Same-clock writes, clock skew and
+changes back to an earlier visible state still invalidate an older read. There is no additional field, table, persisted token, or JSON
 coordination value.
 
 The writer inventory includes invoice and subscription webhooks, subscription
@@ -46,27 +51,33 @@ does not erase historical payment evidence.
 ## Transaction ownership and rollout
 
 The propagated `upsertConcurrencySubscriptionState(tx, ...)` interface is
-removed. Its insert/update SQL and the associated immutable entitlement
-inserts are owned by the reconciliation transaction. The reused timestamp
-builder is pure SQL construction and receives only a `Date`. The scheduled
-change write is also inlined in `changeConcurrencySubscription$`; it no longer
-passes the writable database into a write helper. Remaining ordinary database
-service arguments are inventoried as unfinished ownership work, not terminal
-command-local SQL.
+removed. Invoice and subscription projection commands now accept business data,
+obtain `writeDb$` themselves, and execute their finite SQL directly. Neither the
+database nor transaction is passed to another function from these publication
+commands. The reused timestamp and compatibility-lock builders construct SQL
+from ordinary values only. Invoice/update dispatch and cron snapshot replay use
+named commands; the scheduled change write is inlined in
+`changeConcurrencySubscription$`.
 
-The one historical advisory acquisition definition and its two callers remain
-in Release 1. Outgoing webhook writers publish by subscription ID without
-checking which local state they read. The legacy lock and the provider-read
-transaction boundary keep those outgoing reads serialized with R1 publication.
-The lock helper's transaction parameter exists only for that temporary boundary.
+Each publication reads its exact local snapshot and then retrieves Stripe
+outside the transaction. Its bounded SQL transaction acquires the historical
+advisory lock and conditionally publishes the prepared result. The one acquisition
+definition and its two callers remain because outgoing webhooks still publish
+unconditionally under that same key. An outgoing writer that acquired the lock
+first invalidates R1's snapshot; an outgoing writer that acquires it later reads
+Stripe after the R1 commit. R1 no longer keeps Stripe I/O inside that boundary.
+
+Other legacy billing preparation and reconciliation paths still pass ordinary
+writable databases or transactions to services, including invoice organization
+binding, plan and allowance projection, missing-subscription reconciliation,
+and cron discovery. They are unfinished ownership work; the two command-local
+projection commits do not establish full billing conformance.
 
 Release 2 removal requires evidence that pre-R1 API instances no longer serve,
 their in-flight requests have drained, and every retained rollback target has
-the conditional protocol. Release 2 then removes the acquisition/helper and
-moves the provider read between the initial snapshot read and the bounded SQL
-commit. R1 and R2 can overlap: an R2 commit invalidates an R1 result that was
-waiting on Stripe; an R1 commit likewise invalidates an R2 snapshot. Neither
-writer can overwrite the other's completed publication from an older read.
+the conditional protocol. Release 2 then removes the acquisition and its pure
+SQL builder. R1 and R2 can overlap: either writer's publication invalidates the
+other's older snapshot, and a stale result retries instead of overwriting.
 No App/Runner contract, client floor, or Runner drain is introduced.
 
 This change adds no advisory acquisition and removes none; the combined billing
