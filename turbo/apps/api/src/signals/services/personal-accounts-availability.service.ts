@@ -8,7 +8,9 @@ export async function personalAccountsEnabledForOrg(
   orgId: string,
   switchEnabled: boolean,
 ): Promise<boolean> {
-  if (switchEnabled) {return true;}
+  if (switchEnabled) {
+    return true;
+  }
   const [org] = await db
     .select({ mode: orgMetadata.modelMode })
     .from(orgMetadata)

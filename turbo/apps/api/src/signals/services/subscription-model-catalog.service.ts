@@ -44,7 +44,9 @@ export async function loadMemberSubscriptionModels(
         ? []
         : (await member.personalMetadata.load()).subscriptions
       : member.subscriptions;
-  if (subscriptions.length === 0) {return [];}
+  if (subscriptions.length === 0) {
+    return [];
+  }
   const rows = await db
     .select()
     .from(subscriptionModelCatalog)
@@ -114,14 +116,17 @@ export async function isAutoPersonalSubscriptionRoute(args: {
     !args.model ||
     (args.providerType !== "claude-code-oauth-token" &&
       args.providerType !== "codex-oauth-token")
-  )
-    {return false;}
+  ) {
+    return false;
+  }
   const [org] = await args.db
     .select({ mode: orgMetadata.modelMode })
     .from(orgMetadata)
     .where(eq(orgMetadata.orgId, args.orgId))
     .limit(1);
-  if (org?.mode !== "auto") {return false;}
+  if (org?.mode !== "auto") {
+    return false;
+  }
   const member = await loadMemberModelRouteContext(
     args.db,
     args.orgId,

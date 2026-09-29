@@ -25,18 +25,20 @@ export const subscriptionModelCatalog = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
-  (table) => [
-    uniqueIndex("idx_subscription_model_catalog_type_model").on(
-      table.subscriptionType,
-      table.model,
-    ),
-    check(
-      "chk_subscription_model_catalog_type",
-      sql`${table.subscriptionType} IN ('claude-code-oauth-token', 'codex-oauth-token')`,
-    ),
-    check(
-      "chk_subscription_model_catalog_service_tier",
-      sql`${table.serviceTier} IS NULL OR ${table.serviceTier} = 'priority'`,
-    ),
-  ],
+  (table) => {
+    return [
+      uniqueIndex("idx_subscription_model_catalog_type_model").on(
+        table.subscriptionType,
+        table.model,
+      ),
+      check(
+        "chk_subscription_model_catalog_type",
+        sql`${table.subscriptionType} IN ('claude-code-oauth-token', 'codex-oauth-token')`,
+      ),
+      check(
+        "chk_subscription_model_catalog_service_tier",
+        sql`${table.serviceTier} IS NULL OR ${table.serviceTier} = 'priority'`,
+      ),
+    ];
+  },
 );

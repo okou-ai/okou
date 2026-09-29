@@ -44,6 +44,7 @@ import { computeHmacSignature } from "../../../../lib/event-consumer/hmac";
 import { server } from "../../../../mocks/server";
 import { withBuiltInModelRuntimeRouteCandidateUnavailableForTest } from "../../../../test-fixtures/built-in-model-runtime-route";
 import { readRunUsageEventsFixture } from "../../../../test-fixtures/chat-events";
+import { setOrgModelModeFixture } from "../../../../test-fixtures/org-metadata";
 import {
   readmitPiMemoryStage1CandidateFixture,
   readPiConversationIdentityFixture,
@@ -616,6 +617,11 @@ export function createChatEventsFixture(context: TestContext) {
         : {}),
       tier,
     });
+    if (!actor.orgId) {
+      throw new Error("Entitled chat actor must be org-scoped");
+    }
+    // These legacy chat fixtures intentionally exercise Custom organization routing.
+    await setOrgModelModeFixture(actor.orgId, "custom");
     const { providerId } = await api.ensureOrgModelProvider(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD chat messages agent",

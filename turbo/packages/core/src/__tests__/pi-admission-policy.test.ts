@@ -179,7 +179,7 @@ const EXPECTED_ADMITTED_ROUTES = [
  * shrinks only when a model is retired or a route is removed. The remaining
  * 216 combinations are all evaluated.
  */
-const ENUMERATED_COMBINATIONS = 216;
+const ENUMERATED_COMBINATIONS = 218;
 
 interface Combination {
   readonly selectedModel: string;

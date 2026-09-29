@@ -356,12 +356,17 @@ describe("model-first canonical catalog", () => {
     );
   });
 
-  it("offers Sonnet 5.5 only through the approved routes and restricts free orgs", () => {
+  it("offers Sonnet 5.5 through its subscription route and restricts ordinary free org routes", () => {
     expect(getProvidersForModel("claude-sonnet-5-5")).toEqual([
       "built-in",
       "anthropic-api-key",
+      "claude-code-oauth-token",
     ]);
-    for (const route of ["built-in", "anthropic-api-key"]) {
+    for (const route of [
+      "built-in",
+      "anthropic-api-key",
+      "claude-code-oauth-token",
+    ]) {
       expect(getRunModelRouteAccess("claude-sonnet-5-5", route, true)).toBe(
         "pro_required",
       );
@@ -372,6 +377,7 @@ describe("model-first canonical catalog", () => {
     expect(getProvidersForModel("anthropic/claude-sonnet-5-5")).toEqual([
       "built-in",
       "anthropic-api-key",
+      "claude-code-oauth-token",
     ]);
     expect(
       getRunModelRouteAccess(

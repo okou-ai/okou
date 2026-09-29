@@ -2680,6 +2680,42 @@ jobs:
           echo "::add-mask::$token"
           echo "E2E_API_TOKEN=$token" >> "$GITHUB_ENV"
           echo "E2E_API_URL=$api_url" >> "$GITHUB_ENV"
+      - name: Keep runner E2E fixture organizations in Custom mode
+        shell: bash
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+          NEON_BRANCH_NAME: preview/${{ needs.prepare.outputs.job-ref }}
+          RUNNER_ORG_ID: ${{ needs.cli-e2e-03-runner-prepare.outputs.runner-organization-id }}
+          CODEX_ORG_ID: ${{ needs.cli-e2e-03-runner-prepare.outputs.codex-organization-id }}
+          CLAUDE_ORG_ID: ${{ needs.cli-e2e-03-runner-prepare.outputs.claude-organization-id }}
+          MOCK_CLAUDE_ORG_ID: ${{ needs.cli-e2e-03-runner-prepare.outputs.mock-claude-organization-id }}
+          CODEX_BUILT_IN_ORG_ID: ${{ needs.cli-e2e-03-runner-prepare.outputs.codex-built-in-organization-id }}
+        run: |
+          set -euo pipefail
+          # CI-only fixture setup against this run's disposable Neon TEST branch.
+          # Product mode switching remains restricted to Debug admins.
+          npm install -g neonctl@2.15.0
+          database_url="$(neonctl connection-string "$NEON_BRANCH_NAME" --project-id "$NEON_PROJECT_ID" --database-name neondb --role-name neondb_owner --pooled --ssl verify-full)"
+          if [[ -z "$database_url" ]]; then
+            echo "Runner E2E preview database unavailable" >&2
+            exit 1
+          fi
+          updated="$(psql "$database_url" -X -qAt -v ON_ERROR_STOP=1 \
+            -v runner_org="$RUNNER_ORG_ID" -v codex_org="$CODEX_ORG_ID" \
+            -v claude_org="$CLAUDE_ORG_ID" -v mock_org="$MOCK_CLAUDE_ORG_ID" \
+            -v codex_builtin_org="$CODEX_BUILT_IN_ORG_ID" <<'SQL'
+          WITH updated AS (
+            UPDATE org_metadata SET model_mode = 'custom'
+            WHERE org_id IN (:'runner_org', :'codex_org', :'claude_org', :'mock_org', :'codex_builtin_org')
+            RETURNING 1
+          ) SELECT count(*) FROM updated;
+          SQL
+          )"
+          if [[ "$updated" != 5 ]]; then
+            echo "Expected five existing runner E2E organizations in the preview database" >&2
+            exit 1
+          fi
       - name: Reset runner model defaults
         shell: bash
         run: |
