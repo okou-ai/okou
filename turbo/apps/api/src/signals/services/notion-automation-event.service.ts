@@ -30,27 +30,20 @@ import {
 import { command } from "ccstate";
 import { and, asc, desc, eq, inArray, lte, sql } from "drizzle-orm";
 import { z } from "zod";
-import type { Tx } from "../../lib/db-types";
 import { logger } from "../../lib/log";
-import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
+import { parseRawRows } from "../../lib/db-raw-rows";
+import { workflowAutomationConnectorSelectionSql } from "./workflow-automation-account.service";
+import { writeDb$ } from "../external/db";
 import { now, nowDate } from "../../lib/time";
 import { safeJsonParse, safeUrlParse, settle, tapError } from "../utils";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
-import {
-  loadConnectorRuntimeSnapshot,
-  loadConnectorRuntimeSnapshot$,
-} from "./connector-catalog-runtime.service";
+import { loadConnectorRuntimeSnapshot$ } from "./connector-catalog-runtime.service";
 import {
   loadBuiltinConnectorCredentialConnection$,
   loadBuiltinConnectorCredentialValues$,
   refreshBuiltinConnectorCredentialAccess$,
 } from "./builtin-connector-credential-command.service";
-import {
-  builtinConnectorCredentialRuntimeValueRef,
-  loadBuiltinConnectorCredentialConnection,
-  loadBuiltinConnectorCredentialValues,
-  refreshBuiltinConnectorCredentialAccess,
-} from "./builtin-connector-credential-runtime.service";
+import { builtinConnectorCredentialRuntimeValueRef } from "./builtin-connector-credential-runtime.service";
 import {
   decryptStoredSecretValue,
   encryptStoredSecretValue,
@@ -61,10 +54,10 @@ import type {
   AutomationRow,
 } from "./workflow-automation-launch.service";
 import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
-import { lockConnectorAccountTarget } from "./auth-state-lock.service";
+import { builtinConnectorStateLockStatement } from "./auth-state-lock.service";
 import {
   notionConfigConnectorId,
-  reprojectNotionAutomationsForOwner,
+  notionConfigWithConnectorId,
 } from "./notion-automation-account.service";
 
 const log = logger("api:notion-automation-event");
@@ -466,104 +459,6 @@ function notionEventContext(
       };
     }),
     attemptNumber: event.attempt_number ?? null,
-  };
-}
-
-async function resolveNotionAccess(
-  args: {
-    readonly db: Db;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly connectorId: string;
-  },
-  signal: AbortSignal,
-): Promise<NotionAccessResult> {
-  const currentTime = nowDate();
-  const snapshot = await loadConnectorRuntimeSnapshot(args.db);
-  signal.throwIfAborted();
-  const loaded = await loadBuiltinConnectorCredentialConnection({
-    db: args.db,
-    snapshot,
-    orgId: args.orgId,
-    userId: args.userId,
-    connectorSlug: "notion",
-    connectorId: args.connectorId,
-  });
-  signal.throwIfAborted();
-  if (loaded.kind === "missing") {
-    return {
-      kind: "bad_request",
-      message: "Connect Notion before adding a Notion event automation",
-    };
-  }
-  if (loaded.kind === "unavailable" || loaded.connection.needsReconnect) {
-    return {
-      kind: "bad_request",
-      message: "Reconnect Notion before using Notion event automations",
-    };
-  }
-  const connection = loaded.connection;
-  const accessTokenValueRef = builtinConnectorCredentialRuntimeValueRef(
-    connection,
-    NOTION_ACCESS_TOKEN_ENVIRONMENT_NAME,
-  );
-  if (accessTokenValueRef === null) {
-    return {
-      kind: "bad_request",
-      message: "Reconnect Notion before using Notion event automations",
-    };
-  }
-  const values = await loadBuiltinConnectorCredentialValues({
-    connection,
-    db: args.db,
-    valueRefs: [accessTokenValueRef],
-  });
-  signal.throwIfAborted();
-  const accessToken = values.get(accessTokenValueRef);
-  if (!accessToken) {
-    return {
-      kind: "bad_request",
-      message: "Reconnect Notion before using Notion event automations",
-    };
-  }
-  if (!tokenNeedsRefresh(connection.tokenExpiresAt, currentTime)) {
-    return {
-      kind: "ok",
-      access: {
-        connectorId: connection.connectorId,
-        accessToken,
-      },
-    };
-  }
-  const refreshed = await refreshBuiltinConnectorCredentialAccess(
-    {
-      connection,
-      db: args.db,
-      orgId: args.orgId,
-      userId: args.userId,
-      runtimeEnvironmentName: NOTION_ACCESS_TOKEN_ENVIRONMENT_NAME,
-      persist: { db: args.db, markNeedsReconnectOnFailure: true },
-    },
-    signal,
-  );
-  if (refreshed.kind === "configuration-unavailable") {
-    return {
-      kind: "bad_request",
-      message: "Notion OAuth client env vars are not configured",
-    };
-  }
-  if (refreshed.kind !== "ok") {
-    return {
-      kind: "bad_request",
-      message: "Reconnect Notion before using Notion event automations",
-    };
-  }
-  return {
-    kind: "ok",
-    access: {
-      connectorId: connection.connectorId,
-      accessToken: refreshed.accessToken,
-    },
   };
 }
 
@@ -1191,64 +1086,69 @@ export const validateNotionEventConfigForConnector$ = command(
   },
 );
 
-async function storeVerificationToken(
-  args: {
-    readonly db: Db;
-    readonly token: string;
+const storeVerificationToken$ = command(
+  async (
+    { set },
+    args: {
+      readonly token: string;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    const currentTime = nowDate();
+    const encryptedVerificationToken = await encryptStoredSecretValue(
+      args.token,
+    );
+    signal.throwIfAborted();
+    await db.transaction(async (tx) => {
+      await tx
+        .update(notionWebhookSecrets)
+        .set({ active: false, updatedAt: currentTime })
+        .where(eq(notionWebhookSecrets.active, true));
+      signal.throwIfAborted();
+      await tx.insert(notionWebhookSecrets).values({
+        encryptedVerificationToken,
+        active: true,
+        createdAt: currentTime,
+        updatedAt: currentTime,
+      });
+      signal.throwIfAborted();
+    });
   },
-  signal: AbortSignal,
-): Promise<void> {
-  const currentTime = nowDate();
-  await args.db
-    .update(notionWebhookSecrets)
-    .set({ active: false, updatedAt: currentTime })
-    .where(eq(notionWebhookSecrets.active, true));
-  signal.throwIfAborted();
-  await args.db.insert(notionWebhookSecrets).values({
-    encryptedVerificationToken: await encryptStoredSecretValue(args.token),
-    active: true,
-    createdAt: currentTime,
-    updatedAt: currentTime,
-  });
-  signal.throwIfAborted();
-}
+);
 
-async function activeVerificationTokenExists(
-  args: {
-    readonly db: ReadonlyDb;
+const activeVerificationTokenExists$ = command(
+  async ({ set }, signal: AbortSignal): Promise<boolean> => {
+    const db = set(writeDb$);
+    const rows = await db
+      .select({ id: notionWebhookSecrets.id })
+      .from(notionWebhookSecrets)
+      .where(eq(notionWebhookSecrets.active, true))
+      .limit(1);
+    signal.throwIfAborted();
+    return rows.length > 0;
   },
-  signal: AbortSignal,
-): Promise<boolean> {
-  const rows = await args.db
-    .select({ id: notionWebhookSecrets.id })
-    .from(notionWebhookSecrets)
-    .where(eq(notionWebhookSecrets.active, true))
-    .limit(1);
-  signal.throwIfAborted();
-  return rows.length > 0;
-}
+);
 
-async function loadActiveVerificationTokens(
-  args: {
-    readonly db: ReadonlyDb;
+const loadActiveVerificationTokens$ = command(
+  async ({ set }, signal: AbortSignal): Promise<readonly string[]> => {
+    const db = set(writeDb$);
+    const rows = await db
+      .select({
+        encryptedVerificationToken:
+          notionWebhookSecrets.encryptedVerificationToken,
+      })
+      .from(notionWebhookSecrets)
+      .where(eq(notionWebhookSecrets.active, true))
+      .orderBy(desc(notionWebhookSecrets.createdAt));
+    signal.throwIfAborted();
+    return await Promise.all(
+      rows.map((row) => {
+        return decryptStoredSecretValue(row.encryptedVerificationToken);
+      }),
+    );
   },
-  signal: AbortSignal,
-): Promise<readonly string[]> {
-  const rows = await args.db
-    .select({
-      encryptedVerificationToken:
-        notionWebhookSecrets.encryptedVerificationToken,
-    })
-    .from(notionWebhookSecrets)
-    .where(eq(notionWebhookSecrets.active, true))
-    .orderBy(desc(notionWebhookSecrets.createdAt));
-  signal.throwIfAborted();
-  return await Promise.all(
-    rows.map((row) => {
-      return decryptStoredSecretValue(row.encryptedVerificationToken);
-    }),
-  );
-}
+);
 
 function signatureMatches(args: {
   readonly rawBody: string;
@@ -1325,277 +1225,366 @@ function runAfterForEvent(event: NotionWebhookEvent): Date {
   );
 }
 
-async function insertNotionWebhookEvent(
-  args: {
-    readonly db: Db;
-    readonly event: NotionWebhookEvent;
-    readonly pageId: string | null;
+const insertNotionWebhookEvent$ = command(
+  async (
+    { set },
+    args: {
+      readonly event: NotionWebhookEvent;
+      readonly pageId: string | null;
+    },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const db = set(writeDb$);
+    const [inserted] = await db
+      .insert(notionWebhookEvents)
+      .values({
+        notionEventId: args.event.id,
+        eventType: args.event.type,
+        pageId: args.pageId,
+        receivedAt: nowDate(),
+        createdAt: nowDate(),
+      })
+      .onConflictDoNothing()
+      .returning({ id: notionWebhookEvents.id });
+    signal.throwIfAborted();
+    return inserted !== undefined;
   },
-  signal: AbortSignal,
-): Promise<boolean> {
-  const [inserted] = await args.db
-    .insert(notionWebhookEvents)
-    .values({
-      notionEventId: args.event.id,
-      eventType: args.event.type,
-      pageId: args.pageId,
-      receivedAt: nowDate(),
-      createdAt: nowDate(),
-    })
-    .onConflictDoNothing()
-    .returning({ id: notionWebhookEvents.id });
-  signal.throwIfAborted();
-  return inserted !== undefined;
-}
+);
 
-async function queryNotionAutomations(
-  args: {
-    readonly db: Db;
+const queryNotionAutomations$ = command(
+  async (
+    { set },
+    eventType: NotionAutomationEventType,
+    signal: AbortSignal,
+  ): Promise<readonly AutomationRow[]> => {
+    const db = set(writeDb$);
+    const rows = await db
+      .select(workflowAutomationColumns())
+      .from(workflowAutomations)
+      .where(
+        and(
+          eq(workflowAutomations.kind, "event"),
+          eq(workflowAutomations.enabled, true),
+          eq(workflowAutomations.eventType, eventType),
+        ),
+      );
+    signal.throwIfAborted();
+    return rows;
   },
-  eventType: NotionAutomationEventType,
-  signal: AbortSignal,
-): Promise<readonly AutomationRow[]> {
-  const rows = await args.db
-    .select(workflowAutomationColumns())
-    .from(workflowAutomations)
-    .where(
-      and(
-        eq(workflowAutomations.kind, "event"),
-        eq(workflowAutomations.enabled, true),
-        eq(workflowAutomations.eventType, eventType),
-      ),
-    );
-  signal.throwIfAborted();
-  return rows;
-}
+);
 
-async function repairNotionAutomationProjections(
-  args: {
-    readonly db: Db;
-  },
-  automations: readonly AutomationRow[],
-  signal: AbortSignal,
-): Promise<boolean> {
-  const owners = new Map<
-    string,
-    { readonly orgId: string; readonly userId: string }
-  >();
-  for (const automation of automations) {
-    if (
-      automation.eventConnectorId !== null &&
-      notionConfigConnectorId(automation.eventType, automation.eventConfig) ===
-        automation.eventConnectorId
-    ) {
-      continue;
-    }
-    const owner = {
-      orgId: automation.orgId,
-      userId: automation.ownerUserId,
-    };
-    owners.set(`${owner.orgId}:${owner.userId}`, owner);
-  }
-  const orderedOwners = [...owners.values()].sort((left, right) => {
-    return (
-      left.orgId.localeCompare(right.orgId) ||
-      left.userId.localeCompare(right.userId)
-    );
-  });
-  for (const owner of orderedOwners) {
-    await args.db.transaction(async (tx) => {
-      await lockConnectorAccountTarget(tx, {
-        orgId: owner.orgId,
-        userId: owner.userId,
-        target: { kind: "builtin", connectorSlug: "notion" },
-      });
-      await reprojectNotionAutomationsForOwner(tx, owner);
+const repairNotionAutomationProjection$ = command(
+  async (
+    { set },
+    args: {
+      readonly automationId: string;
+      readonly orgId: string;
+      readonly userId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    await db.transaction(async (tx) => {
+      await tx.execute(
+        builtinConnectorStateLockStatement({
+          ...args,
+          connectorSlug: "notion",
+        }),
+      );
+      const [automation] = await tx
+        .select({
+          id: workflowAutomations.id,
+          workflowId: workflowAutomations.workflowId,
+          eventType: workflowAutomations.eventType,
+          eventConfig: workflowAutomations.eventConfig,
+          eventConnectorId: workflowAutomations.eventConnectorId,
+        })
+        .from(workflowAutomations)
+        .where(
+          and(
+            eq(workflowAutomations.id, args.automationId),
+            eq(workflowAutomations.orgId, args.orgId),
+            eq(workflowAutomations.ownerUserId, args.userId),
+            eq(workflowAutomations.kind, "event"),
+            inArray(workflowAutomations.eventType, [
+              "notion-child-page-created",
+              "notion-database-item-created",
+              "notion-page-content-updated",
+            ]),
+          ),
+        )
+        .for("update")
+        .limit(1);
+      signal.throwIfAborted();
+      if (!automation) {
+        return;
+      }
+      const [selection] = parseRawRows(
+        z.object({ connectorId: z.string().nullable() }),
+        await tx.execute(
+          workflowAutomationConnectorSelectionSql({
+            orgId: args.orgId,
+            userId: args.userId,
+            workflowId: automation.workflowId,
+            connectorSlug: "notion",
+          }),
+        ),
+      );
+      signal.throwIfAborted();
+      const eventConnectorId = selection?.connectorId ?? null;
+      if (
+        automation.eventConnectorId === eventConnectorId &&
+        (eventConnectorId === null ||
+          notionConfigConnectorId(
+            automation.eventType,
+            automation.eventConfig,
+          ) === eventConnectorId)
+      ) {
+        return;
+      }
+      const eventConfig =
+        eventConnectorId === null
+          ? automation.eventConfig
+          : notionConfigWithConnectorId(
+              automation.eventType,
+              automation.eventConfig,
+              eventConnectorId,
+            );
+      await tx
+        .update(workflowAutomations)
+        .set({
+          eventConnectorId,
+          ...(eventConfig === null ? {} : { eventConfig }),
+        })
+        .where(eq(workflowAutomations.id, automation.id));
+      signal.throwIfAborted();
+      const currentTime = nowDate();
+      await tx
+        .update(notionWorkflowPendingEvents)
+        .set({
+          status: "skipped",
+          skipReason: NOTION_ACCOUNT_CHANGED_SKIP_REASON,
+          processedAt: currentTime,
+          updatedAt: currentTime,
+        })
+        .where(
+          and(
+            eq(notionWorkflowPendingEvents.automationId, automation.id),
+            inArray(notionWorkflowPendingEvents.status, ["pending", "running"]),
+          ),
+        );
+      signal.throwIfAborted();
     });
-    signal.throwIfAborted();
-  }
-  return orderedOwners.length > 0;
-}
-
-async function loadCurrentNotionAutomations(
-  args: {
-    readonly db: Db;
   },
-  eventType: NotionAutomationEventType,
-  signal: AbortSignal,
-): Promise<readonly AutomationRow[]> {
-  const automations = await queryNotionAutomations(args, eventType, signal);
-  if (!(await repairNotionAutomationProjections(args, automations, signal))) {
-    return automations;
-  }
-  return await queryNotionAutomations(args, eventType, signal);
-}
+);
 
-async function loadNotionChildPageAutomations(
-  args: { readonly db: Db },
-  signal: AbortSignal,
-): Promise<readonly AutomationRow[]> {
-  return await loadCurrentNotionAutomations(
-    args,
-    "notion-child-page-created",
-    signal,
-  );
-}
-
-async function loadNotionDatabaseItemAutomations(
-  args: { readonly db: Db },
-  signal: AbortSignal,
-): Promise<readonly AutomationRow[]> {
-  return await loadCurrentNotionAutomations(
-    args,
-    "notion-database-item-created",
-    signal,
-  );
-}
-
-async function loadNotionPageContentUpdatedAutomations(
-  args: { readonly db: Db },
-  signal: AbortSignal,
-): Promise<readonly AutomationRow[]> {
-  return await loadCurrentNotionAutomations(
-    args,
-    "notion-page-content-updated",
-    signal,
-  );
-}
-
-async function enqueueNotionChildPageEvents(
-  args: {
-    readonly db: Db;
-    readonly event: NotionWebhookEvent;
-    readonly pageId: string;
-    readonly parentPageId: string;
+const repairNotionAutomationProjections$ = command(
+  async (
+    { set },
+    automations: readonly AutomationRow[],
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const owners = new Map<
+      string,
+      { readonly orgId: string; readonly userId: string }
+    >();
+    for (const automation of automations) {
+      if (
+        automation.eventConnectorId !== null &&
+        notionConfigConnectorId(
+          automation.eventType,
+          automation.eventConfig,
+        ) === automation.eventConnectorId
+      ) {
+        continue;
+      }
+      const owner = { orgId: automation.orgId, userId: automation.ownerUserId };
+      owners.set(`${owner.orgId}:${owner.userId}`, owner);
+    }
+    const orderedOwners = [...owners.values()].sort((left, right) => {
+      return (
+        left.orgId.localeCompare(right.orgId) ||
+        left.userId.localeCompare(right.userId)
+      );
+    });
+    const db = set(writeDb$);
+    for (const owner of orderedOwners) {
+      const rows = await db
+        .select({ id: workflowAutomations.id })
+        .from(workflowAutomations)
+        .where(
+          and(
+            eq(workflowAutomations.orgId, owner.orgId),
+            eq(workflowAutomations.ownerUserId, owner.userId),
+            eq(workflowAutomations.kind, "event"),
+            inArray(workflowAutomations.eventType, [
+              "notion-child-page-created",
+              "notion-database-item-created",
+              "notion-page-content-updated",
+            ]),
+          ),
+        )
+        .orderBy(asc(workflowAutomations.id));
+      signal.throwIfAborted();
+      for (const row of rows) {
+        await set(
+          repairNotionAutomationProjection$,
+          { ...owner, automationId: row.id },
+          signal,
+        );
+      }
+    }
+    return orderedOwners.length > 0;
   },
-  signal: AbortSignal,
-): Promise<number> {
-  const automations = await loadNotionChildPageAutomations(args, signal);
-  let pending = 0;
-  for (const automation of automations) {
-    const config = notionChildPageCreatedEventConfigSchema.safeParse(
-      automation.eventConfig,
-    );
-    if (!config.success || config.data.parentPage.id !== args.parentPageId) {
-      continue;
+);
+
+const loadCurrentNotionAutomations$ = command(
+  async (
+    { set },
+    eventType: NotionAutomationEventType,
+    signal: AbortSignal,
+  ): Promise<readonly AutomationRow[]> => {
+    const automations = await set(queryNotionAutomations$, eventType, signal);
+    if (!(await set(repairNotionAutomationProjections$, automations, signal))) {
+      return automations;
     }
-    if (
-      automation.eventConnectorId === null ||
-      automation.eventConnectorId !== config.data.connectorId
-    ) {
-      continue;
-    }
-    const connectorId = automation.eventConnectorId;
-    const inserted = await persistForCurrentNotionAutomation(
-      args.db,
-      {
-        automation,
-        connectorId,
-        eventType: "notion-child-page-created",
-        persist: async (tx) => {
-          const [row] = await tx
-            .insert(notionWorkflowPendingEvents)
-            .values({
-              automationId: automation.id,
-              connectorId,
-              pageId: args.pageId,
-              scopeType: "page",
-              scopeId: args.parentPageId,
-              eventFamily: "new_child_page",
-              status: "pending",
-              firstNotionEventId: args.event.id,
-              latestNotionEventId: args.event.id,
-              firstEventAt: eventTimestamp(args.event),
-              latestEventAt: eventTimestamp(args.event),
-              latestEventContext: notionEventContext(args.event),
-              runAfter: runAfterForEvent(args.event),
-              parentTitle: config.data.parentPage.title,
-              parentUrl: config.data.parentPage.url,
-              createdAt: nowDate(),
-              updatedAt: nowDate(),
-            })
-            .onConflictDoNothing()
-            .returning({ id: notionWorkflowPendingEvents.id });
-          return row ?? null;
-        },
-      },
+    return await set(queryNotionAutomations$, eventType, signal);
+  },
+);
+
+const enqueueNotionChildPageEvents$ = command(
+  async (
+    { set },
+    args: {
+      readonly event: NotionWebhookEvent;
+      readonly pageId: string;
+      readonly parentPageId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<number> => {
+    const automations = await set(
+      loadCurrentNotionAutomations$,
+      "notion-child-page-created",
       signal,
     );
-    signal.throwIfAborted();
-    if (inserted) {
-      pending += 1;
-    }
-  }
-  return pending;
-}
-
-async function enqueueNotionDatabaseItemEvents(
-  args: {
-    readonly db: Db;
-    readonly event: NotionWebhookEvent;
-    readonly pageId: string;
-    readonly dataSourceId: string;
-  },
-  signal: AbortSignal,
-): Promise<number> {
-  const automations = await loadNotionDatabaseItemAutomations(args, signal);
-  let pending = 0;
-  for (const automation of automations) {
-    const config = notionDatabaseItemCreatedEventConfigSchema.safeParse(
-      automation.eventConfig,
-    );
-    if (!config.success || config.data.dataSource.id !== args.dataSourceId) {
-      continue;
-    }
-    if (
-      automation.eventConnectorId === null ||
-      automation.eventConnectorId !== config.data.connectorId
-    ) {
-      continue;
-    }
-    const connectorId = automation.eventConnectorId;
-    const inserted = await persistForCurrentNotionAutomation(
-      args.db,
-      {
-        automation,
-        connectorId,
-        eventType: "notion-database-item-created",
-        persist: async (tx) => {
-          const [row] = await tx
-            .insert(notionWorkflowPendingEvents)
-            .values({
-              automationId: automation.id,
-              connectorId,
-              pageId: args.pageId,
-              scopeType: "data_source",
-              scopeId: args.dataSourceId,
-              eventFamily: "new_database_item",
-              status: "pending",
-              firstNotionEventId: args.event.id,
-              latestNotionEventId: args.event.id,
-              firstEventAt: eventTimestamp(args.event),
-              latestEventAt: eventTimestamp(args.event),
-              latestEventContext: notionEventContext(args.event),
-              runAfter: runAfterForEvent(args.event),
-              parentTitle: config.data.dataSource.title,
-              parentUrl: config.data.dataSource.url,
-              createdAt: nowDate(),
-              updatedAt: nowDate(),
-            })
-            .onConflictDoNothing()
-            .returning({ id: notionWorkflowPendingEvents.id });
-          return row ?? null;
+    let pending = 0;
+    for (const automation of automations) {
+      const config = notionChildPageCreatedEventConfigSchema.safeParse(
+        automation.eventConfig,
+      );
+      if (!config.success || config.data.parentPage.id !== args.parentPageId) {
+        continue;
+      }
+      if (
+        automation.eventConnectorId === null ||
+        automation.eventConnectorId !== config.data.connectorId
+      ) {
+        continue;
+      }
+      const connectorId = automation.eventConnectorId;
+      const inserted = await set(
+        publishNotionPendingEvent$,
+        {
+          automation,
+          connectorId,
+          eventType: "notion-child-page-created",
+          pendingEvent: {
+            automationId: automation.id,
+            connectorId,
+            pageId: args.pageId,
+            scopeType: "page",
+            scopeId: args.parentPageId,
+            eventFamily: "new_child_page",
+            status: "pending",
+            firstNotionEventId: args.event.id,
+            latestNotionEventId: args.event.id,
+            firstEventAt: eventTimestamp(args.event),
+            latestEventAt: eventTimestamp(args.event),
+            latestEventContext: notionEventContext(args.event),
+            runAfter: runAfterForEvent(args.event),
+            parentTitle: config.data.parentPage.title,
+            parentUrl: config.data.parentPage.url,
+            createdAt: nowDate(),
+            updatedAt: nowDate(),
+          },
         },
-      },
+        signal,
+      );
+      signal.throwIfAborted();
+      if (inserted === "inserted") {
+        pending += 1;
+      }
+    }
+    return pending;
+  },
+);
+
+const enqueueNotionDatabaseItemEvents$ = command(
+  async (
+    { set },
+    args: {
+      readonly event: NotionWebhookEvent;
+      readonly pageId: string;
+      readonly dataSourceId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<number> => {
+    const automations = await set(
+      loadCurrentNotionAutomations$,
+      "notion-database-item-created",
       signal,
     );
-    signal.throwIfAborted();
-    if (inserted) {
-      pending += 1;
+    let pending = 0;
+    for (const automation of automations) {
+      const config = notionDatabaseItemCreatedEventConfigSchema.safeParse(
+        automation.eventConfig,
+      );
+      if (!config.success || config.data.dataSource.id !== args.dataSourceId) {
+        continue;
+      }
+      if (
+        automation.eventConnectorId === null ||
+        automation.eventConnectorId !== config.data.connectorId
+      ) {
+        continue;
+      }
+      const connectorId = automation.eventConnectorId;
+      const inserted = await set(
+        publishNotionPendingEvent$,
+        {
+          automation,
+          connectorId,
+          eventType: "notion-database-item-created",
+          pendingEvent: {
+            automationId: automation.id,
+            connectorId,
+            pageId: args.pageId,
+            scopeType: "data_source",
+            scopeId: args.dataSourceId,
+            eventFamily: "new_database_item",
+            status: "pending",
+            firstNotionEventId: args.event.id,
+            latestNotionEventId: args.event.id,
+            firstEventAt: eventTimestamp(args.event),
+            latestEventAt: eventTimestamp(args.event),
+            latestEventContext: notionEventContext(args.event),
+            runAfter: runAfterForEvent(args.event),
+            parentTitle: config.data.dataSource.title,
+            parentUrl: config.data.dataSource.url,
+            createdAt: nowDate(),
+            updatedAt: nowDate(),
+          },
+        },
+        signal,
+      );
+      signal.throwIfAborted();
+      if (inserted === "inserted") {
+        pending += 1;
+      }
     }
-  }
-  return pending;
-}
+    return pending;
+  },
+);
 
 function pageContentUpdatedScopeType(
   scope: NotionPageContentUpdatedScope,
@@ -1618,322 +1607,368 @@ function pageContentUpdatedScopeParent(scope: NotionPageContentUpdatedScope): {
     : { title: scope.dataSource.title, url: scope.dataSource.url };
 }
 
-async function persistForCurrentNotionAutomation<T>(
-  db: Db,
-  args: {
-    readonly automation: AutomationRow;
-    readonly connectorId: string;
-    readonly eventType: NotionAutomationEventType;
-    readonly persist: (tx: Tx) => Promise<T>;
-  },
-  signal: AbortSignal,
-): Promise<T | null> {
-  return await db.transaction(async (tx) => {
-    await lockConnectorAccountTarget(tx, {
-      orgId: args.automation.orgId,
-      userId: args.automation.ownerUserId,
-      target: { kind: "builtin", connectorSlug: "notion" },
-    });
-    const [current] = await tx
-      .select({
-        eventType: workflowAutomations.eventType,
-        eventConfig: workflowAutomations.eventConfig,
-      })
-      .from(workflowAutomations)
-      .where(
-        and(
-          eq(workflowAutomations.id, args.automation.id),
-          eq(workflowAutomations.enabled, true),
-          eq(workflowAutomations.eventType, args.eventType),
-          eq(workflowAutomations.eventConnectorId, args.connectorId),
-        ),
-      )
-      .for("update")
-      .limit(1);
-    signal.throwIfAborted();
-    if (
-      !current ||
-      notionConfigConnectorId(current.eventType, current.eventConfig) !==
-        args.connectorId
-    ) {
-      return null;
-    }
-    return await args.persist(tx);
-  });
-}
+type NotionPendingPublication = "inserted" | "refreshed" | "none" | null;
 
-async function dataSourceIdForContentUpdatedEvent(
-  args: {
-    readonly db: Db;
-    readonly automation: AutomationRow;
-    readonly config: NotionPageContentUpdatedEventConfig;
-    readonly event: NotionWebhookEvent;
-    readonly pageId: string;
-  },
-  signal: AbortSignal,
-): Promise<string | null> {
-  const eventDataSourceId = eventDataSourceParentId(args.event);
-  if (eventDataSourceId) {
-    return eventDataSourceId;
-  }
-
-  const accessResult = await resolveNotionAccess(
-    {
-      db: args.db,
-      orgId: args.automation.orgId,
-      userId: args.automation.ownerUserId,
-      connectorId: args.config.connectorId,
+const publishNotionPendingEvent$ = command(
+  async (
+    { set },
+    args: {
+      readonly automation: AutomationRow;
+      readonly connectorId: string;
+      readonly eventType: NotionAutomationEventType;
+      readonly pendingEvent: typeof notionWorkflowPendingEvents.$inferInsert;
+      readonly refreshExisting?: boolean;
     },
-    signal,
-  );
-  signal.throwIfAborted();
-  if (accessResult.kind !== "ok") {
-    return null;
-  }
-  const pageResult = await retrieveNotionPage(
-    {
-      accessToken: accessResult.access.accessToken,
-      pageId: args.pageId,
-    },
-    signal,
-  );
-  signal.throwIfAborted();
-  return pageResult.kind === "ok"
-    ? notionPageParentDataSourceId(pageResult.value)
-    : null;
-}
-
-async function contentUpdatedAutomationMatchesEvent(
-  args: {
-    readonly db: Db;
-    readonly automation: AutomationRow;
-    readonly config: NotionPageContentUpdatedEventConfig;
-    readonly event: NotionWebhookEvent;
-    readonly pageId: string;
-  },
-  signal: AbortSignal,
-): Promise<boolean> {
-  if (args.config.scope.type === "page") {
-    return args.config.scope.page.id === args.pageId;
-  }
-  const dataSourceId = await dataSourceIdForContentUpdatedEvent(args, signal);
-  return dataSourceId === args.config.scope.dataSource.id;
-}
-
-async function enqueueOrRefreshNotionPageContentUpdatedEvents(
-  args: {
-    readonly db: Db;
-    readonly event: NotionWebhookEvent;
-    readonly pageId: string;
-  },
-  signal: AbortSignal,
-): Promise<{ readonly pending: number; readonly refreshed: number }> {
-  const automations = await loadNotionPageContentUpdatedAutomations(
-    args,
-    signal,
-  );
-  let pending = 0;
-  let refreshed = 0;
-  for (const automation of automations) {
-    const config = notionPageContentUpdatedEventConfigSchema.safeParse(
-      automation.eventConfig,
-    );
-    if (!config.success) {
-      continue;
-    }
-    if (
-      automation.eventConnectorId === null ||
-      automation.eventConnectorId !== config.data.connectorId
-    ) {
-      continue;
-    }
-    const connectorId = automation.eventConnectorId;
-    if (
-      !(await contentUpdatedAutomationMatchesEvent(
-        {
-          db: args.db,
-          automation,
-          config: config.data,
-          event: args.event,
-          pageId: args.pageId,
-        },
-        signal,
-      ))
-    ) {
-      continue;
-    }
-
-    const persistence = await persistForCurrentNotionAutomation(
-      args.db,
-      {
-        automation,
-        connectorId,
-        eventType: "notion-page-content-updated",
-        persist: async (tx) => {
-          const currentTime = nowDate();
-          const [updated] = await tx
-            .update(notionWorkflowPendingEvents)
-            .set({
-              latestNotionEventId: args.event.id,
-              latestEventAt: eventTimestamp(args.event),
-              latestEventContext: notionEventContext(args.event),
-              runAfter: runAfterForEvent(args.event),
-              lastError: null,
-              updatedAt: currentTime,
-            })
-            .where(
-              and(
-                eq(notionWorkflowPendingEvents.automationId, automation.id),
-                eq(notionWorkflowPendingEvents.pageId, args.pageId),
-                eq(
-                  notionWorkflowPendingEvents.eventFamily,
-                  "page_content_updated",
-                ),
-                eq(notionWorkflowPendingEvents.status, "pending"),
-                eq(notionWorkflowPendingEvents.connectorId, connectorId),
+    signal: AbortSignal,
+  ): Promise<NotionPendingPublication> => {
+    const db = set(writeDb$);
+    return await db.transaction(async (tx) => {
+      await tx.execute(
+        builtinConnectorStateLockStatement({
+          orgId: args.automation.orgId,
+          userId: args.automation.ownerUserId,
+          connectorSlug: "notion",
+        }),
+      );
+      const [current] = await tx
+        .select({
+          eventType: workflowAutomations.eventType,
+          eventConfig: workflowAutomations.eventConfig,
+        })
+        .from(workflowAutomations)
+        .where(
+          and(
+            eq(workflowAutomations.id, args.automation.id),
+            eq(workflowAutomations.enabled, true),
+            eq(workflowAutomations.eventType, args.eventType),
+            eq(workflowAutomations.eventConnectorId, args.connectorId),
+          ),
+        )
+        .for("update")
+        .limit(1);
+      signal.throwIfAborted();
+      if (
+        !current ||
+        notionConfigConnectorId(current.eventType, current.eventConfig) !==
+          args.connectorId
+      ) {
+        return null;
+      }
+      if (args.refreshExisting) {
+        const [updated] = await tx
+          .update(notionWorkflowPendingEvents)
+          .set({
+            latestNotionEventId: args.pendingEvent.latestNotionEventId,
+            latestEventAt: args.pendingEvent.latestEventAt,
+            latestEventContext: args.pendingEvent.latestEventContext,
+            runAfter: args.pendingEvent.runAfter,
+            lastError: null,
+            updatedAt: args.pendingEvent.updatedAt,
+          })
+          .where(
+            and(
+              eq(notionWorkflowPendingEvents.automationId, args.automation.id),
+              eq(notionWorkflowPendingEvents.pageId, args.pendingEvent.pageId),
+              eq(
+                notionWorkflowPendingEvents.eventFamily,
+                "page_content_updated",
               ),
-            )
-            .returning({ id: notionWorkflowPendingEvents.id });
-          if (updated) {
-            return "refreshed" as const;
-          }
+              eq(notionWorkflowPendingEvents.status, "pending"),
+              eq(notionWorkflowPendingEvents.connectorId, args.connectorId),
+            ),
+          )
+          .returning({ id: notionWorkflowPendingEvents.id });
+        signal.throwIfAborted();
+        if (updated) {
+          return "refreshed";
+        }
+      }
+      const [inserted] = await tx
+        .insert(notionWorkflowPendingEvents)
+        .values(args.pendingEvent)
+        .onConflictDoNothing()
+        .returning({ id: notionWorkflowPendingEvents.id });
+      signal.throwIfAborted();
+      return inserted ? "inserted" : "none";
+    });
+  },
+);
 
-          const parent = pageContentUpdatedScopeParent(config.data.scope);
-          const [inserted] = await tx
-            .insert(notionWorkflowPendingEvents)
-            .values({
-              automationId: automation.id,
-              connectorId,
-              pageId: args.pageId,
-              scopeType: pageContentUpdatedScopeType(config.data.scope),
-              scopeId: pageContentUpdatedScopeId(config.data.scope),
-              eventFamily: "page_content_updated",
-              status: "pending",
-              firstNotionEventId: args.event.id,
-              latestNotionEventId: args.event.id,
-              firstEventAt: eventTimestamp(args.event),
-              latestEventAt: eventTimestamp(args.event),
-              latestEventContext: notionEventContext(args.event),
-              runAfter: runAfterForEvent(args.event),
-              parentTitle: parent.title,
-              parentUrl: parent.url,
-              createdAt: currentTime,
-              updatedAt: currentTime,
-            })
-            .onConflictDoNothing()
-            .returning({ id: notionWorkflowPendingEvents.id });
-          return inserted ? ("inserted" as const) : ("none" as const);
-        },
+const dataSourceIdForContentUpdatedEvent$ = command(
+  async (
+    { set },
+    args: {
+      readonly automation: AutomationRow;
+      readonly config: NotionPageContentUpdatedEventConfig;
+      readonly event: NotionWebhookEvent;
+      readonly pageId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<string | null> => {
+    const eventDataSourceId = eventDataSourceParentId(args.event);
+    if (eventDataSourceId) {
+      return eventDataSourceId;
+    }
+
+    const accessResult = await set(
+      resolveNotionCredentialAccess$,
+      {
+        orgId: args.automation.orgId,
+        userId: args.automation.ownerUserId,
+        connectorId: args.config.connectorId,
       },
       signal,
     );
     signal.throwIfAborted();
-    if (persistence === "refreshed") {
-      refreshed += 1;
-      continue;
+    if (accessResult.kind !== "ok") {
+      return null;
     }
-    if (persistence === "inserted") {
-      pending += 1;
-    }
-  }
-  return { pending, refreshed };
-}
-
-async function refreshPendingNotionCreatedPageEvents(
-  args: {
-    readonly db: Db;
-    readonly event: NotionWebhookEvent;
-    readonly pageId: string;
+    const pageResult = await retrieveNotionPage(
+      {
+        accessToken: accessResult.access.accessToken,
+        pageId: args.pageId,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    return pageResult.kind === "ok"
+      ? notionPageParentDataSourceId(pageResult.value)
+      : null;
   },
-  signal: AbortSignal,
-): Promise<number> {
-  const refreshed = await args.db
-    .update(notionWorkflowPendingEvents)
-    .set({
-      latestNotionEventId: args.event.id,
-      latestEventAt: eventTimestamp(args.event),
-      latestEventContext: notionEventContext(args.event),
-      runAfter: runAfterForEvent(args.event),
-      updatedAt: nowDate(),
-    })
-    .where(
-      and(
-        eq(notionWorkflowPendingEvents.pageId, args.pageId),
-        eq(notionWorkflowPendingEvents.status, "pending"),
-        inArray(notionWorkflowPendingEvents.eventFamily, [
-          "new_child_page",
-          "new_database_item",
-        ]),
-      ),
-    )
-    .returning({ id: notionWorkflowPendingEvents.id });
-  signal.throwIfAborted();
-  return refreshed.length;
-}
+);
 
-async function hasActiveNotionCreatedPageEvent(
-  args: {
-    readonly db: Db;
-    readonly pageId: string;
-  },
-  signal: AbortSignal,
-): Promise<boolean> {
-  const [active] = await args.db
-    .select({ id: notionWorkflowPendingEvents.id })
-    .from(notionWorkflowPendingEvents)
-    .where(
-      and(
-        eq(notionWorkflowPendingEvents.pageId, args.pageId),
-        inArray(notionWorkflowPendingEvents.status, ["pending", "running"]),
-        inArray(notionWorkflowPendingEvents.eventFamily, [
-          "new_child_page",
-          "new_database_item",
-        ]),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  return active !== undefined;
-}
-
-async function dispatchNotionEvent(
-  args: {
-    readonly db: Db;
-    readonly event: NotionWebhookEvent;
-  },
-  signal: AbortSignal,
-): Promise<{
-  readonly pending: number;
-  readonly refreshed: number;
-  readonly duplicates: number;
-}> {
-  const pageId = eventPageId(args.event);
-  if (!pageId) {
-    return { pending: 0, refreshed: 0, duplicates: 0 };
-  }
-
-  const inserted = await insertNotionWebhookEvent(
-    {
-      db: args.db,
-      event: args.event,
-      pageId,
+const contentUpdatedAutomationMatchesEvent$ = command(
+  async (
+    { set },
+    args: {
+      readonly automation: AutomationRow;
+      readonly config: NotionPageContentUpdatedEventConfig;
+      readonly event: NotionWebhookEvent;
+      readonly pageId: string;
     },
-    signal,
-  );
-  if (!inserted) {
-    return { pending: 0, refreshed: 0, duplicates: 1 };
-  }
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    if (args.config.scope.type === "page") {
+      return args.config.scope.page.id === args.pageId;
+    }
+    const dataSourceId = await set(
+      dataSourceIdForContentUpdatedEvent$,
+      args,
+      signal,
+    );
+    return dataSourceId === args.config.scope.dataSource.id;
+  },
+);
 
-  if (args.event.type === "page.created") {
-    const parentPageId = eventPageParentId(args.event);
-    if (parentPageId) {
-      return {
-        pending: await enqueueNotionChildPageEvents(
+const enqueueOrRefreshNotionPageContentUpdatedEvents$ = command(
+  async (
+    { set },
+    args: {
+      readonly event: NotionWebhookEvent;
+      readonly pageId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<{ readonly pending: number; readonly refreshed: number }> => {
+    const automations = await set(
+      loadCurrentNotionAutomations$,
+      "notion-page-content-updated",
+      signal,
+    );
+    let pending = 0;
+    let refreshed = 0;
+    for (const automation of automations) {
+      const config = notionPageContentUpdatedEventConfigSchema.safeParse(
+        automation.eventConfig,
+      );
+      if (!config.success) {
+        continue;
+      }
+      if (
+        automation.eventConnectorId === null ||
+        automation.eventConnectorId !== config.data.connectorId
+      ) {
+        continue;
+      }
+      const connectorId = automation.eventConnectorId;
+      if (
+        !(await set(
+          contentUpdatedAutomationMatchesEvent$,
           {
-            db: args.db,
+            automation,
+            config: config.data,
+            event: args.event,
+            pageId: args.pageId,
+          },
+          signal,
+        ))
+      ) {
+        continue;
+      }
+
+      const currentTime = nowDate();
+      const parent = pageContentUpdatedScopeParent(config.data.scope);
+      const persistence = await set(
+        publishNotionPendingEvent$,
+        {
+          automation,
+          connectorId,
+          eventType: "notion-page-content-updated",
+          refreshExisting: true,
+          pendingEvent: {
+            automationId: automation.id,
+            connectorId,
+            pageId: args.pageId,
+            scopeType: pageContentUpdatedScopeType(config.data.scope),
+            scopeId: pageContentUpdatedScopeId(config.data.scope),
+            eventFamily: "page_content_updated",
+            status: "pending",
+            firstNotionEventId: args.event.id,
+            latestNotionEventId: args.event.id,
+            firstEventAt: eventTimestamp(args.event),
+            latestEventAt: eventTimestamp(args.event),
+            latestEventContext: notionEventContext(args.event),
+            runAfter: runAfterForEvent(args.event),
+            parentTitle: parent.title,
+            parentUrl: parent.url,
+            createdAt: currentTime,
+            updatedAt: currentTime,
+          },
+        },
+        signal,
+      );
+      signal.throwIfAborted();
+      if (persistence === "refreshed") {
+        refreshed += 1;
+        continue;
+      }
+      if (persistence === "inserted") {
+        pending += 1;
+      }
+    }
+    return { pending, refreshed };
+  },
+);
+
+const refreshPendingNotionCreatedPageEvents$ = command(
+  async (
+    { set },
+    args: {
+      readonly event: NotionWebhookEvent;
+      readonly pageId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<number> => {
+    const db = set(writeDb$);
+    const refreshed = await db
+      .update(notionWorkflowPendingEvents)
+      .set({
+        latestNotionEventId: args.event.id,
+        latestEventAt: eventTimestamp(args.event),
+        latestEventContext: notionEventContext(args.event),
+        runAfter: runAfterForEvent(args.event),
+        updatedAt: nowDate(),
+      })
+      .where(
+        and(
+          eq(notionWorkflowPendingEvents.pageId, args.pageId),
+          eq(notionWorkflowPendingEvents.status, "pending"),
+          inArray(notionWorkflowPendingEvents.eventFamily, [
+            "new_child_page",
+            "new_database_item",
+          ]),
+        ),
+      )
+      .returning({ id: notionWorkflowPendingEvents.id });
+    signal.throwIfAborted();
+    return refreshed.length;
+  },
+);
+
+const hasActiveNotionCreatedPageEvent$ = command(
+  async (
+    { set },
+    args: {
+      readonly pageId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const db = set(writeDb$);
+    const [active] = await db
+      .select({ id: notionWorkflowPendingEvents.id })
+      .from(notionWorkflowPendingEvents)
+      .where(
+        and(
+          eq(notionWorkflowPendingEvents.pageId, args.pageId),
+          inArray(notionWorkflowPendingEvents.status, ["pending", "running"]),
+          inArray(notionWorkflowPendingEvents.eventFamily, [
+            "new_child_page",
+            "new_database_item",
+          ]),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return active !== undefined;
+  },
+);
+
+const dispatchNotionEvent$ = command(
+  async (
+    { set },
+    args: {
+      readonly event: NotionWebhookEvent;
+    },
+    signal: AbortSignal,
+  ): Promise<{
+    readonly pending: number;
+    readonly refreshed: number;
+    readonly duplicates: number;
+  }> => {
+    const pageId = eventPageId(args.event);
+    if (!pageId) {
+      return { pending: 0, refreshed: 0, duplicates: 0 };
+    }
+
+    const inserted = await set(
+      insertNotionWebhookEvent$,
+      {
+        event: args.event,
+        pageId,
+      },
+      signal,
+    );
+    if (!inserted) {
+      return { pending: 0, refreshed: 0, duplicates: 1 };
+    }
+
+    if (args.event.type === "page.created") {
+      const parentPageId = eventPageParentId(args.event);
+      if (parentPageId) {
+        return {
+          pending: await set(
+            enqueueNotionChildPageEvents$,
+            {
+              event: args.event,
+              pageId,
+              parentPageId,
+            },
+            signal,
+          ),
+          refreshed: 0,
+          duplicates: 0,
+        };
+      }
+      const dataSourceId = eventDataSourceParentId(args.event);
+      if (!dataSourceId) {
+        return { pending: 0, refreshed: 0, duplicates: 0 };
+      }
+      return {
+        pending: await set(
+          enqueueNotionDatabaseItemEvents$,
+          {
             event: args.event,
             pageId,
-            parentPageId,
+            dataSourceId,
           },
           signal,
         ),
@@ -1941,62 +1976,45 @@ async function dispatchNotionEvent(
         duplicates: 0,
       };
     }
-    const dataSourceId = eventDataSourceParentId(args.event);
-    if (!dataSourceId) {
-      return { pending: 0, refreshed: 0, duplicates: 0 };
-    }
-    return {
-      pending: await enqueueNotionDatabaseItemEvents(
-        {
-          db: args.db,
-          event: args.event,
-          pageId,
-          dataSourceId,
-        },
-        signal,
-      ),
-      refreshed: 0,
-      duplicates: 0,
-    };
-  }
 
-  const refreshedCreated = await refreshPendingNotionCreatedPageEvents(
-    {
-      db: args.db,
-      event: args.event,
-      pageId,
-    },
-    signal,
-  );
-  if (args.event.type !== "page.content_updated") {
-    return { pending: 0, refreshed: refreshedCreated, duplicates: 0 };
-  }
-  if (
-    refreshedCreated > 0 ||
-    (await hasActiveNotionCreatedPageEvent(
+    const refreshedCreated = await set(
+      refreshPendingNotionCreatedPageEvents$,
       {
-        db: args.db,
+        event: args.event,
         pageId,
       },
       signal,
-    ))
-  ) {
-    return { pending: 0, refreshed: refreshedCreated, duplicates: 0 };
-  }
-  const contentUpdated = await enqueueOrRefreshNotionPageContentUpdatedEvents(
-    {
-      db: args.db,
-      event: args.event,
-      pageId,
-    },
-    signal,
-  );
-  return {
-    pending: contentUpdated.pending,
-    refreshed: refreshedCreated + contentUpdated.refreshed,
-    duplicates: 0,
-  };
-}
+    );
+    if (args.event.type !== "page.content_updated") {
+      return { pending: 0, refreshed: refreshedCreated, duplicates: 0 };
+    }
+    if (
+      refreshedCreated > 0 ||
+      (await set(
+        hasActiveNotionCreatedPageEvent$,
+        {
+          pageId,
+        },
+        signal,
+      ))
+    ) {
+      return { pending: 0, refreshed: refreshedCreated, duplicates: 0 };
+    }
+    const contentUpdated = await set(
+      enqueueOrRefreshNotionPageContentUpdatedEvents$,
+      {
+        event: args.event,
+        pageId,
+      },
+      signal,
+    );
+    return {
+      pending: contentUpdated.pending,
+      refreshed: refreshedCreated + contentUpdated.refreshed,
+      duplicates: 0,
+    };
+  },
+);
 
 export const dispatchNotionWebhook$ = command(
   async (
@@ -2013,14 +2031,13 @@ export const dispatchNotionWebhook$ = command(
     }
 
     const verification = notionWebhookVerificationSchema.safeParse(rawJson);
-    const db = set(writeDb$);
     if (verification.success) {
-      if (await activeVerificationTokenExists({ db }, signal)) {
+      if (await set(activeVerificationTokenExists$, signal)) {
         return { kind: "unauthorized" };
       }
-      await storeVerificationToken(
+      await set(
+        storeVerificationToken$,
         {
-          db,
           token: verification.data.verification_token,
         },
         signal,
@@ -2034,7 +2051,7 @@ export const dispatchNotionWebhook$ = command(
       };
     }
 
-    const tokens = await loadActiveVerificationTokens({ db }, signal);
+    const tokens = await set(loadActiveVerificationTokens$, signal);
     if (tokens.length === 0) {
       return {
         kind: "config_error",
@@ -2089,9 +2106,9 @@ export const dispatchNotionWebhook$ = command(
       return ACKNOWLEDGED_NOTION_EVENT_RESULT;
     }
 
-    const result = await dispatchNotionEvent(
+    const result = await set(
+      dispatchNotionEvent$,
       {
-        db,
         event: event.data,
       },
       signal,
