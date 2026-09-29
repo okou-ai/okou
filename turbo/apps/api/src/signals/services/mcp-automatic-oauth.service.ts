@@ -84,6 +84,11 @@ export interface McpAutomaticOAuthDcrStore extends McpAutomaticOAuthDcrClientSto
   ): Promise<McpAutomaticOAuthDcrRegistration>;
 }
 
+type McpAutomaticOAuthDcrPreparationStore = Pick<
+  McpAutomaticOAuthDcrStore,
+  "readByIssuer" | "hasLinkedAccounts" | "publish"
+>;
+
 export type McpAutomaticOAuthBinding = {
   readonly issuer: string;
   readonly resource: string;
@@ -679,7 +684,7 @@ function dcrTokenAuthMethod(args: {
 
 async function createDcrRegistration(
   args: {
-    readonly dcrStore: McpAutomaticOAuthDcrStore;
+    readonly dcrStore: McpAutomaticOAuthDcrPreparationStore;
     readonly issuer: string;
     readonly expectedRegistrationId: string | null;
     readonly redirectUri: string;
@@ -726,7 +731,7 @@ async function createDcrRegistration(
 
 async function resolveAutomaticOAuthClient(
   args: {
-    readonly dcrStore: McpAutomaticOAuthDcrStore;
+    readonly dcrStore: McpAutomaticOAuthDcrPreparationStore;
     readonly issuer: string;
     readonly redirectUri: string;
     readonly scope: string | undefined;
@@ -972,7 +977,7 @@ type AutomaticOAuthBoundClientContext = {
 
 export async function prepareMcpAutomaticOAuthAuthorization(
   args: {
-    readonly dcrStore: McpAutomaticOAuthDcrStore;
+    readonly dcrStore: McpAutomaticOAuthDcrPreparationStore;
     readonly endpoint: string;
     readonly redirectUri: string;
     readonly state: string;

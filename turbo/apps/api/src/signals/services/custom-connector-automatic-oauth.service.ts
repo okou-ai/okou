@@ -259,26 +259,59 @@ export function customConnectorAutomaticOAuthErrorCode(
 type PersistedDcrRegistration =
   typeof orgCustomConnectorDcrRegistrations.$inferSelect;
 
-async function readDcrRegistration(args: {
-  readonly db: Db;
-  readonly customConnectorId: string;
-  readonly issuer: string;
-}): Promise<PersistedDcrRegistration | null> {
-  const [registration] = await args.db
-    .select()
-    .from(orgCustomConnectorDcrRegistrations)
-    .where(
-      and(
-        eq(
-          orgCustomConnectorDcrRegistrations.customConnectorId,
-          args.customConnectorId,
+const readCustomDcrRegistrationByIssuer$ = command(
+  async (
+    { set },
+    args: { readonly customConnectorId: string; readonly issuer: string },
+    signal: AbortSignal,
+  ): Promise<
+    (PersistedDcrRegistration & { readonly hasClientSecret: boolean }) | null
+  > => {
+    const db = set(writeDb$);
+    const [registration] = await db
+      .select()
+      .from(orgCustomConnectorDcrRegistrations)
+      .where(
+        and(
+          eq(
+            orgCustomConnectorDcrRegistrations.customConnectorId,
+            args.customConnectorId,
+          ),
+          eq(orgCustomConnectorDcrRegistrations.issuer, args.issuer),
         ),
-        eq(orgCustomConnectorDcrRegistrations.issuer, args.issuer),
-      ),
-    )
-    .limit(1);
-  return registration ?? null;
-}
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return registration
+      ? {
+          ...registration,
+          hasClientSecret: registration.encryptedClientSecret !== null,
+        }
+      : null;
+  },
+);
+
+const hasCustomDcrLinkedAccounts$ = command(
+  async (
+    { set },
+    registrationId: string,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const db = set(writeDb$);
+    const [account] = await db
+      .select({ id: customConnectorAccountOauthBindings.connectorAccountId })
+      .from(customConnectorAccountOauthBindings)
+      .where(
+        eq(
+          customConnectorAccountOauthBindings.dcrRegistrationId,
+          registrationId,
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return account !== undefined;
+  },
+);
 
 async function linkedDcrAccountIds(
   db: Db,
@@ -536,29 +569,6 @@ const publishCustomDcrRegistration$ = command(
   },
 );
 
-function customDcrStore(
-  args: CustomDcrStoreArgs,
-): Omit<McpAutomaticOAuthDcrStore, "publish"> {
-  return {
-    ...customDcrClientStore(args),
-    async readByIssuer(issuer) {
-      const registration = await readDcrRegistration({ ...args, issuer });
-      return registration
-        ? {
-            ...registration,
-            hasClientSecret: registration.encryptedClientSecret !== null,
-          }
-        : null;
-    },
-    async hasLinkedAccounts(registrationId) {
-      return (await linkedDcrAccountIds(args.db, registrationId)).length > 0;
-    },
-    async retire(registrationId) {
-      await retireCustomConnectorDcrRegistration(args.db, registrationId);
-    },
-  };
-}
-
 export type CustomConnectorAutomaticOAuthStateContext =
   McpAutomaticOAuthContext & {
     readonly connectorId: string;
@@ -596,12 +606,24 @@ export const prepareCustomConnectorAutomaticOAuthAuthorization$ = command(
   ): Promise<
     CustomConnectorAutomaticOAuthAuthorization | McpAutomaticNoAuth
   > => {
-    const db = set(writeDb$);
     const prepared = await prepareMcpAutomaticOAuthAuthorization(
       {
         ...args,
         dcrStore: {
-          ...customDcrStore({ ...args, db }),
+          readByIssuer: async (issuer) => {
+            return await set(
+              readCustomDcrRegistrationByIssuer$,
+              { customConnectorId: args.customConnectorId, issuer },
+              signal,
+            );
+          },
+          hasLinkedAccounts: async (registrationId) => {
+            return await set(
+              hasCustomDcrLinkedAccounts$,
+              registrationId,
+              signal,
+            );
+          },
           publish: async (
             registration,
             expectedRegistrationId,

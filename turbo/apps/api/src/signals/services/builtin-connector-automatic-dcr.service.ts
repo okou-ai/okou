@@ -153,6 +153,53 @@ interface BuiltinDcrStoreArgs {
   readonly owner: BuiltinConnectorAutomaticContractOwner;
 }
 
+export const readBuiltinDcrRegistrationByIssuer$ = command(
+  async (
+    { set },
+    args: {
+      readonly owner: BuiltinConnectorAutomaticContractOwner;
+      readonly issuer: string;
+    },
+    signal: AbortSignal,
+  ): Promise<McpAutomaticOAuthDcrRegistration | null> => {
+    const db = set(writeDb$);
+    const [row] = await db
+      .select()
+      .from(builtinConnectorDcrRegistrations)
+      .where(
+        and(
+          ownerCondition(args.owner),
+          eq(builtinConnectorDcrRegistrations.issuer, args.issuer),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return row ? registration(row) : null;
+  },
+);
+
+export const hasBuiltinDcrLinkedAccounts$ = command(
+  async (
+    { set },
+    registrationId: string,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const db = set(writeDb$);
+    const [account] = await db
+      .select({ id: builtinConnectorAccountOauthBindings.connectorAccountId })
+      .from(builtinConnectorAccountOauthBindings)
+      .where(
+        eq(
+          builtinConnectorAccountOauthBindings.dcrRegistrationId,
+          registrationId,
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return account !== undefined;
+  },
+);
+
 export const publishBuiltinDcrRegistration$ = command(
   async (
     { set },

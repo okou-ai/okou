@@ -52,6 +52,8 @@ import {
 import {
   builtinConnectorAutomaticDcrStore,
   publishBuiltinDcrRegistration$,
+  readBuiltinDcrRegistrationByIssuer$,
+  hasBuiltinDcrLinkedAccounts$,
   lockBuiltinConnectorAutomaticLifecycle,
   type BuiltinConnectorAutomaticContractOwner,
 } from "./builtin-connector-automatic-dcr.service";
@@ -449,7 +451,23 @@ const prepareBuiltinAutomaticAuthorization$ = command(
     return await prepareMcpAutomaticOAuthAuthorization(
       {
         dcrStore: {
-          ...dcrStore(db, args.orgId, contract),
+          readByIssuer: async (issuer) => {
+            return await set(
+              readBuiltinDcrRegistrationByIssuer$,
+              {
+                owner: contractOwner(args.orgId, contract),
+                issuer,
+              },
+              signal,
+            );
+          },
+          hasLinkedAccounts: async (registrationId) => {
+            return await set(
+              hasBuiltinDcrLinkedAccounts$,
+              registrationId,
+              signal,
+            );
+          },
           publish: async (value, expectedRegistrationId, publicationSignal) => {
             await assertCurrentContract(db, contract);
             return await set(
