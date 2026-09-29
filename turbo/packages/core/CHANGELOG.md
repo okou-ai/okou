@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.721.0](https://github.com/okou-ai/okou/compare/core-v8.720.4...core-v8.721.0) (2026-09-29)
+
+
+### Features
+
+* add opt-in claude sonnet 5.5 support ([#37361](https://github.com/okou-ai/okou/issues/37361)) ([7d0ab10](https://github.com/okou-ai/okou/commit/7d0ab10383588e7706a5560a14c5b7af3dde712a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.528.0
+
 ## [8.720.4](https://github.com/okou-ai/okou/compare/core-v8.720.3...core-v8.720.4) (2026-09-29)
 
 

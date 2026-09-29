@@ -38,6 +38,30 @@ export async function stagePreAddabilityModelPolicyFixture(args: {
   }
 }
 
+/** Only a historical writer could leave one retired default and no active policies. */
+export async function stageSoleRetiredDefaultPolicyFixture(args: {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly model: "okou-1.0-pro" | "okou-1.0-max";
+}): Promise<void> {
+  await db().transaction(async (tx) => {
+    await tx
+      .delete(orgModelPolicies)
+      .where(eq(orgModelPolicies.orgId, args.orgId));
+    await tx.insert(orgModelPolicies).values({
+      orgId: args.orgId,
+      model: args.model,
+      isDefault: true,
+      defaultProviderType: "built-in",
+      credentialScope: "org",
+      modelProviderId: null,
+      modelProviderSurfaceId: null,
+      createdByUserId: args.userId,
+      updatedByUserId: args.userId,
+    });
+  });
+}
+
 /** Enable one model in the test database without changing the production catalog. */
 export async function enableRunModelCatalogEntryFixture(
   model: SupportedRunModel,

@@ -37,8 +37,6 @@ import { PI_RUNTIME_RESOLVABLE_MODELS } from "../pi-runtime-capability";
  * unexplained diff is a regression.
  */
 const EXPECTED_ADMITTED_ROUTES = [
-  "okou-1.0-max | built-in | openrouter-codex | standard",
-  "okou-1.0-pro | built-in | openrouter-codex | standard",
   "okou-1.0 | built-in | openrouter-codex | standard",
   "claude-opus-5-5 | built-in | built-in | standard",
   "claude-opus-5-5 | built-in | built-in | fast",
@@ -193,10 +191,10 @@ const EXPECTED_ADMITTED_ROUTES = [
 
 /**
  * The enumeration is driven by `ACTIVE_RUN_MODELS` and their providers, so it
- * does not shrink when admission narrows: all 240 combinations are still
- * evaluated, and fewer of them are admitted.
+ * shrinks only when a model is retired or a route is removed. The remaining
+ * 234 combinations are all evaluated.
  */
-const ENUMERATED_COMBINATIONS = 250;
+const ENUMERATED_COMBINATIONS = 234;
 
 interface Combination {
   readonly selectedModel: string;
@@ -290,8 +288,6 @@ describe("Pi admission policy table", () => {
       "claude-sonnet-5",
     ]);
     expect(ACTIVE_RUN_MODELS.filter(isPiGptModel)).toStrictEqual([
-      "okou-1.0-max",
-      "okou-1.0-pro",
       "okou-1.0",
       "gpt-6-sol",
       "gpt-6-luna",

@@ -361,6 +361,8 @@ describe("model-first canonical catalog", () => {
   it.each([
     "gpt-5.5",
     "openai/gpt-5.5",
+    "okou-1.0-pro",
+    "okou-1.0-max",
     "claude-sonnet-4-6",
     "anthropic/claude-sonnet-4.6",
     "claude-opus-4-8",
@@ -371,6 +373,9 @@ describe("model-first canonical catalog", () => {
   ])("keeps %s historical while removing current provider access", (model) => {
     expect(getRunModelAccess(model)).toBe("retired");
     expect(getRunModelAccess(model, true)).toBe("retired");
+    expect(getRunModelRouteAccess(model, "openrouter-codex", false)).toBe(
+      "retired",
+    );
     expect(getProvidersForModel(model)).toEqual([]);
   });
 
@@ -833,8 +838,6 @@ describe("model-first canonical catalog", () => {
       "claude-opus-5",
       "claude-sonnet-5-5",
       "claude-sonnet-5",
-      "okou-1.0-max",
-      "okou-1.0-pro",
       "okou-1.0",
       "deepseek-v4.1-flash",
       "deepseek-v4-flash",
@@ -887,14 +890,10 @@ describe("model-first canonical catalog", () => {
     }
   });
 
-  it.each([
-    ["okou-1.0", "@preset/okou-1-0", "$"],
-    ["okou-1.0-pro", "@preset/okou-1-0-pro", "$$"],
-    ["okou-1.0-max", "@preset/okou-1-0-max", "$$$"],
-  ] as const)(
+  it.each([["okou-1.0", "@preset/okou-1-0", "$"]] as const)(
     "routes %s only through its built-in OpenRouter preset",
     (model, preset, tier) => {
-      expect(getCanonicalModelDisplayName(model)).toMatch(/^Okou 1\.0/u);
+      expect(getCanonicalModelDisplayName(model)).toBe("Auto");
       expect(getBuiltInModelPriceTier(model)).toBe(tier);
       expect(getProvidersForModel(model)).toEqual(["built-in"]);
       expect(getBuiltInModelRouteCandidates(model)).toEqual([
@@ -905,6 +904,20 @@ describe("model-first canonical catalog", () => {
           vendor: "openrouter",
         },
       ]);
+    },
+  );
+
+  it.each([
+    ["okou-1.0-pro", "@preset/okou-1-0-pro", "$$"],
+    ["okou-1.0-max", "@preset/okou-1-0-max", "$$$"],
+  ] as const)(
+    "keeps retired %s billing history without a new route",
+    (model, preset, tier) => {
+      expect(getBuiltInModelPriceTier(model)).toBe(tier);
+      expect(getProvidersForModel(model)).toEqual([]);
+      expect(
+        getModelProviderCodexCatalogForModel(model, preset, "openrouter-codex"),
+      ).toBeUndefined();
     },
   );
 
@@ -947,26 +960,10 @@ describe("model-first canonical catalog", () => {
     {
       model: "okou-1.0",
       preset: "@preset/okou-1-0",
-      displayName: "Okou 1.0",
+      displayName: "Auto",
       sourceModel: "GPT-6 Luna",
       sourceModelId: "openai/gpt-6-luna",
       reasoningEffort: "max",
-    },
-    {
-      model: "okou-1.0-pro",
-      preset: "@preset/okou-1-0-pro",
-      displayName: "Okou 1.0 Pro",
-      sourceModel: "GPT-6 Sol",
-      sourceModelId: "openai/gpt-6-sol",
-      reasoningEffort: "low",
-    },
-    {
-      model: "okou-1.0-max",
-      preset: "@preset/okou-1-0-max",
-      displayName: "Okou 1.0 Max",
-      sourceModel: "GPT-6 Sol",
-      sourceModelId: "openai/gpt-6-sol",
-      reasoningEffort: "high",
     },
   ] as const)(
     "projects Codex metadata for Okou $model to its OpenRouter Preset",
