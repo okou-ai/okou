@@ -447,7 +447,7 @@ describe("GET/PUT /api/model-policies", () => {
       unchanged.body.policies.some((policy) => {
         return policy.model === "claude-sonnet-5-5";
       }),
-    ).toBe(false);
+    ).toBeFalsy();
     expect(unchanged.body.workspaceDefaultModel).toBe(
       LIMITED_FREE1_DEFAULT_RUN_MODEL,
     );

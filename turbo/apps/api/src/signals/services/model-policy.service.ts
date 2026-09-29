@@ -149,7 +149,9 @@ function surfaceSupportsModel(
   surface: SurfaceRouteInfo,
   model: SupportedRunModel,
 ): boolean {
-  if (model === "claude-sonnet-5-5") return false;
+  if (model === "claude-sonnet-5-5") {
+    return false;
+  }
   const providerType = providerTypeForSurface(surface.protocol);
   return (
     providerType !== null &&
