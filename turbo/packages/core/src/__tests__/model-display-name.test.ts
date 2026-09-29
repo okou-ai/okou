@@ -75,11 +75,6 @@ describe("getModelDisplayName", () => {
     expect(getModelDisplayName("ideogram-4")).toBe("Ideogram 4");
   });
 
-  it("does not resolve removed secondary image aliases", () => {
-    expect(getModelDisplayName("flux2-pro")).toBe("flux2-pro");
-    expect(getModelDisplayName("ideogram-v4")).toBe("ideogram-v4");
-  });
-
   it("falls back to the raw model ID when no display name is defined", () => {
     expect(getModelDisplayName("custom/model")).toBe("custom/model");
   });

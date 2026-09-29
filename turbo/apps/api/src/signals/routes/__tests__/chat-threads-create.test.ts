@@ -55,9 +55,6 @@ const vnc = createVncRuntimeApi(context);
 const WORKSPACE_DEFAULT_MODEL = "claude-sonnet-5";
 const OTHER_WORKSPACE_MODEL = "claude-opus-5";
 const PRIORITY_MODEL = "gpt-5.6-sol";
-const EXPLICIT_IMAGE_MODEL = "ideogram/v4";
-const INHERITED_IMAGE_MODEL = "gpt-image-2";
-const MEMBER_IMAGE_MODEL = "fal-ai/flux-pro/v1.1";
 
 interface AgentFixture {
   readonly actor: ApiTestUser;
@@ -166,22 +163,6 @@ function preferenceClient() {
   );
 }
 
-/** The preference route only accepts a session, so Okou run tokens cannot seed it. */
-async function setMemberMediaDefaults(fixture: AgentFixture): Promise<void> {
-  createRouteMocks(context).clerk.session(fixture.userId, fixture.orgId);
-  await accept(
-    preferenceClient().update({
-      headers: { authorization: "Bearer clerk-session" },
-      body: {
-        selectedModel: null,
-        serviceTier: null,
-        selectedImageModel: MEMBER_IMAGE_MODEL,
-      },
-    }),
-    [200],
-  );
-}
-
 function connectorSelectionsClient() {
   return setupApp({ context, routes: chatThreadRoutes })(
     chatThreadConnectorSelectionContract,
@@ -211,23 +192,6 @@ async function readCreatedThreadEvents(threadId: string, token: string) {
   return response.body.events.filter((candidate) => {
     return candidate.kind === "created" && candidate.chatThreadId === threadId;
   });
-}
-
-async function readCreatedThreadEvent(threadId: string, token: string) {
-  const response = await accept(
-    threadsClient().events({
-      headers: { authorization: `Bearer ${token}` },
-      query: {},
-    }),
-    [200],
-  );
-  const event = response.body.events.find((candidate) => {
-    return candidate.kind === "created" && candidate.chatThreadId === threadId;
-  });
-  if (!event) {
-    throw new Error(`Created event not found for thread ${threadId}`);
-  }
-  return event;
 }
 
 describe("POST /api/chat-threads", () => {
@@ -1174,7 +1138,7 @@ describe("POST /api/chat-threads", () => {
     );
   });
 
-  it("creates a titled thread with an Okou run token carrying chat-thread:write and ignores a legacy image model", async () => {
+  it("creates a titled thread with an Okou run token carrying chat-thread:write", async () => {
     const fixture = await seedAgent();
     const token = okouToken({
       userId: fixture.userId,
@@ -1189,7 +1153,6 @@ describe("POST /api/chat-threads", () => {
           agentId: fixture.agentId,
           title: "Deep dive on P2",
           model: OTHER_WORKSPACE_MODEL,
-          imageModel: EXPLICIT_IMAGE_MODEL,
         },
       }),
       [201],
@@ -1220,12 +1183,6 @@ describe("POST /api/chat-threads", () => {
       serviceTier: null,
       computerUseHostId: null,
       cloudBrowserEnabled: false,
-      selectedImageModel: null,
-    });
-    await expect(
-      readCreatedThreadEvent(response.body.id, token),
-    ).resolves.toMatchObject({
-      selectedImageModel: null,
     });
   });
 
@@ -1267,90 +1224,6 @@ describe("POST /api/chat-threads", () => {
     );
     expect(metadataResponse.body.selectedModel).toBe(WORKSPACE_DEFAULT_MODEL);
     expect(metadataResponse.body.serviceTier).toBeNull();
-  });
-
-  it("does not inherit an image model from the run's chat thread", async () => {
-    const fixture = await seedAgent();
-    const sourceToken = okouToken({
-      userId: fixture.userId,
-      orgId: fixture.orgId,
-      capabilities: ["chat-thread:read", "chat-thread:write"],
-    });
-    const source = await accept(
-      threadsClient().create({
-        headers: { authorization: `Bearer ${sourceToken}` },
-        body: {
-          agentId: fixture.agentId,
-          title: "Image model source",
-          model: OTHER_WORKSPACE_MODEL,
-          imageModel: INHERITED_IMAGE_MODEL,
-        },
-      }),
-      [201],
-    );
-    const { runId } = await store.set(
-      seedRun$,
-      {
-        orgId: fixture.orgId,
-        userId: fixture.userId,
-        composeId: fixture.agentId,
-        triggerSource: "web",
-        chatThreadId: source.body.id,
-        selectedModel: OTHER_WORKSPACE_MODEL,
-      },
-      context.signal,
-    );
-    const inheritedToken = okouToken({
-      userId: fixture.userId,
-      orgId: fixture.orgId,
-      capabilities: ["chat-thread:read", "chat-thread:write"],
-      runId,
-    });
-
-    const inherited = await accept(
-      threadsClient().create({
-        headers: { authorization: `Bearer ${inheritedToken}` },
-        body: {
-          agentId: fixture.agentId,
-          title: "Inherited media models",
-        },
-      }),
-      [201],
-    );
-
-    await expect(
-      readCreatedThreadEvent(inherited.body.id, inheritedToken),
-    ).resolves.toMatchObject({
-      selectedImageModel: null,
-    });
-  });
-
-  it("does not pin the member image default when the request omits it", async () => {
-    const fixture = await seedAgent();
-    await setMemberMediaDefaults(fixture);
-    const token = okouToken({
-      userId: fixture.userId,
-      orgId: fixture.orgId,
-      capabilities: ["chat-thread:read", "chat-thread:write"],
-    });
-
-    const response = await accept(
-      threadsClient().create({
-        headers: { authorization: `Bearer ${token}` },
-        body: {
-          agentId: fixture.agentId,
-          title: "Member media defaults",
-          model: OTHER_WORKSPACE_MODEL,
-        },
-      }),
-      [201],
-    );
-
-    await expect(
-      readCreatedThreadEvent(response.body.id, token),
-    ).resolves.toMatchObject({
-      selectedImageModel: null,
-    });
   });
 
   it("uses the member model and priority default and allows an explicit standard override", async () => {

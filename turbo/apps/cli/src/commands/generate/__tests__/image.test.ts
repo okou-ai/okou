@@ -13,7 +13,6 @@ import chalk from "chalk";
 import { server } from "../../../mocks/server";
 import { generateCommand } from "../index";
 import { imageCommand } from "../image";
-import { DEFAULT_IMAGE_MODEL_ENV } from "@okouai/core/image-model-catalog";
 import {
   AVAILABILITY_URL,
   GENERATION_ARTIFACT_ID,
@@ -70,7 +69,6 @@ describe("okou generate image command", () => {
     chalk.level = 0;
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", "test-token");
-    vi.stubEnv(DEFAULT_IMAGE_MODEL_ENV, undefined);
     imageCommand.setOptionValue("visibility", undefined);
   });
 
@@ -249,20 +247,12 @@ describe("okou generate image command", () => {
   });
 
   it.each([
-    { name: "outside a run", insideRun: false, legacyRunDefault: undefined },
-    { name: "inside a run", insideRun: true, legacyRunDefault: undefined },
-    {
-      name: "inside a run with a legacy default-model env var",
-      insideRun: true,
-      legacyRunDefault: "seedream5-lite",
-    },
+    { name: "outside a run", insideRun: false },
+    { name: "inside a run", insideRun: true },
   ])(
     "should leave model and size to the server $name",
-    async ({ insideRun, legacyRunDefault }) => {
+    async ({ insideRun }) => {
       vi.stubEnv("OKOU_TOKEN", insideRun ? buildRunToken() : "test-token");
-      if (legacyRunDefault !== undefined) {
-        vi.stubEnv(DEFAULT_IMAGE_MODEL_ENV, legacyRunDefault);
-      }
       let capturedBody: unknown;
       server.use(
         http.post(IMAGE_URL, async ({ request }) => {
@@ -662,8 +652,7 @@ describe("okou generate image command", () => {
     expect(stdout).toContain("--compiled-prompt");
   });
 
-  it("should report an explicit size in style compilation without a model name", async () => {
-    vi.stubEnv(DEFAULT_IMAGE_MODEL_ENV, "seedream4");
+  it("should report an explicit size in style compilation", async () => {
     await generateCommand.parseAsync([
       "node",
       "cli",
@@ -682,8 +671,6 @@ describe("okou generate image command", () => {
     expect(stdout).toContain(
       "Image model if direct image generation is used: the user's Settings › Built-in tools image model",
     );
-    expect(stdout).not.toContain("seedream4");
-    expect(stdout).not.toContain("--model");
   });
 
   it.each(["ink-storefront", "emboss-deboss"])(
@@ -1023,8 +1010,6 @@ describe("okou generate image command", () => {
     expect(helpOutput).toContain("gpt-image-2.5-flare");
     expect(helpOutput).toContain("gpt-image-2.5-sunburst");
     expect(normalizedHelpOutput).toContain("xhigh and max");
-    expect(helpOutput).not.toContain("gpt-image-1 (default)");
-    expect(helpOutput).not.toContain("--model");
     expect(normalizedHelpOutput).toContain(
       "The image model is not a command option. Built-in generation uses the image model selected in Settings › Built-in tools, or gpt-image-2.5-flare when none is selected.",
     );

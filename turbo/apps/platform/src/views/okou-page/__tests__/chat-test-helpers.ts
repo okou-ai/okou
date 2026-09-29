@@ -388,7 +388,6 @@ export function mockChatLifecycle(
       modelSelection: ModelSelectionRequest;
       serviceTier?: ChatThreadServiceTier | null;
       reasoningEffort?: ReasoningEffort;
-      imageModel?: string;
       connectorSelections?: readonly ConnectorAccountSelection[];
       initialRemoteAccessOverrides?: readonly {
         protocol: "ssh" | "vnc";
@@ -861,7 +860,6 @@ export function mockChatLifecycle(
       modelSelection,
       serviceTier: body.serviceTier,
       reasoningEffort: body.reasoningEffort,
-      imageModel: body.imageModel,
       connectorSelections: body.connectorSelections,
       initialRemoteAccessOverrides: body.initialRemoteAccessOverrides,
     });

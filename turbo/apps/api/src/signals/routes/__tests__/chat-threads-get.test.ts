@@ -108,7 +108,6 @@ describe("GET /api/chat-threads/:id/metadata", () => {
       archived: false,
       computerUseHostId: null,
       cloudBrowserEnabled: false,
-      selectedImageModel: null,
     });
   });
 

@@ -227,7 +227,6 @@ describe("POST /api/welcome-chat-threads", () => {
       title: "Welcome to Okou",
       selectedModel: MODEL,
       serviceTier: null,
-      selectedImageModel: null,
       cloudBrowserEnabled: false,
     });
     const rows = await chat.listThreadEventRows(actor, body.id);
@@ -398,7 +397,7 @@ describe("POST /api/welcome-chat-threads", () => {
     },
   );
 
-  it("inherits the member's chat model at creation without pinning an image model", async () => {
+  it("inherits the member's chat model at creation", async () => {
     const { actor } = await fixture();
     await runs.ensureOrgModelProvider(actor);
     await accept(
@@ -409,7 +408,6 @@ describe("POST /api/welcome-chat-threads", () => {
         body: {
           selectedModel: MODEL,
           serviceTier: null,
-          selectedImageModel: "fal-ai/flux-pro/v1.1",
         },
       }),
       [200],
@@ -424,7 +422,6 @@ describe("POST /api/welcome-chat-threads", () => {
     );
     expect(metadata.body).toMatchObject({
       selectedModel: MODEL,
-      selectedImageModel: null,
     });
   });
 });

@@ -49,7 +49,6 @@ function referencedThread(
     modelSettings: {},
     computerUseHostId: null,
     cloudBrowserEnabled: false,
-    selectedImageModel: null,
   };
 }
 

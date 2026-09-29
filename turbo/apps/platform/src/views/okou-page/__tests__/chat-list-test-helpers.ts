@@ -68,7 +68,6 @@ export function chatListThread(
     serviceTier: null,
     computerUseHostId: null,
     cloudBrowserEnabled: false,
-    selectedImageModel: null,
     ...overrides,
   };
 }
@@ -92,7 +91,6 @@ export function chatListEvent(
     serviceTier: null,
     computerUseHostId: null,
     cloudBrowserEnabled: false,
-    selectedImageModel: null,
     createdAt: `2026-08-01T01:00:${seconds}.000Z`,
     ...overrides,
   };
@@ -253,7 +251,6 @@ export function installActiveChatBoundaries(
       archived: thread.archived,
       computerUseHostId: thread.computerUseHostId ?? null,
       cloudBrowserEnabled: thread.cloudBrowserEnabled ?? false,
-      selectedImageModel: thread.selectedImageModel ?? null,
     });
   });
   context.mocks.api(browserContract.get, ({ respond }) => {

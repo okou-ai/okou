@@ -366,7 +366,6 @@ async function loadScopeProjection(db: SnapshotRootDb, scope: ScopeKey) {
         codexServiceTier: chatThreads.codexServiceTier,
         computerUseHostId: chatThreads.computerUseHostId,
         cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
-        selectedImageModel: chatThreads.selectedImageModel,
       })
       .from(chatThreads)
       .where(
@@ -406,7 +405,6 @@ async function loadScopeProjection(db: SnapshotRootDb, scope: ScopeKey) {
           serviceTier: thread.codexServiceTier === "fast" ? "priority" : null,
           computerUseHostId: thread.computerUseHostId,
           cloudBrowserEnabled: thread.cloudBrowserEnabled,
-          selectedImageModel: thread.selectedImageModel,
         }),
       );
     }

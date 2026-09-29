@@ -259,7 +259,7 @@ describe("CHAT-02: run-level model overrides", () => {
         "connector-contexts",
         "model-provider",
         "user-timezone",
-        "media-models",
+        "image-model",
         "official-workflow",
       ] as const) {
         preparation.release(stage);

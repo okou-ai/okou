@@ -565,9 +565,8 @@ export function createBillingMediaApi(context: TestContext) {
     },
 
     /**
-     * Image generation uses the member's image model setting, never a
-     * request's `model`. Echoes the stored run preference so only the image
-     * model changes.
+     * Image generation uses the member's image model setting. Echoes the
+     * stored run preference so only the image model changes.
      */
     async selectImageModel(actor: ApiTestUser, model: ImageModelId) {
       const client = setupApp({ context, routes: userModelPreferenceRoutes })(

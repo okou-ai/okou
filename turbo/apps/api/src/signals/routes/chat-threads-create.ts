@@ -196,8 +196,6 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!selectedModel) {
     return badRequestMessage("A model selection is required");
   }
-  // `body.data.imageModel` is accepted and ignored: runs use the member's
-  // image model. See `chatThreadCreateBodySchema` for when it can be removed.
   const pin = await resolveModelSelectionPin({
     db: writeDb,
     orgId: auth.orgId,

@@ -1,7 +1,4 @@
-import {
-  DEFAULT_IMAGE_MODEL,
-  DEFAULT_IMAGE_MODEL_ENV,
-} from "@okouai/core/image-model-catalog";
+import { DEFAULT_IMAGE_MODEL } from "@okouai/core/image-model-catalog";
 import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
@@ -11,10 +8,7 @@ import {
   setRetiredOrgMemberImageModelFixture,
 } from "../../../test-fixtures/run-image-model";
 import type { ApiTestUser } from "./helpers/api-bdd";
-import {
-  createChatEventsFixture,
-  claimEnvironment,
-} from "./helpers/chat-events-fixture";
+import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 
 const context = testContext();
 const {
@@ -23,7 +17,6 @@ const {
   entitledNativeChatActor,
   sendChatRun,
   sendWaitingChatInput,
-  claimChatRun,
   waitForRunStatus,
   cancelChatRun,
 } = createChatEventsFixture(context);
@@ -33,19 +26,18 @@ async function imageModelSnapshotActor(): Promise<{
   readonly actor: ApiTestUser;
   readonly agentId: string;
   readonly orgId: string;
-  readonly runnerGroup: string;
 }> {
-  const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+  const { actor, agentId } = await entitledNativeChatActor();
   const orgId = actor.orgId;
   if (!orgId) {
     throw new Error("Expected an entitled chat actor to own an org");
   }
-  return { actor, agentId, orgId, runnerGroup };
+  return { actor, agentId, orgId };
 }
 
 describe("CHAT-02: run image model snapshot", () => {
   it("resolves the member image model, then the global default, into stable snapshots", async () => {
-    const { actor, agentId, runnerGroup } = await imageModelSnapshotActor();
+    const { actor, agentId } = await imageModelSnapshotActor();
 
     const globalDefault = await sendChatRun(actor, {
       agentId,
@@ -74,41 +66,25 @@ describe("CHAT-02: run image model snapshot", () => {
     await expect(
       readRunImageModelSnapshotFixture(afterDefaultChanged.runId),
     ).resolves.toBe("fal-ai/flux-pro/v1.1");
-    await cancelChatRun(actor, afterDefaultChanged.runId);
-
-    // A legacy client can still record a thread image model; runs ignore it.
-    await chat.updateThreadImageModel(
-      actor,
-      globalDefault.threadId,
-      "fal-ai/bytedance/seedream/v4/text-to-image",
-    );
-    const legacyThreadPin = await sendChatRun(actor, {
-      agentId,
-      threadId: globalDefault.threadId,
-      prompt: "a legacy thread image model does not reach the run",
-    });
-    await expect(
-      readRunImageModelSnapshotFixture(legacyThreadPin.runId),
-    ).resolves.toBe("fal-ai/flux-pro/v1.1");
 
     await chat.updateUserModelPreference(actor, null, "fal-ai/nano-banana-2");
     await expect(
-      readRunImageModelSnapshotFixture(legacyThreadPin.runId),
+      readRunImageModelSnapshotFixture(afterDefaultChanged.runId),
     ).resolves.toBe("fal-ai/flux-pro/v1.1");
-    const legacyThreadPinPrompt =
-      (await api.readRun(actor, legacyThreadPin.runId)).appendSystemPrompt ??
-      "";
-    expect(legacyThreadPinPrompt).toContain("# Built-in image model");
-    expect(legacyThreadPinPrompt).toContain(
+    const afterDefaultChangedPrompt =
+      (await api.readRun(actor, afterDefaultChanged.runId))
+        .appendSystemPrompt ?? "";
+    expect(afterDefaultChangedPrompt).toContain("# Built-in image model");
+    expect(afterDefaultChangedPrompt).toContain(
       "Built-in image generation uses `flux-pro-1.1`, from the user's image model setting in Settings › Built-in tools.",
     );
-    expect(legacyThreadPinPrompt).toContain(
+    expect(afterDefaultChangedPrompt).toContain(
       "The model cannot be changed per request. Do not pass `--model` to image generation commands.",
     );
-    expect(legacyThreadPinPrompt).toContain(
+    expect(afterDefaultChangedPrompt).toContain(
       "Image generation through a connected third-party service chooses its model separately; this setting does not apply to that path.\n\n# Restricted Explicit Content",
     );
-    await cancelChatRun(actor, legacyThreadPin.runId);
+    await cancelChatRun(actor, afterDefaultChanged.runId);
 
     const afterSecondChange = await sendChatRun(actor, {
       agentId,
@@ -118,14 +94,6 @@ describe("CHAT-02: run image model snapshot", () => {
     await expect(
       readRunImageModelSnapshotFixture(afterSecondChange.runId),
     ).resolves.toBe("fal-ai/nano-banana-2");
-    const { claim: afterSecondChangeClaim } = await claimChatRun(
-      runnerGroup,
-      afterSecondChange.runId,
-    );
-    // Released CLIs still read the run's image model from this variable.
-    expect(
-      claimEnvironment(afterSecondChangeClaim)[DEFAULT_IMAGE_MODEL_ENV],
-    ).toBe("nano-banana-2");
     await cancelChatRun(actor, afterSecondChange.runId);
   }, 90_000);
 

@@ -82,14 +82,14 @@ describe("CHAT-02: model-first provider policies", () => {
       preparation.arrival("connector-contexts"),
     ]);
     expect(preparation.hasArrived("user-timezone")).toBeFalsy();
-    expect(preparation.hasArrived("media-models")).toBeFalsy();
+    expect(preparation.hasArrived("image-model")).toBeFalsy();
     expect(preparation.hasArrived("official-workflow")).toBeFalsy();
     preparation.release("model-provider");
     preparation.release("connector-contexts");
 
     await Promise.all([
       preparation.arrival("user-timezone"),
-      preparation.arrival("media-models"),
+      preparation.arrival("image-model"),
       preparation.arrival("official-workflow"),
     ]);
     preparation.releaseAll();

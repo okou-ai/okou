@@ -5,7 +5,6 @@
  * API service. Members choose their model in Settings > Built-in tools.
  */
 import {
-  IMAGE_MODEL_IDS,
   isImageModelId,
   type ImageModelId,
 } from "@okouai/api-contracts/contracts/image-models";
@@ -77,12 +76,6 @@ export const IMAGE_MODEL_CONFIGS = {
 } as const satisfies Record<ImageModelId, ImageModelConfig>;
 
 export type ImageModel = ImageModelId;
-
-/** Reserved run environment key carrying the built-in image default alias. */
-export const DEFAULT_IMAGE_MODEL_ENV = "OKOU_DEFAULT_IMAGE_MODEL";
-
-/** All catalog models, in user-facing picker order. */
-export const IMAGE_MODELS: readonly ImageModel[] = IMAGE_MODEL_IDS;
 
 /**
  * Catalog models offered by the user-facing picker, in display order. The

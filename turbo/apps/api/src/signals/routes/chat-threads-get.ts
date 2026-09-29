@@ -30,7 +30,6 @@ const getInner$ = command(async ({ get }, signal: AbortSignal) => {
       archived: chatThreads.archived,
       computerUseHostId: chatThreads.computerUseHostId,
       cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
-      selectedImageModel: chatThreads.selectedImageModel,
     })
     .from(chatThreads)
     .where(
@@ -60,7 +59,6 @@ const getInner$ = command(async ({ get }, signal: AbortSignal) => {
       archived: thread.archived,
       computerUseHostId: thread.computerUseHostId,
       cloudBrowserEnabled: thread.cloudBrowserEnabled,
-      selectedImageModel: thread.selectedImageModel,
     },
   };
 });

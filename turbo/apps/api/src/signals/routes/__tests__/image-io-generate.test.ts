@@ -631,9 +631,9 @@ async function seedImageRun(
   return { runId };
 }
 
-// The endpoint ignores a request's `model`; callers select it through the
-// member's image model setting, as the product does. Echoing the stored run
-// preference leaves everything but the image model unchanged.
+// Callers select the model through the member's image model setting, as the
+// product does. Echoing the stored run preference leaves everything but the
+// image model unchanged.
 async function useImageModel(
   fixture: ImageFixture,
   model: string,
@@ -1272,79 +1272,6 @@ describe("POST /api/image-io/generate", () => {
     });
   });
 
-  it.each([
-    { caseName: "a different catalog model", bodyModel: "gpt-image-1" },
-    { caseName: "an unknown model", bodyModel: "not-a-real-image-model" },
-    { caseName: "a blank model", bodyModel: "   " },
-  ])(
-    "uses the member image model and ignores $caseName in the request body",
-    async ({ bodyModel }) => {
-      const fixture = await seedImageFixture({ credits: 1000 });
-      await useImageModel(fixture, "fal-ai/flux-pro/v1.1");
-      const pricingFixture = await createScopedImagePricing({
-        configured: [...GPT_IMAGE_1_PRICING, ...FLUX_IMAGE_PRICING],
-      });
-      let gptCalls = 0;
-      let fluxCalls = 0;
-      let observedRequestUrl: string | null = null;
-      server.use(
-        http.post(FAL_GPT_IMAGE_1_URL, () => {
-          gptCalls += 1;
-          return HttpResponse.json(falQueueHandle("unexpected-body-model"));
-        }),
-        http.post(FAL_FLUX_PRO_11_URL, ({ request }) => {
-          fluxCalls += 1;
-          observedRequestUrl = request.url;
-          return HttpResponse.json(falQueueHandle("member-image-model"));
-        }),
-        http.get(FAL_FLUX_PRO_11_MEDIA_URL, () => {
-          return new HttpResponse(IMAGE_BYTES, {
-            headers: { "Content-Type": "image/jpeg" },
-          });
-        }),
-      );
-
-      const app = createImageIoTestApp(pricingFixture.resolution);
-      const response = await app.request("/api/image-io/generate", {
-        method: "POST",
-        headers: authHeaders(),
-        body: JSON.stringify({
-          prompt: "the member setting chooses the model",
-          model: bodyModel,
-        }),
-      });
-      expect(response.status).toBe(202);
-      const generationId = readAcceptedGenerationId(
-        await response.json(),
-        "image",
-        fixture.userId,
-      );
-      await postFalWebhook(app, observedRequestUrl, {
-        images: [
-          {
-            url: FAL_FLUX_PRO_11_MEDIA_URL,
-            width: 1024,
-            height: 1024,
-            content_type: "image/jpeg",
-          },
-        ],
-      });
-      await flushWaitUntilForTest();
-
-      const statusResponse = await app.request(
-        `/api/built-in-generations/${generationId}`,
-        { headers: authHeaders() },
-      );
-      expect(statusResponse.status).toBe(200);
-      expect(readGenerationResult(await statusResponse.json())).toMatchObject({
-        model: "fal-ai/flux-pro/v1.1",
-        provider: "fal",
-      });
-      expect(fluxCalls).toBe(1);
-      expect(gptCalls).toBe(0);
-    },
-  );
-
   it("keeps a run's image model snapshot after the member setting changes", async () => {
     const fixture = await seedAdmittedImageRun("fal-ai/flux-pro/v1.1");
     await useImageModel(fixture, "gpt-image-1");
@@ -1375,7 +1302,6 @@ describe("POST /api/image-io/generate", () => {
       headers: { authorization: `Bearer ${okouToken(fixture)}` },
       body: JSON.stringify({
         prompt: "the run keeps the model it announced",
-        model: "gpt-image-1",
       }),
     });
     expect(runResponse.status).toBe(202);

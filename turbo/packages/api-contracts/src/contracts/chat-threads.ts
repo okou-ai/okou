@@ -14,7 +14,6 @@ import {
 } from "./connector-accounts";
 import { apiErrorSchema } from "./errors";
 import { initialRemoteAccessOverrideSchema } from "./chat-remote-access";
-import { imageModelIdSchema } from "./image-models";
 import { requireUserMessageForDraftAttachments } from "./draft-user-message";
 import { hostedArtifactKindSchema } from "./host";
 import { runFailureReasonTokenSchema } from "./run-failure-reasons";
@@ -329,11 +328,6 @@ const chatThreadSnapshotProjectionSchema = z.object({
   serviceTier: chatThreadServiceTierSchema.nullable().default(null),
   computerUseHostId: z.string().uuid().nullable().default(null),
   cloudBrowserEnabled: z.boolean().optional(),
-  // Keep this optional for pre-field browser rows and loose rather than
-  // imageModelIdSchema so a stored model that later leaves the catalog remains
-  // replayable. New write contracts validate against the shared schema.
-  // Follow-up: https://github.com/vm0-ai/vm0/issues/27688
-  selectedImageModel: z.string().nullable().optional(),
 });
 
 export const chatThreadSnapshotArchiveSchema = z.object({
@@ -353,7 +347,6 @@ const chatThreadEventSchema = z.object({
     "model_selection_updated",
     "service_tier_updated",
     "computer_use_host_updated",
-    "image_model_updated",
     "sort_touched",
     "archived",
     "unarchived",
@@ -375,7 +368,6 @@ const chatThreadEventSchema = z.object({
   serviceTier: chatThreadServiceTierSchema.nullable().default(null),
   computerUseHostId: z.string().uuid().nullable().default(null),
   cloudBrowserEnabled: z.boolean().optional(),
-  selectedImageModel: z.string().nullable().optional(),
   createdAt: z.string(),
 });
 
@@ -997,11 +989,6 @@ const chatThreadMetadataSchema = z.object({
   archived: z.boolean(),
   computerUseHostId: z.string().uuid().nullable(),
   cloudBrowserEnabled: z.boolean(),
-  /**
-   * Legacy thread image model, read by older web and app builds. Runs use the
-   * member's image model setting instead; new threads store null.
-   */
-  selectedImageModel: z.string().nullable(),
 });
 
 const chatThreadDraftSchema = z
@@ -1046,22 +1033,9 @@ const chatThreadCreateBodySchema = z.object({
    * preference, use `priority` to enable it, or null for standard.
    */
   serviceTier: chatThreadServiceTierSchema.nullable().optional(),
-  /**
-   * Accepted and ignored. Runs use the member's image model setting, so a
-   * thread no longer pins one. Kept so web and app builds that still send it
-   * are not rejected; remove it once the minimum supported app version no
-   * longer sends it (see docs/deployment-compatibility.md).
-   */
-  imageModel: imageModelIdSchema.optional(),
   /** Concrete override for the selected model; omission keeps its default. */
   reasoningEffort: reasoningEffortSchema.optional(),
   title: z.string().optional(),
-});
-
-const chatThreadImageModelUpdateBodySchema = z.object({
-  /** Image model id, or null. Recorded on the thread; runs ignore it. */
-  model: imageModelIdSchema.nullable(),
-  eventId: chatThreadEventIdSchema.optional(),
 });
 
 const chatThreadModelSelectionUpdateBodySchema = z.object({
@@ -1630,30 +1604,6 @@ export const chatThreadConnectorSelectionContract = c.router({
       404: apiErrorSchema,
     },
     summary: "Clear one chat thread connector account selection",
-  },
-});
-
-/**
- * Legacy: records an image model on a chat thread. Runs no longer read it;
- * they use the member's image model setting. Kept so web and app builds that
- * still call it keep succeeding; remove it once the minimum supported app
- * version no longer calls it (see docs/deployment-compatibility.md).
- */
-export const chatThreadImageModelContract = c.router({
-  update: {
-    method: "POST",
-    path: "/api/chat-threads/:id/image-model",
-    headers: authHeadersSchema,
-    pathParams: chatThreadIdPathParamsSchema,
-    body: chatThreadImageModelUpdateBodySchema,
-    responses: {
-      204: c.noBody(),
-      400: apiErrorSchema,
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-      404: apiErrorSchema,
-    },
-    summary: "Update a chat thread image model",
   },
 });
 

@@ -29,7 +29,6 @@ import {
   mockBillingCapabilities,
   mockOrgModelRoutes,
   selectTemplate,
-  composerModelTrigger,
 } from "./chat-composer-test-helpers.ts";
 
 function setupModels(): void {
@@ -43,7 +42,7 @@ function setupModels(): void {
     selectedModel: "claude-fable-5-1",
     serviceTier: null,
     modelSettings: {},
-    selectedImageModel: "gpt-image-2",
+    selectedImageModel: null,
     updatedAt: "2026-09-07T00:00:00.000Z",
   });
 }
@@ -254,34 +253,6 @@ test("A queued Create message keeps its intent separate from user-authored text"
   await expect(screen.findByText(prompt)).resolves.toBeVisible();
 });
 
-test("Image mode keeps the chat model and sends no image model", async () => {
-  setupModels();
-  const creates: { imageModel?: string; videoModel?: string }[] = [];
-  mockChatLifecycle(context, {
-    onThreadCreate: (body) => {
-      creates.push(body);
-    },
-  });
-  const editor = await setupComposer();
-  await chooseCommand(editor, "A quiet garden /", "image");
-  expect(button("Add style")).toBeInTheDocument();
-  // Images follow the member setting, so Create offers no image model of its
-  // own and the composer keeps naming the chat model.
-  await composerModelTrigger("Claude Fable 5.1");
-  expect(
-    screen.queryByRole("combobox", { name: "Image models" }),
-  ).not.toBeInTheDocument();
-  await waitFor(() => {
-    expect(button("Send")).toBeEnabled();
-  });
-  click(button("Send"));
-  await waitFor(() => {
-    expect(creates).toHaveLength(1);
-  });
-  expect(creates[0]?.imageModel).toBeUndefined();
-  expect(creates[0]?.videoModel).toBeUndefined();
-});
-
 const createTemplateScenarios = [
   {
     mode: "image",
@@ -331,6 +302,7 @@ test.each(createTemplateScenarios)(
       throw new Error(`Expected a ${mode} template`);
     }
     await chooseCommand(editor, "Our launch /", mode);
+    expect(button("Claude Fable 5.1")).toBeInTheDocument();
     click(button(pickerLabel));
     await screen.findByRole("dialog");
     click(await screen.findByLabelText(`${selectLabel} ${first.title}`));

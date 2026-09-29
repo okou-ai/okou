@@ -54,6 +54,7 @@ readonly CHAT_EVENT_V8_PATH=.github/rollback-floors/chat-event-v8
 readonly RETIRED_PREFERENCE_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1274_drop_retired_voice_reasoning_collection_columns.sql
 readonly RETIRED_INTEGRATION_AGENT_TABLES_DROP_PATH=turbo/packages/db/src/migrations/1282_drop_retired_integration_agent_tables.sql
 readonly VIDEO_MODEL_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1283_drop_retired_video_model_columns.sql
+readonly IMAGE_MODEL_THREAD_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1287_drop_image_model_thread_columns.sql
 
 fail() {
   echo "::error::$*" >&2
@@ -225,6 +226,20 @@ if [[ ! "$video_model_columns_drop_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 if ! git merge-base --is-ancestor "$video_model_columns_drop_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the video model column drop: ${video_model_columns_drop_commit}."
+fi
+
+# Migration 1287 drops selected_image_model from chat_threads and
+# chat_thread_events and removes the image_model_updated event kind. Earlier
+# APIs still declare the columns, so every insert, bare select and bare
+# returning on those tables names them, and their raw thread-event insert names
+# selected_image_model explicitly.
+image_model_thread_columns_drop_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$IMAGE_MODEL_THREAD_COLUMNS_DROP_PATH" | sed -n '1p')
+if [[ ! "$image_model_thread_columns_drop_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged image model thread column drop on main."
+fi
+if ! git merge-base --is-ancestor "$image_model_thread_columns_drop_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the image model thread column drop: ${image_model_thread_columns_drop_commit}."
 fi
 
 # Release 7 stopped writing piLaunchConfig.apiFirstTurn. Its Runners, Guests

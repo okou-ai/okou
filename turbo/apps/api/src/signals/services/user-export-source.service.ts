@@ -243,7 +243,6 @@ async function collectThread(
           archived: chatThreads.archived,
           renamedAt: chatThreads.renamedAt,
           selectedModel: chatThreads.selectedModel,
-          selectedImageModel: chatThreads.selectedImageModel,
           modelSettings: chatThreads.modelSettings,
           codexServiceTier: chatThreads.codexServiceTier,
         })

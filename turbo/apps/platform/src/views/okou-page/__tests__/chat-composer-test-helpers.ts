@@ -274,7 +274,6 @@ export function mockAgent(options?: {
 
 export function mockThread(options?: {
   selectedModel?: string | null;
-  selectedImageModel?: string | null;
   activeRunIds?: string[];
   messages?: MockChatEventInput[];
 }): void {
@@ -302,7 +301,6 @@ export function mockThread(options?: {
             selectedModel: options?.selectedModel ?? null,
             serviceTier: null,
             computerUseHostId: null,
-            selectedImageModel: options?.selectedImageModel ?? null,
           },
         ],
         latestEventId: null,

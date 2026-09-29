@@ -343,8 +343,6 @@ const mintOptimisticThreadWithEvent$ = command(
       serviceTier: args.serviceTier,
       computerUseHostId: args.computerUseHostId,
       cloudBrowserEnabled: args.cloudBrowserEnabled,
-      // Image models are a member setting; new threads never carry a pin.
-      selectedImageModel: null,
     });
   },
 );

@@ -9,7 +9,6 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import chalk from "chalk";
-import { DEFAULT_IMAGE_MODEL_ENV } from "@okouai/core/image-model-catalog";
 import { generateCommand } from "../index";
 import { websiteCommand } from "../website";
 
@@ -192,25 +191,6 @@ describe("okou generate website command", () => {
     expect(imageWorkflow).toContain("never call `okou generate image`");
     expect(imageWorkflow).toContain("or a template image wrapper directly");
     expect(imageWorkflow).not.toContain("a fourth is rejected");
-  });
-
-  it("should let the image batch own its settings with a default image model", async () => {
-    vi.stubEnv(DEFAULT_IMAGE_MODEL_ENV, "flux-pro-1.1");
-
-    await generateCommand.parseAsync([
-      "node",
-      "cli",
-      "website",
-      "--prompt",
-      "observability launch site",
-    ]);
-
-    const stdout = mockConsoleLog.mock.calls.flat().join("\n");
-    expect(stdout).toContain(
-      "let the command own generation settings/concurrency/retry",
-    );
-    expect(stdout).not.toContain("use `flux-pro-1.1` by default");
-    expect(stdout).not.toContain("run default image model");
   });
 
   it("should use the generated base slug when no stable site slug is provided", async () => {

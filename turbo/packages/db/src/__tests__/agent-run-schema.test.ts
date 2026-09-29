@@ -29,8 +29,6 @@ describe("agentRuns circular foreign keys", () => {
     const { schema } = await import("../index");
     const { agentRuns } =
       await import("../schema/agent-run-session-conversation");
-    const { chatThreadEvents, chatThreadEventKind } =
-      await import("../schema/chat-thread-event");
     const { chatThreads } = await import("../schema/chat-thread");
     const { orgMembersMetadata } =
       await import("../schema/org-members-metadata");
@@ -107,15 +105,12 @@ describe("agentRuns circular foreign keys", () => {
     expect(agentRuns.runnerVersion.hasDefault).toBe(false);
     for (const column of [
       agentRuns.selectedImageModel,
-      chatThreadEvents.selectedImageModel,
-      chatThreads.selectedImageModel,
       orgMembersMetadata.selectedImageModel,
     ]) {
       expect(column.name).toBe("selected_image_model");
       expect(column.notNull).toBe(false);
       expect(column.hasDefault).toBe(false);
     }
-    expect(chatThreadEventKind.enumValues).toContain("image_model_updated");
 
     const metadataPresenceCheck = agentRunConfig.checks.find((check) => {
       return check.name === "agent_runs_metadata_presence_check";

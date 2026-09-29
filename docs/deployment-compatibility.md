@@ -1,5 +1,110 @@
 # Deployment Compatibility
 
+## Image model thread columns and `image_model_updated` dropped
+
+Final step of "Image model becomes a member setting" (#37246, released
+2026-09-28 23:53 UTC). The owner chose to remove the tombstone tests, dead
+projections and the whole compatibility layer in one change.
+
+- Migration `1287_drop_image_model_thread_columns` deletes the remaining
+  `image_model_updated` thread events (five production rows per MaskDB on
+  2026-09-29 01:13 UTC, the latest from 2026-09-28 05:25 UTC, before #37246
+  was released) and recreates `chat_thread_event_kind` without that value in a
+  single table rewrite of `chat_thread_events`. At that observation the tables
+  held 147,134 events and 162,361 threads; only the five retired events are
+  deleted. It then drops `selected_image_model` from both tables. MaskDB's
+  index metadata shows no index on either column. The committed schema and
+  migration history have no dependent constraint; MaskDB does not expose the
+  constraint catalog or either column, so live constraints and non-null counts
+  cannot be queried through it. The member setting
+  `org_members_metadata.selected_image_model` and the run snapshot
+  `agent_runs.selected_image_model` stay.
+- `POST /api/chat-threads/:id/image-model` and its contract are removed. The
+  create body no longer declares `imageModel`, and thread metadata, thread
+  events and snapshot projections no longer carry `selectedImageModel`. The
+  contract, core replay, API, Platform and CLI no longer know the
+  `image_model_updated` kind.
+- `POST /api/image-io/generate` no longer declares `model`. The request schema
+  remains `.passthrough()`: unknown keys are retained, not stripped or rejected.
+  A released CLI that still sends `model` is accepted and the value is never
+  read: the route passes the resolved model (run snapshot, else
+  member setting, else default) to `parseImageOptions`. Stored job requests
+  still carry their normalized model and are re-parsed by the provider webhook,
+  so `parseImageModel` and the alias table stay.
+- Runs no longer receive `OKOU_DEFAULT_IMAGE_MODEL`, and
+  `DEFAULT_IMAGE_MODEL_ENV` is removed.
+
+Release decision: the owner accepted shipping this without first raising the
+Web client floor.
+
+- The floor is App 0.982.0, the last build before #37246. Its snapshot and
+  event schemas already treat `selectedImageModel` as optional, it does not
+  validate thread metadata responses, and a missing value reads as no thread
+  pin, so removing the field itself does not break thread-list sync. Fresh
+  projections without a pin display the member setting. Cached pins and old
+  server snapshot archives can still display stale selections until the new
+  App is loaded or the cached snapshot is replaced. Archives shed the field
+  when compacted again. Changing the composer image picker registers
+  an optimistic pin and then returns `404`; that optimistic state remains until
+  reload. Runs have used the member setting since #37246. Its create
+  requests still send `imageModel`, which the create body schema strips.
+- Older CLIs inside a run detect the sandbox token and omit `model` unless
+  explicitly given `--model`; the
+  server chooses the model in either case.
+  Without `OKOU_DEFAULT_IMAGE_MODEL` their size default falls back to their
+  built-in model (`1024x1024`, or `auto` with `--image-url`) instead of `auto`
+  for Seedream 5 Lite. For a member whose setting is Seedream 5 Lite, an image
+  text-to-image command with neither `--size` nor an explicit Seedream Lite
+  `--model` fails size validation with `400`. Editing with
+  `--image-url` still defaults to `auto`; the agent can retry text-to-image with
+  `--size auto` or an explicit supported size. Other
+  models are unaffected. Their snapshot and event schemas treat
+  `selectedImageModel` as optional, so chat thread reads are unaffected.
+
+Release prerequisite: release #37268 published CLI 9.373.0 but skipped
+[production Runner rebuild](https://github.com/okou-ai/okou/actions/runs/36498080195/job/109188223120)
+and
+[promotion](https://github.com/okou-ai/okou/actions/runs/36498080195/job/109188968213).
+The preceding verified production rootfs
+[installed CLI 9.371.0](https://github.com/okou-ai/okou/actions/runs/36426838612/job/108946499812).
+A rootfs-installed CLI does not expire with an individual run, so a two-hour
+drain does not establish its retirement. Before production release, verify that
+serving rootfs images use CLI 9.373.0 or later, or obtain explicit owner
+acceptance of continued Seedream 5 Lite default-size failures on older installed
+CLIs. This cleanup does not change CLI launch paths or the installed-CLI floor.
+
+Old and new versions during deploy:
+
+- Migrations run before API promotion. The previous API still declares the
+  columns, so its inserts and bare `select()`/`returning()` on `chat_threads`
+  and `chat_thread_events` receive `42703` until it drains, as with `1283`. Its
+  raw thread-event insert names `selected_image_model` explicitly, so every
+  thread event it writes (create, rename, pin, model selection, archive) fails
+  in that window. Both are hot tables; release this change at low traffic.
+- Previous API with the new App or CLI: the previous API still sends
+  `selectedImageModel`, which the object schemas strip. The new App never calls
+  the image-model route. Before the migration, any retained
+  `image_model_updated` event is rejected by the new clients and the new API's
+  event parser. The migration must precede their promotion; after migration,
+  the previous API instead has the column errors above until it drains.
+- New API with App 0.982.0: see the release decision above.
+- Cached state: a cached snapshot or event that still has
+  `selectedImageModel` parses and the key is stripped. A browser that cached an
+  `image_model_updated` event fails its strict IndexedDB read. The existing
+  degraded path then loads the server snapshot and replaces the local snapshot
+  and event log, with no Sentry report. The CLI cache discards an unparseable
+  file and rebuilds it from the snapshot in the same way. A deleted event cursor
+  receives `410` and reloads the snapshot unless it still equals the valid
+  snapshot watermark.
+- iOS keeps its `imageModelUpdated` wire case, and its decoders do not
+  require `selectedImageModel`; it never called the image-model route. The
+  new event responses and freshly compacted projections omit both.
+
+Rollback promotes artifacts without restoring schema, so
+`resolve-production-rollback-target.sh` rejects API targets that predate the
+canonical main commit that added `1287`. Recovering past that commit requires a
+forward-fix migration that restores the columns and the enum value.
+
 ## Chat Event V8 (2026-09-28)
 
 This is step 2 of the Chat Event V8 plan. `CURRENT_CHAT_EVENT_SCHEMA_VERSION`
@@ -69,35 +174,11 @@ switch still chooses between the #37229 panel and the legacy menu with its
 effort chip, and both list only chat models. The undocumented `birefnet` and
 `clarity-upscaler` transform models are removed.
 
-Compatibility contracts kept for older Web App and iOS builds:
-
-- `POST /api/chat-threads/:id/image-model` still validates, records the value
-  and its `image_model_updated` event, and returns `204`, so older clients
-  reconcile their optimistic event. Runs ignore the value.
-- `POST /api/chat-threads` still accepts `imageModel` and returns `201`, but
-  ignores it. New threads, from every creation path, store a null image model
-  and no longer inherit the calling run's thread image model.
-- Thread responses and `created` events keep `selectedImageModel` (now null for
-  new threads), and the `image_model_updated` event kind remains readable
-  (`ios/Okou/Networking/ChatWire.swift`).
-
-Compatibility contracts kept for released CLIs and Runners:
-
-- `POST /api/image-io/generate` ignores the body `model` instead of rejecting
-  it. The model is the calling run's snapshot, else the member setting, else
-  the default. A released CLI that sends `--model` therefore gets the member's
-  model; a size valid only for the requested model can now fail validation,
-  and the agent retries without it. The undocumented transform models
-  (`birefnet` background removal and `clarity-upscaler`) are removed; a
-  released CLI that names them now gets the member's model instead. A
-  transform job still in flight across the deploy fails when its provider
-  webhook is parsed; recorded usage rows are unaffected.
-- Runs still receive `OKOU_DEFAULT_IMAGE_MODEL` with the snapshotted alias.
-  Released CLIs use it to omit `--model` and to pick `auto` as the Seedream 5
-  Lite default size. The current CLI has no `--model` option, sends no size
-  unless `--size` is given, and lets the API apply the model's default size.
-- New CLIs against an older API omit `model`, so the older API applies the
-  run snapshot or its own default, as it did for an omitted model.
+The compatibility layer this release kept for older Web App builds, iOS and
+released CLIs (the thread image-model route, the create body `imageModel`, the
+thread `selectedImageModel` projection, the `image_model_updated` event kind,
+the image generation body `model` and `OKOU_DEFAULT_IMAGE_MODEL`) is removed by
+"Image model thread columns and `image_model_updated` dropped" above.
 
 `PUT /api/user-model-preference` still requires the run preference. A request
 that echoes the stored `selectedModel` and `serviceTier` without a
@@ -105,18 +186,6 @@ that echoes the stored `selectedModel` and `serviceTier` without a
 chat model has left the policy can still change their image model. Older APIs
 reject that case with `400`; the new Settings dropdown then reports a save
 error until the API is promoted.
-
-Follow-up cleanup, in order:
-
-1. Raise the minimum supported app version past builds that pin a thread image
-   model, then delete the image-model route, its contract, and the create
-   body `imageModel` field.
-2. Once no supported CLI reads it, stop injecting `OKOU_DEFAULT_IMAGE_MODEL`
-   and remove the ignored `model` field from the image generation contract.
-3. Drop `chat_threads.selected_image_model` in two steps: first stop
-   declaring and emitting `selectedImageModel` on thread responses and events
-   once no supported client reads it, then drop the column in a later release
-   after the rollback floor passes the first step.
 
 ## SSH/VNC Agent-grant interface contraction (#36360)
 

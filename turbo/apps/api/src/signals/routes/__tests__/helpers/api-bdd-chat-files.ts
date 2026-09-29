@@ -8,7 +8,6 @@ import {
   chatThreadComputerUseHostContract,
   chatThreadDraftContract,
   chatThreadEventsContract,
-  chatThreadImageModelContract,
   chatThreadMarkAgentReadContract,
   chatThreadMarkReadContract,
   chatThreadMarkUnreadContract,
@@ -82,7 +81,6 @@ import { artifactCatalogRoutes } from "../../artifact-catalog";
 import { chatThreadComputerUseHostRoutes } from "../../chat-threads-computer-use-host";
 import { chatThreadCreateRoutes } from "../../chat-threads-create";
 import { chatThreadDeleteRoutes } from "../../chat-threads-delete";
-import { chatThreadImageModelRoutes } from "../../chat-threads-image-model";
 import { chatThreadMarkReadRoutes } from "../../chat-threads-mark-read";
 import { chatThreadModelSelectionRoutes } from "../../chat-threads-model-selection";
 import { chatThreadPatchRoutes } from "../../chat-threads-patch";
@@ -229,7 +227,6 @@ const chatFilesRoutes = [
   ...chatThreadUnpinRoutes,
   ...chatThreadArchiveRoutes,
   ...chatThreadRenameRoutes,
-  ...chatThreadImageModelRoutes,
   ...chatThreadModelSelectionRoutes,
   ...chatThreadComputerUseHostRoutes,
   ...chatThreadsArtifactsSyncRoutes,
@@ -276,18 +273,6 @@ interface EventIdQuery {
 
 function unpinQuery(query: EventIdQuery) {
   return query.eventId === undefined ? {} : { eventId: query.eventId };
-}
-
-/** The image model pin body; an omitted event id stays omitted so the
- * route keeps generating one for itself. */
-function generationModelBody<TModel extends string>(
-  model: TModel | null,
-  options: EventIdQuery | undefined,
-) {
-  return {
-    model,
-    ...(options?.eventId === undefined ? {} : { eventId: options.eventId }),
-  };
 }
 
 export function persistedAttachment(
@@ -441,10 +426,6 @@ export function createChatFilesBddApi(context: TestContext) {
 
   function threadModelSelectionClient() {
     return chatFilesApp(context)(chatThreadModelSelectionContract);
-  }
-
-  function threadImageModelClient() {
-    return chatFilesApp(context)(chatThreadImageModelContract);
   }
 
   function userModelPreferenceClient() {
@@ -1153,63 +1134,6 @@ export function createChatFilesBddApi(context: TestContext) {
         }),
         [204],
       );
-    },
-
-    async updateThreadImageModel(
-      actor: ApiTestUser,
-      threadId: string,
-      imageModel: ImageModelId | null,
-      options?: EventIdQuery,
-    ): Promise<void> {
-      await accept(
-        threadImageModelClient().update({
-          headers: authenticate(context, actor),
-          params: { id: threadId },
-          body: generationModelBody(imageModel, options),
-        }),
-        [204],
-      );
-    },
-
-    async requestUpdateThreadImageModel(
-      actor: ApiTestUser | null,
-      threadId: string,
-      imageModel: ImageModelId | null,
-      statuses: readonly (204 | 400 | 401 | 403 | 404)[],
-      options?: EventIdQuery,
-    ) {
-      return await accept(
-        threadImageModelClient().update({
-          headers: authenticate(context, actor),
-          params: { id: threadId },
-          body: generationModelBody(imageModel, options),
-        }),
-        statuses,
-      );
-    },
-
-    /**
-     * The image model pin writer driven through an app whose
-     * **operation** signal the caller owns, the same mechanism
-     * {@link readCursorWritesWithOperationSignal} documents. The requests are
-     * returned unnarrowed so a caller can assert the off-contract response a
-     * cancelled operation produces.
-     */
-    generationModelWritesWithOperationSignal(signal: AbortSignal) {
-      const operationApp = chatFilesOperationApp(context, signal);
-      return {
-        async updateImageModel(
-          actor: ApiTestUser,
-          threadId: string,
-          imageModel: ImageModelId | null,
-        ) {
-          return await operationApp(chatThreadImageModelContract).update({
-            headers: authenticate(context, actor),
-            params: { id: threadId },
-            body: { model: imageModel },
-          });
-        },
-      };
     },
 
     async updateUserModelPreference(
