@@ -40,16 +40,6 @@ export const testSshConnectionStateActionBodySchema = z.discriminatedUnion(
           "failed",
         ]),
         chat: z.boolean(),
-        access: z.boolean(),
-      })
-      .strict(),
-    z
-      .object({
-        action: z.literal("set-agent-access"),
-        orgId: z.string().min(1),
-        userId: z.string().min(1),
-        agentId: z.uuid(),
-        enabled: z.boolean(),
       })
       .strict(),
     z

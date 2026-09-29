@@ -135,6 +135,38 @@ async function resetDatabase(dbUrl: string): Promise<void> {
   });
 }
 
+async function validateRetiredAgentGrantTables(dbUrl: string): Promise<void> {
+  const client = new Client({ connectionString: dbUrl });
+  await client.connect();
+  try {
+    const { rows } = await client.query<{
+      sshGrant: string | null;
+      vncGrant: string | null;
+      sshHost: string | null;
+      vncHost: string | null;
+      vncCredential: string | null;
+    }>(`
+      SELECT
+        to_regclass('public.agent_ssh_access')::text AS "sshGrant",
+        to_regclass('public.agent_vnc_access')::text AS "vncGrant",
+        to_regclass('public.ssh_connections')::text AS "sshHost",
+        to_regclass('public.vnc_connections')::text AS "vncHost",
+        to_regclass('public.vnc_credentials')::text AS "vncCredential"
+    `);
+    assert.deepEqual(rows, [
+      {
+        sshGrant: null,
+        vncGrant: null,
+        sshHost: "ssh_connections",
+        vncHost: "vnc_connections",
+        vncCredential: "vnc_credentials",
+      },
+    ]);
+  } finally {
+    await client.end();
+  }
+}
+
 async function validateExpandedBrowserSchema(dbUrl: string): Promise<void> {
   console.log("=== Phase 2.4: Validate expanded browser schema ===\n");
   const client = new Client({ connectionString: dbUrl });
@@ -3101,6 +3133,7 @@ async function main(): Promise<void> {
     await validateAgentRunOfficialWorkflowProvenanceSchema(dbUrl1);
     await validateOfficialAutomationResultEmailSchema(dbUrl1);
     await validateExpandedBrowserSchema(dbUrl1);
+    await validateRetiredAgentGrantTables(dbUrl1);
     await validateCanonicalChatEventStorage(dbUrl1);
     await validateChatEventContextPointerConstraints(dbUrl1);
     await validateConnectorCatalogFinalConstraints(dbUrl1);
@@ -3128,6 +3161,7 @@ async function main(): Promise<void> {
     await validateAgentRunLaunchSnapshotSchema(dbUrl2);
     await validateAgentRunOfficialWorkflowProvenanceSchema(dbUrl2);
     await validateOfficialAutomationResultEmailSchema(dbUrl2);
+    await validateRetiredAgentGrantTables(dbUrl2);
     await validateConnectorAutomaticOAuthConstraints(dbUrl2);
 
     // Step 4: Restore original migrations

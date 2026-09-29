@@ -127,13 +127,42 @@ client calling those routes cannot gain new broad host authority; the new API
 has no handler for them. Current SSH/VNC host inventory and private Runner
 checks continue to require the Run's chat permission.
 
-The physical `agent_ssh_access` and `agent_vnc_access` tables remain in this
-release. Production migrations precede API promotion, so a still-serving older
-API may read or write those rows during the overlap. Existing rows never
-authorize access on the new API. The owner does not require preserving rollback
-to a pre-cutover API for this cleanup. Physical table removal (#37272) is a
-separate deployment: first confirm every serving API instance that references
-the tables has drained; do not infer drain from this PR's merge or deployment.
+The physical `agent_ssh_access` and `agent_vnc_access` tables remain in the
+#36360 release. Production migrations precede API promotion, so a still-serving
+older API could have read or written those rows during the overlap. Existing
+rows never authorize access on the new API. The owner does not require
+preserving rollback to a pre-cutover API for this cleanup.
+
+### Agent-grant table contraction (#37272)
+
+Migration `1287_hot_firebrand` drops only `agent_ssh_access` and
+`agent_vnc_access`. The API no longer reads or writes either table, including
+VNC owner cleanup and the test runtime endpoint; current chat-scoped SSH/VNC
+host authority and owner configuration cleanup remain. Historical migration
+replay retains fixtures that create these tables in isolated historical schemas.
+
+**Pre-deployment evidence (2026-09-29 01:16 UTC; not a migration receipt):**
+#37274 merged as `b40684e` and its descendant `3ce1bc2` was promoted to
+production in [API promotion job
+109188222899](https://github.com/okou-ai/okou/actions/runs/36498080195/job/109188222899)
+(completed 2026-09-28 23:51:50 UTC). Vercel's READY production target
+`dpl_Bhc1WpzjbKXqkDEUvDbtH2GZvinQ` at `020a4d8c` contains that commit;
+all four production aliases (`api.okou.ai`, `api.vm0.ai`, `vm0-api.vm6.ai`,
+`vm0-api-prod.vm6.ai`) and cache-bypassed build-info requests on both public
+domains agreed. More than one hour elapsed since the earlier safe promotion,
+exceeding even Vercel's documented [30-minute extended function execution
+limit](https://vercel.com/docs/functions/configuring-functions/duration).
+This supports a completed _serving invocation_ drain, unlike checking a merge
+or one current request alone. A later rollback to an old API would invalidate
+this evidence.
+
+**Deployment gate:** Immediately before deploying this migration, confirm the
+production target and every serving/rollback-eligible API contain #37274 and
+that old invocations have drained. Because schema migrations run before API
+promotion, never deploy this drop while a pre-#37274 API may serve. After the
+drop, the rollback floor is an API that does not access either retired table;
+pre-#37274 binaries are not valid rollback targets. This entry is a rollout
+plan, not a claim that the migration has run in production.
 
 ## Video model columns and `video_model_updated` dropped (#37249)
 

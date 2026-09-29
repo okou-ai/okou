@@ -91,7 +91,6 @@ async function createRuntime(
         triggerSource: "web",
         status: "running",
         chat: true,
-        access: true,
         ...overrides,
       },
     }),
@@ -192,14 +191,11 @@ describe("SSH authority invalidation", () => {
   it("notifies all active owner Runs after committed edits, rotations, reset and deletion", async () => {
     const group = `ssh-cache-${randomUUID()}`;
     const f = await fixture({ runnerGroup: group });
-    const withoutGrant = await createRuntime(f, {
-      runnerGroup: group,
-      access: false,
-    });
+    const secondRun = await createRuntime(f, { runnerGroup: group });
     await createRuntime(f, { runnerGroup: group, status: "completed" });
     await fixture({ runnerGroup: `other-${randomUUID()}` });
     authenticate(f);
-    const expected = [f.runId, withoutGrant.runId].map((runId) => {
+    const expected = [f.runId, secondRun.runId].map((runId) => {
       return [
         "ssh-authority-invalidated",
         { runId, connectionId: f.connectionId },
@@ -353,29 +349,6 @@ describe("SSH authority invalidation", () => {
       ],
     ]);
   });
-
-  it("invalidates legacy grants without removing chat host authority", async () => {
-    const f = await fixture({ runnerGroup: `ssh-cache-${randomUUID()}` });
-    await createRuntime(f, { runnerGroup: `other-agent-${randomUUID()}` });
-    context.mocks.ably.publish.mockClear();
-    await accept(
-      stateClient().action({
-        body: {
-          action: "set-agent-access",
-          orgId: f.orgId,
-          userId: f.userId,
-          agentId: f.agentId,
-          enabled: false,
-        },
-      }),
-      [200],
-    );
-    expect(context.mocks.ably.publish.mock.calls).toStrictEqual([
-      ["ssh:changed", { orgId: f.orgId }],
-      ["ssh-authority-invalidated", { runId: f.runId, connectionId: null }],
-    ]);
-    await expect(resolve(f)).resolves.toMatchObject({ outcome: "resolved" });
-  });
 });
 
 async function resolve(
@@ -416,20 +389,6 @@ async function pin(
   );
   return r.body;
 }
-async function access(f: Fixture, enabled: boolean) {
-  await accept(
-    stateClient().action({
-      body: {
-        action: "set-agent-access",
-        orgId: f.orgId,
-        userId: f.userId,
-        agentId: f.agentId,
-        enabled,
-      },
-    }),
-    [200],
-  );
-}
 async function list(f: Fixture) {
   authenticate(f);
   return (await accept(config().list({ headers: sessionHeaders }), [200])).body
@@ -442,11 +401,10 @@ beforeEach(() => {
 });
 
 describe("chat thread SSH authority", () => {
-  it("uses current per-host defaults and overrides, ignores Agent grants, and denies Runs without a chat", async () => {
+  it("uses current per-host defaults and overrides and denies Runs without a chat", async () => {
     const f = await fixture(
       {
         chat: true,
-        access: true,
         runnerGroup: `thread-ssh-${randomUUID()}`,
       },
       false,
@@ -470,9 +428,7 @@ describe("chat thread SSH authority", () => {
       [200],
     );
     await expect(resolve(f)).resolves.toMatchObject({ outcome: "resolved" });
-    await access(f, false);
-    await expect(resolve(f)).resolves.toMatchObject({ outcome: "resolved" });
-    const withoutChat = await createRuntime(f, { chat: false, access: true });
+    const withoutChat = await createRuntime(f, { chat: false });
     await expect(resolve({ ...f, ...withoutChat })).resolves.toStrictEqual({
       outcome: "unavailable",
     });
@@ -1038,12 +994,11 @@ describe("SSH connection observations", () => {
 });
 
 describe("official Runner SSH authority", () => {
-  it("allows an ordinary owner without feature overrides and ignores legacy grant revocation", async () => {
+  it("allows an ordinary owner and preserves a pinned connection", async () => {
     const f = await fixture();
     await expect(resolve(f)).resolves.toMatchObject({ outcome: "resolved" });
     await expect(pin(f)).resolves.toMatchObject({ outcome: "pinned" });
     expect((await list(f))[0]?.learnedHostKey).toStrictEqual(hostKey);
-    await access(f, false);
     const kms = useSecretKmsProbe();
     await expect(resolve(f)).resolves.toMatchObject({ outcome: "resolved" });
     expect(kms.decryptCalls).toBe(2);
@@ -1255,7 +1210,7 @@ describe("official Runner SSH authority", () => {
   });
 
   it.each([...triggerSourceSchema.options, null])(
-    "denies a %s Run without a chat thread despite an enabled host default and Agent grant",
+    "denies a %s Run without a chat thread despite an enabled host default",
     async (triggerSource) => {
       const f = await fixture({ triggerSource, chat: false });
       await expect(resolve(f)).resolves.toStrictEqual({
@@ -1267,11 +1222,10 @@ describe("official Runner SSH authority", () => {
     },
   );
 
-  it("denies inactive, unclaimed or ungranted Runs without a chat thread", async () => {
+  it("denies inactive or unclaimed Runs without a chat thread", async () => {
     const f = await fixture({ triggerSource: "automation-event", chat: false });
     const kms = useSecretKmsProbe();
     const denied: Partial<RuntimeBody>[] = [
-      { access: false },
       { runnerId: null, heartbeatGeneration: null },
       { status: "pending" },
       { status: "completed" },

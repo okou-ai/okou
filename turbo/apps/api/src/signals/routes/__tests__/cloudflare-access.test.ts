@@ -333,7 +333,6 @@ async function runtime(owner: Owner, overrides: Partial<RuntimeBody> = {}) {
         triggerSource: "web",
         status: "running",
         chat: true,
-        access: false,
         ...overrides,
       },
     }),
@@ -1824,7 +1823,7 @@ describe("protected SSH authority", () => {
   it("rejects foreign Run owners before decrypting protected credentials", async () => {
     const f = await fixture();
     const foreign = owner({ orgId: f.orgId });
-    const r = await runtime(foreign, { agentId: f.agentId, access: true });
+    const r = await runtime(foreign, { agentId: f.agentId });
     const kms = useSecretKmsProbe();
     const result = await accept(
       runner().resolve({

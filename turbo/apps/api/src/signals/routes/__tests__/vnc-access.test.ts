@@ -92,7 +92,7 @@ describe("live chat VNC Run inventory", () => {
   it("filters live chat inventory by VNC access and the exact SSH dependency", async () => {
     const f = await api.fixture({
       defaultEnabled: false,
-      runtime: { chat: true, access: false },
+      runtime: { chat: true },
     });
     if (!f.threadId) {
       throw new Error("Missing fixture chat thread");
@@ -568,7 +568,7 @@ describe("live chat VNC Run inventory", () => {
   );
 
   it("keeps VNC inventory Agent-token and capability-specific", async () => {
-    const f = await api.fixture({ runtime: { access: true } });
+    const f = await api.fixture();
     expect((await accept(inventory().list({ headers }), [403])).status).toBe(
       403,
     );

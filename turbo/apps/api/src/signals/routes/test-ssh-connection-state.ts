@@ -5,7 +5,6 @@ import {
   type TestSshConnectionStateActionBody,
 } from "@okouai/api-contracts/contracts/test-ssh-connection-state";
 import { sshConnections } from "@okouai/db/schema/ssh-connection";
-import { agentSshAccess } from "@okouai/db/schema/agent-ssh-access";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/schema/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
@@ -24,7 +23,6 @@ import { bodyResultOf } from "../context/request";
 import { writeDb$, type Db } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import { matchSshConnectionCredentials } from "../services/ssh-connection.service";
-import { publishSshRuntimeInvalidation } from "../services/ssh-runtime-wakeup.service";
 import { createDeferredPromise } from "../utils";
 import {
   isTestEndpointAllowed,
@@ -223,11 +221,6 @@ async function createRuntime(
       runnerGroup: body.runnerGroup,
       runnerHeartbeatGeneration: body.heartbeatGeneration,
     });
-    if (body.access) {
-      await tx
-        .insert(agentSshAccess)
-        .values({ orgId: body.orgId, userId: body.userId, agentId });
-    }
   });
   return {
     status: 200 as const,
@@ -239,35 +232,6 @@ async function createRuntime(
       sandboxToken: generateSandboxToken(body.userId, runId, body.orgId),
     },
   };
-}
-
-async function setAgentAccess(
-  db: Db,
-  body: TestSshConnectionStateAction<"set-agent-access">,
-) {
-  if (body.enabled) {
-    await db
-      .insert(agentSshAccess)
-      .values({ orgId: body.orgId, userId: body.userId, agentId: body.agentId })
-      .onConflictDoNothing();
-  } else {
-    await db
-      .delete(agentSshAccess)
-      .where(
-        and(
-          eq(agentSshAccess.orgId, body.orgId),
-          eq(agentSshAccess.userId, body.userId),
-          eq(agentSshAccess.agentId, body.agentId),
-        ),
-      );
-  }
-  await publishSshRuntimeInvalidation(db, {
-    orgId: body.orgId,
-    userId: body.userId,
-    agentId: body.agentId,
-    connectionId: null,
-  });
-  return { status: 200 as const, body: { ok: true as const } };
 }
 
 async function setLearnedHostKey(
@@ -336,9 +300,6 @@ const mutateSshConnectionState$ = command(
       }
       case "create-runtime": {
         return await createRuntime(db, bodyResult.data);
-      }
-      case "set-agent-access": {
-        return await setAgentAccess(db, bodyResult.data);
       }
       case "set-learned-host-key": {
         return await setLearnedHostKey(db, bodyResult.data);

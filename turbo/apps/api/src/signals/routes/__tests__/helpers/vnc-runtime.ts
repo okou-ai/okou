@@ -150,7 +150,6 @@ export function createVncRuntimeApi(context: TestContext) {
           triggerSource: "web",
           status: "running",
           chat: true,
-          access: false,
           ...overrides,
         },
       }),

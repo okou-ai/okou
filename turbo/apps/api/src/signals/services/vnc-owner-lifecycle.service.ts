@@ -1,8 +1,6 @@
 import { vncConnections } from "@okouai/db/schema/vnc-connection";
 import { vncCredentials } from "@okouai/db/schema/vnc-credential";
-import { agentVncAccess } from "@okouai/db/schema/agent-vnc-access";
-import { agents } from "@okouai/db/schema/agent";
-import { and, asc, eq, inArray, sql, type SQL } from "drizzle-orm";
+import { and, asc, eq, sql, type SQL } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
 import { isClerkResourceNotFound, type ClerkClient } from "../external/clerk";
@@ -76,27 +74,10 @@ async function deleteVncRows(
   tx: Tx,
   connectionCondition: SQL | undefined,
   credentialCondition: SQL | undefined,
-  grantCondition: SQL | undefined,
 ): Promise<void> {
-  if (!connectionCondition || !credentialCondition || !grantCondition) {
+  if (!connectionCondition || !credentialCondition) {
     throw new Error("VNC cleanup requires an exact owner scope");
   }
-  // Membership cleanup later locks Runs. Hold their grant parents first so
-  // Agent deletion cannot hold a Run while waiting on our grant deletion.
-  await tx
-    .select({ id: agents.id })
-    .from(agents)
-    .where(
-      inArray(
-        agents.id,
-        tx
-          .select({ id: agentVncAccess.agentId })
-          .from(agentVncAccess)
-          .where(grantCondition),
-      ),
-    )
-    .orderBy(asc(agents.id))
-    .for("share");
   // Overlapping user/organization cleanup locks rows in the same global order.
   await tx
     .select({ id: vncConnections.id })
@@ -110,20 +91,8 @@ async function deleteVncRows(
     .where(credentialCondition)
     .orderBy(asc(vncCredentials.id))
     .for("update");
-  await tx
-    .select({ agentId: agentVncAccess.agentId })
-    .from(agentVncAccess)
-    .where(grantCondition)
-    .orderBy(
-      asc(agentVncAccess.orgId),
-      asc(agentVncAccess.userId),
-      asc(agentVncAccess.agentId),
-    )
-    .for("update");
   await tx.delete(vncConnections).where(connectionCondition);
   await tx.delete(vncCredentials).where(credentialCondition);
-  // Grants may exist with no connections.
-  await tx.delete(agentVncAccess).where(grantCondition);
 }
 
 /** Protect writes against user, organization, and membership cleanup. */
@@ -159,7 +128,6 @@ export async function eraseVncOwner(
       tx,
       eq(vncConnections.userId, scope.userId),
       eq(vncCredentials.userId, scope.userId),
-      eq(agentVncAccess.userId, scope.userId),
     );
     return;
   }
@@ -168,7 +136,6 @@ export async function eraseVncOwner(
       tx,
       eq(vncConnections.orgId, scope.orgId),
       eq(vncCredentials.orgId, scope.orgId),
-      eq(agentVncAccess.orgId, scope.orgId),
     );
     return;
   }
@@ -182,10 +149,6 @@ export async function eraseVncOwner(
     and(
       eq(vncCredentials.orgId, scope.orgId),
       eq(vncCredentials.userId, scope.userId),
-    ),
-    and(
-      eq(agentVncAccess.orgId, scope.orgId),
-      eq(agentVncAccess.userId, scope.userId),
     ),
   );
 }
