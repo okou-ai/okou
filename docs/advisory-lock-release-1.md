@@ -234,8 +234,13 @@ appropriate cursor in their existing atomic commit. `fc1e3a4` carries exact
 automation snapshots through preparation, publication and compensation: a
 delayed prior enable cannot bind a new baseline, delete a newer automation or
 roll back a later enable. Official staged source changes publish their cursor
-with the final conditional source update. The remaining enable and
-official reconciliation handle propagation is still implementation work.
+with the final conditional source update. `b1a69f9`, `1f9bf46` and `f802a1f`
+prepare an ordinary disabled automation's remote watch while it remains
+disabled, then atomically enable it and establish its new cursor baseline in
+one owning command. Account, member and thread deletion invalidate preparation,
+including disabled rows. Verified session membership does not depend on an
+eventually populated membership cache. Already-enabled source/account changes
+and official reconciliation handle propagation remain implementation work.
 Migration 1290 is temporary compatibility for the inspected outgoing unconditional
 cursor writers, subject to the implementation and deployment gates in the
 [credential/watch inventory](./advisory-lock-release-1-credentials.md).
@@ -250,10 +255,15 @@ commit. Social managed/fixed-price preparation now also precedes the transaction
 its job snapshot is revalidated. Allowance reads select only the latest covering
 short/weekly windows for the finite event anchors. Grant preparation pages
 outside the commit and selects the actual purchased-before-bonus debit prefix,
-with input and earlier-grant validation at commit. The required prefix can still
-be large; expired-lot clamping remains one atomic operation and is an unfinished
-bound. Splitting that clamp changes results when a purchase interleaves. The
-event limit alone does not certify a short transaction.
+with input and earlier-grant validation at commit. Active organization lots use
+the current debit's first-expiring prefix, prepared outside the transaction.
+`c2b50e1` refreshes allowance evidence on every preparation retry and rolls stale
+entitlement evidence back through the same typed conflict. `9bd4453` explicitly
+captures and publishes Social billing attribution in the receipt's owning
+transaction, retaining the job, money and reservation atomicity. The required
+grant/lot prefix can still be large; expired-lot clamping remains one atomic
+operation and is an unfinished bound. Splitting that clamp changes results when
+a purchase interleaves. The event limit alone does not certify a short transaction.
 
 Individual source branch checks are evidence for those revisions only. The
 combined head must pass its own relevant static checks, types, API tests and

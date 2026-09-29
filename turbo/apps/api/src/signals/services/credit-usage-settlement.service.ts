@@ -98,7 +98,10 @@ const commitUsageBatch$ = command(
   async ({ set }, args: SettlementBatchArgs, signal: AbortSignal) => {
     const { orgId, refresh, batch } = args;
     const db = set(writeDb$);
-    const { startedAt, work } = settlementObservation(performance.now());
+    const { startedAt, work: initialWork } = settlementObservation(
+      performance.now(),
+    );
+    const work = { ...initialWork };
     const result = await db.transaction(async (tx) => {
       await tx.execute(usageEventCompactionLockSql("shared"));
       work.lockWaitMs = Math.round(performance.now() - startedAt);
