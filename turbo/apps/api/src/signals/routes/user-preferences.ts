@@ -1,3 +1,4 @@
+import { synchronizeMorningBriefTimezone$ } from "../services/morning-brief-timezone.service";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { DEFAULT_USER_TIMEZONE, isValidTimeZone } from "@okouai/core/timezone";
 import { and, eq } from "drizzle-orm";
@@ -20,7 +21,6 @@ import { waitUntil } from "../context/wait-until";
 import type { RouteEntry } from "../route-entry";
 import {
   ensureMorningBriefDefaultEnabled$,
-  synchronizeMorningBriefTimezone$,
   type EnsureMorningBriefDefaultEnabledResult,
 } from "../services/morning-brief-preference.service";
 import {

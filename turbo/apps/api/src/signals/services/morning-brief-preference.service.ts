@@ -1,3 +1,4 @@
+import { morningBriefPreferenceCompatibilitySql } from "./morning-brief-preference-sql";
 import {
   MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
   MORNING_BRIEF_OFFICIAL_DEFINITION_NAME,
@@ -8,14 +9,13 @@ import { isValidTimeZone } from "@okouai/core/timezone";
 import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { delay } from "signal-timers";
 import { z } from "zod";
 
 import { clerk$ } from "../external/clerk";
 import { settle } from "../utils";
 import { nowDate } from "../../lib/time";
-import { calculateNextRun } from "./time-automation";
 import {
   completeMorningBriefEnrollment,
   loadMorningBriefEnrollment,
@@ -38,11 +38,7 @@ import {
   type MorningBriefMigrationState,
 } from "./morning-brief-migration-state.service";
 import { executeRawRows } from "../../lib/db-raw-rows";
-import {
-  applyMorningBriefLogicalChoice,
-  lockMorningBriefNativeScheduleForWrite,
-  materializeMorningBriefNativeSchedule,
-} from "./morning-brief-native-schedule.service";
+import { materializeMorningBriefNativeSchedule } from "./morning-brief-native-schedule.service";
 import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import {
   installOfficialWorkflow$,
@@ -258,13 +254,7 @@ async function withMorningBriefPreferenceLock<T>(
     const result = await db.transaction(async (tx) => {
       const rows = await executeRawRows(
         tx,
-        // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-        sql`SELECT pg_try_advisory_xact_lock(
-          hashtextextended(
-            ${`morning_brief_preference:${args.orgId}:${args.member.userId}`},
-            0
-          )
-        ) AS acquired`,
+        morningBriefPreferenceCompatibilitySql(morningBriefOwner(args)),
         lockRowSchema,
       );
       if (rows[0]?.acquired !== true) {
@@ -878,80 +868,5 @@ export const updateMorningBriefPreference$ = command(
     );
     signal.throwIfAborted();
     return result;
-  },
-);
-
-async function synchronizeTimezoneWhileLocked(
-  db: Db,
-  identity: MorningBriefMemberIdentity,
-): Promise<void> {
-  const timezone = await loadOfficialWorkflowUserTimezone(db, identity);
-  if (!timezone || !isValidTimeZone(timezone)) {
-    return;
-  }
-  const { installation } = await loadMorningBriefOwnership(db, identity);
-  if (!installation) {
-    return;
-  }
-  const workflowId = installation.id;
-  await db.transaction(async (tx) => {
-    // Durable authority first, and the owner key while no row exists, so this
-    // schedule-only edit keeps the documented order and a first materialization
-    // cannot publish the timezone it is replacing.
-    await lockMorningBriefNativeScheduleForWrite(tx, identity);
-    const rows = await tx
-      .select()
-      .from(workflowAutomations)
-      .where(
-        and(
-          eq(workflowAutomations.workflowId, workflowId),
-          eq(
-            workflowAutomations.officialBlueprintKey,
-            MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
-          ),
-        ),
-      )
-      .for("update");
-    // A timezone-only edit is deliberately **not** a revocation: the durable
-    // native row keeps its epoch, and an occurrence that already holds the
-    // obligation keeps its frozen anchor and window. Its one settlement then
-    // computes the next occurrence from the schedule as edited here.
-    await applyMorningBriefLogicalChoice(tx, identity, { timezone }, nowDate());
-    for (const row of rows) {
-      if (
-        row.scheduleType !== "cron" ||
-        !row.cronExpression ||
-        row.timezone === timezone
-      ) {
-        continue;
-      }
-      const currentTime = nowDate();
-      await tx
-        .update(workflowAutomations)
-        .set({
-          timezone,
-          nextRunAt:
-            row.enabled && row.nextRunAt
-              ? calculateNextRun(row.cronExpression, timezone, currentTime)
-              : null,
-          updatedAt: currentTime,
-        })
-        .where(eq(workflowAutomations.id, row.id));
-    }
-  });
-}
-
-/** Updating the timezone never enables a paused schedule or schedules over an in-flight run. */
-export const synchronizeMorningBriefTimezone$ = command(
-  async (
-    { set },
-    args: MorningBriefPreferenceArgs,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    const db = set(writeDb$);
-    const identity = morningBriefOwner(args);
-    await withMorningBriefPreferenceLock(db, args, signal, async () => {
-      await synchronizeTimezoneWhileLocked(db, identity);
-    });
   },
 );
