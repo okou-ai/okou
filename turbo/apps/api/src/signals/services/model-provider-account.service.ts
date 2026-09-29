@@ -28,9 +28,9 @@ import {
   isNull,
   ne,
   not,
-  notExists,
   or,
   sql,
+  type SQL,
 } from "drizzle-orm";
 
 import { settle } from "../utils";
@@ -1018,16 +1018,6 @@ function unreferencedProviderCondition(providerId: string) {
   );
 }
 
-/** Legacy run-terminal cleanup still owns this caller's transaction. */
-async function deleteProviderWithoutAccounts(
-  db: Db,
-  providerId: string,
-): Promise<void> {
-  await db
-    .delete(modelProviders)
-    .where(unreferencedProviderCondition(providerId));
-}
-
 type PersonalAccountDisconnectSelection =
   | { readonly kind: "account"; readonly id: string }
   | {
@@ -1349,56 +1339,69 @@ export function visiblePersonalModelProviderCondition() {
   )`;
 }
 
-/** Called inside the terminal transaction after the run update. A retained
- * account is deleted once no live run references it; a concurrent same-identity
- * reconnect that revived the row makes the conditional delete a no-op. */
-export async function cleanupDisconnectedPersonalModelProviderAccounts(
-  db: Db,
+/** The caller executes both statements in its terminal transaction. The first
+ * locks only the affected existing parents, in the same order as account
+ * publication. The second gets a fresh statement snapshot after any publisher
+ * finishes, so deleting an empty parent cannot cascade a new sibling account.
+ * The builder receives only the actual terminal transition's business values. */
+export function disconnectedPersonalAccountCleanupSql(
   runs: readonly {
     readonly orgId: string;
     readonly userId: string;
     readonly modelProviderId: string | null;
   }[],
-): Promise<void> {
-  const ids = [
-    ...new Set(
-      runs.flatMap((run) => {
-        return run.modelProviderId ? [run.modelProviderId] : [];
-      }),
-    ),
-  ].sort();
-  if (ids.length === 0) {
-    return;
-  }
-  const deleted = await db
-    .delete(modelProviderAccounts)
-    .where(
-      and(
-        inArray(modelProviderAccounts.id, ids),
-        isNotNull(modelProviderAccounts.disconnectedAt),
-        notExists(
-          db
-            .select({ id: agentRuns.id })
-            .from(agentRuns)
-            .where(
-              and(
-                eq(agentRuns.modelProviderId, modelProviderAccounts.id),
-                eq(agentRuns.orgId, modelProviderAccounts.orgId),
-                eq(agentRuns.userId, modelProviderAccounts.userId),
-                inArray(agentRuns.status, ["pending", "running"]),
-              ),
-            ),
-        ),
-      ),
-    )
-    .returning({ modelProviderId: modelProviderAccounts.modelProviderId });
-  for (const providerId of new Set(
-    deleted.map((row) => {
-      return row.modelProviderId;
+): readonly SQL[] {
+  const accounts = new Map(
+    runs.flatMap((run) => {
+      return run.modelProviderId ? [[run.modelProviderId, run] as const] : [];
     }),
-  )) {
-    await deleteProviderWithoutAccounts(db, providerId);
+  );
+  if (accounts.size === 0) {
+    return [];
   }
+  const affectedAccounts =
+    or(
+      ...[...accounts].map(([accountId, run]) => {
+        return and(
+          eq(modelProviderAccounts.id, accountId),
+          eq(modelProviderAccounts.orgId, run.orgId),
+          eq(modelProviderAccounts.userId, run.userId),
+        );
+      }),
+    ) ?? sql`false`;
+  return [
+    sql`SELECT ${modelProviders.id} FROM ${modelProviders}
+      WHERE ${modelProviders.id} IN (
+        SELECT ${modelProviderAccounts.modelProviderId}
+        FROM ${modelProviderAccounts} WHERE ${affectedAccounts}
+      )
+      ORDER BY ${modelProviders.id} FOR UPDATE`,
+    sql`WITH deleted_accounts AS (
+      DELETE FROM ${modelProviderAccounts}
+      WHERE ${affectedAccounts}
+        AND ${modelProviderAccounts.disconnectedAt} IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM ${agentRuns}
+          WHERE ${agentRuns.modelProviderId} = ${modelProviderAccounts.id}
+            AND ${agentRuns.orgId} = ${modelProviderAccounts.orgId}
+            AND ${agentRuns.userId} = ${modelProviderAccounts.userId}
+            AND ${agentRuns.status} IN ('pending', 'running')
+        )
+      RETURNING ${modelProviderAccounts.id},
+        ${modelProviderAccounts.modelProviderId}
+    )
+    DELETE FROM ${modelProviders}
+    WHERE ${modelProviders.id} IN (
+      SELECT model_provider_id FROM deleted_accounts
+    ) AND NOT EXISTS (
+      SELECT 1 FROM ${modelProviderAccounts}
+      WHERE ${modelProviderAccounts.modelProviderId} = ${modelProviders.id}
+        AND NOT EXISTS (
+          SELECT 1 FROM deleted_accounts
+          WHERE deleted_accounts.id = ${modelProviderAccounts.id}
+        )
+    )`,
+  ];
 }
 
 interface SubscriptionCredentialOwner {

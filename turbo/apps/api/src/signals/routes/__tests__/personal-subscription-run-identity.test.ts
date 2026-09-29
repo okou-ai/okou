@@ -820,6 +820,9 @@ describe("personal subscription run identity", () => {
     ).toStrictEqual([accountB]);
     await runs.requestCancelRun(f.actor, first, [200]);
     await runs.requestCancelRun(f.actor, second, [200]);
+    expect(
+      (await support.listPersonalModelProviders(f.actor, [200])).body,
+    ).toMatchObject({ modelProviders: [{ id: accountB }] });
   }, 20_000);
 
   it("reuses the same Claude identity across a reconnect", async () => {
@@ -834,6 +837,9 @@ describe("personal subscription run identity", () => {
       Authorization: `Bearer ${f.connected.token}`,
     });
     await runs.requestCancelRun(f.actor, runId, [200]);
+    expect(
+      (await support.listPersonalModelProviders(f.actor, [200])).body,
+    ).toMatchObject({ modelProviders: [{ id: captured }] });
   });
 
   it.each([
