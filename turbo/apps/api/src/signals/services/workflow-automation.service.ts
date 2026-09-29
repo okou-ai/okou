@@ -107,6 +107,7 @@ import {
 import { resolveGoogleFormsAutomationConnectorId } from "./google-forms-automation-account.service";
 import {
   ensureGoogleFormsWatchForUser$,
+  readGoogleFormsActivationAccount$,
   hasEnabledGoogleFormsConsumer$,
   prepareGoogleFormsResponseEventConfigForPersist,
 } from "./google-forms-automation-event.service";
@@ -5989,6 +5990,156 @@ async function finalizeAndPublishEnabledWorkflowAutomation(
   signal.throwIfAborted();
   return { kind: "ok", summary };
 }
+const activateInactiveGoogleFormsAutomation$ = command(
+  async (
+    { set },
+    args: {
+      readonly previousAutomation: AutomationRow;
+      readonly memberUserId: string;
+      readonly nextRunAt: Date | null;
+      readonly inheritedAutonomyBudget?: number;
+    },
+    signal: AbortSignal,
+  ): Promise<AutomationResult> => {
+    const connectorId = await set(
+      readGoogleFormsActivationAccount$,
+      {
+        orgId: args.previousAutomation.orgId,
+        userId: args.previousAutomation.ownerUserId,
+        workflowId: args.previousAutomation.workflowId,
+      },
+      signal,
+    );
+    if (connectorId === null) {
+      return {
+        kind: "bad-request",
+        message:
+          "Connect Google Forms before using Google Forms response automations",
+      };
+    }
+    const eventConfig = {
+      ...googleFormsResponseSubmittedEventConfigSchema.parse(
+        args.previousAutomation.eventConfig,
+      ),
+      connectorId,
+    };
+    const prepared = await set(
+      ensureGoogleFormsWatchForUser$,
+      {
+        orgId: args.previousAutomation.orgId,
+        userId: args.previousAutomation.ownerUserId,
+        formId: eventConfig.form.id,
+        connectorId: eventConfig.connectorId,
+        resetAutomationId: args.previousAutomation.id,
+        automationSnapshot: workflowAutomationSnapshot(args.previousAutomation),
+        activation: {
+          automationId: args.previousAutomation.id,
+          workflowId: args.previousAutomation.workflowId,
+          eventConfig,
+          nextRunAt: args.nextRunAt,
+          inheritedAutonomyBudget: args.inheritedAutonomyBudget,
+        },
+      },
+      signal,
+    );
+    if (prepared.kind !== "ok") {
+      return {
+        kind: prepared.kind === "superseded" ? "conflict" : "bad-request",
+        message: prepared.message,
+      };
+    }
+    if (!prepared.enabledAutomation) {
+      throw new Error(
+        "Google Forms activation did not commit an enabled automation",
+      );
+    }
+    const row = prepared.enabledAutomation;
+    const db = set(writeDb$);
+    const [binding] = await db
+      .select({ chatThreadId: workflowUserAutomationThreads.chatThreadId })
+      .from(workflowUserAutomationThreads)
+      .where(
+        and(
+          eq(workflowUserAutomationThreads.orgId, row.orgId),
+          eq(workflowUserAutomationThreads.userId, row.ownerUserId),
+          eq(workflowUserAutomationThreads.workflowId, row.workflowId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    const chatThreadId = binding?.chatThreadId ?? null;
+    await publishThreadBoundWorkflowAutomationChanged(
+      args.memberUserId,
+      chatThreadId,
+    );
+    signal.throwIfAborted();
+    const summary = eventRowToSummary(row, chatThreadId);
+    if (!summary) {
+      throw new Error(
+        "Google Forms activation returned an invalid event source",
+      );
+    }
+    return { kind: "ok", summary };
+  },
+);
+
+function enabledWorkflowAutomationFailure(
+  enabled: Awaited<ReturnType<typeof persistEnabledWorkflowAutomation>>,
+): AutomationActionFailure | null {
+  if (enabled.status === "team-required") {
+    return workflowWebhookTeamRequiredResult();
+  }
+  if (enabled.status === "conflict") {
+    return {
+      kind: "conflict",
+      message: OFFICIAL_WORKFLOW_RECONFIGURATION_IN_PROGRESS_MESSAGE,
+    };
+  }
+  if (enabled.status === "gmail-unavailable") {
+    return {
+      kind: "bad-request",
+      message: "Connect Gmail before using Gmail event automations",
+    };
+  }
+  if (enabled.status === "google-calendar-unavailable") {
+    return {
+      kind: "bad-request",
+      message:
+        "Connect Google Calendar before using Google Calendar event automations",
+    };
+  }
+  if (enabled.status === "notion-unavailable") {
+    return {
+      kind: "bad-request",
+      message: "Connect Notion before using Notion event automations",
+    };
+  }
+  if (enabled.status === "notion-account-changed") {
+    return {
+      kind: "bad-request",
+      message:
+        "Notion account selection changed; retry enabling the automation",
+    };
+  }
+  if (enabled.status === "stripe-unavailable") {
+    return { kind: "bad-request", message: enabled.message };
+  }
+  if (enabled.status === "google-forms-unavailable") {
+    return {
+      kind: "bad-request",
+      message:
+        "Connect Google Forms before using Google Forms response automations",
+    };
+  }
+  if (enabled.status === "google-meet-unavailable") {
+    return {
+      kind: "bad-request",
+      message: "Connect Google Meet before using Google Meet event automations",
+    };
+  }
+  return null;
+}
+
 const persistAndReconcileEnabledWorkflowAutomation$ = command(
   async (
     { set },
@@ -6002,6 +6153,22 @@ const persistAndReconcileEnabledWorkflowAutomation$ = command(
     },
     signal: AbortSignal,
   ): Promise<AutomationResult> => {
+    if (
+      args.automation.eventType === "google-forms-response-submitted" &&
+      !args.automation.enabled &&
+      args.automation.officialBlueprintKey === null
+    ) {
+      return await set(
+        activateInactiveGoogleFormsAutomation$,
+        {
+          previousAutomation: args.automation,
+          memberUserId: args.memberUserId,
+          nextRunAt: args.nextRunAt,
+          inheritedAutonomyBudget: args.inheritedAutonomyBudget,
+        },
+        signal,
+      );
+    }
     const db = set(writeDb$);
     const accountProjection = await prepareEnabledAutomationAccountProjection(
       db,
@@ -6031,66 +6198,13 @@ const persistAndReconcileEnabledWorkflowAutomation$ = command(
       },
       signal,
     );
-    if (enabled.status === "team-required") {
-      signal.throwIfAborted();
-      return workflowWebhookTeamRequiredResult();
+    signal.throwIfAborted();
+    const failure = enabledWorkflowAutomationFailure(enabled);
+    if (failure) {
+      return failure;
     }
-    if (enabled.status === "conflict") {
-      signal.throwIfAborted();
-      return {
-        kind: "conflict",
-        message: OFFICIAL_WORKFLOW_RECONFIGURATION_IN_PROGRESS_MESSAGE,
-      };
-    }
-    if (enabled.status === "gmail-unavailable") {
-      signal.throwIfAborted();
-      return {
-        kind: "bad-request",
-        message: "Connect Gmail before using Gmail event automations",
-      };
-    }
-    if (enabled.status === "google-calendar-unavailable") {
-      signal.throwIfAborted();
-      return {
-        kind: "bad-request",
-        message:
-          "Connect Google Calendar before using Google Calendar event automations",
-      };
-    }
-    if (enabled.status === "notion-unavailable") {
-      signal.throwIfAborted();
-      return {
-        kind: "bad-request",
-        message: "Connect Notion before using Notion event automations",
-      };
-    }
-    if (enabled.status === "notion-account-changed") {
-      signal.throwIfAborted();
-      return {
-        kind: "bad-request",
-        message:
-          "Notion account selection changed; retry enabling the automation",
-      };
-    }
-    if (enabled.status === "stripe-unavailable") {
-      signal.throwIfAborted();
-      return { kind: "bad-request", message: enabled.message };
-    }
-    if (enabled.status === "google-forms-unavailable") {
-      signal.throwIfAborted();
-      return {
-        kind: "bad-request",
-        message:
-          "Connect Google Forms before using Google Forms response automations",
-      };
-    }
-    if (enabled.status === "google-meet-unavailable") {
-      signal.throwIfAborted();
-      return {
-        kind: "bad-request",
-        message:
-          "Connect Google Meet before using Google Meet event automations",
-      };
+    if (enabled.status !== "ok") {
+      throw new Error("Unclassified automation enable result");
     }
     if (!enabled.row) {
       throw new Error("Failed to enable workflow automation");

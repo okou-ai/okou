@@ -641,6 +641,14 @@ describe("Google Forms Pub/Sub webhook", () => {
             }
             if (!replacedInterval) {
               replacedInterval = true;
+              const preparing = await accept(
+                automationsClient().get({
+                  headers: authHeaders(),
+                  params: { id: automationId },
+                }),
+                [200],
+              );
+              expect(preparing.body.enabled).toBeFalsy();
               // A real user changes the lifecycle while the provider request is in flight.
               await accept(
                 automationsClient().disable({

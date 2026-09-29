@@ -48,6 +48,8 @@ const disableDepartedMemberAutomations$ = command(
   ): Promise<void> => {
     const db = set(writeDb$);
     await db.transaction(async (tx) => {
+      // Disabled Forms may be preparing a re-enable outside the database.
+      // Touch their observation too so departure rejects that stale publication.
       const disabled = await tx
         .update(workflowAutomations)
         .set({ enabled: false, updatedAt: args.currentTime })
@@ -55,7 +57,6 @@ const disableDepartedMemberAutomations$ = command(
           and(
             eq(workflowAutomations.orgId, args.orgId),
             eq(workflowAutomations.ownerUserId, args.userId),
-            eq(workflowAutomations.enabled, true),
             isNull(workflowAutomations.officialBlueprintKey),
           ),
         )
