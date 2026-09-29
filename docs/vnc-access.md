@@ -17,13 +17,13 @@ The feature remains unavailable until a separate activation decision.
 
 ## Supported profiles and rollout state
 
-| Boundary                                 | X509Vnc                                                                   | X509Plain                                                                 | Activation meaning                     |
-| ---------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------- | -------------------------------------- |
-| Rust RFB engine                          | Supported and independently exercised against the pinned TigerVNC fixture | Supported and independently exercised against the pinned TigerVNC fixture | Protocol evidence only                 |
-| Private API and current Runner           | Exact `vnc_password` / `x509_vnc` pair                                    | Exact `username_password` / `x509_plain` pair                             | Runtime capability, not owner exposure |
-| Owner API, app and Agent inventory       | Exposed                                                                   | Exposed                                                                   | Available only behind `VncAccess`      |
-| Runner without the advertised exact pair | Supported                                                                 | `unsupported_profile` before KMS                                          | Fail closed; no downgrade              |
-| Production switch                        | Disabled                                                                  | Disabled                                                                  | Separate activation decision           |
+| Boundary                           | X509None                                     | X509Vnc                                      | X509Plain                                     | Activation meaning                     |
+| ---------------------------------- | -------------------------------------------- | -------------------------------------------- | --------------------------------------------- | -------------------------------------- |
+| Rust RFB engine                    | Independently exercised with pinned TigerVNC | Independently exercised with pinned TigerVNC | Independently exercised with pinned TigerVNC  | Protocol evidence only                 |
+| Private API and current Runner     | Exact `none` / `x509_none` pair              | Exact `vnc_password` / `x509_vnc` pair       | Exact `username_password` / `x509_plain` pair | Runtime capability, not owner exposure |
+| Owner API, app and Agent inventory | Exposed only by explicit selection           | Exposed                                      | Exposed                                       | Available only behind `VncAccess`      |
+| Older X509Vnc-only Runner          | `unsupported_profile` before KMS             | Supported                                    | `unsupported_profile` before KMS              | Fail closed; no downgrade              |
+| Production switch                  | Disabled                                     | Disabled                                     | Disabled                                      | Separate activation decision           |
 
 X509None is also an exact `none` / `x509_none` pair for direct and saved-SSH
 routes. The RFB engine has TigerVNC fixture coverage. Owner/API/Runner support
@@ -190,9 +190,10 @@ The **RFB destination host** and **RFB destination port** identify the socket
 the VNC client opens. For an SSH route, they are resolved and reached from the
 selected SSH server, not from the Runner. The SSH server must therefore have
 network access to that destination. SSH authenticates and encrypts only the
-Runner-to-SSH-server hop; the selected VeNCrypt profile independently protects
-and authenticates the onward RFB connection. Switching routes preserves the
-draft endpoint, security, credential and SSH selection instead of rewriting
+Runner-to-SSH-server hop. On the onward RFB connection, X509None verifies the
+server and encrypts the session without authenticating the VNC client;
+X509Vnc and X509Plain also authenticate the client. Switching routes preserves
+the draft endpoint, security, credential and SSH selection instead of rewriting
 them.
 
 Select a saved VNC credential or create one for password-backed profiles.
