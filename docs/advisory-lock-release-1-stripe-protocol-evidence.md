@@ -230,3 +230,64 @@ verified Stripe behavior, not invent conditional mutation guarantees.
 Only after that common protocol exists can the retained advisory acquisitions
 be classified solely as outgoing-writer compatibility. The two-release plan
 remains unchanged; this unresolved implementation is part of Release 1.
+
+## Replacing every schedule before initialization
+
+A narrower candidate is valid to investigate and is not disproved merely by
+Stripe requiring two requests. Each schedule writer releases the attached
+schedule it observed, creates its own candidate with `from_subscription`, and
+initializes only that exact candidate. A competing writer must release an
+uninitialized candidate before creating its replacement; it must never adopt
+that candidate and publish different phases through it. Once the candidate is
+released, a late update to that terminal schedule cannot update its successor.
+A local conditional publication before initialization must additionally reject
+an intent whose business source changed during preparation.
+
+This can close the earlier creation/initialization interleaving **among writers
+that mutate only their captured schedule identities**. It is a prospective
+protocol, not an implemented or provider-tested assertion. Creation conflict,
+release conflict, uncertain creation, local publication failure and cleanup of
+only an unreferenced candidate still need explicit outcomes. Recovery cannot
+retrieve the subscription's current schedule and assume it owns that object.
+Existing migration, allocation and Plan records have real schedule/operation
+identities for parts of this recovery; concurrency currently stores the desired
+scheduled quantity and time, but no schedule ID.
+
+The remaining direct-payment edge is concrete. The current concurrency upgrade
+branches in `billing-concurrency-subscription.service.ts` use a direct
+subscription update with `payment_behavior=pending_if_incomplete`. Allocation
+and Plan upgrades also support that payment-action contract. Stripe's
+[pending-update documentation](https://docs.stripe.com/billing/subscriptions/pending-updates),
+read again on September 29, permits pending updates on subscription and
+subscription-item mutations, not schedule phase updates. It explicitly states:
+“A schedule phase change discards a pending update and voids the associated
+invoice.” Moving every immediate upgrade into a schedule phase update is
+therefore not a demonstrated equivalent payment protocol.
+
+Allowing the direct branch only after it reads an empty schedule is insufficient:
+
+1. Direct writer D reads no attached schedule and prepares its immediate upgrade.
+2. Schedule writer A creates candidate T from that same subscription.
+3. D's delayed subscription mutation reaches Stripe while T is attached.
+
+Both writers can have followed a read-before-mutate rule, but D now mutates an
+object managed by another writer's schedule. Stripe's
+[schedule guidance](https://docs.stripe.com/billing/subscriptions/subscription-schedules#subscription-updates-when-a-schedule-is-attached)
+explicitly permits direct `items` changes to split an attached schedule phase,
+and warns that direct changes can be overwritten by later phases. It does not
+make D's earlier empty-schedule observation a provider precondition. The exact
+acceptance of A's subsequently prepared old phase timestamps has not been
+verified, so this note does not claim that every version of that payload is
+accepted or that this precise overwrite was reproduced. It establishes the
+missing exclusion step in the proposed common protocol.
+
+A complete solution may pair terminal schedule identity with admission through
+real business operations; the Plan/allocation/invitation admission preparation
+in this PR is relevant to that direction. It must also cover concurrency's
+direct unpaid upgrade, ordinary purchases and every recovery writer. Holding an
+unchanging schedule solely as a mutex or repurposing paid slot/status fields as
+a claim would not satisfy the terminal constraints. Cached-500 creation remains
+subject to Stripe's indeterminate-response contract above; an empty schedule
+read alone does not authorize abandoning that attempt and issuing a fresh key.
+No speculative shared key, new coordination field or provider mutation was added
+as part of this review.

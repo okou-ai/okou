@@ -37,6 +37,8 @@ import {
 } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
+import { pgTextDecoder } from "../../lib/db-structured-result";
+import { billingRunAttributionWrite } from "../services/managed-usage-attribution";
 import { bodyResultOf } from "../context/request";
 import { request$ } from "../context/hono";
 import { writeDb$, type Db } from "../external/db";
@@ -120,7 +122,7 @@ type UsageStateFixtureAction = UsageStateAction<
   "seed-fixture" | "delete-fixture" | "seed-compose"
 >;
 
-type UsageStateRunAction = UsageStateAction<"seed-run" | "seed-chat-thread">;
+type UsageStateRunAction = UsageStateAction<"seed-chat-thread">;
 
 type UsageStateEventWriteAction = UsageStateAction<
   | "insert-model-usage-event-for-run"
@@ -346,57 +348,80 @@ async function seedCompose(
   return { composeId: row.id, agentId: row.id };
 }
 
-async function seedRun(
-  db: Db,
-  args: SeedRunArgs,
-  signal: AbortSignal,
-): Promise<{ runId: string }> {
-  const [session] = await db
-    .insert(agentSessions)
-    .values({
-      userId: args.userId,
-      orgId: args.orgId,
-      agentId: args.agentId,
-    })
-    .returning({ id: agentSessions.id });
-  signal.throwIfAborted();
-  if (!session) {
-    throw new Error("seedRun: session insert returned no row");
-  }
-  const metadata = args.lifecycleOnly
-    ? null
-    : normalizeRunMetadata({
-        triggerSource: args.triggerSource ?? "test",
-        chatThreadId: args.chatThreadId,
-        selectedModel: args.selectedModel,
-      });
-  const [run] = await db
-    .insert(agentRuns)
-    .values({
-      userId: args.userId,
-      orgId: args.orgId,
-      prompt: args.prompt ?? "test prompt",
-      status: args.status ?? "pending",
-      sessionId: session.id,
-      createdAt: args.createdAt,
-      startedAt: args.startedAt,
-      completedAt: args.completedAt,
-      continuedFromSessionId: args.continuedFromSessionId,
-      sandboxReuseResult: args.sandboxReuseResult ?? null,
-      workspaceReuseResult: args.workspaceReuseResult ?? null,
-      result: args.result ?? null,
-      error: args.error ?? null,
-      lastEventSequence: args.lastEventSequence ?? null,
-      ...metadata,
-    })
-    .returning({ id: agentRuns.id });
-  signal.throwIfAborted();
-  if (!run) {
-    throw new Error("seedRun: run insert returned no row");
-  }
-  signal.throwIfAborted();
-  return { runId: run.id };
-}
+const seedRun$ = command(
+  async (
+    { set },
+    args: SeedRunArgs,
+    signal: AbortSignal,
+  ): Promise<{ runId: string }> => {
+    const db = set(writeDb$);
+    const result = await db.transaction(async (tx) => {
+      const [session] = await tx
+        .insert(agentSessions)
+        .values({
+          userId: args.userId,
+          orgId: args.orgId,
+          agentId: args.agentId,
+        })
+        .returning({ id: agentSessions.id });
+      signal.throwIfAborted();
+      if (!session) {
+        throw new Error("seedRun: session insert returned no row");
+      }
+      const metadata = args.lifecycleOnly
+        ? null
+        : normalizeRunMetadata({
+            triggerSource: args.triggerSource ?? "test",
+            chatThreadId: args.chatThreadId,
+            selectedModel: args.selectedModel,
+          });
+      const [run] = await tx
+        .insert(agentRuns)
+        .values({
+          userId: args.userId,
+          orgId: args.orgId,
+          prompt: args.prompt ?? "test prompt",
+          status: args.status ?? "pending",
+          sessionId: session.id,
+          createdAt: args.createdAt,
+          startedAt: args.startedAt,
+          completedAt: args.completedAt,
+          continuedFromSessionId: args.continuedFromSessionId,
+          sandboxReuseResult: args.sandboxReuseResult ?? null,
+          workspaceReuseResult: args.workspaceReuseResult ?? null,
+          result: args.result ?? null,
+          error: args.error ?? null,
+          lastEventSequence: args.lastEventSequence ?? null,
+          ...metadata,
+        })
+        .returning({
+          id: agentRuns.id,
+          orgId: agentRuns.orgId,
+          userId: agentRuns.userId,
+          startedAt: sql`${agentRuns.createdAt}::text`.mapWith(pgTextDecoder),
+          triggerSource: agentRuns.triggerSource,
+          threadId: agentRuns.chatThreadId,
+        });
+      signal.throwIfAborted();
+      if (!run) {
+        throw new Error("seedRun: run insert returned no row");
+      }
+      const capture = billingRunAttributionWrite(run);
+      const [captured] = await tx
+        .insert(billingRunAttribution)
+        .values(capture.values)
+        .onConflictDoUpdate(capture.conflict)
+        .returning({ runId: billingRunAttribution.runId });
+      if (!captured) {
+        throw new Error("Fixture Run billing identity conflicts with history");
+      }
+      signal.throwIfAborted();
+      return { runId: run.id };
+    });
+    signal.throwIfAborted();
+    return result;
+  },
+);
 
 async function seedChatThread(
   db: Db,
@@ -934,48 +959,51 @@ async function mutateUsageStateFixtureState(
   }
 }
 
+const seedUsageRunState$ = command(
+  async ({ set }, body: UsageStateAction<"seed-run">, signal: AbortSignal) => {
+    const result = await set(
+      seedRun$,
+      {
+        orgId: body.org_id,
+        userId: body.user_id,
+        agentId: body.compose_id,
+        triggerSource: body.trigger_source,
+        chatThreadId: body.chat_thread_id,
+        status: body.status,
+        prompt: body.prompt,
+        createdAt: parseMaybeDate(body.created_at),
+        startedAt:
+          body.started_at === undefined
+            ? undefined
+            : parseOptionalDate(body.started_at),
+        completedAt:
+          body.completed_at === undefined
+            ? undefined
+            : parseOptionalDate(body.completed_at),
+        continuedFromSessionId: body.continued_from_session_id,
+        sandboxReuseResult: body.sandbox_reuse_result,
+        workspaceReuseResult: body.workspace_reuse_result,
+        result: body.result,
+        error: body.error,
+        lastEventSequence: body.last_event_sequence,
+        selectedModel: body.selected_model,
+        lifecycleOnly: body.lifecycle_only,
+      },
+      signal,
+    );
+    return {
+      status: 200 as const,
+      body: { ok: true as const, run_id: result.runId },
+    };
+  },
+);
+
 async function mutateUsageStateRunState(
   db: Db,
   body: UsageStateRunAction,
   signal: AbortSignal,
 ) {
   switch (body.action) {
-    case "seed-run": {
-      const result = await seedRun(
-        db,
-        {
-          orgId: body.org_id,
-          userId: body.user_id,
-          agentId: body.compose_id,
-          triggerSource: body.trigger_source,
-          chatThreadId: body.chat_thread_id,
-          status: body.status,
-          prompt: body.prompt,
-          createdAt: parseMaybeDate(body.created_at),
-          startedAt:
-            body.started_at === undefined
-              ? undefined
-              : parseOptionalDate(body.started_at),
-          completedAt:
-            body.completed_at === undefined
-              ? undefined
-              : parseOptionalDate(body.completed_at),
-          continuedFromSessionId: body.continued_from_session_id,
-          sandboxReuseResult: body.sandbox_reuse_result,
-          workspaceReuseResult: body.workspace_reuse_result,
-          result: body.result,
-          error: body.error,
-          lastEventSequence: body.last_event_sequence,
-          selectedModel: body.selected_model,
-          lifecycleOnly: body.lifecycle_only,
-        },
-        signal,
-      );
-      return {
-        status: 200 as const,
-        body: { ok: true as const, run_id: result.runId },
-      };
-    }
     case "seed-chat-thread": {
       const threadId = await seedChatThread(
         db,
@@ -1162,7 +1190,10 @@ async function mutateUsageStateEventMaterializationState(
 
 async function mutateUsageState(
   db: Db,
-  body: Exclude<TestUsageStateActionBody, { action: "delete-usage-data" }>,
+  body: Exclude<
+    TestUsageStateActionBody,
+    { action: "delete-usage-data" | "seed-run" }
+  >,
   signal: AbortSignal,
 ) {
   switch (body.action) {
@@ -1171,7 +1202,6 @@ async function mutateUsageState(
     case "seed-compose": {
       return await mutateUsageStateFixtureState(db, body, signal);
     }
-    case "seed-run":
     case "seed-chat-thread": {
       return await mutateUsageStateRunState(db, body, signal);
     }
@@ -1211,6 +1241,9 @@ const mutateUsageState$ = command(async ({ get, set }, signal: AbortSignal) => {
     );
     signal.throwIfAborted();
     return { status: 200 as const, body: { ok: true as const } };
+  }
+  if (bodyResult.data.action === "seed-run") {
+    return await set(seedUsageRunState$, bodyResult.data, signal);
   }
   return await mutateUsageState(set(writeDb$), bodyResult.data, signal);
 });

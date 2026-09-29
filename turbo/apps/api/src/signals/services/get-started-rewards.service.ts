@@ -1,6 +1,5 @@
 import {
   GET_STARTED_REWARDS,
-  GET_STARTED_REWARD_TTL_MS,
   getStartedQuestKeySchema,
   type GetStartedClaim,
   type GetStartedQuestKey,
@@ -10,11 +9,8 @@ import { getStartedClaims } from "@okouai/db/schema/get-started-claim";
 import { and, count, desc, eq, or, sql } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
-import { isUniqueViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
-import { settle } from "../utils";
-import { createUsagePackCreditGrant } from "./usage-pack-credit.service";
 
 export type GetStartedClaimRow = typeof getStartedClaims.$inferSelect;
 
@@ -141,144 +137,12 @@ export async function createGetStartedClaim(
   return existing;
 }
 
-async function markIneligible(
-  tx: Tx,
-  id: string,
-  reason: string,
-): Promise<GetStartedClaimRow> {
-  const [row] = await tx
-    .update(getStartedClaims)
-    .set({
-      status: "ineligible",
-      reason,
-      updatedAt: nowDate(),
-      leaseId: null,
-      leaseExpiresAt: null,
-    })
-    .where(eq(getStartedClaims.id, id))
-    .returning();
-  if (!row) {
-    throw new Error("Get started claim disappeared during redemption");
-  }
-  return row;
-}
-
-/** Call in the transaction owning completion, or a worker's short finalization transaction. */
-export async function grantGetStartedClaim(
-  tx: Tx,
-  input: GetStartedClaimRow,
-  rewardKey: string,
-  evidenceText?: string,
-): Promise<GetStartedClaimRow> {
-  const [claim] = await tx
-    .select()
-    .from(getStartedClaims)
-    .where(eq(getStartedClaims.id, input.id))
-    .for("update");
-  if (!claim) {
-    throw new Error("Get started claim disappeared before redemption");
-  }
-  if (input.leaseId !== null && claim.leaseId !== input.leaseId) {
-    return claim;
-  }
-  if (
-    claim.status === "granted" ||
-    claim.status === "ineligible" ||
-    claim.status === "rejected"
-  ) {
-    return claim;
-  }
-  const availability = await getRewardAvailability(tx, claim, rewardKey);
-  if (availability.kind === "ineligible") {
-    return markIneligible(tx, claim.id, availability.reason);
-  }
-  if (claim.questKey === "connector" || claim.questKey === "checkin") {
-    // These exact identities already select one claim through
-    // uq_get_started_claim_source, so its row lock owns the whole grant.
-    return persistGetStartedGrant(tx, claim, rewardKey, null, evidenceText);
-  }
-
-  // Invitations have 15 slots shared across organizations. Granted claims keep
-  // their slots after expiry or source deletion. Each candidate is attempted
-  // once; a conflict consumes that slot, not the other available slots.
-  // Never retry other database failures.
-  for (const rewardSlot of availability.slots) {
-    const granted = await settle(
-      tx.transaction((grantTx) => {
-        return persistGetStartedGrant(
-          grantTx,
-          claim,
-          rewardKey,
-          rewardSlot,
-          evidenceText,
-        );
-      }),
-    );
-    if (granted.ok) {
-      return granted.value;
-    }
-    const error = granted.error;
-    if (
-      !isUniqueViolation(error, "uq_get_started_reward_key") &&
-      !isUniqueViolation(error, "uq_get_started_reward_slot") &&
-      !isUniqueViolation(error, "uq_get_started_slack_org")
-    ) {
-      throw error;
-    }
-
-    // The savepoint has rolled back both credits and the claim update. Check
-    // the reward identity first even when PostgreSQL reports the slot index.
-    const current = await getRewardAvailability(tx, claim, rewardKey);
-    if (current.kind === "ineligible") {
-      return markIneligible(tx, claim.id, current.reason);
-    }
-    if (
-      claim.questKey !== "invite" ||
-      !isUniqueViolation(error, "uq_get_started_reward_slot") ||
-      current.slots.includes(rewardSlot)
-    ) {
-      throw error;
-    }
-  }
-  throw new Error("Get started invitation conflicts did not exhaust its slots");
-}
-
 type RewardAvailability =
   | {
       readonly kind: "ineligible";
       readonly reason: "already_redeemed" | "limit_reached";
     }
   | { readonly kind: "available"; readonly slots: readonly (number | null)[] };
-
-async function getRewardAvailability(
-  tx: Tx,
-  claim: GetStartedClaimRow,
-  rewardKey: string,
-): Promise<RewardAvailability> {
-  const ownerAwards =
-    GET_STARTED_REWARDS[claim.questKey].limit === null
-      ? undefined
-      : and(
-          claim.rewardTarget === "org"
-            ? eq(getStartedClaims.orgId, claim.orgId)
-            : eq(
-                getStartedClaims.beneficiaryUserId,
-                requiredBeneficiary(claim),
-              ),
-          eq(getStartedClaims.questKey, claim.questKey),
-          eq(getStartedClaims.status, "granted"),
-        );
-  // Read identity and capacity from the same snapshot so a concurrent grant
-  // cannot appear only in the capacity check and hide already_redeemed.
-  const awards = await tx
-    .select({
-      rewardKey: getStartedClaims.rewardKey,
-      rewardSlot: getStartedClaims.rewardSlot,
-    })
-    .from(getStartedClaims)
-    .where(or(eq(getStartedClaims.rewardKey, rewardKey), ownerAwards));
-  return getRewardAvailabilityFromAwards(claim, rewardKey, awards);
-}
 
 export function getRewardAvailabilityFromAwards(
   claim: GetStartedClaimRow,
@@ -321,62 +185,6 @@ export function getRewardAvailabilityFromAwards(
     kind: "available",
     slots: [claim.questKey === "slack" ? null : 1],
   };
-}
-
-async function persistGetStartedGrant(
-  tx: Tx,
-  claim: GetStartedClaimRow,
-  rewardKey: string,
-  rewardSlot: number | null,
-  evidenceText: string | undefined,
-): Promise<GetStartedClaimRow> {
-  const grantedAt = nowDate();
-  const expiresAt = new Date(grantedAt.getTime() + GET_STARTED_REWARD_TTL_MS);
-  if (claim.rewardTarget === "org") {
-    throw new Error(
-      "Organization rewards must commit with the Slack installation",
-    );
-  }
-  const grant = await createUsagePackCreditGrant(tx, {
-    orgId: claim.orgId,
-    userId: requiredBeneficiary(claim),
-    grantType: "bonus",
-    idempotencyKey: `get-started:${claim.id}`,
-    amount: claim.rewardAmount,
-    expiresAt,
-  });
-  const [granted] = await tx
-    .update(getStartedClaims)
-    .set({
-      status: "granted",
-      rewardKey,
-      rewardSlot,
-      memberCreditGrantId: grant.id,
-      orgCreditRecordId: null,
-      grantedAt,
-      expiresAt,
-      ...(evidenceText === undefined
-        ? {}
-        : { evidenceText, reviewedAt: grantedAt }),
-      completedAt: claim.completedAt ?? grantedAt,
-      updatedAt: grantedAt,
-      reason: null,
-      leaseId: null,
-      leaseExpiresAt: null,
-    })
-    .where(eq(getStartedClaims.id, claim.id))
-    .returning();
-  if (!granted) {
-    throw new Error("Get started grant was not committed");
-  }
-  return granted;
-}
-
-function requiredBeneficiary(claim: GetStartedClaimRow): string {
-  if (!claim.beneficiaryUserId) {
-    throw new Error("Personal reward has no beneficiary");
-  }
-  return claim.beneficiaryUserId;
 }
 
 export async function getStartedStatus(
