@@ -30,16 +30,8 @@ import { writeDb$, type Db } from "../external/db";
 import { now, nowDate } from "../../lib/time";
 import { safeJsonParse, settle, tapError } from "../utils";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
-import {
-  loadConnectorRuntimeSnapshot,
-  loadConnectorRuntimeSnapshot$,
-} from "./connector-catalog-runtime.service";
-import {
-  builtinConnectorCredentialRuntimeValueRef,
-  loadBuiltinConnectorCredentialConnection,
-  loadBuiltinConnectorCredentialValues,
-  refreshBuiltinConnectorCredentialAccess,
-} from "./builtin-connector-credential-runtime.service";
+import { loadConnectorRuntimeSnapshot$ } from "./connector-catalog-runtime.service";
+import { builtinConnectorCredentialRuntimeValueRef } from "./builtin-connector-credential-runtime.service";
 import {
   AutomationEventSourceTiming,
   type AutomationEventRunTiming,
@@ -50,7 +42,10 @@ import type { WorkflowQueueAdmissionTransaction } from "./workflow-chat-event-qu
 import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
 import { workflowAutomationCanFire } from "./workflow-automation-access.service";
 import { ensureWorkflowUserAutomationThread } from "./workflow-user-automation-thread.service";
-import { builtinConnectorStateLockStatement } from "./auth-state-lock.service";
+import {
+  builtinConnectorStateLockStatement,
+  lockConnectorAccountTarget,
+} from "./auth-state-lock.service";
 import {
   loadBuiltinConnectorCredentialConnection$,
   loadBuiltinConnectorCredentialValues$,
@@ -277,110 +272,6 @@ function tokenNeedsRefresh(tokenExpiresAt: Date | null, currentTime: Date) {
   );
 }
 
-async function resolveGmailAccess(
-  args: {
-    readonly db: Db;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly connectorId: string;
-    readonly refreshExpiredToken?: boolean;
-  },
-  signal: AbortSignal,
-): Promise<GmailAccessResult> {
-  const currentTime = nowDate();
-  const snapshot = await loadConnectorRuntimeSnapshot(args.db);
-  signal.throwIfAborted();
-  const loaded = await loadBuiltinConnectorCredentialConnection({
-    db: args.db,
-    snapshot,
-    orgId: args.orgId,
-    userId: args.userId,
-    connectorSlug: "gmail",
-    connectorId: args.connectorId,
-  });
-  signal.throwIfAborted();
-  if (loaded.kind === "missing") {
-    return {
-      kind: "bad_request",
-      message: "Connect Gmail before adding a Gmail event automation",
-    };
-  }
-  if (loaded.kind === "unavailable" || loaded.connection.needsReconnect) {
-    return {
-      kind: "bad_request",
-      message: "Reconnect Gmail before using Gmail event automations",
-    };
-  }
-  const connection = loaded.connection;
-  const accessTokenValueRef = builtinConnectorCredentialRuntimeValueRef(
-    connection,
-    GMAIL_ACCESS_TOKEN_ENVIRONMENT_NAME,
-  );
-  if (accessTokenValueRef === null) {
-    return {
-      kind: "bad_request",
-      message: "Reconnect Gmail before using Gmail event automations",
-    };
-  }
-  const values = await loadBuiltinConnectorCredentialValues({
-    connection,
-    db: args.db,
-    valueRefs: [accessTokenValueRef],
-  });
-  signal.throwIfAborted();
-  const accessToken = values.get(accessTokenValueRef);
-  if (!accessToken) {
-    return {
-      kind: "bad_request",
-      message: "Reconnect Gmail before using Gmail event automations",
-    };
-  }
-  if (
-    !tokenNeedsRefresh(connection.tokenExpiresAt, currentTime) ||
-    args.refreshExpiredToken === false
-  ) {
-    return {
-      kind: "ok",
-      access: {
-        connectorId: connection.connectorId,
-        emailAddress: connection.externalEmail,
-        accessToken,
-      },
-    };
-  }
-  const refreshed = await refreshBuiltinConnectorCredentialAccess(
-    {
-      connection,
-      db: args.db,
-      orgId: args.orgId,
-      userId: args.userId,
-      runtimeEnvironmentName: GMAIL_ACCESS_TOKEN_ENVIRONMENT_NAME,
-      persist: { db: args.db, markNeedsReconnectOnFailure: true },
-    },
-    signal,
-  );
-  if (refreshed.kind === "configuration-unavailable") {
-    return {
-      kind: "bad_request",
-      message: "Google OAuth client env vars are not configured",
-    };
-  }
-  if (refreshed.kind !== "ok") {
-    return {
-      kind: "bad_request",
-      message: "Reconnect Gmail before using Gmail event automations",
-    };
-  }
-  return {
-    kind: "ok",
-    access: {
-      connectorId: connection.connectorId,
-      emailAddress: connection.externalEmail,
-      accessToken: refreshed.accessToken,
-    },
-  };
-}
-
 const resolveGmailAccess$ = command(
   async (
     { set },
@@ -593,30 +484,32 @@ async function resolveGmailLabelByName(
   return { kind: "ok", labelId: label.id, labelName: label.name };
 }
 
-export async function resolveGmailLabelForUser(
-  args: {
-    readonly db: Db;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly connectorId: string;
-    readonly labelName: string;
-  },
-  signal: AbortSignal,
-): Promise<GmailLabelResolveResult> {
-  const accessResult = await resolveGmailAccess(args, signal);
-  signal.throwIfAborted();
-  if (accessResult.kind !== "ok") {
-    return accessResult;
-  }
-
-  return await resolveGmailLabelByName(
-    {
-      accessToken: accessResult.access.accessToken,
-      labelName: args.labelName,
+export const resolveGmailLabelForUser$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly connectorId: string;
+      readonly labelName: string;
     },
-    signal,
-  );
-}
+    signal: AbortSignal,
+  ): Promise<GmailLabelResolveResult> => {
+    const accessResult = await set(resolveGmailAccess$, args, signal);
+    signal.throwIfAborted();
+    if (accessResult.kind !== "ok") {
+      return accessResult;
+    }
+
+    return await resolveGmailLabelByName(
+      {
+        accessToken: accessResult.access.accessToken,
+        labelName: args.labelName,
+      },
+      signal,
+    );
+  },
+);
 
 async function watchGmailMailbox(
   args: {
@@ -641,32 +534,35 @@ function normalizeGmailAddress(emailAddress: string): string {
   return emailAddress.trim().toLowerCase();
 }
 
-export async function hasEnabledGmailConsumer(
-  args: {
-    readonly db: Db;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly connectorId: string;
+export const hasEnabledGmailConsumer$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly connectorId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const db = set(writeDb$);
+    const [consumer] = await db
+      .select({ id: workflowAutomations.id })
+      .from(workflowAutomations)
+      .where(
+        and(
+          eq(workflowAutomations.orgId, args.orgId),
+          eq(workflowAutomations.ownerUserId, args.userId),
+          eq(workflowAutomations.enabled, true),
+          eq(workflowAutomations.kind, "event"),
+          eq(workflowAutomations.eventConnectorId, args.connectorId),
+          inArray(workflowAutomations.eventType, [...GMAIL_EVENT_TYPES]),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return consumer !== undefined;
   },
-  signal: AbortSignal,
-): Promise<boolean> {
-  const [consumer] = await args.db
-    .select({ id: workflowAutomations.id })
-    .from(workflowAutomations)
-    .where(
-      and(
-        eq(workflowAutomations.orgId, args.orgId),
-        eq(workflowAutomations.ownerUserId, args.userId),
-        eq(workflowAutomations.enabled, true),
-        eq(workflowAutomations.kind, "event"),
-        eq(workflowAutomations.eventConnectorId, args.connectorId),
-        inArray(workflowAutomations.eventType, [...GMAIL_EVENT_TYPES]),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  return consumer !== undefined;
-}
+);
 
 function gmailStateHasEnabledConsumer() {
   return sql`EXISTS (
@@ -895,7 +791,7 @@ const publishGmailWatch$ = command(
             emailAddress: args.emailAddress,
             ...(args.resetCurrentCursor
               ? {
-                  lastHistoryId: sql`greatest(${gmailWatchStates.lastHistoryId}::numeric, ${watch.historyId}::numeric)::text`,
+                  lastHistoryId: watch.historyId,
                 }
               : {}),
             watchExpirationAt: expiration,
@@ -2341,70 +2237,40 @@ async function dispatchGmailHistoryEvents(
   return { kind: "ok", dispatched, duplicates };
 }
 
-async function hasCurrentGmailWatchConsumer(
-  args: {
-    readonly db: Db;
-    readonly state: GmailWatchStateRow;
-    readonly sourceTiming: AutomationEventSourceTiming;
+const loadGmailDispatchAccess$ = command(
+  async (
+    { set },
+    state: GmailWatchStateRow,
+    signal: AbortSignal,
+  ): Promise<GmailAccess | null> => {
+    const owner = {
+      orgId: state.orgId,
+      userId: state.userId,
+      connectorId: state.connectorId,
+    };
+    await set(repairGmailAutomationProjections$, owner, signal);
+    const hasConsumer = await set(hasEnabledGmailConsumer$, owner, signal);
+    if (!hasConsumer) {
+      return null;
+    }
+    const access = await set(resolveGmailAccess$, owner, signal);
+    return access.kind === "ok" ? access.access : null;
   },
-  signal: AbortSignal,
-): Promise<boolean> {
-  const hasConsumer = await args.sourceTiming.measure(
-    "api_dispatch_pre_create_agent_automation_event_load_automations",
-    async () => {
-      return await hasEnabledGmailConsumer(
-        {
-          db: args.db,
-          orgId: args.state.orgId,
-          userId: args.state.userId,
-          connectorId: args.state.connectorId,
-        },
-        signal,
-      );
-    },
-  );
-  if (hasConsumer) {
-    return true;
-  }
-  return false;
-}
+);
 
 async function dispatchGmailWatchState(
   args: {
     readonly db: Db;
     readonly state: GmailWatchStateRow;
+    readonly access: GmailAccess | null;
     readonly decoded: DecodedGmailPubSubPush;
     readonly sourceTiming: AutomationEventSourceTiming;
     readonly startRun: GmailRunStarter;
   },
   signal: AbortSignal,
 ): Promise<GmailDispatchStateResult> {
-  const hasConsumer = await hasCurrentGmailWatchConsumer(args, signal);
-  if (!hasConsumer) {
-    log.debug("Workflow watch dispatch skipped", {
-      provider: "gmail",
-      action: "dispatch",
-      result: "no_consumer",
-    });
-    return { kind: "ok", dispatched: 0, duplicates: 0 };
-  }
-
-  const access = await args.sourceTiming.measure(
-    "api_dispatch_pre_create_agent_automation_event_load_source_state",
-    async () => {
-      return await resolveGmailAccess(
-        {
-          db: args.db,
-          orgId: args.state.orgId,
-          userId: args.state.userId,
-          connectorId: args.state.connectorId,
-        },
-        signal,
-      );
-    },
-  );
-  signal.throwIfAborted();
-  if (access.kind !== "ok") {
+  const access = args.access;
+  if (!access) {
     return { kind: "ok", dispatched: 0, duplicates: 0 };
   }
 
@@ -2413,7 +2279,7 @@ async function dispatchGmailWatchState(
     async () => {
       return await listGmailHistory(
         {
-          accessToken: access.access.accessToken,
+          accessToken: access.accessToken,
           startHistoryId: args.state.lastHistoryId,
         },
         signal,
@@ -2443,7 +2309,7 @@ async function dispatchGmailWatchState(
       db: args.db,
       state: args.state,
       decoded: args.decoded,
-      accessToken: access.access.accessToken,
+      accessToken: access.accessToken,
       history,
       automations,
       sourceTiming: args.sourceTiming,
@@ -2665,15 +2531,12 @@ export const dispatchGmailPubSubPush$ = command(
     let duplicates = 0;
 
     for (const state of states) {
-      await set(
-        repairGmailAutomationProjections$,
-        { orgId: state.orgId, userId: state.userId },
-        signal,
-      );
+      const access = await set(loadGmailDispatchAccess$, state, signal);
       const result = await dispatchGmailWatchState(
         {
           db,
           state,
+          access,
           decoded,
           sourceTiming: sourceTiming.fork(),
           startRun,

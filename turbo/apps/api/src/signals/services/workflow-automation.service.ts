@@ -86,11 +86,14 @@ import {
 } from "./autonomy-budget-schema.service";
 import { prepareGithubWebhookEventConfigForPersist } from "./github-webhook-automation-event.service";
 import { prepareGithubWorkflowRunEventConfigForPersist } from "./github-workflow-run-event.service";
-import { resolveGmailAutomationConnectorId } from "./gmail-automation-account.service";
+import {
+  readGmailAutomationConnectorId$,
+  resolveGmailAutomationConnectorId,
+} from "./gmail-automation-account.service";
 import {
   ensureGmailWatchForUser$,
-  hasEnabledGmailConsumer,
-  resolveGmailLabelForUser,
+  hasEnabledGmailConsumer$,
+  resolveGmailLabelForUser$,
 } from "./gmail-automation-event.service";
 import { resolveGoogleCalendarAutomationConnectorId } from "./google-calendar-automation-account.service";
 import {
@@ -2012,64 +2015,66 @@ async function lockWebhookAutomationCreationAccess(
   }
   return { kind: "ok", workflow: visible.workflow };
 }
-async function prepareGmailEventConfigForPersist(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly connectorId: string;
-    readonly eventType: WorkflowAutomationEventType;
-    readonly eventConfig: GmailAutomationEventConfig;
-  },
-  signal: AbortSignal,
-): Promise<
-  | {
-      readonly kind: "ok";
+const prepareGmailEventConfigForPersist$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly connectorId: string;
+      readonly eventType: WorkflowAutomationEventType;
       readonly eventConfig: GmailAutomationEventConfig;
+    },
+    signal: AbortSignal,
+  ): Promise<
+    | {
+        readonly kind: "ok";
+        readonly eventConfig: GmailAutomationEventConfig;
+      }
+    | {
+        readonly kind: "bad-request";
+        readonly message: string;
+      }
+  > => {
+    if (args.eventType === "gmail-new-message") {
+      if (args.eventConfig.event !== "new_message") {
+        return {
+          kind: "bad-request",
+          message: "eventConfig must be a Gmail new message config",
+        };
+      }
+      return { kind: "ok", eventConfig: args.eventConfig };
     }
-  | {
-      readonly kind: "bad-request";
-      readonly message: string;
-    }
-> {
-  if (args.eventType === "gmail-new-message") {
-    if (args.eventConfig.event !== "new_message") {
+    if (args.eventConfig.event !== "label_applied") {
       return {
         kind: "bad-request",
-        message: "eventConfig must be a Gmail new message config",
+        message: "eventConfig must be a Gmail label applied config",
       };
     }
-    return { kind: "ok", eventConfig: args.eventConfig };
-  }
-  if (args.eventConfig.event !== "label_applied") {
+    const label = await set(
+      resolveGmailLabelForUser$,
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+        connectorId: args.connectorId,
+        labelName: args.eventConfig.labelName,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (label.kind !== "ok") {
+      return { kind: "bad-request", message: label.message };
+    }
     return {
-      kind: "bad-request",
-      message: "eventConfig must be a Gmail label applied config",
+      kind: "ok",
+      eventConfig: {
+        ...args.eventConfig,
+        labelName: label.labelName,
+        resolvedLabelId: label.labelId,
+      },
     };
-  }
-  const label = await resolveGmailLabelForUser(
-    {
-      db,
-      orgId: args.orgId,
-      userId: args.userId,
-      connectorId: args.connectorId,
-      labelName: args.eventConfig.labelName,
-    },
-    signal,
-  );
-  signal.throwIfAborted();
-  if (label.kind !== "ok") {
-    return { kind: "bad-request", message: label.message };
-  }
-  return {
-    kind: "ok",
-    eventConfig: {
-      ...args.eventConfig,
-      labelName: label.labelName,
-      resolvedLabelId: label.labelId,
-    },
-  };
-}
+  },
+);
 const validateCreatedGmailAutomationAccount$ = command(
   async (
     { set },
@@ -2145,11 +2150,15 @@ const createGmailEventAutomationForWorkflow$ = command(
     signal: AbortSignal,
   ): Promise<AutomationResult> => {
     const db = set(writeDb$);
-    const eventConnectorId = await resolveGmailAutomationConnectorId(db, {
-      orgId: args.input.orgId,
-      userId: args.input.member.userId,
-      workflowId: args.context.workflowId,
-    });
+    const eventConnectorId = await set(
+      readGmailAutomationConnectorId$,
+      {
+        orgId: args.input.orgId,
+        userId: args.input.member.userId,
+        workflowId: args.context.workflowId,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     if (eventConnectorId === null) {
       return {
@@ -2157,8 +2166,8 @@ const createGmailEventAutomationForWorkflow$ = command(
         message: "Connect Gmail before adding a Gmail event automation",
       };
     }
-    const preparedConfig = await prepareGmailEventConfigForPersist(
-      db,
+    const preparedConfig = await set(
+      prepareGmailEventConfigForPersist$,
       {
         orgId: args.input.orgId,
         userId: args.input.member.userId,
@@ -2173,9 +2182,9 @@ const createGmailEventAutomationForWorkflow$ = command(
       return preparedConfig;
     }
     const hadConsumer = args.input.enabled
-      ? await hasEnabledGmailConsumer(
+      ? await set(
+          hasEnabledGmailConsumer$,
           {
-            db: db,
             orgId: args.input.orgId,
             userId: args.input.member.userId,
             connectorId: eventConnectorId,
@@ -3880,38 +3889,44 @@ async function prepareOfficialNotionEvent(
     : prepared;
 }
 
-async function prepareOfficialGmailEvent(
-  db: Db,
-  input: CreateGmailEventAutomationInput,
-  signal: AbortSignal,
-): Promise<OfficialAutomationEventPreparationResult> {
-  const eventConnectorId = await resolveGmailAutomationConnectorId(db, {
-    orgId: input.orgId,
-    userId: input.member.userId,
-    workflowId: input.workflowId,
-  });
-  signal.throwIfAborted();
-  if (eventConnectorId === null) {
-    return {
-      kind: "bad-request",
-      message: "Connect Gmail before adding a Gmail event automation",
-    };
-  }
-  const prepared = await prepareGmailEventConfigForPersist(
-    db,
-    {
-      orgId: input.orgId,
-      userId: input.member.userId,
-      connectorId: eventConnectorId,
-      eventType: input.eventType,
-      eventConfig: input.eventConfig,
-    },
-    signal,
-  );
-  return prepared.kind === "ok"
-    ? preparedOfficialEvent(prepared.eventConfig, { eventConnectorId })
-    : prepared;
-}
+const prepareOfficialGmailEvent$ = command(
+  async (
+    { set },
+    input: CreateGmailEventAutomationInput,
+    signal: AbortSignal,
+  ): Promise<OfficialAutomationEventPreparationResult> => {
+    const eventConnectorId = await set(
+      readGmailAutomationConnectorId$,
+      {
+        orgId: input.orgId,
+        userId: input.member.userId,
+        workflowId: input.workflowId,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (eventConnectorId === null) {
+      return {
+        kind: "bad-request",
+        message: "Connect Gmail before adding a Gmail event automation",
+      };
+    }
+    const prepared = await set(
+      prepareGmailEventConfigForPersist$,
+      {
+        orgId: input.orgId,
+        userId: input.member.userId,
+        connectorId: eventConnectorId,
+        eventType: input.eventType,
+        eventConfig: input.eventConfig,
+      },
+      signal,
+    );
+    return prepared.kind === "ok"
+      ? preparedOfficialEvent(prepared.eventConfig, { eventConnectorId })
+      : prepared;
+  },
+);
 
 async function prepareOfficialGoogleCalendarEvent(
   db: Db,
@@ -4099,7 +4114,7 @@ export const prepareOfficialAutomationReconfiguration$ = command(
       return await prepareOfficialChatRunFinishedEvent(db, input, signal);
     }
     if (automationCreateInputIsGmail(input)) {
-      return await prepareOfficialGmailEvent(db, input, signal);
+      return await set(prepareOfficialGmailEvent$, input, signal);
     }
     if (automationCreateInputIsGithub(input)) {
       return await prepareOfficialGithubEvent(db, input, signal);
@@ -4339,11 +4354,15 @@ const updateGmailEventAutomationForWorkflow$ = command(
         message: "eventConfig must be a Gmail event config",
       };
     }
-    const eventConnectorId = await resolveGmailAutomationConnectorId(db, {
-      orgId: args.orgId,
-      userId: args.member.userId,
-      workflowId: args.automation.workflowId,
-    });
+    const eventConnectorId = await set(
+      readGmailAutomationConnectorId$,
+      {
+        orgId: args.orgId,
+        userId: args.member.userId,
+        workflowId: args.automation.workflowId,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     if (eventConnectorId === null) {
       return {
@@ -4351,8 +4370,8 @@ const updateGmailEventAutomationForWorkflow$ = command(
         message: "Connect Gmail before using Gmail event automations",
       };
     }
-    const preparedConfig = await prepareGmailEventConfigForPersist(
-      db,
+    const preparedConfig = await set(
+      prepareGmailEventConfigForPersist$,
       {
         orgId: args.orgId,
         userId: args.member.userId,
@@ -5142,9 +5161,9 @@ const enabledWatchHadConsumer$ = command(
       if (args.automation.eventConnectorId === null) {
         return false;
       }
-      return await hasEnabledGmailConsumer(
+      return await set(
+        hasEnabledGmailConsumer$,
         {
-          db: db,
           orgId: args.automation.orgId,
           userId: args.automation.ownerUserId,
           connectorId: args.automation.eventConnectorId,

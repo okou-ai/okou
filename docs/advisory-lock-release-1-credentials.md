@@ -23,7 +23,7 @@ The six advisory acquisition definitions remain. This work prepares selected wri
 
 - Builtin OAuth callback, Automatic OAuth refresh and its legacy retirement store, ordinary refresh's legacy helper-owned commit path and its nine resolver chains still propagate root database or transaction values. Automatic callback including state claim, catalog preparation and post-commit wakeup has a command-owned boundary. Other builtin/custom callback routes still use the legacy state helper; it remains only for those actual callers.
 - Model-provider firewall refresh, settings and account paths have not been migrated to the complete final command-owned conditional protocol. They still execute provider/KMS work through the locked helper graph.
-- Gmail now has explicit approval for local disable, stopping renewal and remote natural expiry without account-global `users.stop`. Its remote-stop code is removed. Ensure, renewal and watch reconciliation now use owning commands; legacy dispatch/label and shared credential callers remain. Calendar also has explicit approval for a remote gap and best-effort candidate cleanup; authority and basic deduplication remain required.
+- Gmail now has explicit approval for local disable, stopping renewal and remote natural expiry without account-global `users.stop`. Its remote-stop code is removed. Ensure, renewal and watch reconciliation now use owning commands; legacy dispatch/queue SQL and shared credential callers remain. Calendar also has explicit approval for a remote gap and best-effort candidate cleanup; authority and basic deduplication remain required.
 - Calendar lifecycle preparation/activation/reconciliation still has helper-owned and propagated transaction paths. Current-channel remote stop remains inside the existing decision boundary.
 - Forms workflow-thread creation still accepts a transaction. Shared create/official authority preparation, account-deletion watch cleanup and queue model preparation retain legacy database interfaces. The regular Forms watch/configuration/dispatch credential path now uses owning commands. Other event sources still use the legacy workflow queue source callback; this does not claim to migrate those sources.
 
@@ -277,11 +277,28 @@ Then move `watch` HTTP before the finite publication transaction and delete the
 lifecycle key. R1/R2 coexistence is compatible because neither calls `users.stop`.
 Credential/account coordination has its own separate writer gates.
 
-**Still unfinished:** legacy Gmail label preparation and event dispatch/queue
-helpers still forward handles, as do shared credential and account deletion
-paths. Those paths are implementation work, not covered by the outgoing-stop
+**Still unfinished:** legacy Gmail event dispatch/queue SQL helpers still forward
+handles, as do shared credential and account deletion paths. Gmail label
+preparation, ordinary/official configuration and dispatch credential access now
+use owning commands; the legacy Gmail credential resolver has been deleted. Those paths are implementation work, not covered by the outgoing-stop
 gate. This change does not claim the entire credential or event-source graph is
 R1 ready. API coverage retains shared-mailbox consumption, local disable and
 reenable, authorized sources, deduplication and watch-error compensation; the
 old official-removal retry assertion has been replaced by immediate local
 removal without contacting `users.stop`.
+
+### Unresolved one-time refresh consumption
+
+Deleting the exact existing refresh-secret row with `DELETE ... RETURNING` before
+an external one-time refresh would elect one caller without adding a field, but
+it is not yet a valid complete protocol. All future readers would need to treat
+missing refresh input as temporary: the current shared resolver can instead mark
+`needsReconnect`, invalidating the in-flight winner. A process crash after that
+DELETE commits but before the provider request also permanently discards a still
+valid token; the token has no remaining durable copy from which to recover.
+That is a new failure window, beyond the existing provider-success/local-commit
+window, and is not approved by the watch behavior tradeoffs. An explicit provider
+failure could conditionally restore an in-memory token, and an uncertain commit
+requires authoritative reread, but neither addresses process loss. Do not
+classify shared one-time rotation as complete or merely waiting for old writers
+to drain on the strength of this proposal.

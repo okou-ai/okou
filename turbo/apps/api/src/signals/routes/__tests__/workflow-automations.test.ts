@@ -4028,12 +4028,12 @@ describe("okou workflow automations", () => {
     expect(listed.body).toHaveLength(0);
   });
 
-  it("keeps a failed Gmail stop retryable and repairs it in the renewal pass", async () => {
+  it("keeps Gmail disable local and supports re-enable without remote teardown", async () => {
     const scenario = await setupFixture();
     const email = `retry-stop-${scenario.fixture.userId}@example.com`;
     await connectGmail(scenario, email);
-    const watch = configureGmailWatchMock(["history-1", "history-2"]);
-    const stop = configureGmailStopMock([500, 500, 204]);
+    configureGmailWatchMock(["100", "200"]);
+    const stop = configureGmailStopMock([500]);
 
     const created = await accept(
       automationsClient().create({
@@ -4054,7 +4054,20 @@ describe("okou workflow automations", () => {
       }),
       [200],
     );
-    expect(stop.calls).toBe(1);
+    await expect(wf.readAutomation(created.body.id)).resolves.toMatchObject({
+      enabled: false,
+    });
+    const inactiveRenewal = await accept(
+      renewGmailWatchScopeClient().renew({
+        body: { email_address: email, topic_name: GMAIL_TOPIC_NAME },
+      }),
+      [200],
+    );
+    expect(inactiveRenewal.body).toStrictEqual({
+      success: true,
+      renewed: 0,
+      failed: 0,
+    });
 
     await accept(
       automationsClient().enable({
@@ -4063,7 +4076,9 @@ describe("okou workflow automations", () => {
       }),
       [200],
     );
-    expect(watch.calls).toBe(2);
+    await expect(wf.readAutomation(created.body.id)).resolves.toMatchObject({
+      enabled: true,
+    });
 
     await accept(
       automationsClient().disable({
@@ -4072,7 +4087,9 @@ describe("okou workflow automations", () => {
       }),
       [200],
     );
-    expect(stop.calls).toBe(2);
+    await expect(wf.readAutomation(created.body.id)).resolves.toMatchObject({
+      enabled: false,
+    });
 
     const reconciled = await accept(
       renewGmailWatchScopeClient().renew({
@@ -4088,7 +4105,7 @@ describe("okou workflow automations", () => {
       renewed: 0,
       failed: 0,
     });
-    expect(stop.calls).toBe(3);
+    expect(stop.calls).toBe(0);
   });
 
   it("retries an inactive Calendar stop without renewing the channel", async () => {
