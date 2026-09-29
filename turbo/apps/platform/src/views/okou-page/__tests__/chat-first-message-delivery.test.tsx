@@ -502,6 +502,10 @@ test("An ambiguous create response reconciles an existing server thread before p
   const saved = savedFirstMessage();
   expect(threadId).toBe(saved.threadId);
   presentThreadMetadata(saved.threadId);
+  // Refresh is read-only even when the create response was lost.
+  await context.store.set(reconcileNewThreadDeliveries$, context.signal);
+  expect(savedFirstMessage().phase).toBe("prompt");
+  expect(promptIds).toEqual([]);
   clickFirstMessageRetry();
   await waitFor(() => {
     expect(promptIds).toEqual([saved.clientEventId]);
@@ -542,6 +546,9 @@ test("A lost prompt response retries the original event ID after checking the se
   expect(firstEventId).toBe(saved.clientEventId);
   expect(saved.phase).toBe("prompt");
   presentThreadMetadata(saved.threadId);
+  // A prompt-phase refresh checks server history without automatically sending.
+  await context.store.set(reconcileNewThreadDeliveries$, context.signal);
+  expect(savedFirstMessage().status).toBe("uncertain");
   installRunChat({
     onSendRequest(body) {
       if (body.clientEventId) {
@@ -549,6 +556,7 @@ test("A lost prompt response retries the original event ID after checking the se
       }
     },
   });
+  expect(retryIds).toEqual([]);
   clickFirstMessageRetry();
   await waitFor(() => {
     expect(retryIds).toEqual([saved.clientEventId]);
