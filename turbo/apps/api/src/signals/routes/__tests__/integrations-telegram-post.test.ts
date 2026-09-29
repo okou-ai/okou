@@ -235,6 +235,7 @@ async function seedTelegramPostFixture(
       ? OFFICIAL_LINKED_TELEGRAM_USER_ID
       : undefined,
   };
+  await authOrgApi.completeOnboarding(actorForFixture(seeded));
 
   return seeded;
 }

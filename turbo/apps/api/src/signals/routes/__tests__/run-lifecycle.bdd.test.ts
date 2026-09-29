@@ -2525,6 +2525,23 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       versionId: preparedPinnedArtifact.versionId,
       headVersionId: preparedPinnedArtifact.versionId,
     });
+    // Runs no longer create missing artifacts, so the unpinned writeback
+    // artifact exists before the first run and follows its HEAD afterwards.
+    const initialCustomArtifactFile = storageTextFile(
+      "checkpoint.txt",
+      `initial custom writeback ${customArtifactName}`,
+    );
+    const preparedInitialCustomArtifact = await storages.prepareStorage(actor, {
+      storageName: customArtifactName,
+      storageOwner: "user",
+      files: [initialCustomArtifactFile],
+    });
+    await storages.commitStorage(actor, {
+      storageName: customArtifactName,
+      storageOwner: "user",
+      versionId: preparedInitialCustomArtifact.versionId,
+      files: [initialCustomArtifactFile],
+    });
     const composeName = `bdd-storage-persistence-${randomUUID().slice(0, 8)}`;
     const compose = await api.createDirectAgent(actor, {
       version: "1",
@@ -5694,6 +5711,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     if (!onboarding.defaultAgentId) {
       throw new Error("Expected limited-free bootstrap agent");
     }
+    await bdd.completeOnboarding(actor);
     const agentId = onboarding.defaultAgentId;
     await expect(api.readBillingStatus(actor)).resolves.toMatchObject({
       tier: "limited-free-1",
@@ -13761,6 +13779,7 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
       visibility: "public",
     });
     const member = bdd.user({ orgId: actor.orgId });
+    await bdd.completeOnboarding(member);
     await setPaidToolDisabled(context, actor, "web-search", true);
     await setPaidToolDisabled(context, member, "scrape", true);
     const run = await api.createRun(member, {
@@ -15976,6 +15995,7 @@ describe("BILL-02: usage reads for an entitled organization with runs", () => {
     ]);
 
     const member = bdd.user({ orgId: actor.orgId });
+    await bdd.completeOnboarding(member);
     const memberAgent = await bdd.createAgent(member, {
       displayName: "BDD member usage agent",
       visibility: "private",

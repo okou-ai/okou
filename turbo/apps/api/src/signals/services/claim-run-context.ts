@@ -6508,9 +6508,13 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       get(event$),
       get(capturedAutomationTarget$),
     ]);
-    if (!head || !event || !target) return null;
+    if (!head || !event || !target) {
+      return null;
+    }
     const database = get(internalAutomationDatabase$);
-    if (!database) throw new Error("Automation execution has not started");
+    if (!database) {
+      throw new Error("Automation execution has not started");
+    }
     return {
       db: database,
       due: { ...target, chatThreadId: event.chatThreadId },
@@ -6523,7 +6527,9 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   const workflowAutomationLaunchReadGraphIdentityInput$ = computed(
     async (get) => {
       const args = await get(automationExecutionInput$);
-      if (!args) return null;
+      if (!args) {
+        return null;
+      }
       return {
         db: args.db,
         timing: get(workflowAutomationLaunchReadGraphTiming$),
@@ -6609,7 +6615,9 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           get(readiness$),
         ]);
       signal.throwIfAborted();
-      if (readiness) return readiness;
+      if (readiness) {
+        return readiness;
+      }
       if (!model.ok) {
         return model.failure;
       }
@@ -6833,7 +6841,9 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   const queuedAutomationAssemblerAssembly$ = computed(
     async (get): Promise<ChatQueueRunAssembly> => {
       const preparation = get(internalAutomationPreparation$);
-      if (preparation) await preparation;
+      if (preparation) {
+        await preparation;
+      }
       const early = get(queuedAutomationAssemblerInternalEarlyAssembly$);
       if (early) {
         return early;
@@ -6884,7 +6894,9 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   );
   const queuedAutomationAssemblerCallbackInputs$ = computed(async (get) => {
     const preparation = get(internalAutomationPreparation$);
-    if (preparation) await preparation;
+    if (preparation) {
+      await preparation;
+    }
     if (get(queuedAutomationAssemblerInternalEarlyAssembly$)) {
       return undefined;
     }
@@ -12496,7 +12508,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       }),
     );
   });
-  const storageMounts$ = computed(async (get) => {
+  const storageMounts$ = computed((get) => {
     return get(preparedStorage$);
   });
   const runnerStorage$ = computed(async (get) => {
