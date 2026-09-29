@@ -69,8 +69,16 @@ outside the transaction. Its bounded SQL transaction acquires the historical
 advisory lock and conditionally publishes the prepared result. The one acquisition
 definition and its two callers remain because outgoing webhooks still publish
 unconditionally under that same key. An outgoing writer that acquired the lock
-first invalidates R1's snapshot; an outgoing writer that acquires it later reads
-Stripe after the R1 commit. R1 no longer keeps Stripe I/O inside that boundary.
+first invalidates R1's snapshot. R1 no longer keeps Stripe I/O inside that
+boundary. However, the outgoing `handleConcurrencySubscriptionUpdated` uses the
+incoming event directly when its slot quantity equals the stored quantity; it
+does not always retrieve Stripe. After R1 publishes a cancellation, such an old
+same-quantity active event can still overwrite it unconditionally. The retained
+lock and R1's snapshot predicate do not prevent that subsequent old write. This
+is an existing outgoing-writer limitation, not proof that all mixed pre-R1/R1
+projection outcomes are safe. It must remain explicit in rollout evaluation;
+only prepared R1/R2 writers share authoritative retrieval and conditional
+publication.
 
 Other legacy billing preparation and reconciliation paths still pass ordinary
 writable databases or transactions to services, including invoice organization
