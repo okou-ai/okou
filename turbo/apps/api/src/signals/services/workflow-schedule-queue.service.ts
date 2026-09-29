@@ -40,6 +40,7 @@ function claimWorkflowScheduleSql(
   claim: WorkflowScheduleClaimPlan,
   queueEventId: string,
   native: MorningBriefNativeScheduleRow | undefined,
+  admittedAt: Date,
 ) {
   const selected =
     native?.legacyWorkflowId === claim.workflowId &&
@@ -67,17 +68,18 @@ function claimWorkflowScheduleSql(
       WHERE enabled AND org_id = ${claim.orgId} AND owner_user_id = ${claim.ownerUserId}
         AND workflow_id = ${claim.workflowId}::uuid
         AND next_run_at = ${claim.scheduledAnchorAt}
-        AND next_run_at >= ${new Date(nowDate().getTime() - SCHEDULE_GRACE_MS)}
+        AND next_run_at >= ${new Date(admittedAt.getTime() - SCHEDULE_GRACE_MS)}
     ), consumed AS (${consumeNative}), claimed AS (
       INSERT INTO morning_brief_schedule_claims (
         id, automation_id, org_id, owner_user_id, workflow_id,
-        scheduled_anchor_at, claimed_at, claim_sequence, queue_event_id
+        scheduled_anchor_at, claimed_at, claim_sequence, queue_event_id, updated_at
       )
       SELECT ${claim.claimId}::uuid, eligible.id, eligible.org_id,
         eligible.owner_user_id, eligible.workflow_id, ${claim.scheduledAnchorAt},
-        ${claim.claimedAt}, coalesce((SELECT max(claim_sequence)
-          FROM morning_brief_schedule_claims WHERE automation_id = eligible.id), 0) + 1,
-        ${queueEventId}::uuid
+        ${claim.claimedAt}, coalesce((SELECT claim_sequence
+          FROM morning_brief_schedule_claims WHERE automation_id = eligible.id
+          ORDER BY claim_sequence DESC LIMIT 1), 0) + 1,
+        ${queueEventId}::uuid, ${admittedAt}
       FROM eligible WHERE true ${nativeGuard}
       RETURNING automation_id
     ) UPDATE workflow_automations SET next_run_at = NULL,
@@ -89,6 +91,7 @@ function claimWorkflowScheduleSql(
 /** Coalesce only this automation's run-less schedule inputs; manual input stays distinct. */
 function revokePendingWorkflowTicksSql(
   input: PreparedWorkflowAutomationQueueInput,
+  admittedAt: Date,
 ) {
   return sql`
     WITH pending AS MATERIALIZED (
@@ -113,7 +116,7 @@ function revokePendingWorkflowTicksSql(
       SELECT gen_random_uuid(), pending.chat_thread_id, NULL, pending.id,
         'control.revoke', NULL, pending.context_type, pending.context_id,
         reserved.last_seq_id - count(*) OVER () + row_number() OVER (ORDER BY pending.seq_id),
-        greatest(${nowDate()}::timestamp, pending.created_at + interval '1 millisecond')
+        greatest(${admittedAt}::timestamp, pending.created_at + interval '1 millisecond')
       FROM pending JOIN reserved USING (chat_thread_id)
       ORDER BY pending.seq_id ON CONFLICT DO NOTHING
   `;
@@ -133,6 +136,7 @@ export const enqueueWorkflowScheduleInput$ = command(
   ): Promise<string | null> => {
     const db = set(writeDb$);
     const { input, scheduleClaim } = args;
+    let claimCreated = false;
     const result = await settleIncludingAbort(
       db.transaction(async (tx) => {
         await tx
@@ -178,14 +182,20 @@ export const enqueueWorkflowScheduleInput$ = command(
             .limit(1)
             .for("update");
           const { rowCount } = await tx.execute(
-            claimWorkflowScheduleSql(scheduleClaim, event.id, native),
+            claimWorkflowScheduleSql(
+              scheduleClaim,
+              event.id,
+              native,
+              nowDate(),
+            ),
           );
           if (rowCount !== 1) {
             throw new ScheduleOccurrenceUnavailableError();
           }
+          claimCreated = true;
         }
         if (args.replacePendingTicks) {
-          await tx.execute(revokePendingWorkflowTicksSql(input));
+          await tx.execute(revokePendingWorkflowTicksSql(input, nowDate()));
         }
         await tx
           .insert(queuedChatThreads)
@@ -206,7 +216,8 @@ export const enqueueWorkflowScheduleInput$ = command(
     if (!result.ok) {
       if (
         result.error instanceof ScheduleOccurrenceUnavailableError ||
-        !scheduleClaim
+        !scheduleClaim ||
+        !claimCreated
       ) {
         throw result.error;
       }

@@ -32,7 +32,7 @@ import {
 import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import { assembleQueuedAutomationRun$ } from "./workflow-chat-event-queue.service";
 import { recordWorkflowAdmissionDuration } from "./workflow-queue-admission-timing.service";
-import { settleRejectedAutomationInput } from "./workflow-schedule-failure.service";
+import { settleRejectedAutomationInput$ } from "./workflow-schedule-failure.service";
 import type {
   ChatQueueHeadContext,
   ChatQueueHeadRejection,
@@ -303,8 +303,8 @@ const rejectChatQueueHead$ = command(
       error: rejection.error.message,
     });
     if (head.contextType === "automation") {
-      await settleRejectedAutomationInput(
-        set(writeDb$),
+      await set(
+        settleRejectedAutomationInput$,
         {
           contextId: head.contextId,
           queueEventId: head.id,

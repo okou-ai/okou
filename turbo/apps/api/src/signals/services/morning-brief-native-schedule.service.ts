@@ -250,6 +250,15 @@ export async function lockMorningBriefLegacyWriterAuthority(
   expected?: MorningBriefLegacyWriterFence,
 ): Promise<MorningBriefLegacyWriterAuthority> {
   const row = await lockMorningBriefNativeScheduleForWrite(tx, lineage);
+  return morningBriefLegacyWriterAuthorityFromRow(row, lineage, expected);
+}
+
+/** Classify an already-locked row without carrying its database handle. */
+export function morningBriefLegacyWriterAuthorityFromRow(
+  row: MorningBriefNativeScheduleRow | undefined,
+  lineage: MorningBriefLegacyLineage,
+  expected?: MorningBriefLegacyWriterFence,
+): MorningBriefLegacyWriterAuthority {
   const current = legacyWriterFence(row, lineage);
   if (expected !== undefined && !sameLegacyWriterFence(expected, current)) {
     return { kind: "stale" };

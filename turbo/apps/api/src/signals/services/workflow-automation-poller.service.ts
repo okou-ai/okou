@@ -11,7 +11,7 @@ import {
 import { command } from "ccstate";
 import { and, eq, gte, isNull, lt, lte, ne, or, sql } from "drizzle-orm";
 import { logger } from "../../lib/log";
-import { writeDb$, type Db } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { now, nowDate } from "../../lib/time";
 import { tapError } from "../utils";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
@@ -22,19 +22,19 @@ import {
   type AutomationRow,
   type RunWorkflowAutomationResult,
 } from "./workflow-automation-launch.service";
-import { isCanonicalMorningBriefAutomation } from "./morning-brief-schedule-claim.service";
+import { isCanonicalMorningBriefAutomation$ } from "./morning-brief-schedule-claim.service";
 import type { WorkflowScheduleClaimPlan } from "./workflow-chat-event-queue.service";
 import {
   preRunFailureFromError,
-  recordPreRunFailure,
-  settleJournaledSchedulePreRunFailure,
+  recordPreRunFailure$,
+  settleJournaledSchedulePreRunFailure$,
 } from "./workflow-schedule-failure.service";
-import { workflowAutomationCanFire } from "./workflow-automation-access.service";
+import { workflowAutomationCanFire$ } from "./workflow-automation-access.service";
 import { buildWorkflowScheduleAutomationBrief } from "./workflow-automation-brief.service";
 import { ensureWorkflowUserAutomationThread$ } from "./workflow-user-automation-thread.service";
 import {
-  deferWorkflowSchedule,
-  skipExpiredWorkflowSchedule,
+  deferWorkflowSchedule$,
+  skipExpiredWorkflowSchedule$,
 } from "./workflow-schedule-expiry.service";
 import {
   SCHEDULE_GRACE_MS,
@@ -104,23 +104,6 @@ const startDueWorkflowAutomation$ = command(
   },
 );
 
-async function hasOrgMembership(
-  db: Db,
-  args: { readonly orgId: string; readonly userId: string },
-): Promise<boolean> {
-  const [membership] = await db
-    .select({ userId: orgMembersCache.userId })
-    .from(orgMembersCache)
-    .where(
-      and(
-        eq(orgMembersCache.orgId, args.orgId),
-        eq(orgMembersCache.userId, args.userId),
-      ),
-    )
-    .limit(1);
-  return membership !== undefined;
-}
-
 /**
  * Claim a due workflow automation via an optimistic lock on `next_run_at`: clear
  * the next run and stamp `last_run_at`. A one-time automation stays readable
@@ -129,53 +112,59 @@ async function hasOrgMembership(
  * completion callback. Returns the claimed row, or null when another tick won
  * the race.
  */
-async function claimAutomation(
-  db: Db,
-  automation: AutomationRow,
-  currentTime: Date,
-): Promise<AutomationRow | null> {
-  if (!automation.nextRunAt) {
-    return null;
-  }
-  const [claimed] = await db
-    .update(workflowAutomations)
-    .set({
-      nextRunAt: null,
-      lastRunAt: currentTime,
-      updatedAt: currentTime,
-    })
-    .where(
-      and(
-        eq(workflowAutomations.id, automation.id),
-        eq(workflowAutomations.nextRunAt, automation.nextRunAt),
-        // A stale preflight must not claim a disabled row or turn a newly
-        // classified Morning Brief into an unjournaled legacy Run.
-        eq(workflowAutomations.enabled, true),
-        automation.officialBlueprintKey === MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY
-          ? eq(
-              workflowAutomations.officialBlueprintKey,
-              MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
-            )
-          : or(
-              isNull(workflowAutomations.officialBlueprintKey),
-              ne(
-                workflowAutomations.officialBlueprintKey,
-                MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
-              ),
-            ),
-        scheduleExpiryEnabled() ||
+const claimAutomation$ = command(
+  async (
+    { set },
+    automation: AutomationRow,
+    currentTime: Date,
+    signal: AbortSignal,
+  ): Promise<AutomationRow | null> => {
+    const db = set(writeDb$);
+    if (!automation.nextRunAt) {
+      return null;
+    }
+    const [claimed] = await db
+      .update(workflowAutomations)
+      .set({
+        nextRunAt: null,
+        lastRunAt: currentTime,
+        updatedAt: currentTime,
+      })
+      .where(
+        and(
+          eq(workflowAutomations.id, automation.id),
+          eq(workflowAutomations.nextRunAt, automation.nextRunAt),
+          // A stale preflight must not claim a disabled row or turn a newly
+          // classified Morning Brief into an unjournaled legacy Run.
+          eq(workflowAutomations.enabled, true),
           automation.officialBlueprintKey ===
             MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY
-          ? gte(
-              workflowAutomations.nextRunAt,
-              new Date(nowDate().getTime() - SCHEDULE_GRACE_MS),
-            )
-          : undefined,
-      ),
-    )
-    .returning(workflowAutomationColumns());
-  return claimed ?? null;
-}
+            ? eq(
+                workflowAutomations.officialBlueprintKey,
+                MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
+              )
+            : or(
+                isNull(workflowAutomations.officialBlueprintKey),
+                ne(
+                  workflowAutomations.officialBlueprintKey,
+                  MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
+                ),
+              ),
+          scheduleExpiryEnabled() ||
+            automation.officialBlueprintKey ===
+              MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY
+            ? gte(
+                workflowAutomations.nextRunAt,
+                new Date(nowDate().getTime() - SCHEDULE_GRACE_MS),
+              )
+            : undefined,
+        ),
+      )
+      .returning(workflowAutomationColumns());
+    signal.throwIfAborted();
+    return claimed ?? null;
+  },
+);
 
 type DueMode =
   | "legacy"
@@ -254,151 +243,176 @@ function scheduleModeFilter(mode: DueMode, at: Date) {
   );
 }
 
-async function dueWorkflowAutomationRows(
-  db: Db,
-  args: DueSelection,
-  signal: AbortSignal,
-): Promise<DueWorkflowAutomationRow[]> {
-  const mode = args.mode ?? "legacy";
-  const rows = await db
-    .select({
-      automation: workflowAutomationColumns(),
-      agentId: workflows.agentId,
-      workflowName: workflows.name,
-      workflowDisplayName: workflows.displayName,
-      chatThreadId: workflowUserAutomationThreads.chatThreadId,
-      userTimezone: orgMembersMetadata.timezone,
-    })
-    .from(workflowAutomations)
-    .innerJoin(workflows, eq(workflowAutomations.workflowId, workflows.id))
-    .leftJoin(
-      workflowUserAutomationThreads,
-      and(
-        eq(workflowUserAutomationThreads.orgId, workflowAutomations.orgId),
-        eq(
-          workflowUserAutomationThreads.userId,
-          workflowAutomations.ownerUserId,
+const dueWorkflowAutomationRows$ = command(
+  async (
+    { set },
+    args: DueSelection,
+    signal: AbortSignal,
+  ): Promise<DueWorkflowAutomationRow[]> => {
+    const db = set(writeDb$);
+    const mode = args.mode ?? "legacy";
+    const rows = await db
+      .select({
+        automation: workflowAutomationColumns(),
+        agentId: workflows.agentId,
+        workflowName: workflows.name,
+        workflowDisplayName: workflows.displayName,
+        chatThreadId: workflowUserAutomationThreads.chatThreadId,
+        userTimezone: orgMembersMetadata.timezone,
+      })
+      .from(workflowAutomations)
+      .innerJoin(workflows, eq(workflowAutomations.workflowId, workflows.id))
+      .leftJoin(
+        workflowUserAutomationThreads,
+        and(
+          eq(workflowUserAutomationThreads.orgId, workflowAutomations.orgId),
+          eq(
+            workflowUserAutomationThreads.userId,
+            workflowAutomations.ownerUserId,
+          ),
+          eq(
+            workflowUserAutomationThreads.workflowId,
+            workflowAutomations.workflowId,
+          ),
         ),
-        eq(
-          workflowUserAutomationThreads.workflowId,
-          workflowAutomations.workflowId,
+      )
+      .leftJoin(
+        orgMembersMetadata,
+        and(
+          eq(orgMembersMetadata.orgId, workflowAutomations.orgId),
+          eq(orgMembersMetadata.userId, workflowAutomations.ownerUserId),
         ),
-      ),
-    )
-    .leftJoin(
-      orgMembersMetadata,
-      and(
-        eq(orgMembersMetadata.orgId, workflowAutomations.orgId),
-        eq(orgMembersMetadata.userId, workflowAutomations.ownerUserId),
-      ),
-    )
-    .where(
-      and(
-        args.automationId === undefined
-          ? undefined
-          : eq(workflowAutomations.id, args.automationId),
-        args.workflowId === undefined
-          ? undefined
-          : eq(workflowAutomations.workflowId, args.workflowId),
-        eq(workflowAutomations.enabled, true),
-        eq(workflowAutomations.kind, "schedule"),
-        lte(workflowAutomations.nextRunAt, args.at),
-        scheduleModeFilter(mode, args.at),
-      ),
-    )
-    .orderBy(
-      ...(mode === "retry" || mode === "once-retry"
-        ? [
-            workflowAutomations.deferredUntil,
-            workflowAutomations.nextRunAt,
-            workflowAutomations.id,
-          ]
-        : [workflowAutomations.nextRunAt, workflowAutomations.id]),
-    )
-    .limit(DUE_MODE_LIMIT[mode]);
-  signal.throwIfAborted();
-  return rows;
-}
+      )
+      .where(
+        and(
+          args.automationId === undefined
+            ? undefined
+            : eq(workflowAutomations.id, args.automationId),
+          args.workflowId === undefined
+            ? undefined
+            : eq(workflowAutomations.workflowId, args.workflowId),
+          eq(workflowAutomations.enabled, true),
+          eq(workflowAutomations.kind, "schedule"),
+          lte(workflowAutomations.nextRunAt, args.at),
+          scheduleModeFilter(mode, args.at),
+        ),
+      )
+      .orderBy(
+        ...(mode === "retry" || mode === "once-retry"
+          ? [
+              workflowAutomations.deferredUntil,
+              workflowAutomations.nextRunAt,
+              workflowAutomations.id,
+            ]
+          : [workflowAutomations.nextRunAt, workflowAutomations.id]),
+      )
+      .limit(DUE_MODE_LIMIT[mode]);
+    signal.throwIfAborted();
+    return rows;
+  },
+);
 
 /** A departed owner is disabled before expiry can advance its obligation. */
-async function dueWorkflowAutomationOwnerIsMember(
-  db: Db,
-  row: DueWorkflowAutomationRow,
-  currentTime: Date,
-  signal: AbortSignal,
-): Promise<boolean> {
-  const ownerIsMember = await hasOrgMembership(db, {
-    orgId: row.automation.orgId,
-    userId: row.automation.ownerUserId,
-  });
-  signal.throwIfAborted();
-  if (ownerIsMember) {
+const dueWorkflowAutomationOwnerIsMember$ = command(
+  async (
+    { set },
+    row: DueWorkflowAutomationRow,
+    currentTime: Date,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const db = set(writeDb$);
+    const [membership] = await db
+      .select({ userId: orgMembersCache.userId })
+      .from(orgMembersCache)
+      .where(
+        and(
+          eq(orgMembersCache.orgId, row.automation.orgId),
+          eq(orgMembersCache.userId, row.automation.ownerUserId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (membership) {
+      return true;
+    }
+    log.warn(
+      "Disabling workflow automation: owner is no longer an org member",
+      {
+        automationId: row.automation.id,
+        workflowId: row.automation.workflowId,
+        orgId: row.automation.orgId,
+        userId: row.automation.ownerUserId,
+      },
+    );
+    await db
+      .update(workflowAutomations)
+      .set({ enabled: false, nextRunAt: null, updatedAt: currentTime })
+      .where(eq(workflowAutomations.id, row.automation.id));
+    signal.throwIfAborted();
+    return false;
+  },
+);
+
+const dueWorkflowAutomationIsFireable$ = command(
+  async (
+    { set },
+    row: DueWorkflowAutomationRow,
+    currentTime: Date,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    if (
+      !(await set(
+        dueWorkflowAutomationOwnerIsMember$,
+        row,
+        currentTime,
+        signal,
+      ))
+    ) {
+      return false;
+    }
+    const canFire = await set(
+      workflowAutomationCanFire$,
+      { automation: row.automation, agentId: row.agentId },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!canFire) {
+      log.debug("Workflow automation skipped: automation is paused", {
+        automationId: row.automation.id,
+        workflowId: row.automation.workflowId,
+        orgId: row.automation.orgId,
+        userId: row.automation.ownerUserId,
+        agentId: row.agentId,
+      });
+      return false;
+    }
     return true;
-  }
-  log.warn("Disabling workflow automation: owner is no longer an org member", {
-    automationId: row.automation.id,
-    workflowId: row.automation.workflowId,
-    orgId: row.automation.orgId,
-    userId: row.automation.ownerUserId,
-  });
-  await db
-    .update(workflowAutomations)
-    .set({ enabled: false, nextRunAt: null, updatedAt: currentTime })
-    .where(eq(workflowAutomations.id, row.automation.id));
-  signal.throwIfAborted();
-  return false;
-}
+  },
+);
 
-async function dueWorkflowAutomationIsFireable(
-  db: Db,
-  row: DueWorkflowAutomationRow,
-  currentTime: Date,
-  signal: AbortSignal,
-): Promise<boolean> {
-  if (
-    !(await dueWorkflowAutomationOwnerIsMember(db, row, currentTime, signal))
-  ) {
-    return false;
-  }
-  const canFire = await workflowAutomationCanFire(
-    db,
-    { automation: row.automation, agentId: row.agentId },
-    signal,
-  );
-  signal.throwIfAborted();
-  if (!canFire) {
-    log.debug("Workflow automation skipped: automation is paused", {
-      automationId: row.automation.id,
-      workflowId: row.automation.workflowId,
-      orgId: row.automation.orgId,
-      userId: row.automation.ownerUserId,
-      agentId: row.agentId,
-    });
-    return false;
-  }
-  return true;
-}
-
-async function retireDepartedOwner(
-  context: { db: Db; currentTime: Date; expiryEnabled: boolean },
-  row: DueWorkflowAutomationRow,
-  signal: AbortSignal,
-): Promise<boolean> {
-  const anchor = row.automation.nextRunAt;
-  if (
-    !context.expiryEnabled ||
-    !anchor ||
-    !scheduleExpired(anchor, nowDate())
-  ) {
-    return false;
-  }
-  return !(await dueWorkflowAutomationOwnerIsMember(
-    context.db,
-    row,
-    context.currentTime,
-    signal,
-  ));
-}
+const retireDepartedOwner$ = command(
+  async (
+    { set },
+    context: { currentTime: Date; expiryEnabled: boolean },
+    row: DueWorkflowAutomationRow,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const anchor = row.automation.nextRunAt;
+    if (
+      !context.expiryEnabled ||
+      !anchor ||
+      !scheduleExpired(anchor, nowDate())
+    ) {
+      return false;
+    }
+    return !(await set(
+      dueWorkflowAutomationOwnerIsMember$,
+      row,
+      context.currentTime,
+      signal,
+    ));
+  },
+);
 
 type WorkflowPollerArgs = {
   readonly automationId?: string;
@@ -407,40 +421,42 @@ type WorkflowPollerArgs = {
 
 type PollCounters = { executed: number; skipped: number; expired: number };
 
-async function loadDueWorkflowRows(
-  db: Db,
-  args: {
-    readonly currentTime: Date;
-    readonly automationId?: string;
-    readonly workflowId?: string;
-    readonly expiryEnabled: boolean;
+const loadDueWorkflowRows$ = command(
+  async (
+    { set },
+    args: {
+      readonly currentTime: Date;
+      readonly automationId?: string;
+      readonly workflowId?: string;
+      readonly expiryEnabled: boolean;
+    },
+    signal: AbortSignal,
+  ): Promise<DueWorkflowAutomationRow[]> => {
+    const common = {
+      at: args.currentTime,
+      automationId: args.automationId,
+      workflowId: args.workflowId,
+    };
+    if (!args.expiryEnabled) {
+      return await set(dueWorkflowAutomationRows$, common, signal);
+    }
+    const modes: readonly DueMode[] = [
+      "expired",
+      "fresh",
+      "retry",
+      "once-expired",
+      "once",
+      "once-retry",
+    ];
+    const rows: DueWorkflowAutomationRow[] = [];
+    for (const mode of modes) {
+      rows.push(
+        ...(await set(dueWorkflowAutomationRows$, { ...common, mode }, signal)),
+      );
+    }
+    return rows;
   },
-  signal: AbortSignal,
-): Promise<DueWorkflowAutomationRow[]> {
-  const common = {
-    at: args.currentTime,
-    automationId: args.automationId,
-    workflowId: args.workflowId,
-  };
-  if (!args.expiryEnabled) {
-    return await dueWorkflowAutomationRows(db, common, signal);
-  }
-  const modes: readonly DueMode[] = [
-    "expired",
-    "fresh",
-    "retry",
-    "once-expired",
-    "once",
-    "once-retry",
-  ];
-  const rows: DueWorkflowAutomationRow[] = [];
-  for (const mode of modes) {
-    rows.push(
-      ...(await dueWorkflowAutomationRows(db, { ...common, mode }, signal)),
-    );
-  }
-  return rows;
-}
+);
 
 const launchClaimedDueRow$ = command(
   async (
@@ -456,7 +472,6 @@ const launchClaimedDueRow$ = command(
     },
     signal: AbortSignal,
   ): Promise<void> => {
-    const db = set(writeDb$);
     const { row, claimed, currentTime, counters } = args;
     const scheduleClaim: WorkflowScheduleClaimPlan | undefined =
       args.journaled && args.scheduledAnchorAt !== null
@@ -475,18 +490,22 @@ const launchClaimedDueRow$ = command(
         scheduleClaim &&
         (error instanceof WorkflowScheduleAdmissionError || signal.aborted)
       ) {
-        await settleJournaledSchedulePreRunFailure(db, {
+        await set(settleJournaledSchedulePreRunFailure$, {
           automation: claimed,
           claimId: scheduleClaim.claimId,
           failure: preRunFailureFromError(error),
         });
       } else {
-        await recordPreRunFailure(
-          db,
-          claimed,
-          preRunFailureFromError(error),
+        await set(
+          recordPreRunFailure$,
+          {
+            automation: claimed,
+            failure: preRunFailureFromError(error),
+            stillDueAt: args.journaled
+              ? (args.scheduledAnchorAt ?? undefined)
+              : undefined,
+          },
           signal,
-          args.journaled ? (args.scheduledAnchorAt ?? undefined) : undefined,
         );
       }
       counters.skipped++;
@@ -542,17 +561,68 @@ const launchClaimedDueRow$ = command(
     }
     if (result.scheduleOccurrence === "superseded") {
       if (args.expiryEnabled && args.scheduledAnchorAt) {
-        await deferWorkflowSchedule(db, {
-          automationId: row.automation.id,
-          anchor: args.scheduledAnchorAt,
-          at: nowDate(),
-          reason: "unavailable",
-        });
+        await set(
+          deferWorkflowSchedule$,
+          {
+            automationId: row.automation.id,
+            anchor: args.scheduledAnchorAt,
+            at: nowDate(),
+            reason: "unavailable",
+          },
+          signal,
+        );
       }
       counters.skipped++;
       return;
     }
     counters.executed++;
+  },
+);
+
+const skipExpiredDueRow$ = command(
+  async (
+    { set },
+    row: DueWorkflowAutomationRow,
+    expiryEnabled: boolean,
+    counters: PollCounters,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const anchor = row.automation.nextRunAt;
+    if (
+      !expiryEnabled ||
+      anchor === null ||
+      !scheduleExpired(anchor, nowDate())
+    ) {
+      return false;
+    }
+    const at = nowDate();
+    const outcome = await set(
+      skipExpiredWorkflowSchedule$,
+      {
+        automationId: row.automation.id,
+        anchor,
+        at,
+      },
+      signal,
+    );
+    if (outcome === "held") {
+      await set(
+        deferWorkflowSchedule$,
+        {
+          automationId: row.automation.id,
+          anchor,
+          at,
+          reason: "held",
+        },
+        signal,
+      );
+    }
+    signal.throwIfAborted();
+    if (outcome === "skipped") {
+      counters.expired++;
+    }
+    counters.skipped++;
+    return true;
   },
 );
 
@@ -562,11 +632,10 @@ const executeDueWorkflowAutomationsImpl$ = command(
     args: WorkflowPollerArgs,
     signal: AbortSignal,
   ): Promise<ExecuteResult> => {
-    const db = set(writeDb$);
     const currentTime = nowDate();
     const expiryEnabled = scheduleExpiryEnabled();
-    const rows = await loadDueWorkflowRows(
-      db,
+    const rows = await set(
+      loadDueWorkflowRows$,
       {
         currentTime,
         automationId: args.automationId,
@@ -576,67 +645,41 @@ const executeDueWorkflowAutomationsImpl$ = command(
       signal,
     );
     const counters: PollCounters = { executed: 0, skipped: 0, expired: 0 };
-    const skipIfExpired = async (
-      row: DueWorkflowAutomationRow,
-    ): Promise<boolean> => {
-      const anchor = row.automation.nextRunAt;
-      if (
-        !expiryEnabled ||
-        anchor === null ||
-        !scheduleExpired(anchor, nowDate())
-      ) {
-        return false;
-      }
-      const at = nowDate();
-      const outcome = await skipExpiredWorkflowSchedule(db, {
-        automationId: row.automation.id,
-        anchor,
-        at,
-      });
-      if (outcome === "held") {
-        await deferWorkflowSchedule(db, {
-          automationId: row.automation.id,
-          anchor,
-          at,
-          reason: "held",
-        });
-      }
-      signal.throwIfAborted();
-      if (outcome === "skipped") {
-        counters.expired++;
-      }
-      counters.skipped++;
-      return true;
-    };
 
-    const expiryContext = { db: db, currentTime, expiryEnabled };
+    const expiryContext = { currentTime, expiryEnabled };
     for (const row of rows) {
-      if (await retireDepartedOwner(expiryContext, row, signal)) {
+      if (await set(retireDepartedOwner$, expiryContext, row, signal)) {
         counters.skipped++;
         continue;
       }
       // Retire an expired slot before the potentially expensive pause check.
-      if (await skipIfExpired(row)) {
+      if (await set(skipExpiredDueRow$, row, expiryEnabled, counters, signal)) {
         continue;
       }
       if (
-        !(await dueWorkflowAutomationIsFireable(db, row, currentTime, signal))
+        !(await set(dueWorkflowAutomationIsFireable$, row, currentTime, signal))
       ) {
-        if (await skipIfExpired(row)) {
+        if (
+          await set(skipExpiredDueRow$, row, expiryEnabled, counters, signal)
+        ) {
           continue;
         }
         if (expiryEnabled && row.automation.nextRunAt) {
-          await deferWorkflowSchedule(db, {
-            automationId: row.automation.id,
-            anchor: row.automation.nextRunAt,
-            at: nowDate(),
-            reason: "not_fireable",
-          });
+          await set(
+            deferWorkflowSchedule$,
+            {
+              automationId: row.automation.id,
+              anchor: row.automation.nextRunAt,
+              at: nowDate(),
+              reason: "not_fireable",
+            },
+            signal,
+          );
         }
         counters.skipped++;
         continue;
       }
-      if (await skipIfExpired(row)) {
+      if (await set(skipExpiredDueRow$, row, expiryEnabled, counters, signal)) {
         continue;
       }
 
@@ -646,15 +689,17 @@ const executeDueWorkflowAutomationsImpl$ = command(
       const scheduledAnchorAt = row.automation.nextRunAt;
       const journaled =
         scheduledAnchorAt !== null &&
-        (await isCanonicalMorningBriefAutomation(db, row.automation));
+        (await set(isCanonicalMorningBriefAutomation$, row.automation, signal));
       signal.throwIfAborted();
 
       const claimed = journaled
         ? row.automation
-        : await claimAutomation(db, row.automation, currentTime);
+        : await set(claimAutomation$, row.automation, currentTime, signal);
       signal.throwIfAborted();
       if (!claimed) {
-        if (!(await skipIfExpired(row))) {
+        if (
+          !(await set(skipExpiredDueRow$, row, expiryEnabled, counters, signal))
+        ) {
           counters.skipped++;
         }
         continue;

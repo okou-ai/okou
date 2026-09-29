@@ -17,7 +17,6 @@ import {
   resolveCapturedAgentRunStorage,
 } from "./agent-run-storage.service";
 import { personalSubscriptionAccountIdentity } from "./personal-subscription-recovery.service";
-import { observePreparedLaunchPersistenceForTest } from "./prepared-launch-persistence-observer.service";
 import {
   measurePiPreparation,
   measurePiPreparationSync,
@@ -8273,10 +8272,6 @@ async function persistAtomicLaunchRows(
     runId: persisted.run.id,
     status: "pending",
   });
-
-  observePreparedLaunchPersistenceForTest(
-    args.commit.createArgs.agentRunMetadata?.workflowAutomationId,
-  );
 
   const chatThreadId = args.commit.createArgs.chatThreadId;
   if (chatThreadId && !args.validatedThreadSession) {

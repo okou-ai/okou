@@ -53,14 +53,34 @@ transaction handles to another function.
   This removes the inherited per-event SQL loop; it does not claim a fixed row
   cap on a pre-existing schedule backlog.
 
+- The poller now owns its bounded lane reads and conditional due-row claim in
+  commands. Membership/access checks precede model preparation, and only plain
+  occurrence values cross into launch. Failure handling no longer captures a
+  database handle in its returned callback state.
+- Morning Brief journal settlement, ordinary cron/loop completion, pre-run
+  failure and expiry now execute direct SQL inside their owning commands.
+  They retain native-owner-before-automation ordering, exact occurrence and
+  latest-claim checks, the three-failure policy, credit-error exemption,
+  current-timezone recurrence and native revocation on an enabled-state change.
+  Expiry uses bounded existence probes for claimed/pending work rather than
+  loading the complete thread queue. The scheduling lanes and retry loops run
+  outside these local transactions.
+
 ## Implementation still required
 
 These are implementation tasks, not conditions satisfied by draining old API
 requests:
 
-- Morning Brief schedule settlement, expiry and the poller's failure paths still
-  forward database handles through the native-authority helper graph. The
-  completed queue boundary below does not finish those paths.
+- Schedule tick coalescing still operates on the existing pending backlog for
+  one automation/thread. Its own transaction now uses one set statement, but
+  a fixed row bound remains to be implemented without revoking a winner before
+  its new occurrence is admitted.
+- Morning Brief preference, native delivery, installation/reconciliation and
+  revocation still have inherited native-authority helper chains. The absent
+  native-owner key remains necessary for the current shared writer protocol:
+  first materialization can otherwise race an ordinary/selected classification.
+  Preparing its terminal protocol is still implementation work, not merely an
+  outgoing-request drain gate.
 - Producer Run binding still carries `persistProducerRunBinding(tx, run)` into
   the shared Run creation transaction.
 - Workflow launch still forwards a database handle through compute-unit grant
@@ -127,3 +147,20 @@ It no longer asserts that Agent deletion completes at a particular internal lock
 wait point. The separate public concurrent credential-rotation test is unchanged:
 two requests with `expectedRevision: 1` must yield exactly one 200 and one 409,
 advance dependent hosts, preserve an independent host and reject stale writes.
+
+## Schedule test control cleanup
+
+The schedule-claims suite no longer creates an automation row lock, polls
+PostgreSQL blocked waiters or cancels their queries to force an admission
+rollback. Its second artificial failure case no longer injects an exception
+immediately after Run persistence. Both test cases and their exclusive fixture
+helpers are removed, together with the production persistence-observer hook.
+
+Existing tests retain concurrent/repeated completion, the exact thirty-minute
+admission boundary, timezone changes during a run, ordinary cron/loop behavior,
+revoked membership and repeated-failure disablement. Queue tests retain manual
+Run now input alongside automated coalescing and concurrent manual admission.
+These observable behavior cases do not prove rollback at an arbitrary internal
+SQL instruction. Existing journal/native-state read fixtures elsewhere in the
+suite remain a separate test-boundary cleanup item; their presence is not
+reported as compliant user-API-only coverage.
