@@ -1198,7 +1198,7 @@ async function upsertSingletonSubscription(
         eq(modelProvidersTable.orgId, args.orgId),
         eq(modelProvidersTable.userId, args.userId),
         eq(modelProvidersTable.type, args.type),
-        visiblePersonalModelProviderCondition(args.db),
+        visiblePersonalModelProviderCondition(),
       ),
     )
     .limit(1);

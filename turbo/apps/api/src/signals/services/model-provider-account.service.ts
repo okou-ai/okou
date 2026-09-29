@@ -33,7 +33,7 @@ import { settle } from "../utils";
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
 import { isUniqueViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
-import type { Db, ReadonlyDb } from "../external/db";
+import type { Db } from "../external/db";
 import { publishPersonalModelProvidersChangedSafely } from "../external/realtime";
 import {
   decryptStoredSecretValue,
@@ -1047,7 +1047,7 @@ export async function personalModelProviderAccountById(args: {
     .where(
       and(
         eq(modelProviderAccounts.id, args.id),
-        personalSubscriptionAccountAccessCondition(args.db, args.runId),
+        personalSubscriptionAccountAccessCondition(args.runId),
         eq(modelProviderAccounts.orgId, args.orgId),
         eq(modelProviderAccounts.userId, args.userId),
       ),
@@ -1071,52 +1071,34 @@ export async function personalModelProviderAccountResponseById(args: {
 
 /** Settings never receive retired credentials. Runtime retention requires the
  * exact owner, org and live run binding, including queued work. */
-export function personalSubscriptionAccountAccessCondition(
-  db: ReadonlyDb,
-  runId?: string,
-) {
+export function personalSubscriptionAccountAccessCondition(runId?: string) {
   const connected = isNull(modelProviderAccounts.disconnectedAt);
   return runId === undefined
     ? connected
     : or(
         connected,
-        exists(
-          db
-            .select({ id: agentRuns.id })
-            .from(agentRuns)
-            .where(
-              and(
-                eq(agentRuns.id, runId),
-                eq(agentRuns.orgId, modelProviderAccounts.orgId),
-                eq(agentRuns.userId, modelProviderAccounts.userId),
-                eq(agentRuns.modelProviderId, modelProviderAccounts.id),
-                inArray(agentRuns.status, ["pending", "running"]),
-              ),
-            ),
-        ),
+        sql`EXISTS (
+          SELECT 1 FROM ${agentRuns}
+          WHERE ${agentRuns.id} = ${runId}
+            AND ${agentRuns.orgId} = ${modelProviderAccounts.orgId}
+            AND ${agentRuns.userId} = ${modelProviderAccounts.userId}
+            AND ${agentRuns.modelProviderId} = ${modelProviderAccounts.id}
+            AND ${agentRuns.status} IN ('pending', 'running')
+        )`,
       );
 }
 
-export function visiblePersonalModelProviderCondition(db: ReadonlyDb) {
-  return or(
-    notExists(
-      db
-        .select({ id: modelProviderAccounts.id })
-        .from(modelProviderAccounts)
-        .where(eq(modelProviderAccounts.modelProviderId, modelProviders.id)),
-    ),
-    exists(
-      db
-        .select({ id: modelProviderAccounts.id })
-        .from(modelProviderAccounts)
-        .where(
-          and(
-            eq(modelProviderAccounts.modelProviderId, modelProviders.id),
-            isNull(modelProviderAccounts.disconnectedAt),
-          ),
-        ),
-    ),
-  );
+export function visiblePersonalModelProviderCondition() {
+  return sql`(
+    NOT EXISTS (
+      SELECT 1 FROM ${modelProviderAccounts}
+      WHERE ${modelProviderAccounts.modelProviderId} = ${modelProviders.id}
+    ) OR EXISTS (
+      SELECT 1 FROM ${modelProviderAccounts}
+      WHERE ${modelProviderAccounts.modelProviderId} = ${modelProviders.id}
+        AND ${modelProviderAccounts.disconnectedAt} IS NULL
+    )
+  )`;
 }
 
 /** Retain a disconnected account while a live run still references it;
@@ -1259,7 +1241,7 @@ async function readAccountCiphertexts(
     .where(
       and(
         eq(modelProviderAccounts.id, args.sourceId),
-        personalSubscriptionAccountAccessCondition(args.db, args.runId),
+        personalSubscriptionAccountAccessCondition(args.runId),
         eq(modelProviderAccounts.orgId, args.orgId),
         eq(modelProviderAccounts.userId, args.userId),
         eq(modelProviderAccounts.type, args.type),

@@ -1152,7 +1152,7 @@ async function getSecretValue(args: {
       .where(
         and(
           eq(modelProviderAccounts.id, args.sourceId),
-          personalSubscriptionAccountAccessCondition(args.db, args.runId),
+          personalSubscriptionAccountAccessCondition(args.runId),
           eq(modelProviderAccounts.orgId, args.orgId),
           eq(modelProviderAccounts.userId, args.userId),
           eq(modelProviderAccountSecrets.name, args.name),
@@ -1236,7 +1236,7 @@ async function upsertModelProviderSecretValue(
       .where(
         and(
           eq(modelProviderAccounts.id, args.sourceId),
-          personalSubscriptionAccountAccessCondition(db, args.runId),
+          personalSubscriptionAccountAccessCondition(args.runId),
           eq(modelProviderAccounts.orgId, args.orgId),
           eq(modelProviderAccounts.userId, args.userId),
         ),
@@ -2254,7 +2254,7 @@ async function loadModelProviderRefreshStateRow(
       .where(
         and(
           eq(modelProviderAccounts.id, args.sourceId),
-          personalSubscriptionAccountAccessCondition(db, args.runId),
+          personalSubscriptionAccountAccessCondition(args.runId),
           eq(modelProviderAccounts.orgId, args.orgId),
           eq(modelProviderAccounts.userId, context.secretUserId),
           eq(
@@ -3556,7 +3556,7 @@ async function getModelProviderRuntimeSecretValue(args: {
       .where(
         and(
           eq(modelProviderAccounts.id, args.sourceId),
-          personalSubscriptionAccountAccessCondition(args.db, args.runId),
+          personalSubscriptionAccountAccessCondition(args.runId),
           eq(modelProviderAccounts.orgId, args.orgId),
           eq(modelProviderAccounts.userId, args.userId),
           eq(modelProviderAccounts.type, args.providerType),
@@ -3718,7 +3718,7 @@ async function loadModelProviderRuntimeRefreshState(args: {
       .where(
         and(
           eq(modelProviderAccounts.id, args.lookup.metadata.sourceId),
-          personalSubscriptionAccountAccessCondition(args.db, args.runId),
+          personalSubscriptionAccountAccessCondition(args.runId),
           eq(modelProviderAccounts.orgId, args.orgId),
           eq(modelProviderAccounts.userId, args.lookup.userId),
           eq(modelProviderAccounts.type, args.lookup.providerType),
