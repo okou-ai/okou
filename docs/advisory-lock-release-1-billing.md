@@ -557,6 +557,32 @@ pipeline must verify these fixes; source checks do not replace behavior checks.
 
 ### Migration materialization and completion ownership
 
+Migration state reads and initial preview publication also own their finite SQL.
+The state command loads the one open migration and only its selections, and
+retires an expired preview conditionally. Eligibility, current Stripe
+subscription reads, catalogue preparation and quote requests run outside that
+transaction. Preview publication verifies the same organization, customer,
+subscription, tier and non-ending source Plan before retiring a prior preview or
+inserting the new business intent. A cancellation webhook during provider quote
+preparation therefore returns a retryable conflict without publishing a stale
+migration or changing credits. A fresh preview after the source Plan is restored
+remains available.
+
+The corresponding API regression creates the paid source Plan through signed
+webhooks, changes cancellation through the real webhook endpoint while a quote
+response is pending, and checks rejection, absent migration state and unchanged
+billing balances. It then restores the source Plan and verifies a fresh preview.
+It uses no database gate or implementation call-count assertion.
+
+Revision preview and confirmation preparation also use owned commands. Their
+local transaction reads the exact migration and its selections together; the
+provider quote and invoice-line pagination run after commit. Revision intent
+publication directly compares the prepared configuration and replaces only that
+migration's selections in one local transaction. No handle is passed to a
+selection helper. Remote schedule reconciliation and publication still contain
+the legacy database-aware graph; these quote and intent changes do not resolve
+the common remote writer protocol.
+
 Migration confirmation admission, paid snapshot materialization and invitation
 completion now execute their SQL in business-input commands that obtain
 `writeDb$` internally. Materialization owns only the exact migration and its
@@ -572,9 +598,9 @@ payment-backed invitation records and completion state together.
 The historical pending-count trigger was dropped by migration
 `1132_retire_prepared_domain_triggers`; comments that still called it retained
 are corrected. No migration or schema shape changes are introduced here.
-The shared `usage_pack_billing` compatibility boundary remains: confirmation,
-revision, remote schedule publication and other billing writers have not yet
-implemented the common provider protocol. These command changes do not complete
+The shared `usage_pack_billing` compatibility boundary remains: remote schedule
+publication, reconciliation and other billing writers have not yet implemented
+the common provider protocol. These command changes do not complete
 that protocol or turn its missing implementation into a deployment-drain gate.
 
 Existing public billing migration tests retain paid materialization, revision,

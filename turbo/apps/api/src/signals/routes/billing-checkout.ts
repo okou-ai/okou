@@ -71,9 +71,9 @@ import {
 import {
   confirmUsagePackSubscriptionMigration$,
   confirmUsagePackSubscriptionMigrationRevision$,
-  getUsagePackMigrationState,
-  previewUsagePackSubscriptionMigration,
-  previewUsagePackSubscriptionMigrationRevision,
+  getUsagePackMigrationState$,
+  previewUsagePackSubscriptionMigration$,
+  previewUsagePackSubscriptionMigrationRevision$,
   type UsagePackMigrationOwner,
 } from "../services/usage-pack-subscription-migration.service";
 import {
@@ -1007,9 +1007,12 @@ const usagePackMigrationGetAuthed$ = command(
     if (!access.allowed) {
       return access.response;
     }
-    const db = set(writeDb$);
     signal.throwIfAborted();
-    const result = await getUsagePackMigrationState(db, access.auth.orgId);
+    const result = await set(
+      getUsagePackMigrationState$,
+      access.auth.orgId,
+      signal,
+    );
     signal.throwIfAborted();
     if (result.status === "not_found") {
       return notFound("Legacy subscription migration is not available");
@@ -1037,7 +1040,6 @@ const usagePackMigrationPreviewAuthed$ = command(
     if (!bodyResult.ok) {
       return bodyResult.response;
     }
-    const db = set(writeDb$);
     const clerk = get(clerk$);
     const readSignal = AbortSignal.any([signal, get(requestSignal$)]);
     const { memberships, invitations } = await loadBillingOrganizationDirectory(
@@ -1046,8 +1048,8 @@ const usagePackMigrationPreviewAuthed$ = command(
       readSignal,
     );
     signal.throwIfAborted();
-    const result = await previewUsagePackSubscriptionMigration(
-      db,
+    const result = await set(
+      previewUsagePackSubscriptionMigration$,
       {
         orgId: access.auth.orgId,
         targetTier: bodyResult.data.targetTier,
@@ -1149,7 +1151,6 @@ const usagePackMigrationRevisionPreviewAuthed$ = command(
     const { migrationId } = get(
       pathParamsOf(billingUsagePackMigrationContract.previewRevision),
     );
-    const db = set(writeDb$);
     const clerk = get(clerk$);
     const readSignal = AbortSignal.any([signal, get(requestSignal$)]);
     const { memberships, invitations } = await loadBillingOrganizationDirectory(
@@ -1158,8 +1159,8 @@ const usagePackMigrationRevisionPreviewAuthed$ = command(
       readSignal,
     );
     signal.throwIfAborted();
-    const result = await previewUsagePackSubscriptionMigrationRevision(
-      db,
+    const result = await set(
+      previewUsagePackSubscriptionMigrationRevision$,
       {
         orgId: access.auth.orgId,
         migrationId,

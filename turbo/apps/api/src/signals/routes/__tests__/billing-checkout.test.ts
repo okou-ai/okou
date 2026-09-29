@@ -5481,6 +5481,134 @@ describe("legacy subscription usage pack migration", () => {
     mockOptionalEnv("STRIPE_WEBHOOK_SECRET", STRIPE_WEBHOOK_SECRET);
   });
 
+  it("rejects migration pricing prepared before the source Plan starts ending", async () => {
+    const period = {
+      start: currentSecond() - 15 * 86_400,
+      end: currentSecond() + 15 * 86_400,
+    };
+    const fixture = await createSubscriptionOrg({
+      tier: "pro",
+      periodEndUnix: period.end,
+    });
+    onTestFinished(() => {
+      return clearMigrationFixture(fixture.orgId);
+    });
+    context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+      {
+        data: [
+          {
+            role: "org:admin",
+            publicUserData: { userId: fixture.userId },
+            createdAt: now(),
+          },
+        ],
+      },
+    );
+    context.mocks.clerk.organizations.getOrganizationInvitationList.mockResolvedValue(
+      { data: [] },
+    );
+    const source = {
+      id: fixture.subscriptionId,
+      customer: fixture.customerId,
+      status: "active",
+      cancel_at: null,
+      cancel_at_period_end: false,
+      schedule: null,
+      pending_update: null,
+      metadata: { orgId: fixture.orgId },
+      items: {
+        data: [
+          {
+            id: `si_legacy_${randomUUID()}`,
+            price: {
+              id: TEST_PRICE_PRO,
+              recurring: { interval: "month", interval_count: 1 },
+            },
+            quantity: 1,
+            current_period_start: period.start,
+            current_period_end: period.end,
+          },
+        ],
+      },
+    };
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(source);
+    const before = await readBillingStatus(fixture);
+    const quote = { amount_due: 2000, currency: "usd" };
+    const started = createDeferredPromise<void>(context.signal);
+    const response = createDeferredPromise<typeof quote>(context.signal);
+    context.mocks.stripe.invoices.createPreview
+      .mockResolvedValue(quote)
+      .mockImplementationOnce(() => {
+        started.resolve();
+        return response.promise;
+      });
+    const request = migrationClient().preview({
+      headers: { authorization: "Bearer clerk-session" },
+      body: {
+        targetTier: "pro",
+        memberUsagePacks: [{ memberId: fixture.userId, usagePackUsd: 20 }],
+      },
+    });
+    onTestFinished(async () => {
+      if (!started.settled()) {
+        started.resolve();
+      }
+      if (!response.settled()) {
+        response.resolve(quote);
+      }
+      await Promise.allSettled([request]);
+    });
+    await started.promise;
+    const ending = {
+      ...source,
+      cancel_at: period.end,
+      cancel_at_period_end: true,
+    };
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(ending);
+    await postMigrationSubscription(ending);
+    response.resolve(quote);
+    const rejected = await accept(request, [409]);
+    expect(rejected.body.error.message).toBe(
+      "Another subscription update is in progress",
+    );
+    await accept(
+      migrationClient().get({
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [404],
+    );
+    await expect(readBillingStatus(fixture)).resolves.toMatchObject({
+      tier: "pro",
+      cancelAtPeriodEnd: true,
+      credits: before.credits,
+    });
+
+    // Restoring the actual source Plan permits a fresh quote; a rejected old
+    // provider response cannot leave a new migration intent or mutate credits.
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(source);
+    await postMigrationSubscription(source);
+    const retried = await accept(
+      migrationClient().preview({
+        headers: { authorization: "Bearer clerk-session" },
+        body: {
+          targetTier: "pro",
+          memberUsagePacks: [{ memberId: fixture.userId, usagePackUsd: 20 }],
+        },
+      }),
+      [200],
+    );
+    expect(retried.body).toMatchObject({
+      purchasedCredits: 20_000,
+      bonusCredits: 400,
+      totalCredits: 20_400,
+    });
+    await expect(readBillingStatus(fixture)).resolves.toMatchObject({
+      tier: "pro",
+      cancelAtPeriodEnd: false,
+      credits: before.credits,
+    });
+  });
+
   it("rejects a Stripe subscription scheduled for cancellation", async () => {
     const fixture = await seedLegacyMigrationFixture({ tier: "pro" });
     context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
