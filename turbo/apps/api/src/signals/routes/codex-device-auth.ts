@@ -5,12 +5,11 @@ import { badRequestMessage, notFound } from "../../lib/error";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
-import { writeDb$ } from "../external/db";
 import {
   cancelCodexDeviceAuth$,
   codexDeviceAuthUnavailable,
   completeCodexDeviceAuth$,
-  startCodexDeviceAuth,
+  startCodexDeviceAuth$,
 } from "../services/codex-device-auth.service";
 import type { RouteEntry } from "../route-entry";
 
@@ -54,9 +53,9 @@ const startCodexDeviceAuthInner$ = command(
       return badRequestMessage("modelProviderId is required for reconnect");
     }
 
-    const result = await startCodexDeviceAuth(
+    const result = await set(
+      startCodexDeviceAuth$,
       {
-        writeDb: set(writeDb$),
         orgId: auth.orgId,
         userId: auth.userId,
         scope: body.data.scope,
