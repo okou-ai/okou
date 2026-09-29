@@ -15784,9 +15784,16 @@ describe("usage pack allocation management", () => {
     expect(credits).toMatchObject({
       hasUsagePack: true,
       purchasedCredits: 20_000,
-      bonusCredits: 400,
-      totalCredits: 20_400,
+      // The owner's existing package also receives the one accepted-invite reward.
+      bonusCredits: 500,
+      totalCredits: 20_500,
     });
+    const getStarted = await readGetStartedStatus(context, fixture);
+    expect(
+      getStarted.quests.find((quest) => {
+        return quest.key === "invite";
+      }),
+    ).toMatchObject({ claimedCount: 1, earnedCredits: 100 });
   });
 
   it("activates one paid invitation exactly once after Clerk acceptance", async () => {
