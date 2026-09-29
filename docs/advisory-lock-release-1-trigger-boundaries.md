@@ -30,8 +30,9 @@ proposed R1 schema. No production migration completion is inferred from main.
 | `usage_event.mark_raw_billing_usage_observed` and `usage_event_hourly_rollup.mark_hourly_billing_usage_observed`   | Marks attribution as having observed usage, protecting its retention.                                                | Raw insertion and compaction must include the monotone attribution update in their atomic writes.                                    |
 
 Retirement of the six remaining billing triggers still requires **unfinished replacement
-protocols**, not only outgoing-version drain. The complete caller/retention
-audit remains open. Existing
+protocols**, not only outgoing-version drain. The [current producer and retention trace](./advisory-lock-release-1-billing-trigger-writers.md)
+now identifies all observed production writers and the remaining fixture
+dependencies. Command ownership and those fixture conversions remain open. Existing
 attribution readers and the retained convergence fallbacks do not replace
 these writes.
 

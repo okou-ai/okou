@@ -291,3 +291,11 @@ subject to Stripe's indeterminate-response contract above; an empty schedule
 read alone does not authorize abandoning that attempt and issuing a fresh key.
 No speculative shared key, new coordination field or provider mutation was added
 as part of this review.
+
+Release itself also needs current business admission. An old local preview must
+not fetch and release a newer operation's accepted schedule, then discover its
+staleness only in a final database CAS: the release has already removed that
+future change. The candidate must remain bound to its originally observed
+schedule identity and pass the real-operation authority check before release.
+This requirement does not refute terminal schedule identity; it identifies an
+additional mutation boundary that the shared protocol must own.

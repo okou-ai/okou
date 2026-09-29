@@ -105,8 +105,36 @@ Migration `1292_retire_billing_attribution_mutation_guard` also removes the
 redundant canonical attribution mutation guard. Outgoing capture functions and
 the retained operator already compare immutable identity, fill only unknown
 thread grouping, and never regress observation. The writer-by-writer evidence
-is in the trigger retirement inventory; the six billing capture/observation
-triggers retain their separate implementation and compatibility requirements.
+is in the trigger retirement inventory. The [production/fixture writer trace](./advisory-lock-release-1-billing-trigger-writers.md) identifies the explicit capture and retention behavior, plus remaining test-state producers. The six billing capture/observation triggers retain their separate implementation and compatibility requirements.
+
+## Current implementation status
+
+The complete Notion event service now uses business-input commands for credential
+preparation, verification, receipt/source discovery, repair, input publication
+and pending execution. Meet's webhook/lifecycle-notice/receipt/dispatch graph is
+also owned; its subscription ensure, renewal and deletion remain separate
+implementation. Generic workflow event creation commits the selected account,
+binding, optional thread, created event and automation in one owning command.
+Schedule polling/claim/settlement and Official metadata publication have the same
+ownership shape. Specialized Webhook/Stripe creation, final enable and Official
+rollback, Morning Brief native lifecycle, Run/Pi callbacks and unbounded tick
+coalescing remain explicitly unfinished in the workflow inventory.
+
+Invitation payment/claim/refund/acceptance commits now own their direct SQL;
+exactly two invitation projection edges still carry a transaction through Stripe.
+Initial and revised migration quote preparation/publication use owning commands
+and reject a changed source Plan before inserting or retiring intent. Existing
+Plan/allocation/invitation operations share admission predicates, but the complete
+remote quantity/schedule and ordinary purchase protocol is not yet implemented.
+The Stripe evidence distinguishes the viable schedule-only candidate direction
+from the unresolved immediate-payment, recovery and pre-release authority edges.
+
+Shared prepared Storage publication and Custom definition OAuth SQL are now
+executed directly by their owning commands. Pi invalidation/recapture still
+propagates their transaction and remains implementation work. Transient provider
+refresh failures no longer mutate newer authorization metadata; rotating-token
+and explicit revocation protocols still need provider-specific completion.
+The Airtable reconnect-on-uncertain-refresh choice remains pending.
 
 ## Correction follow-up and acceptance gaps
 
