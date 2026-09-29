@@ -1,3 +1,4 @@
+import { recordProviderUsageBatch$ } from "./provider-usage-publication.service";
 import { command } from "ccstate";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { usagePricing } from "@okouai/db/schema/usage-pricing";
@@ -158,10 +159,17 @@ export const recordOpenRouterUsage$ = command(
         quantity: entry.quantity,
       };
     });
-    await writeDb
-      .insert(usageEvent)
-      .values(eventRows)
-      .onConflictDoNothing({ target: [usageEvent.idempotencyKey] });
+    await set(
+      recordProviderUsageBatch$,
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+        runId: args.runId,
+        billingContext: args.runId ? "run" : "runless",
+        events: eventRows,
+      },
+      signal,
+    );
     signal.throwIfAborted();
 
     await set(

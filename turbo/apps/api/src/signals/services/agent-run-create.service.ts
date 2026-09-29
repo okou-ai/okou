@@ -1,3 +1,5 @@
+import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
+import { billingRunAttributionWrite } from "./managed-usage-attribution";
 import {
   DISABLED_PAID_TOOLS_ENV_VAR,
   ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR,
@@ -6624,6 +6626,23 @@ async function insertLaunchRunRows(
   const metadata = launchRunMetadataValues(args);
   await tx.insert(agentRuns).values(launchRunValues(args, createdAt, metadata));
 
+  const capture = billingRunAttributionWrite({
+    id: args.identity.runId,
+    orgId: args.orgId,
+    userId: args.userId,
+    startedAt: createdAt.toISOString(),
+    triggerSource: metadata.triggerSource,
+    threadId: metadata.chatThreadId,
+  });
+  const [attribution] = await tx
+    .insert(billingRunAttribution)
+    .values(capture.values)
+    .onConflictDoUpdate(capture.conflict)
+    .returning({ id: billingRunAttribution.runId });
+  if (!attribution) {
+    throw new Error("New Run billing attribution conflicts with history");
+  }
+
   if (args.callbackRows.length > 0) {
     await tx.insert(agentRunCallbacks).values([...args.callbackRows]);
   }
@@ -8227,6 +8246,22 @@ async function persistAtomicLaunchRows(
       return await persistPendingAtomicLaunch(args, context);
     },
   );
+  const capture = billingRunAttributionWrite({
+    id: persisted.run.id,
+    orgId: context.rowsArgs.orgId,
+    userId: context.rowsArgs.userId,
+    startedAt: persisted.run.createdAt.toISOString(),
+    triggerSource: args.commit.persistence.rows.metadata.triggerSource,
+    threadId: args.commit.persistence.rows.metadata.chatThreadId,
+  });
+  const [attribution] = await args.tx
+    .insert(billingRunAttribution)
+    .values(capture.values)
+    .onConflictDoUpdate(capture.conflict)
+    .returning({ id: billingRunAttribution.runId });
+  if (!attribution) {
+    throw new Error("New Run billing attribution conflicts with history");
+  }
   await args.commit.createArgs.persistProducerRunBinding?.(args.tx, {
     runId: persisted.run.id,
     status: "pending",

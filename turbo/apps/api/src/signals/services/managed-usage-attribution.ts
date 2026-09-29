@@ -86,7 +86,7 @@ function billingSource(triggerSource: string | null): string {
 }
 
 export function managedAttributionWrite(
-  args: ManagedUsageRecordArgs,
+  args: Pick<ManagedUsageRecordArgs, "actor">,
   run: BillingRun,
 ) {
   if (
@@ -96,6 +96,10 @@ export function managedAttributionWrite(
   ) {
     throw new Error("Managed usage Run ownership does not match");
   }
+  return billingRunAttributionWrite(run);
+}
+
+export function billingRunAttributionWrite(run: BillingRun) {
   const source = billingSource(run.triggerSource);
   const startedAt = sql`${run.startedAt}::timestamp`;
   return {
@@ -127,17 +131,23 @@ export function managedAttributionWrite(
   };
 }
 
-export function attributedManagedValues(
-  args: ManagedUsageRecordArgs,
+function usageRunOwned(
+  actor: ManagedUsageRecordArgs["actor"],
+  run: BillingRun | undefined,
+): run is BillingRun {
+  return (
+    run?.id === actor.runId &&
+    run?.orgId === actor.orgId &&
+    run?.userId === actor.userId
+  );
+}
+
+export function attributedUsageIdentity(
+  args: Pick<ManagedUsageRecordArgs, "actor">,
   run: BillingRun | undefined,
   attribution: BillingAttribution | undefined,
 ) {
-  const ownedRun =
-    run?.id === args.actor.runId &&
-    run?.orgId === args.actor.orgId &&
-    run?.userId === args.actor.userId
-      ? run
-      : undefined;
+  const ownedRun = usageRunOwned(args.actor, run) ? run : undefined;
   if (run && !ownedRun && !attribution) {
     throw new Error("Managed usage Run ownership does not match");
   }
@@ -154,7 +164,7 @@ export function attributedManagedValues(
   return {
     // Historical attribution remains authoritative independently of the live
     // Run. Retain a live FK only for the same billed owner, as before capture.
-    ...managedValues(args, ownedRun),
+    runId: ownedRun?.id ?? null,
     billingRunId: args.actor.runId ?? null,
     billingContext: attribution
       ? "run"
@@ -167,5 +177,16 @@ export function attributedManagedValues(
         ? null
         : sql`now()`,
     createdAt: sql`now()`,
+  };
+}
+
+export function attributedManagedValues(
+  args: ManagedUsageRecordArgs,
+  run: BillingRun | undefined,
+  attribution: BillingAttribution | undefined,
+) {
+  return {
+    ...managedValues(args, run),
+    ...attributedUsageIdentity(args, run, attribution),
   };
 }

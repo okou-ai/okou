@@ -16,24 +16,22 @@ and its function, leaving ten application triggers in the proposed R1 schema.
 
 ## Existing billing attribution triggers
 
-| Table and trigger                                                                                                  | Current business guarantee                                                                                           | Replacement work                                                                                                                   |
-| ------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `agent_runs.capture_billing_run_attribution`                                                                       | Captures the original organization, user, run start, source and thread identity.                                     | Both Run insertion paths must explicitly publish attribution atomically with the Run.                                              |
-| `billing_run_attribution.billing_run_attribution_immutable`                                                        | Rejects changed attribution, regressing `usage_observed`, or replacement of an established thread identity.          | Every mutation must use the same identity predicates and monotone observed transition.                                             |
-| `usage_event.capture_usage_billing_attribution` and `usage_event_hourly_rollup.capture_hourly_billing_attribution` | Resolves run identity, context and original allowance anchor, including Pi Stage 1, and rejects inconsistent owners. | Raw and rollup writers must explicitly resolve and validate these ordinary business values in their owning commit.                 |
-| `built_in_generation_jobs.capture_generation_billing_identity`                                                     | Establishes immutable run/runless generation attribution.                                                            | Generation creation now supplies its identity explicitly; outgoing and operator writers still require a complete retirement audit. |
-| `usage_event.mark_raw_billing_usage_observed` and `usage_event_hourly_rollup.mark_hourly_billing_usage_observed`   | Marks attribution as having observed usage, protecting its retention.                                                | Raw insertion and compaction must include the monotone attribution update in their atomic writes.                                  |
+| Table and trigger                                                                                                  | Current business guarantee                                                                                           | Replacement work                                                                                                                    |
+| ------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `agent_runs.capture_billing_run_attribution`                                                                       | Captures the original organization, user, run start, source and thread identity.                                     | Both Run insertion paths now publish attribution atomically with the Run; their broader launch transaction ownership is unfinished. |
+| `billing_run_attribution.billing_run_attribution_immutable`                                                        | Rejects changed attribution, regressing `usage_observed`, or replacement of an established thread identity.          | Every mutation must use the same identity predicates and monotone observed transition.                                              |
+| `usage_event.capture_usage_billing_attribution` and `usage_event_hourly_rollup.capture_hourly_billing_attribution` | Resolves run identity, context and original allowance anchor, including Pi Stage 1, and rejects inconsistent owners. | Raw and rollup writers must explicitly resolve and validate these ordinary business values in their owning commit.                  |
+| `built_in_generation_jobs.capture_generation_billing_identity`                                                     | Establishes immutable run/runless generation attribution.                                                            | Generation creation now supplies its identity explicitly; outgoing and operator writers still require a complete retirement audit.  |
+| `usage_event.mark_raw_billing_usage_observed` and `usage_event_hourly_rollup.mark_hourly_billing_usage_observed`   | Marks attribution as having observed usage, protecting its retention.                                                | Raw insertion and compaction must include the monotone attribution update in their atomic writes.                                   |
 
 Retirement of these seven triggers still requires **unfinished replacement
-protocols**, not only outgoing-version drain. Both Run creation paths in
-`agent-run-create.service.ts` still depend on trigger-side attribution
-publication. OpenRouter, image
-usage, voice, Runner telemetry, Pi Stage 1, hourly compaction and operator
+protocols**, not only outgoing-version drain. Voice, Runner telemetry,
+Pi Stage 1, hourly compaction and operator
 linkage also need a complete explicit capture/observation audit. Existing
 attribution readers and the retained convergence fallbacks do not replace
 these writes.
 
-Three bounded producer changes are implemented:
+The following producer changes are implemented:
 
 - `createImageGenerationJob$` supplies both `billing_run_id` and its explicit
   `run`/`runless` context in the existing single job INSERT. Status, provider
@@ -58,6 +56,18 @@ Three bounded producer changes are implemented:
   transaction. Replayed idempotency keys do not insert or observe another event.
   Builders receive ordinary values only; no transaction or database handle is
   passed out of the command. The existing Social API settlement tests remain.
+- OpenRouter and image-result usage use `recordProviderUsageBatch$`. One provider
+  response's finite categories, canonical ownership/anchor validation and
+  monotone observation commit in a command-local SQL transaction. Pricing,
+  provider and archive work stay outside it. A retained image billing identity
+  does not restore a deleted live Run link; a legacy job without an original
+  identity remains `legacy_unknown`. Existing idempotency keys arbitrate replay.
+- Both Run insertion paths directly insert the canonical attribution in the
+  same launch transaction, using the exact timestamp supplied to the Run INSERT.
+  Conditional conflict handling rejects changed owner/start/source and preserves
+  captured thread identity and observed history. These writes prepare the
+  trigger replacement, but the surrounding launch helpers still receive `tx`;
+  command ownership of that caller graph remains unfinished.
 
 The standalone managed path commits before financial settlement as before;
 Social keeps its combined financial commit. No billing trigger is removed. Existing public API
