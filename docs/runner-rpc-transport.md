@@ -32,14 +32,6 @@ Apply these questions in order:
    RPC on port **52001**. Add an explicitly authorized method/consumer, not a
    new port. `run.usage`, `ssh.*`, and `vnc.*` belong here; file methods use the
    existing opt-in binary stream contract.
-4. **Does a live Run need an independently bounded, long-lived opaque duplex?**
-   Design a distinct logical stream, not an unbounded one-shot RPC or a control
-   command. [#37026](https://github.com/okou-ai/okou/issues/37026) /
-   [PR #37113](https://github.com/okou-ai/okou/pull/37113) **propose**, but
-   have not delivered, a separate duplex mode on the existing 52001 ingress
-   for [direct WSS #36981](https://github.com/okou-ai/okou/issues/36981).
-   Its public admission is a separate boundary; the private mode is not shipped
-   or production-enabled.
 
 Port 1000 has one accepted control connection: the Guest control service owns its
 end, and the host removes the listener after acceptance. Its current reader
@@ -57,12 +49,10 @@ and [host reader](../crates/guest-control-client/src/connection/mod.rs).
 Port 52001 is the private assignment-bound ingress for Guest-origin services.
 The helper connects once per request, while the Runner owns the handler,
 capacity, current-Run authorization, normal-operation reservation, deadline,
-and cancellation. One physical ingress can carry separately framed logical
-modes only with explicit bounded admission and independent lifetimes; a new
-business method does not justify another vsock port. For run-scoped work, 52001
-admission uses the control client's authoritative normal-operation tracker and
-the host's current Run assignment; a separate listener does not create a
-second source of authority. See the
+and cancellation. A new business method does not justify another vsock port.
+For run-scoped work, 52001 admission uses the control client's authoritative
+normal-operation tracker and the host's current Run assignment; a separate
+listener does not create a second source of authority. See the
 [helper](../crates/runner-rpc-client/src/lib.rs) and
 [dispatch owner](../crates/runner-remote/src/guest_rpc/mod.rs).
 
