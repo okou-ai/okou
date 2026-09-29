@@ -1,7 +1,7 @@
 import { command } from "ccstate";
 
 import { writeDb$ } from "../external/db";
-import { resolveUsageAllowanceAvailability } from "./usage-allowance.service";
+import { resolveUsageAllowanceAvailability$ } from "./usage-allowance-availability.service";
 import {
   resolveActiveRunCreditAdmission,
   resolveOrgCreditAvailability,
@@ -45,9 +45,10 @@ export const checkBillableOperationCredits$ = command(
       return true;
     }
 
-    const allowance = await resolveUsageAllowanceAvailability(
-      writeDb,
+    const allowance = await set(
+      resolveUsageAllowanceAvailability$,
       args.orgId,
+      signal,
     );
     signal.throwIfAborted();
     return (allowance?.remainingUnits ?? 0) > 0;

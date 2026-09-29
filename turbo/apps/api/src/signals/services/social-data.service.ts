@@ -1,3 +1,4 @@
+import { resolveUsageAllowanceAvailability$ } from "./usage-allowance-availability.service";
 import { settleOrgUsage$ } from "./credit-usage-settlement.service";
 import { isDeepStrictEqual } from "node:util";
 
@@ -45,10 +46,7 @@ import {
   SocialDataProviderError,
   type SocialDataProviderPlan,
 } from "./social-data-provider-catalog";
-import {
-  resolveUsageAllowanceAvailability,
-  prepareUsageAllowanceRefresh$,
-} from "./usage-allowance.service";
+import { prepareUsageAllowanceRefresh$ } from "./usage-allowance.service";
 
 export const SOCIAL_DATA_RECONCILIATION_TIMEOUT_MS = 240_000;
 const CLAIM_MS = 180_000;
@@ -456,7 +454,7 @@ export const createSocialDataJob$ = command(
         }
         // The owner-row transaction has ended. Allowance refresh takes the
         // credit lock and can call Stripe, so neither belongs under that row.
-        await resolveUsageAllowanceAvailability(db, args.auth.orgId);
+        await set(resolveUsageAllowanceAvailability$, args.auth.orgId, signal);
         signal.throwIfAborted();
         const refreshed = await db.transaction((tx) => {
           return admitJob(tx, { ...args, plan, estimate, resolution }, signal);

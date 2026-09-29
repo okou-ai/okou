@@ -1,3 +1,4 @@
+import { resolveUsageAllowanceAvailability$ } from "./usage-allowance-availability.service";
 import {
   managedUsageReceiptCredits,
   managedRunQuery,
@@ -28,10 +29,7 @@ import { writeDb$, type Db } from "../external/db";
 import { processOrgUsageEvents$ } from "./credit-usage.service";
 import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import { resolveActiveRunCreditAdmission } from "./run-admission.service";
-import {
-  readUsageAllowanceAvailabilitySnapshot,
-  resolveUsageAllowanceAvailability,
-} from "./usage-allowance.service";
+import { readUsageAllowanceAvailabilitySnapshot } from "./usage-allowance.service";
 import { getSpendableUsagePackCredits } from "./usage-pack-credit.service";
 
 export interface ManagedUsageErrorResponse {
@@ -204,32 +202,6 @@ async function checkManagedCreditBalance(
   };
 }
 
-export async function checkManagedCreditsInDb(
-  writeDb: Db,
-  args: ManagedUsageCreditCheckArgs,
-  pricingResolution: UsagePricingResolution,
-  signal: AbortSignal,
-): Promise<ManagedUsageErrorResponse | null> {
-  const balance = await checkManagedCreditBalance(
-    writeDb,
-    args,
-    pricingResolution,
-    signal,
-  );
-  if (!balance || "status" in balance) {
-    return balance;
-  }
-  const allowance = await resolveUsageAllowanceAvailability(
-    writeDb,
-    args.orgId,
-  );
-  signal.throwIfAborted();
-  return balance.spendableCredits + BigInt(allowance?.remainingUnits ?? 0) >=
-    balance.requiredCredits
-    ? null
-    : insufficientCredits();
-}
-
 /** The caller releases its owner row before performing any allowance refresh. */
 export async function checkManagedCreditsSnapshotInDb(
   writeDb: Db,
@@ -266,12 +238,26 @@ export const checkManagedCredits$ = command(
     args: ManagedUsageCreditCheckArgs,
     signal: AbortSignal,
   ): Promise<ManagedUsageErrorResponse | null> => {
-    return await checkManagedCreditsInDb(
+    const balance = await checkManagedCreditBalance(
       set(writeDb$),
       args,
       get(usagePricingResolution$),
       signal,
     );
+    signal.throwIfAborted();
+    if (!balance || "status" in balance) {
+      return balance;
+    }
+    const allowance = await set(
+      resolveUsageAllowanceAvailability$,
+      args.orgId,
+      signal,
+    );
+    signal.throwIfAborted();
+    return balance.spendableCredits + BigInt(allowance?.remainingUnits ?? 0) >=
+      balance.requiredCredits
+      ? null
+      : insufficientCredits();
   },
 );
 
