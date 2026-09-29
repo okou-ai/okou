@@ -552,7 +552,12 @@ const knownExpiredSessionRefreshOutcomes: readonly string[] = Object.freeze([
   "unexpected-bapi-error",
 ]);
 
-function safeClerkSessionFailureReason(reason: string): string {
+function safeClerkSessionFailureReason(reason: unknown): string {
+  // Diagnostics must never turn an unauthenticated request into a 500 when
+  // Clerk omits a reason (or changes the rejection payload at runtime).
+  if (typeof reason !== "string") {
+    return "unknown";
+  }
   if (clerkSessionFailureReasons.includes(reason)) {
     return reason;
   }
