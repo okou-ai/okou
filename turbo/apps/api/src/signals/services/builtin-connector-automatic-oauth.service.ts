@@ -56,6 +56,8 @@ import {
   readBuiltinDcrRegistrationByIssuer$,
   hasBuiltinDcrLinkedAccounts$,
   lockBuiltinConnectorAutomaticLifecycle,
+  readBuiltinDcrBoundClient$,
+  retireBuiltinDcrRegistration$,
   type BuiltinConnectorAutomaticContractOwner,
 } from "./builtin-connector-automatic-dcr.service";
 import {
@@ -74,6 +76,12 @@ import { configuredOkouMcpOAuthClientMetadata } from "./mcp-oauth-client-metadat
 import { resolveRefreshedOAuthIdentity } from "./mcp-oauth-identity.service";
 import { commitConnectorRuntimeMutation } from "./connector-runtime-wakeup.service";
 import { lockConnectorAccountTarget } from "./auth-state-lock.service";
+import {
+  publishAutomaticCallbackConnection$,
+  readAutomaticCallbackAccount$,
+  type AutomaticCallbackAccountSnapshot,
+  type AutomaticConnectionPublication,
+} from "./builtin-connector-automatic-connection.service";
 
 const httpsUrl = z.url({ protocol: /^https$/u });
 const contextBase = z.object({
@@ -625,63 +633,127 @@ export const startBuiltinConnectorAutomatic$ = command(
   },
 );
 
-async function finishAutomaticOAuth(
-  db: Db,
-  stored: StoredBuiltinOAuthState,
-  context: z.infer<typeof builtinAutomaticContextSchema>,
+async function prepareAutomaticCallbackPublication(
   args: {
-    readonly code: string;
-    readonly codeVerifier: string;
-    readonly issuer: string | undefined;
+    readonly stored: StoredBuiltinOAuthState;
+    readonly context: z.infer<typeof builtinAutomaticContextSchema>;
+    readonly contract: BuiltinAutomaticContract;
+    readonly expected: AutomaticCallbackAccountSnapshot | null;
+    readonly token: McpAutomaticOAuthTokenResult;
   },
   signal: AbortSignal,
-) {
-  const { code, codeVerifier, issuer } = args;
-  const contract = await currentContract(
-    db,
-    stored.connectorSlug,
-    stored.authMethod,
-  );
-  if (
-    !contract ||
-    contract.contractHash !== context.contractHash ||
-    contract.endpoint !== context.endpoint ||
-    contract.storageVersion !== context.storageVersion
-  ) {
-    return { kind: "error", reason: "stale-contract" } as const;
+): Promise<AutomaticConnectionPublication> {
+  const { stored, context, contract, token } = args;
+  const credentials = [];
+  for (const key of ["accessToken", "refreshToken", "idToken"] as const) {
+    const name = tokenStorageName(contract, key);
+    const value = token[key];
+    if (name && value) {
+      credentials.push({
+        name,
+        encryptedValue: await encryptStoredSecretValue(value),
+      });
+      signal.throwIfAborted();
+    }
   }
-  return await db.transaction(async (tx) => {
-    await lockBuiltinConnectorAutomaticLifecycle(
-      tx,
-      contractOwner(stored.orgId, contract),
-    );
-    await assertCurrentContract(tx, contract);
-    const resolution = await resolveMutation(
-      tx,
-      {
-        orgId: stored.orgId,
-        userId: stored.userId,
-        account: stored.accountMutation,
-      },
-      contract,
-    );
+  return {
+    orgId: stored.orgId,
+    userId: stored.userId,
+    connectorSlug: contract.connectorSlug,
+    catalogIdentity: contract.catalogIdentity,
+    account: stored.accountMutation,
+    expected: args.expected,
+    identity: token.userInfo,
+    expiresAt: token.expiresAt,
+    scopes: token.scopes,
+    credentials,
+    binding: {
+      orgId: stored.orgId,
+      userId: stored.userId,
+      connectorSlug: contract.connectorSlug,
+      authMethod: contract.authMethodId,
+      storageVersion: contract.storageVersion,
+      contractHash: contract.contractHash,
+      endpoint: contract.endpoint,
+      issuer: context.issuer,
+      resource: context.resource,
+      resourceMetadataUrl: context.resourceMetadataUrl,
+      tokenEndpoint: context.tokenEndpoint,
+      clientId: context.clientId,
+      tokenEndpointAuthMethod: context.tokenEndpointAuthMethod,
+      registrationMethod: context.registrationMethod,
+      dcrRegistrationId:
+        context.registrationMethod === "dcr" ? context.dcrRegistrationId : null,
+    },
+  };
+}
+
+const finishAutomaticOAuth$ = command(
+  async (
+    { set },
+    args: {
+      readonly stored: StoredBuiltinOAuthState;
+      readonly context: z.infer<typeof builtinAutomaticContextSchema>;
+      readonly contract: BuiltinAutomaticContract | null;
+      readonly code: string;
+      readonly codeVerifier: string;
+      readonly issuer: string | undefined;
+    },
+    signal: AbortSignal,
+  ) => {
+    const { stored, context, contract } = args;
     if (
-      resolution.kind !== "ready" ||
-      revision(resolution.mutation) !== context.reconnectRevision
+      !contract ||
+      contract.contractHash !== context.contractHash ||
+      contract.endpoint !== context.endpoint ||
+      contract.storageVersion !== context.storageVersion
+    ) {
+      return { kind: "error", reason: "stale-contract" } as const;
+    }
+    const expected =
+      stored.accountMutation.intent === "reconnect"
+        ? await set(
+            readAutomaticCallbackAccount$,
+            {
+              orgId: stored.orgId,
+              userId: stored.userId,
+              connectorSlug: contract.connectorSlug,
+              connectionId: stored.accountMutation.connectionId,
+              expectedRevision: context.reconnectRevision,
+            },
+            signal,
+          )
+        : null;
+    if (
+      (stored.accountMutation.intent === "reconnect" && expected === null) ||
+      (stored.accountMutation.intent !== "reconnect" &&
+        context.reconnectRevision !== null)
     ) {
       return { kind: "error", reason: "invalid-account" } as const;
     }
-    const store = dcrStore(tx, stored.orgId, contract);
+    const owner = contractOwner(stored.orgId, contract);
+    const client =
+      context.registrationMethod === "dcr"
+        ? await set(
+            readBuiltinDcrBoundClient$,
+            { owner, id: context.dcrRegistrationId },
+            signal,
+          )
+        : null;
     const exchanged = await settle(
       exchangeMcpAutomaticOAuthCode(
         {
-          dcrStore: store,
+          dcrStore: {
+            readBoundClient: (id) => {
+              return Promise.resolve(client?.id === id ? client : null);
+            },
+          },
           context,
           redirectUri: stored.redirectUri,
           cimdClientId: configuredOkouMcpOAuthClientMetadata().client_id,
-          code,
-          iss: issuer,
-          codeVerifier,
+          code: args.code,
+          iss: args.issuer,
+          codeVerifier: args.codeVerifier,
         },
         signal,
       ),
@@ -692,35 +764,51 @@ async function finishAutomaticOAuth(
         isAutomaticOAuthInvalidClient(exchanged.error) &&
         context.registrationMethod === "dcr"
       ) {
-        await store.retire(context.dcrRegistrationId);
+        await set(
+          retireBuiltinDcrRegistration$,
+          { owner, id: context.dcrRegistrationId },
+          signal,
+        );
       }
       return failure(exchanged.error);
     }
-    await assertCurrentContract(tx, contract);
-    const connectionId = await persistConnection(
-      tx,
-      {
-        orgId: stored.orgId,
-        userId: stored.userId,
-        contract,
-        resolution: resolution.mutation,
-        token: exchanged.value,
-        context,
-      },
+    const publication = await prepareAutomaticCallbackPublication(
+      { stored, context, contract, expected, token: exchanged.value },
       signal,
     );
+    const published = await set(
+      publishAutomaticCallbackConnection$,
+      publication,
+      signal,
+    );
+    if (published.kind !== "connected") {
+      return published;
+    }
     return {
       kind: "connected",
       connectorSlug: stored.connectorSlug,
-      connectionId,
+      connectionId: published.connectionId,
       orgId: stored.orgId,
       userId: stored.userId,
       agentId: stored.agentId,
       authorizeAgent: stored.authorizeAgent,
       oauthAttemptId: stored.id,
     } as const;
-  });
-}
+  },
+);
+
+type CompletedBuiltinAutomaticOAuth =
+  | Failure
+  | {
+      readonly kind: "connected";
+      readonly connectorSlug: string;
+      readonly connectionId: string;
+      readonly orgId: string;
+      readonly userId: string;
+      readonly agentId: string | null;
+      readonly authorizeAgent: boolean;
+      readonly oauthAttemptId: string;
+    };
 
 export const completeBuiltinConnectorAutomatic$ = command(
   async (
@@ -734,19 +822,7 @@ export const completeBuiltinConnectorAutomatic$ = command(
       readonly redirectUri: string;
     },
     signal: AbortSignal,
-  ): Promise<
-    | Failure
-    | {
-        readonly kind: "connected";
-        readonly connectorSlug: string;
-        readonly connectionId: string;
-        readonly orgId: string;
-        readonly userId: string;
-        readonly agentId: string | null;
-        readonly authorizeAgent: boolean;
-        readonly oauthAttemptId: string;
-      }
-  > => {
+  ): Promise<CompletedBuiltinAutomaticOAuth> => {
     const db = set(writeDb$);
     const [candidate] = await db
       .select({
@@ -826,11 +902,20 @@ export const completeBuiltinConnectorAutomatic$ = command(
     // route observes the cancelled request.
     const operation = await settle(
       commitConnectorRuntimeMutation(
-        finishAutomaticOAuth(
-          db,
-          stored,
-          context,
-          { code, codeVerifier, issuer: args.issuer },
+        set(
+          finishAutomaticOAuth$,
+          {
+            stored,
+            context,
+            contract: await currentContract(
+              db,
+              stored.connectorSlug,
+              stored.authMethod,
+            ),
+            code,
+            codeVerifier,
+            issuer: args.issuer,
+          },
           signal,
         ),
         (result) => {

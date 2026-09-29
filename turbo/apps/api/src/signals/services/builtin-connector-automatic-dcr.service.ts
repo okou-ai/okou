@@ -28,7 +28,7 @@ export interface BuiltinConnectorAutomaticContractOwner {
   readonly contractHash: string;
 }
 
-function builtinConnectorAutomaticLifecycleLockStatement(
+export function builtinConnectorAutomaticLifecycleLockStatement(
   owner: Pick<
     BuiltinConnectorAutomaticContractOwner,
     "orgId" | "connectorSlug"
@@ -202,7 +202,7 @@ export const hasBuiltinDcrLinkedAccounts$ = command(
   },
 );
 
-function builtinDcrCatalogCondition(identity: ExternalCatalogIdentity) {
+export function builtinDcrCatalogCondition(identity: ExternalCatalogIdentity) {
   return and(
     eq(connectorCatalogActiveSnapshot.sourceId, identity.sourceId),
     eq(connectorCatalogActiveSnapshot.schemaVersion, identity.schemaVersion),
@@ -413,3 +413,147 @@ export function builtinConnectorAutomaticDcrStore(
     },
   };
 }
+
+/** Exact registration invalidation owns its SQL independently of provider I/O. */
+export const retireBuiltinDcrRegistration$ = command(
+  async (
+    { set },
+    args: {
+      readonly owner: BuiltinConnectorAutomaticContractOwner;
+      readonly id: string;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    const { owner, id } = args;
+    await db.transaction(async (tx) => {
+      await tx.execute(builtinConnectorAutomaticLifecycleLockStatement(owner));
+      const [owned] = await tx
+        .select({ id: builtinConnectorDcrRegistrations.id })
+        .from(builtinConnectorDcrRegistrations)
+        .where(
+          and(
+            eq(builtinConnectorDcrRegistrations.id, id),
+            ownerCondition(owner),
+          ),
+        )
+        .for("update")
+        .limit(1);
+      if (!owned) {
+        return;
+      }
+      // Ordinary delete/default operations lock a user's target before sibling
+      // rows. Join that order for every linked owner before locking their accounts.
+      // The lifecycle lock prevents new Automatic bindings while these locks wait.
+      const accountOwners = await tx
+        .selectDistinct({ userId: builtinConnectorAccountOauthBindings.userId })
+        .from(builtinConnectorAccountOauthBindings)
+        .where(eq(builtinConnectorAccountOauthBindings.dcrRegistrationId, id))
+        .orderBy(builtinConnectorAccountOauthBindings.userId);
+      for (const accountOwner of accountOwners) {
+        await tx.execute(
+          builtinConnectorStateLockStatement({
+            orgId: owner.orgId,
+            userId: accountOwner.userId,
+            connectorSlug: owner.connectorSlug,
+          }),
+        );
+      }
+      const accounts = await tx
+        .select({ id: connectors.id })
+        .from(connectors)
+        .innerJoin(
+          builtinConnectorAccountOauthBindings,
+          eq(
+            builtinConnectorAccountOauthBindings.connectorAccountId,
+            connectors.id,
+          ),
+        )
+        .where(eq(builtinConnectorAccountOauthBindings.dcrRegistrationId, id))
+        .orderBy(connectors.id)
+        .for("update", { of: connectors });
+      if (accounts.length > 0) {
+        await tx
+          .update(connectors)
+          .set({
+            needsReconnect: true,
+            reconnectReason: "authorization_expired_or_revoked",
+            updatedAt: nowDate(),
+          })
+          .where(
+            and(
+              inArray(
+                connectors.id,
+                accounts.map((account) => {
+                  return account.id;
+                }),
+              ),
+              // A reconnect to another method may have committed while the row
+              // lock waited. Recheck its current binding after acquiring that lock.
+              inArray(
+                connectors.id,
+                tx
+                  .select({
+                    id: builtinConnectorAccountOauthBindings.connectorAccountId,
+                  })
+                  .from(builtinConnectorAccountOauthBindings)
+                  .where(
+                    eq(
+                      builtinConnectorAccountOauthBindings.dcrRegistrationId,
+                      id,
+                    ),
+                  ),
+              ),
+            ),
+          );
+      }
+      await tx
+        .delete(builtinConnectorAccountOauthBindings)
+        .where(eq(builtinConnectorAccountOauthBindings.dcrRegistrationId, id));
+      await tx
+        .delete(builtinConnectorDcrRegistrations)
+        .where(
+          and(
+            eq(builtinConnectorDcrRegistrations.id, id),
+            ownerCondition(owner),
+          ),
+        );
+      signal.throwIfAborted();
+    });
+  },
+);
+
+export const readBuiltinDcrBoundClient$ = command(
+  async (
+    { set },
+    args: {
+      readonly owner: BuiltinConnectorAutomaticContractOwner;
+      readonly id: string;
+    },
+    signal: AbortSignal,
+  ): Promise<
+    Awaited<ReturnType<McpAutomaticOAuthDcrStore["readBoundClient"]>>
+  > => {
+    const db = set(writeDb$);
+    const [row] = await db
+      .select()
+      .from(builtinConnectorDcrRegistrations)
+      .where(
+        and(
+          ownerCondition(args.owner),
+          eq(builtinConnectorDcrRegistrations.id, args.id),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!row) {
+      return null;
+    }
+    const clientSecret =
+      row.encryptedClientSecret === null
+        ? undefined
+        : await decryptStoredSecretValue(row.encryptedClientSecret);
+    signal.throwIfAborted();
+    return { ...registration(row), clientSecret };
+  },
+);
