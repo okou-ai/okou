@@ -49,6 +49,8 @@ import {
   modelProviderConnections,
   modelProviderSurfaces,
 } from "@okouai/db/schema/model-provider-gateway";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
+import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
 import { runModelCatalog } from "@okouai/db/schema/run-model-catalog";
@@ -58,6 +60,7 @@ import { writeDb$, type Db } from "../external/db";
 import { settle } from "../utils";
 import {
   loadOrgPlanCapabilities,
+  runtimeStatusForEntitlement,
   type OrgPlanCapabilities,
 } from "./org-plan-entitlement-read.service";
 
@@ -210,10 +213,7 @@ async function lockPolicyWrites(
   orgId: string,
   userId: string,
 ): Promise<{ readonly initializeSeed: boolean }> {
-  await db.execute(
-    // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-    sql`SELECT pg_advisory_xact_lock(hashtextextended(${`model-policy:${orgId}`}, 0))`,
-  );
+  await db.execute(modelPolicyWriterLockSql(orgId));
 
   const before = await loadRows(db, orgId, true);
   let initializeSeed = false;
@@ -221,20 +221,9 @@ async function lockPolicyWrites(
     // The existing partial UNIQUE default slot arbitrates an empty policy set.
     // Insert just its real default row: inserting the entire seed could add
     // unwanted models after a concurrent writer replaces that seed.
-    const seed = getDefaultOrgModelPolicySeed().find((policy) => {
-      return policy.isDefault;
-    });
-    if (!seed) {
-      throw new Error("The default model policy seed has no default");
-    }
     const [inserted] = await db
       .insert(orgModelPolicies)
-      .values({
-        ...seed,
-        orgId,
-        createdByUserId: userId,
-        updatedByUserId: userId,
-      })
+      .values(policySeedValues(orgId, userId))
       .onConflictDoNothing()
       .returning({ id: orgModelPolicies.id });
     initializeSeed = inserted !== undefined;
@@ -407,7 +396,10 @@ function storedRouteUnchanged(
 }
 
 function modelPolicyCapabilities(
-  capabilities: OrgPlanCapabilities | null,
+  capabilities: Pick<
+    OrgPlanCapabilities,
+    "status" | "restrictedBuiltInModels" | "supportByok"
+  > | null,
 ): Pick<OrgPlanCapabilities, "restrictedBuiltInModels" | "supportByok"> {
   if (capabilities?.status !== "active") {
     return {
@@ -419,15 +411,6 @@ function modelPolicyCapabilities(
     restrictedBuiltInModels: capabilities.restrictedBuiltInModels,
     supportByok: capabilities.supportByok,
   };
-}
-
-async function orgModelCapabilities(
-  db: Db,
-  orgId: string,
-): Promise<
-  Pick<OrgPlanCapabilities, "restrictedBuiltInModels" | "supportByok">
-> {
-  return modelPolicyCapabilities(await loadOrgPlanCapabilities(db, orgId));
 }
 
 export interface EnsuredOrgModelPolicyFacts {
@@ -795,11 +778,18 @@ async function listOrgSurfaceRoutes(
     .where(eq(modelProviderConnections.orgId, orgId));
 }
 
-async function validateOrgProviderRoute(
-  db: Db,
-  orgId: string,
+interface PolicyRouteSnapshot {
+  readonly providers: readonly Pick<
+    typeof modelProviders.$inferSelect,
+    "id" | "type" | "selectedModel" | "userId"
+  >[];
+  readonly surfaces: readonly SurfaceRouteInfo[];
+}
+
+function validateOrgProviderRoute(
+  routes: PolicyRouteSnapshot,
   policy: UpdateOrgModelPolicy,
-): Promise<string | null> {
+): string | null {
   const surfaceId = policy.modelProviderSurfaceId ?? null;
   if (surfaceId) {
     if (policy.credentialScope !== "org") {
@@ -808,24 +798,9 @@ async function validateOrgProviderRoute(
     if (policy.modelProviderId) {
       return "Custom gateway routes cannot store a legacy provider ID";
     }
-    const [surface] = await db
-      .select({
-        id: modelProviderSurfaces.id,
-        protocol: modelProviderSurfaces.protocol,
-        modelMappings: modelProviderSurfaces.modelMappings,
-      })
-      .from(modelProviderSurfaces)
-      .innerJoin(
-        modelProviderConnections,
-        eq(modelProviderSurfaces.connectionId, modelProviderConnections.id),
-      )
-      .where(
-        and(
-          eq(modelProviderSurfaces.id, surfaceId),
-          eq(modelProviderConnections.orgId, orgId),
-        ),
-      )
-      .limit(1);
+    const surface = routes.surfaces.find((candidate) => {
+      return candidate.id === surfaceId;
+    });
     if (!surface) {
       return "Selected custom gateway surface is not configured for this workspace";
     }
@@ -868,22 +843,9 @@ async function validateOrgProviderRoute(
     return "Org provider routes require a provider ID";
   }
 
-  const [provider] = await db
-    .select({
-      id: modelProviders.id,
-      type: modelProviders.type,
-      selectedModel: modelProviders.selectedModel,
-      userId: modelProviders.userId,
-    })
-    .from(modelProviders)
-    .where(
-      and(
-        eq(modelProviders.orgId, orgId),
-        eq(modelProviders.userId, ORG_SENTINEL_USER_ID),
-        eq(modelProviders.id, policy.modelProviderId),
-      ),
-    )
-    .limit(1);
+  const provider = routes.providers.find((candidate) => {
+    return candidate.id === policy.modelProviderId;
+  });
 
   if (!provider || provider.userId !== ORG_SENTINEL_USER_ID) {
     return "Selected provider is not configured for this workspace";
@@ -946,12 +908,11 @@ interface UpdatePolicyValidationContext {
   readonly modelsAllowedForNewPolicy: ReadonlySet<SupportedRunModel>;
 }
 
-async function validateUpdatePolicies(
-  db: Db,
-  orgId: string,
+function validateUpdatePolicies(
+  routes: PolicyRouteSnapshot,
   policies: UpdateOrgModelPolicy[],
   context: UpdatePolicyValidationContext,
-): Promise<ServiceResult<UpdateOrgModelPolicy[]>> {
+): ServiceResult<UpdateOrgModelPolicy[]> {
   const { capabilities, existingRows, modelsAllowedForNewPolicy } = context;
   if (policies.length === 0) {
     return bad("Request must include at least one model");
@@ -1000,7 +961,7 @@ async function validateUpdatePolicies(
       defaultCount += 1;
     }
 
-    const routeError = await validateOrgProviderRoute(db, orgId, policy);
+    const routeError = validateOrgProviderRoute(routes, policy);
     if (routeError) {
       return bad(routeError);
     }
@@ -1294,23 +1255,7 @@ async function persistOrgModelPolicyUpdates(params: {
   const tx = params.db;
   await tx
     .insert(orgModelPolicies)
-    .values(
-      params.policies.map((policy) => {
-        return {
-          orgId: params.orgId,
-          model: policy.model,
-          isDefault: false,
-          defaultProviderType: policy.defaultProviderType,
-          credentialScope: policy.credentialScope,
-          modelProviderId: policy.modelProviderId,
-          modelProviderSurfaceId: policy.modelProviderSurfaceId ?? null,
-          createdByUserId: params.userId,
-          updatedByUserId: params.userId,
-          createdAt: params.now,
-          updatedAt: params.now,
-        };
-      }),
-    )
+    .values(replacementPolicyValues(params, params.now))
     .onConflictDoNothing({
       target: [orgModelPolicies.orgId, orgModelPolicies.model],
     });
@@ -1361,15 +1306,7 @@ async function persistOrgModelPolicyUpdates(params: {
   for (const policy of params.policies) {
     await tx
       .update(orgModelPolicies)
-      .set({
-        isDefault: policy.isDefault,
-        defaultProviderType: policy.defaultProviderType,
-        credentialScope: policy.credentialScope,
-        modelProviderId: policy.modelProviderId,
-        modelProviderSurfaceId: policy.modelProviderSurfaceId ?? null,
-        updatedAt: params.now,
-        updatedByUserId: params.userId,
-      })
+      .set(policyUpdateValues(policy, params.userId, params.now))
       .where(
         and(
           eq(orgModelPolicies.orgId, params.orgId),
@@ -1459,84 +1396,376 @@ export const listOrgModelPolicies$ = command(
   },
 );
 
+interface ModelPolicyReplacement {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly policies: UpdateOrgModelPolicy[];
+  readonly revision: string;
+}
+
+function policyRefreshConflict(): Extract<
+  ServiceResult<never>,
+  { readonly ok: false }
+> {
+  return {
+    ok: false,
+    response: conflict(
+      "Model settings changed or this client is out of date. Refresh model settings and try again, or upgrade your client.",
+    ),
+  };
+}
+
+function policySeedValues(orgId: string, userId: string) {
+  const seed = getDefaultOrgModelPolicySeed().find((policy) => {
+    return policy.isDefault;
+  });
+  if (!seed) {
+    throw new Error("The default model policy seed has no default");
+  }
+  return { ...seed, orgId, createdByUserId: userId, updatedByUserId: userId };
+}
+
+function replacementPolicyValues(
+  params: Pick<ModelPolicyReplacement, "orgId" | "userId" | "policies">,
+  now: Date,
+) {
+  return params.policies.map((policy) => {
+    return {
+      orgId: params.orgId,
+      model: policy.model,
+      isDefault: false,
+      defaultProviderType: policy.defaultProviderType,
+      credentialScope: policy.credentialScope,
+      modelProviderId: policy.modelProviderId,
+      modelProviderSurfaceId: policy.modelProviderSurfaceId ?? null,
+      createdByUserId: params.userId,
+      updatedByUserId: params.userId,
+      createdAt: now,
+      updatedAt: now,
+    };
+  });
+}
+
+function policyUpdateValues(
+  policy: UpdateOrgModelPolicy,
+  userId: string,
+  now: Date,
+) {
+  return {
+    isDefault: policy.isDefault,
+    defaultProviderType: policy.defaultProviderType,
+    credentialScope: policy.credentialScope,
+    modelProviderId: policy.modelProviderId,
+    modelProviderSurfaceId: policy.modelProviderSurfaceId ?? null,
+    updatedAt: now,
+    updatedByUserId: userId,
+  };
+}
+
+function policySetOwned(
+  locked: readonly OrgModelPolicyRow[],
+  current: readonly OrgModelPolicyRow[],
+) {
+  const ids = new Set(
+    locked.map((row) => {
+      return row.id;
+    }),
+  );
+  return (
+    current.length > 0 &&
+    current.length === ids.size &&
+    current.every((row) => {
+      return ids.has(row.id);
+    })
+  );
+}
+
+function policyWriteCapabilities(
+  row:
+    | {
+        readonly status: string;
+        readonly supportByok: boolean;
+        readonly restrictedBuiltInModels: boolean | null;
+      }
+    | undefined,
+  orgId: string,
+) {
+  if (row?.restrictedBuiltInModels === null) {
+    throw new Error(
+      `Unexpected NULL restricted_built_in_models for org plan entitlement ${orgId}`,
+    );
+  }
+  return modelPolicyCapabilities(
+    row
+      ? {
+          status: runtimeStatusForEntitlement(row.status),
+          restrictedBuiltInModels: row.restrictedBuiltInModels,
+          supportByok: row.supportByok,
+        }
+      : null,
+  );
+}
+
+function modelPolicyWriterLockSql(orgId: string) {
+  // Outgoing writers do not yet fence the complete current policy set. Remove
+  // the legacy key only when they no longer serve, drain, or remain rollback targets.
+  // eslint-disable-next-line api/no-new-advisory-lock -- Existing R1 acquisition; pure SQL builder only.
+  return sql`SELECT pg_advisory_xact_lock(hashtextextended(${`model-policy:${orgId}`}, 0))`;
+}
+
+const POLICY_PROVIDER_SELECTION = {
+  id: modelProviders.id,
+  type: modelProviders.type,
+  selectedModel: modelProviders.selectedModel,
+  userId: modelProviders.userId,
+} as const;
+const POLICY_SURFACE_SELECTION = {
+  id: modelProviderSurfaces.id,
+  protocol: modelProviderSurfaces.protocol,
+  modelMappings: modelProviderSurfaces.modelMappings,
+} as const;
+const POLICY_ENTITLEMENT_SELECTION = {
+  status: orgPlanEntitlements.status,
+  supportByok: orgPlanEntitlements.supportByok,
+  restrictedBuiltInModels: orgPlanEntitlements.restrictedBuiltInModels,
+} as const;
+const POLICY_CATALOG_SELECTION = {
+  model: runModelCatalog.model,
+  allowNewOrgPolicy: runModelCatalog.allowNewOrgPolicy,
+} as const;
+
+function ownedPolicyProviders(orgId: string) {
+  return and(
+    eq(modelProviders.orgId, orgId),
+    eq(modelProviders.userId, ORG_SENTINEL_USER_ID),
+  );
+}
+
+function assertPolicyRevision(
+  revision: string,
+  existing: readonly OrgModelPolicyRow[],
+) {
+  if (revision !== policyRevision(existing)) {
+    throw new RejectedModelPolicyUpdate(policyRefreshConflict());
+  }
+}
+
+function replacementWritePlan(
+  params: ModelPolicyReplacement,
+  now: Date,
+  input: {
+    readonly existing: readonly OrgModelPolicyRow[];
+    readonly routes: PolicyRouteSnapshot;
+    readonly entitlement: Parameters<typeof policyWriteCapabilities>[0];
+    readonly catalog: readonly {
+      readonly model: string;
+      readonly allowNewOrgPolicy: boolean;
+    }[];
+  },
+) {
+  const allowed = new Set(
+    input.catalog.flatMap((row) => {
+      const model = parseSupportedModel(row.model);
+      return model && row.allowNewOrgPolicy ? [model] : [];
+    }),
+  );
+  const validation = validateUpdatePolicies(
+    input.routes,
+    resolveOmittedModelProviderSurfaceIds(params.policies, input.existing),
+    {
+      capabilities: policyWriteCapabilities(input.entitlement, params.orgId),
+      existingRows: input.existing,
+      modelsAllowedForNewPolicy: allowed,
+    },
+  );
+  if (!validation.ok) {
+    throw new RejectedModelPolicyUpdate(validation);
+  }
+  const policies = validation.data;
+  const owner = eq(orgModelPolicies.orgId, params.orgId);
+  return {
+    now,
+    insertValues: replacementPolicyValues({ ...params, policies }, now),
+    removalCondition: and(
+      owner,
+      inArray(orgModelPolicies.model, [...ACTIVE_RUN_MODELS]),
+      notInArray(
+        orgModelPolicies.model,
+        policies.map((policy) => {
+          return policy.model;
+        }),
+      ),
+    ),
+    defaultModel: policies.find((policy) => {
+      return policy.isDefault;
+    })?.model,
+    updates: policies.map((policy) => {
+      return {
+        values: policyUpdateValues(policy, params.userId, now),
+        condition: and(owner, eq(orgModelPolicies.model, policy.model)),
+      };
+    }),
+  };
+}
+
+/** Publish one validated complete policy set; every database handle stays here. */
+const commitOrgModelPolicyReplacement$ = command(
+  async (
+    { set },
+    params: ModelPolicyReplacement,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    signal.throwIfAborted();
+    await db.transaction(async (tx) => {
+      await tx.execute(modelPolicyWriterLockSql(params.orgId));
+      const owner = eq(orgModelPolicies.orgId, params.orgId);
+      const before = await tx.select().from(orgModelPolicies).where(owner);
+      if (before.length === 0) {
+        await tx
+          .insert(orgModelPolicies)
+          .values(policySeedValues(params.orgId, params.userId))
+          .onConflictDoNothing();
+      }
+      let existing: OrgModelPolicyRow[] = [];
+      let routes: PolicyRouteSnapshot = { providers: [], surfaces: [] };
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const providers = await tx
+          .select(POLICY_PROVIDER_SELECTION)
+          .from(modelProviders)
+          .where(ownedPolicyProviders(params.orgId))
+          .orderBy(asc(modelProviders.id))
+          .for("share");
+        await tx
+          .select({ id: modelProviderConnections.id })
+          .from(modelProviderConnections)
+          .where(eq(modelProviderConnections.orgId, params.orgId))
+          .orderBy(asc(modelProviderConnections.id))
+          .for("share");
+        const surfaces = await tx
+          .select(POLICY_SURFACE_SELECTION)
+          .from(modelProviderSurfaces)
+          .innerJoin(
+            modelProviderConnections,
+            eq(modelProviderSurfaces.connectionId, modelProviderConnections.id),
+          )
+          .where(eq(modelProviderConnections.orgId, params.orgId))
+          .orderBy(asc(modelProviderSurfaces.id))
+          .for("share", { of: modelProviderSurfaces });
+        const locked = await tx
+          .select()
+          .from(orgModelPolicies)
+          .where(owner)
+          .orderBy(asc(orgModelPolicies.id))
+          .for("no key update");
+        existing = await tx.select().from(orgModelPolicies).where(owner);
+        if (policySetOwned(locked, existing)) {
+          routes = { providers, surfaces };
+          break;
+        }
+        if (attempt === 2) {
+          throw new Error(
+            "Model policies changed concurrently; retry the operation",
+          );
+        }
+      }
+      assertPolicyRevision(params.revision, existing);
+      const [entitlement] = await tx
+        .select(POLICY_ENTITLEMENT_SELECTION)
+        .from(orgPlanEntitlements)
+        .where(eq(orgPlanEntitlements.orgId, params.orgId))
+        .limit(1);
+      if (!entitlement) {
+        const [org] = await tx
+          .select({ id: orgMetadata.orgId })
+          .from(orgMetadata)
+          .where(eq(orgMetadata.orgId, params.orgId))
+          .limit(1);
+        if (org) {
+          throw new Error(`Missing org plan entitlement for ${params.orgId}`);
+        }
+      }
+      const catalog = await tx
+        .select(POLICY_CATALOG_SELECTION)
+        .from(runModelCatalog)
+        .where(inArray(runModelCatalog.model, [...ACTIVE_RUN_MODELS]))
+        .for("share");
+      const plan = replacementWritePlan(params, nowDate(), {
+        existing,
+        routes,
+        entitlement,
+        catalog,
+      });
+      signal.throwIfAborted();
+      await tx
+        .insert(orgModelPolicies)
+        .values(plan.insertValues)
+        .onConflictDoNothing({
+          target: [orgModelPolicies.orgId, orgModelPolicies.model],
+        });
+      const removed = await tx
+        .delete(orgModelPolicies)
+        .where(plan.removalCondition)
+        .returning({ model: orgModelPolicies.model });
+      if (removed.length > 0 && plan.defaultModel) {
+        await tx
+          .update(orgMembersMetadata)
+          .set({
+            selectedModel: plan.defaultModel,
+            serviceTier: null,
+            updatedAt: plan.now,
+          })
+          .where(
+            and(
+              eq(orgMembersMetadata.orgId, params.orgId),
+              inArray(
+                orgMembersMetadata.selectedModel,
+                removed.map((row) => {
+                  return row.model;
+                }),
+              ),
+            ),
+          );
+      }
+      await tx.update(orgModelPolicies).set({ isDefault: false }).where(owner);
+      for (const update of plan.updates) {
+        await tx
+          .update(orgModelPolicies)
+          .set(update.values)
+          .where(update.condition);
+      }
+      signal.throwIfAborted();
+    });
+    signal.throwIfAborted();
+  },
+);
+
 export const updateOrgModelPolicies$ = command(
   async (
     { get, set },
-    params: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly policies: UpdateOrgModelPolicy[];
+    params: Omit<ModelPolicyReplacement, "revision"> & {
       readonly revision?: string;
     },
     signal: AbortSignal,
   ): Promise<ServiceResult<OrgModelPoliciesResponse>> => {
-    const db = set(writeDb$);
-    const refreshConflict = () => {
-      return {
-        ok: false as const,
-        response: conflict(
-          "Model settings changed or this client is out of date. Refresh model settings and try again, or upgrade your client.",
-        ),
-      };
-    };
-    // Reject unidentified old writers before even the lazy seed/default path.
     if (!params.revision) {
-      return refreshConflict();
+      return policyRefreshConflict();
     }
-    // Empty-set ownership can insert the real default row. Every rejected
-    // update must roll that preparation back instead of committing a repair.
     const written = await settle(
-      db.transaction(async (tx) => {
-        await lockPolicyWrites(tx, params.orgId, params.userId);
-        signal.throwIfAborted();
-        const existing = await loadRows(tx, params.orgId, true);
-        if (
-          params.revision !== undefined &&
-          params.revision !== policyRevision(existing)
-        ) {
-          throw new RejectedModelPolicyUpdate(refreshConflict());
-        }
-        const policies = resolveOmittedModelProviderSurfaceIds(
-          params.policies,
-          existing,
-        );
-        const capabilities = await orgModelCapabilities(tx, params.orgId);
-        const modelsAllowedForNewPolicy =
-          await loadModelsAllowedForNewOrgPolicy(tx, true);
-        const validation = await validateUpdatePolicies(
-          tx,
-          params.orgId,
-          policies,
-          {
-            capabilities,
-            existingRows: existing,
-            modelsAllowedForNewPolicy,
-          },
-        );
-        signal.throwIfAborted();
-        if (!validation.ok) {
-          throw new RejectedModelPolicyUpdate(validation);
-        }
-        await persistOrgModelPolicyUpdates({
-          db: tx,
-          orgId: params.orgId,
-          userId: params.userId,
-          policies: validation.data,
-          now: nowDate(),
-        });
-        signal.throwIfAborted();
-        return ok(undefined);
-      }),
+      set(
+        commitOrgModelPolicyReplacement$,
+        { ...params, revision: params.revision },
+        signal,
+      ),
       signal,
     );
-    signal.throwIfAborted();
     if (!written.ok) {
       if (written.error instanceof RejectedModelPolicyUpdate) {
         return written.error.result;
       }
       throw written.error;
     }
-
+    const db = set(writeDb$);
     const response = await listOrgModelPolicies(
       db,
       params.orgId,

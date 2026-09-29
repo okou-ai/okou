@@ -43,7 +43,7 @@ const CAPABILITY_SELECTION = {
   audioDailyDurationSeconds: orgPlanEntitlements.audioDailyDurationSeconds,
 } as const;
 
-function runtimeStatusForEntitlement(
+export function runtimeStatusForEntitlement(
   status: string,
 ): OrgPlanCapabilities["status"] {
   switch (status) {
