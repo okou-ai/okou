@@ -29,6 +29,12 @@ export default [
     rules: { "api/no-database-trigger": "error" },
   },
   {
+    // The current trigger inventory is production schema policy, even though
+    // its assertions live in a test script. Existing entries are waived inline.
+    files: ["scripts/test-migration-consistency-schema.ts"],
+    rules: { "api/no-database-trigger": "error" },
+  },
+  {
     name: "database-trigger-sql",
     files: ["**/*.sql"],
     ignores: ["scripts/fixtures/**"],

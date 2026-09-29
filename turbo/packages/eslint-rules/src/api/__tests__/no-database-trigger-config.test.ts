@@ -11,6 +11,43 @@ const trigger =
   "CREATE TRIGGER example BEFORE INSERT ON items FOR EACH ROW EXECUTE FUNCTION capture_item();";
 const ruleId = "api/no-database-trigger";
 
+test("the current inventory has nine effective inline legacy exceptions", async () => {
+  const eslint = new ESLint({ cwd: dbRoot });
+  const [result] = await eslint.lintFiles([
+    "scripts/test-migration-consistency-schema.ts",
+  ]);
+  expect(result.messages).toEqual([]);
+  const suppressed = result.suppressedMessages.filter((message) => {
+    return message.ruleId === ruleId;
+  });
+  expect(suppressed).toHaveLength(9);
+  for (const message of suppressed) {
+    expect(message.suppressions).toEqual([
+      {
+        kind: "directive",
+        justification:
+          "Legacy trigger created before 2026-09-29; new database triggers are prohibited.",
+      },
+    ]);
+  }
+});
+
+test("a legacy inline exception does not allow the next trigger definition", async () => {
+  const eslint = new ESLint({ cwd: dbRoot });
+  const code = `
+// eslint-disable-next-line api/no-database-trigger -- Legacy trigger created before 2026-09-29; new database triggers are prohibited.
+export const legacy = ${JSON.stringify(trigger)};
+export const added = ${JSON.stringify(trigger)};
+`;
+  const [result] = await eslint.lintText(code, {
+    filePath: "scripts/test-migration-consistency-schema.ts",
+  });
+  expect(result.messages).toEqual([
+    expect.objectContaining({ ruleId, severity: 2, line: 4 }),
+  ]);
+  expect(result.suppressedMessages).toHaveLength(1);
+});
+
 test("the real DB config rejects new SQL migrations at the SQL source line", async () => {
   const eslint = new ESLint({ cwd: dbRoot });
   const [result] = await eslint.lintText(`-- new migration\n${trigger}`, {

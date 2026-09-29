@@ -299,6 +299,11 @@ explicit ESLint exceptions; do not extend those exceptions for new behavior.
 Keep write orchestration in application transactions and invariants in database
 constraints.
 
+The nine existing definitions in `EXPECTED_PERMANENT_TRIGGERS` have individual
+`eslint-disable-next-line api/no-database-trigger` comments stating that they
+predate 2026-09-29 and new triggers are prohibited. The inventory script is linted
+despite the general test exclusion. Do not add exceptions for new triggers.
+
 When a migration changes or removes an existing trigger or function, or adds a
 function, update `EXPECTED_PERMANENT_TRIGGERS` or `EXPECTED_PERMANENT_FUNCTIONS`
 in `scripts/test-migration-consistency-schema.ts` in the same change. Trigger keys

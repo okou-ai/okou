@@ -14,8 +14,15 @@ assembled entirely at runtime.
 Existing shipped migrations stay unchanged. The DB ESLint configuration lists
 the eight historical migration files that created triggers explicitly; new
 migrations are checked by default. These historical definitions include triggers
-removed by later migrations. The nine surviving triggers remain tracked by
-`EXPECTED_PERMANENT_TRIGGERS` in the migration consistency suite.
+removed by later migrations. CI rejects any edits to these shipped SQL files,
+including comment-only changes.
+
+The nine surviving triggers are checked in `EXPECTED_PERMANENT_TRIGGERS` in
+`scripts/test-migration-consistency-schema.ts`. Each current definition has one
+`eslint-disable-next-line api/no-database-trigger` with the reason:
+`Legacy trigger created before 2026-09-29; new database triggers are prohibited.`
+Keep these exceptions local to the existing definitions; do not add new ones.
+The inventory script is explicitly checked despite the general test exclusion.
 
 Test files and existing fault-injection fixtures may create temporary triggers.
 They are excluded in the owning package's ESLint configuration. Production code
