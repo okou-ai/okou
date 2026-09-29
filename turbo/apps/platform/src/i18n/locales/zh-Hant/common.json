@@ -2012,6 +2012,27 @@
       "template": "[模板：{{title}}]"
     },
     "newChat": "新建聊天",
+    "newThreadDelivery": {
+      "accepted": "首則訊息已由伺服器接收，等待聊天記錄確認。",
+      "agentConflict": "此聊天與已儲存的智能體不符，無法安全重試。",
+      "checkAndRetry": "檢查並重試",
+      "checking": "正在檢查…",
+      "create": "建立聊天",
+      "firstMessage": "首則訊息",
+      "missingChat": "此聊天已無法使用。請查看已儲存的訊息，不要直接重試。",
+      "openChat": "開啟聊天",
+      "pendingCreate": "正在建立聊天…",
+      "pendingPrompt": "正在傳送首則訊息…",
+      "region": "新聊天傳送復原",
+      "rejected": "{{phase}}遭到拒絕。原始訊息、已上傳檔案的參照及選項已儲存在此瀏覽器中。",
+      "rejectedAuth": "{{phase}}遭到拒絕。請使用原帳號與組織登入，再檢查傳送狀態。",
+      "review": "查看已儲存的訊息",
+      "safeRetry": "安全重試需要支援 Web Locks 的瀏覽器。",
+      "storageUnavailable": "訊息未傳送：瀏覽器無法儲存復原副本。請釋放儲存空間後重試。",
+      "uncertain": "{{phase}}尚未確認。重試前請檢查伺服器狀態；不要另建聊天。",
+      "uncertainAuth": "{{phase}}尚未確認。請使用原帳號與組織登入，再檢查傳送狀態。",
+      "uploadedFiles": "已上傳檔案：{{files}}"
+    },
     "origins": {
       "agentphone": "iMessage",
       "discord": "Discord",

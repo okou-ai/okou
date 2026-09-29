@@ -1,5 +1,6 @@
 import { command } from "ccstate";
 import { toast } from "@okouai/ui/components/ui/sonner";
+import { i18n } from "../../i18n/index.ts";
 import {
   chatThreadMetadataContract,
   chatThreadsContract,
@@ -291,8 +292,12 @@ export const retryNewThreadDelivery$ = command(
         }
         toast.error(
           checked.value === "absent"
-            ? "This chat is no longer available. Review your saved message instead of retrying."
-            : "This chat cannot be retried with the saved agent.",
+            ? i18n.t(($) => {
+                return $.chat.newThreadDelivery.missingChat;
+              })
+            : i18n.t(($) => {
+                return $.chat.newThreadDelivery.agentConflict;
+              }),
         );
         return false;
       }
