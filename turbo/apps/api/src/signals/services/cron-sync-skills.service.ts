@@ -328,7 +328,7 @@ async function createSkillArchive(
   return { archiveBuffer, manifestBuffer };
 }
 
-async function hasCurrentSkillVersion(
+function hasCurrentSkillVersion(
   args: {
     readonly db: Db;
     readonly url: string;
@@ -336,47 +336,74 @@ async function hasCurrentSkillVersion(
     readonly files: readonly ExtractedFile[];
   },
   signal: AbortSignal,
-): Promise<boolean> {
-  const [existingSkill] = await args.db
-    .select({ versionHash: skills.versionHash })
-    .from(skills)
-    .where(eq(skills.url, args.url))
-    .limit(1);
-  signal.throwIfAborted();
+): Computed<Promise<boolean>> {
+  return computed(async (get): Promise<boolean> => {
+    const [existingSkill] = await args.db
+      .select({ versionHash: skills.versionHash, storageId: skills.storageId })
+      .from(skills)
+      .where(eq(skills.url, args.url))
+      .limit(1);
+    signal.throwIfAborted();
 
-  if (existingSkill?.versionHash !== args.versionHash) {
-    return false;
-  }
+    if (existingSkill?.versionHash !== args.versionHash) {
+      return false;
+    }
 
-  const { indexes } = await readPiResourceVersionIndexes(
-    args.db,
-    [args.versionHash],
-    signal,
-  );
-  if (!indexes.has(args.versionHash)) {
     const [version] = await args.db
-      .select({ archiveSize: storageVersions.archiveSize })
+      .select({
+        storageId: storageVersions.storageId,
+        s3Key: storageVersions.s3Key,
+        fileCount: storageVersions.fileCount,
+        archiveSize: storageVersions.archiveSize,
+      })
       .from(storageVersions)
       .where(eq(storageVersions.id, args.versionHash))
       .limit(1);
-    if (!version) {
-      throw new Error("Current skill references a missing Storage version");
-    }
-    // Reuse the publisher's archive encoding and bounded parser even when the
-    // logical version is unchanged. Raw files would bypass the expansion limit.
-    const { archiveBuffer } = await createSkillArchive(args.files);
     signal.throwIfAborted();
-    await publishPiResourceVersionIndex(
-      {
-        db: args.db,
-        versionId: args.versionHash,
-        projection: preparePiResourceIndex(archiveBuffer),
-        archiveSize: version.archiveSize,
-      },
+    if (
+      !version ||
+      version.storageId !== existingSkill.storageId ||
+      version.fileCount !== args.files.length
+    ) {
+      throw new Error("Current skill references an invalid Storage version");
+    }
+    if (
+      !(await get(
+        verifyS3FilesExist(
+          env("R2_USER_STORAGES_BUCKET_NAME"),
+          version.s3Key,
+          version.fileCount,
+        ),
+      ))
+    ) {
+      throw new Error(
+        `Existing skill Storage version ${args.versionHash} is missing R2 objects`,
+      );
+    }
+    signal.throwIfAborted();
+
+    const { indexes } = await readPiResourceVersionIndexes(
+      args.db,
+      [args.versionHash],
       signal,
     );
-  }
-  return true;
+    if (!indexes.has(args.versionHash)) {
+      // Reuse the publisher's archive encoding and bounded parser even when the
+      // logical version is unchanged. Raw files would bypass the expansion limit.
+      const { archiveBuffer } = await createSkillArchive(args.files);
+      signal.throwIfAborted();
+      await publishPiResourceVersionIndex(
+        {
+          db: args.db,
+          versionId: args.versionHash,
+          projection: preparePiResourceIndex(archiveBuffer),
+          archiveSize: version.archiveSize,
+        },
+        signal,
+      );
+    }
+    return true;
+  });
 }
 
 function uploadSkillArchive(
@@ -589,14 +616,16 @@ function syncSingleSkill(
     const context = buildSkillSyncContext(extracted);
 
     if (
-      await hasCurrentSkillVersion(
-        {
-          db,
-          url: context.url,
-          versionHash: context.versionHash,
-          files: context.files,
-        },
-        signal,
+      await get(
+        hasCurrentSkillVersion(
+          {
+            db,
+            url: context.url,
+            versionHash: context.versionHash,
+            files: context.files,
+          },
+          signal,
+        ),
       )
     ) {
       return false;

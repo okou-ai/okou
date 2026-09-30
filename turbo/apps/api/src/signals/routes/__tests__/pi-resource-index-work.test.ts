@@ -404,12 +404,18 @@ describe("Pi resource indexing of generic Storage commits", () => {
       { ...snapshot, archiveSize: published.archive.length },
       context.signal,
     );
-    expect(first.snapshot.skills).toHaveLength(1);
+    expect(first.snapshot.skills).toStrictEqual([
+      expect.objectContaining({
+        name: "index-work",
+        description: "Index a committed Storage version",
+        filePath: `${PI_AGENT_DIR}/skills/index-work/SKILL.md`,
+      }),
+    ]);
     const second = await prepareRegisteredPiResourceSnapshotFixture(
       { ...snapshot, archiveSize: 1 },
       context.signal,
     );
-    expect(second.snapshot.skills).toHaveLength(1);
+    expect(second.snapshot).toStrictEqual(first.snapshot);
     expect(archiveGets).toBe(1);
   });
 
