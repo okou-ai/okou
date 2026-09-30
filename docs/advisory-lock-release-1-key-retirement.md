@@ -26,7 +26,7 @@ Ethan: “问题不大。我们流量很小别想着版本升级期间的事儿�
 ## Per-key inventory
 
 Initial inventory: **17 API + 1 operator** definitions. Before this continuation:
-**16 API + 0 operator**. Now: **6 API + 0 operator**; compaction's shared/exclusive
+**16 API + 0 operator**. Now: **5 API + 0 operator**; compaction's shared/exclusive
 SQL definitions count separately. No nonfinancial advisory definition remains.
 Deleting a key does not certify all earlier nonfinancial replacement machinery
 removed; that simplification remains explicit R1 implementation work below.
@@ -36,7 +36,7 @@ removed; that simplification remains explicit R1 implementation work below.
 | `stripe_customer_<org>`                    | **Deleted.** Stripe customer creation is outside SQL with the existing shared organization idempotency key; local missing-binding UPDATE and organization PK arbitrate new financial writers. Fast-path binding reads are unchanged.                                                                                                                                                                                                        |
 | `stripe_concurrency_subscription:<id>`     | **Deleted.** Timestamp/xmin publication and invoice-line uniqueness remain; daily 24-bucket observation repair uses the existing hourly billing cron. This does not complete desired concurrency configuration or duplicate-charge recovery.                                                                                                                                                                                                |
 | `usage_pack_billing:<org>`                 | **Still present, R1 financial work.** Plan/migration/legacy Plan/concurrency/cancel/restore and last-member/deferred changes are not all declarative. No outgoing-version-only exemption is claimed.                                                                                                                                                                                                                                        |
-| `usage_pack_invitation:<purchase>`         | **Still present, R1 financial work.** Complete shared projection, purchase/refund transitions and cleanup must be independent of this key before removal.                                                                                                                                                                                                                                                                                   |
+| `usage_pack_invitation:<purchase>`         | **Deleted.** Conditional purchase/acceptance/refund transitions, immutable PaymentIntent/paid-amount publication, invitation/allocation uniqueness, grant receipts and refund-attempt provider idempotency arbitrate per-purchase work. Organization-level projection remains separate unfinished R1 work.                                                                                                                                  |
 | `billing_purchase:<org>`                   | **Still present, R1 financial work.** Local-first claims still need common Plan/pack arbitration and recoverable duplicate payable-subscription handling. Not an R2 drain gate.                                                                                                                                                                                                                                                             |
 | `credit_<org>`                             | **Still present, R1 financial work.** Window issuance, consumption and all settlement callers need a complete no-key protocol. Existing window uniqueness alone does not prove independent issuance across different Run start times.                                                                                                                                                                                                       |
 | `usage_event_compaction` shared            | **Still present, R1 financial work.** Source/parent/ledger coexistence and financial preservation need their complete no-key protocol.                                                                                                                                                                                                                                                                                                      |
@@ -54,6 +54,26 @@ removed; that simplification remains explicit R1 implementation work below.
 
 Six application billing triggers remain. They require actual replacement;
 there is no permanent trigger exemption or third release assumption.
+
+## Invitation purchase key retirement
+
+The per-purchase key and all ten acquisitions are removed, without a row lock,
+empty write, new field or retry. This is distinct from the still-unfinished
+organization-level `usage_pack_billing` financial protocol.
+
+| Writer              | Financial arbitration / recovery                                                                                                                                                                                                                                                                                                                                                                              |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Payment publication | Validates customer, currency, session, paid amount and PaymentIntent. The actual UPDATE also accepts only an absent or matching PaymentIntent and paid amount, so validation before a concurrent commit cannot overwrite an immutable payment fact. A rejected transaction rolls back its competing-email retirement; existing Stripe redelivery/reconciliation observes the winner, not an in-process retry. |
+| Invitation creation | Conditional `payment_succeeded -> creating_invitation` admission; allocation uniqueness plus status/empty-invitation-id publication. Losing publication rolls back the allocation. Provider/Clerk I/O remains outside SQL.                                                                                                                                                                                    |
+| Acceptance          | Owner/invitation/user validation; allocation assignment and status-conditional purchase publication share a short transaction. A lost publication rolls back assignment.                                                                                                                                                                                                                                      |
+| Activation          | Conditional activation admission and `activating -> accepted`; purchased/bonus grant receipts use the purchase's existing immutable grant identities and payment source. Grant publication and accepted status commit together, with complete-write checks.                                                                                                                                                   |
+| Refund              | Existing `refundAttempt` and status-conditional claim/finalization; provider idempotency is `usage-pack-invitation:<purchase>:refund:<attempt>`. Uncertain outcomes read the existing refund rather than creating another financial identity. Allocation retirement and configuration sync retain their separate org-level protocol until that key's complete audit.                                          |
+| Expired acceptance  | Conditional still-acceptable status transition to refund_pending; accepted/refunded purchases are not made payable again.                                                                                                                                                                                                                                                                                     |
+
+Public billing API coverage includes concurrent payment/acceptance delivery,
+exactly-once credits, hosted and saved-card payments, invalid payment preview,
+revocation/refund, failed-refund recovery, migrated invitations and missed
+post-commit Stripe synchronization. No test asserts key waiting or order.
 
 ## Gmail rolling behavior
 

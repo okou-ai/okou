@@ -337,15 +337,6 @@ function clerkMembershipIdentity(
     : null;
 }
 
-// Release 1 API compatibility: outgoing purchase writers read state and then
-// update by ID. Keep their lock until they have drained and rollback targets
-// use conditional transitions. Stripe projection ordering remains a separate
-// prerequisite; these local transitions alone do not retire the organization lock.
-function invitationPurchaseCompatibilityLockSql(purchaseId: string) {
-  // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-  return sql`SELECT pg_advisory_xact_lock(hashtextextended(${`usage_pack_invitation:${purchaseId}`}, 0))`;
-}
-
 function checkoutExpiration(currentPeriodEnd: Date): number | null {
   const current = Math.floor(nowDate().getTime() / 1000);
   const expiration = Math.min(
@@ -800,7 +791,6 @@ const persistSuccessfulPayment$ = command(
     signal?.throwIfAborted();
     const db = set(writeDb$);
     return await db.transaction(async (tx) => {
-      await tx.execute(invitationPurchaseCompatibilityLockSql(args.purchaseId));
       const [purchase] = await tx
         .select()
         .from(usagePackInvitationPurchases)
@@ -895,6 +885,22 @@ const persistSuccessfulPayment$ = command(
               "failed",
               "payment_succeeded",
             ]),
+            args.paymentIntentId === null
+              ? isNull(usagePackInvitationPurchases.stripePaymentIntentId)
+              : or(
+                  isNull(usagePackInvitationPurchases.stripePaymentIntentId),
+                  eq(
+                    usagePackInvitationPurchases.stripePaymentIntentId,
+                    args.paymentIntentId,
+                  ),
+                ),
+            or(
+              isNull(usagePackInvitationPurchases.amountPaidCents),
+              eq(
+                usagePackInvitationPurchases.amountPaidCents,
+                args.amountPaidCents,
+              ),
+            ),
           ),
         )
         .returning();
@@ -934,7 +940,6 @@ const claimInvitationCreation$ = command(
     signal?.throwIfAborted();
     const db = set(writeDb$);
     return await db.transaction(async (tx) => {
-      await tx.execute(invitationPurchaseCompatibilityLockSql(purchaseId));
       const staleBefore = new Date(
         nowDate().getTime() - RECONCILIATION_DELAY_MS,
       );
@@ -978,9 +983,8 @@ const persistInvitation$ = command(
     signal?.throwIfAborted();
     const db = set(writeDb$);
     return await db.transaction(async (tx) => {
-      // No row lock: purchase writers hold the retained usage_pack_invitation
-      // key, and the publication below is a conditional status transition.
-      await tx.execute(invitationPurchaseCompatibilityLockSql(purchase.id));
+      // Allocation publication and the purchase transition commit together;
+      // a lost status transition rolls back the allocation.
       const [current] = await tx
         .select()
         .from(usagePackInvitationPurchases)
@@ -1249,9 +1253,6 @@ const finalizeRefund$ = command(
     signal?.throwIfAborted();
     const db = set(writeDb$);
     await db.transaction(async (tx) => {
-      await tx.execute(
-        invitationPurchaseCompatibilityLockSql(claimedPurchase.id),
-      );
       // Conditional transition first: only the claimed refund attempt that is
       // still refunding completes; a lost or stale attempt is a no-op.
       const at = nowDate();
@@ -1330,10 +1331,9 @@ const removeRefundedInvitationProjection$ = command(
     }
     const allocationId = purchase.allocationId;
     await db.transaction(async (tx) => {
-      // No row lock: refund transitions hold the retained
-      // usage_pack_invitation key; finalization re-checks its attempt.
+      // The org-level financial protocol remains separate. Refund attempt
+      // identity and status are rechecked before retiring the allocation.
       await tx.execute(usagePackBillingCompatibilityLockSql(purchase.orgId));
-      await tx.execute(invitationPurchaseCompatibilityLockSql(purchase.id));
       const [current] = await tx
         .select()
         .from(usagePackInvitationPurchases)
@@ -1471,7 +1471,6 @@ const refundPurchase$ = command(
       if (parentCount !== 1) {
         return null;
       }
-      await tx.execute(invitationPurchaseCompatibilityLockSql(purchaseId));
       if (
         (
           await tx.execute(
@@ -2252,7 +2251,6 @@ const claimAcceptedPurchaseActivation$ = command(
       if (parentCount !== 1) {
         return null;
       }
-      await tx.execute(invitationPurchaseCompatibilityLockSql(purchaseId));
       if (
         (
           await tx.execute(
@@ -2316,12 +2314,10 @@ const activateAcceptedPurchase$ = command(
       return;
     }
     await db.transaction(async (tx) => {
-      // No row lock on the purchase: activation holds the retained
-      // usage_pack_billing and usage_pack_invitation keys, and the final
-      // activating -> accepted transition is conditional, so a lost race rolls
-      // back its grants instead of paying twice.
+      // Grant receipts and final purchase publication commit atomically;
+      // a lost accepted transition rolls back this delivery's grants. The
+      // remaining org-level financial protocol is audited separately.
       await tx.execute(usagePackBillingCompatibilityLockSql(purchase.orgId));
-      await tx.execute(invitationPurchaseCompatibilityLockSql(purchase.id));
       const [current] = await tx
         .select()
         .from(usagePackInvitationPurchases)
@@ -2461,7 +2457,6 @@ const markLateAcceptanceForRefund$ = command(
     signal?.throwIfAborted();
     const db = set(writeDb$);
     return await db.transaction(async (tx) => {
-      await tx.execute(invitationPurchaseCompatibilityLockSql(candidate.id));
       // Conditional transition: only a still-acceptable purchase moves to
       // refund_pending; anything else is a deterministic "not marked".
       const [marked] = await tx
@@ -2497,10 +2492,8 @@ const recordInvitationAcceptance$ = command(
     signal?.throwIfAborted();
     const db = set(writeDb$);
     await db.transaction(async (tx) => {
-      // No row lock: acceptance writers hold the retained
-      // usage_pack_invitation key, and the purchase transition below is
-      // conditional on the status this decision was made from.
-      await tx.execute(invitationPurchaseCompatibilityLockSql(candidate.id));
+      // Assignment and the status-conditional purchase publication share one
+      // transaction. A lost publication rolls back the assignment.
       const [purchase] = await tx
         .select()
         .from(usagePackInvitationPurchases)
