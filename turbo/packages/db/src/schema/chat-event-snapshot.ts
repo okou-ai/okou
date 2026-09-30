@@ -58,7 +58,6 @@ export const chatEventSnapshots = pgTable(
         table.chatThreadId,
         table.archiveSchemaVersion,
       ),
-      // Migration 1294 retires V7 pointers; persisted snapshots are V8 only.
       check(
         "chat_event_snapshots_archive_schema_version_check",
         sql`${table.archiveSchemaVersion} = 8`,

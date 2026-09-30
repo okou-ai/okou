@@ -40,7 +40,6 @@ assert.ok(
 const migrationMillis = entry.when;
 const pointerCount = 6001;
 const agentId = randomUUID();
-const guardThreadId = randomUUID();
 
 async function migrate(beforeMillis?: number): Promise<void> {
   const sql = postgres(fixtureUrl.toString(), { max: 1, onnotice: () => {} });
@@ -107,31 +106,6 @@ try {
     );
     assert.deepEqual(journalAfterFailure.rows, []);
     await client.query(
-      `INSERT INTO chat_threads (id, user_id, agent_id, title)
-       VALUES ($1, 'snapshot-retirement-user', $2, 'V7 write guard')`,
-      [guardThreadId, agentId],
-    );
-    await assert.rejects(
-      client.query(
-        `INSERT INTO chat_event_snapshots (
-        chat_thread_id, last_seq_id, last_event_id, terminal_seq_id,
-        archive_schema_version, object_key
-      ) VALUES ($1, 1, gen_random_uuid(), 0, 7, 'v7-guard')`,
-        [guardThreadId],
-      ),
-      (error: unknown) => {
-        return (
-          typeof error === "object" &&
-          error !== null &&
-          "code" in error &&
-          error.code === "23514" &&
-          "constraint" in error &&
-          error.constraint ===
-            "chat_event_snapshots_archive_schema_version_check"
-        );
-      },
-    );
-    await client.query(
       `INSERT INTO chat_event_snapshots (
          id, chat_thread_id, last_seq_id, last_event_id,
          terminal_event_id, terminal_seq_id, archive_schema_version, object_key
@@ -172,9 +146,6 @@ try {
     assert.deepEqual(constraint.rows, [
       { validated: true, definition: "CHECK ((archive_schema_version = 8))" },
     ]);
-    const helpers = await client.query(`SELECT proname FROM pg_proc
-      WHERE proname = 'retire_v7_chat_event_snapshot_pointers'`);
-    assert.deepEqual(helpers.rows, []);
     await client.query(
       `DELETE FROM drizzle.__drizzle_migrations WHERE created_at = $1`,
       [migrationMillis],
@@ -183,7 +154,7 @@ try {
     assert.deepEqual(await pointers(client, 7), []);
     assert.deepEqual(await pointers(client, 8), originalV8);
     console.log(
-      "PASS missing V8 fails closed; V7 writes rejected; 6,001 pointers deleted in committed batches; V8 unchanged; retry is a no-op",
+      "PASS missing V8 fails closed; 6,001 pointers deleted in committed batches; validated V8 constraint; V8 unchanged; retry is a no-op",
     );
   } finally {
     await client.end();

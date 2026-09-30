@@ -53,11 +53,9 @@ import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import {
-  deleteFakeChatEventObject,
   installFakeChatEventR2,
   readFakeChatEventObject,
   type RecordedChatEventPut,
-  writeFakeChatEventObject,
 } from "./helpers/fake-chat-event-r2";
 import { createOpsLogsApi } from "./helpers/api-bdd-ops-logs";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";

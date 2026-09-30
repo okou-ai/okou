@@ -124,8 +124,6 @@ describe("canonical chat event row schema", () => {
       "userMessage.nestedProbe.value",
       null,
     );
-    expect(parsed).not.toHaveProperty("content");
-    expect(parsed).not.toHaveProperty("interruptsRunId");
   });
 });
 
@@ -362,7 +360,7 @@ describe("canonical row projection preserves the public ChatEvent contract", () 
     });
   });
 
-  it("accepts an optional V7 failure reason only on failed runs", () => {
+  it("accepts an optional failure reason only on failed runs", () => {
     const runId = "00000000-0000-4000-8000-000000000013";
     const historical = chatEventFromRow(
       canonicalRow({

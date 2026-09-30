@@ -8470,7 +8470,7 @@ describe("okou browser route", () => {
     await deleteAgentRunRootFixture(first.runId);
   }, 120_000);
 
-  it("records browser lifecycle events only for UI actions and automatic reclamation", async () => {
+  it("keeps viewer actions separate from managed-browser reclamation", async () => {
     const { routeMocks, runs, chat, actor, agent } =
       await setupBrowserScenario();
     const first = await createClaimedChatRun(

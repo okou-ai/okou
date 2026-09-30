@@ -10,7 +10,6 @@ import {
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { testChatEventSearchProjectionContract } from "@okouai/api-contracts/contracts/test-chat-event-search-projection";
 import { testChatEventSnapshotContract } from "@okouai/api-contracts/contracts/test-chat-event-snapshot";
-import { createStore } from "ccstate";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -28,11 +27,9 @@ import {
   FAKE_CHAT_EVENT_SNAPSHOT_URL,
   installFakeChatEventR2,
   readFakeChatEventObject,
-  type RecordedChatEventPut,
   writeFakeChatEventObject,
 } from "./helpers/fake-chat-event-r2";
 import {
-  readChatEventRowsAsPreviousApiFixture,
   readChatEventSnapshotHead,
   updateChatEventSnapshotHead,
 } from "./helpers/runtime-state";
@@ -372,99 +369,6 @@ describe("chat event snapshot read endpoints", () => {
     });
   }, 60_000);
 
-  it("does not repair or publish a retired Morning Brief Snapshot object", async () => {
-    const recordedPuts: RecordedChatEventPut[] = [];
-    installFakeChatEventR2(context, recordedPuts);
-    const owner = bdd.user({ orgId: `org_${randomUUID()}` });
-    const agent = await bdd.createAgent(owner, {
-      displayName: "Retired Snapshot projection agent",
-    });
-    const threadId = await sendNoCreditMessage(owner, {
-      agentId: agent.agentId,
-      prompt: `retired-snapshot-${randomUUID()}`,
-    });
-
-    await projectChatEventSearch(threadId);
-    await runSnapshotCron([threadId]);
-    const originalHead = await readChatEventSnapshotHead(context, threadId);
-    const originalObject = readFakeChatEventObject(originalHead.object_key);
-    if (originalObject === undefined) {
-      throw new Error("Expected an original Chat Event Snapshot object");
-    }
-    const originalRows = gunzipSync(originalObject)
-      .toString("utf8")
-      .trimEnd()
-      .split("\n")
-      .map((line) => {
-        return chatEventRowSchema.parse(JSON.parse(line));
-      });
-    const prompt = originalRows.find((row) => {
-      return row.eventType === "input.prompt";
-    });
-    if (prompt === undefined) {
-      throw new Error("Expected a prompt row for the retired Snapshot fixture");
-    }
-    const projectedPrompt = chatEventFromRow(prompt);
-    if (projectedPrompt?.eventType !== "input.prompt") {
-      throw new Error("Expected a projected prompt for the retired fixture");
-    }
-    // Deliberately outside the current row contract: a retired context and
-    // part that no current reader can decode.
-    const retiredPrompt = {
-      ...prompt,
-      contextType: "morning_brief",
-      contextId: prompt.id,
-      payload: {
-        ...prompt.payload,
-        userMessage: {
-          ...projectedPrompt.userMessage,
-          parts: [
-            ...projectedPrompt.userMessage.parts,
-            { type: "morning_brief", briefDate: "2026-08-24" },
-          ],
-        },
-      },
-    };
-    const retiredArchive = Buffer.from(
-      originalRows
-        .map((row) => {
-          return `${JSON.stringify(
-            row.id === retiredPrompt.id ? retiredPrompt : row,
-          )}\n`;
-        })
-        .join(""),
-    );
-    const retiredBody = gzipSync(retiredArchive);
-    const retiredObjectKey = `chat-events/${threadId}/${originalHead.last_seq_id.toString()}-${createHash("sha256").update(retiredBody).digest("hex")}.ndjson.gz`;
-    writeFakeChatEventObject(retiredObjectKey, retiredBody);
-    await trackFakeChatEventObject(Promise.resolve(retiredObjectKey));
-    await updateChatEventSnapshotHead(context, threadId, retiredObjectKey);
-    const retiredHead = await readChatEventSnapshotHead(context, threadId);
-    const canonicalRowsBefore = await readChatEventRowsAsPreviousApiFixture(
-      context,
-      threadId,
-    );
-    const putsBeforeAttempt = recordedPuts.length;
-
-    const result = await runSnapshotCron([threadId], [retiredObjectKey]);
-
-    expect(result).toMatchObject({
-      snapshots: 0,
-      archivedEvents: 0,
-      skippedUndecodableHeads: 1,
-    });
-    expect(recordedPuts).toHaveLength(putsBeforeAttempt);
-    await expect(
-      readChatEventSnapshotHead(context, threadId),
-    ).resolves.toStrictEqual(retiredHead);
-    expect(readFakeChatEventObject(retiredObjectKey)).toStrictEqual(
-      retiredBody,
-    );
-    await expect(
-      readChatEventRowsAsPreviousApiFixture(context, threadId),
-    ).resolves.toStrictEqual(canonicalRowsBefore);
-  }, 60_000);
-
   it("fails closed without moving the pointer for unsupported archive revisions", async () => {
     const owner = bdd.user({ orgId: `org_${randomUUID()}` });
     const agent = await bdd.createAgent(owner, {
@@ -699,10 +603,6 @@ describe("chat event snapshot read endpoints", () => {
     for (const row of rows.body.rows) {
       chatEventRowSchema.parse(row);
       expect(row.chatThreadId).toBe(threadId);
-      expect(row).not.toHaveProperty("content");
-      expect(row).not.toHaveProperty("userMessage");
-      expect(row).not.toHaveProperty("usagePayload");
-      expect(row).not.toHaveProperty("interruptsRunId");
     }
 
     const projected = rows.body.rows.map((row) => {

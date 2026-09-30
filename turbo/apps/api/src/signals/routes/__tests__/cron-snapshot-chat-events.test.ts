@@ -10,7 +10,6 @@ import {
   version as uuidVersion,
   v5 as uuidv5,
 } from "uuid";
-import { createStore } from "ccstate";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";

@@ -253,7 +253,7 @@ none of those uses make it a classification authority.
 New error types must be classified at the authoritative guest or runner
 boundary and propagated through `failureReason`. Do not add a downstream error
 text matcher as the normal implementation of a new recovery category. See
-[Chat Event schema versioning](./chat-event-schema-versioning.md#optional-v7-failure-reasons)
+[Chat Event schema versioning](./chat-event-schema-versioning.md#failure-reasons)
 for the transport and rollout contract.
 
 ## Recognized Link Shapes

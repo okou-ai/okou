@@ -114,8 +114,8 @@ are enforced by the integration ingress tests.
 
 - `scripts/test-retire-v7-chat-event-snapshots.ts` protects migration
   `1294_retire_v7_chat_event_snapshots`: it proves missing V8 counterparts fail
-  without deleting pointers, new V7 writes fail, 6,001 V7 pointers are removed
-  in committed batches (including the zero UUID), every V8 row is unchanged,
+  without deleting pointers, 6,001 V7 pointers are removed in committed batches
+  (including the zero UUID), and every V8 row is unchanged,
   the `= 8` check is validated, and a completed retry is a no-op. The historical
   1286 rewrite validator is removed with the V7 API transition code; historical
   SQL remains unchanged, while schema equivalence and the permanent migration
