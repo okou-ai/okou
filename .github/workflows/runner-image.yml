@@ -309,6 +309,7 @@ jobs:
         with:
           name: runner-cli-${{ github.run_id }}
           path: runner-cli-intermediate/package.tgz
+          overwrite: true
           if-no-files-found: error
           retention-days: 1
           compression-level: 0
