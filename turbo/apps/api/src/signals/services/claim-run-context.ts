@@ -3440,8 +3440,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     initializeModelPolicy$: queuedModelCommandsInitializeModelPolicy$,
     refreshUsageAllowance$: queuedModelCommandsRefreshUsageAllowance$,
   };
-  const { internalPolicyFacts$, selection$, capabilities$, initialPolicies$ } =
-    queuedModelSources;
+  const { selection$, capabilities$, initialPolicies$ } = queuedModelSources;
   const { modelPin$ } = routing;
   const { memberAccountSnapshot$: queuedModelMemberAccountSnapshot$ } = member;
   const {
@@ -3450,90 +3449,91 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   } = runtime;
   const { providerAdmission$ } = admission;
   const { initializeModelPolicy$, refreshUsageAllowance$ } = commands;
-  const queuedModelResolveQueuedModel$ = command(
+  const promptAllowanceWriteResult$ = state<{
+    readonly remainingUnits: number;
+  } | null>(null);
+  const initializePromptModelPolicy$ = command(
     async ({ get, set }, signal: AbortSignal) => {
+      const selection = await get(selection$);
       signal.throwIfAborted();
-      set(internalPolicyFacts$, null);
-      const [selection] = await Promise.all([
-        get(selection$),
-        get(capabilities$),
-        get(initialPolicies$),
-        get(queuedModelFeatureSwitchContext$),
-      ]);
-      signal.throwIfAborted();
-      if (!selection) {
-        return badRequestMessage("Queued input is missing its model selection");
-      }
-      // Re-resolve the captured model against the claim's catalog snapshot
-      // (current at the pick, not at enqueue) with the same resolution as
-      // enqueue and run creation; a replaced model routes to its final
-      // replacement. Already-started runs are never re-resolved.
       if (
-        !resolveRunSelectionModel(
-          await get(claimCatalog$),
-          selection.selectedModel,
-        )
+        !selection ||
+        !resolveRunSelectionModel(await get(claimCatalog$), selection.selectedModel)
       ) {
-        return badRequestMessage(`Unknown model "${selection.selectedModel}"`);
+        return;
       }
       await set(initializeModelPolicy$, signal);
       const pin = await get(modelPin$);
       signal.throwIfAborted();
       if ("status" in pin) {
-        return pin;
+        return;
       }
-      const [
-        admission,
-        featureSwitchContext,
-        builtInModelRuntimeRoute,
-        memberAccountSnapshot,
-      ] = await Promise.all([
-        get(providerAdmission$),
-        get(queuedModelFeatureSwitchContext$),
-        get(builtInRuntimeRoute$),
-        get(queuedModelMemberAccountSnapshot$),
-      ]);
+      const admission = await get(providerAdmission$);
       signal.throwIfAborted();
-      const allowance = admission.needsAllowance
-        ? await set(refreshUsageAllowance$, signal)
-        : null;
-      // `null`: a Built-in pin with no available route.
-      const unpriced =
-        builtInModelRuntimeRoute === null && pin.selectedModel
-          ? await unpricedBuiltInModelRejection(get(db$), {
-              catalog: await get(claimCatalog$),
-              model: pin.selectedModel,
-              serviceTier: selection.codexServiceTier,
-              resolution: get(usagePricingResolution$),
-            })
-          : undefined;
-      signal.throwIfAborted();
-      return {
-        pin,
-        providerAdmission: {
-          effectiveModelProvider: admission.effectiveModelProvider,
-          cliAgentType: admission.cliAgentType,
-          error:
-            admission.error ??
-            unpriced ??
-            (admission.needsAllowance &&
-            (!allowance || allowance.remainingUnits <= 0)
-              ? pickChatRunModelInsufficientCredits()
-              : undefined),
-        },
-        featureSwitchContext,
-        runCodexServiceTier: selection.codexServiceTier ?? undefined,
-        reasoningEffort: selection.reasoningEffort ?? undefined,
-        builtInModelRuntimeRoute,
-        memberAccountSnapshot,
-      };
+      if (admission.needsAllowance) {
+        const allowance = await set(refreshUsageAllowance$, signal);
+        signal.throwIfAborted();
+        set(promptAllowanceWriteResult$, allowance);
+      }
     },
   );
+  const queuedModelResolveQueuedModel$ = computed(async (get) => {
+    const [selection] = await Promise.all([
+      get(selection$),
+      get(capabilities$),
+      get(initialPolicies$),
+      get(queuedModelFeatureSwitchContext$),
+    ]);
+    if (!selection) {
+      return badRequestMessage("Queued input is missing its model selection");
+    }
+    if (!resolveRunSelectionModel(await get(claimCatalog$), selection.selectedModel)) {
+      return badRequestMessage(`Unknown model "${selection.selectedModel}"`);
+    }
+    const pin = await get(modelPin$);
+    if ("status" in pin) {
+      return pin;
+    }
+    const [
+      admission,
+      featureSwitchContext,
+      builtInModelRuntimeRoute,
+      memberAccountSnapshot,
+    ] = await Promise.all([
+      get(providerAdmission$),
+      get(queuedModelFeatureSwitchContext$),
+      get(builtInRuntimeRoute$),
+      get(queuedModelMemberAccountSnapshot$),
+    ]);
+    const allowance = get(promptAllowanceWriteResult$);
+    const unpriced = builtInModelRuntimeRoute === null && pin.selectedModel
+      ? await unpricedBuiltInModelRejection(get(db$), {
+          catalog: await get(claimCatalog$), model: pin.selectedModel,
+          serviceTier: selection.codexServiceTier, resolution: get(usagePricingResolution$),
+        })
+      : undefined;
+    return {
+      pin,
+      providerAdmission: {
+        effectiveModelProvider: admission.effectiveModelProvider,
+        cliAgentType: admission.cliAgentType,
+        error:
+          admission.error ?? unpriced ??
+          (admission.needsAllowance &&
+          (!allowance || allowance.remainingUnits <= 0)
+            ? pickChatRunModelInsufficientCredits()
+            : undefined),
+      },
+      featureSwitchContext,
+      runCodexServiceTier: selection.codexServiceTier ?? undefined,
+      reasoningEffort: selection.reasoningEffort ?? undefined,
+      builtInModelRuntimeRoute,
+      memberAccountSnapshot,
+    };
+  });
   const resolveQueuedModel$ = queuedModelResolveQueuedModel$;
   const promptInternalInputInternalInput$ =
     state<QueuedPromptGraphInput | null>(null);
-  const promptInternalModelInternalModel$ =
-    state<QueuedMessageModelRouteResolution | null>(null);
   const promptInternalDiscordMaterialInternalDiscordMaterial$ = state<{
     readonly material: QueuedLaunchMaterial | null;
   } | null>(null);
@@ -4304,12 +4304,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       throw new QueuedPromptLaunchUnavailableError();
     },
   );
-  const promptModelModel$ = computed((get) => {
-    const model = get(promptInternalModelInternalModel$);
-    if (!model) {
-      throw new Error("Prompt model has not been resolved");
-    }
-    return model;
+  const promptModelModel$ = computed(async (get) => {
+    return await get(promptResolvePromptModelResolvePromptModel$);
   });
   const promptSessionSession$ = computed(async (get) => {
     const [args, model] = await Promise.all([
@@ -4916,13 +4912,9 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       });
     },
   );
-  const promptResolvePromptModelResolvePromptModel$ = command(
-    async (
-      { set },
-      signal: AbortSignal,
-    ): Promise<QueuedMessageModelRouteResolution> => {
-      const model = await set(resolveQueuedModel$, signal);
-      signal.throwIfAborted();
+  const promptResolvePromptModelResolvePromptModel$ = computed(
+    async (get): Promise<QueuedMessageModelRouteResolution> => {
+      const model = await get(resolveQueuedModel$);
       if ("status" in model) {
         return { error: model.body.error };
       }
@@ -5099,7 +5091,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         timing,
         runTiming,
       });
-      set(promptInternalModelInternalModel$, null);
       set(promptInternalDiscordMaterialInternalDiscordMaterial$, null);
       const early = await get(internalEarlyAssembly$);
       signal.throwIfAborted();
@@ -5127,8 +5118,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       head: ChatQueueHeadContext,
       signal: AbortSignal,
     ): Promise<void> => {
-      const [model, material] = await Promise.all([
-        set(promptResolvePromptModelResolvePromptModel$, signal),
+      const [, material] = await Promise.all([
+        set(initializePromptModelPolicy$, signal),
         head.contextType === "discord"
           ? set(
               promptResolvePromptDiscordMaterialResolvePromptDiscordMaterial$,
@@ -5137,7 +5128,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           : null,
       ]);
       signal.throwIfAborted();
-      set(promptInternalModelInternalModel$, model);
       set(promptInternalDiscordMaterialInternalDiscordMaterial$, { material });
     },
   );
@@ -6443,7 +6433,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     refreshUsageAllowance$: queuedModelCommandsRefreshUsageAllowance$2,
   };
   const {
-    internalPolicyFacts$: queuedModelInternalPolicyFacts$,
     selection$: queuedModelSelection$,
     capabilities$: queuedModelCapabilities$,
     initialPolicies$: queuedModelInitialPolicies$,
@@ -6461,113 +6450,88 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     initializeModelPolicy$: queuedModelInitializeModelPolicy$,
     refreshUsageAllowance$: queuedModelRefreshUsageAllowance$,
   } = queuedModelCommands;
-  const queuedModelResolveQueuedModel$2 = command(
+  const automationAllowanceWriteResult$ = state<{
+    readonly remainingUnits: number;
+  } | null>(null);
+  const initializeAutomationModelPolicy$ = command(
     async ({ get, set }, signal: AbortSignal) => {
+      const selection = await get(queuedModelSelection$);
       signal.throwIfAborted();
-      set(queuedModelInternalPolicyFacts$, null);
-      const [selection] = await Promise.all([
-        get(queuedModelSelection$),
-        get(queuedModelCapabilities$),
-        get(queuedModelInitialPolicies$),
-        get(queuedModelFeatureSwitchContext$2),
-      ]);
-      signal.throwIfAborted();
-      if (!selection) {
-        return badRequestMessage("Queued input is missing its model selection");
-      }
-      // Re-resolve the captured model against the claim's catalog snapshot
-      // (current at the pick, not at enqueue) with the same resolution as
-      // enqueue and run creation; a replaced model routes to its final
-      // replacement. Already-started runs are never re-resolved.
       if (
-        !resolveRunSelectionModel(
-          await get(claimCatalog$),
-          selection.selectedModel,
-        )
+        !selection ||
+        !resolveRunSelectionModel(await get(claimCatalog$), selection.selectedModel)
       ) {
-        return badRequestMessage(`Unknown model "${selection.selectedModel}"`);
+        return;
       }
       await set(queuedModelInitializeModelPolicy$, signal);
       const pin = await get(queuedModelModelPin$);
       signal.throwIfAborted();
       if ("status" in pin) {
-        return pin;
+        return;
       }
-      const [
-        admission,
-        featureSwitchContext,
-        builtInModelRuntimeRoute,
-        memberAccountSnapshot,
-      ] = await Promise.all([
-        get(queuedModelProviderAdmission$),
-        get(queuedModelFeatureSwitchContext$2),
-        get(queuedModelBuiltInRuntimeRoute$),
-        get(queuedModelMemberAccountSnapshot$2),
-      ]);
+      const admission = await get(queuedModelProviderAdmission$);
       signal.throwIfAborted();
-      const allowance = admission.needsAllowance
-        ? await set(queuedModelRefreshUsageAllowance$, signal)
-        : null;
-      // `null`: a Built-in pin with no available route.
-      const unpriced =
-        builtInModelRuntimeRoute === null && pin.selectedModel
-          ? await unpricedBuiltInModelRejection(get(db$), {
-              catalog: await get(claimCatalog$),
-              model: pin.selectedModel,
-              serviceTier: selection.codexServiceTier,
-              resolution: get(usagePricingResolution$),
-            })
-          : undefined;
-      signal.throwIfAborted();
-      return {
-        pin,
-        providerAdmission: {
-          effectiveModelProvider: admission.effectiveModelProvider,
-          cliAgentType: admission.cliAgentType,
-          error:
-            admission.error ??
-            unpriced ??
-            (admission.needsAllowance &&
-            (!allowance || allowance.remainingUnits <= 0)
-              ? pickChatRunModelInsufficientCredits()
-              : undefined),
-        },
-        featureSwitchContext,
-        runCodexServiceTier: selection.codexServiceTier ?? undefined,
-        reasoningEffort: selection.reasoningEffort ?? undefined,
-        builtInModelRuntimeRoute,
-        memberAccountSnapshot,
-      };
+      if (admission.needsAllowance) {
+        const allowance = await set(queuedModelRefreshUsageAllowance$, signal);
+        signal.throwIfAborted();
+        set(automationAllowanceWriteResult$, allowance);
+      }
     },
   );
-  const automationLaunchEffectsResolveQueuedModel$ =
-    queuedModelResolveQueuedModel$2;
-  const automationLaunchEffectsResolveAutomationModel$ = command(
-    async (
-      { get, set },
-      args: Pick<AssembleWorkflowAutomationRunArgs, "due" | "queueEventId">,
-      timing: ApiDispatchTimingCollector,
-      signal: AbortSignal,
-    ): Promise<ModelContext> => {
-      return await measureApiDispatchTiming(
-        timing,
-        "api_dispatch_pre_create_agent_workflow_automation_resolve_model_context",
-        "nested",
-        async () => {
-          const context = await set(
-            automationLaunchEffectsResolveQueuedModel$,
-            signal,
-          );
-          signal.throwIfAborted();
-          return workflowModelContext(
-            await get(claimCatalog$),
-            args.due.chatThreadId,
-            context,
-          );
-        },
-      );
-    },
-  );
+  const queuedModelResolveQueuedModel$2 = computed(async (get) => {
+    const [selection] = await Promise.all([
+      get(queuedModelSelection$),
+      get(queuedModelCapabilities$),
+      get(queuedModelInitialPolicies$),
+      get(queuedModelFeatureSwitchContext$2),
+    ]);
+    if (!selection) {
+      return badRequestMessage("Queued input is missing its model selection");
+    }
+    if (!resolveRunSelectionModel(await get(claimCatalog$), selection.selectedModel)) {
+      return badRequestMessage(`Unknown model "${selection.selectedModel}"`);
+    }
+    const pin = await get(queuedModelModelPin$);
+    if ("status" in pin) {
+      return pin;
+    }
+    const [
+      admission,
+      featureSwitchContext,
+      builtInModelRuntimeRoute,
+      memberAccountSnapshot,
+    ] = await Promise.all([
+      get(queuedModelProviderAdmission$),
+      get(queuedModelFeatureSwitchContext$2),
+      get(queuedModelBuiltInRuntimeRoute$),
+      get(queuedModelMemberAccountSnapshot$2),
+    ]);
+    const allowance = get(automationAllowanceWriteResult$);
+    const unpriced = builtInModelRuntimeRoute === null && pin.selectedModel
+      ? await unpricedBuiltInModelRejection(get(db$), {
+          catalog: await get(claimCatalog$), model: pin.selectedModel,
+          serviceTier: selection.codexServiceTier, resolution: get(usagePricingResolution$),
+        })
+      : undefined;
+    return {
+      pin,
+      providerAdmission: {
+        effectiveModelProvider: admission.effectiveModelProvider,
+        cliAgentType: admission.cliAgentType,
+        error:
+          admission.error ?? unpriced ??
+          (admission.needsAllowance &&
+          (!allowance || allowance.remainingUnits <= 0)
+            ? pickChatRunModelInsufficientCredits()
+            : undefined),
+      },
+      featureSwitchContext,
+      runCodexServiceTier: selection.codexServiceTier ?? undefined,
+      reasoningEffort: selection.reasoningEffort ?? undefined,
+      builtInModelRuntimeRoute,
+      memberAccountSnapshot,
+    };
+  });
   const automationLaunchEffectsRecordQueuedWorkflowReward$ = command(
     async (
       { set },
@@ -6585,14 +6549,10 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       signal.throwIfAborted();
     },
   );
-  const workflowAutomationLaunchReadGraphResolveAutomationModel$ =
-    automationLaunchEffectsResolveAutomationModel$;
   const workflowAutomationLaunchReadGraphRecordQueuedWorkflowReward$ =
     automationLaunchEffectsRecordQueuedWorkflowReward$;
   const workflowAutomationLaunchReadGraphInternalTiming$ =
     state<ApiDispatchTimingCollector | null>(null);
-  const workflowAutomationLaunchReadGraphInternalModel$ =
-    state<ModelContext | null>(null);
   const workflowAutomationLaunchReadGraphTiming$ = computed((get) => {
     const timing = get(workflowAutomationLaunchReadGraphInternalTiming$);
     if (!timing) {
@@ -6600,13 +6560,23 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     }
     return timing;
   });
-  const workflowAutomationLaunchReadGraphModel$ = computed((get) => {
-    const model = get(workflowAutomationLaunchReadGraphInternalModel$);
-    if (!model) {
-      throw new Error("Automation model has not been resolved");
-    }
-    return model;
-  });
+  const workflowAutomationLaunchReadGraphModel$ = computed(
+    async (get): Promise<ModelContext> => {
+      const [args, context] = await Promise.all([
+        get(automationExecutionInput$),
+        get(queuedModelResolveQueuedModel$2),
+      ]);
+      return args
+        ? workflowModelContext(await get(claimCatalog$), args.due.chatThreadId, context)
+        : {
+            ok: false,
+            failure: {
+              kind: "conflict",
+              message: "Workflow automation no longer exists",
+            },
+          };
+    },
+  );
   const automationExecutionInput$ = computed(async (get) => {
     const [head, event, target] = await Promise.all([
       get(head$),
@@ -6665,13 +6635,9 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     workflowAutomationLaunchReadGraphComputerUseHostGrant$;
   const workflowAutomationLaunchRunInput$ =
     workflowAutomationLaunchReadGraphRunInput$;
-  const resolveAutomationModel$ =
-    workflowAutomationLaunchReadGraphResolveAutomationModel$;
   const recordQueuedWorkflowReward$ =
     workflowAutomationLaunchReadGraphRecordQueuedWorkflowReward$;
   const internalTiming$ = workflowAutomationLaunchReadGraphInternalTiming$;
-  const workflowAutomationLaunchInternalModel$ =
-    workflowAutomationLaunchReadGraphInternalModel$;
   const timing$ = workflowAutomationLaunchReadGraphTiming$;
   const workflowAutomationLaunchModel$ =
     workflowAutomationLaunchReadGraphModel$;
@@ -6679,21 +6645,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     workflowAutomationLaunchReadGraphIdentityInput$;
   const workflowAutomationLaunchSelectionInput$ =
     workflowAutomationLaunchReadGraphSelectionInput$;
-  const prepareAutomationModel$ = command(
-    async ({ get, set }, signal: AbortSignal): Promise<ModelContext> => {
-      const args = await get(automationExecutionInput$);
-      signal.throwIfAborted();
-      return !args
-        ? {
-            ok: false,
-            failure: {
-              kind: "conflict",
-              message: "Workflow automation no longer exists",
-            },
-          }
-        : await set(resolveAutomationModel$, args, get(timing$), signal);
-    },
-  );
   const assembleWorkflowAutomationRun$ = computed(
     async (get): Promise<AssembledWorkflowAutomationRun | RunFailure> => {
       const args = await get(workflowAutomationLaunchInput$);
@@ -6926,10 +6877,17 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     },
   );
   const resolveAutomationModelSnapshot$ = command(
-    async ({ set }, signal: AbortSignal): Promise<void> => {
-      const model = await set(prepareAutomationModel$, signal);
-      signal.throwIfAborted();
-      set(workflowAutomationLaunchInternalModel$, model);
+    async ({ get, set }, signal: AbortSignal): Promise<void> => {
+      await measureApiDispatchTiming(
+        get(timing$),
+        "api_dispatch_pre_create_agent_workflow_automation_resolve_model_context",
+        "nested",
+        async () => {
+          await set(initializeAutomationModelPolicy$, signal);
+          await get(workflowAutomationLaunchModel$);
+          signal.throwIfAborted();
+        },
+      );
     },
   );
   const queuedAutomationAssemblerAssembly$ = computed(
