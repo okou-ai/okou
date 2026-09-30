@@ -31,14 +31,8 @@ import {
   persistConnectorCatalogCompatibility,
 } from "../signals/services/connector-catalog-compatibility.service";
 import {
-  clearConnectorCatalogExternalReaderIdentityReadHookForTest,
-  setConnectorCatalogExternalReaderIdentityReadHookForTest,
-} from "../signals/services/connector-catalog-external-reader.service";
-import {
   CONNECTOR_CATALOG_RUNTIME_PROJECTION_VERSION,
-  clearConnectorCatalogRuntimeProjectionIdentityReadHookForTest,
   persistConnectorCatalogRuntimeProjection,
-  setConnectorCatalogRuntimeProjectionIdentityReadHookForTest,
 } from "../signals/services/connector-catalog-runtime-projection.service";
 import { connectorCatalogSource } from "../signals/services/connector-catalog-source";
 import {
@@ -256,38 +250,6 @@ async function deleteApiTestConnectorCatalogSource(
       .delete(connectorCatalogSyncState)
       .where(eq(connectorCatalogSyncState.sourceId, sourceId));
   });
-}
-
-export function setApiTestConnectorCatalogRuntimeProjectionIdentityReadHook(
-  hook: () => Promise<void>,
-): void {
-  setConnectorCatalogRuntimeProjectionIdentityReadHookForTest(hook);
-}
-
-export function clearApiTestConnectorCatalogRuntimeProjectionIdentityReplacements(): void {
-  clearConnectorCatalogRuntimeProjectionIdentityReadHookForTest();
-}
-
-export function setApiTestConnectorCatalogExternalReaderIdentityReadHook(
-  hook: () => Promise<void>,
-): void {
-  setConnectorCatalogExternalReaderIdentityReadHookForTest(hook);
-}
-
-export function setApiTestConnectorCatalogExternalReaderIdentityReplacements(
-  catalogVersions: readonly [first: string, second: string],
-): void {
-  const [firstCatalogVersion, secondCatalogVersion] = catalogVersions;
-  let nextCatalogVersion = firstCatalogVersion;
-  setConnectorCatalogExternalReaderIdentityReadHookForTest(async () => {
-    const catalogVersion = nextCatalogVersion;
-    nextCatalogVersion = secondCatalogVersion;
-    await installApiTestConnectorCatalog({ catalogVersion });
-  });
-}
-
-export function clearApiTestConnectorCatalogExternalReaderIdentityReplacements(): void {
-  clearConnectorCatalogExternalReaderIdentityReadHookForTest();
 }
 
 interface ApiTestConnectorCatalogIdentity {

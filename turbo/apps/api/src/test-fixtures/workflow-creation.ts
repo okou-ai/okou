@@ -3,7 +3,6 @@ import {
   VOLUME_ORG_USER_ID,
 } from "@okouai/core/storage-names";
 import { agents } from "@okouai/db/schema/agent";
-import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import {
   workflows,
@@ -13,8 +12,6 @@ import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "../lib/db";
-import { executeRawRows } from "../lib/db-raw-rows";
-import { createDeferredPromise } from "../signals/utils";
 
 // Product APIs cannot expose unpublished identities, transaction IDs or pause a
 // database statement. These fixtures inspect only the test-owned attempt; all
@@ -118,56 +115,4 @@ export async function assertWorkflowPreparationUnlockedFixture(
       .where(eq(storages.id, storageId))
       .for("update", { noWait: true });
   });
-}
-
-const pidSchema = z.object({ pid: z.int() });
-
-export async function holdWorkflowCreationThreadFixture(
-  threadId: string,
-  signal: AbortSignal,
-) {
-  const started = createDeferredPromise<number>(signal);
-  const released = createDeferredPromise<void>(signal);
-  const done = db().transaction(async (tx) => {
-    await tx
-      .select({ id: chatThreads.id })
-      .from(chatThreads)
-      .where(eq(chatThreads.id, threadId))
-      .for("update");
-    const [row] = await executeRawRows(
-      tx,
-      sql`SELECT pg_backend_pid() AS pid`,
-      pidSchema,
-    );
-    if (!row) {
-      throw new Error("Expected the creation-thread lock backend");
-    }
-    started.resolve(row.pid);
-    await released.promise;
-  });
-  const holderPid = await started.promise;
-  return {
-    done,
-    release: () => {
-      if (!released.settled()) {
-        released.resolve();
-      }
-    },
-    blockedPids: async () => {
-      const rows = await executeRawRows(
-        db(),
-        sql`SELECT pid FROM pg_stat_activity WHERE ${holderPid} = ANY(pg_blocking_pids(pid))`,
-        pidSchema,
-      );
-      return rows.map((row) => {
-        return row.pid;
-      });
-    },
-    cancelBlockedPublication: async (pid: number) => {
-      // Limit cancellation to a backend still blocked by this exact fixture.
-      await db().execute(
-        sql`SELECT pg_cancel_backend(pid) FROM pg_stat_activity WHERE pid = ${pid} AND ${holderPid} = ANY(pg_blocking_pids(pid))`,
-      );
-    },
-  };
 }

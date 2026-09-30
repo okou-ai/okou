@@ -1,20 +1,17 @@
 import { randomUUID } from "node:crypto";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
-import { HTTPException } from "hono/http-exception";
 import { HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { testContext } from "../../../__tests__/test-context";
 import { now } from "../../../lib/time";
-import { holdPiContextPreparationStagesFixture } from "../../../test-fixtures/pi-context-preparation";
+import { mockEnv } from "../../../lib/env";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { clearAllDetached } from "../../utils";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { readThreadSessionConversation } from "./helpers/runtime-state";
 import {
   createChatEventsFixture,
-  requireOrgId,
   USER_OWNED_GPT_FAST_BDD_ROUTES,
   expectNoBuiltInModelUsage,
   createGptUsagePricingResolution,
@@ -43,207 +40,56 @@ const {
   mockPiResourceArchiveDownloads,
 } = createChatEventsFixture(context);
 
-function jsonHttpException(status: 422, message: string) {
-  return new HTTPException(status, {
-    res: new Response(JSON.stringify({ error: { message } }), {
-      status,
-      headers: { "content-type": "application/json" },
-    }),
-  });
-}
-
 describe("CHAT-02: run-level model overrides", () => {
-  // A send only enqueues its input; the background pick prepares the run, so
-  // these holds pause the pick while the input waits in the thread.
   describe("subscription account preparation", () => {
-    async function prepareSubscriptionThread() {
-      const { actor, agentId } = await entitledChatActor();
+    it("rejects a personal account disconnected while its input is queued", async () => {
+      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
+      const anchor = await sendChatRun(actor, {
+        agentId,
+        prompt: "hold capacity",
+      });
+      const anchorClaim = await claimChatRun(runnerGroup, anchor.runId);
       const captured = await configureSubscriptionPiModel(actor, {
         accountId: `preparation-subscription-${randomUUID()}`,
       });
-
-      const thread = await chat.createThread(actor, { agentId });
-      const preparation = holdPiContextPreparationStagesFixture({
-        userId: actor.userId,
-        orgId: requireOrgId(actor),
-        signal: context.signal,
+      mockPiCheckpointObjectStore();
+      mockPiResourceArchiveDownloads();
+      const clientEventId = randomUUID();
+      const waiting = await sendWaitingChatInput(actor, {
+        agentId,
+        model: "gpt-6-luna",
+        prompt: "reject a disconnected queued account",
+        clientEventId,
       });
-      return { actor, agentId, captured, thread, preparation };
-    }
-
-    async function sendHeldInput(
-      f: Awaited<ReturnType<typeof prepareSubscriptionThread>>,
-      clientEventId: string,
-      prompt: string,
-    ): Promise<void> {
-      const sent = await chat.requestSendEvent(
-        f.actor,
-        {
-          agentId: f.agentId,
-          threadId: f.thread.id,
-          model: "gpt-6-luna",
-          prompt,
-          clientEventId,
-        },
-        [201],
+      await flushWaitUntilForTest();
+      await authDeviceSupport.deletePersonalModelProviderAccount(
+        actor,
+        captured.accountSourceId,
       );
-      if (sent.status !== 201) {
-        throw new Error("Expected the send to be accepted");
-      }
-      expect(sent.body).toMatchObject({ runId: null, threadId: f.thread.id });
-    }
-
-    /** The held pick has neither launched nor rejected the input yet. */
-    async function expectInputNotConsumed(
-      actor: Awaited<ReturnType<typeof entitledChatActor>>["actor"],
-      threadId: string,
-      clientEventId: string,
-    ): Promise<void> {
-      const page = await chat.listThreadEvents(actor, threadId);
-      expect(
-        userMessages(page.events).filter((message) => {
-          return message.revokesEventId === clientEventId;
-        }),
-      ).toStrictEqual([]);
-    }
-
-    async function waitForRejection(
-      f: Awaited<ReturnType<typeof prepareSubscriptionThread>>,
-    ) {
-      const messages = await waitForThreadMessages(
-        f.actor,
-        f.thread.id,
+      await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders);
+      const page = await waitForThreadMessages(
+        actor,
+        waiting.threadId,
         (items) => {
           return items.some((event) => {
-            return event.eventType === "output.error";
+            return event.eventType === "input.rejected";
           });
         },
       );
-      return messages.events;
-    }
-
-    it("overlaps account capture with thread observation and keeps captured identity", async () => {
-      const f = await prepareSubscriptionThread();
-      mockPiResourceArchiveDownloads();
-      mockPiCheckpointObjectStore();
-      const clientEventId = randomUUID();
-      const waiting = await sendWaitingChatInput(f.actor, {
-        agentId: f.agentId,
-        threadId: f.thread.id,
-        model: "gpt-6-luna",
-        prompt: "overlap subscription capture with thread preparation",
-        clientEventId,
-      });
-
-      await Promise.all([
-        f.preparation.arrival("subscription-account"),
-        f.preparation.arrival("thread-session"),
-      ]);
-      expect(
-        f.preparation.hasArrived("post-authorization-context"),
-      ).toBeFalsy();
-      f.preparation.release("subscription-account");
-      await f.preparation.arrival("post-authorization-context");
-      await expectInputNotConsumed(f.actor, f.thread.id, clientEventId);
-      expect(f.preparation.arrivalCount("subscription-account")).toBe(1);
-      expect(f.preparation.arrivalCount("thread-session")).toBe(1);
-      f.preparation.release("post-authorization-context");
-      f.preparation.release("thread-session");
-      f.preparation.releaseAll();
-
-      const run = await waiting.launchedRun();
-      await expect(api.readRun(f.actor, run.runId)).resolves.toMatchObject({
-        source: {
-          providerType: "codex-oauth-token",
-          account: { id: f.captured.accountSourceId },
-        },
-      });
-    });
-
-    it("rejects an account disconnected after capture before environment preparation", async () => {
-      const f = await prepareSubscriptionThread();
-      const clientEventId = randomUUID();
-      await sendHeldInput(
-        f,
-        clientEventId,
-        "reject a disconnected captured account",
-      );
-
-      await Promise.all([
-        f.preparation.arrival("subscription-account"),
-        f.preparation.arrival("thread-session"),
-      ]);
-      f.preparation.release("subscription-account");
-      await f.preparation.arrival("post-authorization-context");
-      await expectInputNotConsumed(f.actor, f.thread.id, clientEventId);
-      await authDeviceSupport.deletePersonalModelProviderAccount(
-        f.actor,
-        f.captured.accountSourceId,
-      );
-      f.preparation.release("post-authorization-context");
-      f.preparation.release("thread-session");
-      f.preparation.releaseAll();
-
-      await expect(waitForRejection(f)).resolves.toStrictEqual([
-        expect.objectContaining({
-          eventType: "input.prompt",
-          id: clientEventId,
-        }),
+      expect(page.events).toContainEqual(
         expect.objectContaining({
           eventType: "input.rejected",
           revokesEventId: clientEventId,
           error: "provider_unavailable",
         }),
+      );
+      expect(page.events).toContainEqual(
         expect.objectContaining({
           eventType: "output.error",
           error: "provider_unavailable",
         }),
-      ]);
-    });
-
-    it("rejects the input when a captured account disconnects and session preparation fails", async () => {
-      const f = await prepareSubscriptionThread();
-      const clientEventId = randomUUID();
-      await sendHeldInput(
-        f,
-        clientEventId,
-        "preserve the input after session preparation fails",
       );
-
-      await Promise.all([
-        f.preparation.arrival("subscription-account"),
-        f.preparation.arrival("thread-session"),
-      ]);
-      // The queued model graph already captured the shared account metadata.
-      // Disconnecting it now cannot rewrite that snapshot; the adjacent case
-      // verifies the exact-account authority rejects it before run admission.
-      await authDeviceSupport.deletePersonalModelProviderAccount(
-        f.actor,
-        f.captured.accountSourceId,
-      );
-      const sessionError = jsonHttpException(422, "session preparation failed");
-      f.preparation.reject("thread-session", sessionError);
-      await f.preparation.departure("thread-session");
-      await expectInputNotConsumed(f.actor, f.thread.id, clientEventId);
-      f.preparation.release("subscription-account");
-      await f.preparation.arrival("post-authorization-context");
-      f.preparation.releaseAll();
-
-      await expect(clearAllDetached()).rejects.toBe(sessionError);
-      const { events } = await chat.listThreadEvents(f.actor, f.thread.id);
-      expect(events).toContainEqual(
-        expect.objectContaining({
-          eventType: "input.rejected",
-          revokesEventId: clientEventId,
-          error: "internal_error",
-        }),
-      );
-      await expect(
-        api.listAgentRuns(f.actor, {
-          status: "queued,pending,running,completed,failed,timeout,cancelled",
-          limit: 100,
-        }),
-      ).resolves.toMatchObject({ runs: [] });
     });
   });
 

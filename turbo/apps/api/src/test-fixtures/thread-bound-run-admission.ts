@@ -4,47 +4,11 @@ import { db } from "../lib/db";
 import { now } from "../lib/time";
 import { createAgentRun$ } from "../signals/services/background-agent-run.service";
 import { createTestFixtureAgentRun$ } from "../signals/services/test-agent-run-fixture.service";
-import {
-  clearAgentRunPiExecutionSnapshotHookForTest,
-  setAgentRunPiExecutionSnapshotHookForTest,
-  type AgentRunPiExecutionSnapshot,
-} from "../signals/services/agent-run-preparation-hooks";
 import { buildAgentExecutionConfig } from "../signals/services/agent-execution-config";
-import { createDeferredPromise } from "../signals/utils";
 import { loadModelCatalog } from "../signals/services/model-catalog.service";
 
 const USER_ID = "thread-run-invariant-user";
 const ORG_ID = "thread-run-invariant-org";
-
-export function holdAgentRunPiExecutionSnapshotFixture(args: {
-  readonly userId: string;
-  readonly orgId: string;
-  readonly signal: AbortSignal;
-}): {
-  readonly arrival: Promise<AgentRunPiExecutionSnapshot>;
-  readonly release: () => void;
-} {
-  const arrival = createDeferredPromise<AgentRunPiExecutionSnapshot>(
-    args.signal,
-  );
-  const released = createDeferredPromise<void>(args.signal);
-  setAgentRunPiExecutionSnapshotHookForTest(async (snapshot) => {
-    if (snapshot.userId !== args.userId || snapshot.orgId !== args.orgId) {
-      return;
-    }
-    arrival.resolve(snapshot);
-    await released.promise;
-  });
-  return {
-    arrival: arrival.promise,
-    release: () => {
-      clearAgentRunPiExecutionSnapshotHookForTest();
-      if (!released.settled()) {
-        released.resolve(undefined);
-      }
-    },
-  };
-}
 
 /**
  * Exercise the agent-runs-create service boundary that public contracts cannot

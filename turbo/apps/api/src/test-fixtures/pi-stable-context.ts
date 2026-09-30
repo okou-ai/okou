@@ -14,14 +14,7 @@ import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { storages } from "@okouai/db/schema/storage";
 import { createStore } from "ccstate";
 import { and, eq } from "drizzle-orm";
-import { onTestFinished } from "vitest";
 import { writeDb$, type Db } from "../signals/external/db";
-import {
-  clearStableAgentPromptBuildHookForTest,
-  clearStableContextCacheIdentityBuildHookForTest,
-  setStableAgentPromptBuildHookForTest,
-  setStableContextCacheIdentityBuildHookForTest,
-} from "../signals/services/agent-run-preparation-hooks";
 import { piStableContextInputDigest } from "../signals/services/pi-stable-context-digest.service";
 import {
   invalidatePiStableContext,
@@ -253,29 +246,4 @@ export async function readPiStableContextStorageDemandFixture(headId: string) {
     .where(eq(piStableContextHeads.id, headId))
     .limit(1);
   return head ?? null;
-}
-
-export async function withStableAgentPromptBuildCountFixture<T>(
-  work: () => Promise<T>,
-): Promise<{
-  readonly buildCount: number;
-  readonly cacheIdentityBuildCount: number;
-  readonly result: T;
-}> {
-  let buildCount = 0;
-  let cacheIdentityBuildCount = 0;
-  setStableAgentPromptBuildHookForTest(() => {
-    buildCount += 1;
-  });
-  setStableContextCacheIdentityBuildHookForTest(() => {
-    cacheIdentityBuildCount += 1;
-  });
-  const clear = () => {
-    clearStableAgentPromptBuildHookForTest();
-    clearStableContextCacheIdentityBuildHookForTest();
-  };
-  onTestFinished(clear);
-  const result = await work();
-  clear();
-  return { buildCount, cacheIdentityBuildCount, result };
 }

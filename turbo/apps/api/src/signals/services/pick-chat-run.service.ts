@@ -26,7 +26,6 @@ import { waitUntil } from "../context/wait-until";
 import type { Tx } from "../../lib/db-types";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { isFreePlanForCreditAdmission } from "./run-admission.service";
-import { observePreparedLaunchPersistenceForTest } from "./prepared-launch-persistence-observer.service";
 import { now, nowDate } from "../../lib/time";
 import { conflict } from "../../lib/error";
 import { env } from "../../lib/env";
@@ -341,9 +340,6 @@ async function persistClaimedRun(
       );
       await persistClaimProducerBinding(tx, context, rowsPersisted.run.id);
       await requestPiMemoryStage1DayForAdmittedRun(tx, rowsPersisted.run.id);
-      observePreparedLaunchPersistenceForTest(
-        input.args.agentRunMetadata?.workflowAutomationId,
-      );
       const threadSessionBinding =
         input.args.chatThreadId && !admission.validatedThreadSession
           ? await persistThreadSessionBinding(tx, {

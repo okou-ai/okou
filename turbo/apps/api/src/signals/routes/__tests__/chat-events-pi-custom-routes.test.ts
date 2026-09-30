@@ -3,12 +3,10 @@ import { modelProviderConnectionsByIdContract } from "@okouai/api-contracts/cont
 import { MODEL_PROVIDER_ENV_PLACEHOLDERS } from "@okouai/api-contracts/contracts/model-providers";
 import { DEFAULT_PROFILE } from "@okouai/api-contracts/contracts/runners";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { env } from "../../../lib/env";
-import { holdAgentRunPiExecutionSnapshotFixture } from "../../../test-fixtures/thread-bound-run-admission";
-import { holdPiContextPreparationStagesFixture } from "../../../test-fixtures/pi-context-preparation";
+import { env, mockEnv } from "../../../lib/env";
 import { loadPiCatalogModelFixture } from "../../../test-fixtures/model-catalog";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { modelProviderGatewayRoutes } from "../model-provider-gateways";
@@ -22,7 +20,6 @@ import {
   createChatEventsFixture,
   configureNativeCliArtifact,
   GPT_PI_BDD_MODELS,
-  requireOrgId,
   expectNoBuiltInModelUsage,
   createGptUsagePricingResolution,
   createPiUsagePricingResolution,
@@ -40,6 +37,7 @@ const {
   entitledChatActor,
   configureBuiltInPiModel,
   sendChatRun,
+  sendWaitingChatInput,
   claimChatRun,
   waitForThreadMessages,
   waitForRunStatus,
@@ -616,26 +614,14 @@ describe("CHAT-02: model-first provider policies", () => {
   ] as const)(
     "fails custom $selectedModel when its $removed disappears before credential capture",
     async ({ selectedModel, removed }) => {
-      const { actor, agentId } = await entitledChatActor();
-      const gateway = await configureCustomPiModel(actor, selectedModel);
-      const gate = holdPiContextPreparationStagesFixture({
-        userId: actor.userId,
-        orgId: requireOrgId(actor),
-        signal: context.signal,
+      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
+      const anchor = await sendChatRun(actor, {
+        agentId,
+        prompt: "hold capacity",
       });
-      // Pi eligibility is observed in parallel with credentials now. Hold the
-      // provider read itself so deletion happens before its frozen snapshot.
-      for (const stage of [
-        "subscription-account",
-        "post-authorization-context",
-        "thread-session",
-        "connector-contexts",
-        "user-timezone",
-        "image-model",
-        "official-workflow",
-      ] as const) {
-        gate.release(stage);
-      }
+      const anchorClaim = await claimChatRun(runnerGroup, anchor.runId);
+      const gateway = await configureCustomPiModel(actor, selectedModel);
       const clientEventId = randomUUID();
       const sent = await chat.requestSendEvent(
         actor,
@@ -654,7 +640,7 @@ describe("CHAT-02: model-first provider policies", () => {
         throw new Error("Expected the custom route send to be accepted");
       }
       expect(sent.body.runId).toBeNull();
-      await gate.arrival("model-provider");
+      await flushWaitUntilForTest();
       const connection = setupApp({
         context,
         routes: modelProviderGatewayRoutes,
@@ -685,7 +671,7 @@ describe("CHAT-02: model-first provider policies", () => {
           [200],
         );
       }
-      gate.releaseAll();
+      await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders);
       await flushWaitUntilForTest();
       const rejected = await waitForThreadMessages(
         actor,
@@ -801,107 +787,51 @@ describe("CHAT-02: model-first provider policies", () => {
     90_000,
   );
 
-  it.each(["gpt-6-luna"] as const)(
-    "promotes queued custom %s Fast with the admitted tier and switch snapshot",
-    async (selectedModel) => {
-      const { actor, agentId, runnerGroup, providerId } =
-        await entitledChatActor();
-      // The anchor must stay on the native Runner while the queued target
-      // proves Pi promotion; Sonnet 5 would itself run through Pi.
-      await api.updateOrgModelPolicies(actor, [
-        {
-          model: "claude-fable-5-1",
-          preferred: true,
-          defaultProviderType: "anthropic-api-key",
-          credentialScope: "org",
-          modelProviderId: providerId,
-        },
-      ]);
-      const anchor = await sendChatRun(actor, {
-        agentId,
-        prompt: "hold the target thread",
-        model: "claude-fable-5-1",
-      });
-      const anchorClaim = await claimChatRun(runnerGroup, anchor.runId);
-      const gateway = await configureCustomPiModel(actor, selectedModel);
-      mockPiResourceArchiveDownloads();
-      mockPiCheckpointObjectStore();
-      const queuedId = randomUUID();
-      const queued = await chat.requestSendEvent(
-        actor,
-        {
-          agentId,
-          threadId: anchor.threadId,
-          clientEventId: queuedId,
-          model: selectedModel,
-          prompt: "queued custom Fast",
-          runOptions: { codexServiceTier: "fast" },
-        },
-        [201],
-      );
-      if (queued.status !== 201) {
-        throw new Error("Expected a queued custom send");
-      }
-      expect(queued.body.runId).toBeNull();
-      const gate = holdAgentRunPiExecutionSnapshotFixture({
-        userId: actor.userId,
-        orgId: requireOrgId(actor),
-        signal: context.signal,
-      });
-      onTestFinished(gate.release);
-      chatCallbacks.mockChatOutputEvents([]);
-      const completion = completeChatRunOk(
-        anchor.runId,
-        anchorClaim.sandboxHeaders,
-      );
-      const snapshot = await gate.arrival;
-      expect(snapshot).toMatchObject({
-        chatThreadId: anchor.threadId,
-        piExecution: true,
-        threadSessionCliAgentType: "pi",
-      });
-      // Promotion reads the current thread selection, then owns that snapshot.
-      await chat.updateThreadModelSelection(
-        actor,
-        anchor.threadId,
-        selectedModel,
-        { codexServiceTier: null },
-      );
-
-      gate.release();
-      await completion;
-      const messages = await waitForThreadMessages(
-        actor,
-        anchor.threadId,
-        (events) => {
-          return userMessages(events).some((event) => {
-            return (
-              event.revokesEventId === queuedId && event.runId !== undefined
-            );
-          });
-        },
-      );
-      const promoted = userMessages(messages.events).find((event) => {
-        return event.revokesEventId === queuedId;
-      });
-      if (!promoted?.runId) {
-        throw new Error("Expected a promoted custom run");
-      }
-      const claim = await claimChatRun(runnerGroup, promoted.runId);
-      expect(claim.claim.cliAgentType).toBe("pi");
-      expect(claim.claim.piModelConfig).toMatchObject({
-        model: gateway.upstreamModel,
-        serviceTier: "priority",
-        thinkingLevel: "max",
-      });
-      await expect(
-        readRunLaunchSnapshotFixture(context, promoted.runId),
-      ).resolves.toMatchObject({ launch_snapshot: { framework: "pi" } });
-      await cancelChatRun(actor, promoted.runId, claim.sandboxHeaders);
-      await expectNoBuiltInModelUsage(promoted.runId);
-    },
-    90_000,
-  );
+  it("keeps the queued input's model and tier after the thread settings change", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
+    const anchor = await sendChatRun(actor, {
+      agentId,
+      prompt: "hold capacity",
+      model: "claude-fable-5-1",
+    });
+    const anchorClaim = await claimChatRun(runnerGroup, anchor.runId);
+    const gateway = await configureCustomPiModel(actor, "gpt-6-luna");
+    mockPiResourceArchiveDownloads();
+    mockPiCheckpointObjectStore();
+    const thread = await chat.createThread(actor, { agentId });
+    const queuedId = randomUUID();
+    const waiting = await sendWaitingChatInput(actor, {
+      agentId,
+      threadId: thread.id,
+      clientEventId: queuedId,
+      model: "gpt-6-luna",
+      prompt: "queued custom Fast",
+      runOptions: { codexServiceTier: "fast" },
+    });
+    await flushWaitUntilForTest();
+    await chat.updateThreadModelSelection(
+      actor,
+      thread.id,
+      "claude-fable-5-1",
+      { codexServiceTier: null },
+    );
+    chatCallbacks.mockChatOutputEvents([]);
+    await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders);
+    const promoted = await waiting.launchedRun();
+    const claim = await claimChatRun(runnerGroup, promoted.runId);
+    expect(claim.claim.cliAgentType).toBe("pi");
+    expect(claim.claim.piModelConfig).toMatchObject({
+      model: gateway.upstreamModel,
+      serviceTier: "priority",
+      thinkingLevel: "max",
+    });
+    await expect(api.readRun(actor, promoted.runId)).resolves.toMatchObject({
+      source: { model: "gpt-6-luna" },
+    });
+    await cancelChatRun(actor, promoted.runId, claim.sandboxHeaders);
+    await expectNoBuiltInModelUsage(promoted.runId);
+  }, 90_000);
 
   it.each([
     { selectedModel: "gpt-6-astra", tier: undefined },

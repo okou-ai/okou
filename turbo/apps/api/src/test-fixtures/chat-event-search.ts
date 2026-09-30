@@ -33,25 +33,6 @@ interface ChatEventSearchProjectionFixture extends ChatEventSearchProjectionRows
   readonly lastChatEventSeqId: number;
 }
 
-function chatEventSearchMessageFixture(args: {
-  readonly chatThreadId: string;
-  readonly seqId: number;
-  readonly text: string;
-}) {
-  return {
-    chatThreadId: args.chatThreadId,
-    seqId: args.seqId,
-    runId: null,
-    userId: `test-user-${args.chatThreadId}`,
-    orgId: `test-org-${args.chatThreadId}`,
-    agentId: null,
-    role: "user" as const,
-    createdAt: nowDate(),
-    text: args.text,
-    textBigram: chatSearchIndexText(args.text),
-  };
-}
-
 export async function insertSearchableMessageBatchFixture(args: {
   readonly chatThreadId: string;
   readonly userId: string;
@@ -83,56 +64,6 @@ export async function insertSearchableMessageBatchFixture(args: {
     );
 }
 
-export async function insertOrphanedChatEventSearchProjectionFixture(args: {
-  readonly chatThreadId: string;
-  readonly text: string;
-}): Promise<void> {
-  await db().transaction(async (tx) => {
-    await tx.insert(chatEventSearchMessages).values(
-      chatEventSearchMessageFixture({
-        chatThreadId: args.chatThreadId,
-        seqId: 1,
-        text: args.text,
-      }),
-    );
-    await tx.insert(chatEventSearchMessageWatermarks).values({
-      chatThreadId: args.chatThreadId,
-      indexedSeqId: 1,
-    });
-  });
-}
-
-/**
- * Performs the projector's message-then-watermark write order in one real
- * transaction so cleanup tests can place both operations around a row lock.
- */
-export async function writeChatEventSearchProjectionFixture(args: {
-  readonly chatThreadId: string;
-  readonly text: string;
-}): Promise<void> {
-  await db().transaction(async (tx) => {
-    await tx.insert(chatEventSearchMessages).values(
-      chatEventSearchMessageFixture({
-        chatThreadId: args.chatThreadId,
-        seqId: 2,
-        text: args.text,
-      }),
-    );
-    await tx
-      .insert(chatEventSearchMessageWatermarks)
-      .values({
-        chatThreadId: args.chatThreadId,
-        indexedSeqId: 2,
-      })
-      .onConflictDoUpdate({
-        target: chatEventSearchMessageWatermarks.chatThreadId,
-        set: {
-          indexedSeqId: sql`GREATEST(${chatEventSearchMessageWatermarks.indexedSeqId}, EXCLUDED.indexed_seq_id)`,
-        },
-      });
-  });
-}
-
 /**
  * Removes canonical parents while leaving their derived search rows behind.
  * The product deletion path removes both under one lock and the projector now
@@ -149,19 +80,6 @@ export async function removeChatSearchParentThreadsFixture(
   if (deleted.length !== chatThreadIds.length) {
     throw new Error("Expected every chat search parent thread to be removed");
   }
-}
-
-export async function removeChatEventSearchProjectionRowsFixture(
-  chatThreadId: string,
-): Promise<void> {
-  await db().transaction(async (tx) => {
-    await tx
-      .delete(chatEventSearchMessageWatermarks)
-      .where(eq(chatEventSearchMessageWatermarks.chatThreadId, chatThreadId));
-    await tx
-      .delete(chatEventSearchMessages)
-      .where(eq(chatEventSearchMessages.chatThreadId, chatThreadId));
-  });
 }
 
 export async function readChatEventSearchProjectionRowsFixture(

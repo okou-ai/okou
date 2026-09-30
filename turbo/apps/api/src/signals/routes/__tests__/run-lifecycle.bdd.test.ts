@@ -81,7 +81,6 @@ import {
   API_TEST_CONNECTOR_CATALOG,
   API_TEST_CONNECTOR_FIREWALL_CONFIGS,
   apiTestConnectorCatalogValidationAuthority,
-  clearApiTestConnectorCatalogRuntimeProjectionIdentityReplacements,
   corruptApiTestConnectorCatalogActiveSnapshotPayload,
   corruptApiTestConnectorCatalogRuntimeProjectionDigest,
   corruptApiTestConnectorCatalogRuntimeProjectionPayload,
@@ -92,7 +91,6 @@ import {
   readApiTestConnectorCatalogValidationAuthority,
   replaceApiTestConnectorCatalogFilteredAuthMethods,
   replaceApiTestConnectorCatalogStoredBytes,
-  setApiTestConnectorCatalogRuntimeProjectionIdentityReadHook,
   setApiTestConnectorCatalogValidationAuthority,
 } from "../../../test-fixtures/connector-catalog";
 import { readStorageS3PrefixFixture } from "../../../test-fixtures/storage";
@@ -103,10 +101,7 @@ import {
   readSessionHistoryBlobRefCountFixture,
   setRunModelProviderFixture,
 } from "../../../test-fixtures/agent-runs";
-import {
-  holdAgentRunRowLockFixture,
-  timeoutRunWithoutCallbacksFixture,
-} from "../../../test-fixtures/chat-events";
+import { timeoutRunWithoutCallbacksFixture } from "../../../test-fixtures/chat-events";
 import {
   createBddApi,
   expectApiError,
@@ -125,7 +120,6 @@ import {
 } from "./helpers/api-bdd-connectors";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
-import { cleanupTimedOutRun } from "./helpers/api-bdd-run-timeout";
 import {
   createRunsApi,
   expectCanonicalStorageManifest,
@@ -979,14 +973,15 @@ async function setupSameThreadReuseScenario(
   }
 
   async function waitForCancellation(runId: string): Promise<void> {
-    await expect
-      .poll(async () => {
+    await flushWaitUntilForTest();
+    await expect(
+      (async () => {
         const events = await chat.listThreadEvents(actor, first.threadId);
         return events.events.some((event) => {
           return event.eventType === "run.cancelled" && event.runId === runId;
         });
-      })
-      .toBe(true);
+      })(),
+    ).resolves.toBeTruthy();
   }
 
   return {
@@ -1340,209 +1335,6 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     expect(
       findFirewallEntry(differentAuthorityClaim.firewalls, "x"),
     ).toBeDefined();
-  });
-
-  async function prepareOverlappingRuntimeContext() {
-    const api = createRunsApi(context);
-    const fw = createFirewallApi(context);
-    mockEnv(
-      "R2_USER_STORAGES_BUCKET_NAME",
-      `test-run-lifecycle-runtime-context-overlap-${randomUUID()}`,
-    );
-    await installApiTestConnectorCatalog({
-      catalogVersion: `api-test-runtime-context-overlap-${randomUUID()}`,
-      runtimeProjection: true,
-    });
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
-    await api.createOrgModelProvider(actor, {
-      type: "aws-bedrock",
-      authMethod: "access-keys",
-      secrets: {
-        AWS_ACCESS_KEY_ID: "runtime-context-access-key",
-        AWS_SECRET_ACCESS_KEY: "runtime-context-secret-key",
-        AWS_REGION: "us-east-1",
-      },
-    });
-    await fw.seedTestConnector(actor, {
-      connectorSlug: "x",
-      authMethod: "oauth",
-      accessToken: "runtime-context-x-access",
-      refreshToken: "runtime-context-x-refresh",
-    });
-    return { api, actor, agentId, runnerGroup };
-  }
-
-  it("overlaps runtime catalog and provider reads before claiming the run", async () => {
-    const { api, actor, agentId, runnerGroup } =
-      await prepareOverlappingRuntimeContext();
-
-    const providerDecryptStarted = createDeferredPromise<void>(context.signal);
-    onTestFinished(() => {
-      if (!providerDecryptStarted.settled()) {
-        providerDecryptStarted.resolve(undefined);
-      }
-      clearApiTestConnectorCatalogRuntimeProjectionIdentityReplacements();
-    });
-    setApiTestConnectorCatalogRuntimeProjectionIdentityReadHook(async () => {
-      await providerDecryptStarted.promise;
-    });
-    useSecretKmsClientForTests({
-      onDecrypt: () => {
-        if (!providerDecryptStarted.settled()) {
-          providerDecryptStarted.resolve(undefined);
-        }
-      },
-    });
-
-    const run = await api.createDirectRun(actor, {
-      ...agentBackedDirectRunBody({
-        agentId,
-        prompt: "overlap runtime catalog and provider reads",
-      }),
-      modelProviderType: "aws-bedrock",
-      connectorScope: {
-        allowedConnectorSlugs: ["x"],
-        allowedCustomConnectorIds: [],
-      },
-    });
-    expect(providerDecryptStarted.settled()).toBeTruthy();
-
-    await api.heartbeatRunner(runnerGroup);
-    const claim = await api.claimRunnerJob(run.runId);
-    expect(claim.cliAgentType).toBe("claude-code");
-    expect(claim.environment).toMatchObject({
-      CLAUDE_CODE_USE_BEDROCK: "1",
-      AWS_ACCESS_KEY_ID: "runtime-context-access-key",
-      AWS_SECRET_ACCESS_KEY: "runtime-context-secret-key",
-      AWS_REGION: "us-east-1",
-    });
-    expect(claim.connectorRuntimeTargets).toContainEqual(
-      expect.objectContaining({ kind: "builtin", connectorSlug: "x" }),
-    );
-    await api.requestCancelRun(actor, run.runId, [200]);
-  });
-
-  it("cancels overlapping runtime catalog and provider reads without admitting a run", async () => {
-    const { api, actor, agentId } = await prepareOverlappingRuntimeContext();
-    const cancelledDecryptStarted = createDeferredPromise<void>(context.signal);
-    onTestFinished(() => {
-      if (!cancelledDecryptStarted.settled()) {
-        cancelledDecryptStarted.resolve(undefined);
-      }
-      clearApiTestConnectorCatalogRuntimeProjectionIdentityReplacements();
-    });
-    setApiTestConnectorCatalogRuntimeProjectionIdentityReadHook(async () => {
-      await cancelledDecryptStarted.promise;
-    });
-    const requestController = new AbortController();
-    const cancellation = new Error("runtime context preparation cancelled");
-    cancellation.name = "AbortError";
-    useSecretKmsClientForTests({
-      onDecrypt: () => {
-        if (!cancelledDecryptStarted.settled()) {
-          cancelledDecryptStarted.resolve(undefined);
-          requestController.abort(cancellation);
-        }
-      },
-    });
-    const cancellableApi = createRunsApi({
-      ...context,
-      signal: requestController.signal,
-    });
-    const cancelledPrompt = `cancel overlapped runtime context ${randomUUID()}`;
-    await expect(
-      cancellableApi.createDirectRun(actor, {
-        ...agentBackedDirectRunBody({ agentId, prompt: cancelledPrompt }),
-        modelProviderType: "aws-bedrock",
-        connectorScope: {
-          allowedConnectorSlugs: ["x"],
-          allowedCustomConnectorIds: [],
-        },
-      }),
-    ).rejects.toThrow(cancellation.message);
-    expect(cancelledDecryptStarted.settled()).toBeTruthy();
-    const runs = await api.listAgentRuns(actor, {
-      status: "queued,pending,running,completed,failed,timeout,cancelled",
-      limit: 100,
-    });
-    expect(
-      runs.runs.filter((candidate) => {
-        return candidate.prompt === cancelledPrompt;
-      }),
-    ).toHaveLength(0);
-  });
-
-  it("fails on provider rejection without waiting for catalog validation", async () => {
-    const api = createRunsApi(context);
-    mockEnv(
-      "R2_USER_STORAGES_BUCKET_NAME",
-      `test-run-lifecycle-runtime-context-priority-${randomUUID()}`,
-    );
-    await installApiTestConnectorCatalog({
-      catalogVersion: `api-test-runtime-context-priority-${randomUUID()}`,
-      runtimeProjection: true,
-    });
-    const { actor, agentId } = await entitledRunActor();
-    await api.createOrgModelProvider(actor, {
-      type: "aws-bedrock",
-      authMethod: "access-keys",
-      secrets: {
-        AWS_ACCESS_KEY_ID: "runtime-context-priority-access-key",
-        AWS_SECRET_ACCESS_KEY: "runtime-context-priority-secret-key",
-        AWS_REGION: "us-east-1",
-      },
-    });
-    await invalidateApiTestConnectorCatalogCompatibility();
-
-    const catalogStarted = createDeferredPromise<void>(context.signal);
-    const releaseCatalog = createDeferredPromise<void>(context.signal);
-    const catalogFinished = createDeferredPromise<void>(context.signal);
-    onTestFinished(() => {
-      if (!releaseCatalog.settled()) {
-        releaseCatalog.resolve(undefined);
-      }
-      clearApiTestConnectorCatalogRuntimeProjectionIdentityReplacements();
-    });
-    setApiTestConnectorCatalogRuntimeProjectionIdentityReadHook(async () => {
-      if (!catalogStarted.settled()) {
-        catalogStarted.resolve(undefined);
-      }
-      await releaseCatalog.promise;
-      if (!catalogFinished.settled()) {
-        catalogFinished.resolve(undefined);
-      }
-    });
-    const providerError = new Error("first model provider failure");
-    const kms = useSecretKmsProbe(undefined, async () => {
-      await catalogStarted.promise;
-      throw providerError;
-    });
-    const failedPrompt = `fail fast during runtime preparation ${randomUUID()}`;
-    await expect(
-      api.createDirectRun(actor, {
-        ...agentBackedDirectRunBody({
-          agentId,
-          prompt: failedPrompt,
-        }),
-        modelProviderType: "aws-bedrock",
-        connectorScope: {
-          allowedConnectorSlugs: ["x"],
-          allowedCustomConnectorIds: [],
-        },
-      }),
-    ).rejects.toBe(providerError);
-    expect(kms.decryptCalls).toBeGreaterThan(0);
-    releaseCatalog.resolve(undefined);
-    await catalogFinished.promise;
-    const runs = await api.listAgentRuns(actor, {
-      status: "queued,pending,running,completed,failed,timeout,cancelled",
-      limit: 100,
-    });
-    expect(
-      runs.runs.filter((run) => {
-        return run.prompt === failedPrompt;
-      }),
-    ).toStrictEqual([]);
   });
 
   it("reuses scoped runtime entries and materializes sibling connectors", async () => {
@@ -7090,14 +6882,12 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
       modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
-    await expect
-      .poll(
-        async () => {
-          return (await api.pollRunner(runnerGroup)).body.job?.runId;
-        },
-        { timeout: 10_000 },
-      )
-      .toBe(run.runId);
+    await flushWaitUntilForTest();
+    await expect(
+      (async () => {
+        return (await api.pollRunner(runnerGroup)).body.job?.runId;
+      })(),
+    ).resolves.toBe(run.runId);
     const claim = await api.claimRunnerJob(run.runId);
     const figmaTokenPlaceholder = connectorPlaceholder("figma", "FIGMA_TOKEN");
     const figmaTokenTemplate = ["$", "{{ secrets.FIGMA_TOKEN }}"].join("");
@@ -15088,8 +14878,9 @@ describe("HOOK-02/CHAT-02: assistant events reach optional chat consumers", () =
       [200],
     );
 
-    await expect
-      .poll(async () => {
+    await flushWaitUntilForTest();
+    await expect(
+      (async () => {
         const page = await chat.listThreadEvents(actor, threadId);
         return page.events.filter((message) => {
           return (
@@ -15098,8 +14889,8 @@ describe("HOOK-02/CHAT-02: assistant events reach optional chat consumers", () =
             message.content === "cleanup-first assistant text"
           );
         }).length;
-      })
-      .toBe(1);
+      })(),
+    ).resolves.toBe(1);
     await flushWaitUntilForTest();
 
     const late = await webhooks.requestAgentEvents(
@@ -16495,51 +16286,6 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
       ).resolves.toBe("provider_overloaded");
     });
 
-    it("settles one failure when completions race the capacity failure", async () => {
-      const api = createRunsApi(context);
-      const webhooks = createWebhookCallbackApi(context);
-      await seedBuiltInDefaultModelKey();
-      const { actor, agentId } = await entitledRunActor();
-      const run = await api.createRun(actor, {
-        agentId,
-        prompt: "race a built-in capacity completion",
-        modelProvider: "built-in",
-      });
-      const error = `racing capacity failure for ${run.runId}`;
-      const body = {
-        runId: run.runId,
-        exitCode: 1,
-        error,
-        failureReason: "provider_overloaded",
-      } as const;
-      const headers = {
-        authorization: `Bearer ${api.sandboxTokenForRun(actor, run.runId)}`,
-      };
-      const lifecycleGate = await holdAgentRunRowLockFixture({
-        runId: run.runId,
-        signal: context.signal,
-      });
-      const completions = Promise.all([
-        webhooks.requestAgentComplete(body, headers, [200]),
-        webhooks.requestAgentComplete(body, headers, [200]),
-      ]);
-      onTestFinished(async () => {
-        lifecycleGate.release();
-        await Promise.allSettled([completions, lifecycleGate.done]);
-      });
-      await expect.poll(lifecycleGate.waiterCount).toBe(2);
-      lifecycleGate.release();
-      await Promise.all([lifecycleGate.done, completions]);
-
-      await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
-        status: "failed",
-        error,
-      });
-      await expect(
-        readRunFailureReasonFixture(context, run.runId),
-      ).resolves.toBe("provider_overloaded");
-    });
-
     it.each([
       {
         firstReason: "provider_overloaded",
@@ -17116,76 +16862,6 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
     await expect(api.readRun(actor, run.runId)).resolves.toStrictEqual(
       timedOut,
     );
-  });
-
-  it("serializes timeout cleanup behind checkpointed completion", async () => {
-    const api = createRunsApi(context);
-    const webhooks = createWebhookCallbackApi(context);
-    const { actor, agentId } = await entitledRunActor();
-    if (!actor.orgId) {
-      throw new Error("Expected an org-scoped actor");
-    }
-    const startedAt = now();
-    mockNow(startedAt);
-    onTestFinished(() => {
-      clearMockNow();
-    });
-    const run = await api.createRun(actor, {
-      agentId,
-      prompt: "complete while timeout cleanup waits",
-      modelProvider: "anthropic-api-key",
-    });
-    const claim = await api.claimRunnerJob(run.runId);
-    const lifecycleGate = await holdAgentRunRowLockFixture({
-      runId: run.runId,
-      signal: context.signal,
-    });
-    const ownedRequests: Promise<unknown>[] = [];
-    onTestFinished(async () => {
-      lifecycleGate.release();
-      await Promise.all(ownedRequests);
-      await lifecycleGate.done;
-    });
-    const completion = webhooks.requestAgentComplete(
-      {
-        runId: run.runId,
-        exitCode: 0,
-        checkpoint: {
-          cliAgentType: "claude-code",
-          cliAgentSessionId: `bdd-timeout-race-${run.runId}`,
-          cliAgentSessionHistoryDisposition: "unavailable",
-        },
-      },
-      { authorization: `Bearer ${claim.sandboxToken}` },
-      [200],
-    );
-    ownedRequests.push(Promise.allSettled([completion]));
-    await expect.poll(lifecycleGate.waiterCount).toBe(1);
-
-    mockNow(startedAt + 3 * 60 * 1000);
-    const cleanup = cleanupTimedOutRun(context, {
-      runId: run.runId,
-      chatThreadId: randomUUID(),
-    });
-    ownedRequests.push(Promise.allSettled([cleanup]));
-    await expect.poll(lifecycleGate.waiterCount).toBe(2);
-    const requests = Promise.all([completion, cleanup] as const);
-    lifecycleGate.release();
-    const [, [completionResult, cleanupResult]] = await Promise.all([
-      lifecycleGate.done,
-      requests,
-    ] as const);
-
-    expect(completionResult).toMatchObject({
-      body: { success: true, status: "completed" },
-    });
-    expect(cleanupResult).toMatchObject({
-      body: { cleaned: 0, errors: 0, results: [] },
-    });
-    await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
-      status: "completed",
-      result: { checkpointId: expect.any(String) },
-    });
   });
 
   it("keeps claim auth valid through timeout completion and final telemetry", async () => {

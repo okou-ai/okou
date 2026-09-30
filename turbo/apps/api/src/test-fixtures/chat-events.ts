@@ -16,7 +16,6 @@ import { blobs } from "@okouai/db/schema/blob";
 import { chatAgentphoneContext } from "@okouai/db/schema/chat-agentphone-context";
 import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { chatEventSearchMessageWatermarks } from "@okouai/db/schema/chat-event-search";
 import { chatFeishuContext } from "@okouai/db/schema/chat-feishu-context";
 import { chatSlackContext } from "@okouai/db/schema/chat-slack-context";
 import { chatTeamsContext } from "@okouai/db/schema/chat-teams-context";
@@ -50,11 +49,7 @@ import {
 } from "../signals/services/chat-event.service";
 import { createUserMessageDocument } from "../signals/services/chat-user-message.service";
 import { buildFeishuChatOpenUrl } from "../signals/services/feishu-config";
-import {
-  createDeferredPromise,
-  onRejection,
-  settleIncludingAbort,
-} from "../signals/utils";
+import { createDeferredPromise, settleIncludingAbort } from "../signals/utils";
 
 /**
  * BDD-scoped built-in model key prefixes. Fixture acquisition below only
@@ -1037,64 +1032,6 @@ function isSharedThreadHotSnapshotRead(query: string): boolean {
   );
 }
 
-/**
- * Holds the derived search watermark so route tests can deterministically
- * order a projector and orphan cleanup at their shared discoverability anchor.
- * Product APIs cannot pause while holding this projection-internal row lock.
- */
-export async function holdChatEventSearchWatermarkRowLockFixture(args: {
-  readonly chatThreadId: string;
-  readonly signal: AbortSignal;
-}): Promise<{
-  readonly release: () => void;
-  readonly done: Promise<void>;
-  readonly blockedWaiterCount: () => Promise<number>;
-}> {
-  const started = createDeferredPromise<number>(args.signal);
-  const released = createDeferredPromise<void>(args.signal);
-  const done = db().transaction(async (tx) => {
-    const [watermark] = await tx
-      .select({
-        chatThreadId: chatEventSearchMessageWatermarks.chatThreadId,
-      })
-      .from(chatEventSearchMessageWatermarks)
-      .where(
-        eq(chatEventSearchMessageWatermarks.chatThreadId, args.chatThreadId),
-      )
-      .for("update")
-      .limit(1);
-    if (!watermark) {
-      throw new Error("Expected the chat search watermark row");
-    }
-    const pidRows = await executeRawRows(
-      tx,
-      sql`
-        SELECT pg_backend_pid() AS "pid"
-      `,
-      databasePidRowSchema,
-    );
-    const holderPid = pidRows[0]?.pid;
-    if (!holderPid) {
-      throw new Error("Expected the chat search watermark lock holder pid");
-    }
-    started.resolve(holderPid);
-    await released.promise;
-  });
-  const holderPid = await started.promise;
-
-  return {
-    release: () => {
-      if (!released.settled()) {
-        released.resolve(undefined);
-      }
-    },
-    done,
-    blockedWaiterCount: async () => {
-      return await transitiveBlockedWaiterCount(holderPid);
-    },
-  };
-}
-
 async function firstDirectBlockedStatementKind(
   holderPid: number,
 ): Promise<ChatThreadBlockedStatementKind | null> {
@@ -1723,50 +1660,6 @@ export async function holdRunOutputMaterializationRowFixture(args: {
       return await transitiveBlockedWaiterCount(holderPid);
     },
   };
-}
-
-/** Starts one event insert with reservation and persistence in one transaction. */
-export async function startChatEventInsertTransactionFixture(args: {
-  readonly threadId: string;
-  readonly content: string;
-  readonly signal: AbortSignal;
-}): Promise<{
-  readonly pid: number;
-  readonly done: Promise<{ readonly id: string; readonly seqId: number }>;
-}> {
-  const started = createDeferredPromise<number>(args.signal);
-  const done = onRejection(
-    db().transaction(async (tx) => {
-      const pidRows = await executeRawRows(
-        tx,
-        sql`
-          SELECT pg_backend_pid() AS "pid"
-        `,
-        databasePidRowSchema,
-      );
-      const pid = pidRows[0]?.pid;
-      if (!pid) {
-        throw new Error("Expected the chat-message insert pid");
-      }
-      started.resolve(pid);
-      const event = await insertChatEvent(tx, {
-        chatThreadId: args.threadId,
-        eventType: "output.message",
-        content: args.content,
-        runId: null,
-      });
-      if (!event) {
-        throw new Error("Expected the chat-message insert");
-      }
-      return event;
-    }),
-    (error) => {
-      if (!started.settled()) {
-        started.reject(error);
-      }
-    },
-  );
-  return { pid: await started.promise, done };
 }
 
 /**

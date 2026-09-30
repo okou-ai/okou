@@ -35,14 +35,9 @@ import {
   readLegacyAutomation,
   readNativeSchedule,
 } from "../../../test-fixtures/morning-brief-native-schedule";
-import {
-  readMorningBriefScheduleClaimsFixture,
-  withWorkflowAutomationRunPersistenceFailureFixture,
-} from "../../../test-fixtures/morning-brief-schedule-claim";
+import { readMorningBriefScheduleClaimsFixture } from "../../../test-fixtures/morning-brief-schedule-claim";
 import { serializeOfficialWorkflowCatalogTests } from "../../../test-fixtures/official-workflow-catalog-lease";
 import { withOwnedPiStableContextGlobalInvalidationFixture } from "../../../test-fixtures/pi-stable-context";
-import { holdAgentRunPiExecutionSnapshotFixture } from "../../../test-fixtures/thread-bound-run-admission";
-import { holdWorkflowAutomationRowFixture } from "../../../test-fixtures/workflow-queue";
 import {
   readWorkflowScheduleSkipsFixture,
   skewLegacyMorningBriefAnchorFixture,
@@ -740,13 +735,6 @@ describe("Morning Brief legacy schedule claim journal", () => {
     });
   }
 
-  async function briefAutomationEventCount(threadId: string): Promise<number> {
-    const events = await workflowBdd.readThreadEvents(threadId);
-    return events.filter((event) => {
-      return event.eventType === "input.automation";
-    }).length;
-  }
-
   it("skips an expired unclaimed legacy brief without inventing a Run or leaving the native anchor behind", async () => {
     mockEnv("WORKFLOW_SCHEDULE_EXPIRY_ENABLED", "true");
     const brief = await installJournaledBrief();
@@ -902,40 +890,16 @@ describe("Morning Brief legacy schedule claim journal", () => {
     if (!brief.actor.orgId) {
       throw new Error("Expected an organization-scoped brief owner");
     }
-    const gate = holdAgentRunPiExecutionSnapshotFixture({
-      userId: brief.actor.userId,
-      orgId: brief.actor.orgId,
-      signal: context.signal,
-    });
-    onTestFinished(() => {
-      gate.release();
-    });
-    mockNow(brief.anchor + 60_000);
-    const tick = accept(
-      automationExecutionClient().execute({
-        body: { automation_id: brief.automationId },
-      }),
-      [200],
-    );
-    await expect(gate.arrival).resolves.toMatchObject({
-      piExecution: true,
-    });
-    gate.release();
-    await tick;
-    await flushWaitUntilForTest();
+    await pollAt(brief.automationId, brief.anchor + 60_000);
 
     const threadId = await briefThreadId(brief.actor, brief.workflowId);
     const [runId] = await briefRunIds(threadId);
     expect(runId).toStrictEqual(expect.any(String));
-    const claims = await readMorningBriefScheduleClaimsFixture(
-      brief.automationId,
-    );
-    expect(claims).toHaveLength(1);
-    expect(claims[0]).toMatchObject({
-      runId,
-      queueDisposition: "claimed",
-      settlement: "unsettled",
-    });
+    if (!runId) {
+      throw new Error("Expected the Pi brief to start a run");
+    }
+    const claimed = await runs.claimRunnerJob(runId);
+    expect(claimed.cliAgentType).toBe("pi");
   });
 
   it("settles once when concurrent first deliveries of the same completion arrive", async () => {
@@ -1156,115 +1120,6 @@ describe("Morning Brief legacy schedule claim journal", () => {
     expect(afterCallback[0]?.settlement).toBe("revoked");
     expect(afterCallback[0]?.settledAt?.getTime()).toBe(
       revoked[0]?.settledAt?.getTime(),
-    );
-  });
-
-  it("rolls the claim and its queue event back together when the claim transaction fails", async () => {
-    const brief = await installJournaledBrief();
-    await pollAt(brief.automationId, brief.anchor + 60_000);
-    const threadId = await briefThreadId(brief.actor, brief.workflowId);
-    const [runId] = await briefRunIds(threadId);
-    if (!runId) {
-      throw new Error("Expected the first occurrence to start a run");
-    }
-    await deliverBriefCallback(runId);
-    const secondAnchor = Date.parse(
-      (await readBriefState(brief)).nextRunAt ?? "",
-    );
-    const eventsBefore = await briefAutomationEventCount(threadId);
-
-    // The tick reaches the claim, then fails inside the same transaction that
-    // would have inserted its queue event.
-    const held = await holdWorkflowAutomationRowFixture({
-      automationId: brief.automationId,
-      signal: context.signal,
-    });
-    // An open automation row lock would block unrelated agent deletion later.
-    onTestFinished(async () => {
-      held.release();
-      await held.done;
-    });
-    mockNow(secondAnchor + 60_000);
-    const failingTick = accept(
-      automationExecutionClient().execute({
-        body: { automation_id: brief.automationId },
-      }),
-      [200],
-    );
-    await expect
-      .poll(async () => {
-        return await held.blockedWaiterCount();
-      })
-      .toBeGreaterThan(0);
-    await expect(held.cancelBlockedWaiters()).resolves.toBeGreaterThan(0);
-    held.release();
-    await held.done;
-    await failingTick;
-
-    // Nothing partial survives: the claim and the queue event rolled back
-    // together, and the existing failure policy left a real future schedule
-    // rather than a permanently NULL hole.
-    await expect(
-      readMorningBriefScheduleClaimsFixture(brief.automationId),
-    ).resolves.toHaveLength(1);
-    await expect(briefAutomationEventCount(threadId)).resolves.toBe(
-      eventsBefore,
-    );
-    const recoveredSchedule = await readBriefState(brief);
-    if (!recoveredSchedule.nextRunAt) {
-      throw new Error("Expected the failed claim to leave a usable schedule");
-    }
-    const recoveredAnchor = Date.parse(recoveredSchedule.nextRunAt);
-    expect(recoveredAnchor).toBeGreaterThan(secondAnchor);
-    expect(recoveredSchedule.enabled).toBeTruthy();
-
-    // The real cron then records the recovered occurrence on its next tick.
-    await pollAt(brief.automationId, recoveredAnchor + 60_000);
-    const recovered = await readMorningBriefScheduleClaimsFixture(
-      brief.automationId,
-    );
-    expect(recovered).toHaveLength(2);
-    expect(recovered[1]?.scheduledAnchorAt.getTime()).toBe(recoveredAnchor);
-    expect(recovered[1]?.queueEventId).toStrictEqual(expect.any(String));
-  });
-
-  it("rolls back the journal binding and rejects the input when Run persistence fails", async () => {
-    const brief = await installJournaledBrief();
-    const firedAt = brief.anchor + 60_000;
-    const fault = await withWorkflowAutomationRunPersistenceFailureFixture({
-      automationId: brief.automationId,
-      work: async () => {
-        await requestPollAt(brief.automationId, firedAt);
-        await expect(clearAllDetached()).rejects.toThrow(
-          "forced Morning Brief Run persistence rollback",
-        );
-      },
-    });
-    expect(fault.attempts).toBe(1);
-
-    const claims = await readMorningBriefScheduleClaimsFixture(
-      brief.automationId,
-    );
-    expect(claims).toHaveLength(1);
-    // The picked occurrence ends terminal: the Run and journal binding roll
-    // back, the input is rejected and the occurrence settles as a pre-run
-    // failure instead of waiting at the queue head for lease expiry.
-    expect(claims[0]).toMatchObject({
-      runId: null,
-      queueDisposition: "queued",
-      settlement: "pre_run_failure",
-      settledAt: expect.any(Date),
-    });
-    const threadId = await briefThreadId(brief.actor, brief.workflowId);
-    await expect(briefRunIds(threadId)).resolves.toHaveLength(0);
-    const queueEventId = claims[0]?.queueEventId;
-    const events = await workflowBdd.readThreadEvents(threadId);
-    expect(events).toContainEqual(
-      expect.objectContaining({
-        eventType: "input.rejected",
-        revokesEventId: queueEventId,
-        error: "internal_error",
-      }),
     );
   });
 

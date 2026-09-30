@@ -24,7 +24,6 @@ import {
   upsertOrgPlanEntitlementFixture,
 } from "../../../test-fixtures/org-plan-entitlement";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
-import { holdPiContextPreparationStagesFixture } from "../../../test-fixtures/pi-context-preparation";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { expectApiError, type ApiTestUser } from "./helpers/api-bdd";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
@@ -640,7 +639,13 @@ describe("CHAT-02: model-first provider policies", () => {
   it.each(["deleted", "wrong-provider-key"] as const)(
     "rejects V4.1 %s credentials without borrowing another route",
     async (boundary) => {
-      const { actor, agentId } = await entitledChatActor();
+      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
+      const anchor = await sendChatRun(actor, {
+        agentId,
+        prompt: "hold capacity",
+      });
+      const anchorClaim = await claimChatRun(runnerGroup, anchor.runId);
       configureNativeCliArtifact();
       const { providerId } = await upsertOrgModelProvider(actor, {
         type: "openrouter-codex",
@@ -663,24 +668,6 @@ describe("CHAT-02: model-first provider policies", () => {
         },
       ]);
 
-      const gate = holdPiContextPreparationStagesFixture({
-        userId: actor.userId,
-        orgId: requireOrgId(actor),
-        signal: context.signal,
-      });
-      // Pi eligibility is observed in parallel with credentials now. Hold the
-      // provider read itself so deletion happens before its frozen snapshot.
-      for (const stage of [
-        "subscription-account",
-        "post-authorization-context",
-        "thread-session",
-        "connector-contexts",
-        "user-timezone",
-        "image-model",
-        "official-workflow",
-      ] as const) {
-        gate.release(stage);
-      }
       const clientEventId = randomUUID();
       const sent = await chat.requestSendEvent(
         actor,
@@ -695,11 +682,11 @@ describe("CHAT-02: model-first provider policies", () => {
       if (sent.status !== 201) {
         throw new Error("Expected the V4.1 send to be accepted");
       }
-      await gate.arrival("model-provider");
+      await flushWaitUntilForTest();
       if (boundary === "deleted") {
         await misc.deleteOrgModelProvider(actor, "openrouter-codex", [204]);
       }
-      gate.releaseAll();
+      await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders);
       const { picked } = await waitForPickedInput(
         actor,
         sent.body.threadId,

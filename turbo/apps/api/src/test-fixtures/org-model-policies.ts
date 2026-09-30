@@ -1,10 +1,9 @@
 import type { ModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
 import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
+import { runModelCatalog } from "@okouai/db/schema/run-model-catalog";
 import { and, count, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
-import { executeRawRows } from "../lib/db-raw-rows";
-import { createDeferredPromise } from "../signals/utils";
 
 import { db } from "../lib/db";
 
@@ -60,61 +59,6 @@ export async function setOrgModelPolicyProviderTypeFixture(args: {
   if (updated.length !== 1) {
     throw new Error("Expected one org model policy provider to update");
   }
-}
-
-/** A user cannot hold a transaction open through HTTP. Hold only the member
- * preference row to stop a real replacement after its revision decision; tests
- * observe both competing requests and their eventual API-visible results. */
-export async function holdModelPolicyPreferenceFixture(
-  orgId: string,
-  signal: AbortSignal,
-) {
-  const started = createDeferredPromise<number>(signal);
-  const release = createDeferredPromise<void>(signal);
-  const done = db().transaction(async (tx) => {
-    await tx
-      .select({ userId: orgMembersMetadata.userId })
-      .from(orgMembersMetadata)
-      .where(eq(orgMembersMetadata.orgId, orgId))
-      .for("update");
-    const [backend] = await executeRawRows(
-      tx,
-      sql`SELECT pg_backend_pid() AS pid`,
-      z.object({ pid: z.int() }),
-    );
-    if (!backend) {
-      throw new Error("Expected the preference lock owner");
-    }
-    started.resolve(backend.pid);
-    await release.promise;
-  });
-  const pid = await started.promise;
-  return {
-    release: () => {
-      if (!release.settled()) {
-        release.resolve(undefined);
-      }
-    },
-    done,
-    blockedTransactions: async () => {
-      const [result] = await executeRawRows(
-        db(),
-        sql`
-        WITH RECURSIVE blocked(pid) AS (
-          SELECT pid FROM pg_stat_activity WHERE ${pid} = ANY(pg_blocking_pids(pid))
-          UNION
-          SELECT activity.pid FROM pg_stat_activity AS activity
-          INNER JOIN blocked ON blocked.pid = ANY(pg_blocking_pids(activity.pid))
-        ) SELECT ${count()}::int AS total FROM blocked
-      `,
-        z.object({ total: z.int() }),
-      );
-      if (!result) {
-        throw new Error("Expected the blocked transaction count");
-      }
-      return result.total;
-    },
-  };
 }
 
 /**
