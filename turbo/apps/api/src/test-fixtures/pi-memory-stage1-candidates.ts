@@ -1,4 +1,3 @@
-import { piMemoryStage1Days } from "@okouai/db/schema/pi-memory-stage1-schedule";
 import { and, count, eq } from "drizzle-orm";
 
 import { agentRuns } from "@okouai/db/runtime/agent-run";
@@ -7,42 +6,10 @@ import { piMemoryStage1Candidates } from "@okouai/db/schema/pi-memory-stage1-can
 import { storages } from "@okouai/db/schema/storage";
 
 import { db } from "../lib/db";
-import { nowDate } from "../lib/time";
 import {
   admitPiMemoryStage1Candidate,
-  deleteStoragesWithPiMemoryCandidates,
-  commitPiMemoryStage1Candidate,
-  getPiMemoryStage1AdmissionPrerequisiteSkipReason,
   type AdmitPiMemoryStage1CandidateArgs,
-  type PiMemoryStage1CommitResult,
 } from "../signals/services/pi-memory-stage1-candidate.service";
-
-export function piMemoryStage1AdmissionPrerequisiteSkipReasonFixture(
-  overrides: Partial<
-    Pick<
-      AdmitPiMemoryStage1CandidateArgs,
-      | "status"
-      | "framework"
-      | "generationEnabled"
-      | "triggerSource"
-      | "chatThreadId"
-    >
-  > = {},
-) {
-  return getPiMemoryStage1AdmissionPrerequisiteSkipReason({
-    runId: "00000000-0000-4000-8000-000000000001",
-    orgId: "org_test",
-    userId: "user_test",
-    status: "completed",
-    framework: "pi",
-    generationEnabled: true,
-    triggerSource: "web",
-    chatThreadId: "00000000-0000-4000-8000-000000000002",
-    completedAt: nowDate(),
-    idleDelayMs: 30 * 60 * 1000,
-    ...overrides,
-  });
-}
 
 export async function readPiMemoryStage1CandidateFixture(args: {
   readonly orgId: string;
@@ -120,73 +87,6 @@ export async function readPiConversationIdentityFixture(runId: string) {
   return conversation;
 }
 
-export async function leasePiMemoryStage1CandidateFixture(args: {
-  readonly memoryStorageId: string;
-  readonly piSessionId: string;
-  readonly sourceHistoryHash: string;
-  readonly leaseToken: string;
-  readonly leaseExpiresAt: Date;
-}): Promise<void> {
-  const [leased] = await db()
-    .update(piMemoryStage1Candidates)
-    .set({
-      status: "leased",
-      leaseToken: args.leaseToken,
-      leaseExpiresAt: args.leaseExpiresAt,
-      updatedAt: nowDate(),
-    })
-    .where(
-      and(
-        eq(piMemoryStage1Candidates.memoryStorageId, args.memoryStorageId),
-        eq(piMemoryStage1Candidates.piSessionId, args.piSessionId),
-        eq(piMemoryStage1Candidates.sourceHistoryHash, args.sourceHistoryHash),
-        eq(piMemoryStage1Candidates.status, "pending"),
-      ),
-    )
-    .returning({ memoryStorageId: piMemoryStage1Candidates.memoryStorageId });
-  if (!leased) {
-    throw new Error("Expected pending Pi memory candidate to be leased");
-  }
-}
-
-export async function commitPiMemoryStage1CandidateFixture(args: {
-  readonly memoryStorageId: string;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly piSessionId: string;
-  readonly sourceHistoryHash: string;
-  readonly leaseToken: string;
-  readonly committedAt: Date;
-  readonly result: PiMemoryStage1CommitResult;
-}): Promise<boolean> {
-  return await db().transaction(async (tx) => {
-    return await commitPiMemoryStage1Candidate(tx, args);
-  });
-}
-
-export async function setSyntheticPiMemoryStage1SelectionFixture(args: {
-  readonly memoryStorageId: string;
-  readonly piSessionId: string;
-  readonly sourceHistoryHash: string;
-}): Promise<void> {
-  const [selected] = await db()
-    .update(piMemoryStage1Candidates)
-    .set({
-      lastSelectedSourceHistoryHash: args.sourceHistoryHash,
-    })
-    .where(
-      and(
-        eq(piMemoryStage1Candidates.memoryStorageId, args.memoryStorageId),
-        eq(piMemoryStage1Candidates.piSessionId, args.piSessionId),
-        eq(piMemoryStage1Candidates.sourceHistoryHash, args.sourceHistoryHash),
-      ),
-    )
-    .returning({ memoryStorageId: piMemoryStage1Candidates.memoryStorageId });
-  if (!selected) {
-    throw new Error("Expected a synthetic Pi memory selection to be recorded");
-  }
-}
-
 export async function readmitPiMemoryStage1CandidateFixture(
   runId: string,
   ownership: Partial<
@@ -236,26 +136,4 @@ export async function readmitPiMemoryStage1CandidateFixture(
       ...ownership,
     });
   });
-}
-
-export async function deletePiMemoryStorageFixture(
-  memoryStorageId: string,
-): Promise<void> {
-  const deleted = await db().transaction(async (tx) => {
-    return await deleteStoragesWithPiMemoryCandidates(
-      tx,
-      eq(storages.id, memoryStorageId),
-    );
-  });
-  if (!deleted) {
-    throw new Error("Expected Pi memory Storage fixture to be deleted");
-  }
-}
-
-export async function readPiMemoryStage1DayFixture(userId: string) {
-  const [day] = await db()
-    .select()
-    .from(piMemoryStage1Days)
-    .where(eq(piMemoryStage1Days.userId, userId));
-  return day ?? null;
 }

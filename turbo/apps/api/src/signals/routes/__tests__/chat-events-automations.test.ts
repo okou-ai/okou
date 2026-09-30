@@ -1,6 +1,6 @@
 import {
   expectThreadModelCredits,
-  readThreadModelCredits,
+  readThreadModelUsage,
 } from "./helpers/public-thread-usage";
 import { readCompletedRunSessionId } from "./helpers/public-run-session";
 import { randomUUID } from "node:crypto";
@@ -225,7 +225,6 @@ describe("thread-bound Pi Automation execution", () => {
         category: "tokens.output",
         quantity: 3,
       };
-      let creditsAfterFirstReceipt: number | undefined;
       for (const _receipt of [1, 2]) {
         await webhooks.requestAgentUsageEvent(
           { runId: piRunId, events: [sandboxUsage] },
@@ -233,13 +232,6 @@ describe("thread-bound Pi Automation execution", () => {
           [200],
           usagePricingResolution,
         );
-        const credits = await readThreadModelCredits(context, actor, threadId);
-        if (creditsAfterFirstReceipt === undefined) {
-          expect(credits).toBeGreaterThan(0);
-          creditsAfterFirstReceipt = credits;
-        } else {
-          expect(credits).toBe(creditsAfterFirstReceipt);
-        }
       }
       await completeSandboxFirstPiRun({
         actor,
@@ -263,15 +255,18 @@ describe("thread-bound Pi Automation execution", () => {
         piRunId,
       );
       expect(piSessionId).toBe(legacySessionId);
-      if (creditsAfterFirstReceipt === undefined) {
-        throw new Error("Expected the first public model charge");
-      }
-      await expectThreadModelCredits(
-        context,
-        actor,
-        threadId,
-        creditsAfterFirstReceipt,
+      const billed = await readThreadModelUsage(context, actor, threadId);
+      expect(billed.tokens).toBe(3);
+      expect(billed.credits).toBeGreaterThan(0);
+      await webhooks.requestAgentUsageEvent(
+        { runId: piRunId, events: [sandboxUsage] },
+        piClaim.sandboxHeaders,
+        [200],
+        usagePricingResolution,
       );
+      await expect(
+        readThreadModelUsage(context, actor, threadId),
+      ).resolves.toStrictEqual(billed);
       await accept(
         setupApp({ context, routes: testWorkflowAutomationExecutionRoutes })(
           testWorkflowAutomationExecutionContract,

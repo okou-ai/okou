@@ -7,11 +7,11 @@ import type { ApiTestUser } from "./api-bdd";
 import { createRouteMocks } from "./route-test";
 
 /** User-visible model credits for one owned thread, across the full response. */
-export async function readThreadModelCredits(
+export async function readThreadModelUsage(
   context: TestContext,
   actor: ApiTestUser,
   threadId: string,
-): Promise<number> {
+): Promise<{ readonly credits: number; readonly tokens: number }> {
   createRouteMocks(context).clerk.session(
     actor.userId,
     actor.orgId,
@@ -22,6 +22,7 @@ export async function readThreadModelCredits(
   );
   let page = 1;
   let credits = 0;
+  let tokens = 0;
   while (true) {
     const response = await accept(
       client.get({
@@ -30,10 +31,13 @@ export async function readThreadModelCredits(
       }),
       [200],
     );
-    credits += response.body.rows
-      .filter((row) => {
-        return row.threadId === threadId;
-      })
+    const ownedRows = response.body.rows.filter((row) => {
+      return row.threadId === threadId;
+    });
+    tokens += ownedRows.reduce((sum, row) => {
+      return sum + row.tokens;
+    }, 0);
+    credits += ownedRows
       .flatMap((row) => {
         return row.breakdown;
       })
@@ -51,7 +55,15 @@ export async function readThreadModelCredits(
     }
     page += 1;
   }
-  return credits;
+  return { credits, tokens };
+}
+
+export async function readThreadModelCredits(
+  context: TestContext,
+  actor: ApiTestUser,
+  threadId: string,
+): Promise<number> {
+  return (await readThreadModelUsage(context, actor, threadId)).credits;
 }
 
 export async function expectThreadModelCredits(
