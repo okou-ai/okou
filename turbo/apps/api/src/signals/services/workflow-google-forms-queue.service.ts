@@ -12,7 +12,6 @@ import { and, eq, sql } from "drizzle-orm";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
-import { builtinConnectorStateLockStatement } from "./auth-state-lock.service";
 import {
   appendCanonicalChatEventsSql,
   chatEventAppendResultSchema,
@@ -91,13 +90,16 @@ export const enqueueGoogleFormsWorkflowInput$ = command(
         }
         return null;
       }
-      await tx.execute(
-        builtinConnectorStateLockStatement({
-          orgId: source.orgId,
-          userId: source.userId,
-          connectorSlug: "google-forms",
-        }),
-      );
+      // Row locks arbitrate this admission: account deletion (FK SET NULL),
+      // disable and reprojection update the automation row; watch removal
+      // deletes the state row; cursor resets delete or move the cursor row.
+      // Lock order: automation -> watch state -> cursor.
+      const [automation] = await tx
+        .select({ id: workflowAutomations.id })
+        .from(workflowAutomations)
+        .where(googleFormsQueueAutomationCondition(source))
+        .for("update")
+        .limit(1);
       const [state] = await tx
         .select({ id: googleFormsWatchStates.id })
         .from(googleFormsWatchStates)
@@ -112,12 +114,6 @@ export const enqueueGoogleFormsWorkflowInput$ = command(
           ),
         )
         .for("key share")
-        .limit(1);
-      const [automation] = await tx
-        .select({ id: workflowAutomations.id })
-        .from(workflowAutomations)
-        .where(googleFormsQueueAutomationCondition(source))
-        .for("update")
         .limit(1);
       const cursorCondition = and(
         eq(googleFormsAutomationCursors.automationId, source.automationId),

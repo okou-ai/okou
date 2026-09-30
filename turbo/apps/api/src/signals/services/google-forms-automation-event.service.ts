@@ -37,8 +37,8 @@ import { testOverride } from "../../lib/singleton";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import { safeJsonParse, safeUrlParse, settle, tapError } from "../utils";
-import { builtinConnectorStateLockStatement } from "./auth-state-lock.service";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
+import { builtinConnectorAccountRowsLockSql } from "./builtin-connector-account-rows";
 import {
   workflowAutomationSnapshotColumns,
   workflowAutomationSnapshotCondition,
@@ -1262,13 +1262,10 @@ const publishGoogleFormsActivation$ = command(
       args,
       activation,
     );
+    // Lock order: selected account row (KEY SHARE), observed automation row
+    // (FOR UPDATE with its xmin snapshot), then the watch-state unique upsert.
+    // Any reprojection or disable changes the automation snapshot first.
     return await db.transaction(async (tx) => {
-      await tx.execute(
-        builtinConnectorStateLockStatement({
-          ...args,
-          connectorSlug: "google-forms",
-        }),
-      );
       const [account] = await tx
         .select({ id: connectors.id })
         .from(connectors)
@@ -1595,8 +1592,9 @@ export const reprojectGoogleFormsAutomationOwnership$ = command(
   ): Promise<void> => {
     const db = set(writeDb$);
     await db.transaction(async (tx) => {
+      // The projection depends on the member's account set and default.
       await tx.execute(
-        builtinConnectorStateLockStatement({
+        builtinConnectorAccountRowsLockSql({
           ...args,
           connectorSlug: "google-forms",
         }),

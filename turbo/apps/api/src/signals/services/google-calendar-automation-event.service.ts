@@ -38,8 +38,8 @@ import { webUrl } from "../../lib/web-url";
 import { writeDb$ } from "../external/db";
 import { onRejection, settle, tapError } from "../utils";
 import { nowDate } from "../../lib/time";
-import { builtinConnectorStateLockStatement } from "./auth-state-lock.service";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
+import { builtinConnectorAccountRowsLockSql } from "./builtin-connector-account-rows";
 import { loadConnectorRuntimeSnapshot$ } from "./connector-catalog-runtime.service";
 import {
   builtinConnectorCredentialRuntimeValueRef,
@@ -1575,14 +1575,9 @@ const publishGoogleCalendarWatch$ = command(
   ): Promise<GoogleCalendarWatchStateRow | null> => {
     const db = set(writeDb$);
     return await db.transaction(async (tx) => {
-      // The separate credential protocol still has outgoing account writers.
-      await tx.execute(
-        builtinConnectorStateLockStatement({
-          orgId: args.orgId,
-          userId: args.userId,
-          connectorSlug: "google-calendar",
-        }),
-      );
+      // Row arbitration in lock order: the exact credential row, then the
+      // consumer (SHARE blocks a concurrent disable or retarget), then the
+      // watch-state CAS or unique insert.
       const [credential] = await tx
         .select({ id: connectors.id })
         .from(connectors)
@@ -1601,6 +1596,7 @@ const publishGoogleCalendarWatch$ = command(
             connectorId: args.access.connectorId,
           }),
         )
+        .for("share")
         .limit(1);
       if (!consumer && !args.allowStagedTarget) {
         return null;
@@ -1897,13 +1893,7 @@ const persistLegacyPrimaryCalendarMigration$ = command(
   ): Promise<GoogleCalendarWatchStateRow | null> => {
     const db = set(writeDb$);
     return await db.transaction(async (tx) => {
-      await tx.execute(
-        builtinConnectorStateLockStatement({
-          orgId: args.orgId,
-          userId: args.userId,
-          connectorSlug: "google-calendar",
-        }),
-      );
+      // Lock order: credential row, legacy consumers, then both watch states.
       const [credential] = await tx
         .select({ id: connectors.id })
         .from(connectors)
@@ -1911,6 +1901,21 @@ const persistLegacyPrimaryCalendarMigration$ = command(
         .for("update")
         .limit(1);
       if (!credential) {
+        return null;
+      }
+      const legacyConsumerCondition = calendarConsumerCondition({
+        orgId: args.orgId,
+        userId: args.userId,
+        connectorId: args.access.connectorId,
+        calendarId: args.legacyCalendarId,
+      });
+      const legacyConsumers = await tx
+        .select({ id: workflowAutomations.id })
+        .from(workflowAutomations)
+        .where(legacyConsumerCondition)
+        .orderBy(workflowAutomations.id)
+        .for("update");
+      if (legacyConsumers.length === 0) {
         return null;
       }
       const states = await tx
@@ -1955,14 +1960,7 @@ const persistLegacyPrimaryCalendarMigration$ = command(
           eventConfig: sql`jsonb_set(${workflowAutomations.eventConfig}, '{calendarId}', to_jsonb(${GOOGLE_CALENDAR_PRIMARY_ID}::text))`,
           updatedAt: nowDate(),
         })
-        .where(
-          calendarConsumerCondition({
-            orgId: args.orgId,
-            userId: args.userId,
-            connectorId: args.access.connectorId,
-            calendarId: args.legacyCalendarId,
-          }),
-        )
+        .where(legacyConsumerCondition)
         .returning({ id: workflowAutomations.id });
       if (migrated.length === 0) {
         return null;
@@ -2459,8 +2457,9 @@ const repairGoogleCalendarAutomationProjections$ = command(
   ): Promise<void> => {
     const db = set(writeDb$);
     await db.transaction(async (tx) => {
+      // The projection depends on the member's account set and default.
       await tx.execute(
-        builtinConnectorStateLockStatement({
+        builtinConnectorAccountRowsLockSql({
           ...args,
           connectorSlug: "google-calendar",
         }),

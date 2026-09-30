@@ -56,7 +56,7 @@ import {
   decryptStoredSecretValue,
   encryptStoredSecretValue,
 } from "./crypto.utils";
-import { lockBuiltinConnectorState } from "./auth-state-lock.service";
+import { builtinConnectorAccountRowsLockSql } from "./builtin-connector-account-rows";
 import {
   userFeatureSwitchContext,
   userFeatureSwitchOverrides,
@@ -1129,11 +1129,16 @@ async function deleteBuiltinConnectorAccountLocalState(
   featureSwitchContext: FeatureSwitchContext | null,
   signal: AbortSignal,
 ) {
-  await lockBuiltinConnectorState(tx, {
-    orgId: args.orgId,
-    userId: args.userId,
-    connectorSlug: args.connectorSlug,
-  });
+  // Ordered sibling row locks first: the exact-row FOR UPDATE below and the
+  // default promotion in prepareBuiltinConnectorAccountDeletion then only
+  // upgrade rows this transaction already holds.
+  await tx.execute(
+    builtinConnectorAccountRowsLockSql({
+      orgId: args.orgId,
+      userId: args.userId,
+      connectorSlug: args.connectorSlug,
+    }),
+  );
   signal.throwIfAborted();
 
   const account = await loadBuiltinConnectorAccountForDeletion(

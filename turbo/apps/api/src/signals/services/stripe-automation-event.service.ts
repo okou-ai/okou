@@ -31,7 +31,6 @@ import { logger } from "../../lib/log";
 import { now, nowDate } from "../../lib/time";
 import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { settle } from "../utils";
-import { lockConnectorAccountTarget } from "./auth-state-lock.service";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import { stripeInvoicePaidWorkflowAutomationEnabledForOwnerInDb } from "./stripe-invoice-paid-workflow-automation-feature-switch.service";
 import {
@@ -685,10 +684,16 @@ async function repairMissingStripeIngressProjections(
   const owners = await loadMissingStripeProjectionOwners(db, accountId, signal);
   for (const owner of owners) {
     await db.transaction(async (tx) => {
-      await lockConnectorAccountTarget(tx, {
-        ...owner,
-        target: { kind: "builtin", connectorSlug: "stripe" },
-      });
+      // Lock the repaired automation before reading its selected account.
+      // Selection, default and reconnect writers (outgoing and new) reproject
+      // by updating this row and account deletion nulls it through the FK, so
+      // each finishes before the read below or overwrites the repair after it.
+      await tx
+        .select({ id: workflowAutomations.id })
+        .from(workflowAutomations)
+        .where(eq(workflowAutomations.id, owner.automationId))
+        .for("update")
+        .limit(1);
       await repairMissingStripeInvoicePaidAutomationProjection(
         tx,
         owner,
@@ -1160,11 +1165,16 @@ async function repairMissingStripeDeliveryProjection(
     return;
   }
   await db.transaction(async (tx) => {
-    await lockConnectorAccountTarget(tx, {
-      orgId: owner.orgId,
-      userId: owner.userId,
-      target: { kind: "builtin", connectorSlug: "stripe" },
-    });
+    // Lock the repaired automation before reading its selected account.
+    // Selection, default and reconnect writers (outgoing and new) reproject
+    // by updating this row and account deletion nulls it through the FK, so
+    // each finishes before the read below or overwrites the repair after it.
+    await tx
+      .select({ id: workflowAutomations.id })
+      .from(workflowAutomations)
+      .where(eq(workflowAutomations.id, delivery.automationId))
+      .for("update")
+      .limit(1);
     await repairMissingStripeInvoicePaidAutomationProjection(
       tx,
       {

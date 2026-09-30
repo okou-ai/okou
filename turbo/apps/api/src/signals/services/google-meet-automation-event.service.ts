@@ -28,6 +28,7 @@ import {
   tapError,
 } from "../utils";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
+import { builtinConnectorAccountRowsLockSql } from "./builtin-connector-account-rows";
 import { loadConnectorRuntimeSnapshot } from "./connector-catalog-runtime.service";
 import {
   builtinConnectorCredentialRuntimeValueRef,
@@ -40,10 +41,6 @@ import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
 import type { AutomationRow } from "./workflow-automation-launch.service";
 import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
 import { ensureWorkflowUserAutomationThread$ } from "./workflow-user-automation-thread.service";
-import {
-  lockBuiltinConnectorState,
-  builtinConnectorStateLockStatement,
-} from "./auth-state-lock.service";
 import { reprojectGoogleMeetAutomationsForOwner } from "./google-meet-automation-account.service";
 
 const GOOGLE_MEET_ACCESS_TOKEN_ENVIRONMENT_NAME = "GOOGLE_MEET_TOKEN";
@@ -963,6 +960,37 @@ async function prepareGoogleMeetTranscriptGeneratedSubscription(
   };
 }
 
+/** Meet automations of one owner that target one connector, in any state. */
+function googleMeetConnectorAutomationsCondition(args: {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly connectorId: string;
+}) {
+  return and(
+    eq(workflowAutomations.orgId, args.orgId),
+    eq(workflowAutomations.ownerUserId, args.userId),
+    eq(workflowAutomations.kind, "event"),
+    eq(
+      workflowAutomations.eventType,
+      GOOGLE_MEET_TRANSCRIPT_GENERATED_EVENT_TYPE,
+    ),
+    eq(workflowAutomations.eventConnectorId, args.connectorId),
+  );
+}
+
+function googleMeetConsumerStateCondition(allowStagedOfficialTarget: boolean) {
+  return allowStagedOfficialTarget
+    ? or(
+        eq(workflowAutomations.enabled, true),
+        and(
+          eq(workflowAutomations.enabled, false),
+          eq(workflowAutomations.officialReconciliationStatus, "reconciling"),
+          isNotNull(workflowAutomations.officialBlueprintKey),
+        ),
+      )
+    : eq(workflowAutomations.enabled, true);
+}
+
 export async function hasEnabledGoogleMeetConsumer(
   args: {
     readonly db: Db;
@@ -973,30 +1001,15 @@ export async function hasEnabledGoogleMeetConsumer(
   },
   signal: AbortSignal,
 ): Promise<boolean> {
-  const consumerState = args.allowStagedOfficialTarget
-    ? or(
-        eq(workflowAutomations.enabled, true),
-        and(
-          eq(workflowAutomations.enabled, false),
-          eq(workflowAutomations.officialReconciliationStatus, "reconciling"),
-          isNotNull(workflowAutomations.officialBlueprintKey),
-        ),
-      )
-    : eq(workflowAutomations.enabled, true);
   const [consumer] = await args.db
     .select({ id: workflowAutomations.id })
     .from(workflowAutomations)
     .where(
       and(
-        eq(workflowAutomations.orgId, args.orgId),
-        eq(workflowAutomations.ownerUserId, args.userId),
-        eq(workflowAutomations.kind, "event"),
-        eq(
-          workflowAutomations.eventType,
-          GOOGLE_MEET_TRANSCRIPT_GENERATED_EVENT_TYPE,
+        googleMeetConnectorAutomationsCondition(args),
+        googleMeetConsumerStateCondition(
+          args.allowStagedOfficialTarget === true,
         ),
-        eq(workflowAutomations.eventConnectorId, args.connectorId),
-        consumerState,
       ),
     )
     .limit(1);
@@ -1190,9 +1203,10 @@ async function reconcileGoogleMeetSubscriptionLifecycle(
 }
 
 /**
- * Short local publication. The outgoing-writer compatibility key is taken
- * only for this local write; a disabled consumer or deleted account cannot be
- * revived by a late remote preparation.
+ * Short local publication arbitrated by rows in lock order: the account row
+ * (KEY SHARE blocks its deletion), a consumer row (SHARE blocks a concurrent
+ * disable or retarget), then the state unique upsert. A disabled consumer or
+ * deleted account cannot be revived by a late remote preparation.
  */
 async function publishGoogleMeetSubscription(
   args: {
@@ -1207,11 +1221,6 @@ async function publishGoogleMeetSubscription(
   signal: AbortSignal,
 ): Promise<boolean> {
   return await args.db.transaction(async (tx) => {
-    await lockBuiltinConnectorState(tx, {
-      orgId: args.orgId,
-      userId: args.userId,
-      connectorSlug: "google-meet",
-    });
     const [connector] = await tx
       .select({ id: connectors.id })
       .from(connectors)
@@ -1222,14 +1231,29 @@ async function publishGoogleMeetSubscription(
           eq(connectors.userId, args.userId),
         ),
       )
+      .for("key share")
       .limit(1);
     signal.throwIfAborted();
-    if (
-      !connector ||
-      (args.requireConsumer &&
-        !(await hasEnabledGoogleMeetConsumer({ ...args, db: tx }, signal)))
-    ) {
+    if (!connector) {
       return false;
+    }
+    if (args.requireConsumer) {
+      const [consumer] = await tx
+        .select({ id: workflowAutomations.id })
+        .from(workflowAutomations)
+        .where(
+          and(
+            googleMeetConnectorAutomationsCondition(args),
+            googleMeetConsumerStateCondition(args.allowStagedOfficialTarget),
+          ),
+        )
+        .orderBy(workflowAutomations.id)
+        .for("share")
+        .limit(1);
+      signal.throwIfAborted();
+      if (!consumer) {
+        return false;
+      }
     }
     await persistWorkspaceSubscriptionState(
       { db: tx, ...args.publication },
@@ -1239,7 +1263,13 @@ async function publishGoogleMeetSubscription(
   });
 }
 
-/** Deletes local subscription state only while no consumer is enabled. */
+/**
+ * Deletes local subscription state only while no consumer is enabled. Every
+ * automation currently targeting the connector is share-locked first, so a
+ * concurrent enable either commits before this check or waits for the delete
+ * and then repairs the subscription. An automation newly retargeted to the
+ * connector may still see a notification gap until repair (accepted).
+ */
 async function removeGoogleMeetSubscriptionStates(
   args: {
     readonly db: Db;
@@ -1251,11 +1281,15 @@ async function removeGoogleMeetSubscriptionStates(
   signal: AbortSignal,
 ): Promise<boolean> {
   return await args.db.transaction(async (tx) => {
-    await lockBuiltinConnectorState(tx, {
-      orgId: args.orgId,
-      userId: args.userId,
-      connectorSlug: "google-meet",
-    });
+    // Share-lock every automation targeting the connector; the following
+    // statement then reads their latest committed state.
+    await tx
+      .select({ id: workflowAutomations.id })
+      .from(workflowAutomations)
+      .where(googleMeetConnectorAutomationsCondition(args))
+      .orderBy(workflowAutomations.id)
+      .for("share");
+    signal.throwIfAborted();
     if (await hasEnabledGoogleMeetConsumer({ ...args, db: tx }, signal)) {
       return false;
     }
@@ -1304,11 +1338,33 @@ async function loadGoogleMeetConnectorInventory(
   signal: AbortSignal,
 ): Promise<Set<string>> {
   return await args.db.transaction(async (tx) => {
-    await lockBuiltinConnectorState(tx, {
-      orgId: args.orgId,
-      userId: args.userId,
-      connectorSlug: "google-meet",
-    });
+    // Owner-wide reprojection depends on the account set and default: lock the
+    // account rows, then every Meet automation of the owner, before reading
+    // selections and rewriting connector targets.
+    await tx.execute(
+      builtinConnectorAccountRowsLockSql({
+        orgId: args.orgId,
+        userId: args.userId,
+        connectorSlug: "google-meet",
+      }),
+    );
+    await tx
+      .select({ id: workflowAutomations.id })
+      .from(workflowAutomations)
+      .where(
+        and(
+          eq(workflowAutomations.orgId, args.orgId),
+          eq(workflowAutomations.ownerUserId, args.userId),
+          eq(workflowAutomations.kind, "event"),
+          eq(
+            workflowAutomations.eventType,
+            GOOGLE_MEET_TRANSCRIPT_GENERATED_EVENT_TYPE,
+          ),
+        ),
+      )
+      .orderBy(workflowAutomations.id)
+      .for("update");
+    signal.throwIfAborted();
     await reprojectGoogleMeetAutomationsForOwner(tx, args);
     signal.throwIfAborted();
     const automationRows = await tx
@@ -1370,9 +1426,11 @@ const repairGoogleMeetAutomationProjection$ = command(
   ): Promise<void> => {
     const db = set(writeDb$);
     await db.transaction(async (tx) => {
+      // The selected connector depends on the member's account set and default.
       await tx.execute(
-        builtinConnectorStateLockStatement({
-          ...args,
+        builtinConnectorAccountRowsLockSql({
+          orgId: args.orgId,
+          userId: args.userId,
           connectorSlug: "google-meet",
         }),
       );

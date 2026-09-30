@@ -9,7 +9,6 @@ import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
-import { builtinConnectorStateLockStatement } from "./auth-state-lock.service";
 import {
   appendCanonicalChatEventsSql,
   chatEventAppendResultSchema,
@@ -94,26 +93,37 @@ export const enqueueGoogleCalendarWorkflowInput$ = command(
         }
         return null;
       }
-      await tx.execute(
-        builtinConnectorStateLockStatement({
-          orgId: source.orgId,
-          userId: source.userId,
-          connectorSlug: "google-calendar",
-        }),
-      );
-      const [state] = await tx
-        .select({ id: googleCalendarWatchStates.id })
-        .from(googleCalendarWatchStates)
-        .innerJoin(
-          connectors,
-          eq(connectors.id, googleCalendarWatchStates.connectorId),
-        )
+      // Row locks arbitrate this admission in the member lock order
+      // account -> automation -> watch state. Reconnect marking, credential
+      // rewrites and account deletion conflict with the account share lock;
+      // disable and reprojection update the automation row; channel
+      // replacement, action-required marking and stop update or delete the
+      // watch row.
+      const [account] = await tx
+        .select({ id: connectors.id })
+        .from(connectors)
         .where(
           and(
+            eq(connectors.id, source.connectorId),
             eq(connectors.orgId, source.orgId),
             eq(connectors.userId, source.userId),
             eq(connectors.connectorSlug, "google-calendar"),
             eq(connectors.needsReconnect, false),
+          ),
+        )
+        .for("share")
+        .limit(1);
+      const [automation] = await tx
+        .select({ id: workflowAutomations.id })
+        .from(workflowAutomations)
+        .where(googleCalendarQueueAutomationCondition(source))
+        .for("update")
+        .limit(1);
+      const [state] = await tx
+        .select({ id: googleCalendarWatchStates.id })
+        .from(googleCalendarWatchStates)
+        .where(
+          and(
             eq(googleCalendarWatchStates.id, source.watchStateId),
             eq(googleCalendarWatchStates.orgId, source.orgId),
             eq(googleCalendarWatchStates.userId, source.userId),
@@ -126,14 +136,8 @@ export const enqueueGoogleCalendarWorkflowInput$ = command(
         )
         .for("share")
         .limit(1);
-      const [automation] = await tx
-        .select({ id: workflowAutomations.id })
-        .from(workflowAutomations)
-        .where(googleCalendarQueueAutomationCondition(source))
-        .for("update")
-        .limit(1);
       signal.throwIfAborted();
-      if (!state || !automation) {
+      if (!account || !automation || !state) {
         throw new GoogleCalendarSourceTransitionChangedError();
       }
       const currentTime = nowDate();

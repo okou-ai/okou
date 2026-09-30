@@ -27,7 +27,8 @@ import {
   loadConnectorRuntimeSnapshot,
   type ConnectorRuntimeSelection,
 } from "./connector-catalog-runtime.service";
-import { lockConnectorAccountTarget } from "./auth-state-lock.service";
+import { builtinConnectorStateLockStatement } from "./auth-state-lock.service";
+import { builtinConnectorAccountRowsLockSql } from "./builtin-connector-account-rows";
 import { listConnectorAccountsByIds } from "./connector-account-lifecycle.service";
 import { reprojectWorkflowAutomationsForOwner } from "./workflow-automation-account-projection.service";
 import { isWorkflowAutomationAccountConnectorSlug } from "./workflow-automation-account-classification.service";
@@ -349,16 +350,27 @@ export async function prepareChatThreadConnectorSelections(
   }
 
   const selections = [...byTarget.values()];
-  for (const selection of [...selections].sort((left, right) => {
-    return connectorAccountTargetKey(left.target).localeCompare(
-      connectorAccountTargetKey(right.target),
+  // Builtin selections hold the member's account rows for the target in ID
+  // order: deletion's FOR UPDATE waits until the selection commits (and then
+  // deletes it), and default changes cannot race the automation reprojection
+  // that follows. Custom targets use definition protection and FK arbitration.
+  const builtinSlugs = [
+    ...new Set(
+      selections.flatMap((selection) => {
+        return selection.target.kind === "builtin"
+          ? [selection.target.connectorSlug]
+          : [];
+      }),
+    ),
+  ].sort();
+  for (const connectorSlug of builtinSlugs) {
+    await db.execute(
+      builtinConnectorAccountRowsLockSql({
+        orgId: args.orgId,
+        userId: args.userId,
+        connectorSlug,
+      }),
     );
-  })) {
-    await lockConnectorAccountTarget(db, {
-      orgId: args.orgId,
-      userId: args.userId,
-      target: selection.target,
-    });
   }
   const scope = await loadAgentConnectorScope(db, args);
   const snapshot = await loadSnapshotForBuiltinTargets(db, selections);
@@ -549,6 +561,26 @@ export async function updateChatThreadConnectorSelection(
         if (!thread) {
           return { kind: "not_found" };
         }
+        if (
+          args.selection.target.kind === "builtin" &&
+          isWorkflowAutomationAccountConnectorSlug(
+            args.selection.target.connectorSlug,
+          )
+        ) {
+          // R1 compatibility only: outgoing main insertEventAutomation and
+          // the other automation creators read this selection under
+          // connector_state without locking account rows, so the
+          // reprojection below could miss their uncommitted automation.
+          // Taken after the thread and before row locks, in main's order;
+          // remove in R2 once main no longer acquires connector_state.
+          await tx.execute(
+            builtinConnectorStateLockStatement({
+              orgId: args.orgId,
+              userId: args.userId,
+              connectorSlug: args.selection.target.connectorSlug,
+            }),
+          );
+        }
         const prepared = await prepareChatThreadConnectorSelections(tx, {
           orgId: args.orgId,
           userId: args.userId,
@@ -617,7 +649,26 @@ export async function clearChatThreadConnectorSelection(
       args.target.kind === "builtin" &&
       isWorkflowAutomationAccountConnectorSlug(args.target.connectorSlug)
     ) {
-      await lockConnectorAccountTarget(tx, args);
+      // R1 compatibility only: outgoing main insertEventAutomation and the
+      // other automation creators read this selection under connector_state
+      // without locking account rows. Taken before row locks, in main's
+      // order; remove in R2 once main no longer acquires connector_state.
+      await tx.execute(
+        builtinConnectorStateLockStatement({
+          orgId: args.orgId,
+          userId: args.userId,
+          connectorSlug: args.target.connectorSlug,
+        }),
+      );
+      // The reprojection reads which account is default; hold the account
+      // rows so a concurrent default change or deletion serializes with it.
+      await tx.execute(
+        builtinConnectorAccountRowsLockSql({
+          orgId: args.orgId,
+          userId: args.userId,
+          connectorSlug: args.target.connectorSlug,
+        }),
+      );
     }
     await tx
       .delete(chatThreadConnectorSelections)

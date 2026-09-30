@@ -103,10 +103,6 @@ import {
   decryptStoredSecretValue,
   encryptStoredSecretValue,
 } from "./crypto.utils";
-import {
-  lockBuiltinConnectorState,
-  lockModelProviderState,
-} from "./auth-state-lock.service";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import { resolveBuiltinConnectorAutomaticMcpCredential } from "./builtin-connector-automatic-oauth.service";
 import {
@@ -2821,27 +2817,6 @@ function refreshPreparedConnectorAccessToken(
   );
 }
 
-async function lockPreparedRefreshSource(
-  db: Db,
-  args: RefreshAccessTokenArgs,
-  prepared: PreparedRefreshTokenContext,
-): Promise<void> {
-  if (prepared.sourceType === "connector") {
-    await lockBuiltinConnectorState(db, {
-      orgId: args.orgId,
-      userId: args.userId,
-      connectorSlug: prepared.connectorSlug,
-    });
-    return;
-  }
-
-  await lockModelProviderState(db, {
-    orgId: args.orgId,
-    userId: prepared.context.secretUserId,
-    type: args.metadataKey ?? prepared.providerKey,
-  });
-}
-
 function preparedRefreshSourceMatchesState(
   args: RefreshAccessTokenArgs,
   prepared: PreparedRefreshTokenContext,
@@ -3158,9 +3133,9 @@ async function refreshPreparedLockedAccessToken(args: {
     refreshArgs.featureSwitchContext,
   );
   const returnedSecretValues = await refreshArgs.db.transaction(async (tx) => {
-    // Outgoing unconditional credential writers still use this key; the
-    // exact owner-row CAS below is what decides this publication.
-    await lockPreparedRefreshSource(tx, refreshArgs, prepared);
+    // The exact owner-row CAS decides this publication. Every credential
+    // replacement, deletion and refresh writer changes or row-locks that owner
+    // row, so a concurrent change fails the CAS instead of being overwritten.
     return await markRefreshSuccess(
       { ...refreshArgs, db: tx },
       prepared,

@@ -9,7 +9,6 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
-import { builtinConnectorStateLockStatement } from "./auth-state-lock.service";
 import {
   appendCanonicalChatEventsSql,
   chatEventAppendResultSchema,
@@ -86,23 +85,36 @@ export const enqueueGmailWorkflowInput$ = command(
         }
         return null;
       }
-      await tx.execute(
-        builtinConnectorStateLockStatement({
-          orgId: source.orgId,
-          userId: source.userId,
-          connectorSlug: "gmail",
-        }),
-      );
-      const [state] = await tx
-        .select({ id: gmailWatchStates.id })
-        .from(gmailWatchStates)
-        .innerJoin(connectors, eq(connectors.id, gmailWatchStates.connectorId))
+      // Row locks arbitrate this admission in the member lock order
+      // account -> automation -> watch state. Reconnect marking, credential
+      // rewrites and account deletion conflict with the account share lock;
+      // disable and reprojection update the automation row; watch stop,
+      // replacement and mailbox changes update or delete the watch row.
+      const [account] = await tx
+        .select({ id: connectors.id })
+        .from(connectors)
         .where(
           and(
+            eq(connectors.id, source.connectorId),
             eq(connectors.orgId, source.orgId),
             eq(connectors.userId, source.userId),
             eq(connectors.connectorSlug, "gmail"),
             eq(connectors.needsReconnect, false),
+          ),
+        )
+        .for("share")
+        .limit(1);
+      const [automation] = await tx
+        .select({ id: workflowAutomations.id })
+        .from(workflowAutomations)
+        .where(gmailQueueAutomationCondition(source))
+        .for("update")
+        .limit(1);
+      const [state] = await tx
+        .select({ id: gmailWatchStates.id })
+        .from(gmailWatchStates)
+        .where(
+          and(
             eq(gmailWatchStates.id, source.watchStateId),
             eq(gmailWatchStates.orgId, source.orgId),
             eq(gmailWatchStates.userId, source.userId),
@@ -115,14 +127,8 @@ export const enqueueGmailWorkflowInput$ = command(
         )
         .for("share")
         .limit(1);
-      const [automation] = await tx
-        .select({ id: workflowAutomations.id })
-        .from(workflowAutomations)
-        .where(gmailQueueAutomationCondition(source))
-        .for("update")
-        .limit(1);
       signal.throwIfAborted();
-      if (!state || !automation) {
+      if (!account || !automation || !state) {
         throw new GmailAutomationSourceChangedError();
       }
       const currentTime = nowDate();

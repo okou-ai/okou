@@ -12,7 +12,7 @@ import { and, eq, gt, isNull, or, sql } from "drizzle-orm";
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
-import { builtinConnectorStateLockStatement } from "./auth-state-lock.service";
+import { builtinConnectorAccountRowsLockSql } from "./builtin-connector-account-rows";
 import {
   builtinConnectorAutomaticLifecycleLockStatement,
   builtinDcrCatalogCondition,
@@ -185,7 +185,6 @@ export const publishAutomaticConnection$ = command(
         return { kind: "error", reason: "stale-contract" };
       }
       await tx.execute(builtinConnectorAutomaticLifecycleLockStatement(input));
-      await tx.execute(builtinConnectorStateLockStatement(input));
       if (input.binding?.registrationMethod === "dcr") {
         const [registration] = await tx
           .select({ id: builtinConnectorDcrRegistrations.id })
@@ -206,13 +205,11 @@ export const publishAutomaticConnection$ = command(
           .where(automaticReconnectCondition(input))
           .returning({ id: connectors.id });
       } else {
-        const existing = await tx
-          .select({ id: connectors.id })
-          .from(connectors)
-          .where(automaticConnectionOwnerCondition(input))
-          .orderBy(connectors.id)
-          .for("update")
-          .limit(1);
+        // Ordered sibling row locks join set-default and delete. With no rows,
+        // idx_connectors_org_user_slug_default arbitrates the first default.
+        const { rowCount: existingCount } = await tx.execute(
+          builtinConnectorAccountRowsLockSql(input),
+        );
         const values = {
           orgId: input.orgId,
           userId: input.userId,
@@ -223,7 +220,7 @@ export const publishAutomaticConnection$ = command(
         };
         [connection] = await tx
           .insert(connectors)
-          .values({ ...values, isDefault: existing.length === 0 })
+          .values({ ...values, isDefault: (existingCount ?? 0) === 0 })
           .onConflictDoNothing()
           .returning({ id: connectors.id });
         if (!connection) {
@@ -306,7 +303,6 @@ export const publishAutomaticAuthorizationState$ = command(
         return { kind: "error", reason: "stale-contract" };
       }
       await tx.execute(builtinConnectorAutomaticLifecycleLockStatement(args));
-      await tx.execute(builtinConnectorStateLockStatement(args));
       if (args.account.intent === "reconnect") {
         if (!args.expected) {
           return { kind: "error", reason: "invalid-account" };

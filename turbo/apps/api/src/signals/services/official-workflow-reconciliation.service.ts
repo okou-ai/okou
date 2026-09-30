@@ -34,12 +34,13 @@ import {
   reconcileAutomationEventWatches$,
   reconcileAutomationEventWatchReconfiguration$,
 } from "./automation-event-watch-lifecycle.service";
-import { lockConnectorAccountTarget } from "./auth-state-lock.service";
+import { builtinConnectorStateLockStatement } from "./auth-state-lock.service";
 import {
   googleFormsCursorMustReset,
   googleFormsCursorPublicationStatement,
 } from "./google-forms-cursor-lifecycle";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
+import { builtinConnectorAccountRowsLockSql } from "./builtin-connector-account-rows";
 import { reconcileOfficialGoogleFormsConfiguration$ } from "./official-google-forms-reconfiguration.service";
 import { observedWorkflowAutomationCondition } from "./workflow-automation-snapshot";
 import { notionConfigWithConnectorId } from "./notion-automation-account.service";
@@ -317,11 +318,31 @@ async function lockOfficialAutomationAccountProjection(
     return { kind: "not-required" };
   }
   for (const connectorSlug of connectorSlugs) {
-    await lockConnectorAccountTarget(db, {
-      orgId: args.orgId,
-      userId: args.userId,
-      target: { kind: "builtin", connectorSlug },
-    });
+    // R1 compatibility only: outgoing updateChatThreadConnectorSelection and
+    // clearChatThreadConnectorSelection (chat-thread-connector-selection on
+    // main) change the workflow thread's selection under this key without a
+    // conflicting account or automation row lock, and their reprojection
+    // skips an automation whose event type this transition is changing. Remove
+    // in R2 once no deployed selection writer relies on connector_state.
+    await db.execute(
+      builtinConnectorStateLockStatement({
+        orgId: args.orgId,
+        userId: args.userId,
+        connectorSlug,
+      }),
+    );
+  }
+  // The projected account depends on the member's account set, default and
+  // credentials. Sibling account row locks serialize the read below with
+  // default changes, deletion, reconnects and row-locking selection writers.
+  for (const connectorSlug of connectorSlugs) {
+    await db.execute(
+      builtinConnectorAccountRowsLockSql({
+        orgId: args.orgId,
+        userId: args.userId,
+        connectorSlug,
+      }),
+    );
   }
   const stripeReadiness =
     nextConnectorSlug === "stripe"

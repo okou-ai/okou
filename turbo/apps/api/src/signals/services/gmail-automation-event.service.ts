@@ -30,6 +30,7 @@ import { writeDb$ } from "../external/db";
 import { now, nowDate } from "../../lib/time";
 import { safeJsonParse, settle, tapError } from "../utils";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
+import { builtinConnectorAccountRowsLockSql } from "./builtin-connector-account-rows";
 import { loadConnectorRuntimeSnapshot$ } from "./connector-catalog-runtime.service";
 import { builtinConnectorCredentialRuntimeValueRef } from "./builtin-connector-credential-runtime.service";
 import {
@@ -42,7 +43,6 @@ import { GmailAutomationSourceChangedError } from "./workflow-gmail-queue.servic
 import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
 import { workflowAutomationCanFire$ } from "./workflow-automation-access.service";
 import { ensureWorkflowUserAutomationThread$ } from "./workflow-user-automation-thread.service";
-import { builtinConnectorStateLockStatement } from "./auth-state-lock.service";
 import {
   loadBuiltinConnectorCredentialConnection$,
   loadBuiltinConnectorCredentialValues$,
@@ -1022,8 +1022,10 @@ const repairGmailAutomationProjections$ = command(
   ) => {
     const db = set(writeDb$);
     await db.transaction(async (tx) => {
+      // The projection depends on which Gmail accounts exist and which one is
+      // default; lock that account set before the automation rows.
       await tx.execute(
-        builtinConnectorStateLockStatement({ ...args, connectorSlug: "gmail" }),
+        builtinConnectorAccountRowsLockSql({ ...args, connectorSlug: "gmail" }),
       );
       await tx.execute(sql`
       WITH candidates AS MATERIALIZED (
@@ -1854,14 +1856,9 @@ const updateResolvedGmailLabelId$ = command(
       ...args.automation.config,
       resolvedLabelId: args.labelId,
     };
+    // The watch-state KEY SHARE and the conditional automation update are the
+    // whole arbitration: removal or reprojection makes this publication a no-op.
     const published = await db.transaction(async (tx) => {
-      await tx.execute(
-        builtinConnectorStateLockStatement({
-          orgId: args.automation.automation.orgId,
-          userId: args.automation.automation.ownerUserId,
-          connectorSlug: "gmail",
-        }),
-      );
       const [currentState] = await tx
         .select({ id: gmailWatchStates.id })
         .from(gmailWatchStates)

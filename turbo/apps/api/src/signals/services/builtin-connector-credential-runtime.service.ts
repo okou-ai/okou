@@ -16,7 +16,6 @@ import { logger } from "../../lib/log";
 import type { Db, ReadonlyDb } from "../external/db";
 import { nowDate } from "../../lib/time";
 import { settleIncludingAbort } from "../utils";
-import { lockBuiltinConnectorState } from "./auth-state-lock.service";
 import type {
   ConnectorRuntimeMethod,
   ConnectorRuntimeSnapshot,
@@ -566,14 +565,9 @@ async function commitConnectorRefresh(
   signal: AbortSignal,
 ): Promise<ConnectorRefreshPublicationResult> {
   const result = await args.db.transaction(async (tx) => {
-    // Outgoing account replacement/deletion still uses this coordinator.
-    // Retire it only when those writers share the conditional storage protocol.
-    await lockBuiltinConnectorState(tx, {
-      orgId: args.orgId,
-      userId: args.userId,
-      connectorSlug: args.connection.connectorSlug,
-    });
-    signal.throwIfAborted();
+    // The exact account row lock arbitrates this publication: every account
+    // replacement, deletion and refresh writer updates or deletes that row,
+    // so a concurrent change surfaces here as a changed state revision.
     const [currentConnector] = await tx
       .select(connectorRefreshStateSelection())
       .from(connectors)

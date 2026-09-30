@@ -82,10 +82,8 @@ import {
   safeSync,
   settle,
 } from "../utils";
-import {
-  builtinConnectorStateLockStatement,
-  lockConnectorAccountTarget,
-} from "./auth-state-lock.service";
+import { builtinConnectorStateLockStatement } from "./auth-state-lock.service";
+import { builtinConnectorAccountRowsLockSql } from "./builtin-connector-account-rows";
 import { reconcileAutomationEventWatches$ } from "./automation-event-watch-lifecycle.service";
 import {
   insertWorkflowAutomation,
@@ -1864,6 +1862,23 @@ function eventAutomationThreadOwner(args: InsertEventAutomationArgs) {
   };
 }
 
+// R1 compatibility only: outgoing main updateChatThreadConnectorSelection
+// (and clearChatThreadConnectorSelection) change a thread's account selection
+// under connector_state without locking account rows, so a projection read
+// here could miss their uncommitted selection. The key is taken before the
+// ordered account rows, in main's order; remove the key in R2 once main no
+// longer acquires connector_state. New writers are serialized by the rows.
+export function automationAccountProjectionLocksSql(owner: {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly connectorSlug: string;
+}) {
+  return [
+    builtinConnectorStateLockStatement(owner),
+    builtinConnectorAccountRowsLockSql(owner),
+  ];
+}
+
 function workflowAutomationThreadParentLocksSql(
   owner: ReturnType<typeof eventAutomationThreadOwner>,
 ) {
@@ -1893,9 +1908,15 @@ const insertEventAutomation$ = command(
     return await db.transaction(async (tx) => {
       let eventConnectorId: string | null = null;
       if (connectorSlug !== null) {
-        await tx.execute(
-          builtinConnectorStateLockStatement({ ...owner, connectorSlug }),
-        );
+        // The member's ordered account rows keep the selected/default
+        // account stable until this automation commits with it.
+        for (const statement of automationAccountProjectionLocksSql({
+          orgId: owner.orgId,
+          userId: owner.userId,
+          connectorSlug,
+        })) {
+          await tx.execute(statement);
+        }
         const [selected] = parseRawRows(
           z.object({ connectorId: z.string().nullable() }),
           await tx.execute(
@@ -3309,11 +3330,13 @@ const createStripeInvoicePaidEventAutomationForWorkflow$ = command(
     const db = set(writeDb$);
     const currentTime = nowDate();
     const result = await db.transaction(async (tx) => {
-      await lockConnectorAccountTarget(tx, {
+      for (const statement of automationAccountProjectionLocksSql({
         orgId: args.input.orgId,
         userId: args.input.member.userId,
-        target: { kind: "builtin", connectorSlug: "stripe" },
-      });
+        connectorSlug: "stripe",
+      })) {
+        await tx.execute(statement);
+      }
       const chatThreadId = await ensureWorkflowUserAutomationThread(tx, {
         orgId: args.input.orgId,
         userId: args.input.member.userId,
@@ -4746,9 +4769,13 @@ const persistGmailEventConfiguration$ = command(
   ): Promise<WorkflowAutomationSummary | null> => {
     const db = set(writeDb$);
     const row = await db.transaction(async (tx) => {
-      await tx.execute(
-        builtinConnectorStateLockStatement({ ...args, connectorSlug: "gmail" }),
-      );
+      for (const statement of automationAccountProjectionLocksSql({
+        orgId: args.orgId,
+        userId: args.userId,
+        connectorSlug: "gmail",
+      })) {
+        await tx.execute(statement);
+      }
       const [updated] = await tx
         .update(workflowAutomations)
         .set({
@@ -5010,13 +5037,13 @@ const persistGoogleCalendarAutomationReconfiguration$ = command(
   ): Promise<GoogleCalendarReconfigurationPersistenceResult> => {
     const db = set(writeDb$);
     const committed = await db.transaction(async (tx) => {
-      await tx.execute(
-        builtinConnectorStateLockStatement({
-          orgId: args.orgId,
-          userId: args.member.userId,
-          connectorSlug: "google-calendar",
-        }),
-      );
+      for (const statement of automationAccountProjectionLocksSql({
+        orgId: args.orgId,
+        userId: args.member.userId,
+        connectorSlug: "google-calendar",
+      })) {
+        await tx.execute(statement);
+      }
       const [account] = await tx
         .select({
           id: connectors.id,
@@ -6214,14 +6241,13 @@ async function lockEnabledAutomationAccountProjection(
   if (provider === null) {
     return { status: "ok", required: false };
   }
-  await lockConnectorAccountTarget(db, {
+  for (const statement of automationAccountProjectionLocksSql({
     orgId: automation.orgId,
     userId: automation.ownerUserId,
-    target: {
-      kind: "builtin",
-      connectorSlug: provider,
-    },
-  });
+    connectorSlug: provider,
+  })) {
+    await db.execute(statement);
+  }
   const connectorArgs = {
     orgId: automation.orgId,
     userId: automation.ownerUserId,

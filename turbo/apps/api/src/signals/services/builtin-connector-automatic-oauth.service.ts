@@ -70,7 +70,6 @@ import {
 import { configuredOkouMcpOAuthClientMetadata } from "./mcp-oauth-client-metadata.service";
 import { resolveRefreshedOAuthIdentity } from "./mcp-oauth-identity.service";
 import { publishConnectorRuntimeSyncWakeups$ } from "./connector-runtime-wakeup.service";
-import { lockConnectorAccountTarget } from "./auth-state-lock.service";
 import {
   publishAutomaticConnection$,
   publishAutomaticAuthorizationState$,
@@ -1128,7 +1127,7 @@ async function markReconnect(
 /**
  * Ordinary refresh outside any transaction: KMS decryption, discovery and the
  * provider token request run first; one short transaction then takes the
- * outgoing-writer compatibility keys and publishes by exact account/token CAS.
+ * lifecycle key and publishes by exact account/token CAS.
  */
 async function handleAutomaticRefreshFailure(
   context: {
@@ -1251,16 +1250,12 @@ async function refreshAutomaticOutsideTransaction(
     signal,
   );
   const published = await args.db.transaction(async (tx) => {
-    // Outgoing writers still use these keys; the CAS below decides.
+    // Outgoing Automatic OAuth writers still hold the lifecycle key; the exact
+    // account/refresh-token CAS below decides this publication.
     await lockBuiltinConnectorAutomaticLifecycle(
       tx,
       contractOwner(args.orgId, contract),
     );
-    await lockConnectorAccountTarget(tx, {
-      orgId: args.orgId,
-      userId: args.userId,
-      target: { kind: "builtin", connectorSlug: args.connectorSlug },
-    });
     if (
       !(await credentialDestinationMatches(
         tx,
@@ -1362,11 +1357,8 @@ async function resolveLockedAutomatic(
     tx,
     contractOwner(args.orgId, contract),
   );
-  await lockConnectorAccountTarget(tx, {
-    orgId: args.orgId,
-    userId: args.userId,
-    target: { kind: "builtin", connectorSlug: args.connectorSlug },
-  });
+  // The exact account row lock arbitrates against replacement, deletion and
+  // other credential writers, which all update or delete this row.
   const [account] = await tx
     .select({
       ...getTableColumns(connectors),

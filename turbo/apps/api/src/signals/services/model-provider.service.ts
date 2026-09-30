@@ -207,6 +207,8 @@ export const deleteUserModelProvider$ = command(
       await tx.execute(modelProviderStateLockStatement(args));
       signal.throwIfAborted();
 
+      // Lock the provider row before its secrets, the order refresh
+      // publication uses for its owner-row CAS.
       const [provider] = await tx
         .select({
           id: modelProvidersTable.id,
@@ -222,6 +224,7 @@ export const deleteUserModelProvider$ = command(
             eq(modelProvidersTable.type, args.type),
           ),
         )
+        .for("update")
         .limit(1);
       signal.throwIfAborted();
 
@@ -574,6 +577,8 @@ const persistSingleAuthModelProvider$ = command(
   }> => {
     const db = set(writeDb$);
     const result = await db.transaction(async (tx) => {
+      // Lock the provider row before its secret, the order refresh
+      // publication uses for its owner-row CAS.
       const [existingProvider] = await tx
         .select({ id: modelProvidersTable.id })
         .from(modelProvidersTable)
@@ -584,6 +589,7 @@ const persistSingleAuthModelProvider$ = command(
             eq(modelProvidersTable.type, args.type),
           ),
         )
+        .for("update")
         .limit(1);
       signal.throwIfAborted();
 
@@ -784,6 +790,8 @@ const persistMultiAuthModelProvider$ = command(
     const result = await db.transaction(async (tx) => {
       await tx.execute(modelProviderStateLockStatement(args));
       signal.throwIfAborted();
+      // Lock the provider row before its secrets, the order refresh
+      // publication uses for its owner-row CAS.
       const [existingProvider] = await tx
         .select()
         .from(modelProvidersTable)
@@ -794,6 +802,7 @@ const persistMultiAuthModelProvider$ = command(
             eq(modelProvidersTable.type, args.type),
           ),
         )
+        .for("update")
         .limit(1);
       const obsoleteNames =
         existingProvider && existingProvider.authMethod !== args.authMethod

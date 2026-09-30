@@ -87,7 +87,7 @@ import {
 import { awaitWithSignal, bestEffort, onRejection, settle } from "../utils";
 import { reconcileGmailWatchesForUser$ } from "../services/gmail-automation-event.service";
 import { reconcileGoogleCalendarWatchesForUser$ } from "../services/google-calendar-automation-event.service";
-import { lockConnectorAccountTarget } from "../services/auth-state-lock.service";
+import { automationAccountProjectionLocksSql } from "../services/workflow-automation.service";
 import { reprojectWorkflowAutomationsForOwner } from "../services/workflow-automation-account-projection.service";
 import {
   workflowAutomationAccountConnectorSlug,
@@ -1351,16 +1351,19 @@ async function lockWorkflowCopyInputs(
     return false;
   }
   if (prepared) {
-    // Account changes take this lock before updating Automation projections.
-    // Acquire it before locking source Automations, in the same order.
+    // Account changes hold the member's ordered account rows before updating
+    // Automation projections. Acquire them before locking source Automations,
+    // in the same order.
     for (const connectorSlug of workflowCopyConnectorSlugs(
       prepared.sourceAutomations,
     )) {
-      await lockConnectorAccountTarget(tx, {
+      for (const statement of automationAccountProjectionLocksSql({
         orgId: args.orgId,
         userId: args.userId,
-        target: { kind: "builtin", connectorSlug },
-      });
+        connectorSlug,
+      })) {
+        await tx.execute(statement);
+      }
     }
   }
   return true;

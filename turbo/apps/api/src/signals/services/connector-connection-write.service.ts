@@ -10,7 +10,7 @@ import type { Tx } from "../../lib/db-types";
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import { logger } from "../../lib/log";
 import { deleteConnectorOwnedCredentialRows } from "./connector-credential-storage-write.service";
-import { lockConnectorAccountTarget } from "./auth-state-lock.service";
+import { builtinConnectorAccountRowsLockSql } from "./builtin-connector-account-rows";
 
 const log = logger("api:connector-account-mutation");
 
@@ -97,6 +97,14 @@ export type ReadyConnectorConnectionMutation =
       readonly kind: "insert";
       readonly displayName: string | null;
       readonly isDefault: boolean;
+      /**
+       * Resolution inputs kept for a builtin first-account race: when a
+       * concurrent first create wins the default unique index, the insert is
+       * re-resolved as a non-default sibling only if the serialized outcome
+       * would also have been a new sibling.
+       */
+      readonly allowSiblings: boolean;
+      readonly matchExternalId: string | null;
     }
   | {
       readonly kind: "update";
@@ -204,7 +212,19 @@ export async function resolveConnectorConnectionMutation(
     readonly matchExternalId?: string;
   },
 ): Promise<ConnectorConnectionMutationResolution> {
-  await lockConnectorAccountTarget(db, args);
+  // Builtin accounts follow the ordered sibling row protocol shared with set
+  // default and delete. With no account rows there is nothing to lock; the
+  // first-account default is arbitrated by idx_connectors_org_user_slug_default
+  // in writeConnectorConnectionMetadata.
+  if (args.target.kind === "builtin") {
+    await db.execute(
+      builtinConnectorAccountRowsLockSql({
+        orgId: args.orgId,
+        userId: args.userId,
+        connectorSlug: args.target.connectorSlug,
+      }),
+    );
+  }
 
   if (args.mutation.intent === "reconnect") {
     const [existing] = await db
@@ -287,6 +307,11 @@ export async function resolveConnectorConnectionMutation(
         kind: "insert",
         displayName: args.mutation.displayName ?? null,
         isDefault: existing.length === 0,
+        allowSiblings: args.allowSiblings,
+        matchExternalId:
+          args.mutation.intent === "add"
+            ? (args.matchExternalId ?? null)
+            : null,
       },
     };
   }
@@ -367,34 +392,121 @@ export async function writeConnectorConnectionMetadata(
     needsReconnect: false,
     reconnectReason: null,
   };
-  const [row] =
-    args.resolution.kind === "insert"
-      ? await db
-          .insert(connectors)
-          .values({
-            ...(args.insertConnectionId ? { id: args.insertConnectionId } : {}),
-            orgId: args.orgId,
-            userId: args.userId,
-            displayName: args.resolution.displayName,
-            isDefault: args.resolution.isDefault,
-            ...targetValues,
-            ...replacementValues,
-          })
-          .returning(connectorConnectionSelection())
-      : await db
-          .update(connectors)
-          .set({
-            ...replacementValues,
-            updatedAt: sql`clock_timestamp()`,
-          })
-          .where(eq(connectors.id, args.resolution.existing.id))
-          .returning(connectorConnectionSelection());
+  const insertValues = (isDefault: boolean) => {
+    return {
+      ...(args.insertConnectionId ? { id: args.insertConnectionId } : {}),
+      orgId: args.orgId,
+      userId: args.userId,
+      displayName:
+        args.resolution.kind === "insert" ? args.resolution.displayName : null,
+      isDefault,
+      ...targetValues,
+      ...replacementValues,
+    };
+  };
+  let row: StoredConnectorConnectionRow | undefined;
+  if (args.resolution.kind === "update") {
+    [row] = await db
+      .update(connectors)
+      .set({
+        ...replacementValues,
+        updatedAt: sql`clock_timestamp()`,
+      })
+      .where(eq(connectors.id, args.resolution.existing.id))
+      .returning(connectorConnectionSelection());
+  } else if (args.target.kind === "builtin" && args.resolution.isDefault) {
+    row = await insertFirstBuiltinConnectorConnection(db, {
+      orgId: args.orgId,
+      userId: args.userId,
+      connectorSlug: args.target.connectorSlug,
+      resolution: args.resolution,
+      insertValues,
+    });
+  } else {
+    [row] = await db
+      .insert(connectors)
+      .values(insertValues(args.resolution.isDefault))
+      .returning(connectorConnectionSelection());
+  }
   if (!row) {
     throw new Error(
       `Failed to write ${args.target.kind === "builtin" ? "Builtin" : "Custom"} connector connection`,
     );
   }
   return row;
+}
+
+/**
+ * Inserts a builtin account resolved as the member's first one. Without the
+ * former connector_state key two first creates can both resolve "no account";
+ * the default unique index picks the winner. The loser waits for the winner's
+ * commit (ON CONFLICT) and then sees its row: when the serialized outcome
+ * would have been another sibling it inserts as non-default, otherwise the
+ * serialized outcome (update of the winner, sibling-disabled) differs from the
+ * prepared write and the transaction is aborted so the caller can retry.
+ */
+async function insertFirstBuiltinConnectorConnection(
+  db: Tx,
+  args: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly connectorSlug: string;
+    readonly resolution: Extract<
+      ReadyConnectorConnectionMutation,
+      { readonly kind: "insert" }
+    >;
+    readonly insertValues: (
+      isDefault: boolean,
+    ) => typeof connectors.$inferInsert;
+  },
+): Promise<StoredConnectorConnectionRow | undefined> {
+  const [inserted] = await db
+    .insert(connectors)
+    .values(args.insertValues(true))
+    .onConflictDoNothing({
+      target: [connectors.orgId, connectors.userId, connectors.connectorSlug],
+      where: sql`${connectors.connectorSlug} IS NOT NULL AND ${connectors.isDefault} = true`,
+    })
+    .returning(connectorConnectionSelection());
+  if (inserted) {
+    return inserted;
+  }
+
+  const owner = {
+    orgId: args.orgId,
+    userId: args.userId,
+    connectorSlug: args.connectorSlug,
+  };
+  await db.execute(builtinConnectorAccountRowsLockSql(owner));
+  const matchExternalId = args.resolution.matchExternalId;
+  const [sameIdentity] =
+    matchExternalId === null
+      ? []
+      : await db
+          .select({ id: connectors.id })
+          .from(connectors)
+          .where(
+            and(
+              eq(connectors.orgId, owner.orgId),
+              eq(connectors.userId, owner.userId),
+              eq(connectors.connectorSlug, owner.connectorSlug),
+              eq(connectors.externalId, matchExternalId),
+            ),
+          )
+          .limit(1);
+  if (!args.resolution.allowSiblings || sameIdentity) {
+    log.warn("Concurrent first builtin connector account create lost", {
+      connectorSlug: owner.connectorSlug,
+    });
+    throw new Error(
+      "Concurrent builtin connector account create; retry the connection",
+    );
+  }
+  const [sibling] = await db
+    .insert(connectors)
+    .values(args.insertValues(false))
+    .returning(connectorConnectionSelection());
+  return sibling;
 }
 
 export async function replaceConnectorConnection(

@@ -8,10 +8,6 @@ import type { ExternalCatalogIdentity } from "./connector-catalog-external-reade
 import { writeDb$, type Db } from "../external/db";
 import { nowDate } from "../../lib/time";
 import {
-  builtinConnectorStateLockStatement,
-  lockConnectorAccountTarget,
-} from "./auth-state-lock.service";
-import {
   decryptStoredSecretValue,
   encryptStoredSecretValue,
 } from "./crypto.utils";
@@ -80,21 +76,8 @@ async function retireRegistration(
   if (!owned) {
     return;
   }
-  // Ordinary delete/default operations lock a user's target before sibling
-  // rows. Join that order for every linked owner before locking their accounts.
-  // The lifecycle lock prevents new Automatic bindings while these locks wait.
-  const accountOwners = await db
-    .selectDistinct({ userId: builtinConnectorAccountOauthBindings.userId })
-    .from(builtinConnectorAccountOauthBindings)
-    .where(eq(builtinConnectorAccountOauthBindings.dcrRegistrationId, id))
-    .orderBy(builtinConnectorAccountOauthBindings.userId);
-  for (const accountOwner of accountOwners) {
-    await lockConnectorAccountTarget(db, {
-      orgId: owner.orgId,
-      userId: accountOwner.userId,
-      target: { kind: "builtin", connectorSlug: owner.connectorSlug },
-    });
-  }
+  // Linked accounts lock in id order, the order account-set writers use for
+  // sibling rows. The lifecycle lock prevents new Automatic bindings meanwhile.
   const accounts = await db
     .select({ id: connectors.id })
     .from(connectors)
@@ -299,15 +282,21 @@ export const publishBuiltinDcrRegistration$ = command(
             "Existing MCP OAuth registration acquired a linked account during preparation",
           );
         }
-        for (const accountOwner of accountOwners) {
-          await tx.execute(
-            builtinConnectorStateLockStatement({
-              orgId: owner.orgId,
-              userId: accountOwner.userId,
-              connectorSlug: owner.connectorSlug,
-            }),
-          );
-        }
+        // Expired registration: lock its linked accounts in id order, the order
+        // account-set writers use, before invalidating them.
+        await tx
+          .select({ id: connectors.id })
+          .from(connectors)
+          .innerJoin(
+            builtinConnectorAccountOauthBindings,
+            eq(
+              builtinConnectorAccountOauthBindings.connectorAccountId,
+              connectors.id,
+            ),
+          )
+          .where(bindingCondition)
+          .orderBy(connectors.id)
+          .for("update", { of: connectors });
         await tx
           .update(connectors)
           .set({
@@ -442,23 +431,8 @@ export const retireBuiltinDcrRegistration$ = command(
       if (!owned) {
         return;
       }
-      // Ordinary delete/default operations lock a user's target before sibling
-      // rows. Join that order for every linked owner before locking their accounts.
-      // The lifecycle lock prevents new Automatic bindings while these locks wait.
-      const accountOwners = await tx
-        .selectDistinct({ userId: builtinConnectorAccountOauthBindings.userId })
-        .from(builtinConnectorAccountOauthBindings)
-        .where(eq(builtinConnectorAccountOauthBindings.dcrRegistrationId, id))
-        .orderBy(builtinConnectorAccountOauthBindings.userId);
-      for (const accountOwner of accountOwners) {
-        await tx.execute(
-          builtinConnectorStateLockStatement({
-            orgId: owner.orgId,
-            userId: accountOwner.userId,
-            connectorSlug: owner.connectorSlug,
-          }),
-        );
-      }
+      // Linked accounts lock in id order, the order account-set writers use for
+      // sibling rows. The lifecycle lock prevents new Automatic bindings meanwhile.
       const accounts = await tx
         .select({ id: connectors.id })
         .from(connectors)

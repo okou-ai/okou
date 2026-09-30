@@ -12,7 +12,6 @@ import { and, eq } from "drizzle-orm";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
-import { builtinConnectorStateLockStatement } from "./auth-state-lock.service";
 import {
   appendCanonicalChatEventsSql,
   chatEventAppendResultSchema,
@@ -116,13 +115,9 @@ export const enqueueNotionWorkflowInput$ = command(
         }
         return null;
       }
-      await tx.execute(
-        builtinConnectorStateLockStatement({
-          orgId: source.orgId,
-          userId: source.userId,
-          connectorSlug: "notion",
-        }),
-      );
+      // Row locks arbitrate this admission: account deletion (FK SET NULL on
+      // both rows), disable and reprojection update the automation row, and
+      // pending-event transitions update the receipt row.
       const [automation] = await tx
         .select({
           eventType: workflowAutomations.eventType,

@@ -39,16 +39,15 @@ import {
 } from "drizzle-orm";
 import { z } from "zod";
 
+import { parseRawRows } from "../../lib/db-raw-rows";
 import type { Tx } from "../../lib/db-types";
 import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { safeJsonParse, settle } from "../utils";
-import {
-  builtinConnectorStateLockStatement,
-  lockConnectorAccountTarget,
-} from "./auth-state-lock.service";
+import { builtinConnectorStateLockStatement } from "./auth-state-lock.service";
+import { builtinConnectorAccountRowsLockSql } from "./builtin-connector-account-rows";
 import { googleFormsAccountProjectionStatement } from "./google-forms-automation-account.service";
 import { reprojectWorkflowAutomationsForOwner } from "./workflow-automation-account-projection.service";
 import { invalidateNotionPendingEventsForConnector } from "./notion-automation-account.service";
@@ -77,6 +76,7 @@ const log = logger("connector-account-lifecycle");
 const accessTokenSecret = alias(secrets, "connector_account_access_token");
 const refreshTokenSecret = alias(secrets, "connector_account_refresh_token");
 const oauthScopesSchema = z.array(z.string());
+const lockedAccountRowSchema = z.object({ id: z.string() });
 const cursorSchema = z
   .object({
     createdAt: z.string().datetime(),
@@ -952,9 +952,23 @@ export const setDefaultGoogleFormsAccount$ = command(
   ): Promise<Date | null> => {
     const db = set(writeDb$);
     return await db.transaction(async (tx) => {
+      // R1 compatibility only: outgoing main insertEventAutomation (and the
+      // other Forms automation creators) read the default under
+      // connector_state without locking account rows, so this reprojection
+      // could miss their uncommitted automation. Taken before row locks, in
+      // main's order; remove in R2 once main no longer acquires connector_state.
       await tx.execute(
         builtinConnectorStateLockStatement({
-          ...args,
+          orgId: args.orgId,
+          userId: args.userId,
+          connectorSlug: "google-forms",
+        }),
+      );
+      // Ordered sibling row locks (connectors -> automations -> cursors).
+      await tx.execute(
+        builtinConnectorAccountRowsLockSql({
+          orgId: args.orgId,
+          userId: args.userId,
           connectorSlug: "google-forms",
         }),
       );
@@ -975,7 +989,13 @@ export const setDefaultGoogleFormsAccount$ = command(
       await tx
         .update(connectors)
         .set({ isDefault: false, updatedAt: sql`clock_timestamp()` })
-        .where(condition);
+        .where(
+          and(
+            condition,
+            eq(connectors.isDefault, true),
+            ne(connectors.id, args.connectionId),
+          ),
+        );
       const [updated] = await tx
         .update(connectors)
         .set({ isDefault: true, updatedAt: sql`clock_timestamp()` })
@@ -999,7 +1019,20 @@ export async function setDefaultConnectorAccount(
   signal: AbortSignal,
 ): Promise<Date | null> {
   return await db.transaction(async (tx) => {
-    await lockConnectorAccountTarget(tx, args);
+    if (args.target.kind === "builtin") {
+      // R1 compatibility only: outgoing main insertEventAutomation and the
+      // other automation creators read the default under connector_state
+      // without locking account rows, so the reprojection below could miss
+      // their uncommitted automation. Taken before row locks, in main's
+      // order; remove in R2 once main no longer acquires connector_state.
+      await tx.execute(
+        builtinConnectorStateLockStatement({
+          orgId: args.orgId,
+          userId: args.userId,
+          connectorSlug: args.target.connectorSlug,
+        }),
+      );
+    }
     if (
       args.target.kind === "custom" &&
       !(await customTargetIsVisible(tx, {
@@ -1009,29 +1042,38 @@ export async function setDefaultConnectorAccount(
     ) {
       return null;
     }
-    if (args.target.kind === "custom") {
-      // Default changes touch sibling rows. Acquire them in the same order as
-      // deletion, without blocking the selection FK's KEY SHARE on survivors.
-      const accounts = await tx
-        .select({ id: connectors.id })
-        .from(connectors)
-        .where(
-          and(
-            eq(connectors.orgId, args.orgId),
-            eq(connectors.userId, args.userId),
-            targetCondition(args.target),
-          ),
-        )
-        .orderBy(asc(connectors.id))
-        .for("no key update");
-      if (
-        !accounts.some((account) => {
-          return account.id === args.connectionId;
-        })
-      ) {
-        return null;
-      }
-    } else if (!(await exactOwnedAccountExists(tx, args))) {
+    // Default changes touch sibling rows. Both targets acquire them in the same
+    // ID order as deletion and connection writes, without blocking the
+    // selection FK's KEY SHARE on survivors.
+    const accounts =
+      args.target.kind === "custom"
+        ? await tx
+            .select({ id: connectors.id })
+            .from(connectors)
+            .where(
+              and(
+                eq(connectors.orgId, args.orgId),
+                eq(connectors.userId, args.userId),
+                targetCondition(args.target),
+              ),
+            )
+            .orderBy(asc(connectors.id))
+            .for("no key update")
+        : parseRawRows(
+            lockedAccountRowSchema,
+            await tx.execute(
+              builtinConnectorAccountRowsLockSql({
+                orgId: args.orgId,
+                userId: args.userId,
+                connectorSlug: args.target.connectorSlug,
+              }),
+            ),
+          );
+    if (
+      !accounts.some((account) => {
+        return account.id === args.connectionId;
+      })
+    ) {
       return null;
     }
     await tx
@@ -1042,12 +1084,8 @@ export async function setDefaultConnectorAccount(
           eq(connectors.orgId, args.orgId),
           eq(connectors.userId, args.userId),
           targetCondition(args.target),
-          args.target.kind === "custom"
-            ? and(
-                eq(connectors.isDefault, true),
-                ne(connectors.id, args.connectionId),
-              )
-            : undefined,
+          eq(connectors.isDefault, true),
+          ne(connectors.id, args.connectionId),
         ),
       );
     const [updated] = await tx
@@ -1089,8 +1127,9 @@ async function oldestConnectorAccountSibling(
     )
     .orderBy(asc(connectors.createdAt), asc(connectors.id))
     .limit(1);
-  const [row] =
-    args.target.kind === "custom" ? await query : await query.for("update");
+  // Callers already hold the sibling rows (builtin: every row in ID order;
+  // custom: the definition row stabilizes membership).
+  const [row] = await query;
   return row ?? null;
 }
 
@@ -1154,8 +1193,10 @@ type PreparedConnectorAccountDeletion =
     };
 
 /**
- * Hold the account target's lock until commit. Custom deletion also holds its
- * definition's credential-contract row in a READ COMMITTED transaction.
+ * Builtin deletion holds every sibling account row in ID order until commit
+ * (callers that lock other account state first must acquire the same ordered
+ * rows before it). Custom deletion holds its definition's credential-contract
+ * row in a READ COMMITTED transaction.
  */
 export async function prepareConnectorAccountDeletionWithTargetLocked(
   db: Tx,
@@ -1168,6 +1209,15 @@ export async function prepareConnectorAccountDeletionWithTargetLocked(
   signal: AbortSignal,
 ): Promise<PreparedConnectorAccountDeletion> {
   let sibling: { readonly id: string } | null = null;
+  if (args.target.kind === "builtin") {
+    await db.execute(
+      builtinConnectorAccountRowsLockSql({
+        orgId: args.orgId,
+        userId: args.userId,
+        connectorSlug: args.target.connectorSlug,
+      }),
+    );
+  }
   if (args.target.kind === "custom") {
     const [observed] = await db
       .select({ id: connectors.id })

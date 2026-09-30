@@ -37,6 +37,7 @@ import { writeDb$ } from "../external/db";
 import { now, nowDate } from "../../lib/time";
 import { safeJsonParse, safeUrlParse, settle, tapError } from "../utils";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
+import { builtinConnectorAccountRowsLockSql } from "./builtin-connector-account-rows";
 import { loadConnectorRuntimeSnapshot$ } from "./connector-catalog-runtime.service";
 import {
   loadBuiltinConnectorCredentialConnection$,
@@ -54,7 +55,6 @@ import type {
   AutomationRow,
 } from "./workflow-automation-launch.service";
 import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
-import { builtinConnectorStateLockStatement } from "./auth-state-lock.service";
 import {
   notionConfigConnectorId,
   notionConfigWithConnectorId,
@@ -1285,9 +1285,12 @@ const repairNotionAutomationProjection$ = command(
   ): Promise<void> => {
     const db = set(writeDb$);
     await db.transaction(async (tx) => {
+      // The selected connector depends on the member's account set and
+      // default; lock it before the automation and its pending events.
       await tx.execute(
-        builtinConnectorStateLockStatement({
-          ...args,
+        builtinConnectorAccountRowsLockSql({
+          orgId: args.orgId,
+          userId: args.userId,
           connectorSlug: "notion",
         }),
       );
@@ -1622,14 +1625,9 @@ const publishNotionPendingEvent$ = command(
     signal: AbortSignal,
   ): Promise<NotionPendingPublication> => {
     const db = set(writeDb$);
+    // The automation row lock with its enabled/connector conditions and the
+    // pending-event connector foreign key (KEY SHARE) arbitrate publication.
     return await db.transaction(async (tx) => {
-      await tx.execute(
-        builtinConnectorStateLockStatement({
-          orgId: args.automation.orgId,
-          userId: args.automation.ownerUserId,
-          connectorSlug: "notion",
-        }),
-      );
       const [current] = await tx
         .select({
           eventType: workflowAutomations.eventType,

@@ -7,7 +7,6 @@ import { and, eq } from "drizzle-orm";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
-import { builtinConnectorStateLockStatement } from "./auth-state-lock.service";
 import {
   appendCanonicalChatEventsSql,
   chatEventAppendResultSchema,
@@ -60,13 +59,28 @@ export const enqueueGoogleMeetWorkflowInput$ = command(
         }
         return null;
       }
-      await tx.execute(
-        builtinConnectorStateLockStatement({
-          orgId: source.orgId,
-          userId: source.userId,
-          connectorSlug: "google-meet",
-        }),
-      );
+      // Row locks arbitrate this admission: account deletion (FK SET NULL),
+      // disable and reprojection update the automation row; subscription
+      // removal deletes the state row. Lock order: automation -> state.
+      const [automation] = await tx
+        .select({ id: workflowAutomations.id })
+        .from(workflowAutomations)
+        .where(
+          and(
+            eq(workflowAutomations.id, source.automationId),
+            eq(workflowAutomations.orgId, source.orgId),
+            eq(workflowAutomations.ownerUserId, source.userId),
+            eq(workflowAutomations.enabled, true),
+            eq(workflowAutomations.kind, "event"),
+            eq(
+              workflowAutomations.eventType,
+              "google-meet-transcript-generated",
+            ),
+            eq(workflowAutomations.eventConnectorId, source.connectorSourceId),
+          ),
+        )
+        .for("update")
+        .limit(1);
       const [state] = await tx
         .select({ id: googleWorkspaceEventSubscriptionStates.id })
         .from(googleWorkspaceEventSubscriptionStates)
@@ -88,25 +102,6 @@ export const enqueueGoogleMeetWorkflowInput$ = command(
           ),
         )
         .for("key share")
-        .limit(1);
-      const [automation] = await tx
-        .select({ id: workflowAutomations.id })
-        .from(workflowAutomations)
-        .where(
-          and(
-            eq(workflowAutomations.id, source.automationId),
-            eq(workflowAutomations.orgId, source.orgId),
-            eq(workflowAutomations.ownerUserId, source.userId),
-            eq(workflowAutomations.enabled, true),
-            eq(workflowAutomations.kind, "event"),
-            eq(
-              workflowAutomations.eventType,
-              "google-meet-transcript-generated",
-            ),
-            eq(workflowAutomations.eventConnectorId, source.connectorSourceId),
-          ),
-        )
-        .for("update")
         .limit(1);
       if (!state || !automation) {
         throw new GoogleMeetAutomationSourceChangedError();

@@ -16,8 +16,8 @@ import { and, eq } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
-import { builtinConnectorStateLockStatement } from "./auth-state-lock.service";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
+import { builtinConnectorAccountRowsLockSql } from "./builtin-connector-account-rows";
 import {
   googleFormsCursorMustReset,
   googleFormsCursorPublicationStatement,
@@ -179,9 +179,15 @@ const commitOfficialFormsReconfiguration$ = command(
       if (!catalog) {
         return false;
       }
+      // The selected account depends on the member's Forms account set and
+      // default. Sibling account row locks serialize this publication with
+      // default changes, deletion and credential rewrites; selection changes
+      // and reprojection conflict on the automation row locked below, and
+      // its observed snapshot rejects a publication that raced them.
       await tx.execute(
-        builtinConnectorStateLockStatement({
-          ...args,
+        builtinConnectorAccountRowsLockSql({
+          orgId: args.orgId,
+          userId: args.userId,
           connectorSlug: "google-forms",
         }),
       );
