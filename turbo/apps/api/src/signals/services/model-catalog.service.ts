@@ -9,6 +9,9 @@ import { modelRoutes } from "@okouai/db/schema/model-route";
 import { runModelCatalog } from "@okouai/db/schema/run-model-catalog";
 import type { ReadonlyDb } from "../external/db";
 
+/** `usage_pricing.kind` of model token usage (the addon's `MODEL_USAGE_KIND`). */
+const MODEL_USAGE_PRICING_KIND = "model";
+
 type CatalogModel = Readonly<{
   model: string;
   displayName: string;
@@ -34,6 +37,12 @@ export type CatalogRoute = Readonly<{
   efforts: readonly string[];
   defaultEffort: string | null;
   priceTier: string | null;
+  /**
+   * `usage_pricing` key that bills usage on this route (Built-in only; NULL on
+   * BYOK and subscription routes, which are not platform-billed).
+   */
+  pricingKind: string | null;
+  pricingProvider: string | null;
 }>;
 
 export type ModelCatalog = Readonly<{
@@ -124,6 +133,9 @@ function validateModelCatalog(
       `system default ${systemDefault.model} is retired`,
     );
   }
+  for (const route of routes) {
+    validateRoutePricingLink(route);
+  }
   const hasBuiltInRoute = routes.some((route) => {
     return (
       route.model === systemDefault.model &&
@@ -143,6 +155,50 @@ function validateModelCatalog(
     systemDefaultModel: systemDefault.model,
     byModel,
   };
+}
+
+/**
+ * A Built-in route is billed through its `usage_pricing` link; every other
+ * route is not platform-billed and carries none. The schema CHECK states the
+ * same rule; it is re-checked here because billing a Built-in run under no or
+ * the wrong pricing identity is worse than failing the request.
+ */
+function validateRoutePricingLink(route: CatalogRoute): void {
+  const label = `${route.model} ${route.providerType}/${route.concreteProviderType}`;
+  if (isBuiltInModelProviderType(route.providerType)) {
+    if (
+      route.pricingKind !== MODEL_USAGE_PRICING_KIND ||
+      !route.pricingProvider
+    ) {
+      throw new ModelCatalogInvariantError(
+        `Built-in route ${label} has no model pricing link`,
+      );
+    }
+    return;
+  }
+  if (route.pricingKind !== null || route.pricingProvider !== null) {
+    throw new ModelCatalogInvariantError(
+      `non-Built-in route ${label} must not carry a pricing link`,
+    );
+  }
+}
+
+/**
+ * The `usage_pricing` provider that bills a Built-in run of `model` on the
+ * concrete route it was assigned, or null when the catalog has no such
+ * enabled route. Model usage events of the run are reported under it.
+ */
+export function catalogBuiltInPricingProvider(
+  catalog: ModelCatalog,
+  model: string,
+  concreteProviderType: string,
+): string | null {
+  const route = catalogRoutesFor(catalog, model, "built-in").find(
+    (candidate) => {
+      return candidate.concreteProviderType === concreteProviderType;
+    },
+  );
+  return route?.pricingProvider ?? null;
 }
 
 /**
@@ -382,6 +438,8 @@ export async function loadModelCatalog(
         efforts: modelRoutes.efforts,
         defaultEffort: modelRoutes.defaultEffort,
         priceTier: modelRoutes.priceTier,
+        pricingKind: modelRoutes.pricingKind,
+        pricingProvider: modelRoutes.pricingProvider,
       })
       .from(modelRoutes)
       .orderBy(

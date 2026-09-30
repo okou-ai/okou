@@ -40,8 +40,14 @@ const getModelCatalogInner$ = command(async ({ get }, signal: AbortSignal) => {
         };
       }),
       routes: catalog.routes.map((route) => {
+        // The pricing link is internal billing identity, not client data.
+        const {
+          pricingKind: _pricingKind,
+          pricingProvider: _pricingProvider,
+          ...publicRoute
+        } = route;
         return {
-          ...route,
+          ...publicRoute,
           serviceTiers: [...route.serviceTiers],
           efforts: [...route.efforts],
         };

@@ -168,6 +168,8 @@ export interface BuiltInRouteFixture {
   readonly efforts: readonly string[];
   readonly defaultEffort: string | null;
   readonly serviceTiers?: readonly ("priority" | "ultrafast")[];
+  /** `usage_pricing` provider of the route's pricing link; defaults to the model ID. */
+  readonly pricingProvider?: string;
 }
 
 /**
@@ -203,7 +205,7 @@ export async function insertCatalogModelFixture(args: {
           defaultEffort: route.defaultEffort,
           priceTier: "$",
           pricingKind: "model",
-          pricingProvider: args.model,
+          pricingProvider: route.pricingProvider ?? args.model,
         };
       }),
     );

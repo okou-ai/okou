@@ -79,6 +79,50 @@ category. Routes carry no names or ordering of their own. Personal
 subscription routes (formerly `subscription_model_catalog`) are
 `model_routes` rows with `subscription_type` set.
 
+## Billing chain
+
+`usage_pricing` is the billing authority for Built-in model usage, reached
+through the pricing link of the route a run was assigned:
+
+1. **Run creation and claim.** Run creation captures the Built-in concrete
+   route (`builtInModelRuntimeRoute`). At the claim (and on a direct run),
+   `prepareModelUsageContext` (`agent-run-execution.service.ts`) reads that
+   route's `pricing_provider` from the same catalog snapshot the claim uses
+   for routing (`catalogBuiltInPricingProvider`) and sends it to the Runner as
+   `modelUsageProvider`, together with the billable firewalls. Only Built-in
+   runs have billable `model-provider:*` firewalls. The run's selected model,
+   display name and upstream ID stay the actual model; only the usage label
+   follows the pricing link. A Built-in run whose route has no pricing link
+   fails before launch instead of reporting unpriced usage.
+2. **Runner addon.** The Runner passes `modelUsageProvider` to the mitm addon
+   as opaque sandbox metadata. For each billable model response the addon
+   emits one usage event per positive token category with `kind = "model"`,
+   `provider = modelUsageProvider` and a category from `tokens.input`,
+   `tokens.output`, `tokens.cache_read` and `tokens.cache_creation`, with the
+   `.long_context` infix when the provider appears in
+   `MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS` (keyed by `usage_pricing`
+   provider) and the `.fast` / `.ultrafast` suffix for service tiers.
+3. **Usage webhook.** The addon posts the events to the sandbox usage webhook,
+   which stores them in `usage_event` unchanged.
+4. **Settlement.** Settlement (`credit-usage.service.ts`) prices every pending
+   event by `(kind, provider, category)` from `usage_pricing`, falling back to
+   the provider's `__fallback__` category. A missing row charges zero and
+   records the `missing_pricing` billing error.
+
+Usage events and billing history keep the provider they captured; changing a
+route's pricing link affects only later claims. BYOK and subscription routes
+have no pricing link (a schema CHECK and the API catalog loader both enforce
+it) and are not platform-billed: they have no billable model firewall, and
+their `modelUsageProvider` stays the catalog model ID as before.
+
+`usage_pricing` rows are operator data seeded outside migrations, so no schema
+constraint or migration check can prove that a linked provider has rows for
+every category a route can produce. The API catalog loader validates the link
+itself (Built-in: kind `model` and a provider; other routes: none);
+settlement surfaces a missing row as `missing_pricing`. The credit-usage view
+names a model usage row by its provider, so a pricing provider that is not a
+catalog model or route upstream ID is shown verbatim.
+
 ## API surface
 
 `GET /api/model-catalog` returns `systemDefaultModel`, every catalog model

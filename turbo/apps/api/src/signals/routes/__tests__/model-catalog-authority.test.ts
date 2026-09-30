@@ -10,6 +10,14 @@ import { modelPoliciesRoutes } from "../model-policies";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import { userModelPreferenceRoutes } from "../user-model-preference";
 import { randomUUID } from "node:crypto";
+import { usageRecordContract } from "@okouai/api-contracts/contracts/usage-record";
+import {
+  deleteUsagePricingRows,
+  seedUsagePricingRows,
+} from "../../../test-fixtures/system-config-seeds";
+import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { usageRecordRoutes } from "../usage-record";
 import {
   insertCatalogModelFixture,
   updateBuiltInRouteFixture,
@@ -25,6 +33,8 @@ const context = testContext();
 const mocks = createRouteMocks(context);
 const authOrgApi = createAuthOrgAgentsBddApi(context);
 const chatEvents = createChatEventsFixture(context);
+const webhooks = createWebhookCallbackApi(context);
+const billing = createBillingMediaApi(context);
 function authHeaders() {
   return { authorization: "Bearer clerk-session" };
 }
@@ -274,5 +284,146 @@ describe("model catalog authority", () => {
       // (`usage_pricing` provider = the model ID).
       modelUsageProvider: model,
     });
+  });
+  it("bills a new catalog model through its route's usage_pricing link", async () => {
+    const { actor, agentId, runnerGroup } =
+      await chatEvents.entitledChatActor();
+    // The route's pricing link names a usage_pricing provider that differs
+    // from the model ID, so the charged amount can only come from the linked
+    // rows. The upstream ID is a fixture value: this verifies protocol-level
+    // routing and platform billing, not live provider acceptance.
+    const model = `catalog-billed-${randomUUID()}`;
+    const pricingProvider = `catalog-billed-pricing-${randomUUID()}`;
+    const upstreamModel = `catalog-billed-upstream-${randomUUID()}`;
+    const pricedCategories = {
+      "tokens.input": 7,
+      "tokens.output": 11,
+      "tokens.cache_read": 3,
+      "tokens.cache_creation": 5,
+    } as const;
+    await seedUsagePricingRows(
+      Object.entries(pricedCategories).map(([category, unitPrice]) => {
+        return {
+          kind: "model",
+          provider: pricingProvider,
+          category,
+          unitPrice,
+          unitSize: 1,
+        };
+      }),
+    );
+    onTestFinished(async () => {
+      await deleteUsagePricingRows({
+        kind: "model",
+        provider: pricingProvider,
+        categories: Object.keys(pricedCategories),
+      });
+    });
+    const restore = await insertCatalogModelFixture({
+      model,
+      displayName: "Catalog Billed",
+      sortOrder: 100_000,
+      builtInRoutes: [
+        {
+          concreteProviderType: "openai-api-key",
+          upstreamModel,
+          priority: 0,
+          efforts: ["low", "medium", "high"],
+          defaultEffort: "medium",
+          pricingProvider,
+        },
+      ],
+    });
+    onTestFinished(restore);
+    await seedBuiltInModelCandidateKeys(context, model);
+    await chatEvents.api.updateOrgModelPolicies(actor, [
+      {
+        model,
+        preferred: true,
+        defaultProviderType: "built-in",
+        credentialScope: "org",
+        modelProviderId: null,
+      },
+    ]);
+
+    const run = await chatEvents.sendChatRun(actor, {
+      agentId,
+      prompt: "bill the new catalog model",
+      model,
+    });
+    await expect(
+      readRunModelRuntimeRouteFixture(run.runId),
+    ).resolves.toMatchObject({ selectedModel: model });
+    const { claim, sandboxHeaders } = await chatEvents.claimChatRun(
+      runnerGroup,
+      run.runId,
+    );
+    expect(claim).toMatchObject({
+      billableFirewalls: ["model-provider:openai-api-key"],
+      modelUsageProvider: pricingProvider,
+    });
+
+    // The Runner addon reports each token category under the claim's
+    // modelUsageProvider through the sandbox usage webhook.
+    const usageProvider = claim.modelUsageProvider;
+    if (!usageProvider) {
+      throw new Error("Expected the claim to carry a usage provider");
+    }
+    const tokens = {
+      "tokens.input": 100,
+      "tokens.output": 10,
+      "tokens.cache_read": 1000,
+      "tokens.cache_creation": 20,
+    } as const;
+    await webhooks.requestAgentUsageEvent(
+      {
+        runId: run.runId,
+        events: Object.entries(tokens).map(([category, quantity]) => {
+          return {
+            idempotencyKey: randomUUID(),
+            kind: "model" as const,
+            provider: usageProvider,
+            category,
+            quantity,
+          };
+        }),
+      },
+      sandboxHeaders,
+      [200],
+    );
+    await billing.processOrgUsageEvents(actor);
+
+    // 100*7 + 10*11 + 1000*3 + 20*5 credits under the linked pricing rows.
+    const expectedCredits = 3910;
+    if (!actor.orgId) {
+      throw new Error("Expected an organization member");
+    }
+    mocks.clerk.session(actor.userId, actor.orgId);
+    const record = await accept(
+      setupApp({ context, routes: usageRecordRoutes })(usageRecordContract).get(
+        { query: {}, headers: authHeaders() },
+      ),
+      [200],
+    );
+    expect(record.body.totalCredits).toBe(expectedCredits);
+    expect(record.body.rows).toStrictEqual([
+      expect.objectContaining({
+        threadId: run.threadId,
+        credits: expectedCredits,
+        breakdown: [
+          {
+            kind: "model",
+            credits: expectedCredits,
+            providers: [
+              {
+                provider: pricingProvider,
+                credits: expectedCredits,
+                usageKinds: [{ kind: "model", credits: expectedCredits }],
+              },
+            ],
+          },
+        ],
+      }),
+    ]);
   });
 });

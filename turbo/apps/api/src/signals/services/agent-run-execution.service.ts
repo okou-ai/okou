@@ -200,6 +200,7 @@ import {
 } from "./built-in-model-runtime-route.service";
 import {
   catalogBuiltInCandidates,
+  catalogBuiltInPricingProvider,
   catalogHasProviderRoute,
   loadModelCatalog,
   catalogProviderUpstreamModel,
@@ -9458,17 +9459,40 @@ export function prepareModelUsageContext(args: {
   return validation ?? { billableFirewalls, modelUsageProvider };
 }
 
+/**
+ * The provider the Runner addon reports model usage events under, which
+ * settlement uses as the `usage_pricing` provider. A Built-in run takes it
+ * from the pricing link of the concrete route it was assigned, read from the
+ * same catalog snapshot as the route itself; the selected model stays the
+ * run's model. Other runs are not platform-billed (only Built-in runs have
+ * billable model firewalls) and keep reporting under the catalog model ID.
+ */
 function modelUsageProviderForContext(
   catalog: ModelCatalog,
   modelProvider: ResolvedModelProviderEnvironment | null,
 ): string | undefined {
-  // Usage is reported per catalog model; a provider-only model ID (for
-  // example a BYOK provider default) has no catalog pricing identity.
+  // A provider-only model ID (for example a BYOK provider default) has no
+  // catalog pricing identity.
   if (!modelProvider?.selectedModel) {
     return undefined;
   }
   const model = normalizeRunModelId(modelProvider.selectedModel);
-  return catalog.byModel.has(model) ? model : undefined;
+  if (!catalog.byModel.has(model)) {
+    return undefined;
+  }
+  if (!isBuiltInModelProviderType(modelProvider.type)) {
+    return model;
+  }
+  const concreteProviderType =
+    modelProvider.builtInModelRuntimeRoute?.providerType ??
+    modelProvider.concreteType;
+  if (!concreteProviderType) {
+    return undefined;
+  }
+  return (
+    catalogBuiltInPricingProvider(catalog, model, concreteProviderType) ??
+    undefined
+  );
 }
 
 function sessionStorageMountsForPersistence(args: {
