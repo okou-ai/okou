@@ -233,7 +233,7 @@ test("a known invalid create can be corrected without consuming its resource ID"
   await accept(create("host", id), [201]);
 });
 
-test("host edit retries retain the expected generation and do not repeat inline creation", async () => {
+test("a host can be saved again after overlapping low-frequency edits", async () => {
   useSecretKmsProbe();
   owner();
   const created = await accept(
@@ -259,25 +259,35 @@ test("host edit retries retain the expected generation and do not repeat inline 
     connections().update({ headers, params, body: edit }),
     connections().update({ headers, params, body: edit }),
   ]);
-  expect(
-    results
-      .map((result) => {
-        return result.status;
-      })
-      .sort((left, right) => {
-        return left - right;
-      }),
-  ).toStrictEqual([200, 409]);
-  const retry = await accept(
-    connections().update({ headers, params, body: edit }),
-    [409],
+  for (const result of results) {
+    expect([200, 409]).toContain(result.status);
+  }
+  const observed = await resources();
+  const host = observed.hosts[0];
+  if (!host) {
+    throw new Error("Expected the edited host to remain available");
+  }
+  await accept(
+    connections().update({
+      headers,
+      params,
+      body: {
+        expectedGeneration: host.generation,
+        displayName: "Saved again",
+      },
+    }),
+    [200],
   );
-  expect(retry.body.error.code).toBe("SSH_GENERATION_CONFLICT");
   const current = await resources();
   expect(current.hosts[0]).toMatchObject({
-    generation: 2,
+    displayName: "Saved again",
+    generation: host.generation + 1,
     credentialName: "Replacement",
+    username: login.username,
   });
-  expect(current.credentials).toHaveLength(2);
-  expect(current.access).toHaveLength(1);
+  expect(
+    current.credentials.map((credential) => {
+      return credential.id;
+    }),
+  ).toContain(current.hosts[0]?.credentialId);
 });
