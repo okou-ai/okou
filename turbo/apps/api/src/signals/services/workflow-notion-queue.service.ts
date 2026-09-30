@@ -8,7 +8,7 @@ import { notionWorkflowPendingEvents } from "@okouai/db/schema/notion-event";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
@@ -82,6 +82,31 @@ function notionConfigMatchesPendingEvent(
   return false;
 }
 
+/** Queue admission gated by the consumer still having the matched config. */
+function notionQueueAdmissionSql(args: {
+  readonly source: NotionQueueSource;
+  readonly connectorId: string;
+  readonly chatThreadId: string;
+  readonly eventType: string | null;
+  readonly eventConfig: unknown;
+  readonly currentTime: Date;
+}) {
+  const timestamp = sql`${args.currentTime.toISOString()}::timestamp`;
+  return sql`INSERT INTO ${queuedChatThreads} (chat_thread_id, org_id, queued_at)
+    SELECT ${args.chatThreadId}::uuid, ${args.source.orgId}, ${timestamp}
+    WHERE EXISTS (
+      SELECT 1 FROM ${workflowAutomations}
+      WHERE ${and(
+        eq(workflowAutomations.id, args.source.automationId),
+        eq(workflowAutomations.enabled, true),
+        eq(workflowAutomations.eventConnectorId, args.connectorId),
+        sql`${workflowAutomations.eventType} IS NOT DISTINCT FROM ${args.eventType}`,
+        sql`${workflowAutomations.eventConfig} IS NOT DISTINCT FROM ${JSON.stringify(args.eventConfig ?? null)}::jsonb`,
+      )}
+    )
+    ON CONFLICT (chat_thread_id) DO UPDATE SET claim_id = NULL, claim_expires_at = NULL`;
+}
+
 /** Admit one prepared page event only for its still-current source and receipt. */
 export const enqueueNotionWorkflowInput$ = command(
   async (
@@ -115,9 +140,12 @@ export const enqueueNotionWorkflowInput$ = command(
         }
         return null;
       }
-      // Row locks arbitrate this admission: account deletion (FK SET NULL on
-      // both rows), disable and reprojection update the automation row, and
-      // pending-event transitions update the receipt row.
+      // No source rows are locked. The consumer config is matched in memory,
+      // the receipt moves running -> processed by compare-and-set, and the
+      // queue record is admitted only while the consumer still has the same
+      // enabled config. Any zero-row step rolls the admission back. A
+      // disable racing these statements may still admit one event, which
+      // dispatch re-checks.
       const [automation] = await tx
         .select({
           eventType: workflowAutomations.eventType,
@@ -131,24 +159,9 @@ export const enqueueNotionWorkflowInput$ = command(
             eq(workflowAutomations.eventConnectorId, connectorId),
           ),
         )
-        .for("update")
-        .limit(1);
-      const [pending] = await tx
-        .select({ id: notionWorkflowPendingEvents.id })
-        .from(notionWorkflowPendingEvents)
-        .where(
-          and(
-            eq(notionWorkflowPendingEvents.id, source.pending.id),
-            eq(notionWorkflowPendingEvents.automationId, source.automationId),
-            eq(notionWorkflowPendingEvents.connectorId, connectorId),
-            eq(notionWorkflowPendingEvents.status, "running"),
-          ),
-        )
-        .for("update")
         .limit(1);
       if (
         !automation ||
-        !pending ||
         !notionConfigMatchesPendingEvent(
           automation.eventType,
           automation.eventConfig,
@@ -158,7 +171,7 @@ export const enqueueNotionWorkflowInput$ = command(
         throw new NotionAutomationSourceChangedError();
       }
       const currentTime = nowDate();
-      await tx
+      const [processed] = await tx
         .update(notionWorkflowPendingEvents)
         .set({
           status: "processed",
@@ -169,18 +182,34 @@ export const enqueueNotionWorkflowInput$ = command(
           processedAt: currentTime,
           updatedAt: currentTime,
         })
-        .where(eq(notionWorkflowPendingEvents.id, source.pending.id));
-      await tx
-        .insert(queuedChatThreads)
-        .values({
-          chatThreadId: input.event.chatThreadId,
-          orgId: source.orgId,
-          queuedAt: currentTime,
-        })
-        .onConflictDoUpdate({
-          target: queuedChatThreads.chatThreadId,
-          set: { claimId: null, claimExpiresAt: null },
-        });
+        .where(
+          and(
+            eq(notionWorkflowPendingEvents.id, source.pending.id),
+            eq(notionWorkflowPendingEvents.automationId, source.automationId),
+            eq(notionWorkflowPendingEvents.connectorId, connectorId),
+            eq(notionWorkflowPendingEvents.status, "running"),
+          ),
+        )
+        .returning({ id: notionWorkflowPendingEvents.id });
+      if (!processed) {
+        throw new NotionAutomationSourceChangedError();
+      }
+      if (
+        (
+          await tx.execute(
+            notionQueueAdmissionSql({
+              source,
+              connectorId,
+              chatThreadId: input.event.chatThreadId,
+              eventType: automation.eventType,
+              eventConfig: automation.eventConfig,
+              currentTime,
+            }),
+          )
+        ).rowCount === 0
+      ) {
+        throw new NotionAutomationSourceChangedError();
+      }
       signal.throwIfAborted();
       return event.id;
     });

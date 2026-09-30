@@ -40,7 +40,6 @@ import {
   googleFormsCursorPublicationStatement,
 } from "./google-forms-cursor-lifecycle";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
-import { builtinConnectorAccountRowsLockSql } from "./builtin-connector-account-rows";
 import { reconcileOfficialGoogleFormsConfiguration$ } from "./official-google-forms-reconfiguration.service";
 import { observedWorkflowAutomationCondition } from "./workflow-automation-snapshot";
 import { notionConfigWithConnectorId } from "./notion-automation-account.service";
@@ -279,7 +278,7 @@ function eventWatchFailureMessage(result: {
     ? result.message
     : "Official Workflow event-watch reconciliation failed";
 }
-async function lockOfficialAutomationAccountProjection(
+async function readOfficialAutomationAccountProjection(
   db: Db,
   args: {
     readonly orgId: string;
@@ -294,7 +293,7 @@ async function lockOfficialAutomationAccountProjection(
       readonly kind: "not-required";
     }
   | {
-      readonly kind: "locked";
+      readonly kind: "projected";
       readonly connectorSlug: WorkflowAutomationAccountConnectorSlug | null;
       readonly eventConnectorId: string | null;
       readonly stripeBinding: StripeAutomationBinding | null;
@@ -332,18 +331,10 @@ async function lockOfficialAutomationAccountProjection(
       }),
     );
   }
-  // The projected account depends on the member's account set, default and
-  // credentials. Sibling account row locks serialize the read below with
-  // default changes, deletion, reconnects and row-locking selection writers.
-  for (const connectorSlug of connectorSlugs) {
-    await db.execute(
-      builtinConnectorAccountRowsLockSql({
-        orgId: args.orgId,
-        userId: args.userId,
-        connectorSlug,
-      }),
-    );
-  }
+  // No account row is locked. The projection is read from current rows and
+  // published by this transaction; an account set, default or credential
+  // change committing concurrently converges through its own reprojection of
+  // this automation or the projection repair paths.
   const stripeReadiness =
     nextConnectorSlug === "stripe"
       ? await resolveStripeInvoicePaidAutomationBinding(
@@ -360,7 +351,7 @@ async function lockOfficialAutomationAccountProjection(
   const stripeBinding =
     stripeReadiness?.kind === "ok" ? stripeReadiness.binding : null;
   return {
-    kind: "locked",
+    kind: "projected",
     connectorSlug: nextConnectorSlug,
     eventConnectorId:
       nextConnectorSlug === null
@@ -379,7 +370,7 @@ async function lockOfficialAutomationAccountProjection(
 
 function accountProjectionMatchesPatch(
   projection: Awaited<
-    ReturnType<typeof lockOfficialAutomationAccountProjection>
+    ReturnType<typeof readOfficialAutomationAccountProjection>
   >,
   patch: OfficialAutomationPatch,
 ): boolean {
@@ -695,7 +686,7 @@ async function persistReconfigurationPatch(
     ) {
       return null;
     }
-    const accountProjection = await lockOfficialAutomationAccountProjection(
+    const accountProjection = await readOfficialAutomationAccountProjection(
       tx,
       {
         orgId: args.orgId,
@@ -790,11 +781,11 @@ async function persistReconfigurationPatch(
 
 function restoredNotionEventConfig(
   projection: Awaited<
-    ReturnType<typeof lockOfficialAutomationAccountProjection>
+    ReturnType<typeof readOfficialAutomationAccountProjection>
   >,
   previous: OfficialAutomationRow,
 ) {
-  return projection.kind === "locked" &&
+  return projection.kind === "projected" &&
     projection.eventConnectorId !== null &&
     workflowAutomationAccountConnectorSlug(previous.eventType) === "notion"
     ? notionConfigWithConnectorId(
@@ -827,7 +818,7 @@ function restoredStripeEventConfig(
   eventConfig: unknown,
 ) {
   const binding =
-    projection.kind === "locked" ? projection.stripeBinding : null;
+    projection.kind === "projected" ? projection.stripeBinding : null;
   return binding === null
     ? {}
     : {
@@ -840,14 +831,14 @@ function restoredStripeEventConfig(
 
 function restoredAutomationAccountFields(
   projection: Awaited<
-    ReturnType<typeof lockOfficialAutomationAccountProjection>
+    ReturnType<typeof readOfficialAutomationAccountProjection>
   >,
   previous: OfficialAutomationRow,
   eventConfig: OfficialAutomationRow["eventConfig"],
 ) {
   const notion = restoredNotionEventConfig(projection, previous);
   return {
-    ...(projection.kind === "locked"
+    ...(projection.kind === "projected"
       ? {
           eventConnectorId: projection.eventConnectorId,
           ...(notion === null ? {} : { eventConfig: notion }),
@@ -871,7 +862,7 @@ const restoreFailedReconfiguration$ = command(
     const cleanupSignal = new AbortController().signal;
     const restored = await db.transaction(async (tx) => {
       await lockAcceptedOfficialWorkflowCatalog(tx);
-      const accountProjection = await lockOfficialAutomationAccountProjection(
+      const accountProjection = await readOfficialAutomationAccountProjection(
         tx,
         {
           orgId: args.orgId,
@@ -1577,7 +1568,7 @@ type FinalizeAutomationStructureTransitionResult =
     };
 
 type OfficialAutomationAccountProjection = Awaited<
-  ReturnType<typeof lockOfficialAutomationAccountProjection>
+  ReturnType<typeof readOfficialAutomationAccountProjection>
 >;
 
 interface FinalizeAutomationStructureTransitionArgs {
@@ -1708,7 +1699,7 @@ async function finalizeAutomationStructureTransition(
         { orgId: args.orgId },
         signal,
       ));
-    const accountProjection = await lockOfficialAutomationAccountProjection(
+    const accountProjection = await readOfficialAutomationAccountProjection(
       tx,
       {
         orgId: args.orgId,

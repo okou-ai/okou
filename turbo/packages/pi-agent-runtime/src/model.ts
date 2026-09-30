@@ -163,6 +163,39 @@ function sourceModel(provider: string, model: string): Model<Api> | undefined {
       },
     };
   }
+  // The pinned Pi catalog predates 6.1 Sol. Only direct OpenAI and the
+  // ChatGPT subscription are approved; do not infer OpenRouter support.
+  if (
+    (provider === "openai" || provider === "openai-codex") &&
+    model === "gpt-6.1-sol"
+  ) {
+    const predecessor = providerModels(provider).find((entry) => {
+      return entry.id === "gpt-6-sol";
+    });
+    if (!predecessor) return undefined;
+    return {
+      ...predecessor,
+      id: model,
+      name: "GPT 6.1 Sol",
+      contextWindow: 1_050_000,
+      maxTokens: 128_000,
+      cost: {
+        input: 2,
+        output: 10,
+        cacheRead: 0.1,
+        cacheWrite: 2.5,
+        tiers: [
+          {
+            inputTokensAbove: 272_000,
+            input: 4,
+            output: 15,
+            cacheRead: 0.2,
+            cacheWrite: 5,
+          },
+        ],
+      },
+    };
+  }
   // pi-ai 0.86.1 retired `deepseek-v4-flash` from the DeepSeek catalog while
   // the product still offers it. Pin the exact 0.85.1 definition so admission,
   // tier and billing keep their current behaviour; see deepseek-v41-catalog.md.
@@ -233,9 +266,13 @@ function streamSimpleResponsesWithPolicy(
   options?: PiAgentStreamOptions,
 ): AssistantMessageEventStream {
   const serviceTier = options?.serviceTier;
-  if (serviceTier !== undefined && serviceTier !== "priority") {
+  if (
+    serviceTier !== undefined &&
+    serviceTier !== "priority" &&
+    !(serviceTier === "ultrafast" && model.id === "gpt-6-astra")
+  ) {
     throw new Error(
-      "Pi public Responses only accepts the priority service tier",
+      "Pi public Responses service tier only accepts priority, or Ultrafast for Astra",
     );
   }
   const base = buildBaseOptions(model, context, options, options?.apiKey);
@@ -246,7 +283,9 @@ function streamSimpleResponsesWithPolicy(
   return streamResponses(model, context, {
     ...base,
     reasoningEffort: clampedReasoning === "off" ? undefined : clampedReasoning,
-    serviceTier,
+    // The bundled OpenAI SDK predates Ultrafast's service_tier literal. Pi
+    // forwards this value unchanged to the Responses request at runtime.
+    serviceTier: serviceTier as "priority" | undefined,
   });
 }
 
@@ -419,7 +458,13 @@ export function resolvePiAgentModel(
   if (
     config.serviceTier !== undefined &&
     config.serviceTier !==
-      (config.dialect === "openai-codex-responses" ? "fast" : "priority")
+      (config.dialect === "openai-codex-responses" ? "fast" : "priority") &&
+    !(
+      config.serviceTier === "ultrafast" &&
+      config.dialect === "openai-responses" &&
+      config.provider === "openai" &&
+      config.model === "gpt-6-astra"
+    )
   ) {
     return null;
   }

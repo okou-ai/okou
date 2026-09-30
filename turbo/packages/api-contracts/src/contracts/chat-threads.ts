@@ -306,8 +306,8 @@ export const indicatorsSchema = z.object({
 const chatThreadEventIdSchema = z.string().uuid();
 export { type ReasoningEffort } from "./model-reasoning-effort";
 
-const codexServiceTierSchema = z.enum(["fast"]);
-export const chatThreadServiceTierSchema = z.enum(["priority"]);
+const codexServiceTierSchema = z.enum(["fast", "ultrafast"]);
+export const chatThreadServiceTierSchema = z.enum(["priority", "ultrafast"]);
 
 const chatThreadSnapshotProjectionSchema = z.object({
   id: z.string().uuid(),

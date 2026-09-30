@@ -349,7 +349,7 @@ describe("GET/PUT /api/model-policies", () => {
     ).toBe(403);
   });
 
-  it("projects the six subscription catalog entries only for the connected Auto member", async () => {
+  it("projects the seven subscription catalog entries only for the connected Auto member", async () => {
     const fixture = seedFixture();
     // Plan state is infrastructure-owned; Auto admits subscriptions on limited-free.
     await seedOrgMetadata({
@@ -381,8 +381,9 @@ describe("GET/PUT /api/model-policies", () => {
       "claude-sonnet-5-5",
       "gpt-6-luna",
       "claude-opus-5-5",
-      "gpt-6-sol",
+      "gpt-6.1-sol",
       "claude-fable-5-1",
+      "gpt-6-sol",
       "gpt-6-astra",
     ]);
     expect(
@@ -399,6 +400,14 @@ describe("GET/PUT /api/model-policies", () => {
         providerType: "claude-code-oauth-token",
         availability: "available",
       },
+    });
+    expect(
+      after.body.policies.find((policy) => {
+        return policy.model === "gpt-6.1-sol";
+      })?.subscriptionOptions,
+    ).toMatchObject({
+      efforts: ["low", "medium", "high", "xhigh", "max"],
+      serviceTier: "priority",
     });
     expect(
       after.body.policies.find((policy) => {

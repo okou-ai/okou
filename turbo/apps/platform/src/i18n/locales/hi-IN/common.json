@@ -4994,7 +4994,10 @@
           "claudeCodeOauth": "Claude Code (OAuth टोकन)",
           "deepseek": "गहन खोज"
         },
-        "standard": "मानक"
+        "standard": "मानक",
+        "ultrafast": "अल्ट्राफ़ास्ट",
+        "ultrafastImpact": "टोकन गति 8× तक · OpenAI API टोकन मूल्य 6×",
+        "ultrafastMode": "अल्ट्राफ़ास्ट मोड"
       },
       "policies": {
         "actionsFor": "{{model}} के लिए क्रियाएँ",

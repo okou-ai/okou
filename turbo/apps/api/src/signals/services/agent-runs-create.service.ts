@@ -488,7 +488,7 @@ function buildAgentRunPlatformEnvironment(args: {
   readonly agentId: string;
   readonly triggerSource: TriggerSource;
   readonly chatThreadId: string | undefined;
-  readonly codexServiceTier: "fast" | undefined;
+  readonly codexServiceTier: CodexServiceTier | undefined;
   readonly reasoningEffort?: ReasoningEffort | null;
 }): Record<string, string> {
   const integrationByTriggerSource: Partial<Record<TriggerSource, string>> = {
@@ -1049,7 +1049,7 @@ function buildCreateAgentRunArgs(
     ...(command.builtInModelRuntimeRoute
       ? { builtInModelRuntimeRoute: command.builtInModelRuntimeRoute }
       : {}),
-    ...(command.codexServiceTier === "fast"
+    ...(command.codexServiceTier
       ? { codexServiceTier: command.codexServiceTier }
       : {}),
     chatThreadId: command.chatThreadId,

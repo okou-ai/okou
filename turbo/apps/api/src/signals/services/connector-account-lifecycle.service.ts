@@ -33,21 +33,21 @@ import {
   lt,
   lte,
   ne,
+  notExists,
   or,
   sql,
   type SQL,
 } from "drizzle-orm";
 import { z } from "zod";
 
-import { parseRawRows } from "../../lib/db-raw-rows";
 import type { Tx } from "../../lib/db-types";
 import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { safeJsonParse, settle } from "../utils";
+import { isUniqueViolation } from "../../lib/pg-errors";
 import { builtinConnectorStateLockStatement } from "./auth-state-lock.service";
-import { builtinConnectorAccountRowsLockSql } from "./builtin-connector-account-rows";
 import { googleFormsAccountProjectionStatement } from "./google-forms-automation-account.service";
 import { reprojectWorkflowAutomationsForOwner } from "./workflow-automation-account-projection.service";
 import { invalidateNotionPendingEventsForConnector } from "./notion-automation-account.service";
@@ -76,7 +76,6 @@ const log = logger("connector-account-lifecycle");
 const accessTokenSecret = alias(secrets, "connector_account_access_token");
 const refreshTokenSecret = alias(secrets, "connector_account_refresh_token");
 const oauthScopesSchema = z.array(z.string());
-const lockedAccountRowSchema = z.object({ id: z.string() });
 const cursorSchema = z
   .object({
     createdAt: z.string().datetime(),
@@ -940,6 +939,111 @@ export async function renameConnectorAccount(
   });
 }
 
+function connectorAccountOwnerCondition(args: {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly target: ConnectorAccountTarget;
+}): SQL {
+  return and(
+    eq(connectors.orgId, args.orgId),
+    eq(connectors.userId, args.userId),
+    targetCondition(args.target),
+  ) as SQL;
+}
+
+/** Rolls back a default change whose target was deleted concurrently. */
+class DefaultConnectorAccountMissing extends Error {}
+
+/**
+ * Default change without row locks: clear the other default, then set the
+ * target only while no other default is committed. Both are ordinary UPDATEs;
+ * their implicit row locks and the partial default unique index order
+ * concurrent default writers. Zero rows on the second statement means either
+ * the target was deleted (rolled back as not found) or a concurrent default
+ * change committed after the first statement's snapshot; the latter is
+ * reported as applied and then superseded, leaving that change in place.
+ */
+
+function clearOtherDefaultsSql(
+  owner: ReturnType<typeof connectorAccountOwnerCondition>,
+  connectionId: string,
+) {
+  return and(
+    owner,
+    eq(connectors.isDefault, true),
+    ne(connectors.id, connectionId),
+  );
+}
+
+/**
+ * Moves the default with ordinary conditional statements. Clearing the old
+ * default takes its implicit row lock; a concurrent change that already moved
+ * the default is observed by the next statement. When two changes race on an
+ * owner that had no default at all, the partial unique index decides: the
+ * loser (inside a savepoint) clears the winner and sets its own target once
+ * more, which is the serialized "last change wins" result, never a 500.
+ */
+async function changeDefaultConnectorAccount(
+  tx: Tx,
+  args: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly target: ConnectorAccountTarget;
+    readonly connectionId: string;
+  },
+): Promise<Date> {
+  const owner = connectorAccountOwnerCondition(args);
+  const moveDefault = async (): Promise<Date | null> => {
+    await tx
+      .update(connectors)
+      .set({ isDefault: false, updatedAt: sql`clock_timestamp()` })
+      .where(clearOtherDefaultsSql(owner, args.connectionId));
+    const [updated] = await tx
+      .update(connectors)
+      .set({ isDefault: true, updatedAt: sql`clock_timestamp()` })
+      .where(and(owner, eq(connectors.id, args.connectionId)))
+      .returning({ updatedAt: connectors.updatedAt });
+    return updated?.updatedAt ?? null;
+  };
+  const first = await settle(
+    tx.transaction(async () => {
+      return await moveDefault();
+    }),
+  );
+  let updatedAt: Date | null;
+  if (first.ok) {
+    updatedAt = first.value;
+  } else if (isDefaultIndexViolation(first.error)) {
+    updatedAt = await moveDefault();
+  } else {
+    throw first.error;
+  }
+  if (updatedAt === null) {
+    throw new DefaultConnectorAccountMissing();
+  }
+  return updatedAt;
+}
+
+function isDefaultIndexViolation(error: unknown): boolean {
+  return (
+    isUniqueViolation(error, "idx_connectors_org_user_slug_default") ||
+    isUniqueViolation(error, "idx_connectors_org_user_custom_connector_default")
+  );
+}
+
+async function settleDefaultChange(
+  change: Promise<Date>,
+): Promise<Date | null> {
+  const settled = await settle(change);
+  if (settled.ok) {
+    return settled.value;
+  }
+  if (settled.error instanceof DefaultConnectorAccountMissing) {
+    return null;
+  }
+  throw settled.error;
+}
+
 export const setDefaultGoogleFormsAccount$ = command(
   async (
     { set },
@@ -951,60 +1055,29 @@ export const setDefaultGoogleFormsAccount$ = command(
     signal: AbortSignal,
   ): Promise<Date | null> => {
     const db = set(writeDb$);
-    return await db.transaction(async (tx) => {
-      // R1 compatibility only: outgoing main insertEventAutomation (and the
-      // other Forms automation creators) read the default under
-      // connector_state without locking account rows, so this reprojection
-      // could miss their uncommitted automation. Taken before row locks, in
-      // main's order; remove in R2 once main no longer acquires connector_state.
-      await tx.execute(
-        builtinConnectorStateLockStatement({
-          orgId: args.orgId,
-          userId: args.userId,
-          connectorSlug: "google-forms",
-        }),
-      );
-      // Ordered sibling row locks (connectors -> automations -> cursors).
-      await tx.execute(
-        builtinConnectorAccountRowsLockSql({
-          orgId: args.orgId,
-          userId: args.userId,
-          connectorSlug: "google-forms",
-        }),
-      );
-      const condition = and(
-        eq(connectors.orgId, args.orgId),
-        eq(connectors.userId, args.userId),
-        eq(connectors.connectorSlug, "google-forms"),
-      );
-      const [account] = await tx
-        .select({ id: connectors.id })
-        .from(connectors)
-        .where(and(condition, eq(connectors.id, args.connectionId)))
-        .for("update")
-        .limit(1);
-      if (!account) {
-        return null;
-      }
-      await tx
-        .update(connectors)
-        .set({ isDefault: false, updatedAt: sql`clock_timestamp()` })
-        .where(
-          and(
-            condition,
-            eq(connectors.isDefault, true),
-            ne(connectors.id, args.connectionId),
-          ),
+    return await settleDefaultChange(
+      db.transaction(async (tx) => {
+        // R1 compatibility only: outgoing main insertEventAutomation (and the
+        // other Forms automation creators) read the default under
+        // connector_state without locking account rows, so this reprojection
+        // could miss their uncommitted automation. Taken before row locks, in
+        // main's order; remove in R2 once main no longer acquires connector_state.
+        await tx.execute(
+          builtinConnectorStateLockStatement({
+            orgId: args.orgId,
+            userId: args.userId,
+            connectorSlug: "google-forms",
+          }),
         );
-      const [updated] = await tx
-        .update(connectors)
-        .set({ isDefault: true, updatedAt: sql`clock_timestamp()` })
-        .where(and(condition, eq(connectors.id, args.connectionId)))
-        .returning({ updatedAt: connectors.updatedAt });
-      await tx.execute(googleFormsAccountProjectionStatement(args));
-      signal.throwIfAborted();
-      return updated?.updatedAt ?? null;
-    });
+        const updatedAt = await changeDefaultConnectorAccount(tx, {
+          ...args,
+          target: { kind: "builtin", connectorSlug: "google-forms" },
+        });
+        await tx.execute(googleFormsAccountProjectionStatement(args));
+        signal.throwIfAborted();
+        return updatedAt;
+      }),
+    );
   },
 );
 
@@ -1018,119 +1091,36 @@ export async function setDefaultConnectorAccount(
   },
   signal: AbortSignal,
 ): Promise<Date | null> {
-  return await db.transaction(async (tx) => {
-    if (args.target.kind === "builtin") {
-      // R1 compatibility only: outgoing main insertEventAutomation and the
-      // other automation creators read the default under connector_state
-      // without locking account rows, so the reprojection below could miss
-      // their uncommitted automation. Taken before row locks, in main's
-      // order; remove in R2 once main no longer acquires connector_state.
-      await tx.execute(
-        builtinConnectorStateLockStatement({
+  return await settleDefaultChange(
+    db.transaction(async (tx) => {
+      if (args.target.kind === "builtin") {
+        // R1 compatibility only: outgoing main insertEventAutomation and the
+        // other automation creators read the default under connector_state
+        // without locking account rows, so the reprojection below could miss
+        // their uncommitted automation. Taken before row locks, in main's
+        // order; remove in R2 once main no longer acquires connector_state.
+        await tx.execute(
+          builtinConnectorStateLockStatement({
+            orgId: args.orgId,
+            userId: args.userId,
+            connectorSlug: args.target.connectorSlug,
+          }),
+        );
+      }
+      if (
+        args.target.kind === "custom" &&
+        !(await customTargetIsVisible(tx, {
           orgId: args.orgId,
-          userId: args.userId,
-          connectorSlug: args.target.connectorSlug,
-        }),
-      );
-    }
-    if (
-      args.target.kind === "custom" &&
-      !(await customTargetIsVisible(tx, {
-        orgId: args.orgId,
-        customConnectorId: args.target.customConnectorId,
-      }))
-    ) {
-      return null;
-    }
-    // Default changes touch sibling rows. Both targets acquire them in the same
-    // ID order as deletion and connection writes, without blocking the
-    // selection FK's KEY SHARE on survivors.
-    const accounts =
-      args.target.kind === "custom"
-        ? await tx
-            .select({ id: connectors.id })
-            .from(connectors)
-            .where(
-              and(
-                eq(connectors.orgId, args.orgId),
-                eq(connectors.userId, args.userId),
-                targetCondition(args.target),
-              ),
-            )
-            .orderBy(asc(connectors.id))
-            .for("no key update")
-        : parseRawRows(
-            lockedAccountRowSchema,
-            await tx.execute(
-              builtinConnectorAccountRowsLockSql({
-                orgId: args.orgId,
-                userId: args.userId,
-                connectorSlug: args.target.connectorSlug,
-              }),
-            ),
-          );
-    if (
-      !accounts.some((account) => {
-        return account.id === args.connectionId;
-      })
-    ) {
-      return null;
-    }
-    await tx
-      .update(connectors)
-      .set({ isDefault: false, updatedAt: sql`clock_timestamp()` })
-      .where(
-        and(
-          eq(connectors.orgId, args.orgId),
-          eq(connectors.userId, args.userId),
-          targetCondition(args.target),
-          eq(connectors.isDefault, true),
-          ne(connectors.id, args.connectionId),
-        ),
-      );
-    const [updated] = await tx
-      .update(connectors)
-      .set({ isDefault: true, updatedAt: sql`clock_timestamp()` })
-      .where(
-        and(
-          eq(connectors.id, args.connectionId),
-          eq(connectors.orgId, args.orgId),
-          eq(connectors.userId, args.userId),
-          targetCondition(args.target),
-        ),
-      )
-      .returning({ updatedAt: connectors.updatedAt });
-    await reprojectWorkflowAutomationsForOwner(tx, args, signal);
-    return updated?.updatedAt ?? null;
-  });
-}
-
-async function oldestConnectorAccountSibling(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly target: ConnectorAccountTarget;
-    readonly excludedConnectionId: string;
-  },
-): Promise<{ readonly id: string } | null> {
-  const query = db
-    .select({ id: connectors.id })
-    .from(connectors)
-    .where(
-      and(
-        eq(connectors.orgId, args.orgId),
-        eq(connectors.userId, args.userId),
-        targetCondition(args.target),
-        ne(connectors.id, args.excludedConnectionId),
-      ),
-    )
-    .orderBy(asc(connectors.createdAt), asc(connectors.id))
-    .limit(1);
-  // Callers already hold the sibling rows (builtin: every row in ID order;
-  // custom: the definition row stabilizes membership).
-  const [row] = await query;
-  return row ?? null;
+          customConnectorId: args.target.customConnectorId,
+        }))
+      ) {
+        throw new DefaultConnectorAccountMissing();
+      }
+      const updatedAt = await changeDefaultConnectorAccount(tx, args);
+      await reprojectWorkflowAutomationsForOwner(tx, args, signal);
+      return updatedAt;
+    }),
+  );
 }
 
 export async function connectorAccountDeletionImpact(
@@ -1193,10 +1183,12 @@ type PreparedConnectorAccountDeletion =
     };
 
 /**
- * Builtin deletion holds every sibling account row in ID order until commit
- * (callers that lock other account state first must acquire the same ordered
- * rows before it). Custom deletion holds its definition's credential-contract
- * row in a READ COMMITTED transaction.
+ * Claims the account with an exact-identity UPDATE (its implicit row lock is
+ * held until commit; zero rows = deleted concurrently) and clears its default
+ * flag, then promotes the oldest remaining sibling only while no other
+ * default exists. The caller deletes the claimed row in the same transaction.
+ * Custom deletion additionally holds its definition's credential-contract row
+ * in a READ COMMITTED transaction.
  */
 export async function prepareConnectorAccountDeletionWithTargetLocked(
   db: Tx,
@@ -1208,84 +1200,15 @@ export async function prepareConnectorAccountDeletionWithTargetLocked(
   },
   signal: AbortSignal,
 ): Promise<PreparedConnectorAccountDeletion> {
-  let sibling: { readonly id: string } | null = null;
-  if (args.target.kind === "builtin") {
-    await db.execute(
-      builtinConnectorAccountRowsLockSql({
-        orgId: args.orgId,
-        userId: args.userId,
-        connectorSlug: args.target.connectorSlug,
-      }),
-    );
-  }
-  if (args.target.kind === "custom") {
-    const [observed] = await db
-      .select({ id: connectors.id })
-      .from(connectors)
-      .where(
-        and(
-          eq(connectors.id, args.connectionId),
-          eq(connectors.orgId, args.orgId),
-          eq(connectors.userId, args.userId),
-          targetCondition(args.target),
-        ),
-      )
-      .limit(1);
-    if (!observed) {
-      return { kind: "missing" };
-    }
-    const candidate = await oldestConnectorAccountSibling(db, {
-      ...args,
-      excludedConnectionId: args.connectionId,
-    });
-    // The definition row stabilizes membership. Lock the deletion/promotion
-    // pair in ID order before upgrading only the account being deleted.
-    const accounts = await db
-      .select({ id: connectors.id })
-      .from(connectors)
-      .where(
-        and(
-          eq(connectors.orgId, args.orgId),
-          eq(connectors.userId, args.userId),
-          targetCondition(args.target),
-          inArray(
-            connectors.id,
-            candidate ? [args.connectionId, candidate.id] : [args.connectionId],
-          ),
-        ),
-      )
-      .orderBy(asc(connectors.id))
-      .for("no key update");
-    sibling =
-      accounts.find((account) => {
-        return account.id === candidate?.id;
-      }) ?? null;
-  }
-  const [account] = await db
-    .select({ id: connectors.id, isDefault: connectors.isDefault })
-    .from(connectors)
-    .where(
-      and(
-        eq(connectors.id, args.connectionId),
-        eq(connectors.orgId, args.orgId),
-        eq(connectors.userId, args.userId),
-        targetCondition(args.target),
-      ),
-    )
-    .for("update")
-    .limit(1);
-  if (!account) {
+  const owner = connectorAccountOwnerCondition(args);
+  const [claimed] = await db
+    .update(connectors)
+    .set({ isDefault: false, updatedAt: sql`clock_timestamp()` })
+    .where(and(owner, eq(connectors.id, args.connectionId)))
+    .returning({ id: connectors.id });
+  if (!claimed) {
     return { kind: "missing" };
   }
-
-  if (args.target.kind === "builtin") {
-    sibling = await oldestConnectorAccountSibling(db, {
-      ...args,
-      excludedConnectionId: args.connectionId,
-    });
-  }
-  // Use a fresh statement after the parent FOR UPDATE has waited for prior
-  // FK attachments. New selections cannot attach to the account before DELETE.
   const resolvedSelectionCount =
     (
       await db
@@ -1293,18 +1216,49 @@ export async function prepareConnectorAccountDeletionWithTargetLocked(
         .where(eq(chatThreadConnectorSelections.connectorId, args.connectionId))
     ).rowCount ?? 0;
 
-  let promotedDefaultConnectionId: string | null = null;
-  if (account.isDefault && sibling) {
-    await db
-      .update(connectors)
-      .set({ isDefault: false, updatedAt: sql`clock_timestamp()` })
-      .where(eq(connectors.id, args.connectionId));
-    await db
-      .update(connectors)
-      .set({ isDefault: true, updatedAt: sql`clock_timestamp()` })
-      .where(eq(connectors.id, sibling.id));
-    promotedDefaultConnectionId = sibling.id;
+  // A fresh statement sees any default committed after the claim. A default
+  // still in flight wins through the partial unique index: the savepoint
+  // turns that conflict into "not promoted" instead of an error.
+  const promotion = await settle(
+    db.transaction(async (savepoint) => {
+      return await savepoint
+        .update(connectors)
+        .set({ isDefault: true, updatedAt: sql`clock_timestamp()` })
+        .where(
+          and(
+            owner,
+            eq(
+              connectors.id,
+              db
+                .select({ id: connectors.id })
+                .from(connectors)
+                .where(and(owner, ne(connectors.id, args.connectionId)))
+                .orderBy(asc(connectors.createdAt), asc(connectors.id))
+                .limit(1),
+            ),
+            notExists(
+              db
+                .select({ id: connectors.id })
+                .from(connectors)
+                .where(
+                  and(
+                    owner,
+                    eq(connectors.isDefault, true),
+                    ne(connectors.id, args.connectionId),
+                  ),
+                ),
+            ),
+          ),
+        )
+        .returning({ id: connectors.id });
+    }),
+  );
+  if (!promotion.ok && !isDefaultIndexViolation(promotion.error)) {
+    throw promotion.error;
   }
+  const promotedDefaultConnectionId = promotion.ok
+    ? (promotion.value[0]?.id ?? null)
+    : null;
 
   if (
     args.target.kind === "builtin" &&

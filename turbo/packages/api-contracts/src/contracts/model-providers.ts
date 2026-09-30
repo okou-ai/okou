@@ -204,6 +204,7 @@ const SUPPORTED_RUN_MODEL_LABELS: Record<SupportedRunModel, string> = {
   "deepseek-v4-flash": "DeepSeek V4 Flash",
   "deepseek-v4-pro": "DeepSeek V4 Pro",
   "gpt-6-astra": "GPT 6 Astra",
+  "gpt-6.1-sol": "GPT 6.1 Sol",
   "gpt-6-sol": "GPT 6 Sol",
   "gpt-6-luna": "GPT 6 Luna",
   "gpt-5.6-sol": "GPT 5.6 Sol",
@@ -268,12 +269,13 @@ export function getRunModelRouteAccess(
   const knownByokRoute = MODEL_PROVIDER_TYPE_IDS.some((type) => {
     return type === providerType && !isBuiltInModelProviderType(type);
   });
-  // Sonnet 5.5 is restricted for the organization on both managed and BYOK routes.
+  // Newly launched paid models are restricted on managed and BYOK routes.
+  const canonical = normalizeBuiltInModelId(model?.trim().toLowerCase() ?? "");
   return getRunModelAccess(
     model,
     restrictedBuiltInModels &&
-      (normalizeBuiltInModelId(model?.trim().toLowerCase() ?? "") ===
-        "claude-sonnet-5-5" ||
+      (canonical === "claude-sonnet-5-5" ||
+        canonical === "gpt-6.1-sol" ||
         !knownByokRoute),
   );
 }
@@ -293,6 +295,7 @@ export function isSupportedRunModel(
 /** Models supported by the Codex Fast service tier. */
 export const CODEX_FAST_MODE_MODELS = [
   "gpt-6-astra",
+  "gpt-6.1-sol",
   "gpt-6-sol",
   "gpt-6-luna",
   "gpt-5.6-sol",
@@ -450,6 +453,9 @@ export const BUILT_IN_MODEL_TO_PROVIDER = {
       },
     ],
   },
+  "gpt-6.1-sol": {
+    candidates: [{ concreteType: "openai-api-key" }],
+  },
   "gpt-6-sol": {
     candidates: [
       { concreteType: "openai-api-key" },
@@ -588,6 +594,7 @@ export type ModelImageInputSupport = "supported" | "unsupported" | "unknown";
 const IMAGE_INPUT_SUPPORTED_MODELS = new Set([
   "gpt-6-astra",
   "openai/gpt-6-astra",
+  "gpt-6.1-sol",
   "gpt-6-sol",
   "openai/gpt-6-sol",
   "gpt-6-luna",
@@ -850,6 +857,7 @@ export const MODEL_PROVIDER_TYPES = {
     } satisfies ModelProviderEnvBindings,
     models: [
       "gpt-6-astra",
+      "gpt-6.1-sol",
       "gpt-6-sol",
       "gpt-6-luna",
       "gpt-5.6-sol",
@@ -925,6 +933,7 @@ export const MODEL_PROVIDER_TYPES = {
     } satisfies ModelProviderEnvBindings,
     models: [
       "gpt-6-astra",
+      "gpt-6.1-sol",
       "gpt-6-sol",
       "gpt-6-luna",
       "gpt-5.6-sol",
@@ -1104,6 +1113,7 @@ const MODEL_FIRST_PROVIDER_COMPATIBILITY = {
     "codex-oauth-token",
     "openrouter-codex",
   ],
+  "gpt-6.1-sol": ["built-in", "openai-api-key", "codex-oauth-token"],
   "gpt-6-sol": [
     "built-in",
     "openai-api-key",

@@ -3,8 +3,8 @@ import { sql } from "drizzle-orm";
 /**
  * R1 compatibility only: outgoing (pre-R1) builtin connector writers still
  * serialize selection changes and automation creation under this key without
- * locking account rows. New writers arbitrate with ordered account row locks
- * (builtin-connector-account-rows.ts) and take this key only inside short
+ * locking account rows. New writers arbitrate with conditional writes and
+ * existing unique constraints, and take this key only inside short
  * local transactions where such an outgoing writer could otherwise race.
  * Release 2 deletes it once no serving, in-flight or rollback writer uses it.
  */
@@ -18,10 +18,13 @@ export function builtinConnectorStateLockStatement(args: {
 }
 
 /**
- * Settings writers serialize model provider state. Lifecycle callers acquire
- * existing thread/session/run row locks before this lock. Settings only lock
- * provider/account/secret state after it; their run-reference checks are MVCC
- * reads, never run row locks.
+ * R1 compatibility only: outgoing (origin/main) model provider settings
+ * writers and runtime refresh serialize on this key, and read provider state
+ * without a row lock before writing secrets. New settings writers take it only
+ * as the first statement of their short local transaction; their correctness
+ * comes from writing the provider row first (implicit row lock), conditional
+ * DELETE ... RETURNING and the unique indexes. Release 2 deletes it once no
+ * serving, in-flight or rollback writer uses it.
  */
 export function modelProviderStateLockStatement(args: {
   readonly orgId: string;

@@ -152,6 +152,9 @@ surface; the index does not replace their detailed rules.
   reference releases, lifecycle locks, cascade inventory and bounded SQL costs.
 - [Pi runtime architecture](./pi-runtime-architecture.md): launch, SDK/session,
   memory, accounting, retained compatibility, and patch ownership boundaries.
+- [Guest/Runner transport placement](./runner-rpc-transport.md#choosing-a-guestrunner-transport-for-new-work):
+  decide between the control vsock, Guest-to-Runner RPC, and no cross-VM
+  transport for a new operation.
 - [Runner host configuration](./runner-host-configuration.md): configure and
   verify host-local concurrency and I/O capacity overrides.
 - [Runner WSS target resolution](./runner-wss-target-resolution.md): internal

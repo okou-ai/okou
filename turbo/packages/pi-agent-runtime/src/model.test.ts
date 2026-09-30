@@ -401,6 +401,39 @@ describe("Pi agent model adapter", () => {
     },
   );
 
+  it.each(["openai", "openai-codex"] as const)(
+    "pins the official 6.1 Sol identity and prices for %s",
+    (provider) => {
+      const config =
+        provider === "openai-codex"
+          ? {
+              provider,
+              baseUrl: "https://chatgpt.com/backend-api",
+              apiKey: "test-key",
+              model: "gpt-6.1-sol",
+              dialect: "openai-codex-responses" as const,
+              accountId: "test",
+              transport: "sse" as const,
+            }
+          : {
+              provider,
+              baseUrl: "https://api.openai.com/v1",
+              apiKey: "test-key",
+              model: "gpt-6.1-sol",
+              dialect: "openai-responses" as const,
+              transport: "sse" as const,
+            };
+      const model = resolvePiAgentModel(config);
+      expect(model).toMatchObject({
+        id: "gpt-6.1-sol",
+        name: "GPT 6.1 Sol",
+        contextWindow: 1_050_000,
+        maxTokens: 128_000,
+        cost: { input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5 },
+      });
+    },
+  );
+
   it.each([
     {
       name: "public Responses",
@@ -591,6 +624,48 @@ describe("Pi agent model adapter", () => {
       }).toThrow("service tier");
     },
   );
+
+  it("sends Astra Ultrafast as the public Responses service tier", async () => {
+    const config = {
+      ...OPENAI_LUNA,
+      model: "gpt-6-astra",
+      serviceTier: "ultrafast",
+    } as const;
+    const model = resolvePiAgentModel(config);
+    expect(model).not.toBeNull();
+    if (!model || model.api !== "openai-responses") {
+      throw new Error("Expected an OpenAI Responses model");
+    }
+    const requests: unknown[] = [];
+    const providerFetch = vi.fn(
+      async (input: string | URL | Request, init?: RequestInit) => {
+        requests.push(JSON.parse(await new Request(input, init).text()));
+        return new Response("Unauthorized", { status: 401 });
+      },
+    );
+    const stream = piAgentStreamForConfig(config)(
+      model,
+      normalizeContext({
+        messages: [{ role: "user", content: "hello", timestamp: 1 }],
+        tools: [],
+      }),
+      {
+        apiKey: config.apiKey,
+        fetch: providerFetch,
+        signal: AbortSignal.timeout(5_000),
+      },
+    );
+    for await (const _event of stream) {
+      // The provider rejects authentication after capturing the request.
+    }
+    expect(providerFetch).toHaveBeenCalledOnce();
+    expect(requests).toEqual([
+      expect.objectContaining({
+        model: "gpt-6-astra",
+        service_tier: "ultrafast",
+      }),
+    ]);
+  });
 
   it.each([undefined, "fast"] as const)(
     "normalizes native config tier %s with exact credentials and no retry over SSE",

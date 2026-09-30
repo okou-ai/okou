@@ -71,6 +71,7 @@ describe("model-first canonical catalog", () => {
   it("recognizes Codex fast mode models", () => {
     expect(CODEX_FAST_MODE_MODELS).toEqual([
       "gpt-6-astra",
+      "gpt-6.1-sol",
       "gpt-6-sol",
       "gpt-6-luna",
       "gpt-5.6-sol",
@@ -123,6 +124,7 @@ describe("model-first canonical catalog", () => {
       "claude-sonnet-5",
       "claude-sonnet-4-6",
       "gpt-6-astra",
+      "gpt-6.1-sol",
       "gpt-6-sol",
       "gpt-6-luna",
       "gpt-5.6-sol",
@@ -389,6 +391,32 @@ describe("model-first canonical catalog", () => {
     expect(getBuiltInModelPriceTier("claude-sonnet-5-5")).toBe("$$");
     expect(DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL).toBe("gpt-6-luna");
     expect(DEFAULT_ORG_MODEL_POLICY_MODELS).not.toContain("claude-sonnet-5-5");
+  });
+
+  it("offers opt-in 6.1 Sol only through approved routes and requires a paid org", () => {
+    expect(getProvidersForModel("gpt-6.1-sol")).toEqual([
+      "built-in",
+      "openai-api-key",
+      "codex-oauth-token",
+    ]);
+    for (const route of getProvidersForModel("gpt-6.1-sol")) {
+      expect(getRunModelRouteAccess("gpt-6.1-sol", route, true)).toBe(
+        "pro_required",
+      );
+      expect(getRunModelRouteAccess("gpt-6.1-sol", route, false)).toBe(
+        "allowed",
+      );
+    }
+    expect(getProvidersForModel("openai/gpt-6.1-sol")).toEqual([]);
+    expect(getBuiltInModelRouteCandidates("gpt-6.1-sol")).toEqual([
+      {
+        selectedModel: "gpt-6.1-sol",
+        providerType: "openai-api-key",
+        upstreamModel: "gpt-6.1-sol",
+        vendor: "openai",
+      },
+    ]);
+    expect(DEFAULT_ORG_MODEL_POLICY_MODELS).not.toContain("gpt-6.1-sol");
   });
 
   it("returns compatible provider types for canonical models", () => {
@@ -800,6 +828,7 @@ describe("model-first canonical catalog", () => {
       "deepseek-v4.1-flash",
       "deepseek-v4-flash",
       "gpt-6-astra",
+      "gpt-6.1-sol",
       "gpt-6-sol",
       "gpt-6-luna",
       "gpt-5.6-sol",
@@ -815,7 +844,11 @@ describe("model-first canonical catalog", () => {
     for (const model of ACTIVE_RUN_MODELS) {
       const candidates = getBuiltInModelRouteCandidates(model);
       expect(candidates).toHaveLength(
-        isOkouRunModel(model) || model === "claude-sonnet-5-5" ? 1 : 2,
+        isOkouRunModel(model) ||
+          model === "claude-sonnet-5-5" ||
+          model === "gpt-6.1-sol"
+          ? 1
+          : 2,
       );
       expect(candidates[0]?.providerType).toBe(
         getBuiltInConcreteProviderType(model),
@@ -994,6 +1027,7 @@ describe("model-first canonical catalog", () => {
         "claude-opus-5-5": "$$$",
         "claude-opus-5": "$$$",
         "gpt-6-astra": "$$$$",
+        "gpt-6.1-sol": "$$$",
         "gpt-6-sol": "$$$",
         "gpt-6-luna": "$",
         "gpt-5.6-sol": "$$$",
@@ -1372,6 +1406,7 @@ describe("openai-api-key codex provider", () => {
   it("offers codex-compatible models with gpt-5.6-sol default", () => {
     expect(getModels("openai-api-key")).toEqual([
       "gpt-6-astra",
+      "gpt-6.1-sol",
       "gpt-6-sol",
       "gpt-6-luna",
       "gpt-5.6-sol",
@@ -1591,6 +1626,7 @@ describe("codex-oauth-token codex provider", () => {
   it("offers current GPT models with gpt-5.6-sol default", () => {
     expect(getModels("codex-oauth-token")).toEqual([
       "gpt-6-astra",
+      "gpt-6.1-sol",
       "gpt-6-sol",
       "gpt-6-luna",
       "gpt-5.6-sol",

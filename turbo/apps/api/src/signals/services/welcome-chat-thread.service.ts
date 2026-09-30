@@ -104,7 +104,12 @@ export const createWelcomeChatThread$ = command(
         title: content.title,
         eventId: undefined,
         ...chatThreadModelPinColumns(pin),
-        codexServiceTier: pin.serviceTier === "priority" ? "fast" : null,
+        codexServiceTier:
+          pin.serviceTier === "priority"
+            ? "fast"
+            : pin.serviceTier === "ultrafast"
+              ? "ultrafast"
+              : null,
       });
       signal.throwIfAborted();
       if (thread.kind === "created") {

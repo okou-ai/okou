@@ -25,7 +25,7 @@ import { modelProviders as modelProvidersTable } from "@okouai/db/schema/model-p
 import { modelProviderConnections } from "@okouai/db/schema/model-provider-gateway";
 import { modelProviderAccounts } from "@okouai/db/schema/model-provider-account";
 import { secrets } from "@okouai/db/schema/secret";
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, getTableColumns, inArray, isNull, sql } from "drizzle-orm";
 import { db$, writeDb$ } from "../external/db";
 import {
   publishModelPoliciesChangedForOrgSafely,
@@ -33,6 +33,7 @@ import {
 } from "../external/realtime";
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
 import { logger } from "../../lib/log";
+import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
 import { encryptStoredSecretValue } from "./crypto.utils";
 import { modelProviderStateLockStatement } from "./auth-state-lock.service";
@@ -161,16 +162,16 @@ type NotFoundResponse = ReturnType<typeof notFound>;
 /**
  * Delete a user-level model provider and cascade-delete its secrets.
  *
- * Delete behavior:
- *   - Legacy single-secret providers: deleting an unshared secret cascades the
- *     model_provider row via FK (`onDelete: "cascade"` at the schema). During
- *     gateway migration, a shared secret is retained and only the old provider
- *     row is deleted.
- *   - Multi-auth providers: deletes the per-auth-method secrets by name,
- *     then deletes the model_provider row explicitly.
+ * Delete behavior: a conditional DELETE of the provider row decides the
+ * result, then its secrets go in the same short transaction.
+ *   - Legacy single-secret providers: an unshared secret is deleted with the
+ *     row (the FK cascade also removes any other provider sharing it). During
+ *     gateway migration, a shared secret is retained.
+ *   - Multi-auth providers: deletes every auth method's secrets by name, so a
+ *     leftover from a replaced auth method cannot survive the provider.
  *
- * Uses the same auth-state advisory lock as runtime access refresh so a refresh
- * cannot recreate secrets after a delete.
+ * A concurrent refresh publishes through an exact provider-row CAS, so it
+ * cannot recreate secrets after the row is gone.
  */
 export const deleteUserModelProvider$ = command(
   async (
@@ -204,19 +205,22 @@ export const deleteUserModelProvider$ = command(
     }
 
     const result = await writeDb.transaction(async (tx) => {
+      // R1 compatibility only: origin/main settings writers
+      // (persistMultiAuthModelProvider, deleteUserModelProvider$) read the
+      // provider unlocked and write secrets before the provider row, and
+      // origin/main refresh (refreshAccessTokenForSource) holds this key across
+      // provider I/O. They serialize only through this key. R2 removes this
+      // acquisition once no serving, in-flight or rollback origin/main writer
+      // takes model_provider_state. New writers do not rely on it: each one
+      // writes the provider row first, so the row's implicit lock orders them.
       await tx.execute(modelProviderStateLockStatement(args));
       signal.throwIfAborted();
 
-      // Lock the provider row before its secrets, the order refresh
-      // publication uses for its owner-row CAS.
+      // The conditional delete is the decision: zero rows means another
+      // writer already removed it. Its implicit row lock precedes every secret
+      // write, the same order every provider writer and refresh CAS use.
       const [provider] = await tx
-        .select({
-          id: modelProvidersTable.id,
-          isDefault: modelProvidersTable.isDefault,
-          secretId: modelProvidersTable.secretId,
-          authMethod: modelProvidersTable.authMethod,
-        })
-        .from(modelProvidersTable)
+        .delete(modelProvidersTable)
         .where(
           and(
             eq(modelProvidersTable.orgId, args.orgId),
@@ -224,8 +228,9 @@ export const deleteUserModelProvider$ = command(
             eq(modelProvidersTable.type, args.type),
           ),
         )
-        .for("update")
-        .limit(1);
+        .returning({
+          secretId: modelProvidersTable.secretId,
+        });
       signal.throwIfAborted();
 
       if (!provider) {
@@ -233,42 +238,33 @@ export const deleteUserModelProvider$ = command(
       }
 
       if (provider.secretId) {
+        // During gateway migration a shared secret is retained; otherwise the
+        // legacy single secret goes with its provider.
         const [gatewayReference] = await tx
           .select({ id: modelProviderConnections.id })
           .from(modelProviderConnections)
           .where(eq(modelProviderConnections.secretId, provider.secretId))
           .limit(1);
-        if (gatewayReference) {
-          await tx
-            .delete(modelProvidersTable)
-            .where(eq(modelProvidersTable.id, provider.id));
-        } else {
+        if (!gatewayReference) {
           await tx.delete(secrets).where(eq(secrets.id, provider.secretId));
         }
         signal.throwIfAborted();
       } else {
-        if (provider.authMethod) {
-          const secretNames = getSecretNamesForAuthMethod(
-            args.type,
-            provider.authMethod,
-          );
-          if (secretNames && secretNames.length > 0) {
-            await tx
-              .delete(secrets)
-              .where(
-                and(
-                  eq(secrets.orgId, args.orgId),
-                  eq(secrets.userId, args.userId),
-                  inArray(secrets.name, [...secretNames]),
-                ),
-              );
-            signal.throwIfAborted();
-          }
+        const secretNames = allMultiAuthSecretNames(args.type);
+        if (secretNames.length > 0) {
+          await tx
+            .delete(secrets)
+            .where(
+              and(
+                eq(secrets.orgId, args.orgId),
+                eq(secrets.userId, args.userId),
+                eq(secrets.type, "model-provider"),
+                isNull(secrets.connectorId),
+                inArray(secrets.name, secretNames),
+              ),
+            );
+          signal.throwIfAborted();
         }
-        await tx
-          .delete(modelProvidersTable)
-          .where(eq(modelProvidersTable.id, provider.id));
-        signal.throwIfAborted();
       }
 
       return undefined;
@@ -452,6 +448,29 @@ function validateSingleSecretProviderRequest(args: {
   return { secretName };
 }
 
+/**
+ * Every secret name any auth method of a multi-auth type can own. Multi-auth
+ * secret names are unique to their provider type, so deleting them by name
+ * cannot touch another provider's credentials.
+ */
+function allMultiAuthSecretNames(type: ModelProviderType): string[] {
+  const names = new Set<string>();
+  for (const authMethod of Object.keys(getAuthMethodsForType(type) ?? {})) {
+    for (const name of getSecretNamesForAuthMethod(type, authMethod) ?? []) {
+      names.add(name);
+    }
+  }
+  return [...names];
+}
+
+/**
+ * `xmax = 0` on an upserted row means this statement inserted it; the ON
+ * CONFLICT update path stamps the row with this transaction's xid.
+ */
+const upsertInsertedColumn = sql`(${modelProvidersTable}.xmax = 0)`.mapWith(
+  pgBooleanDecoder,
+);
+
 interface ModelProviderMetadata {
   readonly tokenExpiresAt?: Date | null;
   readonly workspaceName?: string | null;
@@ -494,13 +513,17 @@ function buildMultiAuthInsertValues(args: {
 function buildMultiAuthConflictSet(
   authMethod: string,
   selectedModel: string | undefined,
+  preserveSelectedModel: boolean,
   metadata?: ModelProviderMetadata,
 ): Record<string, unknown> {
   const base: Record<string, unknown> = {
     authMethod,
-    selectedModel: selectedModel ?? null,
     updatedAt: sql`clock_timestamp()`,
   };
+  // Omitting the column keeps the existing row's value on conflict.
+  if (selectedModel !== undefined || !preserveSelectedModel) {
+    base.selectedModel = selectedModel ?? null;
+  }
   if (!metadata) {
     return base;
   }
@@ -525,12 +548,10 @@ function buildMultiAuthConflictSet(
 }
 
 function buildSingleAuthConflictSet(args: {
-  readonly secretId: string;
   readonly selectedModel: string | undefined;
   readonly metadata?: ModelProviderMetadata;
 }): Record<string, unknown> {
   const base: Record<string, unknown> = {
-    secretId: args.secretId,
     selectedModel: args.selectedModel ?? null,
     needsReconnect: false,
     lastRefreshErrorCode: null,
@@ -577,50 +598,15 @@ const persistSingleAuthModelProvider$ = command(
   }> => {
     const db = set(writeDb$);
     const result = await db.transaction(async (tx) => {
-      // Lock the provider row before its secret, the order refresh
-      // publication uses for its owner-row CAS.
-      const [existingProvider] = await tx
-        .select({ id: modelProvidersTable.id })
-        .from(modelProvidersTable)
-        .where(
-          and(
-            eq(modelProvidersTable.orgId, args.orgId),
-            eq(modelProvidersTable.userId, args.userId),
-            eq(modelProvidersTable.type, args.type),
-          ),
-        )
-        .for("update")
-        .limit(1);
-      signal.throwIfAborted();
-
-      const [upsertedSecret] = await tx
-        .insert(secrets)
-        .values({
-          userId: args.userId,
-          name: args.secretName,
-          encryptedValue: args.encryptedValue,
-          type: "model-provider",
-          description: `Model provider secret for ${MODEL_PROVIDER_TYPES[args.type].label}`,
-          orgId: args.orgId,
-        })
-        .onConflictDoUpdate({
-          target: [secrets.orgId, secrets.userId, secrets.name, secrets.type],
-          targetWhere: isNull(secrets.connectorId),
-          set: { encryptedValue: args.encryptedValue, updatedAt: nowDate() },
-        })
-        .returning();
-      signal.throwIfAborted();
-
-      if (!upsertedSecret) {
-        throw new Error("Expected secret upsert to return a row");
-      }
-
-      const [provider] = await tx
+      // The provider row is written first: its implicit row lock orders this
+      // writer before its secret, the same order delete and the refresh CAS
+      // use. A new row starts without its secret and is completed below.
+      const [upsertedProvider] = await tx
         .insert(modelProvidersTable)
         .values({
           type: args.type,
           userId: args.userId,
-          secretId: upsertedSecret.id,
+          secretId: null,
           isDefault: false,
           selectedModel: args.selectedModel ?? null,
           orgId: args.orgId,
@@ -639,23 +625,64 @@ const persistSingleAuthModelProvider$ = command(
             modelProvidersTable.type,
           ],
           set: buildSingleAuthConflictSet({
-            secretId: upsertedSecret.id,
             selectedModel: args.selectedModel,
             metadata: args.metadata,
           }),
         })
-        .returning();
+        .returning({
+          ...getTableColumns(modelProvidersTable),
+          inserted: upsertInsertedColumn,
+        });
+      signal.throwIfAborted();
+      if (!upsertedProvider) {
+        throw new Error("Expected model provider upsert to return a row");
+      }
+
+      const [upsertedSecret] = await tx
+        .insert(secrets)
+        .values({
+          userId: args.userId,
+          name: args.secretName,
+          encryptedValue: args.encryptedValue,
+          type: "model-provider",
+          description: `Model provider secret for ${MODEL_PROVIDER_TYPES[args.type].label}`,
+          orgId: args.orgId,
+        })
+        .onConflictDoUpdate({
+          target: [secrets.orgId, secrets.userId, secrets.name, secrets.type],
+          targetWhere: isNull(secrets.connectorId),
+          set: { encryptedValue: args.encryptedValue, updatedAt: nowDate() },
+        })
+        .returning({ id: secrets.id });
       signal.throwIfAborted();
 
-      if (!provider) {
-        throw new Error("Expected model provider upsert to return a row");
+      if (!upsertedSecret) {
+        throw new Error("Expected secret upsert to return a row");
+      }
+
+      const { inserted, ...upsertedRow } = upsertedProvider;
+      let provider: ModelProviderRow = upsertedRow;
+      if (upsertedRow.secretId !== upsertedSecret.id) {
+        // This transaction already holds the row, so the update cannot miss.
+        const [linked] = await tx
+          .update(modelProvidersTable)
+          .set({ secretId: upsertedSecret.id })
+          .where(eq(modelProvidersTable.id, upsertedRow.id))
+          .returning();
+        signal.throwIfAborted();
+        if (!linked) {
+          throw new Error(
+            "Expected model provider secret link to return a row",
+          );
+        }
+        provider = linked;
       }
 
       const consent = deviceAuthSessionPublicationSql(args);
       if (consent && (await tx.execute(consent)).rowCount !== 1) {
         throw new Error("Device authorization was cancelled or expired");
       }
-      return { provider, created: !existingProvider };
+      return { provider, created: inserted };
     });
     signal.throwIfAborted();
     return result;
@@ -788,33 +815,58 @@ const persistMultiAuthModelProvider$ = command(
   }> => {
     const db = set(writeDb$);
     const result = await db.transaction(async (tx) => {
+      // R1 compatibility only: origin/main persistMultiAuthModelProvider and
+      // deleteUserModelProvider$ read the provider unlocked and write secrets
+      // before the provider row; origin/main refreshAccessTokenForSource holds
+      // this key across provider I/O. R2 removes this acquisition once no
+      // serving, in-flight or rollback origin/main writer takes
+      // model_provider_state. New writers do not rely on it.
       await tx.execute(modelProviderStateLockStatement(args));
       signal.throwIfAborted();
-      // Lock the provider row before its secrets, the order refresh
-      // publication uses for its owner-row CAS.
-      const [existingProvider] = await tx
-        .select()
-        .from(modelProvidersTable)
-        .where(
-          and(
-            eq(modelProvidersTable.orgId, args.orgId),
-            eq(modelProvidersTable.userId, args.userId),
-            eq(modelProvidersTable.type, args.type),
-          ),
+
+      // Upsert the provider row first. Its implicit row (or unique-index)
+      // lock makes concurrent saves, including two first saves with
+      // different auth methods, apply one after another; the later one sees
+      // the earlier one's committed secrets below and removes them.
+      const [upsertedProvider] = await tx
+        .insert(modelProvidersTable)
+        .values(
+          buildMultiAuthInsertValues({
+            ...args,
+            selectedModel: args.selectedModel,
+            metadata: args.metadata,
+          }),
         )
-        .for("update")
-        .limit(1);
-      const obsoleteNames =
-        existingProvider && existingProvider.authMethod !== args.authMethod
-          ? (
-              getSecretNamesForAuthMethod(
-                args.type,
-                existingProvider.authMethod ?? "",
-              ) ?? []
-            ).filter((name) => {
-              return !args.secretNames.includes(name);
-            })
-          : [];
+        .onConflictDoUpdate({
+          target: [
+            modelProvidersTable.orgId,
+            modelProvidersTable.userId,
+            modelProvidersTable.type,
+          ],
+          set: buildMultiAuthConflictSet(
+            args.authMethod,
+            args.selectedModel,
+            args.type === "azure-foundry" || args.type === "aws-bedrock",
+            args.metadata,
+          ),
+        })
+        .returning({
+          ...getTableColumns(modelProvidersTable),
+          inserted: upsertInsertedColumn,
+        });
+      signal.throwIfAborted();
+      if (!upsertedProvider) {
+        throw new Error(
+          "Expected multi-auth model provider upsert to return a row",
+        );
+      }
+      const { inserted, ...provider } = upsertedProvider;
+
+      const obsoleteNames = allMultiAuthSecretNames(args.type).filter(
+        (name) => {
+          return !args.secretNames.includes(name);
+        },
+      );
       if (obsoleteNames.length > 0) {
         await tx
           .delete(secrets)
@@ -827,6 +879,7 @@ const persistMultiAuthModelProvider$ = command(
               inArray(secrets.name, obsoleteNames),
             ),
           );
+        signal.throwIfAborted();
       }
       for (const secret of args.encryptedSecrets) {
         await tx
@@ -846,45 +899,13 @@ const persistMultiAuthModelProvider$ = command(
               updatedAt: nowDate(),
             },
           });
-      }
-      const selectedModel =
-        args.selectedModel ??
-        (args.type === "azure-foundry" || args.type === "aws-bedrock"
-          ? (existingProvider?.selectedModel ?? undefined)
-          : undefined);
-      const [provider] = await tx
-        .insert(modelProvidersTable)
-        .values(
-          buildMultiAuthInsertValues({
-            ...args,
-            selectedModel: args.selectedModel,
-            metadata: args.metadata,
-          }),
-        )
-        .onConflictDoUpdate({
-          target: [
-            modelProvidersTable.orgId,
-            modelProvidersTable.userId,
-            modelProvidersTable.type,
-          ],
-          set: buildMultiAuthConflictSet(
-            args.authMethod,
-            selectedModel,
-            args.metadata,
-          ),
-        })
-        .returning();
-      signal.throwIfAborted();
-      if (!provider) {
-        throw new Error(
-          "Expected multi-auth model provider upsert to return a row",
-        );
+        signal.throwIfAborted();
       }
       const consent = deviceAuthSessionPublicationSql(args);
       if (consent && (await tx.execute(consent)).rowCount !== 1) {
         throw new Error("Device authorization was cancelled or expired");
       }
-      return { provider, wasCreated: !existingProvider };
+      return { provider, wasCreated: inserted };
     });
     signal.throwIfAborted();
     return result;

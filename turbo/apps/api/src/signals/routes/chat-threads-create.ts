@@ -149,7 +149,12 @@ const initialThreadModel$ = command(
         : requested.serviceTier;
     return {
       selectedModel: initial.selectedModel,
-      codexServiceTier: serviceTier === "priority" ? "fast" : null,
+      codexServiceTier:
+        serviceTier === "priority"
+          ? "fast"
+          : serviceTier === "ultrafast"
+            ? "ultrafast"
+            : null,
     };
   },
 );

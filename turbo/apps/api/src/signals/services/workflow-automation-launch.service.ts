@@ -102,7 +102,7 @@ export type WorkflowModelContext =
       readonly effectiveModelProvider: string | null | undefined;
       readonly builtInModelRuntimeRoute: BuiltInModelRuntimeRoute | undefined;
       readonly cliAgentType: string | null;
-      readonly codexServiceTier: "fast" | undefined;
+      readonly codexServiceTier: "fast" | "ultrafast" | undefined;
       readonly reasoningEffort: ReasoningEffort | null;
       readonly piExecution: boolean;
     }

@@ -4976,7 +4976,10 @@
           "claudeCodeOauth": "Claude Code（OAuth令牌）",
           "deepseek": "Deepseek"
         },
-        "standard": "标准"
+        "standard": "标准",
+        "ultrafast": "极速",
+        "ultrafastImpact": "Token 生成速度最高 8 倍 · OpenAI API Token 价格 6 倍",
+        "ultrafastMode": "极速模式"
       },
       "policies": {
         "actionsFor": "{{model}}的操作",

@@ -12,7 +12,6 @@ import { and, eq, gt, isNull, or, sql } from "drizzle-orm";
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
-import { builtinConnectorAccountRowsLockSql } from "./builtin-connector-account-rows";
 import {
   builtinConnectorAutomaticLifecycleLockStatement,
   builtinDcrCatalogCondition,
@@ -175,11 +174,11 @@ export const publishAutomaticConnection$ = command(
   > => {
     const db = set(writeDb$);
     return await db.transaction(async (tx) => {
+      // Plain MVCC check, as main's assertCurrentContract; no row lock.
       const [catalog] = await tx
         .select({ sourceId: connectorCatalogActiveSnapshot.sourceId })
         .from(connectorCatalogActiveSnapshot)
         .where(builtinDcrCatalogCondition(input.catalogIdentity))
-        .for("share")
         .limit(1);
       if (!catalog) {
         return { kind: "error", reason: "stale-contract" };
@@ -190,7 +189,6 @@ export const publishAutomaticConnection$ = command(
           .select({ id: builtinConnectorDcrRegistrations.id })
           .from(builtinConnectorDcrRegistrations)
           .where(automaticBoundRegistrationCondition(input))
-          .for("key share")
           .limit(1);
         if (!registration) {
           return { kind: "error", reason: "stale-contract" };
@@ -205,11 +203,10 @@ export const publishAutomaticConnection$ = command(
           .where(automaticReconnectCondition(input))
           .returning({ id: connectors.id });
       } else {
-        // Ordered sibling row locks join set-default and delete. With no rows,
-        // idx_connectors_org_user_slug_default arbitrates the first default.
-        const { rowCount: existingCount } = await tx.execute(
-          builtinConnectorAccountRowsLockSql(input),
-        );
+        // No sibling locks: the default is tried first against
+        // idx_connectors_org_user_slug_default, which only admits it while
+        // no default is committed (and waits for an in-flight one); otherwise
+        // the account becomes a non-default sibling.
         const values = {
           orgId: input.orgId,
           userId: input.userId,
@@ -220,8 +217,15 @@ export const publishAutomaticConnection$ = command(
         };
         [connection] = await tx
           .insert(connectors)
-          .values({ ...values, isDefault: (existingCount ?? 0) === 0 })
-          .onConflictDoNothing()
+          .values({ ...values, isDefault: true })
+          .onConflictDoNothing({
+            target: [
+              connectors.orgId,
+              connectors.userId,
+              connectors.connectorSlug,
+            ],
+            where: sql`${connectors.connectorSlug} IS NOT NULL AND ${connectors.isDefault} = true`,
+          })
           .returning({ id: connectors.id });
         if (!connection) {
           [connection] = await tx
@@ -297,7 +301,6 @@ export const publishAutomaticAuthorizationState$ = command(
         .select({ sourceId: connectorCatalogActiveSnapshot.sourceId })
         .from(connectorCatalogActiveSnapshot)
         .where(builtinDcrCatalogCondition(args.catalogIdentity))
-        .for("share")
         .limit(1);
       if (!catalog) {
         return { kind: "error", reason: "stale-contract" };
@@ -321,7 +324,6 @@ export const publishAutomaticAuthorizationState$ = command(
               sql`${connectors}.xmin::text = ${args.expected.rowVersion}`,
             ),
           )
-          .for("update")
           .limit(1);
         if (!account) {
           return { kind: "error", reason: "invalid-account" };

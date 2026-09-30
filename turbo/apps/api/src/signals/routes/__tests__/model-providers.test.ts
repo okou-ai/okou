@@ -974,6 +974,73 @@ describe("POST /api/model-providers", () => {
     );
   });
 
+  it("applies concurrent first saves with different auth methods one after another", async () => {
+    const fixture = uniqueOrgUser("zmp-concurrent-bedrock");
+    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
+    const client = setupApp({ context, routes: modelProvidersRoutes })(
+      modelProvidersMainContract,
+    );
+
+    const responses = await Promise.all([
+      accept(
+        client.upsert({
+          headers: { authorization: "Bearer clerk-session" },
+          body: {
+            type: "aws-bedrock",
+            authMethod: "access-keys",
+            secrets: {
+              AWS_ACCESS_KEY_ID: "test-access-key",
+              AWS_SECRET_ACCESS_KEY: "test-secret-key",
+              AWS_REGION: "us-east-1",
+            },
+          },
+        }),
+        [200, 201],
+      ),
+      accept(
+        client.upsert({
+          headers: { authorization: "Bearer clerk-session" },
+          body: {
+            type: "aws-bedrock",
+            authMethod: "api-key",
+            secrets: {
+              AWS_BEARER_TOKEN_BEDROCK: "test-bearer-token",
+              AWS_REGION: "us-west-2",
+            },
+          },
+        }),
+        [200, 201],
+      ),
+    ]);
+
+    expect(
+      responses
+        .map((response) => {
+          return response.status;
+        })
+        .sort(),
+    ).toStrictEqual([200, 201]);
+    const lastApplied = responses.find((response) => {
+      return response.status === 200;
+    });
+    const list = await accept(
+      client.list({ headers: { authorization: "Bearer clerk-session" } }),
+      [200],
+    );
+    const providers = list.body.modelProviders.filter(
+      (candidate: ModelProviderResponse) => {
+        return candidate.type === "aws-bedrock";
+      },
+    );
+    expect(providers).toHaveLength(1);
+    expect(providers[0]?.authMethod).toBe(
+      lastApplied?.body.provider.authMethod,
+    );
+    expect(providers[0]?.secretNames).toStrictEqual(
+      lastApplied?.body.provider.secretNames,
+    );
+  });
+
   it("rejects secrets outside the selected provider auth method", async () => {
     const fixture = uniqueOrgUser("zmp-unknown-multi-secret");
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");

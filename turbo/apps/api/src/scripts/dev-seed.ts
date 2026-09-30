@@ -195,6 +195,21 @@ function withFastPricing(
   ];
 }
 
+function withUltrafastPricing(
+  rows: readonly UsagePricingRow[],
+): readonly UsagePricingRow[] {
+  return [
+    ...rows,
+    ...rows
+      .filter(([category]) => {
+        return !category.endsWith(".fast");
+      })
+      .map(([category, unitPrice, unitSize]) => {
+        return [`${category}.ultrafast`, unitPrice * 6, unitSize] as const;
+      }),
+  ];
+}
+
 const GPT_5_6_SOL_USAGE_PRICING = withFastPricing(
   withLongContextPricing(GPT_5_6_SOL_PRICING, 2, 1.5),
 );
@@ -478,7 +493,26 @@ export const USAGE_PRICING: readonly (typeof usagePricing.$inferInsert)[] = [
   ...usageGroup(
     "model",
     "gpt-6-astra",
-    withFastPricing(withLongContextPricing(GPT_6_ASTRA_PRICING, 2, 1.5)),
+    withUltrafastPricing(
+      withFastPricing(withLongContextPricing(GPT_6_ASTRA_PRICING, 2, 1.5)),
+    ),
+  ),
+  // https://developers.openai.com/api/docs/models/gpt-6.1-sol
+  ...usageGroup(
+    "model",
+    "gpt-6.1-sol",
+    withFastPricing(
+      withLongContextPricing(
+        [
+          ["tokens.input", usd(2), 1_000_000],
+          ["tokens.cache_read", usd(0.1), 1_000_000],
+          ["tokens.cache_creation", usd(2.5), 1_000_000],
+          ["tokens.output", usd(10), 1_000_000],
+        ],
+        2,
+        1.5,
+      ),
+    ),
   ),
   // https://developers.openai.com/api/docs/models/gpt-6-luna
   ...usageGroup("model", "gpt-6-luna", GPT_6_LUNA_PRICING),

@@ -1,6 +1,9 @@
 import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import type { DefaultModelFirstPin } from "./model-selection.service";
-import { chatThreadEventInsertSql } from "./chat-thread-event.service";
+import {
+  chatThreadEventInsertSql,
+  chatThreadServiceTierFromCodex,
+} from "./chat-thread-event.service";
 
 export interface IntegrationChatThreadCreation {
   readonly orgId: string;
@@ -28,7 +31,11 @@ export function integrationChatThreadValues(
     agentId: args.agentId,
     selectedModel: args.initialModel.selectedModel,
     codexServiceTier:
-      args.initialModel.serviceTier === "priority" ? ("fast" as const) : null,
+      args.initialModel.serviceTier === "priority"
+        ? ("fast" as const)
+        : args.initialModel.serviceTier === "ultrafast"
+          ? ("ultrafast" as const)
+          : null,
     modelSettings: defaults.modelSettings,
     cloudBrowserEnabled: defaults.cloudBrowserEnabled,
     title: null,
@@ -52,7 +59,7 @@ export function integrationThreadCreatedEventSql(
     title: thread.title,
     selectedModel: thread.selectedModel,
     modelSettings: thread.modelSettings,
-    serviceTier: thread.codexServiceTier === "fast" ? "priority" : null,
+    serviceTier: chatThreadServiceTierFromCodex(thread.codexServiceTier),
     computerUseHostId: null,
     cloudBrowserEnabled: thread.cloudBrowserEnabled,
     createdAt: thread.createdAt,

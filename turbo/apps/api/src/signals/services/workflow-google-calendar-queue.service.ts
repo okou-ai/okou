@@ -54,6 +54,45 @@ function googleCalendarQueueAutomationCondition(
   );
 }
 
+/** Queue admission gated by the current account, consumer and channel rows. */
+function googleCalendarQueueAdmissionSql(
+  source: GoogleCalendarQueueSource,
+  chatThreadId: string,
+  currentTime: Date,
+) {
+  const timestamp = sql`${currentTime.toISOString()}::timestamp`;
+  return sql`INSERT INTO ${queuedChatThreads} (chat_thread_id, org_id, queued_at)
+    SELECT ${chatThreadId}::uuid, ${source.orgId}, ${timestamp}
+    WHERE EXISTS (
+      SELECT 1 FROM ${connectors}
+      WHERE ${and(
+        eq(connectors.id, source.connectorId),
+        eq(connectors.orgId, source.orgId),
+        eq(connectors.userId, source.userId),
+        eq(connectors.connectorSlug, "google-calendar"),
+        eq(connectors.needsReconnect, false),
+      )}
+    )
+    AND EXISTS (
+      SELECT 1 FROM ${workflowAutomations}
+      WHERE ${googleCalendarQueueAutomationCondition(source)}
+    )
+    AND EXISTS (
+      SELECT 1 FROM ${googleCalendarWatchStates}
+      WHERE ${and(
+        eq(googleCalendarWatchStates.id, source.watchStateId),
+        eq(googleCalendarWatchStates.orgId, source.orgId),
+        eq(googleCalendarWatchStates.userId, source.userId),
+        eq(googleCalendarWatchStates.connectorId, source.connectorId),
+        eq(googleCalendarWatchStates.calendarId, source.calendarId),
+        eq(googleCalendarWatchStates.channelId, source.channelId),
+        isNull(googleCalendarWatchStates.actionRequiredReason),
+        isNull(googleCalendarWatchStates.actionRequiredAt),
+      )}
+    )
+    ON CONFLICT (chat_thread_id) DO UPDATE SET claim_id = NULL, claim_expires_at = NULL`;
+}
+
 /** Authorize the current channel and consumer in the local queue transaction. */
 export const enqueueGoogleCalendarWorkflowInput$ = command(
   async (
@@ -75,8 +114,8 @@ export const enqueueGoogleCalendarWorkflowInput$ = command(
       );
     }
     return await db.transaction(async (tx) => {
-      // Match outgoing queue writers: append first, then acquire source locks.
-      // A rejected source rolls the append and its sequence reservation back.
+      // Append first; a rejected source rolls the append and its sequence
+      // reservation back.
       await tx
         .insert(chatAutomationContext)
         .values(input.context)
@@ -93,65 +132,23 @@ export const enqueueGoogleCalendarWorkflowInput$ = command(
         }
         return null;
       }
-      // Row locks arbitrate this admission in the member lock order
-      // account -> automation -> watch state. Reconnect marking, credential
-      // rewrites and account deletion conflict with the account share lock;
-      // disable and reprojection update the automation row; channel
-      // replacement, action-required marking and stop update or delete the
-      // watch row.
-      const [account] = await tx
-        .select({ id: connectors.id })
-        .from(connectors)
-        .where(
-          and(
-            eq(connectors.id, source.connectorId),
-            eq(connectors.orgId, source.orgId),
-            eq(connectors.userId, source.userId),
-            eq(connectors.connectorSlug, "google-calendar"),
-            eq(connectors.needsReconnect, false),
-          ),
-        )
-        .for("share")
-        .limit(1);
-      const [automation] = await tx
-        .select({ id: workflowAutomations.id })
-        .from(workflowAutomations)
-        .where(googleCalendarQueueAutomationCondition(source))
-        .for("update")
-        .limit(1);
-      const [state] = await tx
-        .select({ id: googleCalendarWatchStates.id })
-        .from(googleCalendarWatchStates)
-        .where(
-          and(
-            eq(googleCalendarWatchStates.id, source.watchStateId),
-            eq(googleCalendarWatchStates.orgId, source.orgId),
-            eq(googleCalendarWatchStates.userId, source.userId),
-            eq(googleCalendarWatchStates.connectorId, source.connectorId),
-            eq(googleCalendarWatchStates.calendarId, source.calendarId),
-            eq(googleCalendarWatchStates.channelId, source.channelId),
-            isNull(googleCalendarWatchStates.actionRequiredReason),
-            isNull(googleCalendarWatchStates.actionRequiredAt),
-          ),
-        )
-        .for("share")
-        .limit(1);
-      signal.throwIfAborted();
-      if (!account || !automation || !state) {
+      // One conditional statement admits the queue record only while the
+      // account, consumer and channel are current; zero rows rolls the append
+      // back. Concurrent disable/replacement/reconnect is not serialized: an
+      // event admitted just before it commits is re-checked at dispatch.
+      if (
+        (
+          await tx.execute(
+            googleCalendarQueueAdmissionSql(
+              source,
+              input.event.chatThreadId,
+              nowDate(),
+            ),
+          )
+        ).rowCount === 0
+      ) {
         throw new GoogleCalendarSourceTransitionChangedError();
       }
-      const currentTime = nowDate();
-      await tx
-        .insert(queuedChatThreads)
-        .values({
-          chatThreadId: input.event.chatThreadId,
-          orgId: source.orgId,
-          queuedAt: currentTime,
-        })
-        .onConflictDoUpdate({
-          target: queuedChatThreads.chatThreadId,
-          set: { claimId: null, claimExpiresAt: null },
-        });
       signal.throwIfAborted();
       return event.id;
     });

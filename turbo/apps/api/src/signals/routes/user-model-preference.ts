@@ -1,5 +1,8 @@
 import { command, computed } from "ccstate";
-import { isMemberModelPolicyConfigurable } from "@okouai/api-contracts/contracts/member-model-policy";
+import {
+  getMemberModelPolicyRoute,
+  isMemberModelPolicyConfigurable,
+} from "@okouai/api-contracts/contracts/member-model-policy";
 import {
   getRunModelAccess,
   RETIRED_RUN_MODEL_MESSAGE,
@@ -43,6 +46,27 @@ function validateModelSettingsPatch(args: {
   if (!isModelReasoningEffortSupported(args.patch.model, args.patch.effort)) {
     return badRequestMessage(
       "Reasoning effort is not supported by the selected model",
+    );
+  }
+  return undefined;
+}
+
+function validateUltrafastServiceTier(args: {
+  readonly requested: boolean;
+  readonly configuredPolicy: OrgModelPolicy | undefined;
+}): ReturnType<typeof badRequestMessage> | undefined {
+  if (!args.requested) {
+    return undefined;
+  }
+  if (
+    !args.configuredPolicy ||
+    !isMemberModelPolicyConfigurable(args.configuredPolicy) ||
+    args.configuredPolicy.model !== "gpt-6-astra" ||
+    getMemberModelPolicyRoute(args.configuredPolicy).providerType !==
+      "openai-api-key"
+  ) {
+    return badRequestMessage(
+      "Astra Ultrafast requires a direct OpenAI API-key route",
     );
   }
   return undefined;
@@ -174,10 +198,15 @@ const updateUserModelPreferenceInner$ = command(
       return modelSettingsError;
     }
 
-    const serviceTierError = validatePriorityServiceTier({
-      requested: body.data.serviceTier === "priority",
-      configuredPolicy,
-    });
+    const serviceTierError =
+      validateUltrafastServiceTier({
+        requested: body.data.serviceTier === "ultrafast",
+        configuredPolicy,
+      }) ??
+      validatePriorityServiceTier({
+        requested: body.data.serviceTier === "priority",
+        configuredPolicy,
+      });
     if (serviceTierError) {
       return serviceTierError;
     }

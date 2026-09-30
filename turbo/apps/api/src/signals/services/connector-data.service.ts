@@ -56,7 +56,6 @@ import {
   decryptStoredSecretValue,
   encryptStoredSecretValue,
 } from "./crypto.utils";
-import { builtinConnectorAccountRowsLockSql } from "./builtin-connector-account-rows";
 import {
   userFeatureSwitchContext,
   userFeatureSwitchOverrides,
@@ -116,7 +115,7 @@ import { reconcileConnectorAccountState } from "./connector-account-state.servic
 import { prepareConnectorAccountDeletionWithTargetLocked } from "./connector-account-lifecycle.service";
 import { resolveConnectorAccount } from "./connector-account-resolution.service";
 import {
-  replaceConnectorConnection,
+  replaceConnectorConnectionOutcome,
   resolveConnectorConnectionMutation,
   type ConnectorConnectionMutationResolution,
   type StoredConnectorConnectionRow as StoredConnectorRow,
@@ -1013,11 +1012,7 @@ type BuiltinConnectorAccountForDeletion =
     }
   | {
       readonly kind: "resolved";
-      readonly connector: {
-        readonly id: string;
-        readonly authMethod: string;
-        readonly storageVersion: number;
-      };
+      readonly connectionId: string;
     };
 
 async function loadBuiltinConnectorAccountForDeletion(
@@ -1042,19 +1037,7 @@ async function loadBuiltinConnectorAccountForDeletion(
   if (resolution.kind !== "resolved") {
     return { kind: "missing" };
   }
-
-  const [connector] = await db
-    .select({
-      id: connectors.id,
-      authMethod: connectors.authMethod,
-      storageVersion: connectors.storageVersion,
-    })
-    .from(connectors)
-    .where(eq(connectors.id, resolution.account.connectorId))
-    .for("update")
-    .limit(1);
-  signal.throwIfAborted();
-  return connector ? { kind: "resolved", connector } : { kind: "missing" };
+  return { kind: "resolved", connectionId: resolution.account.connectorId };
 }
 
 async function prepareBuiltinConnectorAccountDeletion(
@@ -1129,18 +1112,9 @@ async function deleteBuiltinConnectorAccountLocalState(
   featureSwitchContext: FeatureSwitchContext | null,
   signal: AbortSignal,
 ) {
-  // Ordered sibling row locks first: the exact-row FOR UPDATE below and the
-  // default promotion in prepareBuiltinConnectorAccountDeletion then only
-  // upgrade rows this transaction already holds.
-  await tx.execute(
-    builtinConnectorAccountRowsLockSql({
-      orgId: args.orgId,
-      userId: args.userId,
-      connectorSlug: args.connectorSlug,
-    }),
-  );
-  signal.throwIfAborted();
-
+  // Plain resolution read: prepareBuiltinConnectorAccountDeletion's
+  // exact-identity write claims the row (missing if a concurrent delete won)
+  // and holds it until commit, so the details read afterwards are current.
   const account = await loadBuiltinConnectorAccountForDeletion(
     tx,
     args,
@@ -1152,12 +1126,11 @@ async function deleteBuiltinConnectorAccountLocalState(
       pendingTokenRevoke: null,
     };
   }
-  const existing = account.connector;
   const deletion = await prepareBuiltinConnectorAccountDeletion(
     tx,
     {
       ...args,
-      connectionId: existing.id,
+      connectionId: account.connectionId,
     },
     signal,
   );
@@ -1167,6 +1140,19 @@ async function deleteBuiltinConnectorAccountLocalState(
       kind: deletion.kind,
       pendingTokenRevoke: null,
     };
+  }
+  const [existing] = await tx
+    .select({
+      id: connectors.id,
+      authMethod: connectors.authMethod,
+      storageVersion: connectors.storageVersion,
+    })
+    .from(connectors)
+    .where(eq(connectors.id, account.connectionId))
+    .limit(1);
+  signal.throwIfAborted();
+  if (!existing) {
+    throw new Error("Claimed connector account disappeared before deletion");
   }
 
   let pendingTokenRevoke: PendingBuiltinConnectorTokenRevoke | null = null;
@@ -1612,7 +1598,7 @@ async function commitManualGrantConnector(
       },
       signal,
     );
-  const connectorRow = await replaceConnectorConnection(
+  const written = await replaceConnectorConnectionOutcome(
     db,
     {
       orgId: args.orgId,
@@ -1646,6 +1632,10 @@ async function commitManualGrantConnector(
     },
     signal,
   );
+  if (written.kind !== "written") {
+    return connectorConnectionMutationFailure(written);
+  }
+  const connectorRow = written.row;
   await deleteUserSecretNames(
     db,
     {
@@ -1804,7 +1794,7 @@ export const connectNoAuthBuiltinConnector$ = command(
         signal,
       );
 
-      connectorRow = await replaceConnectorConnection(
+      const written = await replaceConnectorConnectionOutcome(
         tx,
         {
           orgId: args.orgId,
@@ -1824,6 +1814,11 @@ export const connectNoAuthBuiltinConnector$ = command(
         },
         signal,
       );
+      if (written.kind !== "written") {
+        mutationFailure = connectorConnectionMutationFailure(written);
+        return;
+      }
+      connectorRow = written.row;
     });
     if (signal.aborted) {
       postCommitAbort ??= signal.reason;
@@ -2478,7 +2473,7 @@ export async function commitBuiltinConnectorTokenConnection(
       signal,
     );
   }
-  const connectorRow = await replaceConnectorConnection(
+  const written = await replaceConnectorConnectionOutcome(
     args.db,
     {
       orgId: args.orgId,
@@ -2516,6 +2511,10 @@ export async function commitBuiltinConnectorTokenConnection(
     },
     signal,
   );
+  if (written.kind !== "written") {
+    return connectorConnectionMutationFailure(written);
+  }
+  const connectorRow = written.row;
   if (isOneClickConnectorGrantKind(args.runtimeMethod.method.grant.kind)) {
     await args.db.execute(
       completedGetStartedQuestSql(

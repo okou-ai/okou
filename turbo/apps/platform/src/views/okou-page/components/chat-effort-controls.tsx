@@ -194,6 +194,53 @@ export function ChatEffortSettings({
  * Show Fast's cost before the user enables it, including as the
  * switch's accessible description.
  */
+export function ChatUltrafastSetting({
+  selection,
+  disabled,
+  onChange,
+}: {
+  selection: ModelProviderSelection;
+  disabled: boolean;
+  onChange: (selection: ModelProviderSelection) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <Field.Root className="flex items-center justify-between gap-3 px-2 py-3">
+      <div className="flex min-w-0 items-start gap-2">
+        <Zap
+          size={18}
+          fill="currentColor"
+          className="mt-px shrink-0 text-amber-600 dark:text-amber-300"
+          aria-hidden="true"
+        />
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <Field.Label className="text-[13px]">
+            {t(($) => {
+              return $.settings.models.picker.ultrafastMode;
+            })}
+          </Field.Label>
+          <Field.Description className="text-[11px] text-gray-700">
+            {t(($) => {
+              return $.settings.models.picker.ultrafastImpact;
+            })}
+          </Field.Description>
+        </div>
+      </div>
+      <Switch
+        size="compact"
+        checked={selection.codexServiceTier === "ultrafast"}
+        onCheckedChange={(enabled) => {
+          onChange({
+            ...selection,
+            codexServiceTier: enabled ? "ultrafast" : undefined,
+          });
+        }}
+        disabled={disabled}
+      />
+    </Field.Root>
+  );
+}
+
 export function ChatFastSetting({
   selection,
   disabled,

@@ -12,7 +12,10 @@ import type { ModelSettingsPatch } from "@okouai/api-contracts/contracts/model-r
 import { accept } from "../../lib/accept.ts";
 import { nowDate } from "../../lib/time.ts";
 import { apiClient$ } from "../api-client.ts";
-import { threadCodexServiceTierFromSelection } from "./model-selection-request.ts";
+import {
+  apiServiceTierFromSelection,
+  threadCodexServiceTierFromSelection,
+} from "./model-selection-request.ts";
 import {
   setAblyInvalidationLoop$,
   setAblyLoop$,
@@ -165,8 +168,7 @@ export const patchChatThreadModelSelection$ = command(
         kind: "service_tier_updated",
         chatThreadId: threadId,
         agentId: threadMeta.agentId,
-        serviceTier:
-          modelSelection?.codexServiceTier === "fast" ? "priority" : null,
+        serviceTier: apiServiceTierFromSelection(modelSelection),
         createdAt,
       });
     }

@@ -41,13 +41,21 @@ export function withSelectedModelAnnotation(
 export function runOptionsFromModelProviderSelection(
   value: ModelProviderSelection | null,
 ): ChatRunOptionsRequest | undefined {
-  return value?.codexServiceTier === "fast"
-    ? { codexServiceTier: "fast" }
+  return value?.codexServiceTier
+    ? { codexServiceTier: value.codexServiceTier }
     : undefined;
 }
 
 export function threadCodexServiceTierFromSelection(
   value: ModelProviderSelection | null,
 ): CodexServiceTier | null {
-  return value?.codexServiceTier === "fast" ? "fast" : null;
+  return value?.codexServiceTier ?? null;
+}
+
+export function apiServiceTierFromSelection(
+  value: ModelProviderSelection | null,
+): ChatThreadServiceTier | null {
+  return value?.codexServiceTier === "fast"
+    ? "priority"
+    : (value?.codexServiceTier ?? null);
 }

@@ -87,7 +87,7 @@ import {
 import { awaitWithSignal, bestEffort, onRejection, settle } from "../utils";
 import { reconcileGmailWatchesForUser$ } from "../services/gmail-automation-event.service";
 import { reconcileGoogleCalendarWatchesForUser$ } from "../services/google-calendar-automation-event.service";
-import { automationAccountProjectionLocksSql } from "../services/workflow-automation.service";
+import { automationAccountProjectionCompatLockSql } from "../services/workflow-automation.service";
 import { reprojectWorkflowAutomationsForOwner } from "../services/workflow-automation-account-projection.service";
 import {
   workflowAutomationAccountConnectorSlug,
@@ -1351,19 +1351,21 @@ async function lockWorkflowCopyInputs(
     return false;
   }
   if (prepared) {
-    // Account changes hold the member's ordered account rows before updating
-    // Automation projections. Acquire them before locking source Automations,
-    // in the same order.
+    // No account row is locked: copied Automations are inserted unbound and
+    // the reprojection after them computes each account from current rows. An
+    // account change committing concurrently converges through its own
+    // reprojection or the projection repair paths. The compatibility key is
+    // taken before source Automations are locked, in main's order.
     for (const connectorSlug of workflowCopyConnectorSlugs(
       prepared.sourceAutomations,
     )) {
-      for (const statement of automationAccountProjectionLocksSql({
-        orgId: args.orgId,
-        userId: args.userId,
-        connectorSlug,
-      })) {
-        await tx.execute(statement);
-      }
+      await tx.execute(
+        automationAccountProjectionCompatLockSql({
+          orgId: args.orgId,
+          userId: args.userId,
+          connectorSlug,
+        }),
+      );
     }
   }
   return true;

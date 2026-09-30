@@ -12,12 +12,13 @@ import {
   workflows,
 } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
-import { and, eq } from "drizzle-orm";
+import { and, eq, exists } from "drizzle-orm";
 
+import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
+import { settle } from "../utils";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
-import { builtinConnectorAccountRowsLockSql } from "./builtin-connector-account-rows";
 import {
   googleFormsCursorMustReset,
   googleFormsCursorPublicationStatement,
@@ -156,6 +157,28 @@ function activeIdentityUpdate(automationId: string, updatedAt: Date) {
   };
 }
 
+/** The publication lost a race after its automation update; roll it back. */
+class OfficialFormsPublicationSupersededError extends Error {
+  constructor(readonly reason: string) {
+    super(reason);
+    this.name = "OfficialFormsPublicationSupersededError";
+  }
+}
+
+function isFormsSourceAccountMissing(error: unknown): boolean {
+  return (
+    isForeignKeyViolation(error) &&
+    error instanceof Error &&
+    typeof error.cause === "object" &&
+    error.cause !== null &&
+    "constraint" in error.cause &&
+    (error.cause.constraint ===
+      "workflow_automations_event_connector_id_connectors_id_fk" ||
+      error.cause.constraint ===
+        "google_forms_automation_cursors_watch_state_id_google_forms_wat")
+  );
+}
+
 const commitOfficialFormsReconfiguration$ = command(
   async (
     { set },
@@ -169,116 +192,119 @@ const commitOfficialFormsReconfiguration$ = command(
     const config = googleFormsResponseSubmittedEventConfigSchema.parse(
       args.patch.eventConfig,
     );
-    return await db.transaction(async (tx) => {
-      const [catalog] = await tx
-        .select({ id: officialWorkflowCatalogState.acceptedReleaseId })
-        .from(officialWorkflowCatalogState)
-        .where(acceptedCatalogCondition(args.catalogReleaseId))
-        .for("share")
-        .limit(1);
-      if (!catalog) {
-        return false;
-      }
-      // The selected account depends on the member's Forms account set and
-      // default. Sibling account row locks serialize this publication with
-      // default changes, deletion and credential rewrites; selection changes
-      // and reprojection conflict on the automation row locked below, and
-      // its observed snapshot rejects a publication that raced them.
-      await tx.execute(
-        builtinConnectorAccountRowsLockSql({
-          orgId: args.orgId,
-          userId: args.userId,
-          connectorSlug: "google-forms",
-        }),
-      );
-      const [account] = await tx
-        .select({ id: connectors.id })
-        .from(connectors)
-        .where(
-          googleFormsSelectedAccountCondition({
-            ...args,
-            workflowId: args.expected.workflowId,
-            connectorId: config.connectorId,
-          }),
-        )
-        .for("key share")
-        .limit(1);
-      const [workflow] = await tx
-        .select({ id: workflows.id })
-        .from(workflows)
-        .where(installedWorkflowCondition(args))
-        .for("update")
-        .limit(1);
-      const [current] = await tx
-        .select(workflowAutomationColumns())
-        .from(workflowAutomations)
-        .where(observedWorkflowAutomationCondition(args.expected))
-        .for("update")
-        .limit(1);
-      if (!account || !workflow || !current) {
-        return false;
-      }
-      const enabled =
-        current.officialIntendedEnabled === true || current.enabled;
-      if (enabled) {
-        const [watch] = await tx
-          .select({ id: googleFormsWatchStates.id })
-          .from(googleFormsWatchStates)
-          .where(preparedWatchCondition(args))
-          .for("key share")
-          .limit(1);
-        if (!watch) {
+    const enabled =
+      args.expected.officialIntendedEnabled === true || args.expected.enabled;
+    const settled = await settle(
+      db.transaction(async (tx) => {
+        const currentTime = nowDate();
+        // One conditional statement publishes the configuration only while
+        // the observed automation version, the accepted catalog release, the
+        // installed Workflow, the selected Forms account and (when enabled)
+        // the prepared watch are all current. No row is locked: a concurrent
+        // change either commits first and fails a condition here (retry), or
+        // commits afterward and reconciles/reprojects this automation itself.
+        const [updated] = await tx
+          .update(workflowAutomations)
+          .set({
+            ...refreshOfficialAutomationPatch(
+              args.expected,
+              { ...args.patch, enabled },
+              currentTime,
+            ),
+            officialReconciliationStatus: "current",
+          })
+          .where(
+            and(
+              observedWorkflowAutomationCondition(args.expected),
+              exists(
+                tx
+                  .select({
+                    id: officialWorkflowCatalogState.acceptedReleaseId,
+                  })
+                  .from(officialWorkflowCatalogState)
+                  .where(acceptedCatalogCondition(args.catalogReleaseId)),
+              ),
+              exists(
+                tx
+                  .select({ id: workflows.id })
+                  .from(workflows)
+                  .where(installedWorkflowCondition(args)),
+              ),
+              exists(
+                tx
+                  .select({ id: connectors.id })
+                  .from(connectors)
+                  .where(
+                    googleFormsSelectedAccountCondition({
+                      ...args,
+                      workflowId: args.expected.workflowId,
+                      connectorId: config.connectorId,
+                    }),
+                  ),
+              ),
+              enabled
+                ? exists(
+                    tx
+                      .select({ id: googleFormsWatchStates.id })
+                      .from(googleFormsWatchStates)
+                      .where(preparedWatchCondition(args)),
+                  )
+                : undefined,
+            ),
+          )
+          .returning(workflowAutomationColumns());
+        if (!updated) {
           return false;
         }
-      }
-      const currentTime = nowDate();
-      const [updated] = await tx
-        .update(workflowAutomations)
-        .set({
-          ...refreshOfficialAutomationPatch(
-            current,
-            { ...args.patch, enabled },
-            currentTime,
-          ),
-          officialReconciliationStatus: "current",
-        })
-        .where(observedWorkflowAutomationCondition(current))
-        .returning(workflowAutomationColumns());
-      if (!updated) {
-        throw new Error(
-          "Official Forms publication lost its locked observation",
+        if (googleFormsCursorMustReset(args.expected, updated)) {
+          await tx
+            .delete(googleFormsAutomationCursors)
+            .where(
+              eq(googleFormsAutomationCursors.automationId, args.expected.id),
+            );
+        }
+        const cursor = googleFormsCursorPublicationStatement(
+          updated,
+          args.seedCursor,
+          currentTime,
         );
-      }
-      if (googleFormsCursorMustReset(current, updated)) {
+        if (cursor !== null && (await tx.execute(cursor)).rowCount !== 1) {
+          throw new OfficialFormsPublicationSupersededError(
+            "Official Forms publication lost its prepared watch",
+          );
+        }
         await tx
-          .delete(googleFormsAutomationCursors)
-          .where(eq(googleFormsAutomationCursors.automationId, current.id));
-      }
-      const cursor = googleFormsCursorPublicationStatement(
-        updated,
-        args.seedCursor,
-        currentTime,
-      );
-      if (cursor !== null && (await tx.execute(cursor)).rowCount !== 1) {
-        throw new Error("Official Forms publication lost its prepared watch");
-      }
-      await tx
-        .insert(officialWorkflowAutomationIdentities)
-        .values(activeIdentityValues(updated, currentTime))
-        .onConflictDoUpdate({
-          target: [
-            officialWorkflowAutomationIdentities.workflowId,
-            officialWorkflowAutomationIdentities.blueprintKey,
-          ],
-          set: activeIdentityUpdate(updated.id, currentTime),
-        });
-      await tx
-        .update(workflows)
-        .set({ updatedBy: args.userId, updatedAt: currentTime })
-        .where(eq(workflows.id, updated.workflowId));
-      signal.throwIfAborted();
-      return true;
-    });
+          .insert(officialWorkflowAutomationIdentities)
+          .values(activeIdentityValues(updated, currentTime))
+          .onConflictDoUpdate({
+            target: [
+              officialWorkflowAutomationIdentities.workflowId,
+              officialWorkflowAutomationIdentities.blueprintKey,
+            ],
+            set: activeIdentityUpdate(updated.id, currentTime),
+          });
+        await tx
+          .update(workflows)
+          .set({ updatedBy: args.userId, updatedAt: currentTime })
+          .where(eq(workflows.id, updated.workflowId));
+        signal.throwIfAborted();
+        return true;
+      }),
+    );
+    signal.throwIfAborted();
+    if (settled.ok) {
+      return settled.value;
+    }
+    // The whole publication rolled back: its watch or account disappeared
+    // after the automation update. Report it as superseded; the caller
+    // retries reconciliation from current state.
+    if (
+      settled.error instanceof OfficialFormsPublicationSupersededError ||
+      isFormsSourceAccountMissing(settled.error)
+    ) {
+      return false;
+    }
+    throw settled.error;
   },
 );
 

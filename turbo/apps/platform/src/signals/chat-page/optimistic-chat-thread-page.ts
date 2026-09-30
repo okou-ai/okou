@@ -37,6 +37,7 @@ import { userModelPreference$ } from "../external/user-model-preference.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { logger } from "../log.ts";
 import {
+  apiServiceTierFromSelection,
   runOptionsFromModelProviderSelection,
   withSelectedModelAnnotation,
 } from "./model-selection-request.ts";
@@ -137,7 +138,7 @@ function annotatedMessagesForNewThread(
   const annotatedUserMessage = withSelectedModelAnnotation(
     userMessage,
     modelSelection.selectedModel,
-    modelSelection.codexServiceTier === "fast" ? "priority" : undefined,
+    apiServiceTierFromSelection(modelSelection) ?? undefined,
   );
   return {
     annotatedUserMessage,
@@ -321,7 +322,7 @@ const mintOptimisticThreadWithEvent$ = command(
       readonly eventId: string;
       readonly agentId: string;
       readonly selectedModel: string | null;
-      readonly serviceTier: "priority" | null;
+      readonly serviceTier: "priority" | "ultrafast" | null;
       readonly modelSettings: ModelSettings;
       readonly computerUseHostId: string | null;
       readonly cloudBrowserEnabled: boolean;
@@ -371,8 +372,7 @@ async function createChatThread(
         clientThreadId: args.clientThreadId,
         eventId: args.eventId,
         model: args.modelSelection.selectedModel,
-        serviceTier:
-          args.modelSelection.codexServiceTier === "fast" ? "priority" : null,
+        serviceTier: apiServiceTierFromSelection(args.modelSelection),
         ...(selectedEffort === undefined
           ? {}
           : { reasoningEffort: selectedEffort }),
@@ -426,8 +426,7 @@ const startNewChatThreadCreate$ = command(
         agentId,
         selectedModel: modelSelection.selectedModel,
         modelSettings: modelSelection.modelSettings ?? {},
-        serviceTier:
-          modelSelection.codexServiceTier === "fast" ? "priority" : null,
+        serviceTier: apiServiceTierFromSelection(modelSelection),
         computerUseHostId: null,
         cloudBrowserEnabled: false,
       },
@@ -544,10 +543,7 @@ const sendNewThreadMessage$ = command(
         agentId,
         selectedModel: resolvedModelSelection.selectedModel,
         modelSettings: resolvedModelSelection.modelSettings ?? {},
-        serviceTier:
-          resolvedModelSelection.codexServiceTier === "fast"
-            ? "priority"
-            : null,
+        serviceTier: apiServiceTierFromSelection(resolvedModelSelection),
         computerUseHostId: computerUseHostId ?? null,
         cloudBrowserEnabled: cloudBrowserEnabled ?? false,
       },

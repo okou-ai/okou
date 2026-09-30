@@ -3,7 +3,16 @@ import { createHash } from "node:crypto";
 import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import { OAuth2Client } from "google-auth-library";
 import { command } from "ccstate";
-import { and, asc, eq, getTableColumns, inArray, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  exists,
+  getTableColumns,
+  inArray,
+  or,
+  sql,
+} from "drizzle-orm";
 import { z } from "zod";
 import {
   gmailLabelAppliedEventConfigSchema,
@@ -24,13 +33,13 @@ import {
 import { connectors } from "@okouai/db/schema/connector";
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { optionalEnv } from "../../lib/env";
+import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { logger } from "../../lib/log";
 import { testOverride } from "../../lib/singleton";
 import { writeDb$ } from "../external/db";
 import { now, nowDate } from "../../lib/time";
 import { safeJsonParse, settle, tapError } from "../utils";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
-import { builtinConnectorAccountRowsLockSql } from "./builtin-connector-account-rows";
 import { loadConnectorRuntimeSnapshot$ } from "./connector-catalog-runtime.service";
 import { builtinConnectorCredentialRuntimeValueRef } from "./builtin-connector-credential-runtime.service";
 import {
@@ -639,32 +648,6 @@ function gmailLifecycleLockStatement(args: GmailPhysicalScopeInput) {
   return sql`SELECT pg_advisory_xact_lock(hashtext(${key}))`;
 }
 
-function gmailWatchInsertValues(
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly connectorId: string;
-    readonly emailAddress: string;
-    readonly topicName: string;
-  },
-  watch: z.infer<typeof gmailWatchResponseSchema>,
-  currentTime: Date,
-) {
-  return {
-    orgId: args.orgId,
-    userId: args.userId,
-    connectorId: args.connectorId,
-    emailAddress: args.emailAddress,
-    topicName: args.topicName,
-    lastHistoryId: watch.historyId,
-    watchExpirationAt: watchExpirationDate(watch.expiration),
-    lastWatchRenewedAt: currentTime,
-    needsRewatch: false,
-    createdAt: currentTime,
-    updatedAt: currentTime,
-  };
-}
-
 interface GmailWatchPublicationInput {
   readonly orgId: string;
   readonly userId: string;
@@ -675,6 +658,56 @@ interface GmailWatchPublicationInput {
   readonly forceRefresh: boolean;
   readonly allowStagedOfficialTarget: boolean;
   readonly accessToken: string;
+}
+
+/** Conditional unique upsert of one mailbox watch for a usable account and live consumer. */
+function gmailWatchPublicationSql(
+  args: GmailWatchPublicationInput,
+  historyId: string,
+  expiration: Date,
+  currentTime: Date,
+) {
+  const timestamp = sql`${currentTime.toISOString()}::timestamp`;
+  const expiresAt = sql`${expiration.toISOString()}::timestamp`;
+  const accountCondition = and(
+    eq(connectors.id, args.connectorId),
+    eq(connectors.orgId, args.orgId),
+    eq(connectors.userId, args.userId),
+    eq(connectors.connectorSlug, "gmail"),
+    eq(connectors.needsReconnect, false),
+    sql`(${connectors.externalEmail} IS NULL OR lower(${connectors.externalEmail}) = ${normalizeGmailAddress(args.emailAddress)})`,
+  );
+  const consumerCondition = and(
+    eq(workflowAutomations.orgId, args.orgId),
+    eq(workflowAutomations.ownerUserId, args.userId),
+    eq(workflowAutomations.eventConnectorId, args.connectorId),
+    sql`(${workflowAutomations.enabled} OR (${args.allowStagedOfficialTarget}
+      AND ${workflowAutomations.officialReconciliationStatus} = 'reconciling'
+      AND ${workflowAutomations.officialBlueprintKey} IS NOT NULL))`,
+    eq(workflowAutomations.kind, "event"),
+    inArray(workflowAutomations.eventType, [...GMAIL_EVENT_TYPES]),
+  );
+  const historyUpdate = args.resetCurrentCursor
+    ? sql`EXCLUDED.last_history_id`
+    : sql`${gmailWatchStates.lastHistoryId}`;
+  return sql`INSERT INTO ${gmailWatchStates} (
+      org_id, user_id, connector_id, email_address, topic_name,
+      last_history_id, watch_expiration_at, last_watch_renewed_at,
+      needs_rewatch, created_at, updated_at
+    )
+    SELECT ${args.orgId}, ${args.userId}, ${args.connectorId}::uuid,
+      ${args.emailAddress}, ${args.topicName}, ${historyId}, ${expiresAt},
+      ${timestamp}, false, ${timestamp}, ${timestamp}
+    WHERE EXISTS (SELECT 1 FROM ${connectors} WHERE ${accountCondition})
+      AND EXISTS (SELECT 1 FROM ${workflowAutomations} WHERE ${consumerCondition})
+    ON CONFLICT (connector_id, topic_name) DO UPDATE SET
+      email_address = EXCLUDED.email_address,
+      last_history_id = ${historyUpdate},
+      watch_expiration_at = EXCLUDED.watch_expiration_at,
+      last_watch_renewed_at = EXCLUDED.last_watch_renewed_at,
+      needs_rewatch = false,
+      updated_at = EXCLUDED.updated_at
+    RETURNING id`;
 }
 
 const publishGmailWatch$ = command(
@@ -723,42 +756,21 @@ const publishGmailWatch$ = command(
       }
       const watch = watchResult.value;
       const expiration = watchExpirationDate(watch.expiration);
-      const [account] = await tx
-        .select({ id: connectors.id })
-        .from(connectors)
-        .where(
-          and(
-            eq(connectors.id, args.connectorId),
-            eq(connectors.orgId, args.orgId),
-            eq(connectors.userId, args.userId),
-            eq(connectors.connectorSlug, "gmail"),
-            eq(connectors.needsReconnect, false),
-            sql`(${connectors.externalEmail} IS NULL OR lower(${connectors.externalEmail}) = ${normalizeGmailAddress(args.emailAddress)})`,
-          ),
-        )
-        .for("key share")
-        .limit(1);
-      if (!account) {
-        return "inactive";
-      }
-      const [consumer] = await tx
-        .select({ id: workflowAutomations.id })
-        .from(workflowAutomations)
-        .where(
-          and(
-            eq(workflowAutomations.orgId, args.orgId),
-            eq(workflowAutomations.ownerUserId, args.userId),
-            eq(workflowAutomations.eventConnectorId, args.connectorId),
-            sql`(${workflowAutomations.enabled} OR (${args.allowStagedOfficialTarget}
-              AND ${workflowAutomations.officialReconciliationStatus} = 'reconciling'
-              AND ${workflowAutomations.officialBlueprintKey} IS NOT NULL))`,
-            eq(workflowAutomations.kind, "event"),
-            inArray(workflowAutomations.eventType, [...GMAIL_EVENT_TYPES]),
-          ),
-        )
-        .for("share")
-        .limit(1);
-      if (!consumer) {
+      // The unique upsert publishes only while the account is usable and a
+      // consumer is enabled; no source row is locked. The connector FK check
+      // protects a new row from a concurrent account delete.
+      if (
+        (
+          await tx.execute(
+            gmailWatchPublicationSql(
+              args,
+              watch.historyId,
+              expiration,
+              currentTime,
+            ),
+          )
+        ).rowCount === 0
+      ) {
         return "inactive";
       }
       await tx
@@ -779,24 +791,6 @@ const publishGmailWatch$ = command(
             gmailStateHasEnabledConsumer(),
           ),
         );
-      await tx
-        .insert(gmailWatchStates)
-        .values(gmailWatchInsertValues(args, watch, currentTime))
-        .onConflictDoUpdate({
-          target: [gmailWatchStates.connectorId, gmailWatchStates.topicName],
-          set: {
-            emailAddress: args.emailAddress,
-            ...(args.resetCurrentCursor
-              ? {
-                  lastHistoryId: watch.historyId,
-                }
-              : {}),
-            watchExpirationAt: expiration,
-            lastWatchRenewedAt: currentTime,
-            needsRewatch: false,
-            updatedAt: currentTime,
-          },
-        });
       signal.throwIfAborted();
       return "published";
     });
@@ -1021,14 +1015,12 @@ const repairGmailAutomationProjections$ = command(
     signal: AbortSignal,
   ) => {
     const db = set(writeDb$);
-    await db.transaction(async (tx) => {
-      // The projection depends on which Gmail accounts exist and which one is
-      // default; lock that account set before the automation rows.
-      await tx.execute(
-        builtinConnectorAccountRowsLockSql({ ...args, connectorSlug: "gmail" }),
-      );
-      await tx.execute(sql`
-      WITH candidates AS MATERIALIZED (
+    // One conditional UPDATE computes each target from the current
+    // selection and default-account rows; no rows are locked up front. An
+    // account change committed after this statement's snapshot is picked
+    // up by the next repair run.
+    await db.execute(sql`
+      WITH candidates AS (
         SELECT ${workflowAutomations.id} AS id,
           CASE WHEN ${chatThreadConnectorSelections.connectorSlug} IS NOT NULL
             THEN ${chatThreadConnectorSelections.connectorId} ELSE ${connectors.id} END AS desired_connector_id
@@ -1045,7 +1037,6 @@ const repairGmailAutomationProjections$ = command(
           AND ${connectors.connectorSlug} = 'gmail' AND ${connectors.isDefault}
         WHERE ${workflowAutomations.orgId} = ${args.orgId} AND ${workflowAutomations.ownerUserId} = ${args.userId}
           AND ${workflowAutomations.kind} = 'event' AND ${workflowAutomations.eventType} IN ('gmail-new-message', 'gmail-label-applied')
-        ORDER BY ${workflowAutomations.id} FOR UPDATE OF ${workflowAutomations}
       )
       UPDATE ${workflowAutomations} SET event_connector_id = candidates.desired_connector_id,
         event_config = CASE WHEN ${workflowAutomations.eventType} = 'gmail-label-applied'
@@ -1053,8 +1044,7 @@ const repairGmailAutomationProjections$ = command(
       FROM candidates WHERE ${workflowAutomations.id} = candidates.id
         AND ${workflowAutomations.eventConnectorId} IS DISTINCT FROM candidates.desired_connector_id
     `);
-      signal.throwIfAborted();
-    });
+    signal.throwIfAborted();
   },
 );
 
@@ -1658,24 +1648,25 @@ const insertGmailProcessedEvent$ = command(
     | { readonly kind: "stale_source" }
   > => {
     const db = set(writeDb$);
-    return await db.transaction(async (tx) => {
-      const [currentState] = await tx
-        .select({ id: gmailWatchStates.id })
-        .from(gmailWatchStates)
-        .where(
-          and(
-            eq(gmailWatchStates.id, args.state.id),
-            eq(gmailWatchStates.connectorId, args.state.connectorId),
-          ),
-        )
-        .for("key share")
-        .limit(1);
-      signal.throwIfAborted();
-      if (!currentState) {
-        return { kind: "stale_source" };
-      }
-
-      const [processed] = await tx
+    // No row lock: the receipt's FK checks on the watch state and automation
+    // are the implicit protection. A source removed concurrently surfaces as
+    // a FK violation and maps to the same deterministic stale_source result.
+    const [currentState] = await db
+      .select({ id: gmailWatchStates.id })
+      .from(gmailWatchStates)
+      .where(
+        and(
+          eq(gmailWatchStates.id, args.state.id),
+          eq(gmailWatchStates.connectorId, args.state.connectorId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!currentState) {
+      return { kind: "stale_source" };
+    }
+    const inserted = await settle(
+      db
         .insert(gmailProcessedEvents)
         .values({
           watchStateId: args.state.id,
@@ -1687,12 +1678,19 @@ const insertGmailProcessedEvent$ = command(
           createdAt: nowDate(),
         })
         .onConflictDoNothing()
-        .returning({ id: gmailProcessedEvents.id });
-      signal.throwIfAborted();
-      return processed
-        ? { kind: "inserted", id: processed.id }
-        : { kind: "duplicate" };
-    });
+        .returning({ id: gmailProcessedEvents.id }),
+      signal,
+    );
+    if (!inserted.ok) {
+      if (isForeignKeyViolation(inserted.error)) {
+        return { kind: "stale_source" };
+      }
+      throw inserted.error;
+    }
+    const [processed] = inserted.value;
+    return processed
+      ? { kind: "inserted", id: processed.id }
+      : { kind: "duplicate" };
   },
 );
 
@@ -1856,54 +1854,48 @@ const updateResolvedGmailLabelId$ = command(
       ...args.automation.config,
       resolvedLabelId: args.labelId,
     };
-    // The watch-state KEY SHARE and the conditional automation update are the
-    // whole arbitration: removal or reprojection makes this publication a no-op.
-    const published = await db.transaction(async (tx) => {
-      const [currentState] = await tx
-        .select({ id: gmailWatchStates.id })
-        .from(gmailWatchStates)
-        .where(
-          and(
-            eq(gmailWatchStates.id, args.watchStateId),
-            eq(gmailWatchStates.connectorId, args.connectorId),
+    // One conditional UPDATE is the whole arbitration: watch removal,
+    // reprojection or a user config change makes this publication a no-op.
+    const [automation] = await db
+      .update(workflowAutomations)
+      .set({
+        eventConfig: config,
+        updatedAt: nowDate(),
+      })
+      .where(
+        and(
+          eq(workflowAutomations.id, args.automation.automation.id),
+          eq(workflowAutomations.orgId, args.automation.automation.orgId),
+          eq(
+            workflowAutomations.ownerUserId,
+            args.automation.automation.ownerUserId,
           ),
-        )
-        .for("key share")
-        .limit(1);
-      if (!currentState) {
-        return null;
-      }
-      const [automation] = await tx
-        .update(workflowAutomations)
-        .set({
-          eventConfig: config,
-          updatedAt: nowDate(),
-        })
-        .where(
-          and(
-            eq(workflowAutomations.id, args.automation.automation.id),
-            eq(workflowAutomations.orgId, args.automation.automation.orgId),
-            eq(
-              workflowAutomations.ownerUserId,
-              args.automation.automation.ownerUserId,
-            ),
-            eq(workflowAutomations.enabled, true),
-            eq(workflowAutomations.kind, "event"),
-            eq(workflowAutomations.eventType, "gmail-label-applied"),
-            eq(workflowAutomations.eventConnectorId, args.connectorId),
-            // Another notification can already have published this same label.
-            // A different user configuration must never be overwritten.
-            or(
-              sql`${workflowAutomations.eventConfig} IS NOT DISTINCT FROM ${JSON.stringify(args.automation.automation.eventConfig)}::jsonb`,
-              eq(workflowAutomations.eventConfig, config),
-            ),
+          eq(workflowAutomations.enabled, true),
+          eq(workflowAutomations.kind, "event"),
+          eq(workflowAutomations.eventType, "gmail-label-applied"),
+          eq(workflowAutomations.eventConnectorId, args.connectorId),
+          exists(
+            db
+              .select({ id: gmailWatchStates.id })
+              .from(gmailWatchStates)
+              .where(
+                and(
+                  eq(gmailWatchStates.id, args.watchStateId),
+                  eq(gmailWatchStates.connectorId, args.connectorId),
+                ),
+              ),
           ),
-        )
-        .returning(workflowAutomationColumns());
-      return automation ? { ...args.automation, automation, config } : null;
-    });
+          // Another notification can already have published this same label.
+          // A different user configuration must never be overwritten.
+          or(
+            sql`${workflowAutomations.eventConfig} IS NOT DISTINCT FROM ${JSON.stringify(args.automation.automation.eventConfig)}::jsonb`,
+            eq(workflowAutomations.eventConfig, config),
+          ),
+        ),
+      )
+      .returning(workflowAutomationColumns());
     signal.throwIfAborted();
-    return published;
+    return automation ? { ...args.automation, automation, config } : null;
   },
 );
 

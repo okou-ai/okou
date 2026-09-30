@@ -28,16 +28,26 @@ import {
   workflows,
 } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
-import { and, asc, desc, eq, inArray, lte, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  exists,
+  inArray,
+  isNull,
+  lte,
+  sql,
+} from "drizzle-orm";
 import { z } from "zod";
 import { logger } from "../../lib/log";
 import { parseRawRows } from "../../lib/db-raw-rows";
+import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { workflowAutomationConnectorSelectionSql } from "./workflow-automation-account.service";
 import { writeDb$ } from "../external/db";
 import { now, nowDate } from "../../lib/time";
 import { safeJsonParse, safeUrlParse, settle, tapError } from "../utils";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
-import { builtinConnectorAccountRowsLockSql } from "./builtin-connector-account-rows";
 import { loadConnectorRuntimeSnapshot$ } from "./connector-catalog-runtime.service";
 import {
   loadBuiltinConnectorCredentialConnection$,
@@ -1284,83 +1294,90 @@ const repairNotionAutomationProjection$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     const db = set(writeDb$);
-    await db.transaction(async (tx) => {
-      // The selected connector depends on the member's account set and
-      // default; lock it before the automation and its pending events.
-      await tx.execute(
-        builtinConnectorAccountRowsLockSql({
-          orgId: args.orgId,
-          userId: args.userId,
-          connectorSlug: "notion",
-        }),
-      );
-      const [automation] = await tx
-        .select({
-          id: workflowAutomations.id,
-          workflowId: workflowAutomations.workflowId,
-          eventType: workflowAutomations.eventType,
-          eventConfig: workflowAutomations.eventConfig,
-          eventConnectorId: workflowAutomations.eventConnectorId,
-        })
-        .from(workflowAutomations)
-        .where(
-          and(
-            eq(workflowAutomations.id, args.automationId),
-            eq(workflowAutomations.orgId, args.orgId),
-            eq(workflowAutomations.ownerUserId, args.userId),
-            eq(workflowAutomations.kind, "event"),
-            inArray(workflowAutomations.eventType, [
-              "notion-child-page-created",
-              "notion-database-item-created",
-              "notion-page-content-updated",
-            ]),
-          ),
-        )
-        .for("update")
-        .limit(1);
-      signal.throwIfAborted();
-      if (!automation) {
-        return;
-      }
-      const [selection] = parseRawRows(
-        z.object({ connectorId: z.string().nullable() }),
-        await tx.execute(
-          workflowAutomationConnectorSelectionSql({
-            orgId: args.orgId,
-            userId: args.userId,
-            workflowId: automation.workflowId,
-            connectorSlug: "notion",
-          }),
+    // No row locks: the automation and the member's selected account are
+    // read plainly, then the retarget is a conditional UPDATE that only
+    // applies while the automation still has the observed target and the
+    // selection still resolves to the computed one. A concurrent change makes
+    // it a no-op; that change's own repair converges the projection.
+    const [automation] = await db
+      .select({
+        id: workflowAutomations.id,
+        workflowId: workflowAutomations.workflowId,
+        eventType: workflowAutomations.eventType,
+        eventConfig: workflowAutomations.eventConfig,
+        eventConnectorId: workflowAutomations.eventConnectorId,
+      })
+      .from(workflowAutomations)
+      .where(
+        and(
+          eq(workflowAutomations.id, args.automationId),
+          eq(workflowAutomations.orgId, args.orgId),
+          eq(workflowAutomations.ownerUserId, args.userId),
+          eq(workflowAutomations.kind, "event"),
+          inArray(workflowAutomations.eventType, [
+            "notion-child-page-created",
+            "notion-database-item-created",
+            "notion-page-content-updated",
+          ]),
         ),
-      );
-      signal.throwIfAborted();
-      const eventConnectorId = selection?.connectorId ?? null;
-      if (
-        automation.eventConnectorId === eventConnectorId &&
-        (eventConnectorId === null ||
-          notionConfigConnectorId(
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!automation) {
+      return;
+    }
+    const selectionSql = workflowAutomationConnectorSelectionSql({
+      orgId: args.orgId,
+      userId: args.userId,
+      workflowId: automation.workflowId,
+      connectorSlug: "notion",
+    });
+    const [selection] = parseRawRows(
+      z.object({ connectorId: z.string().nullable() }),
+      await db.execute(selectionSql),
+    );
+    signal.throwIfAborted();
+    const eventConnectorId = selection?.connectorId ?? null;
+    if (
+      automation.eventConnectorId === eventConnectorId &&
+      (eventConnectorId === null ||
+        notionConfigConnectorId(
+          automation.eventType,
+          automation.eventConfig,
+        ) === eventConnectorId)
+    ) {
+      return;
+    }
+    const eventConfig =
+      eventConnectorId === null
+        ? automation.eventConfig
+        : notionConfigWithConnectorId(
             automation.eventType,
             automation.eventConfig,
-          ) === eventConnectorId)
-      ) {
-        return;
-      }
-      const eventConfig =
-        eventConnectorId === null
-          ? automation.eventConfig
-          : notionConfigWithConnectorId(
-              automation.eventType,
-              automation.eventConfig,
-              eventConnectorId,
-            );
-      await tx
+            eventConnectorId,
+          );
+    await db.transaction(async (tx) => {
+      const [retargeted] = await tx
         .update(workflowAutomations)
         .set({
           eventConnectorId,
           ...(eventConfig === null ? {} : { eventConfig }),
         })
-        .where(eq(workflowAutomations.id, automation.id));
+        .where(
+          and(
+            eq(workflowAutomations.id, automation.id),
+            sql`${workflowAutomations.eventConnectorId} IS NOT DISTINCT FROM ${automation.eventConnectorId}::uuid`,
+            automation.eventConfig === null
+              ? isNull(workflowAutomations.eventConfig)
+              : eq(workflowAutomations.eventConfig, automation.eventConfig),
+            sql`(${selectionSql}) IS NOT DISTINCT FROM ${eventConnectorId}::uuid`,
+          ),
+        )
+        .returning({ id: workflowAutomations.id });
       signal.throwIfAborted();
+      if (!retargeted) {
+        return;
+      }
       const currentTime = nowDate();
       await tx
         .update(notionWorkflowPendingEvents)
@@ -1625,70 +1642,94 @@ const publishNotionPendingEvent$ = command(
     signal: AbortSignal,
   ): Promise<NotionPendingPublication> => {
     const db = set(writeDb$);
-    // The automation row lock with its enabled/connector conditions and the
-    // pending-event connector foreign key (KEY SHARE) arbitrate publication.
-    return await db.transaction(async (tx) => {
-      const [current] = await tx
-        .select({
-          eventType: workflowAutomations.eventType,
-          eventConfig: workflowAutomations.eventConfig,
-        })
-        .from(workflowAutomations)
-        .where(
-          and(
-            eq(workflowAutomations.id, args.automation.id),
-            eq(workflowAutomations.enabled, true),
-            eq(workflowAutomations.eventType, args.eventType),
-            eq(workflowAutomations.eventConnectorId, args.connectorId),
-          ),
-        )
-        .for("update")
-        .limit(1);
-      signal.throwIfAborted();
-      if (
-        !current ||
-        notionConfigConnectorId(current.eventType, current.eventConfig) !==
-          args.connectorId
-      ) {
-        return null;
-      }
-      if (args.refreshExisting) {
-        const [updated] = await tx
-          .update(notionWorkflowPendingEvents)
-          .set({
-            latestNotionEventId: args.pendingEvent.latestNotionEventId,
-            latestEventAt: args.pendingEvent.latestEventAt,
-            latestEventContext: args.pendingEvent.latestEventContext,
-            runAfter: args.pendingEvent.runAfter,
-            lastError: null,
-            updatedAt: args.pendingEvent.updatedAt,
+    // No row lock: the consumer is checked with a plain read, the refresh is
+    // conditional on that consumer still being current, and the insert relies
+    // on its automation/connector FK checks. A disable racing this write can
+    // still publish one pending row; queue admission re-checks the consumer.
+    // A FK violation (automation or account deleted concurrently) maps to the
+    // same "no current consumer" result.
+    const automationCondition = and(
+      eq(workflowAutomations.id, args.automation.id),
+      eq(workflowAutomations.enabled, true),
+      eq(workflowAutomations.eventType, args.eventType),
+      eq(workflowAutomations.eventConnectorId, args.connectorId),
+    );
+    const published = await settle(
+      db.transaction(async (tx): Promise<NotionPendingPublication> => {
+        const [current] = await tx
+          .select({
+            eventType: workflowAutomations.eventType,
+            eventConfig: workflowAutomations.eventConfig,
           })
-          .where(
-            and(
-              eq(notionWorkflowPendingEvents.automationId, args.automation.id),
-              eq(notionWorkflowPendingEvents.pageId, args.pendingEvent.pageId),
-              eq(
-                notionWorkflowPendingEvents.eventFamily,
-                "page_content_updated",
+          .from(workflowAutomations)
+          .where(automationCondition)
+          .limit(1);
+        signal.throwIfAborted();
+        if (
+          !current ||
+          notionConfigConnectorId(current.eventType, current.eventConfig) !==
+            args.connectorId
+        ) {
+          return null;
+        }
+        if (args.refreshExisting) {
+          const [updated] = await tx
+            .update(notionWorkflowPendingEvents)
+            .set({
+              latestNotionEventId: args.pendingEvent.latestNotionEventId,
+              latestEventAt: args.pendingEvent.latestEventAt,
+              latestEventContext: args.pendingEvent.latestEventContext,
+              runAfter: args.pendingEvent.runAfter,
+              lastError: null,
+              updatedAt: args.pendingEvent.updatedAt,
+            })
+            .where(
+              and(
+                eq(
+                  notionWorkflowPendingEvents.automationId,
+                  args.automation.id,
+                ),
+                eq(
+                  notionWorkflowPendingEvents.pageId,
+                  args.pendingEvent.pageId,
+                ),
+                eq(
+                  notionWorkflowPendingEvents.eventFamily,
+                  "page_content_updated",
+                ),
+                eq(notionWorkflowPendingEvents.status, "pending"),
+                eq(notionWorkflowPendingEvents.connectorId, args.connectorId),
+                exists(
+                  db
+                    .select({ id: workflowAutomations.id })
+                    .from(workflowAutomations)
+                    .where(automationCondition),
+                ),
               ),
-              eq(notionWorkflowPendingEvents.status, "pending"),
-              eq(notionWorkflowPendingEvents.connectorId, args.connectorId),
-            ),
-          )
+            )
+            .returning({ id: notionWorkflowPendingEvents.id });
+          signal.throwIfAborted();
+          if (updated) {
+            return "refreshed";
+          }
+        }
+        const [inserted] = await tx
+          .insert(notionWorkflowPendingEvents)
+          .values(args.pendingEvent)
+          .onConflictDoNothing()
           .returning({ id: notionWorkflowPendingEvents.id });
         signal.throwIfAborted();
-        if (updated) {
-          return "refreshed";
-        }
-      }
-      const [inserted] = await tx
-        .insert(notionWorkflowPendingEvents)
-        .values(args.pendingEvent)
-        .onConflictDoNothing()
-        .returning({ id: notionWorkflowPendingEvents.id });
-      signal.throwIfAborted();
-      return inserted ? "inserted" : "none";
-    });
+        return inserted ? "inserted" : "none";
+      }),
+      signal,
+    );
+    if (published.ok) {
+      return published.value;
+    }
+    if (isForeignKeyViolation(published.error)) {
+      return null;
+    }
+    throw published.error;
   },
 );
 

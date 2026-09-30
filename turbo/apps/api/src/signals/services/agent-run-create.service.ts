@@ -1091,7 +1091,7 @@ export interface CreateAgentRunArgs {
   readonly capturedPersonalSubscriptionAccount?: CapturedPersonalSubscriptionAccount;
   readonly selectedModelOverride?: string;
   readonly builtInModelRuntimeRoute?: BuiltInModelRuntimeRoute;
-  readonly codexServiceTier?: "fast";
+  readonly codexServiceTier?: "fast" | "ultrafast";
   readonly callbacks?: readonly RunCallback[];
   readonly chatThreadId?: string;
   /** Exact connector that delivered this run's durable integration input. */
@@ -8359,8 +8359,13 @@ async function claimQueueFirstAssociationForLaunch(args: {
     admission: args.admission,
     runId: args.identity.runId,
     selectedModel: args.createArgs.agentRunModelPin.selectedModel,
-    ...(args.createArgs.codexServiceTier === "fast"
-      ? { serviceTier: "priority" as const }
+    ...(args.createArgs.codexServiceTier
+      ? {
+          serviceTier:
+            args.createArgs.codexServiceTier === "fast"
+              ? ("priority" as const)
+              : ("ultrafast" as const),
+        }
       : {}),
     timing: args.timing,
   });
@@ -10180,6 +10185,15 @@ async function materializeResolvedPiProvider(
   const resolvedModelProvider = modelProviderResult.value;
   if (isRouteError(resolvedModelProvider)) {
     return resolvedModelProvider;
+  }
+  if (
+    createArgs.codexServiceTier === "ultrafast" &&
+    (resolvedModelProvider?.type !== "openai-api-key" ||
+      resolvedModelProvider.selectedModel !== "gpt-6-astra")
+  ) {
+    return badRequestMessage(
+      "Astra Ultrafast requires a direct OpenAI API-key route",
+    );
   }
   const materializedProvider = await settle(
     materializePreparedPiProvider(createArgs, resolvedModelProvider),

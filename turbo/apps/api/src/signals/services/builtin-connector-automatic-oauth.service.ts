@@ -1148,8 +1148,10 @@ async function handleAutomaticRefreshFailure(
     isAutomaticOAuthInvalidClient(error) &&
     binding.registrationMethod === "dcr"
   ) {
-    // Retirement locks every linked owner's accounts; it must run in its own
-    // transaction after the lifecycle key, as ordinary account writers do.
+    // Exact retirement is a short conditional local write outside provider
+    // I/O. R1 compatibility only: origin/main finishAutomaticOAuth binds
+    // accounts to a registration it read under the lifecycle key; remove the
+    // key in R2 once no serving, in-flight or rollback writer takes it.
     await context.db.transaction(async (tx) => {
       await lockBuiltinConnectorAutomaticLifecycle(
         tx,
@@ -1250,8 +1252,10 @@ async function refreshAutomaticOutsideTransaction(
     signal,
   );
   const published = await args.db.transaction(async (tx) => {
-    // Outgoing Automatic OAuth writers still hold the lifecycle key; the exact
-    // account/refresh-token CAS below decides this publication.
+    // R1 compatibility only: origin/main resolveLockedAutomatic refreshes under
+    // the lifecycle key; remove in R2 once no serving, in-flight or rollback
+    // writer takes it. The exact account/refresh-token CAS below decides this
+    // publication.
     await lockBuiltinConnectorAutomaticLifecycle(
       tx,
       contractOwner(args.orgId, contract),

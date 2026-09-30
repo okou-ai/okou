@@ -3,7 +3,7 @@ import { googleWorkspaceEventSubscriptionStates } from "@okouai/db/schema/google
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
@@ -29,6 +29,48 @@ export class GoogleMeetAutomationSourceChangedError extends Error {
     );
     this.name = "GoogleMeetAutomationSourceChangedError";
   }
+}
+
+/** Queue admission gated by the current consumer and subscription rows. */
+function googleMeetQueueAdmissionSql(
+  source: GoogleMeetQueueSource,
+  chatThreadId: string,
+  currentTime: Date,
+) {
+  const timestamp = sql`${currentTime.toISOString()}::timestamp`;
+  return sql`INSERT INTO ${queuedChatThreads} (chat_thread_id, org_id, queued_at)
+    SELECT ${chatThreadId}::uuid, ${source.orgId}, ${timestamp}
+    WHERE EXISTS (
+      SELECT 1 FROM ${workflowAutomations}
+      WHERE ${and(
+        eq(workflowAutomations.id, source.automationId),
+        eq(workflowAutomations.orgId, source.orgId),
+        eq(workflowAutomations.ownerUserId, source.userId),
+        eq(workflowAutomations.enabled, true),
+        eq(workflowAutomations.kind, "event"),
+        eq(workflowAutomations.eventType, "google-meet-transcript-generated"),
+        eq(workflowAutomations.eventConnectorId, source.connectorSourceId),
+      )}
+    )
+    AND EXISTS (
+      SELECT 1 FROM ${googleWorkspaceEventSubscriptionStates}
+      WHERE ${and(
+        eq(
+          googleWorkspaceEventSubscriptionStates.id,
+          source.subscriptionStateId,
+        ),
+        eq(
+          googleWorkspaceEventSubscriptionStates.subscriptionName,
+          source.subscriptionName,
+        ),
+        eq(
+          googleWorkspaceEventSubscriptionStates.connectorId,
+          source.connectorSourceId,
+        ),
+        eq(googleWorkspaceEventSubscriptionStates.provider, "google-meet"),
+      )}
+    )
+    ON CONFLICT (chat_thread_id) DO UPDATE SET claim_id = NULL, claim_expires_at = NULL`;
 }
 
 export const enqueueGoogleMeetWorkflowInput$ = command(
@@ -59,64 +101,23 @@ export const enqueueGoogleMeetWorkflowInput$ = command(
         }
         return null;
       }
-      // Row locks arbitrate this admission: account deletion (FK SET NULL),
-      // disable and reprojection update the automation row; subscription
-      // removal deletes the state row. Lock order: automation -> state.
-      const [automation] = await tx
-        .select({ id: workflowAutomations.id })
-        .from(workflowAutomations)
-        .where(
-          and(
-            eq(workflowAutomations.id, source.automationId),
-            eq(workflowAutomations.orgId, source.orgId),
-            eq(workflowAutomations.ownerUserId, source.userId),
-            eq(workflowAutomations.enabled, true),
-            eq(workflowAutomations.kind, "event"),
-            eq(
-              workflowAutomations.eventType,
-              "google-meet-transcript-generated",
+      // One conditional statement admits the queue record only while the
+      // consumer and subscription are current; zero rows rolls the append
+      // back. A disable/removal racing this statement may still admit one
+      // event, which dispatch re-checks.
+      if (
+        (
+          await tx.execute(
+            googleMeetQueueAdmissionSql(
+              source,
+              input.event.chatThreadId,
+              nowDate(),
             ),
-            eq(workflowAutomations.eventConnectorId, source.connectorSourceId),
-          ),
-        )
-        .for("update")
-        .limit(1);
-      const [state] = await tx
-        .select({ id: googleWorkspaceEventSubscriptionStates.id })
-        .from(googleWorkspaceEventSubscriptionStates)
-        .where(
-          and(
-            eq(
-              googleWorkspaceEventSubscriptionStates.id,
-              source.subscriptionStateId,
-            ),
-            eq(
-              googleWorkspaceEventSubscriptionStates.subscriptionName,
-              source.subscriptionName,
-            ),
-            eq(
-              googleWorkspaceEventSubscriptionStates.connectorId,
-              source.connectorSourceId,
-            ),
-            eq(googleWorkspaceEventSubscriptionStates.provider, "google-meet"),
-          ),
-        )
-        .for("key share")
-        .limit(1);
-      if (!state || !automation) {
+          )
+        ).rowCount === 0
+      ) {
         throw new GoogleMeetAutomationSourceChangedError();
       }
-      await tx
-        .insert(queuedChatThreads)
-        .values({
-          chatThreadId: input.event.chatThreadId,
-          orgId: source.orgId,
-          queuedAt: nowDate(),
-        })
-        .onConflictDoUpdate({
-          target: queuedChatThreads.chatThreadId,
-          set: { claimId: null, claimExpiresAt: null },
-        });
       signal.throwIfAborted();
       return event.id;
     });

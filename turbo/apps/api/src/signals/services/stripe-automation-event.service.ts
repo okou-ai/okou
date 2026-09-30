@@ -683,23 +683,10 @@ async function repairMissingStripeIngressProjections(
 ): Promise<void> {
   const owners = await loadMissingStripeProjectionOwners(db, accountId, signal);
   for (const owner of owners) {
-    await db.transaction(async (tx) => {
-      // Lock the repaired automation before reading its selected account.
-      // Selection, default and reconnect writers (outgoing and new) reproject
-      // by updating this row and account deletion nulls it through the FK, so
-      // each finishes before the read below or overwrites the repair after it.
-      await tx
-        .select({ id: workflowAutomations.id })
-        .from(workflowAutomations)
-        .where(eq(workflowAutomations.id, owner.automationId))
-        .for("update")
-        .limit(1);
-      await repairMissingStripeInvoicePaidAutomationProjection(
-        tx,
-        owner,
-        signal,
-      );
-    });
+    // No row lock: the repair publishes only while the automation is still
+    // unbound (conditional UPDATE). A reprojection that binds it first wins;
+    // one that commits afterward recomputes from current rows and overwrites.
+    await repairMissingStripeInvoicePaidAutomationProjection(db, owner, signal);
     signal.throwIfAborted();
   }
 }
@@ -1164,27 +1151,17 @@ async function repairMissingStripeDeliveryProjection(
   ) {
     return;
   }
-  await db.transaction(async (tx) => {
-    // Lock the repaired automation before reading its selected account.
-    // Selection, default and reconnect writers (outgoing and new) reproject
-    // by updating this row and account deletion nulls it through the FK, so
-    // each finishes before the read below or overwrites the repair after it.
-    await tx
-      .select({ id: workflowAutomations.id })
-      .from(workflowAutomations)
-      .where(eq(workflowAutomations.id, delivery.automationId))
-      .for("update")
-      .limit(1);
-    await repairMissingStripeInvoicePaidAutomationProjection(
-      tx,
-      {
-        automationId: delivery.automationId,
-        orgId: owner.orgId,
-        userId: owner.userId,
-      },
-      signal,
-    );
-  });
+  // No row lock: the repair publishes only while the automation is still
+  // unbound (conditional UPDATE); see repairMissingStripeIngressProjections.
+  await repairMissingStripeInvoicePaidAutomationProjection(
+    db,
+    {
+      automationId: delivery.automationId,
+      orgId: owner.orgId,
+      userId: owner.userId,
+    },
+    signal,
+  );
   signal.throwIfAborted();
 }
 

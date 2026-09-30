@@ -78,12 +78,8 @@ export function insufficientCredits() {
   );
 }
 
-export function paidPlanRequired() {
-  return httpError(
-    402,
-    "PRO_REQUIRED",
-    "Claude Sonnet 5.5 requires a paid plan.",
-  );
+export function paidPlanRequired(modelName = "Claude Sonnet 5.5") {
+  return httpError(402, "PRO_REQUIRED", `${modelName} requires a paid plan.`);
 }
 
 export function teamRequired(message: string) {

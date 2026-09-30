@@ -28,7 +28,6 @@ import {
   type ConnectorRuntimeSelection,
 } from "./connector-catalog-runtime.service";
 import { builtinConnectorStateLockStatement } from "./auth-state-lock.service";
-import { builtinConnectorAccountRowsLockSql } from "./builtin-connector-account-rows";
 import { listConnectorAccountsByIds } from "./connector-account-lifecycle.service";
 import { reprojectWorkflowAutomationsForOwner } from "./workflow-automation-account-projection.service";
 import { isWorkflowAutomationAccountConnectorSlug } from "./workflow-automation-account-classification.service";
@@ -174,44 +173,6 @@ async function loadOwnedChatThread(
   return thread?.agentId ? { agentId: thread.agentId } : undefined;
 }
 
-async function loadLockedOwnedChatThread(
-  tx: Tx,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly chatThreadId: string;
-  },
-): Promise<OwnedChatThread | undefined> {
-  const observed = await loadOwnedChatThread(tx, args);
-  if (!observed) {
-    return undefined;
-  }
-  // A selection and its generation must not outlive either parent. Shared
-  // parent protection still permits unrelated selections on the same Agent.
-  const [agent] = await tx
-    .select({ id: agents.id })
-    .from(agents)
-    .where(and(eq(agents.id, observed.agentId), eq(agents.orgId, args.orgId)))
-    .for("key share")
-    .limit(1);
-  if (!agent) {
-    return undefined;
-  }
-  const [thread] = await tx
-    .select({ agentId: chatThreads.agentId })
-    .from(chatThreads)
-    .where(
-      and(
-        eq(chatThreads.id, args.chatThreadId),
-        eq(chatThreads.userId, args.userId),
-        eq(chatThreads.agentId, agent.id),
-      ),
-    )
-    .for("key share")
-    .limit(1);
-  return thread?.agentId ? { agentId: thread.agentId } : undefined;
-}
-
 async function loadSelectionRows(
   db: ReadonlyDb,
   chatThreadId: string,
@@ -350,28 +311,10 @@ export async function prepareChatThreadConnectorSelections(
   }
 
   const selections = [...byTarget.values()];
-  // Builtin selections hold the member's account rows for the target in ID
-  // order: deletion's FOR UPDATE waits until the selection commits (and then
-  // deletes it), and default changes cannot race the automation reprojection
-  // that follows. Custom targets use definition protection and FK arbitration.
-  const builtinSlugs = [
-    ...new Set(
-      selections.flatMap((selection) => {
-        return selection.target.kind === "builtin"
-          ? [selection.target.connectorSlug]
-          : [];
-      }),
-    ),
-  ].sort();
-  for (const connectorSlug of builtinSlugs) {
-    await db.execute(
-      builtinConnectorAccountRowsLockSql({
-        orgId: args.orgId,
-        userId: args.userId,
-        connectorSlug,
-      }),
-    );
-  }
+  // No account row is locked here. The selection insert's FK checks on the
+  // thread and account arbitrate a concurrent deletion: the loser of that race
+  // receives a deterministic invalid/omitted result (see
+  // selectionParentMissing), never a stale selection.
   const scope = await loadAgentConnectorScope(db, args);
   const snapshot = await loadSnapshotForBuiltinTargets(db, selections);
   for (const selection of byTarget.values()) {
@@ -532,16 +475,41 @@ async function upsertSelection(
   return selection;
 }
 
-function isCustomSelectionAccountMissing(error: unknown): boolean {
-  return (
-    isForeignKeyViolation(error) &&
-    error instanceof Error &&
-    typeof error.cause === "object" &&
-    error.cause !== null &&
-    "constraint" in error.cause &&
-    error.cause.constraint ===
-      "fk_chat_thread_connector_selections_custom_connector"
-  );
+function foreignKeyConstraint(error: unknown): string | undefined {
+  if (
+    !isForeignKeyViolation(error) ||
+    !(error instanceof Error) ||
+    typeof error.cause !== "object" ||
+    error.cause === null ||
+    !("constraint" in error.cause) ||
+    typeof error.cause.constraint !== "string"
+  ) {
+    return undefined;
+  }
+  return error.cause.constraint;
+}
+
+/**
+ * A selection insert lost a race with deletion of its parent: the thread
+ * (and its Agent, which cascades to the thread) or the selected account.
+ * PostgreSQL's FK check waits for the deleting transaction and then rejects
+ * the insert; callers map it to a deterministic result.
+ */
+function selectionParentMissing(
+  error: unknown,
+): "thread" | "account" | undefined {
+  switch (foreignKeyConstraint(error)) {
+    case "fk_chat_thread_connector_selections_thread": {
+      return "thread";
+    }
+    case "fk_chat_thread_connector_selections_connector_slug":
+    case "fk_chat_thread_connector_selections_custom_connector": {
+      return "account";
+    }
+    default: {
+      return undefined;
+    }
+  }
 }
 
 export async function updateChatThreadConnectorSelection(
@@ -557,7 +525,10 @@ export async function updateChatThreadConnectorSelection(
   const result = await settle(
     db.transaction(
       async (tx): Promise<UpdateChatThreadConnectorSelectionResult> => {
-        const thread = await loadLockedOwnedChatThread(tx, args);
+        // No parent row lock: the selection upsert's FK check on the thread
+        // (or the row lock on an existing selection) makes a concurrent Agent
+        // or thread deletion wait for this commit, or reject the upsert.
+        const thread = await loadOwnedChatThread(tx, args);
         if (!thread) {
           return { kind: "not_found" };
         }
@@ -569,10 +540,10 @@ export async function updateChatThreadConnectorSelection(
         ) {
           // R1 compatibility only: outgoing main insertEventAutomation and
           // the other automation creators read this selection under
-          // connector_state without locking account rows, so the
-          // reprojection below could miss their uncommitted automation.
-          // Taken after the thread and before row locks, in main's order;
-          // remove in R2 once main no longer acquires connector_state.
+          // connector_state, so the reprojection below could miss their
+          // uncommitted automation. New writers do not depend on it: a new
+          // creator racing this change converges on the next reprojection or
+          // repair. Remove in R2 once main no longer acquires connector_state.
           await tx.execute(
             builtinConnectorStateLockStatement({
               orgId: args.orgId,
@@ -616,17 +587,21 @@ export async function updateChatThreadConnectorSelection(
     return result.value;
   }
   // Wait for the whole transaction to roll back before reporting a lost
-  // account, including its selection change and generation invalidation.
-  if (
-    args.selection.target.kind === "custom" &&
-    isCustomSelectionAccountMissing(result.error)
-  ) {
-    return {
-      kind: "invalid",
-      message: "Connector account does not match the requested target",
-    };
+  // parent, including its selection change and generation invalidation.
+  switch (selectionParentMissing(result.error)) {
+    case "thread": {
+      return { kind: "not_found" };
+    }
+    case "account": {
+      return {
+        kind: "invalid",
+        message: "Connector account does not match the requested target",
+      };
+    }
+    default: {
+      throw result.error;
+    }
   }
-  throw result.error;
 }
 
 export async function clearChatThreadConnectorSelection(
@@ -640,7 +615,7 @@ export async function clearChatThreadConnectorSelection(
   signal: AbortSignal,
 ): Promise<ClearChatThreadConnectorSelectionResult> {
   return await db.transaction(async (tx) => {
-    const thread = await loadLockedOwnedChatThread(tx, args);
+    const thread = await loadOwnedChatThread(tx, args);
     if (!thread) {
       return { kind: "not_found" };
     }
@@ -650,9 +625,9 @@ export async function clearChatThreadConnectorSelection(
       isWorkflowAutomationAccountConnectorSlug(args.target.connectorSlug)
     ) {
       // R1 compatibility only: outgoing main insertEventAutomation and the
-      // other automation creators read this selection under connector_state
-      // without locking account rows. Taken before row locks, in main's
-      // order; remove in R2 once main no longer acquires connector_state.
+      // other automation creators read this selection under connector_state.
+      // New writers do not depend on it; remove in R2 once main no longer
+      // acquires connector_state.
       await tx.execute(
         builtinConnectorStateLockStatement({
           orgId: args.orgId,
@@ -660,17 +635,12 @@ export async function clearChatThreadConnectorSelection(
           connectorSlug: args.target.connectorSlug,
         }),
       );
-      // The reprojection reads which account is default; hold the account
-      // rows so a concurrent default change or deletion serializes with it.
-      await tx.execute(
-        builtinConnectorAccountRowsLockSql({
-          orgId: args.orgId,
-          userId: args.userId,
-          connectorSlug: args.target.connectorSlug,
-        }),
-      );
     }
-    await tx
+    // A deleted row stays locked until commit, so an Agent/thread cascade
+    // waits for the generation invalidation below. Clearing an absent
+    // selection leaves the generation alone (it may belong to a deleted
+    // Agent); the reprojection still recomputes from current rows.
+    const deleted = await tx
       .delete(chatThreadConnectorSelections)
       .where(
         and(
@@ -685,13 +655,16 @@ export async function clearChatThreadConnectorSelection(
                 args.target.customConnectorId,
               ),
         ),
-      );
+      )
+      .returning({ connectorId: chatThreadConnectorSelections.connectorId });
     await reprojectWorkflowAutomationsForOwner(tx, args, signal);
-    await invalidatePiStableContext(tx, {
-      orgId: args.orgId,
-      userId: args.userId,
-      agentId: thread.agentId,
-    });
+    if (deleted.length > 0) {
+      await invalidatePiStableContext(tx, {
+        orgId: args.orgId,
+        userId: args.userId,
+        agentId: thread.agentId,
+      });
+    }
     return { kind: "cleared" };
   });
 }
@@ -703,29 +676,10 @@ export async function insertInitialChatThreadConnectorSelections(
     readonly selections: readonly PreparedChatThreadConnectorSelection[];
   },
 ): Promise<void> {
-  if (args.selections.length === 0) {
-    return;
-  }
-  const builtinSelections = args.selections.filter((selection) => {
-    return selection.target.kind === "builtin";
-  });
-  if (builtinSelections.length > 0) {
-    await tx.insert(chatThreadConnectorSelections).values(
-      builtinSelections.map((selection) => {
-        return {
-          chatThreadId: args.chatThreadId,
-          connectorId: selection.connectionId,
-          ...targetColumns(selection.target),
-        };
-      }),
-    );
-  }
   for (const selection of args.selections) {
-    if (selection.target.kind !== "custom") {
-      continue;
-    }
-    // Initial thread creation omits vanished accounts. A savepoint contains
-    // only this child insert, preserving the thread and its other selections.
+    // Initial thread creation omits accounts deleted since preparation (no
+    // account row is locked). A savepoint contains only this child insert,
+    // preserving the thread and its other selections.
     const inserted = await settle(
       tx.transaction(async (selectionTx) => {
         await selectionTx.insert(chatThreadConnectorSelections).values({
@@ -735,7 +689,7 @@ export async function insertInitialChatThreadConnectorSelections(
         });
       }),
     );
-    if (!inserted.ok && !isCustomSelectionAccountMissing(inserted.error)) {
+    if (!inserted.ok && selectionParentMissing(inserted.error) !== "account") {
       throw inserted.error;
     }
   }

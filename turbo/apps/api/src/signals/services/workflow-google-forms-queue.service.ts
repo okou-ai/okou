@@ -10,7 +10,9 @@ import { command } from "ccstate";
 import { and, eq, sql } from "drizzle-orm";
 
 import { parseRawRows } from "../../lib/db-raw-rows";
+import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
+import { settle } from "../utils";
 import { writeDb$ } from "../external/db";
 import {
   appendCanonicalChatEventsSql,
@@ -53,6 +55,33 @@ function googleFormsQueueAutomationCondition(source: GoogleFormsQueueSource) {
   );
 }
 
+/** Queue admission gated by the current consumer and watch rows. */
+function googleFormsQueueAdmissionSql(
+  source: GoogleFormsQueueSource,
+  chatThreadId: string,
+  currentTime: Date,
+) {
+  const timestamp = sql`${currentTime.toISOString()}::timestamp`;
+  return sql`INSERT INTO ${queuedChatThreads} (chat_thread_id, org_id, queued_at)
+    SELECT ${chatThreadId}::uuid, ${source.orgId}, ${timestamp}
+    WHERE EXISTS (
+      SELECT 1 FROM ${workflowAutomations}
+      WHERE ${googleFormsQueueAutomationCondition(source)}
+    )
+    AND EXISTS (
+      SELECT 1 FROM ${googleFormsWatchStates}
+      WHERE ${and(
+        eq(googleFormsWatchStates.id, source.watchStateId),
+        eq(googleFormsWatchStates.orgId, source.orgId),
+        eq(googleFormsWatchStates.userId, source.userId),
+        eq(googleFormsWatchStates.connectorId, source.connectorId),
+        eq(googleFormsWatchStates.formId, source.formId),
+        eq(googleFormsWatchStates.watchId, source.watchId),
+      )}
+    )
+    ON CONFLICT (chat_thread_id) DO UPDATE SET claim_id = NULL, claim_expires_at = NULL`;
+}
+
 /** The input, source receipt, cursor and queue record have one local owner. */
 export const enqueueGoogleFormsWorkflowInput$ = command(
   async (
@@ -71,105 +100,94 @@ export const enqueueGoogleFormsWorkflowInput$ = command(
     ) {
       throw new Error("Google Forms input does not match its delivery source");
     }
-    return await db.transaction(async (tx) => {
-      // Match outgoing queue writers: append first, then acquire source locks.
-      // A rejected source rolls the append and its sequence reservation back.
-      await tx
-        .insert(chatAutomationContext)
-        .values(input.context)
-        .onConflictDoNothing();
-      const [event] = parseRawRows(
-        chatEventAppendResultSchema,
-        await tx.execute(
-          appendCanonicalChatEventsSql([input.event], input.conflict),
-        ),
-      );
-      if (!event) {
-        if (input.conflict === "none") {
-          throw new Error("Workflow queue event insert returned no row");
-        }
-        return null;
-      }
-      // Row locks arbitrate this admission: account deletion (FK SET NULL),
-      // disable and reprojection update the automation row; watch removal
-      // deletes the state row; cursor resets delete or move the cursor row.
-      // Lock order: automation -> watch state -> cursor.
-      const [automation] = await tx
-        .select({ id: workflowAutomations.id })
-        .from(workflowAutomations)
-        .where(googleFormsQueueAutomationCondition(source))
-        .for("update")
-        .limit(1);
-      const [state] = await tx
-        .select({ id: googleFormsWatchStates.id })
-        .from(googleFormsWatchStates)
-        .where(
-          and(
-            eq(googleFormsWatchStates.id, source.watchStateId),
-            eq(googleFormsWatchStates.orgId, source.orgId),
-            eq(googleFormsWatchStates.userId, source.userId),
-            eq(googleFormsWatchStates.connectorId, source.connectorId),
-            eq(googleFormsWatchStates.formId, source.formId),
-            eq(googleFormsWatchStates.watchId, source.watchId),
+    // The receipt's FKs to the watch state and automation are the implicit
+    // protection against a concurrent removal; losing that race is the same
+    // deterministic source-changed outcome, not a 500.
+    const admitted = await settle(
+      db.transaction(async (tx) => {
+        // Append first; a rejected source rolls the append and its sequence
+        // reservation back.
+        await tx
+          .insert(chatAutomationContext)
+          .values(input.context)
+          .onConflictDoNothing();
+        const [event] = parseRawRows(
+          chatEventAppendResultSchema,
+          await tx.execute(
+            appendCanonicalChatEventsSql([input.event], input.conflict),
           ),
-        )
-        .for("key share")
-        .limit(1);
-      const cursorCondition = and(
-        eq(googleFormsAutomationCursors.automationId, source.automationId),
-        eq(googleFormsAutomationCursors.watchStateId, source.watchStateId),
-        eq(googleFormsAutomationCursors.lastSeenSubmittedTime, source.cursor),
-      );
-      const [cursor] = await tx
-        .select({ automationId: googleFormsAutomationCursors.automationId })
-        .from(googleFormsAutomationCursors)
-        .where(cursorCondition)
-        .for("update")
-        .limit(1);
-      signal.throwIfAborted();
-      if (!state || !automation || !cursor) {
-        throw new GoogleFormsSourceTransitionChangedError();
-      }
-      const currentTime = nowDate();
-      const [processed] = await tx
-        .insert(googleFormsProcessedEvents)
-        .values({
-          watchStateId: source.watchStateId,
-          automationId: source.automationId,
-          pubsubMessageId: source.pubsubMessageId,
-          responseId: source.responseId,
-          lastSubmittedTime: source.lastSubmittedTime,
-          createdAt: currentTime,
-        })
-        .onConflictDoNothing()
-        .returning({ id: googleFormsProcessedEvents.id });
-      if (!processed) {
-        throw new GoogleFormsSourceTransitionChangedError();
-      }
-      const [advanced] = await tx
-        .update(googleFormsAutomationCursors)
-        .set({
-          lastSeenSubmittedTime: source.lastSubmittedTime,
-          updatedAt: currentTime,
-        })
-        .where(cursorCondition)
-        .returning({ automationId: googleFormsAutomationCursors.automationId });
-      if (!advanced) {
-        throw new GoogleFormsSourceTransitionChangedError();
-      }
-      await tx
-        .insert(queuedChatThreads)
-        .values({
-          chatThreadId: input.event.chatThreadId,
-          orgId: source.orgId,
-          queuedAt: currentTime,
-        })
-        .onConflictDoUpdate({
-          target: queuedChatThreads.chatThreadId,
-          set: { claimId: null, claimExpiresAt: null },
-        });
-      signal.throwIfAborted();
-      return event.id;
-    });
+        );
+        if (!event) {
+          if (input.conflict === "none") {
+            throw new Error("Workflow queue event insert returned no row");
+          }
+          return null;
+        }
+        // No source rows are locked. The receipt insert dedupes the response,
+        // the cursor advance is a compare-and-set on the observed cursor, and
+        // the queue record is admitted only while the consumer and watch are
+        // current. Any zero-row step rolls the whole admission back. A
+        // disable/removal racing these statements may still admit one event,
+        // which dispatch re-checks.
+        const cursorCondition = and(
+          eq(googleFormsAutomationCursors.automationId, source.automationId),
+          eq(googleFormsAutomationCursors.watchStateId, source.watchStateId),
+          eq(googleFormsAutomationCursors.lastSeenSubmittedTime, source.cursor),
+        );
+        signal.throwIfAborted();
+        const currentTime = nowDate();
+        const [processed] = await tx
+          .insert(googleFormsProcessedEvents)
+          .values({
+            watchStateId: source.watchStateId,
+            automationId: source.automationId,
+            pubsubMessageId: source.pubsubMessageId,
+            responseId: source.responseId,
+            lastSubmittedTime: source.lastSubmittedTime,
+            createdAt: currentTime,
+          })
+          .onConflictDoNothing()
+          .returning({ id: googleFormsProcessedEvents.id });
+        if (!processed) {
+          throw new GoogleFormsSourceTransitionChangedError();
+        }
+        const [advanced] = await tx
+          .update(googleFormsAutomationCursors)
+          .set({
+            lastSeenSubmittedTime: source.lastSubmittedTime,
+            updatedAt: currentTime,
+          })
+          .where(cursorCondition)
+          .returning({
+            automationId: googleFormsAutomationCursors.automationId,
+          });
+        if (!advanced) {
+          throw new GoogleFormsSourceTransitionChangedError();
+        }
+        if (
+          (
+            await tx.execute(
+              googleFormsQueueAdmissionSql(
+                source,
+                input.event.chatThreadId,
+                currentTime,
+              ),
+            )
+          ).rowCount === 0
+        ) {
+          throw new GoogleFormsSourceTransitionChangedError();
+        }
+        signal.throwIfAborted();
+        return event.id;
+      }),
+      signal,
+    );
+    if (admitted.ok) {
+      return admitted.value;
+    }
+    if (isForeignKeyViolation(admitted.error)) {
+      throw new GoogleFormsSourceTransitionChangedError();
+    }
+    throw admitted.error;
   },
 );

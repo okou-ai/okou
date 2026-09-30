@@ -48,6 +48,45 @@ function gmailQueueAutomationCondition(source: GmailQueueSource) {
   );
 }
 
+/** Queue admission gated by the current account, consumer and watch rows. */
+function gmailQueueAdmissionSql(
+  source: GmailQueueSource,
+  chatThreadId: string,
+  currentTime: Date,
+) {
+  const timestamp = sql`${currentTime.toISOString()}::timestamp`;
+  return sql`INSERT INTO ${queuedChatThreads} (chat_thread_id, org_id, queued_at)
+    SELECT ${chatThreadId}::uuid, ${source.orgId}, ${timestamp}
+    WHERE EXISTS (
+      SELECT 1 FROM ${connectors}
+      WHERE ${and(
+        eq(connectors.id, source.connectorId),
+        eq(connectors.orgId, source.orgId),
+        eq(connectors.userId, source.userId),
+        eq(connectors.connectorSlug, "gmail"),
+        eq(connectors.needsReconnect, false),
+      )}
+    )
+    AND EXISTS (
+      SELECT 1 FROM ${workflowAutomations}
+      WHERE ${gmailQueueAutomationCondition(source)}
+    )
+    AND EXISTS (
+      SELECT 1 FROM ${gmailWatchStates}
+      WHERE ${and(
+        eq(gmailWatchStates.id, source.watchStateId),
+        eq(gmailWatchStates.orgId, source.orgId),
+        eq(gmailWatchStates.userId, source.userId),
+        eq(gmailWatchStates.connectorId, source.connectorId),
+        eq(
+          sql`lower(${gmailWatchStates.emailAddress})`,
+          source.emailAddress.trim().toLowerCase(),
+        ),
+      )}
+    )
+    ON CONFLICT (chat_thread_id) DO UPDATE SET claim_id = NULL, claim_expires_at = NULL`;
+}
+
 /** Publish one input only while its mailbox, account and consumer remain current. */
 export const enqueueGmailWorkflowInput$ = command(
   async (
@@ -67,8 +106,8 @@ export const enqueueGmailWorkflowInput$ = command(
       throw new Error("Gmail input does not match its delivery source");
     }
     return await db.transaction(async (tx) => {
-      // Match outgoing queue writers: append first, then acquire source locks.
-      // A rejected source rolls the append and its sequence reservation back.
+      // Append first; a rejected source rolls the append and its sequence
+      // reservation back.
       await tx
         .insert(chatAutomationContext)
         .values(input.context)
@@ -85,64 +124,19 @@ export const enqueueGmailWorkflowInput$ = command(
         }
         return null;
       }
-      // Row locks arbitrate this admission in the member lock order
-      // account -> automation -> watch state. Reconnect marking, credential
-      // rewrites and account deletion conflict with the account share lock;
-      // disable and reprojection update the automation row; watch stop,
-      // replacement and mailbox changes update or delete the watch row.
-      const [account] = await tx
-        .select({ id: connectors.id })
-        .from(connectors)
-        .where(
-          and(
-            eq(connectors.id, source.connectorId),
-            eq(connectors.orgId, source.orgId),
-            eq(connectors.userId, source.userId),
-            eq(connectors.connectorSlug, "gmail"),
-            eq(connectors.needsReconnect, false),
-          ),
-        )
-        .for("share")
-        .limit(1);
-      const [automation] = await tx
-        .select({ id: workflowAutomations.id })
-        .from(workflowAutomations)
-        .where(gmailQueueAutomationCondition(source))
-        .for("update")
-        .limit(1);
-      const [state] = await tx
-        .select({ id: gmailWatchStates.id })
-        .from(gmailWatchStates)
-        .where(
-          and(
-            eq(gmailWatchStates.id, source.watchStateId),
-            eq(gmailWatchStates.orgId, source.orgId),
-            eq(gmailWatchStates.userId, source.userId),
-            eq(gmailWatchStates.connectorId, source.connectorId),
-            eq(
-              sql`lower(${gmailWatchStates.emailAddress})`,
-              source.emailAddress.trim().toLowerCase(),
-            ),
-          ),
-        )
-        .for("share")
-        .limit(1);
-      signal.throwIfAborted();
-      if (!account || !automation || !state) {
+      // One conditional statement admits the queue record only while the
+      // account, consumer and mailbox watch are current; zero rows rolls the
+      // append back. Concurrent disable/stop/reconnect is not serialized: an
+      // event admitted just before it commits is re-checked at dispatch.
+      if (
+        (
+          await tx.execute(
+            gmailQueueAdmissionSql(source, input.event.chatThreadId, nowDate()),
+          )
+        ).rowCount === 0
+      ) {
         throw new GmailAutomationSourceChangedError();
       }
-      const currentTime = nowDate();
-      await tx
-        .insert(queuedChatThreads)
-        .values({
-          chatThreadId: input.event.chatThreadId,
-          orgId: source.orgId,
-          queuedAt: currentTime,
-        })
-        .onConflictDoUpdate({
-          target: queuedChatThreads.chatThreadId,
-          set: { claimId: null, claimExpiresAt: null },
-        });
       signal.throwIfAborted();
       return event.id;
     });

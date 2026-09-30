@@ -15,7 +15,7 @@ contains migration `1290_retire_cloudflare_access_triggers`, removing both
 Cloudflare guards and their functions with independently documented serving and
 rollback evidence. This PR preserves that migration unchanged and withdraws its
 redundant unshipped scope-only retirement. With both unshipped Forms triggers
-withdrawn and migration `1293_retire_billing_attribution_mutation_guard` removing
+withdrawn and migration `1294_retire_billing_attribution_mutation_guard` removing
 the redundant canonical guard, **six billing application triggers remain** in the
 proposed R1 schema. No production migration completion is inferred from main.
 
@@ -146,7 +146,7 @@ and reader fallback removal still needs its own data evidence.
 
 ## Canonical mutation guard: independent retirement evidence
 
-Migration `1293_retire_billing_attribution_mutation_guard` removes
+Migration `1294_retire_billing_attribution_mutation_guard` removes
 `billing_run_attribution_immutable` and `reject_billing_attribution_update`.
 It does not remove any capture, observation or attribution reader fallback.
 
@@ -221,7 +221,7 @@ metadata and the two trigger/function inventory entries. The original non-null
 and the observed production deployment tree `c501c3b7` exclude these PR-only
 migrations; #37313 is still open and unmerged. Existing published migration history, including main 1288, is untouched.
 Main migrations 1289 and 1290 are preserved. Drizzle generated the two remaining
-PR-only purge and canonical mutation-guard retirements as 1292 and 1293, without
+PR-only purge and canonical mutation-guard retirements as 1293 and 1294, without
 a Forms schema change or added table/column.
 
 Application SQL still checks active authority, selected source and normal

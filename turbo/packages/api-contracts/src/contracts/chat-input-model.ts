@@ -5,7 +5,7 @@ import { reasoningEffortSchema } from "./model-reasoning-effort";
 export const chatInputModelSelectionSchema = z
   .object({
     selectedModel: z.string().min(1),
-    codexServiceTier: z.literal("fast").nullable(),
+    codexServiceTier: z.enum(["fast", "ultrafast"]).nullable(),
     reasoningEffort: reasoningEffortSchema.nullable(),
   })
   .strict();

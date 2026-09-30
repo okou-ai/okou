@@ -24,6 +24,16 @@ export interface BuiltinConnectorAutomaticContractOwner {
   readonly contractHash: string;
 }
 
+/**
+ * R1 compatibility only: origin/main Automatic OAuth writers (the DCR store's
+ * withLock registration, finishAutomaticOAuth's code exchange and
+ * resolveLockedAutomatic) hold this key across provider I/O and read-then-write
+ * registrations and bindings without conditions. New writers acquire it only as
+ * a short statement inside local-write transactions so such an outgoing writer
+ * cannot interleave; their own outcomes come from the registration unique
+ * constraints, the binding foreign key and conditional writes. Release 2 deletes
+ * it once no serving, in-flight or rollback writer uses it.
+ */
 export function builtinConnectorAutomaticLifecycleLockStatement(
   owner: Pick<
     BuiltinConnectorAutomaticContractOwner,
@@ -34,7 +44,7 @@ export function builtinConnectorAutomaticLifecycleLockStatement(
   return sql`SELECT pg_advisory_xact_lock(hashtext(${JSON.stringify(["connector-mcp-oauth", owner.orgId, owner.connectorSlug])}))`;
 }
 
-/** Reconnects can cross method contracts, so take this lock before any account row. */
+/** R1 compatibility only: see builtinConnectorAutomaticLifecycleLockStatement. */
 export async function lockBuiltinConnectorAutomaticLifecycle(
   db: Db,
   owner: Pick<
@@ -60,72 +70,47 @@ function registration(
   return { ...row, hasClientSecret: row.encryptedClientSecret !== null };
 }
 
-/** Lifecycle coordination precedes owner target locks, which precede their account rows. */
+/**
+ * Retires one exact registration in the caller's transaction without explicit
+ * row locks. Accounts are written first, the order account writers use; the
+ * binding condition selects only accounts still bound to this registration,
+ * and deleting its bindings before the registration satisfies the binding
+ * foreign key. Every statement is conditional on the exact id and owner, so a
+ * registration already retired by another writer is a no-op.
+ */
 async function retireRegistration(
   db: Db,
   owner: BuiltinConnectorAutomaticContractOwner,
   id: string,
 ): Promise<void> {
-  const [owned] = await db
-    .select({ id: builtinConnectorDcrRegistrations.id })
-    .from(builtinConnectorDcrRegistrations)
+  const boundToRegistration = and(
+    eq(builtinConnectorAccountOauthBindings.dcrRegistrationId, id),
+    eq(builtinConnectorAccountOauthBindings.orgId, owner.orgId),
+    eq(builtinConnectorAccountOauthBindings.connectorSlug, owner.connectorSlug),
+    eq(builtinConnectorAccountOauthBindings.authMethod, owner.authMethod),
+    eq(builtinConnectorAccountOauthBindings.contractHash, owner.contractHash),
+  );
+  await db
+    .update(connectors)
+    .set({
+      needsReconnect: true,
+      reconnectReason: "authorization_expired_or_revoked",
+      updatedAt: nowDate(),
+    })
     .where(
-      and(eq(builtinConnectorDcrRegistrations.id, id), ownerCondition(owner)),
-    )
-    .limit(1);
-  if (!owned) {
-    return;
-  }
-  // Linked accounts lock in id order, the order account-set writers use for
-  // sibling rows. The lifecycle lock prevents new Automatic bindings meanwhile.
-  const accounts = await db
-    .select({ id: connectors.id })
-    .from(connectors)
-    .innerJoin(
-      builtinConnectorAccountOauthBindings,
-      eq(
-        builtinConnectorAccountOauthBindings.connectorAccountId,
+      inArray(
         connectors.id,
+        db
+          .select({
+            id: builtinConnectorAccountOauthBindings.connectorAccountId,
+          })
+          .from(builtinConnectorAccountOauthBindings)
+          .where(boundToRegistration),
       ),
-    )
-    .where(eq(builtinConnectorAccountOauthBindings.dcrRegistrationId, id))
-    .orderBy(connectors.id)
-    .for("update", { of: connectors });
-  if (accounts.length > 0) {
-    await db
-      .update(connectors)
-      .set({
-        needsReconnect: true,
-        reconnectReason: "authorization_expired_or_revoked",
-        updatedAt: nowDate(),
-      })
-      .where(
-        and(
-          inArray(
-            connectors.id,
-            accounts.map((account) => {
-              return account.id;
-            }),
-          ),
-          // A reconnect to another method may have committed while the row
-          // lock waited. Recheck its current binding after acquiring that lock.
-          inArray(
-            connectors.id,
-            db
-              .select({
-                id: builtinConnectorAccountOauthBindings.connectorAccountId,
-              })
-              .from(builtinConnectorAccountOauthBindings)
-              .where(
-                eq(builtinConnectorAccountOauthBindings.dcrRegistrationId, id),
-              ),
-          ),
-        ),
-      );
-  }
+    );
   await db
     .delete(builtinConnectorAccountOauthBindings)
-    .where(eq(builtinConnectorAccountOauthBindings.dcrRegistrationId, id));
+    .where(boundToRegistration);
   await db
     .delete(builtinConnectorDcrRegistrations)
     .where(
@@ -236,11 +221,12 @@ export const publishBuiltinDcrRegistration$ = command(
       eq(builtinConnectorDcrRegistrations.issuer, value.issuer),
     );
     return await db.transaction(async (tx) => {
+      // Admission check: a registration is published only for the current
+      // catalog. This is a plain read; the callback publication rechecks it.
       const [catalog] = await tx
         .select({ sourceId: connectorCatalogActiveSnapshot.sourceId })
         .from(connectorCatalogActiveSnapshot)
         .where(builtinDcrCatalogCondition(args.catalogIdentity))
-        .for("share")
         .limit(1);
       if (!catalog) {
         throw new McpAutomaticOAuthError(
@@ -248,33 +234,33 @@ export const publishBuiltinDcrRegistration$ = command(
           "Builtin MCP credential catalog changed during client registration",
         );
       }
-      // Outgoing Automatic OAuth writers still rely on lifecycle coordination.
-      // Remove only after those writers drain and rollback targets implement
-      // conditional publication and exact registration retirement.
+      // R1 compatibility only: origin/main registration (DCR store withLock
+      // create) reads and inserts under this key without ON CONFLICT. Remove
+      // in R2 once no serving, in-flight or rollback writer takes it.
       await tx.execute(builtinConnectorAutomaticLifecycleLockStatement(owner));
       const [current] = await tx
         .select()
         .from(builtinConnectorDcrRegistrations)
         .where(issuerCondition)
-        .for("update")
         .limit(1);
       if (current && current.id !== expectedRegistrationId) {
         return registration(current);
       }
       if (current) {
-        const bindingCondition = eq(
-          builtinConnectorAccountOauthBindings.dcrRegistrationId,
-          current.id,
-        );
-        const accountOwners = await tx
-          .selectDistinct({
-            userId: builtinConnectorAccountOauthBindings.userId,
+        const [linked] = await tx
+          .select({
+            id: builtinConnectorAccountOauthBindings.connectorAccountId,
           })
           .from(builtinConnectorAccountOauthBindings)
-          .where(bindingCondition)
-          .orderBy(builtinConnectorAccountOauthBindings.userId);
+          .where(
+            eq(
+              builtinConnectorAccountOauthBindings.dcrRegistrationId,
+              current.id,
+            ),
+          )
+          .limit(1);
         if (
-          accountOwners.length > 0 &&
+          linked &&
           (current.expiresAt === null || current.expiresAt > nowDate())
         ) {
           throw new McpAutomaticOAuthError(
@@ -282,50 +268,9 @@ export const publishBuiltinDcrRegistration$ = command(
             "Existing MCP OAuth registration acquired a linked account during preparation",
           );
         }
-        // Expired registration: lock its linked accounts in id order, the order
-        // account-set writers use, before invalidating them.
-        await tx
-          .select({ id: connectors.id })
-          .from(connectors)
-          .innerJoin(
-            builtinConnectorAccountOauthBindings,
-            eq(
-              builtinConnectorAccountOauthBindings.connectorAccountId,
-              connectors.id,
-            ),
-          )
-          .where(bindingCondition)
-          .orderBy(connectors.id)
-          .for("update", { of: connectors });
-        await tx
-          .update(connectors)
-          .set({
-            needsReconnect: true,
-            reconnectReason: "authorization_expired_or_revoked",
-            updatedAt: nowDate(),
-          })
-          .where(
-            inArray(
-              connectors.id,
-              tx
-                .select({
-                  id: builtinConnectorAccountOauthBindings.connectorAccountId,
-                })
-                .from(builtinConnectorAccountOauthBindings)
-                .where(bindingCondition),
-            ),
-          );
-        await tx
-          .delete(builtinConnectorAccountOauthBindings)
-          .where(bindingCondition);
-        await tx
-          .delete(builtinConnectorDcrRegistrations)
-          .where(
-            and(
-              ownerCondition(owner),
-              eq(builtinConnectorDcrRegistrations.id, current.id),
-            ),
-          );
+        // Replace the observed registration exactly; if another writer already
+        // retired it, the conditional statements change nothing.
+        await retireRegistration(tx, owner, current.id);
       }
       const [inserted] = await tx
         .insert(builtinConnectorDcrRegistrations)
@@ -340,8 +285,10 @@ export const publishBuiltinDcrRegistration$ = command(
             .where(issuerCondition)
             .limit(1);
       if (!winner) {
-        throw new Error(
-          "Failed to persist builtin MCP OAuth client registration",
+        // The conflicting winner was retired before this read.
+        throw new McpAutomaticOAuthError(
+          { kind: "incompatible", reason: "registration-conflict" },
+          "Concurrent MCP OAuth registration was retired during publication",
         );
       }
       return registration(winner);
@@ -416,84 +363,13 @@ export const retireBuiltinDcrRegistration$ = command(
     const db = set(writeDb$);
     const { owner, id } = args;
     await db.transaction(async (tx) => {
+      // R1 compatibility only: origin/main finishAutomaticOAuth binds accounts
+      // to a registration it read under this key. Remove in R2 once no
+      // serving, in-flight or rollback writer takes it.
       await tx.execute(builtinConnectorAutomaticLifecycleLockStatement(owner));
-      const [owned] = await tx
-        .select({ id: builtinConnectorDcrRegistrations.id })
-        .from(builtinConnectorDcrRegistrations)
-        .where(
-          and(
-            eq(builtinConnectorDcrRegistrations.id, id),
-            ownerCondition(owner),
-          ),
-        )
-        .for("update")
-        .limit(1);
-      if (!owned) {
-        return;
-      }
-      // Linked accounts lock in id order, the order account-set writers use for
-      // sibling rows. The lifecycle lock prevents new Automatic bindings meanwhile.
-      const accounts = await tx
-        .select({ id: connectors.id })
-        .from(connectors)
-        .innerJoin(
-          builtinConnectorAccountOauthBindings,
-          eq(
-            builtinConnectorAccountOauthBindings.connectorAccountId,
-            connectors.id,
-          ),
-        )
-        .where(eq(builtinConnectorAccountOauthBindings.dcrRegistrationId, id))
-        .orderBy(connectors.id)
-        .for("update", { of: connectors });
-      if (accounts.length > 0) {
-        await tx
-          .update(connectors)
-          .set({
-            needsReconnect: true,
-            reconnectReason: "authorization_expired_or_revoked",
-            updatedAt: nowDate(),
-          })
-          .where(
-            and(
-              inArray(
-                connectors.id,
-                accounts.map((account) => {
-                  return account.id;
-                }),
-              ),
-              // A reconnect to another method may have committed while the row
-              // lock waited. Recheck its current binding after acquiring that lock.
-              inArray(
-                connectors.id,
-                tx
-                  .select({
-                    id: builtinConnectorAccountOauthBindings.connectorAccountId,
-                  })
-                  .from(builtinConnectorAccountOauthBindings)
-                  .where(
-                    eq(
-                      builtinConnectorAccountOauthBindings.dcrRegistrationId,
-                      id,
-                    ),
-                  ),
-              ),
-            ),
-          );
-      }
-      await tx
-        .delete(builtinConnectorAccountOauthBindings)
-        .where(eq(builtinConnectorAccountOauthBindings.dcrRegistrationId, id));
-      await tx
-        .delete(builtinConnectorDcrRegistrations)
-        .where(
-          and(
-            eq(builtinConnectorDcrRegistrations.id, id),
-            ownerCondition(owner),
-          ),
-        );
-      signal.throwIfAborted();
+      await retireRegistration(tx, owner, id);
     });
+    signal.throwIfAborted();
   },
 );
 

@@ -1,4 +1,5 @@
 import { command, computed, state } from "ccstate";
+import { getMemberModelPolicyRoute } from "@okouai/api-contracts/contracts/member-model-policy";
 import { orgModelPolicies$ } from "../external/org-model-policies.ts";
 import { userModelPreference$ } from "../external/user-model-preference.ts";
 import {
@@ -65,10 +66,22 @@ export const chatPageModelSelection$ = computed(
         selectedModel: user.value.selectedModel,
         modelSettings: user.value.modelSettings ?? {},
       };
-      if (user.value.codexServiceTier !== "fast") {
+      if (!user.value.codexServiceTier) {
         return selection;
       }
       const policies = await get(orgModelPolicies$);
+      if (user.value.codexServiceTier === "ultrafast") {
+        const directAstra = policies?.policies.some((policy) => {
+          return (
+            policy.model === user.value?.selectedModel &&
+            policy.model === "gpt-6-astra" &&
+            getMemberModelPolicyRoute(policy).providerType === "openai-api-key"
+          );
+        });
+        return directAstra
+          ? { ...selection, codexServiceTier: "ultrafast" }
+          : selection;
+      }
       return isCodexFastModeAvailableForSelection({
         policies,
         selectedModel: user.value.selectedModel,

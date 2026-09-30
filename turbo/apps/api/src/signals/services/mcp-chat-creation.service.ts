@@ -286,7 +286,7 @@ const prepareThreadModel$ = command(
     signal: AbortSignal,
   ) => {
     let pin: ModelFirstPin;
-    let codexServiceTier: "fast" | null = null;
+    let codexServiceTier: "fast" | "ultrafast" | null = null;
     if (input.model === undefined) {
       const initialModel = await set(
         resolveRequiredDefaultChatThreadModelPin$,
@@ -296,7 +296,11 @@ const prepareThreadModel$ = command(
       );
       pin = initialModel;
       codexServiceTier =
-        initialModel.serviceTier === "priority" ? "fast" : null;
+        initialModel.serviceTier === "priority"
+          ? "fast"
+          : initialModel.serviceTier === "ultrafast"
+            ? "ultrafast"
+            : null;
     } else {
       const resolved = await set(
         resolveModelSelectionPin$,
@@ -360,7 +364,7 @@ const commitNewThread$ = command(
         | {
             readonly kind: "prepared";
             readonly pin: ModelFirstPin;
-            readonly codexServiceTier: "fast" | null;
+            readonly codexServiceTier: "fast" | "ultrafast" | null;
             readonly modelSettings: import("@okouai/api-contracts/contracts/model-reasoning-effort").ModelSettings;
             readonly cloudBrowserEnabled: boolean;
           };

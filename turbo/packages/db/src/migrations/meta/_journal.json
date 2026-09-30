@@ -1503,15 +1503,22 @@
     {
       "idx": 1292,
       "version": "7",
-      "when": 1790691800289,
-      "tag": "1292_retire_provisional_billing_purge",
+      "when": 1790729666014,
+      "tag": "1292_gpt_6_1_sol_subscription_catalog",
       "breakpoints": true
     },
     {
       "idx": 1293,
       "version": "7",
-      "when": 1790691801289,
-      "tag": "1293_retire_billing_attribution_mutation_guard",
+      "when": 1790729667014,
+      "tag": "1293_retire_provisional_billing_purge",
+      "breakpoints": true
+    },
+    {
+      "idx": 1294,
+      "version": "7",
+      "when": 1790729668014,
+      "tag": "1294_retire_billing_attribution_mutation_guard",
       "breakpoints": true
     }
   ]

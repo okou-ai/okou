@@ -8791,9 +8791,13 @@ function ComposerTemporaryModelNotice({
     policies,
   });
   const selectionServiceTier =
-    selection?.codexServiceTier === "fast" ? "priority" : null;
+    selection?.codexServiceTier === "fast"
+      ? "priority"
+      : (selection?.codexServiceTier ?? null);
   const defaultServiceTier =
-    defaultSelection?.codexServiceTier === "fast" ? "priority" : null;
+    defaultSelection?.codexServiceTier === "fast"
+      ? "priority"
+      : (defaultSelection?.codexServiceTier ?? null);
   const modelChanged =
     selection?.selectedModel !== defaultSelection?.selectedModel;
   const serviceTierChanged = selectionServiceTier !== defaultServiceTier;
@@ -8812,7 +8816,9 @@ function ComposerTemporaryModelNotice({
   const runSpeedLabel = t(($) => {
     return selectionServiceTier === "priority"
       ? $.settings.models.picker.fast
-      : $.settings.models.picker.standard;
+      : selectionServiceTier === "ultrafast"
+        ? $.settings.models.picker.ultrafastMode
+        : $.settings.models.picker.standard;
   });
   const scopedModelLabel = [
     modelName,
