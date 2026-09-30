@@ -9977,69 +9977,71 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     shared: shared,
     bootstrapMetadata$: preCreateBootstrapMetadata$,
   };
+  const automationThreadSessionSnapshot$ = computed(async (get) => {
+    const identity = await get(claimReadIdentity$);
+    if (!identity) {
+      return null;
+    }
+    const db = get(db$);
+    const threadId = claim.chatThreadId;
+    const [thread] = await db
+      .select(chatThreadSessionSelection())
+      .from(chatThreads)
+      .leftJoin(
+        agentSessions,
+        and(
+          eq(agentSessions.id, chatThreads.agentSessionId),
+          eq(agentSessions.userId, identity.userId),
+          eq(agentSessions.orgId, identity.orgId),
+        ),
+      )
+      .leftJoin(agents, eq(agents.id, identity.agentId))
+      .leftJoin(
+        conversations,
+        eq(conversations.id, agentSessions.conversationId),
+      )
+      .leftJoin(blobs, eq(blobs.hash, conversations.cliAgentSessionHistoryHash))
+      .leftJoin(
+        chatThreadConversationRun,
+        eq(chatThreadConversationRun.id, conversations.runId),
+      )
+      .leftJoin(agentRuns, eq(agentRuns.id, chatThreads.agentSessionRunId))
+      .where(
+        and(
+          eq(chatThreads.id, threadId),
+          eq(chatThreads.userId, identity.userId),
+          eq(chatThreads.agentId, identity.agentId),
+        ),
+      )
+      .limit(1);
+    return thread ?? null;
+  });
   const preCreateThreadSessionThreadSession$ = computed(
     async (get): Promise<ChatThreadSessionResolution | undefined> => {
-      const { command } = await get(preCreateInput$);
-      const db = get(db$);
+      const [{ command }, agent, thread] = await Promise.all([
+        get(preCreateInput$),
+        get(preCreateAgentAgent$),
+        get(automationThreadSessionSnapshot$),
+      ]);
       if (!command.chatThreadId) {
         return undefined;
       }
-      const agent = await get(preCreateAgentAgent$);
       if (!agent) {
         throw new Error("Agent disappeared after preparation authorization");
       }
-      const threadId = command.chatThreadId;
       const route = command.threadSessionRoute;
       if (!route) {
         throw new Error("Thread-bound agent run is missing its model route");
       }
-      return await (async () => {
-        const [thread] = await db
-          .select(chatThreadSessionSelection())
-          .from(chatThreads)
-          .leftJoin(
-            agentSessions,
-            and(
-              eq(agentSessions.id, chatThreads.agentSessionId),
-              eq(agentSessions.userId, command.auth.userId),
-              eq(agentSessions.orgId, command.auth.orgId),
-            ),
-          )
-          .leftJoin(agents, eq(agents.id, agent.id))
-          .leftJoin(
-            conversations,
-            eq(conversations.id, agentSessions.conversationId),
-          )
-          .leftJoin(
-            blobs,
-            eq(blobs.hash, conversations.cliAgentSessionHistoryHash),
-          )
-          .leftJoin(
-            chatThreadConversationRun,
-            eq(chatThreadConversationRun.id, conversations.runId),
-          )
-          .leftJoin(agentRuns, eq(agentRuns.id, chatThreads.agentSessionRunId))
-          .where(
-            and(
-              eq(chatThreads.id, threadId),
-              eq(chatThreads.userId, command.auth.userId),
-              eq(
-                chatThreads.agentId,
-                command.expectedThreadAgentId ?? agent.id,
-              ),
-            ),
-          )
-          .limit(1);
-        if (!thread) {
-          throw new Error(
-            "Chat thread not found while resolving session binding",
-          );
-        }
-        return resolveChatThreadSessionSnapshot(thread, {
-          agentId: agent.id,
-          route,
-        });
-      })();
+      if (!thread) {
+        throw new Error(
+          "Chat thread not found while resolving session binding",
+        );
+      }
+      return resolveChatThreadSessionSnapshot(thread, {
+        agentId: agent.id,
+        route,
+      });
     },
   );
   const capturedSelectedStorageInput$ = computed(
@@ -12494,6 +12496,14 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   );
   const readClaimInputSources$ = command(
     async ({ get, set }, head: ChatQueueHeadContext, signal: AbortSignal) => {
+      if (
+        head.contextType === "automation" &&
+        !(await get(capturedAutomationTarget$))
+      ) {
+        signal.throwIfAborted();
+        return;
+      }
+      signal.throwIfAborted();
       // Model/member reads have no agent-identity barrier. Agent-specific
       // rows start concurrently and wait only for the selected agent itself.
       const commonReads = [
@@ -12504,6 +12514,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       ];
       if (head.contextType === "automation") {
         await Promise.all([
+          get(automationThreadSessionSnapshot$),
           get(queuedModelSelection$),
           get(queuedModelCapabilities$),
           get(queuedModelInitialPolicies$),
