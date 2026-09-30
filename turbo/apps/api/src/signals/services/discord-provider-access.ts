@@ -44,7 +44,7 @@ export async function loadDiscordGuildAccess(
     discordUserId: string;
     botUserId: string;
   },
-  signal: AbortSignal,
+  signal?: AbortSignal,
 ): Promise<{ kind: "allowed"; access: DiscordGuildAccess } | AccessFailure> {
   const [guild, roles, user, bot, self] = await Promise.all([
     discordClient.fetchDiscordGuild(args, signal),
@@ -163,7 +163,7 @@ interface DiscordProviderAccessArgs {
 async function resolvePermissionChannel(
   args: DiscordProviderAccessArgs,
   channel: DiscordChannel,
-  signal: AbortSignal,
+  signal?: AbortSignal,
 ): Promise<{ kind: "allowed"; channel: DiscordChannel } | AccessFailure> {
   if (isDiscordThread(channel)) {
     if (!channel.parent_id || !channel.thread_metadata) {
@@ -197,7 +197,7 @@ function canStartPublicThread(
 
 export async function resolveDiscordProviderAccess(
   args: DiscordProviderAccessArgs,
-  signal: AbortSignal,
+  signal?: AbortSignal,
 ): Promise<{ kind: "allowed"; channel: DiscordChannel } | AccessFailure> {
   const result = await discordClient.fetchDiscordChannel(args, signal);
   if (result.kind !== "ok") {
@@ -264,7 +264,7 @@ async function requireThreadAccess(
   args: DiscordProviderAccessArgs,
   channel: DiscordChannel,
   permissions: { user: bigint; bot: bigint },
-  signal: AbortSignal,
+  signal?: AbortSignal,
 ): Promise<{ kind: "allowed"; channel: DiscordChannel } | AccessFailure> {
   if (channel.type === 12) {
     for (const [userId, memberPermissions] of [
