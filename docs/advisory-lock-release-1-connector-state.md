@@ -8,7 +8,11 @@ of preference:
 1. Exact row locks and conditional writes on the rows a writer depends on
    (account `connectors` row, `workflow_automations`, watch/subscription state),
    with existing unique indexes and `ON CONFLICT`.
-2. For writers that change or project the member's whole builtin account set,
+2. **Superseded (2026-09-30):** the ordered account-rows lock described below
+   was removed with all explicit row locks; see
+   [row lock inventory](./advisory-lock-release-1-row-locks.md). Account-set
+   writers now use conditional statements and the default unique index.
+   Former text: for writers that change or project the member's whole builtin account set,
    `builtinConnectorAccountRowsLockSql` (ordered `FOR UPDATE` of all of that member's
    account rows for the slug), the same ordering custom accounts use. It is
    `FOR UPDATE` because account writers later lock the same rows; builtin
