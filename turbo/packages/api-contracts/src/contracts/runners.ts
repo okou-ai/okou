@@ -1061,7 +1061,7 @@ const piModelConfigVersionedSchema = z
     thinkingLevel: z
       .enum(["off", "minimal", "low", "medium", "high", "xhigh", "max"])
       .optional(),
-    serviceTier: z.enum(["priority", "fast"]).optional(),
+    serviceTier: z.enum(["priority", "fast", "ultrafast"]).optional(),
     credentialBindings: z.array(piModelCredentialBindingSchema).min(1).max(2),
   })
   .strict()
@@ -1148,7 +1148,7 @@ export const piModelConfigV3Schema = z
       dialect: z.literal("openai-responses"),
       transport: z.enum(["sse"]),
       provider: z.enum(["deepseek", "openai", "openrouter"]),
-      serviceTier: z.enum(["priority"]).optional(),
+      serviceTier: z.enum(["priority", "ultrafast"]).optional(),
     }),
     piModelConfigVersionedSchema.safeExtend({
       schemaVersion: z.literal(PI_MODEL_CONFIG_DIALECT_TIER_GENERATION),
@@ -1158,6 +1158,19 @@ export const piModelConfigV3Schema = z
       serviceTier: z.enum(["fast"]).optional(),
     }),
   ])
+  .superRefine((config, refinement) => {
+    if (
+      config.dialect === "openai-responses" &&
+      config.serviceTier === "ultrafast" &&
+      (config.provider !== "openai" || config.model !== "gpt-6-astra")
+    ) {
+      refinement.addIssue({
+        code: "custom",
+        path: ["serviceTier"],
+        message: "Ultrafast requires direct OpenAI Astra",
+      });
+    }
+  })
   .readonly();
 
 export const piModelConfigSchema = z.union([

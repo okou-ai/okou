@@ -134,8 +134,10 @@ function planRestricted<T>(model?: SupportedRunModel): ServiceResult<T> {
   return {
     ok: false,
     response:
-      model === "claude-sonnet-5-5"
-        ? paidPlanRequired()
+      model === "claude-sonnet-5-5" || model === "gpt-6.1-sol"
+        ? paidPlanRequired(
+            model === "gpt-6.1-sol" ? "GPT 6.1 Sol" : "Claude Sonnet 5.5",
+          )
         : insufficientCredits(),
   };
 }
@@ -155,7 +157,7 @@ function surfaceSupportsModel(
   surface: SurfaceRouteInfo,
   model: SupportedRunModel,
 ): boolean {
-  if (model === "claude-sonnet-5-5") {
+  if (model === "claude-sonnet-5-5" || model === "gpt-6.1-sol") {
     return false;
   }
   const providerType = providerTypeForSurface(surface.protocol);

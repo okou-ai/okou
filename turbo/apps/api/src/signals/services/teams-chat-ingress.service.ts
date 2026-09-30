@@ -104,7 +104,12 @@ async function createCanonicalTeamsChatThread(
     userId: args.userId,
     agentId: args.agentId,
     selectedModel: initialModel.selectedModel,
-    codexServiceTier: initialModel.serviceTier === "priority" ? "fast" : null,
+    codexServiceTier:
+      initialModel.serviceTier === "priority"
+        ? "fast"
+        : initialModel.serviceTier === "ultrafast"
+          ? "ultrafast"
+          : null,
     title: null,
     lastReadAt: args.currentTime,
     lastMessageAt: args.currentTime,

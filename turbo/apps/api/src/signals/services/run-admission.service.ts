@@ -267,9 +267,15 @@ export function checkOrgPlanRunAdmission(params: {
   }
   if (
     modelAccess === "pro_required" &&
-    normalizeBuiltInModelId(params.selectedModel ?? "") === "claude-sonnet-5-5"
+    ["claude-sonnet-5-5", "gpt-6.1-sol"].includes(
+      normalizeBuiltInModelId(params.selectedModel ?? ""),
+    )
   ) {
-    return paidPlanRequired();
+    return paidPlanRequired(
+      normalizeBuiltInModelId(params.selectedModel ?? "") === "gpt-6.1-sol"
+        ? "GPT 6.1 Sol"
+        : "Claude Sonnet 5.5",
+    );
   }
   return (!capabilities.supportByok &&
     !params.autoPersonalSubscription &&

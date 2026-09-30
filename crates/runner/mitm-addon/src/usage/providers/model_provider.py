@@ -9,7 +9,7 @@ idempotency keys preserved.
 
 Extractor metadata uses only the base categories in ``MODEL_USAGE_CATEGORIES``.
 Billing tier selection may remap those keys to reporter-owned
-``.long_context`` and ``.fast`` categories only while building billable usage
+``.long_context``, ``.fast``, and ``.ultrafast`` categories when building billable usage
 events.
 
 Run contexts set ``flow.metadata[metadata_keys.MODEL_USAGE_PROVIDER]`` to the
@@ -57,6 +57,7 @@ from ..underbilling import log_usage_underbilling
 
 MODEL_USAGE_KIND = "model"
 type _ModelUsageTier = Literal["base", "long_context"]
+type _ModelServiceTier = Literal["standard", "fast", "ultrafast"]
 type _ModelUsageTransport = Literal["http", "websocket"]
 type _ModelUsageBufferMode = Literal["aggregate", "source"]
 _MODEL_USAGE_TIER_BASE: _ModelUsageTier = "base"
@@ -66,12 +67,13 @@ _MODEL_USAGE_CATEGORY_OUTPUT_LONG_CONTEXT = "tokens.output.long_context"
 _MODEL_USAGE_CATEGORY_CACHE_READ_LONG_CONTEXT = "tokens.cache_read.long_context"
 _MODEL_USAGE_CATEGORY_CACHE_CREATION_LONG_CONTEXT = "tokens.cache_creation.long_context"
 _MODEL_USAGE_FAST_CATEGORY_SUFFIX = ".fast"
+_MODEL_USAGE_ULTRAFAST_CATEGORY_SUFFIX = ".ultrafast"
 
 
 @dataclass(frozen=True, slots=True)
 class _ModelUsageTierDecision:
     tier: _ModelUsageTier
-    fast: bool
+    service_tier: _ModelServiceTier
     committed: bool
 
 
@@ -98,24 +100,26 @@ _MODEL_INPUT_PARTITION_BASE_CATEGORIES = (
 def _billable_model_usage_category(
     category: str,
     billing_tier: _ModelUsageTier,
-    fast: bool,
+    service_tier: _ModelServiceTier,
 ) -> str:
     billable_category = (
         _MODEL_USAGE_LONG_CONTEXT_CATEGORY_BY_BASE[category]
         if billing_tier == _MODEL_USAGE_TIER_LONG_CONTEXT
         else category
     )
-    if fast:
+    if service_tier == "fast":
         return f"{billable_category}{_MODEL_USAGE_FAST_CATEGORY_SUFFIX}"
+    if service_tier == "ultrafast":
+        return f"{billable_category}{_MODEL_USAGE_ULTRAFAST_CATEGORY_SUFFIX}"
     return billable_category
 
 
 _MODEL_PROVIDER_USAGE_TIER_SOURCE_LIMIT = 100
 _MODEL_INPUT_PARTITION_CATEGORIES = frozenset(
-    _billable_model_usage_category(category, billing_tier, fast)
+    _billable_model_usage_category(category, billing_tier, service_tier)
     for category in _MODEL_INPUT_PARTITION_BASE_CATEGORIES
     for billing_tier in (_MODEL_USAGE_TIER_BASE, _MODEL_USAGE_TIER_LONG_CONTEXT)
-    for fast in (False, True)
+    for service_tier in ("standard", "fast", "ultrafast")
 )
 
 
@@ -241,7 +245,7 @@ def report_model_provider_usage_source(
             source_usage,
         )
         if pricing is not None:
-            billing_tier, fast = pricing
+            billing_tier, service_tier = pricing
             usage_events = _build_usage_events(
                 run_id,
                 source_id,
@@ -249,7 +253,7 @@ def report_model_provider_usage_source(
                 source_usage,
                 USAGE_EVENT_NAMESPACE_MODEL,
                 billing_tier,
-                fast,
+                service_tier,
             )
     if not usage_events:
         return
@@ -343,7 +347,7 @@ def log_terminal_model_provider_usage_sources(
                 source.usage,
                 USAGE_EVENT_NAMESPACE_MODEL,
                 billing_tier,
-                _is_fast_service_tier(source.usage),
+                _model_service_tier(source.usage),
             )
         _log_model_provider_usage_source(
             flow,
@@ -466,7 +470,7 @@ def _build_model_provider_usage_events(
                 source.usage,
                 namespace,
                 billing_tier,
-                _is_fast_service_tier(source.usage),
+                _model_service_tier(source.usage),
             )
         )
     return events
@@ -551,7 +555,7 @@ def _build_usage_events(
     usage: dict,
     namespace: uuid.UUID,
     billing_tier: _ModelUsageTier,
-    fast: bool,
+    service_tier: _ModelServiceTier,
 ) -> list[UsageEvent]:
     events: list[UsageEvent] = []
     for category in MODEL_USAGE_CATEGORIES:
@@ -561,7 +565,7 @@ def _build_usage_events(
         billable_category = _billable_model_usage_category(
             category,
             billing_tier,
-            fast,
+            service_tier,
         )
         event: UsageEvent = {
             "idempotencyKey": derive_usage_idempotency_key(
@@ -584,35 +588,35 @@ def _source_model_usage_pricing(
     message_id: str,
     provider: str,
     usage: dict,
-) -> tuple[_ModelUsageTier, bool] | None:
+) -> tuple[_ModelUsageTier, _ModelServiceTier] | None:
     billing_tier = _model_usage_tier(provider, usage)
     if provider not in MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS:
-        return (billing_tier, _is_fast_service_tier(usage)) if billing_tier else None
+        return (billing_tier, _model_service_tier(usage)) if billing_tier else None
 
     tiers = _model_provider_usage_tiers(flow)
     remembered_decision = tiers.get(message_id)
-    observed_fast = _observed_fast_service_tier(usage)
+    observed_service_tier = _observed_model_service_tier(usage)
     if remembered_decision is not None:
         tier = remembered_decision.tier
-        fast = remembered_decision.fast
+        service_tier = remembered_decision.service_tier
         if not remembered_decision.committed:
             if billing_tier is not None:
                 tier = billing_tier
-            if observed_fast is not None:
-                fast = observed_fast
+            if observed_service_tier is not None:
+                service_tier = observed_service_tier
         tiers[message_id] = _ModelUsageTierDecision(
             tier=tier,
-            fast=fast,
+            service_tier=service_tier,
             committed=remembered_decision.committed or has_positive_model_provider_usage(usage),
         )
         tiers.move_to_end(message_id)
-        return tier, fast
+        return tier, service_tier
     # Admitted source keys remain authoritative after the tier cache evicts
     # a response, even if this snapshot contains a different input partition.
-    fast = observed_fast is True
+    service_tier = observed_service_tier or "standard"
     recovered_pricing = _recover_source_model_usage_pricing(run_id, source_id)
     if recovered_pricing is not None:
-        billing_tier, fast = recovered_pricing
+        billing_tier, service_tier = recovered_pricing
     elif billing_tier is None:
         if not has_positive_model_provider_usage(usage):
             return None
@@ -622,35 +626,35 @@ def _source_model_usage_pricing(
             run_id,
             provider,
             billing_tier,
-            fast,
+            service_tier,
         )
 
     tiers[message_id] = _ModelUsageTierDecision(
         tier=billing_tier,
-        fast=fast,
+        service_tier=service_tier,
         committed=recovered_pricing is not None or has_positive_model_provider_usage(usage),
     )
     if len(tiers) > _MODEL_PROVIDER_USAGE_TIER_SOURCE_LIMIT:
         tiers.popitem(last=False)
-    return billing_tier, fast
+    return billing_tier, service_tier
 
 
 def _recover_source_model_usage_pricing(
     run_id: str,
     source_id: str,
-) -> tuple[_ModelUsageTier, bool] | None:
-    pricing_by_source_key: dict[str, tuple[_ModelUsageTier, bool]] = {
+) -> tuple[_ModelUsageTier, _ModelServiceTier] | None:
+    pricing_by_source_key: dict[str, tuple[_ModelUsageTier, _ModelServiceTier]] = {
         derive_usage_idempotency_key(
             USAGE_EVENT_NAMESPACE_MODEL,
             (
                 run_id,
                 source_id,
-                _billable_model_usage_category(category, billing_tier, fast),
+                _billable_model_usage_category(category, billing_tier, service_tier),
             ),
-        ): (billing_tier, fast)
+        ): (billing_tier, service_tier)
         for category in MODEL_USAGE_CATEGORIES
         for billing_tier in (_MODEL_USAGE_TIER_BASE, _MODEL_USAGE_TIER_LONG_CONTEXT)
-        for fast in (False, True)
+        for service_tier in ("standard", "fast", "ultrafast")
     }
     seen_keys = seen_source_idempotency_keys(pricing_by_source_key)
     if not seen_keys:
@@ -693,15 +697,17 @@ def _model_usage_tier(provider: str, usage: dict) -> _ModelUsageTier | None:
     return _MODEL_USAGE_TIER_BASE
 
 
-def _observed_fast_service_tier(usage: dict) -> bool | None:
-    service_tier = usage.get("service_tier")
-    if not isinstance(service_tier, str) or not service_tier:
+def _observed_model_service_tier(usage: dict) -> _ModelServiceTier | None:
+    tier = usage.get("service_tier")
+    if not isinstance(tier, str) or not tier:
         return None
-    return service_tier in ("fast", "priority")
+    if tier == "ultrafast":
+        return "ultrafast"
+    return "fast" if tier in ("fast", "priority") else "standard"
 
 
-def _is_fast_service_tier(usage: dict) -> bool:
-    return _observed_fast_service_tier(usage) is True
+def _model_service_tier(usage: dict) -> _ModelServiceTier:
+    return _observed_model_service_tier(usage) or "standard"
 
 
 def _log_model_usage_tier_unresolved(
@@ -724,7 +730,7 @@ def _log_model_usage_tier_fallback(
     run_id: str,
     provider: str,
     billing_tier: _ModelUsageTier,
-    fast: bool,
+    service_tier: _ModelServiceTier,
 ) -> None:
     log_usage_underbilling(
         flow_metadata.proxy_log_path(flow.metadata),
@@ -735,7 +741,8 @@ def _log_model_usage_tier_fallback(
         provider=provider,
         usage_billed=True,
         fallback_billing_tier=billing_tier,
-        fallback_fast=fast,
+        fallback_fast=service_tier == "fast",
+        fallback_service_tier=service_tier,
     )
 
 

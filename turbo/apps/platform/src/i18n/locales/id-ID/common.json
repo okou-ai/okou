@@ -4976,7 +4976,10 @@
           "claudeCodeOauth": "Claude Code (token OAuth)",
           "deepseek": "Deepseek"
         },
-        "standard": "Standar"
+        "standard": "Standar",
+        "ultrafast": "Ultracepat",
+        "ultrafastImpact": "Kecepatan token hingga 8× · Harga token API OpenAI 6×",
+        "ultrafastMode": "Mode ultracepat"
       },
       "policies": {
         "actionsFor": "Tindakan untuk {{model}}",

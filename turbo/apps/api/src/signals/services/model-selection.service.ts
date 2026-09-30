@@ -304,13 +304,17 @@ export async function resolveDefaultModelFirstPin(
               )?.serviceTier
             : undefined;
         const serviceTier =
-          preference.serviceTier === "priority" &&
-          (facts.modelMode !== "auto" || catalogTier === "priority") &&
-          isCodexFastServiceTierSupported({
-            selectedModel: preferredRoute.selectedModel,
-          })
-            ? "priority"
-            : null;
+          preference.serviceTier === "ultrafast" &&
+          preferredRoute.selectedModel === "gpt-6-astra" &&
+          preferredRoute.modelProviderType === "openai-api-key"
+            ? "ultrafast"
+            : preference.serviceTier === "priority" &&
+                (facts.modelMode !== "auto" || catalogTier === "priority") &&
+                isCodexFastServiceTierSupported({
+                  selectedModel: preferredRoute.selectedModel,
+                })
+              ? "priority"
+              : null;
         return { ...modelFirstPinFromRoute(preferredRoute), serviceTier };
       }
     }
@@ -647,8 +651,16 @@ export function isCodexFastServiceTierSupported(params: {
 
 export function validateCodexServiceTier(params: {
   readonly pin: ModelFirstPin;
-  readonly codexServiceTier: "fast" | null;
+  readonly codexServiceTier: "fast" | "ultrafast" | null;
 }): ReturnType<typeof badRequestMessage> | undefined {
+  if (params.codexServiceTier === "ultrafast") {
+    return params.pin.selectedModel === "gpt-6-astra" &&
+      params.pin.modelProviderType === "openai-api-key"
+      ? undefined
+      : badRequestMessage(
+          "Astra Ultrafast requires a direct OpenAI API-key route",
+        );
+  }
   if (params.codexServiceTier !== "fast") {
     return undefined;
   }
@@ -657,7 +669,5 @@ export function validateCodexServiceTier(params: {
   ) {
     return undefined;
   }
-  return badRequestMessage(
-    "Codex fast mode is only available for GPT 5.6 runs",
-  );
+  return badRequestMessage("Fast mode is unavailable for this model");
 }

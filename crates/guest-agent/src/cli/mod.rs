@@ -119,6 +119,7 @@ const CODEX_FIXED_STARTUP_CONFIGS: [&str; 5] = [
 ];
 const CODEX_FAST_MODE_STARTUP_CONFIGS: [&str; 2] =
     ["features.fast_mode=true", r#"service_tier="fast""#];
+const CODEX_ULTRAFAST_MODE_STARTUP_CONFIG: &str = r#"service_tier="ultrafast""#;
 const CODEX_WEB_SEARCH_DISABLED_CONFIG: &str = r#"web_search="disabled""#;
 
 #[derive(serde::Serialize)]
@@ -372,6 +373,7 @@ pub(super) struct CliRuntimeConfig<'a> {
     codex_runtime_config: Option<CodexRuntimeConfig>,
     codex_oauth_mode: bool,
     codex_fast_mode: bool,
+    codex_ultrafast_mode: bool,
     reasoning_effort: Option<&'a str>,
     disable_builtin_web_search: bool,
     agent_execution_deadline: Option<AgentExecutionDeadline>,
@@ -451,6 +453,8 @@ impl<'a> CliRuntimeConfig<'a> {
             codex_oauth_mode: !user_env_value(&config.user_env, "CHATGPT_ACCOUNT_ID").is_empty(),
             codex_fast_mode: matches!(config.framework, env::Framework::Codex)
                 && user_env_value(&config.user_env, CODEX_SERVICE_TIER_CANONICAL_ENV) == "fast",
+            codex_ultrafast_mode: matches!(config.framework, env::Framework::Codex)
+                && user_env_value(&config.user_env, CODEX_SERVICE_TIER_CANONICAL_ENV) == "ultrafast",
             reasoning_effort: reasoning_effort::resolve(config.framework, &config.user_env)?,
             disable_builtin_web_search,
             agent_execution_deadline,
@@ -496,6 +500,9 @@ impl<'a> CliRuntimeConfig<'a> {
         overrides.extend(CODEX_FIXED_STARTUP_CONFIGS.map(str::to_string));
         if self.codex_fast_mode {
             overrides.extend(CODEX_FAST_MODE_STARTUP_CONFIGS.map(str::to_string));
+        }
+        if self.codex_ultrafast_mode {
+            overrides.push(CODEX_ULTRAFAST_MODE_STARTUP_CONFIG.to_string());
         }
         overrides
     }
@@ -2570,6 +2577,7 @@ mod tests {
             codex_runtime_config: None,
             codex_oauth_mode: false,
             codex_fast_mode: false,
+            codex_ultrafast_mode: false,
             reasoning_effort: None,
             disable_builtin_web_search: false,
             agent_execution_deadline: None,
@@ -2993,6 +3001,23 @@ mod tests {
                 )]),
                 expected_fast_mode,
             );
+        }
+    }
+
+    #[test]
+    fn codex_ultrafast_tier_uses_only_ultrafast_startup_config() {
+        let config = guest_config_for_agent_context(HashMap::from([(
+            super::CODEX_SERVICE_TIER_CANONICAL_ENV.to_string(),
+            "ultrafast".to_string(),
+        )]));
+        let paths = crate::paths::GuestPaths::from_runtime_dir("/tmp/codex-ultrafast-test");
+        let runtime = CliRuntimeConfig::from_config(&config, &paths, Instant::now()).unwrap();
+        let overrides = runtime.codex_startup_config_overrides();
+        assert!(!runtime.codex_fast_mode);
+        assert!(runtime.codex_ultrafast_mode);
+        assert!(overrides.contains(&super::CODEX_ULTRAFAST_MODE_STARTUP_CONFIG.to_string()));
+        for fast_config in super::CODEX_FAST_MODE_STARTUP_CONFIGS {
+            assert!(!overrides.contains(&fast_config.to_string()));
         }
     }
 

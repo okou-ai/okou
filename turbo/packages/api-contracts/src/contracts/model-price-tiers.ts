@@ -19,6 +19,7 @@ export const SUPPORTED_RUN_MODELS = [
   "claude-sonnet-5",
   "claude-sonnet-4-6",
   "gpt-6-astra",
+  "gpt-6.1-sol",
   "gpt-6-sol",
   "gpt-6-luna",
   "gpt-5.6-sol",
@@ -47,6 +48,7 @@ export const BUILT_IN_MODEL_PRICE_TIER = Object.freeze<
   "claude-opus-5-5": "$$$",
   "claude-opus-5": "$$$",
   "gpt-6-astra": "$$$$",
+  "gpt-6.1-sol": "$$$",
   "gpt-6-sol": "$$$",
   "gpt-6-luna": "$",
   "gpt-5.6-sol": "$$$",
@@ -71,6 +73,7 @@ export const MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS: Readonly<
 > = Object.freeze({
   "okou-1.0": 272_001,
   "gpt-6-astra": 272_001,
+  "gpt-6.1-sol": 272_001,
   "gpt-6-sol": 272_001,
   "gpt-6-luna": 272_001,
   "gpt-5.5": 272_001,

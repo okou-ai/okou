@@ -680,11 +680,12 @@ function requestedThreadRunSettings(
   }
   const requestedTier = body.runOptions?.codexServiceTier;
   if (
-    requestedTier === "fast" &&
-    !isCodexFastServiceTierSupported({ selectedModel })
+    (requestedTier === "fast" &&
+      !isCodexFastServiceTierSupported({ selectedModel })) ||
+    (requestedTier === "ultrafast" && selectedModel !== "gpt-6-astra")
   ) {
     return badRequestMessage(
-      "Codex fast mode is only available for GPT 5.6 runs",
+      "The requested service tier is unavailable for this model",
     );
   }
   // A model or run-option selection carries its tier; an effort-only change
@@ -840,7 +841,12 @@ async function resolveNewSendThread(
   const runSettings = requestedThreadRunSettings(args.body, {
     selectedModel: initialModel?.selectedModel ?? null,
     modelSettings: defaults.modelSettings,
-    codexServiceTier: initialModel?.serviceTier === "priority" ? "fast" : null,
+    codexServiceTier:
+      initialModel?.serviceTier === "priority"
+        ? "fast"
+        : initialModel?.serviceTier === "ultrafast"
+          ? "ultrafast"
+          : null,
   });
   if ("status" in runSettings) {
     return runSettings;

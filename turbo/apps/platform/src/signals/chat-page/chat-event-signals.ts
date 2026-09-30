@@ -112,7 +112,9 @@ function createSendInputChatEvent({
               input.selectedModel,
               input.runOptions?.codexServiceTier === "fast"
                 ? "priority"
-                : undefined,
+                : input.runOptions?.codexServiceTier === "ultrafast"
+                  ? "ultrafast"
+                  : undefined,
             )
           : input.userMessage;
       const optimisticUserMessage = input.source

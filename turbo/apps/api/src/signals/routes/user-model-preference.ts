@@ -1,5 +1,8 @@
 import { command, computed } from "ccstate";
-import { isMemberModelPolicyConfigurable } from "@okouai/api-contracts/contracts/member-model-policy";
+import {
+  getMemberModelPolicyRoute,
+  isMemberModelPolicyConfigurable,
+} from "@okouai/api-contracts/contracts/member-model-policy";
 import {
   getRunModelAccess,
   RETIRED_RUN_MODEL_MESSAGE,
@@ -174,6 +177,19 @@ const updateUserModelPreferenceInner$ = command(
       return modelSettingsError;
     }
 
+    if (body.data.serviceTier === "ultrafast") {
+      if (
+        !configuredPolicy ||
+        !isMemberModelPolicyConfigurable(configuredPolicy) ||
+        configuredPolicy.model !== "gpt-6-astra" ||
+        getMemberModelPolicyRoute(configuredPolicy).providerType !==
+          "openai-api-key"
+      ) {
+        return badRequestMessage(
+          "Astra Ultrafast requires a direct OpenAI API-key route",
+        );
+      }
+    }
     const serviceTierError = validatePriorityServiceTier({
       requested: body.data.serviceTier === "priority",
       configuredPolicy,

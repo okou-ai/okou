@@ -93,7 +93,11 @@ const setModelSelection$ = command(
         {
           selectedModel,
           serviceTier:
-            selection?.codexServiceTier === "fast" ? "priority" : null,
+            selection?.codexServiceTier === "fast"
+              ? "priority"
+              : selection?.codexServiceTier === "ultrafast"
+                ? "ultrafast"
+                : null,
           ...(modelSettingsPatch === undefined ? {} : { modelSettingsPatch }),
         },
         signal,

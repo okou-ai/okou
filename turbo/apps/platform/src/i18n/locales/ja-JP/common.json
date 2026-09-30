@@ -4976,7 +4976,10 @@
           "claudeCodeOauth": "Claude Code（OAuthトークン）",
           "deepseek": "ディープシーク"
         },
-        "standard": "標準"
+        "standard": "標準",
+        "ultrafast": "ウルトラファスト",
+        "ultrafastImpact": "トークン生成速度が最大8倍 · OpenAI APIのトークン料金は6倍",
+        "ultrafastMode": "ウルトラファストモード"
       },
       "policies": {
         "actionsFor": "{{model}} のアクション",

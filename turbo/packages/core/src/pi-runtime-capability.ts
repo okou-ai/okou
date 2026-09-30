@@ -43,8 +43,21 @@ export const PI_RUNTIME_RESOLVABLE_MODELS = {
   // `deepseek-flash` and `deepseek-v4.1-flash` exist only as hand-pinned
   // definitions; the pinned upstream DeepSeek catalog does not carry them.
   deepseek: ["deepseek-flash", "deepseek-v4.1-flash", "deepseek-v4-flash"],
-  openai: ["gpt-6-sol", "gpt-6-luna", "gpt-5.6-sol", "gpt-5.6-luna"],
-  "openai-codex": ["gpt-6-sol", "gpt-6-luna", "gpt-5.6-sol", "gpt-5.6-luna"],
+  // 6.1 Sol uses the reviewed pinned resolver until the upstream catalog ships.
+  openai: [
+    "gpt-6.1-sol",
+    "gpt-6-sol",
+    "gpt-6-luna",
+    "gpt-5.6-sol",
+    "gpt-5.6-luna",
+  ],
+  "openai-codex": [
+    "gpt-6.1-sol",
+    "gpt-6-sol",
+    "gpt-6-luna",
+    "gpt-5.6-sol",
+    "gpt-5.6-luna",
+  ],
   openrouter: [
     "okou-1.0",
     "deepseek/deepseek-v4.1-flash",

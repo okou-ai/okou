@@ -454,6 +454,46 @@ describe("CHAT effort: thread configuration", () => {
     90_000,
   );
 
+  it("launches Astra Ultrafast only on the direct OpenAI API-key route", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { providerId } = await upsertOrgModelProvider(actor, {
+      type: "openai-api-key",
+      secret: "test-astra-ultrafast-openai-key",
+    });
+    await api.updateOrgModelPolicies(actor, [
+      {
+        model: "gpt-6-astra",
+        isDefault: true,
+        defaultProviderType: "openai-api-key",
+        credentialScope: "org",
+        modelProviderId: providerId,
+      },
+    ]);
+    const thread = await chat.createThread(actor, {
+      agentId,
+      title: "Direct API Ultrafast",
+      model: "gpt-6-astra",
+    });
+    await chat.updateThreadModelSelection(actor, thread.id, "gpt-6-astra", {
+      codexServiceTier: "ultrafast",
+    });
+    await expect(
+      chat.readThreadMetadata(actor, thread.id),
+    ).resolves.toMatchObject({
+      serviceTier: "ultrafast",
+    });
+    const sent = await sendChatRun(actor, {
+      agentId,
+      threadId: thread.id,
+      prompt: "Use Astra Ultrafast",
+    });
+    const claimed = await claimChatRun(runnerGroup, sent.runId);
+    expect(claimed.claim.platformEnvironment.OKOU_CODEX_SERVICE_TIER).toBe(
+      "ultrafast",
+    );
+    await cancelChatRun(actor, sent.runId, claimed.sandboxHeaders);
+  }, 90_000);
+
   it("preserves Fast when changing effort", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const { providerId } = await upsertOrgModelProvider(actor, {

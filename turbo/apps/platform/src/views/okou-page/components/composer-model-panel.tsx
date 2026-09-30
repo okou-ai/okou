@@ -1,6 +1,9 @@
 import { Radio as RadioPrimitive } from "@base-ui/react/radio";
 import { ScrollArea } from "@base-ui/react/scroll-area";
-import { isMemberModelPolicyConfigurable } from "@okouai/api-contracts/contracts/member-model-policy";
+import {
+  getMemberModelPolicyRoute,
+  isMemberModelPolicyConfigurable,
+} from "@okouai/api-contracts/contracts/member-model-policy";
 import {
   getCanonicalModelDisplayName,
   isCodexFastModeModel,
@@ -30,6 +33,7 @@ import { SCROLL_FADE_Y_WHEN_OVERFLOWING } from "../scroll-fade.ts";
 import {
   ChatEffortSettings,
   ChatFastSetting,
+  ChatUltrafastSetting,
   formatChatEffort,
   useChatEffort,
 } from "./chat-effort-controls.tsx";
@@ -102,6 +106,11 @@ function ComposerModelPanelBody({
   const configurable =
     selectedPolicy !== undefined &&
     isMemberModelPolicyConfigurable(selectedPolicy);
+  const ultrafastAvailable =
+    selectedPolicy !== undefined &&
+    configurable &&
+    selectedPolicy.model === "gpt-6-astra" &&
+    getMemberModelPolicyRoute(selectedPolicy).providerType === "openai-api-key";
   const fastAvailable =
     configurable &&
     (selectedPolicy.subscriptionOptions
@@ -183,6 +192,7 @@ function ComposerModelPanelBody({
           fastImpact={
             fastAvailable ? <ModelFastImpact policy={selectedPolicy} /> : null
           }
+          ultrafastAvailable={ultrafastAvailable}
         />
       )}
     </>
@@ -194,14 +204,16 @@ function ComposerModelPanelOptions({
   onChange,
   disabled,
   fastImpact,
+  ultrafastAvailable,
 }: {
   value: ModelProviderSelection;
   onChange: (selection: ModelProviderSelection) => void;
   disabled: boolean;
   fastImpact: ReactNode;
+  ultrafastAvailable: boolean;
 }) {
   const { efforts } = useChatEffort(value);
-  if (efforts.length === 0 && fastImpact === null) {
+  if (efforts.length === 0 && fastImpact === null && !ultrafastAvailable) {
     return null;
   }
   return (
@@ -220,6 +232,13 @@ function ComposerModelPanelOptions({
           onChange={onChange}
         />
       )}
+      {ultrafastAvailable && (
+        <ChatUltrafastSetting
+          selection={value}
+          disabled={disabled}
+          onChange={onChange}
+        />
+      )}
     </div>
   );
 }
@@ -234,7 +253,8 @@ function ComposerModelPanelTriggerLabel({
 }: Pick<ComposerModelPanelProps, "value" | "placeholder">) {
   const { t } = useTranslation();
   const { effort } = useChatEffort(value);
-  const fast = value.codexServiceTier === "fast";
+  const fast =
+    value.codexServiceTier === "fast" || value.codexServiceTier === "ultrafast";
   return (
     <span className="flex min-w-0 items-center gap-1">
       <ModelFirstTriggerLabel
@@ -279,7 +299,13 @@ export function ComposerModelPanel({
   const triggerAriaLabel = [
     getCanonicalModelDisplayName(value.selectedModel),
     effort === undefined ? undefined : formatChatEffort(effort),
-    value.codexServiceTier === "fast" ? fastLabel : undefined,
+    value.codexServiceTier === "fast"
+      ? fastLabel
+      : value.codexServiceTier === "ultrafast"
+        ? t(($) => {
+            return $.settings.models.picker.ultrafast;
+          })
+        : undefined,
   ]
     .filter(Boolean)
     .join(", ");

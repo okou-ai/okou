@@ -20,6 +20,7 @@ pub(super) fn default_reasoning_effort_for_model(model: &str) -> Option<&'static
     let bare = model.strip_prefix("openai/").unwrap_or(model);
     match bare {
         "gpt-6-astra" => Some("max"),
+        "gpt-6.1-sol" => Some("medium"),
         "gpt-6-sol" => Some("max"),
         "gpt-6-luna" => Some("max"),
         "gpt-5.6-sol" => Some("max"),
