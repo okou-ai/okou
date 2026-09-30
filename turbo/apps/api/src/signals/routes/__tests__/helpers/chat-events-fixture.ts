@@ -249,7 +249,7 @@ export interface ChatRunSendBody {
   readonly threadId?: string;
   readonly clientThreadId?: string;
   readonly clientEventId?: string;
-  readonly model?: SupportedRunModel;
+  readonly model?: string;
   readonly runOptions?: ChatRunOptionsRequest;
   readonly template?: GenerationTemplateRequest;
   readonly computerUseHostId?: string | null;
@@ -1278,7 +1278,7 @@ export function createChatEventsFixture(context: TestContext) {
       readonly clientEventId?: string;
       readonly prompt: string;
       readonly threadId?: string;
-      readonly model?: SupportedRunModel;
+      readonly model?: string;
       readonly runOptions?: ChatRunOptionsRequest;
       readonly userMessage?: UserMessageInputDocument;
     },

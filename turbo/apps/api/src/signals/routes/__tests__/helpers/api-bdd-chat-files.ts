@@ -111,7 +111,7 @@ type BddSendEventBody =
       readonly prompt: string;
       readonly threadId?: string;
       readonly clientThreadId?: string;
-      readonly model?: SupportedRunModel;
+      readonly model?: string;
       readonly runOptions?: ChatRunOptionsRequest;
       readonly userMessage?: UserMessageDocument;
       readonly hasTextContent?: boolean;
@@ -514,7 +514,7 @@ export function createChatFilesBddApi(context: TestContext) {
         readonly title?: string;
         readonly clientThreadId?: string;
         readonly eventId?: string;
-        readonly model?: SupportedRunModel;
+        readonly model?: string;
       },
     ): Promise<{ readonly id: string; readonly title: string | null }> {
       const response = await accept(
@@ -542,7 +542,7 @@ export function createChatFilesBddApi(context: TestContext) {
         readonly title?: string;
         readonly clientThreadId?: string;
         readonly eventId?: string;
-        readonly model?: SupportedRunModel;
+        readonly model?: string;
       },
       statuses: readonly (201 | 400 | 401 | 402 | 404)[],
     ) {
