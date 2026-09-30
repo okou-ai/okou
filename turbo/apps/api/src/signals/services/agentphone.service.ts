@@ -1553,6 +1553,7 @@ const runAgentForAgentPhone$ = command(
       {
         orgId: args.userLink.orgId,
         chatThreadId: persisted.chatThreadId,
+        eventId: persisted.chatEventId,
         afterPick: async (pick, pickSignal) => {
           const notice = chatQueueWaitNotice(pick.reason);
           if (notice) {

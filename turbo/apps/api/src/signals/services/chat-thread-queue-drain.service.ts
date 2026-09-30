@@ -1,12 +1,12 @@
 import { command } from "ccstate";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
+import { chatEvents } from "@okouai/db/schema/chat-event";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import {
   and,
   count,
   eq,
-  gt,
   isNotNull,
   isNull,
   lte,
@@ -168,42 +168,47 @@ export interface ChatQueuePick extends ChatQueuePickResult {
 /**
  * The integration wait reason for one enqueued input, read after that
  * enqueue's pick has finished and never from the pick's return value, since
- * another picker may hold the thread lease. A thread in `active_agent_runs`
- * is running (this enqueue launched it, or the input steers into the running
- * run); a live lease means another picker is working on the thread; otherwise
- * the input waits for an organization slot. Rare cases, such as an earlier
- * input rejected ahead of this one, may report `org-full` for an idle thread;
- * that gap is accepted (design §5.2).
+ * another picker may hold the thread lease (design §5.2):
+ * - a later chat_events row revoking the input means it was already handled
+ *   (a run claimed it, it was rejected, or the user recalled it);
+ * - otherwise a thread in `active_agent_runs` is running, and the input steers
+ *   into that run;
+ * - otherwise the input waits for an organization slot.
+ * Rare cases, such as an earlier queued input rejected ahead of this one, may
+ * report `org-full` for an idle thread; that gap is accepted.
  */
 const enqueuedChatQueueWaitReason$ = command(
   async (
     { get },
-    input: { readonly orgId: string; readonly chatThreadId: string },
+    input: {
+      readonly orgId: string;
+      readonly chatThreadId: string;
+      readonly eventId: string;
+    },
     signal: AbortSignal,
   ): Promise<ChatQueuePick> => {
     const database = get(db$);
+    const [revoker] = await database
+      .select({ id: chatEvents.id })
+      .from(chatEvents)
+      .where(
+        and(
+          eq(chatEvents.chatThreadId, input.chatThreadId),
+          eq(chatEvents.revokesEventId, input.eventId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (revoker) {
+      return { orgId: input.orgId, reason: "handled" };
+    }
     const [active] = await database
       .select({ runId: activeAgentRuns.runId })
       .from(activeAgentRuns)
       .where(eq(activeAgentRuns.chatThreadId, input.chatThreadId))
       .limit(1);
     signal.throwIfAborted();
-    if (active) {
-      return { orgId: input.orgId, reason: "running" };
-    }
-    const [leased] = await database
-      .select({ chatThreadId: queuedChatThreads.chatThreadId })
-      .from(queuedChatThreads)
-      .where(
-        and(
-          eq(queuedChatThreads.orgId, input.orgId),
-          eq(queuedChatThreads.chatThreadId, input.chatThreadId),
-          gt(queuedChatThreads.claimExpiresAt, nowDate()),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    return { orgId: input.orgId, reason: leased ? "thread-busy" : "org-full" };
+    return { orgId: input.orgId, reason: active ? "running" : "org-full" };
   },
 );
 
@@ -213,8 +218,8 @@ const enqueuedChatQueueWaitReason$ = command(
  * none, or an error) never drives the notice. Once the pick finishes, `touch`
  * (a direct send's best-effort sidebar ordering), `publish` (the UI realtime
  * event), and then `afterPick` (an integration's wait notice) run in that
- * order. `afterPick` receives the thread's state at that point (see
- * `enqueuedChatQueueWaitReason$`). A failed pick still counts as finished: the later
+ * order. `afterPick` receives the state of the enqueued input `eventId` and
+ * its thread at that point (see `enqueuedChatQueueWaitReason$`). A failed pick still counts as finished: the later
  * steps still run, then the pick or notice error is rethrown (both, as an
  * AggregateError, when both fail). No entry awaits the pick.
  *
@@ -231,11 +236,17 @@ export const scheduleEnqueuedChatThreadPick$ = command(
       readonly enqueueCommit?: ChatInputEnqueueCommit;
       readonly touch?: () => Promise<void>;
       readonly publish?: () => Promise<void>;
-      readonly afterPick?: (
-        pick: ChatQueuePick,
-        signal: AbortSignal,
-      ) => Promise<void>;
-    },
+    } & (
+      | { readonly afterPick?: undefined; readonly eventId?: undefined }
+      | {
+          readonly afterPick: (
+            pick: ChatQueuePick,
+            signal: AbortSignal,
+          ) => Promise<void>;
+          /** The chat event this enqueue created; the notice observes it. */
+          readonly eventId: string;
+        }
+    ),
     signal: AbortSignal,
   ): void => {
     const receipt = input.enqueueCommit;
@@ -252,10 +263,15 @@ export const scheduleEnqueuedChatThreadPick$ = command(
         await input.publish?.();
         const noticed = await settle(
           (async () => {
-            if (input.afterPick) {
+            // `eventId` is present exactly when `afterPick` is.
+            if (input.eventId !== undefined) {
               const pick = await set(
                 enqueuedChatQueueWaitReason$,
-                { orgId: input.orgId, chatThreadId: input.chatThreadId },
+                {
+                  orgId: input.orgId,
+                  chatThreadId: input.chatThreadId,
+                  eventId: input.eventId,
+                },
                 signal,
               );
               signal.throwIfAborted();
