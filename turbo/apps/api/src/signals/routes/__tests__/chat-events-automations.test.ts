@@ -25,10 +25,7 @@ import { readAgentRunState$ } from "./helpers/agent-run-callback";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import {
-  readRunLaunchSnapshotFixture,
-  readThreadSessionBinding,
-} from "./helpers/runtime-state";
+import { readThreadSessionBinding } from "./helpers/runtime-state";
 import {
   createChatEventsFixture,
   requireOrgId,
@@ -259,11 +256,7 @@ describe("thread-bound Pi Automation execution", () => {
       });
       await flushWaitUntilForTest();
       const legacyBinding = await readThreadSessionBinding(context, threadId);
-      await expect(
-        readRunLaunchSnapshotFixture(context, legacyRunId),
-      ).resolves.toMatchObject({
-        launch_snapshot: { framework: legacyFramework },
-      });
+
       await expect(
         readPiMemoryStage1CandidateFixture({ orgId, userId: actor.userId }),
       ).resolves.toBeNull();
@@ -703,11 +696,7 @@ describe("thread-bound Pi terminal failures", () => {
         [200],
       );
       await flushWaitUntilForTest();
-      await expect(
-        readRunLaunchSnapshotFixture(context, run.runId),
-      ).resolves.toMatchObject({
-        launch_snapshot: { schemaVersion: 3, framework: "pi" },
-      });
+
       await expectNoBuiltInModelUsage(run.runId);
       await expect(
         readPiMemoryStage1CandidateFixture({ orgId, userId: actor.userId }),

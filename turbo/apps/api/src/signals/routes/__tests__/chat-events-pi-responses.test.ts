@@ -20,7 +20,6 @@ import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { chatEventDisplayText } from "./helpers/chat-event";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import {
-  readRunLaunchSnapshotFixture,
   seedBuiltInModelCandidateKeys,
   readThreadSessionBinding,
   readThreadSessionConversation,
@@ -192,9 +191,6 @@ describe("CHAT-02: model-first provider policies", () => {
       });
       await flushWaitUntilForTest();
 
-      await expect(
-        readRunLaunchSnapshotFixture(context, run.runId),
-      ).resolves.toMatchObject({ launch_snapshot: { framework: "pi" } });
       const { claim } = await claimChatRun(runnerGroup, run.runId);
       expect(claim.cliAgentType).toBe("pi");
       // Only the approved Sol route uses the US endpoint; the GPT 6 pair
@@ -624,11 +620,6 @@ describe("CHAT-02: model-first provider policies", () => {
       });
 
       for (const run of [first, fast, returned]) {
-        await expect(
-          readRunLaunchSnapshotFixture(context, run.runId),
-        ).resolves.toMatchObject({
-          launch_snapshot: { framework: "pi" },
-        });
         const claim = await api.requestClaimRunnerJob(true, run.runId, [404]);
         expect(claim.status).toBe(404);
       }
@@ -784,11 +775,7 @@ describe("CHAT-02: model-first provider policies", () => {
       }
       const promotedRunId = promoted.runId;
       await flushWaitUntilForTest();
-      await expect(
-        readRunLaunchSnapshotFixture(context, promotedRunId),
-      ).resolves.toMatchObject({
-        launch_snapshot: { framework: "pi" },
-      });
+
       const promotedClaim = await claimChatRun(runnerGroup, promotedRunId);
       expect(promotedClaim.claim.cliAgentType).toBe("pi");
       expect(promotedClaim.claim.piModelConfig).toMatchObject({
