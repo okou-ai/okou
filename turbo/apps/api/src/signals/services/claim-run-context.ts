@@ -645,6 +645,8 @@ export interface ThreadClaim {
   readonly orgId: string;
   readonly chatThreadId: string;
   readonly claimId: string;
+  /** App-clock time the pick claimed the thread; the run's API start. */
+  readonly pickStartedAt: number;
 }
 
 interface QueuedModelInput {
@@ -1739,7 +1741,7 @@ function isDirectSendContext(contextType: string | null): boolean {
   return contextType === "web" || contextType === "agent_run";
 }
 
-type RunPlan = Omit<AtomicLaunchRunInput, "db">;
+type RunPlan = Omit<AtomicLaunchRunInput, "db" | "phaseTiming">;
 
 function unreadyQueueHeadRejection(
   head: ChatQueueHeadContext,
@@ -1776,7 +1778,6 @@ function claimAssemblyRejection(
  * passed as a plain argument; it is not part of the prepared RunContext.
  */
 export interface ClaimRunTiming {
-  readonly startedAt: number;
   readonly run: ApiDispatchTimingCollector;
   readonly phase: ApiDispatchPhaseCollector;
 }
@@ -2589,12 +2590,10 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       .limit(1);
     return row ? { ...picked, ...row } : null;
   });
-  const internalStartedAt$ = state<number | null>(null);
   const internalRunIds$ = state<{
     readonly runId: string;
     readonly newSessionId: string;
   } | null>(null);
-  const internalPhaseTiming$ = state<ApiDispatchPhaseCollector | null>(null);
   const input$ = computed(async (get) => {
     const head = await get(pickedEvent$);
     if (!head) {
@@ -2616,10 +2615,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       get(input$),
       get(queueHeadContext$),
     ]);
-    const apiStartTime = get(internalStartedAt$);
-    if (apiStartTime === null) {
-      throw new Error("Claim preparation has not started");
-    }
+    const apiStartTime = claim.pickStartedAt;
     return context
       ? {
           id: input.head.id,
@@ -11850,7 +11846,9 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   });
   const capturedRunAdmissionCapabilities$ = computed(
     async (get): Promise<OrgPlanCapabilities | null> => {
-      const { db, orgId } = await get(capturedRunAdmissionReadInput$);
+      const { orgId } = await get(capturedRunAdmissionReadInput$);
+
+      const db = get(db$);
       const [capabilities] = await db
         .select(ORG_PLAN_CAPABILITY_SELECTION)
         .from(orgPlanEntitlements)
@@ -11881,7 +11879,9 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     },
   );
   const runAdmissionCreditBalance$ = computed(async (get) => {
-    const { db, orgId, at } = await get(capturedRunAdmissionReadInput$);
+    const { orgId, at } = await get(capturedRunAdmissionReadInput$);
+
+    const db = get(db$);
     const expired = db.$with("expired").as(
       db
         .select({
@@ -11913,7 +11913,9 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       : row.credits - (row.unsettledExpired ?? 0);
   });
   const runAdmissionUsagePack$ = computed(async (get) => {
-    const { db, orgId, userId, at } = await get(capturedRunAdmissionReadInput$);
+    const { orgId, userId, at } = await get(capturedRunAdmissionReadInput$);
+
+    const db = get(db$);
     const [row] = await db
       .select({
         total: sum(usagePackCreditGrants.remainingAmount).mapWith(
@@ -11953,7 +11955,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   const usageAllowanceSnapshot$ = computed(
     async (get): Promise<UsageAllowanceAvailabilitySnapshot> => {
       const input = await get(capturedRunAdmissionReadInput$);
-      const db = input.db ?? get(db$);
+      const db = get(db$);
       const { orgId } = input;
       const at = nowDate();
       const rows = await db
@@ -12084,7 +12086,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   const runAdmissionAutoPersonalSubscription$ = computed(async (get) => {
     const input = await get(capturedRunAdmissionReadInput$);
     return await isAutoPersonalSubscriptionRoute({
-      db: input.db,
+      db: get(db$),
       orgId: input.orgId,
       userId: input.userId,
       model: input.selectedModel,
@@ -12527,16 +12529,11 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         return storagePlan;
       }
       const contextInput = await get(contextInput$);
-      const phaseTiming = get(internalPhaseTiming$);
-      if (!phaseTiming) {
-        throw new Error("Claim preparation timing is unavailable");
-      }
       const prepared = {
         args: contextInput.args,
         context,
         contextInput,
         timing: contextInput.timing,
-        phaseTiming,
       };
       const args = prepared.args;
       const finalAppendSystemPrompt =
@@ -12551,7 +12548,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         args,
         context: finalizePreparedRunContext(prepared, finalAppendSystemPrompt),
         timing: prepared.timing,
-        phaseTiming,
         enforceBuiltInCredits:
           args.enforceBuiltInCredits === true &&
           isBuiltInModelProviderType(context.modelProvider?.type),
@@ -12764,7 +12760,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           const credits = await set(
             checkAdmission$,
             {
-              db: set(writeDb$),
               orgId: claim.orgId,
               userId: input.command.auth.userId,
               modelProviderType: "built-in",
@@ -12782,7 +12777,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       return await set(
         checkAdmission$,
         {
-          db: set(writeDb$),
           orgId: claim.orgId,
           userId: input.command.auth.userId,
           modelProviderType: model?.type ?? input.command.body.modelProvider,
@@ -12826,13 +12820,11 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   const initializeRunPreparation$ = command(
     async ({ get, set }, timing: ClaimRunTiming, signal: AbortSignal) => {
       signal.throwIfAborted();
-      set(internalStartedAt$, timing.startedAt);
       const head = await get(head$);
       signal.throwIfAborted();
       if (!head) {
         return null;
       }
-      set(internalPhaseTiming$, timing.phase);
       const resolvePromptInputs =
         head.contextType === "automation"
           ? await set(initializeAutomationExecution$, head, timing.run, signal)

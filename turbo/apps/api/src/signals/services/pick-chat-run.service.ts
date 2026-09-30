@@ -624,6 +624,7 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
           chatThreadId: row.chatThreadId,
           claimId,
           queuedAt: row.queuedAt,
+          pickStartedAt: at.getTime(),
         }
       : null;
     return claim;
@@ -1194,11 +1195,9 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
       },
       signal: AbortSignal,
     ): Promise<string | null> => {
-      const startedAt = now();
       const timing: ClaimRunTiming = {
-        startedAt,
         run: new ApiDispatchTimingCollector(),
-        phase: new ApiDispatchPhaseCollector(startedAt),
+        phase: new ApiDispatchPhaseCollector(claim.pickStartedAt),
       };
       const context = await set(claimed.prepareRunContext$, timing, signal);
       signal.throwIfAborted();
@@ -1237,6 +1236,7 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
         orgId: claim.orgId,
         chatThreadId: claim.chatThreadId,
         claimId: claim.claimId,
+        pickStartedAt: claim.pickStartedAt,
       });
       const [hasCapacity, event] = await Promise.all([
         get(orgHasCapacity$),

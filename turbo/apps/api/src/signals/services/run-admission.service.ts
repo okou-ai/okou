@@ -23,7 +23,7 @@ import {
   paidPlanRequired,
 } from "../../lib/error";
 import { nowDate } from "../../lib/time";
-import type { Db } from "../external/db";
+import { db$, type Db } from "../external/db";
 import {
   loadOrgPlanCapabilities,
   type OrgPlanCapabilities,
@@ -66,7 +66,6 @@ export interface RunCreditAdmissionState {
 
 /** One admission phase; callers replace this input before a fresh check. */
 export interface RunAdmissionInput {
-  readonly db: Db;
   readonly orgId: string;
   readonly userId: string;
   readonly modelProviderType: string | null | undefined;
@@ -88,7 +87,9 @@ type RunAdmissionReadInput = ReturnType<typeof createRunAdmissionReadInput>;
 
 function createRunAdmissionCapabilitiesObject(input$: RunAdmissionReadInput) {
   return computed(async (get): Promise<OrgPlanCapabilities | null> => {
-    const { db, orgId } = await get(input$);
+    const { orgId } = await get(input$);
+
+    const db = get(db$);
     const [capabilities] = await db
       .select(ORG_PLAN_CAPABILITY_SELECTION)
       .from(orgPlanEntitlements)
@@ -121,7 +122,9 @@ function createRunAdmissionCapabilitiesObject(input$: RunAdmissionReadInput) {
 
 function createRunAdmissionCreditBalanceObject(input$: RunAdmissionReadInput) {
   return computed(async (get) => {
-    const { db, orgId, at } = await get(input$);
+    const { orgId, at } = await get(input$);
+
+    const db = get(db$);
     // Preserve the single-statement credit/expiry snapshot and precision check.
     const expired = db.$with("expired").as(
       db
@@ -157,7 +160,9 @@ function createRunAdmissionCreditBalanceObject(input$: RunAdmissionReadInput) {
 
 function createRunAdmissionUsagePackObject(input$: RunAdmissionReadInput) {
   return computed(async (get) => {
-    const { db, orgId, userId, at } = await get(input$);
+    const { orgId, userId, at } = await get(input$);
+
+    const db = get(db$);
     const [row] = await db
       .select({
         total: sum(usagePackCreditGrants.remainingAmount).mapWith(
@@ -210,7 +215,7 @@ export function createRunAdmissionObjects(input$: RunAdmissionInputObject) {
   const autoPersonalSubscription$ = computed(async (get) => {
     const input = await get(readInput$);
     return await isAutoPersonalSubscriptionRoute({
-      db: input.db,
+      db: get(db$),
       orgId: input.orgId,
       userId: input.userId,
       model: input.selectedModel,

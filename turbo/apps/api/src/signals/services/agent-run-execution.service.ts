@@ -15345,7 +15345,7 @@ interface CompleteAgentRunArgs {
 }
 
 export function finalizePreparedRunContext(
-  prepared: PreparedAgentRun,
+  prepared: Omit<PreparedAgentRun, "phaseTiming">,
   finalAppendSystemPrompt: CreateRunBody["appendSystemPrompt"],
 ): FinalizedPreparedRunContext {
   return {
@@ -15383,7 +15383,6 @@ function createCheckUnavailableProviderCreditsCommand() {
       return await set(
         checkAdmission$,
         {
-          db: set(writeDb$),
           orgId: args.orgId,
           userId: args.userId,
           modelProviderType: "built-in",
@@ -16754,7 +16753,6 @@ export function matchingAuthorizedRequestObservation(
 
 function createPreCreateInternalInput() {
   return state<{
-    readonly db: Db;
     readonly timing: ApiDispatchTimingCollector;
     readonly command: AnyCreateAgentRunCommandArgs;
   } | null>(null);
@@ -18577,7 +18575,6 @@ export function createSelectedAgentRunObjects(
       assertThreadBoundAgentRunHasQueueAssociation(args);
       set(internalInput$, {
         command: args,
-        db: set(writeDb$),
         timing: serviceEntryTiming(args),
       });
       return await set(prepareQueuedAgentRun$, signal);

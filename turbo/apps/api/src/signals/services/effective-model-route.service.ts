@@ -21,7 +21,7 @@ import {
   modelProviderSurfaces,
 } from "@okouai/db/schema/model-provider-gateway";
 import { and, eq, inArray, isNull } from "drizzle-orm";
-import type { Db } from "../external/db";
+import type { Db, ReadonlyDb } from "../external/db";
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 
 const ORG_SENTINEL_USER_ID = "__org__";
@@ -80,7 +80,7 @@ type ModelRouteMemberContext =
   | PreparedMemberModelRouteContext;
 
 export function prepareMemberModelRouteContext(
-  db: Db,
+  db: ReadonlyDb,
   orgId: string,
   userId: string,
 ): PreparedMemberModelRouteContext {
@@ -124,7 +124,7 @@ export function prepareMemberModelRouteContext(
 }
 
 export async function loadMemberModelRouteContext(
-  db: Db,
+  db: ReadonlyDb,
   orgId: string,
   userId: string,
 ): Promise<MemberModelRouteContext> {
@@ -143,7 +143,7 @@ export async function loadMemberModelRouteContext(
  * Never call account list/capture, decrypt, or probe a provider here. A type is
  * a candidate only while its logical provider has a connected account. */
 async function loadPersonalModelRouteSubscriptions(
-  db: Db,
+  db: ReadonlyDb,
   orgId: string,
   userId: string,
 ): Promise<readonly PersonalCandidate[]> {
