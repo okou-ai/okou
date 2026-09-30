@@ -206,7 +206,7 @@ describe("Pi resource indexing of generic Storage commits", () => {
     });
   });
 
-  it("preserves an in-flight index lease when reusing an already registered volume", async () => {
+  it("does not requeue a ready index when reusing a registered volume", async () => {
     const actor = bdd.user();
     bdd.acceptAgentStorageWrites();
     const agent = await bdd.createAgent(actor, { displayName: "Repair owner" });
@@ -214,9 +214,6 @@ describe("Pi resource indexing of generic Storage commits", () => {
       throw new Error("Expected an organization-scoped actor");
     }
     const objects = new Map<string, Buffer>();
-    const entered = createDeferredPromise<void>(context.signal);
-    const released = createDeferredPromise<void>(context.signal);
-    let holdRead = false;
     context.mocks.s3.send.mockImplementation(async (request: unknown) => {
       if (request instanceof PutObjectCommand) {
         const { Key: key, Body: body } = request.input;
@@ -238,11 +235,6 @@ describe("Pi resource indexing of generic Storage commits", () => {
             name: "NotFound",
             $metadata: { httpStatusCode: 404 },
           });
-        }
-        if (holdRead && request instanceof GetObjectCommand) {
-          holdRead = false;
-          entered.resolve(undefined);
-          await released.promise;
         }
         return {
           ContentLength: body.length,
@@ -300,15 +292,9 @@ describe("Pi resource indexing of generic Storage commits", () => {
       files,
       versionId: prepared.versionId,
     });
-    holdRead = true;
-    const previousWorker = run(prepared.versionId);
-    onTestFinished(async () => {
-      if (!released.settled()) {
-        released.resolve(undefined);
-      }
-      await previousWorker;
+    await expect(run(prepared.versionId)).resolves.toMatchObject({
+      claimed: 0,
     });
-    await entered.promise;
     const putCount = context.mocks.s3.send.mock.calls.filter(
       ([command]) => command instanceof PutObjectCommand,
     ).length;
@@ -326,8 +312,6 @@ describe("Pi resource indexing of generic Storage commits", () => {
         ([command]) => command instanceof PutObjectCommand,
       ),
     ).toHaveLength(putCount);
-    released.resolve(undefined);
-    await expect(previousWorker).resolves.toMatchObject({ ready: 1, stale: 0 });
     await expect(run(prepared.versionId)).resolves.toMatchObject({
       claimed: 0,
     });

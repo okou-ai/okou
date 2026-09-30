@@ -1199,7 +1199,7 @@ describe("Official Workflow catalog release boundary", () => {
       outcome: "rejected",
       diagnostics: [{ code: "artifact-preparation-failed" }],
     });
-    expect(s3.objects.has(archiveKey)).toBe(false);
+    expect(s3.objects.has(archiveKey)).toBeFalsy();
     expect(s3.writes).toHaveLength(0);
 
     s3.objects.set(archiveKey, archive);
@@ -1211,7 +1211,7 @@ describe("Official Workflow catalog release boundary", () => {
       outcome: "rejected",
       diagnostics: [{ code: "artifact-preparation-failed" }],
     });
-    expect(s3.objects.has(manifestKey)).toBe(false);
+    expect(s3.objects.has(manifestKey)).toBeFalsy();
     expect(s3.writes).toHaveLength(0);
 
     // External recovery may restore bytes; normal catalog sync never repairs.
@@ -1263,7 +1263,7 @@ describe("Official Workflow catalog release boundary", () => {
       outcome: "rejected",
       diagnostics: [{ code: "artifact-preparation-failed" }],
     });
-    expect(s3.objects.has(archiveKey)).toBe(false);
+    expect(s3.objects.has(archiveKey)).toBeFalsy();
     expect(s3.writes).toHaveLength(0);
     expect((await readState(name)).body.definition).toMatchObject({
       lifecycle: "active",
@@ -1284,7 +1284,7 @@ describe("Official Workflow catalog release boundary", () => {
       outcome: "rejected",
       diagnostics: [{ code: "artifact-preparation-failed" }],
     });
-    expect(s3.objects.has(manifestKey)).toBe(false);
+    expect(s3.objects.has(manifestKey)).toBeFalsy();
     expect(s3.writes).toHaveLength(0);
 
     s3.objects.set(manifestKey, manifest);
@@ -1341,7 +1341,7 @@ describe("Official Workflow catalog release boundary", () => {
       outcome: "rejected",
       diagnostics: [{ code: "artifact-preparation-failed" }],
     });
-    expect(s3.objects.has(firstArchiveKey)).toBe(false);
+    expect(s3.objects.has(firstArchiveKey)).toBeFalsy();
     expect(s3.writes).toHaveLength(0);
     s3.objects.set(firstArchiveKey, firstArchive);
     const restored = await syncCatalog(catalog([currentCandidate]));
