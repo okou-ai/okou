@@ -671,6 +671,8 @@ describe("CHAT-02: model-first provider policies", () => {
           );
         },
       );
+      // A public queue mutation precedes pin resolution. Existing policy
+      // validation rejects the unavailable mapping before credential capture.
       expect(
         userMessages(rejected.events).filter((message) => {
           return message.revokesEventId === clientEventId;
@@ -678,16 +680,19 @@ describe("CHAT-02: model-first provider policies", () => {
       ).toStrictEqual([
         expect.objectContaining({
           eventType: "input.rejected",
-          error: "provider_unavailable",
+          error: "bad_request",
         }),
       ]);
       expect(
         assistantMessages(rejected.events).filter((message) => {
           return message.eventType === "output.error";
         }),
-      ).toStrictEqual([
-        expect.objectContaining({ error: "provider_unavailable" }),
-      ]);
+      ).toStrictEqual([expect.objectContaining({ error: "bad_request" })]);
+      expect(
+        userMessages(rejected.events).filter((message) => {
+          return message.runId !== undefined;
+        }),
+      ).toStrictEqual([]);
     },
     90_000,
   );
@@ -813,6 +818,9 @@ describe("CHAT-02: model-first provider policies", () => {
     await chat.updateThreadModelSelection(actor, thread.id, "gpt-6-astra", {
       codexServiceTier: null,
     });
+    await expect(
+      chat.readThreadMetadata(actor, thread.id),
+    ).resolves.toMatchObject({ selectedModel: "gpt-6-astra" });
     chatCallbacks.mockChatOutputEvents([]);
     await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders);
     const promoted = await waiting.launchedRun();
