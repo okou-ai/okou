@@ -10,7 +10,6 @@ import {
 import {
   MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS,
   SUPPORTED_RUN_MODELS,
-  BUILT_IN_MODEL_PRICE_TIER,
   type SupportedRunModel,
   type ModelPriceTier,
 } from "./model-price-tiers";
@@ -74,7 +73,6 @@ const DEEPSEEK_MODEL_CATALOG = {
 export {
   MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS,
   SUPPORTED_RUN_MODELS,
-  BUILT_IN_MODEL_PRICE_TIER,
   type SupportedRunModel,
   type ModelPriceTier,
 };
@@ -164,33 +162,19 @@ const MODEL_PROVIDER_CODEX_RUNTIME_CONFIGS: Partial<
 
 export const supportedRunModelSchema = z.enum(SUPPORTED_RUN_MODELS);
 
+/**
+ * A run model ID on the wire. The global model catalog (served by
+ * `GET /api/model-catalog`) is the authority; the API validates and resolves
+ * the ID against it, so clients can pass catalog models this package does
+ * not list.
+ */
+export const runModelIdSchema = z.string().trim().min(1).max(255);
+
 export const modelProviderCredentialScopeSchema = z.enum(["org", "member"]);
 
 export type ModelProviderCredentialScope = z.infer<
   typeof modelProviderCredentialScopeSchema
 >;
-
-const SUPPORTED_RUN_MODEL_LABELS: Record<SupportedRunModel, string> = {
-  "okou-1.0": "Auto",
-  "claude-fable-5-1": "Claude Fable 5.1",
-  "claude-fable-5": "Claude Fable 5",
-  "claude-opus-5-5": "Claude Opus 5.5",
-  "claude-opus-5": "Claude Opus 5",
-  "claude-opus-4-8": "Claude Opus 4.8",
-  "claude-sonnet-5-5": "Claude Sonnet 5.5",
-  "claude-sonnet-5": "Claude Sonnet 5",
-  "claude-sonnet-4-6": "Claude Sonnet 4.6",
-  "deepseek-v4.1-flash": "DeepSeek V4.1 Flash",
-  "deepseek-v4-flash": "DeepSeek V4 Flash",
-  "deepseek-v4-pro": "DeepSeek V4 Pro",
-  "gpt-6-astra": "GPT 6 Astra",
-  "gpt-6.1-sol": "GPT 6.1 Sol",
-  "gpt-6-sol": "GPT 6 Sol",
-  "gpt-6-luna": "GPT 6 Luna",
-  "gpt-5.6-sol": "GPT 5.6 Sol",
-  "gpt-5.6-luna": "GPT 5.6 Luna",
-  "gpt-5.5": "GPT 5.5",
-};
 
 const SUPPORTED_RUN_MODEL_SET: ReadonlySet<string> = new Set(
   SUPPORTED_RUN_MODELS,
@@ -222,19 +206,16 @@ const RETIRED_RUN_MODEL_SET: ReadonlySet<string> = new Set(RETIRED_RUN_MODELS);
 
 export type ActiveRunModel = Exclude<SupportedRunModel, RetiredRunModel>;
 
-// Historical IDs remain in the wire schemas and billing catalog. Availability
-// is a separate product decision, including for provider-prefixed aliases.
+// Retirement and replacement are owned by the global model catalog
+// (`run_model_catalog.replaced_by`). RETIRED_RUN_MODELS above only records
+// which recognized IDs have no runtime execution route in this code.
 export const RETIRED_RUN_MODEL_MESSAGE =
   "This model has been retired. Select another available model.";
 
 export function getRunModelAccess(
   model: string | null | undefined,
   restrictedBuiltInModels = false,
-): "allowed" | "pro_required" | "retired" {
-  const canonical = normalizeBuiltInModelId(model?.trim().toLowerCase() ?? "");
-  if (RETIRED_RUN_MODEL_SET.has(canonical)) {
-    return "retired";
-  }
+): "allowed" | "pro_required" {
   return restrictedBuiltInModels && isLimitedFree1RestrictedRunModel(model)
     ? "pro_required"
     : "allowed";
@@ -245,7 +226,7 @@ export function getRunModelRouteAccess(
   model: string | null | undefined,
   providerType: string | null | undefined,
   restrictedBuiltInModels = false,
-): "allowed" | "pro_required" | "retired" {
+): "allowed" | "pro_required" {
   const knownByokRoute = MODEL_PROVIDER_TYPE_IDS.some((type) => {
     return type === providerType && !isBuiltInModelProviderType(type);
   });
@@ -260,10 +241,23 @@ export function getRunModelRouteAccess(
   );
 }
 
+/**
+ * Runtime guard: a recognized ID (or provider alias) this code can no longer
+ * execute. Product retirement and replacement are resolved from the catalog
+ * before admission; this only stops an unresolved ID from reaching a runner.
+ */
+export function hasNoRuntimeExecutionRoute(
+  model: string | null | undefined,
+): boolean {
+  const canonical = normalizeBuiltInModelId(model?.trim().toLowerCase() ?? "");
+  return RETIRED_RUN_MODEL_SET.has(canonical);
+}
+
+/** Whether this code has a runtime execution route for the model. */
 export function isActiveRunModel(
   model: string | null | undefined,
 ): model is ActiveRunModel {
-  return isSupportedRunModel(model) && getRunModelAccess(model) === "allowed";
+  return isSupportedRunModel(model) && !RETIRED_RUN_MODEL_SET.has(model);
 }
 
 export function isSupportedRunModel(
@@ -295,18 +289,6 @@ export function isCodexFastModeModel(
   return (
     typeof bareModel === "string" && CODEX_FAST_MODE_MODEL_SET.has(bareModel)
   );
-}
-
-export function getBuiltInModelPriceTier(
-  model: string,
-): ModelPriceTier | undefined {
-  return isSupportedRunModel(model)
-    ? BUILT_IN_MODEL_PRICE_TIER[model]
-    : undefined;
-}
-
-export function getCanonicalModelDisplayName(model: string): string {
-  return isSupportedRunModel(model) ? SUPPORTED_RUN_MODEL_LABELS[model] : model;
 }
 
 /**
@@ -626,13 +608,6 @@ export function modelSupportsImageInput(
   providerType?: ModelProviderType,
 ): boolean {
   return getModelImageInputSupport(model, providerType) === "supported";
-}
-
-/**
- * Return the built-in models visible to callers.
- */
-export function getBuiltInVisibleModels(): string[] {
-  return [...ACTIVE_RUN_MODELS];
 }
 
 /**
@@ -1581,15 +1556,8 @@ export const upsertModelProviderRequestSchema = z.object({
   secret: z.string().min(1).optional(), // Legacy single secret
   authMethod: z.string().optional(), // For multi-auth providers
   secrets: z.record(z.string(), z.string()).optional(), // For multi-auth providers
-  selectedModel: z
-    .string()
-    .refine(
-      (model) => {
-        return getRunModelAccess(model) !== "retired";
-      },
-      { message: RETIRED_RUN_MODEL_MESSAGE },
-    )
-    .optional(),
+  // Retired catalog models are rejected by the API against the catalog.
+  selectedModel: z.string().optional(),
 });
 
 export type UpsertModelProviderRequest = z.infer<
@@ -1620,7 +1588,7 @@ export type OrgModelPolicyRouteStatus = z.infer<
 
 export const orgModelPolicySchema = z.object({
   id: z.uuid(),
-  model: supportedRunModelSchema,
+  model: runModelIdSchema,
   modelLabel: z.string(),
   // Deprecated compatibility field for released clients that decode it as
   // required. True only for the projected system default (the catalog's
@@ -1676,7 +1644,7 @@ export type OrgModelPolicy = z.infer<typeof orgModelPolicySchema>;
 
 // Released clients may still send `isDefault`; z.object strips it.
 export const updateOrgModelPolicySchema = z.object({
-  model: supportedRunModelSchema,
+  model: runModelIdSchema,
   defaultProviderType: modelProviderWriteTypeSchema,
   credentialScope: modelProviderCredentialScopeSchema,
   modelProviderId: z.uuid().nullable(),
@@ -1694,10 +1662,10 @@ export const orgModelPoliciesResponseSchema = z.object({
   revision: z.string(),
   writePreconditionRequired: z.boolean(),
   policies: z.array(orgModelPolicySchema),
-  modelsAvailableToAdd: z.array(supportedRunModelSchema),
+  modelsAvailableToAdd: z.array(runModelIdSchema),
   // Deprecated compatibility fields for released clients. Always the catalog
   // system default and its projected policy ID; new code must not read them.
-  workspaceDefaultModel: supportedRunModelSchema.nullable(),
+  workspaceDefaultModel: runModelIdSchema.nullable(),
   workspaceDefaultPolicyId: z.uuid().nullable(),
 });
 

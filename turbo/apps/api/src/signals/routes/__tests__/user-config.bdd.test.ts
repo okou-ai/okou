@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 
 import { afterEach, describe, expect, it } from "vitest";
-import { ORG_DEFAULT_RUN_MODEL } from "@okouai/api-contracts/contracts/model-providers";
 
 import { testContext } from "../../../__tests__/test-context";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
@@ -12,6 +11,7 @@ import {
 import { expectApiError } from "./helpers/api-bdd";
 import { createUserConfigBddApi } from "./helpers/api-bdd-user-config";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 
 /*
 Round-5 cluster auth-03 (AUTH-01/AUTH-03): user-owned configuration plus the
@@ -297,10 +297,10 @@ describe("AUTH-03 user model preference", () => {
     });
 
     const updated = await cfg.updateModelPreference(admin, {
-      selectedModel: ORG_DEFAULT_RUN_MODEL,
+      selectedModel: SEEDED_SYSTEM_DEFAULT_MODEL,
       serviceTier: null,
     });
-    expect(updated.selectedModel).toBe(ORG_DEFAULT_RUN_MODEL);
+    expect(updated.selectedModel).toBe(SEEDED_SYSTEM_DEFAULT_MODEL);
     expect(updated.serviceTier).toBeNull();
     expect(updated.updatedAt).toStrictEqual(expect.any(String));
     const readUpdated = await cfg.readModelPreference(admin);

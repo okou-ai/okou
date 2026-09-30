@@ -117,6 +117,14 @@ function projectedPolicies(): OrgModelPolicy[] {
   ];
 }
 
+// Server admission (`allow_new_org_policy`) keeps some active models out of
+// `modelsAvailableToAdd`; the client must follow the server's list.
+const NON_ADMITTED_MODELS = new Set([
+  "gpt-6-sol",
+  "claude-opus-5-5",
+  "gpt-6-luna",
+]);
+
 function response(): OrgModelPoliciesResponse {
   const policies = projectedPolicies();
   // Deprecated compat fields for released iOS clients mirror the system default.
@@ -137,7 +145,11 @@ function response(): OrgModelPoliciesResponse {
     policies,
     modelsAvailableToAdd: getMockModelCatalog()
       .models.filter((entry) => {
-        return entry.replacedBy === null && !configuredModels.has(entry.model);
+        return (
+          entry.replacedBy === null &&
+          !NON_ADMITTED_MODELS.has(entry.model) &&
+          !configuredModels.has(entry.model)
+        );
       })
       .map((entry) => {
         return entry.model;

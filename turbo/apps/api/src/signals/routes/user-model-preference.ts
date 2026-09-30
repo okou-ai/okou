@@ -3,11 +3,7 @@ import {
   getMemberModelPolicyRoute,
   isMemberModelPolicyConfigurable,
 } from "@okouai/api-contracts/contracts/member-model-policy";
-import {
-  getRunModelAccess,
-  RETIRED_RUN_MODEL_MESSAGE,
-  type OrgModelPolicy,
-} from "@okouai/api-contracts/contracts/model-providers";
+import type { OrgModelPolicy } from "@okouai/api-contracts/contracts/model-providers";
 import {
   isModelReasoningEffortSupported,
   type ModelSettingsPatch,
@@ -25,6 +21,11 @@ import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
 import { listOrgModelPolicies$ } from "../services/model-policy.service";
+import {
+  loadModelCatalog,
+  resolveCatalogRunModel,
+} from "../services/model-catalog.service";
+import { db$ } from "../external/db";
 import { isCodexFastServiceTierSupported } from "../services/model-selection.service";
 import {
   updateUserModelPreference$,
@@ -157,12 +158,43 @@ const updateUserModelPreferenceInner$ = command(
       return await set(persistUserModelPreference$, body.data, signal);
     }
 
-    if (getRunModelAccess(body.data.selectedModel) === "retired") {
-      return badRequestMessage(RETIRED_RUN_MODEL_MESSAGE);
+    // A legacy client may send a replaced model ID: store the final model of
+    // its replacement chain. Unknown IDs are rejected explicitly.
+    const catalog = await loadModelCatalog(get(db$));
+    signal.throwIfAborted();
+    const resolveModel = (model: string) => {
+      return resolveCatalogRunModel(catalog, model);
+    };
+    const selectedModel =
+      body.data.selectedModel === null
+        ? null
+        : resolveModel(body.data.selectedModel);
+    if (body.data.selectedModel !== null && selectedModel === null) {
+      return badRequestMessage(`Unknown model "${body.data.selectedModel}"`);
     }
+    const patchModel = body.data.modelSettingsPatch
+      ? resolveModel(body.data.modelSettingsPatch.model)
+      : null;
+    if (body.data.modelSettingsPatch && patchModel === null) {
+      return badRequestMessage(
+        `Unknown model "${body.data.modelSettingsPatch.model}"`,
+      );
+    }
+    const data: UpdateUserModelPreferenceRequest = {
+      ...body.data,
+      selectedModel,
+      ...(body.data.modelSettingsPatch && patchModel
+        ? {
+            modelSettingsPatch: {
+              ...body.data.modelSettingsPatch,
+              model: patchModel,
+            },
+          }
+        : {}),
+    };
 
     const policies =
-      body.data.selectedModel !== null
+      data.selectedModel !== null
         ? await set(
             listOrgModelPolicies$,
             { orgId: auth.orgId, userId: auth.userId },
@@ -170,13 +202,13 @@ const updateUserModelPreferenceInner$ = command(
           )
         : undefined;
     const configuredPolicy = policies?.policies.find((policy) => {
-      return policy.model === body.data.selectedModel;
+      return policy.model === data.selectedModel;
     });
-    if (body.data.selectedModel !== null && !configuredPolicy) {
+    if (data.selectedModel !== null && !configuredPolicy) {
       return badRequestMessage("Invalid request");
     }
 
-    const modelSettingsPatch = body.data.modelSettingsPatch;
+    const modelSettingsPatch = data.modelSettingsPatch;
     signal.throwIfAborted();
     if (
       modelSettingsPatch &&
@@ -192,7 +224,7 @@ const updateUserModelPreferenceInner$ = command(
 
     const modelSettingsError = validateModelSettingsPatch({
       patch: modelSettingsPatch,
-      selectedModel: body.data.selectedModel,
+      selectedModel: data.selectedModel,
     });
     if (modelSettingsError) {
       return modelSettingsError;
@@ -200,18 +232,18 @@ const updateUserModelPreferenceInner$ = command(
 
     const serviceTierError =
       validateUltrafastServiceTier({
-        requested: body.data.serviceTier === "ultrafast",
+        requested: data.serviceTier === "ultrafast",
         configuredPolicy,
       }) ??
       validatePriorityServiceTier({
-        requested: body.data.serviceTier === "priority",
+        requested: data.serviceTier === "priority",
         configuredPolicy,
       });
     if (serviceTierError) {
       return serviceTierError;
     }
 
-    return await set(persistUserModelPreference$, body.data, signal);
+    return await set(persistUserModelPreference$, data, signal);
   },
 );
 

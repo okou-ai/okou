@@ -1,6 +1,6 @@
 import {
   isBuiltInModelProviderType,
-  getRunModelAccess,
+  hasNoRuntimeExecutionRoute,
   getRunModelRouteAccess,
   normalizeBuiltInModelId,
   RETIRED_RUN_MODEL_MESSAGE,
@@ -217,7 +217,7 @@ async function checkResolvedOrgCreditsForRunAdmissionWithAllowance(params: {
   } | null>;
 }): Promise<RunAdmissionFailure | undefined> {
   const { availability } = params;
-  if (getRunModelAccess(params.selectedModel) === "retired") {
+  if (hasNoRuntimeExecutionRoute(params.selectedModel)) {
     return badRequestMessage(RETIRED_RUN_MODEL_MESSAGE);
   }
   if (!availability) {
@@ -259,7 +259,7 @@ export function checkOrgPlanRunAdmission(params: {
     params.modelProviderType,
     capabilities?.restrictedBuiltInModels && !params.autoPersonalSubscription,
   );
-  if (modelAccess === "retired") {
+  if (hasNoRuntimeExecutionRoute(params.selectedModel)) {
     return badRequestMessage(RETIRED_RUN_MODEL_MESSAGE);
   }
   if (!capabilities || capabilities.status !== "active") {

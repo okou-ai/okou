@@ -31,6 +31,9 @@ export async function validateModelCatalogStoredSelections(
     "model_providers",
     "agent_runs",
     "usage_event",
+    "chat_threads",
+    "chat_thread_events",
+    "chat_thread_event_sequences",
   ] as const;
   type Table = (typeof tables)[number];
   const rowsSchema = z.array(z.record(z.string(), z.unknown()));
@@ -60,7 +63,8 @@ export async function validateModelCatalogStoredSelections(
     await client.query(
       `DROP TABLE pg_temp.model_selection_rewrite,
          pg_temp.model_selection_rewrite_effort,
-         pg_temp.model_selection_rewrite_policy`,
+         pg_temp.model_selection_rewrite_policy,
+         pg_temp.model_selection_rewrite_threads`,
     );
   }
 
@@ -141,18 +145,85 @@ export async function validateModelCatalogStoredSelections(
               ($2, 'openai-api-key', 'org-b', 'user-b', 'gpt-5.5')`,
       [deepseekProvider, openaiProvider],
     );
+    const agentA = randomUUID();
+    const agentB = randomUUID();
     await client.query(
       `INSERT INTO agents (id, org_id, owner, name, selected_model, model_provider_id)
        VALUES ($1, 'org-a', 'user-a', 'agent-a', 'claude-opus-4-8', NULL),
               ($2, 'org-b', 'user-b', 'agent-b', 'deepseek-v4-pro', $3),
               ($4, 'org-b', 'user-b', 'agent-c', 'gpt-5.5', $5)`,
+      [agentA, agentB, deepseekProvider, randomUUID(), openaiProvider],
+    );
+
+    // Threads: unpinned two-hop rewrite with effort carried over; a DeepSeek
+    // BYOK pin that cannot serve gpt-6-luna stays; a connection pin without a
+    // stored type resolves through model_providers and takes the route
+    // default effort; an agentless thread moves without an event; an active
+    // selection is untouched.
+    const threadOpus = randomUUID();
+    const threadDeepSeekPinned = randomUUID();
+    const threadConnectionPinned = randomUUID();
+    const threadAgentless = randomUUID();
+    const threadActive = randomUUID();
+    for (const [
+      id,
+      userId,
+      agentId,
+      model,
+      providerType,
+      providerId,
+      settings,
+    ] of [
       [
-        randomUUID(),
-        randomUUID(),
-        deepseekProvider,
-        randomUUID(),
-        openaiProvider,
+        threadOpus,
+        "user-a",
+        agentA,
+        "claude-opus-4-8",
+        null,
+        null,
+        '{"claude-opus-4-8":{"effort":"extra"}}',
       ],
+      [
+        threadDeepSeekPinned,
+        "user-b",
+        agentB,
+        "deepseek-v4-pro",
+        "deepseek",
+        deepseekProvider,
+        '{"deepseek-v4-pro":{"effort":"high"}}',
+      ],
+      [
+        threadConnectionPinned,
+        "user-b",
+        agentB,
+        "gpt-5.5",
+        null,
+        openaiProvider,
+        '{"gpt-5.5":{"effort":"ultra"}}',
+      ],
+      [
+        threadAgentless,
+        "user-a",
+        null,
+        "gpt-5.5",
+        null,
+        null,
+        '{"gpt-5.5":{"effort":"low"},"gpt-6-luna":{"effort":"high"}}',
+      ],
+      [threadActive, "user-a", agentA, "claude-opus-5-5", null, null, "{}"],
+    ]) {
+      await client.query(
+        `INSERT INTO chat_threads (
+          id, user_id, agent_id, selected_model, model_provider_type,
+          model_provider_id, model_settings, updated_at, last_message_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, '2026-09-01', '2026-09-01')`,
+        [id, userId, agentId, model, providerType, providerId, settings],
+      );
+    }
+    // user-a already has thread events; user-b has no sequence row yet.
+    await client.query(
+      `INSERT INTO chat_thread_event_sequences (user_id, org_id, last_seq_id)
+       VALUES ('user-a', 'org-a', 7)`,
     );
     await client.query(
       `INSERT INTO agent_runs (
@@ -253,6 +324,98 @@ export async function validateModelCatalogStoredSelections(
 
     assert.deepEqual(await rows("agent_runs", "id"), beforeRuns);
     assert.deepEqual(await rows("usage_event", "id"), beforeUsage);
+
+    const threads = new Map(
+      (await rows("chat_threads", "id")).map((row) => {
+        return [
+          row.id,
+          [
+            row.selected_model,
+            row.model_provider_type,
+            row.model_provider_id,
+            row.model_settings,
+          ],
+        ];
+      }),
+    );
+    assert.deepEqual(threads.get(threadOpus), [
+      "claude-opus-5-5",
+      null,
+      null,
+      {
+        "claude-opus-4-8": { effort: "extra" },
+        "claude-opus-5-5": { effort: "extra" },
+      },
+    ]);
+    assert.deepEqual(threads.get(threadDeepSeekPinned), [
+      "deepseek-v4-pro",
+      "deepseek",
+      deepseekProvider,
+      { "deepseek-v4-pro": { effort: "high" } },
+    ]);
+    assert.deepEqual(threads.get(threadConnectionPinned), [
+      "gpt-6-luna",
+      null,
+      openaiProvider,
+      { "gpt-5.5": { effort: "ultra" }, "gpt-6-luna": { effort: "max" } },
+    ]);
+    assert.deepEqual(threads.get(threadAgentless), [
+      "gpt-6-luna",
+      null,
+      null,
+      { "gpt-5.5": { effort: "low" }, "gpt-6-luna": { effort: "high" } },
+    ]);
+    assert.deepEqual(threads.get(threadActive), [
+      "claude-opus-5-5",
+      null,
+      null,
+      {},
+    ]);
+    assert.deepEqual(
+      (await rows("chat_thread_events", "user_id, seq_id")).map((row) => {
+        return [
+          row.user_id,
+          row.org_id,
+          row.seq_id,
+          row.chat_thread_id,
+          row.kind,
+          row.agent_id,
+          row.selected_model,
+          row.model_settings_patch,
+        ];
+      }),
+      [
+        [
+          "user-a",
+          "org-a",
+          "8",
+          threadOpus,
+          "model_selection_updated",
+          agentA,
+          "claude-opus-5-5",
+          { model: "claude-opus-5-5", effort: "extra" },
+        ],
+        [
+          "user-b",
+          "org-b",
+          "1",
+          threadConnectionPinned,
+          "model_selection_updated",
+          agentB,
+          "gpt-6-luna",
+          { model: "gpt-6-luna", effort: "max" },
+        ],
+      ],
+    );
+    assert.deepEqual(
+      (await rows("chat_thread_event_sequences", "user_id")).map((row) => {
+        return [row.user_id, row.org_id, row.last_seq_id];
+      }),
+      [
+        ["user-a", "org-a", "8"],
+        ["user-b", "org-b", "1"],
+      ],
+    );
 
     const afterFirstRun = await snapshot();
     await applyMigration(migration);

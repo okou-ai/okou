@@ -4,7 +4,6 @@ import {
   chatThreadRenameContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
-import { ORG_DEFAULT_RUN_MODEL } from "@okouai/api-contracts/contracts/model-providers";
 import { createStore } from "ccstate";
 import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -16,6 +15,7 @@ import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { chatThreadGetRoutes } from "../chat-threads-get";
 import { chatThreadRenameRoutes } from "../chat-threads-rename";
+import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 
 const context = testContext();
 const store = createStore();
@@ -128,7 +128,7 @@ describe("POST /api/chat-threads/:id/rename", () => {
       title: "CLI renamed title",
       pinnedAt: null,
       archived: false,
-      selectedModel: ORG_DEFAULT_RUN_MODEL,
+      selectedModel: SEEDED_SYSTEM_DEFAULT_MODEL,
       modelSettings: {},
       serviceTier: null,
       computerUseHostId: null,

@@ -1,7 +1,6 @@
 import { onTestFinished } from "vitest";
 import { randomUUID } from "node:crypto";
 import {
-  ORG_DEFAULT_RUN_MODEL,
   ACTIVE_RUN_MODELS,
   isBuiltInModelProviderType,
   type OrgModelPoliciesResponse,
@@ -27,8 +26,6 @@ import {
   holdModelPolicyPreferenceFixture,
   stageUnrepairedOrgModelPolicyFixture,
   readUnrepairedOrgModelPolicyFixture,
-  removeRunModelCatalogEntryFixture,
-  enableRunModelCatalogEntryFixture,
   setOrgMemberRunModelOutsidePolicyFixture,
   setOrgModelPolicyProviderTypeFixture,
   stagePreAddabilityModelPolicyFixture,
@@ -53,6 +50,7 @@ import { modelPoliciesRoutes } from "../model-policies";
 import { modelProvidersRoutes } from "../model-providers";
 import { modelProviderGatewayRoutes } from "../model-provider-gateways";
 import { userModelPreferenceRoutes } from "../user-model-preference";
+import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 
 const TEST_APP_ROUTES = Object.freeze([
   ...modelPoliciesRoutes,
@@ -239,7 +237,7 @@ async function listSeededLimitedFreePolicies(): Promise<{
     stored.body.policies.map((policy) => {
       return policy.model;
     }),
-  ).toStrictEqual([ORG_DEFAULT_RUN_MODEL, "gpt-6-astra"]);
+  ).toStrictEqual([SEEDED_SYSTEM_DEFAULT_MODEL, "gpt-6-astra"]);
   return { fixture, stored: stored.body };
 }
 
@@ -332,7 +330,7 @@ describe("GET/PUT /api/model-policies", () => {
           body: {
             revision: auto.body.revision,
             policies: [
-              makeBuiltInPolicy(ORG_DEFAULT_RUN_MODEL),
+              makeBuiltInPolicy(SEEDED_SYSTEM_DEFAULT_MODEL),
               makeBuiltInPolicy("gpt-6-luna"),
             ],
           },
@@ -574,7 +572,7 @@ describe("GET/PUT /api/model-policies", () => {
     ).toStrictEqual(["okou-1.0", "gpt-6-luna"]);
   });
 
-  it("offers only catalog-enabled models and rejects a staged model addition", async () => {
+  it("offers active catalog models and rejects replaced or unknown ones", async () => {
     const fixture = seedFixture();
     useSession(fixture);
     const client = apiClient();
@@ -583,45 +581,49 @@ describe("GET/PUT /api/model-policies", () => {
       [200],
     );
 
-    expect(initial.body.modelsAvailableToAdd).toContain("gpt-5.6-sol");
-    expect(initial.body.modelsAvailableToAdd).not.toContain("gpt-6-sol");
-    expect(initial.body.modelsAvailableToAdd).not.toContain("claude-opus-5-5");
-    expect(initial.body.modelsAvailableToAdd).not.toContain(
-      "claude-sonnet-5-5",
+    // `replaced_by IS NULL` is the only addability authority.
+    expect(initial.body.modelsAvailableToAdd).toEqual(
+      expect.arrayContaining(["gpt-5.6-sol", "gpt-6-sol", "claude-opus-5-5"]),
     );
+    for (const replaced of ["claude-fable-5", "gpt-5.5", "deepseek-v4-pro"]) {
+      expect(initial.body.modelsAvailableToAdd).not.toContain(replaced);
+    }
     expect(initial.body.modelsAvailableToAdd).not.toContain(
-      ORG_DEFAULT_RUN_MODEL,
+      SEEDED_SYSTEM_DEFAULT_MODEL,
     );
 
-    for (const stagedModel of [
-      "gpt-6-sol",
-      "claude-opus-5-5",
-      "claude-sonnet-5-5",
-    ] as const) {
-      const rejected = await accept(
-        client.update({
-          headers: authHeaders(),
-          body: {
-            revision: await currentPolicyRevision(),
-            policies: [
-              ...toUpdate(initial.body),
-              makeBuiltInPolicy(stagedModel),
-            ],
-          },
-        }),
-        [400],
-      );
-      expect(rejected.body.error.message).toBe(
-        `Model "${stagedModel}" is not available to add`,
-      );
-    }
+    const retired = await accept(
+      client.update({
+        headers: authHeaders(),
+        body: {
+          revision: initial.body.revision,
+          policies: [makeBuiltInPolicy("claude-fable-5")],
+        },
+      }),
+      [400],
+    );
+    expect(retired.body.error.message).toBe(
+      "This model has been retired. Select another available model.",
+    );
+    const unknown = await accept(
+      client.update({
+        headers: authHeaders(),
+        body: {
+          revision: initial.body.revision,
+          policies: [makeBuiltInPolicy("not-a-catalog-model")],
+        },
+      }),
+      [400],
+    );
+    expect(unknown.body.error.message).toBe(
+      'Unknown model "not-a-catalog-model"',
+    );
 
     const unchanged = await accept(
       client.list({ headers: authHeaders() }),
       [200],
     );
     expect(unchanged.body.revision).toBe(initial.body.revision);
-    expect(toUpdate(unchanged.body)).toStrictEqual(toUpdate(initial.body));
   });
 
   it("can re-add GPT 6 Luna after removing it", async () => {
@@ -634,7 +636,7 @@ describe("GET/PUT /api/model-policies", () => {
         body: {
           revision: await currentPolicyRevision(),
           policies: [
-            makeBuiltInPolicy(ORG_DEFAULT_RUN_MODEL),
+            makeBuiltInPolicy(SEEDED_SYSTEM_DEFAULT_MODEL),
             makeBuiltInPolicy("gpt-5.6-luna"),
           ],
         },
@@ -649,7 +651,7 @@ describe("GET/PUT /api/model-policies", () => {
         body: {
           revision: await currentPolicyRevision(),
           policies: [
-            makeBuiltInPolicy(ORG_DEFAULT_RUN_MODEL),
+            makeBuiltInPolicy(SEEDED_SYSTEM_DEFAULT_MODEL),
             makeBuiltInPolicy("gpt-5.6-luna"),
             makeBuiltInPolicy("gpt-6-luna"),
           ],
@@ -664,10 +666,7 @@ describe("GET/PUT /api/model-policies", () => {
     ).toContain("gpt-6-luna");
   });
 
-  it("admits Sonnet 5.5 only after catalog activation and keeps defaults unchanged", async () => {
-    onTestFinished(
-      await enableRunModelCatalogEntryFixture("claude-sonnet-5-5"),
-    );
+  it("admits active Sonnet 5.5 subject to the organization plan", async () => {
     const fixture = seedFixture();
     useSession(fixture);
     await seedBuiltInModelCandidateKeys(context, "claude-sonnet-5-5");
@@ -734,35 +733,7 @@ describe("GET/PUT /api/model-policies", () => {
     ).toBeFalsy();
   });
 
-  it("fails closed when an active model has no catalog row", async () => {
-    const restoreCatalogEntry =
-      await removeRunModelCatalogEntryFixture("gpt-6-sol");
-    onTestFinished(restoreCatalogEntry);
-    const fixture = seedFixture();
-    useSession(fixture);
-    const client = apiClient();
-    const initial = await accept(
-      client.list({ headers: authHeaders() }),
-      [200],
-    );
-
-    expect(initial.body.modelsAvailableToAdd).not.toContain("gpt-6-sol");
-    const rejected = await accept(
-      client.update({
-        headers: authHeaders(),
-        body: {
-          revision: await currentPolicyRevision(),
-          policies: [...toUpdate(initial.body), makeBuiltInPolicy("gpt-6-sol")],
-        },
-      }),
-      [400],
-    );
-    expect(rejected.body.error.message).toBe(
-      'Model "gpt-6-sol" is not available to add',
-    );
-  });
-
-  it("keeps a staged model configurable once added but prevents re-adding it", async () => {
+  it("keeps a stored model configurable and lets it be re-added while active", async () => {
     const fixture = seedFixture();
     useSession(fixture);
     const client = apiClient();
@@ -812,9 +783,9 @@ describe("GET/PUT /api/model-policies", () => {
       }),
       [200],
     );
-    expect(removed.body.modelsAvailableToAdd).not.toContain("gpt-6-sol");
+    expect(removed.body.modelsAvailableToAdd).toContain("gpt-6-sol");
 
-    const reAdd = await accept(
+    await accept(
       client.update({
         headers: authHeaders(),
         body: {
@@ -822,10 +793,7 @@ describe("GET/PUT /api/model-policies", () => {
           policies: [...toUpdate(removed.body), makeBuiltInPolicy("gpt-6-sol")],
         },
       }),
-      [400],
-    );
-    expect(reAdd.body.error.message).toBe(
-      'Model "gpt-6-sol" is not available to add',
+      [200],
     );
   });
 
@@ -946,7 +914,7 @@ describe("GET/PUT /api/model-policies", () => {
     });
   });
 
-  it("seeds only the fixed Auto default for a workspace without policies", async () => {
+  it("projects only the system default for a workspace without policies", async () => {
     const fixture = await seedFixture();
     useSession(fixture);
 
@@ -959,7 +927,7 @@ describe("GET/PUT /api/model-policies", () => {
 
     expect(response.body.policies).toStrictEqual([
       expect.objectContaining({
-        model: ORG_DEFAULT_RUN_MODEL,
+        model: SEEDED_SYSTEM_DEFAULT_MODEL,
         modelLabel: "Auto",
         isDefault: true,
         defaultProviderType: "built-in",
@@ -968,13 +936,15 @@ describe("GET/PUT /api/model-policies", () => {
         routeStatus: "valid",
       }),
     ]);
-    expect(response.body.workspaceDefaultModel).toBe(ORG_DEFAULT_RUN_MODEL);
+    expect(response.body.workspaceDefaultModel).toBe(
+      SEEDED_SYSTEM_DEFAULT_MODEL,
+    );
     expect(response.body.workspaceDefaultPolicyId).toBe(
       response.body.policies[0]?.id,
     );
   });
 
-  it("adds the fixed default to policies stored before it existed", async () => {
+  it("projects the system default beside stored policies", async () => {
     const fixture = await seedFixture();
     // An API that predates the fixed default seeded other built-in models.
     await stagePreAddabilityModelPolicyFixture({
@@ -994,10 +964,12 @@ describe("GET/PUT /api/model-policies", () => {
         return [policy.model, policy.isDefault];
       }),
     ).toStrictEqual([
-      [ORG_DEFAULT_RUN_MODEL, true],
+      [SEEDED_SYSTEM_DEFAULT_MODEL, true],
       ["gpt-6-luna", false],
     ]);
-    expect(response.body.workspaceDefaultModel).toBe(ORG_DEFAULT_RUN_MODEL);
+    expect(response.body.workspaceDefaultModel).toBe(
+      SEEDED_SYSTEM_DEFAULT_MODEL,
+    );
   });
 
   it("advertises the current built-in provider for route-specific effort controls", async () => {
@@ -1012,7 +984,7 @@ describe("GET/PUT /api/model-policies", () => {
         body: {
           revision: await currentPolicyRevision(),
           policies: [
-            makeBuiltInPolicy(ORG_DEFAULT_RUN_MODEL),
+            makeBuiltInPolicy(SEEDED_SYSTEM_DEFAULT_MODEL),
             makeBuiltInPolicy(model),
           ],
         },
@@ -1067,7 +1039,7 @@ describe("GET/PUT /api/model-policies", () => {
 
     await setOrgModelPolicyProviderTypeFixture({
       orgId: fixture.orgId,
-      model: ORG_DEFAULT_RUN_MODEL,
+      model: SEEDED_SYSTEM_DEFAULT_MODEL,
       defaultProviderType: "built-in",
     });
 
@@ -1077,7 +1049,7 @@ describe("GET/PUT /api/model-policies", () => {
     );
     expect(
       response.body.policies.find((policy) => {
-        return policy.model === ORG_DEFAULT_RUN_MODEL;
+        return policy.model === SEEDED_SYSTEM_DEFAULT_MODEL;
       }),
     ).toMatchObject({
       defaultProviderType: "built-in",
@@ -1129,7 +1101,7 @@ describe("GET/PUT /api/model-policies", () => {
       response.body.policies.map((policy) => {
         return policy.model;
       }),
-    ).toStrictEqual([ORG_DEFAULT_RUN_MODEL]);
+    ).toStrictEqual([SEEDED_SYSTEM_DEFAULT_MODEL]);
     expect(response.body.policies[0]).toMatchObject({
       defaultProviderType: "built-in",
       credentialScope: "org",
@@ -1155,16 +1127,16 @@ describe("GET/PUT /api/model-policies", () => {
       response.body.policies.map((policy) => {
         return policy.model;
       }),
-    ).toStrictEqual([ORG_DEFAULT_RUN_MODEL]);
+    ).toStrictEqual([SEEDED_SYSTEM_DEFAULT_MODEL]);
   });
 
-  it("rejects an update that removes the fixed default", async () => {
+  it("keeps the projected default when an update omits it", async () => {
     const fixture = await seedFixture();
     useSession(fixture);
     const client = apiClient();
     const listed = await accept(client.list({ headers: authHeaders() }), [200]);
 
-    const rejected = await accept(
+    const written = await accept(
       client.update({
         headers: authHeaders(),
         body: {
@@ -1172,17 +1144,17 @@ describe("GET/PUT /api/model-policies", () => {
           policies: [makeBuiltInPolicy("gpt-6-luna")],
         },
       }),
-      [400],
-    );
-
-    expect(rejected.body.error.message).toBe(
-      'Model "okou-1.0" is the workspace default and cannot be removed',
-    );
-    const unchanged = await accept(
-      client.list({ headers: authHeaders() }),
       [200],
     );
-    expect(unchanged.body.revision).toBe(listed.body.revision);
+
+    expect(
+      written.body.policies.map((policy) => {
+        return [policy.model, policy.isDefault];
+      }),
+    ).toStrictEqual([
+      [SEEDED_SYSTEM_DEFAULT_MODEL, true],
+      ["gpt-6-luna", false],
+    ]);
   });
 
   it("allows members to read policy controls", async () => {
@@ -1200,8 +1172,10 @@ describe("GET/PUT /api/model-policies", () => {
       response.body.policies.map((policy) => {
         return policy.model;
       }),
-    ).toStrictEqual([ORG_DEFAULT_RUN_MODEL]);
-    expect(response.body.workspaceDefaultModel).toBe(ORG_DEFAULT_RUN_MODEL);
+    ).toStrictEqual([SEEDED_SYSTEM_DEFAULT_MODEL]);
+    expect(response.body.workspaceDefaultModel).toBe(
+      SEEDED_SYSTEM_DEFAULT_MODEL,
+    );
   });
 
   it("allows agent tokens to read policy controls without a model-provider capability", async () => {
@@ -1225,7 +1199,9 @@ describe("GET/PUT /api/model-policies", () => {
       [200],
     );
 
-    expect(response.body.workspaceDefaultModel).toBe(ORG_DEFAULT_RUN_MODEL);
+    expect(response.body.workspaceDefaultModel).toBe(
+      SEEDED_SYSTEM_DEFAULT_MODEL,
+    );
   });
 
   it("requires admins for policy writes", async () => {
@@ -1279,7 +1255,7 @@ describe("GET/PUT /api/model-policies", () => {
       after.body.policies.map((policy) => {
         return policy.model;
       }),
-    ).toStrictEqual([ORG_DEFAULT_RUN_MODEL]);
+    ).toStrictEqual([SEEDED_SYSTEM_DEFAULT_MODEL]);
   });
 
   it("removes supported models omitted from an update", async () => {
@@ -1293,7 +1269,7 @@ describe("GET/PUT /api/model-policies", () => {
         body: {
           revision: await currentPolicyRevision(),
           policies: [
-            makeBuiltInPolicy(ORG_DEFAULT_RUN_MODEL),
+            makeBuiltInPolicy(SEEDED_SYSTEM_DEFAULT_MODEL),
             makeBuiltInPolicy(removedModel),
           ],
         },
@@ -1343,7 +1319,7 @@ describe("GET/PUT /api/model-policies", () => {
         body: {
           revision: await currentPolicyRevision(),
           policies: [
-            makeBuiltInPolicy(ORG_DEFAULT_RUN_MODEL),
+            makeBuiltInPolicy(SEEDED_SYSTEM_DEFAULT_MODEL),
             makeBuiltInPolicy(removedModel),
           ],
         },
@@ -1363,7 +1339,7 @@ describe("GET/PUT /api/model-policies", () => {
         headers: authHeaders(),
         body: {
           revision: await currentPolicyRevision(),
-          policies: [makeBuiltInPolicy(ORG_DEFAULT_RUN_MODEL)],
+          policies: [makeBuiltInPolicy(SEEDED_SYSTEM_DEFAULT_MODEL)],
         },
       }),
       [200],
@@ -1373,7 +1349,9 @@ describe("GET/PUT /api/model-policies", () => {
       preferenceClient.get({ headers: authHeaders() }),
       [200],
     );
-    expect(preferenceResponse.body.selectedModel).toBe(ORG_DEFAULT_RUN_MODEL);
+    expect(preferenceResponse.body.selectedModel).toBe(
+      SEEDED_SYSTEM_DEFAULT_MODEL,
+    );
   });
 
   it("keeps member preferences for models still allowed after an update", async () => {
@@ -1392,7 +1370,7 @@ describe("GET/PUT /api/model-policies", () => {
         body: {
           revision: await currentPolicyRevision(),
           policies: [
-            makeBuiltInPolicy(ORG_DEFAULT_RUN_MODEL),
+            makeBuiltInPolicy(SEEDED_SYSTEM_DEFAULT_MODEL),
             makeBuiltInPolicy(keptModel),
             makeBuiltInPolicy(removedModel),
           ],
@@ -1414,7 +1392,7 @@ describe("GET/PUT /api/model-policies", () => {
         body: {
           revision: await currentPolicyRevision(),
           policies: [
-            makeBuiltInPolicy(ORG_DEFAULT_RUN_MODEL),
+            makeBuiltInPolicy(SEEDED_SYSTEM_DEFAULT_MODEL),
             makeBuiltInPolicy(keptModel),
           ],
         },
@@ -1480,7 +1458,7 @@ describe("GET/PUT /api/model-policies", () => {
         body: {
           revision: await currentPolicyRevision(),
           policies: [
-            makeBuiltInPolicy(ORG_DEFAULT_RUN_MODEL),
+            makeBuiltInPolicy(SEEDED_SYSTEM_DEFAULT_MODEL),
             {
               ...makeBuiltInPolicy("gpt-6-astra"),
               defaultProviderType: "openai-api-key",
@@ -1952,7 +1930,7 @@ describe("GET/PUT /api/model-policies", () => {
         body: {
           revision: await currentPolicyRevision(),
           policies: [
-            makeBuiltInPolicy(ORG_DEFAULT_RUN_MODEL),
+            makeBuiltInPolicy(SEEDED_SYSTEM_DEFAULT_MODEL),
             {
               model: "gpt-5.6-sol",
               defaultProviderType: "openai-api-key",
@@ -2037,7 +2015,7 @@ describe("GET/PUT /api/model-policies", () => {
       preferenceClient.update({
         headers: authHeaders(),
         body: {
-          selectedModel: ORG_DEFAULT_RUN_MODEL,
+          selectedModel: SEEDED_SYSTEM_DEFAULT_MODEL,
           serviceTier: null,
           selectedImageModel: "fal-ai/flux-pro/v1.1",
         },
@@ -2045,7 +2023,7 @@ describe("GET/PUT /api/model-policies", () => {
       [200],
     );
     expect(stored.body).toMatchObject({
-      selectedModel: ORG_DEFAULT_RUN_MODEL,
+      selectedModel: SEEDED_SYSTEM_DEFAULT_MODEL,
       selectedImageModel: "fal-ai/flux-pro/v1.1",
     });
     expect(stored.body.updatedAt).not.toBeNull();
@@ -2089,7 +2067,7 @@ describe("GET/PUT /api/model-policies", () => {
       preferenceClient.update({
         headers: authHeaders(),
         body: {
-          selectedModel: ORG_DEFAULT_RUN_MODEL,
+          selectedModel: SEEDED_SYSTEM_DEFAULT_MODEL,
           serviceTier: null,
           selectedImageModel: "gpt-image-2",
         },
@@ -2216,7 +2194,7 @@ describe("GET/PUT /api/model-policies", () => {
       preferenceClient.update({
         headers: authHeaders(),
         body: {
-          selectedModel: ORG_DEFAULT_RUN_MODEL,
+          selectedModel: SEEDED_SYSTEM_DEFAULT_MODEL,
           serviceTier: null,
           selectedImageModel: outsideCatalog,
         },
@@ -2519,7 +2497,7 @@ test.each([
         body: {
           revision: await currentPolicyRevision(),
           policies: [
-            makeBuiltInPolicy(ORG_DEFAULT_RUN_MODEL),
+            makeBuiltInPolicy(SEEDED_SYSTEM_DEFAULT_MODEL),
             {
               model: "claude-sonnet-5",
               defaultProviderType: type,
@@ -2552,7 +2530,7 @@ describe("conditional organization model policy writes", () => {
         body: {
           revision: await currentPolicyRevision(),
           policies: [
-            makeBuiltInPolicy(ORG_DEFAULT_RUN_MODEL),
+            makeBuiltInPolicy(SEEDED_SYSTEM_DEFAULT_MODEL),
             makeBuiltInPolicy("gpt-5.6-luna"),
             makeBuiltInPolicy("gpt-6-astra"),
           ],
@@ -2610,7 +2588,7 @@ describe("conditional organization model policy writes", () => {
           headers: authHeaders(),
           body: {
             policies: [
-              makeBuiltInPolicy(ORG_DEFAULT_RUN_MODEL),
+              makeBuiltInPolicy(SEEDED_SYSTEM_DEFAULT_MODEL),
               makeBuiltInPolicy("gpt-6-astra"),
             ],
             revision,
@@ -2643,7 +2621,7 @@ describe("conditional organization model policy writes", () => {
         headers: authHeaders(),
         body: {
           policies: [
-            makeBuiltInPolicy(ORG_DEFAULT_RUN_MODEL),
+            makeBuiltInPolicy(SEEDED_SYSTEM_DEFAULT_MODEL),
             makeBuiltInPolicy("gpt-5.6-luna"),
             makeBuiltInPolicy("deepseek-v4-flash"),
           ],
@@ -2656,11 +2634,7 @@ describe("conditional organization model policy writes", () => {
       edited.body.policies.map((policy) => {
         return policy.model;
       }),
-    ).toStrictEqual([
-      ORG_DEFAULT_RUN_MODEL,
-      "gpt-5.6-luna",
-      "deepseek-v4-flash",
-    ]);
+    ).toStrictEqual(["gpt-5.6-luna", "deepseek-v4-flash"]);
   });
 
   it.each([
@@ -2690,7 +2664,7 @@ describe("conditional organization model policy writes", () => {
           body: {
             revision: await currentPolicyRevision(),
             policies: [
-              makeBuiltInPolicy(ORG_DEFAULT_RUN_MODEL),
+              makeBuiltInPolicy(SEEDED_SYSTEM_DEFAULT_MODEL),
               makeBuiltInPolicy("gpt-5.6-luna"),
               {
                 ...makeBuiltInPolicy(model),
@@ -2823,7 +2797,7 @@ describe("conditional organization model policy writes", () => {
         body: {
           revision: await currentPolicyRevision(),
           policies: [
-            makeBuiltInPolicy(ORG_DEFAULT_RUN_MODEL),
+            makeBuiltInPolicy(SEEDED_SYSTEM_DEFAULT_MODEL),
             makeBuiltInPolicy("gpt-5.6-luna"),
             makeBuiltInPolicy("gpt-6-astra"),
           ],
@@ -2859,7 +2833,7 @@ describe("conditional organization model policy writes", () => {
       headers: authHeaders(),
       body: {
         policies: [
-          makeBuiltInPolicy(ORG_DEFAULT_RUN_MODEL),
+          makeBuiltInPolicy(SEEDED_SYSTEM_DEFAULT_MODEL),
           makeBuiltInPolicy("gpt-5.6-luna"),
         ],
         revision: snapshot.body.revision,
@@ -2893,12 +2867,12 @@ describe("conditional organization model policy writes", () => {
       current.body.policies.map((policy) => {
         return policy.model;
       }),
-    ).toStrictEqual([ORG_DEFAULT_RUN_MODEL, "gpt-5.6-luna"]);
+    ).toStrictEqual([SEEDED_SYSTEM_DEFAULT_MODEL, "gpt-5.6-luna"]);
     const preference = await accept(
       preferences.get({ headers: authHeaders() }),
       [200],
     );
-    expect(preference.body.selectedModel).toBe(ORG_DEFAULT_RUN_MODEL);
+    expect(preference.body.selectedModel).toBe(SEEDED_SYSTEM_DEFAULT_MODEL);
   });
 });
 
@@ -2920,7 +2894,7 @@ describe("conditional policy writes and persisted repair boundaries", () => {
         body: {
           revision: await currentPolicyRevision(),
           policies: [
-            makeBuiltInPolicy(ORG_DEFAULT_RUN_MODEL),
+            makeBuiltInPolicy(SEEDED_SYSTEM_DEFAULT_MODEL),
             retainedPolicy,
             makeBuiltInPolicy("gpt-6-astra"),
           ],
@@ -2955,7 +2929,10 @@ describe("conditional policy writes and persisted repair boundaries", () => {
     const replacement = apiClient().update({
       headers: authHeaders(),
       body: {
-        policies: [makeBuiltInPolicy(ORG_DEFAULT_RUN_MODEL), retainedPolicy],
+        policies: [
+          makeBuiltInPolicy(SEEDED_SYSTEM_DEFAULT_MODEL),
+          retainedPolicy,
+        ],
         revision: snapshot.body.revision,
       },
     });
@@ -2995,11 +2972,11 @@ describe("conditional policy writes and persisted repair boundaries", () => {
       preferences.get({ headers: authHeaders() }),
       [200],
     );
-    expect(preference.body.selectedModel).toBe(ORG_DEFAULT_RUN_MODEL);
+    expect(preference.body.selectedModel).toBe(SEEDED_SYSTEM_DEFAULT_MODEL);
   });
 
-  it.each(["unseeded", "missing_default"] as const)(
-    "rejects missing and stale preconditions before repairing %s policies",
+  it.each(["unseeded"] as const)(
+    "rejects missing and stale preconditions for %s policies",
     async (state) => {
       const fixture = seedFixture();
       useSession(fixture);
@@ -3009,7 +2986,7 @@ describe("conditional policy writes and persisted repair boundaries", () => {
           body: {
             revision: await currentPolicyRevision(),
             policies: [
-              makeBuiltInPolicy(ORG_DEFAULT_RUN_MODEL),
+              makeBuiltInPolicy(SEEDED_SYSTEM_DEFAULT_MODEL),
               makeBuiltInPolicy("gpt-5.6-luna"),
               makeBuiltInPolicy("gpt-6-astra"),
             ],
@@ -3044,7 +3021,7 @@ describe("conditional policy writes and persisted repair boundaries", () => {
             headers: authHeaders(),
             body: {
               policies: [
-                makeBuiltInPolicy(ORG_DEFAULT_RUN_MODEL),
+                makeBuiltInPolicy(SEEDED_SYSTEM_DEFAULT_MODEL),
                 makeBuiltInPolicy("gpt-5.6-luna"),
               ],
               revision,
@@ -3057,7 +3034,7 @@ describe("conditional policy writes and persisted repair boundaries", () => {
           readUnrepairedOrgModelPolicyFixture(fixture.orgId),
         ).resolves.toStrictEqual(before);
       }
-      // The normal read still owns initialization/default repair after rejection.
+      // The system default is projected on every read.
       const repaired = await accept(
         apiClient().list({ headers: authHeaders() }),
         [200],
@@ -3066,7 +3043,7 @@ describe("conditional policy writes and persisted repair boundaries", () => {
         repaired.body.policies.map((policy) => {
           return policy.model;
         }),
-      ).toContain(ORG_DEFAULT_RUN_MODEL);
+      ).toContain(SEEDED_SYSTEM_DEFAULT_MODEL);
     },
   );
 });

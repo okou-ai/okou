@@ -5,7 +5,6 @@ import {
   onboardingStatusContract,
 } from "@okouai/api-contracts/contracts/onboarding";
 import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
-import { ORG_DEFAULT_RUN_MODEL } from "@okouai/api-contracts/contracts/model-providers";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
@@ -16,6 +15,7 @@ import { createRouteMocks } from "./helpers/route-test";
 import { onboardingCompleteRoutes } from "../onboarding-complete";
 import { onboardingStatusRoutes } from "../onboarding-status";
 import { modelPoliciesRoutes } from "../model-policies";
+import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -207,8 +207,10 @@ describe("member source-first onboarding", () => {
       policies.body.policies.map((policy) => {
         return policy.model;
       }),
-    ).toStrictEqual([ORG_DEFAULT_RUN_MODEL]);
-    expect(policies.body.workspaceDefaultModel).toBe(ORG_DEFAULT_RUN_MODEL);
+    ).toStrictEqual([SEEDED_SYSTEM_DEFAULT_MODEL]);
+    expect(policies.body.workspaceDefaultModel).toBe(
+      SEEDED_SYSTEM_DEFAULT_MODEL,
+    );
   });
 
   it("does not pull a member who already chats in the workspace into onboarding", async () => {
@@ -305,7 +307,7 @@ describe("POST /api/onboarding/complete", () => {
       policies.body.policies.map((policy) => {
         return policy.model;
       }),
-    ).toStrictEqual([ORG_DEFAULT_RUN_MODEL]);
+    ).toStrictEqual([SEEDED_SYSTEM_DEFAULT_MODEL]);
     // A new organization starts in Auto.
     expect(policies.body.modelMode).toBe("auto");
   });
@@ -333,7 +335,7 @@ describe("POST /api/onboarding/complete", () => {
     expect(response.body.modelMode).toBe("auto");
     expect(response.body.policies).toStrictEqual([
       expect.objectContaining({
-        model: ORG_DEFAULT_RUN_MODEL,
+        model: SEEDED_SYSTEM_DEFAULT_MODEL,
         defaultProviderType: "built-in",
         credentialScope: "org",
       }),
@@ -366,7 +368,7 @@ describe("POST /api/onboarding/complete", () => {
         before.body.policies.map((policy) => {
           return policy.model;
         }),
-      ).toStrictEqual([ORG_DEFAULT_RUN_MODEL]);
+      ).toStrictEqual([SEEDED_SYSTEM_DEFAULT_MODEL]);
 
       await accept(
         onboardingCompleteClient().complete({
@@ -384,7 +386,7 @@ describe("POST /api/onboarding/complete", () => {
         after.body.policies.map((policy) => {
           return policy.model;
         }),
-      ).toStrictEqual([ORG_DEFAULT_RUN_MODEL, ...models]);
+      ).toStrictEqual([SEEDED_SYSTEM_DEFAULT_MODEL, ...models]);
       for (const model of models) {
         expect(
           after.body.policies.find((policy) => {
@@ -395,7 +397,9 @@ describe("POST /api/onboarding/complete", () => {
           credentialScope: "member",
         });
       }
-      expect(after.body.workspaceDefaultModel).toBe(ORG_DEFAULT_RUN_MODEL);
+      expect(after.body.workspaceDefaultModel).toBe(
+        SEEDED_SYSTEM_DEFAULT_MODEL,
+      );
 
       await accept(
         onboardingCompleteClient().complete({
@@ -415,7 +419,7 @@ describe("POST /api/onboarding/complete", () => {
         repeated.body.policies.map((policy) => {
           return policy.model;
         }),
-      ).toStrictEqual([ORG_DEFAULT_RUN_MODEL, ...models]);
+      ).toStrictEqual([SEEDED_SYSTEM_DEFAULT_MODEL, ...models]);
     },
   );
 
@@ -434,12 +438,7 @@ describe("POST /api/onboarding/complete", () => {
         body: {
           revision: before.body.revision,
           policies: (
-            [
-              ORG_DEFAULT_RUN_MODEL,
-              "claude-fable-5-1",
-              "gpt-6-astra",
-              "gpt-5.6-luna",
-            ] as const
+            ["claude-fable-5-1", "gpt-6-astra", "gpt-5.6-luna"] as const
           ).map((model) => {
             return {
               model,
@@ -470,7 +469,7 @@ describe("POST /api/onboarding/complete", () => {
         return [policy.model, policy.defaultProviderType];
       }),
     ).toStrictEqual([
-      [ORG_DEFAULT_RUN_MODEL, "built-in"],
+      [SEEDED_SYSTEM_DEFAULT_MODEL, "built-in"],
       ["gpt-6-astra", "codex-oauth-token"],
       ["gpt-6-sol", "codex-oauth-token"],
       ["gpt-6-luna", "codex-oauth-token"],
@@ -497,12 +496,7 @@ describe("POST /api/onboarding/complete", () => {
       policies.body.policies.map((policy) => {
         return policy.model;
       }),
-    ).toStrictEqual([
-      ORG_DEFAULT_RUN_MODEL,
-      "claude-fable-5-1",
-      "claude-opus-5-5",
-      "claude-sonnet-5",
-    ]);
+    ).toStrictEqual(["claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5"]);
   });
 
   it("keeps a customized model policy when onboarding completes", async () => {
@@ -520,7 +514,7 @@ describe("POST /api/onboarding/complete", () => {
           revision: before.body.revision,
           policies: [
             {
-              model: ORG_DEFAULT_RUN_MODEL,
+              model: SEEDED_SYSTEM_DEFAULT_MODEL,
               defaultProviderType: "built-in",
               credentialScope: "org",
               modelProviderId: null,
@@ -553,7 +547,7 @@ describe("POST /api/onboarding/complete", () => {
       after.body.policies.map((policy) => {
         return policy.model;
       }),
-    ).toStrictEqual([ORG_DEFAULT_RUN_MODEL, "gpt-5.6-luna"]);
+    ).toStrictEqual([SEEDED_SYSTEM_DEFAULT_MODEL, "gpt-5.6-luna"]);
   });
 
   it("stores the field the source-first flow answered", async () => {

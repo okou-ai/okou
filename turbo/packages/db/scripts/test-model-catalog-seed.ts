@@ -3,10 +3,8 @@ import { pathToFileURL } from "node:url";
 import { Client } from "pg";
 import {
   ACTIVE_RUN_MODELS,
-  BUILT_IN_MODEL_PRICE_TIER,
   SUPPORTED_RUN_MODELS,
   getBuiltInModelRouteCandidates,
-  getCanonicalModelDisplayName,
   getProviderRuntimeModel,
   getProvidersForModel,
   isCodexFastModeModel,
@@ -84,7 +82,8 @@ export async function validateModelCatalogSeed(
       [...SUPPORTED_RUN_MODELS],
     );
     for (const row of catalog.rows) {
-      assert.equal(row.display_name, getCanonicalModelDisplayName(row.model));
+      // Labels now live only in the catalog.
+      assert.ok(row.display_name.length > 0, row.model);
       assert.ok(
         (SUPPORTED_RUN_MODELS as readonly string[]).includes(row.model),
         row.model,
@@ -149,6 +148,17 @@ export async function validateModelCatalogSeed(
       return `${row.model}|${row.provider_type}|${row.subscription_type ?? ""}|${row.priority}`;
     };
     const expected = new Map<string, unknown>();
+    // Built-in price tiers now live only in model_routes: one tier per model.
+    const priceTiers = new Map<string, string | null>();
+    for (const route of routes.rows) {
+      if (route.provider_type !== "built-in") {
+        continue;
+      }
+      assert.ok(route.price_tier, route.model);
+      const previous = priceTiers.get(route.model);
+      assert.ok(previous === undefined || previous === route.price_tier);
+      priceTiers.set(route.model, route.price_tier);
+    }
     const tiers = (model: string, providerType: string) => {
       return [
         ...(isCodexFastModeModel(model) ? ["priority"] : []),
@@ -174,7 +184,7 @@ export async function validateModelCatalogSeed(
           default_service_tier: null,
           efforts,
           default_effort: defaultEffort,
-          price_tier: BUILT_IN_MODEL_PRICE_TIER[model],
+          price_tier: priceTiers.get(model) ?? null,
           pricing_kind: "model",
           pricing_provider: model,
         };
@@ -234,7 +244,9 @@ export async function validateModelCatalogSeed(
     for (const subscription of subscriptions.rows) {
       assert.equal(
         subscription.display_name,
-        getCanonicalModelDisplayName(subscription.model),
+        catalog.rows.find((row) => {
+          return row.model === subscription.model;
+        })?.display_name,
       );
       const row = {
         model: subscription.model,

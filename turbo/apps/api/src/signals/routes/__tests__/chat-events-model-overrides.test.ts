@@ -1,8 +1,5 @@
 import { createHash } from "node:crypto";
-import {
-  MODEL_PROVIDER_ENV_PLACEHOLDERS,
-  ORG_DEFAULT_RUN_MODEL,
-} from "@okouai/api-contracts/contracts/model-providers";
+import { MODEL_PROVIDER_ENV_PLACEHOLDERS } from "@okouai/api-contracts/contracts/model-providers";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { describe, expect, it } from "vitest";
@@ -23,6 +20,7 @@ import {
   eventBackedContents,
   assistantEvent,
 } from "./helpers/chat-events-fixture";
+import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 
 const context = testContext({ connectorCatalog: true });
 const {
@@ -251,7 +249,7 @@ describe("CHAT-02: run-level model overrides", () => {
       model: "claude-sonnet-5",
     });
     await misc.deleteOrgModelProvider(actor, "anthropic-api-key", [204]);
-    await seedBuiltInModelKey(ORG_DEFAULT_RUN_MODEL);
+    await seedBuiltInModelKey(SEEDED_SYSTEM_DEFAULT_MODEL);
 
     // The member preference does not replace an unavailable thread model.
     const fallback = await sendChatRun(actor, {
@@ -259,9 +257,7 @@ describe("CHAT-02: run-level model overrides", () => {
       threadId: thread.id,
       prompt: "use the fixed organization default",
     });
-    expect((await api.readRun(actor, fallback.runId)).source.model).toBe(
-      ORG_DEFAULT_RUN_MODEL,
-    );
+    expect((await api.readRun(actor, fallback.runId)).source.model).toBe();
     await expect(
       chat.readThreadMetadata(actor, thread.id),
     ).resolves.toMatchObject({

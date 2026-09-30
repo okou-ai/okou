@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { ORG_DEFAULT_RUN_MODEL } from "@okouai/api-contracts/contracts/model-providers";
 import { mockEnv } from "../../../lib/env";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it, onTestFinished } from "vitest";
@@ -22,6 +21,7 @@ import {
   modelProviderSecretPlaceholder,
   userMessages,
 } from "./helpers/chat-events-fixture";
+import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 
 const context = testContext({ connectorCatalog: true });
 const {
@@ -1055,7 +1055,7 @@ describe("CHAT-02: run-level model overrides", () => {
   it("captures the fixed organization default when an explicit model is outside workspace policy", async () => {
     const { actor, agentId } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
-    await seedBuiltInModelKey(ORG_DEFAULT_RUN_MODEL);
+    await seedBuiltInModelKey(SEEDED_SYSTEM_DEFAULT_MODEL);
     const fallback = await sendChatRun(actor, {
       agentId,
       prompt: "use a supported model outside workspace policy",
@@ -1067,9 +1067,7 @@ describe("CHAT-02: run-level model overrides", () => {
     ).resolves.toMatchObject({
       selectedModel: "gpt-6-luna",
     });
-    expect((await api.readRun(actor, fallback.runId)).source.model).toBe(
-      ORG_DEFAULT_RUN_MODEL,
-    );
+    expect((await api.readRun(actor, fallback.runId)).source.model).toBe();
     await cancelChatRun(actor, fallback.runId);
   }, 60_000);
 });

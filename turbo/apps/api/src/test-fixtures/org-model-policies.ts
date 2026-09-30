@@ -3,8 +3,6 @@ import {
   type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
-import { modelRoutes } from "@okouai/db/schema/model-route";
-import { runModelCatalog } from "@okouai/db/schema/run-model-catalog";
 import { and, count, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
@@ -39,82 +37,6 @@ export async function stagePreAddabilityModelPolicyFixture(args: {
   if (inserted.length !== 1) {
     throw new Error("Expected one pre-addability model policy to be inserted");
   }
-}
-
-/** Enable one seeded catalog model in the test database. */
-export async function enableRunModelCatalogEntryFixture(
-  model: SupportedRunModel,
-): Promise<() => Promise<void>> {
-  const [existing] = await db()
-    .select({ allowNewOrgPolicy: runModelCatalog.allowNewOrgPolicy })
-    .from(runModelCatalog)
-    .where(eq(runModelCatalog.model, model))
-    .limit(1);
-  if (!existing) {
-    throw new Error(`Expected run model catalog entry for ${model}`);
-  }
-  await db()
-    .update(runModelCatalog)
-    .set({ allowNewOrgPolicy: true })
-    .where(eq(runModelCatalog.model, model));
-  return async () => {
-    await db()
-      .update(runModelCatalog)
-      .set({ allowNewOrgPolicy: existing.allowNewOrgPolicy })
-      .where(eq(runModelCatalog.model, model));
-  };
-}
-
-/**
- * Remove one operator catalog row, with its routes, to exercise the
- * production fail-closed path.
- */
-export async function removeRunModelCatalogEntryFixture(
-  model: SupportedRunModel,
-): Promise<() => Promise<void>> {
-  const { removed, removedRoutes } = await db().transaction(async (tx) => {
-    const routes = await tx
-      .delete(modelRoutes)
-      .where(eq(modelRoutes.model, model))
-      .returning();
-    const [row] = await tx
-      .delete(runModelCatalog)
-      .where(eq(runModelCatalog.model, model))
-      .returning({
-        model: runModelCatalog.model,
-        displayName: runModelCatalog.displayName,
-        sortOrder: runModelCatalog.sortOrder,
-        isSystemDefault: runModelCatalog.isSystemDefault,
-        replacedBy: runModelCatalog.replacedBy,
-        allowNewOrgPolicy: runModelCatalog.allowNewOrgPolicy,
-        createdAt: runModelCatalog.createdAt,
-        updatedAt: runModelCatalog.updatedAt,
-      });
-    return { removed: row, removedRoutes: routes };
-  });
-  if (!removed) {
-    throw new Error(`Expected run model catalog entry for ${model}`);
-  }
-
-  let restored = false;
-  return async () => {
-    if (restored) {
-      return;
-    }
-    await db().transaction(async (tx) => {
-      await tx
-        .insert(runModelCatalog)
-        .values(removed)
-        .onConflictDoNothing({ target: runModelCatalog.model });
-      if (removedRoutes.length > 0) {
-        await tx
-          .insert(modelRoutes)
-          .values(removedRoutes)
-          .onConflictDoNothing({ target: modelRoutes.id });
-      }
-    });
-    restored = true;
-  };
 }
 
 /**

@@ -11,7 +11,6 @@ import {
   type DiscordComponentInteraction,
 } from "@okouai/api-contracts/contracts/discord-interactions";
 import { integrationsDiscordContract } from "@okouai/api-contracts/contracts/integrations-discord";
-import { ORG_DEFAULT_RUN_MODEL } from "@okouai/api-contracts/contracts/model-providers";
 import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
 import { modelProvidersMainContract } from "@okouai/api-contracts/contracts/model-provider-routes";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
@@ -49,6 +48,7 @@ import {
   deleteFeatureSwitchesForUser,
   updateFeatureSwitchesForUser,
 } from "./helpers/feature-switches";
+import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 
 const context = testContext();
 const accountApi = createAuthOrgAgentsBddApi(context);
@@ -465,7 +465,7 @@ async function configureModelPreferences(scope: Pick<Fixture, "owner">) {
   );
   const initial = await accept(policies.list({ headers }), [200]);
   const autoPolicy = {
-    model: ORG_DEFAULT_RUN_MODEL,
+    model: SEEDED_SYSTEM_DEFAULT_MODEL,
     defaultProviderType: "built-in" as const,
     credentialScope: "org" as const,
     modelProviderId: null,
@@ -703,7 +703,7 @@ describe("Discord account preferences through private controls", () => {
     // The thread's removed model resolves to the fixed org default.
     expect(
       preselected(await discord.send(commandPayload(sender, "model"))),
-    ).toStrictEqual([ORG_DEFAULT_RUN_MODEL]);
+    ).toStrictEqual([SEEDED_SYSTEM_DEFAULT_MODEL]);
     const after = await accept(preference.get({ headers }), [200]);
     expect(after.body.selectedModel).toBeNull();
   });

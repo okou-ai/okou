@@ -2,7 +2,12 @@ import { onTestFinished } from "vitest";
 import { modelCatalogContract } from "@okouai/api-contracts/contracts/model-catalog";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { clearModelCatalogSystemDefaultFixture } from "../../../test-fixtures/model-catalog";
+import {
+  clearModelCatalogSystemDefaultFixture,
+  setModelCatalogSystemDefaultFixture,
+} from "../../../test-fixtures/model-catalog";
+import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
+import { modelPoliciesRoutes } from "../model-policies";
 import { createRouteMocks } from "./helpers/route-test";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { modelCatalogRoutes } from "../model-catalog";
@@ -25,6 +30,14 @@ function signIn(): void {
   mocks.clerk.session(actor.userId, actor.orgId, "org:member");
 }
 
+function policiesApi() {
+  return setupApp({ context, routes: modelPoliciesRoutes })(
+    modelPoliciesMainContract,
+  );
+}
+
+// Tests that mutate the global catalog row live only in this file (its tests
+// run sequentially) and restore the row in the same test.
 describe("GET /api/model-catalog", () => {
   it("returns the global catalog with replacements resolved", async () => {
     signIn();
@@ -152,6 +165,33 @@ describe("GET /api/model-catalog", () => {
     });
 
     expect(response.status).toBe(500);
+  });
+
+  it("changes every organization's default when the database default changes", async () => {
+    signIn();
+    const restore = await setModelCatalogSystemDefaultFixture("gpt-6-luna");
+    onTestFinished(restore);
+
+    const catalog = await accept(
+      apiClient().get({ headers: { authorization: "Bearer clerk-session" } }),
+      [200],
+    );
+    expect(catalog.body.systemDefaultModel).toBe("gpt-6-luna");
+
+    const policies = (
+      await accept(
+        policiesApi().list({
+          headers: { authorization: "Bearer clerk-session" },
+        }),
+        [200],
+      )
+    ).body;
+    expect(policies.workspaceDefaultModel).toBe("gpt-6-luna");
+    expect(
+      policies.policies.map((policy) => {
+        return [policy.model, policy.isDefault];
+      }),
+    ).toStrictEqual([["gpt-6-luna", true]]);
   });
 
   it("requires an authenticated organization session", async () => {

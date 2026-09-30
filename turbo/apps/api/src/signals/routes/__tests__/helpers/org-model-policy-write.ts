@@ -1,6 +1,5 @@
 import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
 import {
-  ORG_DEFAULT_RUN_MODEL,
   type SupportedRunModel,
   type UpdateOrgModelPolicy,
 } from "@okouai/api-contracts/contracts/model-providers";
@@ -10,6 +9,7 @@ import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
 import { modelPoliciesRoutes } from "../../model-policies";
 import { updateFeatureSwitchesForUser } from "./feature-switches";
+import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./seeded-system-default";
 
 /**
  * A policy for the test helpers' wholesale policy replacement. The org default
@@ -41,7 +41,7 @@ export function orgModelPolicyWrite(policies: readonly TestOrgModelPolicy[]): {
     };
   });
   const hasOrgDefault = request.some((policy) => {
-    return policy.model === ORG_DEFAULT_RUN_MODEL;
+    return policy.model === SEEDED_SYSTEM_DEFAULT_MODEL;
   });
   const preferred = policies.find((policy) => {
     return policy.preferred === true;
@@ -51,7 +51,7 @@ export function orgModelPolicyWrite(policies: readonly TestOrgModelPolicy[]): {
       ? request
       : [
           {
-            model: ORG_DEFAULT_RUN_MODEL,
+            model: SEEDED_SYSTEM_DEFAULT_MODEL,
             defaultProviderType: "built-in",
             credentialScope: "org",
             modelProviderId: null,

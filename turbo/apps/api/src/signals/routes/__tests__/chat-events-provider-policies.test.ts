@@ -1,6 +1,5 @@
 import { assertPiLangfuseRelayContract } from "./helpers/pi-langfuse-relay";
 import { randomUUID } from "node:crypto";
-import { ORG_DEFAULT_RUN_MODEL } from "@okouai/api-contracts/contracts/model-providers";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
@@ -45,6 +44,7 @@ import {
   userMessages,
   modelProviderSecretPlaceholder,
 } from "./helpers/chat-events-fixture";
+import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 
 const context = testContext({ connectorCatalog: true });
 const {
@@ -452,7 +452,7 @@ describe("CHAT-02: model-first provider policies", () => {
   it("routes from the authoritative policies seeded by the same send", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
-    await seedBuiltInModelKey(ORG_DEFAULT_RUN_MODEL);
+    await seedBuiltInModelKey(SEEDED_SYSTEM_DEFAULT_MODEL);
     await stageUnrepairedOrgModelPolicyFixture({
       orgId: requireOrgId(actor),
       state: "unseeded",
@@ -466,12 +466,12 @@ describe("CHAT-02: model-first provider policies", () => {
     await expect(
       chat.readThreadMetadata(actor, run.threadId),
     ).resolves.toMatchObject({
-      selectedModel: ORG_DEFAULT_RUN_MODEL,
+      selectedModel: SEEDED_SYSTEM_DEFAULT_MODEL,
     });
     const { claim } = await claimChatRun(runnerGroup, run.runId);
     expect(claim.cliAgentType).toBe("pi");
     expect(claim.piModelConfig).toMatchObject({
-      catalogModel: ORG_DEFAULT_RUN_MODEL,
+      catalogModel: SEEDED_SYSTEM_DEFAULT_MODEL,
     });
     await cancelChatRun(actor, run.runId);
   }, 90_000);
@@ -1011,7 +1011,7 @@ describe("CHAT-02: model-first provider policies", () => {
     await completeChatRunOk(first.runId, firstClaim.sandboxHeaders);
     await flushWaitUntilForTest();
 
-    await seedBuiltInModelKey(ORG_DEFAULT_RUN_MODEL);
+    await seedBuiltInModelKey(SEEDED_SYSTEM_DEFAULT_MODEL);
     await seedBuiltInModelKey("gpt-6-astra");
     // The member preference does not replace an unavailable thread model.
     await api.updateOrgModelPolicies(actor, [
@@ -1031,7 +1031,9 @@ describe("CHAT-02: model-first provider policies", () => {
       prompt: "continue through the fixed default",
     });
     const fallbackClaim = await claimChatRun(runnerGroup, fallback.runId);
-    expect(fallbackClaim.claim.modelUsageProvider).toBe(ORG_DEFAULT_RUN_MODEL);
+    expect(fallbackClaim.claim.modelUsageProvider).toBe(
+      SEEDED_SYSTEM_DEFAULT_MODEL,
+    );
     await expect(
       chat.readThreadMetadata(actor, first.threadId),
     ).resolves.toMatchObject({

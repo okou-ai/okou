@@ -9,10 +9,15 @@ import type { ModelCatalog } from "../../../../signals/external/model-catalog.ts
 /** Display price tiers; which tier a model has comes from the catalog. */
 export type ModelPriceTier = "$" | "$$" | "$$$" | "$$$$";
 
-const MODEL_PRICE_TIERS: readonly string[] = ["$", "$$", "$$$", "$$$$"];
+const MODEL_PRICE_TIERS: ReadonlySet<string> = new Set([
+  "$",
+  "$$",
+  "$$$",
+  "$$$$",
+]);
 
 function isModelPriceTier(value: string | null): value is ModelPriceTier {
-  return value !== null && MODEL_PRICE_TIERS.includes(value);
+  return value !== null && MODEL_PRICE_TIERS.has(value);
 }
 
 /** The catalog's Built-in display price tier of a model, if it has one. */

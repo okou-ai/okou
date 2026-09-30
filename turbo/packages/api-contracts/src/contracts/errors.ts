@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { formatRunBalanceError } from "./run-balance-errors";
 import {
-  getCanonicalModelDisplayName,
   normalizeRunModelId,
   type ModelProviderCredentialScope,
   type ModelProviderType,
@@ -420,7 +419,7 @@ function formatClaudeProviderOverloadedMessage(
 ): string {
   const trimmedModel = selectedModel?.trim();
   const modelLabel = trimmedModel
-    ? getCanonicalModelDisplayName(normalizeRunModelId(trimmedModel))
+    ? normalizeRunModelId(trimmedModel)
     : CLAUDE_PROVIDER_OVERLOADED_FALLBACK_MODEL;
   return `${modelLabel} ${CLAUDE_PROVIDER_OVERLOADED_GUIDANCE}`;
 }

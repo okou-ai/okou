@@ -265,11 +265,23 @@ Production may hold `gpt-5.6-terra`, `okou-1.0-pro` and `okou-1.0-max`
 per row whether to add routes or retire it into an approved replacement
 before `allow_new_org_policy` is dropped.
 
-1297 deliberately does not rewrite chat thread selections
-(`chat_threads.selected_model`, `model_settings`, provider pin) yet: a
-thread rewrite must also append `model_selection_updated` events to
-`chat_thread_events` with reserved sequence ranges, as 1213 did. Until then
-the API resolves them along the chain on read.
+1297 rewrites chat thread selections (`chat_threads.selected_model` and
+`model_settings`) and appends one `model_selection_updated` event per
+re-pinned thread with an agent, reserving one contiguous `seq_id` range per
+`(user_id, org_id)` stream as 1213 did. The event carries a
+`model_settings_patch` only when an effort is copied. Legacy provider pins
+(`model_provider_type`, or the type of `model_provider_id`) are never
+transplanted or cleared: a thread whose pin type has no enabled route on the
+replacement keeps its retired model and pin, so the API resolves it along the
+chain and rejects the route explicitly instead of silently re-routing it to
+the organization policy or Built-in billing. Compatible pins stay as stored.
+The effort domain is the replacement's route for the pin type (Built-in when
+unpinned); an unsupported effort becomes that route's `default_effort`. The
+chat thread rewrite is one scan of `chat_threads` in the migration
+transaction, like 1213. Only rows still selecting a retired model are
+written, so re-running appends nothing. If production counts of such threads
+are large, split the thread rewrite into a batched non-transactional
+migration (see 1286) before release.
 
 ## Migration patterns
 

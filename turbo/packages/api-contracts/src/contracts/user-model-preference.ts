@@ -2,7 +2,7 @@ import { z } from "zod";
 import { initContract, authHeadersSchema } from "./base";
 import { apiErrorSchema } from "./errors";
 import { imageModelIdSchema } from "./image-models";
-import { supportedRunModelSchema } from "./model-providers";
+import { runModelIdSchema } from "./model-providers";
 import { chatThreadServiceTierSchema } from "./chat-threads";
 import {
   modelSettingsPatchSchema,
@@ -12,7 +12,7 @@ import {
 const c = initContract();
 
 export const userModelPreferenceResponseSchema = z.object({
-  selectedModel: supportedRunModelSchema.nullable(),
+  selectedModel: runModelIdSchema.nullable(),
   serviceTier: chatThreadServiceTierSchema.nullable(),
   modelSettings: modelSettingsSchema.default({}),
   selectedImageModel: imageModelIdSchema.nullable(),
@@ -24,7 +24,7 @@ export type UserModelPreferenceResponse = z.infer<
 >;
 
 export const updateUserModelPreferenceRequestSchema = z.object({
-  selectedModel: supportedRunModelSchema.nullable(),
+  selectedModel: runModelIdSchema.nullable(),
   serviceTier: chatThreadServiceTierSchema.nullable(),
   /** Patch only the named model; omitted preserves every stored model setting. */
   modelSettingsPatch: modelSettingsPatchSchema.optional(),

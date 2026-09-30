@@ -1,13 +1,14 @@
 import {
+  MOCK_SYSTEM_DEFAULT_MODEL,
+  mockCatalogDisplayName,
+} from "../../../mocks/handlers/api-model-catalog.ts";
+import {
   findModelMenuOption,
   queryModelMenuOption,
 } from "./chat-model-menu-test-helpers.ts";
-import {
-  getCanonicalModelDisplayName,
-  ORG_DEFAULT_RUN_MODEL,
-  type ModelProviderType,
-  type OrgModelPolicy,
-  type SupportedRunModel,
+import type {
+  ModelProviderType,
+  OrgModelPolicy,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen } from "@testing-library/react";
@@ -32,7 +33,7 @@ interface PolicyOptions {
 }
 
 function modelPolicy(
-  model: SupportedRunModel,
+  model: string,
   index: number,
   options: PolicyOptions = {},
 ): OrgModelPolicy {
@@ -41,8 +42,8 @@ function modelPolicy(
   return {
     id: `e3000000-0000-4000-a000-${String(index).padStart(12, "0")}`,
     model,
-    modelLabel: getCanonicalModelDisplayName(model),
-    isDefault: model === ORG_DEFAULT_RUN_MODEL,
+    modelLabel: mockCatalogDisplayName(model),
+    isDefault: model === MOCK_SYSTEM_DEFAULT_MODEL,
     defaultProviderType: providerType,
     credentialScope,
     modelProviderId:
@@ -57,16 +58,16 @@ function modelPolicy(
   };
 }
 
-function configurePolicies(models: readonly SupportedRunModel[]): void {
+function configurePolicies(models: readonly string[]): void {
   context.mocks.data.orgModelPolicies(
-    [...models, ORG_DEFAULT_RUN_MODEL].map((model, index) => {
+    [...models, MOCK_SYSTEM_DEFAULT_MODEL].map((model, index) => {
       return modelPolicy(model, index + 1);
     }),
   );
 }
 
 function preference(
-  selectedModel: SupportedRunModel,
+  selectedModel: string,
   serviceTier: "priority" | null = null,
 ): void {
   context.mocks.data.userModelPreference({

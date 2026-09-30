@@ -8773,6 +8773,14 @@ function ComposerModelScopeCard({
   );
 }
 
+function runServiceTier(
+  selection: ModelProviderSelection | null | undefined,
+): "priority" | "ultrafast" | null {
+  return selection?.codexServiceTier === "fast"
+    ? "priority"
+    : (selection?.codexServiceTier ?? null);
+}
+
 function ComposerTemporaryModelNotice({
   signals,
 }: {
@@ -8792,14 +8800,8 @@ function ComposerTemporaryModelNotice({
     policies,
     catalog,
   });
-  const selectionServiceTier =
-    selection?.codexServiceTier === "fast"
-      ? "priority"
-      : (selection?.codexServiceTier ?? null);
-  const defaultServiceTier =
-    defaultSelection?.codexServiceTier === "fast"
-      ? "priority"
-      : (defaultSelection?.codexServiceTier ?? null);
+  const selectionServiceTier = runServiceTier(selection);
+  const defaultServiceTier = runServiceTier(defaultSelection);
   const modelChanged =
     selection?.selectedModel !== defaultSelection?.selectedModel;
   const serviceTierChanged = selectionServiceTier !== defaultServiceTier;
@@ -8811,7 +8813,6 @@ function ComposerTemporaryModelNotice({
   if (
     !selection ||
     !defaultSelection ||
-    catalog === undefined ||
     userPreference === undefined ||
     policies === undefined ||
     (!modelChanged && !serviceTierChanged && !effortChanged)
@@ -8819,7 +8820,8 @@ function ComposerTemporaryModelNotice({
     return withChatScrollLayout(null);
   }
   const updating = updateLoadable.state === "loading";
-  const modelName = catalog.displayName(selection.selectedModel);
+  const modelName =
+    catalog?.displayName(selection.selectedModel) ?? selection.selectedModel;
   const runSpeedLabel = t(($) => {
     return selectionServiceTier === "priority"
       ? $.settings.models.picker.fast

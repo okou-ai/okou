@@ -45,7 +45,6 @@ import {
 } from "@okouai/api-contracts/contracts/artifact-catalog";
 import type { ApiErrorResponse } from "@okouai/api-contracts/contracts/errors";
 import {
-  ORG_DEFAULT_RUN_MODEL,
   type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
@@ -102,6 +101,7 @@ import {
   readProjectedChatEvents,
 } from "./chat-event-test-reader";
 import { createRouteMocks } from "./route-test";
+import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./seeded-system-default";
 
 interface AuthHeaders {
   readonly authorization?: string;
@@ -350,7 +350,7 @@ export function createChatFilesBddApi(context: TestContext) {
     actor: ApiTestUser | null,
   ): Promise<SupportedRunModel> {
     if (!actor?.orgId) {
-      return ORG_DEFAULT_RUN_MODEL;
+      return SEEDED_SYSTEM_DEFAULT_MODEL;
     }
     const policies = await accept(
       modelPoliciesClient().list({ headers: authenticate(context, actor) }),
@@ -368,7 +368,7 @@ export function createChatFilesBddApi(context: TestContext) {
         return policy.model === preferred;
       })
       ? preferred
-      : ORG_DEFAULT_RUN_MODEL;
+      : SEEDED_SYSTEM_DEFAULT_MODEL;
   }
 
   function threadByIdClient() {

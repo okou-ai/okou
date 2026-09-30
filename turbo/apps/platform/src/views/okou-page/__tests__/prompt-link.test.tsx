@@ -1,7 +1,7 @@
+import { MOCK_SYSTEM_DEFAULT_MODEL } from "../../../mocks/handlers/api-model-catalog.ts";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
-import { ORG_DEFAULT_RUN_MODEL } from "@okouai/api-contracts/contracts/model-providers";
 import {
   chatEventsContract,
   chatThreadsContract,
@@ -220,10 +220,10 @@ test("A prompt link starts a presentation chat with its selected template", asyn
       },
     },
   });
-  expect(capture.createdThreads[0]?.model).toBe(ORG_DEFAULT_RUN_MODEL);
+  expect(capture.createdThreads[0]?.model).toBe(MOCK_SYSTEM_DEFAULT_MODEL);
   expect(userMessageParts(send)).toContainEqual({
     type: "model",
-    selectedModel: ORG_DEFAULT_RUN_MODEL,
+    selectedModel: MOCK_SYSTEM_DEFAULT_MODEL,
   });
 });
 

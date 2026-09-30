@@ -11,7 +11,6 @@ import { describe, expect, it, beforeEach } from "vitest";
 
 import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
 import { GET_STARTED_REWARDS_CHANGED_EVENT } from "@okouai/api-contracts/contracts/get-started";
-import { ORG_DEFAULT_RUN_MODEL } from "@okouai/api-contracts/contracts/model-providers";
 
 import { testContext } from "../../../__tests__/test-context";
 import { mockEnv } from "../../../lib/env";
@@ -53,6 +52,7 @@ import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { readGetStartedStatus } from "./helpers/get-started";
+import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 
 const context = testContext();
 interface LinkedAgentPhoneActor {
@@ -1293,7 +1293,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     ).resolves.toMatchObject({
       selectedModel: "gpt-6-astra",
     });
-    await seedBuiltInModelCandidateKeys(context, ORG_DEFAULT_RUN_MODEL);
+    await seedBuiltInModelCandidateKeys(context, SEEDED_SYSTEM_DEFAULT_MODEL);
     await send("use the fixed organization default");
     await runs.heartbeatRunner(runnerGroup);
     let runId: string | undefined;
@@ -1306,9 +1306,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     if (!runId) {
       throw new Error("Expected an AgentPhone run to be dispatched");
     }
-    expect((await runs.readRun(actor, runId)).source.model).toBe(
-      ORG_DEFAULT_RUN_MODEL,
-    );
+    expect((await runs.readRun(actor, runId)).source.model).toBe();
     const metadata = await createChatFilesBddApi(context).readThreadMetadata(
       actor,
       preferred.threadId,

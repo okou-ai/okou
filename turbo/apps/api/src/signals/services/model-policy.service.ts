@@ -223,9 +223,13 @@ function providerTypeForSurface(protocol: string): ModelProviderType | null {
 
 function surfaceSupportsModel(
   surface: SurfaceRouteInfo,
-  model: SupportedRunModel,
+  model: string,
 ): boolean {
-  if (model === "claude-sonnet-5-5" || model === "gpt-6.1-sol") {
+  if (
+    !isSupportedRunModel(model) ||
+    model === "claude-sonnet-5-5" ||
+    model === "gpt-6.1-sol"
+  ) {
     return false;
   }
   const providerType = providerTypeForSurface(surface.protocol);

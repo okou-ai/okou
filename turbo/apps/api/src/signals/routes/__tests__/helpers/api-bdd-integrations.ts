@@ -35,7 +35,6 @@ import {
   type GithubOauthInstallQuery,
 } from "@okouai/api-contracts/contracts/github-oauth";
 import {
-  ORG_DEFAULT_RUN_MODEL,
   type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { testSlackStateContract } from "@okouai/api-contracts/contracts/test-slack-state";
@@ -92,6 +91,7 @@ import { slackInteractiveRoutes } from "../../slack-interactive";
 import { slackOauthRoutes } from "../../slack-oauth";
 import { userModelPreferenceRoutes } from "../../user-model-preference";
 import { ensureCustomModelModeForTest } from "./org-model-policy-write";
+import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./seeded-system-default";
 
 const TEST_APP_ROUTES = Object.freeze([
   ...githubOauthRoutes,
@@ -1297,7 +1297,7 @@ export function createBddIntegrationApi(context: TestContext) {
             revision: snapshot.body.revision,
             policies: [
               {
-                model: ORG_DEFAULT_RUN_MODEL,
+                model: SEEDED_SYSTEM_DEFAULT_MODEL,
                 defaultProviderType: "built-in",
                 credentialScope: "org",
                 modelProviderId: null,

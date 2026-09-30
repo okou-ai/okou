@@ -10,10 +10,7 @@ import {
   type UserMessageInputDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { cronProjectChatEventSearchContract } from "@okouai/api-contracts/contracts/cron";
-import {
-  ORG_DEFAULT_RUN_MODEL,
-  type SupportedRunModel,
-} from "@okouai/api-contracts/contracts/model-providers";
+import { type SupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import { CANCELLATION_RECOVERY_STALE_AFTER_MS } from "@okouai/api-contracts/contracts/runners";
 import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
 import { testChatThreadSnapshotCompactionContract } from "@okouai/api-contracts/contracts/test-chat-thread-snapshot-compaction";
@@ -95,6 +92,7 @@ import {
   insertUsageEvent$,
   materializeHourlyUsage$,
 } from "./helpers/usage-state";
+import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 
 const TEST_APP_ROUTES = Object.freeze([
   ...cronProjectChatEventSearchRoutes,
@@ -3586,7 +3584,7 @@ describe("CHAT-03 run usage events", () => {
 
   it("emits complete allowance-covered usage in one event", async () => {
     const fixture = await seedBuiltInDefaultModelKey(context);
-    const selectedModel = ORG_DEFAULT_RUN_MODEL;
+    const selectedModel = SEEDED_SYSTEM_DEFAULT_MODEL;
     expect(fixture.selectedModel).toBe(selectedModel);
 
     const { actor, agentId } = await entitledChatActorWithoutRunner(

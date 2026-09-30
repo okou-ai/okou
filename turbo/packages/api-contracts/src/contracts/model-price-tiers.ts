@@ -1,13 +1,7 @@
-/**
- * Canonical built-in run models and credit price tiers.
- *
- * Keep this module lightweight so public UI surfaces can read price tier data
- * without importing the full model provider contract schema.
- */
-// Ordered by model family (Okou → claude → gpt → deepseek), and within each family
-// from newest/highest capability to oldest/lowest. This order is load-bearing:
-// it drives the model dropdown and all model-related UI via sortRowsByCatalog.
-// Recognized wire and historical IDs. Use ACTIVE_RUN_MODELS for model selection.
+/** Run model IDs known to the runtime, and the display price tier type. */
+// Model IDs this code has runtime knowledge of (protocol adapters, run
+// options, long-context billing). Names, order, availability, replacement and
+// display price tiers come from the global model catalog.
 export const SUPPORTED_RUN_MODELS = [
   "okou-1.0",
   "claude-fable-5-1",
@@ -33,36 +27,6 @@ export const SUPPORTED_RUN_MODELS = [
 export type SupportedRunModel = (typeof SUPPORTED_RUN_MODELS)[number];
 
 export type ModelPriceTier = "$" | "$$" | "$$$" | "$$$$";
-
-/**
- * User-facing credit cost tier for Built-in model offerings. Only applies to
- * the `built-in` provider type; BYOK providers pay the vendor directly and do not
- * carry a platform tier.
- */
-export const BUILT_IN_MODEL_PRICE_TIER = Object.freeze<
-  Record<SupportedRunModel, ModelPriceTier>
->({
-  "okou-1.0": "$",
-  "claude-fable-5-1": "$$$$",
-  "claude-fable-5": "$$$$",
-  "claude-opus-5-5": "$$$",
-  "claude-opus-5": "$$$",
-  "gpt-6-astra": "$$$$",
-  "gpt-6.1-sol": "$$$",
-  "gpt-6-sol": "$$$",
-  "gpt-6-luna": "$",
-  "gpt-5.6-sol": "$$$",
-  "gpt-5.6-luna": "$",
-  "gpt-5.5": "$$$",
-  "claude-opus-4-8": "$$$",
-  "claude-sonnet-5-5": "$$",
-  "claude-sonnet-5": "$$",
-  "claude-sonnet-4-6": "$$",
-  "deepseek-v4.1-flash": "$",
-  "deepseek-v4-flash": "$",
-  // Display tier only. Runtime token pricing is seeded separately.
-  "deepseek-v4-pro": "$",
-});
 
 /**
  * Inclusive total-input boundary for built-in model long-context pricing.

@@ -1,4 +1,3 @@
-import { ORG_DEFAULT_RUN_MODEL } from "@okouai/api-contracts/contracts/model-providers";
 import { readFileSync } from "node:fs";
 import { oomEvidenceSchema } from "@okouai/api-contracts/contracts/oom-evidence";
 import { createHash, randomUUID } from "node:crypto";
@@ -65,6 +64,7 @@ import {
   readThreadConnectorSelectionState,
   seedCustomThreadConnectorSelection,
 } from "./helpers/connector-credential-storage-state";
+import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 
 const context = testContext({
   connectorCatalog: true,
@@ -794,7 +794,7 @@ describe("WHCB-01: third-party webhook verification boundaries", () => {
       policies.policies.map((policy) => {
         return policy.model;
       }),
-    ).toStrictEqual([ORG_DEFAULT_RUN_MODEL]);
+    ).toStrictEqual([SEEDED_SYSTEM_DEFAULT_MODEL]);
   });
 
   it("keeps Clerk membership creation from duplicating bootstrap state", async () => {

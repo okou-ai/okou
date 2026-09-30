@@ -18,7 +18,6 @@ import type {
   ModelProviderResponse,
   ModelProviderType,
   OrgModelPolicy,
-  SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 import { screen, waitFor, within } from "@testing-library/react";
@@ -59,7 +58,7 @@ type PersonalProviderType = Extract<
 
 function policy(args: {
   readonly isDefault?: boolean;
-  readonly model: SupportedRunModel;
+  readonly model: string;
   readonly modelLabel: string;
   readonly providerType: PersonalProviderType;
   readonly modelProviderId: string | null;
@@ -81,7 +80,7 @@ function policy(args: {
 }
 
 function builtInPolicy(
-  model: SupportedRunModel,
+  model: string,
   modelLabel: string,
   isDefault: boolean,
 ): OrgModelPolicy {
@@ -129,7 +128,7 @@ function billingStatus(args: {
 }
 
 function configurePersonalRoute(args: {
-  readonly model: SupportedRunModel;
+  readonly model: string;
   readonly modelLabel: string;
   readonly providerType: PersonalProviderType;
   readonly modelProviderId?: string | null;

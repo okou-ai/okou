@@ -49,7 +49,6 @@ import {
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { readAgentRunCallbacks$ } from "./helpers/agent-run-callback";
-import { ORG_DEFAULT_RUN_MODEL } from "@okouai/api-contracts/contracts/model-providers";
 import {
   readRunLaunchSnapshotFixture,
   readThreadSessionBinding,
@@ -57,6 +56,7 @@ import {
 } from "./helpers/runtime-state";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { readConnectorOAuthAccountMutation } from "./helpers/connector-credential-storage-state";
+import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 
 /*
 helper gap:
@@ -4315,7 +4315,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
 
     await chat.updateThreadModelSelection(actor, chatThreadId, null);
     await integrations.updateUserModelPreference(actor, "gpt-6-astra");
-    await seedBuiltInModelCandidateKeys(context, ORG_DEFAULT_RUN_MODEL);
+    await seedBuiltInModelCandidateKeys(context, SEEDED_SYSTEM_DEFAULT_MODEL);
     expect(
       (await chat.readThreadMetadata(actor, chatThreadId)).selectedModel,
     ).toBeNull();
@@ -4331,9 +4331,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     // An existing thread without a pin uses the fixed org default, not the
     // member preference.
     const resolvedRunId = await pollSlackRun(runnerGroup);
-    expect((await runs.readRun(actor, resolvedRunId)).source.model).toBe(
-      ORG_DEFAULT_RUN_MODEL,
-    );
+    expect((await runs.readRun(actor, resolvedRunId)).source.model).toBe();
     expect(
       (await chat.readThreadMetadata(actor, chatThreadId)).selectedModel,
     ).toBeNull();
@@ -4611,7 +4609,10 @@ describe("INT-01: Slack app deep webhook flows", () => {
     );
     expect(context.mocks.slack.views.open).not.toHaveBeenCalled();
 
-    await integrations.updateUserModelPreference(actor, ORG_DEFAULT_RUN_MODEL);
+    await integrations.updateUserModelPreference(
+      actor,
+      SEEDED_SYSTEM_DEFAULT_MODEL,
+    );
     const modelResponse = await integrations.postSlackCommand({
       teamId,
       userId: slackUserId,

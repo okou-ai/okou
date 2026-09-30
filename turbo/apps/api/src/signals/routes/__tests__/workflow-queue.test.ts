@@ -1,4 +1,3 @@
-import { ORG_DEFAULT_RUN_MODEL } from "@okouai/api-contracts/contracts/model-providers";
 import { createHash, randomUUID } from "node:crypto";
 
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
@@ -46,6 +45,7 @@ import { createRouteMocks } from "./helpers/route-test";
 import { readThreadSessionBinding } from "./helpers/runtime-state";
 import { refreshConcurrencyEntitlement } from "./helpers/stripe-billing-webhook";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
+import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 
 const TEST_APP_ROUTES = Object.freeze([
   ...testWorkflowAutomationExecutionRoutes,
@@ -1392,7 +1392,7 @@ describe("workflow queue", () => {
     // so neither the preferred model nor the default has a usable route.
     await setOrgModelPolicyProviderTypeFixture({
       orgId: scenario.orgId,
-      model: ORG_DEFAULT_RUN_MODEL,
+      model: SEEDED_SYSTEM_DEFAULT_MODEL,
       defaultProviderType: "anthropic-api-key",
     });
 

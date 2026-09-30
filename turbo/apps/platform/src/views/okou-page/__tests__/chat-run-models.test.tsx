@@ -1,13 +1,14 @@
 import {
+  MOCK_SYSTEM_DEFAULT_MODEL,
+  mockCatalogDisplayName,
+} from "../../../mocks/handlers/api-model-catalog.ts";
+import {
   billingStatusContract,
   type BillingStatusResponse,
 } from "@okouai/api-contracts/contracts/billing";
-import {
-  getCanonicalModelDisplayName,
-  ORG_DEFAULT_RUN_MODEL,
-  type ModelProviderResponse,
-  type OrgModelPolicy,
-  type SupportedRunModel,
+import type {
+  ModelProviderResponse,
+  OrgModelPolicy,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { CHAT_RUN_EXECUTION_TIMEOUT_MESSAGE } from "@okouai/api-contracts/contracts/errors";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -45,9 +46,7 @@ const RUN_C = "a0000000-0000-4000-a000-000000000303";
 const RUN_D = "a0000000-0000-4000-a000-000000000304";
 const PROVIDER_ID = "e0000000-0000-4000-a000-000000000301";
 
-function configureCodexSubscriptionPolicies(
-  models: readonly SupportedRunModel[],
-): void {
+function configureCodexSubscriptionPolicies(models: readonly string[]): void {
   configureModelPolicies(models, {
     credentialScope: "member",
     defaultProviderType: "codex-oauth-token",
@@ -81,7 +80,7 @@ function recoveryCard(): Promise<HTMLElement> {
 }
 
 function configureModelPolicies(
-  models: readonly SupportedRunModel[],
+  models: readonly string[],
   options: {
     readonly credentialScope?: "member" | "org";
     readonly defaultProviderType?: "built-in" | "codex-oauth-token";
@@ -93,8 +92,8 @@ function configureModelPolicies(
     return {
       id: `e0000000-0000-4000-a000-${String(index + 1).padStart(12, "0")}`,
       model,
-      modelLabel: getCanonicalModelDisplayName(model),
-      isDefault: model === ORG_DEFAULT_RUN_MODEL,
+      modelLabel: mockCatalogDisplayName(model),
+      isDefault: model === MOCK_SYSTEM_DEFAULT_MODEL,
       defaultProviderType: options.defaultProviderType ?? "built-in",
       credentialScope: options.credentialScope ?? "org",
       modelProviderId: options.modelProviderId ?? null,
@@ -133,7 +132,7 @@ function limitedFreeBillingStatus(): BillingStatusResponse {
 
 function failedRunEvents(
   error: string,
-  model: SupportedRunModel,
+  model: string,
   failureReason?: MockChatEventInput["failureReason"],
 ): MockChatEventInput[] {
   return [

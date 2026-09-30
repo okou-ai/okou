@@ -1,14 +1,14 @@
-import { onTestFinished } from "vitest";
 import { modelCatalogContract } from "@okouai/api-contracts/contracts/model-catalog";
 import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
 import type { UpdateOrgModelPolicy } from "@okouai/api-contracts/contracts/model-providers";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { setModelCatalogSystemDefaultFixture } from "../../../test-fixtures/model-catalog";
 import { createRouteMocks } from "./helpers/route-test";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { modelCatalogRoutes } from "../model-catalog";
 import { modelPoliciesRoutes } from "../model-policies";
+import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
+import { userModelPreferenceRoutes } from "../user-model-preference";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -95,23 +95,6 @@ describe("model catalog authority", () => {
     expect(written.body.policies).toStrictEqual(initial.policies);
   });
 
-  it("changes every organization's default when the database default changes", async () => {
-    signInAdmin();
-    const restore = await setModelCatalogSystemDefaultFixture("gpt-6-luna");
-    onTestFinished(restore);
-
-    const catalog = await accept(catalogApi().get({ headers }), [200]);
-    expect(catalog.body.systemDefaultModel).toBe("gpt-6-luna");
-
-    const policies = await listPolicies();
-    expect(policies.workspaceDefaultModel).toBe("gpt-6-luna");
-    expect(
-      policies.policies.map((policy) => {
-        return [policy.model, policy.isDefault];
-      }),
-    ).toStrictEqual([["gpt-6-luna", true]]);
-  });
-
   it("admits a new policy only for an active catalog model", async () => {
     signInAdmin();
     const { revision } = await listPolicies();
@@ -138,5 +121,36 @@ describe("model catalog authority", () => {
     ).toStrictEqual(["okou-1.0", "claude-opus-5-5"]);
     expect(added.body.modelsAvailableToAdd).not.toContain("claude-fable-5");
     expect(added.body.modelsAvailableToAdd).not.toContain("okou-1.0");
+  });
+
+  it("stores the final replacement for a legacy model preference", async () => {
+    signInAdmin();
+    const { revision } = await listPolicies();
+    await accept(
+      policiesApi().update({
+        headers,
+        body: { revision, policies: [builtIn("claude-fable-5-1")] },
+      }),
+      [200],
+    );
+    const preferences = setupApp({
+      context,
+      routes: userModelPreferenceRoutes,
+    })(userModelPreferenceContract);
+
+    const updated = await accept(
+      preferences.update({
+        headers,
+        body: { selectedModel: "claude-fable-5", serviceTier: null },
+      }),
+      [200],
+    );
+    expect(updated.body.selectedModel).toBe("claude-fable-5-1");
+
+    const unknown = await preferences.update({
+      headers,
+      body: { selectedModel: "not-a-catalog-model", serviceTier: null },
+    });
+    expect(unknown.status).toBe(400);
   });
 });

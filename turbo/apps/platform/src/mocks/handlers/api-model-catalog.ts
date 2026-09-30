@@ -2,6 +2,7 @@ import {
   modelCatalogContract,
   type ModelCatalogResponse,
 } from "@okouai/api-contracts/contracts/model-catalog";
+import type { OrgModelPolicy } from "@okouai/api-contracts/contracts/model-providers";
 import { mockApi } from "../msw-contract.ts";
 
 type MockCatalogModel = ModelCatalogResponse["models"][number];
@@ -167,8 +168,11 @@ function resolveReplacement(model: string): string {
   return row?.[3] ? resolveReplacement(row[3]) : model;
 }
 
+/** The seeded catalog's system default. */
+export const MOCK_SYSTEM_DEFAULT_MODEL = "okou-1.0";
+
 export function createMockModelCatalog(
-  systemDefaultModel = "okou-1.0",
+  systemDefaultModel = MOCK_SYSTEM_DEFAULT_MODEL,
 ): ModelCatalogResponse {
   const models: MockCatalogModel[] = MODEL_ROWS.map(
     ([model, displayName, sortOrder, replacedBy]) => {
@@ -198,8 +202,37 @@ export function getMockModelCatalog(): ModelCatalogResponse {
   return mockModelCatalog;
 }
 
-export function setMockModelCatalog(catalog: ModelCatalogResponse): void {
-  mockModelCatalog = catalog;
+/** Test lookups against the current mock catalog. */
+export function mockCatalogDisplayName(model: string): string {
+  return (
+    mockModelCatalog.models.find((entry) => {
+      return entry.model === model;
+    })?.displayName ?? model
+  );
+}
+
+export function mockCatalogHasModel(model: string | null | undefined) {
+  return mockModelCatalog.models.some((entry) => {
+    return entry.model === model;
+  });
+}
+
+export function mockCatalogActiveModels(): string[] {
+  return mockModelCatalog.models
+    .filter((entry) => {
+      return entry.replacedBy === null;
+    })
+    .map((entry) => {
+      return entry.model;
+    });
+}
+
+export function mockCatalogBuiltInProvider(
+  model: string,
+): OrgModelPolicy["runtimeProviderType"] {
+  return (mockModelCatalog.routes.find((route) => {
+    return route.model === model && route.providerType === "built-in";
+  })?.concreteProviderType ?? null) as OrgModelPolicy["runtimeProviderType"];
 }
 
 export function setMockModelCatalogSystemDefault(model: string): void {

@@ -1,9 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import {
-  ORG_DEFAULT_RUN_MODEL,
-  type SupportedRunModel,
-} from "@okouai/api-contracts/contracts/model-providers";
+import { type SupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import { ALL_RUN_STATUSES } from "@okouai/api-contracts/contracts/runs";
 import { describe, expect, it, onTestFinished } from "vitest";
 
@@ -31,6 +28,7 @@ import {
   seedBuiltInModelKey,
   setBuiltInCandidateCooldownFixture,
 } from "./helpers/runtime-state";
+import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -82,10 +80,7 @@ interface ClaimedBuiltInRun {
 }
 
 async function createClaimedBuiltInRun(): Promise<ClaimedBuiltInRun> {
-  const keyFixture = await seedBuiltInModelCandidateKeys(
-    context,
-    ORG_DEFAULT_RUN_MODEL,
-  );
+  const keyFixture = await seedBuiltInModelCandidateKeys(context);
   const actor = bdd.user();
   bdd.acceptAgentStorageWrites();
   runs.acceptStorageDownloads();

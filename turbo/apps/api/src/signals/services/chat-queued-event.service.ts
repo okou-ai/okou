@@ -316,8 +316,10 @@ async function materializeQueuedUserMessage(
   const selectedModel =
     event.selectedModel === null
       ? null
-      : (resolveCatalogRunModel(await loadModelCatalog(db), event.selectedModel) ??
-        event.selectedModel);
+      : (resolveCatalogRunModel(
+          await loadModelCatalog(db),
+          event.selectedModel,
+        ) ?? event.selectedModel);
   return {
     ...queuedEvent,
     selectedModel,

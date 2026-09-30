@@ -1,4 +1,3 @@
-import { ORG_DEFAULT_RUN_MODEL } from "@okouai/api-contracts/contracts/model-providers";
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
@@ -28,6 +27,7 @@ import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
+import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 
 const context = testContext({ connectorCatalog: true });
 const bdd = createBddApi(context);
@@ -335,7 +335,7 @@ describe("POST /api/welcome-chat-threads", () => {
       }),
       [200],
     );
-    expect(metadata.body.selectedModel).toBe(ORG_DEFAULT_RUN_MODEL);
+    expect(metadata.body.selectedModel).toBe(SEEDED_SYSTEM_DEFAULT_MODEL);
     expect((await runs.readBillingStatus(actor)).credits).toBe(0);
     await expect(
       chat.listThreadEventRows(actor, body.id),

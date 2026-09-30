@@ -1,6 +1,6 @@
 import {
   getProvidersForModel,
-  getRunModelAccess,
+  isActiveRunModel,
   getRunModelRouteAccess,
   isBuiltInModelProviderType,
   isModelSupportedByProvider,
@@ -381,10 +381,7 @@ export async function resolveEffectivePolicyRoute(params: {
   readonly policy: ModelRoutePolicy;
 }): Promise<ResolvedModelFirstPolicyRoute | null> {
   const { policy } = params;
-  if (
-    !isSupportedRunModel(policy.model) ||
-    getRunModelAccess(policy.model) !== "allowed"
-  ) {
+  if (!isActiveRunModel(policy.model)) {
     return null;
   }
   const { providerType, credentialScope } = parsePolicyRoute(policy);

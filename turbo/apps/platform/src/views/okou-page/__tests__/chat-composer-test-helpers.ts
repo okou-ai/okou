@@ -1,3 +1,4 @@
+import { MOCK_SYSTEM_DEFAULT_MODEL } from "../../../mocks/handlers/api-model-catalog.ts";
 import { screen, waitFor } from "@testing-library/react";
 import type { PresentationTemplateItem } from "@okouai/core";
 import {
@@ -5,10 +6,9 @@ import {
   chatThreadEventsContract,
   chatThreadsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import {
-  ORG_DEFAULT_RUN_MODEL,
-  type ModelProviderResponse,
-  type OrgModelPolicy,
+import type {
+  ModelProviderResponse,
+  OrgModelPolicy,
 } from "@okouai/api-contracts/contracts/model-providers";
 import type { ComposerWorkflow } from "@okouai/api-contracts/contracts/workflows";
 import {
@@ -179,7 +179,7 @@ export function mockOrgModelRoutes(): void {
     }),
     buildModelPolicy({
       id: "00000000-0000-4000-a000-000000000205",
-      model: ORG_DEFAULT_RUN_MODEL,
+      model: MOCK_SYSTEM_DEFAULT_MODEL,
       modelLabel: "Auto",
       isDefault: true,
       defaultProviderType: "built-in",

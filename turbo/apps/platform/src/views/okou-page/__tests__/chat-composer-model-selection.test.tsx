@@ -1,4 +1,9 @@
 import {
+  MOCK_SYSTEM_DEFAULT_MODEL,
+  mockCatalogBuiltInProvider,
+  mockCatalogDisplayName,
+} from "../../../mocks/handlers/api-model-catalog.ts";
+import {
   findModelMenuOption,
   modelMenuOption,
 } from "./chat-model-menu-test-helpers.ts";
@@ -13,11 +18,7 @@ import {
 import {
   type ModelProviderType,
   type OrgModelPolicy,
-  type SupportedRunModel,
-  getCanonicalModelDisplayName,
-  getBuiltInConcreteProviderType,
   isBuiltInModelProviderType,
-  ORG_DEFAULT_RUN_MODEL,
 } from "@okouai/api-contracts/contracts/model-providers";
 import {
   type UpdateUserModelPreferenceRequest,
@@ -59,7 +60,7 @@ interface PolicyOptions {
 }
 
 function modelPolicy(
-  model: SupportedRunModel,
+  model: string,
   index: number,
   options: PolicyOptions = {},
 ): OrgModelPolicy {
@@ -68,11 +69,11 @@ function modelPolicy(
   return {
     id: `e1000000-0000-4000-a000-${String(index).padStart(12, "0")}`,
     model,
-    modelLabel: getCanonicalModelDisplayName(model),
-    isDefault: model === ORG_DEFAULT_RUN_MODEL,
+    modelLabel: mockCatalogDisplayName(model),
+    isDefault: model === MOCK_SYSTEM_DEFAULT_MODEL,
     defaultProviderType: providerType,
     ...(isBuiltInModelProviderType(providerType)
-      ? { runtimeProviderType: getBuiltInConcreteProviderType(model) }
+      ? { runtimeProviderType: mockCatalogBuiltInProvider(model) }
       : {}),
     credentialScope,
     modelProviderId:
@@ -87,7 +88,7 @@ function modelPolicy(
   };
 }
 
-function configurePolicies(models: readonly SupportedRunModel[]): void {
+function configurePolicies(models: readonly string[]): void {
   context.mocks.data.orgModelPolicies(
     models.map((model, index) => {
       return modelPolicy(model, index + 1);
@@ -96,7 +97,7 @@ function configurePolicies(models: readonly SupportedRunModel[]): void {
 }
 
 function preference(
-  selectedModel: SupportedRunModel,
+  selectedModel: string,
   serviceTier: "priority" | null = null,
 ): UserModelPreferenceResponse {
   return {
@@ -109,8 +110,8 @@ function preference(
 }
 
 function installNewChat(
-  models: readonly SupportedRunModel[],
-  selectedModel: SupportedRunModel,
+  models: readonly string[],
+  selectedModel: string,
 ): void {
   installRunChat({ selectedModel });
   configurePolicies(models);
@@ -396,9 +397,12 @@ test("Switch chat models immediately and adjust Fast from settings", async () =>
   // Only chat models: there is no Image or Video category to step into.
   expect(queryAllByRoleFast("menuitem", list)).toHaveLength(0);
   const options = queryAllByRoleFast("menuitemradio", list);
-  expect(options).toHaveLength(2);
-  expect(options[0]).toHaveTextContent(/^GPT 5\.6 Sol/u);
-  expect(options[1]).toHaveTextContent(/^GPT 5\.6 Luna/u);
+  // The server projects the catalog system default (Auto) for every org;
+  // rows follow catalog sortOrder.
+  expect(options).toHaveLength(3);
+  expect(options[0]).toHaveTextContent(/^Auto/u);
+  expect(options[1]).toHaveTextContent(/^GPT 5\.6 Sol/u);
+  expect(options[2]).toHaveTextContent(/^GPT 5\.6 Luna/u);
   click(modelMenuOption(/^GPT 5\.6 Luna/u, list));
   await expect(findButton("GPT 5.6 Luna")).resolves.toBeVisible();
   await waitFor(() => {
@@ -812,7 +816,7 @@ test.each([
       path: RUN_PATH,
     });
     await readyChat();
-    const label = getCanonicalModelDisplayName(model);
+    const label = mockCatalogDisplayName(model);
     click(await findButton(label));
     await openEffortPanel();
     const slider = await screen.findByRole("slider", {

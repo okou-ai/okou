@@ -7,12 +7,10 @@ import {
   getModelProviderEnvBindings,
   getFrameworkForType,
   getModelProviderPresentationLabel,
-  getBuiltInVisibleModels,
   normalizeBuiltInModelId,
   getModelImageInputSupport,
   modelSupportsImageInput,
   getSelectableProviderTypes,
-  getCanonicalModelDisplayName,
   getProviderRuntimeModel,
   getProvidersForModel,
   getBuiltInApiModel,
@@ -20,11 +18,9 @@ import {
   getBuiltInVendor,
   getBuiltInModelRouteCandidates,
   getBuiltInModelRouteVendors,
-  getBuiltInModelPriceTier,
   isModelSupportedByProvider,
   isCodexFastModeModel,
   isSupportedRunModel,
-  getRunModelAccess,
   getRunModelRouteAccess,
   normalizeRunModelId,
   getAuthMethodsForType,
@@ -48,7 +44,6 @@ import {
   MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS,
   SUPPORTED_RUN_MODELS,
   ACTIVE_RUN_MODELS,
-  BUILT_IN_MODEL_PRICE_TIER,
   MODEL_PROVIDER_FIREWALL_CONFIGS,
   MODEL_PROVIDER_ENV_PLACEHOLDERS,
   MODEL_PROVIDER_TYPES,
@@ -253,38 +248,6 @@ describe("model-first canonical catalog", () => {
     expect(isLimitedFree1RestrictedRunModel(null)).toBe(false);
   });
 
-  it("surfaces display labels for canonical models", () => {
-    expect(getCanonicalModelDisplayName("claude-fable-5-1")).toBe(
-      "Claude Fable 5.1",
-    );
-    expect(getCanonicalModelDisplayName("claude-opus-5-5")).toBe(
-      "Claude Opus 5.5",
-    );
-    expect(getCanonicalModelDisplayName("claude-opus-5")).toBe("Claude Opus 5");
-    expect(getCanonicalModelDisplayName("claude-opus-4-8")).toBe(
-      "Claude Opus 4.8",
-    );
-    expect(getCanonicalModelDisplayName("claude-sonnet-5")).toBe(
-      "Claude Sonnet 5",
-    );
-    expect(getCanonicalModelDisplayName("claude-fable-5")).toBe(
-      "Claude Fable 5",
-    );
-    expect(getCanonicalModelDisplayName("gpt-6-astra")).toBe("GPT 6 Astra");
-    expect(getCanonicalModelDisplayName("gpt-6-sol")).toBe("GPT 6 Sol");
-    expect(getCanonicalModelDisplayName("gpt-6-luna")).toBe("GPT 6 Luna");
-    expect(getCanonicalModelDisplayName("gpt-5.6-sol")).toBe("GPT 5.6 Sol");
-    expect(getCanonicalModelDisplayName("gpt-5.6-luna")).toBe("GPT 5.6 Luna");
-    expect(getCanonicalModelDisplayName("gpt-5.5")).toBe("GPT 5.5");
-    expect(getCanonicalModelDisplayName("deepseek-v4.1-flash")).toBe(
-      "DeepSeek V4.1 Flash",
-    );
-    expect(getCanonicalModelDisplayName("deepseek-v4-pro")).toBe(
-      "DeepSeek V4 Pro",
-    );
-    expect(getCanonicalModelDisplayName("custom/model")).toBe("custom/model");
-  });
-
   it("normalizes provider aliases without accepting unsupported models", () => {
     expect(normalizeRunModelId("anthropic/claude-sonnet-5")).toBe(
       "claude-sonnet-5",
@@ -329,12 +292,7 @@ describe("model-first canonical catalog", () => {
     "deepseek-v4-pro",
     "deepseek/deepseek-v4-pro",
     " Anthropic/Claude-Sonnet-4.6 ",
-  ])("keeps %s historical while removing current provider access", (model) => {
-    expect(getRunModelAccess(model)).toBe("retired");
-    expect(getRunModelAccess(model, true)).toBe("retired");
-    expect(getRunModelRouteAccess(model, "openrouter-codex", false)).toBe(
-      "retired",
-    );
+  ])("keeps %s recognized without a runtime provider route", (model) => {
     expect(getProvidersForModel(model)).toEqual([]);
   });
 
@@ -350,9 +308,6 @@ describe("model-first canonical catalog", () => {
     );
     expect(getRunModelRouteAccess("gpt-6-astra", "unknown", true)).toBe(
       "pro_required",
-    );
-    expect(getRunModelRouteAccess("gpt-5.5", "openai-api-key", true)).toBe(
-      "retired",
     );
   });
 
@@ -386,7 +341,6 @@ describe("model-first canonical catalog", () => {
         true,
       ),
     ).toBe("pro_required");
-    expect(getBuiltInModelPriceTier("claude-sonnet-5-5")).toBe("$$");
   });
 
   it("offers opt-in 6.1 Sol only through approved routes and requires a paid org", () => {
@@ -875,11 +829,9 @@ describe("model-first canonical catalog", () => {
     }
   });
 
-  it.each([["okou-1.0", "@preset/okou-1-0", "$"]] as const)(
+  it.each([["okou-1.0", "@preset/okou-1-0"]] as const)(
     "routes %s only through its built-in OpenRouter preset",
-    (model, preset, tier) => {
-      expect(getCanonicalModelDisplayName(model)).toBe("Auto");
-      expect(getBuiltInModelPriceTier(model)).toBe(tier);
+    (model, preset) => {
       expect(getProvidersForModel(model)).toEqual(["built-in"]);
       expect(getBuiltInModelRouteCandidates(model)).toEqual([
         {
@@ -988,44 +940,7 @@ describe("model-first canonical catalog", () => {
     expect(isLimitedFree1RestrictedRunModel("okou-1.0")).toBe(false);
   });
 
-  it("exposes price tiers for built-in reasoning models", () => {
-    expect(BUILT_IN_MODEL_PRICE_TIER).toEqual(
-      expect.objectContaining({
-        "okou-1.0": "$",
-        "claude-fable-5-1": "$$$$",
-        "claude-fable-5": "$$$$",
-        "claude-opus-5-5": "$$$",
-        "claude-opus-5": "$$$",
-        "gpt-6-astra": "$$$$",
-        "gpt-6.1-sol": "$$$",
-        "gpt-6-sol": "$$$",
-        "gpt-6-luna": "$",
-        "gpt-5.6-sol": "$$$",
-        "gpt-5.6-luna": "$",
-        "claude-opus-4-8": "$$$",
-        "claude-sonnet-5": "$$",
-        "deepseek-v4.1-flash": "$",
-        "deepseek-v4-flash": "$",
-        "deepseek-v4-pro": "$",
-      }),
-    );
-    expect(getBuiltInModelPriceTier("claude-fable-5-1")).toBe("$$$$");
-    expect(getBuiltInModelPriceTier("claude-fable-5")).toBe("$$$$");
-    expect(getBuiltInModelPriceTier("claude-opus-5-5")).toBe("$$$");
-    expect(getBuiltInModelPriceTier("claude-opus-5")).toBe("$$$");
-    expect(getBuiltInModelPriceTier("gpt-6-astra")).toBe("$$$$");
-    expect(getBuiltInModelPriceTier("gpt-6-sol")).toBe("$$$");
-    expect(getBuiltInModelPriceTier("gpt-6-luna")).toBe("$");
-    expect(getBuiltInModelPriceTier("gpt-5.6-sol")).toBe("$$$");
-    expect(getBuiltInModelPriceTier("gpt-5.6-luna")).toBe("$");
-    expect(getBuiltInModelPriceTier("claude-opus-4-8")).toBe("$$$");
-    expect(getBuiltInModelPriceTier("claude-sonnet-5")).toBe("$$");
-    expect(getBuiltInModelPriceTier("deepseek-v4.1-flash")).toBe("$");
-    expect(getBuiltInModelPriceTier("deepseek-v4-flash")).toBe("$");
-    expect(getBuiltInModelPriceTier("deepseek-v4-pro")).toBe("$");
-    expect(getBuiltInModelPriceTier("claude-opus-4-7")).toBeUndefined();
-    expect(getBuiltInModelPriceTier("kimi-k3")).toBeUndefined();
-    expect(getBuiltInModelPriceTier("custom/model")).toBeUndefined();
+  it("keeps long-context billing thresholds for runtime models", () => {
     expect(MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS["gpt-6-astra"]).toBe(
       272_001,
     );
@@ -1132,15 +1047,6 @@ describe("model selection for Claude-compatible gateway providers", () => {
     const envBindings = getModelProviderEnvBindings(type);
     expect(envBindings).toBeDefined();
     expect(envBindings!["CLAUDE_CODE_DISABLE_ATTACHMENTS"]).toBeUndefined();
-  });
-});
-
-describe("getBuiltInVisibleModels", () => {
-  it("returns only active built-in models", () => {
-    const models = getBuiltInVisibleModels();
-    expect(models).toEqual(ACTIVE_RUN_MODELS);
-    expect(models).not.toContain("gpt-5.5");
-    expect(models).toContain("claude-sonnet-5");
   });
 });
 

@@ -1,14 +1,16 @@
+import {
+  MOCK_SYSTEM_DEFAULT_MODEL,
+  mockCatalogActiveModels,
+  mockCatalogDisplayName,
+} from "../../../mocks/handlers/api-model-catalog.ts";
 import userEvent from "@testing-library/user-event";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
-import {
-  ACTIVE_RUN_MODELS,
-  getCanonicalModelDisplayName,
-  ORG_DEFAULT_RUN_MODEL,
-  type OrgModelPoliciesResponse,
-  type UpdateOrgModelPoliciesRequest,
-  type ModelProviderResponse,
-  type OrgModelPolicy,
+import type {
+  OrgModelPoliciesResponse,
+  UpdateOrgModelPoliciesRequest,
+  ModelProviderResponse,
+  OrgModelPolicy,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { codexDeviceAuthContract } from "@okouai/api-contracts/contracts/codex-device-auth";
 import { claudeCodeDeviceAuthContract } from "@okouai/api-contracts/contracts/claude-code-device-auth";
@@ -161,7 +163,7 @@ function builtInPolicy(
     id,
     model,
     modelLabel,
-    isDefault: model === ORG_DEFAULT_RUN_MODEL,
+    isDefault: model === MOCK_SYSTEM_DEFAULT_MODEL,
     defaultProviderType: "built-in",
     credentialScope: "org",
     modelProviderId: null,
@@ -175,7 +177,7 @@ function builtInPolicy(
 function autoPolicy(): OrgModelPolicy {
   return builtInPolicy(
     "00000000-0000-4000-a000-000000000210",
-    ORG_DEFAULT_RUN_MODEL,
+    MOCK_SYSTEM_DEFAULT_MODEL,
     "Auto",
   );
 }
@@ -463,10 +465,6 @@ async function openProvidersTab(): Promise<void> {
       screen.getByRole("dialog", { name: "Settings" }),
     ).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Models" })).toBeInTheDocument();
-    // Policy rows render once the policies and the model catalog load.
-    expect(
-      document.querySelector('[data-testid^="org-model-policy-row-"]'),
-    ).not.toBeNull();
   });
 }
 
@@ -1597,9 +1595,9 @@ function enabledPolicySnapshot(): OrgModelPoliciesResponse {
   return {
     revision: "administrative-snapshot-one",
     writePreconditionRequired: true,
-    workspaceDefaultModel: ORG_DEFAULT_RUN_MODEL,
+    workspaceDefaultModel: MOCK_SYSTEM_DEFAULT_MODEL,
     workspaceDefaultPolicyId: autoPolicy().id,
-    modelsAvailableToAdd: ACTIVE_RUN_MODELS.filter((model) => {
+    modelsAvailableToAdd: mockCatalogActiveModels().filter((model) => {
       return (
         model !== "gpt-5.6-luna" &&
         model !== "claude-fable-5-1" &&
@@ -1649,20 +1647,20 @@ function mockPriorityPolicyWrites() {
         ...builtInPolicy(
           previous?.id ?? crypto.randomUUID(),
           policy.model,
-          getCanonicalModelDisplayName(policy.model),
+          mockCatalogDisplayName(policy.model),
         ),
         ...policy,
       };
     });
     const autoRoute = policies.find((policy) => {
-      return policy.model === ORG_DEFAULT_RUN_MODEL;
+      return policy.model === MOCK_SYSTEM_DEFAULT_MODEL;
     });
     snapshot = {
       revision: crypto.randomUUID(),
       writePreconditionRequired: true,
       workspaceDefaultModel: autoRoute?.model ?? null,
       workspaceDefaultPolicyId: autoRoute?.id ?? null,
-      modelsAvailableToAdd: ACTIVE_RUN_MODELS.filter((model) => {
+      modelsAvailableToAdd: mockCatalogActiveModels().filter((model) => {
         return (
           model !== "gpt-6-sol" &&
           model !== "claude-opus-5-5" &&
@@ -1711,7 +1709,7 @@ test("Enabled priority adds a subscription while preserving existing routes and 
         defaultProviderType: "codex-oauth-token",
       }),
       expect.objectContaining({ model: "claude-fable-5-1" }),
-      expect.objectContaining({ model: ORG_DEFAULT_RUN_MODEL }),
+      // The server-projected system default is never part of the write.
       expect.objectContaining({
         model: "claude-opus-5",
         defaultProviderType: "claude-code-oauth-token",

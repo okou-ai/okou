@@ -8,6 +8,7 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
+import { findModelMenuOption } from "./chat-model-menu-test-helpers.ts";
 import {
   context,
   installRunChat,
@@ -72,9 +73,7 @@ test("Offer only active catalog models in catalog order with catalog names", asy
   await readyComposer();
 
   await user.click(await composerModelTrigger("Auto"));
-  await expect(
-    screen.findByRole("menuitemradio", { name: /^GPT 6 Luna/u }),
-  ).resolves.toBeVisible();
+  await expect(findModelMenuOption(/^GPT 6 Luna/u)).resolves.toBeVisible();
   const names = queryAllByRoleFast("menuitemradio").map((option) => {
     return option.getAttribute("aria-label") ?? option.textContent?.trim();
   });

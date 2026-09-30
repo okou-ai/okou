@@ -14,7 +14,6 @@ import {
   getProviderRuntimeModel,
   getBuiltInConcreteProviderType,
   getBuiltInVendor,
-  ORG_DEFAULT_RUN_MODEL,
   type ModelProviderType,
   type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
@@ -191,6 +190,7 @@ import { connectorAccountRoutes } from "../connector-accounts";
 import { connectorCheckRoutes } from "../connector-check";
 import { installAutomaticMcpCatalog } from "./helpers/connector-automatic-catalog";
 import { createRouteMocks } from "./helpers/route-test";
+import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 
 /**
  * RUN-01..04 and CHAIN-RUN: successful run dispatch and lifecycle.
@@ -5706,9 +5706,9 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       modelPolicies.policies.map((policy) => {
         return policy.model;
       }),
-    ).toStrictEqual([ORG_DEFAULT_RUN_MODEL]);
+    ).toStrictEqual([SEEDED_SYSTEM_DEFAULT_MODEL]);
 
-    await seedBuiltInModelKey(ORG_DEFAULT_RUN_MODEL);
+    await seedBuiltInModelKey(SEEDED_SYSTEM_DEFAULT_MODEL);
     // The fixed default is Pi-eligible, so the limited-free default chat run
     // is claimed as a sandbox Pi turn rather than a Codex Runner job.
     preparePiSandboxClaim();
@@ -5721,9 +5721,9 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     expect(claim.cliAgentType).toBe("pi");
     expect(claim.piModelConfig).toMatchObject({
       provider: "openrouter",
-      catalogModel: ORG_DEFAULT_RUN_MODEL,
+      catalogModel: SEEDED_SYSTEM_DEFAULT_MODEL,
     });
-    expect(claim.modelUsageProvider).toBe(ORG_DEFAULT_RUN_MODEL);
+    expect(claim.modelUsageProvider).toBe(SEEDED_SYSTEM_DEFAULT_MODEL);
     await api.requestCancelRun(actor, sent.runId, [200]);
     await finishCancelledRun(sent.runId, claim.sandboxToken);
 
@@ -5742,9 +5742,11 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       const fallbackClaim = await api.claimRunnerJob(fallback.runId);
       expect(fallbackClaim.piModelConfig).toMatchObject({
         provider: "openrouter",
-        catalogModel: ORG_DEFAULT_RUN_MODEL,
+        catalogModel: SEEDED_SYSTEM_DEFAULT_MODEL,
       });
-      expect(fallbackClaim.modelUsageProvider).toBe(ORG_DEFAULT_RUN_MODEL);
+      expect(fallbackClaim.modelUsageProvider).toBe(
+        SEEDED_SYSTEM_DEFAULT_MODEL,
+      );
       await api.requestCancelRun(actor, fallback.runId, [200]);
       await finishCancelledRun(fallback.runId, fallbackClaim.sandboxToken);
 

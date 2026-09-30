@@ -5,7 +5,7 @@ import {
   getFrameworkForType,
   getBuiltInConcreteProviderType,
   isActiveRunModel,
-  getRunModelAccess,
+  hasNoRuntimeExecutionRoute,
   RETIRED_RUN_MODEL_MESSAGE,
 } from "@okouai/api-contracts/contracts/model-providers";
 import type {
@@ -201,7 +201,7 @@ function validateMappings(
     if (!upstreamModel) {
       return badRequestMessage(`Upstream model for "${model}" cannot be empty`);
     }
-    if (getRunModelAccess(upstreamModel) === "retired") {
+    if (hasNoRuntimeExecutionRoute(upstreamModel)) {
       return badRequestMessage(RETIRED_RUN_MODEL_MESSAGE);
     }
     normalized[model] = upstreamModel;

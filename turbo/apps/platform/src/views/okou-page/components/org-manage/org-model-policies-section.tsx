@@ -133,25 +133,20 @@ function getCatalogProviderTypes(
   return catalog.providerTypes(model).filter(isModelProviderType);
 }
 
-/** Active catalog models with a Built-in route that the org has not added. */
+/**
+ * The server decides admission (`modelsAvailableToAdd`); the catalog only
+ * orders them and drops models it no longer lists as active.
+ */
 function getAddableCatalogModels(
   catalog: ModelCatalog,
-  policies: OrgModelPolicy[],
+  modelsAvailableToAdd: readonly string[],
 ): string[] {
-  const configured = new Set(
-    policies.map((policy) => {
-      return policy.model;
-    }),
-  );
-  return catalog.activeModels
-    .filter((entry) => {
-      return (
-        !configured.has(entry.model) &&
-        catalog.routes(entry.model, { providerType: "built-in" }).length > 0
-      );
+  return modelsAvailableToAdd
+    .filter((model) => {
+      return catalog.isActive(model);
     })
-    .map((entry) => {
-      return entry.model;
+    .sort((left, right) => {
+      return catalog.compare(left, right);
     });
 }
 
@@ -1754,7 +1749,10 @@ export function OrgModelPoliciesSection() {
     .sort((left, right) => {
       return catalog.compare(left.model, right.model);
     });
-  const addableModels = getAddableCatalogModels(catalog, policies);
+  const addableModels = getAddableCatalogModels(
+    catalog,
+    data.modelsAvailableToAdd,
+  );
 
   const submit = (
     next: UpdateOrgModelPolicy[],

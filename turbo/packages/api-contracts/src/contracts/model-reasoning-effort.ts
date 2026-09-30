@@ -1,9 +1,6 @@
 import { z } from "zod";
 
-import {
-  isSupportedRunModel,
-  supportedRunModelSchema,
-} from "./model-providers";
+import { runModelIdSchema } from "./model-providers";
 import {
   CLAUDE_CODE_EFFORTS,
   CODEX_REASONING_EFFORTS,
@@ -23,11 +20,13 @@ const modelSettingSchema = z
   })
   .strict();
 
+// Keys are catalog model IDs. Efforts are still validated against the
+// runtime's static effort vocabulary (model-run-options).
 export const modelSettingsSchema = z
-  .partialRecord(supportedRunModelSchema, modelSettingSchema)
+  .record(runModelIdSchema, modelSettingSchema)
   .superRefine((settings, context) => {
-    for (const model of supportedRunModelSchema.options) {
-      const effort = settings[model]?.effort;
+    for (const [model, setting] of Object.entries(settings)) {
+      const effort = setting.effort;
       if (effort && !isModelReasoningEffortSupported(model, effort)) {
         context.addIssue({
           code: "custom",
@@ -42,7 +41,7 @@ export type ModelSettings = z.infer<typeof modelSettingsSchema>;
 
 export const modelSettingsPatchSchema = z
   .object({
-    model: supportedRunModelSchema,
+    model: runModelIdSchema,
     effort: reasoningEffortSchema,
   })
   .strict();
@@ -129,7 +128,7 @@ export function modelReasoningEffort(
   model: string | null | undefined,
   settings: ModelSettings | null | undefined,
 ): ReasoningEffort | undefined {
-  if (!isSupportedRunModel(model)) {
+  if (!model) {
     return undefined;
   }
   const saved = settings?.[model]?.effort;

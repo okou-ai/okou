@@ -106,8 +106,6 @@ import {
 } from "../../../test-fixtures/chat-event-search";
 import { createRouteMocks } from "./helpers/route-test";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
-import { stageUnrepairedOrgModelPolicyFixture } from "../../../test-fixtures/org-model-policies";
-import { ORG_DEFAULT_RUN_MODEL } from "@okouai/api-contracts/contracts/model-providers";
 import { setOrgDefaultAgentFixture } from "../../../test-fixtures/org-metadata";
 import { createBddApi } from "./helpers/api-bdd";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
@@ -138,6 +136,7 @@ import {
   writeFakeChatEventObject,
   type RecordedChatEventPut,
 } from "./helpers/fake-chat-event-r2";
+import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 
 const context = testContext();
 const resource = "https://api.mcp.example.test/mcp";
@@ -1323,7 +1322,7 @@ describe("MCP chat discovery and creation", () => {
     ).toStrictEqual([]);
   });
 
-  it("reports pending model setup when stored policies lack the fixed default", async () => {
+  it("projects the system default without a stored default policy", async () => {
     const f = await threadFixture();
     const runs = createRunsApi(context);
     await runs.grantProEntitlement(f.actor);
@@ -1335,35 +1334,11 @@ describe("MCP chat discovery and creation", () => {
         modelProviderId: null,
       },
     ]);
-    if (!f.actor.orgId) {
-      throw new Error("Expected an organization");
-    }
-    // Policies written before the fixed default existed; only a policy read
-    // (never MCP discovery) adds it.
-    await stageUnrepairedOrgModelPolicyFixture({
-      orgId: f.actor.orgId,
-      state: "missing_default",
-    });
     const token = f.auth.token({ scope: defaultScopes });
 
-    const pending = await callTool(token, "list_models");
-    expect(pending.isError).toBeTruthy();
-    structuredToolError(pending);
-    expect(pending.content).toContainEqual({
-      type: "text",
-      text: "Model policies need to be synchronized. Open model settings, then retry discovery.",
-    });
-
-    createRouteMocks(context).clerk.session(f.auth.userId, f.auth.orgId);
-    await accept(
-      setupApp({ context, routes: modelPoliciesRoutes })(
-        modelPoliciesMainContract,
-      ).list({ headers: { authorization: "Bearer clerk-session" } }),
-      [200],
-    );
     const models = await listModels(token);
     expect(models.defaultModel).toStrictEqual({
-      model: ORG_DEFAULT_RUN_MODEL,
+      model: SEEDED_SYSTEM_DEFAULT_MODEL,
       source: "org_default",
     });
   });
@@ -1977,14 +1952,17 @@ describe("MCP chat discovery and creation", () => {
       title: "Newer combined state",
       model: {
         selectedModel: null,
-        effectiveModel: ORG_DEFAULT_RUN_MODEL,
+        effectiveModel: SEEDED_SYSTEM_DEFAULT_MODEL,
         source: "org_default",
       },
     });
     await expect(getThread(token, created.threadId)).resolves.toMatchObject({
       thread: {
         title: "Newer combined state",
-        model: { selectedModel: null, effectiveModel: ORG_DEFAULT_RUN_MODEL },
+        model: {
+          selectedModel: null,
+          effectiveModel: SEEDED_SYSTEM_DEFAULT_MODEL,
+        },
       },
     });
   });
@@ -7834,7 +7812,7 @@ describe("external MCP entry", () => {
     const model = (await getThread(token, created.id)).thread.model;
     expect(model).toMatchObject({
       selectedModel: null,
-      effectiveModel: ORG_DEFAULT_RUN_MODEL,
+      effectiveModel: SEEDED_SYSTEM_DEFAULT_MODEL,
       admission: "checked_on_send",
     });
     expect(model.source).toBe("org_default");

@@ -4,17 +4,20 @@
 -- still reference a retired model, so a second run changes nothing.
 --
 -- Touched: org_model_policies.model, org_members_metadata.selected_model and
--- model_settings, agents.selected_model and model_providers.selected_model.
+-- model_settings, agents.selected_model, model_providers.selected_model, and
+-- chat thread selections (chat_threads.selected_model and model_settings,
+-- with one model_selection_updated event per re-pinned thread, as in 1213).
 -- A selection is rewritten only where the replacement has an enabled route of
 -- the same provider type; credentials, BYOK, subscription and custom-gateway
--- bindings are never transplanted onto another provider.
+-- bindings are never transplanted onto another provider. A chat thread whose
+-- legacy provider pin cannot serve the replacement keeps its retired model and
+-- pin: the API resolves it along the chain and rejects the incompatible route
+-- explicitly instead of silently re-routing it.
 --
 -- Not touched: history (agent_runs, chat_events including queued inputs,
 -- usage and billing, session conversations), org_plan_entitlements
--- restrictions, custom-gateway model_mappings and chat thread selections
--- (chat_threads plus its chat_thread_events stream; see MIGRATIONS.md). The
--- API resolves those along the chain when it reads them and rechecks queued
--- runs at dispatch.
+-- restrictions and custom-gateway model_mappings. Queued inputs are rechecked
+-- by the API at dispatch.
 CREATE TEMP TABLE model_selection_rewrite ON COMMIT DROP AS
 WITH RECURSIVE chain (source, target) AS (
   SELECT model, replaced_by
@@ -200,6 +203,97 @@ WHERE provider.selected_model = map.source
       AND route.enabled
       AND route.provider_type = provider.type
   );
+--> statement-breakpoint
+-- Chat threads. chat_threads has no selected_model index: scan it once, like
+-- 1213. The effective legacy pin is model_provider_type, or the type of the
+-- pinned model_providers row. No pin, or a pin type the replacement serves,
+-- is compatible; the pin columns are kept as they are. The organization comes
+-- from the thread's agent; agentless threads have no event stream.
+CREATE TEMP TABLE model_selection_rewrite_threads ON COMMIT DROP AS
+SELECT
+  thread.id AS thread_id,
+  thread.user_id,
+  agent.org_id,
+  thread.agent_id,
+  map.target,
+  CASE
+    WHEN thread.model_settings ? map.target THEN NULL
+    WHEN (thread.model_settings -> map.source ->> 'effort') = ANY(route.efforts)
+      THEN thread.model_settings -> map.source ->> 'effort'
+    WHEN thread.model_settings -> map.source ? 'effort' THEN route.default_effort
+  END AS effort,
+  row_number() OVER (
+    PARTITION BY thread.user_id, agent.org_id
+    ORDER BY thread.id
+  ) AS rn
+FROM chat_threads AS thread
+JOIN model_selection_rewrite AS map ON map.source = thread.selected_model
+LEFT JOIN agents AS agent ON agent.id = thread.agent_id
+LEFT JOIN model_providers AS provider ON provider.id = thread.model_provider_id
+CROSS JOIN LATERAL (
+  SELECT candidate.efforts, candidate.default_effort
+  FROM model_routes AS candidate
+  WHERE candidate.model = map.target
+    AND candidate.enabled
+    AND candidate.provider_type = CASE
+      WHEN thread.model_provider_type IS NULL AND thread.model_provider_id IS NULL
+        THEN 'built-in'
+      ELSE coalesce(thread.model_provider_type, provider.type)
+    END
+  ORDER BY candidate.priority
+  LIMIT 1
+) AS route;
+--> statement-breakpoint
+UPDATE chat_threads AS thread
+SET
+  selected_model = moved.target,
+  model_settings = CASE
+    WHEN moved.effort IS NULL THEN thread.model_settings
+    ELSE thread.model_settings
+      || jsonb_build_object(moved.target, jsonb_build_object('effort', moved.effort))
+  END,
+  updated_at = now()
+FROM model_selection_rewrite_threads AS moved
+WHERE thread.id = moved.thread_id;
+--> statement-breakpoint
+-- Reserve one contiguous seq_id range per (user_id, org_id) stream, in key
+-- order, and append one model_selection_updated event per re-pinned thread.
+WITH counts AS (
+  SELECT user_id, org_id, count(*) AS cnt
+  FROM model_selection_rewrite_threads
+  WHERE org_id IS NOT NULL
+  GROUP BY user_id, org_id
+),
+reserved AS (
+  INSERT INTO chat_thread_event_sequences (user_id, org_id, last_seq_id)
+  SELECT user_id, org_id, cnt
+  FROM counts
+  ORDER BY user_id, org_id
+  ON CONFLICT (user_id, org_id) DO UPDATE
+    SET last_seq_id = chat_thread_event_sequences.last_seq_id + EXCLUDED.last_seq_id
+  RETURNING user_id, org_id, last_seq_id
+)
+INSERT INTO chat_thread_events (
+  user_id, org_id, seq_id, chat_thread_id, kind, agent_id, selected_model,
+  model_settings_patch, cloud_browser_enabled, created_at
+)
+SELECT
+  moved.user_id,
+  moved.org_id,
+  reserved.last_seq_id - counts.cnt + moved.rn,
+  moved.thread_id,
+  'model_selection_updated',
+  moved.agent_id,
+  moved.target,
+  CASE
+    WHEN moved.effort IS NULL THEN NULL
+    ELSE jsonb_build_object('model', moved.target, 'effort', moved.effort)
+  END,
+  false,
+  timezone('UTC', now())
+FROM model_selection_rewrite_threads AS moved
+JOIN reserved USING (user_id, org_id)
+JOIN counts USING (user_id, org_id);
 --> statement-breakpoint
 DO $$
 DECLARE
