@@ -2168,7 +2168,7 @@ export interface QueuedMessageModelRoute {
 }
 
 export function routeQueuedMessagePiExecution(args: {
-  readonly input: CreateQueuedChatRunInputArgs;
+  readonly input: QueuedChatPromptData;
   readonly modelRoute: QueuedMessageModelRoute;
 }) {
   const piExecution = shouldUsePiExecution({
@@ -2198,13 +2198,16 @@ export type QueuedMessageModelRouteResolution =
   | { readonly route: QueuedMessageModelRoute }
   | { readonly error: QueuedMessageModelRouteError };
 
-export interface CreateQueuedChatRunInputArgs {
+export interface QueuedChatPromptData {
   readonly expectedThreadAgentId?: string;
-  readonly db: ReadonlyDb;
   readonly threadId: string;
   readonly userId: string;
   readonly agent: AgentForAutoSend;
   readonly queuedMessage: QueuedUserMessage;
+}
+
+interface CreateQueuedChatRunInputArgs extends QueuedChatPromptData {
+  readonly db: ReadonlyDb;
   readonly timing?: ChatCallbackPreCreateTimingCollector;
 }
 
@@ -2254,7 +2257,7 @@ function requiredQueuedDelivery<Delivery>(
 }
 
 export function queuedMessageAdmissionFailure(
-  args: CreateQueuedChatRunInputArgs,
+  args: QueuedChatPromptData,
   launchMaterial: QueuedLaunchMaterial,
   error: QueuedMessageModelRouteError,
 ): QueuedMessageAdmissionFailure {

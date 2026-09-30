@@ -356,7 +356,7 @@ import {
   buildQueuedCreateAgentRunArgs,
   ChatCallbackPreCreateTimingCollector,
   type CreateQueuedChatRunInput,
-  type CreateQueuedChatRunInputArgs,
+  type QueuedChatPromptData,
   deliverQueuedPromptRejection$,
   deliverUnexpectedQueuedPromptRejection$,
   buildAppendSystemPrompt as pickChatRunPromptBuildAppendSystemPrompt,
@@ -664,6 +664,9 @@ interface QueuedPromptTiming {
 }
 
 class QueuedPromptInputInvalidError extends Error {}
+
+/** The initializer already committed the ordinary business-rejection path. */
+class ClaimInputAlreadyRejected extends Error {}
 
 function resolveQueuedOfficialWorkflowContext(args: {
   readonly contextType: QueuedUserMessageContextType;
@@ -1203,7 +1206,7 @@ function buildWebChatIncompleteContext(
 }
 
 function queuedPromptRunInput(args: {
-  readonly input: CreateQueuedChatRunInputArgs;
+  readonly input: QueuedChatPromptData;
   readonly launch: QueuedLaunchMaterial;
   readonly model: Exclude<
     QueuedMessageModelRouteResolution,
@@ -3688,9 +3691,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     },
   );
   const promptArgsArgs$ = computed(
-    async (get): Promise<CreateQueuedChatRunInputArgs> => {
+    async (get): Promise<QueuedChatPromptData> => {
       const head = await get(promptSelectedHead$);
-      const db = get(db$);
       const [queuedMessage, agent] = await Promise.all([
         get(promptQueuedMessageQueuedMessage$),
         get(promptAgentAgent$),
@@ -3699,7 +3701,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         throw new Error("Prompt preparation lost its selected head or agent");
       }
       return {
-        db,
         threadId: head.chatThreadId,
         userId: head.userId,
         agent: { id: agent.agentId, orgId: head.orgId },
@@ -4312,30 +4313,26 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   const promptModelModel$ = computed(async (get) => {
     return await get(promptResolvePromptModelResolvePromptModel$);
   });
-  const promptSessionSession$ = computed(async (get) => {
-    const [args, model] = await Promise.all([
-      get(promptArgsArgs$),
-      get(promptModelModel$),
+  const promptThreadSessionSnapshot$ = computed(async (get) => {
+    const [head, agent] = await Promise.all([
+      get(promptSelectedHead$),
+      get(promptAgentAgent$),
     ]);
-    if ("error" in model) {
+    if (!agent) {
       return null;
     }
-    const { routedModel } = routeQueuedMessagePiExecution({
-      input: args,
-      modelRoute: model.route,
-    });
-    const [thread] = await args.db
+    const [thread] = await get(db$)
       .select(chatThreadSessionSelection())
       .from(chatThreads)
       .leftJoin(
         agentSessions,
         and(
           eq(agentSessions.id, chatThreads.agentSessionId),
-          eq(agentSessions.userId, args.userId),
-          eq(agentSessions.orgId, args.agent.orgId),
+          eq(agentSessions.userId, head.userId),
+          eq(agentSessions.orgId, head.orgId),
         ),
       )
-      .leftJoin(agents, eq(agents.id, args.agent.id))
+      .leftJoin(agents, eq(agents.id, agent.agentId))
       .leftJoin(
         conversations,
         eq(conversations.id, agentSessions.conversationId),
@@ -4348,12 +4345,27 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       .leftJoin(agentRuns, eq(agentRuns.id, chatThreads.agentSessionRunId))
       .where(
         and(
-          eq(chatThreads.id, args.threadId),
-          eq(chatThreads.userId, args.userId),
-          eq(chatThreads.agentId, args.expectedThreadAgentId ?? args.agent.id),
+          eq(chatThreads.id, head.chatThreadId),
+          eq(chatThreads.userId, head.userId),
+          eq(chatThreads.agentId, agent.expectedThreadAgentId ?? agent.agentId),
         ),
       )
       .limit(1);
+    return thread ?? null;
+  });
+  const promptSessionSession$ = computed(async (get) => {
+    const [args, model, thread] = await Promise.all([
+      get(promptArgsArgs$),
+      get(promptModelModel$),
+      get(promptThreadSessionSnapshot$),
+    ]);
+    if ("error" in model) {
+      return null;
+    }
+    const { routedModel } = routeQueuedMessagePiExecution({
+      input: args,
+      modelRoute: model.route,
+    });
     if (!thread) {
       throw new Error("Chat thread not found while resolving session binding");
     }
@@ -4366,7 +4378,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     });
   });
   const incompleteRoundAnchors$ = computed(async (get) => {
-    const { db, threadId } = await get(promptArgsArgs$);
+    const db = get(db$);
+    const { threadId } = await get(promptArgsArgs$);
     const anchors = [undefined, sql`incomplete_frontier.seq_id`].map(
       (beforeSeq) => {
         const isSuccessfulRun = sql`COALESCE(
@@ -4533,7 +4546,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         get(promptArgsArgs$),
         get(promptIncompleteSelectionIncompleteSelection$),
       ]);
-      const { db, threadId } = args;
+      const db = get(db$);
+      const { threadId } = args;
       if (selection.length === 0) {
         return [];
       }
@@ -4596,7 +4610,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       return [];
     }
     const contextType = args.queuedMessage.contextType;
-    const rows = await args.db
+    const rows = await get(db$)
       .select({
         runId: agentRuns.id,
         status: agentRuns.status,
@@ -4638,7 +4652,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     if (!runIds.length) {
       return [];
     }
-    return await args.db
+    return await get(db$)
       .select({
         runId: chatEvents.runId,
         eventType: chatEvents.eventType,
@@ -4651,13 +4665,13 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           eq(chatEvents.chatThreadId, args.threadId),
           chatEventTextCondition(),
           inArray(chatEvents.runId, runIds),
-          visibleChatEventCondition(args.db),
+          visibleChatEventCondition(get(db$)),
           isWebChatContextType(args.queuedMessage.contextType)
             ? or(
                 chatEventTypeIn(CHAT_EVENT_USER_MESSAGE_TEXT_TYPES),
                 inArray(
                   chatEvents.seqId,
-                  args.db
+                  get(db$)
                     .select({ seqId: max(chatEvents.seqId) })
                     .from(chatEvents)
                     .where(
@@ -4666,7 +4680,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
                         chatEventTypeIn(CHAT_EVENT_CONTENT_TEXT_TYPES),
                         isNotNull(canonicalChatEventContent()),
                         inArray(chatEvents.runId, runIds),
-                        visibleChatEventCondition(args.db),
+                        visibleChatEventCondition(get(db$)),
                       ),
                     )
                     .groupBy(chatEvents.runId),
@@ -4716,7 +4730,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       if (!ids.length) {
         return [];
       }
-      const rows = await args.db
+      const rows = await get(db$)
         .select({ id: presentationTemplates.id })
         .from(presentationTemplates)
         .where(
@@ -4752,7 +4766,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     ) {
       return [];
     }
-    const rows = await args.db
+    const rows = await get(db$)
       .select({ id: userTemplates.id, manifest: userTemplates.manifest })
       .from(userTemplates)
       .where(
@@ -12814,13 +12828,77 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       return { kind: "passed" };
     },
   );
+  const readClaimInputSources$ = command(
+    async ({ get }, head: ChatQueueHeadContext, signal: AbortSignal) => {
+      if (head.contextType === "automation") {
+        const input = await get(automationExecutionInput$);
+        signal.throwIfAborted();
+        if (!input) {
+          return;
+        }
+        await Promise.all([
+          get(queuedModelSelection$),
+          get(queuedModelCapabilities$),
+          get(queuedModelInitialPolicies$),
+          get(queuedModelFeatureSwitchContext$2),
+          get(queuedModelMemberAccountSnapshot$2),
+        ]);
+      } else {
+        await Promise.all([
+          get(promptThreadSessionSnapshot$),
+          get(selection$),
+          get(capabilities$),
+          get(initialPolicies$),
+          get(queuedModelFeatureSwitchContext$),
+          get(queuedModelMemberAccountSnapshot$),
+        ]);
+      }
+      signal.throwIfAborted();
+    },
+  );
+  const initializeClaimIdentityForReads$ = command(
+    async ({ set }, timing: ClaimRunTiming, signal: AbortSignal) => {
+      const head = await set(initializeRunPreparation$, timing, signal);
+      signal.throwIfAborted();
+      if (!head) {
+        throw new ClaimInputAlreadyRejected();
+      }
+      return head;
+    },
+  );
+  const prepareClaimReadSnapshots$ = command(
+    async ({ get, set }, timing: ClaimRunTiming, signal: AbortSignal) => {
+      const head = await get(head$);
+      signal.throwIfAborted();
+      if (!head) {
+        return null;
+      }
+      // The same memoized snapshots feed session/model preparation. Their I/O
+      // starts before initialization/authorization, and rejection is fail-fast.
+      const initialized = await settle(
+        Promise.all([
+          set(readClaimInputSources$, head, signal),
+          set(initializeClaimIdentityForReads$, timing, signal),
+        ]),
+        signal,
+      );
+      if (!initialized.ok) {
+        if (initialized.error instanceof ClaimInputAlreadyRejected) {
+          return null;
+        }
+        throw initialized.error;
+      }
+      signal.throwIfAborted();
+      return head;
+    },
+  );
   const prepareRunContext$ = command(
     async (
       { set },
       timing: ClaimRunTiming,
       signal: AbortSignal,
     ): Promise<RunContext | { readonly kind: "passed" }> => {
-      const head = await set(initializeRunPreparation$, timing, signal);
+      const head = await set(prepareClaimReadSnapshots$, timing, signal);
       signal.throwIfAborted();
       if (!head) {
         return { kind: "passed" };
