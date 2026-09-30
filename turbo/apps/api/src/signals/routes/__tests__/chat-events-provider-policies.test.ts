@@ -1798,7 +1798,11 @@ describe("CHAT-02: model-first provider policies", () => {
         "deepseek-v4-flash",
       ] as const
     ).flatMap((model) => {
-      return [false, true].map((enabled) => {
+      const switchValues =
+        model === "claude-fable-5-1" || model === "deepseek-v4-flash"
+          ? [true]
+          : [false, true];
+      return switchValues.map((enabled) => {
         return { model, enabled };
       });
     }),

@@ -1517,8 +1517,15 @@
     {
       "idx": 1294,
       "version": "7",
-      "when": 1790746330715,
-      "tag": "1294_chat_thread_canonical_session",
+      "when": 1790746852141,
+      "tag": "1294_retire_v7_chat_event_snapshots",
+      "breakpoints": true
+    },
+    {
+      "idx": 1295,
+      "version": "7",
+      "when": 1790756094146,
+      "tag": "1295_chat_thread_canonical_session",
       "breakpoints": true
     }
   ]

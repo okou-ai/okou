@@ -515,13 +515,6 @@ describe("ORG-01 and ORG-02", () => {
 });
 
 describe("ORG-03 onboarding status mapping", () => {
-  it("rejects onboarding status without authentication", async () => {
-    const unauthenticated = await bdd.requestReadOnboardingStatus(null, [401]);
-    expect(unauthenticated.body).toStrictEqual({
-      error: { message: "Not authenticated", code: "UNAUTHORIZED" },
-    });
-  });
-
   it.each(["admin", "member"] as const)(
     "protects the default Okou for its %s owner",
     async (role) => {

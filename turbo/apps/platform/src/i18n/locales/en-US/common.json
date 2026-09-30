@@ -4733,6 +4733,8 @@
           "title": "Invoices"
         },
         "model": {
+          "autoDescription": "Okou chooses the model for each task.",
+          "autoLabel": "Easy model",
           "description": "Choose which AI models your workspace and your runs use.",
           "title": "Models"
         },

@@ -4723,6 +4723,8 @@
           "title": "Faktur"
         },
         "model": {
+          "autoDescription": "Okou memilih model untuk setiap tugas.",
+          "autoLabel": "Pemilihan otomatis",
           "description": "Pilih model AI yang digunakan oleh ruang kerja dan eksekusi Anda.",
           "title": "Model"
         },

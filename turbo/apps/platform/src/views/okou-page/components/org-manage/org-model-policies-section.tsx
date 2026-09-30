@@ -1991,8 +1991,15 @@ export function OrgModelPoliciesSection() {
 }
 
 function ModelPoliciesSkeleton() {
+  const { t } = useTranslation();
   return (
-    <section className="flex flex-col gap-3">
+    <section
+      role="status"
+      aria-label={t(($) => {
+        return $.settings.models.picker.loading;
+      })}
+      className="flex flex-col gap-3"
+    >
       <div className="h-5 w-24 rounded bg-muted/50 animate-pulse" />
       <div className="overflow-hidden rounded-xl border border-border/50 bg-card">
         {[0, 1, 2].map((item) => {

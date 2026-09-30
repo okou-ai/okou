@@ -55,10 +55,6 @@ import {
   type ChatEventSnapshotProjectionVariant,
   validateChatEventSnapshotRows,
 } from "./chat-event-snapshot-body.service";
-import {
-  PREVIOUS_CHAT_EVENT_SNAPSHOT_SCHEMA_VERSION,
-  upgradeChatEventSnapshotBody,
-} from "./chat-event-snapshot-upgrade.service";
 
 const log = logger("api:cron:snapshot-chat-events");
 
@@ -110,13 +106,6 @@ interface SnapshotCandidate {
   readonly headTerminalEventId: string | null;
   readonly headObjectKey: string | null;
   readonly headArchiveSchemaVersion: number | null;
-  /**
-   * Chat Event V8 transition: the thread's V7 pointer, read only while no V8
-   * head exists so the first V8 Snapshot upgrades the V7 prefix instead of
-   * rebuilding from possibly reclaimed Raw Events. Removed in PR-3 once every
-   * Snapshot pointer is V8 and pre-V8 APIs have left the rollback window.
-   */
-  readonly previous: SnapshotSourceMetadata | null;
 }
 
 /**
@@ -125,7 +114,7 @@ interface SnapshotCandidate {
  */
 const ARCHIVE_CONTENT_TYPE = "application/x-ndjson";
 const ARCHIVE_CONTENT_ENCODING = "gzip";
-/** V7 wire shape is unchanged; this marks objects validated after Phase B. */
+/** Object-key revision for snapshots validated after Phase B. */
 const ARCHIVE_ROW_CONTRACT_REVISION = 1;
 const ARCHIVE_OBJECT_KEY_PREFIX_PATTERN = "^chat-events/[0-9a-f-]{36}/[0-9]+";
 const ARCHIVE_OBJECT_KEY_SUFFIX_PATTERN = "-[0-9a-f]{64}[.]ndjson[.]gz$";
@@ -164,11 +153,6 @@ const HEX_DIGITS = "0123456789abcdef";
 const currentSnapshot = alias(
   chatEventSnapshots,
   "current_chat_event_snapshot",
-);
-/** Chat Event V8 transition (removed in PR-3); see SnapshotCandidate. */
-const previousSnapshot = alias(
-  chatEventSnapshots,
-  "previous_chat_event_snapshot",
 );
 
 type ArchiveEventRow = Pick<
@@ -435,16 +419,6 @@ function resolveSnapshotSource(
   };
 }
 
-function candidateSourceResolution(
-  candidate: SnapshotCandidate,
-): SnapshotSourceResolution {
-  if (candidate.headId === null && candidate.previous !== null) {
-    // Chat Event V8 transition (removed in PR-3): upgrade the V7 prefix.
-    return resolveSnapshotSource(candidate.previous);
-  }
-  return candidateHeadResolution(candidate);
-}
-
 function candidateHeadResolution(
   candidate: SnapshotCandidate,
 ): SnapshotSourceResolution {
@@ -461,19 +435,6 @@ function candidateHeadResolution(
           schemaVersion: candidate.headArchiveSchemaVersion,
         },
   );
-}
-
-function candidateCurrentSource(
-  candidate: SnapshotCandidate,
-): SnapshotSource | null {
-  const resolved = candidateHeadResolution(candidate);
-  if (resolved.kind === "initial") {
-    return null;
-  }
-  if (resolved.kind === "skipped") {
-    throw new Error("Chat Event Snapshot pointer is not reusable");
-  }
-  return resolved.source;
 }
 
 type SnapshotPrefixResolution =
@@ -558,24 +519,9 @@ async function decodeSnapshotPrefix(
   const decompressed = await decodeSnapshotStage("gzip", async () => {
     return await gunzipAsync(compressed);
   });
-  // Chat Event V8 transition (removed in PR-3): an older prefix is upgraded
-  // in memory; its stored terminal row still pairs with the source pointer.
-  const decoded = await decodeSnapshotStage("raw_row", () => {
-    if (args.source.schemaVersion === CURRENT_CHAT_EVENT_SCHEMA_VERSION) {
-      const rows = decodeChatEventSnapshotBody(decompressed);
-      const stored = rows.at(-1);
-      return {
-        body: decompressed,
-        rows,
-        sourceTerminal: { id: stored?.id ?? null, seqId: stored?.seqId ?? 0 },
-      };
-    }
-    return upgradeChatEventSnapshotBody(
-      decompressed,
-      args.source.schemaVersion,
-    );
+  const decodedRows = await decodeSnapshotStage("raw_row", () => {
+    return decodeChatEventSnapshotBody(decompressed);
   });
-  const decodedRows = decoded.rows;
   await decodeSnapshotStage("projection", () => {
     validateChatEventSnapshotRows(decodedRows);
   });
@@ -585,13 +531,13 @@ async function decodeSnapshotPrefix(
   await decodeSnapshotStage("terminal", () => {
     validateSnapshotPrefixTerminal(
       args,
-      decoded.sourceTerminal.seqId,
-      decoded.sourceTerminal.id,
+      decodedRows.at(-1)?.seqId ?? 0,
+      decodedRows.at(-1)?.id ?? null,
     );
   });
   const terminal = decodedRows.at(-1);
   return {
-    body: decoded.body,
+    body: decompressed,
     terminalSeqId: terminal?.seqId ?? 0,
     terminalEventId: terminal?.id ?? null,
   };
@@ -666,19 +612,7 @@ async function publishSnapshotVersion(
   const { lastSeqId, lastEventId, terminalSeqId, terminalEventId, objectKey } =
     pointer;
   return await db.transaction(async (tx) => {
-    const current = candidateCurrentSource(candidate);
-    if (source !== null && source.id !== current?.id) {
-      const [lockedSource] = await tx
-        .select({ id: chatEventSnapshots.id })
-        .from(chatEventSnapshots)
-        .where(exactSnapshotPointer(source))
-        .for("update")
-        .limit(1);
-      if (lockedSource === undefined) {
-        return false;
-      }
-    }
-    if (current !== null) {
+    if (source !== null) {
       const updated = await tx
         .update(chatEventSnapshots)
         .set({
@@ -689,7 +623,7 @@ async function publishSnapshotVersion(
           objectKey,
           createdAt: nowDate(),
         })
-        .where(exactSnapshotPointer(current))
+        .where(exactSnapshotPointer(source))
         .returning({ id: chatEventSnapshots.id });
       if (updated.length === 0) {
         return false;
@@ -768,7 +702,7 @@ function resolveArchivePrefix(
   signal: AbortSignal,
 ): Computed<Promise<ArchivePrefixResolution>> {
   return computed(async (get): Promise<ArchivePrefixResolution> => {
-    const sourceResolution = candidateSourceResolution(args.candidate);
+    const sourceResolution = candidateHeadResolution(args.candidate);
     signal.throwIfAborted();
     if (sourceResolution.kind === "skipped") {
       return sourceResolution;
@@ -1364,13 +1298,6 @@ async function loadSnapshotCandidates(
       headTerminalEventId: currentSnapshot.terminalEventId,
       headObjectKey: currentSnapshot.objectKey,
       headArchiveSchemaVersion: currentSnapshot.archiveSchemaVersion,
-      previousId: previousSnapshot.id,
-      previousLastSeqId: previousSnapshot.lastSeqId,
-      previousLastEventId: previousSnapshot.lastEventId,
-      previousTerminalSeqId: previousSnapshot.terminalSeqId,
-      previousTerminalEventId: previousSnapshot.terminalEventId,
-      previousObjectKey: previousSnapshot.objectKey,
-      previousArchiveSchemaVersion: previousSnapshot.archiveSchemaVersion,
     })
     .from(chatThreads)
     .innerJoin(
@@ -1384,16 +1311,6 @@ async function loadSnapshotCandidates(
         eq(
           currentSnapshot.archiveSchemaVersion,
           CURRENT_CHAT_EVENT_SCHEMA_VERSION,
-        ),
-      ),
-    )
-    .leftJoin(
-      previousSnapshot,
-      and(
-        eq(previousSnapshot.chatThreadId, chatThreads.id),
-        eq(
-          previousSnapshot.archiveSchemaVersion,
-          PREVIOUS_CHAT_EVENT_SNAPSHOT_SCHEMA_VERSION,
         ),
       ),
     )
@@ -1442,18 +1359,6 @@ async function loadSnapshotCandidates(
       headTerminalEventId: row.headTerminalEventId,
       headObjectKey: row.headObjectKey,
       headArchiveSchemaVersion: row.headArchiveSchemaVersion,
-      previous:
-        row.previousId === null
-          ? null
-          : {
-              id: row.previousId,
-              lastSeqId: row.previousLastSeqId,
-              lastEventId: row.previousLastEventId,
-              terminalSeqId: row.previousTerminalSeqId,
-              terminalEventId: row.previousTerminalEventId,
-              objectKey: row.previousObjectKey,
-              schemaVersion: row.previousArchiveSchemaVersion,
-            },
     };
   });
 }

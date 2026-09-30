@@ -10,7 +10,6 @@ import {
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { testChatEventSearchProjectionContract } from "@okouai/api-contracts/contracts/test-chat-event-search-projection";
 import { testChatEventSnapshotContract } from "@okouai/api-contracts/contracts/test-chat-event-snapshot";
-import { createStore } from "ccstate";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -28,20 +27,14 @@ import {
   FAKE_CHAT_EVENT_SNAPSHOT_URL,
   installFakeChatEventR2,
   readFakeChatEventObject,
-  type RecordedChatEventPut,
   writeFakeChatEventObject,
 } from "./helpers/fake-chat-event-r2";
 import {
-  readChatEventRowsAsPreviousApiFixture,
   readChatEventSnapshotHead,
   updateChatEventSnapshotHead,
 } from "./helpers/runtime-state";
 import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import {
-  seedV7ChatEventSnapshot$,
-  v7SnapshotUpgradeTemplates,
-} from "../../../test-fixtures/chat-event-snapshot-v7";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -376,99 +369,6 @@ describe("chat event snapshot read endpoints", () => {
     });
   }, 60_000);
 
-  it("does not repair or publish a retired Morning Brief Snapshot object", async () => {
-    const recordedPuts: RecordedChatEventPut[] = [];
-    installFakeChatEventR2(context, recordedPuts);
-    const owner = bdd.user({ orgId: `org_${randomUUID()}` });
-    const agent = await bdd.createAgent(owner, {
-      displayName: "Retired Snapshot projection agent",
-    });
-    const threadId = await sendNoCreditMessage(owner, {
-      agentId: agent.agentId,
-      prompt: `retired-snapshot-${randomUUID()}`,
-    });
-
-    await projectChatEventSearch(threadId);
-    await runSnapshotCron([threadId]);
-    const originalHead = await readChatEventSnapshotHead(context, threadId);
-    const originalObject = readFakeChatEventObject(originalHead.object_key);
-    if (originalObject === undefined) {
-      throw new Error("Expected an original Chat Event Snapshot object");
-    }
-    const originalRows = gunzipSync(originalObject)
-      .toString("utf8")
-      .trimEnd()
-      .split("\n")
-      .map((line) => {
-        return chatEventRowSchema.parse(JSON.parse(line));
-      });
-    const prompt = originalRows.find((row) => {
-      return row.eventType === "input.prompt";
-    });
-    if (prompt === undefined) {
-      throw new Error("Expected a prompt row for the retired Snapshot fixture");
-    }
-    const projectedPrompt = chatEventFromRow(prompt);
-    if (projectedPrompt?.eventType !== "input.prompt") {
-      throw new Error("Expected a projected prompt for the retired fixture");
-    }
-    // Deliberately outside the current row contract: a retired context and
-    // part that no current reader can decode.
-    const retiredPrompt = {
-      ...prompt,
-      contextType: "morning_brief",
-      contextId: prompt.id,
-      payload: {
-        ...prompt.payload,
-        userMessage: {
-          ...projectedPrompt.userMessage,
-          parts: [
-            ...projectedPrompt.userMessage.parts,
-            { type: "morning_brief", briefDate: "2026-08-24" },
-          ],
-        },
-      },
-    };
-    const retiredArchive = Buffer.from(
-      originalRows
-        .map((row) => {
-          return `${JSON.stringify(
-            row.id === retiredPrompt.id ? retiredPrompt : row,
-          )}\n`;
-        })
-        .join(""),
-    );
-    const retiredBody = gzipSync(retiredArchive);
-    const retiredObjectKey = `chat-events/${threadId}/${originalHead.last_seq_id.toString()}-${createHash("sha256").update(retiredBody).digest("hex")}.ndjson.gz`;
-    writeFakeChatEventObject(retiredObjectKey, retiredBody);
-    await trackFakeChatEventObject(Promise.resolve(retiredObjectKey));
-    await updateChatEventSnapshotHead(context, threadId, retiredObjectKey);
-    const retiredHead = await readChatEventSnapshotHead(context, threadId);
-    const canonicalRowsBefore = await readChatEventRowsAsPreviousApiFixture(
-      context,
-      threadId,
-    );
-    const putsBeforeAttempt = recordedPuts.length;
-
-    const result = await runSnapshotCron([threadId], [retiredObjectKey]);
-
-    expect(result).toMatchObject({
-      snapshots: 0,
-      archivedEvents: 0,
-      skippedUndecodableHeads: 1,
-    });
-    expect(recordedPuts).toHaveLength(putsBeforeAttempt);
-    await expect(
-      readChatEventSnapshotHead(context, threadId),
-    ).resolves.toStrictEqual(retiredHead);
-    expect(readFakeChatEventObject(retiredObjectKey)).toStrictEqual(
-      retiredBody,
-    );
-    await expect(
-      readChatEventRowsAsPreviousApiFixture(context, threadId),
-    ).resolves.toStrictEqual(canonicalRowsBefore);
-  }, 60_000);
-
   it("fails closed without moving the pointer for unsupported archive revisions", async () => {
     const owner = bdd.user({ orgId: `org_${randomUUID()}` });
     const agent = await bdd.createAgent(owner, {
@@ -703,10 +603,6 @@ describe("chat event snapshot read endpoints", () => {
     for (const row of rows.body.rows) {
       chatEventRowSchema.parse(row);
       expect(row.chatThreadId).toBe(threadId);
-      expect(row).not.toHaveProperty("content");
-      expect(row).not.toHaveProperty("userMessage");
-      expect(row).not.toHaveProperty("usagePayload");
-      expect(row).not.toHaveProperty("interruptsRunId");
     }
 
     const projected = rows.body.rows.map((row) => {
@@ -771,188 +667,6 @@ describe("chat event snapshot read endpoints", () => {
         message: "Chat events cursor has expired",
         code: "CHAT_EVENTS_EXPIRED",
       },
-    });
-  }, 60_000);
-
-  // Chat Event V8 transition: removed with the V7 -> V8 Snapshot upgrade in
-  // PR-3 once every Snapshot pointer is V8.
-  it("publishes an upgraded V8 Snapshot on read while only a V7 pointer exists", async () => {
-    const owner = bdd.user({ orgId: `org_${randomUUID()}` });
-    const agent = await bdd.createAgent(owner, {
-      displayName: "V7 snapshot upgrade agent",
-    });
-    const threadId = await sendNoCreditMessage(owner, {
-      agentId: agent.agentId,
-      prompt: `v7-upgrade-${randomUUID()}`,
-    });
-    const { templates, expected } = v7SnapshotUpgradeTemplates();
-    const v7 = await createStore().set(
-      seedV7ChatEventSnapshot$,
-      { chatThreadId: threadId, rows: templates },
-      context.signal,
-    );
-    writeFakeChatEventObject(v7.objectKey, v7.body);
-    await trackFakeChatEventObject(Promise.resolve(v7.objectKey));
-
-    // Raw Events below the V7 coverage may already be reclaimed.
-    const coldStart = await accept(
-      eventsClient().rows({
-        headers: authenticate(owner),
-        params: { threadId },
-        query: { sinceSeqId: 0 },
-      }),
-      [410],
-    );
-    expect(coldStart.body).toStrictEqual({
-      error: {
-        message: "Chat events cursor has expired",
-        code: "CHAT_EVENTS_EXPIRED",
-      },
-    });
-
-    await sendNoCreditMessage(owner, {
-      agentId: agent.agentId,
-      threadId,
-      prompt: `v7-upgrade-tail-${randomUUID()}`,
-    });
-    await projectChatEventSearch(threadId);
-
-    const download = await accept(
-      eventsClient().snapshot({
-        headers: authenticate(owner),
-        params: { threadId },
-      }),
-      [200],
-    );
-    const head = await readChatEventSnapshotHead(context, threadId);
-    expect(head.archive_schema_version).toBe(CURRENT_CHAT_EVENT_SCHEMA_VERSION);
-    expect(head.object_key).not.toBe(v7.objectKey);
-    const snapshotObject = readFakeChatEventObject(head.object_key);
-    if (snapshotObject === undefined) {
-      throw new Error("Expected the upgraded V8 snapshot object");
-    }
-    await trackFakeChatEventObject(Promise.resolve(head.object_key));
-    const rows = gunzipSync(snapshotObject)
-      .toString("utf8")
-      .trim()
-      .split("\n")
-      .map((line) => {
-        return chatEventRowSchema.parse(JSON.parse(line));
-      });
-    const upgraded = rows.filter((row) => {
-      return row.seqId <= v7.lastSeqId;
-    });
-    expect(upgraded).toStrictEqual(
-      expected.map(({ index, fields }) => {
-        return expect.objectContaining({
-          id: v7.rows[index]?.id,
-          seqId: v7.rows[index]?.seqId,
-          ...fields,
-        });
-      }),
-    );
-    const tail = rows.filter((row) => {
-      return row.seqId > v7.lastSeqId;
-    });
-    expect(tail.length).toBeGreaterThan(0);
-    expect(download.body).toMatchObject({
-      lastEventId: tail.at(-1)?.id,
-      lastSeqId: tail.at(-1)?.seqId,
-    });
-  }, 60_000);
-
-  // Chat Event V8 transition: removed in PR-3 with the V7 Snapshot upgrade.
-  it("routes batch cursors inside V7-only coverage to the upgraded V8 Snapshot", async () => {
-    const owner = bdd.user({ orgId: `org_${randomUUID()}` });
-    const agent = await bdd.createAgent(owner, {
-      displayName: "V7 batch catch-up agent",
-    });
-    const threadId = await sendNoCreditMessage(owner, {
-      agentId: agent.agentId,
-      prompt: `v7-batch-${randomUUID()}`,
-    });
-    const { templates } = v7SnapshotUpgradeTemplates();
-    const v7 = await createStore().set(
-      seedV7ChatEventSnapshot$,
-      { chatThreadId: threadId, rows: templates },
-      context.signal,
-    );
-    writeFakeChatEventObject(v7.objectKey, v7.body);
-    await trackFakeChatEventObject(Promise.resolve(v7.objectKey));
-    await sendNoCreditMessage(owner, {
-      agentId: agent.agentId,
-      threadId,
-      prompt: `v7-batch-tail-${randomUUID()}`,
-    });
-    const archivedCursor = v7.rows[2]?.seqId;
-    if (archivedCursor === undefined) {
-      throw new Error("Expected a cursor inside the V7 coverage");
-    }
-
-    // A V7 pointer has no paired terminal cursor, so every cursor at or below
-    // its physical coverage must rebuild from the Snapshot: those Raw Events
-    // may already be reclaimed.
-    for (const cursor of [0, archivedCursor, v7.lastSeqId]) {
-      const covered = await accept(
-        eventsClient().catchUp({
-          headers: authenticate(owner),
-          body: [[threadId, cursor]],
-        }),
-        [200],
-      );
-      expect(covered.body).toStrictEqual({
-        events: {},
-        notFoundThreads: [threadId],
-      });
-    }
-    // Sequence watermarks above that coverage continue from Raw Events.
-    const watermark = v7.lastSeqId + 1;
-    const partitioned = await accept(
-      eventsClient().catchUp({
-        headers: authenticate(owner),
-        body: [[threadId, watermark]],
-      }),
-      [200],
-    );
-    expect(partitioned.body.notFoundThreads).toStrictEqual([]);
-    const tail = partitioned.body.events[threadId] ?? [];
-    expect(tail.length).toBeGreaterThan(0);
-    const tailSeqIds = tail.map((row) => {
-      return row.seqId;
-    });
-    expect(tailSeqIds).toStrictEqual(
-      tailSeqIds
-        .filter((seqId) => {
-          return seqId > watermark;
-        })
-        .sort((left, right) => {
-          return left - right;
-        }),
-    );
-
-    // The rebuild publishes the V8 Snapshot, whose terminal cursor then
-    // catches up with no further events.
-    await projectChatEventSearch(threadId);
-    const download = await accept(
-      eventsClient().snapshot({
-        headers: authenticate(owner),
-        params: { threadId },
-      }),
-      [200],
-    );
-    const head = await readChatEventSnapshotHead(context, threadId);
-    await trackFakeChatEventObject(Promise.resolve(head.object_key));
-    expect(download.body.lastSeqId).toBe(tail.at(-1)?.seqId);
-    const current = await accept(
-      eventsClient().catchUp({
-        headers: authenticate(owner),
-        body: [[threadId, download.body.lastSeqId]],
-      }),
-      [200],
-    );
-    expect(current.body).toStrictEqual({
-      events: { [threadId]: [] },
-      notFoundThreads: [],
     });
   }, 60_000);
 

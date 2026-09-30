@@ -1,6 +1,6 @@
 {
-  "id": "32b68995-f291-4da4-90d9-b63a1b23d8cc",
-  "prevId": "ab7d614c-0b3f-4310-a4db-81100651a036",
+  "id": "c6f07c2a-98c7-4d05-834d-15ee6c360e22",
+  "prevId": "32b68995-f291-4da4-90d9-b63a1b23d8cc",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -8467,6 +8467,21 @@
         }
       },
       "indexes": {
+        "chat_threads_agent_session_unique": {
+          "name": "chat_threads_agent_session_unique",
+          "columns": [
+            {
+              "expression": "agent_session_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "idx_chat_threads_user_agent_pinned": {
           "name": "idx_chat_threads_user_agent_pinned",
           "columns": [

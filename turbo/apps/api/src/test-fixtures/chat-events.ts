@@ -411,25 +411,21 @@ const annotationProjectionInputs = [
       },
     },
   },
-  // GitHub direct chat was retired in #24941 and no longer writes context rows;
-  // historical GitHub source parts still render from stored user messages.
   {
     text: "github issue comment linked",
-    githubSource: {
-      repo: "okou-ai/okou",
-      subjectNumber: 24_218,
-      subjectKind: "issue",
-      triggerCommentId: "123456",
+    sourcePart: {
+      type: "source",
+      kind: "github",
+      href: "https://github.com/okou-ai/okou/issues/24218#issuecomment-123456",
     },
     context: { contextType: "web" },
   },
   {
     text: "github pull request linked",
-    githubSource: {
-      repo: "okou-ai/okou",
-      subjectNumber: 24_219,
-      subjectKind: "pull_request",
-      triggerCommentId: null,
+    sourcePart: {
+      type: "source",
+      kind: "github",
+      href: "https://github.com/okou-ai/okou/pull/24219",
     },
     context: { contextType: "web" },
   },
@@ -444,8 +440,8 @@ function annotationProjectionSourcePart(
       messagePermalink: input.messagePermalink,
     });
   }
-  if ("githubSource" in input) {
-    return createChatEventSourcePart({ kind: "github", ...input.githubSource });
+  if ("sourcePart" in input) {
+    return input.sourcePart;
   }
   if ("feishuContext" in input.context) {
     return createChatEventSourcePart({
@@ -504,13 +500,11 @@ export async function seedChatEventAnnotationProjectionFixture(
       eventType: "input.prompt",
       userMessage: createUserMessageDocument({
         text: "claimed annotation",
-        nonContentPart: createChatEventSourcePart({
+        nonContentPart: {
+          type: "source",
           kind: "github",
-          repo: "okou-ai/okou",
-          subjectNumber: 24_218,
-          subjectKind: "issue",
-          triggerCommentId: "654321",
-        }),
+          href: "https://github.com/okou-ai/okou/issues/24218#issuecomment-654321",
+        },
       }),
       runId: null,
       contextType: "web",
@@ -520,13 +514,11 @@ export async function seedChatEventAnnotationProjectionFixture(
       eventType: "input.prompt",
       userMessage: createUserMessageDocument({
         text: "claimed annotation",
-        nonContentPart: createChatEventSourcePart({
+        nonContentPart: {
+          type: "source",
           kind: "github",
-          repo: "okou-ai/okou",
-          subjectNumber: 24_218,
-          subjectKind: "issue",
-          triggerCommentId: "654321",
-        }),
+          href: "https://github.com/okou-ai/okou/issues/24218#issuecomment-654321",
+        },
       }),
       runId: randomUUID(),
     });

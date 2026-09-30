@@ -70,16 +70,13 @@ function mockBrowserApi(
         })
       : respond(200, { browser: currentSession });
   });
-  context.mocks.api(browserContract.open, ({ body, respond }) => {
+  context.mocks.api(browserContract.open, ({ respond }) => {
     currentSession = liveBrowserSession();
-    return respond(200, {
-      browser: currentSession,
-      lifecycleEventId: body.eventId,
-    });
+    return respond(200, { browser: currentSession });
   });
-  context.mocks.api(browserContract.close, ({ body, respond }) => {
+  context.mocks.api(browserContract.close, ({ respond }) => {
     closeRequestCount += 1;
-    return respond(200, { lifecycleEventId: body.eventId });
+    return respond(200, {});
   });
   context.mocks.api(browserContract.leaseByThread, ({ respond }) => {
     return currentSession === null

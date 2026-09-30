@@ -51,7 +51,6 @@ import {
 } from "../../../test-fixtures/chat-thread-events";
 
 import { setAgentRunCreatedAtFixture } from "../../../test-fixtures/run-deletion";
-import { seedV7ChatEventSnapshot$ } from "../../../test-fixtures/chat-event-snapshot-v7";
 import {
   seedOrgMetadata,
   seedUsagePricingRows,
@@ -85,11 +84,6 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { chatEventDisplayText } from "./helpers/chat-event";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import {
-  deleteFakeChatEventObject,
-  installFakeChatEventR2,
-  writeFakeChatEventObject,
-} from "./helpers/fake-chat-event-r2";
 import { createRouteMocks } from "./helpers/route-test";
 import { seedBuiltInDefaultModelKey } from "./helpers/runtime-state";
 import {
@@ -3590,113 +3584,6 @@ describe("CHAT-03 run usage events", () => {
         ],
       },
     });
-  }, 60_000);
-
-  // Chat Event V8 transition: removed in PR-3 with the V7 Snapshot upgrade.
-  it("revises run usage archived only in a V7 Snapshot", async () => {
-    const { actor, agentId } = await entitledChatActor(
-      "V7 archived usage agent",
-    );
-    installFakeChatEventR2(context);
-    const provider = `v7-usage-${randomUUID().slice(0, 8)}`;
-    const category = "api_request";
-    await seedUsagePricingRows([
-      { kind: "connector", provider, category, unitPrice: 7, unitSize: 2 },
-    ]);
-    const { runId, threadId } = await sendChatRun(actor, {
-      agentId,
-      prompt: "record usage archived by a V7 Snapshot",
-    });
-    await cancelChatRun(actor, runId);
-    const launched = (await chat.listThreadEvents(actor, threadId)).events.at(
-      -1,
-    );
-    if (!launched) {
-      throw new Error("Expected launched chat events");
-    }
-
-    // Infrastructure exception: only a pre-V8 API wrote V7 Snapshot pointers,
-    // and its usage row exists only in that archive. The shared V7 fixture
-    // seeds that state; usage settlement and chat reads stay real.
-    const v7 = await store.set(
-      seedV7ChatEventSnapshot$,
-      {
-        chatThreadId: threadId,
-        rows: [
-          {
-            eventType: "usage.recorded",
-            runId,
-            payload: {
-              usage: {
-                version: 1,
-                totalCredits: 1,
-                settledAt: new Date(now() - 60_000).toISOString(),
-                breakdown: [],
-              },
-            },
-          },
-          // A retired V7 type: the archive only decodes once upgraded to V8.
-          { eventType: "output.thinking", payload: { content: "reasoning" } },
-        ],
-      },
-      context.signal,
-    );
-    writeFakeChatEventObject(v7.objectKey, v7.body);
-    onTestFinished(async () => {
-      await deleteFakeChatEventObject(v7.objectKey);
-    });
-    const archivedUsage = v7.rows[0];
-    if (!archivedUsage) {
-      throw new Error("Expected the archived V7 usage row");
-    }
-
-    await webhooks.requestAgentUsageEvent(
-      {
-        runId,
-        events: [
-          {
-            idempotencyKey: randomUUID(),
-            kind: "connector",
-            provider,
-            category,
-            quantity: 5,
-          },
-        ],
-      },
-      { authorization: `Bearer ${api.sandboxTokenForRun(actor, runId)}` },
-      [200],
-    );
-    await createBillingMediaApi(context).processOrgUsageEvents(actor);
-
-    // Read from a physical cursor: Raw Events below the V7 coverage may
-    // already be reclaimed, and the archived rows are served by the Snapshot.
-    const tail = await chat.listThreadEvents(actor, threadId, {
-      sinceSeqId: launched.seqId,
-      sinceEventId: launched.id,
-    });
-    const usageEvents = tail.events.filter((event) => {
-      return event.eventType === "usage.recorded" && event.runId === runId;
-    });
-    // Settlement finds the usage row in the upgraded V7 archive and revises
-    // it instead of emitting a second, unrelated usage event.
-    expect(usageEvents).toStrictEqual([
-      expect.objectContaining({
-        eventType: "usage.recorded",
-        revokesEventId: archivedUsage.id,
-        usage: expect.objectContaining({
-          version: 1,
-          totalCredits: 18,
-          breakdown: [
-            {
-              kind: "connector",
-              credits: 18,
-              providers: [{ provider, credits: 18 }],
-            },
-          ],
-        }),
-      }),
-    ]);
-    expect(usageEvents[0]?.seqId).toBeGreaterThan(v7.lastSeqId);
   }, 60_000);
 
   it("emits complete allowance-covered usage in one event", async () => {

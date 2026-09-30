@@ -101,11 +101,9 @@ export const chatEvents = pgTable(
     /**
      * Input source discriminator and optional polymorphic context pointer.
      *
-     * `web` identifies a source without a context row; current rows use reserved
-     * UUID sentinels for web queue launch identity, while legacy rows are null.
-     * Migration 1286 rewrote historical Goal inputs to `automation` and
-     * historical GitHub rows to `web`, both without a contextId. For other
-     * values, contextId selects the row in the table named by contextType.
+     * `web` and `automation` can identify an input without a context row.
+     * Web queue launch identity uses reserved UUID sentinels when present.
+     * For other values, contextId selects the row named by contextType.
      * contextId is not unique: when a pending event is claimed, the revoke +
      * insert replacement reuses it. Legal (eventType, contextType)
      * combinations are enforced by the NewChatEvent

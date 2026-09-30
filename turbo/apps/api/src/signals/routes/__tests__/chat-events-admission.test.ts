@@ -482,8 +482,12 @@ describe("CHAT-02: interrupting active chat runs", () => {
       );
     });
     expect(interruptRows).toHaveLength(1);
-    expect(interruptRows[0]).toMatchObject({ id: interruptId, content: null });
-    expect(interruptRows[0]).not.toHaveProperty("runId");
+    expect(interruptRows[0]).toMatchObject({
+      id: interruptId,
+      content: null,
+      eventType: "control.interrupt",
+      interruptsRunId: first.runId,
+    });
     const [storedInterrupt] = await readCanonicalChatEventStorageFixture([
       interruptId,
     ]);
