@@ -2640,7 +2640,6 @@ export type QueuedPromptLaunchInput = Pick<
 
 export interface QueuedPromptLaunchContext {
   readonly userId: string;
-  readonly timing: ChatCallbackPreCreateTimingCollector;
   readonly runInput: QueuedPromptLaunchInput;
 }
 
@@ -2649,6 +2648,7 @@ export const recordQueuedPromptRunLaunch$ = command(
     { set },
     args: QueuedPromptLaunchContext,
     runId: string,
+    timing: ChatCallbackPreCreateTimingCollector,
     signal: AbortSignal,
   ): void => {
     signal.throwIfAborted();
@@ -2680,7 +2680,7 @@ export const recordQueuedPromptRunLaunch$ = command(
         target: runInput.discordDelivery,
       });
     }
-    args.timing.flush(runId, runInput.triggerSource);
+    timing.flush(runId, runInput.triggerSource);
   },
 );
 

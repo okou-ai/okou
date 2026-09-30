@@ -1,8 +1,4 @@
 import { CONVERSATION_GUIDANCE } from "../../lib/conversation-guidance";
-import {
-  type PgPoolAcquisitionCapture,
-  withPgPoolAcquisitionCapture,
-} from "../../lib/db-instrumentation";
 import { executeRawRows } from "../../lib/db-raw-rows";
 import {
   nullableDriverValueDecoder,
@@ -46,10 +42,10 @@ import { onRejection, safeSync, settle, tapError } from "../utils";
 import { buildAgentExecutionConfig } from "./agent-execution-config";
 import { BEFORE_DISPATCH_CANCELLED_ERROR } from "./agent-run-cancellation";
 import {
-  type AgentRunAfterPreCreate,
+  type AgentRunAfterPreCreate as TimedAgentRunAfterPreCreate,
   type AgentRunCreateBody,
-  type AgentRunGraphInput,
-  type AgentRunIdentityInput,
+  type AgentRunGraphInput as TimedAgentRunGraphInput,
+  type AgentRunIdentityInput as TimedAgentRunIdentityInput,
   type AgentRunIdentityCommand,
   type AgentRunRecord,
   agentRunResolutionOptions,
@@ -61,11 +57,9 @@ import {
   allowedStoredConnectorRows,
   assemblePiLaunchResources,
   assertUniquePersistedMountPaths,
-  atomicLaunchPayloadInput,
+  atomicLaunchPayloadData,
   type AtomicLaunchRunInput,
   bindStableAppendSystemPrompt,
-  bootstrapLoadTimingDimensions,
-  bootstrapMaterializeTimingDimensions,
   type BootstrapMetadataQueryRow,
   buildCreateAgentRunArgs,
   buildMergedVariables,
@@ -86,7 +80,6 @@ import {
   composePreparedRunContext,
   connectorScopeForRuntimeSnapshot,
   connectorScopeFromCreateArgs,
-  countBucket,
   type CreateAgentRunArgs,
   type CreateQueueFirstAgentRunCommandArgs,
   type CreateRunErrorResult,
@@ -121,7 +114,6 @@ import {
   materializePreparedPiProvider,
   materializeRunBootstrapContext,
   materializeStoredConnectorSnapshotRows,
-  measureAgentRunPreCreate,
   mergeRecords,
   modelProviderFramework,
   noContentPiMemoryRecall,
@@ -147,7 +139,7 @@ import {
   loadRunRoutePricing,
   type PreparePiLaunchResourcesArgs,
   prepareRequestStorageResolution,
-  type PrepareRunContextInput,
+  type PrepareRunContextInput as TimedPrepareRunContextInput,
   prepareRunnerStorageInput,
   prepareRunOutputMetadata,
   priorPiMemoryRecall,
@@ -172,7 +164,7 @@ import {
   type RunConnectorCatalogSelection,
   type RunConnectorContextSnapshot,
   type RunConnectorPreparation,
-  type RunConnectorReadInput,
+  type RunConnectorReadInput as TimedRunConnectorReadInput,
   type RunConnectorSelection,
   runConnectorTargetFromRow,
   runConnectorTargetIsAuthorized,
@@ -181,8 +173,8 @@ import {
   runCustomConnectorRefreshTokenSecret,
   runEnvironmentSecretNames,
   type RunMemberSnapshot,
-  type RunModelProviderReadInput,
-  type RunPreparedConnectorInputs,
+  type RunModelProviderReadInput as TimedRunModelProviderReadInput,
+  type RunPreparedConnectorInputs as TimedRunPreparedConnectorInputs,
   runThreadConnectorCandidates,
   type RunWorkflowModelState,
   type RunWorkflowReadInput,
@@ -288,7 +280,6 @@ import {
   identityLogFields,
   readCachedConnectorCatalogSnapshot,
 } from "./connector-catalog-external-reader.service";
-import { ConnectorCatalogLoadTiming } from "./connector-catalog-load-timing.service";
 import {
   isPersonalSubscriptionRoute,
   loadMemberSubscriptionModels,
@@ -303,7 +294,6 @@ import {
   clearRuntimeSelectionInFlight,
   getConnectorRuntimeConnector,
   materializeProjectedRuntimeSelection,
-  observeRuntimeSelection,
   projectionIdentityKey,
   rememberProjectedConnectors,
   requestedProjectionConnectorSlugs,
@@ -437,7 +427,6 @@ import {
   planStorageManifestMixedLookup,
   signStorageManifestPresignedUrls,
   type SelectedStoragePresignedUrlCacheRow,
-  storageManifestCacheCountBucket,
   storageManifestPresignedUrlCacheLookupPairs,
   type StorageManifestPresignedUrlCacheScope,
 } from "./system-storage-presigned-url-cache.service";
@@ -659,11 +648,6 @@ interface QueuedModelInput {
   readonly eventId: string;
   readonly featureSwitchContext?: FeatureSwitchContext;
   readonly providerModelSupport?: ProviderModelSupport;
-}
-
-interface QueuedPromptTiming {
-  readonly timing: ChatCallbackPreCreateTimingCollector;
-  readonly runTiming: ApiDispatchTimingCollector;
 }
 
 class QueuedPromptInputInvalidError extends Error {}
@@ -1659,7 +1643,6 @@ function automationSelectionCommand(
     | "connectorSourceId"
   >,
   model: Extract<ModelContext, { readonly ok: true }>,
-  timing: ApiDispatchTimingCollector,
 ): AgentRunSelectionInput &
   Pick<
     CreateQueueFirstAgentRunCommandArgs,
@@ -1698,7 +1681,6 @@ function automationSelectionCommand(
       selectedModel: model.modelPin.selectedModel,
     },
     piExecution: model.piExecution,
-    timing,
   };
 }
 
@@ -1768,7 +1750,15 @@ function isDirectSendContext(contextType: string | null): boolean {
   return contextType === "web" || contextType === "agent_run";
 }
 
-type RunPlan = Omit<AtomicLaunchRunInput, "db" | "phaseTiming">;
+type UntimedRead<T> = Omit<T, "timing"> & { readonly timing?: undefined };
+type AgentRunAfterPreCreate = UntimedRead<TimedAgentRunAfterPreCreate>;
+type AgentRunGraphInput = UntimedRead<TimedAgentRunGraphInput>;
+type AgentRunIdentityInput = UntimedRead<TimedAgentRunIdentityInput>;
+type PrepareRunContextInput = UntimedRead<TimedPrepareRunContextInput>;
+type RunConnectorReadInput = UntimedRead<TimedRunConnectorReadInput>;
+type RunModelProviderReadInput = UntimedRead<TimedRunModelProviderReadInput>;
+type RunPreparedConnectorInputs = UntimedRead<TimedRunPreparedConnectorInputs>;
+type RunPlan = UntimedRead<Omit<AtomicLaunchRunInput, "db" | "phaseTiming">>;
 
 function unreadyQueueHeadRejection(
   head: ChatQueueHeadContext,
@@ -1807,6 +1797,7 @@ function claimAssemblyRejection(
 export interface ClaimRunTiming {
   readonly run: ApiDispatchTimingCollector;
   readonly phase: ApiDispatchPhaseCollector;
+  readonly prompt: ChatCallbackPreCreateTimingCollector;
 }
 
 export interface RunContext {
@@ -2409,7 +2400,6 @@ function claimLaunchRecord(record: ClaimLaunchRecord): ClaimLaunchRecord {
     kind: "prompt",
     context: {
       userId: record.context.userId,
-      timing: record.context.timing,
       runInput: {
         orgId: input.orgId,
         threadId: input.threadId,
@@ -3554,21 +3544,12 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     };
   });
   const resolveQueuedModel$ = queuedModelResolveQueuedModel$;
-  const promptTiming$ = state<QueuedPromptTiming | null>(null);
   const promptSelectedHead$ = computed(async (get) => {
     const head = await get(head$);
     if (!head) {
       throw new Error("Prompt preparation has no selected head");
     }
     return head;
-  });
-  const promptInputInput$ = computed(async (get) => {
-    const head = await get(promptSelectedHead$);
-    const timing = get(promptTiming$);
-    if (!timing) {
-      throw new Error("Prompt preparation has no timing collector");
-    }
-    return { head, ...timing };
   });
   const promptQueuedEventQueuedEvent$ = computed(async (get) => {
     const head = await get(promptSelectedHead$);
@@ -5078,13 +5059,11 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   );
   const initializeQueuedPrompt$ = command(
     async (
-      { get, set },
+      { get },
       head: ChatQueueHeadContext,
-      runTiming: ApiDispatchTimingCollector,
+      timing: ClaimRunTiming,
       signal: AbortSignal,
     ): Promise<boolean> => {
-      const timing = new ChatCallbackPreCreateTimingCollector();
-      set(promptTiming$, { timing, runTiming });
       const early = await get(internalEarlyAssembly$);
       signal.throwIfAborted();
       if (early) {
@@ -5095,7 +5074,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       if (!queued) {
         throw new Error("Prepared prompt has no selected queue input");
       }
-      timing.recordElapsed({
+      timing.prompt.recordElapsed({
         actionType:
           "api_dispatch_pre_create_agent_chat_callback_auto_send_queue_age",
         spanKind: "nested",
@@ -5112,17 +5091,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       if (early) {
         return early;
       }
-      const input = await get(promptInputInput$);
-      const { head, timing } = input;
-      const prepared = await settle(
-        timing.measure(
-          "api_dispatch_pre_create_agent_chat_callback_auto_send_build_input",
-          "top_level",
-          () => {
-            return get(promptRunInputRunInput$);
-          },
-        ),
-      );
+      const head = await get(promptSelectedHead$);
+      const prepared = await settle(get(promptRunInputRunInput$));
       if (!prepared.ok) {
         return queuedPromptPreparationRejection(prepared.error, head);
       }
@@ -5139,15 +5109,12 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       }
       return {
         kind: "assembled",
-        run: {
-          ...buildQueuedCreateAgentRunArgs(runInput, head.apiStartTime),
-          timing: input.runTiming,
-        },
+        run: { ...buildQueuedCreateAgentRunArgs(runInput, head.apiStartTime) },
         producerBinding: agent.producerBinding ?? null,
         rejection: { kind: "prompt", runInput },
         launchRecord: {
           kind: "prompt",
-          context: { userId: head.userId, timing, runInput },
+          context: { userId: head.userId, runInput },
         },
       };
     },
@@ -5170,10 +5137,9 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     if (await get(internalEarlyAssembly$)) {
       return null;
     }
-    const { head, runTiming: timing } = await get(promptInputInput$);
+    const head = await get(promptSelectedHead$);
     const args = await get(promptArgsArgs$);
     return {
-      timing,
       auth: {
         tokenType: "session" as const,
         userId: args.userId,
@@ -5207,7 +5173,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       modelRoute: model.route,
     });
     return {
-      timing: identity.timing,
       command: {
         auth: identity.auth,
         apiStartTime: identity.apiStartTime,
@@ -5248,7 +5213,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         requiredOfficialWorkflowIds:
           args.queuedMessage.requiredOfficialWorkflowIds,
         piExecution,
-        timing: identity.timing,
       },
     };
   });
@@ -6519,15 +6483,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   );
   const workflowAutomationLaunchReadGraphRecordQueuedWorkflowReward$ =
     automationLaunchEffectsRecordQueuedWorkflowReward$;
-  const workflowAutomationLaunchReadGraphInternalTiming$ =
-    state<ApiDispatchTimingCollector | null>(null);
-  const workflowAutomationLaunchReadGraphTiming$ = computed((get) => {
-    const timing = get(workflowAutomationLaunchReadGraphInternalTiming$);
-    if (!timing) {
-      throw new Error("Automation timing is missing its selected input");
-    }
-    return timing;
-  });
   const workflowAutomationLaunchReadGraphModel$ = computed(
     async (get): Promise<ModelContext> => {
       const [args, context] = await Promise.all([
@@ -6569,7 +6524,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         return null;
       }
       return {
-        timing: get(workflowAutomationLaunchReadGraphTiming$),
         auth: workflowAutomationAgentRunAuth(args.due.automation),
         apiStartTime: args.apiStartTime,
         agentId: args.due.agentId,
@@ -6589,10 +6543,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         get(automationExecutionInput$),
       ]);
       return identity && model.ok && args
-        ? {
-            timing: identity.timing,
-            command: automationSelectionCommand(args, model, identity.timing),
-          }
+        ? { command: automationSelectionCommand(args, model) }
         : null;
     },
   );
@@ -6605,8 +6556,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     workflowAutomationLaunchReadGraphRunInput$;
   const recordQueuedWorkflowReward$ =
     workflowAutomationLaunchReadGraphRecordQueuedWorkflowReward$;
-  const internalTiming$ = workflowAutomationLaunchReadGraphInternalTiming$;
-  const timing$ = workflowAutomationLaunchReadGraphTiming$;
   const workflowAutomationLaunchModel$ =
     workflowAutomationLaunchReadGraphModel$;
   const workflowAutomationLaunchIdentityInput$ =
@@ -6616,7 +6565,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   const assembleWorkflowAutomationRun$ = computed(
     async (get): Promise<AssembledWorkflowAutomationRun | RunFailure> => {
       const args = await get(workflowAutomationLaunchInput$);
-      const timing = get(timing$);
+
       const [selection, model, computerUseHostGrant, runInput, readiness] =
         await Promise.all([
           get(workflowAutomationLaunchSelectionInput$),
@@ -6636,11 +6585,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           "A valid automation model is missing execution identity",
         );
       }
-      timing.recordElapsed(
-        "api_dispatch_pre_create_agent_workflow_automation_create_run",
-        "nested",
-        now(),
-      );
+
       return {
         kind: "assembled",
         run: {
@@ -6719,10 +6664,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       runTiming: ApiDispatchTimingCollector,
       signal: AbortSignal,
     ): Promise<false> => {
-      set(
-        internalTiming$,
-        workflowAutomationTiming(runTiming, head.apiStartTime),
-      );
+      workflowAutomationTiming(runTiming, head.apiStartTime);
       const input = await get(automationExecutionInput$);
       signal.throwIfAborted();
       if (!input) {
@@ -6845,9 +6787,13 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     },
   );
   const resolveAutomationModelSnapshot$ = command(
-    async ({ get, set }, signal: AbortSignal): Promise<void> => {
+    async (
+      { get, set },
+      timing: ApiDispatchTimingCollector,
+      signal: AbortSignal,
+    ): Promise<void> => {
       await measureApiDispatchTiming(
-        get(timing$),
+        timing,
         "api_dispatch_pre_create_agent_workflow_automation_resolve_model_context",
         "nested",
         async () => {
@@ -7010,7 +6956,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         throw new Error("Run identity is unavailable");
       }
       return {
-        timing: input.timing,
         command: {
           auth: input.auth,
           apiStartTime: input.apiStartTime,
@@ -7023,34 +6968,28 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     },
   );
   const preCreateAgentIdAgentId$ = computed(async (get) => {
-    const { command: args, timing } = await get(
-      selectedIdentityInputIdentityInput$,
-    );
+    const { command: args } = await get(selectedIdentityInputIdentityInput$);
     const db = get(db$);
-    return await measureAgentRunPreCreate(
-      timing,
-      "api_dispatch_pre_create_agent_resolve_agent_id",
-      async () => {
-        if (args.body.agentId) {
-          return args.body.agentId;
-        }
-        if (!args.body.sessionId) {
-          return null;
-        }
-        const [session] = await db
-          .select({ agentId: agentSessions.agentId })
-          .from(agentSessions)
-          .where(
-            and(
-              eq(agentSessions.id, args.body.sessionId),
-              eq(agentSessions.userId, args.auth.userId),
-              eq(agentSessions.orgId, args.auth.orgId),
-            ),
-          )
-          .limit(1);
-        return session?.agentId ?? null;
-      },
-    );
+    return await (async () => {
+      if (args.body.agentId) {
+        return args.body.agentId;
+      }
+      if (!args.body.sessionId) {
+        return null;
+      }
+      const [session] = await db
+        .select({ agentId: agentSessions.agentId })
+        .from(agentSessions)
+        .where(
+          and(
+            eq(agentSessions.id, args.body.sessionId),
+            eq(agentSessions.userId, args.auth.userId),
+            eq(agentSessions.orgId, args.auth.orgId),
+          ),
+        )
+        .limit(1);
+      return session?.agentId ?? null;
+    })();
   });
   const preCreateRequestObservationRequestObservation$ = computed(
     async (get) => {
@@ -7063,7 +7002,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   );
   const preCreateAgentAgent$ = computed(
     async (get): Promise<AgentRunRecord | null> => {
-      const { timing } = await get(selectedIdentityInputIdentityInput$);
       const db = get(db$);
       const [agentId, observation] = await Promise.all([
         get(preCreateAgentIdAgentId$),
@@ -7072,38 +7010,30 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       if (!agentId) {
         return null;
       }
-      return await measureAgentRunPreCreate(
-        timing,
-        "api_dispatch_pre_create_agent_load_agent",
-        async () => {
-          if (observation) {
-            return observation.agent;
-          }
-          const [agent] = await db
-            .select({
-              id: agents.id,
-              name: agents.name,
-              orgId: agents.orgId,
-              defaultAgentId: orgMetadata.defaultAgentId,
-              owner: agents.owner,
-              visibility: agents.visibility,
-              displayName: agents.displayName,
-              description: agents.description,
-              sound: agents.sound,
-              modelProviderId: agents.modelProviderId,
-              selectedModel: agents.selectedModel,
-            })
-            .from(agents)
-            .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
-            .where(eq(agents.id, agentId))
-            .limit(1);
-          return agent ?? null;
-        },
-        {
-          authorized_request_agent_source:
-            observation === undefined ? "database" : "request_observation",
-        },
-      );
+      return await (async () => {
+        if (observation) {
+          return observation.agent;
+        }
+        const [agent] = await db
+          .select({
+            id: agents.id,
+            name: agents.name,
+            orgId: agents.orgId,
+            defaultAgentId: orgMetadata.defaultAgentId,
+            owner: agents.owner,
+            visibility: agents.visibility,
+            displayName: agents.displayName,
+            description: agents.description,
+            sound: agents.sound,
+            modelProviderId: agents.modelProviderId,
+            selectedModel: agents.selectedModel,
+          })
+          .from(agents)
+          .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
+          .where(eq(agents.id, agentId))
+          .limit(1);
+        return agent ?? null;
+      })();
     },
   );
   const claimReadIdentity$ = computed(async (get) => {
@@ -7318,23 +7248,15 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   );
   const preCreateBootstrapRowsBootstrapRows$ = computed(
     async (get): Promise<RunBootstrapSnapshotRows> => {
-      const { timing } = await get(selectedIdentityInputIdentityInput$);
       let snapshot: RunBootstrapSnapshotRows | undefined;
-      return await measureAgentRunPreCreate(
-        timing,
-        "api_dispatch_pre_create_agent_load_bootstrap_snapshot_rows",
-        async () => {
-          const [metadataRows, workflowRows] = await Promise.all([
-            get(preCreateBootstrapMetadataRowsBootstrapMetadataRows$),
-            get(preCreateWorkflowRowsWorkflowRows$),
-          ]);
-          snapshot = { metadataRows, workflowRows };
-          return snapshot;
-        },
-        () => {
-          return bootstrapLoadTimingDimensions(snapshot);
-        },
-      );
+      return await (async () => {
+        const [metadataRows, workflowRows] = await Promise.all([
+          get(preCreateBootstrapMetadataRowsBootstrapMetadataRows$),
+          get(preCreateWorkflowRowsWorkflowRows$),
+        ]);
+        snapshot = { metadataRows, workflowRows };
+        return snapshot;
+      })();
     },
   );
   const preCreateBootstrapMetadata$ = computed(async (get) => {
@@ -7350,29 +7272,22 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     );
   });
   const preCreateBootstrapBootstrap$ = computed(async (get) => {
-    const { command, timing } = await get(selectedIdentityInputIdentityInput$);
+    const { command } = await get(selectedIdentityInputIdentityInput$);
     const [rows, metadata] = await Promise.all([
       get(preCreateBootstrapRowsBootstrapRows$),
       get(preCreateBootstrapMetadata$),
     ]);
     let context: RunBootstrapContext | undefined;
-    return await measureAgentRunPreCreate(
-      timing,
-      "api_dispatch_pre_create_agent_materialize_bootstrap_context",
-      () => {
-        context = {
-          ...metadata,
-          workflows: workflowsForRunFromRows(
-            rows.workflowRows,
-            command.auth.userId,
-          ),
-        };
-        return context;
-      },
-      () => {
-        return bootstrapMaterializeTimingDimensions(rows, context);
-      },
-    );
+    return await (() => {
+      context = {
+        ...metadata,
+        workflows: workflowsForRunFromRows(
+          rows.workflowRows,
+          command.auth.userId,
+        ),
+      };
+      return context;
+    })();
   });
   const preCreateSubscriptionAccountSubscriptionAccount$ = computed(
     async (
@@ -7384,7 +7299,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         }
       | ReturnType<typeof conflict>
     > => {
-      const { command, timing } = await get(preCreateInput$);
+      const { command } = await get(preCreateInput$);
       const db = get(db$);
       const pin = command.agentRunModelPin;
       if (
@@ -7396,75 +7311,67 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         return { command };
       }
       const providerType = pin.modelProvider;
-      return await measureAgentRunPreCreate(
-        timing,
-        "api_dispatch_pre_create_agent_capture_subscription_account",
-        async () => {
-          const preloaded = personalSubscriptionAccountCandidates({
-            command,
-            providerType,
-            modelProviderId: pin.modelProviderId,
-            snapshot: await get(memberAccountSnapshot$),
-          });
-          const accountCandidates =
-            preloaded ??
-            (await db
-              .select()
-              .from(modelProviderAccounts)
-              .where(
-                and(
-                  eq(modelProviderAccounts.orgId, command.auth.orgId),
-                  eq(modelProviderAccounts.userId, command.auth.userId),
-                  isNull(modelProviderAccounts.disconnectedAt),
-                  pin.modelProviderId === null
-                    ? and(
+      return await (async () => {
+        const preloaded = personalSubscriptionAccountCandidates({
+          command,
+          providerType,
+          modelProviderId: pin.modelProviderId,
+          snapshot: await get(memberAccountSnapshot$),
+        });
+        const accountCandidates =
+          preloaded ??
+          (await db
+            .select()
+            .from(modelProviderAccounts)
+            .where(
+              and(
+                eq(modelProviderAccounts.orgId, command.auth.orgId),
+                eq(modelProviderAccounts.userId, command.auth.userId),
+                isNull(modelProviderAccounts.disconnectedAt),
+                pin.modelProviderId === null
+                  ? and(
+                      eq(modelProviderAccounts.type, providerType),
+                      eq(modelProviderAccounts.isActive, true),
+                    )
+                  : or(
+                      eq(modelProviderAccounts.id, pin.modelProviderId),
+                      and(
+                        eq(
+                          modelProviderAccounts.modelProviderId,
+                          pin.modelProviderId,
+                        ),
                         eq(modelProviderAccounts.type, providerType),
                         eq(modelProviderAccounts.isActive, true),
-                      )
-                    : or(
-                        eq(modelProviderAccounts.id, pin.modelProviderId),
-                        and(
-                          eq(
-                            modelProviderAccounts.modelProviderId,
-                            pin.modelProviderId,
-                          ),
-                          eq(modelProviderAccounts.type, providerType),
-                          eq(modelProviderAccounts.isActive, true),
-                        ),
                       ),
-                ),
-              )
-              .limit(pin.modelProviderId === null ? 1 : 2));
-          const account =
-            accountCandidates.find((candidate) => {
-              return candidate.id === pin.modelProviderId;
-            }) ?? accountCandidates[0];
-          if (!account || account.type !== providerType) {
-            return conflict(
-              "The selected subscription account is unavailable. Reconnect it before starting another run.",
-            );
-          }
-          return {
-            capturedPersonalSubscriptionAccount: {
-              id: account.id,
-              orgId: account.orgId,
-              userId: account.userId,
-              type: providerType,
-            },
-            command: {
-              ...command,
-              modelProviderId: account.id,
-              agentRunModelPin: { ...pin, modelProviderId: account.id },
-            },
-          };
-        },
-      );
+                    ),
+              ),
+            )
+            .limit(pin.modelProviderId === null ? 1 : 2));
+        const account =
+          accountCandidates.find((candidate) => {
+            return candidate.id === pin.modelProviderId;
+          }) ?? accountCandidates[0];
+        if (!account || account.type !== providerType) {
+          return conflict(
+            "The selected subscription account is unavailable. Reconnect it before starting another run.",
+          );
+        }
+        return {
+          capturedPersonalSubscriptionAccount: {
+            id: account.id,
+            orgId: account.orgId,
+            userId: account.userId,
+            type: providerType,
+          },
+          command: {
+            ...command,
+            modelProviderId: account.id,
+            agentRunModelPin: { ...pin, modelProviderId: account.id },
+          },
+        };
+      })();
     },
   );
-  const catalogInput$ = computed(async (get) => {
-    const { timing } = await get(selectedIdentityInputIdentityInput$);
-    return { timing };
-  });
   const requestedSlugs$ = computed(async (get) => {
     const bootstrap = await get(preCreateBootstrapMetadata$);
     return {
@@ -7472,106 +7379,95 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       metadataConnectorSlugs: bootstrap.connectorCatalogMetadataSlugs,
     };
   });
-  const catalogReadInput$ = computed(async (get) => {
-    const { timing } = await get(catalogInput$);
-    return { timing: new ConnectorCatalogLoadTiming(timing, undefined) };
-  });
   const connectorCatalogIdentity$ = computed(
     async (get): Promise<CapturedConnectorCatalogIdentity | undefined> => {
-      const input = await get(catalogReadInput$);
-      if (input === undefined) {
-        return undefined;
-      }
       const sourceId = connectorCatalogSource().sourceId;
       const capabilityDigest =
         connectorCatalogExecutableCapabilityState().digest;
       const validator = currentConnectorCatalogValidatorIdentity();
-      const row = await input.timing.measure(
-        "api_dispatch_connector_catalog_query_projection_identity",
-        async () => {
-          const [row] = await get(db$)
-            .select({
-              projectionSetId: connectorCatalogRuntimeProjectionSets.id,
-              schemaVersion: connectorCatalogActiveSnapshot.schemaVersion,
-              catalogVersion: connectorCatalogActiveSnapshot.catalogVersion,
-              catalogDigest: connectorCatalogActiveSnapshot.catalogDigest,
-              projectionVersion:
-                connectorCatalogRuntimeProjectionSets.projectionVersion,
-              connectorCount:
-                connectorCatalogRuntimeProjectionSets.connectorCount,
-              projectionValidationBackendVersion:
-                connectorCatalogRuntimeProjectionSets.catalogValidationBackendVersion,
-              projectionValidationBuildCommitSha:
-                connectorCatalogRuntimeProjectionSets.catalogValidationBuildCommitSha,
-              evaluatedCapabilityDigest:
+      const row = await (async () => {
+        const [row] = await get(db$)
+          .select({
+            projectionSetId: connectorCatalogRuntimeProjectionSets.id,
+            schemaVersion: connectorCatalogActiveSnapshot.schemaVersion,
+            catalogVersion: connectorCatalogActiveSnapshot.catalogVersion,
+            catalogDigest: connectorCatalogActiveSnapshot.catalogDigest,
+            projectionVersion:
+              connectorCatalogRuntimeProjectionSets.projectionVersion,
+            connectorCount:
+              connectorCatalogRuntimeProjectionSets.connectorCount,
+            projectionValidationBackendVersion:
+              connectorCatalogRuntimeProjectionSets.catalogValidationBackendVersion,
+            projectionValidationBuildCommitSha:
+              connectorCatalogRuntimeProjectionSets.catalogValidationBuildCommitSha,
+            evaluatedCapabilityDigest:
+              connectorCatalogCompatibilityEvaluation.executableCapabilityDigest,
+            compatibilityValidationBackendVersion:
+              connectorCatalogCompatibilityEvaluation.catalogValidationBackendVersion,
+            compatibilityValidationBuildCommitSha:
+              connectorCatalogCompatibilityEvaluation.catalogValidationBuildCommitSha,
+            filteredAuthMethods:
+              connectorCatalogCompatibilityEvaluation.filteredAuthMethods,
+          })
+          .from(connectorCatalogActiveSnapshot)
+          .leftJoin(
+            connectorCatalogRuntimeProjectionSets,
+            and(
+              eq(
+                connectorCatalogRuntimeProjectionSets.sourceId,
+                connectorCatalogActiveSnapshot.sourceId,
+              ),
+              eq(
+                connectorCatalogRuntimeProjectionSets.schemaVersion,
+                connectorCatalogActiveSnapshot.schemaVersion,
+              ),
+              eq(
+                connectorCatalogRuntimeProjectionSets.catalogVersion,
+                connectorCatalogActiveSnapshot.catalogVersion,
+              ),
+              eq(
+                connectorCatalogRuntimeProjectionSets.catalogDigest,
+                connectorCatalogActiveSnapshot.catalogDigest,
+              ),
+            ),
+          )
+          .leftJoin(
+            connectorCatalogCompatibilityEvaluation,
+            and(
+              eq(
+                connectorCatalogCompatibilityEvaluation.sourceId,
+                connectorCatalogActiveSnapshot.sourceId,
+              ),
+              eq(
+                connectorCatalogCompatibilityEvaluation.schemaVersion,
+                connectorCatalogActiveSnapshot.schemaVersion,
+              ),
+              eq(
+                connectorCatalogCompatibilityEvaluation.catalogVersion,
+                connectorCatalogActiveSnapshot.catalogVersion,
+              ),
+              eq(
+                connectorCatalogCompatibilityEvaluation.catalogDigest,
+                connectorCatalogActiveSnapshot.catalogDigest,
+              ),
+              eq(
                 connectorCatalogCompatibilityEvaluation.executableCapabilityDigest,
-              compatibilityValidationBackendVersion:
-                connectorCatalogCompatibilityEvaluation.catalogValidationBackendVersion,
-              compatibilityValidationBuildCommitSha:
-                connectorCatalogCompatibilityEvaluation.catalogValidationBuildCommitSha,
-              filteredAuthMethods:
-                connectorCatalogCompatibilityEvaluation.filteredAuthMethods,
-            })
-            .from(connectorCatalogActiveSnapshot)
-            .leftJoin(
-              connectorCatalogRuntimeProjectionSets,
-              and(
-                eq(
-                  connectorCatalogRuntimeProjectionSets.sourceId,
-                  connectorCatalogActiveSnapshot.sourceId,
-                ),
-                eq(
-                  connectorCatalogRuntimeProjectionSets.schemaVersion,
-                  connectorCatalogActiveSnapshot.schemaVersion,
-                ),
-                eq(
-                  connectorCatalogRuntimeProjectionSets.catalogVersion,
-                  connectorCatalogActiveSnapshot.catalogVersion,
-                ),
-                eq(
-                  connectorCatalogRuntimeProjectionSets.catalogDigest,
-                  connectorCatalogActiveSnapshot.catalogDigest,
-                ),
+                capabilityDigest,
               ),
-            )
-            .leftJoin(
-              connectorCatalogCompatibilityEvaluation,
-              and(
-                eq(
-                  connectorCatalogCompatibilityEvaluation.sourceId,
-                  connectorCatalogActiveSnapshot.sourceId,
-                ),
-                eq(
-                  connectorCatalogCompatibilityEvaluation.schemaVersion,
-                  connectorCatalogActiveSnapshot.schemaVersion,
-                ),
-                eq(
-                  connectorCatalogCompatibilityEvaluation.catalogVersion,
-                  connectorCatalogActiveSnapshot.catalogVersion,
-                ),
-                eq(
-                  connectorCatalogCompatibilityEvaluation.catalogDigest,
-                  connectorCatalogActiveSnapshot.catalogDigest,
-                ),
-                eq(
-                  connectorCatalogCompatibilityEvaluation.executableCapabilityDigest,
-                  capabilityDigest,
-                ),
+            ),
+          )
+          .where(
+            and(
+              eq(connectorCatalogActiveSnapshot.sourceId, sourceId),
+              eq(
+                connectorCatalogActiveSnapshot.schemaVersion,
+                SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
               ),
-            )
-            .where(
-              and(
-                eq(connectorCatalogActiveSnapshot.sourceId, sourceId),
-                eq(
-                  connectorCatalogActiveSnapshot.schemaVersion,
-                  SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
-                ),
-              ),
-            )
-            .limit(1);
-          return row;
-        },
-      );
+            ),
+          )
+          .limit(1);
+        return row;
+      })();
       return {
         identity:
           row === undefined
@@ -7608,10 +7504,9 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   });
   const runtimeCatalogProjectionRowsProjectionRows$ = computed(async (get) => {
     const db = get(db$);
-    const [captured, requested, { timing }] = await Promise.all([
+    const [captured, requested] = await Promise.all([
       get(connectorCatalogIdentity$),
       get(runtimeCatalogInputRequestedSlugs$),
-      get(catalogReadInput$),
     ]);
     if (captured === undefined) {
       throw new Error("Connector catalog identity input is unavailable");
@@ -7634,47 +7529,33 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     const rows: ConnectorCatalogRuntimeProjectionRowsRead =
       uncachedSlugs.length === 0
         ? { kind: "ready", connectors: [], missingConnectorSlugs: [] }
-        : await timing.measure(
-            "api_dispatch_connector_catalog_query_projection_rows",
-            async () => {
-              const selectedRows = await timing.measure(
-                "api_dispatch_connector_catalog_fetch_projection_rows",
-                async () => {
-                  return await db
-                    .select({
-                      connectorSlug:
-                        connectorCatalogRuntimeProjections.connectorSlug,
-                      connectorDigest:
-                        connectorCatalogRuntimeProjections.connectorDigest,
-                      connectorPayload:
-                        connectorCatalogRuntimeProjections.connectorPayload,
-                    })
-                    .from(connectorCatalogRuntimeProjections)
-                    .where(
-                      and(
-                        eq(
-                          connectorCatalogRuntimeProjections.projectionSetId,
-                          projection.identity.projectionSetId,
-                        ),
-                        inArray(
-                          connectorCatalogRuntimeProjections.connectorSlug,
-                          uncachedSlugs,
-                        ),
-                      ),
-                    );
-                },
+        : await (async () => {
+            const selectedRows = await db
+              .select({
+                connectorSlug: connectorCatalogRuntimeProjections.connectorSlug,
+                connectorDigest:
+                  connectorCatalogRuntimeProjections.connectorDigest,
+                connectorPayload:
+                  connectorCatalogRuntimeProjections.connectorPayload,
+              })
+              .from(connectorCatalogRuntimeProjections)
+              .where(
+                and(
+                  eq(
+                    connectorCatalogRuntimeProjections.projectionSetId,
+                    projection.identity.projectionSetId,
+                  ),
+                  inArray(
+                    connectorCatalogRuntimeProjections.connectorSlug,
+                    uncachedSlugs,
+                  ),
+                ),
               );
-              return timing.measureProjectionRowValidation(
-                (validationTiming) => {
-                  return validateConnectorCatalogRuntimeProjectionRows({
-                    rows: selectedRows,
-                    connectorSlugs: uncachedSlugs,
-                    timing: validationTiming,
-                  });
-                },
-              );
-            },
-          );
+            return validateConnectorCatalogRuntimeProjectionRows({
+              rows: selectedRows,
+              connectorSlugs: uncachedSlugs,
+            });
+          })();
     return {
       kind: "projection" as const,
       captured,
@@ -7696,132 +7577,126 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       return undefined;
     }
     const db = get(db$);
-    const { timing } = await get(catalogReadInput$);
-    return await timing.measure(
-      "api_dispatch_connector_catalog_count_projection_rows",
-      async () => {
-        const [row] = await db
-          .select({ value: count() })
-          .from(connectorCatalogRuntimeProjections)
-          .where(
-            eq(
-              connectorCatalogRuntimeProjections.projectionSetId,
-              rows.projection.identity.projectionSetId,
-            ),
-          );
-        if (row === undefined) {
-          throw new Error(
-            "Connector runtime projection count query returned no row",
-          );
-        }
-        return row.value;
-      },
-    );
+
+    return await (async () => {
+      const [row] = await db
+        .select({ value: count() })
+        .from(connectorCatalogRuntimeProjections)
+        .where(
+          eq(
+            connectorCatalogRuntimeProjections.projectionSetId,
+            rows.projection.identity.projectionSetId,
+          ),
+        );
+      if (row === undefined) {
+        throw new Error(
+          "Connector runtime projection count query returned no row",
+        );
+      }
+      return row.value;
+    })();
   });
   const freshIdentityInput$ = computed(async (get) => {
     const rows = await get(runtimeCatalogProjectionRowsProjectionRows$);
-    return rows.kind === "projection" &&
+    return (
+      rows.kind === "projection" &&
       rows.rows.kind === "ready" &&
       rows.rows.missingConnectorSlugs.length > 0
-      ? await get(catalogReadInput$)
-      : undefined;
+    );
   });
   const capturedConnectorCatalogIdentity$ = computed(
     async (get): Promise<CapturedConnectorCatalogIdentity | undefined> => {
-      const input = await get(freshIdentityInput$);
-      if (input === undefined) {
+      const needed = await get(freshIdentityInput$);
+      if (!needed) {
         return undefined;
       }
       const sourceId = connectorCatalogSource().sourceId;
       const capabilityDigest =
         connectorCatalogExecutableCapabilityState().digest;
       const validator = currentConnectorCatalogValidatorIdentity();
-      const row = await input.timing.measure(
-        "api_dispatch_connector_catalog_query_projection_identity",
-        async () => {
-          const [row] = await get(db$)
-            .select({
-              projectionSetId: connectorCatalogRuntimeProjectionSets.id,
-              schemaVersion: connectorCatalogActiveSnapshot.schemaVersion,
-              catalogVersion: connectorCatalogActiveSnapshot.catalogVersion,
-              catalogDigest: connectorCatalogActiveSnapshot.catalogDigest,
-              projectionVersion:
-                connectorCatalogRuntimeProjectionSets.projectionVersion,
-              connectorCount:
-                connectorCatalogRuntimeProjectionSets.connectorCount,
-              projectionValidationBackendVersion:
-                connectorCatalogRuntimeProjectionSets.catalogValidationBackendVersion,
-              projectionValidationBuildCommitSha:
-                connectorCatalogRuntimeProjectionSets.catalogValidationBuildCommitSha,
-              evaluatedCapabilityDigest:
+      const row = await (async () => {
+        const [row] = await get(db$)
+          .select({
+            projectionSetId: connectorCatalogRuntimeProjectionSets.id,
+            schemaVersion: connectorCatalogActiveSnapshot.schemaVersion,
+            catalogVersion: connectorCatalogActiveSnapshot.catalogVersion,
+            catalogDigest: connectorCatalogActiveSnapshot.catalogDigest,
+            projectionVersion:
+              connectorCatalogRuntimeProjectionSets.projectionVersion,
+            connectorCount:
+              connectorCatalogRuntimeProjectionSets.connectorCount,
+            projectionValidationBackendVersion:
+              connectorCatalogRuntimeProjectionSets.catalogValidationBackendVersion,
+            projectionValidationBuildCommitSha:
+              connectorCatalogRuntimeProjectionSets.catalogValidationBuildCommitSha,
+            evaluatedCapabilityDigest:
+              connectorCatalogCompatibilityEvaluation.executableCapabilityDigest,
+            compatibilityValidationBackendVersion:
+              connectorCatalogCompatibilityEvaluation.catalogValidationBackendVersion,
+            compatibilityValidationBuildCommitSha:
+              connectorCatalogCompatibilityEvaluation.catalogValidationBuildCommitSha,
+            filteredAuthMethods:
+              connectorCatalogCompatibilityEvaluation.filteredAuthMethods,
+          })
+          .from(connectorCatalogActiveSnapshot)
+          .leftJoin(
+            connectorCatalogRuntimeProjectionSets,
+            and(
+              eq(
+                connectorCatalogRuntimeProjectionSets.sourceId,
+                connectorCatalogActiveSnapshot.sourceId,
+              ),
+              eq(
+                connectorCatalogRuntimeProjectionSets.schemaVersion,
+                connectorCatalogActiveSnapshot.schemaVersion,
+              ),
+              eq(
+                connectorCatalogRuntimeProjectionSets.catalogVersion,
+                connectorCatalogActiveSnapshot.catalogVersion,
+              ),
+              eq(
+                connectorCatalogRuntimeProjectionSets.catalogDigest,
+                connectorCatalogActiveSnapshot.catalogDigest,
+              ),
+            ),
+          )
+          .leftJoin(
+            connectorCatalogCompatibilityEvaluation,
+            and(
+              eq(
+                connectorCatalogCompatibilityEvaluation.sourceId,
+                connectorCatalogActiveSnapshot.sourceId,
+              ),
+              eq(
+                connectorCatalogCompatibilityEvaluation.schemaVersion,
+                connectorCatalogActiveSnapshot.schemaVersion,
+              ),
+              eq(
+                connectorCatalogCompatibilityEvaluation.catalogVersion,
+                connectorCatalogActiveSnapshot.catalogVersion,
+              ),
+              eq(
+                connectorCatalogCompatibilityEvaluation.catalogDigest,
+                connectorCatalogActiveSnapshot.catalogDigest,
+              ),
+              eq(
                 connectorCatalogCompatibilityEvaluation.executableCapabilityDigest,
-              compatibilityValidationBackendVersion:
-                connectorCatalogCompatibilityEvaluation.catalogValidationBackendVersion,
-              compatibilityValidationBuildCommitSha:
-                connectorCatalogCompatibilityEvaluation.catalogValidationBuildCommitSha,
-              filteredAuthMethods:
-                connectorCatalogCompatibilityEvaluation.filteredAuthMethods,
-            })
-            .from(connectorCatalogActiveSnapshot)
-            .leftJoin(
-              connectorCatalogRuntimeProjectionSets,
-              and(
-                eq(
-                  connectorCatalogRuntimeProjectionSets.sourceId,
-                  connectorCatalogActiveSnapshot.sourceId,
-                ),
-                eq(
-                  connectorCatalogRuntimeProjectionSets.schemaVersion,
-                  connectorCatalogActiveSnapshot.schemaVersion,
-                ),
-                eq(
-                  connectorCatalogRuntimeProjectionSets.catalogVersion,
-                  connectorCatalogActiveSnapshot.catalogVersion,
-                ),
-                eq(
-                  connectorCatalogRuntimeProjectionSets.catalogDigest,
-                  connectorCatalogActiveSnapshot.catalogDigest,
-                ),
+                capabilityDigest,
               ),
-            )
-            .leftJoin(
-              connectorCatalogCompatibilityEvaluation,
-              and(
-                eq(
-                  connectorCatalogCompatibilityEvaluation.sourceId,
-                  connectorCatalogActiveSnapshot.sourceId,
-                ),
-                eq(
-                  connectorCatalogCompatibilityEvaluation.schemaVersion,
-                  connectorCatalogActiveSnapshot.schemaVersion,
-                ),
-                eq(
-                  connectorCatalogCompatibilityEvaluation.catalogVersion,
-                  connectorCatalogActiveSnapshot.catalogVersion,
-                ),
-                eq(
-                  connectorCatalogCompatibilityEvaluation.catalogDigest,
-                  connectorCatalogActiveSnapshot.catalogDigest,
-                ),
-                eq(
-                  connectorCatalogCompatibilityEvaluation.executableCapabilityDigest,
-                  capabilityDigest,
-                ),
+            ),
+          )
+          .where(
+            and(
+              eq(connectorCatalogActiveSnapshot.sourceId, sourceId),
+              eq(
+                connectorCatalogActiveSnapshot.schemaVersion,
+                SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
               ),
-            )
-            .where(
-              and(
-                eq(connectorCatalogActiveSnapshot.sourceId, sourceId),
-                eq(
-                  connectorCatalogActiveSnapshot.schemaVersion,
-                  SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
-                ),
-              ),
-            )
-            .limit(1);
-          return row;
-        },
-      );
+            ),
+          )
+          .limit(1);
+        return row;
+      })();
       return {
         identity:
           row === undefined
@@ -7891,7 +7766,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       );
     }
     return {
-      ...(await get(catalogReadInput$)),
       identity: result.captured.identity,
     };
   });
@@ -7900,51 +7774,45 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     if (args === undefined) {
       return undefined;
     }
-    const row = await args.timing.measure(
-      "api_dispatch_connector_catalog_query_payload",
-      async () => {
-        const [row] = await get(db$)
-          .select({
-            catalogRawSize: connectorCatalogActiveSnapshot.catalogRawSize,
-            catalogGzip: connectorCatalogActiveSnapshot.catalogGzip,
-            catalogValidationBackendVersion:
-              connectorCatalogCompatibilityEvaluation.catalogValidationBackendVersion,
-            catalogValidationBuildCommitSha:
-              connectorCatalogCompatibilityEvaluation.catalogValidationBuildCommitSha,
-            executableCapabilityDigest:
-              connectorCatalogCompatibilityEvaluation.executableCapabilityDigest,
-            filteredAuthMethods:
-              connectorCatalogCompatibilityEvaluation.filteredAuthMethods,
-          })
-          .from(connectorCatalogActiveSnapshot)
-          .leftJoin(
-            connectorCatalogCompatibilityEvaluation,
-            externalCatalogJoin(args.identity.capabilityDigest),
-          )
-          .where(
-            and(
-              eq(
-                connectorCatalogActiveSnapshot.sourceId,
-                args.identity.sourceId,
-              ),
-              eq(
-                connectorCatalogActiveSnapshot.schemaVersion,
-                args.identity.schemaVersion,
-              ),
-              eq(
-                connectorCatalogActiveSnapshot.catalogVersion,
-                args.identity.catalogVersion,
-              ),
-              eq(
-                connectorCatalogActiveSnapshot.catalogDigest,
-                args.identity.catalogDigest,
-              ),
+    const row = await (async () => {
+      const [row] = await get(db$)
+        .select({
+          catalogRawSize: connectorCatalogActiveSnapshot.catalogRawSize,
+          catalogGzip: connectorCatalogActiveSnapshot.catalogGzip,
+          catalogValidationBackendVersion:
+            connectorCatalogCompatibilityEvaluation.catalogValidationBackendVersion,
+          catalogValidationBuildCommitSha:
+            connectorCatalogCompatibilityEvaluation.catalogValidationBuildCommitSha,
+          executableCapabilityDigest:
+            connectorCatalogCompatibilityEvaluation.executableCapabilityDigest,
+          filteredAuthMethods:
+            connectorCatalogCompatibilityEvaluation.filteredAuthMethods,
+        })
+        .from(connectorCatalogActiveSnapshot)
+        .leftJoin(
+          connectorCatalogCompatibilityEvaluation,
+          externalCatalogJoin(args.identity.capabilityDigest),
+        )
+        .where(
+          and(
+            eq(connectorCatalogActiveSnapshot.sourceId, args.identity.sourceId),
+            eq(
+              connectorCatalogActiveSnapshot.schemaVersion,
+              args.identity.schemaVersion,
             ),
-          )
-          .limit(1);
-        return row;
-      },
-    );
+            eq(
+              connectorCatalogActiveSnapshot.catalogVersion,
+              args.identity.catalogVersion,
+            ),
+            eq(
+              connectorCatalogActiveSnapshot.catalogDigest,
+              args.identity.catalogDigest,
+            ),
+          ),
+        )
+        .limit(1);
+      return row;
+    })();
     if (row === undefined) {
       throw new ExternalConnectorCatalogUnavailableError(
         "captured_identity_unavailable",
@@ -7954,7 +7822,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       return decodeAcceptedConnectorCatalogPayload({
         identity: args.identity,
         capability: connectorCatalogExecutableCapabilityState(),
-        timing: args.timing,
         row,
       });
     });
@@ -7991,8 +7858,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         );
       }
       const snapshot = await readCachedConnectorCatalogSnapshot({
+        timing: undefined,
         identity: input.identity,
-        timing: input.timing,
         load: async () => {
           return await get(snapshotPayload$);
         },
@@ -8007,10 +7874,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   );
   const runtimeCatalogSelectionResultSelectionResult$ = computed(
     async (get): Promise<RuntimeSelectionBuildResult> => {
-      const [result, { timing }] = await Promise.all([
-        get(runtimeCatalogProjectionResultProjectionResult$),
-        get(catalogReadInput$),
-      ]);
+      const result = await get(runtimeCatalogProjectionResultProjectionResult$);
       if (result.kind === "fallback") {
         const acceptedSnapshot = await get(
           capturedConnectorCatalogSnapshotCompleteSnapshot$,
@@ -8023,7 +7887,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           load: {
             selection: runtimeSelectionFromAcceptedSnapshot({
               acceptedSnapshot,
-              timing,
               ...result.requested,
             }),
             source: "full_fallback",
@@ -8039,7 +7902,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         cacheOutcome: result.cacheOutcome,
         load: {
           selection: materializeProjectedRuntimeSelection({
-            timing,
             projection: result.projection,
             connectors: [...result.cached, ...result.rows.connectors],
             ...result.requested,
@@ -8050,42 +7912,30 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     },
   );
   const runtimeCatalogSelectionConnectorCatalog$ = computed(async (get) => {
-    const { timing } = await get(catalogReadInput$);
-    return await timing.measureComplete(async () => {
+    return await (async () => {
       const [requested, captured] = await Promise.all([
         get(runtimeCatalogInputRequestedSlugs$),
         get(connectorCatalogIdentity$),
       ]);
-      timing.recordRequestedConnectorCounts(requested);
+
       if (captured === undefined) {
         throw new Error("Connector catalog identity input is unavailable");
       }
       const identity = captured.projection;
       if (identity.kind === "fallback") {
         const result = await get(runtimeCatalogSelectionResultSelectionResult$);
-        timing.recordProjectionResult({
-          source: result.load.source,
-          cacheOutcome: result.cacheOutcome,
-          fallbackReason: result.load.fallbackReason,
-        });
+
         return result.load.selection;
       }
       const key = runtimeSelectionProjectionKey({
         identity: identity.projection.identity,
         ...requested,
       });
-      timing.recordProjectionCacheObservation(
-        observeRuntimeSelection(identity.projection.identity, key),
-      );
+
       const cache = runtimeSelectionCache();
       if (cache.inFlight?.key === key) {
         const result = await cache.inFlight.promise;
-        timing.recordMaterializedConnectorCount(0);
-        timing.recordProjectionResult({
-          source: result.load.source,
-          cacheOutcome: "in_flight",
-          fallbackReason: result.load.fallbackReason,
-        });
+
         return result.load.selection;
       }
       const promise = get(runtimeCatalogSelectionResultSelectionResult$);
@@ -8094,13 +7944,9 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         clearRuntimeSelectionInFlight(cache, key, promise);
       });
       clearRuntimeSelectionInFlight(cache, key, promise);
-      timing.recordProjectionResult({
-        source: result.load.source,
-        cacheOutcome: result.cacheOutcome,
-        fallbackReason: result.load.fallbackReason,
-      });
+
       return result.load.selection;
-    });
+    })();
   });
   const selectedCatalog$ = runtimeCatalogSelectionConnectorCatalog$;
   const preCreateConnectorCatalogConnectorCatalog$ = computed(
@@ -8113,27 +7959,22 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   );
   const preCreatePermissionPoliciesPermissionPolicies$ = computed(
     async (get) => {
-      const { timing } = await get(selectedIdentityInputIdentityInput$);
       const [bootstrap, catalog] = await Promise.all([
         get(preCreateBootstrapMetadata$),
         get(preCreateConnectorCatalogConnectorCatalog$),
       ]);
-      return await measureAgentRunPreCreate(
-        timing,
-        "api_dispatch_pre_create_agent_resolve_firewall_metadata",
-        async () => {
-          const stored = permissionGrantsToFirewallPolicies(
-            bootstrap.permissionGrants,
-          );
-          return catalog.kind === "empty"
-            ? stored
-            : await expandConnectorServerFirewallPolicies({
-                catalog: catalog.selection.serverFirewalls,
-                stored,
-                connectorSlugs: [...bootstrap.allowedConnectorSlugs],
-              });
-        },
-      );
+      return await (async () => {
+        const stored = permissionGrantsToFirewallPolicies(
+          bootstrap.permissionGrants,
+        );
+        return catalog.kind === "empty"
+          ? stored
+          : await expandConnectorServerFirewallPolicies({
+              catalog: catalog.selection.serverFirewalls,
+              stored,
+              connectorSlugs: [...bootstrap.allowedConnectorSlugs],
+            });
+      })();
     },
   );
   const sessionPrompt$ = computed(async (get) => {
@@ -8143,7 +7984,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     async (
       get,
     ): Promise<AgentRunAfterPreCreate | ReturnType<typeof conflict>> => {
-      const { timing } = await get(preCreateInput$);
       const [
         bootstrapResult,
         agentResult,
@@ -8175,7 +8015,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         ...bootstrap,
         ...account,
         agent,
-        timing,
         cloudBrowserEnabled: undefined,
         connectorCatalogSelection: catalog,
         runPermissionPolicies: policies,
@@ -8230,13 +8069,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     }
     return {
       input,
-      args: await measureAgentRunPreCreate(
-        input.timing,
-        "api_dispatch_pre_create_agent_build_create_run_args",
-        () => {
-          return buildCreateAgentRunArgs(input);
-        },
-      ),
+      args: await buildCreateAgentRunArgs(input),
     };
   });
   const preCreateExecutionInput$ = preCreateInput$;
@@ -8399,7 +8232,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     ): Promise<
       Omit<RunModelProviderReadInput, "db"> | CreateRunErrorResult
     > => {
-      const input = await get(preCreateExecutionInput$);
       const [agent, account] = await Promise.all([
         get(preCreateExecutionAgent$),
         get(preCreateExecutionSubscriptionAccount$),
@@ -8411,7 +8243,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         throw new Error("Agent disappeared after preparation authorization");
       }
       return {
-        timing: input.timing,
         args: {
           ...selectedRunModelProviderArgs(
             account.command,
@@ -8840,18 +8671,10 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     if (!context.shouldResolve) {
       return null;
     }
-    return await context.input.timing.measure(
-      "api_dispatch_prepare_context_resolve_model_provider",
-      "nested",
-      async () => {
-        return (
-          (await get(environment$)) ??
-          providerUnavailable(
-            `No model provider configured and ${frameworkApiKeyEnv(context.requestedFramework)} is not declared in compose environment`,
-          )
-        );
-      },
-    );
+    return await ((await get(environment$)) ??
+      providerUnavailable(
+        `No model provider configured and ${frameworkApiKeyEnv(context.requestedFramework)} is not declared in compose environment`,
+      ));
   });
   const runModelProviderModelRoute$ = computed(async (get) => {
     const context = await get(providerContext$);
@@ -8893,9 +8716,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   };
   const connectorInput$ = computed(
     async (get): Promise<Omit<RunConnectorReadInput, "db">> => {
-      const { command, timing } = await get(preCreateExecutionIdentityInput$);
+      const { command } = await get(preCreateExecutionIdentityInput$);
       return {
-        timing,
         args: {
           orgId: command.auth.orgId,
           userId: command.auth.userId,
@@ -8923,12 +8745,11 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   });
   const runCustomConnectorDefinitionRows$ = computed(async (get) => {
     const db = get(db$);
-    const { args, timing } = await get(connectorInput$);
+    const { args } = await get(connectorInput$);
     const ids = (await get(preCreateConnectorScope$)).allowedCustomConnectorIds;
     if (ids.length === 0) {
       return [];
     }
-    const startedAt = now();
     const rows = await db
       .select({
         connector: customConnectorDefinitionSelection(),
@@ -8952,12 +8773,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           inArray(orgCustomConnectors.id, [...ids]),
         ),
       );
-    timing.recordElapsed(
-      "api_dispatch_prepare_context_load_custom_connector_rows",
-      "nested",
-      startedAt,
-      now(),
-    );
+
     return rows.map((row) => {
       return normaliseCustomConnectorRow(row.connector, row.oauthConfig);
     });
@@ -9288,7 +9104,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       get,
     ): Promise<readonly StoredConnectorMaterializationSnapshotRow[]> => {
       const db = get(db$);
-      const { args, timing } = await get(connectorInput$);
+      const { args } = await get(connectorInput$);
       const selectedConnectors = await get(runStoredConnectorSelectionView$);
       if (!selectedConnectors) {
         return [];
@@ -9332,10 +9148,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         .where(eq(variables.type, "connector"))
         .groupBy(variables.connectorId)
         .as("stored_connector_variable_groups");
-      const startedAt = now();
-      const dimensions = storedConnectorTimingDimensions({
-        scopeSource: (await get(preCreateConnectorScope$)).source,
-      });
       const rows = await onRejection(
         db
           .with(selectedConnectors)
@@ -9362,26 +9174,9 @@ export function createClaimRunObjects(claim: ThreadClaim) {
             variableGroups,
             eq(variableGroups.connectorId, selectedConnectors.connectorId),
           ),
-        () => {
-          timing.recordElapsed(
-            "api_dispatch_prepare_context_load_stored_connector_snapshot_rows",
-            "nested",
-            startedAt,
-            now(),
-            dimensions,
-          );
-        },
+        () => {},
       );
-      timing.recordElapsed(
-        "api_dispatch_prepare_context_load_stored_connector_snapshot_rows",
-        "nested",
-        startedAt,
-        now(),
-        {
-          ...dimensions,
-          stored_connector_candidate_count_bucket: countBucket(rows.length),
-        },
-      );
+
       return rows.map((row) => {
         return {
           ...row,
@@ -9582,7 +9377,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   const runCustomConnectorStoredRows$ = computed(
     async (get): Promise<readonly CustomConnectorRuntimeStorageRow[]> => {
       const db = get(db$);
-      const { timing } = await get(connectorInput$);
+
       const [connections, values] = await Promise.all([
         get(runCustomConnectorConnectionView$),
         get(runCustomConnectorValueView$),
@@ -9590,7 +9385,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       if (!connections || !values) {
         return [];
       }
-      const startedAt = now();
       const rows = await db
         .with(connections, values)
         .select({
@@ -9613,12 +9407,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         })
         .from(connections)
         .leftJoin(values, eq(values.memberConnectorId, connections.id));
-      timing.recordElapsed(
-        "api_dispatch_prepare_context_load_custom_connector_value_rows",
-        "nested",
-        startedAt,
-        now(),
-      );
+
       return rows;
     },
   );
@@ -9730,60 +9519,43 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           };
         }),
       );
-      return await (
-        await get(connectorInput$)
-      ).timing.measure(
-        "api_dispatch_prepare_context_build_custom_connector_firewalls",
-        "nested",
-        async () => {
-          return await buildNewRunCustomConnectorRuntimeContext({
-            rows: chosenRows,
-            permissionBundlesByConnectorId,
-            featureSwitchContext,
-            connectorCatalogSnapshot: args.connectorCatalogSnapshot,
-            grants: args.customConnectorGrants,
-          });
-        },
-      );
+      return await buildNewRunCustomConnectorRuntimeContext({
+        rows: chosenRows,
+        permissionBundlesByConnectorId,
+        featureSwitchContext,
+        connectorCatalogSnapshot: args.connectorCatalogSnapshot,
+        grants: args.customConnectorGrants,
+      });
     },
   );
   const runConnectorReadConnectorSnapshot$ = computed(
     async (
       get,
     ): Promise<RunConnectorContextSnapshot | CreateRunErrorResult> => {
-      const input = await get(connectorInput$);
-      const scope = await get(preCreateConnectorScope$);
-      return await input.timing.measure(
-        "api_dispatch_prepare_context_load_connector_contexts",
-        "nested",
-        async () => {
-          const [preparation, storedConnectorSnapshot, customConnectorContext] =
-            await Promise.all([
-              get(runConnectorPreparation$),
-              get(runStoredConnectorSnapshot$),
-              get(runCustomConnectorContext$),
-            ]);
-          if (isRouteError(preparation)) {
-            return preparation;
-          }
-          if (isRouteError(storedConnectorSnapshot)) {
-            return storedConnectorSnapshot;
-          }
-          if (isRouteError(customConnectorContext)) {
-            return customConnectorContext;
-          }
-          return {
+      return await (async () => {
+        const [preparation, storedConnectorSnapshot, customConnectorContext] =
+          await Promise.all([
+            get(runConnectorPreparation$),
+            get(runStoredConnectorSnapshot$),
+            get(runCustomConnectorContext$),
+          ]);
+        if (isRouteError(preparation)) {
+          return preparation;
+        }
+        if (isRouteError(storedConnectorSnapshot)) {
+          return storedConnectorSnapshot;
+        }
+        if (isRouteError(customConnectorContext)) {
+          return customConnectorContext;
+        }
+        return {
+          storedConnectorSnapshot,
+          storedConnectorMetadataContext: storedConnectorContextFromSnapshot(
             storedConnectorSnapshot,
-            storedConnectorMetadataContext: storedConnectorContextFromSnapshot(
-              storedConnectorSnapshot,
-            ),
-            customConnectorContext,
-          };
-        },
-        storedConnectorTimingDimensions({
-          scopeSource: scope.source,
-        }),
-      );
+          ),
+          customConnectorContext,
+        };
+      })();
     },
   );
   const connectorSelection$ = runConnectorSelection$;
@@ -9816,7 +9588,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   const inputs$ = computed(
     async (get): Promise<RunPreparedConnectorInputs | CreateRunErrorResult> => {
       const [
-        input,
         selection,
         snapshot,
         modelProvider,
@@ -9825,7 +9596,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         metadata,
         agent,
       ] = await Promise.all([
-        get(preCreateExecutionIdentityInput$),
         get(connectorSelection$),
         get(connectorSnapshot$),
         get(modelRoute$),
@@ -9851,7 +9621,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       }
       return {
         db: get(db$),
-        timing: input.timing,
         connectorScope: selection.connectorScope,
         connectorCatalogSelection: selection.connectorCatalogSelection,
         body: { ...body, permissionPolicies: policies ?? undefined },
@@ -9866,13 +9635,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     const input = await get(inputs$);
     return isRouteError(input)
       ? input
-      : await input.timing.measure(
-          "api_dispatch_prepare_context_build_permission_manifest",
-          "nested",
-          async () => {
-            return await buildPreparedPermissionManifest(input);
-          },
-        );
+      : await buildPreparedPermissionManifest(input);
   });
   const runConnectorEagerSecretPlan$ = computed(async (get) => {
     const [input, permissionManifest] = await Promise.all([
@@ -10226,7 +9989,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   };
   const preCreateThreadSessionThreadSession$ = computed(
     async (get): Promise<ChatThreadSessionResolution | undefined> => {
-      const { command, timing } = await get(preCreateInput$);
+      const { command } = await get(preCreateInput$);
       const db = get(db$);
       if (!command.chatThreadId) {
         return undefined;
@@ -10240,60 +10003,53 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       if (!route) {
         throw new Error("Thread-bound agent run is missing its model route");
       }
-      return await measureAgentRunPreCreate(
-        timing,
-        "api_dispatch_pre_create_agent_resolve_thread_session",
-        async () => {
-          const [thread] = await db
-            .select(chatThreadSessionSelection())
-            .from(chatThreads)
-            .leftJoin(
-              agentSessions,
-              and(
-                eq(agentSessions.id, chatThreads.agentSessionId),
-                eq(agentSessions.userId, command.auth.userId),
-                eq(agentSessions.orgId, command.auth.orgId),
+      return await (async () => {
+        const [thread] = await db
+          .select(chatThreadSessionSelection())
+          .from(chatThreads)
+          .leftJoin(
+            agentSessions,
+            and(
+              eq(agentSessions.id, chatThreads.agentSessionId),
+              eq(agentSessions.userId, command.auth.userId),
+              eq(agentSessions.orgId, command.auth.orgId),
+            ),
+          )
+          .leftJoin(agents, eq(agents.id, agent.id))
+          .leftJoin(
+            conversations,
+            eq(conversations.id, agentSessions.conversationId),
+          )
+          .leftJoin(
+            blobs,
+            eq(blobs.hash, conversations.cliAgentSessionHistoryHash),
+          )
+          .leftJoin(
+            chatThreadConversationRun,
+            eq(chatThreadConversationRun.id, conversations.runId),
+          )
+          .leftJoin(agentRuns, eq(agentRuns.id, chatThreads.agentSessionRunId))
+          .where(
+            and(
+              eq(chatThreads.id, threadId),
+              eq(chatThreads.userId, command.auth.userId),
+              eq(
+                chatThreads.agentId,
+                command.expectedThreadAgentId ?? agent.id,
               ),
-            )
-            .leftJoin(agents, eq(agents.id, agent.id))
-            .leftJoin(
-              conversations,
-              eq(conversations.id, agentSessions.conversationId),
-            )
-            .leftJoin(
-              blobs,
-              eq(blobs.hash, conversations.cliAgentSessionHistoryHash),
-            )
-            .leftJoin(
-              chatThreadConversationRun,
-              eq(chatThreadConversationRun.id, conversations.runId),
-            )
-            .leftJoin(
-              agentRuns,
-              eq(agentRuns.id, chatThreads.agentSessionRunId),
-            )
-            .where(
-              and(
-                eq(chatThreads.id, threadId),
-                eq(chatThreads.userId, command.auth.userId),
-                eq(
-                  chatThreads.agentId,
-                  command.expectedThreadAgentId ?? agent.id,
-                ),
-              ),
-            )
-            .limit(1);
-          if (!thread) {
-            throw new Error(
-              "Chat thread not found while resolving session binding",
-            );
-          }
-          return resolveChatThreadSessionSnapshot(thread, {
-            agentId: agent.id,
-            route,
-          });
-        },
-      );
+            ),
+          )
+          .limit(1);
+        if (!thread) {
+          throw new Error(
+            "Chat thread not found while resolving session binding",
+          );
+        }
+        return resolveChatThreadSessionSnapshot(thread, {
+          agentId: agent.id,
+          route,
+        });
+      })();
     },
   );
   const capturedSelectedStorageInput$ = computed(
@@ -10392,7 +10148,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           additionalVolumeSources: metadata.additionalVolumeSources,
           framework: piSandbox === undefined ? framework : "pi",
           persistedStorageMounts: resolved.persistedStorageMounts,
-          timing: input.timing,
           stats: new StorageManifestBuildStats(),
         },
       };
@@ -10458,80 +10213,71 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   );
   const capturedStorageBaseIndex$ = computed(async (get) => {
     const selection = await get(storageSelection$);
-    const input = {
-      db: selection.args.db,
-      requests: selection.requests,
-      timing: selection.args.timing,
-    };
-    const index = await measureApiDispatchTiming(
-      input.timing,
-      "api_dispatch_prepare_storage_manifest_load_storage_index",
-      "nested",
-      async () => {
-        const uniqueRequests = uniqueStorageIndexRequests(input.requests);
-        if (uniqueRequests.length === 0) {
-          return new Map<string, StorageIndexEntry>();
-        }
-        const orgIds = uniqueRequests.map((request) => {
-          return request.lookup.orgId;
-        });
-        const userIds = uniqueRequests.map((request) => {
-          return request.lookup.userId;
-        });
-        const names = uniqueRequests.map((request) => {
-          return request.lookup.name;
-        });
-        const exactVersionIds = uniqueRequests.map((request) => {
-          return request.exactVersionId;
-        });
-        const rows: StorageIndexRow[] = await input.db
-          .select({
-            orgId: storages.orgId,
-            userId: storages.userId,
-            name: storages.name,
-            storageId: storages.id,
-            headVersionId: storages.headVersionId,
-            s3Prefix: storages.s3Prefix,
-            headId: headStorageVersions.id,
-            headS3Key: headStorageVersions.s3Key,
-            headArchiveSize: headStorageVersions.archiveSize,
-            headFileCount: headStorageVersions.fileCount,
-            exactId: exactStorageVersions.id,
-            exactS3Key: exactStorageVersions.s3Key,
-            exactArchiveSize: exactStorageVersions.archiveSize,
-            exactFileCount: exactStorageVersions.fileCount,
-          })
-          .from(storages)
-          .innerJoin(
-            sql`unnest(
+    const input = { db: selection.args.db, requests: selection.requests };
+    const index = await (async () => {
+      const uniqueRequests = uniqueStorageIndexRequests(input.requests);
+      if (uniqueRequests.length === 0) {
+        return new Map<string, StorageIndexEntry>();
+      }
+      const orgIds = uniqueRequests.map((request) => {
+        return request.lookup.orgId;
+      });
+      const userIds = uniqueRequests.map((request) => {
+        return request.lookup.userId;
+      });
+      const names = uniqueRequests.map((request) => {
+        return request.lookup.name;
+      });
+      const exactVersionIds = uniqueRequests.map((request) => {
+        return request.exactVersionId;
+      });
+      const rows: StorageIndexRow[] = await input.db
+        .select({
+          orgId: storages.orgId,
+          userId: storages.userId,
+          name: storages.name,
+          storageId: storages.id,
+          headVersionId: storages.headVersionId,
+          s3Prefix: storages.s3Prefix,
+          headId: headStorageVersions.id,
+          headS3Key: headStorageVersions.s3Key,
+          headArchiveSize: headStorageVersions.archiveSize,
+          headFileCount: headStorageVersions.fileCount,
+          exactId: exactStorageVersions.id,
+          exactS3Key: exactStorageVersions.s3Key,
+          exactArchiveSize: exactStorageVersions.archiveSize,
+          exactFileCount: exactStorageVersions.fileCount,
+        })
+        .from(storages)
+        .innerJoin(
+          sql`unnest(
         ${sql.param(orgIds)}::text[],
         ${sql.param(userIds)}::text[],
         ${sql.param(names)}::varchar(256)[],
         ${sql.param(exactVersionIds)}::varchar(64)[]
       ) AS requested(org_id, user_id, name, version_id)`,
-            and(
-              eq(storages.orgId, sql`requested.org_id`),
-              eq(storages.userId, sql`requested.user_id`),
-              eq(storages.name, sql`requested.name`),
+          and(
+            eq(storages.orgId, sql`requested.org_id`),
+            eq(storages.userId, sql`requested.user_id`),
+            eq(storages.name, sql`requested.name`),
+          ),
+        )
+        .leftJoin(
+          headStorageVersions,
+          eq(storages.headVersionId, headStorageVersions.id),
+        )
+        .leftJoin(
+          exactStorageVersions,
+          and(
+            eq(
+              exactStorageVersions.id,
+              sql`NULLIF(requested.version_id, ${storages.headVersionId})`,
             ),
-          )
-          .leftJoin(
-            headStorageVersions,
-            eq(storages.headVersionId, headStorageVersions.id),
-          )
-          .leftJoin(
-            exactStorageVersions,
-            and(
-              eq(
-                exactStorageVersions.id,
-                sql`NULLIF(requested.version_id, ${storages.headVersionId})`,
-              ),
-              eq(exactStorageVersions.storageId, storages.id),
-            ),
-          );
-        return buildStorageIndex(rows);
-      },
-    );
+            eq(exactStorageVersions.storageId, storages.id),
+          ),
+        );
+      return buildStorageIndex(rows);
+    })();
     // Keep the query and its selection together so dependent version reads
     // reuse this snapshot without walking the same upstream graph again.
     return { selection, input, index };
@@ -10575,75 +10321,69 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   const agentRunStorageStoragePlan$ = computed(
     async (get): Promise<AgentRunStoragePlan> => {
       const { selection, storageIndex } = await get(capturedStorageIndex$);
-      return await measureApiDispatchTiming(
-        selection.args.timing,
-        "api_dispatch_prepare_storage_manifest_resolve_plan",
-        "nested",
-        async () => {
-          if (selection.kind === "captured") {
-            return {
-              requested: await resolveValidatedPersistedStorageMounts({
-                ...selection.args,
+      return await (async () => {
+        if (selection.kind === "captured") {
+          return {
+            requested: await resolveValidatedPersistedStorageMounts({
+              ...selection.args,
+              bucket: selection.bucket,
+              storageIndex,
+              branch: "captured",
+            }),
+            sessionWriteback: undefined,
+            missingArtifacts: [],
+          };
+        }
+        const missingArtifacts = selection.remainingArtifacts.filter(
+          (artifact) => {
+            const entry = storageIndex.get(
+              storageIndexKey(
+                selection.args.runtimeOrgId,
+                selection.args.userId,
+                artifact.name,
+              ),
+            );
+            return !entry || entry.headVersionId === null;
+          },
+        );
+        const missingNames = new Set(
+          missingArtifacts.map((artifact) => {
+            return artifact.name;
+          }),
+        );
+        const [requested, sessionWriteback] = await Promise.all([
+          resolveStorageEntries(
+            {
+              ...selection.request.input,
+              artifacts: selection.remainingArtifacts.filter((artifact) => {
+                return !missingNames.has(artifact.name);
+              }),
+              storageIndex,
+            },
+            "requested",
+          ),
+          selection.canonicalWritebackMounts.length === 0
+            ? undefined
+            : resolveSessionWritebackStorageMounts({
+                db: selection.args.db,
                 bucket: selection.bucket,
                 storageIndex,
-                branch: "captured",
+                mounts: selection.canonicalWritebackMounts,
+                stats: selection.args.stats,
               }),
-              sessionWriteback: undefined,
-              missingArtifacts: [],
-            };
-          }
-          const missingArtifacts = selection.remainingArtifacts.filter(
-            (artifact) => {
-              const entry = storageIndex.get(
-                storageIndexKey(
-                  selection.args.runtimeOrgId,
-                  selection.args.userId,
-                  artifact.name,
-                ),
-              );
-              return !entry || entry.headVersionId === null;
+        ]);
+        return {
+          requested: {
+            ...requested,
+            input: {
+              ...requested.input,
+              artifacts: selection.remainingArtifacts,
             },
-          );
-          const missingNames = new Set(
-            missingArtifacts.map((artifact) => {
-              return artifact.name;
-            }),
-          );
-          const [requested, sessionWriteback] = await Promise.all([
-            resolveStorageEntries(
-              {
-                ...selection.request.input,
-                artifacts: selection.remainingArtifacts.filter((artifact) => {
-                  return !missingNames.has(artifact.name);
-                }),
-                storageIndex,
-              },
-              "requested",
-            ),
-            selection.canonicalWritebackMounts.length === 0
-              ? undefined
-              : resolveSessionWritebackStorageMounts({
-                  db: selection.args.db,
-                  bucket: selection.bucket,
-                  storageIndex,
-                  mounts: selection.canonicalWritebackMounts,
-                  timing: selection.args.timing,
-                  stats: selection.args.stats,
-                }),
-          ]);
-          return {
-            requested: {
-              ...requested,
-              input: {
-                ...requested.input,
-                artifacts: selection.remainingArtifacts,
-              },
-            },
-            sessionWriteback,
-            missingArtifacts,
-          };
-        },
-      );
+          },
+          sessionWriteback,
+          missingArtifacts,
+        };
+      })();
     },
   );
   const sessionWritebackEntries$ = computed(async (get) => {
@@ -10729,9 +10469,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         logicalLookupCount: groups.length,
       },
       groups,
-      observation: entries.input.timing
-        ? { timing: entries.input.timing, branch: entries.branch }
-        : undefined,
     };
   });
   const mixedStorageManifestPresignedUrlCacheRows$ = computed(async (get) => {
@@ -10743,67 +10480,22 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     if (!lookup) {
       return undefined;
     }
-    const { requestedCount, pairs, cacheKeysByRequest } = lookup;
-    const acquisitionCapture: PgPoolAcquisitionCapture = { acquisitions: [] };
+    const { pairs, cacheKeysByRequest } = lookup;
     const condition = storageManifestCacheLookupCondition(pairs);
-    const rows = await measureApiDispatchTiming(
-      args.observation?.timing,
-      "api_dispatch_prepare_storage_manifest_cache_mixed_lookup",
-      "nested",
-      async () => {
-        const lookup = async () => {
-          return await args.db
-            .select({
-              scope: systemStoragePresignedUrlCache.scope,
-              cacheKey: systemStoragePresignedUrlCache.cacheKey,
-              presignedUrl: systemStoragePresignedUrlCache.presignedUrl,
-              expiresAt: systemStoragePresignedUrlCache.expiresAt,
-            })
-            .from(systemStoragePresignedUrlCache)
-            .where(condition);
-        };
-        const query = args.observation
-          ? withPgPoolAcquisitionCapture(acquisitionCapture, lookup)
-          : lookup();
-        return await query.finally(() => {
-          for (const acquisition of acquisitionCapture.acquisitions) {
-            args.observation?.timing.recordDuration(
-              "api_dispatch_prepare_storage_manifest_cache_pool_acquire",
-              "nested",
-              acquisition.durationMs,
-              now(),
-              {
-                storage_manifest_branch:
-                  args.observation?.branch ?? "unobserved",
-                storage_manifest_cache_scope: "all_scopes",
-                storage_manifest_cache_lookup_kind: "mixed",
-                storage_manifest_cache_pool_acquire_path: acquisition.path,
-                storage_manifest_cache_requested_count_bucket:
-                  storageManifestCacheCountBucket(requestedCount),
-                storage_manifest_cache_unique_key_count_bucket:
-                  storageManifestCacheCountBucket(pairs.length),
-              },
-            );
-          }
-        });
-      },
-      () => {
-        return {
-          storage_manifest_branch: args.observation?.branch ?? "unobserved",
-          storage_manifest_cache_scope: "all_scopes",
-          storage_manifest_cache_requested_count_bucket:
-            storageManifestCacheCountBucket(requestedCount),
-          storage_manifest_cache_unique_key_count_bucket:
-            storageManifestCacheCountBucket(pairs.length),
-          storage_manifest_cache_logical_lookup_count_bucket:
-            storageManifestCacheCountBucket(args.input.logicalLookupCount),
-          storage_manifest_cache_pool_acquire_count_bucket:
-            storageManifestCacheCountBucket(
-              acquisitionCapture.acquisitions.length,
-            ),
-        };
-      },
-    );
+    const rows = await (async () => {
+      const lookup = async () => {
+        return await args.db
+          .select({
+            scope: systemStoragePresignedUrlCache.scope,
+            cacheKey: systemStoragePresignedUrlCache.cacheKey,
+            presignedUrl: systemStoragePresignedUrlCache.presignedUrl,
+            expiresAt: systemStoragePresignedUrlCache.expiresAt,
+          })
+          .from(systemStoragePresignedUrlCache)
+          .where(condition);
+      };
+      return await lookup();
+    })();
     const rowsByScope = new Map<
       StorageManifestPresignedUrlCacheScope,
       Map<string, SelectedStoragePresignedUrlCacheRow>
@@ -10979,9 +10671,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         logicalLookupCount: groups.length,
       },
       groups,
-      observation: entries.input.timing
-        ? { timing: entries.input.timing, branch: entries.branch }
-        : undefined,
     };
   });
   const capturedMixedStorageManifestPresignedUrlCacheRows$ = computed(
@@ -10994,67 +10683,22 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       if (!lookup) {
         return undefined;
       }
-      const { requestedCount, pairs, cacheKeysByRequest } = lookup;
-      const acquisitionCapture: PgPoolAcquisitionCapture = { acquisitions: [] };
+      const { pairs, cacheKeysByRequest } = lookup;
       const condition = storageManifestCacheLookupCondition(pairs);
-      const rows = await measureApiDispatchTiming(
-        args.observation?.timing,
-        "api_dispatch_prepare_storage_manifest_cache_mixed_lookup",
-        "nested",
-        async () => {
-          const lookup = async () => {
-            return await args.db
-              .select({
-                scope: systemStoragePresignedUrlCache.scope,
-                cacheKey: systemStoragePresignedUrlCache.cacheKey,
-                presignedUrl: systemStoragePresignedUrlCache.presignedUrl,
-                expiresAt: systemStoragePresignedUrlCache.expiresAt,
-              })
-              .from(systemStoragePresignedUrlCache)
-              .where(condition);
-          };
-          const query = args.observation
-            ? withPgPoolAcquisitionCapture(acquisitionCapture, lookup)
-            : lookup();
-          return await query.finally(() => {
-            for (const acquisition of acquisitionCapture.acquisitions) {
-              args.observation?.timing.recordDuration(
-                "api_dispatch_prepare_storage_manifest_cache_pool_acquire",
-                "nested",
-                acquisition.durationMs,
-                now(),
-                {
-                  storage_manifest_branch:
-                    args.observation?.branch ?? "unobserved",
-                  storage_manifest_cache_scope: "all_scopes",
-                  storage_manifest_cache_lookup_kind: "mixed",
-                  storage_manifest_cache_pool_acquire_path: acquisition.path,
-                  storage_manifest_cache_requested_count_bucket:
-                    storageManifestCacheCountBucket(requestedCount),
-                  storage_manifest_cache_unique_key_count_bucket:
-                    storageManifestCacheCountBucket(pairs.length),
-                },
-              );
-            }
-          });
-        },
-        () => {
-          return {
-            storage_manifest_branch: args.observation?.branch ?? "unobserved",
-            storage_manifest_cache_scope: "all_scopes",
-            storage_manifest_cache_requested_count_bucket:
-              storageManifestCacheCountBucket(requestedCount),
-            storage_manifest_cache_unique_key_count_bucket:
-              storageManifestCacheCountBucket(pairs.length),
-            storage_manifest_cache_logical_lookup_count_bucket:
-              storageManifestCacheCountBucket(args.input.logicalLookupCount),
-            storage_manifest_cache_pool_acquire_count_bucket:
-              storageManifestCacheCountBucket(
-                acquisitionCapture.acquisitions.length,
-              ),
-          };
-        },
-      );
+      const rows = await (async () => {
+        const lookup = async () => {
+          return await args.db
+            .select({
+              scope: systemStoragePresignedUrlCache.scope,
+              cacheKey: systemStoragePresignedUrlCache.cacheKey,
+              presignedUrl: systemStoragePresignedUrlCache.presignedUrl,
+              expiresAt: systemStoragePresignedUrlCache.expiresAt,
+            })
+            .from(systemStoragePresignedUrlCache)
+            .where(condition);
+        };
+        return await lookup();
+      })();
       const rowsByScope = new Map<
         StorageManifestPresignedUrlCacheScope,
         Map<string, SelectedStoragePresignedUrlCacheRow>
@@ -11207,7 +10851,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
             sessionWriteback === undefined
               ? requested
               : combinePreparedStorageEntries({ requested, sessionWriteback }),
-          timing: plan.requested.input.timing,
           stats: plan.requested.input.stats,
         }),
       ]);
@@ -11299,11 +10942,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
             },
           }
         : selected.args;
-      return {
-        db: get(db$),
-        args,
-        timing: selected.input.timing,
-      };
+      return { db: get(db$), args };
     },
   );
   const resolutionOptions$ = computed(async (get) => {
@@ -11337,21 +10976,15 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           agentOwner: preloaded.ownerUserId,
         };
       }
-      const [row] = await input.timing.measure(
-        "api_dispatch_resolve_agent_execution_lookup_agent",
-        "nested",
-        async () => {
-          return await input.db
-            .select({
-              agentId: agents.id,
-              agentOrgId: agents.orgId,
-              agentOwner: agents.owner,
-            })
-            .from(agents)
-            .where(eq(agents.id, agentId))
-            .limit(1);
-        },
-      );
+      const [row] = await input.db
+        .select({
+          agentId: agents.id,
+          agentOrgId: agents.orgId,
+          agentOwner: agents.owner,
+        })
+        .from(agents)
+        .where(eq(agents.id, agentId))
+        .limit(1);
       return row;
     },
   );
@@ -11374,64 +11007,58 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         db,
         args: { userId, orgId },
       } = input;
-      const [snapshot] = await input.timing.measure(
-        "api_dispatch_resolve_agent_execution_lookup_session_snapshot",
-        "nested",
-        async () => {
-          return await db
-            .select({
-              session: {
-                id: agentSessions.id,
-                agentId: agentSessions.agentId,
-                conversationId: agentSessions.conversationId,
-                storageMounts: agentSessions.storageMounts,
-              },
-              agent: {
-                id: agents.id,
-                orgId: agents.orgId,
-                owner: agents.owner,
-              },
-              conversation: {
-                id: conversations.id,
-                runId: conversations.runId,
-                cliAgentType: conversations.cliAgentType,
-                cliAgentSessionId: conversations.cliAgentSessionId,
-                cliAgentSessionHistory: conversations.cliAgentSessionHistory,
-                cliAgentSessionHistoryHash:
-                  conversations.cliAgentSessionHistoryHash,
-              },
-              historyBlob: {
-                hash: blobs.hash,
-                encoding: blobs.encoding,
-              },
-              previousRun: {
-                id: agentRuns.id,
-                vars: agentRuns.vars,
-                storageMounts: agentRuns.storageMounts,
-                selectedModel: agentRuns.selectedModel,
-              },
-            })
-            .from(agentSessions)
-            .leftJoin(agents, eq(agentSessions.agentId, agents.id))
-            .leftJoin(
-              conversations,
-              eq(agentSessions.conversationId, conversations.id),
-            )
-            .leftJoin(
-              blobs,
-              eq(conversations.cliAgentSessionHistoryHash, blobs.hash),
-            )
-            .leftJoin(agentRuns, eq(conversations.runId, agentRuns.id))
-            .where(
-              and(
-                eq(agentSessions.id, agentSessionId),
-                eq(agentSessions.userId, userId),
-                eq(agentSessions.orgId, orgId),
-              ),
-            )
-            .limit(1);
-        },
-      );
+      const [snapshot] = await db
+        .select({
+          session: {
+            id: agentSessions.id,
+            agentId: agentSessions.agentId,
+            conversationId: agentSessions.conversationId,
+            storageMounts: agentSessions.storageMounts,
+          },
+          agent: {
+            id: agents.id,
+            orgId: agents.orgId,
+            owner: agents.owner,
+          },
+          conversation: {
+            id: conversations.id,
+            runId: conversations.runId,
+            cliAgentType: conversations.cliAgentType,
+            cliAgentSessionId: conversations.cliAgentSessionId,
+            cliAgentSessionHistory: conversations.cliAgentSessionHistory,
+            cliAgentSessionHistoryHash:
+              conversations.cliAgentSessionHistoryHash,
+          },
+          historyBlob: {
+            hash: blobs.hash,
+            encoding: blobs.encoding,
+          },
+          previousRun: {
+            id: agentRuns.id,
+            vars: agentRuns.vars,
+            storageMounts: agentRuns.storageMounts,
+            selectedModel: agentRuns.selectedModel,
+          },
+        })
+        .from(agentSessions)
+        .leftJoin(agents, eq(agentSessions.agentId, agents.id))
+        .leftJoin(
+          conversations,
+          eq(agentSessions.conversationId, conversations.id),
+        )
+        .leftJoin(
+          blobs,
+          eq(conversations.cliAgentSessionHistoryHash, blobs.hash),
+        )
+        .leftJoin(agentRuns, eq(conversations.runId, agentRuns.id))
+        .where(
+          and(
+            eq(agentSessions.id, agentSessionId),
+            eq(agentSessions.userId, userId),
+            eq(agentSessions.orgId, orgId),
+          ),
+        )
+        .limit(1);
       return snapshot;
     },
   );
@@ -11446,12 +11073,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       initialRunBody(input.args),
       input.args.userId,
       input.args.orgId,
-      {
-        ...(await get(resolutionOptions$)),
-        agentObservation,
-        sessionSnapshot,
-        timing: input.timing,
-      },
+      { ...(await get(resolutionOptions$)), agentObservation, sessionSnapshot },
     );
   });
   const body$ = computed(async (get) => {
@@ -12146,8 +11768,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       piSandbox: args.piSandbox,
       chatThreadId: args.chatThreadId,
       piLaunchConfig: args.piLaunchConfig,
-      timing: args.timing,
-    } satisfies PreparePiLaunchResourcesArgs;
+    } satisfies Omit<PreparePiLaunchResourcesArgs, "timing">;
   });
   const capturedPiMemoryRecallSelection$ = computed(async (get) => {
     const args = await get(preparePiLaunchResourcesInput$);
@@ -12294,24 +11915,15 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         return undefined;
       }
       const piSandbox = args.piSandbox;
-      return measureApiDispatchTiming(
-        args.timing,
-        "api_dispatch_prepare_pi_launch_resources",
-        "nested",
-        () => {
-          return Promise.resolve(
-            assemblePiLaunchResources({
-              modelConfig: piSandbox,
-              piLaunchConfig: args.piLaunchConfig,
-              memoryRecall,
-              resumeSession:
-                args.chatThreadId === undefined
-                  ? undefined
-                  : args.resumeSession,
-              sessionId: args.chatThreadId ?? args.runId,
-            }),
-          );
-        },
+      return Promise.resolve(
+        assemblePiLaunchResources({
+          modelConfig: piSandbox,
+          piLaunchConfig: args.piLaunchConfig,
+          memoryRecall,
+          resumeSession:
+            args.chatThreadId === undefined ? undefined : args.resumeSession,
+          sessionId: args.chatThreadId ?? args.runId,
+        }),
       );
     },
   );
@@ -12350,12 +11962,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         return storagePlan;
       }
       const contextInput = await get(contextInput$);
-      const prepared = {
-        args: contextInput.args,
-        context,
-        contextInput,
-        timing: contextInput.timing,
-      };
+      const prepared = { args: contextInput.args, context, contextInput };
       const args = prepared.args;
       const finalAppendSystemPrompt =
         args.piExecution && args.piStableContext
@@ -12368,7 +11975,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       return {
         args,
         context: finalizePreparedRunContext(prepared, finalAppendSystemPrompt),
-        timing: prepared.timing,
         enforceBuiltInCredits:
           args.enforceBuiltInCredits === true &&
           isBuiltInModelProviderType(context.modelProvider?.type),
@@ -12400,7 +12006,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     if (!identity) {
       throw new Error("Selected claim has no run identity");
     }
-    return atomicLaunchPayloadInput({
+    return atomicLaunchPayloadData({
       createArgs: input.args,
       context: input.context,
       run: {
@@ -12408,12 +12014,15 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         sessionId: identity.sessionId,
         shouldCreateSession: identity.shouldCreateSession,
       },
-      timing: input.timing,
     });
   });
   /** The run token makes runner input a command; its result is passed on. */
   const prepareRunnerInput$ = command(
-    async ({ get, set }, signal: AbortSignal) => {
+    async (
+      { get, set },
+      timing: ApiDispatchTimingCollector,
+      signal: AbortSignal,
+    ) => {
       const args = await get(runnerArgs$);
       signal.throwIfAborted();
       if (!args || isRouteError(args)) {
@@ -12421,7 +12030,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       }
       return prepareRunnerStorageInput({
         db: set(writeDb$),
-        args,
+        args: { ...args, timing },
         storageManifestStats: new StorageManifestBuildStats(),
       });
     },
@@ -12463,9 +12072,13 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     return get(preparedStorage$);
   });
   const prepareRunnerStorage$ = command(
-    async ({ get, set }, signal: AbortSignal) => {
+    async (
+      { get, set },
+      timing: ApiDispatchTimingCollector,
+      signal: AbortSignal,
+    ) => {
       const [input, preparedStorage, piResources] = await Promise.all([
-        set(prepareRunnerInput$, signal),
+        set(prepareRunnerInput$, timing, signal),
         get(preparedStorage$),
         get(piLaunchResources$),
       ]);
@@ -12608,7 +12221,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       const resolvePromptInputs =
         head.contextType === "automation"
           ? await set(initializeAutomationExecution$, head, timing.run, signal)
-          : await set(initializeQueuedPrompt$, head, timing.run, signal);
+          : await set(initializeQueuedPrompt$, head, timing, signal);
       signal.throwIfAborted();
       const { identityInput, authorization } = await set(
         authorizeIdentity$,
@@ -12659,10 +12272,14 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   );
   /** Runner input owns the random token; storage then reads its result. */
   const prepareRunnerResources$ = command(
-    async ({ get, set }, signal: AbortSignal) => {
+    async (
+      { get, set },
+      timing: ApiDispatchTimingCollector,
+      signal: AbortSignal,
+    ) => {
       const [plan, storage] = await Promise.all([
         get(runPlan$),
-        set(prepareRunnerStorage$, signal),
+        set(prepareRunnerStorage$, timing, signal),
       ]);
       signal.throwIfAborted();
       const runnerInput: RunnerInputResult =
@@ -12674,8 +12291,41 @@ export function createClaimRunObjects(claim: ThreadClaim) {
    * Automation launch arguments are the only write-derived input of these
    * reads; Web input starts them at once.
    */
+  const readClaimAssembly$ = command(
+    async (
+      { get },
+      head: ChatQueueHeadContext,
+      timing: ClaimRunTiming,
+      signal: AbortSignal,
+    ) => {
+      const assembly =
+        head.contextType === "automation"
+          ? await get(assembly$)
+          : await timing.prompt.measure(
+              "api_dispatch_pre_create_agent_chat_callback_auto_send_build_input",
+              "top_level",
+              () => {
+                return get(assembly$);
+              },
+            );
+      signal.throwIfAborted();
+      if (head.contextType === "automation" && assembly.kind === "assembled") {
+        timing.run.recordElapsed(
+          "api_dispatch_pre_create_agent_workflow_automation_create_run",
+          "nested",
+          now(),
+        );
+      }
+      return assembly;
+    },
+  );
   const prepareLaunchResources$ = command(
-    async ({ get, set }, head: ChatQueueHeadContext, signal: AbortSignal) => {
+    async (
+      { get, set },
+      head: ChatQueueHeadContext,
+      timing: ClaimRunTiming,
+      signal: AbortSignal,
+    ) => {
       let rewardArgs: AssembleWorkflowAutomationRunArgs | null = null;
       if (head.contextType === "automation") {
         const launch = await set(
@@ -12697,12 +12347,12 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         signal.throwIfAborted();
       }
       const [runner, , callbackRows, assembly, identity] = await Promise.all([
-        set(prepareRunnerResources$, signal),
+        set(prepareRunnerResources$, timing.run, signal),
         rewardArgs
           ? set(recordQueuedWorkflowReward$, rewardArgs, signal)
           : undefined,
         set(prepareCallbacks$, signal),
-        get(assembly$),
+        set(readClaimAssembly$, head, timing, signal),
         get(runIdentity$),
         get(runMemberSnapshot$),
         get(runDisabledPaidToolsSnapshot$),
@@ -12719,9 +12369,14 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     },
   );
   const prepareClaimResources$ = command(
-    async ({ get, set }, head: ChatQueueHeadContext, signal: AbortSignal) => {
+    async (
+      { get, set },
+      head: ChatQueueHeadContext,
+      timing: ClaimRunTiming,
+      signal: AbortSignal,
+    ) => {
       if (head.contextType === "automation") {
-        await set(resolveAutomationModelSnapshot$, signal);
+        await set(resolveAutomationModelSnapshot$, timing.run, signal);
         signal.throwIfAborted();
       }
       // Storage mounts and runtime-secret KMS do not read reconciled
@@ -12729,7 +12384,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       const [encrypted, admission, launch] = await Promise.all([
         set(prepareEncryptedSecrets$, signal),
         set(checkClaimAdmission$, signal),
-        set(prepareLaunchResources$, head, signal),
+        set(prepareLaunchResources$, head, timing, signal),
         get(storageMounts$),
       ]);
       signal.throwIfAborted();
@@ -12892,7 +12547,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         return { kind: "passed" };
       }
       const resources = await settle(
-        set(prepareClaimResources$, head, signal),
+        set(prepareClaimResources$, head, timing, signal),
         signal,
       );
       if (!resources.ok) {

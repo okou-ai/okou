@@ -83,6 +83,7 @@ import { finalizeClaimedRunUserMessage } from "./chat-run-event.service";
 import { activatePendingRun$ as activateCommittedRun$ } from "./agent-run-activation.service";
 import {
   recordQueuedPromptRunLaunch$,
+  ChatCallbackPreCreateTimingCollector,
   queuedMessageRejection,
   rejectedQueuedRunAdmissionFailure,
   deliverQueuedPromptRejection$,
@@ -477,6 +478,7 @@ function createClaimRunTiming(pickStartedAt: number): ClaimRunTiming {
   return {
     run: new ApiDispatchTimingCollector(),
     phase: new ApiDispatchPhaseCollector(pickStartedAt),
+    prompt: new ChatCallbackPreCreateTimingCollector(),
   };
 }
 
@@ -1112,7 +1114,12 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
   );
 
   const activatePendingRun$ = command(
-    async ({ set }, pending: PendingClaimRun, signal: AbortSignal) => {
+    async (
+      { set },
+      pending: PendingClaimRun,
+      timing: ClaimRunTiming,
+      signal: AbortSignal,
+    ) => {
       await set(
         activateCommittedRun$,
         { activation: pending.activation, activationScheduledAt: now() },
@@ -1124,6 +1131,7 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
           recordQueuedPromptRunLaunch$,
           launched.context,
           pending.runId,
+          timing.prompt,
           signal,
         );
       } else {
@@ -1269,7 +1277,7 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
         return { kind: "none" };
       }
       waitUntil(set(claimed.updatePresignedUrlCache$, signal));
-      await set(activatePendingRun$, pending, signal);
+      await set(activatePendingRun$, pending, timing, signal);
       return { kind: "launched", runId: pending.runId };
     },
   );

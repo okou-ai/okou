@@ -127,7 +127,7 @@ function parseAttestedConnectorCatalogRuntimeProjection(
 
 function validateAttestedConnectorCatalogRuntimeProjectionRow(args: {
   readonly row: ConnectorCatalogRuntimeProjectionRow;
-  readonly timing: ConnectorCatalogRuntimeProjectionValidationTiming;
+  readonly timing?: ConnectorCatalogRuntimeProjectionValidationTiming;
 }):
   | {
       readonly kind: "ready";
@@ -138,21 +138,27 @@ function validateAttestedConnectorCatalogRuntimeProjectionRow(args: {
       readonly reason: "malformed" | "digest_mismatch";
     } {
   const payload = args.row.connectorPayload;
-  const digestMatches = args.timing.measureDigest(() => {
+  const checkDigest = () => {
     return (
       connectorCatalogRuntimeProjectionDigest(payload) ===
       args.row.connectorDigest
     );
-  });
+  };
+  const digestMatches =
+    args.timing === undefined
+      ? checkDigest()
+      : args.timing.measureDigest(checkDigest);
   if (!digestMatches) {
     return { kind: "fallback", reason: "digest_mismatch" };
   }
-  const connector = args.timing.measureParse(() => {
+  const parse = () => {
     return parseAttestedConnectorCatalogRuntimeProjection(
       payload,
       args.row.connectorSlug,
     );
-  });
+  };
+  const connector =
+    args.timing === undefined ? parse() : args.timing.measureParse(parse);
   return connector === undefined
     ? { kind: "fallback", reason: "malformed" }
     : { kind: "ready", connector };
@@ -161,7 +167,7 @@ function validateAttestedConnectorCatalogRuntimeProjectionRow(args: {
 export function validateConnectorCatalogRuntimeProjectionRows(args: {
   readonly rows: readonly ConnectorCatalogRuntimeProjectionRow[];
   readonly connectorSlugs: readonly ConnectorSlug[];
-  readonly timing: ConnectorCatalogRuntimeProjectionValidationTiming;
+  readonly timing?: ConnectorCatalogRuntimeProjectionValidationTiming;
 }): ConnectorCatalogRuntimeProjectionRowsRead {
   const rowBySlug = new Map(
     args.rows.map((row) => {

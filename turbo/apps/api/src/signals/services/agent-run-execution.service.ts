@@ -11365,14 +11365,22 @@ export function admissionAttemptOutcome(
   return "rejected";
 }
 
-export function atomicLaunchPayloadInput(args: {
+export function atomicLaunchPayloadInput(
+  args: Parameters<typeof atomicLaunchPayloadData>[0] & {
+    readonly timing: ApiDispatchTimingCollector;
+  },
+): BuildRunnerJobPayloadInput {
+  return { ...atomicLaunchPayloadData(args), timing: args.timing };
+}
+
+/** Pure payload data; the resource command supplies its timing parameter. */
+export function atomicLaunchPayloadData(args: {
   readonly capturedStorageMounts?: readonly PersistedStorageMount[];
   readonly deferredPiResources?: PreparedPiLaunchResources;
   readonly createArgs: CreateAgentRunArgs;
   readonly context: FinalizedPreparedRunContext;
   readonly run: Pick<RunRecord, "id" | "sessionId" | "shouldCreateSession">;
-  readonly timing: ApiDispatchTimingCollector;
-}): BuildRunnerJobPayloadInput {
+}): Omit<BuildRunnerJobPayloadInput, "timing"> {
   return {
     disabledPaidTools: args.context.disabledPaidTools,
     run: args.run,
@@ -11405,7 +11413,6 @@ export function atomicLaunchPayloadInput(args: {
     platformEnvironment: args.createArgs.platformEnvironment,
     userTimezone: args.context.userTimezone,
     featureSwitchContext: args.context.featureSwitchContext,
-    timing: args.timing,
     piLaunchConfig: args.createArgs.piLaunchConfig,
     artifactMissingRootPolicy: args.createArgs.artifactMissingRootPolicy,
   };
@@ -11765,7 +11772,7 @@ export async function buildPreparedPermissionManifest(args: {
   readonly modelProvider: ResolvedModelProviderEnvironment | null;
   readonly storedConnectorMetadataContext: BuiltinConnectorRuntimeContext;
   readonly customConnectorContext: CustomConnectorRuntimeContext;
-  readonly timing: ApiDispatchTimingCollector;
+  readonly timing?: ApiDispatchTimingCollector;
 }): Promise<PermissionManifest | undefined | CreateRunErrorResult> {
   const result = await settle(
     buildPermissionManifest({
@@ -15636,7 +15643,7 @@ interface CompleteAgentRunArgs {
 }
 
 export function finalizePreparedRunContext(
-  prepared: Omit<PreparedAgentRun, "phaseTiming">,
+  prepared: Pick<PreparedAgentRun, "args" | "context">,
   finalAppendSystemPrompt: CreateRunBody["appendSystemPrompt"],
 ): FinalizedPreparedRunContext {
   return {
@@ -16414,7 +16421,7 @@ interface BuildCreateAgentRunArgsInput {
   readonly allowedCustomConnectorIds: readonly string[];
   readonly customConnectorGrants: readonly AgentCustomConnectorGrant[];
   readonly customConnectorDefinitions: readonly CustomConnectorDefinitionVersion[];
-  readonly timing: ApiDispatchTimingCollector;
+  readonly timing?: ApiDispatchTimingCollector;
   readonly threadSessionResolution?: ChatThreadSessionResolution;
   readonly cloudBrowserEnabled: boolean | undefined;
   readonly featureSwitchContext: FeatureSwitchContext;
