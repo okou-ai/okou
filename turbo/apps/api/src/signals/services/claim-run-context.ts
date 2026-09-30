@@ -5572,18 +5572,35 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   const reconciliation = {
     reconcileOfficialWorkflow$: reconcileOfficialWorkflow$,
   };
-  const automationLaunchReadinessInternalInput$ =
-    state<AssembleWorkflowAutomationRunArgs | null>(null);
-  const automationLaunchReadinessInput$ = computed((get) => {
-    const input = get(automationLaunchReadinessInternalInput$);
-    if (!input) {
-      throw new Error("Automation launch requires a selected queued input");
+  const automationLaunchReadinessInput$ = computed(async (get) => {
+    const [head, event, target, launchMaterial, autonomyBudget] =
+      await Promise.all([
+        get(head$),
+        get(event$),
+        get(target$),
+        get(material.launchMaterial$),
+        get(budget.autonomyBudget$),
+      ]);
+    if (
+      !head ||
+      !event ||
+      !target ||
+      !launchMaterial ||
+      autonomyBudget.kind === "invalid"
+    ) {
+      throw new Error("Automation launch requires a valid queued input");
     }
-    return input;
+    return queuedAutomationLaunchArguments({
+      head,
+      event,
+      target,
+      material: launchMaterial,
+      autonomyBudget: autonomyBudget.autonomyBudget,
+    });
   });
   const previousRunFailure$ = computed(
     async (get): Promise<RunFailure | null> => {
-      const args = get(automationLaunchReadinessInput$);
+      const args = await get(automationLaunchReadinessInput$);
       const { automation } = args.due;
       if (args.activePreviousRunPolicy === "allow" || !automation.lastRunId) {
         return null;
@@ -5599,7 +5616,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     },
   );
   const ownerMember$ = computed(async (get) => {
-    const { automation } = get(automationLaunchReadinessInput$).due;
+    const { automation } = (await get(automationLaunchReadinessInput$)).due;
     const [member] = await get(db$)
       .select({ role: orgMembersCache.role })
       .from(orgMembersCache)
@@ -5613,7 +5630,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     return member ?? null;
   });
   const visibleTarget$ = computed(async (get) => {
-    const { automation } = get(automationLaunchReadinessInput$).due;
+    const { automation } = (await get(automationLaunchReadinessInput$)).due;
     const [target] = await get(db$)
       .select({
         agentId: workflows.agentId,
@@ -5636,8 +5653,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     return target ?? null;
   });
   const targetReadable$ = computed(async (get) => {
-    const { automation, agentId, allowClaimedOnceScheduleAutomation } = get(
-      automationLaunchReadinessInput$,
+    const { automation, agentId, allowClaimedOnceScheduleAutomation } = (
+      await get(automationLaunchReadinessInput$)
     ).due;
     const claimedOnceSchedule =
       allowClaimedOnceScheduleAutomation === true &&
@@ -5682,12 +5699,10 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     },
   );
   const workflowAutomationLaunchReadGraphSources = {
-    internalInput$: automationLaunchReadinessInternalInput$,
     input$: automationLaunchReadinessInput$,
     readiness$: automationLaunchReadinessReadiness$,
   };
   const {
-    internalInput$: workflowAutomationLaunchReadGraphInternalInput$,
     input$: workflowAutomationLaunchReadGraphInput$,
     readiness$: workflowAutomationLaunchReadGraphReadiness$,
   } = workflowAutomationLaunchReadGraphSources;
@@ -5695,8 +5710,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     workflowAutomationLaunchReadGraphSources;
   const automationLaunchMaterialsComputerUseHostGrant$ = computed(
     async (get): Promise<ComputerUseHostGrant> => {
-      const { automation, chatThreadId } = get(
-        automationLaunchMaterialsInput$,
+      const { automation, chatThreadId } = (
+        await get(automationLaunchMaterialsInput$)
       ).due;
       const [host] = await get(db$)
         .select({
@@ -5723,7 +5738,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   );
   const automationLaunchMaterialsRunInput$ = computed(
     async (get): Promise<WorkflowAutomationRunInput> => {
-      const args = get(automationLaunchMaterialsInput$);
+      const args = await get(automationLaunchMaterialsInput$);
       const computerUseHostGrant = await get(
         automationLaunchMaterialsComputerUseHostGrant$,
       );
@@ -6643,8 +6658,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         : null;
     },
   );
-  const workflowAutomationLaunchInternalInput$ =
-    workflowAutomationLaunchReadGraphInternalInput$;
   const workflowAutomationLaunchInput$ =
     workflowAutomationLaunchReadGraphInput$;
   const readiness$ = workflowAutomationLaunchReadGraphReadiness$;
@@ -6683,7 +6696,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   );
   const assembleWorkflowAutomationRun$ = computed(
     async (get): Promise<AssembledWorkflowAutomationRun | RunFailure> => {
-      const args = get(workflowAutomationLaunchInput$);
+      const args = await get(workflowAutomationLaunchInput$);
       const timing = get(timing$);
       const [selection, model, computerUseHostGrant, runInput, readiness] =
         await Promise.all([
@@ -6740,11 +6753,10 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   );
   const initializeWorkflowAutomationRun$ = command(
     async (
-      { get, set },
+      { get },
       args: AssembleWorkflowAutomationRunArgs,
       signal: AbortSignal,
     ): Promise<AssembleWorkflowAutomationRunArgs | null> => {
-      set(workflowAutomationLaunchInternalInput$, args);
       const assembly = await get(assembleWorkflowAutomationRun$);
       signal.throwIfAborted();
       // An assembled launch records its independent Get Started reward; the
