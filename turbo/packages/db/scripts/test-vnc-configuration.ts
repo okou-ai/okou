@@ -90,7 +90,7 @@ try {
     "1229_peaceful_mathemanic.sql",
     "1253_unique_zarek.sql",
     "1289_thick_bruce_banner.sql",
-    "1294_steady_red_shift.sql",
+    "1295_steady_red_shift.sql",
   ]) {
     await client.query(
       (await migration(name)).replaceAll('"public".', `"${schema}".`),
