@@ -106,9 +106,12 @@ impl Peer {
             let mut roots = RootCertStore::empty();
             roots.add(root_certificate.der().clone()).unwrap();
             builder.with_client_cert_verifier(
-                WebPkiClientVerifier::builder(Arc::new(roots))
-                    .build()
-                    .unwrap(),
+                WebPkiClientVerifier::builder_with_provider(
+                    Arc::new(roots),
+                    Arc::new(rustls::crypto::aws_lc_rs::default_provider()),
+                )
+                .build()
+                .unwrap(),
             )
         } else {
             builder.with_no_client_auth()
