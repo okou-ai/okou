@@ -63,7 +63,7 @@ const commonRequestSchema = z
   })
   .strict();
 
-const supportedProfileSchema = z
+const supportedProfileFieldsSchema = z
   .object({
     authMethod: z.enum([
       "none",
@@ -86,32 +86,41 @@ const supportedProfileSchema = z
     ]),
     transportType: z.enum(["direct", "ssh"]),
   })
-  .strict()
-  .refine((profile) => {
+  .strict();
+
+const exactSecurityByAuth = {
+  none: "x509_none",
+  client_certificate: "x509_none",
+  vnc_password: "x509_vnc",
+  client_certificate_vnc_password: "x509_vnc",
+  username_password: "x509_plain",
+  apple_dh_username_password: "apple_dh",
+  apple_srp_username_password: "apple_srp",
+  apple_rsa_srp_username_password: "apple_rsa_srp",
+} as const satisfies Record<
+  z.infer<typeof supportedProfileFieldsSchema>["authMethod"],
+  z.infer<typeof supportedProfileFieldsSchema>["securityType"]
+>;
+
+function matchesSupportedVncProfile(
+  profile: z.infer<typeof supportedProfileFieldsSchema>,
+): boolean {
+  if (profile.securityType === "apple_vnc_password") {
     return (
-      (profile.authMethod === "none" && profile.securityType === "x509_none") ||
-      (profile.authMethod === "client_certificate" &&
-        profile.securityType === "x509_none") ||
-      (profile.authMethod === "client_certificate_vnc_password" &&
-        profile.securityType === "x509_vnc") ||
-      (profile.authMethod === "vnc_password" &&
-        profile.securityType === "x509_vnc") ||
-      (profile.authMethod === "vnc_password" &&
-        profile.securityType === "apple_vnc_password" &&
-        profile.transportType === "ssh") ||
-      (profile.authMethod === "username_password" &&
-        profile.securityType === "x509_plain") ||
-      (profile.authMethod === "apple_dh_username_password" &&
-        profile.securityType === "apple_dh" &&
-        profile.transportType === "ssh") ||
-      (profile.authMethod === "apple_srp_username_password" &&
-        profile.securityType === "apple_srp" &&
-        profile.transportType === "ssh") ||
-      (profile.authMethod === "apple_rsa_srp_username_password" &&
-        profile.securityType === "apple_rsa_srp" &&
-        profile.transportType === "ssh")
+      profile.authMethod === "vnc_password" && profile.transportType === "ssh"
     );
-  }, "VNC Runner profiles require an exact authentication/security pair");
+  }
+  return (
+    profile.securityType === exactSecurityByAuth[profile.authMethod] &&
+    (!profile.authMethod.startsWith("apple_") ||
+      profile.transportType === "ssh")
+  );
+}
+
+const supportedProfileSchema = supportedProfileFieldsSchema.refine(
+  matchesSupportedVncProfile,
+  "VNC Runner profiles require an exact authentication/security pair",
+);
 
 const resolveRequestSchema = commonRequestSchema.extend({
   supportedProfiles: z.array(supportedProfileSchema).max(16),
