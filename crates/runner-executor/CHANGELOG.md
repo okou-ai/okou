@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/okou-ai/okou/compare/runner-executor-v0.2.7...runner-executor-v0.3.0) (2026-09-30)
+
+
+### Features
+
+* **runner:** add private run-scoped guest duplex channel ([#37113](https://github.com/okou-ai/okou/issues/37113)) ([5487cfc](https://github.com/okou-ai/okou/commit/5487cfce060b5072409b8a0d944a7d1528ffbd91))
+
 ## [0.2.7](https://github.com/okou-ai/okou/compare/runner-executor-v0.2.6...runner-executor-v0.2.7) (2026-09-30)
 
 ## [0.2.6](https://github.com/okou-ai/okou/compare/runner-executor-v0.2.5...runner-executor-v0.2.6) (2026-09-30)

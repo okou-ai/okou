@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.0](https://github.com/okou-ai/okou/compare/guest-control-server-v0.21.53...guest-control-server-v0.22.0) (2026-09-30)
+
+
+### Features
+
+* **runner:** add private run-scoped guest duplex channel ([#37113](https://github.com/okou-ai/okou/issues/37113)) ([5487cfc](https://github.com/okou-ai/okou/commit/5487cfce060b5072409b8a0d944a7d1528ffbd91))
+
 ## [0.21.53](https://github.com/okou-ai/okou/compare/guest-control-server-v0.21.52...guest-control-server-v0.21.53) (2026-09-30)
 
 ## [0.21.52](https://github.com/okou-ai/okou/compare/guest-control-server-v0.21.51...guest-control-server-v0.21.52) (2026-09-29)
