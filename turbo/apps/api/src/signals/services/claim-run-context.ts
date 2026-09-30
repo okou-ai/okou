@@ -8984,14 +8984,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     if (isRouteError(provider)) {
       return provider;
     }
-    if (
-      context.input.args.codexServiceTier === "ultrafast" &&
-      (provider?.type !== "openai-api-key" ||
-        provider.selectedModel !== "gpt-6-astra")
-    ) {
-      return badRequestMessage(
-        "Astra Ultrafast requires a direct OpenAI API-key route",
-      );
+    if (context.input.args.codexServiceTier === "ultrafast") {
+      return badRequestMessage("Astra Ultrafast is temporarily disabled");
     }
     const materialized = await settle(
       materializePreparedPiProvider(context.input.args, provider),

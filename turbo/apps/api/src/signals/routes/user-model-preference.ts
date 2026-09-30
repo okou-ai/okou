@@ -1,8 +1,5 @@
 import { command, computed } from "ccstate";
-import {
-  getMemberModelPolicyRoute,
-  isMemberModelPolicyConfigurable,
-} from "@okouai/api-contracts/contracts/member-model-policy";
+import { isMemberModelPolicyConfigurable } from "@okouai/api-contracts/contracts/member-model-policy";
 import {
   getRunModelAccess,
   RETIRED_RUN_MODEL_MESSAGE,
@@ -53,23 +50,10 @@ function validateModelSettingsPatch(args: {
 
 function validateUltrafastServiceTier(args: {
   readonly requested: boolean;
-  readonly configuredPolicy: OrgModelPolicy | undefined;
 }): ReturnType<typeof badRequestMessage> | undefined {
-  if (!args.requested) {
-    return undefined;
-  }
-  if (
-    !args.configuredPolicy ||
-    !isMemberModelPolicyConfigurable(args.configuredPolicy) ||
-    args.configuredPolicy.model !== "gpt-6-astra" ||
-    getMemberModelPolicyRoute(args.configuredPolicy).providerType !==
-      "openai-api-key"
-  ) {
-    return badRequestMessage(
-      "Astra Ultrafast requires a direct OpenAI API-key route",
-    );
-  }
-  return undefined;
+  return args.requested
+    ? badRequestMessage("Astra Ultrafast is temporarily disabled")
+    : undefined;
 }
 
 function validatePriorityServiceTier(args: {
@@ -201,7 +185,6 @@ const updateUserModelPreferenceInner$ = command(
     const serviceTierError =
       validateUltrafastServiceTier({
         requested: body.data.serviceTier === "ultrafast",
-        configuredPolicy,
       }) ??
       validatePriorityServiceTier({
         requested: body.data.serviceTier === "priority",

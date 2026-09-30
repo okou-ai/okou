@@ -84,7 +84,7 @@ const MODEL_RUN_OPTIONS: Readonly<Record<string, ModelRunOptions>> =
       efforts: CODEX_REASONING_EFFORTS,
       defaultEffort: "max",
       fast: { ...CODEX_FAST, chatGptSpeedMultiplier: 2 },
-      ultrafast: { apiCostMultiplier: 6, speedMultiplier: 8 },
+      // Ultrafast is disabled until account-specific service-tier discovery is verified.
     },
     "gpt-6.1-sol": {
       efforts: ["low", "medium", "high", "xhigh", "max"],

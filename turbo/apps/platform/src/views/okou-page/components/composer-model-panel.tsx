@@ -4,6 +4,7 @@ import {
   getMemberModelPolicyRoute,
   isMemberModelPolicyConfigurable,
 } from "@okouai/api-contracts/contracts/member-model-policy";
+import { getModelRunOptions } from "@okouai/api-contracts/contracts/model-run-options";
 import {
   getCanonicalModelDisplayName,
   isCodexFastModeModel,
@@ -109,7 +110,7 @@ function ComposerModelPanelBody({
   const ultrafastAvailable =
     selectedPolicy !== undefined &&
     configurable &&
-    selectedPolicy.model === "gpt-6-astra" &&
+    getModelRunOptions(selectedPolicy.model).ultrafast !== undefined &&
     getMemberModelPolicyRoute(selectedPolicy).providerType === "openai-api-key";
   const fastAvailable =
     configurable &&
