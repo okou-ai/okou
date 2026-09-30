@@ -49,7 +49,7 @@ import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { safeJsonParse, settle } from "../utils";
-import { isUniqueViolation } from "../../lib/pg-errors";
+import { isUniqueViolation, safeSqlStateCode } from "../../lib/pg-errors";
 import { googleFormsAccountProjectionStatement } from "./google-forms-automation-account.service";
 import { reprojectWorkflowAutomationsForOwner } from "./workflow-automation-account-projection.service";
 import { invalidateNotionPendingEventsForConnector } from "./notion-automation-account.service";
@@ -1037,7 +1037,12 @@ async function settleDefaultChange(
   if (settled.error instanceof DefaultConnectorAccountMissing) {
     return null;
   }
-  if (isDefaultIndexViolation(settled.error)) {
+  if (
+    isDefaultIndexViolation(settled.error) ||
+    safeSqlStateCode(settled.error) === "40P01"
+  ) {
+    // This nonfinancial operation failed and rolled back. Ask for another
+    // save; do not retry, acquire a lock or serialize the competing settings.
     return "conflict";
   }
   throw settled.error;
