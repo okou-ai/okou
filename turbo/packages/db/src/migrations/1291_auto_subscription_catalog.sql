@@ -20,6 +20,5 @@ INSERT INTO "subscription_model_catalog" ("subscription_type", "model", "display
   ('claude-code-oauth-token', 'claude-opus-5-5', 'Claude Opus 5.5', ARRAY['low','medium','high','extra','max','ultracode'], NULL, 2),
   ('claude-code-oauth-token', 'claude-fable-5-1', 'Claude Fable 5.1', ARRAY['low','medium','high','extra','max','ultracode'], NULL, 3),
   ('codex-oauth-token', 'gpt-6-luna', 'GPT 6 Luna', ARRAY['low','medium','high','xhigh','max'], 'priority', 1),
-  ('codex-oauth-token', 'gpt-6.1-sol', 'GPT 6.1 Sol', ARRAY['low','medium','high','xhigh','max'], 'priority', 2),
-  ('codex-oauth-token', 'gpt-6-sol', 'GPT 6 Sol', ARRAY['low','medium','high','xhigh','max','ultra'], 'priority', 3),
-  ('codex-oauth-token', 'gpt-6-astra', 'GPT 6 Astra', ARRAY['low','medium','high','xhigh','max','ultra'], 'priority', 4);
+  ('codex-oauth-token', 'gpt-6-sol', 'GPT 6 Sol', ARRAY['low','medium','high','xhigh','max','ultra'], 'priority', 2),
+  ('codex-oauth-token', 'gpt-6-astra', 'GPT 6 Astra', ARRAY['low','medium','high','xhigh','max','ultra'], 'priority', 3);

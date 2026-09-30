@@ -208,7 +208,9 @@ test("Direct OpenAI Astra sends the priced Ultrafast tier", async () => {
   await waitFor(() => {
     expect(toggle).toBeChecked();
   });
-  expect(await findButton("GPT 6 Astra, Max, Ultrafast")).toBeVisible();
+  await expect(
+    findButton("GPT 6 Astra, Max, Ultrafast"),
+  ).resolves.toBeVisible();
   await userEvent.setup({ delay: null }).keyboard("{Escape}");
   const composer = await screen.findByRole("textbox", { name: "Message" });
   await fillComposer(composer, "Run this on Astra Ultrafast");
