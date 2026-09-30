@@ -25,7 +25,6 @@ import {
   inArray,
   isNull,
   lte,
-  notExists,
   or,
   sql,
 } from "drizzle-orm";
@@ -1840,6 +1839,50 @@ async function migrationSubscriptionRoot(
   return root ?? null;
 }
 
+function migrationPlanRootConversion(
+  migration: MigrationRow,
+  existing: typeof usagePackSubscriptions.$inferSelect,
+  subscription: StripeSubscription,
+) {
+  return {
+    values: {
+      tier: migration.targetTier,
+      stripePlanPriceId: migration.stripePlanPriceId,
+      subscriptionStatus: subscription.status,
+      cancelAtPeriodEnd: subscription.cancel_at_period_end,
+      updatedAt: nowDate(),
+    },
+    condition: and(
+      eq(usagePackSubscriptions.id, existing.id),
+      eq(usagePackSubscriptions.orgId, migration.orgId),
+      eq(usagePackSubscriptions.stripeCustomerId, migration.stripeCustomerId),
+      eq(
+        usagePackSubscriptions.stripeSubscriptionId,
+        migration.stripeSubscriptionId,
+      ),
+      eq(usagePackSubscriptions.tier, migration.sourceTier),
+      inArray(usagePackSubscriptions.subscriptionStatus, [
+        "active",
+        "trialing",
+        "past_due",
+        "unpaid",
+        "canceled",
+        "incomplete_expired",
+        "paused",
+      ]),
+      eq(
+        usagePackSubscriptions.stripePlanPriceId,
+        migration.legacyStripePriceId,
+      ),
+      eq(
+        usagePackSubscriptions.subscriptionStatus,
+        existing.subscriptionStatus,
+      ),
+      sql`NOT EXISTS (SELECT 1 FROM ${usagePackAllocations} WHERE ${usagePackAllocations.usagePackSubscriptionId} = ${existing.id}::uuid)`,
+    ),
+  };
+}
+
 const materializeUsagePackSnapshot$ = command(
   async (
     { set },
@@ -1907,55 +1950,15 @@ const materializeUsagePackSnapshot$ = command(
           cancelAtPeriodEnd: subscription.cancel_at_period_end,
         });
       } else if (convertingPlanRoot) {
+        const conversion = migrationPlanRootConversion(
+          migration,
+          existing,
+          subscription,
+        );
         const [converted] = await tx
           .update(usagePackSubscriptions)
-          .set({
-            tier: migration.targetTier,
-            stripePlanPriceId: migration.stripePlanPriceId,
-            subscriptionStatus: subscription.status,
-            cancelAtPeriodEnd: subscription.cancel_at_period_end,
-            updatedAt: nowDate(),
-          })
-          .where(
-            and(
-              eq(usagePackSubscriptions.id, rootId),
-              eq(usagePackSubscriptions.orgId, migration.orgId),
-              eq(
-                usagePackSubscriptions.stripeCustomerId,
-                migration.stripeCustomerId,
-              ),
-              eq(
-                usagePackSubscriptions.stripeSubscriptionId,
-                migration.stripeSubscriptionId,
-              ),
-              eq(usagePackSubscriptions.tier, migration.sourceTier),
-              inArray(usagePackSubscriptions.subscriptionStatus, [
-                "active",
-                "trialing",
-                "past_due",
-                "unpaid",
-                "canceled",
-                "incomplete_expired",
-                "paused",
-              ]),
-              eq(
-                usagePackSubscriptions.stripePlanPriceId,
-                migration.legacyStripePriceId,
-              ),
-              eq(
-                usagePackSubscriptions.subscriptionStatus,
-                existing.subscriptionStatus,
-              ),
-              notExists(
-                tx
-                  .select({ id: usagePackAllocations.id })
-                  .from(usagePackAllocations)
-                  .where(
-                    eq(usagePackAllocations.usagePackSubscriptionId, rootId),
-                  ),
-              ),
-            ),
-          )
+          .set(conversion.values)
+          .where(conversion.condition)
           .returning({ id: usagePackSubscriptions.id });
         if (!converted) {
           throw new Error(
@@ -2255,6 +2258,66 @@ async function completeLockedMigration(
   }
 }
 
+function migrationInvitationValues(args: {
+  readonly migration: MigrationRow;
+  readonly invoice: StripeInvoice;
+  readonly usagePackSubscriptionId: string;
+  readonly selection: typeof usagePackSubscriptionMigrationSelections.$inferSelect;
+  readonly allocation: typeof usagePackAllocations.$inferSelect | undefined;
+  readonly credit:
+    | { readonly purchasedCredits: number; readonly bonusCredits: number }
+    | undefined;
+  readonly amountPaidCents: number;
+  readonly paymentIntentId: string | null;
+}) {
+  const {
+    migration,
+    invoice,
+    usagePackSubscriptionId,
+    selection,
+    allocation,
+    credit,
+    amountPaidCents,
+    paymentIntentId,
+  } = args;
+  if (
+    !allocation ||
+    !allocation.currentPeriodStart ||
+    !allocation.currentPeriodEnd ||
+    !credit ||
+    !selection.normalizedEmail ||
+    !selection.role ||
+    !selection.inviterUserId
+  ) {
+    throw new Error(
+      `Usage pack migration invitation ${selection.invitationId} is incomplete`,
+    );
+  }
+  return {
+    usagePackSubscriptionId,
+    allocationId: allocation.id,
+    orgId: migration.orgId,
+    normalizedEmail: selection.normalizedEmail,
+    role: selection.role,
+    inviterUserId: selection.inviterUserId,
+    usagePackUsd: selection.usagePackUsd,
+    stripePriceId: selection.stripePriceId,
+    status: "invitation_pending" as const,
+    currentPeriodStart: allocation.currentPeriodStart,
+    currentPeriodEnd: allocation.currentPeriodEnd,
+    prorationTimestamp: Math.floor(migration.effectiveAt.getTime() / 1000),
+    unitAmountCents: selection.unitAmountCents,
+    expectedAmountCents: amountPaidCents,
+    amountPaidCents,
+    currency: migration.currency,
+    purchasedCredits: credit.purchasedCredits,
+    bonusCredits: credit.bonusCredits,
+    stripePaymentIntentId: amountPaidCents > 0 ? paymentIntentId : null,
+    clerkInvitationId: selection.invitationId,
+    paidAt: invoicePaidAt(invoice),
+  };
+}
+
 const completeMigrationInvitations$ = command(
   async (
     { set },
@@ -2338,49 +2401,19 @@ const completeMigrationInvitations$ = command(
         if (!selection.invitationId) {
           continue;
         }
-        const allocation = allocations.find((candidate) => {
-          return candidate.invitationId === selection.invitationId;
-        });
-        const selectionCredit = credits.get(selection.id);
-        if (
-          !allocation ||
-          !allocation.currentPeriodStart ||
-          !allocation.currentPeriodEnd ||
-          !selectionCredit ||
-          !selection.normalizedEmail ||
-          !selection.role ||
-          !selection.inviterUserId
-        ) {
-          throw new Error(
-            `Usage pack migration invitation ${selection.invitationId} is incomplete`,
-          );
-        }
-        const amountPaidCents = paidAmounts.get(selection.id) ?? 0;
-        await tx.insert(usagePackInvitationPurchases).values({
+        const values = migrationInvitationValues({
+          migration,
+          invoice,
           usagePackSubscriptionId,
-          allocationId: allocation.id,
-          orgId: migration.orgId,
-          normalizedEmail: selection.normalizedEmail,
-          role: selection.role,
-          inviterUserId: selection.inviterUserId,
-          usagePackUsd: selection.usagePackUsd,
-          stripePriceId: selection.stripePriceId,
-          status: "invitation_pending",
-          currentPeriodStart: allocation.currentPeriodStart,
-          currentPeriodEnd: allocation.currentPeriodEnd,
-          prorationTimestamp: Math.floor(
-            migration.effectiveAt.getTime() / 1000,
-          ),
-          unitAmountCents: selection.unitAmountCents,
-          expectedAmountCents: amountPaidCents,
-          amountPaidCents,
-          currency: migration.currency,
-          purchasedCredits: selectionCredit.purchasedCredits,
-          bonusCredits: selectionCredit.bonusCredits,
-          stripePaymentIntentId: amountPaidCents > 0 ? paymentIntentId : null,
-          clerkInvitationId: selection.invitationId,
-          paidAt: invoicePaidAt(invoice),
+          selection,
+          allocation: allocations.find((candidate) => {
+            return candidate.invitationId === selection.invitationId;
+          }),
+          credit: credits.get(selection.id),
+          amountPaidCents: paidAmounts.get(selection.id) ?? 0,
+          paymentIntentId,
         });
+        await tx.insert(usagePackInvitationPurchases).values(values);
       }
       await completeLockedMigration(tx, {
         migrationId: migration.id,
