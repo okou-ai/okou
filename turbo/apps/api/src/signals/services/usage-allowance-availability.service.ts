@@ -1,6 +1,6 @@
 import { orgUsageAllowanceEntitlements } from "@okouai/db/schema/org-usage-allowance";
 import { command } from "ccstate";
-import { eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import { safeSync } from "../utils";
@@ -56,11 +56,22 @@ export const resolveUsageAllowanceAvailability$ = command(
           at,
         );
         if (prepared.update && owned) {
-          await tx
+          const [published] = await tx
             .update(orgUsageAllowanceEntitlements)
             .set(prepared.update)
-            .where(eq(orgUsageAllowanceEntitlements.id, owned.id));
+            .where(
+              and(
+                eq(orgUsageAllowanceEntitlements.id, owned.id),
+                sql`${orgUsageAllowanceEntitlements}::text = ${owned.snapshot}`,
+              ),
+            )
+            .returning({ id: orgUsageAllowanceEntitlements.id });
           signal?.throwIfAborted();
+          if (!published) {
+            throw new Error(
+              "Usage allowance changed during refresh publication",
+            );
+          }
         }
         if (!prepared.entitlement) {
           return null;

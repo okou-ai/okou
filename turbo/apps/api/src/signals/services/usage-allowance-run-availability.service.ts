@@ -95,6 +95,24 @@ function runWindowAvailability(
   };
 }
 
+function unchangedEntitlement(owned: {
+  readonly id: string;
+  readonly snapshot: string;
+}) {
+  return and(
+    eq(orgUsageAllowanceEntitlements.id, owned.id),
+    sql`${orgUsageAllowanceEntitlements}::text = ${owned.snapshot}`,
+  );
+}
+
+function requireRefreshPublication(
+  published: { readonly id: string } | undefined,
+) {
+  if (!published) {
+    throw new Error("Run allowance changed during refresh publication");
+  }
+}
+
 /** Issued Run windows remain usable after their entitlement's current period. */
 export const resolveUsageAllowanceAvailabilityForRun$ = command(
   async (
@@ -152,11 +170,13 @@ export const resolveUsageAllowanceAvailabilityForRun$ = command(
           at,
         );
         if (prepared.update && owned) {
-          await tx
+          const [published] = await tx
             .update(orgUsageAllowanceEntitlements)
             .set(prepared.update)
-            .where(eq(orgUsageAllowanceEntitlements.id, owned.id));
+            .where(unchangedEntitlement(owned))
+            .returning({ id: orgUsageAllowanceEntitlements.id });
           signal?.throwIfAborted();
+          requireRefreshPublication(published);
         }
         const entitlement = prepared.entitlement;
         if (
