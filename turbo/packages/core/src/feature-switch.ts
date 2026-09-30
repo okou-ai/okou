@@ -31,7 +31,10 @@ export interface FeatureSwitchMetadata {
 }
 
 export type FeatureSwitchRolloutStage =
-  "released" | "beta" | "alpha" | "internal";
+  | "released"
+  | "beta"
+  | "alpha"
+  | "internal";
 
 export interface FeatureSwitchContext {
   readonly userId?: string;
