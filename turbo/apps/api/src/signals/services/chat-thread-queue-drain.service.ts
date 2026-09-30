@@ -20,6 +20,7 @@ import { db$, writeDb$, type Db } from "../external/db";
 import { publishActiveInputToRunnerGroup } from "../external/realtime";
 import { safeSync, settle, tapError } from "../utils";
 import { createPickObjects } from "./pick-chat-run.service";
+import type { PrefetchedAgentBootstrap } from "./agent-bootstrap";
 import type { ChatQueuePickResult } from "./chat-queue-wait-reason";
 import type { Tx } from "../../lib/db-types";
 import { listPendingChatInputs } from "./chat-event-queue.service";
@@ -234,6 +235,7 @@ export const scheduleEnqueuedChatThreadPick$ = command(
       readonly orgId: string;
       readonly chatThreadId: string;
       readonly enqueueCommit?: ChatInputEnqueueCommit;
+      readonly prefetchedBootstrap?: PrefetchedAgentBootstrap;
       readonly touch?: () => Promise<void>;
       readonly publish?: () => Promise<void>;
     } & (
@@ -255,7 +257,11 @@ export const scheduleEnqueuedChatThreadPick$ = command(
         return new Map(previous).set(receipt.eventId, receipt.committedAt);
       });
     }
-    const { pick$ } = createPickObjects(input.orgId, input.chatThreadId);
+    const { pick$ } = createPickObjects(
+      input.orgId,
+      input.chatThreadId,
+      input.prefetchedBootstrap,
+    );
     waitUntil(
       (async () => {
         const picked = await settle(set(pick$, signal));

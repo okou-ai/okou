@@ -44,6 +44,10 @@ import type { SlackUserInfo } from "../external/slack-message-client";
 import { getOfficialTelegramBotConfig } from "../external/telegram-official";
 import { onRejection, safeSync, settle, tapError } from "../utils";
 import { buildAgentExecutionConfig } from "./agent-execution-config";
+import {
+  createAgentBootstrapObjects,
+  type PrefetchedAgentBootstrap,
+} from "./agent-bootstrap";
 import { BEFORE_DISPATCH_CANCELLED_ERROR } from "./agent-run-cancellation";
 import {
   type AgentRunAfterPreCreate,
@@ -52,7 +56,6 @@ import {
   type AgentRunIdentityInput,
   type AgentRunIdentityCommand,
   type AgentRunRecord,
-  agentRunResolutionOptions,
   agentRunsCreateForbidden,
   type AgentRunSelectionInput,
   type AgentRunStorageInput,
@@ -66,7 +69,6 @@ import {
   bindStableAppendSystemPrompt,
   bootstrapLoadTimingDimensions,
   bootstrapMaterializeTimingDimensions,
-  type BootstrapMetadataQueryRow,
   buildCreateAgentRunArgs,
   buildMergedVariables,
   buildNewRunCustomConnectorRuntimeContext,
@@ -94,11 +96,9 @@ import {
   customConnectorNewRunRowIsAdmissible,
   customGatewayProviderEnvironmentFromSnapshot,
   decryptStoredConnectorSecretRows,
-  type DisabledPaidToolsSnapshot,
   eagerStoredConnectorSecretInputs,
   eagerStoredConnectorSecretNames,
   type EffectiveConnectorScope,
-  emptyBootstrapMetadataFields,
   emptyCustomConnectorRuntimeContext,
   enforceCaptureNetworkBodiesGate,
   exactStorageVersions,
@@ -130,8 +130,6 @@ import {
   ORG_SENTINEL_USER_ID,
   overriddenRuntimeSecretAliases,
   pendingOkouTokenSecrets,
-  type PersistedRunEnvironmentSecret,
-  type PersistedRunEnvironmentVariable,
   persistedStorageMountRequests,
   personalProviderEnvironmentFromSnapshot,
   personalSubscriptionAccountCandidates,
@@ -163,7 +161,6 @@ import {
   resolveStorageManifestInputs,
   resolveStoredConnectorSecrets,
   resolveValidatedPersistedStorageMounts,
-  type RunAgentObservation,
   type RunBootstrapContext,
   type RunBootstrapSnapshotRows,
   runConnectorAccountCandidatesFromRows,
@@ -178,8 +175,6 @@ import {
   runCustomConnectorAccessTokenSecret,
   runCustomConnectorConnectionColumns,
   runCustomConnectorRefreshTokenSecret,
-  runEnvironmentSecretNames,
-  type RunMemberSnapshot,
   type RunModelProviderReadInput,
   type RunPreparedConnectorInputs,
   runThreadConnectorCandidates,
@@ -264,7 +259,6 @@ import {
 import { resolveReasoningEffortForDispatch } from "./chat-reasoning-effort.service";
 import {
   chatThreadConversationRun,
-  type ChatThreadExecutionSnapshot,
   type ChatThreadSessionResolution,
   chatThreadSessionSelection,
   resolveChatThreadSessionSnapshot,
@@ -285,14 +279,16 @@ import {
 } from "./connector-catalog-external-reader.service";
 import { ConnectorCatalogLoadTiming } from "./connector-catalog-load-timing.service";
 import {
+  createAgentCatalogIdentity,
+  createAgentCatalogProjectionRows,
+} from "./agent-bootstrap-catalog";
+import {
   isAutoPersonalSubscriptionRoute,
   loadMemberSubscriptionModels,
 } from "./subscription-model-catalog.service";
 import {
-  type CapturedConnectorCatalogIdentity,
   type ConnectorCatalogRuntimeProjectionRowsRead,
   projectionIdentityReadHook,
-  resolveProjectionIdentity,
   validateConnectorCatalogRuntimeProjectionRows,
 } from "./connector-catalog-runtime-projection.service";
 import {
@@ -311,7 +307,6 @@ import {
   uniqueSortedConnectorSlugs,
 } from "./connector-catalog-runtime.service";
 import { connectorCatalogSource } from "./connector-catalog-source";
-import { currentConnectorCatalogValidatorIdentity } from "./connector-catalog-validator-authority";
 import {
   type CustomConnectorRuntimeContext,
   loadEffectiveCustomConnectorPermissionBundle,
@@ -323,9 +318,7 @@ import {
   encryptPersistentSecretsMap,
 } from "./crypto.utils";
 import type { CustomConnectorRuntimeStorageRow } from "./custom-connector-credential-access.service";
-import { customConnectorDefinitionSelection } from "./custom-connector-definition-selection";
 import type { CustomConnectorPermissionBundle } from "./custom-connector-permission-bundle.service";
-import { normaliseCustomConnectorRow } from "./custom-connector.service";
 import { requireDiscordConversationAccess$ } from "./discord-access.service";
 import {
   type DiscordDeliveryTarget,
@@ -451,7 +444,6 @@ import {
   resolveAvailabilityInLockedTransaction,
   type UsageAllowanceAvailabilitySnapshot,
 } from "./usage-allowance.service";
-import { activeUserPermissionGrantCondition } from "./user-permission-grants.service";
 import {
   selectedUserTemplateIds,
   userTemplateVolumes,
@@ -472,7 +464,6 @@ import {
 } from "./workflow-automation-enqueue.service";
 import { manualTriggerSource } from "./workflow-automation-trigger-source";
 import {
-  type RunWorkflowSourceRow,
   visibleWorkflowCondition,
   workflowsForRunFromRows,
 } from "./workflow-data.service";
@@ -556,7 +547,6 @@ import {
   connectorCatalogActiveSnapshot,
   connectorCatalogCompatibilityEvaluation,
   connectorCatalogRuntimeProjections,
-  connectorCatalogRuntimeProjectionSets,
 } from "@okouai/db/schema/connector-catalog";
 import { conversations } from "@okouai/db/schema/conversation";
 import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
@@ -584,7 +574,6 @@ import {
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { orgCustomConnectorOauthConfigs } from "@okouai/db/schema/org-custom-connector-oauth-config";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
-import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
 import {
@@ -603,12 +592,8 @@ import { teamsOrgConnections } from "@okouai/db/schema/teams-org-connection";
 import { teamsOrgInstallations } from "@okouai/db/schema/teams-org-installation";
 import { telegramOfficialUserLinks } from "@okouai/db/schema/telegram-official-user-link";
 import { usagePackCreditGrants } from "@okouai/db/schema/usage-pack-credit-grant";
-import { userCache } from "@okouai/db/schema/user-cache";
-import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
-import { userCustomConnectors } from "@okouai/db/schema/user-custom-connector";
-import { userDisabledPaidTools } from "@okouai/db/schema/user-disabled-paid-tools";
+
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
-import { userPermissionGrants } from "@okouai/db/schema/user-permission-grant";
 import { userTemplates } from "@okouai/db/schema/user-template";
 import { variables } from "@okouai/db/schema/variable";
 import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
@@ -2273,19 +2258,6 @@ type ActivePreviousRunPolicy = "block" | "allow";
 
 const INCOMPLETE_EVENT_CHAR_CAP = 4000;
 
-const bootstrapMetadataRowKindDecoder = zodEnumDriverValueDecoder(
-  z.enum([
-    "user_info",
-    "feature_switch",
-    "builtin_connector",
-    "custom_connector",
-    "permission_grant",
-  ]),
-);
-const nullableTextDecoder = nullableDriverValueDecoder(pgTextDecoder);
-const persistedRunEnvironmentRowKindDecoder = zodEnumDriverValueDecoder(
-  z.enum(["variable", "secret"]),
-);
 const storedConnectorSecretNamesDecoder = zodDriverValueDecoder(
   z.array(z.string()),
 );
@@ -2404,7 +2376,10 @@ function storageManifestCacheLookupCondition(
   );
 }
 
-export function createClaimRunObjects(claim: ThreadClaim) {
+export function createClaimRunObjects(
+  claim: ThreadClaim,
+  prefetchedBootstrap?: PrefetchedAgentBootstrap,
+) {
   const appendChatQueueHeadRejection$ = command(
     async (
       { set },
@@ -7194,7 +7169,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   const preCreateAgentAgent$ = computed(
     async (get): Promise<AgentRunRecord | null> => {
       const { timing } = await get(selectedIdentityInputIdentityInput$);
-      const db = get(db$);
       const [agentId, observation] = await Promise.all([
         get(preCreateAgentIdAgentId$),
         get(preCreateRequestObservationRequestObservation$),
@@ -7209,25 +7183,10 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           if (observation) {
             return observation.agent;
           }
-          const [agent] = await db
-            .select({
-              id: agents.id,
-              name: agents.name,
-              orgId: agents.orgId,
-              defaultAgentId: orgMetadata.defaultAgentId,
-              owner: agents.owner,
-              visibility: agents.visibility,
-              displayName: agents.displayName,
-              description: agents.description,
-              sound: agents.sound,
-              modelProviderId: agents.modelProviderId,
-              selectedModel: agents.selectedModel,
-            })
-            .from(agents)
-            .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
-            .where(eq(agents.id, agentId))
-            .limit(1);
-          return agent ?? null;
+          const { hit } = await get(claimBootstrapIdentity$);
+          return hit
+            ? (await get(claimBootstrap$)).agent
+            : await get((await get(localBootstrapObjects$)).agent$);
         },
         {
           authorized_request_agent_source:
@@ -7236,220 +7195,102 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       );
     },
   );
-  const preCreateBootstrapQueryArgsBootstrapQueryArgs$ = computed(
-    async (get) => {
-      const { command } = await get(selectedIdentityInputIdentityInput$);
-      const agent = await get(preCreateAgentAgent$);
-      if (!agent) {
-        throw new Error("Agent disappeared after preparation authorization");
-      }
-      return {
-        userId: command.auth.userId,
-        orgId: command.auth.orgId,
-        agentId: agent.id,
-        checkedAt: new Date(command.apiStartTime),
-      };
-    },
-  );
-  const bootstrapCustomConnectorQuery$ = computed(async (get) => {
-    const [, args] = await Promise.all([
+  const claimBootstrapIdentity$ = computed(async (get) => {
+    const [{ command }, agentId, head] = await Promise.all([
       get(selectedIdentityInputIdentityInput$),
-      get(preCreateBootstrapQueryArgsBootstrapQueryArgs$),
+      get(preCreateAgentIdAgentId$),
+      get(head$),
     ]);
-    const db = get(db$);
-    return {
-      query: db
-        .select({
-          kind: sql`'custom_connector'`
-            .mapWith(bootstrapMetadataRowKindDecoder)
-            .as("kind"),
-          ...emptyBootstrapMetadataFields(),
-          id: sql`${userCustomConnectors.customConnectorId}::text`
-            .mapWith(nullableTextDecoder)
-            .as("id"),
-          detail: orgCustomConnectors.slug,
-          permissionNames: userCustomConnectors.permissionNames,
-          permissionBundleRef: orgCustomConnectors.permissionBundleRef,
-          storageVersion: orgCustomConnectors.storageVersion,
-          skillStorageVersionId: orgCustomConnectors.skillStorageVersionId,
-          isMcp: isNotNull(orgCustomConnectors.mcpEndpoint)
-            .mapWith(pgBooleanDecoder)
-            .as("is_mcp"),
-        })
-        .from(userCustomConnectors)
-        .innerJoin(
-          orgCustomConnectors,
-          and(
-            eq(orgCustomConnectors.id, userCustomConnectors.customConnectorId),
-            eq(orgCustomConnectors.orgId, userCustomConnectors.orgId),
-          ),
-        )
-        .where(
-          and(
-            eq(userCustomConnectors.orgId, args.orgId),
-            eq(userCustomConnectors.userId, args.userId),
-            eq(userCustomConnectors.agentId, args.agentId),
-            eq(orgCustomConnectors.enabled, true),
-          ),
-        ),
+    if (!agentId || !head) {
+      throw new Error("Bootstrap requires a selected execution identity");
+    }
+    const identity = {
+      userId: command.auth.userId,
+      orgId: command.auth.orgId,
+      chatThreadId: head.chatThreadId,
+      agentId,
     };
+    const hit =
+      prefetchedBootstrap !== undefined &&
+      prefetchedBootstrap.userId === identity.userId &&
+      prefetchedBootstrap.orgId === identity.orgId &&
+      prefetchedBootstrap.agentId === identity.agentId &&
+      head.userId === identity.userId &&
+      head.orgId === identity.orgId &&
+      head.agentId === identity.agentId;
+    return { identity, hit, prefetched: hit ? prefetchedBootstrap : undefined };
+  });
+  const localBootstrapObjects$ = computed(async (get) => {
+    const { identity } = await get(claimBootstrapIdentity$);
+    return createAgentBootstrapObjects(
+      identity.userId,
+      identity.orgId,
+      identity.agentId,
+    );
+  });
+  const claimBootstrap$ = computed(async (get) => {
+    const [{ timing }, { hit, prefetched }] = await Promise.all([
+      get(selectedIdentityInputIdentityInput$),
+      get(claimBootstrapIdentity$),
+    ]);
+    let snapshot: RunBootstrapSnapshotRows | undefined;
+    return await measureAgentRunPreCreate(
+      timing,
+      "api_dispatch_pre_create_agent_load_bootstrap_snapshot_rows",
+      async () => {
+        // A matching speculative read is authoritative for this pick: its
+        // rejection propagates, without a second query or a retry.
+        const bootstrap = prefetched
+          ? await prefetched.bootstrap
+          : await get((await get(localBootstrapObjects$)).bootstrap$);
+        snapshot = bootstrap;
+        return bootstrap;
+      },
+      () => {
+        return {
+          ...bootstrapLoadTimingDimensions(snapshot),
+          bootstrap_prefetch: hit ? "hit" : "miss",
+          ...(hit
+            ? {}
+            : {
+                bootstrap_prefetch_miss_reason:
+                  prefetchedBootstrap === undefined
+                    ? "not_provided"
+                    : "identity_mismatch",
+              }),
+        };
+      },
+    );
   });
   const preCreateBootstrapMetadataRowsBootstrapMetadataRows$ = computed(
-    async (get): Promise<BootstrapMetadataQueryRow[]> => {
-      await get(selectedIdentityInputIdentityInput$);
-      const db = get(db$);
-      const [args, featureContext, { query: customConnectorQuery }] =
-        await Promise.all([
-          get(preCreateBootstrapQueryArgsBootstrapQueryArgs$),
-          get(featureSwitchContext$),
-          get(bootstrapCustomConnectorQuery$),
-        ]);
-      const includeFeatureSwitches = featureContext === undefined;
-      // Keep userInfoQuery first: its fields own the UNION's runtime decoders,
-      // including the mapped NULL fields from emptyBootstrapMetadataFields().
-      const userInfoQuery = db
-        .select({
-          kind: sql`'user_info'`
-            .mapWith(bootstrapMetadataRowKindDecoder)
-            .as("kind"),
-          ...emptyBootstrapMetadataFields(),
-          name: userCache.name,
-          email: sql`${userCache.email}`
-            .mapWith(nullableTextDecoder)
-            .as("email"),
-          timezone: orgMembersMetadata.timezone,
-        })
-        .from(userCache)
-        .leftJoin(
-          orgMembersMetadata,
-          and(
-            eq(orgMembersMetadata.userId, args.userId),
-            eq(orgMembersMetadata.orgId, args.orgId),
-          ),
-        )
-        .where(eq(userCache.userId, args.userId));
-      const featureSwitchQuery = db
-        .select({
-          kind: sql`'feature_switch'`
-            .mapWith(bootstrapMetadataRowKindDecoder)
-            .as("kind"),
-          ...emptyBootstrapMetadataFields(),
-          featureUserId: userFeatureSwitches.userId,
-          switches: userFeatureSwitches.switches,
-        })
-        .from(userFeatureSwitches)
-        .where(
-          and(
-            eq(userFeatureSwitches.orgId, args.orgId),
-            inArray(userFeatureSwitches.userId, [
-              args.userId,
-              agentRunsCreateORG_SENTINEL_USER_ID,
-            ]),
-          ),
+    async (get) => {
+      const [{ command }, bootstrap, featureContext] = await Promise.all([
+        get(selectedIdentityInputIdentityInput$),
+        get(claimBootstrap$),
+        get(featureSwitchContext$),
+      ]);
+      return bootstrap.metadataRows.filter((row) => {
+        if (row.kind === "feature_switch" && featureContext !== undefined) {
+          return false;
+        }
+        return (
+          row.kind !== "permission_grant" ||
+          row.expiresAt === null ||
+          row.expiresAt.getTime() > command.apiStartTime
         );
-      const builtinConnectorQuery = db
-        .select({
-          kind: sql`'builtin_connector'`
-            .mapWith(bootstrapMetadataRowKindDecoder)
-            .as("kind"),
-          ...emptyBootstrapMetadataFields(),
-          name: userBuiltinConnectors.connectorSlug,
-        })
-        .from(userBuiltinConnectors)
-        .where(
-          and(
-            eq(userBuiltinConnectors.orgId, args.orgId),
-            eq(userBuiltinConnectors.userId, args.userId),
-            eq(userBuiltinConnectors.agentId, args.agentId),
-          ),
-        );
-      const permissionGrantQuery = db
-        .select({
-          kind: sql`'permission_grant'`
-            .mapWith(bootstrapMetadataRowKindDecoder)
-            .as("kind"),
-          ...emptyBootstrapMetadataFields(),
-          name: userPermissionGrants.connectorSlug,
-          detail: userPermissionGrants.permission,
-          action: userPermissionGrants.action,
-          expiresAt: userPermissionGrants.expiresAt,
-        })
-        .from(userPermissionGrants)
-        .where(
-          and(
-            eq(userPermissionGrants.orgId, args.orgId),
-            eq(userPermissionGrants.userId, args.userId),
-            eq(userPermissionGrants.agentId, args.agentId),
-            activeUserPermissionGrantCondition(args.checkedAt),
-          ),
-        );
-      if (includeFeatureSwitches) {
-        return await unionAll(
-          userInfoQuery,
-          featureSwitchQuery,
-          builtinConnectorQuery,
-          customConnectorQuery,
-          permissionGrantQuery,
-        );
-      }
-      return await unionAll(
-        userInfoQuery,
-        builtinConnectorQuery,
-        customConnectorQuery,
-        permissionGrantQuery,
-      );
+      });
     },
   );
-  const preCreateWorkflowRowsWorkflowRows$ = computed(
-    async (get): Promise<RunWorkflowSourceRow[]> => {
-      await get(selectedIdentityInputIdentityInput$);
-      const db = get(db$);
-      const args = await get(preCreateBootstrapQueryArgsBootstrapQueryArgs$);
-      return await db
-        .select({
-          id: workflows.id,
-          name: workflows.name,
-          visibility: workflows.visibility,
-          ownerUserId: workflows.ownerUserId,
-          officialDefinitionName: workflows.officialDefinitionName,
-          createdAt: workflows.createdAt,
-        })
-        .from(workflows)
-        .where(
-          and(
-            eq(workflows.orgId, args.orgId),
-            eq(workflows.agentId, args.agentId),
-            or(
-              isNull(workflows.officialDefinitionName),
-              eq(workflows.officialInstallationState, "installed"),
-            ),
-            or(
-              eq(workflows.visibility, "public"),
-              eq(workflows.ownerUserId, args.userId),
-            ),
-          ),
-        );
-    },
-  );
+  const preCreateWorkflowRowsWorkflowRows$ = computed(async (get) => {
+    return (await get(claimBootstrap$)).workflowRows;
+  });
   const preCreateBootstrapRowsBootstrapRows$ = computed(
     async (get): Promise<RunBootstrapSnapshotRows> => {
-      const { timing } = await get(selectedIdentityInputIdentityInput$);
-      let snapshot: RunBootstrapSnapshotRows | undefined;
-      return await measureAgentRunPreCreate(
-        timing,
-        "api_dispatch_pre_create_agent_load_bootstrap_snapshot_rows",
-        async () => {
-          const [metadataRows, workflowRows] = await Promise.all([
-            get(preCreateBootstrapMetadataRowsBootstrapMetadataRows$),
-            get(preCreateWorkflowRowsWorkflowRows$),
-          ]);
-          snapshot = { metadataRows, workflowRows };
-          return snapshot;
-        },
-        () => {
-          return bootstrapLoadTimingDimensions(snapshot);
-        },
-      );
+      const [metadataRows, workflowRows] = await Promise.all([
+        get(preCreateBootstrapMetadataRowsBootstrapMetadataRows$),
+        get(preCreateWorkflowRowsWorkflowRows$),
+      ]);
+      return { metadataRows, workflowRows };
     },
   );
   const preCreateBootstrapMetadata$ = computed(async (get) => {
@@ -7595,123 +7436,20 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     const { db, timing } = await get(catalogInput$);
     return { db, timing: new ConnectorCatalogLoadTiming(timing, undefined) };
   });
-  const connectorCatalogIdentity$ = computed(
-    async (get): Promise<CapturedConnectorCatalogIdentity | undefined> => {
-      const input = await get(catalogReadInput$);
-      if (input === undefined) {
-        return undefined;
-      }
-      const sourceId = connectorCatalogSource().sourceId;
-      const capabilityDigest =
-        connectorCatalogExecutableCapabilityState().digest;
-      const validator = currentConnectorCatalogValidatorIdentity();
-      const row = await input.timing.measure(
-        "api_dispatch_connector_catalog_query_projection_identity",
-        async () => {
-          const [row] = await input.db
-            .select({
-              projectionSetId: connectorCatalogRuntimeProjectionSets.id,
-              schemaVersion: connectorCatalogActiveSnapshot.schemaVersion,
-              catalogVersion: connectorCatalogActiveSnapshot.catalogVersion,
-              catalogDigest: connectorCatalogActiveSnapshot.catalogDigest,
-              projectionVersion:
-                connectorCatalogRuntimeProjectionSets.projectionVersion,
-              connectorCount:
-                connectorCatalogRuntimeProjectionSets.connectorCount,
-              projectionValidationBackendVersion:
-                connectorCatalogRuntimeProjectionSets.catalogValidationBackendVersion,
-              projectionValidationBuildCommitSha:
-                connectorCatalogRuntimeProjectionSets.catalogValidationBuildCommitSha,
-              evaluatedCapabilityDigest:
-                connectorCatalogCompatibilityEvaluation.executableCapabilityDigest,
-              compatibilityValidationBackendVersion:
-                connectorCatalogCompatibilityEvaluation.catalogValidationBackendVersion,
-              compatibilityValidationBuildCommitSha:
-                connectorCatalogCompatibilityEvaluation.catalogValidationBuildCommitSha,
-              filteredAuthMethods:
-                connectorCatalogCompatibilityEvaluation.filteredAuthMethods,
-            })
-            .from(connectorCatalogActiveSnapshot)
-            .leftJoin(
-              connectorCatalogRuntimeProjectionSets,
-              and(
-                eq(
-                  connectorCatalogRuntimeProjectionSets.sourceId,
-                  connectorCatalogActiveSnapshot.sourceId,
-                ),
-                eq(
-                  connectorCatalogRuntimeProjectionSets.schemaVersion,
-                  connectorCatalogActiveSnapshot.schemaVersion,
-                ),
-                eq(
-                  connectorCatalogRuntimeProjectionSets.catalogVersion,
-                  connectorCatalogActiveSnapshot.catalogVersion,
-                ),
-                eq(
-                  connectorCatalogRuntimeProjectionSets.catalogDigest,
-                  connectorCatalogActiveSnapshot.catalogDigest,
-                ),
-              ),
-            )
-            .leftJoin(
-              connectorCatalogCompatibilityEvaluation,
-              and(
-                eq(
-                  connectorCatalogCompatibilityEvaluation.sourceId,
-                  connectorCatalogActiveSnapshot.sourceId,
-                ),
-                eq(
-                  connectorCatalogCompatibilityEvaluation.schemaVersion,
-                  connectorCatalogActiveSnapshot.schemaVersion,
-                ),
-                eq(
-                  connectorCatalogCompatibilityEvaluation.catalogVersion,
-                  connectorCatalogActiveSnapshot.catalogVersion,
-                ),
-                eq(
-                  connectorCatalogCompatibilityEvaluation.catalogDigest,
-                  connectorCatalogActiveSnapshot.catalogDigest,
-                ),
-                eq(
-                  connectorCatalogCompatibilityEvaluation.executableCapabilityDigest,
-                  capabilityDigest,
-                ),
-              ),
-            )
-            .where(
-              and(
-                eq(connectorCatalogActiveSnapshot.sourceId, sourceId),
-                eq(
-                  connectorCatalogActiveSnapshot.schemaVersion,
-                  SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
-                ),
-              ),
-            )
-            .limit(1);
-          return row;
-        },
-      );
-      await projectionIdentityReadHook.get()?.();
-      return {
-        identity:
-          row === undefined
-            ? undefined
-            : {
-                sourceId,
-                schemaVersion: row.schemaVersion,
-                catalogVersion: row.catalogVersion,
-                catalogDigest: row.catalogDigest,
-                capabilityDigest,
-              },
-        projection: resolveProjectionIdentity({
-          sourceId,
-          capabilityDigest,
-          validator,
-          row,
-        }),
-      };
-    },
-  );
+  const connectorCatalogIdentity$ = computed(async (get) => {
+    const input = await get(catalogReadInput$);
+    if (input === undefined) {
+      return undefined;
+    }
+    const captured = await input.timing.measure(
+      "api_dispatch_connector_catalog_query_projection_identity",
+      async () => {
+        return await get(createAgentCatalogIdentity());
+      },
+    );
+    await projectionIdentityReadHook.get()?.();
+    return captured;
+  });
   const runtimeCatalogInputRequestedSlugs$ = computed(async (get) => {
     const { requestedConnectorSlugs, metadataConnectorSlugs = [] } =
       await get(requestedSlugs$);
@@ -7727,7 +7465,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     };
   });
   const runtimeCatalogProjectionRowsProjectionRows$ = computed(async (get) => {
-    const [captured, requested, { db, timing }] = await Promise.all([
+    const [captured, requested, { timing }] = await Promise.all([
       get(connectorCatalogIdentity$),
       get(runtimeCatalogInputRequestedSlugs$),
       get(catalogReadInput$),
@@ -7759,28 +7497,36 @@ export function createClaimRunObjects(claim: ThreadClaim) {
               const selectedRows = await timing.measure(
                 "api_dispatch_connector_catalog_fetch_projection_rows",
                 async () => {
-                  return await db
-                    .select({
-                      connectorSlug:
-                        connectorCatalogRuntimeProjections.connectorSlug,
-                      connectorDigest:
-                        connectorCatalogRuntimeProjections.connectorDigest,
-                      connectorPayload:
-                        connectorCatalogRuntimeProjections.connectorPayload,
-                    })
-                    .from(connectorCatalogRuntimeProjections)
-                    .where(
-                      and(
-                        eq(
-                          connectorCatalogRuntimeProjections.projectionSetId,
+                  const selectionStartedAt = now();
+                  const { hit } = await get(claimBootstrapIdentity$);
+                  const prefetched = hit
+                    ? (await get(claimBootstrap$)).catalog
+                    : undefined;
+                  const catalogHit =
+                    prefetched !== undefined &&
+                    prefetched.captured.projection.kind === "ready" &&
+                    projectionIdentityKey(
+                      prefetched.captured.projection.projection.identity,
+                    ) === projectionIdentityKey(projection.identity) &&
+                    prefetched.connectorSlugs.join("\0") ===
+                      selectedSlugs.join("\0");
+                  (await get(catalogInput$)).timing.recordElapsed(
+                    "api_dispatch_connector_catalog_prefetch_selection",
+                    "nested",
+                    selectionStartedAt,
+                    now(),
+                    { bootstrap_catalog_prefetch: catalogHit ? "hit" : "miss" },
+                  );
+                  return catalogHit
+                    ? prefetched.rows.filter((row) => {
+                        return uncachedSlugs.includes(row.connectorSlug);
+                      })
+                    : await get(
+                        createAgentCatalogProjectionRows(
                           projection.identity.projectionSetId,
-                        ),
-                        inArray(
-                          connectorCatalogRuntimeProjections.connectorSlug,
                           uncachedSlugs,
                         ),
-                      ),
-                    );
+                      );
                 },
               );
               return timing.measureProjectionRowValidation(
@@ -7844,123 +7590,20 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       ? await get(catalogReadInput$)
       : undefined;
   });
-  const capturedConnectorCatalogIdentity$ = computed(
-    async (get): Promise<CapturedConnectorCatalogIdentity | undefined> => {
-      const input = await get(freshIdentityInput$);
-      if (input === undefined) {
-        return undefined;
-      }
-      const sourceId = connectorCatalogSource().sourceId;
-      const capabilityDigest =
-        connectorCatalogExecutableCapabilityState().digest;
-      const validator = currentConnectorCatalogValidatorIdentity();
-      const row = await input.timing.measure(
-        "api_dispatch_connector_catalog_query_projection_identity",
-        async () => {
-          const [row] = await input.db
-            .select({
-              projectionSetId: connectorCatalogRuntimeProjectionSets.id,
-              schemaVersion: connectorCatalogActiveSnapshot.schemaVersion,
-              catalogVersion: connectorCatalogActiveSnapshot.catalogVersion,
-              catalogDigest: connectorCatalogActiveSnapshot.catalogDigest,
-              projectionVersion:
-                connectorCatalogRuntimeProjectionSets.projectionVersion,
-              connectorCount:
-                connectorCatalogRuntimeProjectionSets.connectorCount,
-              projectionValidationBackendVersion:
-                connectorCatalogRuntimeProjectionSets.catalogValidationBackendVersion,
-              projectionValidationBuildCommitSha:
-                connectorCatalogRuntimeProjectionSets.catalogValidationBuildCommitSha,
-              evaluatedCapabilityDigest:
-                connectorCatalogCompatibilityEvaluation.executableCapabilityDigest,
-              compatibilityValidationBackendVersion:
-                connectorCatalogCompatibilityEvaluation.catalogValidationBackendVersion,
-              compatibilityValidationBuildCommitSha:
-                connectorCatalogCompatibilityEvaluation.catalogValidationBuildCommitSha,
-              filteredAuthMethods:
-                connectorCatalogCompatibilityEvaluation.filteredAuthMethods,
-            })
-            .from(connectorCatalogActiveSnapshot)
-            .leftJoin(
-              connectorCatalogRuntimeProjectionSets,
-              and(
-                eq(
-                  connectorCatalogRuntimeProjectionSets.sourceId,
-                  connectorCatalogActiveSnapshot.sourceId,
-                ),
-                eq(
-                  connectorCatalogRuntimeProjectionSets.schemaVersion,
-                  connectorCatalogActiveSnapshot.schemaVersion,
-                ),
-                eq(
-                  connectorCatalogRuntimeProjectionSets.catalogVersion,
-                  connectorCatalogActiveSnapshot.catalogVersion,
-                ),
-                eq(
-                  connectorCatalogRuntimeProjectionSets.catalogDigest,
-                  connectorCatalogActiveSnapshot.catalogDigest,
-                ),
-              ),
-            )
-            .leftJoin(
-              connectorCatalogCompatibilityEvaluation,
-              and(
-                eq(
-                  connectorCatalogCompatibilityEvaluation.sourceId,
-                  connectorCatalogActiveSnapshot.sourceId,
-                ),
-                eq(
-                  connectorCatalogCompatibilityEvaluation.schemaVersion,
-                  connectorCatalogActiveSnapshot.schemaVersion,
-                ),
-                eq(
-                  connectorCatalogCompatibilityEvaluation.catalogVersion,
-                  connectorCatalogActiveSnapshot.catalogVersion,
-                ),
-                eq(
-                  connectorCatalogCompatibilityEvaluation.catalogDigest,
-                  connectorCatalogActiveSnapshot.catalogDigest,
-                ),
-                eq(
-                  connectorCatalogCompatibilityEvaluation.executableCapabilityDigest,
-                  capabilityDigest,
-                ),
-              ),
-            )
-            .where(
-              and(
-                eq(connectorCatalogActiveSnapshot.sourceId, sourceId),
-                eq(
-                  connectorCatalogActiveSnapshot.schemaVersion,
-                  SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
-                ),
-              ),
-            )
-            .limit(1);
-          return row;
-        },
-      );
-      await projectionIdentityReadHook.get()?.();
-      return {
-        identity:
-          row === undefined
-            ? undefined
-            : {
-                sourceId,
-                schemaVersion: row.schemaVersion,
-                catalogVersion: row.catalogVersion,
-                catalogDigest: row.catalogDigest,
-                capabilityDigest,
-              },
-        projection: resolveProjectionIdentity({
-          sourceId,
-          capabilityDigest,
-          validator,
-          row,
-        }),
-      };
-    },
-  );
+  const capturedConnectorCatalogIdentity$ = computed(async (get) => {
+    const input = await get(freshIdentityInput$);
+    if (input === undefined) {
+      return undefined;
+    }
+    const captured = await input.timing.measure(
+      "api_dispatch_connector_catalog_query_projection_identity",
+      async () => {
+        return await get(createAgentCatalogIdentity());
+      },
+    );
+    await projectionIdentityReadHook.get()?.();
+    return captured;
+  });
   const runtimeCatalogProjectionResultProjectionResult$ = computed(
     async (get) => {
       const [read, actualConnectorCount, latest] = await Promise.all([
@@ -8374,143 +8017,14 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   const preCreateExecutionPermissionPolicies$ =
     preCreatePermissionPoliciesPermissionPolicies$;
   const preCreateExecutionWorkflowRows$ = preCreateWorkflowRowsWorkflowRows$;
-  const scope$ = computed(async (get) => {
-    const { command } = await get(preCreateExecutionIdentityInput$);
-    const db = get(db$);
-    return { db, orgId: command.auth.orgId, userId: command.auth.userId };
+  const runDisabledPaidToolsSnapshot$ = computed(async (get) => {
+    return (await get(claimBootstrap$)).disabledPaidTools;
   });
-  const environmentInput$ = computed(async (get) => {
-    const scope = await get(scope$);
-    const agent = await get(preCreateExecutionAgent$);
-    if (!agent) {
-      throw new Error("Agent disappeared after preparation authorization");
-    }
-    return {
-      ...scope,
-      secretNames: runEnvironmentSecretNames(
-        buildAgentExecutionConfig(agent.name),
-      ),
-    };
+  const runMemberSnapshot$ = computed(async (get) => {
+    return (await get(claimBootstrap$)).member;
   });
-  const runDisabledPaidToolsSnapshot$ = computed(
-    async (get): Promise<DisabledPaidToolsSnapshot> => {
-      const args = await get(scope$);
-      const { db } = args;
-      const rows = await db
-        .select({ toolId: userDisabledPaidTools.toolId })
-        .from(userDisabledPaidTools)
-        .where(
-          and(
-            eq(userDisabledPaidTools.orgId, args.orgId),
-            eq(userDisabledPaidTools.userId, args.userId),
-          ),
-        )
-        .orderBy(asc(userDisabledPaidTools.toolId));
-      return {
-        orgId: args.orgId,
-        userId: args.userId,
-        toolIds: rows.map((row) => {
-          return row.toolId;
-        }),
-      };
-    },
-  );
-  const runMemberSnapshot$ = computed(
-    async (get): Promise<RunMemberSnapshot> => {
-      const args = await get(scope$);
-      const { db } = args;
-      const [member] = await db
-        .select({
-          timezone: orgMembersMetadata.timezone,
-          selectedImageModel: orgMembersMetadata.selectedImageModel,
-        })
-        .from(orgMembersMetadata)
-        .where(
-          and(
-            eq(orgMembersMetadata.orgId, args.orgId),
-            eq(orgMembersMetadata.userId, args.userId),
-          ),
-        )
-        .limit(1);
-      return { orgId: args.orgId, userId: args.userId, member };
-    },
-  );
   const runEnvironmentSnapshot$ = computed(async (get) => {
-    const args = await get(environmentInput$);
-    if (isRouteError(args)) {
-      return args;
-    }
-    const { db, secretNames: secretNamesToLoad } = args;
-    const variableQuery = db
-      .select({
-        kind: sql`'variable'`
-          .mapWith(persistedRunEnvironmentRowKindDecoder)
-          .as("kind"),
-        name: variables.name,
-        value: variables.value,
-        userId: variables.userId,
-      })
-      .from(variables)
-      .where(
-        and(
-          eq(variables.orgId, args.orgId),
-          eq(variables.type, "user"),
-          or(
-            eq(variables.userId, ORG_SENTINEL_USER_ID),
-            eq(variables.userId, args.userId),
-          ),
-        ),
-      );
-    const rows =
-      secretNamesToLoad.length > 0
-        ? await variableQuery.unionAll(
-            db
-              .select({
-                kind: sql`'secret'`
-                  .mapWith(persistedRunEnvironmentRowKindDecoder)
-                  .as("kind"),
-                name: secretsTable.name,
-                value: secretsTable.encryptedValue,
-                userId: secretsTable.userId,
-              })
-              .from(secretsTable)
-              .where(
-                and(
-                  eq(secretsTable.orgId, args.orgId),
-                  eq(secretsTable.type, "user"),
-                  or(
-                    eq(secretsTable.userId, ORG_SENTINEL_USER_ID),
-                    eq(secretsTable.userId, args.userId),
-                  ),
-                  inArray(secretsTable.name, secretNamesToLoad),
-                ),
-              ),
-          )
-        : await variableQuery;
-    const variableRows: PersistedRunEnvironmentVariable[] = [];
-    const secretRows: PersistedRunEnvironmentSecret[] = [];
-    for (const row of rows) {
-      if (row.kind === "variable") {
-        variableRows.push({
-          name: row.name,
-          value: row.value,
-          userId: row.userId,
-        });
-      } else {
-        secretRows.push({
-          name: row.name,
-          encryptedValue: row.value,
-          userId: row.userId,
-        });
-      }
-    }
-    return {
-      orgId: args.orgId,
-      userId: args.userId,
-      secretNames: secretNamesToLoad,
-      variables: variableRows,
-      secrets: secretRows,
-    };
+    return (await get(claimBootstrap$)).environment;
   });
   const resources = {
     disabledPaidTools$: runDisabledPaidToolsSnapshot$,
@@ -8549,8 +8063,10 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     return buildAgentExecutionConfig(agent.name);
   });
   const preCreateModelFeatureSwitchContext$ = computed(async (get) => {
-    return (await get(preCreateExecutionBootstrapMetadata$))
-      .featureSwitchContext;
+    const observed = await get(featureSwitchContext$);
+    return observed === undefined
+      ? (await get(preCreateExecutionBootstrapMetadata$)).featureSwitchContext
+      : observed;
   });
   const runFramework$ = computed(async (get) => {
     const [input, content] = await Promise.all([
@@ -9039,44 +8555,14 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       .featureSwitchContext;
   });
   const runCustomConnectorDefinitionRows$ = computed(async (get) => {
-    const { db, args, timing } = await get(connectorInput$);
-    const ids = (await get(preCreateConnectorScope$)).allowedCustomConnectorIds;
-    if (ids.length === 0) {
-      return [];
-    }
-    const startedAt = now();
-    const rows = await db
-      .select({
-        connector: customConnectorDefinitionSelection(),
-        oauthConfig: orgCustomConnectorOauthConfigs,
-      })
-      .from(orgCustomConnectors)
-      .leftJoin(
-        orgCustomConnectorOauthConfigs,
-        and(
-          eq(
-            orgCustomConnectorOauthConfigs.connectorId,
-            orgCustomConnectors.id,
-          ),
-          eq(orgCustomConnectorOauthConfigs.orgId, orgCustomConnectors.orgId),
-        ),
-      )
-      .where(
-        and(
-          eq(orgCustomConnectors.orgId, args.orgId),
-          eq(orgCustomConnectors.enabled, true),
-          inArray(orgCustomConnectors.id, [...ids]),
-        ),
-      );
-    timing.recordElapsed(
+    const { timing } = await get(connectorInput$);
+    return await timing.measure(
       "api_dispatch_prepare_context_load_custom_connector_rows",
       "nested",
-      startedAt,
-      now(),
+      async () => {
+        return (await get(claimBootstrap$)).customConnectorDefinitions;
+      },
     );
-    return rows.map((row) => {
-      return normaliseCustomConnectorRow(row.connector, row.oauthConfig);
-    });
   });
   const runOwnedConnectorThread$ = computed(async (get) => {
     const { db, args } = await get(connectorInput$);
@@ -11415,162 +10901,65 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       };
     },
   );
-  const resolutionOptions$ = computed(async (get) => {
-    return agentRunResolutionOptions((await get(contextInput$)).args);
-  });
-  const runAgentObservation$ = computed(
-    async (get): Promise<RunAgentObservation | undefined> => {
-      const input = await get(contextInput$);
-      const options = await get(resolutionOptions$);
-      const body = initialRunBody(input.args);
-      if (
-        options.testOnlyResolveDirectRun ||
-        body.sessionId ||
-        options.productAgentExecutionPlan?.identity === "no-agent" ||
-        !body.agentId
-      ) {
-        return undefined;
-      }
-      const agentId = body.agentId;
-      const preloaded = options.preloadedAgentExecutionObservation;
-      if (
-        preloaded &&
-        preloaded.requestUserId === input.args.userId &&
-        preloaded.requestOrgId === input.args.orgId &&
-        preloaded.agentId === agentId &&
-        preloaded.agentOrgId === input.args.orgId
-      ) {
-        return {
-          agentId,
-          agentOrgId: preloaded.agentOrgId,
-          agentOwner: preloaded.ownerUserId,
-        };
-      }
-      const [row] = await input.timing.measure(
-        "api_dispatch_resolve_agent_execution_lookup_agent",
-        "nested",
-        async () => {
-          return await input.db
-            .select({
-              agentId: agents.id,
-              agentOrgId: agents.orgId,
-              agentOwner: agents.owner,
-            })
-            .from(agents)
-            .where(eq(agents.id, agentId))
-            .limit(1);
-        },
-      );
-      return row;
-    },
-  );
-  const runSessionSnapshot$ = computed(
-    async (get): Promise<ChatThreadExecutionSnapshot | undefined> => {
-      const input = await get(contextInput$);
-      const options = await get(resolutionOptions$);
-      const agentSessionId = initialRunBody(input.args).sessionId;
-      if (
-        options.testOnlyResolveDirectRun ||
-        !agentSessionId ||
-        options.productAgentExecutionPlan?.identity === "no-agent"
-      ) {
-        return undefined;
-      }
-      if (options.sessionSnapshot) {
-        return options.sessionSnapshot;
-      }
-      const {
-        db,
-        args: { userId, orgId },
-      } = input;
-      const [snapshot] = await input.timing.measure(
-        "api_dispatch_resolve_agent_execution_lookup_session_snapshot",
-        "nested",
-        async () => {
-          return await db
-            .select({
-              session: {
-                id: agentSessions.id,
-                agentId: agentSessions.agentId,
-                conversationId: agentSessions.conversationId,
-                storageMounts: agentSessions.storageMounts,
-              },
-              agent: {
-                id: agents.id,
-                orgId: agents.orgId,
-                owner: agents.owner,
-              },
-              conversation: {
-                id: conversations.id,
-                runId: conversations.runId,
-                cliAgentType: conversations.cliAgentType,
-                cliAgentSessionId: conversations.cliAgentSessionId,
-                cliAgentSessionHistory: conversations.cliAgentSessionHistory,
-                cliAgentSessionHistoryHash:
-                  conversations.cliAgentSessionHistoryHash,
-              },
-              historyBlob: {
-                hash: blobs.hash,
-                encoding: blobs.encoding,
-              },
-              previousRun: {
-                id: agentRuns.id,
-                vars: agentRuns.vars,
-                storageMounts: agentRuns.storageMounts,
-                selectedModel: agentRuns.selectedModel,
-              },
-            })
-            .from(agentSessions)
-            .leftJoin(agents, eq(agentSessions.agentId, agents.id))
-            .leftJoin(
-              conversations,
-              eq(agentSessions.conversationId, conversations.id),
-            )
-            .leftJoin(
-              blobs,
-              eq(conversations.cliAgentSessionHistoryHash, blobs.hash),
-            )
-            .leftJoin(agentRuns, eq(conversations.runId, agentRuns.id))
-            .where(
-              and(
-                eq(agentSessions.id, agentSessionId),
-                eq(agentSessions.userId, userId),
-                eq(agentSessions.orgId, orgId),
-              ),
-            )
-            .limit(1);
-        },
-      );
-      return snapshot;
-    },
-  );
   const execution$ = computed(async (get) => {
-    const input = await get(contextInput$);
-    const [agentObservation, sessionSnapshot] = await Promise.all([
-      get(runAgentObservation$),
-      get(runSessionSnapshot$),
-    ]);
+    // Agent/session resolution has no dependency on connector firewall policies
+    // or the completed runner body. Use the already-authorized identity and
+    // canonical session snapshot directly, as buildCreateAgentRunArgs does.
+    const [{ command, timing }, fullCommand, agent, session] =
+      await Promise.all([
+        get(preCreateInput$),
+        get(selectedCommand$),
+        get(preCreateAgentAgent$),
+        get(threadSession$),
+      ]);
+    if (!agent) {
+      throw new Error("Agent disappeared after preparation authorization");
+    }
+    if (!fullCommand) {
+      throw new Error("Run execution requires an authorized ready input");
+    }
+    const body = {
+      ...fullCommand.body,
+      agentId: agent.id,
+      triggerSource: fullCommand.triggerSource ?? "web",
+    };
+    if (session?.sessionId) {
+      body.sessionId = session.sessionId;
+    } else if (command.chatThreadId) {
+      delete body.sessionId;
+    }
     return await resolveAgentExecution(
-      input.db,
-      initialRunBody(input.args),
-      input.args.userId,
-      input.args.orgId,
+      get(db$),
+      body,
+      command.auth.userId,
+      command.auth.orgId,
       {
-        ...(await get(resolutionOptions$)),
-        agentObservation,
-        sessionSnapshot,
-        timing: input.timing,
+        productAgentExecutionPlan: {
+          identity: "agent",
+          content: buildAgentExecutionConfig(agent.name),
+        },
+        preloadedAgentExecutionObservation: {
+          requestUserId: command.auth.userId,
+          requestOrgId: command.auth.orgId,
+          agentId: agent.id,
+          ownerUserId: agent.owner,
+          agentOrgId: agent.orgId,
+        },
+        resetNativeSession: session?.resetNativeSession,
+        sessionSnapshot: session?.executionSnapshot,
+        timing,
       },
     );
   });
   const body$ = computed(async (get) => {
-    const input = await get(contextInput$);
     const [
+      input,
       resolved,
       persistedEnvironment,
       featureSwitchContext,
       resolvedEnvironment,
     ] = await Promise.all([
+      get(contextInput$),
       get(execution$),
       get(runEnvironmentSnapshot$),
       get(preCreateModelFeatureSwitchContext$),
@@ -11604,9 +10993,9 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   });
   const runBodyBodyContext$ = computed(
     async (get): Promise<PreparedRunBodyContext | CreateRunErrorResult> => {
-      const input = await get(contextInput$);
-      const [resolved, body, requestedFramework, featureSwitchContext] =
+      const [input, resolved, body, requestedFramework, featureSwitchContext] =
         await Promise.all([
+          get(contextInput$),
           get(execution$),
           get(body$),
           get(runFramework$),
@@ -12448,6 +11837,9 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         get(preCreateRunArgsRunArgs$),
         get(preparedRunPlan$),
         get(storagePlan$),
+        // Start session-based execution alongside firewall/body assembly,
+        // rather than only after the completed create arguments are available.
+        get(execution$),
       ]);
       if (!selected || isRouteError(selected)) {
         return selected;

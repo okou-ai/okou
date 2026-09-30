@@ -44,6 +44,11 @@ import type {
   AgentRunRequestAgent,
 } from "./agent-run-contracts";
 import { recordGetStartedWorkflow } from "./get-started-workflow.service";
+import { logger } from "../../lib/log";
+import {
+  createAgentBootstrap,
+  type PrefetchedAgentBootstrap,
+} from "./agent-bootstrap";
 import { resolveChatReasoningEffort } from "./chat-reasoning-effort.service";
 import {
   enqueueChatInput,
@@ -1364,6 +1369,46 @@ function normalSendThreadTouch(
  * pick; a rejection appears in the thread as `input.rejected`. A direct
  * message's sidebar touch runs after the pick.
  */
+const bootstrapLog = logger("ChatAgentBootstrapPrefetch");
+
+const prefetchAgentBootstrap$ = command(
+  (
+    { get },
+    args: NormalSendArgs,
+    signal: AbortSignal,
+  ): PrefetchedAgentBootstrap | undefined => {
+    signal.throwIfAborted();
+    if (
+      args.agentRunPreCreateSource !== undefined ||
+      (args.auth.tokenType !== "session" && args.mcpSource === undefined)
+    ) {
+      return undefined;
+    }
+    const identity = {
+      userId: args.userId,
+      orgId: args.orgId,
+      agentId: args.body.agentId,
+    };
+    const bootstrap = get(
+      createAgentBootstrap(identity.userId, identity.orgId, identity.agentId),
+    );
+    // Own speculative work even when enqueue collides, a run is already
+    // active, or the FIFO head belongs to another identity. Keep the original
+    // Promise so a matching pick still receives its rejection.
+    waitUntil(
+      (async () => {
+        const result = await settle(bootstrap);
+        if (!result.ok) {
+          bootstrapLog.error("Agent bootstrap prefetch failed", {
+            error: result.error,
+          });
+        }
+      })(),
+    );
+    return { ...identity, bootstrap };
+  },
+);
+
 export const sendNormalEvent$ = command(
   async (
     { get, set },
@@ -1424,6 +1469,7 @@ export const sendNormalEvent$ = command(
       requiredOfficialWorkflowIds: args.requiredOfficialWorkflowIds,
     });
     const member = { userId: args.userId, orgId: args.orgId };
+    const prefetchedBootstrap = set(prefetchAgentBootstrap$, args, signal);
     const enqueued = await settle(
       (async () => {
         let createdAt: Date | undefined;
@@ -1456,6 +1502,7 @@ export const sendNormalEvent$ = command(
             orgId: args.orgId,
             chatThreadId: thread.threadId,
             ...(enqueueCommit ? { enqueueCommit } : {}),
+            ...(prefetchedBootstrap ? { prefetchedBootstrap } : {}),
             touch: normalSendThreadTouch(db, args, thread, createdAt),
             publish: async () => {
               await publishChatEventCreated({

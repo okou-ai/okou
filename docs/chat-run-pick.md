@@ -1,16 +1,17 @@
 # Chat run pick
 
-`createPickObjects(orgId, threadId?)` in
+`createPickObjects(orgId, threadId?, prefetchedBootstrap?)` in
 `turbo/apps/api/src/signals/services/pick-chat-run.service.ts` returns only
 `{ pick$ }`. The parent owns organization capacity, thread selection, the lease,
 overall control flow, the pending transaction, token-bound cleanup and activation.
-`createClaimRunObjects(claim)` in `claim-run-context.ts` returns only
+`createClaimRunObjects(claim, prefetchedBootstrap?)` in `claim-run-context.ts` returns only
 `{ pickedEvent$, prepareRunContext$, updatePresignedUrlCache$ }`. It owns selection
 of the claimed thread's input, execution identity, pinned model, prompt,
 connectors, storage, complete resource preparation and the deferred URL-cache
 write. These are the two S2/S3 business-object boundaries.
 
-Both factories accept ordinary business identities only. The child claim contains
+Both factories accept ordinary business identities and an optional ordinary
+prefetch object containing identity values and a Promise. The child claim contains
 `orgId`, `chatThreadId` and `claimId`; the parent also keeps the claimed
 `queuedAt`. No factory in this path receives a `State`,
 `Computed`, `Command`, getter, setter, Store, signal or business callback, including
@@ -75,6 +76,80 @@ graph; downstream nodes consume their actual dependencies rather than results
 copied between preparation commands. Independent reads use `Promise.all` and
 propagate the first rejection. There is no prescribed priority among concurrent
 infrastructure failures, no settled-result staging and no error fallback.
+
+## S1 agent bootstrap prefetch
+
+Web session-authenticated direct sends and verified MCP direct sends start
+`get(createAgentBootstrap(userId, orgId, agentId))` before the enqueue transaction.
+`agent-bootstrap.ts` owns this signal factory. The entry passes the ordinary
+`{ userId, orgId, agentId, bootstrap: Promise<AgentBootstrap> }` object to its
+post-commit pick. It does not await it before returning the accepted-input
+response. Integration, automation, workflow-command, run-callback and other
+non-Web direct-send entries keep the canonical claim-owned read.
+
+The package joins agent/organization definition, user information, feature
+switches, built-in/custom connector grants, permissions, accessible workflows,
+member settings, disabled paid tools, persisted variables/secrets, custom
+connector definitions and catalog projections. Independent queries start together.
+Environment secrets depend on the agent's execution configuration; custom
+connector definitions and catalog projection rows depend on the connector list.
+The catalog identity query depends only on global data and starts immediately.
+The factories accept ordinary values only and obtain their database inside
+computed nodes; no database handle or signal is passed through request state.
+Canonical claims construct the same query graph. Its agent-only read remains
+independent so authorization does not start automation metadata before its
+existing preparation boundary.
+
+The claim derives `{ userId, orgId, chatThreadId, agentId }` from its selected
+execution identity and already-read queue head. All three prefetch key fields
+must match both identities before any speculative result is consumed. A miss
+or absent object reads the canonical graph. A matching Promise rejection
+propagates through the existing rejection/lease boundary; it never triggers a
+second query or retry. S1 tracks the original speculative work in `waitUntil`
+with a separate error observer, including duplicate sends, active-run steer,
+no-capacity and identity misses. Observing an unused rejection does not turn
+the original Promise into a successful result or change the accepted S1 response.
+
+Permission expiry remains checked against the claim's existing API start time,
+not the earlier S1 read time. Existing observed feature-switch values retain
+precedence. Model-provider feature switches use that observation directly,
+without waiting for bootstrap. Session-based execution resolution starts beside
+firewall/body construction, using the same authorized agent, canonical session
+snapshot, reset policy and product execution configuration.
+
+Catalog reuse has a separate key: current projection identity plus the sorted
+connector list. The pick reads the current global identity; only a matching
+projection set/version, capability identity and connector list reuse speculative
+rows. A changed catalog reads current projection rows without discarding other
+bootstrap data. Existing payload/digest validation, count checks, immutable
+process caches and conditional fresh-identity fencing remain in force. Thread
+connector selection/accounts, stored connector snapshots, custom connector
+values and session rows are not in the prefetch package.
+
+`api_dispatch_pre_create_agent_load_bootstrap_snapshot_rows` measures remaining
+package wait, with `bootstrap_prefetch=hit|miss` and a miss reason of
+`not_provided|identity_mismatch`. `api_dispatch_connector_catalog_prefetch_selection`
+records `bootstrap_catalog_prefetch=hit|miss` when uncached projection rows are
+needed. These overlapping waits do not measure S1 query cost and must not be
+summed. A process-cached catalog can avoid the projection selection altogether.
+
+The identity lookups are primary-key/composite-index reads. Connector grants
+use `(org_id, user_id, agent_id)` or `(agent_id, user_id)` indexes, workflows
+use their agent/org indexes, member and paid-tool reads use organization/user
+keys, environment rows use organization/user/type/name indexes, and catalog
+identity/projection reads use source/schema and projection-set/slug keys. S1 may
+perform unused reads for steer; this is accepted. Live masked metadata confirms
+indexes on accessible tables, but MaskDB does not expose EXPLAIN and does not
+expose every catalog/config table. Actual production plan choice and latency
+remain deployment-verification work, not claims established by static checks.
+
+Route tests observe accepted input while a real database read is held, claimable
+Web/CLI runs, visible rejection after a one-shot PostgreSQL cancellation,
+continued steer after an unused prefetch failure, and current-catalog behavior
+when publication changes during prefetch. The database barrier/cancellation and
+catalog publication fixtures are infrastructure-only exceptions: no production
+user API can create those conditions. Assertions stay on chat and Runner APIs;
+there are no database-row/log assertions, elapsed polling or production hooks.
 
 ## One pick and one organization pass
 

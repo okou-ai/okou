@@ -23,6 +23,7 @@ import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
 import { db$, writeDb$ } from "../external/db";
 import { waitUntil } from "../context/wait-until";
+import type { PrefetchedAgentBootstrap } from "./agent-bootstrap";
 import type { Tx } from "../../lib/db-types";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { isFreePlanForCreditAdmission } from "./run-admission.service";
@@ -484,7 +485,11 @@ function createClaimRunTiming(pickStartedAt: number): ClaimRunTiming {
   };
 }
 
-export function createPickObjects(orgId: string, fixedThreadId?: string) {
+export function createPickObjects(
+  orgId: string,
+  fixedThreadId?: string,
+  prefetchedBootstrap?: PrefetchedAgentBootstrap,
+) {
   const internalReloadPick$ = state(0);
   const internalOrgCursor$ = state<OrgPickCursor | null>(null);
   const orgActiveRunCount$ = computed(async (get) => {
@@ -1198,12 +1203,15 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
       if (!claim) {
         return { kind: "none" };
       }
-      const claimed = createClaimRunObjects({
-        orgId: claim.orgId,
-        chatThreadId: claim.chatThreadId,
-        claimId: claim.claimId,
-        pickStartedAt: claim.pickStartedAt,
-      });
+      const claimed = createClaimRunObjects(
+        {
+          orgId: claim.orgId,
+          chatThreadId: claim.chatThreadId,
+          claimId: claim.claimId,
+          pickStartedAt: claim.pickStartedAt,
+        },
+        prefetchedBootstrap,
+      );
       const [hasCapacity, event] = await Promise.all([
         get(orgHasCapacity$),
         get(claimed.pickedEvent$),
