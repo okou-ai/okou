@@ -1,7 +1,9 @@
 import { computed, type Computed } from "ccstate";
 import type { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { runEnvironmentSecretNames } from "./agent-run-execution.service";
-import { buildAgentExecutionConfig } from "./agent-execution-config";
+import {
+  agentEnvironmentSecretNames,
+  buildAgentExecutionConfig,
+} from "./agent-execution-config";
 import { createBootstrapAgent } from "./agent-bootstrap-agent";
 import {
   createAgentDisabledPaidTools,
@@ -167,7 +169,7 @@ export function createAgentBootstrap(
       createAgentEnvironment(
         userId,
         orgId,
-        runEnvironmentSecretNames(buildAgentExecutionConfig(agent.name)),
+        agentEnvironmentSecretNames(buildAgentExecutionConfig(agent.name)),
       ),
     );
     return {

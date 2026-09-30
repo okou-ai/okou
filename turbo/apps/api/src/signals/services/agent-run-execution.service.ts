@@ -169,6 +169,7 @@ import {
   type AgentExecutionConfig as agentRunCreateAgentExecutionConfig,
   type AgentExecutionDefinition,
   buildAgentExecutionConfig,
+  agentEnvironmentSecretNames,
 } from "./agent-execution-config";
 import {
   type SessionExecutionIdentity,
@@ -6577,25 +6578,10 @@ function createRunEnvironmentObject(
       db: input.db,
       orgId: input.args.orgId,
       userId: input.args.userId,
-      secretNames: runEnvironmentSecretNames(content),
+      secretNames: agentEnvironmentSecretNames(content),
     };
   });
   return createRunEnvironmentSnapshotObject(readInput$);
-}
-
-export function runEnvironmentSecretNames(
-  content: agentRunCreateAgentExecutionConfig,
-) {
-  const environment = firstAgent(content)?.environment;
-  return [
-    ...new Set(
-      environment
-        ? extractAndGroupVariables(environment).secrets.map((ref) => {
-            return ref.name;
-          })
-        : [],
-    ),
-  ].sort();
 }
 
 function createRunEnvironmentSnapshotObject(
@@ -17767,7 +17753,7 @@ function createPreCreateResourceObjects(
     }
     return {
       ...scope,
-      secretNames: runEnvironmentSecretNames(
+      secretNames: agentEnvironmentSecretNames(
         buildAgentExecutionConfig(agent.name),
       ),
     };
