@@ -4686,21 +4686,23 @@ immutable: the publish step fails the release when the version already exists
 with different bytes, so one CLI version identifies exactly one bundle and the
 semantic version can serve as a compatibility identity.
 
-A Runner compiled with source-bound embedded CLI bytes installs its own verified
+A Runner compiled with an embedded CLI bundle installs its verified
 `package.tgz` into the rootfs customize layer at
-`/usr/local/lib/okou-cli/<version>/`, even when a legacy
-`--okou-cli-artifact DIR` argument is supplied. The compiled version, Pi SDK and
-session identity are validated against the package manifest during compilation;
-only the package bytes are embedded. `runner build` stages those bytes alongside
-the embedded Guest binaries and writes `/usr/local/bin/okou` and
-`/usr/local/lib/okou-cli/installed.json`. The package bytes and installed
+`/usr/local/lib/okou-cli/<version>/`. The compiled version, Pi SDK and session
+identity are validated against the explicitly supplied package manifest during
+compilation; only the package bytes are embedded. `runner build` stages those
+bytes alongside the embedded Guest binaries and writes `/usr/local/bin/okou`
+and `/usr/local/lib/okou-cli/installed.json`. The package bytes and installed
 manifest are part of the rootfs hash, and `verify-rootfs.sh` checks the
-installed manifest against the verified identity. An older/local Runner without
-an embedded CLI may still install `--okou-cli-artifact DIR` or build a CLI-free
-rootfs; the Guest's commit-addressed compatibility path remains available.
-Release and preview orchestration may still stage the legacy host artifact
-until the separate cutover in #37342; it is not used as the install source by
-a source-bound Runner.
+installed manifest against the verified identity.
+
+New Runner binaries no longer accept `--okou-cli-artifact DIR`, and current
+release/preview orchestration does not stage a separate host CLI artifact. A
+local Runner compiled without embedded resources can still build a CLI-free
+rootfs with explicit Guest binary paths; Pi then uses the task's captured
+`CLI_PKG_URL` through `npx`. Already-deployed older Runner binaries retain their
+historical host-artifact option until replaced. Neither that old binary behavior
+nor the Guest's commit-addressed runtime fallback is removed retroactively.
 
 Compatibility is negotiated per run rather than by deployment order:
 

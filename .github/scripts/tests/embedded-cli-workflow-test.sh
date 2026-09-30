@@ -61,14 +61,14 @@ jq -e '
   any(.jobs["build-runner-release-assets"].steps[];
     .name == "Cross-compile runner with embedded guests and CLI for ${{ matrix.target }}" and
     .env.GUEST_CLI_PATH == "${{ github.workspace }}/runner-cli-intermediate/package.tgz" and
-    .env.GUEST_CLI_MANIFEST_PATH == "${{ github.workspace }}/runner-cli-intermediate/manifest.json" and
-    (.env | has("GUEST_CLI_SOURCE_SHA") | not)) and
+    .env.GUEST_CLI_MANIFEST_PATH == "${{ github.workspace }}/runner-cli-intermediate/manifest.json") and
   (.jobs["builds-complete"].needs | index("publish-cli-versioned-artifact") != null) and
-  (.jobs["build-runner-production"].needs | index("publish-cli-versioned-artifact") == null) and
+  (.jobs["build-runner-production"].needs | index("build-runner-release-assets") != null) and
   any(.jobs["build-runner-production"].steps[];
     .name == "Build rootfs and snapshot on production hosts" and
-    (.env | has("OKOU_CLI_PACKAGE_URL") | not) and
-    (.run | contains("okou_cli_package_url") | not)
+    .env.RUNNER_TARGET == "${{ matrix.target }}" and
+    .env.RUNNER_VERSION == "${{ needs.release-please.outputs.runner_rs_version }}" and
+    (.run | contains("playbooks/build-runner.yml"))
   )
 ' <<<"$release_json" >/dev/null || {
   echo 'Release CLI producer/consumer ordering is invalid' >&2

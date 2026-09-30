@@ -61,7 +61,6 @@ jq -e '
     .env.TARGET_TRIPLE == "${{ matrix.target }}" and
     .env.GUEST_CLI_PATH == "${{ github.workspace }}/runner-cli-intermediate/package.tgz" and
     .env.GUEST_CLI_MANIFEST_PATH == "${{ github.workspace }}/runner-cli-intermediate/manifest.json" and
-    (.env | has("GUEST_CLI_SOURCE_SHA") | not) and
     (.run | contains("runner_guest_binaries_load")) and
     (.run | contains("env \"${guest_env[@]}\" cargo build --release --target \"$TARGET_TRIPLE\" -p runner"))
   ) and

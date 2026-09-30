@@ -65,8 +65,6 @@ fn guest_cli_flags_match_inventory() {
         .get_arguments()
         .filter(|arg| arg.get_value_parser().type_id() == TypeId::of::<PathBuf>())
         .filter_map(|arg| arg.get_long())
-        // The CLI artifact is a versioned bundle, not a guest binary.
-        .filter(|long| *long != "okou-cli-artifact")
         .map(str::to_owned)
         .collect();
     let expected: BTreeSet<_> = guest_definitions()
@@ -99,20 +97,6 @@ async fn explicit_guest_paths_resolve_every_inventory_entry() {
             guest.definition.name
         );
     }
-}
-
-#[test]
-fn build_args_reject_host_cli_artifact() {
-    let mut args = build_args();
-    args.extend([
-        "--okou-cli-artifact".to_string(),
-        "/tmp/okou-cli".to_string(),
-    ]);
-
-    let error = <TestBuildCli as clap::Parser>::try_parse_from(args)
-        .err()
-        .expect("host CLI artifacts are unsupported");
-    assert_eq!(error.kind(), clap::error::ErrorKind::UnknownArgument);
 }
 
 #[test]

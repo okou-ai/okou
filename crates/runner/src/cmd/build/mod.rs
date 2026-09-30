@@ -280,7 +280,7 @@ struct RootfsBuildInput<'a> {
     rootfs_paths: &'a RootfsPaths,
     guests: &'a GuestBinaries,
     /// Versioned CLI installed into the customize layer when bundled.
-    /// CLI-free local builds remain possible, but Pi launch requires an install.
+    /// CLI-free local builds remain possible; Pi then uses the task's CLI URL.
     okou_cli: Option<&'a OkouCliArtifact>,
 }
 

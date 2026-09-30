@@ -287,7 +287,22 @@ if [ "${1:-}" = "sudo" ] && [ "${3:-}" = "gc" ]; then
 fi
 
 if [ "${1:-}" = "sudo" ] && [ "${3:-}" = "setup" ]; then
+  [ "${SSH_COMPLETE:-}" = "1" ] && exit 0
   exit 42
+fi
+
+if [ "${SSH_COMPLETE:-}" = "1" ] &&
+   [ "${1:-}" = "sudo" ] &&
+   [ "${6:-}" = "/var/lib/vm0-runner/bin/pr-123/runner" ] &&
+   [ "${7:-}" = "build" ] && [ "${8:-}" = "--profile" ] &&
+   [ "${9:-}" = "vm0/default" ]; then
+  if [ "$#" -eq 10 ] && [ "${10}" = "--warm-rootfs-cache" ]; then
+    exit 0
+  fi
+  if [ "$#" -eq 9 ]; then
+    printf 'rootfs_hash=%064d\nsnapshot_hash=%064d\n' 1 2
+    exit 0
+  fi
 fi
 
 exit 42
@@ -432,6 +447,7 @@ run_remote_case() {
     SSH_GC_COUNT_FILE="${case_dir}/gc-count" \
     SSH_GC_STATUSES="${REMOTE_GC_STATUSES:-}" \
     SSH_REACH_GC="${REMOTE_REACH_GC:-}" \
+    SSH_COMPLETE="${REMOTE_COMPLETE:-}" \
     SSH_UPLOAD_DIR="${case_dir}/uploads" \
     SSH_UPLOAD_COUNT_FILE="${case_dir}/upload-count" \
     SSH_UPLOAD_STATUSES="${REMOTE_UPLOAD_STATUSES:-}" \
@@ -454,7 +470,11 @@ run_remote_case() {
     EXPECTED_BINARY_INPUT_DIGEST="$input_digest" \
     MANIFEST_PATH="${case_dir}/manifest.json" \
     "$PREPARE" >"${case_dir}/out" 2>"${case_dir}/err"; then
-    fail "expected mocked post-preparation SSH boundary to fail"
+    [ "${REMOTE_COMPLETE:-}" = "1" ] || fail "expected mocked post-preparation SSH boundary to fail"
+  else
+    if [ "${REMOTE_COMPLETE:-}" = "1" ]; then
+      fail "expected full mocked image preparation to succeed"
+    fi
   fi
 }
 
@@ -628,20 +648,6 @@ grep -Fq 'runner sha mismatch' "${upload_corrupt_case}/out" || fail "successful 
 [ ! -e "${upload_corrupt_case}/manifest.json" ] || fail "corrupt upload must not publish a manifest"
 [ "$(< "${upload_corrupt_case}/gc-count")" -eq 0 ] || fail "corrupt upload must not reach GC"
 
-# The only metal upload is the runner executable; it already contains the
-# checked CLI package, just like the embedded Guest binaries.
-embedded_cli_case="${TMPDIR}/embedded-cli-only"
-prepare_remote_case "$embedded_cli_case"
-REMOTE_REACH_GC=1 REMOTE_GC_STATUSES=0 REMOTE_UPLOAD_STATUSES=0 \
-  run_remote_case "$embedded_cli_case"
-[ "$(< "${embedded_cli_case}/upload-count")" -eq 1 ] || fail "only the runner executable may be uploaded"
-if grep -Fq '/var/lib/vm0-runner/bin/pr-123/okou-cli' "${embedded_cli_case}/ssh.log"; then
-  fail "no CLI artifact command may reach the host"
-fi
-if grep -Fq -- '--okou-cli-artifact' "$PREPARE"; then
-  fail "runner build must use the embedded CLI, not a host artifact"
-fi
-
 # Reuse the private compile input for manifest metadata, but never send either
 # file to metal. A mismatched input must be rejected before any SSH call.
 cli_input="${TMPDIR}/cli-compile-input"
@@ -658,12 +664,17 @@ jq -n --arg sha "$cli_sha" --argjson size "$cli_size" '{
 metadata_case="${TMPDIR}/embedded-cli-metadata"
 prepare_remote_case "$metadata_case"
 GUEST_CLI_PATH="${cli_input}/package.tgz" GUEST_CLI_MANIFEST_PATH="$cli_manifest" \
-  REMOTE_REACH_GC=1 REMOTE_GC_STATUSES=0 REMOTE_UPLOAD_STATUSES=0 \
+  REMOTE_REACH_GC=1 REMOTE_GC_STATUSES=0 REMOTE_UPLOAD_STATUSES=0 REMOTE_COMPLETE=1 \
   run_remote_case "$metadata_case"
-[ "$(< "${metadata_case}/upload-count")" -eq 1 ] || fail "compile input must not be uploaded to metal"
-if grep -Fq '/var/lib/vm0-runner/bin/pr-123/okou-cli' "${metadata_case}/ssh.log"; then
-  fail "compile input metadata must not cause a host artifact upload"
-fi
+[ "$(< "${metadata_case}/upload-count")" -eq 1 ] || fail "compile input metadata must keep a single runner upload"
+jq -e --arg sha "$cli_sha" '
+  .okouCli == {
+    cliVersion: "9.353.0",
+    piAgentRuntimeVersion: "1.36.0",
+    piSdkVersion: "0.86.1+okou.0123456789ab",
+    packageSha256: $sha
+  }
+' "${metadata_case}/manifest.json" >/dev/null || fail "image manifest must describe the validated embedded CLI"
 
 printf 'tampered\n' > "${cli_input}/package.tgz"
 tampered_case="${TMPDIR}/embedded-cli-tampered"
