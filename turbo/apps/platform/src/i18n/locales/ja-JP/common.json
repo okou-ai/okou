@@ -4723,6 +4723,8 @@
           "title": "請求書"
         },
         "model": {
+          "autoDescription": "Okou がタスクごとにモデルを選びます。",
+          "autoLabel": "自動モデル選択",
           "description": "ワークスペースと実行で使用する AI モデルを選択します。",
           "title": "モデル"
         },
