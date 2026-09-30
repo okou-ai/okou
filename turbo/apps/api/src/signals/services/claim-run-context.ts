@@ -9071,7 +9071,11 @@ export function createClaimRunObjects(
     }
     return db.$with("custom_connector_runtime_connections").as(
       db
-        .select(runCustomConnectorConnectionColumns())
+        .select({
+          ...runCustomConnectorConnectionColumns(),
+          // A native column keeps this ID qualified across both joined CTEs.
+          id: connectors.id,
+        })
         .from(connectors)
         .innerJoin(
           orgCustomConnectors,
@@ -9136,9 +9140,7 @@ export function createClaimRunObjects(
     );
     const secretQuery = db
       .select({
-        memberConnectorId: sql`${connections.id}`
-          .mapWith(pgTextDecoder)
-          .as("value_member_connector_id"),
+        memberConnectorId: connections.id,
         kind: sql`'secret'`
           .mapWith(runCustomConnectorStoredValueKindDecoder)
           .as("kind"),
@@ -9177,7 +9179,8 @@ export function createClaimRunObjects(
           currentVersion,
         ),
       );
-    // The first branch keeps the member ID's runtime decoder and CTE alias.
+    // The member ID is only used by the outer JOIN, not decoded in its result.
+    // Keep the first branch's kind decoder for the returned UNION fields.
     return db
       .$with("custom_connector_runtime_values")
       .as(unionAll(secretQuery, variableQuery));

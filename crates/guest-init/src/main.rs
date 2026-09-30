@@ -3,7 +3,7 @@
 //! Runs as PID 1 inside a Firecracker VM. PID 1 synchronously waits for blocked
 //! child and shutdown signals, then reaps every available zombie.
 //!
-//! Like tini, guest-init forks a child process (PID 2) to run guest-control-server.
+//! Like tini, guest-init forks a child process (PID 2) to run Guest services.
 //! PID 1 then enters an event-driven supervision loop, waiting for the child to
 //! exit while also reaping orphaned zombie processes.
 //!
@@ -22,14 +22,15 @@
 //!
 //! Startup sequence:
 //! 1. Initialize guest filesystems, environment, and cgroup v2 exec containment.
-//!    Failure is fatal before `guest-control-server` is forked.
+//!    Failure is fatal before the Guest services child is forked.
 //! 2. Configure PID 1 signals and block supervised signals
 //! 3. Fork child process
-//! 4. Child (PID 2): restore its inherited signal mask, run guest-control-server
+//! 4. Child (PID 2): restore its inherited signal mask, run private duplex and guest control
 //! 5. Parent (PID 1): wait for child and shutdown events
 
 mod init;
 mod pid1;
+mod private_duplex;
 
 use std::time::Duration;
 
@@ -54,9 +55,9 @@ fn main() {
     };
     eprintln!("[guest-init] PID 1 signals configured");
 
-    // Step 3: Fork child process for guest-control-server
+    // Step 3: Fork child process for the Guest services
     // SAFETY: fork() is called before any threads are spawned, so it is safe.
-    // The child will run guest-control-server; the parent stays as PID 1 reaper.
+    // The child will run Guest services; the parent stays as PID 1 reaper.
     let child_pid = unsafe { libc::fork() };
     if child_pid < 0 {
         eprintln!("[guest-init] FATAL: fork() failed");
@@ -75,7 +76,7 @@ fn main() {
             }
         }
 
-        let code = match guest_control_server::run(None) {
+        let code = match run_guest_services() {
             Ok(()) => 0,
             Err(e) => {
                 guest_control_server::log("ERROR", &format!("Fatal: {e}"));
@@ -92,12 +93,12 @@ fn main() {
     }
 
     // === Parent process (PID 1) ===
-    eprintln!("[guest-init] guest-control-server forked as pid={child_pid}");
+    eprintln!("[guest-init] guest services forked as pid={child_pid}");
 
     // Step 5: Wait for child and shutdown events while reaping orphans.
     match pid1::supervise(&signal_context, child_pid, SHUTDOWN_GRACE_PERIOD) {
         Ok(exit_code) => {
-            eprintln!("[guest-init] guest-control-server exited with code {exit_code}");
+            eprintln!("[guest-init] guest services exited with code {exit_code}");
             std::process::exit(exit_code);
         }
         Err(error) => {
@@ -105,4 +106,13 @@ fn main() {
             std::process::exit(1);
         }
     }
+}
+
+/// Compose both private Guest services in PID 2. Start no threads before fork;
+/// failing to start the duplex worker is fatal before entering the control loop.
+fn run_guest_services() -> std::io::Result<()> {
+    let _duplex_worker = std::thread::Builder::new()
+        .name("gdup-connect".into())
+        .spawn(private_duplex::run)?;
+    guest_control_server::run(None)
 }

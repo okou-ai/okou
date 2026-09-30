@@ -713,6 +713,12 @@ pub trait Sandbox: Send + Sync + Any {
         None
     }
 
+    /// Optional private duplex Guest channel for this exact run assignment.
+    /// The returned capability must reject parked, stopped and reused assignments.
+    fn guest_duplex(&self, _expected_run_id: &str) -> Option<Arc<dyn crate::GuestDuplexAcceptor>> {
+        None
+    }
+
     // -- lifecycle --
 
     /// Boot the guest and make the sandbox ready to serve operations.

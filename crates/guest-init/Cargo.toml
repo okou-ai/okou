@@ -1,8 +1,8 @@
 [package]
 name = "guest-init"
-version = "0.16.303"
+version = "0.17.0"
 edition.workspace = true
-description = "Guest init process for Firecracker - filesystem setup, PID 1, and guest-control-server"
+description = "Guest init process for Firecracker - filesystem setup, PID 1, and Guest service composition"
 
 [dependencies]
 guest-contracts.workspace = true
