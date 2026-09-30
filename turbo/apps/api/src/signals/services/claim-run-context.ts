@@ -2790,7 +2790,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         userId: head.userId,
         threadId: claim.chatThreadId,
         eventId: head.id,
-        featureSwitchContext: await get(promptFeaturesFeatures$),
         providerModelSupport: "trust-enqueued",
       };
     },
@@ -3061,37 +3060,11 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     modelPin$: queuedModelRoutingModelPin$,
     customSurface$: customSurface$,
   };
-  const {
-    input$: queuedModelRuntimeInput$,
-    selection$: queuedModelRuntimeSelection$,
-  } = queuedModelSources;
+  const { selection$: queuedModelRuntimeSelection$ } = queuedModelSources;
   const { modelPin$: queuedModelRuntimeModelPin$ } = routing;
   const queuedModelRuntimeFeatureSwitchContext$ = computed(
     async (get): Promise<FeatureSwitchContext> => {
-      const input = await get(queuedModelRuntimeInput$);
-      if (input.featureSwitchContext) {
-        return input.featureSwitchContext;
-      }
-      const rows = await get(db$)
-        .select({
-          userId: userFeatureSwitches.userId,
-          switches: userFeatureSwitches.switches,
-        })
-        .from(userFeatureSwitches)
-        .where(
-          and(
-            eq(userFeatureSwitches.orgId, input.orgId),
-            inArray(userFeatureSwitches.userId, [
-              input.userId,
-              agentRunsCreateORG_SENTINEL_USER_ID,
-            ]),
-          ),
-        );
-      return {
-        orgId: input.orgId,
-        userId: input.userId,
-        overrides: userFeatureSwitchOverridesFromRows(rows, input.userId),
-      };
+      return await get(promptFeaturesFeatures$);
     },
   );
   const keyIdsByVendor$ = computed(async (get) => {
@@ -6914,7 +6887,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   });
   const featureSwitchContext$ = computed(async (get) => {
     return (await get(isAutomation$))
-      ? undefined
+      ? get(queuedModelFeatureSwitchContext$2)
       : get(promptExecutionResourcesFeatureSwitchContext$);
   });
   const memberAccountSnapshot$ = computed(async (get) => {
@@ -12473,7 +12446,9 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       const needsPolicyWrite =
         initial.policies.length === 0 ||
         shouldReplaceExistingDefaultForPlan(
-          initial.policies.find((policy) => {return policy.isDefault}),
+          initial.policies.find((policy) => {
+            return policy.isDefault;
+          }),
           modelPolicyCapabilities(initial.orgPlanCapabilities),
         );
       if (needsPolicyWrite) {
