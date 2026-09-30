@@ -5,7 +5,6 @@ import { agentSessions } from "@okouai/db/schema/agent-session";
 import { blobs } from "@okouai/db/schema/blob";
 import { chatThreadDrafts } from "@okouai/db/schema/chat-thread-draft";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { orgUsageAllowanceEntitlements } from "@okouai/db/schema/org-usage-allowance";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { settle } from "../utils";
