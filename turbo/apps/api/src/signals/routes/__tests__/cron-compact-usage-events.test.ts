@@ -653,6 +653,29 @@ describe("usage event compaction cron", () => {
     });
   });
 
+  it("does not recreate hourly facts after owned usage cleanup", async () => {
+    const fixture = await seedFixture();
+    await store.set(
+      insertUsageEvent$,
+      {
+        ...fixture,
+        status: "processed",
+        count: RAW_SEED_LIMIT,
+        processedAt: new Date("2026-08-01T00:15:00.000Z"),
+      },
+      context.signal,
+    );
+    await Promise.all([
+      compactOwnedUsage(fixture),
+      store.set(deleteUsageStateFixture$, fixture, context.signal),
+    ]);
+    await expect(readStorage(fixture)).resolves.toStrictEqual({
+      raw: 0,
+      processedRaw: 0,
+      hourly: 0,
+    });
+  });
+
   it("processes overlapping invocations without duplicating facts", async () => {
     const fixture = await seedFixture();
     await store.set(
@@ -681,19 +704,24 @@ describe("usage event compaction cron", () => {
       compactOwnedUsage(fixture),
     ]);
 
-    const outcomes = responses.map((response) => {
-      return {
-        rawRowsDeleted: response.body.rawRowsDeleted,
-        quantity: response.body.quantity,
-      };
-    });
-    expect(outcomes).toHaveLength(2);
-    expect(outcomes).toStrictEqual(
-      expect.arrayContaining([
-        { rawRowsDeleted: RAW_SEED_LIMIT, quantity: String(RAW_SEED_LIMIT) },
-        { rawRowsDeleted: 1, quantity: "70001" },
-      ]),
-    );
+    // A competing snapshot may consume zero rows. The next ordinary cron
+    // visit processes what remains, rather than retrying the lost batch.
+    const nextVisit = await compactOwnedUsage(fixture);
+    const visits = [...responses, nextVisit];
+    for (const response of visits) {
+      expect(response.body.reconciled).toBeTruthy();
+      expect(response.body.rawRowsDeleted).toBeLessThanOrEqual(RAW_SEED_LIMIT);
+    }
+    expect(
+      visits.reduce((total, response) => {
+        return total + response.body.rawRowsDeleted;
+      }, 0),
+    ).toBe(RAW_SEED_LIMIT + 1);
+    expect(
+      visits.reduce((total, response) => {
+        return total + Number(response.body.quantity);
+      }, 0),
+    ).toBe(RAW_SEED_LIMIT + 70_001);
     await expect(readStorage(fixture)).resolves.toStrictEqual({
       raw: 0,
       processedRaw: 0,

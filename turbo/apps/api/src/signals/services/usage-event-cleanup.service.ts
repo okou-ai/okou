@@ -5,7 +5,6 @@ import { usageEventHourlyRollup } from "@okouai/db/schema/usage-event-hourly-rol
 import { command } from "ccstate";
 import { eq } from "drizzle-orm";
 import { writeDb$ } from "../external/db";
-import { usageEventCompactionLockSql } from "./usage-event-compaction-lock.service";
 
 export interface UsageCleanupScope {
   readonly scope: "organization" | "user";
@@ -52,13 +51,12 @@ export const deleteUsageData$ = command(
   ): Promise<void> => {
     const db = set(writeDb$);
     await db.transaction(async (tx) => {
-      await tx.execute(usageEventCompactionLockSql());
       const [jobs, ...targets] = usageCleanupTargets(args);
       await tx.delete(jobs.table).where(jobs.condition);
-      // The exclusive compaction barrier above already excludes settlement,
-      // which holds it shared. The entitlement DELETE owns its row before the
-      // window/allocation cascade, the same order as admission and Stripe
-      // publication. A user cleanup leaves the organization's entitlement.
+      // Actual raw deletion precedes the rollup deletion. If compaction won
+      // those raw rows, this next statement sees and deletes its committed
+      // rollups; if cleanup won, compaction consumes no source facts.
+      // A user cleanup leaves the organization's entitlement.
       for (const target of targets) {
         await tx.delete(target.table).where(target.condition);
       }

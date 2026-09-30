@@ -10,7 +10,6 @@ import type { Tx } from "../../lib/db-types";
 import { settle } from "../utils";
 import { writeDb$ } from "../external/db";
 import { usageCleanupTargets } from "./usage-event-cleanup.service";
-import { usageEventCompactionLockSql } from "./usage-event-compaction-lock.service";
 import { logCommittedConversationDeletion } from "./conversation-history-deletion.service";
 import {
   clerkStableContextCleanupSql,
@@ -76,9 +75,6 @@ const deleteClerkUserLifecycleData$ = command(
     const db = set(writeDb$);
     const outcome = await settle(
       db.transaction(async (tx) => {
-        // Outgoing maintenance still owns ledger rows before parents. Release 1
-        // keeps its barrier, but every current writer takes jobs and parents first.
-        await tx.execute(usageEventCompactionLockSql());
         const [jobs, ...usage] = usageCleanupTargets({
           scope: "user",
           id: userId,
@@ -146,8 +142,7 @@ const deleteClerkOrganizationLifecycleData$ = command(
     const db = set(writeDb$);
     const outcome = await settle(
       db.transaction(async (tx) => {
-        // Match Social settlement's job-before-parent ownership.
-        await tx.execute(usageEventCompactionLockSql());
+        // Match Social settlement's job-before-parent mutations.
         const [jobs, ...usage] = usageCleanupTargets({
           scope: "organization",
           id: orgId,

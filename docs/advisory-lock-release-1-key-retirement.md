@@ -25,9 +25,10 @@ Ethan: “问题不大。我们流量很小别想着版本升级期间的事儿�
 
 ## Per-key inventory
 
-Initial inventory: **17 API + 1 operator** definitions. Before this continuation:
-**16 API + 0 operator**. Now: **5 API + 0 operator**; compaction's shared/exclusive
-SQL definitions count separately. No nonfinancial advisory definition remains.
+Initial inventory: **17 API + 1 operator** definitions. At `0ea5f20d`:
+**6 API + 0 operator**. Now: **3 API + 0 operator** after invitation and serving
+compaction retirement; shared/exclusive compaction counted separately before
+removal. A later main integration must recheck any imported definitions. No nonfinancial advisory definition remains.
 Deleting a key does not certify all earlier nonfinancial replacement machinery
 removed; that simplification remains explicit R1 implementation work below.
 
@@ -39,8 +40,8 @@ removed; that simplification remains explicit R1 implementation work below.
 | `usage_pack_invitation:<purchase>`         | **Deleted.** Conditional purchase/acceptance/refund transitions, immutable PaymentIntent/paid-amount publication, invitation/allocation uniqueness, grant receipts and refund-attempt provider idempotency arbitrate per-purchase work. Organization-level projection remains separate unfinished R1 work.                                                                                                                                  |
 | `billing_purchase:<org>`                   | **Still present, R1 financial work.** Local-first claims still need common Plan/pack arbitration and recoverable duplicate payable-subscription handling. Not an R2 drain gate.                                                                                                                                                                                                                                                             |
 | `credit_<org>`                             | **Still present, R1 financial work.** Window issuance, consumption and all settlement callers need a complete no-key protocol. Existing window uniqueness alone does not prove independent issuance across different Run start times.                                                                                                                                                                                                       |
-| `usage_event_compaction` shared            | **Still present, R1 financial work.** Source/parent/ledger coexistence and financial preservation need their complete no-key protocol.                                                                                                                                                                                                                                                                                                      |
-| `usage_event_compaction` exclusive         | **Still present, R1 financial work.** Do not remove the barrier before the serving source-consumption/deletion protocol preserves actual consumed facts.                                                                                                                                                                                                                                                                                    |
+| `usage_event_compaction` shared            | **Deleted.** Settlement claims pending rows conditionally; compaction consumes only actual version-matching DELETE RETURNING rows and publishes their immutable totals in the same transaction. Raw-first cleanup sees committed rollups in its next SQL snapshot.                                                                                                                                                                          |
+| `usage_event_compaction` exclusive         | **Deleted.** No compactor reads/replaces old hourly fragments or selects rows FOR UPDATE. A competing batch may consume zero; the next normal cron visit handles the remainder without an in-process retry.                                                                                                                                                                                                                                 |
 | `usage_event_compaction` operator          | **Deleted.** Existing `--migrate --ack-writer-drain` operator opt-in and one conditional business-checkpoint UPDATE; rejected batch rolls back once, without retry. No serving compatibility acquisition remains in the script.                                                                                                                                                                                                             |
 | `org_bootstrap:<org>`                      | **Deleted.** Prepared R2 storage is outside SQL; default Agent publication uses the existing default field, and losing candidates are cleaned up. Onboarding credits retain their separate unique receipt/financial protocol. No rolling-version fence.                                                                                                                                                                                     |
 | `morning-brief-native-owner:<org>:<user>`  | **Deleted.** Native owner reads and first materialization no longer acquire an absent-owner key or explicit native-row locks. Existing owner/occurrence uniqueness remains. Preference/materialization races may recover through another save or scheduled task. Native/enrollment/timezone xmin guards and materialization's empty timestamp write are also removed; other prepared authority paths still need their simplification audit. |
@@ -54,6 +55,34 @@ removed; that simplification remains explicit R1 implementation work below.
 
 Six application billing triggers remain. They require actual replacement;
 there is no permanent trigger exemption or third release assumption.
+
+## Serving compaction retirement
+
+Both advisory definitions, every settlement/deletion/cleanup acquisition and the
+lock-scope fixture adapter are removed. Candidate, Run and attribution reads
+have no explicit locks. The one financial mutation statement deletes only
+version-matching processed raw rows and uses `DELETE RETURNING` as its sole
+source of quantity, charged credits, allowance units and window identities.
+Canonical missing identities are captured only for consumed facts; conflicts
+use `ON CONFLICT DO NOTHING`, not an empty UPDATE. A missing required identity
+rejects and rolls back the batch. Hourly publication depends on that capture,
+so the retained triggers are not used to supply omitted identity.
+
+Each batch stays at most 500 raw rows and appends immutable hourly fragments;
+old fragments are neither read nor rewritten. Complete source/insert totals
+and window checks remain. A stale competing delete consumes zero and publishes
+no duplicate fragment. The next ordinary cron visit processes residual rows;
+there is no local retry. Ordinary statement/FK failures roll back all financial
+mutations and follow the cron's existing failure path. No successful convergence
+is claimed for an aborted batch.
+
+Cleanup deletes raw rows before hourly rows. When compaction won a raw row,
+cleanup's following READ COMMITTED DELETE sees its newly committed fragment;
+when cleanup won, compaction consumes no raw source and creates no fragment.
+Public scoped cron API tests retain exact financial/storage totals, verify
+same-hour fragments and identities after live Run deletion, and cover overlap
+followed by an ordinary next visit plus cleanup without resurrection. No
+production convergence census was performed.
 
 ## Invitation purchase key retirement
 

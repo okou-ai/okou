@@ -28,7 +28,6 @@ import { writeDb$ } from "../external/db";
 import { recordBillingOperationTimings } from "../external/sandbox-op-log";
 import { safeSync } from "../utils";
 import { timestampWithoutTimeZone } from "../../lib/time";
-import { usageEventCompactionLockSql } from "./usage-event-compaction-lock.service";
 
 const L = logger("CronCompactUsageEvents");
 const USAGE_EVENT_COMPACTION_RAW_SEED_LIMIT = 500;
@@ -135,9 +134,8 @@ function physicalGrainOrder(alias: string): SQL {
   `;
 }
 
-// Acquire live Run FK parents before canonical and ledger rows. A busy deletion
-// is skipped rather than waited on after retaining child rows. The candidate
-// identity is rechecked when the raw row is retained below.
+// Read bounded candidate identities. Ordinary mutation/FK checks arbitrate
+// deletion; no parent or ledger rows are locked before the actual consumption.
 function retainedIdentityCtes(args: {
   readonly cutoff: string;
   readonly rawSeedLimit: number;
@@ -158,7 +156,6 @@ function retainedIdentityCtes(args: {
         SELECT COALESCE(billing_run_id, run_id) FROM raw_candidates
       )
       ORDER BY id
-      FOR KEY SHARE SKIP LOCKED
     ),
     retained_attributions AS MATERIALIZED (
       SELECT run_id, org_id, user_id, run_started_at
@@ -169,7 +166,6 @@ function retainedIdentityCtes(args: {
         WHERE candidate.run_id IS NULL OR candidate.run_id IN (SELECT id FROM retained_runs)
       )
       ORDER BY run_id
-      FOR UPDATE
     )
   `;
 }
@@ -194,22 +190,13 @@ function capturedIdentityCtes(): SQL {
         CASE WHEN chat_thread_id IS NULL THEN 'threadless' ELSE 'thread' END
       FROM retained_runs run
       WHERE NOT EXISTS (SELECT 1 FROM retained_attributions attribution WHERE attribution.run_id = run.id)
+        AND EXISTS (
+          SELECT 1 FROM deleted_raw consumed
+          WHERE consumed.billing_run_id = run.id AND consumed.billing_context = 'run'
+        )
       ORDER BY id
-      ON CONFLICT (run_id) DO UPDATE SET
-        thread_id = CASE WHEN billing_run_attribution.thread_context = 'unknown'
-          THEN EXCLUDED.thread_id ELSE billing_run_attribution.thread_id END,
-        thread_context = CASE WHEN billing_run_attribution.thread_context = 'unknown'
-          THEN EXCLUDED.thread_context ELSE billing_run_attribution.thread_context END
-      WHERE billing_run_attribution.org_id = EXCLUDED.org_id
-        AND billing_run_attribution.user_id = EXCLUDED.user_id
-        AND billing_run_attribution.run_started_at = EXCLUDED.run_started_at
-        AND billing_run_attribution.source = EXCLUDED.source
+      ON CONFLICT (run_id) DO NOTHING
       RETURNING run_id, org_id, user_id, run_started_at
-    ),
-    resolved_attributions AS MATERIALIZED (
-      SELECT * FROM retained_attributions
-      UNION ALL
-      SELECT * FROM captured_attributions
     )
   `;
 }
@@ -221,10 +208,20 @@ function candidateCtes(args: {
 }): SQL {
   return sql`
     ${retainedIdentityCtes(args)},
-    ${capturedIdentityCtes()},
+    resolved_attributions AS MATERIALIZED (
+      SELECT * FROM retained_attributions
+      UNION ALL
+      SELECT id AS run_id, org_id, user_id, created_at AS run_started_at
+      FROM retained_runs run
+      WHERE NOT EXISTS (
+        SELECT 1 FROM retained_attributions attribution WHERE attribution.run_id = run.id
+      )
+    ),
     raw_seed AS MATERIALIZED (
       SELECT
         event.id,
+        event::text AS observed_event,
+        COALESCE(allocation.units_applied, 0)::bigint AS allowance_units,
         date_trunc('hour', event.processed_at)::timestamp AS processed_hour,
         event.org_id,
         event.user_id,
@@ -274,7 +271,6 @@ function candidateCtes(args: {
             AND live_run.id NOT IN (SELECT id FROM retained_runs)
         )
       ORDER BY ${oldestProcessedEventOrder}
-      FOR UPDATE OF event SKIP LOCKED
     ),
     raw_seed_grains AS MATERIALIZED (
       SELECT DISTINCT ${physicalGrainColumns("raw_seed")}
@@ -291,17 +287,17 @@ function candidateCtes(args: {
 // Only this bounded raw seed is consumed. Existing hourly fragments are immutable
 // here; readers aggregate fragments by their business dimensions. Expanding a
 // seed to an entire hour made one busy grain an unbounded transaction.
-function lockedSourceCtes(): SQL {
+function consumedSourceCtes(): SQL {
   return sql`
-    locked_raw_allocations AS MATERIALIZED (
-      SELECT
-        allocation.usage_event_id,
-        allocation.units_applied
-      FROM raw_seed event
-      INNER JOIN ${usageAllowanceAllocations} ${allocation}
-        ON ${eq(allocation.usageEventId, sql`event.id`)}
-      FOR UPDATE OF allocation
+    deleted_raw AS (
+      DELETE FROM ${usageEvent} ${event}
+      USING raw_seed
+      WHERE event.id = raw_seed.id
+        AND event.status = 'processed'
+        AND event::text = raw_seed.observed_event
+      RETURNING raw_seed.*
     ),
+    ${capturedIdentityCtes()},
     locked_raw AS MATERIALIZED (
       SELECT
         event.id,
@@ -317,10 +313,17 @@ function lockedSourceCtes(): SQL {
         event.weekly_window_id,
         event.quantity,
         event.credits_charged,
-        COALESCE(allocation.units_applied, 0)::bigint AS allowance_units
-      FROM raw_seed event
-      LEFT JOIN locked_raw_allocations allocation
-        ON allocation.usage_event_id = event.id
+        event.allowance_units
+      FROM deleted_raw event
+      WHERE event.billing_context <> 'run'
+        OR EXISTS (
+          SELECT 1 FROM retained_attributions retained
+          WHERE retained.run_id = event.billing_run_id
+        )
+        OR EXISTS (
+          SELECT 1 FROM captured_attributions captured
+          WHERE captured.run_id = event.billing_run_id
+        )
     ),
     source_facts AS MATERIALIZED (
       SELECT
@@ -384,15 +387,6 @@ function mutationCtes(): SQL {
         quantity,
         credits_charged,
         allowance_units
-    ),
-    deleted_raw AS (
-      DELETE FROM ${usageEvent} ${event}
-      USING locked_raw
-      WHERE ${and(
-        eq(event.id, sql`locked_raw.id`),
-        eq(event.status, sql`'processed'`),
-      )}
-      RETURNING event.id
     )
   `;
 }
@@ -534,6 +528,13 @@ function compactionSummarySelect(): SQL {
         AND row_counts.locked_raw_rows = row_counts.raw_rows_deleted
         AND row_counts.selected_grains >= row_counts.hourly_rows_inserted
         AND NOT EXISTS (SELECT 1 FROM raw_seed WHERE NOT billing_identity_valid)
+        AND NOT EXISTS (
+          SELECT 1 FROM deleted_raw consumed
+          JOIN retained_runs run ON run.id = consumed.billing_run_id
+          WHERE consumed.billing_context = 'run'
+            AND NOT EXISTS (SELECT 1 FROM retained_attributions retained WHERE retained.run_id = run.id)
+            AND NOT EXISTS (SELECT 1 FROM captured_attributions captured WHERE captured.run_id = run.id)
+        )
       ) AS "reconciled"
     FROM source_totals
     CROSS JOIN inserted_totals
@@ -550,7 +551,7 @@ function compactUsageEventsSql(args: {
   return sql`
     WITH
     ${candidateCtes(args)},
-    ${lockedSourceCtes()},
+    ${consumedSourceCtes()},
     ${mutationCtes()},
     ${rowCountCte()},
     ${productTotalCtes()},
@@ -594,9 +595,7 @@ const compactUsageEventBatch$ = command(
     const db = set(writeDb$);
     const rawSeedLimit = USAGE_EVENT_COMPACTION_RAW_SEED_LIMIT;
     return await db.transaction(async (tx) => {
-      const lockStartedAt = performance.now();
-      await tx.execute(usageEventCompactionLockSql());
-      const lockWaitMs = Math.round(performance.now() - lockStartedAt);
+      const lockWaitMs = 0;
       signal.throwIfAborted();
 
       const cutoffRows = parseRawRows(

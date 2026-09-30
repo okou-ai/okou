@@ -80,7 +80,6 @@ import {
   planAllowanceWrites,
   requireAllowanceWrite,
 } from "./usage-allowance-settlement-plan";
-import { usageEventCompactionLockSql } from "./usage-event-compaction-lock.service";
 import {
   orgCreditCompatibilityLockSql,
   prepareUsageAllowanceRefresh$,
@@ -125,8 +124,7 @@ const commitUsageBatch$ = command(
     const { orgId, refresh, batch } = args;
     const { startedAt, work } = settlementObservation(batch.prices.length);
     const result = await set(writeDb$).transaction(async (tx) => {
-      await tx.execute(usageEventCompactionLockSql("shared"));
-      work.lockWaitMs = Math.round(performance.now() - startedAt);
+      work.lockWaitMs = 0;
       const [job] = args.social
         ? await tx.select().from(socialJobQuery(orgId, args.social))
         : [];

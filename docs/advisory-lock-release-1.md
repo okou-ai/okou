@@ -26,7 +26,7 @@ requirements, not authorization to release or to remove their locks prematurely.
 
 ## Current key retirement
 
-Current source: **5 API definitions and zero operator definitions** (before
+Current source: **3 API definitions and zero operator definitions** (before
 this continuation 16 + 0; initial steer 17 + 1). All nonfinancial keys are
 removed, including Gmail, SSH, model-policy, native/preference Morning Brief,
 bootstrap, connector/model-provider state and DCR; customer publication is also
@@ -43,8 +43,10 @@ simplification; removing keys alone does not finish that additional instruction.
 
 The per-purchase invitation key is now also deleted: conditional financial
 transitions, immutable payment publication, grant identities and refund-attempt
-idempotency arbitrate it. Remaining keys are financial: billing purchase,
-usage-pack billing, credit and compaction shared/exclusive. They are R1 implementation work, not
+idempotency arbitrate it. Serving compaction's shared/exclusive keys are also
+deleted: only actual version-matching deleted facts become immutable rollups;
+raw-first cleanup and financial reconciliation remain. Remaining keys are
+financial: billing purchase, usage-pack billing and credit. They are R1 implementation work, not
 outgoing-version/R2 gates. Six application billing triggers also remain. Empty
 org-metadata UPDATEs and application-side failure increments are already fixed;
 allowance duplicate preflight is documented for current migration 1297.

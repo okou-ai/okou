@@ -25,7 +25,6 @@ import {
   ne,
   notInArray,
   or,
-  sql,
 } from "drizzle-orm";
 
 import { command } from "ccstate";
