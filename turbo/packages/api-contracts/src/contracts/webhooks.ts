@@ -1118,6 +1118,7 @@ export const webhookStoragesPrepareContract = c.router({
       storageId: z.string().uuid(),
       files: storageManifestFilesSchema,
       parentVersionId: z.string().optional(),
+      /** Legacy request field; a registered version cannot be re-uploaded. */
       force: z.boolean().optional(),
       baseVersion: z.string().optional(),
       changes: storageChangesSchema.optional(),
@@ -1139,6 +1140,7 @@ export const webhookStoragesPrepareContract = c.router({
       400: apiErrorSchema,
       401: apiErrorSchema,
       404: apiErrorSchema,
+      409: apiErrorSchema,
       413: apiErrorSchema,
       500: apiErrorSchema,
     },

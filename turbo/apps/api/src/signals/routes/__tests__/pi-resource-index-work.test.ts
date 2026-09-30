@@ -9,14 +9,22 @@ import {
 import { testPiResourceIndexWorkContract } from "@okouai/api-contracts/contracts/test-pi-resource-index-work";
 import { workflowsCollectionContract } from "@okouai/api-contracts/contracts/workflows";
 import { getCustomSkillStorageName } from "@okouai/core/storage-names";
-import { CANONICAL_WORKING_DIR } from "@okouai/api-contracts/contracts/runners";
+import {
+  CANONICAL_WORKING_DIR,
+  PI_AGENT_DIR,
+  type StoredStorageMountEntry,
+} from "@okouai/api-contracts/contracts/runners";
 import { synthesizeWorkflowSkillMd } from "@okouai/core/skill-document";
+import { createStore } from "ccstate";
 import { Header } from "tar";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { db } from "../../../lib/db";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
+import { readStorageIdentityFixture } from "../../../test-fixtures/storage";
+import { preparePiResourceSnapshot } from "../../services/pi-resource-snapshot.service";
 import {
   prepareEmptyPiWritebackSnapshotFixture,
   prepareUnpublishedPiVolumeFixture,
@@ -198,7 +206,7 @@ describe("Pi resource indexing of generic Storage commits", () => {
     });
   });
 
-  it("invalidates a worker lease when server-side encoding repair finishes without HEAD publication", async () => {
+  it("preserves an in-flight index lease when reusing an already registered volume", async () => {
     const actor = bdd.user();
     bdd.acceptAgentStorageWrites();
     const agent = await bdd.createAgent(actor, { displayName: "Repair owner" });
@@ -301,9 +309,9 @@ describe("Pi resource indexing of generic Storage commits", () => {
       await previousWorker;
     });
     await entered.promise;
-    objects.delete(archiveKey);
-    // The API cannot pause after preparation but before commit. Model that
-    // interruption without publishing HEAD; all other steps use real routes.
+    const putCount = context.mocks.s3.send.mock.calls.filter(
+      ([command]) => command instanceof PutObjectCommand,
+    ).length;
     await prepareUnpublishedPiVolumeFixture(
       {
         orgId: actor.orgId,
@@ -313,11 +321,15 @@ describe("Pi resource indexing of generic Storage commits", () => {
       },
       context.signal,
     );
+    expect(
+      context.mocks.s3.send.mock.calls.filter(
+        ([command]) => command instanceof PutObjectCommand,
+      ),
+    ).toHaveLength(putCount);
     released.resolve(undefined);
-    await expect(previousWorker).resolves.toMatchObject({ ready: 0, stale: 1 });
+    await expect(previousWorker).resolves.toMatchObject({ ready: 1, stale: 0 });
     await expect(run(prepared.versionId)).resolves.toMatchObject({
-      claimed: 1,
-      ready: 1,
+      claimed: 0,
     });
   });
 
@@ -334,7 +346,50 @@ describe("Pi resource indexing of generic Storage commits", () => {
     });
   });
 
-  it("rebuilds an index when Storage repairs the archive encoding for the same version", async () => {
+  it("prepares a snapshot from a different gzip size and reuses the logical index", async () => {
+    const published = await publishStorage();
+    if (!published.actor.orgId) {
+      throw new Error("Expected an organization-scoped actor");
+    }
+    const identity = await readStorageIdentityFixture({
+      orgId: published.actor.orgId,
+      userId: published.actor.userId,
+      name: published.storageName,
+    });
+    const recompressed = gzipSync(gunzipSync(published.archive), { level: 0 });
+    expect(recompressed.length).not.toBe(published.archive.length);
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(new Uint8Array(recompressed), {
+        status: 200,
+        headers: { "content-length": String(recompressed.length) },
+      }),
+    );
+    onTestFinished(() => fetchSpy.mockRestore());
+    const mount: StoredStorageMountEntry = {
+      name: published.storageName,
+      storageId: identity.id,
+      versionId: published.versionId,
+      orgId: published.actor.orgId,
+      userId: published.actor.userId,
+      mountPath: `${PI_AGENT_DIR}/skills/index-work`,
+      archiveUrl: "https://storage.example/alternate-gzip.tar.gz",
+      archiveSize: published.archive.length,
+    };
+    const first = await createStore().get(
+      preparePiResourceSnapshot({ db: db(), mounts: [mount] }, context.signal),
+    );
+    expect(first.snapshot.skills).toHaveLength(1);
+    const second = await createStore().get(
+      preparePiResourceSnapshot(
+        { db: db(), mounts: [{ ...mount, archiveSize: 1 }] },
+        context.signal,
+      ),
+    );
+    expect(second.snapshot.skills).toHaveLength(1);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not requeue a ready index when a registered version is reused", async () => {
     const published = await publishStorage();
     await expect(run(published.versionId)).resolves.toMatchObject({ ready: 1 });
     const repaired = gzipSync(gunzipSync(published.archive), { level: 0 });
@@ -358,11 +413,30 @@ describe("Pi resource indexing of generic Storage commits", () => {
       versionId: published.versionId,
     });
     await expect(run(published.versionId)).resolves.toMatchObject({
-      claimed: 1,
-      ready: 1,
+      claimed: 0,
+    });
+  });
+
+  it("indexes logical files when the registered and actual gzip sizes differ", async () => {
+    const published = await publishStorage();
+    const recompressed = gzipSync(gunzipSync(published.archive), { level: 0 });
+    expect(recompressed.length).not.toBe(published.archive.length);
+    context.mocks.s3.send.mockImplementation((request: unknown) => {
+      if (request instanceof GetObjectCommand) {
+        return Promise.resolve({
+          ContentLength: recompressed.length,
+          Body: {
+            async *[Symbol.asyncIterator]() {
+              yield recompressed;
+            },
+          },
+        });
+      }
+      return Promise.resolve({ ContentLength: recompressed.length });
     });
     await expect(run(published.versionId)).resolves.toMatchObject({
-      claimed: 0,
+      claimed: 1,
+      ready: 1,
     });
   });
 
@@ -387,6 +461,28 @@ describe("Pi resource indexing of generic Storage commits", () => {
       unindexable: 1,
     });
     await expect(run(versionId)).resolves.toMatchObject({ claimed: 0 });
+  });
+
+  it("does not index a truncated object response with an incorrect Content-Length", async () => {
+    const { versionId, archive } = await publishStorage();
+    context.mocks.s3.send.mockImplementation((request: unknown) => {
+      if (request instanceof GetObjectCommand) {
+        return Promise.resolve({
+          ContentLength: archive.length + 1,
+          Body: {
+            async *[Symbol.asyncIterator]() {
+              yield archive;
+            },
+          },
+        });
+      }
+      return Promise.resolve({ ContentLength: archive.length });
+    });
+    await expect(run(versionId)).resolves.toMatchObject({
+      claimed: 1,
+      ready: 0,
+      retried: 1,
+    });
   });
 
   it("retries a failed object read after its bounded backoff", async () => {

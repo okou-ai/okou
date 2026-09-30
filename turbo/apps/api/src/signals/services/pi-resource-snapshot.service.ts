@@ -146,12 +146,6 @@ async function downloadArchive(
   if (!mount.archiveUrl) {
     return null;
   }
-  const expectedSize = safeSync(() => {
-    return expectedArchiveSize(mount);
-  });
-  if ("error" in expectedSize) {
-    throw resourcePreparationError(expectedSize.error);
-  }
   const fetched = await settle(
     fetch(mount.archiveUrl, {
       cache: "no-store",
@@ -168,37 +162,29 @@ async function downloadArchive(
       new Error(`Pi resource snapshot archive returned ${response.status}`),
     );
   }
-  const validated = safeSync(() => {
-    validateArchiveContentLength(response, expectedSize.ok);
+  // The Storage archiveSize is not an expected byte count: a historical
+  // version may have a different gzip encoding at the same object key.
+  const declaredLength = safeSync(() => {
+    return validateArchiveContentLength(response);
   });
-  if ("error" in validated) {
-    throw resourcePreparationError(validated.error);
+  if ("error" in declaredLength) {
+    throw resourcePreparationError(declaredLength.error);
   }
-  const body = await settle(readArchiveBody(response, expectedSize.ok), signal);
+  const body = await settle(
+    readArchiveBody(response, declaredLength.ok),
+    signal,
+  );
   if (!body.ok) {
     throw resourcePreparationError(body.error);
   }
   return body.value;
 }
 
-function expectedArchiveSize(mount: StoredStorageMountEntry): number {
-  if (
-    mount.archiveSize === undefined ||
-    mount.archiveSize > RESOURCE_ARCHIVE_MAX_BYTES
-  ) {
-    throw new Error("Pi resource snapshot archive exceeds its size limit");
-  }
-  return mount.archiveSize;
-}
-
 function cancelResponseBody(response: Response): void {
   startUntrackedBestEffortCleanup(response.body?.cancel() ?? Promise.resolve());
 }
 
-function validateArchiveContentLength(
-  response: Response,
-  expectedSize: number,
-): void {
+function validateArchiveContentLength(response: Response): number | undefined {
   const declaredLengthHeader = response.headers.get("content-length");
   const declaredLength =
     declaredLengthHeader === null ? undefined : Number(declaredLengthHeader);
@@ -216,19 +202,17 @@ function validateArchiveContentLength(
     cancelResponseBody(response);
     throw new Error("Pi resource snapshot archive exceeds its size limit");
   }
-  if (declaredLength !== undefined && declaredLength !== expectedSize) {
-    cancelResponseBody(response);
-    throw new Error(
-      `Pi resource snapshot Content-Length ${declaredLength} does not match Storage ${expectedSize}`,
-    );
-  }
+  return declaredLength;
 }
 
 async function readArchiveBody(
   response: Response,
-  expectedSize: number,
+  declaredLength: number | undefined,
 ): Promise<Buffer> {
   if (!response.body) {
+    if (declaredLength !== undefined && declaredLength !== 0) {
+      throw new Error("Pi resource snapshot archive response body is missing");
+    }
     return Buffer.alloc(0);
   }
   const reader = response.body.getReader();
@@ -237,9 +221,9 @@ async function readArchiveBody(
   while (true) {
     const { done, value } = await reader.read();
     if (done) {
-      if (size !== expectedSize) {
+      if (declaredLength !== undefined && size !== declaredLength) {
         throw new Error(
-          `Pi resource snapshot archive size ${size} does not match Storage ${expectedSize}`,
+          `Pi resource snapshot archive size ${size} does not match Content-Length ${declaredLength}`,
         );
       }
       return Buffer.concat(chunks, size);
@@ -634,10 +618,7 @@ async function loadResourceVersionIndexes(
       }
       const indexed = indexes.get(mount.versionId);
       if (indexed) {
-        if (
-          indexed.storageId !== mount.storageId ||
-          indexed.archiveSize !== mount.archiveSize
-        ) {
+        if (indexed.storageId !== mount.storageId) {
           throw resourcePreparationError(
             new Error(
               "Pi resource index does not match the captured Storage version",
@@ -677,7 +658,7 @@ async function loadResourceVersionIndexes(
             db: args.db,
             versionId: mount.versionId,
             projection,
-            archiveSize: archive.length,
+            archiveSize: mount.archiveSize ?? archive.length,
             source: "captured-read",
           },
           signal,

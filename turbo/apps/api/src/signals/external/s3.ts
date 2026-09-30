@@ -736,6 +736,12 @@ async function readS3ObjectBody(
         }
         chunks.push(chunk);
       }
+      if (
+        response.ContentLength !== undefined &&
+        totalLength !== response.ContentLength
+      ) {
+        throw new Error(`S3 object body length mismatch for ${key}`);
+      }
       return Buffer.concat(
         chunks.map((chunk) => {
           return Buffer.from(chunk);

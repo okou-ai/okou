@@ -1162,19 +1162,38 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
       versionId: volumeVersion,
       files: [volumeFile],
     });
-    const refreshedVolumeArchiveSize = 23_456;
-    const forcedPrepare = await storages.prepareStorage(actor, {
+    const presignCount = context.mocks.s3.getSignedUrl.mock.calls.length;
+    context.mocks.s3.send.mockRejectedValue(
+      Object.assign(new Error("Missing Storage objects"), {
+        name: "NotFound",
+        $metadata: { httpStatusCode: 404 },
+      }),
+    );
+    const missingPrepare = await storages.prepareStorageResponse(actor, {
       storageName: volumeName,
       storageOwner: "organization",
       files: [volumeFile],
       force: true,
     });
-    expect(forcedPrepare).toMatchObject({
-      versionId: volumeVersion,
-      existing: false,
-      uploads: expect.any(Object),
+    expect(missingPrepare.status).toBe(409);
+    expect(await missingPrepare.json()).toMatchObject({
+      error: { code: "S3_FILES_MISSING" },
     });
-    storages.mockStorageObjectsExist(refreshedVolumeArchiveSize);
+    expect(context.mocks.s3.getSignedUrl).toHaveBeenCalledTimes(presignCount);
+    storages.mockStorageObjectsExist(volumeArchiveSize);
+    const repeatedPrepare = await storages.prepareStorage(actor, {
+      storageName: volumeName,
+      storageOwner: "organization",
+      files: [volumeFile],
+      force: true,
+    });
+    expect(repeatedPrepare).toStrictEqual({
+      versionId: volumeVersion,
+      existing: true,
+    });
+    expect(context.mocks.s3.getSignedUrl).toHaveBeenCalledTimes(presignCount);
+    // Even a later R2 response size change cannot rewrite a committed version.
+    storages.mockStorageObjectsExist(23_456);
     await storages.commitStorage(actor, {
       storageName: volumeName,
       storageOwner: "organization",
@@ -1241,7 +1260,7 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
           name: volumeName,
           mountPath: "/data",
           versionId: volumeVersion,
-          archiveSize: refreshedVolumeArchiveSize,
+          archiveSize: volumeArchiveSize,
         }),
       ]),
     );

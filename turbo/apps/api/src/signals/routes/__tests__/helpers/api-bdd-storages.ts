@@ -88,6 +88,29 @@ function fixtureFiles(files: readonly BddStorageFileEntry[]) {
   });
 }
 
+function prepareActionBody(
+  actor: ApiTestUser,
+  body: BddStoragePrepareBody,
+): Extract<TestStorageStateActionBody, { action: "prepare" }> {
+  return {
+    action: "prepare",
+    orgId: requireOrgId(actor),
+    userId: actor.userId,
+    storageName: body.storageName,
+    storageOwner: body.storageOwner,
+    files: fixtureFiles(body.files),
+    force: body.force,
+    baseVersion: body.baseVersion,
+    changes: body.changes
+      ? {
+          added: [...body.changes.added],
+          modified: [...body.changes.modified],
+          deleted: [...body.changes.deleted],
+        }
+      : undefined,
+  };
+}
+
 export function createStoragesBddApi(context: TestContext) {
   return {
     mockStoragePresignedUrls(
@@ -108,24 +131,18 @@ export function createStoragesBddApi(context: TestContext) {
       });
     },
 
+    async prepareStorageResponse(
+      actor: ApiTestUser,
+      body: BddStoragePrepareBody,
+    ) {
+      return await requestStorageState(context, prepareActionBody(actor, body));
+    },
+
     async prepareStorage(actor: ApiTestUser, body: BddStoragePrepareBody) {
-      const response = await postAction(context, {
-        action: "prepare",
-        orgId: requireOrgId(actor),
-        userId: actor.userId,
-        storageName: body.storageName,
-        storageOwner: body.storageOwner,
-        files: fixtureFiles(body.files),
-        force: body.force,
-        baseVersion: body.baseVersion,
-        changes: body.changes
-          ? {
-              added: [...body.changes.added],
-              modified: [...body.changes.modified],
-              deleted: [...body.changes.deleted],
-            }
-          : undefined,
-      });
+      const response = await postAction(
+        context,
+        prepareActionBody(actor, body),
+      );
       if (!response.prepared) {
         throw new Error("Storage prepare action returned no result");
       }

@@ -836,6 +836,59 @@ describe("GET /api/cron/sync-skills", () => {
     });
   });
 
+  it("reuses a previously registered skill version after A to B to A", async () => {
+    const fixture = useCronSyncSkillsFixture();
+    await seedCurrentSeedSkillVersions(fixture);
+    const firstCommitSha = newCommitSha();
+    setupMswHandlers(
+      firstCommitSha,
+      createFullTarball(fixture, [fixture.alphaSkill]),
+    );
+    await syncOwnedSkills(fixture);
+    const firstVersion = buildMockSkillVersion(fixture, fixture.alphaSkill);
+    const firstStorage = await findSystemStorageByName(
+      firstVersion.storageName,
+    );
+    if (!firstStorage?.archiveSize) {
+      throw new Error("Expected the first registered skill version");
+    }
+
+    const modifiedAlpha: MockSkillEntry = {
+      ...fixture.alphaSkill,
+      files: fixture.alphaSkill.files.map((file) =>
+        file.path === "SKILL.md"
+          ? { ...file, content: `${file.content}\n\nVersion B.` }
+          : file,
+      ),
+    };
+    setupMswHandlers(
+      newCommitSha(),
+      createFullTarball(fixture, [modifiedAlpha]),
+    );
+    await syncOwnedSkills(fixture);
+    context.mocks.s3.send.mockClear();
+
+    const finalCommitSha = newCommitSha();
+    setupMswHandlers(
+      finalCommitSha,
+      createFullTarball(fixture, [fixture.alphaSkill]),
+    );
+    const result = await syncOwnedSkills(fixture);
+
+    expect(result).toMatchObject({ success: true, synced: 1, failed: 0 });
+    expect(s3CallsByName("PutObjectCommand")).toHaveLength(0);
+    expect(s3CallsByName("HeadObjectCommand")).toHaveLength(2);
+    await expect(
+      findSystemStorageByName(firstVersion.storageName),
+    ).resolves.toMatchObject({
+      headVersionId: firstVersion.versionHash,
+      archiveSize: firstStorage.archiveSize,
+    });
+    await expect(
+      findSkillByUrl(testSkillUrl(fixture.alphaSkill.name)),
+    ).resolves.toMatchObject({ commitSha: finalCommitSha });
+  });
+
   it("records ready stable-context demand in the system-skill V2 transaction", async () => {
     const fixture = useCronSyncSkillsFixture();
     const firstCommitSha = newCommitSha();

@@ -555,20 +555,19 @@ const downloadProjectionArchive$ = command(
     const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
     const work = args.work;
     const archiveKey = `${work.s3Key}/archive.tar.gz`;
-    if (
-      !Number.isSafeInteger(work.archiveSize) ||
-      work.archiveSize <= 0 ||
-      work.archiveSize > ARCHIVE_MAX_BYTES
-    ) {
-      return { status: "over_limit" };
-    }
+    // The registered archiveSize is a hint, not a physical identity. A
+    // previously issued upload URL can leave a different gzip size for the
+    // same logical version; enforce limits on the actual object instead.
     const archiveHead = await get(s3ObjectHead(bucket, archiveKey));
     signal.throwIfAborted();
     if (archiveHead.kind === "missing") {
       return { status: "missing" };
     }
-    if (archiveHead.contentLength !== work.archiveSize) {
-      return { status: "invalid" };
+    if (
+      archiveHead.contentLength !== undefined &&
+      archiveHead.contentLength > ARCHIVE_MAX_BYTES
+    ) {
+      return { status: "over_limit" };
     }
 
     const archiveDownload = await settle(
@@ -587,9 +586,6 @@ const downloadProjectionArchive$ = command(
         return { status: "over_limit" };
       }
       throw archiveDownload.error;
-    }
-    if (archiveDownload.value.length !== work.archiveSize) {
-      return { status: "invalid" };
     }
     const extracted = extractSummaryFromArchive(archiveDownload.value);
     if (extracted.status !== "found") {
