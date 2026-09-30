@@ -122,6 +122,32 @@ sequence/queue lock order changes. Admission errors still reject before commit.
 The attempted issuance/settlement retirement is withdrawn for the distinct-Run
 financial gap above. No serving/in-flight/rollback compatibility gate is retained.
 
+## Canonical migration root mapping — partial implementation
+
+Migration materialization now resolves the existing subscription root by its
+unique Stripe subscription binding and verifies organization/customer ownership.
+A paid conversion of a zero-allocation legacy Plan root updates only its real
+Price/tier/status; it never changes the root PK or clears the provider binding.
+The migration UUID remains the quote/selection/payment/completion and provider
+idempotency identity. Existing rootless historical migrations still use their
+already-persisted migration UUID, not a newly generated root identity.
+
+Canonical root ID is carried into allocation FKs, existing Stripe metadata
+aliases, correlated paid invoice/parent metadata and invitation purchase ownership.
+Before completion, replay checks the beneficiary/Price/USD selection set, not
+merely its row count. Invoice/line/allocation/grant identities and monetary/period
+validation are retained. Existing migration key acquisitions are not added or
+removed by this mapping.
+
+**Verification boundary:** whole existing billing API coverage passes, including
+migration payment/replay/invitation paths. The new zero-allocation legacy Plan-root
+case is not constructible through the current production Plan purchase writer,
+which still stores Plan purchases on org metadata only; it therefore has source,
+type and lint evidence but not a claimed new-case runtime API proof. No internal
+fixture was added to disguise that missing entry point. Shared initial Plan/pack
+admission, no-provider/expired-quote recovery, Plan-family routing and purchase
+key retirement remain unfinished R1 work.
+
 ## Key-free paid allocation invoice fulfillment
 
 Two further `usage_pack_billing` acquisitions are removed: standalone upgrade
