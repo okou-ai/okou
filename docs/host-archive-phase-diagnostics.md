@@ -37,10 +37,12 @@ record, sleep or awaited telemetry upload to startup. This is a bounded overhead
 budget, not a claim of zero runtime cost. Admission, HTTP reuse, the 30-second
 request timeout, 8 MiB limit, cache flock and permits through staging are unchanged.
 
-Records contain fixed action names and bounded reasons. A failed `headers`
-phase with `response-size-mismatch` also includes the optional
-`archive_size_mismatch` object described below. An entered `headers` phase also
-includes the optional `archive_connection_attempt` object described below.
+Records contain fixed action names and bounded reasons. When a declared
+response length differs from the known manifest size, the `headers` phase
+includes the optional `archive_size_mismatch` object described below. That
+phase can succeed despite the disagreement; zero-length and over-limit
+responses still fail. An entered `headers` phase also includes the optional
+`archive_connection_attempt` object described below.
 Records include no archive URL, query, raw headers, object identity, mount path
 or content. Phase records from parallel archives cannot be paired by order. Do
 not add phase maxima or percentiles as one request's latency, or add overlapping
@@ -56,15 +58,15 @@ pool continues it in a background task. The headers phase atomically freezes
 the observer on success, error or interruption; a connector completion or drop
 after that boundary cannot change the recorded summary.
 
-| Field inside `archive_connection_attempt` | Meaning                                                                                  |
-| ------------------------------------------ | ---------------------------------------------------------------------------------------- |
-| `started`                                  | Connector futures started while the request observer was active.                        |
-| `succeeded`                                | Those futures that returned a connection before the headers observer froze.              |
-| `failed`                                   | Those futures that returned an error before freeze; raw errors are not retained.          |
-| `dropped`                                  | Those futures dropped without returning before freeze.                                   |
-| `active_at_headers`                        | Started futures with no terminal result when the headers observer froze.                  |
-| `terminal_duration_ms`                     | Sum of whole elapsed milliseconds for success, failure and drop recorded before freeze.   |
-| `saturated`                                | At least one count or the duration sum reached its fixed representable cap.               |
+| Field inside `archive_connection_attempt` | Meaning                                                                                 |
+| ----------------------------------------- | --------------------------------------------------------------------------------------- |
+| `started`                                 | Connector futures started while the request observer was active.                        |
+| `succeeded`                               | Those futures that returned a connection before the headers observer froze.             |
+| `failed`                                  | Those futures that returned an error before freeze; raw errors are not retained.        |
+| `dropped`                                 | Those futures dropped without returning before freeze.                                  |
+| `active_at_headers`                       | Started futures with no terminal result when the headers observer froze.                |
+| `terminal_duration_ms`                    | Sum of whole elapsed milliseconds for success, failure and drop recorded before freeze. |
+| `saturated`                               | At least one count or the duration sum reached its fixed representable cap.             |
 
 Counts are capped at 255 and `terminal_duration_ms` at 4,294,967,295. When an
 observation exceeds a cap the value remains bounded and `saturated` is true. The API
@@ -109,12 +111,12 @@ diagnostics require both updated artifacts.
 ## Declared-size disagreement
 
 When a known manifest length differs from the response's declared body length,
-the existing headers failure carries these fields:
+the existing headers operation carries these fields:
 
 | Field inside `archive_size_mismatch` | Meaning                                                                                                  |
 | ------------------------------------ | -------------------------------------------------------------------------------------------------------- |
 | `expected_bytes`                     | Reconciled positive manifest archive length, as exact decimal text.                                      |
-| `response_bytes`                     | The HTTP library's declared response length, as exact decimal text; no body bytes have been consumed.    |
+| `response_bytes`                     | The HTTP library's declared response length, as exact decimal text; measured before body consumption.    |
 | `source_kind`                        | `storage` or `artifact` for the grouped request's first target.                                          |
 | `source_index`                       | That representative target's zero-based index in the normalized prepared plan's collection for its kind. |
 | `content_encoding`                   | `absent`, one trimmed case-insensitive `identity` or `gzip`, or `other`.                                 |
@@ -128,13 +130,21 @@ a representative, not a unique object identity or a stable index across retries.
 Multiple, empty, invalid, encoding-list and unrecognized Content-Encoding values
 become `other`; their raw values are never retained.
 
-The metadata belongs to the existing failed phase, preserving its completion
+The metadata belongs to the existing headers phase, preserving its completion
 timestamp and explicit drain semantics. It adds no event or network request.
-It is absent on status failures, body-size failures, successful headers and
-interrupted requests without a completed mismatch observation. Rejection still
-precedes body consumption, cache publication and Guest staging, with no second
-download owner. These measurements can distinguish candidate representations;
-they do not establish an overwrite, corruption, or a production repair.
+A disagreement alone no longer fails the headers phase: a positive declared
+length within the 8 MiB limit becomes the expected length for this transfer.
+The body must still be fully received at that length. Zero-length and oversized
+responses fail in headers; a transfer ending before its declared length fails
+during body reading and is never published. Without a declared length, the
+existing manifest-size fallback still applies.
+
+The object is absent on status failures and requests interrupted before a
+completed mismatch observation; a later body failure does not erase a
+successfully recorded headers disagreement. A successful transfer can proceed
+to cache publication and Guest staging without a second download owner.
+Neither the lengths nor the metadata prove that the decompressed paths and file
+contents match the logical version, or that an overwrite occurred.
 
 For follow-up analysis, freeze exact Runner/API artifacts, UTC window, hosts,
 startup route, manifest/content and cache shape; report success, failure, retry
@@ -145,7 +155,7 @@ does not establish a production performance improvement or resolve Guest/proxy
 connection attribution. The optional mismatch object extends the API telemetry
 schema without changing persisted state or the Guest protocol. New APIs accept
 old Runner operations that omit it. Older APIs strip the unknown object and
-retain the existing failed operation, so either deployment order remains
-functional. Complete diagnostic availability requires both updated API and
-Runner artifacts. Missing metadata from an older receiver is not a zero size
-or evidence that no mismatch occurred.
+retain the existing headers operation, successful or failed, so either
+deployment order remains functional. Complete diagnostic availability requires
+both updated API and Runner artifacts. Missing metadata from an older receiver
+is not a zero size or evidence that no mismatch occurred.

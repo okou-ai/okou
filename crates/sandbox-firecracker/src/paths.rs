@@ -268,7 +268,7 @@ impl SnapshotOutputPaths {
     /// `sock_id` identifies the socket directory under `/run/vm0/sock/` —
     /// typically the config hash so each snapshot gets a unique path. It must
     /// satisfy the Firecracker socket-ID requirements documented on
-    /// [`sandbox::SnapshotCreateConfig::id`], including room for the `_1000`
+    /// [`sandbox::SnapshotCreateConfig::id`], including room for the `_52000`
     /// guest-control listener suffix.
     ///
     /// This helper only constructs paths; it does not validate `sock_id`.
@@ -341,6 +341,7 @@ mod tests {
 
         let api = sock.api_sock();
         let vsock = sock.vsock();
+        let control_listener = format!("{}_{}", vsock.display(), guest_control_proto::VSOCK_PORT);
 
         assert!(
             api.as_os_str().len() <= 107,
@@ -354,6 +355,28 @@ mod tests {
             vsock.as_os_str().len(),
             vsock.display()
         );
+        assert!(
+            control_listener.len() <= 107,
+            "snapshot control listener path too long: {control_listener}"
+        );
+    }
+
+    #[test]
+    fn snapshot_control_listener_id_length_boundary() {
+        let runtime = RuntimePaths::new();
+        let control_listener_len = |id_length| {
+            let sock = SockPaths::new(runtime.sock_dir(&"a".repeat(id_length)));
+            format!(
+                "{}_{}",
+                sock.vsock().display(),
+                guest_control_proto::VSOCK_PORT
+            )
+            .len()
+        };
+
+        // The Linux sun_path array has 108 bytes including the terminating NUL.
+        assert_eq!(control_listener_len(70), 107);
+        assert_eq!(control_listener_len(71), 108);
     }
 
     /// Guard against using a composite `<rootfs>/<snapshot>` as sock_id.

@@ -203,6 +203,16 @@
         {
             "type": "cargo-workspace",
             "cargoWorkspacePath": "crates"
+        },
+        {
+            "type": "release-dependencies",
+            "rules": [
+                {
+                    "source": "turbo/apps/cli",
+                    "dependent": "crates/runner",
+                    "minimumBump": "patch"
+                }
+            ]
         }
     ]
 }

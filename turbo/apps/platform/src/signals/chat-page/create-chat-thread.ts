@@ -3596,9 +3596,18 @@ function createChatThreadComposerSignals(
       if (!isSupportedRunModel(selectedModel)) {
         return null;
       }
+      const policies = await get(orgModelPolicies$);
+      const effectiveModel = policies.policies.some((policy) => {
+        return policy.model === selectedModel;
+      })
+        ? selectedModel
+        : policies.workspaceDefaultModel;
+      if (!isSupportedRunModel(effectiveModel)) {
+        return null;
+      }
       const modelSettings = get(modelSelection.modelSettings$);
       return {
-        selectedModel,
+        selectedModel: effectiveModel,
         ...((await get(modelSelection.codexFastModeActive$))
           ? { codexServiceTier: "fast" as const }
           : {}),

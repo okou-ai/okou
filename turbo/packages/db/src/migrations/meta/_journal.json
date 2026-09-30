@@ -1510,8 +1510,15 @@
     {
       "idx": 1293,
       "version": "7",
-      "when": 1790733279900,
-      "tag": "1293_chat_thread_canonical_session",
+      "when": 1790743537610,
+      "tag": "1293_subscription_catalog_global_order",
+      "breakpoints": true
+    },
+    {
+      "idx": 1294,
+      "version": "7",
+      "when": 1790746330715,
+      "tag": "1294_chat_thread_canonical_session",
       "breakpoints": true
     }
   ]

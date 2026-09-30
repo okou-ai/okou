@@ -17,7 +17,9 @@ use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use guest_control_client::{ExecOwnedCapturedOutput, SupervisedExecControl, SupervisedExecRequest};
-use guest_control_proto::{ExecOutputPolicy, ExecOutputStream, ExecTermination, ExecTimeoutPolicy};
+use guest_control_proto::{
+    ExecOutputPolicy, ExecOutputStream, ExecTermination, ExecTimeoutPolicy, VSOCK_PORT,
+};
 use shell_quote::quote_shell_arg;
 
 const PRE_READY_CONTROL_MESSAGE_ID: &str = "process-control-before-cli-ready";
@@ -418,7 +420,7 @@ async fn collect_stdout_until(
 
 async fn start_host_and_guest(dir: &Path, guest_agent: PathBuf) -> TestResult<ConnectionHarness> {
     let base_path = dir.join("vsock").to_string_lossy().to_string();
-    let listener_path = format!("{base_path}_1000");
+    let listener_path = format!("{base_path}_{VSOCK_PORT}");
     let listener = PathBuf::from(&listener_path);
     let host_base_path = base_path.clone();
     let mut host_task = tokio::spawn(async move {
