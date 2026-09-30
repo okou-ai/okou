@@ -632,7 +632,8 @@ grep -Fq 'runner sha mismatch' "${upload_corrupt_case}/out" || fail "successful 
 # checked CLI package, just like the embedded Guest binaries.
 embedded_cli_case="${TMPDIR}/embedded-cli-only"
 prepare_remote_case "$embedded_cli_case"
-REMOTE_REACH_GC=1 REMOTE_GC_STATUSES=0 run_remote_case "$embedded_cli_case"
+REMOTE_REACH_GC=1 REMOTE_GC_STATUSES=0 REMOTE_UPLOAD_STATUSES=0 \
+  run_remote_case "$embedded_cli_case"
 [ "$(< "${embedded_cli_case}/upload-count")" -eq 1 ] || fail "only the runner executable may be uploaded"
 if grep -Fq '/var/lib/vm0-runner/bin/pr-123/okou-cli' "${embedded_cli_case}/ssh.log"; then
   fail "no CLI artifact command may reach the host"
@@ -658,7 +659,8 @@ prepare_remote_case "$metadata_case"
 GUEST_CLI_PATH="${cli_input}/package.tgz" \
   GUEST_CLI_MANIFEST_PATH="${cli_input}/manifest.json" \
   RUNNER_BINARY_GIT_REVISION=abc \
-  REMOTE_REACH_GC=1 REMOTE_GC_STATUSES=0 run_remote_case "$metadata_case"
+  REMOTE_REACH_GC=1 REMOTE_GC_STATUSES=0 REMOTE_UPLOAD_STATUSES=0 \
+  run_remote_case "$metadata_case"
 [ "$(< "${metadata_case}/upload-count")" -eq 1 ] || fail "compile input must not be uploaded to metal"
 if grep -Fq '/var/lib/vm0-runner/bin/pr-123/okou-cli' "${metadata_case}/ssh.log"; then
   fail "compile input metadata must not cause a host artifact upload"
