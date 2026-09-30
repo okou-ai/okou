@@ -286,7 +286,7 @@ test("exports legacy instructions when the gzip size differs from the registered
   const storages = createStoragesBddApi(context);
   storages.mockStoragePresignedUrls();
   storages.mockStorageObjectsExist(original.length);
-  const storageName = getInstructionsStorageName(agent.name);
+  const storageName = getInstructionsStorageName(agent.agentId);
   const prepared = await storages.prepareStorage(user, {
     storageName,
     storageOwner: "organization",
