@@ -683,10 +683,10 @@ the browser lease.
 Browser lifecycle is not a chat event. Starting or resuming the browser changes
 only the browser session. Closing the sidebar hides it without stopping the
 provider instance, and entering a thread never opens the sidebar
-automatically. The open and close endpoints still accept an `eventId` and echo
-it as `lifecycleEventId` for clients that send it. The browser icon in
-the thread header remains available in either state, and both a never-created
-browser and a non-live browser keep the Start action. When a screenshot exists,
+automatically. The open and close endpoints accept an empty request body; open
+returns the browser session and close returns an empty acknowledgement. The
+browser icon in the thread header remains available in either state, and both a
+never-created browser and a non-live browser keep the Start action. When a screenshot exists,
 the suspended sidebar reuses it at full width and top-aligns it beneath a
 half-transparent blurred mask, so the small preview fills the available surface
 without being presented as a live browser.

@@ -136,7 +136,7 @@ forward-fix migration that restores the columns and the enum value.
 ## Chat Event V8 (2026-09-28)
 
 This is step 2 of the Chat Event V8 plan. `CURRENT_CHAT_EVENT_SCHEMA_VERSION`
-becomes 8; the V8 shape and the V7 to V8 upgrade rules are in
+becomes 8; the current V8 contract is documented in
 [Chat Event schema versioning](./chat-event-schema-versioning.md#v8).
 
 Migration `1286_chat_event_v8` is non-transactional and re-runnable. It first
