@@ -213,12 +213,6 @@ import {
 import { loadBuiltInRoutePricing } from "./built-in-route-pricing";
 import { usagePricingResolution$ } from "../context/usage-pricing-resolution";
 import {
-  observeAgentRunPiExecutionSnapshot,
-  observeAgentRunPreCreateParallelStage,
-  observeRunConnectorAccountsRead,
-  observeRunContextParallelStage,
-} from "./agent-run-preparation-hooks";
-import {
   type AgentPhoneDeliveryTarget,
   agentphoneDeliveryTargetSchema,
 } from "./agentphone-chat-callback-payload";
@@ -302,7 +296,6 @@ import {
 import {
   type CapturedConnectorCatalogIdentity,
   type ConnectorCatalogRuntimeProjectionRowsRead,
-  projectionIdentityReadHook,
   resolveProjectionIdentity,
   validateConnectorCatalogRuntimeProjectionRows,
 } from "./connector-catalog-runtime-projection.service";
@@ -641,6 +634,8 @@ import {
   or,
   sql,
   sum,
+  getTableColumns,
+  notExists,
 } from "drizzle-orm";
 import { alias, unionAll } from "drizzle-orm/pg-core";
 import { randomUUID } from "node:crypto";
@@ -2109,6 +2104,7 @@ interface AgentPhoneQueuedLaunchMaterial {
 
 type IncompleteRunStatus = "cancelled" | "failed" | "timeout";
 
+const pickedRevoker = alias(chatEvents, "picked_input_revoker");
 const earlierRunEvent = alias(chatEvents, "earlier_run_event");
 
 const incompleteRunAnchor = alias(chatEvents, "incomplete_run_anchor");
@@ -2696,63 +2692,10 @@ export function createClaimRunObjects(claim: ThreadClaim) {
 
   const pickedEvent$ = computed(async (get) => {
     const database = get(db$);
-    const candidates = await database
-      .select({
-        id: chatEvents.id,
-        createdAt: chatEvents.createdAt,
-        seqId: chatEvents.seqId,
-        eventType: chatEvents.eventType,
-      })
-      .from(chatEvents)
-      .where(
-        and(
-          eq(chatEvents.chatThreadId, claim.chatThreadId),
-          chatEventRunlessInputPredicate(
-            chatEvents.runId,
-            chatEvents.eventType,
-          ),
-          inArray(chatEvents.eventType, ["input.prompt", "input.automation"]),
-        ),
-      );
-    if (candidates.length === 0) {
-      return null;
-    }
-    const revocations = await database
-      .select({ eventId: chatEvents.revokesEventId })
-      .from(chatEvents)
-      .where(
-        inArray(
-          chatEvents.revokesEventId,
-          candidates.map(({ id }) => {
-            return id;
-          }),
-        ),
-      );
-    const revoked = new Set(
-      revocations.map(({ eventId }) => {
-        return eventId;
-      }),
-    );
-    const picked =
-      candidates
-        .filter(({ id }) => {
-          return !revoked.has(id);
-        })
-        .sort((left, right) => {
-          return left.seqId - right.seqId;
-        })[0] ?? null;
-    if (!picked) {
-      return null;
-    }
-    // The one read of the head row: the queue context, prompt branch and
-    // model selection all derive from it.
     const [row] = await database
       .select({
-        contextType: chatEvents.contextType,
-        contextId: chatEvents.contextId,
+        ...getTableColumns(chatEvents),
         userMessage: canonicalChatEventUserMessage(),
-        requiredOfficialWorkflowIds: chatEvents.requiredOfficialWorkflowIds,
-        modelSelection: chatEvents.modelSelection,
         canonicalModelSelection: canonicalChatInputModelSelection(),
         sourceAutonomyBudget: agentRuns.autonomyBudget,
         userId: chatThreads.userId,
@@ -2769,17 +2712,30 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       )
       .where(
         and(
-          eq(chatEvents.id, picked.id),
           eq(chatEvents.chatThreadId, claim.chatThreadId),
+          chatEventRunlessInputPredicate(
+            chatEvents.runId,
+            chatEvents.eventType,
+          ),
+          inArray(chatEvents.eventType, ["input.prompt", "input.automation"]),
+          notExists(
+            database
+              .select({ id: pickedRevoker.id })
+              .from(pickedRevoker)
+              .where(eq(pickedRevoker.revokesEventId, chatEvents.id)),
+          ),
         ),
       )
+      .orderBy(asc(chatEvents.seqId))
       .limit(1);
-    return row ? { ...picked, ...row } : null;
+    return row ?? null;
   });
-  const internalRunIds$ = state<{
-    readonly runId: string;
-    readonly newSessionId: string;
-  } | null>(null);
+  const runIds$ = computed(() => {
+    return {
+      runId: randomUUID(),
+      newSessionId: randomUUID(),
+    };
+  });
   const input$ = computed(async (get) => {
     const head = await get(pickedEvent$);
     if (!head) {
@@ -2812,18 +2768,33 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         }
       : null;
   });
-  const queuedModelInputsInternalInput$ = state<QueuedModelInput | null>(null);
+  const queuedModelInputsInternalInput$ = computed(
+    async (get): Promise<QueuedModelInput> => {
+      const head = await get(head$);
+      if (!head) {
+        throw new Error("Claim has no picked queue head");
+      }
+      return {
+        orgId: claim.orgId,
+        userId: head.userId,
+        threadId: claim.chatThreadId,
+        eventId: head.id,
+        featureSwitchContext: await get(promptFeaturesFeatures$),
+        providerModelSupport: "trust-enqueued",
+      };
+    },
+  );
   const queuedModelInputsInternalPolicyFacts$ =
     state<EnsuredOrgModelPolicyFacts | null>(null);
-  const queuedModelInputsInput$ = computed((get) => {
-    const input = get(queuedModelInputsInternalInput$);
+  const queuedModelInputsInput$ = computed(async (get) => {
+    const input = await get(queuedModelInputsInternalInput$);
     if (!input) {
       throw new Error("Queued model preparation requires a selected input");
     }
     return input;
   });
   const queuedModelInputsSelection$ = computed(async (get) => {
-    const input = get(queuedModelInputsInput$);
+    const input = await get(queuedModelInputsInput$);
     const head = await get(pickedEvent$);
     if (head?.id !== input.eventId) {
       throw new Error("Queued model selection must belong to the picked head");
@@ -2831,7 +2802,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     return head.canonicalModelSelection;
   });
   const orgMetadata$ = computed(async (get) => {
-    const { orgId } = get(queuedModelInputsInput$);
+    const { orgId } = await get(queuedModelInputsInput$);
     const [org] = await get(db$)
       .select({
         credits: orgMetadata.credits,
@@ -2844,7 +2815,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   });
   const queuedModelInputsCapabilities$ = computed(
     async (get): Promise<OrgPlanCapabilities | null> => {
-      const { orgId } = get(queuedModelInputsInput$);
+      const { orgId } = await get(queuedModelInputsInput$);
       const [capabilities] = await get(db$)
         .select({
           planKey: orgPlanEntitlements.planKey,
@@ -2889,7 +2860,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     return await get(db$)
       .select()
       .from(orgModelPolicies)
-      .where(eq(orgModelPolicies.orgId, get(queuedModelInputsInput$).orgId));
+      .where(eq(orgModelPolicies.orgId, (await get(queuedModelInputsInput$)).orgId));
   });
   const policyFacts$ = computed((get) => {
     const facts = get(queuedModelInputsInternalPolicyFacts$);
@@ -2932,7 +2903,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   } = queuedModelSources;
   const queuedMemberModelRoutesMemberAccountSnapshot$ = computed(
     async (get) => {
-      const { orgId, userId } = get(queuedMemberModelRoutesInput$);
+      const { orgId, userId } = await get(queuedMemberModelRoutesInput$);
       const [policy, org] = await Promise.all([
         get(queuedMemberModelRoutesPolicy$),
         get(orgMetadata$),
@@ -2966,7 +2937,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   const memberRoutes$ = computed(async (get) => {
     const snapshot = await get(queuedMemberModelRoutesMemberAccountSnapshot$);
     return memberModelRouteContextFromAccounts(
-      get(queuedMemberModelRoutesInput$).userId,
+      (await get(queuedMemberModelRoutesInput$)).userId,
       snapshot?.accounts.map((account) => {
         return { ...account, providerId: account.modelProviderId };
       }) ?? [],
@@ -2999,7 +2970,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       .where(
         and(
           eq(modelProviders.id, policy.modelProviderId),
-          eq(modelProviders.orgId, get(queuedModelRoutingInput$).orgId),
+          eq(modelProviders.orgId, (await get(queuedModelRoutingInput$)).orgId),
           eq(modelProviders.userId, agentRunsCreateORG_SENTINEL_USER_ID),
         ),
       )
@@ -3027,7 +2998,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           eq(modelProviderSurfaces.id, policy.modelProviderSurfaceId),
           eq(
             modelProviderConnections.orgId,
-            get(queuedModelRoutingInput$).orgId,
+            (await get(queuedModelRoutingInput$)).orgId,
           ),
         ),
       )
@@ -3085,7 +3056,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   const { modelPin$: queuedModelRuntimeModelPin$ } = routing;
   const queuedModelRuntimeFeatureSwitchContext$ = computed(
     async (get): Promise<FeatureSwitchContext> => {
-      const input = get(queuedModelRuntimeInput$);
+      const input = await get(queuedModelRuntimeInput$);
       if (input.featureSwitchContext) {
         return input.featureSwitchContext;
       }
@@ -3195,7 +3166,10 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       .from(creditExpiresRecord)
       .where(
         and(
-          eq(creditExpiresRecord.orgId, get(queuedModelCreditsInput$).orgId),
+          eq(
+            creditExpiresRecord.orgId,
+            (await get(queuedModelCreditsInput$)).orgId,
+          ),
           lte(creditExpiresRecord.expiresAt, nowDate()),
           gt(creditExpiresRecord.remaining, 0),
         ),
@@ -3203,7 +3177,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     return row?.total ?? 0;
   });
   const usagePackCredits$ = computed(async (get) => {
-    const input = get(queuedModelCreditsInput$);
+    const input = await get(queuedModelCreditsInput$);
     const [row] = await get(db$)
       .select({
         total: sum(usagePackCreditGrants.remainingAmount).mapWith(
@@ -3237,7 +3211,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   const credits = { creditBalance$: creditBalance$ };
   const { input$: queuedModelAllowanceInput$ } = queuedModelSources;
   const allowanceSnapshot$ = computed(async (get) => {
-    const { orgId } = get(queuedModelAllowanceInput$);
+    const { orgId } = await get(queuedModelAllowanceInput$);
     const at = nowDate();
     const rows = await get(db$)
       .select({
@@ -3353,7 +3327,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     return await resolveQueuedProviderAdmission({
       catalog: await get(claimCatalog$),
       pin,
-      providerModelSupport: get(queuedProviderAdmissionInput$)
+      providerModelSupport: (await get(queuedProviderAdmissionInput$))
         .providerModelSupport,
       customSurface: () => {
         return get(queuedProviderAdmissionCustomSurface$);
@@ -3402,8 +3376,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     },
   );
   const ensureModelPolicy$ = orgModelPolicyInitializationInitializeModelPolicy$;
-  const allowanceInput$ = computed((get) => {
-    return { orgId: get(queuedModelCommandsInput$).orgId };
+  const allowanceInput$ = computed(async (get) => {
+    return { orgId: (await get(queuedModelCommandsInput$)).orgId };
   });
   const resolveUsageAllowance$ = command(
     async ({ get, set }, signal: AbortSignal) => {
@@ -3452,7 +3426,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   const queuedModelCommandsRefreshUsageAllowance$ = resolveUsageAllowance$;
   const queuedModelCommandsInitializeModelPolicy$ = command(
     async ({ get, set }, signal: AbortSignal) => {
-      const input = get(queuedModelCommandsInput$);
+      const input = await get(queuedModelCommandsInput$);
+      signal.throwIfAborted();
       const facts =
         input.userId === "__no_preference__"
           ? await get(initialFacts$)
@@ -3465,13 +3440,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     initializeModelPolicy$: queuedModelCommandsInitializeModelPolicy$,
     refreshUsageAllowance$: queuedModelCommandsRefreshUsageAllowance$,
   };
-  const {
-    internalInput$,
-    internalPolicyFacts$,
-    selection$,
-    capabilities$,
-    initialPolicies$,
-  } = queuedModelSources;
+  const { internalPolicyFacts$, selection$, capabilities$, initialPolicies$ } =
+    queuedModelSources;
   const { modelPin$ } = routing;
   const { memberAccountSnapshot$: queuedModelMemberAccountSnapshot$ } = member;
   const {
@@ -3481,9 +3451,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   const { providerAdmission$ } = admission;
   const { initializeModelPolicy$, refreshUsageAllowance$ } = commands;
   const queuedModelResolveQueuedModel$ = command(
-    async ({ get, set }, input: QueuedModelInput, signal: AbortSignal) => {
+    async ({ get, set }, signal: AbortSignal) => {
       signal.throwIfAborted();
-      set(internalInput$, input);
       set(internalPolicyFacts$, null);
       const [selection] = await Promise.all([
         get(selection$),
@@ -3771,6 +3740,10 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       get(promptFeaturesFeatures$),
       get(promptProjectionProjection$),
     ]);
+    const picked = await get(pickedEvent$);
+    if (!picked) {
+      throw new Error("Claim has no picked event");
+    }
     return {
       eventId: args.queuedMessage.id,
       chatThreadId: args.threadId,
@@ -3778,6 +3751,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       userId: args.userId,
       featureSwitchContext: features,
       contextType: args.queuedMessage.contextType,
+      contextId: args.queuedMessage.contextId,
+      userMessage: picked.userMessage,
       userMessageProjection: projection,
       agentRunSource: agentRunSourceAnnotation(args.queuedMessage.userMessage),
     };
@@ -3803,18 +3778,11 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         threadTs: chatSlackContext.threadTs,
         routeThreadTs: chatSlackContext.routeThreadTs,
       })
-      .from(chatEvents)
-      .innerJoin(
-        chatSlackContext,
-        and(
-          eq(chatSlackContext.id, chatEvents.contextId),
-          eq(chatSlackContext.chatThreadId, chatEvents.chatThreadId),
-        ),
-      )
+      .from(chatSlackContext)
       .innerJoin(
         slackChatThreadRoutes,
         and(
-          eq(slackChatThreadRoutes.chatThreadId, chatEvents.chatThreadId),
+          eq(slackChatThreadRoutes.chatThreadId, chatSlackContext.chatThreadId),
           eq(slackChatThreadRoutes.channelId, chatSlackContext.channelId),
           or(
             and(
@@ -3845,9 +3813,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       )
       .where(
         and(
-          eq(chatEvents.id, args.eventId),
-          eq(chatEvents.chatThreadId, args.chatThreadId),
-          eq(chatEvents.contextType, "slack"),
+          eq(chatSlackContext.id, z.string().parse(args.contextId)),
+          eq(chatSlackContext.chatThreadId, args.chatThreadId),
         ),
       )
       .limit(1);
@@ -3880,18 +3847,14 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         routeThreadId: feishuChatThreadRoutes.threadId,
         feishuDisplayName: feishuOrgConnections.feishuUserName,
       })
-      .from(chatEvents)
-      .innerJoin(
-        chatFeishuContext,
-        and(
-          eq(chatFeishuContext.id, chatEvents.contextId),
-          eq(chatFeishuContext.chatThreadId, chatEvents.chatThreadId),
-        ),
-      )
+      .from(chatFeishuContext)
       .innerJoin(
         feishuChatThreadRoutes,
         and(
-          eq(feishuChatThreadRoutes.chatThreadId, chatEvents.chatThreadId),
+          eq(
+            feishuChatThreadRoutes.chatThreadId,
+            chatFeishuContext.chatThreadId,
+          ),
           eq(
             feishuChatThreadRoutes.connectionId,
             chatFeishuContext.connectionId,
@@ -3920,9 +3883,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       )
       .where(
         and(
-          eq(chatEvents.id, args.eventId),
-          eq(chatEvents.chatThreadId, args.chatThreadId),
-          eq(chatEvents.contextType, "feishu"),
+          eq(chatFeishuContext.id, z.string().parse(args.contextId)),
+          eq(chatFeishuContext.chatThreadId, args.chatThreadId),
         ),
       )
       .limit(1);
@@ -4011,18 +3973,11 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         installationBotId: teamsOrgInstallations.botId,
         installationBotName: teamsOrgInstallations.botName,
       })
-      .from(chatEvents)
-      .innerJoin(
-        chatTeamsContext,
-        and(
-          eq(chatTeamsContext.id, chatEvents.contextId),
-          eq(chatTeamsContext.chatThreadId, chatEvents.chatThreadId),
-        ),
-      )
+      .from(chatTeamsContext)
       .innerJoin(
         teamsChatThreadRoutes,
         and(
-          eq(teamsChatThreadRoutes.chatThreadId, chatEvents.chatThreadId),
+          eq(teamsChatThreadRoutes.chatThreadId, chatTeamsContext.chatThreadId),
           eq(teamsChatThreadRoutes.connectionId, chatTeamsContext.connectionId),
           eq(
             teamsChatThreadRoutes.conversationId,
@@ -4049,9 +4004,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       )
       .where(
         and(
-          eq(chatEvents.id, args.eventId),
-          eq(chatEvents.chatThreadId, args.chatThreadId),
-          eq(chatEvents.contextType, "teams"),
+          eq(chatTeamsContext.id, z.string().parse(args.contextId)),
+          eq(chatTeamsContext.chatThreadId, args.chatThreadId),
         ),
       )
       .limit(1);
@@ -4082,18 +4036,11 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         agentId: agents.id,
         officialUserLinkId: telegramOfficialUserLinks.id,
       })
-      .from(chatEvents)
-      .innerJoin(
-        chatTelegramContext,
-        and(
-          eq(chatTelegramContext.id, chatEvents.contextId),
-          eq(chatTelegramContext.chatThreadId, chatEvents.chatThreadId),
-        ),
-      )
+      .from(chatTelegramContext)
       .innerJoin(
         chatThreads,
         and(
-          eq(chatThreads.id, chatEvents.chatThreadId),
+          eq(chatThreads.id, chatTelegramContext.chatThreadId),
           eq(chatThreads.userId, args.userId),
         ),
       )
@@ -4109,9 +4056,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       )
       .where(
         and(
-          eq(chatEvents.id, args.eventId),
-          eq(chatEvents.chatThreadId, args.chatThreadId),
-          eq(chatEvents.contextType, "telegram"),
+          eq(chatTelegramContext.id, z.string().parse(args.contextId)),
+          eq(chatTelegramContext.chatThreadId, args.chatThreadId),
         ),
       )
       .limit(1);
@@ -4140,18 +4086,11 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         agentphoneAgentId: chatAgentphoneContext.agentphoneAgentId,
         agentId: agents.id,
       })
-      .from(chatEvents)
-      .innerJoin(
-        chatAgentphoneContext,
-        and(
-          eq(chatAgentphoneContext.id, chatEvents.contextId),
-          eq(chatAgentphoneContext.chatThreadId, chatEvents.chatThreadId),
-        ),
-      )
+      .from(chatAgentphoneContext)
       .innerJoin(
         chatThreads,
         and(
-          eq(chatThreads.id, chatEvents.chatThreadId),
+          eq(chatThreads.id, chatAgentphoneContext.chatThreadId),
           eq(chatThreads.userId, args.userId),
         ),
       )
@@ -4166,9 +4105,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       )
       .where(
         and(
-          eq(chatEvents.id, args.eventId),
-          eq(chatEvents.chatThreadId, args.chatThreadId),
-          eq(chatEvents.contextType, "agentphone"),
+          eq(chatAgentphoneContext.id, z.string().parse(args.contextId)),
+          eq(chatAgentphoneContext.chatThreadId, args.chatThreadId),
         ),
       )
       .limit(1);
@@ -4192,16 +4130,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         messageId: chatDiscordContext.messageId,
         sessionKey: discordChatThreadRoutes.sessionKey,
         conversationContext: chatDiscordContext.conversationContext,
-        userMessage: canonicalChatEventUserMessage(),
       })
-      .from(chatEvents)
-      .innerJoin(
-        chatDiscordContext,
-        and(
-          eq(chatDiscordContext.id, chatEvents.contextId),
-          eq(chatDiscordContext.chatThreadId, chatEvents.chatThreadId),
-        ),
-      )
+      .from(chatDiscordContext)
       .innerJoin(
         discordChatThreadRoutes,
         eq(discordChatThreadRoutes.id, chatDiscordContext.routeId),
@@ -4212,13 +4142,12 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       )
       .where(
         and(
-          eq(chatEvents.id, args.eventId),
-          eq(chatEvents.chatThreadId, args.chatThreadId),
-          eq(chatEvents.contextType, "discord"),
+          eq(chatDiscordContext.id, z.string().parse(args.contextId)),
+          eq(chatDiscordContext.chatThreadId, args.chatThreadId),
         ),
       )
       .limit(1);
-    return context ?? null;
+    return context ? { ...context, userMessage: args.userMessage } : null;
   });
   const promptDiscordRouteDiscordRoute$ = computed(async (get) => {
     const [context, args] = await Promise.all([
@@ -4393,11 +4322,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     const { routedModel } = routeQueuedMessagePiExecution({
       input: args,
       modelRoute: model.route,
-    });
-    await observeAgentRunPreCreateParallelStage("thread-session", {
-      command: {
-        auth: { userId: args.userId, orgId: args.agent.orgId },
-      },
     });
     const [thread] = await args.db
       .select(chatThreadSessionSelection())
@@ -4994,26 +4918,10 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   );
   const promptResolvePromptModelResolvePromptModel$ = command(
     async (
-      { get, set },
+      { set },
       signal: AbortSignal,
     ): Promise<QueuedMessageModelRouteResolution> => {
-      const [args, features] = await Promise.all([
-        get(promptArgsArgs$),
-        get(promptFeaturesFeatures$),
-      ]);
-      signal.throwIfAborted();
-      const model = await set(
-        resolveQueuedModel$,
-        {
-          orgId: args.agent.orgId,
-          userId: args.userId,
-          threadId: args.threadId,
-          eventId: args.queuedMessage.id,
-          featureSwitchContext: features,
-          providerModelSupport: "trust-enqueued",
-        },
-        signal,
-      );
+      const model = await set(resolveQueuedModel$, signal);
       signal.throwIfAborted();
       if ("status" in model) {
         return { error: model.body.error };
@@ -5156,7 +5064,28 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         };
       },
     );
-  const internalEarlyAssembly$ = state<ChatQueueRunAssembly | null>(null);
+  const internalEarlyAssembly$ = computed(
+    async (get): Promise<ChatQueueRunAssembly | null> => {
+      const head = await get(head$);
+      if (!head) {
+        return { kind: "not-ready" };
+      }
+      const selected = await settle(
+        Promise.all([
+          get(promptQueuedMessageQueuedMessage$),
+          get(promptAgentAgent$),
+        ]),
+      );
+      if (!selected.ok) {
+        return queuedPromptPreparationRejection(selected.error, head);
+      }
+      const [queued, agent] = selected.value;
+      if (queued?.id !== head.id) {
+        return { kind: "not-ready" };
+      }
+      return agent ? null : missingQueuedAgentRejection(head);
+    },
+  );
   const initializeQueuedPrompt$ = command(
     async (
       { get, set },
@@ -5172,26 +5101,15 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       });
       set(promptInternalModelInternalModel$, null);
       set(promptInternalDiscordMaterialInternalDiscordMaterial$, null);
-      set(internalEarlyAssembly$, null);
-      const selected = await settle(
-        Promise.all([
-          get(promptQueuedMessageQueuedMessage$),
-          get(promptAgentAgent$),
-        ]),
-        signal,
-      );
+      const early = await get(internalEarlyAssembly$);
       signal.throwIfAborted();
-      if (!selected.ok) {
-        set(
-          internalEarlyAssembly$,
-          queuedPromptPreparationRejection(selected.error, head),
-        );
+      if (early) {
         return false;
       }
-      const [queued, agent] = selected.value;
-      if (queued?.id !== head.id) {
-        set(internalEarlyAssembly$, { kind: "not-ready" });
-        return false;
+      const queued = await get(promptQueuedMessageQueuedMessage$);
+      signal.throwIfAborted();
+      if (!queued) {
+        throw new Error("Prepared prompt has no selected queue input");
       }
       timing.recordElapsed({
         actionType:
@@ -5200,10 +5118,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         startedAt: queued.createdAt.getTime(),
         finishedAt: head.apiStartTime,
       });
-      if (!agent) {
-        set(internalEarlyAssembly$, missingQueuedAgentRejection(head));
-        return false;
-      }
       return true;
     },
   );
@@ -5229,7 +5143,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   );
   const promptAssembleQueuedPromptRunAssembly$ = computed(
     async (get): Promise<ChatQueueRunAssembly> => {
-      const early = get(internalEarlyAssembly$);
+      const early = await get(internalEarlyAssembly$);
       if (early) {
         return early;
       }
@@ -5291,7 +5205,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     return !("error" in templates);
   });
   const promptExecutionSelectionIdentityInput$ = computed(async (get) => {
-    if (get(internalEarlyAssembly$)) {
+    if (await get(internalEarlyAssembly$)) {
       return null;
     }
     const { head, runTiming: timing } = get(promptInputInput$);
@@ -5380,7 +5294,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     };
   });
   const promptExecutionResourcesThreadSession$ = computed(async (get) => {
-    if (get(internalEarlyAssembly$)) {
+    if (await get(internalEarlyAssembly$)) {
       return undefined;
     }
     return (await get(promptSessionSession$)) ?? undefined;
@@ -5391,14 +5305,14 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   });
   const promptExecutionResourcesFeatureSwitchContext$ = computed(
     async (get) => {
-      return get(internalEarlyAssembly$)
+      return (await get(internalEarlyAssembly$))
         ? undefined
         : await get(promptFeaturesFeatures$);
     },
   );
   const promptExecutionResourcesMemberAccountSnapshot$ = computed(
     async (get) => {
-      if (get(internalEarlyAssembly$)) {
+      if (await get(internalEarlyAssembly$)) {
         return null;
       }
       const model = await get(promptModelModel$);
@@ -5406,7 +5320,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     },
   );
   const availableMaterial$ = computed(async (get) => {
-    if (get(internalEarlyAssembly$)) {
+    if (await get(internalEarlyAssembly$)) {
       return null;
     }
     const material = await settle(get(promptMaterialMaterial$));
@@ -5420,7 +5334,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     return material.value;
   });
   const promptExecutionResourcesCallbackInputs$ = computed(async (get) => {
-    if (get(internalEarlyAssembly$)) {
+    if (await get(internalEarlyAssembly$)) {
       return undefined;
     }
     const [args, material] = await Promise.all([
@@ -5441,7 +5355,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     return (await get(availableMaterial$))?.connectorSourceId;
   });
   const promptExecutionResourcesStorageBody$ = computed(async (get) => {
-    if (get(internalEarlyAssembly$)) {
+    if (await get(internalEarlyAssembly$)) {
       return {};
     }
     const templates = await get(promptTemplatesTemplates$);
@@ -5449,10 +5363,10 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       ? {}
       : additionalVolumesForRun(templates.presentationTemplateVolumes);
   });
-  const internalHead$ = state<ChatQueueHeadContext | null>(null);
+  const internalHead$ = head$;
   const internalTargetRevision$ = state(0);
-  const queuedAutomationInputsHead$ = computed((get) => {
-    const head = get(internalHead$);
+  const queuedAutomationInputsHead$ = computed(async (get) => {
+    const head = await get(internalHead$);
     if (!head) {
       throw new Error("Queued automation context requires a selected input");
     }
@@ -5460,7 +5374,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   });
   const event$ = computed(
     async (get): Promise<QueuedAutomationEvent | null> => {
-      const head = get(queuedAutomationInputsHead$);
+      const head = await get(queuedAutomationInputsHead$);
       if (head.contextId === null) {
         return null;
       }
@@ -5832,18 +5746,34 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     automationLaunchMaterialsComputerUseHostGrant$;
   const workflowAutomationLaunchReadGraphRunInput$ =
     automationLaunchMaterialsRunInput$;
-  const queuedModelInputsInternalInput$2 = state<QueuedModelInput | null>(null);
+  const queuedModelInputsInternalInput$2 = computed(
+    async (get): Promise<QueuedModelInput> => {
+      const [head, target] = await Promise.all([
+        get(head$),
+        get(capturedAutomationTarget$),
+      ]);
+      if (!head || !target) {
+        throw new Error("Automation claim has no selected model input");
+      }
+      return {
+        orgId: claim.orgId,
+        userId: target.automation.ownerUserId,
+        threadId: claim.chatThreadId,
+        eventId: head.id,
+      };
+    },
+  );
   const queuedModelInputsInternalPolicyFacts$2 =
     state<EnsuredOrgModelPolicyFacts | null>(null);
-  const queuedModelInputsInput$2 = computed((get) => {
-    const input = get(queuedModelInputsInternalInput$2);
+  const queuedModelInputsInput$2 = computed(async (get) => {
+    const input = await get(queuedModelInputsInternalInput$2);
     if (!input) {
       throw new Error("Queued model preparation requires a selected input");
     }
     return input;
   });
   const queuedModelInputsSelection$2 = computed(async (get) => {
-    const input = get(queuedModelInputsInput$2);
+    const input = await get(queuedModelInputsInput$2);
     const head = await get(pickedEvent$);
     if (head?.id !== input.eventId) {
       throw new Error("Queued model selection must belong to the picked head");
@@ -5851,7 +5781,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     return head.canonicalModelSelection;
   });
   const queuedModelInputsOrgMetadata$ = computed(async (get) => {
-    const { orgId } = get(queuedModelInputsInput$2);
+    const { orgId } = await get(queuedModelInputsInput$2);
     const [org] = await get(db$)
       .select({
         credits: orgMetadata.credits,
@@ -5864,7 +5794,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   });
   const queuedModelInputsCapabilities$2 = computed(
     async (get): Promise<OrgPlanCapabilities | null> => {
-      const { orgId } = get(queuedModelInputsInput$2);
+      const { orgId } = await get(queuedModelInputsInput$2);
       const [capabilities] = await get(db$)
         .select({
           planKey: orgPlanEntitlements.planKey,
@@ -5909,7 +5839,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     return await get(db$)
       .select()
       .from(orgModelPolicies)
-      .where(eq(orgModelPolicies.orgId, get(queuedModelInputsInput$2).orgId));
+      .where(eq(orgModelPolicies.orgId, (await get(queuedModelInputsInput$2)).orgId));
   });
   const queuedModelInputsPolicyFacts$ = computed((get) => {
     const facts = get(queuedModelInputsInternalPolicyFacts$2);
@@ -5952,7 +5882,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   } = queuedModelSources2;
   const queuedMemberModelRoutesMemberAccountSnapshot$2 = computed(
     async (get) => {
-      const { orgId, userId } = get(queuedMemberModelRoutesInput$2);
+      const { orgId, userId } = await get(queuedMemberModelRoutesInput$2);
       const [policy, org] = await Promise.all([
         get(queuedMemberModelRoutesPolicy$2),
         get(queuedModelInputsOrgMetadata$),
@@ -5986,7 +5916,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   const queuedMemberModelRoutesMemberRoutes$ = computed(async (get) => {
     const snapshot = await get(queuedMemberModelRoutesMemberAccountSnapshot$2);
     return memberModelRouteContextFromAccounts(
-      get(queuedMemberModelRoutesInput$2).userId,
+      (await get(queuedMemberModelRoutesInput$2)).userId,
       snapshot?.accounts.map((account) => {
         return { ...account, providerId: account.modelProviderId };
       }) ?? [],
@@ -6019,7 +5949,10 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       .where(
         and(
           eq(modelProviders.id, policy.modelProviderId),
-          eq(modelProviders.orgId, get(queuedModelRoutingInput$2).orgId),
+          eq(
+            modelProviders.orgId,
+            (await get(queuedModelRoutingInput$2)).orgId,
+          ),
           eq(modelProviders.userId, agentRunsCreateORG_SENTINEL_USER_ID),
         ),
       )
@@ -6047,7 +5980,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           eq(modelProviderSurfaces.id, policy.modelProviderSurfaceId),
           eq(
             modelProviderConnections.orgId,
-            get(queuedModelRoutingInput$2).orgId,
+            (await get(queuedModelRoutingInput$2)).orgId,
           ),
         ),
       )
@@ -6105,7 +6038,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   const { modelPin$: queuedModelRuntimeModelPin$2 } = queuedModelRouting;
   const queuedModelRuntimeFeatureSwitchContext$2 = computed(
     async (get): Promise<FeatureSwitchContext> => {
-      const input = get(queuedModelRuntimeInput$2);
+      const input = await get(queuedModelRuntimeInput$2);
       if (input.featureSwitchContext) {
         return input.featureSwitchContext;
       }
@@ -6215,7 +6148,10 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       .from(creditExpiresRecord)
       .where(
         and(
-          eq(creditExpiresRecord.orgId, get(queuedModelCreditsInput$2).orgId),
+          eq(
+            creditExpiresRecord.orgId,
+            (await get(queuedModelCreditsInput$2)).orgId,
+          ),
           lte(creditExpiresRecord.expiresAt, nowDate()),
           gt(creditExpiresRecord.remaining, 0),
         ),
@@ -6223,7 +6159,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     return row?.total ?? 0;
   });
   const queuedModelCreditsUsagePackCredits$ = computed(async (get) => {
-    const input = get(queuedModelCreditsInput$2);
+    const input = await get(queuedModelCreditsInput$2);
     const [row] = await get(db$)
       .select({
         total: sum(usagePackCreditGrants.remainingAmount).mapWith(
@@ -6259,7 +6195,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   };
   const { input$: queuedModelAllowanceInput$2 } = queuedModelSources2;
   const queuedModelAllowanceAllowanceSnapshot$ = computed(async (get) => {
-    const { orgId } = get(queuedModelAllowanceInput$2);
+    const { orgId } = await get(queuedModelAllowanceInput$2);
     const at = nowDate();
     const rows = await get(db$)
       .select({
@@ -6376,7 +6312,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     return await resolveQueuedProviderAdmission({
       catalog: await get(claimCatalog$),
       pin,
-      providerModelSupport: get(queuedProviderAdmissionInput$2)
+      providerModelSupport: (await get(queuedProviderAdmissionInput$2))
         .providerModelSupport,
       customSurface: () => {
         return get(queuedProviderAdmissionCustomSurface$2);
@@ -6426,8 +6362,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   );
   const queuedModelCommandsEnsureModelPolicy$ =
     orgModelPolicyInitializationInitializeModelPolicy$2;
-  const queuedModelCommandsAllowanceInput$ = computed((get) => {
-    return { orgId: get(queuedModelCommandsInput$2).orgId };
+  const queuedModelCommandsAllowanceInput$ = computed(async (get) => {
+    return { orgId: (await get(queuedModelCommandsInput$2)).orgId };
   });
   const capturedResolveUsageAllowance$ = command(
     async ({ get, set }, signal: AbortSignal) => {
@@ -6477,7 +6413,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     capturedResolveUsageAllowance$;
   const queuedModelCommandsInitializeModelPolicy$2 = command(
     async ({ get, set }, signal: AbortSignal) => {
-      const input = get(queuedModelCommandsInput$2);
+      const input = await get(queuedModelCommandsInput$2);
+      signal.throwIfAborted();
       const facts =
         input.userId === "__no_preference__"
           ? await get(queuedModelCommandsInitialFacts$)
@@ -6491,7 +6428,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     refreshUsageAllowance$: queuedModelCommandsRefreshUsageAllowance$2,
   };
   const {
-    internalInput$: queuedModelInternalInput$,
     internalPolicyFacts$: queuedModelInternalPolicyFacts$,
     selection$: queuedModelSelection$,
     capabilities$: queuedModelCapabilities$,
@@ -6511,9 +6447,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     refreshUsageAllowance$: queuedModelRefreshUsageAllowance$,
   } = queuedModelCommands;
   const queuedModelResolveQueuedModel$2 = command(
-    async ({ get, set }, input: QueuedModelInput, signal: AbortSignal) => {
+    async ({ get, set }, signal: AbortSignal) => {
       signal.throwIfAborted();
-      set(queuedModelInternalInput$, input);
       set(queuedModelInternalPolicyFacts$, null);
       const [selection] = await Promise.all([
         get(queuedModelSelection$),
@@ -6606,12 +6541,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         async () => {
           const context = await set(
             automationLaunchEffectsResolveQueuedModel$,
-            {
-              orgId: args.due.automation.orgId,
-              userId: args.due.automation.ownerUserId,
-              threadId: args.due.chatThreadId,
-              eventId: args.queueEventId,
-            },
             signal,
           );
           signal.throwIfAborted();
@@ -6854,7 +6783,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   const queuedAutomationAssemblerInternalEarlyAssembly$ =
     state<ChatQueueRunAssembly | null>(null);
   const {
-    internalHead$: initializeQueuedAutomationInternalHead$,
     event$: initializeQueuedAutomationEvent$,
     target$: initializeQueuedAutomationTarget$,
   } = queuedAutomationRunSources;
@@ -6875,7 +6803,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       runTiming: ApiDispatchTimingCollector,
       signal: AbortSignal,
     ): Promise<false> => {
-      set(initializeQueuedAutomationInternalHead$, head);
       set(
         internalTiming$,
         workflowAutomationTiming(runTiming, head.apiStartTime),
@@ -6903,7 +6830,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       head: ChatQueueHeadContext,
       signal: AbortSignal,
     ): Promise<AssembleWorkflowAutomationRunArgs | null> => {
-      set(initializeQueuedAutomationInternalHead$, head);
       set(queuedAutomationAssemblerInternalEarlyAssembly$, null);
       const unreadable = (message: string): ChatQueueRunAssembly => {
         return {
@@ -7532,9 +7458,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         return { command };
       }
       const providerType = pin.modelProvider;
-      await observeAgentRunPreCreateParallelStage("subscription-account", {
-        command,
-      });
       return await measureAgentRunPreCreate(
         timing,
         "api_dispatch_pre_create_agent_capture_subscription_account",
@@ -7712,7 +7635,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           return row;
         },
       );
-      await projectionIdentityReadHook.get()?.();
       return {
         identity:
           row === undefined
@@ -7961,7 +7883,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           return row;
         },
       );
-      await projectionIdentityReadHook.get()?.();
       return {
         identity:
           row === undefined
@@ -8245,14 +8166,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   const selectedCatalog$ = runtimeCatalogSelectionConnectorCatalog$;
   const preCreateConnectorCatalogConnectorCatalog$ = computed(
     async (get): Promise<RunConnectorCatalogSelection> => {
-      const [{ command }, bootstrap] = await Promise.all([
-        get(selectedIdentityInputIdentityInput$),
-        get(preCreateBootstrapMetadata$),
-      ]);
-      await observeAgentRunPreCreateParallelStage(
-        "post-authorization-context",
-        { command },
-      );
+      const bootstrap = await get(preCreateBootstrapMetadata$);
       return isEmptyRunConnectorScope(bootstrap)
         ? { kind: "empty" }
         : { kind: "scoped", selection: await get(selectedCatalog$) };
@@ -8984,13 +8898,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     if (!context.shouldResolve) {
       return null;
     }
-    const hold = observeRunContextParallelStage(
-      "model-provider",
-      context.input.args,
-    );
-    if (hold) {
-      await hold;
-    }
     return await context.input.timing.measure(
       "api_dispatch_prepare_context_resolve_model_provider",
       "nested",
@@ -9184,7 +9091,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     if (isEmptyRunConnectorScope(scope)) {
       return [];
     }
-    await observeRunConnectorAccountsRead();
     return await db
       .select({
         connectorId: connectors.id,
@@ -9337,7 +9243,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       if (isRouteError(selection)) {
         return selection;
       }
-      await observeRunContextParallelStage("connector-contexts", input.args);
       const {
         connectorCatalogSelection,
         connectorScope,
@@ -10177,7 +10082,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   });
   const candidates$ = computed(async (get) => {
     const { args } = await get(workflowInput$);
-    await observeRunContextParallelStage("official-workflow", args);
     const modelState = await get(modelState$);
     if (modelState === undefined || isRouteError(modelState)) {
       return [];
@@ -10382,9 +10286,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       if (!agent) {
         throw new Error("Agent disappeared after preparation authorization");
       }
-      await observeAgentRunPreCreateParallelStage("thread-session", {
-        command,
-      });
       const threadId = command.chatThreadId;
       const route = command.threadSessionRoute;
       if (!route) {
@@ -11739,15 +11640,11 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   );
   const runContextRuntime = { runtimeContext$: runRuntimeRuntimeContext$ };
   const runMemberUserTimezone$ = computed(async (get) => {
-    const input = await get(contextInput$);
-    await observeRunContextParallelStage("user-timezone", input.args);
     return selectedRunContextShared
       ? get(selectedRunContextShared.userTimezone$)
       : ((await get(runMemberSnapshot$)).member?.timezone ?? undefined);
   });
   const runMemberImageModel$ = computed(async (get) => {
-    const input = await get(contextInput$);
-    await observeRunContextParallelStage("image-model", input.args);
     const stored = (await get(runMemberSnapshot$)).member?.selectedImageModel;
     return isImageModelId(stored) ? stored : DEFAULT_IMAGE_MODEL;
   });
@@ -12459,27 +12356,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       );
     },
   );
-  const observeExecution$ = command(async ({ get }, signal: AbortSignal) => {
-    if (!(await get(selectionInput$))) {
-      signal.throwIfAborted();
-      return;
-    }
-    const { command: selected } = await get(preCreateInput$);
-    signal.throwIfAborted();
-    await observeAgentRunPiExecutionSnapshot({
-      userId: selected.auth.userId,
-      orgId: selected.auth.orgId,
-      chatThreadId: selected.chatThreadId,
-      piExecution: selectedRunPiExecution(selected),
-      threadSessionCliAgentType: selected.threadSessionRoute?.cliAgentType,
-    });
-    signal.throwIfAborted();
-  });
   const runIdentity$ = computed(async (get) => {
-    const ids = get(internalRunIds$);
-    if (!ids) {
-      throw new Error("Claim has no run identity");
-    }
+    const ids = get(runIds$);
     if (!(await get(selectionInput$))) {
       return null;
     }
@@ -12590,10 +12468,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     },
   );
   const prepareCallbacks$ = command(async ({ get }, signal: AbortSignal) => {
-    const identity = get(internalRunIds$);
-    if (!identity) {
-      throw new Error("Claim has no run identity");
-    }
+    const identity = get(runIds$);
     const [callbacks, bootstrap] = await Promise.all([
       get(callbackInputs$),
       get(preCreateBootstrapMetadata$),
@@ -12858,7 +12733,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         await set(rejectChatQueueHead$, { head, rejection }, signal);
         return null;
       }
-      set(internalRunIds$, { runId: randomUUID(), newSessionId: randomUUID() });
       return head;
     },
   );
@@ -12909,7 +12783,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         set(prepareCallbacks$, signal),
         get(assembly$),
         get(runIdentity$),
-        set(observeExecution$, signal),
         get(runMemberSnapshot$),
         get(runDisabledPaidToolsSnapshot$),
         get(runEnvironmentSnapshot$),
