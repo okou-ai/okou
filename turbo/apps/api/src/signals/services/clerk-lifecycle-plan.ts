@@ -34,21 +34,62 @@ export type ClerkDeletionScope =
   | { readonly kind: "organization"; readonly orgId: string }
   | { readonly kind: "user"; readonly userId: string };
 
-export const removedConversationGroupSchema = z.object({
-  hash: z.string().nullable(),
-  references: z.number().int().nonnegative(),
+export const releasedConversationSweepSchema = z.object({
+  deletedConversations: z.number().int().nonnegative(),
+  releasedHashes: z.number().int().nonnegative(),
+  releasedReferences: z.number().int().nonnegative(),
+  matchedHashes: z.number().int().nonnegative(),
 });
+type ReleasedConversationSweep = z.infer<
+  typeof releasedConversationSweepSchema
+>;
 
-/** Its owner retains the exact Run parents before deleting any children. */
-export function removeRunConversationsSql(runIds: readonly string[]) {
+/**
+ * Delete the target Runs' conversations and release their blob references in
+ * ONE statement, so no interleaving writer can observe a deleted conversation
+ * whose reference is still held. Each decrement is conditional arithmetic on
+ * the current row version; a missing or insufficient blob leaves its hash
+ * unmatched, which the caller rejects to roll back the whole transaction.
+ * No explicit row lock is taken: the Run rows stay unlocked until the
+ * conversation-free DELETE below.
+ */
+export function releaseRunConversationsSql(runIds: readonly string[]) {
   return sql`WITH removed AS (
     DELETE FROM ${conversations}
     WHERE ${conversations.runId} = ANY(${sql.param(runIds)}::uuid[])
     RETURNING ${conversations.cliAgentSessionHistoryHash} AS hash
-  ) SELECT hash, count(*)::int AS "references" FROM removed GROUP BY hash`;
+  ), release_plan AS (
+    SELECT hash, count(*)::int AS release_count FROM removed
+    WHERE hash IS NOT NULL GROUP BY hash
+  ), released AS (
+    UPDATE ${blobs} SET ref_count = ${blobs.refCount} - release_plan.release_count
+    FROM release_plan
+    WHERE ${and(eq(blobs.hash, sql`release_plan.hash`), gte(blobs.refCount, sql`release_plan.release_count`))}
+    RETURNING ${blobs.hash}
+  ) SELECT
+    (SELECT count(*)::int FROM removed) AS "deletedConversations",
+    (SELECT count(*)::int FROM release_plan) AS "releasedHashes",
+    (SELECT coalesce(sum(release_count), 0)::int FROM release_plan) AS "releasedReferences",
+    (SELECT count(*)::int FROM released) AS "matchedHashes"`;
 }
 
-export function lockedRunCatalogCleanupSql(runIds: readonly string[]) {
+export function requireReleasedConversationReferences(
+  rows: readonly ReleasedConversationSweep[],
+): ConversationDeletionReceipt {
+  const [row] = rows;
+  if (!row || row.matchedHashes !== row.releasedHashes) {
+    throw new ClerkReferenceAccountingError(
+      "Conversation history reference accounting failed: missing or insufficient blob references",
+    );
+  }
+  return {
+    deletedConversations: row.deletedConversations,
+    releasedReferences: row.releasedReferences,
+    releasedHashes: row.releasedHashes,
+  };
+}
+
+export function runCatalogCleanupSql(runIds: readonly string[]) {
   const ownedFiles = sql`SELECT ${runUploadedFiles.id} FROM ${runUploadedFiles}
     WHERE ${runUploadedFiles.runId} = ANY(${sql.param(runIds)}::uuid[])`;
   return [
@@ -66,8 +107,18 @@ export function lockedRunCatalogCleanupSql(runIds: readonly string[]) {
   ];
 }
 
-export function lockedRunDeleteCondition(runIds: readonly string[]) {
-  return eq(agentRuns.id, sql`ANY(${sql.param(runIds)}::uuid[])`);
+/**
+ * Only delete Runs that have no conversation, so the Run cascade never drops a
+ * conversation (and its blob reference) this deletion did not release. A Run
+ * that gained a conversation after the release statement survives this DELETE
+ * and is picked up by the next bounded sweep.
+ */
+export function conversationFreeRunDeleteSql(runIds: readonly string[]) {
+  return sql`DELETE FROM ${agentRuns}
+    WHERE ${agentRuns.id} = ANY(${sql.param(runIds)}::uuid[])
+    AND NOT EXISTS (
+      SELECT 1 FROM ${conversations} WHERE ${conversations.runId} = ${agentRuns.id}
+    )`;
 }
 
 /** Remove generation fences before ordered heads and artifact cascades. */
@@ -127,67 +178,30 @@ export function revokeAgentDeliveriesSql(agentIds: readonly string[]) {
   )`;
 }
 
-type RemovedConversationGroup = z.infer<typeof removedConversationGroupSchema>;
-export function conversationReleasePlan(
-  rows: readonly RemovedConversationGroup[],
-) {
-  const references = rows
-    .flatMap((row) => {
-      return row.hash === null
-        ? []
-        : [{ hash: row.hash, release_count: row.references }];
-    })
-    .sort((a, b) => {
-      return a.hash.localeCompare(b.hash);
-    });
+export interface ConversationDeletionReceipt {
+  readonly deletedConversations: number;
+  readonly releasedReferences: number;
+  readonly releasedHashes: number;
+}
+
+export function emptyConversationDeletionReceipt(): ConversationDeletionReceipt {
+  return { deletedConversations: 0, releasedReferences: 0, releasedHashes: 0 };
+}
+
+export function addConversationDeletionReceipts(
+  a: ConversationDeletionReceipt,
+  b: ConversationDeletionReceipt,
+): ConversationDeletionReceipt {
   return {
-    references,
-    deletedConversations: rows.reduce((sum, row) => {
-      return sum + row.references;
-    }, 0),
+    deletedConversations: a.deletedConversations + b.deletedConversations,
+    releasedReferences: a.releasedReferences + b.releasedReferences,
+    releasedHashes: a.releasedHashes + b.releasedHashes,
   };
 }
-type ConversationReleasePlan = ReturnType<typeof conversationReleasePlan>;
 
-export function releaseConversationBlobsSql(plan: ConversationReleasePlan) {
-  return sql`UPDATE ${blobs} SET ref_count = ${blobs.refCount} - removed.release_count
-    FROM jsonb_to_recordset(${JSON.stringify(plan.references)}::jsonb)
-      AS removed(hash text, release_count integer)
-    WHERE ${and(eq(blobs.hash, sql`removed.hash`), gte(blobs.refCount, sql`removed.release_count`))}`;
-}
-
-export function requireConversationReferences(
-  actual: number,
-  plan: ConversationReleasePlan,
-) {
-  if (actual !== plan.references.length) {
-    throw new ClerkReferenceAccountingError(
-      "Conversation history reference accounting failed: missing or insufficient blob references",
-    );
-  }
-}
-export function conversationDeletionReceipt(plan: ConversationReleasePlan) {
-  return {
-    deletedConversations: plan.deletedConversations,
-    releasedReferences: plan.references.reduce((total, entry) => {
-      return total + entry.release_count;
-    }, 0),
-    releasedHashes: plan.references.length,
-  };
-}
-export function requireDeletedRunCount(
-  actual: number,
-  runIds: readonly string[],
-) {
-  if (actual !== runIds.length) {
-    throw new ClerkReferenceAccountingError(
-      "Conversation deletion lost a locked run",
-    );
-  }
-}
-
-export function conversationBlobHashes(plan: ConversationReleasePlan) {
-  return plan.references.map((entry) => {
-    return entry.hash;
-  });
+/** Late Runs or conversations kept appearing; roll back and let the job retry. */
+export function throwUnconvergedRunSweep(): never {
+  throw new ClerkReferenceAccountingError(
+    "Conversation deletion did not converge: target runs kept gaining conversations",
+  );
 }

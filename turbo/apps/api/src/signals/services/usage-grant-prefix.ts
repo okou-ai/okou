@@ -129,6 +129,11 @@ export function usageGrossByUser(
   }
   return result;
 }
+/**
+ * Plain read of the prepared prefix. It only rejects an obviously stale
+ * prefix early; the authority is the conditional decrement in
+ * memberGrantDeductionsSql, which requires each row's observed xmin.
+ */
 export function preparedMemberGrantsQuery(
   orgId: string,
   prefix: PreparedUsageGrantPrefix,
@@ -156,7 +161,6 @@ export function preparedMemberGrantsQuery(
       asc(usagePackCreditGrants.expiresAt),
       asc(usagePackCreditGrants.id),
     )
-    .for("update")
     .as("prepared_usage_grants");
 }
 function frontierWhere(frontier: UsageGrantFrontier) {

@@ -1750,6 +1750,111 @@ describe("POST /api/webhooks/gmail", () => {
     ]);
   });
 
+  it("binds an unbound Gmail automation when the member's first account connects", async () => {
+    configureGmailEnv();
+    const runnerGroup = runsApi.configureRunnerGroup();
+    const watch = configureGmailWatchLifecycleMock();
+    const { actor, agentId, workflowId } = await setupFixture();
+    await updateFeatureSwitchesForUser(context, actor, {});
+    await configureWorkspaceModelProvider(actor);
+    // Creation requires a connected account, so the unbound state an
+    // automation reaches when it races the member's first account connect is
+    // built through its documented equivalent: removing the only account
+    // leaves the enabled automation without an account.
+    const initialConnectorId = await connectGmail(
+      actor,
+      uniqueGmailEmail(),
+      "gmail-initial-account",
+      undefined,
+      agentId,
+    );
+    const created = await accept(
+      automationsClient().create({
+        headers: authHeaders(actor),
+        params: { workflowId },
+        body: {
+          kind: "event",
+          eventType: "gmail-new-message",
+          eventConfig: { provider: "gmail", event: "new_message" },
+        },
+      }),
+      [201],
+    );
+    const chatThreadId = requireAutomationChatThreadId(created.body);
+    await configureAutomationThreadModel(actor, chatThreadId);
+    await accept(
+      connectorAccountsClient().delete({
+        headers: authHeaders(actor),
+        params: { connectionId: initialConnectorId },
+        body: { target: { kind: "builtin", connectorSlug: "gmail" } },
+      }),
+      [200],
+    );
+    await expect(
+      connectorsApi.listBuiltinConnectorAccounts(actor, "gmail"),
+    ).resolves.toStrictEqual([]);
+    await expect(readAutomation(actor, created.body.id)).resolves.toMatchObject(
+      { enabled: true, lastRunAt: null },
+    );
+
+    const firstEmail = uniqueGmailEmail();
+    const firstConnectorId = await addGmailAccount(actor, {
+      gmailEmail: firstEmail,
+      subject: "gmail-first-account",
+      accessToken: "gmail-first-access-token",
+      displayName: "First Gmail",
+      agentId,
+    });
+    await expect(
+      connectorsApi.listBuiltinConnectorAccounts(actor, "gmail"),
+    ).resolves.toStrictEqual([
+      expect.objectContaining({ id: firstConnectorId, isDefault: true }),
+    ]);
+    expect(watch.watchedTokens.at(-1)).toBe("Bearer gmail-first-access-token");
+
+    configureGmailMessageMocks(firstEmail, "gmail-first-access-token");
+    const delivered = await postGmailWebhook(
+      gmailPushBody({
+        emailAddress: firstEmail,
+        historyId: 101,
+        messageId: "pubsub-first-account",
+      }),
+    );
+    expectResponseStatus(delivered, 200);
+    expect(delivered.body).toStrictEqual({
+      success: true,
+      watchStates: 1,
+      dispatched: 1,
+      duplicates: 0,
+    });
+    await flushWaitUntilForTest();
+    await expect(readAutomation(actor, created.body.id)).resolves.toMatchObject(
+      { enabled: true, lastRunAt: expect.any(String) },
+    );
+    const [runId] = await workflowRunIds(actor, chatThreadId);
+    if (!runId) {
+      throw new Error(
+        "Expected the rebound Gmail automation to dispatch a run",
+      );
+    }
+    await runsApi.heartbeatRunner(runnerGroup);
+    const claim = await runsApi.claimRunnerJob(runId);
+    expectGmailEventContextInPrompt(claim.prompt, {
+      automationId: created.body.id,
+      event: "new_message",
+      emailAddress: firstEmail,
+      messageId: "msg-1",
+      threadId: "gmail-thread-1",
+      from: "Customer Example <customer@example.com>",
+      to: [firstEmail],
+      cc: [],
+      subject: "Invoice needs a reply",
+    });
+    expect(
+      Object.values(claim.secretConnectorMetadataMap ?? {}),
+    ).toContainEqual(expect.objectContaining({ sourceId: firstConnectorId }));
+  });
+
   it("dispatches label applied events after refreshing a recreated label id", async () => {
     const gmailEmail = uniqueGmailEmail();
     const runnerGroup = runsApi.configureRunnerGroup();

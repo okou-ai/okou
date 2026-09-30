@@ -3,7 +3,12 @@ import { usagePackSubscriptions } from "@okouai/db/schema/usage-pack-subscriptio
 import { and, eq } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 
-/** Keep the subscription parent before the wallet and any grant/claim rows. */
+/**
+ * Plain existence read of the subscription parent. The invoice fulfillment
+ * row the transaction inserts references it (FOREIGN KEY, ON DELETE CASCADE),
+ * so the implicit key-share lock of that insert keeps the parent for the
+ * commit, and its primary key on the Stripe invoice makes publication unique.
+ */
 export function grantSubscriptionOwnershipQuery(
   orgId: string,
   subscriptionId: string,
@@ -17,16 +22,20 @@ export function grantSubscriptionOwnershipQuery(
         eq(usagePackSubscriptions.orgId, orgId),
       ),
     )
-    .for("update")
     .as("grant_subscription_parent");
 }
 
+/**
+ * Plain existence read of the wallet. Member-grant publication no longer has
+ * to exclude settlement through this row: settlement decrements grants with
+ * conditional xmin writes, and a grant published after its unseen-prefix read
+ * is ordered after that settlement (settle, then publish).
+ */
 export function grantWalletOwnershipQuery(orgId: string) {
   return new QueryBuilder()
     .select({ orgId: orgMetadata.orgId })
     .from(orgMetadata)
     .where(eq(orgMetadata.orgId, orgId))
-    .for("update")
     .as("grant_wallet_parent");
 }
 

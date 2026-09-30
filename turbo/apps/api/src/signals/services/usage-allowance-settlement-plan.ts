@@ -386,6 +386,16 @@ export function allowanceConsumptionSql(
     WHERE ${orgUsageAllowanceWindows.id} = consumption.id`;
 }
 
+/**
+ * Kept deliberately (not replaceable by a conditional write alone): this row
+ * lock is the shared creation protocol for allowance windows. Settlement,
+ * run availability and allowance availability all create short/weekly windows
+ * after observing that no covering window exists, and windows have no
+ * uniqueness/exclusion constraint that would reject an overlapping duplicate.
+ * Window consumption is planned from the observed consumed_units. Replacing it
+ * needs every window creator to switch together to a conditional entitlement
+ * revision (or an exclusion constraint), which is outside this settlement.
+ */
 export function entitlementQuery(orgId: string) {
   return new QueryBuilder()
     .select(allowanceEntitlementSelection())

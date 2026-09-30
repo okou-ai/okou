@@ -2,9 +2,10 @@ import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { command } from "ccstate";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
+import { settle } from "../utils";
 import { expireOrgCredits$ } from "./org-credit-expiration.service";
 import {
   orgCreditInvoiceGrantSql,
@@ -21,6 +22,8 @@ import {
   legacyPlanMemberPackQuery,
   legacyPlanOmittedTrialQuery,
   legacyPlanTrialHistoryQuery,
+  LegacyPlanInvoiceConflict,
+  legacyPlanInvoiceWalletWhere,
   replacedLegacyPlanSubscriptionId,
   type LegacyPlanInvoice,
 } from "./legacy-plan-invoice";
@@ -46,8 +49,7 @@ const commitLegacyPlanInvoice$ = command(
       const [wallet] = await tx
         .select()
         .from(orgMetadata)
-        .where(eq(orgMetadata.orgId, args.orgId))
-        .for("update");
+        .where(eq(orgMetadata.orgId, args.orgId));
       if (!wallet || legacyPlanInvoiceAdmission(wallet, args) === "rejected") {
         return {
           processed: false,
@@ -59,6 +61,20 @@ const commitLegacyPlanInvoice$ = command(
         legacyPlanInvoiceAdmission(wallet, args) === "publish";
       let writeEntitlement =
         writeMetadata || legacyPlanEntitlementIsCurrent(wallet, args);
+      if (writeEntitlement) {
+        // The admission decision is a function of these wallet columns. This
+        // conditional transition is the linearization point: it succeeds only
+        // if they are unchanged, and its implicit row lock orders any later
+        // plan writer after this commit. Zero rows rejects the stale read.
+        const [claimed] = await tx
+          .update(orgMetadata)
+          .set({ updatedAt: sql`${orgMetadata.updatedAt}` })
+          .where(legacyPlanInvoiceWalletWhere(args.orgId, wallet))
+          .returning({ orgId: orgMetadata.orgId });
+        if (!claimed) {
+          throw new LegacyPlanInvoiceConflict(args.invoiceId);
+        }
+      }
       let cancelReplaced = true;
       if (writeMetadata) {
         const [pending] = await tx
@@ -177,15 +193,22 @@ export const publishLegacyPlanInvoice$ = command(
             .orderBy(asc(creditExpiresRecord.id))
         : [];
     signal.throwIfAborted();
-    return await set(
-      commitLegacyPlanInvoice$,
-      {
-        invoice,
-        trialIds: trialRows.map(({ id }) => {
-          return id;
-        }),
-      },
-      signal,
-    );
+    const trialIds = trialRows.map(({ id }) => {
+      return id;
+    });
+    for (let attempt = 0; ; attempt++) {
+      const outcome = await settle(
+        set(commitLegacyPlanInvoice$, { invoice, trialIds }, signal),
+        signal,
+      );
+      if (outcome.ok) {
+        return outcome.value;
+      }
+      // The whole commit rolled back; decide again from the current wallet.
+      if (outcome.error instanceof LegacyPlanInvoiceConflict && attempt < 3) {
+        continue;
+      }
+      throw outcome.error;
+    }
   },
 );

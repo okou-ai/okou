@@ -12,7 +12,14 @@ export interface LegacyMorningBriefSettlement {
   readonly at: Date;
 }
 
-/** Final values of a legacy settlement, including explicit native revocation. */
+/**
+ * Final values of a legacy settlement, including explicit native revocation.
+ *
+ * Epoch alone does not fence a schedule or timezone edit, which deliberately
+ * keeps the epoch. The choice and recurrence the settlement was computed from
+ * are therefore part of the predicate, so a writer that did not lock the row
+ * gets zero rows instead of overwriting a concurrent edit.
+ */
 export function settleLegacyMorningBriefSql(
   lineage: MorningBriefLegacyLineage,
   current: MorningBriefNativeScheduleRow,
@@ -29,6 +36,9 @@ export function settleLegacyMorningBriefSql(
         updated_at = ${args.at}
       WHERE org_id = ${lineage.orgId} AND user_id = ${lineage.userId}
         AND owner_epoch = ${current.ownerEpoch} AND phase = 'legacy'
+        AND enabled = ${current.enabled}
+        AND cron_expression IS NOT DISTINCT FROM ${current.cronExpression}
+        AND timezone = ${current.timezone}
         AND legacy_workflow_id = ${lineage.workflowId}::uuid
         AND legacy_automation_id = ${lineage.automationId}::uuid
       RETURNING owner_epoch

@@ -1,16 +1,24 @@
 import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { command } from "ccstate";
-import { asc, eq } from "drizzle-orm";
+import { asc } from "drizzle-orm";
+import { parseRawRows } from "../../lib/db-raw-rows";
+import { safeSqlStateCode } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
+import { settle } from "../utils";
 import {
   atomicOrgCreditExpirationSql,
   boundedOrgCreditExpirationSql,
   expiredOrgCreditsWhere,
-  omittedOrgCreditExpirationQuery,
+  OrgCreditExpirationConflict,
+  orgCreditExpirationOutcome,
+  orgCreditExpirationOutcomeRow,
   ORG_CREDIT_EXPIRATION_BATCH_SIZE,
+  requireCompleteOrgCreditExpiration,
 } from "./org-credit-expiration";
+
+/** Bounded re-reads after a lost conditional clear before surfacing it. */
+const ORG_CREDIT_EXPIRATION_CONFLICT_RETRIES = 3;
 
 /** Business recovery for a wallet writer that found unfinished expiration. */
 export const expireOrgCredits$ = command(
@@ -27,6 +35,7 @@ export const expireOrgCreditsAt$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     const db = set(writeDb$);
+    let conflicts = 0;
     while (true) {
       const prepared = await db
         .select({ id: creditExpiresRecord.id })
@@ -44,35 +53,57 @@ export const expireOrgCreditsAt$ = command(
       const ids = prepared.map(({ id }) => {
         return id;
       });
-      const exists = await db.transaction(async (tx) => {
-        const [wallet] = await tx
-          .select({ orgId: orgMetadata.orgId })
-          .from(orgMetadata)
-          .where(eq(orgMetadata.orgId, args.orgId))
-          .for("update");
-        if (!wallet) {
-          return false;
-        }
-        const [omitted] = await tx
-          .select()
-          .from(omittedOrgCreditExpirationQuery(args.orgId, args.at, ids));
-        if (omitted) {
-          // Pre-R1 adders can add between partial clamps. Until those writers have
-          // drained, the incomplete cohort must commit one full clamp instead.
-          // This branch runs before a finite batch has changed any amount.
-          await tx.execute(atomicOrgCreditExpirationSql(args.orgId, args.at));
-        } else {
-          // Re-read remaining amounts/expiry under row ownership in this statement;
-          // never apply a prepared absolute balance or an observed lot amount.
-          await tx.execute(
-            boundedOrgCreditExpirationSql(args.orgId, args.at, ids),
+      // No explicit row lock: each statement clears lots conditionally on
+      // their observed versions and clamps the wallet with atomic arithmetic.
+      // A short clear throws inside the transaction, rolling the clamp back,
+      // and this loop reads the cohort again.
+      const outcome = await settle(
+        db.transaction(async (tx) => {
+          const bounded = orgCreditExpirationOutcome(
+            parseRawRows(
+              orgCreditExpirationOutcomeRow,
+              await tx.execute(
+                boundedOrgCreditExpirationSql(args.orgId, args.at, ids),
+              ),
+            ),
           );
-        }
-        signal.throwIfAborted();
-        return true;
-      });
+          if (!bounded.wallet) {
+            return false;
+          }
+          if (bounded.omitted) {
+            // Pre-R1 adders can add between partial clamps. Until those
+            // writers have drained, the incomplete cohort must commit one full
+            // clamp instead. The bounded statement changed nothing here.
+            const atomic = orgCreditExpirationOutcome(
+              parseRawRows(
+                orgCreditExpirationOutcomeRow,
+                await tx.execute(
+                  atomicOrgCreditExpirationSql(args.orgId, args.at),
+                ),
+              ),
+            );
+            requireCompleteOrgCreditExpiration(args.orgId, atomic);
+          } else {
+            requireCompleteOrgCreditExpiration(args.orgId, bounded);
+          }
+          signal.throwIfAborted();
+          return true;
+        }),
+        signal,
+      );
       signal.throwIfAborted();
-      if (!exists) {
+      if (!outcome.ok) {
+        if (
+          (outcome.error instanceof OrgCreditExpirationConflict ||
+            safeSqlStateCode(outcome.error) === "40P01") &&
+          conflicts < ORG_CREDIT_EXPIRATION_CONFLICT_RETRIES
+        ) {
+          conflicts += 1;
+          continue;
+        }
+        throw outcome.error;
+      }
+      if (!outcome.value) {
         return;
       }
     }

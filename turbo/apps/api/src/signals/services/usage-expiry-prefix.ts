@@ -95,7 +95,10 @@ export function usageExpiryScope(
   };
 }
 
-/** Expiration admission has already established that no expired remainder exists. */
+/**
+ * Expiration admission has already established that no expired remainder
+ * exists. Plain read; expiryLotDeductionsSql re-checks each observed xmin.
+ */
 export function expiryLotsQuery(scope: UsageExpiryScope) {
   return new QueryBuilder()
     .select(expiryPrefixSelection())
@@ -113,7 +116,6 @@ export function expiryLotsQuery(scope: UsageExpiryScope) {
       ),
     )
     .orderBy(asc(creditExpiresRecord.expiresAt), asc(creditExpiresRecord.id))
-    .for("update")
     .as("settlement_expiry_lots");
 }
 export function unseenExpiryQuery(scope: UsageExpiryScope) {

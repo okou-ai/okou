@@ -45,14 +45,16 @@ import {
   socialJobQuery,
   socialClaimUnavailable,
   socialPlan,
-  socialWhere,
   socialValues,
+  socialSettledWhere,
+  requireSocialSettlement,
   type SocialSettlementClaim,
 } from "./social-data-settlement-plan";
 import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { command } from "ccstate";
+import { safeSqlStateCode } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import { usagePricingResolution$ } from "../context/usage-pricing-resolution";
@@ -67,8 +69,8 @@ import {
   planMemberGrantDeductions,
   memberGrantDeductionsSql,
   expiryLotDeductionsSql,
+  requireConditionalDeductions,
   orgDebitPlan,
-  walletQuery,
   completeSettlementReceipt,
   settlementDefaultPlan,
   settlementReceipt,
@@ -89,6 +91,19 @@ import {
   type PreparedUsageAllowanceRefresh,
 } from "./usage-allowance.service";
 
+/**
+ * The whole settlement transaction rolled back, so it is safe to prepare again
+ * from a fresh read: a conditional write reported a stale snapshot, or
+ * PostgreSQL chose this transaction as a deadlock victim against a writer that
+ * acquires the same rows' implicit locks in another order.
+ */
+function retryableSettlementConflict(error: unknown) {
+  return (
+    error instanceof UsageSettlementSnapshotConflict ||
+    safeSqlStateCode(error) === "40P01"
+  );
+}
+
 interface UsageSettlementArgs {
   readonly orgId: string;
   readonly idempotencyKeys?: readonly string[];
@@ -100,13 +115,17 @@ interface SettlementBatchArgs extends UsageSettlementArgs {
   readonly batch: PreparedUsageBatch;
 }
 
-/** All financial rows commit together; only plain values leave this command. */
+/**
+ * All financial rows commit together; only plain values leave this command.
+ * Parents precede usage/allocation FK rows and the entitlement, as in deletion
+ * and launch. Grant and lot deductions are conditional on the rows read and
+ * the wallet debit is atomic arithmetic; a short row count rejects the batch.
+ */
 const commitUsageBatch$ = command(
   async ({ set }, args: SettlementBatchArgs, signal: AbortSignal) => {
     const { orgId, refresh, batch } = args;
-    const db = set(writeDb$);
     const { startedAt, work } = settlementObservation(batch.prices.length);
-    const result = await db.transaction(async (tx) => {
+    const result = await set(writeDb$).transaction(async (tx) => {
       await tx.execute(usageEventCompactionLockSql("shared"));
       work.lockWaitMs = Math.round(performance.now() - startedAt);
       const [job] = args.social
@@ -135,14 +154,10 @@ const commitUsageBatch$ = command(
         }
         await tx.execute(managedUsagePublicationSql(managed, run, attribution));
       }
-      // Parent ownership precedes usage and its allocation FK rows, matching
-      // deletion, launch activation and compaction. Own parents before the
-      // entitlement as well: launch and cleanup can already own those Runs.
       const key = managed?.idempotencyKey;
       const parents = await tx
         .select()
         .from(pendingParentsQuery(orgId, batch.events, key));
-      const [wallet] = await tx.select().from(walletQuery(orgId));
       const [entitlement] = await tx.select().from(entitlementQuery(orgId));
       const at = nowDate();
       work.orgLockWaitMs = settlementOrgLockWaitMs(startedAt, work.lockWaitMs);
@@ -154,7 +169,7 @@ const commitUsageBatch$ = command(
             .returning()
         : [];
       requireCompleteUsageClaim(batch.events.length, events.length, !!job);
-      work.pendingEvents = events.length;
+      Object.assign(work, { pendingEvents: events.length });
       if (hasNoStandaloneUsage(events, args.social)) {
         return emptySettlementReceipt(work);
       }
@@ -183,13 +198,12 @@ const commitUsageBatch$ = command(
         .from(unseenGrantPrefixQuery(orgId, prefix, at));
       requireCurrentGrantPrefix(prefix, grants, unseenGrant);
       const deduction = planMemberGrantDeductions(charges.byUser, grants);
-      await tx.execute(memberGrantDeductionsSql(deduction.updates));
-      Object.assign(work, deduction.work);
+      const grantSql = memberGrantDeductionsSql(deduction.updates, at);
+      const granted = (await tx.execute(grantSql)).rowCount;
+      requireConditionalDeductions("grant", deduction.updates, granted);
       const amount = deduction.sharedCredits;
-      const [pendingExpiry] =
-        amount > 0
-          ? await tx.select().from(pendingOrgCreditExpirationQuery(orgId, at))
-          : [];
+      const pending = pendingOrgCreditExpirationQuery(orgId, at);
+      const [pendingExpiry] = amount > 0 ? await tx.select().from(pending) : [];
       requireNoPendingOrgCreditExpiration(orgId, pendingExpiry);
       const lotScope = usageExpiryScope(orgId, batch.lots, amount, at);
       const lots =
@@ -197,9 +211,11 @@ const commitUsageBatch$ = command(
       const [unseenLot] =
         amount > 0 ? await tx.select().from(unseenExpiryQuery(lotScope)) : [];
       const expiry = planCurrentExpiryDeduction(lotScope, lots, unseenLot);
-      await tx.execute(expiryLotDeductionsSql(expiry.updates));
-      Object.assign(work, expiry.work);
-      let afterCredits = wallet?.credits ?? 0;
+      const lotSql = expiryLotDeductionsSql(expiry.updates);
+      const lotted = (await tx.execute(lotSql)).rowCount;
+      requireConditionalDeductions("expiry lot", expiry.updates, lotted);
+      Object.assign(work, deduction.work, expiry.work);
+      let afterCredits = 0;
       if (amount > 0) {
         const debit = orgDebitPlan(orgId, amount, expiry.expired, at);
         const [debited] = await tx
@@ -221,14 +237,15 @@ const commitUsageBatch$ = command(
         const [receipt] = managed
           ? await tx.select().from(receiptQuery(job.usageIdempotencyKey))
           : [];
-        await tx
+        const settled = await tx
           .update(socialDataJobs)
           .set(socialValues(managed, receipt, at))
-          .where(socialWhere(args.social));
+          .where(socialSettledWhere(args.social, job))
+          .returning({ id: socialDataJobs.id });
+        requireSocialSettlement(settled.length);
       }
       signal.throwIfAborted();
-      const committed = { amount, wallet, expiry, work, afterCredits };
-      return settlementReceipt(orgId, priced, committed);
+      return settlementReceipt(orgId, priced, { amount, work, afterCredits });
     });
     signal.throwIfAborted();
     return { result, startedAt };
@@ -255,10 +272,7 @@ export const settleOrgUsage$ = command(
           await set(expireOrgCredits$, args.orgId, signal);
           continue;
         }
-        if (
-          outcome.error instanceof UsageSettlementSnapshotConflict &&
-          attempt < 3
-        ) {
+        if (retryableSettlementConflict(outcome.error) && attempt < 3) {
           continue;
         }
         throw outcome.error;

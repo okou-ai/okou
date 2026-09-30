@@ -9,7 +9,9 @@ import { morningBriefScheduleClaims } from "@okouai/db/schema/morning-brief-sche
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
+import { pgTextDecoder } from "../../lib/db-structured-result";
 import type { ReadonlyDb } from "../external/db";
+import { settle } from "../utils";
 import type { MorningBriefMemberIdentity } from "./morning-brief-enrollment-data.service";
 import { calculateNextRun } from "./time-automation";
 
@@ -126,6 +128,92 @@ export async function lockMorningBriefNativeScheduleForWrite(
   }
   await lockAbsentMorningBriefOwnerKey(tx, owner);
   return await lockMorningBriefNativeSchedule(tx, owner);
+}
+
+/** A native row together with the exact row version it was read at. */
+export interface MorningBriefNativeScheduleSnapshot {
+  readonly row: MorningBriefNativeScheduleRow;
+  readonly rowVersion: string;
+}
+
+async function readMorningBriefNativeScheduleSnapshot(
+  tx: MorningBriefNativeWriter,
+  owner: MorningBriefMemberIdentity,
+): Promise<MorningBriefNativeScheduleSnapshot | undefined> {
+  const [snapshot] = await tx
+    .select({
+      row: morningBriefNativeSchedules,
+      rowVersion: sql`${morningBriefNativeSchedules}.xmin::text`.mapWith(
+        pgTextDecoder,
+      ),
+    })
+    .from(morningBriefNativeSchedules)
+    .where(morningBriefScheduleWhere(owner))
+    .limit(1);
+  return snapshot;
+}
+
+/**
+ * Read durable authority for a writer that commits with a conditional UPDATE.
+ *
+ * No row lock is taken. A materialized row is read with its row version, and
+ * the writer's UPDATE must carry {@link morningBriefNativeRowVersionCondition}
+ * so a concurrent commit turns it into zero rows instead of a lost update.
+ * While the row is still absent the pre-existing owner key is taken, so first
+ * materialization cannot appear under a writer that classified it as absent.
+ */
+export async function readMorningBriefNativeScheduleForWrite(
+  tx: MorningBriefNativeWriter,
+  owner: MorningBriefMemberIdentity,
+): Promise<MorningBriefNativeScheduleSnapshot | undefined> {
+  const existing = await readMorningBriefNativeScheduleSnapshot(tx, owner);
+  if (existing !== undefined) {
+    return existing;
+  }
+  await lockAbsentMorningBriefOwnerKey(tx, owner);
+  return await readMorningBriefNativeScheduleSnapshot(tx, owner);
+}
+
+/** The native row is still exactly the version a writer read. */
+export function morningBriefNativeRowVersionCondition(rowVersion: string) {
+  return sql`${morningBriefNativeSchedules}.xmin::text = ${rowVersion}`;
+}
+
+/**
+ * A conditional Morning Brief write lost to a concurrent commit.
+ *
+ * Thrown inside the writer's transaction so every write it already made rolls
+ * back; {@link withFreshMorningBriefSnapshot} then re-reads current state.
+ */
+export class MorningBriefSnapshotChanged extends Error {}
+
+const MORNING_BRIEF_SNAPSHOT_ATTEMPTS = 5;
+
+/**
+ * Re-run a read-compute-conditional-write transaction from fresh state.
+ *
+ * This is not a lock retry: each attempt re-reads the current rows and
+ * recomputes from them, and an attempt only repeats when another writer
+ * committed a change to exactly the rows it read. The bound turns sustained
+ * contention into an error instead of an unbounded loop.
+ */
+export async function withFreshMorningBriefSnapshot<T>(
+  attempt: () => Promise<T>,
+  signal?: AbortSignal,
+): Promise<T> {
+  for (let count = 1; ; count += 1) {
+    signal?.throwIfAborted();
+    const result = await settle(attempt(), signal);
+    if (result.ok) {
+      return result.value;
+    }
+    if (
+      !(result.error instanceof MorningBriefSnapshotChanged) ||
+      count >= MORNING_BRIEF_SNAPSHOT_ATTEMPTS
+    ) {
+      throw result.error;
+    }
+  }
 }
 
 /** The selected legacy row a reconciliation, claim or callback may mutate. */

@@ -83,6 +83,12 @@ export function checkObservationTimes(
   }
 }
 
+/**
+ * The SHARE lock is kept (pre-existing on main, moved here): admission checks
+ * observation times against completed_at, and billability against trigger and
+ * model provider, three times across the transaction. A lock-free form needs a
+ * publication conditional on the Run's current completion window.
+ */
 export function xUsageRunQuery(owner: Owner) {
   return new QueryBuilder()
     .select({

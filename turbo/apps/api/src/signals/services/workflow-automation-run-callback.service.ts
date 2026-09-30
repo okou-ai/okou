@@ -1,10 +1,10 @@
-import { morningBriefNativeSchedules } from "@okouai/db/schema/morning-brief-native-schedule";
 import { settleLegacyMorningBriefSql } from "./morning-brief-legacy-settlement-sql";
 import { command } from "ccstate";
 import { MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
+import { pgTextDecoder } from "../../lib/db-structured-result";
 import { writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
 import { advanceTimeAutomationAfterCompletion } from "./time-automation";
@@ -16,10 +16,10 @@ import type {
 } from "./internal-run-callback";
 import { settleMorningBriefScheduleForRun$ } from "./morning-brief-schedule-claim.service";
 import {
-  morningBriefNativeOwnerCompatibilitySql,
-  morningBriefScheduleWhere,
+  MorningBriefSnapshotChanged,
   morningBriefLegacyWriterAuthorityFromRow,
-  type MorningBriefNativeScheduleRow,
+  readMorningBriefNativeScheduleForWrite,
+  withFreshMorningBriefSnapshot,
   type MorningBriefLegacyLineage,
   type MorningBriefLegacyWriterAuthority,
 } from "./morning-brief-native-schedule.service";
@@ -147,8 +147,8 @@ function revalidateUnjournaledCallbackLineage(args: {
   );
   if (args.lineage === undefined && lockedLineage !== undefined) {
     // The optimistic ordinary/absent read became a Morning Brief row before
-    // this lock. Release this transaction and retry from durable authority;
-    // never acquire the schedule after the automation row.
+    // this read. Release this transaction and retry from durable authority;
+    // never write the schedule after the automation row.
     return { kind: "retry-selected", lineage: lockedLineage };
   }
   if (
@@ -222,6 +222,15 @@ function unjournaledSettlementPlan(
   };
 }
 
+/**
+ * One unjournaled settlement from current rows, committed only if unchanged.
+ *
+ * No row is locked. The successor is computed from the automation's current
+ * cron, interval and timezone; the native mirror and then the automation are
+ * written with conditional UPDATEs fenced on exactly what was read, so a
+ * concurrent edit or settlement rolls this attempt back and the caller
+ * recomputes from fresh state rather than overwriting it.
+ */
 const attemptUnjournaledWorkflowAutomationCallbackSettlement$ = command(
   async (
     { set },
@@ -229,95 +238,93 @@ const attemptUnjournaledWorkflowAutomationCallbackSettlement$ = command(
     signal?: AbortSignal,
   ): Promise<UnjournaledCallbackSettlementAttempt> => {
     const db = set(writeDb$);
-    const result = await db.transaction(async (tx) => {
-      let native: MorningBriefNativeScheduleRow | undefined;
-      if (args.lineage) {
-        [native] = await tx
-          .select()
-          .from(morningBriefNativeSchedules)
-          .where(morningBriefScheduleWhere(args.lineage))
-          .limit(1)
-          .for("update");
-        if (!native) {
-          await tx.execute(
-            morningBriefNativeOwnerCompatibilitySql(args.lineage),
-          );
-          [native] = await tx
-            .select()
-            .from(morningBriefNativeSchedules)
-            .where(morningBriefScheduleWhere(args.lineage))
-            .limit(1)
-            .for("update");
+    const result = await withFreshMorningBriefSnapshot(() => {
+      return db.transaction(async (tx) => {
+        const native = args.lineage
+          ? await readMorningBriefNativeScheduleForWrite(tx, args.lineage)
+          : undefined;
+        const authority: MorningBriefLegacyWriterAuthority = args.lineage
+          ? morningBriefLegacyWriterAuthorityFromRow(native?.row, args.lineage)
+          : { kind: "ordinary", fence: { kind: "ordinary" } };
+        if (authority.kind === "stale") {
+          return skippedUnjournaledCallbackSettlement();
         }
-      }
-      const authority: MorningBriefLegacyWriterAuthority = args.lineage
-        ? morningBriefLegacyWriterAuthorityFromRow(native, args.lineage)
-        : { kind: "ordinary", fence: { kind: "ordinary" } };
-      if (authority.kind === "stale") {
-        return skippedUnjournaledCallbackSettlement();
-      }
-      const [lockedAutomation] = await tx
-        .select(workflowAutomationColumns())
-        .from(workflowAutomations)
-        .where(eq(workflowAutomations.id, args.automationId))
-        .limit(1)
-        .for("update");
-      const revalidation = revalidateUnjournaledCallbackLineage({
-        automationId: args.automationId,
-        lineage: args.lineage,
-        authority,
-        automation: lockedAutomation,
-      });
-      if (revalidation.kind !== "continue") {
-        return revalidation;
-      }
-      const automation = revalidation.automation;
-      const completedAt = nowDate();
-      let isCreditError = false;
-      if (args.callback.status === "failed") {
-        const [run] = await tx
-          .select({ failureReason: agentRuns.failureReason })
-          .from(agentRuns)
+        const [snapshot] = await tx
+          .select({
+            ...workflowAutomationColumns(),
+            rowVersion: sql`${workflowAutomations}.xmin::text`.mapWith(
+              pgTextDecoder,
+            ),
+          })
+          .from(workflowAutomations)
+          .where(eq(workflowAutomations.id, args.automationId))
+          .limit(1);
+        const revalidation = revalidateUnjournaledCallbackLineage({
+          automationId: args.automationId,
+          lineage: args.lineage,
+          authority,
+          automation: snapshot,
+        });
+        if (revalidation.kind !== "continue") {
+          return revalidation;
+        }
+        const automation = revalidation.automation;
+        const completedAt = nowDate();
+        let isCreditError = false;
+        if (args.callback.status === "failed") {
+          const [run] = await tx
+            .select({ failureReason: agentRuns.failureReason })
+            .from(agentRuns)
+            .where(
+              and(
+                eq(agentRuns.id, args.callback.runId),
+                eq(agentRuns.orgId, automation.orgId),
+              ),
+            )
+            .limit(1);
+          isCreditError = run?.failureReason === "insufficient_credits";
+        }
+        const plan = unjournaledSettlementPlan(
+          automation,
+          authority,
+          args.callback,
+          isCreditError,
+          completedAt,
+        );
+        if (
+          args.lineage &&
+          authority.kind === "selected" &&
+          authority.row.phase === "legacy"
+        ) {
+          const { rowCount } = await tx.execute(
+            settleLegacyMorningBriefSql(
+              args.lineage,
+              authority.row,
+              plan.native,
+            ),
+          );
+          if (rowCount !== 1) {
+            throw new MorningBriefSnapshotChanged();
+          }
+        }
+        const [advanced] = await tx
+          .update(workflowAutomations)
+          .set(plan.automation)
           .where(
             and(
-              eq(agentRuns.id, args.callback.runId),
-              eq(agentRuns.orgId, automation.orgId),
+              eq(workflowAutomations.id, args.automationId),
+              eq(workflowAutomations.enabled, true),
+              sql`${workflowAutomations}.xmin::text = ${snapshot?.rowVersion ?? ""}`,
             ),
           )
-          .limit(1);
-        isCreditError = run?.failureReason === "insufficient_credits";
-      }
-      const plan = unjournaledSettlementPlan(
-        automation,
-        authority,
-        args.callback,
-        isCreditError,
-        completedAt,
-      );
-      await tx
-        .update(workflowAutomations)
-        .set(plan.automation)
-        .where(
-          and(
-            eq(workflowAutomations.id, args.automationId),
-            eq(workflowAutomations.enabled, true),
-          ),
-        );
-      if (
-        args.lineage &&
-        authority.kind === "selected" &&
-        authority.row.phase === "legacy"
-      ) {
-        const { rowCount } = await tx.execute(
-          settleLegacyMorningBriefSql(args.lineage, authority.row, plan.native),
-        );
-        if (rowCount !== 1) {
-          throw new Error("Morning Brief settlement authority changed");
+          .returning({ id: workflowAutomations.id });
+        if (!advanced) {
+          throw new MorningBriefSnapshotChanged();
         }
-      }
-      signal?.throwIfAborted();
-      return { kind: "settled", result: { success: true } } as const;
-    });
+        signal?.throwIfAborted();
+        return { kind: "settled", result: { success: true } } as const;
+      });
+    }, signal);
     signal?.throwIfAborted();
     return result;
   },

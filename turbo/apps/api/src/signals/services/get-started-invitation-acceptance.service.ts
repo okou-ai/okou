@@ -13,6 +13,7 @@ import {
   getStartedMemberRewardSql,
   getStartedRewardAvailabilityQuery,
   memberRewardWalletQuery,
+  unresolvedClaimWhere,
 } from "./get-started-member-reward";
 import {
   slackRewardIneligibleValues,
@@ -24,6 +25,8 @@ import {
   acceptedInvitationClaimValues,
   invitationClaimConflict,
   invitationAcceptanceValues,
+  InvitationClaimTransitionLost,
+  requireInvitationClaimTransition,
   requireInvitationRewardIdentity,
   type AcceptedGetStartedInvitation,
 } from "./get-started-invitation-acceptance";
@@ -87,10 +90,12 @@ export const acceptGetStartedInvitation$ = command(
           requireInvitationRewardIdentity(args, claim);
           const at = nowDate();
           if (claim.beneficiaryUserId === args.userId) {
-            await tx
+            const ineligible = await tx
               .update(getStartedClaims)
               .set(slackRewardIneligibleValues("self_invitation", at))
-              .where(eq(getStartedClaims.id, claim.id));
+              .where(unresolvedClaimWhere(claim))
+              .returning({ id: getStartedClaims.id });
+            requireInvitationClaimTransition(claim.id, ineligible.length);
             return;
           }
           const rewardKey = `invite:${args.userId}`;
@@ -103,20 +108,25 @@ export const acceptGetStartedInvitation$ = command(
             awards,
           );
           if (availability.kind === "ineligible") {
-            await tx
+            const ineligible = await tx
               .update(getStartedClaims)
               .set({
                 ...slackRewardIneligibleValues(availability.reason, at),
                 ...invitationAcceptanceValues(args, claim.invitationId, at),
               })
-              .where(eq(getStartedClaims.id, claim.id));
+              .where(unresolvedClaimWhere(claim))
+              .returning({ id: getStartedClaims.id });
+            requireInvitationClaimTransition(claim.id, ineligible.length);
             return;
           }
           const slot = availability.slots[0];
           if (slot === undefined) {
             throw new Error("Invitation reward has no available slot");
           }
-          if (
+          // Conditional on the unresolved claim and its observed lease; the
+          // grant row exists only if that transition happened.
+          requireInvitationClaimTransition(
+            claim.id,
             (
               await tx.execute(
                 getStartedMemberRewardSql(
@@ -127,10 +137,9 @@ export const acceptGetStartedInvitation$ = command(
                   at,
                 ),
               )
-            ).rowCount !== 1
-          ) {
-            throw new Error("Invitation reward was not committed");
-          }
+            ).rowCount,
+          );
+          // The claim is now owned by this transaction's own transition.
           await tx
             .update(getStartedClaims)
             .set(invitationAcceptanceValues(args, claim.invitationId, at))
@@ -144,6 +153,7 @@ export const acceptGetStartedInvitation$ = command(
         return;
       }
       if (
+        !(result.error instanceof InvitationClaimTransitionLost) &&
         !isUniqueViolation(result.error, "uq_get_started_reward_key") &&
         !isUniqueViolation(result.error, "uq_get_started_reward_slot")
       ) {

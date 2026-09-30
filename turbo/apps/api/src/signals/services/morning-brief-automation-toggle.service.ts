@@ -12,9 +12,12 @@ import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import {
+  MorningBriefSnapshotChanged,
   morningBriefLogicalChoicePlan,
-  morningBriefNativeOwnerCompatibilitySql,
+  morningBriefNativeRowVersionCondition,
   morningBriefScheduleWhere,
+  readMorningBriefNativeScheduleForWrite,
+  withFreshMorningBriefSnapshot,
   type MorningBriefNativeScheduleRow,
 } from "./morning-brief-native-schedule.service";
 import { officialAutomationLifecycleCondition } from "./workflow-automation-write-condition";
@@ -102,7 +105,15 @@ function revokedOccurrence(at: Date) {
 
 class StaleMorningBriefToggle extends Error {}
 
-/** Atomically commit the legacy automation, enrollment choice and native obligation. */
+/**
+ * Atomically commit the legacy automation, enrollment choice and native obligation.
+ *
+ * No row is locked. The native obligation is computed from the row as read and
+ * written first (the documented order) under its exact row version; losing to
+ * a concurrent native writer rolls the attempt back and recomputes from fresh
+ * state. The automation write keeps its caller-snapshot lifecycle condition,
+ * whose zero-row outcome is the existing stale-toggle result.
+ */
 export const persistMorningBriefAutomationToggle$ = command(
   async (
     { set },
@@ -116,97 +127,92 @@ export const persistMorningBriefAutomationToggle$ = command(
     const db = set(writeDb$);
     signal.throwIfAborted();
     const result = await settle(
-      db.transaction(async (tx) => {
-        let [native] = await tx
-          .select()
-          .from(morningBriefNativeSchedules)
-          .where(morningBriefScheduleWhere(owner))
-          .limit(1)
-          .for("update");
-        if (native === undefined) {
-          await tx.execute(morningBriefNativeOwnerCompatibilitySql(owner));
-          [native] = await tx
-            .select()
-            .from(morningBriefNativeSchedules)
-            .where(morningBriefScheduleWhere(owner))
-            .limit(1)
-            .for("update");
-        }
-        const choice = toggleChoice(args, native);
-        const [row] = await tx
-          .update(workflowAutomations)
-          .set(choice.values)
-          .where(officialAutomationLifecycleCondition(args.automation))
-          .returning(workflowAutomationColumns());
-        if (row === undefined) {
-          throw new StaleMorningBriefToggle();
-        }
-        if (!choice.reconciliationOwned) {
-          const values = enrollmentChoice(choice.enabled, args.now);
-          await tx
-            .insert(morningBriefEnrollments)
-            .values({ ...owner, ...values })
-            .onConflictDoUpdate({
-              target: [
-                morningBriefEnrollments.orgId,
-                morningBriefEnrollments.userId,
-              ],
-              set: values,
-            });
-        }
-        if (!choice.selected || native === undefined) {
-          return row;
-        }
-        const [occurrence] = await tx
-          .select()
-          .from(morningBriefNativeOccurrences)
-          .where(occurrenceWhere(owner))
-          .orderBy(morningBriefNativeOccurrences.scheduledFor)
-          .limit(1);
-        const [claim] = await tx
-          .select({ settlement: morningBriefScheduleClaims.settlement })
-          .from(morningBriefScheduleClaims)
-          .where(
-            eq(morningBriefScheduleClaims.automationId, args.automation.id),
-          )
-          .orderBy(desc(morningBriefScheduleClaims.claimSequence))
-          .limit(1);
-        const plan = morningBriefLogicalChoicePlan(
-          native,
-          { enabled: choice.enabled },
-          occurrence,
-          native.phase === "legacy" && claim?.settlement === "unsettled",
-          args.now,
-        );
-        const [applied] = await tx
-          .update(morningBriefNativeSchedules)
-          .set(plan.values)
-          .where(
-            and(
-              morningBriefScheduleWhere(owner),
-              eq(morningBriefNativeSchedules.ownerEpoch, native.ownerEpoch),
-            ),
-          )
-          .returning({ ownerEpoch: morningBriefNativeSchedules.ownerEpoch });
-        if (applied === undefined) {
-          throw new Error(
-            "Morning Brief choice changed during automation toggle",
+      withFreshMorningBriefSnapshot(() => {
+        return db.transaction(async (tx) => {
+          const snapshot = await readMorningBriefNativeScheduleForWrite(
+            tx,
+            owner,
           );
-        }
-        if (plan.revokes) {
-          await tx
-            .update(morningBriefNativeOccurrences)
-            .set(revokedOccurrence(args.now))
-            .where(
-              and(
-                occurrenceWhere(owner),
-                eq(morningBriefNativeOccurrences.ownerEpoch, native.ownerEpoch),
-              ),
+          const native = snapshot?.row;
+          const choice = toggleChoice(args, native);
+          if (choice.selected && snapshot !== undefined) {
+            const [occurrence] = await tx
+              .select()
+              .from(morningBriefNativeOccurrences)
+              .where(occurrenceWhere(owner))
+              .orderBy(morningBriefNativeOccurrences.scheduledFor)
+              .limit(1);
+            const [claim] = await tx
+              .select({ settlement: morningBriefScheduleClaims.settlement })
+              .from(morningBriefScheduleClaims)
+              .where(
+                eq(morningBriefScheduleClaims.automationId, args.automation.id),
+              )
+              .orderBy(desc(morningBriefScheduleClaims.claimSequence))
+              .limit(1);
+            const plan = morningBriefLogicalChoicePlan(
+              snapshot.row,
+              { enabled: choice.enabled },
+              occurrence,
+              snapshot.row.phase === "legacy" &&
+                claim?.settlement === "unsettled",
+              args.now,
             );
-        }
-        signal.throwIfAborted();
-        return row;
-      }),
+            const [applied] = await tx
+              .update(morningBriefNativeSchedules)
+              .set(plan.values)
+              .where(
+                and(
+                  morningBriefScheduleWhere(owner),
+                  morningBriefNativeRowVersionCondition(snapshot.rowVersion),
+                ),
+              )
+              .returning({
+                ownerEpoch: morningBriefNativeSchedules.ownerEpoch,
+              });
+            if (applied === undefined) {
+              throw new MorningBriefSnapshotChanged();
+            }
+            if (plan.revokes) {
+              await tx
+                .update(morningBriefNativeOccurrences)
+                .set(revokedOccurrence(args.now))
+                .where(
+                  and(
+                    occurrenceWhere(owner),
+                    eq(
+                      morningBriefNativeOccurrences.ownerEpoch,
+                      snapshot.row.ownerEpoch,
+                    ),
+                  ),
+                );
+            }
+          }
+          const [row] = await tx
+            .update(workflowAutomations)
+            .set(choice.values)
+            .where(officialAutomationLifecycleCondition(args.automation))
+            .returning(workflowAutomationColumns());
+          if (row === undefined) {
+            throw new StaleMorningBriefToggle();
+          }
+          if (!choice.reconciliationOwned) {
+            const values = enrollmentChoice(choice.enabled, args.now);
+            await tx
+              .insert(morningBriefEnrollments)
+              .values({ ...owner, ...values })
+              .onConflictDoUpdate({
+                target: [
+                  morningBriefEnrollments.orgId,
+                  morningBriefEnrollments.userId,
+                ],
+                set: values,
+              });
+          }
+          signal.throwIfAborted();
+          return row;
+        });
+      }, signal),
       signal,
     );
     signal.throwIfAborted();

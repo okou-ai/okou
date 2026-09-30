@@ -1,6 +1,6 @@
 import { socialDataJobs } from "@okouai/db/schema/social-data-job";
 import { usageEvent } from "@okouai/db/schema/usage-event";
-import { and, eq, getTableColumns, sql } from "drizzle-orm";
+import { and, eq, getTableColumns, isNull, sql } from "drizzle-orm";
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import { UsageSettlementSnapshotConflict } from "./credit-usage-batch";
 import { QueryBuilder } from "drizzle-orm/pg-core";
@@ -20,18 +20,42 @@ export function socialWhere(claim: SocialSettlementClaim) {
     eq(socialDataJobs.claimExpiresAt, claim.expiresAt),
   );
 }
+/** The claimed job is still the unsettled version this settlement read. */
+export function socialSettledWhere(
+  claim: SocialSettlementClaim,
+  job: { readonly xmin: string },
+) {
+  return and(
+    socialWhere(claim),
+    isNull(socialDataJobs.creditsCharged),
+    sql`${socialDataJobs}.xmin::text = ${job.xmin}`,
+  );
+}
+
+export function requireSocialSettlement(updated: number) {
+  if (updated !== 1) {
+    throw new UsageSettlementSnapshotConflict(
+      "Social settlement changed before its charge was recorded",
+    );
+  }
+}
+
 export function socialJobSelection() {
   return {
     ...getTableColumns(socialDataJobs),
     xmin: sql`${socialDataJobs}.xmin::text`.mapWith(pgTextDecoder).as("xmin"),
   };
 }
+/**
+ * Plain read. The settling transaction's final job write is conditional on
+ * this row version and an unsettled charge (socialSettledWhere); a zero-row
+ * result rejects the snapshot and rolls the whole settlement back.
+ */
 export function socialJobQuery(orgId: string, claim: SocialSettlementClaim) {
   return new QueryBuilder()
     .select(socialJobSelection())
     .from(socialDataJobs)
     .where(and(eq(socialDataJobs.orgId, orgId), socialWhere(claim)))
-    .for("update")
     .as("settlement_social_job");
 }
 function socialUsageArgs(

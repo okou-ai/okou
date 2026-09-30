@@ -24,6 +24,11 @@ export interface BillingAttribution {
   readonly startedAt: string;
 }
 
+/**
+ * The KEY SHARE is kept deliberately: the usage-event insert's run_id FK takes
+ * the same lock implicitly; taking it first keeps Run-before-ledger order with
+ * Run deletion instead of a deadlock cycle. It never blocks Run updates.
+ */
 export function managedBillingRunQuery(runId: string | undefined) {
   return new QueryBuilder()
     .select({

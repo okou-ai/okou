@@ -13,6 +13,12 @@ export interface AcceptedGetStartedInvitation {
   readonly purchaseId?: string;
 }
 
+/**
+ * Plain read. Every transition the acceptance then makes on this claim is
+ * conditional on it still being unresolved under the observed lease
+ * (unresolvedClaimWhere); a zero-row transition means another redeemer won and
+ * the acceptance is decided again from a fresh read.
+ */
 export function acceptedInvitationClaimQuery(
   args: AcceptedGetStartedInvitation,
 ) {
@@ -36,7 +42,6 @@ export function acceptedInvitationClaimQuery(
           : eq(getStartedClaims.sourceKey, `purchase:${args.purchaseId}`),
       ),
     )
-    .for("update")
     .limit(1)
     .as("accepted_invitation_claim");
 }
@@ -117,6 +122,23 @@ export function invitationClaimConflict(sourceKey: string) {
     ],
     set: { sourceKey },
   };
+}
+
+/** A conditional claim transition lost to another redeemer. */
+export class InvitationClaimTransitionLost extends Error {
+  constructor(readonly claimId: string) {
+    super(`Invitation reward claim ${claimId} changed during acceptance`);
+    this.name = "InvitationClaimTransitionLost";
+  }
+}
+
+export function requireInvitationClaimTransition(
+  claimId: string,
+  updated: number | null,
+) {
+  if (updated !== 1) {
+    throw new InvitationClaimTransitionLost(claimId);
+  }
 }
 
 export function requireInvitationRewardIdentity(

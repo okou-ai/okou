@@ -5,7 +5,14 @@ import {
   usagePackAllocations,
   usagePackSubscriptions,
 } from "@okouai/db/schema/usage-pack-subscription";
-import { and, eq, inArray, notInArray } from "drizzle-orm";
+import {
+  and,
+  eq,
+  inArray,
+  isNull,
+  notInArray,
+  type SQLWrapper,
+} from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { checkoutWouldReplaceWithSameOrLowerTier } from "./billing-checkout.service";
 import { orgPlanEntitlementValues } from "./org-plan-entitlements.service";
@@ -28,6 +35,30 @@ export type LegacyPlanInvoiceWallet = Pick<
   | "subscriptionStatus"
   | "lastProcessedInvoiceId"
 >;
+
+export class LegacyPlanInvoiceConflict extends Error {
+  constructor(readonly invoiceId: string) {
+    super(`Legacy plan invoice ${invoiceId} admission state changed`);
+    this.name = "LegacyPlanInvoiceConflict";
+  }
+}
+
+/** Every wallet column that admission and replacement read, unchanged. */
+export function legacyPlanInvoiceWalletWhere(
+  orgId: string,
+  wallet: LegacyPlanInvoiceWallet,
+) {
+  const same = (column: SQLWrapper, value: string | null) => {
+    return value === null ? isNull(column) : eq(column, value);
+  };
+  return and(
+    eq(orgMetadata.orgId, orgId),
+    same(orgMetadata.tier, wallet.tier),
+    same(orgMetadata.stripeSubscriptionId, wallet.stripeSubscriptionId),
+    same(orgMetadata.subscriptionStatus, wallet.subscriptionStatus),
+    same(orgMetadata.lastProcessedInvoiceId, wallet.lastProcessedInvoiceId),
+  );
+}
 
 export function legacyPlanInvoiceAdmission(
   wallet: LegacyPlanInvoiceWallet,

@@ -8,24 +8,24 @@ import {
 } from "@okouai/db/schema/morning-brief-schedule-claim";
 import { command } from "ccstate";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { morningBriefNativeSchedules } from "@okouai/db/schema/morning-brief-native-schedule";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
 import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
-import { and, asc, desc, eq, isNull, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, sql, type SQL } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
+import { pgTextDecoder } from "../../lib/db-structured-result";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import { advanceTimeAutomationAfterCompletion } from "./time-automation";
 import {
-  morningBriefNativeOwnerCompatibilitySql,
-  morningBriefScheduleWhere,
+  MorningBriefSnapshotChanged,
   morningBriefLegacyWriterAuthorityFromRow,
-  type MorningBriefNativeScheduleRow,
+  readMorningBriefNativeScheduleForWrite,
+  withFreshMorningBriefSnapshot,
   type MorningBriefLegacyWriterAuthority,
 } from "./morning-brief-native-schedule.service";
 
@@ -359,6 +359,133 @@ function legacyMorningBriefSettlementPlan(
   };
 }
 
+/** The automation row a settlement computed from, with its exact row version. */
+function automationSnapshotColumns() {
+  return {
+    ...workflowAutomationColumns(),
+    rowVersion: sql`${workflowAutomations}.xmin::text`.mapWith(pgTextDecoder),
+  };
+}
+
+type MorningBriefScheduleSettlementOutcome = {
+  readonly orgId: string | null;
+  readonly userId: string | null;
+  readonly consecutiveFailures: number;
+} | null;
+
+/**
+ * One attempt: read the current rows, compute the successor from their current
+ * cron and timezone, then commit only if none of them changed.
+ *
+ * No row is locked. Writes follow the documented order (native row, legacy
+ * automation, then its claim) and each is a conditional UPDATE. A concurrent
+ * schedule, timezone, toggle or claim commit makes the native or automation
+ * write match zero rows, which rolls the attempt back so the caller recomputes
+ * from fresh state. The claim write is the exactly-once gate: when another
+ * settler already settled it, this attempt rolls back and settles nothing.
+ */
+async function attemptMorningBriefScheduleSettlement(
+  tx: Tx,
+  args: SettleMorningBriefScheduleArgs,
+): Promise<MorningBriefScheduleSettlementOutcome> {
+  const lineage = args.owner && {
+    ...args.owner,
+    automationId: args.automationId,
+  };
+  const native = lineage
+    ? await readMorningBriefNativeScheduleForWrite(tx, lineage)
+    : undefined;
+  const authority: MorningBriefLegacyWriterAuthority = lineage
+    ? morningBriefLegacyWriterAuthorityFromRow(native?.row, lineage)
+    : { kind: "ordinary", fence: { kind: "ordinary" } };
+  const [automation] = await tx
+    .select(automationSnapshotColumns())
+    .from(workflowAutomations)
+    .where(eq(workflowAutomations.id, args.automationId))
+    .limit(1);
+  if (!automation) {
+    return null;
+  }
+  const [claim] = await tx
+    .select()
+    .from(morningBriefScheduleClaims)
+    .where(settlementClaimCondition(args))
+    .limit(1);
+  if (!claim || claim.settlement !== "unsettled") {
+    return null;
+  }
+  const [current] = await tx
+    .select({ claimSequence: morningBriefScheduleClaims.claimSequence })
+    .from(morningBriefScheduleClaims)
+    .where(eq(morningBriefScheduleClaims.automationId, args.automationId))
+    .orderBy(desc(morningBriefScheduleClaims.claimSequence))
+    .limit(1);
+  if (current?.claimSequence !== claim.claimSequence) {
+    return null;
+  }
+  const settledAt = nowDate();
+  const plan = legacyMorningBriefSettlementPlan(
+    automation,
+    authority,
+    args,
+    settledAt,
+  );
+  if (
+    plan &&
+    lineage &&
+    authority.kind === "selected" &&
+    authority.row.phase === "legacy"
+  ) {
+    const { rowCount } = await tx.execute(
+      settleLegacyMorningBriefSql(lineage, authority.row, plan.nativeValues),
+    );
+    if (rowCount !== 1) {
+      throw new MorningBriefSnapshotChanged();
+    }
+  }
+  if (plan) {
+    // A newer claim always rewrites this row, so its version also fences the
+    // claim-sequence read above.
+    const [advanced] = await tx
+      .update(workflowAutomations)
+      .set(plan.automationValues)
+      .where(
+        and(
+          eq(workflowAutomations.id, args.automationId),
+          eq(workflowAutomations.enabled, true),
+          isNull(workflowAutomations.nextRunAt),
+          sql`${workflowAutomations}.xmin::text = ${automation.rowVersion}`,
+        ),
+      )
+      .returning({ id: workflowAutomations.id });
+    if (!advanced) {
+      throw new MorningBriefSnapshotChanged();
+    }
+  }
+  const [settled] = await tx
+    .update(morningBriefScheduleClaims)
+    .set({ settlement: args.settlement, settledAt, updatedAt: settledAt })
+    .where(
+      and(
+        eq(morningBriefScheduleClaims.id, claim.id),
+        eq(morningBriefScheduleClaims.settlement, "unsettled"),
+      ),
+    )
+    .returning({ id: morningBriefScheduleClaims.id });
+  if (!settled) {
+    // Another settler won this occurrence; discard everything this attempt
+    // wrote. The next attempt reads the settled claim and returns null.
+    throw new MorningBriefSnapshotChanged();
+  }
+  return plan?.shouldDisable
+    ? {
+        orgId: claim.orgId,
+        userId: claim.ownerUserId,
+        consecutiveFailures: plan.consecutiveFailures,
+      }
+    : null;
+}
+
 /** One occurrence and its native mirror settle together with direct local SQL. */
 const commitMorningBriefScheduleSettlement$ = command(
   async (
@@ -367,114 +494,13 @@ const commitMorningBriefScheduleSettlement$ = command(
     signal?: AbortSignal,
   ): Promise<void> => {
     const db = set(writeDb$);
-    const lineage = args.owner && {
-      ...args.owner,
-      automationId: args.automationId,
-    };
-    const outcome = await db.transaction(async (tx) => {
-      let native: MorningBriefNativeScheduleRow | undefined;
-      if (lineage) {
-        [native] = await tx
-          .select()
-          .from(morningBriefNativeSchedules)
-          .where(morningBriefScheduleWhere(lineage))
-          .limit(1)
-          .for("update");
-        if (!native) {
-          await tx.execute(morningBriefNativeOwnerCompatibilitySql(lineage));
-          [native] = await tx
-            .select()
-            .from(morningBriefNativeSchedules)
-            .where(morningBriefScheduleWhere(lineage))
-            .limit(1)
-            .for("update");
-        }
-      }
-      const authority: MorningBriefLegacyWriterAuthority = lineage
-        ? morningBriefLegacyWriterAuthorityFromRow(native, lineage)
-        : { kind: "ordinary", fence: { kind: "ordinary" } };
-      const [automation] = await tx
-        .select(workflowAutomationColumns())
-        .from(workflowAutomations)
-        .where(eq(workflowAutomations.id, args.automationId))
-        .limit(1)
-        .for("update");
-      if (!automation) {
-        return null;
-      }
-      const [claim] = await tx
-        .select()
-        .from(morningBriefScheduleClaims)
-        .where(settlementClaimCondition(args))
-        .limit(1)
-        .for("update");
-      if (!claim || claim.settlement !== "unsettled") {
-        return null;
-      }
-      const [current] = await tx
-        .select({ claimSequence: morningBriefScheduleClaims.claimSequence })
-        .from(morningBriefScheduleClaims)
-        .where(eq(morningBriefScheduleClaims.automationId, args.automationId))
-        .orderBy(desc(morningBriefScheduleClaims.claimSequence))
-        .limit(1);
-      if (current?.claimSequence !== claim.claimSequence) {
-        return null;
-      }
-      // Sample only after the native, automation and occurrence locks have been acquired.
-      const settledAt = nowDate();
-      const plan = legacyMorningBriefSettlementPlan(
-        automation,
-        authority,
-        args,
-        settledAt,
-      );
-      if (plan) {
-        await tx
-          .update(workflowAutomations)
-          .set(plan.automationValues)
-          .where(
-            and(
-              eq(workflowAutomations.id, args.automationId),
-              eq(workflowAutomations.enabled, true),
-              isNull(workflowAutomations.nextRunAt),
-            ),
-          );
-      }
-      await tx
-        .update(morningBriefScheduleClaims)
-        .set({ settlement: args.settlement, settledAt, updatedAt: settledAt })
-        .where(
-          and(
-            eq(morningBriefScheduleClaims.id, claim.id),
-            eq(morningBriefScheduleClaims.settlement, "unsettled"),
-          ),
-        );
-      if (
-        plan &&
-        lineage &&
-        authority.kind === "selected" &&
-        authority.row.phase === "legacy"
-      ) {
-        const { rowCount } = await tx.execute(
-          settleLegacyMorningBriefSql(
-            lineage,
-            authority.row,
-            plan.nativeValues,
-          ),
-        );
-        if (rowCount !== 1) {
-          throw new Error("Morning Brief settlement authority changed");
-        }
-      }
-      signal?.throwIfAborted();
-      return plan?.shouldDisable
-        ? {
-            orgId: claim.orgId,
-            userId: claim.ownerUserId,
-            consecutiveFailures: plan.consecutiveFailures,
-          }
-        : null;
-    });
+    const outcome = await withFreshMorningBriefSnapshot(() => {
+      return db.transaction(async (tx) => {
+        const attempted = await attemptMorningBriefScheduleSettlement(tx, args);
+        signal?.throwIfAborted();
+        return attempted;
+      });
+    }, signal);
     signal?.throwIfAborted();
     if (outcome) {
       log.warn(

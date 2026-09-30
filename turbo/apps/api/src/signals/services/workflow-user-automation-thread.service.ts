@@ -2,7 +2,6 @@ import {
   userLocaleSchema,
   type UserLocale,
 } from "@okouai/api-contracts/contracts/user-preferences";
-import { agents } from "@okouai/db/schema/agent";
 import { googleFormsAutomationCursors } from "@okouai/db/schema/google-forms-event";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import {
@@ -10,7 +9,7 @@ import {
   workflowUserAutomationThreads,
   workflows,
 } from "@okouai/db/schema/workflow";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 
 import { command } from "ccstate";
 import { randomUUID } from "node:crypto";
@@ -185,8 +184,8 @@ export async function loadWorkflowUserAutomationThreadId(
 
 /**
  * Pause every enabled automation that shares a workflow-user chat thread.
- * The caller deletes the thread in the same transaction, so the binding still
- * identifies the affected workflows while this update runs.
+ * The caller deletes the thread in the same transaction; the bindings are
+ * deleted here and their returned workflows identify the affected automations.
  */
 export async function disableThreadBoundWorkflowAutomations(
   db: ChatThreadEventTransaction,
@@ -201,19 +200,20 @@ export async function disableThreadBoundWorkflowAutomations(
     "orgId" | "ownerUserId" | "eventType" | "eventConfig" | "eventConnectorId"
   >[]
 > {
-  // Creation holds this binding until its automation INSERT commits. Reuse
-  // never writes the destination thread, so deletion can wait here and disable
-  // every automation that joined the binding before detaching it.
+  // Detach by deleting the bindings with a conditional DELETE. Creation and
+  // reuse both write the binding row through its unique owner key before they
+  // insert an automation, so this DELETE either waits for that commit and then
+  // disables the automation it added, or commits first and a later creator
+  // inserts a fresh binding with a new destination thread.
   const bindings = await db
-    .select({ workflowId: workflowUserAutomationThreads.workflowId })
-    .from(workflowUserAutomationThreads)
+    .delete(workflowUserAutomationThreads)
     .where(
       and(
         eq(workflowUserAutomationThreads.userId, args.userId),
         eq(workflowUserAutomationThreads.chatThreadId, args.chatThreadId),
       ),
     )
-    .for("update");
+    .returning({ workflowId: workflowUserAutomationThreads.workflowId });
   if (bindings.length === 0) {
     return [];
   }
@@ -315,6 +315,67 @@ async function createAutomationChatThread(
   return thread.id;
 }
 
+/**
+ * Upsert this owner's binding through its unique key and return it.
+ *
+ * `ON CONFLICT DO UPDATE` writes the existing row (a no-op assignment), so the
+ * binding is this transaction's until it commits: a concurrent creator waits
+ * and then observes the committed destination, and thread deletion's
+ * conditional DELETE cannot detach it between this read and the caller's
+ * automation INSERT. A binding deleted concurrently is simply inserted anew.
+ */
+async function claimWorkflowUserAutomationThreadBinding(
+  db: ChatThreadEventTransaction,
+  args: WorkflowUserAutomationThreadOwner & { readonly currentTime: Date },
+): Promise<{ readonly chatThreadId: string | null }> {
+  const [binding] = await db
+    .insert(workflowUserAutomationThreads)
+    .values({
+      orgId: args.orgId,
+      userId: args.userId,
+      workflowId: args.workflowId,
+      createdAt: args.currentTime,
+      updatedAt: args.currentTime,
+    })
+    .onConflictDoUpdate({
+      target: [
+        workflowUserAutomationThreads.orgId,
+        workflowUserAutomationThreads.userId,
+        workflowUserAutomationThreads.workflowId,
+      ],
+      set: {
+        chatThreadId: sql`${workflowUserAutomationThreads.chatThreadId}`,
+      },
+    })
+    .returning({ chatThreadId: workflowUserAutomationThreads.chatThreadId });
+  if (!binding) {
+    throw new Error("Failed to claim workflow automation thread binding");
+  }
+  return binding;
+}
+
+/** Publish a new destination only into a binding that still has none. */
+async function bindWorkflowUserAutomationThread(
+  db: ChatThreadEventTransaction,
+  args: WorkflowUserAutomationThreadOwner & { readonly currentTime: Date },
+  chatThreadId: string,
+): Promise<string> {
+  const [updated] = await db
+    .update(workflowUserAutomationThreads)
+    .set({ chatThreadId, updatedAt: args.currentTime })
+    .where(
+      and(
+        workflowUserAutomationThreadOwnerCondition(args),
+        isNull(workflowUserAutomationThreads.chatThreadId),
+      ),
+    )
+    .returning({ chatThreadId: workflowUserAutomationThreads.chatThreadId });
+  if (!updated?.chatThreadId) {
+    throw new Error("Failed to persist workflow automation chat thread");
+  }
+  return updated.chatThreadId;
+}
+
 export async function ensureWorkflowUserAutomationThread(
   db: ChatThreadEventTransaction,
   args: {
@@ -327,52 +388,8 @@ export async function ensureWorkflowUserAutomationThread(
     readonly preparation: WorkflowThreadPreparation;
   },
 ): Promise<string> {
-  // Acquire the parent FK locks before the binding and shared event sequence.
-  // An existing binding with a deleted thread otherwise postpones the workflow
-  // FK lock until an automation is inserted, reversing copy's lock order.
-  // Agent first also preserves the order used by agent deletion cascades.
-  await db
-    .select({ id: agents.id })
-    .from(agents)
-    .where(and(eq(agents.orgId, args.orgId), eq(agents.id, args.agentId)))
-    .for("key share");
-  await db
-    .select({ id: workflows.id })
-    .from(workflows)
-    .where(
-      and(
-        eq(workflows.orgId, args.orgId),
-        eq(workflows.id, args.workflowId),
-        eq(workflows.agentId, args.agentId),
-      ),
-    )
-    .for("key share");
-
-  await db
-    .insert(workflowUserAutomationThreads)
-    .values({
-      orgId: args.orgId,
-      userId: args.userId,
-      workflowId: args.workflowId,
-      createdAt: args.currentTime,
-      updatedAt: args.currentTime,
-    })
-    .onConflictDoNothing({
-      target: [
-        workflowUserAutomationThreads.orgId,
-        workflowUserAutomationThreads.userId,
-        workflowUserAutomationThreads.workflowId,
-      ],
-    });
-  // The unique owner key arbitrates the first binding; its row serializes
-  // destination creation and deletion. Reusing it touches no existing thread.
-  const [binding] = await db
-    .select({ chatThreadId: workflowUserAutomationThreads.chatThreadId })
-    .from(workflowUserAutomationThreads)
-    .where(workflowUserAutomationThreadOwnerCondition(args))
-    .limit(1)
-    .for("update");
-  if (binding?.chatThreadId) {
+  const binding = await claimWorkflowUserAutomationThreadBinding(db, args);
+  if (binding.chatThreadId) {
     return binding.chatThreadId;
   }
 
@@ -385,15 +402,7 @@ export async function ensureWorkflowUserAutomationThread(
     preparation: args.preparation,
     currentTime: args.currentTime,
   });
-  const [updated] = await db
-    .update(workflowUserAutomationThreads)
-    .set({ chatThreadId, updatedAt: args.currentTime })
-    .where(workflowUserAutomationThreadOwnerCondition(args))
-    .returning({ chatThreadId: workflowUserAutomationThreads.chatThreadId });
-  if (!updated?.chatThreadId) {
-    throw new Error("Failed to persist workflow automation chat thread");
-  }
-  return updated.chatThreadId;
+  return await bindWorkflowUserAutomationThread(db, args, chatThreadId);
 }
 
 interface WorkflowThreadOwner extends WorkflowUserAutomationThreadOwner {
@@ -445,45 +454,8 @@ export const ensureWorkflowUserAutomationThread$ = command(
     );
     const db = set(writeDb$);
     const result = await db.transaction(async (tx) => {
-      await tx
-        .select({ id: agents.id })
-        .from(agents)
-        .where(and(eq(agents.orgId, args.orgId), eq(agents.id, args.agentId)))
-        .for("key share");
-      await tx
-        .select({ id: workflows.id })
-        .from(workflows)
-        .where(
-          and(
-            eq(workflows.orgId, args.orgId),
-            eq(workflows.id, args.workflowId),
-            eq(workflows.agentId, args.agentId),
-          ),
-        )
-        .for("key share");
-      await tx
-        .insert(workflowUserAutomationThreads)
-        .values({
-          orgId: args.orgId,
-          userId: args.userId,
-          workflowId: args.workflowId,
-          createdAt: args.currentTime,
-          updatedAt: args.currentTime,
-        })
-        .onConflictDoNothing({
-          target: [
-            workflowUserAutomationThreads.orgId,
-            workflowUserAutomationThreads.userId,
-            workflowUserAutomationThreads.workflowId,
-          ],
-        });
-      const [binding] = await tx
-        .select({ chatThreadId: workflowUserAutomationThreads.chatThreadId })
-        .from(workflowUserAutomationThreads)
-        .where(workflowUserAutomationThreadOwnerCondition(args))
-        .limit(1)
-        .for("update");
-      if (binding?.chatThreadId) {
+      const binding = await claimWorkflowUserAutomationThreadBinding(tx, args);
+      if (binding.chatThreadId) {
         return binding.chatThreadId;
       }
       const values = preparedWorkflowThreadValues(
@@ -507,18 +479,13 @@ export const ensureWorkflowUserAutomationThread$ = command(
           createdAt: values.createdAt,
         }),
       );
-      const [updated] = await tx
-        .update(workflowUserAutomationThreads)
-        .set({ chatThreadId: values.id, updatedAt: args.currentTime })
-        .where(workflowUserAutomationThreadOwnerCondition(args))
-        .returning({
-          chatThreadId: workflowUserAutomationThreads.chatThreadId,
-        });
-      if (!updated?.chatThreadId) {
-        throw new Error("Failed to persist workflow automation chat thread");
-      }
+      const chatThreadId = await bindWorkflowUserAutomationThread(
+        tx,
+        args,
+        values.id,
+      );
       signal.throwIfAborted();
-      return updated.chatThreadId;
+      return chatThreadId;
     });
     signal.throwIfAborted();
     return result;
