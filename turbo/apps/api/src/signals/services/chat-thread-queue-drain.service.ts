@@ -1,33 +1,35 @@
-import { command, type Command } from "ccstate";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { and, eq, isNotNull } from "drizzle-orm";
-
-import { logger } from "../../lib/log";
-import { waitUntil } from "../context/wait-until";
-import { writeDb$, type Db } from "../external/db";
-import { publishActiveInputToRunnerGroup } from "../external/realtime";
-import { settle, tapError } from "../utils";
-import { orgHasRunCapacity } from "./agent-run-create.service";
-import { dispatchFailedRunCallbacks$ } from "./agent-run-callback.service";
+import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
+import { chatEvents } from "@okouai/db/schema/chat-event";
+import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
+import { command } from "ccstate";
 import {
-  consumeChatQueueHead$,
-  rejectUnconsumedChatQueueHead$,
-} from "./chat-queue-consume.service";
-import type { ChatQueuePickResult } from "./chat-queue-wait-reason";
+  and,
+  count,
+  eq,
+  isNotNull,
+  isNull,
+  lte,
+  notExists,
+  or,
+} from "drizzle-orm";
 import type { Tx } from "../../lib/db-types";
+import { logger } from "../../lib/log";
+import { now, nowDate } from "../../lib/time";
+import { waitUntil } from "../context/wait-until";
+import { db$, writeDb$, type Db } from "../external/db";
+import { publishActiveInputToRunnerGroup } from "../external/realtime";
+import { safeSync, settle, tapError } from "../utils";
+import { listPendingChatInputs } from "./chat-event-queue.service";
 import {
-  listPendingChatInputs,
-  loadChatQueueHead,
-} from "./chat-event-queue.service";
+  chatInputEnqueueCommits$,
+  type ChatInputEnqueueCommit,
+} from "./chat-input-enqueue-observation";
+import type { ChatQueuePickResult } from "./chat-queue-wait-reason";
+import { createPickObjects } from "./pick-chat-run.service";
 import {
-  chatThreadHasActiveRun,
-  claimQueuedChatThread,
-  deleteQueuedChatThread,
-  listPickableQueuedChatThreads,
   listQueuedChatThreadOrgIds,
   markChatThreadQueued,
-  releaseQueuedChatThreadClaim,
-  type QueuedChatThreadCursor,
 } from "./queued-chat-thread.service";
 
 const L = logger("ChatThreadQueue");
@@ -46,6 +48,8 @@ export interface EnqueueChatInput {
   readonly appendInput: (tx: Tx) => Promise<string | null>;
   /** The producer's own write that commits with the input, when it has one. */
   readonly persistSourceTransition?: (tx: Tx, eventId: string) => Promise<void>;
+  /** Captures a local receipt; observation failure cannot change a committed input. */
+  readonly onCommitted?: (receipt: ChatInputEnqueueCommit) => void;
   /** Optional, fail-open observation for the workflow producer; no other ingress opts in. */
   readonly measureStep?: <T>(
     step: EnqueueChatInputStep,
@@ -66,8 +70,9 @@ async function measureEnqueueStep<T>(
 /**
  * The single enqueue for every chat input: web, CLI and MCP sends,
  * integrations, and every workflow trigger. One transaction appends the
- * run-less input and upserts the thread's `queued_chat_threads` row, clearing
- * any lease so a picker that read the queue as empty cannot delete the row.
+ * run-less input and upserts the thread's `queued_chat_threads` row, advancing
+ * its `queuedAt` without touching a live lease; a lease holder whose
+ * empty-queue delete misses that change releases and schedules one new pick.
  * The entry captures the input's model at enqueue; the pick resolves that
  * decision's route and performs credit admission. Enqueue adds no explicit
  * row lock.
@@ -77,7 +82,7 @@ export async function enqueueChatInput(
   input: EnqueueChatInput,
 ): Promise<string | null> {
   return await measureEnqueueStep(input, "transaction", async () => {
-    return await db.transaction(async (tx) => {
+    const eventId = await db.transaction(async (tx) => {
       return await measureEnqueueStep(input, "callback", async () => {
         const eventId = await input.appendInput(tx);
         if (eventId === null) {
@@ -93,6 +98,13 @@ export async function enqueueChatInput(
         return eventId;
       });
     });
+    const committedAt = now();
+    if (eventId !== null) {
+      safeSync(() => {
+        input.onCommitted?.({ eventId, committedAt });
+      });
+    }
+    return eventId;
   });
 }
 
@@ -145,217 +157,159 @@ export async function notifyRunningChatRunOfPendingInput(
   return true;
 }
 
-/** Defensive bound on one thread pick's rounds; not a retry. */
-const MAX_PICK_ROUNDS = 1024;
-
-/** What one thread pick did, reported by its last round. */
+/**
+ * User-facing observation of one enqueued input for integrations, taken after
+ * that enqueue's pick has finished.
+ */
 export interface ChatQueuePick extends ChatQueuePickResult {
-  readonly orgId: string | null;
+  readonly orgId: string;
 }
 
 /**
- * Pick one queued thread, round by round:
- *
- * 1. take the 60-second lease; no row or a held lease ends the pick;
- * 2. a busy thread or a full organization releases the lease and ends it;
- * 3. read the strict-FIFO head; an empty queue deletes the row and ends it;
- * 4. consume the head into a run, or reject it as `input.rejected`; only a
- *    thread that actually became busy preserves an unconsumed head;
- * 5. after a launch, keep the row (clearing the lease) when more input waits,
- *    else delete it; after a consumption without a run, release the lease and
- *    start the next round when more input waits, else delete the row.
- *
- * Deleting and releasing are conditioned on this pick's claim id, which every
- * enqueue clears, so a concurrent enqueue always keeps the row.
+ * The integration wait reason for one enqueued input, read after that
+ * enqueue's pick has finished and never from the pick's return value, since
+ * another picker may hold the thread lease (design §5.2):
+ * - a later chat_events row revoking the input means it was already handled
+ *   (a run claimed it, it was rejected, or the user recalled it);
+ * - otherwise a thread in `active_agent_runs` is running, and the input steers
+ *   into that run;
+ * - otherwise the input waits for an organization slot.
+ * Rare cases, such as an earlier queued input rejected ahead of this one, may
+ * report `org-full` for an idle thread; that gap is accepted.
  */
-export const pickQueuedChatThread$ = command(
+const enqueuedChatQueueWaitReason$ = command(
   async (
-    { set },
-    input: { readonly chatThreadId: string },
+    { get },
+    input: {
+      readonly orgId: string;
+      readonly chatThreadId: string;
+      readonly eventId: string;
+    },
     signal: AbortSignal,
   ): Promise<ChatQueuePick> => {
-    const db = set(writeDb$);
-    let last: ChatQueuePick = { reason: "thread-busy", orgId: null };
-    for (let round = 0; round < MAX_PICK_ROUNDS; round++) {
-      const claim = await claimQueuedChatThread(db, input.chatThreadId);
-      signal.throwIfAborted();
-      if (!claim) {
-        return last;
-      }
-      const unavailable = (await chatThreadHasActiveRun(db, claim.chatThreadId))
-        ? "thread-busy"
-        : (await orgHasRunCapacity(db, claim.orgId))
-          ? null
-          : "org-full";
-      signal.throwIfAborted();
-      if (unavailable !== null) {
-        await releaseQueuedChatThreadClaim(db, claim);
-        signal.throwIfAborted();
-        return { reason: unavailable, orgId: claim.orgId };
-      }
-      const head = await loadChatQueueHead(db, claim.chatThreadId);
-      signal.throwIfAborted();
-      if (!head) {
-        await deleteQueuedChatThread(db, claim);
-        signal.throwIfAborted();
-        return last;
-      }
-      const consumption = await settle(
-        set(
-          consumeChatQueueHead$,
-          {
-            chatThreadId: claim.chatThreadId,
-            orgId: claim.orgId,
-            head,
-            dispatchFailedCallbacks: dispatchFailedRunCallbacks$,
-          },
-          signal,
+    const database = get(db$);
+    const [revoker] = await database
+      .select({ id: chatEvents.id })
+      .from(chatEvents)
+      .where(
+        and(
+          eq(chatEvents.chatThreadId, input.chatThreadId),
+          eq(chatEvents.revokesEventId, input.eventId),
         ),
-        signal,
-      );
-      if (!consumption.ok) {
-        L.error("Failed to consume queued chat input", {
-          chatThreadId: claim.chatThreadId,
-          eventId: head.id,
-          error: consumption.error,
-        });
-      }
-      const consumed = consumption.ok
-        ? consumption.value
-        : { kind: "passed" as const };
-      let next = await loadChatQueueHead(db, claim.chatThreadId);
-      signal.throwIfAborted();
-      if (consumed.kind === "passed" && next?.id === head.id) {
-        if (await chatThreadHasActiveRun(db, claim.chatThreadId)) {
-          // Only an actual active run may leave the head for a later pick.
-          await releaseQueuedChatThreadClaim(db, claim);
-          signal.throwIfAborted();
-          return {
-            reason: "thread-busy",
-            orgId: claim.orgId,
-            eventId: head.id,
-          };
-        }
-        await set(
-          rejectUnconsumedChatQueueHead$,
-          {
-            chatThreadId: claim.chatThreadId,
-            orgId: claim.orgId,
-            eventId: head.id,
-            dispatchFailedCallbacks: dispatchFailedRunCallbacks$,
-          },
-          signal,
-        );
-        next = await loadChatQueueHead(db, claim.chatThreadId);
-        signal.throwIfAborted();
-      }
-      last =
-        consumed.kind === "launched"
-          ? {
-              reason: "launched",
-              orgId: claim.orgId,
-              eventId: head.id,
-              runId: consumed.runId,
-            }
-          : { reason: "rejected", orgId: claim.orgId, eventId: head.id };
-      if (!next) {
-        await deleteQueuedChatThread(db, claim);
-        signal.throwIfAborted();
-        return last;
-      }
-      await releaseQueuedChatThreadClaim(db, claim);
-      signal.throwIfAborted();
-      if (consumed.kind === "launched") {
-        // The next input waits for this run's end, which picks the org.
-        return last;
-      }
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (revoker) {
+      return { orgId: input.orgId, reason: "handled" };
     }
-    L.warn("Chat thread pick reached its round limit", {
-      chatThreadId: input.chatThreadId,
-      rounds: MAX_PICK_ROUNDS,
-    });
-    return last;
+    const [active] = await database
+      .select({ runId: activeAgentRuns.runId })
+      .from(activeAgentRuns)
+      .where(eq(activeAgentRuns.chatThreadId, input.chatThreadId))
+      .limit(1);
+    signal.throwIfAborted();
+    return { orgId: input.orgId, reason: active ? "running" : "org-full" };
   },
 );
 
 /**
  * After an enqueue commits: pick the thread once and notify its running run
- * in two independent background tasks. `afterPick` (an integration's wait
- * notice) runs after the pick; `touch` (a direct send's best-effort sidebar
- * touch) and then `publish` (the UI realtime event) run last, also when the
- * pick fails. No entry awaits the pick.
+ * in two independent background tasks. The pick's result (a run, org-full,
+ * none, or an error) never drives the notice. Once the pick finishes, `touch`
+ * (a direct send's best-effort sidebar ordering), `publish` (the UI realtime
+ * event), and then `afterPick` (an integration's wait notice) run in that
+ * order. `afterPick` receives the state of the enqueued input `eventId` and
+ * its thread at that point (see `enqueuedChatQueueWaitReason$`). A failed pick still counts as finished: the later
+ * steps still run, then the pick or notice error is rethrown (both, as an
+ * AggregateError, when both fail). No entry awaits the pick.
+ *
+ * `touch`, `publish`, and `afterPick` stay entry-owned callbacks: turning them
+ * into data would make this module dispatch to every integration's notice
+ * sender, and those modules import this one.
  */
-export function createEnqueuedChatThreadPickScheduler<AfterPickInput>(
-  afterPick$: Command<
-    Promise<void>,
-    [AfterPickInput, ChatQueuePick, AbortSignal]
-  >,
-) {
-  return command(
-    (
-      { set },
-      input: {
-        readonly chatThreadId: string;
-        readonly afterPick?: AfterPickInput;
-        readonly touch?: () => Promise<void>;
-        readonly publish?: () => Promise<void>;
-      },
-    ): void => {
-      const backgroundSignal = new AbortController().signal;
-      waitUntil(
-        (async () => {
-          const picked = await settle(
-            (async () => {
-              const pick = await set(
-                pickQueuedChatThread$,
-                { chatThreadId: input.chatThreadId },
-                backgroundSignal,
-              );
-              if (input.afterPick !== undefined) {
-                await set(afterPick$, input.afterPick, pick, backgroundSignal);
-              }
-            })(),
-          );
-          await input.touch?.();
-          await input.publish?.();
-          if (!picked.ok) {
-            L.error("Failed to pick enqueued chat thread", {
-              chatThreadId: input.chatThreadId,
-              error: picked.error,
-            });
-          }
-        })(),
-      );
-      waitUntil(
-        notifyRunningChatRunOfPendingInput(set(writeDb$), input.chatThreadId),
-      );
-    },
-  );
-}
-
-const runEnqueuedChatThreadAfterPick$ = command(
+export const scheduleEnqueuedChatThreadPick$ = command(
   (
-    _context,
-    afterPick: (pick: ChatQueuePick, signal: AbortSignal) => Promise<void>,
-    pick: ChatQueuePick,
+    { set },
+    input: {
+      readonly orgId: string;
+      readonly chatThreadId: string;
+      readonly enqueueCommit?: ChatInputEnqueueCommit;
+      readonly touch?: () => Promise<void>;
+      readonly publish?: () => Promise<void>;
+    } & (
+      | { readonly afterPick?: undefined; readonly eventId?: undefined }
+      | {
+          readonly afterPick: (
+            pick: ChatQueuePick,
+            signal: AbortSignal,
+          ) => Promise<void>;
+          /** The chat event this enqueue created; the notice observes it. */
+          readonly eventId: string;
+        }
+    ),
     signal: AbortSignal,
-  ) => {
-    return afterPick(pick, signal);
+  ): void => {
+    const receipt = input.enqueueCommit;
+    if (receipt) {
+      set(chatInputEnqueueCommits$, (previous) => {
+        return new Map(previous).set(receipt.eventId, receipt.committedAt);
+      });
+    }
+    const { pick$ } = createPickObjects(input.orgId, input.chatThreadId);
+    waitUntil(
+      (async () => {
+        const picked = await settle(set(pick$, signal));
+        await input.touch?.();
+        await input.publish?.();
+        const noticed = await settle(
+          (async () => {
+            // `eventId` is present exactly when `afterPick` is.
+            if (input.eventId !== undefined) {
+              const pick = await set(
+                enqueuedChatQueueWaitReason$,
+                {
+                  orgId: input.orgId,
+                  chatThreadId: input.chatThreadId,
+                  eventId: input.eventId,
+                },
+                signal,
+              );
+              signal.throwIfAborted();
+              await input.afterPick(pick, signal);
+            }
+          })(),
+        );
+        const errors = [picked, noticed].flatMap((result) => {
+          return result.ok ? [] : [result.error];
+        });
+        if (errors.length > 1) {
+          throw new AggregateError(
+            errors,
+            "Enqueued chat thread pick and wait notice failed",
+          );
+        }
+        if (errors[0] !== undefined) {
+          throw errors[0];
+        }
+      })(),
+    );
+    waitUntil(
+      notifyRunningChatRunOfPendingInput(set(writeDb$), input.chatThreadId),
+    );
   },
 );
-
-export const scheduleEnqueuedChatThreadPick$ =
-  createEnqueuedChatThreadPickScheduler(runEnqueuedChatThreadAfterPick$);
 
 /** Keyset page size for passes over queued threads and organizations. */
 const PICK_PAGE_SIZE = 100;
 
 /**
- * Pick the organization's queued threads oldest first by a (queued_at,
- * chat_thread_id) keyset until the organization is full or no pickable
- * thread remains. Slot release, the cron, and a concurrency-limit change all
- * use this; no thread has priority. A failed thread pick is logged and does
- * not stop the pass.
+ * A finite organization pass handles at most the queued-thread count captured
+ * at entry. One factory owns the keyset cursor and skips active/leased work;
+ * each candidate is visited once, even when it has no input, loses its claim,
+ * or rejects its head. A `none` pick is not a signal that the organization is
+ * empty; the pass stops early only when a pick found the organization full.
+ * Remaining input and new work are handled by the next enqueue, slot release,
+ * or cron pass. Unexpected errors propagate to the caller's error boundary.
  */
 export const pickOrgQueuedChatThreads$ = command(
   async (
@@ -363,42 +317,47 @@ export const pickOrgQueuedChatThreads$ = command(
     input: { readonly orgId: string },
     signal: AbortSignal,
   ): Promise<number> => {
-    const db = set(writeDb$);
+    const database = set(writeDb$);
+    const [snapshot] = await database
+      .select({ count: count() })
+      .from(queuedChatThreads)
+      .where(
+        and(
+          eq(queuedChatThreads.orgId, input.orgId),
+          or(
+            isNull(queuedChatThreads.claimExpiresAt),
+            lte(queuedChatThreads.claimExpiresAt, nowDate()),
+          ),
+          notExists(
+            database
+              .select({ runId: activeAgentRuns.runId })
+              .from(activeAgentRuns)
+              .where(
+                eq(
+                  activeAgentRuns.chatThreadId,
+                  queuedChatThreads.chatThreadId,
+                ),
+              ),
+          ),
+        ),
+      );
+    signal.throwIfAborted();
+    if (!snapshot) {
+      throw new Error("Queued chat thread count returned no row");
+    }
+    const { pick$ } = createPickObjects(input.orgId);
     let launched = 0;
-    let after: QueuedChatThreadCursor | undefined;
-    while (true) {
-      const rows = await listPickableQueuedChatThreads(db, {
-        orgId: input.orgId,
-        limit: PICK_PAGE_SIZE,
-        ...(after === undefined ? {} : { after }),
-      });
+    for (let visited = 0; visited < snapshot.count; visited++) {
+      const picked = await set(pick$, signal);
       signal.throwIfAborted();
-      for (const { chatThreadId } of rows) {
-        const picked = await settle(
-          set(pickQueuedChatThread$, { chatThreadId }, signal),
-          signal,
-        );
-        if (!picked.ok) {
-          L.error("Failed to pick queued chat thread", {
-            chatThreadId,
-            orgId: input.orgId,
-            error: picked.error,
-          });
-          continue;
-        }
-        if (picked.value.reason === "org-full") {
-          return launched;
-        }
-        if (picked.value.reason === "launched") {
-          launched += 1;
-        }
-      }
-      const last = rows.at(-1);
-      if (rows.length < PICK_PAGE_SIZE || last === undefined) {
+      if (picked.kind === "org-full") {
         return launched;
       }
-      after = last;
+      if (picked.kind === "launched") {
+        launched += 1;
+      }
     }
+    return launched;
   },
 );
 

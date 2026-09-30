@@ -1,16 +1,14 @@
-import { randomUUID } from "node:crypto";
-
 import { createStore } from "ccstate";
-
+import { randomUUID } from "node:crypto";
 import { now } from "../lib/time";
-import { createAgentRun$ } from "../signals/services/agent-run-create.service";
+import { buildAgentExecutionConfig } from "../signals/services/agent-execution-config";
 import {
   clearAgentRunPiExecutionSnapshotHookForTest,
-  createTestFixtureAgentRun$,
   setAgentRunPiExecutionSnapshotHookForTest,
   type AgentRunPiExecutionSnapshot,
-} from "../signals/services/agent-runs-create.service";
-import { buildAgentExecutionConfig } from "../signals/services/agent-execution-config";
+} from "../signals/services/agent-run-preparation-hooks";
+import { createAgentRun$ } from "../signals/services/background-agent-run.service";
+import { createTestFixtureAgentRun$ } from "../signals/services/test-agent-run-fixture.service";
 import { createDeferredPromise } from "../signals/utils";
 
 const USER_ID = "thread-run-invariant-user";

@@ -1,22 +1,23 @@
-import { randomUUID } from "node:crypto";
 import {
   resolveChatEventRecommendedFollowups,
   type ChatEvent,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { http, HttpResponse } from "msw";
+import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { testContext } from "../../../__tests__/test-context";
 import { mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import type { ApiTestUser } from "./helpers/api-bdd";
-import { readThreadSessionBinding } from "./helpers/runtime-state";
 import {
+  assistantEvent,
   createChatEventsFixture,
   openRouterBodySchema,
   userMessages,
-  assistantEvent,
 } from "./helpers/chat-events-fixture";
+import { readThreadSessionBinding } from "./helpers/runtime-state";
 
 const context = testContext();
 const {
@@ -346,6 +347,7 @@ describe("CHAT-02: prior rounds and thread titles", () => {
     );
     expect(retriedFollowup.body).toStrictEqual(normalFollowup.body);
     expect(normalFollowup.body.runId).toBeNull();
+    await flushWaitUntilForTest();
     const afterFollowup = await waitForThreadMessages(
       actor,
       first.threadId,

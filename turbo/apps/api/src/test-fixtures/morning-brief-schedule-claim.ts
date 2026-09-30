@@ -2,6 +2,7 @@ import { morningBriefScheduleClaims } from "@okouai/db/schema/morning-brief-sche
 import { asc, eq } from "drizzle-orm";
 
 import { db } from "../lib/db";
+import { withPreparedLaunchPersistenceObserverForTest } from "../signals/services/prepared-launch-persistence-observer.service";
 
 interface MorningBriefScheduleClaimSnapshot {
   readonly id: string;
@@ -40,4 +41,26 @@ export async function readMorningBriefScheduleClaimsFixture(
     .from(morningBriefScheduleClaims)
     .where(eq(morningBriefScheduleClaims.automationId, automationId))
     .orderBy(asc(morningBriefScheduleClaims.claimSequence));
+}
+
+/**
+ * Fail one test-owned launch after its real atomic persistence statement.
+ *
+ * No public API can force a transaction failure at this exact boundary. The
+ * case remains valuable because it proves the Run and journal binding roll
+ * back atomically while setup and verification stay on production routes.
+ */
+export async function withWorkflowAutomationRunPersistenceFailureFixture(args: {
+  readonly automationId: string;
+  readonly work: () => Promise<void>;
+}): Promise<{ readonly attempts: number }> {
+  let attempts = 0;
+  await withPreparedLaunchPersistenceObserverForTest((workflowAutomationId) => {
+    if (workflowAutomationId !== args.automationId) {
+      return;
+    }
+    attempts += 1;
+    throw new Error("forced Morning Brief Run persistence rollback");
+  }, args.work);
+  return { attempts };
 }

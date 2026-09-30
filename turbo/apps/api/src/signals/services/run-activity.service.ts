@@ -18,9 +18,9 @@ import { eventConsumerPayload$ } from "../../lib/event-consumer/route";
 import { logger } from "../../lib/log";
 import { safeSqlStateCode } from "../../lib/pg-errors";
 import { activityRevision, mergeActivity } from "../../lib/run-activity";
+import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import { publishChatThreadDetailChangedSafely } from "../external/realtime";
-import { nowDate } from "../../lib/time";
 import { settleIncludingAbort } from "../utils";
 import { scheduleReleasedSlotPicks$ } from "./agent-run-lifecycle.service";
 import { releaseRunSlots } from "./agent-run-terminal-transition.service";
@@ -171,7 +171,7 @@ export const releaseStaleTerminalActiveAgentRuns$ = command(
     );
     signal.throwIfAborted();
     if (outcome.ok) {
-      set(scheduleReleasedSlotPicks$, outcome.value.released);
+      set(scheduleReleasedSlotPicks$, outcome.value.released, signal);
       // The released run's cancellation recovery barrier is over; open chat
       // threads re-read their detail.
       const releasedRunIds = new Set(

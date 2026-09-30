@@ -1,25 +1,26 @@
 import { MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context";
-import { command } from "ccstate";
 import { morningBriefNativeSchedules } from "@okouai/db/schema/morning-brief-native-schedule";
 import { morningBriefScheduleClaims } from "@okouai/db/schema/morning-brief-schedule-claim";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
+import { command } from "ccstate";
 import { and, eq, sql } from "drizzle-orm";
 
 import { pgTextDecoder } from "../../lib/db-structured-result";
+
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
-import {
-  morningBriefScheduleWhere,
-  morningBriefLegacyWriterAuthorityFromRow,
-} from "./morning-brief-native-schedule.service";
 import { settleLegacyMorningBriefSql } from "./morning-brief-legacy-settlement-sql";
+import {
+  morningBriefLegacyWriterAuthorityFromRow,
+  morningBriefScheduleWhere,
+} from "./morning-brief-native-schedule.service";
 import { settleMorningBriefSchedulePreRunFailure$ } from "./morning-brief-schedule-claim.service";
 import { calculateNextRun } from "./time-automation";
-import type { AutomationRow } from "./workflow-automation-launch.service";
+import type { AutomationRow } from "./workflow-automation-enqueue.service";
 
 const log = logger("WorkflowScheduleFailure");
 

@@ -24,10 +24,10 @@ import {
   pgTimestampWithoutTimezoneToDateSchema,
 } from "../../lib/db-raw-rows";
 import { logger } from "../../lib/log";
+import { timestampWithoutTimeZone } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import { recordBillingOperationTimings } from "../external/sandbox-op-log";
 import { safeSync } from "../utils";
-import { timestampWithoutTimeZone } from "../../lib/time";
 
 const L = logger("CronCompactUsageEvents");
 const USAGE_EVENT_COMPACTION_RAW_SEED_LIMIT = 500;
@@ -56,6 +56,11 @@ interface UsageEventCompactionStats {
 }
 
 const integerTextSchema = z.string().regex(/^-?\d+$/);
+const safeCountSchema = z
+  .string()
+  .regex(/^\d+$/)
+  .transform(Number)
+  .pipe(z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER));
 
 const cutoffRowSchema = z.object({
   cutoff: pgTimestampWithoutTimezoneToDateSchema,
@@ -72,6 +77,7 @@ const compactionRowSchema = z.object({
   rawRowsDeleted: z.int(),
   hourlyRowsDeleted: z.int(),
   hourlyRowsInserted: z.int(),
+  maxGrainSourceRows: safeCountSchema,
   quantity: integerTextSchema,
   creditsCharged: integerTextSchema,
   allowanceUnits: integerTextSchema,
@@ -338,7 +344,8 @@ function consumedSourceCtes(): SQL {
         ${physicalGrainColumns("source_facts")},
         SUM(source_facts.quantity) AS quantity,
         SUM(source_facts.credits_charged) AS credits_charged,
-        SUM(source_facts.allowance_units) AS allowance_units
+        SUM(source_facts.allowance_units) AS allowance_units,
+        ${count()} AS source_rows
       FROM source_facts
       GROUP BY ${physicalGrainColumns("source_facts")}
     )
@@ -513,6 +520,8 @@ function compactionSummarySelect(): SQL {
       row_counts.raw_rows_deleted AS "rawRowsDeleted",
       row_counts.hourly_rows_deleted AS "hourlyRowsDeleted",
       row_counts.hourly_rows_inserted AS "hourlyRowsInserted",
+      COALESCE((SELECT MAX(source_rows) FROM consolidated), 0)::text
+        AS "maxGrainSourceRows",
       source_totals.quantity::text AS "quantity",
       source_totals.credits_charged::text AS "creditsCharged",
       source_totals.allowance_units::text AS "allowanceUnits",
@@ -591,7 +600,11 @@ const compactUsageEventBatch$ = command(
     { set },
     orgId: string | undefined,
     signal: AbortSignal,
-  ): Promise<Omit<UsageEventCompactionStats, "durationMs">> => {
+  ): Promise<
+    Omit<UsageEventCompactionStats, "durationMs"> & {
+      readonly maxGrainSourceRows: number;
+    }
+  > => {
     const db = set(writeDb$);
     const rawSeedLimit = USAGE_EVENT_COMPACTION_RAW_SEED_LIMIT;
     return await db.transaction(async (tx) => {
@@ -666,6 +679,7 @@ const compactUsageEventBatch$ = command(
         rawSeedLimit,
         seededRawRows: compaction.seededRawRows,
         selectedGrains: compaction.selectedGrains,
+        maxGrainSourceRows: compaction.maxGrainSourceRows,
         probedRawRows: holdProbe.probedRawRows,
         billingErrorHeldRows: holdProbe.billingErrorHeldRows,
         rawRowsDeleted: compaction.rawRowsDeleted,
@@ -691,9 +705,14 @@ export const compactUsageEvents$ = command(
     signal: AbortSignal,
   ): Promise<UsageEventCompactionStats> => {
     const startedAt = performance.now();
-    const result = await set(compactUsageEventBatch$, orgId, signal);
+    const { maxGrainSourceRows, ...batch } = await set(
+      compactUsageEventBatch$,
+      orgId,
+      signal,
+    );
+
     const stats = {
-      ...result,
+      ...batch,
       durationMs: Math.round(performance.now() - startedAt),
     };
     const logicalInputRows = stats.rawRowsDeleted + stats.hourlyRowsDeleted;
@@ -714,6 +733,7 @@ export const compactUsageEvents$ = command(
             hourly_rows_inserted: stats.hourlyRowsInserted,
             billing_error_held_rows: stats.billingErrorHeldRows,
             logical_input_rows: logicalInputRows,
+            max_grain_source_rows: maxGrainSourceRows,
             logical_compression_ratio:
               stats.hourlyRowsInserted === 0
                 ? null

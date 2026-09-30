@@ -1,16 +1,15 @@
-import { command } from "ccstate";
 import { personalModelProviderAccountsByIdContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { command } from "ccstate";
 
 import { isNotFoundResponse, notFound } from "../../lib/error";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import { writeDb$ } from "../external/db";
+import type { RouteEntry } from "../route-entry";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
-import { personalAccountsEnabledForOrg } from "../services/personal-accounts-availability.service";
-import { resetStaleAutoMemberSelection$ } from "../services/subscription-model-catalog.service";
 import {
   activatePersonalModelProviderAccount$,
   disconnectPersonalModelProviderAccounts$,
@@ -22,11 +21,12 @@ import {
   consumePersonalCodexRateLimitResetCredit$,
   refreshPersonalModelProviderSubscriptionUsage$,
 } from "../services/model-provider-subscription-usage.service";
+import { personalAccountsEnabledForOrg } from "../services/personal-accounts-availability.service";
 import {
   failedRunAccountIdentity,
   personalSubscriptionAccountIdentity,
 } from "../services/personal-subscription-recovery.service";
-import type { RouteEntry } from "../route-entry";
+import { resetStaleAutoMemberSelection } from "../services/subscription-model-catalog.service";
 
 const getInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
@@ -158,7 +158,7 @@ const deleteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (result) {
     return result;
   }
-  await set(resetStaleAutoMemberSelection$, auth.orgId, auth.userId, signal);
+  await resetStaleAutoMemberSelection(set(writeDb$), auth.orgId, auth.userId);
   signal.throwIfAborted();
   return { status: 204 as const, body: undefined };
 });

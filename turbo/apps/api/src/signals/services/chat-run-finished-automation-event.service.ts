@@ -1,36 +1,38 @@
-import { ChatRunFinishedAutomationAlreadyAdmittedError } from "./workflow-input-queue.service";
-import { command } from "ccstate";
-import { z } from "zod";
-import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
-import { v5 as uuidv5 } from "uuid";
 import {
   chatRunFinishedEventConfigSchema,
   type ChatRunFinishedEventConfig,
 } from "@okouai/api-contracts/contracts/workflows";
+import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import {
-  workflowUserAutomationThreads,
   workflowAutomations,
   workflows,
+  workflowUserAutomationThreads,
 } from "@okouai/db/schema/workflow";
+import { command } from "ccstate";
 import { and, eq, sql } from "drizzle-orm";
+import { v5 as uuidv5 } from "uuid";
+import { z } from "zod";
 import { zodDriverValueDecoder } from "../../lib/db-structured-result";
-import { settle } from "../utils";
-
-import { writeDb$, type Db } from "../external/db";
 import { AUTONOMY_BUDGET_EXHAUSTED_MESSAGE } from "../../lib/error";
 import { now, nowDate } from "../../lib/time";
+import { writeDb$, type Db } from "../external/db";
 import { publishChatThreadMessageCreatedSafely } from "../external/realtime";
-import { loadRunAutonomyBudget } from "./autonomy-budget.service";
+import { settle } from "../utils";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
-import type { ChatRunFinishedEvent } from "./chat-run-finished-event";
-import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
-import { scheduleEnqueuedChatThreadPick$ } from "./chat-thread-queue-drain.service";
-import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
-import { ensureWorkflowUserAutomationThread$ } from "./workflow-user-automation-thread.service";
-import { insertChatEvent } from "./chat-event.service";
+import { loadRunAutonomyBudget } from "./autonomy-budget.service";
 import { touchChatThreadLastMessageAtIndependently } from "./chat-event-shared.service";
 import { attemptChatEventSideEffect } from "./chat-event-write-side-effects.service";
+import { insertChatEvent } from "./chat-event.service";
+import type { ChatRunFinishedEvent } from "./chat-run-finished-event";
+import { scheduleEnqueuedChatThreadPick$ } from "./chat-thread-queue-drain.service";
 import { agentRunSourceTitleSnapshot } from "./chat-user-message.service";
+import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
+import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
+import {
+  ChatRunFinishedAutomationAlreadyAdmittedError,
+  persistWorkflowSourceReceipt,
+} from "./workflow-input-queue.service";
+import { ensureWorkflowUserAutomationThread$ } from "./workflow-user-automation-thread.service";
 
 const CHAT_RUN_FINISHED_EVENT_TYPE = "chat-run-finished";
 // Bounds the finished run's output copied into the triggered run's context.
@@ -212,10 +214,28 @@ const admitChatRunFinishedAutomation$ = command(
             `${automation.id}:${event.runId}`,
             CHAT_RUN_FINISHED_QUEUE_EVENT_NAMESPACE,
           ),
-          queueReceipt: {
-            kind: "chat-run-finished",
-            sourceCallbackId: event.sourceCallbackId,
-            runId: event.runId,
+          persistSourceTransition: async (tx) => {
+            await persistWorkflowSourceReceipt(
+              tx,
+              {
+                receipt: {
+                  kind: "chat-run-finished",
+                  sourceCallbackId: event.sourceCallbackId,
+                  runId: event.runId,
+                },
+                automationId: {
+                  automation,
+                  agentId,
+                  chatThreadId,
+                }.automation.id,
+                chatThreadId: {
+                  automation,
+                  agentId,
+                  chatThreadId,
+                }.chatThreadId,
+              },
+              signal,
+            );
           },
           apiStartTime: now(),
           agentRunSource: {
@@ -242,7 +262,14 @@ const admitChatRunFinishedAutomation$ = command(
         throw admission.error;
       }
       // A competing callback committed this input; wake the thread anyway.
-      set(scheduleEnqueuedChatThreadPick$, { chatThreadId });
+      set(
+        scheduleEnqueuedChatThreadPick$,
+        {
+          orgId: automation.orgId,
+          chatThreadId,
+        },
+        signal,
+      );
     }
   },
 );
@@ -316,9 +343,14 @@ export const dispatchChatRunFinishedAutomationEvents$ = command(
         // Queue admission is durable independently of its launch. A source retry
         // also retries the target wakeup, including after hot-event retention.
         if (row.chatThreadId !== null) {
-          set(scheduleEnqueuedChatThreadPick$, {
-            chatThreadId: row.chatThreadId,
-          });
+          set(
+            scheduleEnqueuedChatThreadPick$,
+            {
+              orgId: row.automation.orgId,
+              chatThreadId: row.chatThreadId,
+            },
+            signal,
+          );
         }
         continue;
       }

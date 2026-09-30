@@ -1,52 +1,52 @@
+import type { SupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { http, HttpResponse } from "msw";
 import { createHash, randomUUID } from "node:crypto";
 import { describe, expect, it, onTestFinished, test } from "vitest";
-import { createPinnedSubscriptionRunFixture } from "../../../test-fixtures/personal-subscription";
-import { readRunModelSourceFixture } from "../../../test-fixtures/agent-runs";
-import {
-  upsertOrgPlanEntitlementFixture,
-  deleteOrgPlanEntitlementFixture,
-} from "../../../test-fixtures/org-plan-entitlement";
-import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
-import { createDeferredPromise } from "../../utils";
-import { readRunUsageEventsFixture } from "../../../test-fixtures/chat-events";
-import { http, HttpResponse } from "msw";
 import { server } from "../../../mocks/server";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import type { SupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
+import { readRunModelSourceFixture } from "../../../test-fixtures/agent-runs";
+import { readRunUsageEventsFixture } from "../../../test-fixtures/chat-events";
+import {
+  deleteOrgPlanEntitlementFixture,
+  upsertOrgPlanEntitlementFixture,
+} from "../../../test-fixtures/org-plan-entitlement";
+import { createPinnedSubscriptionRunFixture } from "../../../test-fixtures/personal-subscription";
+import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
+import { clearAllDetached, createDeferredPromise } from "../../utils";
 
-import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
-import { holdSubscriptionKmsBatch } from "./helpers/subscription-kms-batch";
-import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
+import {
+  modelProviderConnectionsByIdContract,
+  modelProviderConnectionsMainContract,
+} from "@okouai/api-contracts/contracts/model-provider-gateways";
+import { setupRawAppRequestWithRoutes } from "../../../__tests__/test-app";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { setupRawAppRequestWithRoutes } from "../../../__tests__/test-app";
-import { chatEventsRoutes } from "../chat-events";
-import { modelProviderGatewayRoutes } from "../model-provider-gateways";
-import {
-  modelProviderConnectionsMainContract,
-  modelProviderConnectionsByIdContract,
-} from "@okouai/api-contracts/contracts/model-provider-gateways";
-import { createRouteMocks } from "./helpers/route-test";
 import { now, withMockNowForTest } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { chatEventsRoutes } from "../chat-events";
+import { modelProviderGatewayRoutes } from "../model-provider-gateways";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
-import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
-import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
-import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
-import { createAuthDeviceSupportApi } from "./helpers/api-bdd-auth-device-support";
 import {
+  createAuthDeviceApiActions,
   makeCodexAuthJson,
   makeCodexJwt,
   mockClaudeCodeTokenEndpoint,
   mockCodexDeviceAuthProvider,
-  createAuthDeviceApiActions,
 } from "./helpers/api-bdd-auth-device";
+import { createAuthDeviceSupportApi } from "./helpers/api-bdd-auth-device-support";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
+import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import {
   cleanupTimedOutRun,
   type TestTerminalRunStatus,
 } from "./helpers/api-bdd-run-timeout";
+import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
+import { createRouteMocks } from "./helpers/route-test";
+import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
+import { holdSubscriptionKmsBatch } from "./helpers/subscription-kms-batch";
 
 type SubscriptionType = "claude-code-oauth-token" | "codex-oauth-token";
 const context = testContext({ connectorCatalog: true });
@@ -357,17 +357,48 @@ describe("personal subscription run identity", () => {
     },
   );
 
-  it("keeps recovery identity unknown when launch preparation fails", async () => {
+  it("rejects the input without capturing run recovery identity when launch preparation fails", async () => {
     const f = await fixture("codex-oauth-token");
-    context.mocks.s3.getSignedUrl.mockRejectedValue(
-      new Error("Archive signing failed"),
+    const preparationError = new Error("Archive signing failed");
+    context.mocks.s3.getSignedUrl.mockRejectedValue(preparationError);
+    const chat = createChatFilesBddApi(context);
+    const clientEventId = randomUUID();
+    const sent = await chat.requestSendEvent(
+      f.actor,
+      {
+        agentId: f.agentId,
+        prompt: "use my selected subscription",
+        model: f.model,
+        clientEventId,
+      },
+      [201],
     );
-    const runId = await f.start();
-    await expect(runs.readRun(f.actor, runId)).resolves.toMatchObject({
-      status: "failed",
-      error: "Archive signing failed",
-      source: { account: { status: "unknown" } },
-    });
+    if (sent.status !== 201) {
+      throw new Error("Expected the chat send to be queued");
+    }
+    expect(sent.body.runId).toBeNull();
+    await expect(clearAllDetached()).rejects.toBe(preparationError);
+    const { events } = await chat.listThreadEvents(f.actor, sent.body.threadId);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        id: clientEventId,
+        eventType: "input.prompt",
+      }),
+    );
+    // The picked input ends rejected; no run or recovery identity exists.
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        eventType: "input.rejected",
+        revokesEventId: clientEventId,
+        error: "internal_error",
+      }),
+    );
+    await expect(
+      runs.listAgentRuns(f.actor, {
+        status: "queued,pending,running,completed,failed,timeout,cancelled",
+        limit: 100,
+      }),
+    ).resolves.toMatchObject({ runs: [] });
   });
 
   it("admits an Auto member's catalog subscription model on the limited-free plan", async () => {
@@ -377,6 +408,8 @@ describe("personal subscription run identity", () => {
       throw new Error("Expected an organization-scoped actor");
     }
     bdd.acceptAgentStorageWrites();
+    // Run creation requires the member memory that onboarding initializes.
+    expect((await bdd.completeOnboarding(actor)).status).toBe(200);
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     const runnerGroup = runs.configureRunnerGroup();
@@ -746,21 +779,18 @@ describe("personal subscription run identity", () => {
     }
     expect(responseRunIds.size).toBeLessThanOrEqual(1);
 
-    let claimedRunId: string | undefined;
-    await expect
-      .poll(async () => {
-        const events = (await chat.listThreadEvents(f.actor, thread.id)).events;
-        const claims = events.filter((event) => {
-          return (
-            event.eventType === "input.prompt" &&
-            event.revokesEventId === headId &&
-            event.runId !== null
-          );
-        });
-        claimedRunId = claims[0]?.runId ?? undefined;
-        return claims.length;
-      })
-      .toBe(1);
+    await flushWaitUntilForTest();
+    const admittedEvents = (await chat.listThreadEvents(f.actor, thread.id))
+      .events;
+    const claims = admittedEvents.filter((event) => {
+      return (
+        event.eventType === "input.prompt" &&
+        event.revokesEventId === headId &&
+        event.runId !== null
+      );
+    });
+    expect(claims).toHaveLength(1);
+    const claimedRunId = claims[0]?.runId;
     if (!claimedRunId) {
       throw new Error("Expected the input to be claimed by one run");
     }
@@ -1365,6 +1395,7 @@ describe("member-effective model policy contract", () => {
     await configureOrganizationApi(f, "custom");
     const bdd = createBddApi(context);
     const member = bdd.user({ orgId: f.actor.orgId, orgRole: "org:member" });
+    await bdd.completeOnboarding(member);
     const misc = createMiscRoutesApi(context);
     const before = await misc.listModelPolicies(f.actor);
     const other = await misc.listModelPolicies(member);

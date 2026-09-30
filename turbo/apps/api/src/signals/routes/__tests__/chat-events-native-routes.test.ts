@@ -1,16 +1,16 @@
-import { piNativeCatalogModelSchema } from "@okouai/api-contracts/contracts/pi-native-models";
+import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
+import { getProviderRuntimeModel } from "@okouai/api-contracts/contracts/model-providers";
 import {
   PI_NATIVE_CREDENTIAL_PLACEHOLDER,
   piModelConfigV4Schema,
   piNativeInferenceUrl,
 } from "@okouai/api-contracts/contracts/pi-native";
 import { piNativeFirewall } from "@okouai/api-contracts/contracts/pi-native-firewall";
-import { createHash, randomUUID } from "node:crypto";
-import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
-import { getProviderRuntimeModel } from "@okouai/api-contracts/contracts/model-providers";
+import { piNativeCatalogModelSchema } from "@okouai/api-contracts/contracts/pi-native-models";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isPiNativeModel } from "@okouai/core/pi-execution";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
+import { createHash, randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { env, mockEnv } from "../../../lib/env";
@@ -23,20 +23,21 @@ import {
 } from "../../../test-fixtures/pi-memory-stage1-candidates";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import type { ApiTestUser } from "./helpers/api-bdd";
+import { mockClaudeCodeTokenEndpoint } from "./helpers/api-bdd-auth-device";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
-import { readThreadSessionBinding } from "./helpers/runtime-state";
 import {
-  createChatEventsFixture,
+  claimEnvironment,
   configureNativeCliArtifact,
-  requireOrgId,
-  expectNoBuiltInModelUsage,
+  createChatEventsFixture,
   createGptUsagePricingResolution,
   createPiUsagePricingResolution,
-  claimEnvironment,
   expectExactPrivatePiMemoryAdmission,
+  expectNoBuiltInModelUsage,
+  requireOrgId,
   userMessages,
 } from "./helpers/chat-events-fixture";
+import { readThreadSessionBinding } from "./helpers/runtime-state";
 
 const context = testContext();
 const {
@@ -881,7 +882,7 @@ describe("shared native Pi route activation", () => {
     90_000,
   );
 
-  it("rotates native Claude API Pi to personal Claude Code while preserving the logical model", async () => {
+  it("resets native Claude API Pi to personal Claude Code while preserving the session and logical model", async () => {
     const { actor, agentId, runnerGroup, providerId } =
       await entitledChatActor();
     configureNativeCliArtifact();
@@ -919,6 +920,7 @@ describe("shared native Pi route activation", () => {
       usagePricingResolution: await createGptUsagePricingResolution(),
     });
     const original = await readThreadSessionBinding(context, first.threadId);
+    mockClaudeCodeTokenEndpoint();
     await misc.upsertPersonalModelProvider(
       actor,
       {
@@ -938,7 +940,7 @@ describe("shared native Pi route activation", () => {
     expect(
       (await readThreadSessionBinding(context, first.threadId))
         .agent_session_id,
-    ).not.toBe(original.agent_session_id);
+    ).toBe(original.agent_session_id);
     expect(claimEnvironment(claim.claim).ANTHROPIC_MODEL).toBe(model);
     await expect(
       readRunModelSourceFixture(second.runId),

@@ -1,14 +1,5 @@
-import { piNativeCatalogModelSchema } from "@okouai/api-contracts/contracts/pi-native-models";
-import { createHash, randomUUID } from "node:crypto";
-import { gunzipSync, gzipSync, zstdDecompressSync } from "node:zlib";
 import { HeadObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
-import { Header } from "tar";
-import { getInstructionsStorageName } from "@okouai/core/storage-names";
-import { readCanonicalAgentNameFixture } from "../../../../test-fixtures/canonical-agent-authority";
-import { createStoragesBddApi } from "./api-bdd-storages";
-import { storageTextFile } from "./api-bdd-storage-files";
 import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
-import { CANONICAL_WORKING_DIR } from "@okouai/api-contracts/contracts/runners";
 import {
   chatEventsContract,
   chatThreadsContract,
@@ -23,17 +14,23 @@ import { modelProvidersMainContract } from "@okouai/api-contracts/contracts/mode
 import {
   getModelProviderFirewall,
   getProvidersForModel,
-  type UpsertModelProviderRequest,
   type ModelProviderType,
   type SupportedRunModel,
+  type UpsertModelProviderRequest,
 } from "@okouai/api-contracts/contracts/model-providers";
+import { piNativeCatalogModelSchema } from "@okouai/api-contracts/contracts/pi-native-models";
+import { CANONICAL_WORKING_DIR } from "@okouai/api-contracts/contracts/runners";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
 import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { getInstructionsStorageName } from "@okouai/core/storage-names";
 import { createPiSessionJsonl } from "@okouai/pi-agent-runtime/api";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { createStore } from "ccstate";
 import { http, HttpResponse } from "msw";
+import { createHash, randomUUID } from "node:crypto";
+import { gunzipSync, gzipSync, zstdDecompressSync } from "node:zlib";
+import { Header } from "tar";
 import { expect, onTestFinished } from "vitest";
 import { z } from "zod";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
@@ -41,8 +38,10 @@ import { setupApp } from "../../../../__tests__/test-helpers";
 import { createAppWithRoutes } from "../../../../app-factory-core";
 import { env, mockEnv, mockOptionalEnv } from "../../../../lib/env";
 import { computeHmacSignature } from "../../../../lib/event-consumer/hmac";
+import { nowDate } from "../../../../lib/time";
 import { server } from "../../../../mocks/server";
 import { withBuiltInModelRuntimeRouteCandidateUnavailableForTest } from "../../../../test-fixtures/built-in-model-runtime-route";
+import { readCanonicalAgentNameFixture } from "../../../../test-fixtures/canonical-agent-authority";
 import { readRunUsageEventsFixture } from "../../../../test-fixtures/chat-events";
 import {
   readmitPiMemoryStage1CandidateFixture,
@@ -78,9 +77,10 @@ import { createChatFilesBddApi } from "./api-bdd-chat-files";
 import { createConnectorBddApi } from "./api-bdd-connectors";
 import { createMiscRoutesApi } from "./api-bdd-misc";
 import { createRunsApi } from "./api-bdd-runs";
+import { storageTextFile } from "./api-bdd-storage-files";
+import { createStoragesBddApi } from "./api-bdd-storages";
 import { createWebhookCallbackApi } from "./api-bdd-webhooks";
 import { chatEventDisplayText } from "./chat-event";
-import { nowDate } from "../../../../lib/time";
 import { createRouteMocks } from "./route-test";
 import {
   readRunLaunchSnapshotFixture,
@@ -841,10 +841,10 @@ export function createChatEventsFixture(context: TestContext) {
     }
     let runId: string | null | undefined = sent.body.runId;
     if (runId === null) {
-      // Sends enqueue before the background pick creates a run association.
-      // Tests that need the completed pick can await that domain boundary;
-      // other tests may deliberately keep its publication work pending.
-      if (options?.awaitEnqueuedPick) {
+      // A successful-run fixture owns the enqueued pick before inspecting its
+      // effects. Tests that intentionally hold publication can opt out and
+      // observe their own explicit intermediate boundary.
+      if (options?.awaitEnqueuedPick !== false) {
         await flushWaitUntilForTest();
       }
       const messages = await waitForThreadMessages(

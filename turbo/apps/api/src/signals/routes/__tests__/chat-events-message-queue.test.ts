@@ -1,10 +1,10 @@
-import { randomUUID } from "node:crypto";
 import {
   ACTIVE_INPUT_CONTROL_PAYLOAD_MAX_BYTES,
   CANCELLATION_RECOVERY_STALE_AFTER_MS,
   STEERED_INPUT_RUN_NOT_RUNNING_ERROR_CODE,
 } from "@okouai/api-contracts/contracts/runners";
 import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
+import { randomUUID } from "node:crypto";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -14,11 +14,11 @@ import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandbo
 import { expectApiError } from "./helpers/api-bdd";
 import { cleanupTimedOutRun } from "./helpers/api-bdd-run-timeout";
 import { chatEventDisplayText } from "./helpers/chat-event";
-import { steerRunTimeBudgetFixture } from "./helpers/runtime-state";
 import {
   createChatEventsFixture,
   userMessages,
 } from "./helpers/chat-events-fixture";
+import { steerRunTimeBudgetFixture } from "./helpers/runtime-state";
 
 const context = testContext();
 const {
@@ -167,6 +167,9 @@ describe("CHAT-02: queueing and recalling messages", () => {
       api.nextSteerableInput(claimed.claim.sandboxToken, active.runId),
     ).resolves.toStrictEqual(firstRead);
 
+    // Enqueue notifications run in waitUntil; finish them before counting the
+    // notifications owned by the concurrent steering declarations.
+    await flushWaitUntilForTest();
     context.mocks.ably.publish.mockClear();
     const declarations = await Promise.all([
       api.declareSteeredInput(
@@ -489,6 +492,7 @@ describe("CHAT-02: queueing and recalling messages", () => {
         prompt: "release only after teardown completion",
       },
     });
+    await flushWaitUntilForTest();
     context.mocks.ably.publish.mockClear();
     context.mocks.ably.publish.mockRejectedValueOnce(
       new DOMException("timeout cancel unavailable", "AbortError"),

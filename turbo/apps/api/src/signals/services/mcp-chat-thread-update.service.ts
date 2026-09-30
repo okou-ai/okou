@@ -1,16 +1,17 @@
+import type { McpChatMutationResult } from "@okouai/api-contracts/contracts/mcp-chat-mutations";
 import type {
   McpUpdateChatThreadInput,
   McpUpdateChatThreadOutput,
 } from "@okouai/api-contracts/contracts/mcp-chat-thread-update";
-import type { McpChatMutationResult } from "@okouai/api-contracts/contracts/mcp-chat-mutations";
 import { formatMcpChatTimestamp } from "@okouai/api-contracts/contracts/mcp-chat-time";
 import { command } from "ccstate";
+import { writeDb$ } from "../external/db";
 
 import { env } from "../../lib/env";
 import { publishThreadListChanged } from "../external/realtime";
 import { settle } from "../utils";
 import { updateChatThreadMetadata$ } from "./chat-thread-metadata-update.service";
-import { mcpChatThreadModels$ } from "./mcp-chat-thread-model.service";
+import { mcpChatThreadModels } from "./mcp-chat-thread-model.service";
 
 interface Principal {
   readonly userId: string;
@@ -93,12 +94,9 @@ export const updateMcpChatThread$ = command(
       };
     }
 
-    const models = await set(
-      mcpChatThreadModels$,
-      args.principal,
-      [update.state.selectedModel],
-      signal,
-    );
+    const models = await mcpChatThreadModels(set(writeDb$), args.principal, [
+      update.state.selectedModel,
+    ]);
     signal.throwIfAborted();
     const model = models.get(update.state.selectedModel);
     if (!model) {

@@ -1,29 +1,28 @@
-import { command } from "ccstate";
 import type { RunnerCancellationMode } from "@okouai/api-contracts/contracts/runners";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
-
+import { notFound, runNotCancellable } from "../../lib/error";
+import { logger } from "../../lib/log";
+import { now } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import {
   publishCancelToRunnerGroup,
   publishChatThreadDetailChangedSafely,
   publishRunQueueChangedForOrgSafely,
 } from "../external/realtime";
-import { logger } from "../../lib/log";
-import { notFound, runNotCancellable } from "../../lib/error";
-import { now } from "../../lib/time";
 import { tapError } from "../utils";
 import {
   dispatchRunCallbacks$,
   undeliveredChatCallbackIdForRun,
 } from "./agent-run-callback.service";
-import { scheduleReleasedSlotPicks$ } from "./agent-run-lifecycle.service";
-import { processOrgUsageEvents$ } from "./credit-usage.service";
 import { cancelLockedRun } from "./agent-run-cancellation-transition.service";
+import { scheduleReleasedSlotPicks$ } from "./agent-run-lifecycle.service";
 import {
   releaseRunSlots,
   type ReleasedRunSlot,
 } from "./agent-run-terminal-transition.service";
+import { processOrgUsageEvents$ } from "./credit-usage.service";
 import { lockCancellationProtection } from "./threadless-run-protection.service";
 import { THREADLESS_RUN_PROTECTIONS } from "./threadless-run-protections";
 
@@ -199,7 +198,7 @@ export const cancelRun$ = command(
     signal.throwIfAborted();
     // Only a committed cancellation reaches here: a never-started run's slot
     // goes back to its organization before any other side effect.
-    set(scheduleReleasedSlotPicks$, releasedSlots);
+    set(scheduleReleasedSlotPicks$, releasedSlots, signal);
 
     return result;
   },

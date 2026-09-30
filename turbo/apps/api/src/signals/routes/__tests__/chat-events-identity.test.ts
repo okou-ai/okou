@@ -8,14 +8,14 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { readAgentRunState$ } from "./helpers/agent-run-callback";
 import { expectApiError, type ApiTestUser } from "./helpers/api-bdd";
 import { createComputerUseBddApi } from "./helpers/api-bdd-computer-use";
-import { readRunAutonomyBudgetFixture } from "./helpers/runtime-state";
 import {
   createChatEventsFixture,
-  type PromptMessage,
-  type RunnerClaim,
   okouTokenFromClaim,
   userMessages,
+  type PromptMessage,
+  type RunnerClaim,
 } from "./helpers/chat-events-fixture";
+import { readRunAutonomyBudgetFixture } from "./helpers/runtime-state";
 
 const context = testContext();
 const {
@@ -233,6 +233,7 @@ describe("CHAT-02: run-scoped agent-token chat launches", () => {
     }
     expect(immediateSend.body.runId).toBeNull();
     // The idle thread's background pick launches the handoff.
+    await flushWaitUntilForTest();
     const launchedMessages = await waitForThreadMessages(
       actor,
       createdThread.body.id,
@@ -302,6 +303,7 @@ describe("CHAT-02: run-scoped agent-token chat launches", () => {
     expect(queued.body.runId).toBeNull();
 
     await cancelChatRun(actor, immediateRunId);
+    await flushWaitUntilForTest();
     const promotedMessages = await waitForThreadMessages(
       actor,
       createdThread.body.id,

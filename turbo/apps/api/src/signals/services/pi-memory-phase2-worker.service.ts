@@ -1,32 +1,28 @@
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { piMemoryPhase2Jobs } from "@okouai/db/schema/pi-memory-phase2-job";
+import { piMemoryPhase2SelectionDigest } from "@okouai/pi-agent-runtime/api";
+import { command } from "ccstate";
+import { and, asc, eq, isNotNull } from "drizzle-orm";
 import {
   checkPiMemoryQuota,
   PiMemoryQuotaError,
 } from "./pi-memory-quota.service";
 import { checkOrgCreditsForRunAdmission } from "./run-admission.service";
-import { piMemoryPhase2SelectionDigest } from "@okouai/pi-agent-runtime/api";
-import { PI_MEMORY_ROOT } from "@okouai/api-contracts/contracts/runners";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { piMemoryPhase2Jobs } from "@okouai/db/schema/pi-memory-phase2-job";
-import { command } from "ccstate";
-import { and, asc, eq, isNotNull } from "drizzle-orm";
 
 import { logger } from "../../lib/log";
 import { now, nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import { settle } from "../utils";
-import {
-  createAgentRun$,
-  type PersistProducerRunBinding,
-} from "./agent-run-create.service";
 import { dispatchRunCallbacks$ } from "./agent-run-callback.service";
+import type { PersistProducerRunBinding } from "./agent-run-contracts";
+import { createAgentRun$ } from "./background-agent-run.service";
+import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import {
   PiMemoryPhase2CredentialError,
   resolvePiMemoryPhase2Credential,
 } from "./pi-memory-phase2-credential.service";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
-import { bindPiMemoryPhase2MaintenanceRun } from "./pi-memory-phase2-maintenance.service";
 import {
   claimPiMemoryPhase2Job,
   failPiMemoryPhase2Job,
@@ -34,6 +30,7 @@ import {
   type ClaimedPiMemoryPhase2Job,
   type PiMemoryPhase2OwnerScope,
 } from "./pi-memory-phase2-job.service";
+import { bindPiMemoryPhase2MaintenanceRun } from "./pi-memory-phase2-maintenance.service";
 
 const log = logger("PiMemoryPhase2Worker");
 
@@ -297,13 +294,6 @@ const dispatchClaim$ = command(
           triggerSource: "agent",
           // Private BYOK runs need an encrypted namespace for dynamic secrets.
           secrets: {},
-          artifacts: [
-            {
-              name: "memory",
-              version: claim.baseVersion.versionId,
-              mountPath: PI_MEMORY_ROOT,
-            },
-          ],
         },
         apiStartTime: now(),
         modelProviderType: credential.pin.modelProvider,
@@ -358,6 +348,7 @@ const dispatchClaim$ = command(
         piExecution: true,
         piLaunchConfig: { maintenance },
         artifactMissingRootPolicy: "fail",
+        pinnedMemoryVersionId: claim.baseVersion.versionId,
       },
       signal,
     );

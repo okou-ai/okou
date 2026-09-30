@@ -1,10 +1,11 @@
-import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { chatEvents } from "@okouai/db/schema/chat-event";
 import {
   CHAT_EVENT_TYPES,
   chatEventCompatibilityRole,
   type ChatEventType,
 } from "@okouai/api-contracts/contracts/chat-events";
+import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { chatEvents } from "@okouai/db/schema/chat-event";
+import { computed, type Computed } from "ccstate";
 import {
   and,
   asc,
@@ -25,14 +26,14 @@ import { z } from "zod";
 
 import { executeRawRows } from "../../lib/db-raw-rows";
 import { pgBooleanDecoder } from "../../lib/db-structured-result";
-import type { Db } from "../external/db";
+import { db$, rawSqlReadDb$, type Db } from "../external/db";
+import { canonicalChatEventContent } from "./canonical-chat-event-read.service";
+import { visibleChatEventCondition } from "./chat-event-shared.service";
 import {
   chatEventTextCondition,
   chatEventTypeIn,
   runOwnedChatEventCondition,
 } from "./chat-event-type.service";
-import { visibleChatEventCondition } from "./chat-event-shared.service";
-import { canonicalChatEventContent } from "./canonical-chat-event-read.service";
 
 const INCOMPLETE_ROUND_LIMIT = 20;
 const INCOMPLETE_EVENT_CHAR_CAP = 4000;
@@ -65,6 +66,14 @@ interface IncompleteRoundEvent {
 interface IncompleteRound extends IncompleteRoundSelection {
   readonly events: IncompleteRoundEvent[];
 }
+
+export interface WebChatIncompleteContextInput {
+  readonly threadId: string;
+}
+
+type IncompleteContextInputObject = Computed<
+  Promise<WebChatIncompleteContextInput | undefined>
+>;
 
 function isIncompleteRunStatus(value: string): value is IncompleteRunStatus {
   return value === "cancelled" || value === "failed" || value === "timeout";
@@ -169,23 +178,29 @@ function incompleteRoundAnchorQuery(
     .limit(1);
 }
 
-async function selectIncompleteRoundFrontier(
-  db: Db,
-  threadId: string,
-): Promise<readonly IncompleteRoundSelection[]> {
-  const newestAnchor = incompleteRoundAnchorQuery(db, threadId, undefined);
-  const precedingAnchor = incompleteRoundAnchorQuery(
-    db,
-    threadId,
-    sql`incomplete_frontier.seq_id`,
-  );
-  // Keep the stop at the successful run inside this single statement. Loading
-  // 21 anchors first would scan older, unused history even after a success.
-  // The installed builder cannot express the recursive statement; its two
-  // candidate reads still use the typed builder and share one snapshot.
-  const rows = await executeRawRows(
-    db,
-    sql`
+function createIncompleteRoundFrontierObject(
+  input$: IncompleteContextInputObject,
+) {
+  return computed(async (get): Promise<readonly IncompleteRoundSelection[]> => {
+    const input = await get(input$);
+    if (!input) {
+      return [];
+    }
+    const { threadId } = input;
+    const db = get(rawSqlReadDb$);
+    const newestAnchor = incompleteRoundAnchorQuery(db, threadId, undefined);
+    const precedingAnchor = incompleteRoundAnchorQuery(
+      db,
+      threadId,
+      sql`incomplete_frontier.seq_id`,
+    );
+    // Keep the stop at the successful run inside this single statement. Loading
+    // 21 anchors first would scan older, unused history even after a success.
+    // The installed builder cannot express the recursive statement; its two
+    // candidate reads still use the typed builder and share one snapshot.
+    const rows = await executeRawRows(
+      db,
+      sql`
       WITH RECURSIVE incomplete_frontier AS (
         SELECT candidate.*, 1 AS depth
         FROM (${newestAnchor}) AS candidate(run_id, run_status, is_success, seq_id)
@@ -203,80 +218,88 @@ async function selectIncompleteRoundFrontier(
       FROM incomplete_frontier
       ORDER BY depth
     `,
-    incompleteRoundFrontierRowSchema,
-  );
+      incompleteRoundFrontierRowSchema,
+    );
 
-  const rounds: IncompleteRoundSelection[] = [];
-  for (const row of rows) {
-    if (row.isSuccess) {
-      break;
+    const rounds: IncompleteRoundSelection[] = [];
+    for (const row of rows) {
+      if (row.isSuccess) {
+        break;
+      }
+      if (
+        rounds.length < INCOMPLETE_ROUND_LIMIT &&
+        isIncompleteRunStatus(row.runStatus)
+      ) {
+        rounds.push({ runId: row.runId, status: row.runStatus });
+      }
     }
-    if (
-      rounds.length < INCOMPLETE_ROUND_LIMIT &&
-      isIncompleteRunStatus(row.runStatus)
-    ) {
-      rounds.push({ runId: row.runId, status: row.runStatus });
-    }
-  }
 
-  return rounds.reverse();
+    return rounds.reverse();
+  });
 }
 
-async function loadSelectedIncompleteRounds(
-  db: Db,
-  threadId: string,
-  selection: readonly IncompleteRoundSelection[],
-): Promise<readonly IncompleteRound[]> {
-  if (selection.length === 0) {
-    return [];
-  }
-
-  const runIds = selection.map((round) => {
-    return round.runId;
-  });
-  const rows = await db
-    .select({
-      runId: chatEvents.runId,
-      eventType: chatEvents.eventType,
-      content: canonicalChatEventContent(),
-      agentPrompt: agentRuns.prompt,
-    })
-    .from(chatEvents)
-    .innerJoin(agentRuns, eq(agentRuns.id, chatEvents.runId))
-    .where(
-      and(
-        eq(chatEvents.chatThreadId, threadId),
-        inArray(chatEvents.runId, runIds),
-        chatEventTextCondition(),
-        visibleChatEventCondition(db),
-      ),
-    )
-    .orderBy(asc(chatEvents.seqId));
-
-  // Seed the map in selected run order. Interleaved late text can change the
-  // first visible row of a round, but must not change the round's position.
-  const roundsByRunId = new Map<string, IncompleteRound>();
-  for (const round of selection) {
-    roundsByRunId.set(round.runId, { ...round, events: [] });
-  }
-  for (const row of rows) {
-    if (row.runId === null) {
-      continue;
+function createIncompleteRoundEventsObject(
+  input$: IncompleteContextInputObject,
+  selection$: ReturnType<typeof createIncompleteRoundFrontierObject>,
+) {
+  return computed(async (get): Promise<readonly IncompleteRound[]> => {
+    const [input, selection] = await Promise.all([
+      get(input$),
+      get(selection$),
+    ]);
+    if (!input || selection.length === 0) {
+      return [];
     }
-    const round = roundsByRunId.get(row.runId);
-    if (round === undefined) {
-      continue;
-    }
-    round.events.push({
-      eventType: row.eventType,
-      role: chatEventCompatibilityRole(row.eventType),
-      content: row.content,
-      agentPrompt: row.agentPrompt,
+    const { threadId } = input;
+    const db = get(db$);
+
+    const runIds = selection.map((round) => {
+      return round.runId;
     });
-  }
+    const rows = await db
+      .select({
+        runId: chatEvents.runId,
+        eventType: chatEvents.eventType,
+        content: canonicalChatEventContent(),
+        agentPrompt: agentRuns.prompt,
+      })
+      .from(chatEvents)
+      .innerJoin(agentRuns, eq(agentRuns.id, chatEvents.runId))
+      .where(
+        and(
+          eq(chatEvents.chatThreadId, threadId),
+          inArray(chatEvents.runId, runIds),
+          chatEventTextCondition(),
+          visibleChatEventCondition(db),
+        ),
+      )
+      .orderBy(asc(chatEvents.seqId));
 
-  return [...roundsByRunId.values()].filter((round) => {
-    return round.events.length > 0;
+    // Seed the map in selected run order. Interleaved late text can change the
+    // first visible row of a round, but must not change the round's position.
+    const roundsByRunId = new Map<string, IncompleteRound>();
+    for (const round of selection) {
+      roundsByRunId.set(round.runId, { ...round, events: [] });
+    }
+    for (const row of rows) {
+      if (row.runId === null) {
+        continue;
+      }
+      const round = roundsByRunId.get(row.runId);
+      if (round === undefined) {
+        continue;
+      }
+      round.events.push({
+        eventType: row.eventType,
+        role: chatEventCompatibilityRole(row.eventType),
+        content: row.content,
+        agentPrompt: row.agentPrompt,
+      });
+    }
+
+    return [...roundsByRunId.values()].filter((round) => {
+      return round.events.length > 0;
+    });
   });
 }
 
@@ -338,11 +361,13 @@ function buildWebChatIncompleteContext(
   ].join("\n");
 }
 
-export async function loadWebChatIncompleteContext(
-  db: Db,
-  threadId: string,
-): Promise<string> {
-  const selection = await selectIncompleteRoundFrontier(db, threadId);
-  const rounds = await loadSelectedIncompleteRounds(db, threadId, selection);
-  return buildWebChatIncompleteContext(rounds);
+export function createWebChatIncompleteContextObjects(
+  input$: IncompleteContextInputObject,
+) {
+  const frontier$ = createIncompleteRoundFrontierObject(input$);
+  const rounds$ = createIncompleteRoundEventsObject(input$, frontier$);
+  const incompleteContext$ = computed(async (get) => {
+    return buildWebChatIncompleteContext(await get(rounds$));
+  });
+  return { incompleteContext$ };
 }

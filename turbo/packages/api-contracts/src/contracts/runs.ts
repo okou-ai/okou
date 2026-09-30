@@ -87,16 +87,6 @@ const unifiedRunRequestSchema = z
     // Base parameters (can be used directly or overridden after shortcut expansion)
     agentId: z.string().optional(),
     conversationId: z.string().optional(),
-    // Multi-mount artifacts, each with its own mountPath.
-    artifacts: z
-      .array(
-        z.object({
-          name: z.string(),
-          version: z.string().optional(),
-          mountPath: z.string(),
-        }),
-      )
-      .optional(),
     vars: z.record(z.string(), z.string()).optional(),
     secrets: z.record(z.string(), z.string()).optional(),
     volumeVersions: z.record(z.string(), z.string()).optional(),

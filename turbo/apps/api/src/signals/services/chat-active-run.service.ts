@@ -1,26 +1,10 @@
 import { CANCELLATION_RECOVERY_STALE_AFTER_MS } from "@okouai/api-contracts/contracts/runners";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import {
-  and,
-  eq,
-  exists,
-  gt,
-  isNotNull,
-  ne,
-  notExists,
-  or,
-  type SQL,
-} from "drizzle-orm";
-import type { Db } from "../external/db";
+import { and, eq, gt, isNotNull, notExists, or, type SQL } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
+import type { Db } from "../external/db";
 import { chatEventTypeIn } from "./chat-event-type.service";
-
-interface ChatThreadAdmissionConditionArgs {
-  readonly threadId: string;
-  readonly excludeRunId?: string;
-}
 
 function unresolvedCancellationRecoveryCondition(
   db: Pick<Db, "select">,
@@ -82,30 +66,6 @@ export async function cancellationRecoveryPendingForThread(
     .limit(1);
 
   return run !== undefined;
-}
-
-/**
- * A thread is busy while it holds an active run row. The row lives from launch
- * until the Runner finishes with the run (completion, or timeout cleanup), so
- * it also covers cancellation recovery and open active-input deliveries.
- */
-export function chatThreadAdmissionBlockerCondition(
-  db: Pick<Db, "select">,
-  args: ChatThreadAdmissionConditionArgs,
-): SQL {
-  return exists(
-    db
-      .select({ runId: activeAgentRuns.runId })
-      .from(activeAgentRuns)
-      .where(
-        and(
-          eq(activeAgentRuns.chatThreadId, args.threadId),
-          args.excludeRunId === undefined
-            ? undefined
-            : ne(activeAgentRuns.runId, args.excludeRunId),
-        ),
-      ),
-  );
 }
 
 // A managed browser outlives the run that opened it and the next run simply

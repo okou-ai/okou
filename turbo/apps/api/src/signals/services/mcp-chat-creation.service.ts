@@ -1,13 +1,13 @@
 import type {
-  McpCreateChatWithMessageInput,
   McpCreateChatThreadInput,
   McpCreateChatThreadOutput,
+  McpCreateChatWithMessageInput,
   McpCreateEmptyChatThreadOutput,
 } from "@okouai/api-contracts/contracts/mcp-chat-creation";
 import type { McpChatMutationResult } from "@okouai/api-contracts/contracts/mcp-chat-mutations";
 import { formatMcpChatTimestamp } from "@okouai/api-contracts/contracts/mcp-chat-time";
-import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
+import { agents } from "@okouai/db/schema/agent";
 import { chatThreadEvents } from "@okouai/db/schema/chat-thread-event";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { command } from "ccstate";
@@ -26,6 +26,8 @@ import { writeDb$ } from "../external/db";
 import { publishThreadListChanged } from "../external/realtime";
 import { settle } from "../utils";
 import { visibleJoinedAgentCondition } from "./agent-data.service";
+import { resolveChatReasoningEffort } from "./chat-reasoning-effort.service";
+import { loadNewChatThreadDefaults$ } from "./chat-thread-defaults.service";
 import {
   chatThreadEventInsertSql,
   chatThreadServiceTierFromCodex,
@@ -34,13 +36,11 @@ import {
   chatThreadModelPinColumns,
   resolveRequiredDefaultChatThreadModelPin$,
 } from "./chat-thread-model.service";
-import { loadNewChatThreadDefaults$ } from "./chat-thread-defaults.service";
-import { resolveChatReasoningEffort } from "./chat-reasoning-effort.service";
-import { mcpChatThreadModels$ } from "./mcp-chat-thread-model.service";
 import { submitMcpChatInput$ } from "./mcp-chat-send.service";
+import { mcpChatThreadModels } from "./mcp-chat-thread-model.service";
 import {
   MODEL_FIRST_SELECTION_PROVIDER_ID,
-  resolveModelSelectionPin$,
+  resolveModelSelectionPin,
   type ModelFirstPin,
 } from "./model-selection.service";
 
@@ -302,18 +302,15 @@ const prepareThreadModel$ = command(
             ? "ultrafast"
             : null;
     } else {
-      const resolved = await set(
-        resolveModelSelectionPin$,
-        {
-          orgId: principal.orgId,
-          userId: principal.userId,
-          modelSelection: {
-            modelProviderId: MODEL_FIRST_SELECTION_PROVIDER_ID,
-            selectedModel: input.model,
-          },
+      const resolved = await resolveModelSelectionPin({
+        db: set(writeDb$),
+        orgId: principal.orgId,
+        userId: principal.userId,
+        modelSelection: {
+          modelProviderId: MODEL_FIRST_SELECTION_PROVIDER_ID,
+          selectedModel: input.model,
         },
-        signal,
-      );
+      });
       signal.throwIfAborted();
       if ("status" in resolved) {
         return {
@@ -481,12 +478,9 @@ const createChatThread$ = command(
     if (thread.agentId !== agentId) {
       creationConflict();
     }
-    const models = await set(
-      mcpChatThreadModels$,
-      principal,
-      [thread.selectedModel],
-      signal,
-    );
+    const models = await mcpChatThreadModels(set(writeDb$), principal, [
+      thread.selectedModel,
+    ]);
     signal.throwIfAborted();
     const model = models.get(thread.selectedModel);
     if (!model) {

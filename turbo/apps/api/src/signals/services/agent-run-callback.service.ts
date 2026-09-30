@@ -1,14 +1,14 @@
-import { command } from "ccstate";
 import { formatRunBalanceError } from "@okouai/api-contracts/contracts/run-balance-errors";
-import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
+import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
+import { command } from "ccstate";
 import { and, eq, inArray, isNull, notInArray, or } from "drizzle-orm";
 import { env, optionalEnv } from "../../lib/env";
 import { computeHmacSignature } from "../../lib/event-consumer/hmac";
 import { logger } from "../../lib/log";
-import { writeDb$, type Db } from "../external/db";
 import { now, nowDate } from "../../lib/time";
+import { writeDb$, type Db } from "../external/db";
 import { settle } from "../utils";
 import { decryptPersistentSecretValue } from "./crypto.utils";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
@@ -20,10 +20,9 @@ import {
   type InternalRunCallbackEnvelope,
   type InternalRunCallbackKind,
 } from "./internal-run-callback";
-import { handleWorkflowAutomationInternalCallback$ } from "./workflow-automation-run-callback.service";
 import { handleWorkflowAutomationResultEmailInternalCallback$ } from "./internal-workflow-automation-result-email-callback.service";
 import { handlePiMemoryPhase2MaintenanceCallback } from "./pi-memory-phase2-maintenance.service";
-import type { DispatchFailedRunCallbacks } from "./agent-run-create.service";
+import { handleWorkflowAutomationInternalCallback$ } from "./workflow-automation-run-callback.service";
 
 const L = logger("AgentRunCallback");
 
@@ -376,16 +375,6 @@ export const dispatchRunCallbacks$ = command(
       results.push(dispatchResult);
     }
     return results;
-  },
-);
-
-export const dispatchFailedRunCallbacks$: DispatchFailedRunCallbacks = command(
-  async ({ set }, { db, runId, error }, signal): Promise<void> => {
-    await set(
-      dispatchRunCallbacks$,
-      { db, runId, status: "failed", error },
-      signal,
-    );
   },
 );
 

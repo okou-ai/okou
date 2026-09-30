@@ -10,12 +10,13 @@ import type {
 } from "@okouai/api-contracts/contracts/mcp-chat-threads";
 import { formatMcpChatTimestamp } from "@okouai/api-contracts/contracts/mcp-chat-time";
 import { agentDisplayName } from "@okouai/core/brand-presentation";
-import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
+import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { and, desc, eq, gte, ilike, lt, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 
+import { command } from "ccstate";
 import {
   nullableDriverValueDecoder,
   pgBooleanDecoder,
@@ -24,9 +25,8 @@ import {
 import { env } from "../../lib/env";
 import { now } from "../../lib/time";
 import { writeDb$ } from "../external/db";
-import { command } from "ccstate";
 import { safeJsonParse } from "../utils";
-import { mcpChatThreadModels$ } from "./mcp-chat-thread-model.service";
+import { mcpChatThreadModels } from "./mcp-chat-thread-model.service";
 
 interface Principal {
   readonly userId: string;
@@ -224,13 +224,12 @@ const projectThreads$ = command(
     rows: readonly ThreadRow[],
     signal?: AbortSignal,
   ): Promise<McpChatThread[]> => {
-    const models = await set(
-      mcpChatThreadModels$,
+    const models = await mcpChatThreadModels(
+      set(writeDb$),
       principal,
       rows.map((row) => {
         return row.selectedModel;
       }),
-      signal,
     );
     signal?.throwIfAborted();
     return rows.map((row) => {

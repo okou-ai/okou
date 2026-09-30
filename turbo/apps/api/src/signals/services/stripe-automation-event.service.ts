@@ -1,10 +1,6 @@
 import {
-  StripeDeliveryClaimChangedError,
-  StripeDeliveryTargetChangedError,
-} from "./workflow-stripe-queue.service";
-import {
-  stripeInvoicePaidEventConfigSchema,
   stripeInvoiceBillingReasonSchema,
+  stripeInvoicePaidEventConfigSchema,
   type StripeInvoiceBillingReason,
 } from "@okouai/api-contracts/contracts/workflows";
 import type {
@@ -18,20 +14,20 @@ import {
   stripeWorkflowDeliveries,
 } from "@okouai/db/schema/stripe-automation-event";
 import {
-  workflowUserAutomationThreads,
   workflowAutomations,
   workflows,
+  workflowUserAutomationThreads,
 } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
 import { and, asc, eq, inArray, isNull, lte, or } from "drizzle-orm";
 import { z } from "zod";
-
 import type { Tx } from "../../lib/db-types";
 import { logger } from "../../lib/log";
 import { now, nowDate } from "../../lib/time";
 import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { settle } from "../utils";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
+import { loadConnectorRuntimeSnapshot } from "./connector-catalog-runtime.service";
 import { stripeInvoicePaidWorkflowAutomationEnabledForOwnerInDb } from "./stripe-invoice-paid-workflow-automation-feature-switch.service";
 import {
   repairMissingStripeInvoicePaidAutomationProjection,
@@ -43,8 +39,13 @@ import type {
   AutomationRow,
   RunWorkflowAutomationNowArgs,
   RunWorkflowAutomationResult,
-} from "./workflow-automation-launch.service";
+} from "./workflow-automation-enqueue.service";
 import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
+import {
+  persistStripeWorkflowSource,
+  StripeDeliveryClaimChangedError,
+  StripeDeliveryTargetChangedError,
+} from "./workflow-stripe-queue.service";
 
 const log = logger("api:stripe-automation-event");
 
@@ -1356,6 +1357,8 @@ async function processClaimedDelivery(
     return "lost";
   }
   const target = validation.target;
+  const snapshot = await loadConnectorRuntimeSnapshot(args.db);
+  signal.throwIfAborted();
   const started = await settle(
     args.startRun(
       {
@@ -1373,16 +1376,35 @@ async function processClaimedDelivery(
         triggerSource: "automation-event",
         triggerBrief: `Stripe invoice paid: ${args.delivery.snapshot.invoice.id}`,
         replacePendingScheduleTick: false,
-        stripeSource: {
-          id: args.delivery.id,
-          revision: args.delivery.revision,
-          automationId: args.delivery.automationId,
-          connectorId: args.delivery.connectorId,
-          stripeAccountId: args.delivery.stripeAccountId,
-          livemode: args.delivery.livemode,
-          billingReason: args.delivery.billingReason,
-          orgId: target.automation.orgId,
-          userId: target.automation.ownerUserId,
+        persistSourceTransition: async (tx) => {
+          await persistStripeWorkflowSource(
+            tx,
+            {
+              source: {
+                id: args.delivery.id,
+                revision: args.delivery.revision,
+                automationId: args.delivery.automationId,
+                connectorId: args.delivery.connectorId,
+                stripeAccountId: args.delivery.stripeAccountId,
+                livemode: args.delivery.livemode,
+                billingReason: args.delivery.billingReason,
+                orgId: target.automation.orgId,
+                userId: target.automation.ownerUserId,
+              },
+              automationId: {
+                automation: target.automation,
+                agentId: target.agentId,
+                chatThreadId: target.chatThreadId,
+              }.automation.id,
+              chatThreadId: {
+                automation: target.automation,
+                agentId: target.agentId,
+                chatThreadId: target.chatThreadId,
+              }.chatThreadId,
+              snapshot,
+            },
+            signal,
+          );
         },
       },
       signal,

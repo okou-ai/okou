@@ -1,6 +1,21 @@
-import { Buffer } from "node:buffer";
-import { pgBooleanDecoder } from "../../lib/db-structured-result";
-import { OAuth2Client } from "google-auth-library";
+import {
+  gmailLabelAppliedEventConfigSchema,
+  gmailNewMessageEventConfigSchema,
+  type GmailAutomationEventConfig,
+  type GmailLabelAppliedEventConfig,
+  type GmailNewMessageEventConfig,
+} from "@okouai/api-contracts/contracts/workflows";
+import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
+import { connectors } from "@okouai/db/schema/connector";
+import {
+  gmailProcessedEvents,
+  gmailWatchStates,
+} from "@okouai/db/schema/gmail-event";
+import {
+  workflowAutomations,
+  workflows,
+  workflowUserAutomationThreads,
+} from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
 import {
   and,
@@ -12,50 +27,39 @@ import {
   or,
   sql,
 } from "drizzle-orm";
+import { OAuth2Client } from "google-auth-library";
+import { Buffer } from "node:buffer";
 import { z } from "zod";
-import {
-  gmailLabelAppliedEventConfigSchema,
-  gmailNewMessageEventConfigSchema,
-  type GmailLabelAppliedEventConfig,
-  type GmailNewMessageEventConfig,
-  type GmailAutomationEventConfig,
-} from "@okouai/api-contracts/contracts/workflows";
-import {
-  gmailProcessedEvents,
-  gmailWatchStates,
-} from "@okouai/db/schema/gmail-event";
-import {
-  workflowUserAutomationThreads,
-  workflowAutomations,
-  workflows,
-} from "@okouai/db/schema/workflow";
-import { connectors } from "@okouai/db/schema/connector";
-import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
+import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import { optionalEnv } from "../../lib/env";
-import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { logger } from "../../lib/log";
+import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { testOverride } from "../../lib/singleton";
-import { writeDb$ } from "../external/db";
 import { now, nowDate } from "../../lib/time";
+import { writeDb$ } from "../external/db";
 import { safeJsonParse, settle, tapError } from "../utils";
-import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
-import { loadConnectorRuntimeSnapshot$ } from "./connector-catalog-runtime.service";
-import { builtinConnectorCredentialRuntimeValueRef } from "./builtin-connector-credential-runtime.service";
 import {
   AutomationEventSourceTiming,
   type AutomationEventRunTiming,
 } from "./automation-event-source-timing.service";
+import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
+import { builtinConnectorCredentialRuntimeValueRef } from "./builtin-connector-credential-runtime.service";
+import { loadConnectorRuntimeSnapshot } from "./connector-catalog-runtime.service";
+import type { AutomationRow } from "./workflow-automation-enqueue.service";
 import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
-import type { AutomationRow } from "./workflow-automation-launch.service";
-import { GmailAutomationSourceChangedError } from "./workflow-gmail-queue.service";
-import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
-import { workflowAutomationCanFire$ } from "./workflow-automation-access.service";
-import { ensureWorkflowUserAutomationThread$ } from "./workflow-user-automation-thread.service";
+import {
+  GmailAutomationSourceChangedError,
+  persistGmailWorkflowSource,
+} from "./workflow-gmail-queue.service";
+
 import {
   loadBuiltinConnectorCredentialConnection$,
   loadBuiltinConnectorCredentialValues$,
   refreshBuiltinConnectorCredentialAccess$,
 } from "./builtin-connector-credential-command.service";
+import { workflowAutomationCanFire$ } from "./workflow-automation-access.service";
+import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
+import { ensureWorkflowUserAutomationThread$ } from "./workflow-user-automation-thread.service";
 
 const log = logger("api:gmail-automation-event");
 
@@ -289,7 +293,7 @@ const resolveGmailAccess$ = command(
     signal: AbortSignal,
   ): Promise<GmailAccessResult> => {
     const currentTime = nowDate();
-    const snapshot = await set(loadConnectorRuntimeSnapshot$, signal);
+    const snapshot = await loadConnectorRuntimeSnapshot(set(writeDb$));
     signal.throwIfAborted();
     const loaded = await set(loadBuiltinConnectorCredentialConnection$, {
       snapshot,
@@ -2367,14 +2371,32 @@ const startGmailWorkflowRun$ = command(
           apiStartTime: args.apiStartTime,
           triggerSource: "automation-event",
           triggerBrief: runInput.triggerBrief,
-          gmailSource: {
-            automationId: args.automation.automation.id,
-            orgId: args.automation.automation.orgId,
-            userId: args.automation.automation.ownerUserId,
-            connectorId: args.connectorSourceId,
-            watchStateId: args.watchStateId,
-            emailAddress: args.decoded.emailAddress,
-            eventConfig: args.automation.automation.eventConfig,
+          persistSourceTransition: async (tx) => {
+            await persistGmailWorkflowSource(
+              tx,
+              {
+                source: {
+                  automationId: args.automation.automation.id,
+                  orgId: args.automation.automation.orgId,
+                  userId: args.automation.automation.ownerUserId,
+                  connectorId: args.connectorSourceId,
+                  watchStateId: args.watchStateId,
+                  emailAddress: args.decoded.emailAddress,
+                  eventConfig: args.automation.automation.eventConfig,
+                },
+                automationId: {
+                  automation: args.automation.automation,
+                  agentId: args.automation.agentId,
+                  chatThreadId: args.automation.chatThreadId,
+                }.automation.id,
+                chatThreadId: {
+                  automation: args.automation.automation,
+                  agentId: args.automation.agentId,
+                  chatThreadId: args.automation.chatThreadId,
+                }.chatThreadId,
+              },
+              signal,
+            );
           },
           timing: args.timing.collectorForRunStart(),
         },

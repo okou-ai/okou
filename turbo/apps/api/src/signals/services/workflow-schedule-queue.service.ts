@@ -1,26 +1,16 @@
-import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context";
 import { morningBriefNativeSchedules } from "@okouai/db/schema/morning-brief-native-schedule";
-import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
-import { command } from "ccstate";
 import { sql } from "drizzle-orm";
-import { parseRawRows } from "../../lib/db-raw-rows";
+import type { Tx } from "../../lib/db-types";
 import { nowDate } from "../../lib/time";
-import { writeDb$ } from "../external/db";
-import { settleIncludingAbort } from "../utils";
-import {
-  appendCanonicalChatEventsSql,
-  chatEventAppendResultSchema,
-} from "./chat-event-append.service";
-import {
-  ScheduleOccurrenceUnavailableError,
-  type PreparedWorkflowAutomationQueueInput,
-  type WorkflowScheduleClaimPlan,
-} from "./workflow-chat-event-queue.service";
 import {
   morningBriefScheduleWhere,
   type MorningBriefNativeScheduleRow,
 } from "./morning-brief-native-schedule.service";
 import { SCHEDULE_GRACE_MS } from "./schedule-expiry-policy";
+import {
+  ScheduleOccurrenceUnavailableError,
+  type WorkflowScheduleClaimPlan,
+} from "./workflow-automation-enqueue.service";
 
 /** Distinguishes a failed admission from preparation that never attempted it. */
 export class WorkflowScheduleAdmissionError extends Error {
@@ -50,7 +40,7 @@ function consumeWorkflowScheduleAnchorSql(
 ) {
   const selected =
     native?.legacyWorkflowId === claim.workflowId &&
-    native.legacyAutomationId === claim.automationId;
+    native?.legacyAutomationId === claim.automationId;
   const consumeNative = selected
     ? sql`UPDATE morning_brief_native_schedules SET next_run_at = NULL,
         schedule_owner = NULL, updated_at = ${claim.claimedAt}
@@ -106,135 +96,38 @@ function journalWorkflowScheduleClaimSql(
   `;
 }
 
-/** Coalesce only this automation's run-less schedule inputs; manual input stays distinct. */
-function revokePendingWorkflowTicksSql(
-  input: PreparedWorkflowAutomationQueueInput,
-  admittedAt: Date,
-) {
-  return sql`
-    WITH pending AS MATERIALIZED (
-      SELECT event.id, event.chat_thread_id, event.created_at, event.seq_id,
-        event.context_type, event.context_id
-      FROM chat_events event JOIN chat_automation_context context ON context.id = event.context_id
-      WHERE event.chat_thread_id = ${input.event.chatThreadId}::uuid
-        AND event.event_type = 'input.automation' AND event.run_id IS NULL
-        AND event.context_type = 'automation'
-        AND context.automation_id = ${input.context.automationId}::uuid
-        AND context.event_type IS DISTINCT FROM 'manual'
-        AND event.id <> ${input.event.id}::uuid
-        AND NOT EXISTS (SELECT 1 FROM chat_events revoked WHERE revoked.revokes_event_id = event.id)
-    ), reserved AS (
-      INSERT INTO chat_event_sequences (chat_thread_id, last_seq_id)
-      SELECT chat_thread_id, count(*) FROM pending GROUP BY chat_thread_id
-      ON CONFLICT (chat_thread_id) DO UPDATE
-        SET last_seq_id = chat_event_sequences.last_seq_id + EXCLUDED.last_seq_id
-      RETURNING chat_thread_id, last_seq_id
-    ) INSERT INTO chat_events (id, chat_thread_id, run_id, revokes_event_id,
-        event_type, payload, context_type, context_id, seq_id, created_at)
-      SELECT gen_random_uuid(), pending.chat_thread_id, NULL, pending.id,
-        'control.revoke', NULL, pending.context_type, pending.context_id,
-        reserved.last_seq_id - count(*) OVER () + row_number() OVER (ORDER BY pending.seq_id),
-        greatest(${admittedAt}::timestamp, pending.created_at + interval '1 millisecond')
-      FROM pending JOIN reserved USING (chat_thread_id)
-      ORDER BY pending.seq_id ON CONFLICT DO NOTHING
-  `;
-}
-
-/** Schedule occurrence, input and queue wake-up are one local SQL operation. */
-export const enqueueWorkflowScheduleInput$ = command(
-  async (
-    { set },
-    args: {
-      readonly input: PreparedWorkflowAutomationQueueInput;
-      readonly orgId: string;
-      readonly scheduleClaim?: WorkflowScheduleClaimPlan;
-      readonly replacePendingTicks: boolean;
-    },
-    signal: AbortSignal,
-  ): Promise<string | null> => {
-    const db = set(writeDb$);
-    const { input, scheduleClaim } = args;
-    let claimCreated = false;
-    const result = await settleIncludingAbort(
-      db.transaction(async (tx) => {
-        await tx
-          .insert(chatAutomationContext)
-          .values(input.context)
-          .onConflictDoNothing();
-        const [event] = parseRawRows(
-          chatEventAppendResultSchema,
-          await tx.execute(
-            appendCanonicalChatEventsSql([input.event], input.conflict),
-          ),
-        );
-        if (!event) {
-          if (input.conflict === "none") {
-            throw new Error("Workflow queue event insert returned no row");
-          }
-          return null;
-        }
-        if (scheduleClaim) {
-          const owner = {
-            orgId: scheduleClaim.orgId,
-            userId: scheduleClaim.ownerUserId,
-          };
-          // A plain read classifies the owner; no absent-owner key is taken.
-          const [native] = await tx
-            .select()
-            .from(morningBriefNativeSchedules)
-            .where(morningBriefScheduleWhere(owner))
-            .limit(1);
-          const admittedAt = nowDate();
-          const { rowCount: consumed } = await tx.execute(
-            consumeWorkflowScheduleAnchorSql(scheduleClaim, native, admittedAt),
-          );
-          if (consumed !== 1) {
-            throw new ScheduleOccurrenceUnavailableError();
-          }
-          const { rowCount } = await tx.execute(
-            journalWorkflowScheduleClaimSql(
-              scheduleClaim,
-              event.id,
-              admittedAt,
-            ),
-          );
-          if (rowCount !== 1) {
-            throw new Error("Morning Brief schedule claim was not journaled");
-          }
-          claimCreated = true;
-        }
-        if (args.replacePendingTicks) {
-          await tx.execute(revokePendingWorkflowTicksSql(input, nowDate()));
-        }
-        await tx
-          .insert(queuedChatThreads)
-          .values({
-            chatThreadId: input.event.chatThreadId,
-            orgId: args.orgId,
-            queuedAt: nowDate(),
-          })
-          .onConflictDoUpdate({
-            target: queuedChatThreads.chatThreadId,
-            set: { claimId: null, claimExpiresAt: null },
-          });
-        signal.throwIfAborted();
-        return event.id;
+export async function persistWorkflowScheduleOccurrence(
+  tx: Tx,
+  claim: WorkflowScheduleClaimPlan,
+  eventId: string,
+): Promise<void> {
+  const [native] = await tx
+    .select()
+    .from(morningBriefNativeSchedules)
+    .where(
+      morningBriefScheduleWhere({
+        orgId: claim.orgId,
+        userId: claim.ownerUserId,
       }),
-    );
-    signal.throwIfAborted();
-    if (!result.ok) {
-      if (
-        result.error instanceof ScheduleOccurrenceUnavailableError ||
-        !scheduleClaim ||
-        !claimCreated
-      ) {
-        throw result.error;
-      }
-      throw new WorkflowScheduleAdmissionError(
-        scheduleClaim.claimId,
-        result.error,
-      );
-    }
-    return result.value;
-  },
-);
+    )
+    .limit(1);
+  const admittedAt = nowDate();
+  if (
+    (
+      await tx.execute(
+        consumeWorkflowScheduleAnchorSql(claim, native, admittedAt),
+      )
+    ).rowCount !== 1
+  ) {
+    throw new ScheduleOccurrenceUnavailableError();
+  }
+  if (
+    (
+      await tx.execute(
+        journalWorkflowScheduleClaimSql(claim, eventId, admittedAt),
+      )
+    ).rowCount !== 1
+  ) {
+    throw new Error("Morning Brief schedule claim was not journaled");
+  }
+}

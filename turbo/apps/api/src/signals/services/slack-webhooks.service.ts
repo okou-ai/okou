@@ -1,20 +1,23 @@
-import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
-import { command, computed, type Computed } from "ccstate";
-import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
-import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import {
   getBuiltInVisibleModels,
   isSupportedRunModel,
   type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
+import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
+import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
+import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
 import { userCache } from "@okouai/db/schema/user-cache";
-import { agents } from "@okouai/db/schema/agent";
+import { command, computed, type Computed } from "ccstate";
 import { and, eq, or } from "drizzle-orm";
 import { env, optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
+import {
+  OFFICIAL_SLACK_APP_NAME,
+  officialSlackBotMention,
+} from "../../lib/slack-official-app";
 import {
   getSlackSignatureHeaders,
   verifySlackSignature,
@@ -33,36 +36,33 @@ import {
   buildWelcomeMessage,
 } from "../../lib/slack-webhook-blocks";
 import type { SlackFile } from "../../lib/slack-webhook-context";
+import { nowDate } from "../../lib/time";
 import { request$ } from "../context/hono";
 import { waitUntil } from "../context/wait-until";
+import { writeDb$, type Db } from "../external/db";
 import type { SlackAnyBlock } from "../external/slack-block-kit";
 import {
   createSlackClient,
   type SlackClient,
 } from "../external/slack-message-client";
-import { nowDate } from "../../lib/time";
-import {
-  OFFICIAL_SLACK_APP_NAME,
-  officialSlackBotMention,
-} from "../../lib/slack-official-app";
-import { writeDb$, type Db } from "../external/db";
-import { userFeatureSwitchOverrides } from "./feature-switches.service";
+import { onRejection, safeJsonParse, tapError } from "../utils";
+import { processCanonicalSlackIngress$ } from "./canonical-slack-ingress-processor.service";
 import { decryptPersistentSecretValue } from "./crypto.utils";
+import { userFeatureSwitchOverrides } from "./feature-switches.service";
 import {
   readIntegrationChatThreadModel$,
   updateIntegrationChatThreadModel$,
 } from "./integration-chat-thread-model.service";
 import { listOrgModelPolicies$ } from "./model-policy.service";
-import { publishSlackAdminSignal$ } from "./slack-connect.service";
+import { resolveDefaultModelFirstPin } from "./model-selection.service";
 import {
   admitCanonicalSlackChatEvent$,
   ensureCanonicalSlackChatThreadRoute$,
-  findSlackDirectMessageChatThreadId$,
   findSlackChatThreadRoute$,
+  findSlackDirectMessageChatThreadId$,
   slackSessionThreadTs,
 } from "./slack-chat-ingress.service";
-import { processCanonicalSlackIngress$ } from "./canonical-slack-ingress-processor.service";
-import { onRejection, safeJsonParse, tapError } from "../utils";
+import { publishSlackAdminSignal$ } from "./slack-connect.service";
 
 const L = logger("SlackWebhooks");
 const MODEL_PICKER_MAX_OPTIONS = 100;
@@ -737,10 +737,12 @@ const resolveConnectedSlackAgentRouteAdmission$ = command(
     const route = await set(
       ensureCanonicalSlackChatThreadRoute$,
       {
-        initialModel: await set(
-          resolveDefaultModelFirstPin$,
-          { orgId: args.orgId, userId: args.connection.userId },
-          signal,
+        initialModel: await resolveDefaultModelFirstPin(
+          set(writeDb$),
+          args.orgId,
+          args.connection.userId,
+          undefined,
+          undefined,
         ),
         ...routeKey,
         orgId: args.orgId,

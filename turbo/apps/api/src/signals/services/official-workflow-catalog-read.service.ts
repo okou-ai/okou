@@ -14,8 +14,8 @@ import {
   officialWorkflowDefinitionRevisions,
 } from "@okouai/db/schema/official-workflow-catalog";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
-import { and, asc, eq, or } from "drizzle-orm";
 import { command } from "ccstate";
+import { and, asc, eq, or } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
 import { writeDb$, type ReadonlyDb } from "../external/db";
@@ -51,7 +51,7 @@ function officialWorkflowPayloadSchemaVersion(payload: unknown): number {
   return payload.schemaVersion;
 }
 
-function acceptedRevisionFromRow(
+export function acceptedRevisionFromRow(
   row: OfficialWorkflowRevisionRow,
 ): OfficialWorkflowAcceptedRevision {
   const definition = officialWorkflowDefinitionRevisionPayloadSchema.parse(
@@ -116,6 +116,12 @@ export async function readAcceptedOfficialWorkflowCatalog(
     )
     .limit(1);
   signal?.throwIfAborted();
+  return acceptedCatalogFromRow(row);
+}
+
+export function acceptedCatalogFromRow(
+  row: { readonly releaseId: string; readonly payload: unknown } | undefined,
+): AcceptedOfficialWorkflowCatalog | null {
   if (!row) {
     return null;
   }

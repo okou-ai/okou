@@ -1,19 +1,19 @@
+import { agents } from "@okouai/db/schema/agent";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { v5 as uuidv5 } from "uuid";
-import { agents } from "@okouai/db/schema/agent";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 
 import { env } from "../../lib/env";
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
-import { welcomeThreadContent } from "../../lib/welcome-thread-content";
 import { nowDate } from "../../lib/time";
+import { welcomeThreadContent } from "../../lib/welcome-thread-content";
 import { writeDb$ } from "../external/db";
 import { visibleJoinedAgentCondition } from "./agent-data.service";
 import { insertChatEvent } from "./chat-event.service";
-import { createChatThreadInTransaction } from "./chat-thread.service";
 import { chatThreadModelPinColumns } from "./chat-thread-model.service";
-import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
+import { createChatThreadInTransaction } from "./chat-thread.service";
+import { resolveDefaultModelFirstPin } from "./model-selection.service";
 import { userPreferences } from "./user-data.service";
 
 interface WelcomeThreadAction {
@@ -84,10 +84,12 @@ export const createWelcomeChatThread$ = command(
       );
     }
 
-    const pin = await set(
-      resolveDefaultModelFirstPin$,
-      { orgId: args.orgId, userId: args.userId },
-      signal,
+    const pin = await resolveDefaultModelFirstPin(
+      set(writeDb$),
+      args.orgId,
+      args.userId,
+      undefined,
+      undefined,
     );
     signal.throwIfAborted();
     const preferences = await get(userPreferences(args));

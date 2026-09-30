@@ -1,5 +1,8 @@
-import { randomUUID } from "node:crypto";
-import { HeadObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
+import {
+  HeadObjectCommand,
+  ListObjectsV2Command,
+  PutObjectCommand,
+} from "@aws-sdk/client-s3";
 import type {
   GenerationTemplateRequest,
   UserMessageInputDocument,
@@ -18,6 +21,7 @@ import {
   userPresentationTemplateDirectory,
 } from "@okouai/core/presentation-template-selection";
 import { userTemplateDirectory } from "@okouai/core/user-template-selection";
+import { randomUUID } from "node:crypto";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -27,15 +31,17 @@ import {
 } from "../../../lib/file-url";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
+import { presentationTemplatesRoutes } from "../presentation-templates";
+import { userTemplatesRoutes } from "../user-templates";
 import { expectApiError, type ApiTestUser } from "./helpers/api-bdd";
 import { chatEventDisplayText } from "./helpers/chat-event";
 import {
+  assistantEvent,
   createChatEventsFixture,
-  type PromptMessage,
+  eventBackedContents,
   userMessageWithTemplate,
   userMessages,
-  eventBackedContents,
-  assistantEvent,
+  type PromptMessage,
 } from "./helpers/chat-events-fixture";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
@@ -44,8 +50,6 @@ import {
   tarGz,
   uploadTemplateFile,
 } from "./helpers/template-publish-fixture";
-import { presentationTemplatesRoutes } from "../presentation-templates";
-import { userTemplatesRoutes } from "../user-templates";
 
 const context = testContext();
 const {
@@ -88,13 +92,8 @@ async function waitForLaunchedRunId(
   threadId: string,
   clientEventId: string,
 ): Promise<string> {
-  const messages = await waitForThreadMessages(actor, threadId, (items) => {
-    return userMessages(items).some((message) => {
-      return (
-        message.revokesEventId === clientEventId && message.runId !== undefined
-      );
-    });
-  });
+  await flushWaitUntilForTest();
+  const messages = await chat.listThreadEvents(actor, threadId);
   const runId = userMessages(messages.events).find((message) => {
     return message.revokesEventId === clientEventId;
   })?.runId;
@@ -1234,6 +1233,13 @@ describe("CHAT-02: generation templates and attachments", () => {
       },
     ];
     const credits = (await api.readBillingStatus(actor)).credits;
+    await flushWaitUntilForTest();
+    const storageWrites = context.mocks.s3.send.mock.calls.filter(
+      ([command]) => {
+        return command instanceof PutObjectCommand;
+      },
+    ).length;
+    const storageSignatures = context.mocks.s3.getSignedUrl.mock.calls.length;
     for (const arm of arms) {
       const clientEventId = randomUUID();
       const rejected = await chat.requestSendEvent(
@@ -1297,6 +1303,16 @@ describe("CHAT-02: generation templates and attachments", () => {
         }),
       ).toBeFalsy();
     }
+    await flushWaitUntilForTest();
+    // Rejected inputs must not initialize runner storage or sign its URLs.
+    expect(
+      context.mocks.s3.send.mock.calls.filter(([command]) => {
+        return command instanceof PutObjectCommand;
+      }),
+    ).toHaveLength(storageWrites);
+    expect(context.mocks.s3.getSignedUrl).toHaveBeenCalledTimes(
+      storageSignatures,
+    );
     expect((await api.readBillingStatus(actor)).credits).toBe(credits);
 
     // Sharing through the owner APIs makes both packages readable. The same

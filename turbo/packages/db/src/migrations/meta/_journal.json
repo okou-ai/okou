@@ -1524,36 +1524,43 @@
     {
       "idx": 1295,
       "version": "7",
-      "when": 1790754862985,
-      "tag": "1295_retire_provisional_billing_purge",
+      "when": 1790756094146,
+      "tag": "1295_chat_thread_canonical_session",
       "breakpoints": true
     },
     {
       "idx": 1296,
       "version": "7",
-      "when": 1790754871909,
-      "tag": "1296_retire_billing_attribution_mutation_guard",
+      "when": 1790772681079,
+      "tag": "1296_retire_provisional_billing_purge",
       "breakpoints": true
     },
     {
       "idx": 1297,
       "version": "7",
-      "when": 1790754880489,
-      "tag": "1297_allowance_window_uniqueness",
+      "when": 1790772687341,
+      "tag": "1297_retire_billing_attribution_mutation_guard",
       "breakpoints": true
     },
     {
       "idx": 1298,
       "version": "7",
-      "when": 1790754947799,
-      "tag": "1298_connector_selection_delete_cascade",
+      "when": 1790772693579,
+      "tag": "1298_allowance_window_uniqueness",
       "breakpoints": true
     },
     {
       "idx": 1299,
       "version": "7",
-      "when": 1790756050247,
-      "tag": "1299_connector_selection_deferred_references",
+      "when": 1790772699999,
+      "tag": "1299_connector_selection_delete_cascade",
+      "breakpoints": true
+    },
+    {
+      "idx": 1300,
+      "version": "7",
+      "when": 1790772706723,
+      "tag": "1300_connector_selection_deferred_references",
       "breakpoints": true
     }
   ]

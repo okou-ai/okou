@@ -1,7 +1,4 @@
-import { command, computed, type Computed } from "ccstate";
-import { randomUUID } from "node:crypto";
-import { isDeepStrictEqual } from "node:util";
-import { and, eq, gte, inArray, lt, sql } from "drizzle-orm";
+import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
   isIntegrationManagedCustomConnector,
   isIntegrationManagedCustomConnectorProviderAdapter,
@@ -23,78 +20,78 @@ import {
   type CustomConnectorValueInput,
   type UpdateCustomConnectorBody,
 } from "@okouai/api-contracts/contracts/custom-connectors";
-import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
   canonicalizeFirewallBaseUrl,
   expandHostWildcardsInBaseUrl,
   validateBaseUrlHostPolicy,
 } from "@okouai/connectors/firewall-types";
+import { customConnectorAccountOauthBindings } from "@okouai/db/schema/custom-connector-account-oauth-binding";
+import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
+import { orgCustomConnectorDcrRegistrations } from "@okouai/db/schema/org-custom-connector-dcr-registration";
 import {
   orgCustomConnectorOauthConfigs,
   type OrgCustomConnectorOAuthPkceMethod,
   type OrgCustomConnectorOAuthProviderAdapter,
   type OrgCustomConnectorOAuthTokenEndpointAuthMethod,
 } from "@okouai/db/schema/org-custom-connector-oauth-config";
-import { customConnectorAccountOauthBindings } from "@okouai/db/schema/custom-connector-account-oauth-binding";
-import { orgCustomConnectorDcrRegistrations } from "@okouai/db/schema/org-custom-connector-dcr-registration";
-import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
+import { command, computed, type Computed } from "ccstate";
+import { and, eq, gte, inArray, lt, sql } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 
-import { clerk$ } from "../external/clerk";
-import { db$, writeDb$, type ReadonlyDb } from "../external/db";
+import type { Tx } from "../../lib/db-types";
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
+import { clerk$ } from "../external/clerk";
+import { db$, writeDb$, type ReadonlyDb } from "../external/db";
 import { safeSync, settle } from "../utils";
-import { encryptStoredSecretValue } from "./crypto.utils";
-import { userFeatureSwitchContext } from "./feature-switches.service";
-import { addUserCustomConnector } from "./user-connectors.service";
-import {
-  loadConnectorRuntimeSnapshot,
-  loadConnectorRuntimeSnapshot$,
-} from "./connector-catalog-runtime.service";
-import {
-  customConnectorDefinitionSelection,
-  type CustomConnectorDefinitionRow,
-} from "./custom-connector-definition-selection";
-import {
-  deleteCustomConnectorMemberConnectionExact,
-  type PreparedCustomConnectorValue,
-  upsertCustomConnectorStoredValues,
-} from "./custom-connector-credential-storage.service";
-import { deleteConnectorSelectionsForCustomConnectorDefinition } from "./connector-credential-storage-write.service";
-import { loadCustomConnectorPermissionBundle } from "./custom-connector-permission-bundle.service";
-import {
-  customConnectorDefinitionConnectedAccount,
-  loadCurrentCustomConnectorStoredValues,
-  loadCurrentCustomConnectorValueMarkers,
-  loadConnectedCustomConnectorConnections,
-  type CustomConnectorCredentialAccess,
-  type CustomConnectorCredentialValueMarker,
-  type CustomConnectorStoredValue,
-} from "./custom-connector-credential-access.service";
-import { effectiveCustomConnectorPermissionBundleRef } from "./feishu-custom-connector-permissions";
-import { prepareCustomConnectorSkillVolume$ } from "./custom-connector-skill-volume.service";
-import type { PreparedServerSideVolume } from "./storage-volume-publication.service";
-import { preparedVolumePublicationSql } from "./storage-volume-publication-sql";
-import { StorageVersionIdentityConflictError } from "./storage-version-registration.service";
-import {
-  commitConnectorRuntimeMutation,
-  publishConnectorRuntimeSyncWakeups$,
-} from "./connector-runtime-wakeup.service";
+import { loadConnectorRuntimeSnapshot } from "./connector-catalog-runtime.service";
 import {
   publishCustomConnectorOrganizationInvalidationAfterCommit,
   publishCustomConnectorUserInvalidationAfterCommit,
   type CapturedConnectorClientInvalidationAbort,
 } from "./connector-client-invalidation.service";
 import {
-  type ConnectorConnectionMetadataArgs,
   replaceConnectorConnection,
   resolveConnectorConnectionMutation,
-  type ReadyConnectorConnectionMutation,
   writeConnectorConnectionMetadata,
+  type ConnectorConnectionMetadataArgs,
+  type ReadyConnectorConnectionMutation,
 } from "./connector-connection-write.service";
-import type { Tx } from "../../lib/db-types";
+import { deleteConnectorSelectionsForCustomConnectorDefinition } from "./connector-credential-storage-write.service";
+import {
+  commitConnectorRuntimeMutation,
+  publishConnectorRuntimeSyncWakeups$,
+} from "./connector-runtime-wakeup.service";
+import { encryptStoredSecretValue } from "./crypto.utils";
+import {
+  customConnectorDefinitionConnectedAccount,
+  loadConnectedCustomConnectorConnections,
+  loadCurrentCustomConnectorStoredValues,
+  loadCurrentCustomConnectorValueMarkers,
+  type CustomConnectorCredentialAccess,
+  type CustomConnectorCredentialValueMarker,
+  type CustomConnectorStoredValue,
+} from "./custom-connector-credential-access.service";
+import {
+  deleteCustomConnectorMemberConnectionExact,
+  upsertCustomConnectorStoredValues,
+  type PreparedCustomConnectorValue,
+} from "./custom-connector-credential-storage.service";
+import {
+  customConnectorDefinitionSelection,
+  type CustomConnectorDefinitionRow,
+} from "./custom-connector-definition-selection";
+import { loadCustomConnectorPermissionBundle } from "./custom-connector-permission-bundle.service";
+import { prepareCustomConnectorSkillVolume$ } from "./custom-connector-skill-volume.service";
+import { userFeatureSwitchContext } from "./feature-switches.service";
+import { effectiveCustomConnectorPermissionBundleRef } from "./feishu-custom-connector-permissions";
 import { invalidatePiStableContextsForOrg } from "./pi-stable-context-generation.service";
+import { StorageVersionIdentityConflictError } from "./storage-version-registration.service";
+import { preparedVolumePublicationSql } from "./storage-volume-publication-sql";
+import type { PreparedServerSideVolume } from "./storage-volume-publication.service";
+import { addUserCustomConnector } from "./user-connectors.service";
 
 const L = logger("CustomConnectorService");
 
@@ -1582,7 +1579,8 @@ const validatePermissionBundleRef$ = command(
     if (permissionBundleRef === null) {
       return null;
     }
-    const snapshot = await set(loadConnectorRuntimeSnapshot$, signal);
+    const snapshot = await loadConnectorRuntimeSnapshot(set(writeDb$));
+    signal.throwIfAborted();
     const bundle = await loadCustomConnectorPermissionBundle({
       catalog: snapshot.serverFirewallMetadata,
       ref: permissionBundleRef,

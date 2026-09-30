@@ -2,17 +2,17 @@ import {
   MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
   MORNING_BRIEF_OFFICIAL_DEFINITION_NAME,
 } from "@okouai/api-contracts/contracts/morning-brief-preference";
+import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { agents } from "@okouai/db/schema/agent";
+import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
 import {
   morningBriefScheduleClaims,
   type MorningBriefScheduleClaimSettlement,
 } from "@okouai/db/schema/morning-brief-schedule-claim";
-import { command } from "ccstate";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
 import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
-import { and, asc, desc, eq, type SQL } from "drizzle-orm";
+import { command } from "ccstate";
+import { and, asc, desc, eq, isNull, type SQL } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
 import { logger } from "../../lib/log";
@@ -20,12 +20,12 @@ import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import { settle } from "../utils";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
-import { advanceTimeAutomationAfterCompletion } from "./time-automation";
 import {
   morningBriefLegacyWriterAuthorityFromRow,
   readMorningBriefNativeScheduleForWrite,
   type MorningBriefLegacyWriterAuthority,
 } from "./morning-brief-native-schedule.service";
+import { advanceTimeAutomationAfterCompletion } from "./time-automation";
 
 import { advanceInFlightSchedule } from "./morning-brief-legacy-settlement-sql";
 
@@ -548,3 +548,58 @@ export const settleMorningBriefSchedulePreRunFailure$ = command(
     }
   },
 );
+
+export async function bindMorningBriefScheduleClaimRun(
+  db: Db | Tx,
+  args: { readonly queueEventId: string; readonly runId: string },
+): Promise<void> {
+  await db
+    .update(morningBriefScheduleClaims)
+    .set({
+      runId: args.runId,
+      queueDisposition: "claimed",
+      updatedAt: nowDate(),
+    })
+    .where(
+      and(
+        eq(morningBriefScheduleClaims.queueEventId, args.queueEventId),
+        isNull(morningBriefScheduleClaims.runId),
+      ),
+    );
+}
+
+export async function morningBriefScheduleClaimBound(
+  db: Pick<Db, "select">,
+  runId: string,
+): Promise<boolean> {
+  const [bound] = await db
+    .select({ id: morningBriefScheduleClaims.id })
+    .from(morningBriefScheduleClaims)
+    .where(eq(morningBriefScheduleClaims.runId, runId))
+    .limit(1);
+  return bound !== undefined;
+}
+
+export async function morningBriefScheduleClaimSuperseded(
+  tx: Tx,
+  runId: string,
+): Promise<boolean> {
+  const [own] = await tx
+    .select({
+      automationId: morningBriefScheduleClaims.automationId,
+      claimSequence: morningBriefScheduleClaims.claimSequence,
+    })
+    .from(morningBriefScheduleClaims)
+    .where(eq(morningBriefScheduleClaims.runId, runId))
+    .limit(1);
+  if (!own) {
+    return false;
+  }
+  const [current] = await tx
+    .select({ claimSequence: morningBriefScheduleClaims.claimSequence })
+    .from(morningBriefScheduleClaims)
+    .where(eq(morningBriefScheduleClaims.automationId, own.automationId))
+    .orderBy(desc(morningBriefScheduleClaims.claimSequence))
+    .limit(1);
+  return (current?.claimSequence ?? own.claimSequence) > own.claimSequence;
+}

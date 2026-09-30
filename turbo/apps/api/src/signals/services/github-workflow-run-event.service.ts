@@ -1,5 +1,3 @@
-import { command } from "ccstate";
-import { and, asc, eq } from "drizzle-orm";
 import {
   githubWorkflowRunCompletedEventConfigSchema,
   type GithubWorkflowRunCompletedEventConfig,
@@ -7,26 +5,28 @@ import {
 } from "@okouai/api-contracts/contracts/workflows";
 import { githubInstallations } from "@okouai/db/schema/github-installation";
 import {
-  workflowUserAutomationThreads,
   workflowAutomations,
   workflowGithubProcessedEvents,
   workflows,
+  workflowUserAutomationThreads,
 } from "@okouai/db/schema/workflow";
+import { command } from "ccstate";
+import { and, asc, eq } from "drizzle-orm";
 import { resolveImmutableDedupeInsert } from "../../lib/immutable-dedupe-insert";
 import { logger } from "../../lib/log";
-import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { nowDate } from "../../lib/time";
+import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { settle } from "../utils";
-import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
-import { workflowAutomationCanFire$ } from "./workflow-automation-access.service";
-import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
-import type { AutomationRow } from "./workflow-automation-launch.service";
-import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
-import { ensureWorkflowUserAutomationThread$ } from "./workflow-user-automation-thread.service";
 import {
   AutomationEventSourceTiming,
   type AutomationEventRunTiming,
 } from "./automation-event-source-timing.service";
+import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
+import { workflowAutomationCanFire$ } from "./workflow-automation-access.service";
+import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
+import type { AutomationRow } from "./workflow-automation-enqueue.service";
+import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
+import { ensureWorkflowUserAutomationThread$ } from "./workflow-user-automation-thread.service";
 
 const log = logger("api:github-workflow-run-event");
 

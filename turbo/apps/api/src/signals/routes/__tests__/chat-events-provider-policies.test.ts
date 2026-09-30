@@ -1,7 +1,6 @@
-import { assertPiLangfuseRelayContract } from "./helpers/pi-langfuse-relay";
-import { randomUUID } from "node:crypto";
 import { DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL } from "@okouai/api-contracts/contracts/model-providers";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { randomUUID } from "node:crypto";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
@@ -21,27 +20,28 @@ import {
   deleteOrgPlanEntitlementFixture,
   upsertOrgPlanEntitlementFixture,
 } from "../../../test-fixtures/org-plan-entitlement";
+import { holdPiContextPreparationStagesFixture } from "../../../test-fixtures/pi-context-preparation";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
-import { holdAgentRunPiExecutionSnapshotFixture } from "../../../test-fixtures/thread-bound-run-admission";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { expectApiError, type ApiTestUser } from "./helpers/api-bdd";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import { overwriteModelProviderSecretForTests } from "./helpers/model-provider-state";
-import { seedBuiltInModelCandidateKeys } from "./helpers/runtime-state";
 import {
-  createChatEventsFixture,
-  configureNativeCliArtifact,
+  claimEnvironment,
   CODEX_WEB_IMAGE_UPLOAD_PROMPT_SNIPPET,
-  type ChatRunSendBody,
-  type PromptMessage,
-  requireOrgId,
+  configureNativeCliArtifact,
+  createChatEventsFixture,
   createGptUsagePricingResolution,
   createPiUsagePricingResolution,
-  claimEnvironment,
-  userMessages,
   modelProviderSecretPlaceholder,
+  requireOrgId,
+  userMessages,
+  type ChatRunSendBody,
+  type PromptMessage,
 } from "./helpers/chat-events-fixture";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { overwriteModelProviderSecretForTests } from "./helpers/model-provider-state";
+import { assertPiLangfuseRelayContract } from "./helpers/pi-langfuse-relay";
+import { seedBuiltInModelCandidateKeys } from "./helpers/runtime-state";
 
 const context = testContext({ connectorCatalog: true });
 const {
@@ -665,12 +665,24 @@ describe("CHAT-02: model-first provider policies", () => {
         },
       ]);
 
-      const gate = holdAgentRunPiExecutionSnapshotFixture({
+      const gate = holdPiContextPreparationStagesFixture({
         userId: actor.userId,
         orgId: requireOrgId(actor),
         signal: context.signal,
       });
-      onTestFinished(gate.release);
+      // Pi eligibility is observed in parallel with credentials now. Hold the
+      // provider read itself so deletion happens before its frozen snapshot.
+      for (const stage of [
+        "subscription-account",
+        "post-authorization-context",
+        "thread-session",
+        "connector-contexts",
+        "user-timezone",
+        "image-model",
+        "official-workflow",
+      ] as const) {
+        gate.release(stage);
+      }
       const clientEventId = randomUUID();
       const sent = await chat.requestSendEvent(
         actor,
@@ -685,11 +697,11 @@ describe("CHAT-02: model-first provider policies", () => {
       if (sent.status !== 201) {
         throw new Error("Expected the V4.1 send to be accepted");
       }
-      await expect(gate.arrival).resolves.toMatchObject({ piExecution: true });
+      await gate.arrival("model-provider");
       if (boundary === "deleted") {
         await misc.deleteOrgModelProvider(actor, "openrouter-codex", [204]);
       }
-      gate.release();
+      gate.releaseAll();
       const { picked } = await waitForPickedInput(
         actor,
         sent.body.threadId,

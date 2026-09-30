@@ -1,24 +1,24 @@
-import { createHash } from "node:crypto";
+import { PRIVATE_ARTIFACT_CACHE_CONTROL } from "@okouai/api-contracts/contracts/artifact-cache";
+import { PRESIGNED_URL_TTL_SECONDS } from "@okouai/api-contracts/contracts/presigned-urls";
 import { systemStoragePresignedUrlCache } from "@okouai/db/schema/system-storage-presigned-url-cache";
 import { command, computed, type Computed } from "ccstate";
 import { and, eq, inArray, like, lte, sql } from "drizzle-orm";
+import { createHash } from "node:crypto";
 import { z } from "zod";
-
-import { joinAll, safeSync } from "../utils";
-import { executeRawRows } from "../../lib/db-raw-rows";
 import {
   withPgPoolAcquisitionCapture,
   type PgPoolAcquisition,
   type PgPoolAcquisitionCapture,
 } from "../../lib/db-instrumentation";
+import { executeRawRows } from "../../lib/db-raw-rows";
 import { env } from "../../lib/env";
-import type { Db } from "../external/db";
-import {
-  generateArtifactPreviewUrl,
-  generatePresignedGetUrl,
-} from "../external/s3";
 import { now, nowDate, timestampWithoutTimeZone } from "../../lib/time";
-import { PRESIGNED_URL_TTL_SECONDS } from "@okouai/api-contracts/contracts/presigned-urls";
+import type { Db, ReadonlyDb } from "../external/db";
+import {
+  presignedGetUrlSignerForBucket,
+  type PresignedGetUrlSigner,
+} from "../external/s3";
+import { onRejection, safeSync } from "../utils";
 import {
   measureApiDispatchTiming,
   type ApiDispatchTimingActionType,
@@ -223,7 +223,7 @@ const STORAGE_MANIFEST_CACHE_ACTION_TYPES = [
 type StorageManifestCacheActionType =
   (typeof STORAGE_MANIFEST_CACHE_ACTION_TYPES)[number];
 
-function storageManifestCacheCountBucket(
+export function storageManifestCacheCountBucket(
   count: number,
 ): StorageManifestCacheCountBucket {
   if (count <= 0) {
@@ -581,60 +581,50 @@ function objectKeyPrefixCondition(objectKeyPrefix: string | undefined) {
       )} escape '\\'`;
 }
 
-function signCacheValue(args: {
+async function signCacheValue(args: {
+  readonly sign: PresignedGetUrlSigner;
   readonly request: StoragePresignedUrlRequest;
   readonly cacheKey: string;
   readonly ttlSeconds: number;
   readonly issuedAt: Date;
   readonly lastRequestedAt: Date;
-}): Computed<Promise<CacheRowValue>> {
-  return computed(async (get) => {
-    const signed =
-      args.request.scope === "private_artifact_preview"
-        ? await get(
-            generateArtifactPreviewUrl(
-              args.request.bucket,
-              args.request.objectKey,
-              {
-                signingDate: args.issuedAt,
-                ...(args.request.filename !== undefined
-                  ? { filename: args.request.filename }
-                  : {}),
-              },
-            ),
-          )
-        : {
-            url: await get(
-              generatePresignedGetUrl(
-                args.request.bucket,
-                args.request.objectKey,
-                undefined,
-                args.request.publicEndpoint,
-              ),
-            ),
-            expiresAt: expirationFromIssuedAt(
-              args.issuedAt,
-              args.ttlSeconds,
-            ).toISOString(),
-          };
-    const expiresAt = new Date(signed.expiresAt);
-    return {
-      cacheKey: args.cacheKey,
-      scope: args.request.scope,
-      bucket: args.request.bucket,
-      objectKey: args.request.objectKey,
-      storageVersionId: args.request.storageVersionId,
-      resolvedOrgId: args.request.resolvedOrgId,
-      publicEndpoint: args.request.publicEndpoint,
-      ttlSeconds: args.ttlSeconds,
-      presignedUrl: signed.url,
-      expiresAt,
-      // Retain the required legacy column while older API deployments coexist.
-      refreshAfter: expiresAt,
-      lastRequestedAt: args.lastRequestedAt,
-      updatedAt: args.issuedAt,
-    };
-  });
+}): Promise<CacheRowValue> {
+  const privatePreview = args.request.scope === "private_artifact_preview";
+  const signingDate = privatePreview
+    ? new Date(Math.floor(args.issuedAt.getTime() / 1000) * 1000)
+    : undefined;
+  const presignedUrl = await args.sign(
+    args.request.bucket,
+    args.request.objectKey,
+    {
+      filename: privatePreview ? args.request.filename : undefined,
+      signingDate,
+      responseCacheControl:
+        args.request.bucket === env("R2_PRIVATE_ARTIFACTS_BUCKET_NAME")
+          ? PRIVATE_ARTIFACT_CACHE_CONTROL
+          : undefined,
+    },
+  );
+  const expiresAt = expirationFromIssuedAt(
+    signingDate ?? args.issuedAt,
+    privatePreview ? PRESIGNED_URL_TTL_SECONDS : args.ttlSeconds,
+  );
+  return {
+    cacheKey: args.cacheKey,
+    scope: args.request.scope,
+    bucket: args.request.bucket,
+    objectKey: args.request.objectKey,
+    storageVersionId: args.request.storageVersionId,
+    resolvedOrgId: args.request.resolvedOrgId,
+    publicEndpoint: args.request.publicEndpoint,
+    ttlSeconds: args.ttlSeconds,
+    presignedUrl,
+    expiresAt,
+    // Retain the required legacy column while older API deployments coexist.
+    refreshAfter: expiresAt,
+    lastRequestedAt: args.lastRequestedAt,
+    updatedAt: args.issuedAt,
+  };
 }
 
 async function upsertCacheValues(
@@ -846,7 +836,7 @@ function recordStorageManifestPrefetchDecision(args: {
   );
 }
 
-function storageManifestPresignedUrlCacheLookupPairs(
+export function storageManifestPresignedUrlCacheLookupPairs(
   input: StorageManifestPresignedUrlCachePrefetchInput,
   memoizeByValue: boolean,
 ): {
@@ -987,186 +977,183 @@ function storageManifestExceedsObjectKeyLowerBound(
   return false;
 }
 
-async function lookupMixedStorageManifestPresignedUrlCacheRows(
-  db: Db,
-  pairs: readonly StorageManifestPresignedUrlCacheLookupPair[],
-) {
-  const scopes = pairs.map((pair) => {
-    return pair.scope;
-  });
-  const cacheKeys = pairs.map((pair) => {
-    return pair.cacheKey;
-  });
-  return await db
-    .select({
-      scope: systemStoragePresignedUrlCache.scope,
-      cacheKey: systemStoragePresignedUrlCache.cacheKey,
-      presignedUrl: systemStoragePresignedUrlCache.presignedUrl,
-      expiresAt: systemStoragePresignedUrlCache.expiresAt,
-    })
-    .from(systemStoragePresignedUrlCache)
-    .innerJoin(
-      sql`unnest(
-        ${sql.param(scopes)}::varchar(64)[],
-        ${sql.param(cacheKeys)}::varchar(64)[]
-      ) AS requested(scope, cache_key)`,
-      and(
-        eq(systemStoragePresignedUrlCache.scope, sql`requested.scope`),
-        eq(systemStoragePresignedUrlCache.cacheKey, sql`requested.cache_key`),
-      ),
-    );
-}
-
-async function measureMixedStorageManifestPresignedUrlCacheRows(args: {
-  readonly db: Db;
-  readonly pairs: readonly StorageManifestPresignedUrlCacheLookupPair[];
-  readonly requestedCount: number;
-  readonly logicalLookupCount: number;
-  readonly observation:
-    | StorageManifestCacheMixedLookupObservationContext
-    | undefined;
-}) {
-  const acquisitionCapture: PgPoolAcquisitionCapture = { acquisitions: [] };
-  return await measureApiDispatchTiming(
-    args.observation?.timing,
-    "api_dispatch_prepare_storage_manifest_cache_mixed_lookup",
-    "nested",
-    async () => {
-      const lookup = async () => {
-        return await lookupMixedStorageManifestPresignedUrlCacheRows(
-          args.db,
-          args.pairs,
-        );
-      };
-      const rows = args.observation
-        ? withPgPoolAcquisitionCapture(acquisitionCapture, lookup)
-        : lookup();
-      return await rows.finally(() => {
-        for (const acquisition of acquisitionCapture.acquisitions) {
-          args.observation?.timing.recordDuration(
-            "api_dispatch_prepare_storage_manifest_cache_pool_acquire",
-            "nested",
-            acquisition.durationMs,
-            now(),
-            {
-              storage_manifest_branch: args.observation?.branch ?? "unobserved",
-              storage_manifest_cache_scope: "all_scopes",
-              storage_manifest_cache_lookup_kind: "mixed",
-              storage_manifest_cache_pool_acquire_path: acquisition.path,
-              storage_manifest_cache_requested_count_bucket:
-                storageManifestCacheCountBucket(args.requestedCount),
-              storage_manifest_cache_unique_key_count_bucket:
-                storageManifestCacheCountBucket(args.pairs.length),
-            },
-          );
-        }
-      });
-    },
-    () => {
-      return {
-        storage_manifest_branch: args.observation?.branch ?? "unobserved",
-        storage_manifest_cache_scope: "all_scopes",
-        storage_manifest_cache_requested_count_bucket:
-          storageManifestCacheCountBucket(args.requestedCount),
-        storage_manifest_cache_unique_key_count_bucket:
-          storageManifestCacheCountBucket(args.pairs.length),
-        storage_manifest_cache_logical_lookup_count_bucket:
-          storageManifestCacheCountBucket(args.logicalLookupCount),
-        storage_manifest_cache_pool_acquire_count_bucket:
-          storageManifestCacheCountBucket(
-            acquisitionCapture.acquisitions.length,
-          ),
-      };
-    },
-  );
-}
-
-export function prefetchStorageManifestPresignedUrlCacheRows(args: {
-  readonly db: Db;
+interface StorageManifestPresignedUrlCacheReadInput {
+  readonly db: ReadonlyDb;
   readonly input: StorageManifestPresignedUrlCachePrefetchInput;
+  readonly groups: readonly RunStoragePresignedUrlsArgs["requests"][];
   readonly observation?: StorageManifestCacheMixedLookupObservationContext;
-}): Computed<Promise<StorageManifestPresignedUrlCacheSnapshot | undefined>> {
-  return computed(async () => {
-    const requestedCount =
-      args.input.systemRequests.length +
-      args.input.workflowSkillRequests.length +
-      args.input.readOnlyRequests.length;
-    if (args.input.logicalLookupCount < 2) {
-      recordStorageManifestPrefetchDecision({
-        observation: args.observation,
-        decision: "insufficient_groups",
-        requestedCount,
-        logicalLookupCount: args.input.logicalLookupCount,
-      });
-      return undefined;
-    }
-    if (
-      requestedCount > STORAGE_MANIFEST_PRESIGNED_URL_MIXED_LOOKUP_MAX_REQUESTS
-    ) {
-      recordStorageManifestPrefetchDecision({
-        observation: args.observation,
-        decision: "over_request_limit",
-        requestedCount,
-        logicalLookupCount: args.input.logicalLookupCount,
-      });
-      return undefined;
-    }
-    if (
-      requestedCount > STORAGE_MANIFEST_PRESIGNED_URL_MIXED_LOOKUP_MAX_PAIRS &&
-      storageManifestExceedsObjectKeyLowerBound(args.input)
-    ) {
-      recordStorageManifestPrefetchDecision({
-        observation: args.observation,
-        decision: "over_object_key_lower_bound",
-        requestedCount,
-        logicalLookupCount: args.input.logicalLookupCount,
-        uniquePairCount: args.observation
-          ? storageManifestPresignedUrlUniquePairCount(args.input)
-          : undefined,
-      });
-      return undefined;
-    }
-    const { pairs, cacheKeysByRequest } =
-      storageManifestPresignedUrlCacheLookupPairs(
-        args.input,
-        requestedCount > STORAGE_MANIFEST_PRESIGNED_URL_MIXED_LOOKUP_MAX_PAIRS,
-      );
-    if (pairs.length === 0) {
-      recordStorageManifestPrefetchDecision({
-        observation: args.observation,
-        decision: "no_pairs",
-        requestedCount,
-        logicalLookupCount: args.input.logicalLookupCount,
-        uniquePairCount: pairs.length,
-      });
-      return undefined;
-    }
-    if (pairs.length > STORAGE_MANIFEST_PRESIGNED_URL_MIXED_LOOKUP_MAX_PAIRS) {
-      recordStorageManifestPrefetchDecision({
-        observation: args.observation,
-        decision: "over_unique_pair_limit",
-        requestedCount,
-        logicalLookupCount: args.input.logicalLookupCount,
-        uniquePairCount: pairs.length,
-      });
-      return undefined;
-    }
+}
 
+export function planStorageManifestMixedLookup(
+  args: StorageManifestPresignedUrlCacheReadInput,
+) {
+  const requestedCount =
+    args.input.systemRequests.length +
+    args.input.workflowSkillRequests.length +
+    args.input.readOnlyRequests.length;
+  if (args.input.logicalLookupCount < 2) {
     recordStorageManifestPrefetchDecision({
       observation: args.observation,
-      decision: "mixed_lookup_selected",
+      decision: "insufficient_groups",
+      requestedCount,
+      logicalLookupCount: args.input.logicalLookupCount,
+    });
+    return undefined;
+  }
+  if (
+    requestedCount > STORAGE_MANIFEST_PRESIGNED_URL_MIXED_LOOKUP_MAX_REQUESTS
+  ) {
+    recordStorageManifestPrefetchDecision({
+      observation: args.observation,
+      decision: "over_request_limit",
+      requestedCount,
+      logicalLookupCount: args.input.logicalLookupCount,
+    });
+    return undefined;
+  }
+  if (
+    requestedCount > STORAGE_MANIFEST_PRESIGNED_URL_MIXED_LOOKUP_MAX_PAIRS &&
+    storageManifestExceedsObjectKeyLowerBound(args.input)
+  ) {
+    recordStorageManifestPrefetchDecision({
+      observation: args.observation,
+      decision: "over_object_key_lower_bound",
+      requestedCount,
+      logicalLookupCount: args.input.logicalLookupCount,
+      uniquePairCount: args.observation
+        ? storageManifestPresignedUrlUniquePairCount(args.input)
+        : undefined,
+    });
+    return undefined;
+  }
+  const { pairs, cacheKeysByRequest } =
+    storageManifestPresignedUrlCacheLookupPairs(
+      args.input,
+      requestedCount > STORAGE_MANIFEST_PRESIGNED_URL_MIXED_LOOKUP_MAX_PAIRS,
+    );
+  if (pairs.length === 0) {
+    recordStorageManifestPrefetchDecision({
+      observation: args.observation,
+      decision: "no_pairs",
       requestedCount,
       logicalLookupCount: args.input.logicalLookupCount,
       uniquePairCount: pairs.length,
     });
-
-    const rows = await measureMixedStorageManifestPresignedUrlCacheRows({
-      db: args.db,
-      pairs,
+    return undefined;
+  }
+  if (pairs.length > STORAGE_MANIFEST_PRESIGNED_URL_MIXED_LOOKUP_MAX_PAIRS) {
+    recordStorageManifestPrefetchDecision({
+      observation: args.observation,
+      decision: "over_unique_pair_limit",
       requestedCount,
       logicalLookupCount: args.input.logicalLookupCount,
-      observation: args.observation,
+      uniquePairCount: pairs.length,
     });
+    return undefined;
+  }
+
+  recordStorageManifestPrefetchDecision({
+    observation: args.observation,
+    decision: "mixed_lookup_selected",
+    requestedCount,
+    logicalLookupCount: args.input.logicalLookupCount,
+    uniquePairCount: pairs.length,
+  });
+  return { pairs, cacheKeysByRequest, requestedCount };
+}
+
+function createMixedStorageManifestPresignedUrlCacheRows(
+  input$: Computed<
+    Promise<StorageManifestPresignedUrlCacheReadInput | undefined>
+  >,
+) {
+  return computed(async (get) => {
+    const args = await get(input$);
+    if (!args) {
+      return undefined;
+    }
+    const lookup = planStorageManifestMixedLookup(args);
+    if (!lookup) {
+      return undefined;
+    }
+    const { requestedCount, pairs, cacheKeysByRequest } = lookup;
+    const acquisitionCapture: PgPoolAcquisitionCapture = { acquisitions: [] };
+    const scopes = pairs.map((pair) => {
+      return pair.scope;
+    });
+    const cacheKeys = pairs.map((pair) => {
+      return pair.cacheKey;
+    });
+    const rows = await measureApiDispatchTiming(
+      args.observation?.timing,
+      "api_dispatch_prepare_storage_manifest_cache_mixed_lookup",
+      "nested",
+      async () => {
+        const lookup = async () => {
+          return await args.db
+            .select({
+              scope: systemStoragePresignedUrlCache.scope,
+              cacheKey: systemStoragePresignedUrlCache.cacheKey,
+              presignedUrl: systemStoragePresignedUrlCache.presignedUrl,
+              expiresAt: systemStoragePresignedUrlCache.expiresAt,
+            })
+            .from(systemStoragePresignedUrlCache)
+            .innerJoin(
+              sql`unnest(
+                ${sql.param(scopes)}::varchar(64)[],
+                ${sql.param(cacheKeys)}::varchar(64)[]
+              ) AS requested(scope, cache_key)`,
+              and(
+                eq(systemStoragePresignedUrlCache.scope, sql`requested.scope`),
+                eq(
+                  systemStoragePresignedUrlCache.cacheKey,
+                  sql`requested.cache_key`,
+                ),
+              ),
+            );
+        };
+        const query = args.observation
+          ? withPgPoolAcquisitionCapture(acquisitionCapture, lookup)
+          : lookup();
+        return await query.finally(() => {
+          for (const acquisition of acquisitionCapture.acquisitions) {
+            args.observation?.timing.recordDuration(
+              "api_dispatch_prepare_storage_manifest_cache_pool_acquire",
+              "nested",
+              acquisition.durationMs,
+              now(),
+              {
+                storage_manifest_branch:
+                  args.observation?.branch ?? "unobserved",
+                storage_manifest_cache_scope: "all_scopes",
+                storage_manifest_cache_lookup_kind: "mixed",
+                storage_manifest_cache_pool_acquire_path: acquisition.path,
+                storage_manifest_cache_requested_count_bucket:
+                  storageManifestCacheCountBucket(requestedCount),
+                storage_manifest_cache_unique_key_count_bucket:
+                  storageManifestCacheCountBucket(pairs.length),
+              },
+            );
+          }
+        });
+      },
+      () => {
+        return {
+          storage_manifest_branch: args.observation?.branch ?? "unobserved",
+          storage_manifest_cache_scope: "all_scopes",
+          storage_manifest_cache_requested_count_bucket:
+            storageManifestCacheCountBucket(requestedCount),
+          storage_manifest_cache_unique_key_count_bucket:
+            storageManifestCacheCountBucket(pairs.length),
+          storage_manifest_cache_logical_lookup_count_bucket:
+            storageManifestCacheCountBucket(args.input.logicalLookupCount),
+          storage_manifest_cache_pool_acquire_count_bucket:
+            storageManifestCacheCountBucket(
+              acquisitionCapture.acquisitions.length,
+            ),
+        };
+      },
+    );
 
     const rowsByScope = new Map<
       StorageManifestPresignedUrlCacheScope,
@@ -1188,8 +1175,83 @@ export function prefetchStorageManifestPresignedUrlCacheRows(args: {
   });
 }
 
+/** Construct cache readers once; later storage initialization only changes input. */
+export function createStorageManifestPresignedUrlCacheRows(
+  input$: Computed<
+    Promise<StorageManifestPresignedUrlCacheReadInput | undefined>
+  >,
+): Computed<Promise<StorageManifestPresignedUrlCacheSnapshot | undefined>> {
+  const mixedRows$ = createMixedStorageManifestPresignedUrlCacheRows(input$);
+  return computed(async (get) => {
+    const [args, mixedRows] = await Promise.all([get(input$), get(mixedRows$)]);
+    if (!args || mixedRows) {
+      return mixedRows;
+    }
+    const { cacheKeysByRequest } = storageManifestPresignedUrlCacheLookupPairs(
+      args.input,
+      false,
+    );
+    // The mixed lookup has the same bounds as before. Outside those bounds,
+    // preserve the existing logical batches instead of expanding one query per URL.
+    const batches = await Promise.all(
+      args.groups.map(async (group) => {
+        const scope: StorageManifestPresignedUrlCacheScope =
+          group.kind === "system"
+            ? "system_storage"
+            : group.kind === "workflow"
+              ? "workflow_skill_storage"
+              : "readonly_storage";
+        const cacheKeys = [
+          ...new Set(
+            group.values.map((request) => {
+              const identity = cacheKeysByRequest.get(request);
+              if (!identity) {
+                throw new Error(
+                  "Storage cache request is outside the captured batch",
+                );
+              }
+              return identity.cacheKey;
+            }),
+          ),
+        ];
+        const rows =
+          cacheKeys.length === 0
+            ? []
+            : await args.db
+                .select({
+                  cacheKey: systemStoragePresignedUrlCache.cacheKey,
+                  presignedUrl: systemStoragePresignedUrlCache.presignedUrl,
+                  expiresAt: systemStoragePresignedUrlCache.expiresAt,
+                })
+                .from(systemStoragePresignedUrlCache)
+                .where(
+                  and(
+                    eq(systemStoragePresignedUrlCache.scope, scope),
+                    inArray(systemStoragePresignedUrlCache.cacheKey, cacheKeys),
+                  ),
+                );
+        return { scope, rows };
+      }),
+    );
+    const rowsByScope = new Map<
+      StorageManifestPresignedUrlCacheScope,
+      Map<string, SelectedStoragePresignedUrlCacheRow>
+    >();
+    for (const { scope, rows } of batches) {
+      const rowsByCacheKey =
+        rowsByScope.get(scope) ??
+        new Map<string, SelectedStoragePresignedUrlCacheRow>();
+      for (const row of rows) {
+        rowsByCacheKey.set(row.cacheKey, row);
+      }
+      rowsByScope.set(scope, rowsByCacheKey);
+    }
+    return { rowsByScope, cacheKeysByRequest };
+  });
+}
+
 async function lookupStoragePresignedUrlCacheRows(args: {
-  readonly db: Db;
+  readonly db: ReadonlyDb;
   readonly scope: StoragePresignedUrlCacheScope;
   readonly cacheKeys: readonly string[];
 }): Promise<readonly SelectedStoragePresignedUrlCacheRow[]> {
@@ -1209,7 +1271,7 @@ async function lookupStoragePresignedUrlCacheRows(args: {
 }
 
 async function storagePresignedUrlCacheRows(args: {
-  readonly db: Db;
+  readonly db: ReadonlyDb;
   readonly scope: StoragePresignedUrlCacheScope;
   readonly cacheKeys: readonly string[];
   readonly timing: StorageManifestCacheTiming | undefined;
@@ -1310,6 +1372,255 @@ function appendFreshStoragePresignedUrlResults(args: {
   }
 }
 
+interface PreparedStoragePresignedUrls {
+  readonly results: ReadonlyMap<string, StoragePresignedUrlResult>;
+  readonly freshValues: readonly CacheRowValue[];
+  readonly timing: StorageManifestCacheTiming | undefined;
+}
+
+interface PreparedStoragePresignedUrlRequests {
+  readonly results: Map<string, StoragePresignedUrlResult>;
+  readonly needsFresh: readonly StoragePresignedUrlFreshRequest[];
+  readonly issuedAt: Date;
+  readonly ttlSeconds: number;
+  readonly timing: StorageManifestCacheTiming | undefined;
+}
+
+interface StoragePresignedUrlSigningRequest extends StoragePresignedUrlFreshRequest {
+  readonly sign: PresignedGetUrlSigner;
+}
+
+async function prepareStoragePresignedUrls<TRequest extends object>(args: {
+  readonly db: ReadonlyDb;
+  readonly scope: StoragePresignedUrlCacheScope;
+  readonly requests: readonly TRequest[];
+  readonly ttlSeconds: number;
+  readonly cacheKey: (request: TRequest) => string;
+  readonly normalize: (request: TRequest) => StoragePresignedUrlRequest;
+  readonly issuedAt?: Date;
+  readonly minimumRemainingMs?: number;
+  readonly observation?: StorageManifestCacheObservationContext;
+  readonly prefetchedRows?: StorageManifestPresignedUrlCacheSnapshot;
+}): Promise<PreparedStoragePresignedUrlRequests> {
+  if (args.requests.length === 0) {
+    return {
+      results: new Map(),
+      needsFresh: [],
+      issuedAt: args.issuedAt ?? nowDate(),
+      ttlSeconds: args.ttlSeconds,
+      timing: undefined,
+    };
+  }
+
+  const stats: StorageManifestCacheObservationStats = {
+    requestedCount: args.requests.length,
+    uniqueKeyCount: 0,
+    hitCount: 0,
+    hardExpiredCount: 0,
+    missingCount: 0,
+    freshCount: 0,
+  };
+  const timing =
+    args.observation &&
+    args.scope !== "presentation_template_preview" &&
+    args.scope !== "private_artifact_preview"
+      ? new StorageManifestCacheTiming(args.observation, args.scope, stats)
+      : undefined;
+
+  const resolve = async () => {
+    const prepareRequests = () => {
+      return prepareStoragePresignedUrlRequests({
+        requests: args.requests,
+        scope: args.scope,
+        cacheKey: args.cacheKey,
+        normalize: args.normalize,
+        stats,
+        prefetchedRows: args.prefetchedRows,
+      });
+    };
+    const requestsByCacheKey = timing
+      ? timing.measureSync(
+          "api_dispatch_prepare_storage_manifest_cache_prepare_requests",
+          prepareRequests,
+        )
+      : prepareRequests();
+
+    const cacheKeys = [...requestsByCacheKey.keys()];
+    const rows = await storagePresignedUrlCacheRows({
+      db: args.db,
+      scope: args.scope,
+      cacheKeys,
+      timing,
+      prefetchedRows: args.prefetchedRows,
+    });
+
+    const issuedAt = args.issuedAt ?? nowDate();
+    const results = new Map<string, StoragePresignedUrlResult>();
+    const needsFresh: StoragePresignedUrlFreshRequest[] = [];
+    const classify = () => {
+      classifyStoragePresignedUrlCacheRows({
+        requestsByCacheKey,
+        rows,
+        issuedAt,
+        minimumRemainingMs: args.minimumRemainingMs ?? 0,
+        results,
+        needsFresh,
+        stats,
+      });
+    };
+    if (timing) {
+      timing.measureSync(
+        "api_dispatch_prepare_storage_manifest_cache_classify",
+        classify,
+      );
+    } else {
+      classify();
+    }
+
+    return {
+      results,
+      needsFresh,
+      issuedAt,
+      ttlSeconds: args.ttlSeconds,
+      timing,
+    };
+  };
+  return await onRejection(resolve(), () => {
+    timing?.flush();
+  });
+}
+
+async function signPreparedStoragePresignedUrls(
+  prepared: PreparedStoragePresignedUrlRequests,
+  signingRequests: readonly StoragePresignedUrlSigningRequest[],
+): Promise<PreparedStoragePresignedUrls> {
+  const signMisses = async () => {
+    return await Promise.all(
+      signingRequests.map((entry) => {
+        return signCacheValue({
+          ...entry,
+          ttlSeconds: prepared.ttlSeconds,
+          issuedAt: prepared.issuedAt,
+          lastRequestedAt: prepared.issuedAt,
+        });
+      }),
+    );
+  };
+  const freshValues = await onRejection(
+    prepared.timing
+      ? prepared.timing.measure(
+          "api_dispatch_prepare_storage_manifest_cache_sign_misses",
+          signMisses,
+        )
+      : signMisses(),
+    () => {
+      prepared.timing?.flush();
+    },
+  );
+  appendFreshStoragePresignedUrlResults({
+    results: prepared.results,
+    needsFresh: prepared.needsFresh,
+    freshValues,
+  });
+  return { results: prepared.results, freshValues, timing: prepared.timing };
+}
+
+/** Classify a captured database snapshot and sign misses entirely in memory. */
+export async function signStorageManifestPresignedUrls(args: {
+  readonly input: StorageManifestPresignedUrlCachePrefetchInput;
+  readonly prefetchedRows: StorageManifestPresignedUrlCacheSnapshot;
+  readonly sign: PresignedGetUrlSigner;
+}): Promise<{
+  readonly results: ReadonlyMap<string, StoragePresignedUrlResult>;
+  readonly freshValues: readonly CacheRowValue[];
+}> {
+  const requests = [
+    ...args.input.systemRequests.map((request) => {
+      return {
+        cacheKey: systemStoragePresignedUrlCacheKey(request),
+        request: systemStorageRequest(request),
+        ttlSeconds: SYSTEM_STORAGE_PRESIGNED_URL_TTL_SECONDS,
+      };
+    }),
+    ...args.input.workflowSkillRequests.map((request) => {
+      return {
+        cacheKey: workflowSkillStoragePresignedUrlCacheKey(request),
+        request: workflowSkillStorageRequest(request),
+        ttlSeconds: WORKFLOW_SKILL_STORAGE_PRESIGNED_URL_TTL_SECONDS,
+      };
+    }),
+    ...args.input.readOnlyRequests.map((request) => {
+      return {
+        cacheKey: readOnlyStoragePresignedUrlCacheKey(request),
+        request: readOnlyStorageRequest(request),
+        ttlSeconds: READ_ONLY_STORAGE_PRESIGNED_URL_TTL_SECONDS,
+      };
+    }),
+  ];
+  const unique = new Map(
+    requests.map((entry) => {
+      return [entry.cacheKey, entry];
+    }),
+  );
+  const issuedAt = nowDate();
+  const results = new Map<string, StoragePresignedUrlResult>();
+  const missing = [...unique.values()].filter((entry) => {
+    const row = args.prefetchedRows.rowsByScope
+      .get(entry.request.scope as StorageManifestPresignedUrlCacheScope)
+      ?.get(entry.cacheKey);
+    if (!row || row.expiresAt.getTime() <= issuedAt.getTime()) {
+      return true;
+    }
+    results.set(entry.cacheKey, {
+      cacheKey: entry.cacheKey,
+      url: row.presignedUrl,
+      expiresAt: row.expiresAt,
+      status: "hit",
+    });
+    return false;
+  });
+  const freshValues = await Promise.all(
+    missing.map((entry) => {
+      return signCacheValue({
+        ...entry,
+        sign: args.sign,
+        issuedAt,
+        lastRequestedAt: issuedAt,
+      });
+    }),
+  );
+  appendFreshStoragePresignedUrlResults({
+    results,
+    needsFresh: missing,
+    freshValues,
+  });
+  return { results, freshValues };
+}
+
+async function persistPreparedStoragePresignedUrls(
+  db: Db,
+  prepared: PreparedStoragePresignedUrls,
+): Promise<ReadonlyMap<string, StoragePresignedUrlResult>> {
+  const persist = async () => {
+    await upsertCacheValues(db, prepared.freshValues);
+  };
+  if (prepared.timing) {
+    await onRejection(
+      prepared.timing.measure(
+        "api_dispatch_prepare_storage_manifest_cache_upsert_misses",
+        persist,
+      ),
+      () => {
+        prepared.timing?.flush();
+      },
+    );
+    prepared.timing.flush();
+  } else {
+    await persist();
+  }
+  return prepared.results;
+}
+
 function resolveStoragePresignedUrls<TRequest extends object>(args: {
   readonly db: Db;
   readonly scope: StoragePresignedUrlCacheScope;
@@ -1323,123 +1634,106 @@ function resolveStoragePresignedUrls<TRequest extends object>(args: {
   readonly prefetchedRows?: StorageManifestPresignedUrlCacheSnapshot;
 }): Computed<Promise<ReadonlyMap<string, StoragePresignedUrlResult>>> {
   return computed(async (get) => {
-    if (args.requests.length === 0) {
-      return new Map();
-    }
-
-    const stats: StorageManifestCacheObservationStats = {
-      requestedCount: args.requests.length,
-      uniqueKeyCount: 0,
-      hitCount: 0,
-      hardExpiredCount: 0,
-      missingCount: 0,
-      freshCount: 0,
-    };
-    const timing =
-      args.observation &&
-      args.scope !== "presentation_template_preview" &&
-      args.scope !== "private_artifact_preview"
-        ? new StorageManifestCacheTiming(args.observation, args.scope, stats)
-        : undefined;
-
-    const resolve = async () => {
-      const prepareRequests = () => {
-        return prepareStoragePresignedUrlRequests({
-          requests: args.requests,
-          scope: args.scope,
-          cacheKey: args.cacheKey,
-          normalize: args.normalize,
-          stats,
-          prefetchedRows: args.prefetchedRows,
-        });
+    const requests = await prepareStoragePresignedUrls(args);
+    const signingRequests = requests.needsFresh.map((entry) => {
+      return {
+        ...entry,
+        sign: get(
+          presignedGetUrlSignerForBucket(
+            entry.request.bucket,
+            entry.request.publicEndpoint,
+          ),
+        ),
       };
-      const requestsByCacheKey = timing
-        ? timing.measureSync(
-            "api_dispatch_prepare_storage_manifest_cache_prepare_requests",
-            prepareRequests,
-          )
-        : prepareRequests();
-
-      const cacheKeys = [...requestsByCacheKey.keys()];
-      const rows = await storagePresignedUrlCacheRows({
-        db: args.db,
-        scope: args.scope,
-        cacheKeys,
-        timing,
-        prefetchedRows: args.prefetchedRows,
-      });
-
-      const issuedAt = args.issuedAt ?? nowDate();
-      const results = new Map<string, StoragePresignedUrlResult>();
-      const needsFresh: StoragePresignedUrlFreshRequest[] = [];
-      const classify = () => {
-        classifyStoragePresignedUrlCacheRows({
-          requestsByCacheKey,
-          rows,
-          issuedAt,
-          minimumRemainingMs: args.minimumRemainingMs ?? 0,
-          results,
-          needsFresh,
-          stats,
-        });
-      };
-      if (timing) {
-        timing.measureSync(
-          "api_dispatch_prepare_storage_manifest_cache_classify",
-          classify,
-        );
-      } else {
-        classify();
-      }
-
-      const signMisses = async () => {
-        return await joinAll(
-          needsFresh.map((entry) => {
-            return get(
-              signCacheValue({
-                request: entry.request,
-                cacheKey: entry.cacheKey,
-                ttlSeconds: args.ttlSeconds,
-                issuedAt,
-                lastRequestedAt: issuedAt,
-              }),
-            );
-          }),
-        );
-      };
-      const freshValues = timing
-        ? await timing.measure(
-            "api_dispatch_prepare_storage_manifest_cache_sign_misses",
-            signMisses,
-          )
-        : await signMisses();
-      const upsertMisses = async () => {
-        await upsertCacheValues(args.db, freshValues);
-      };
-      if (timing) {
-        await timing.measure(
-          "api_dispatch_prepare_storage_manifest_cache_upsert_misses",
-          upsertMisses,
-        );
-      } else {
-        await upsertMisses();
-      }
-
-      appendFreshStoragePresignedUrlResults({
-        results,
-        needsFresh,
-        freshValues,
-      });
-
-      return results;
-    };
-    return timing
-      ? await resolve().finally(() => {
-          timing.flush();
-        })
-      : await resolve();
+    });
+    const prepared = await signPreparedStoragePresignedUrls(
+      requests,
+      signingRequests,
+    );
+    return await persistPreparedStoragePresignedUrls(args.db, prepared);
   });
 }
+
+interface RunStoragePresignedUrlsArgs {
+  readonly db: ReadonlyDb;
+  readonly requests:
+    | {
+        readonly kind: "system";
+        readonly values: readonly SystemStoragePresignedUrlRequest[];
+      }
+    | {
+        readonly kind: "workflow";
+        readonly values: readonly WorkflowSkillStoragePresignedUrlRequest[];
+      }
+    | {
+        readonly kind: "readonly";
+        readonly values: readonly ReadOnlyStoragePresignedUrlRequest[];
+      };
+  readonly observation?: StorageManifestCacheObservationContext;
+  readonly prefetchedRows: StorageManifestPresignedUrlCacheSnapshot;
+}
+
+function prepareRunStoragePresignedUrls(args: RunStoragePresignedUrlsArgs) {
+  const { requests, ...common } = args;
+  switch (requests.kind) {
+    case "system": {
+      return prepareStoragePresignedUrls({
+        ...common,
+        requests: requests.values,
+        scope: "system_storage",
+        ttlSeconds: SYSTEM_STORAGE_PRESIGNED_URL_TTL_SECONDS,
+        cacheKey: systemStoragePresignedUrlCacheKey,
+        normalize: systemStorageRequest,
+      });
+    }
+    case "workflow": {
+      return prepareStoragePresignedUrls({
+        ...common,
+        requests: requests.values,
+        scope: "workflow_skill_storage",
+        ttlSeconds: WORKFLOW_SKILL_STORAGE_PRESIGNED_URL_TTL_SECONDS,
+        cacheKey: workflowSkillStoragePresignedUrlCacheKey,
+        normalize: workflowSkillStorageRequest,
+      });
+    }
+    case "readonly": {
+      return prepareStoragePresignedUrls({
+        ...common,
+        requests: requests.values,
+        scope: "readonly_storage",
+        ttlSeconds: READ_ONLY_STORAGE_PRESIGNED_URL_TTL_SECONDS,
+        cacheKey: readOnlyStoragePresignedUrlCacheKey,
+        normalize: readOnlyStorageRequest,
+      });
+    }
+  }
+}
+
+/** Shared run preparation signs from a captured cache snapshot without persisting. */
+export const materializeRunStoragePresignedUrls$ = command(
+  async ({ get }, args: RunStoragePresignedUrlsArgs, signal: AbortSignal) => {
+    const requests = await prepareRunStoragePresignedUrls(args);
+    signal.throwIfAborted();
+    const signingRequests = requests.needsFresh.map((entry) => {
+      return {
+        ...entry,
+        sign: get(
+          presignedGetUrlSignerForBucket(
+            entry.request.bucket,
+            entry.request.publicEndpoint,
+          ),
+        ),
+      };
+    });
+    const prepared = await signPreparedStoragePresignedUrls(
+      requests,
+      signingRequests,
+    );
+    signal.throwIfAborted();
+    prepared.timing?.flush();
+    return prepared.results;
+  },
+);
 
 export function resolveSystemStoragePresignedUrls(args: {
   readonly db: Db;

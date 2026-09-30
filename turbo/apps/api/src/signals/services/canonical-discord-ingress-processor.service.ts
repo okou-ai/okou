@@ -1,15 +1,16 @@
-import { enqueueIntegrationChatInput$ } from "./integration-chat-queue.service";
-import { resolveEnqueuedChatInputModel$ } from "./chat-input-model.service";
-import { randomUUID } from "node:crypto";
-import { command } from "ccstate";
 import { discordGatewayEnvelopeSchema } from "@okouai/api-contracts/contracts/discord-gateway";
 import { MAX_DISCORD_FILE_SIZE_BYTES } from "@okouai/api-contracts/contracts/integrations-discord-files";
 import { discordChatIngress } from "@okouai/db/schema/discord-chat-ingress";
 import { discordChatThreadRoutes } from "@okouai/db/schema/discord-chat-thread-route";
 import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
 import { discordOrgInstallations } from "@okouai/db/schema/discord-org-installation";
+import { command } from "ccstate";
 import { and, asc, eq, gte, inArray, lt, lte, or, sql } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+import { resolveEnqueuedChatInputModel } from "./chat-input-model.service";
+import { enqueueIntegrationChatInput$ } from "./integration-chat-queue.service";
 
+import type { Tx } from "../../lib/db-types";
 import {
   discordConversationContext,
   discordMessageContent,
@@ -21,9 +22,8 @@ import {
 } from "../../lib/discord-gateway-event";
 import { DiscordIngressFailure } from "../../lib/discord-ingress-failure";
 import { discordMessageUrl } from "../../lib/discord-message";
-import { nowDate } from "../../lib/time";
 import { safeSqlStateCode } from "../../lib/pg-errors";
-import type { Tx } from "../../lib/db-types";
+import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import {
   discordClient,
@@ -42,8 +42,8 @@ import { safeJsonParse, settle } from "../utils";
 import {
   canonicalInputContentType,
   canonicalInputMessageFiles,
-  InputFileImportError,
   createCanonicalInputFileCommands,
+  InputFileImportError,
   type CanonicalInputAsset,
 } from "./canonical-asset.service";
 import { createChatEventSourcePart } from "./chat-event-annotation.service";
@@ -56,21 +56,21 @@ import {
   insertChatEvent,
   type DiscordChatEventContext,
 } from "./chat-event.service";
+import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
 import {
-  createEnqueuedChatThreadPickScheduler,
+  scheduleEnqueuedChatThreadPick$,
   type ChatQueuePick,
 } from "./chat-thread-queue-drain.service";
-import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
 import { createUserMessageDocument } from "./chat-user-message.service";
 import { requireDiscordConversationAccess$ } from "./discord-access.service";
-import { prepareCanonicalDiscordIngressRoute$ } from "./discord-route-admission.service";
-import { scheduleDiscordAdmissionTyping } from "./discord-run-typing.service";
+import { getDiscordAppConfig } from "./discord-config";
+import { readDiscordHistoryPage$ } from "./discord-context.service";
 import {
   discordIngressSenderBindings,
   type DiscordVerifiedBinding,
 } from "./discord-data.service";
-import { getDiscordAppConfig } from "./discord-config";
-import { readDiscordHistoryPage$ } from "./discord-context.service";
+import { prepareCanonicalDiscordIngressRoute$ } from "./discord-route-admission.service";
+import { scheduleDiscordAdmissionTyping } from "./discord-run-typing.service";
 import {
   sendDiscordChatReply$,
   sendDiscordIngressNotice$,
@@ -407,15 +407,11 @@ const enqueueMessage$ = command(
       id: args.ingress.id,
       chatThreadId: args.ingress.chatThreadId,
       eventType: "input.prompt",
-      modelSelection: await set(
-        resolveEnqueuedChatInputModel$,
-        {
-          threadId: args.ingress.chatThreadId,
-          orgId: args.orgId,
-          userId: args.ingress.userId,
-        },
-        signal,
-      ),
+      modelSelection: await resolveEnqueuedChatInputModel(set(writeDb$), {
+        threadId: args.ingress.chatThreadId,
+        orgId: args.orgId,
+        userId: args.ingress.userId,
+      }),
       runId: null,
       userMessage: createUserMessageDocument({
         text: args.context.messageText,
@@ -1159,9 +1155,6 @@ const sendIngressQueueWaitNotice$ = command(
   },
 );
 
-const scheduleDiscordIngressChatThreadPick$ =
-  createEnqueuedChatThreadPickScheduler(sendIngressQueueWaitNotice$);
-
 export const processCanonicalDiscordIngress$ = command(
   async (
     { set },
@@ -1209,21 +1202,35 @@ export const processCanonicalDiscordIngress$ = command(
       orgId: ingress.orgId,
     });
     signal.throwIfAborted();
-    set(scheduleDiscordIngressChatThreadPick$, {
-      chatThreadId: ingress.chatThreadId,
-      afterPick: {
-        ingressId: args.ingressId,
-        connectionId: ingress.connectionId,
-        channelId: ingress.destinationChannelId,
+    set(
+      scheduleEnqueuedChatThreadPick$,
+      {
+        orgId: ingress.orgId,
+        chatThreadId: ingress.chatThreadId,
+        // The ingress id is the enqueued input's chat event id.
+        eventId: args.ingressId,
+        afterPick: async (pick, pickSignal) => {
+          await set(
+            sendIngressQueueWaitNotice$,
+            {
+              ingressId: args.ingressId,
+              connectionId: ingress.connectionId,
+              channelId: ingress.destinationChannelId,
+            },
+            pick,
+            pickSignal,
+          );
+        },
+        publish: async () => {
+          await publishChatThreadMessageCreatedSafely({
+            userId: ingress.userId,
+            orgId: ingress.orgId,
+            threadId: ingress.chatThreadId,
+          });
+        },
       },
-      publish: async () => {
-        await publishChatThreadMessageCreatedSafely({
-          userId: ingress.userId,
-          orgId: ingress.orgId,
-          threadId: ingress.chatThreadId,
-        });
-      },
-    });
+      signal,
+    );
     return true;
   },
 );

@@ -1,40 +1,37 @@
-import { cancelEmptyUsagePackSubscription$ } from "./billing-downgrade.service";
-import { organizationAgentRunScopePredicate } from "./pi-inference-lifecycle.service";
-import { piMemoryStage1Days } from "@okouai/db/schema/pi-memory-stage1-schedule";
-import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
-import { cleanupSharedThreadArtifacts$ } from "./shared-thread-artifacts.service";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { artifacts } from "@okouai/db/schema/artifact";
+import { browserUserActionRequests } from "@okouai/db/schema/browser-session";
 import { chatAgentRunContext } from "@okouai/db/schema/chat-agent-run-context";
 import { cliTokens } from "@okouai/db/schema/cli-tokens";
+import { cloudflareAccessConfigs } from "@okouai/db/schema/cloudflare-access-config";
 import { composeJobs } from "@okouai/db/schema/compose-job";
+import { connectors } from "@okouai/db/schema/connector";
 import { builtinConnectorExternalCodeSessions } from "@okouai/db/schema/connector-external-code-session";
 import { builtinConnectorOauthDeviceAuthorizationSessions } from "@okouai/db/schema/connector-oauth-device-authorization-session";
-import { browserUserActionRequests } from "@okouai/db/schema/browser-session";
-import { connectors } from "@okouai/db/schema/connector";
-import { cloudflareAccessConfigs } from "@okouai/db/schema/cloudflare-access-config";
 import { deviceCodes } from "@okouai/db/schema/device-codes";
 import { exportJobs } from "@okouai/db/schema/export-job";
 import { githubUserLinks } from "@okouai/db/schema/github-user-link";
-import { modelProviderAuthSessions } from "@okouai/db/schema/model-provider-auth-session";
 import { modelProviders } from "@okouai/db/schema/model-provider";
+import { modelProviderAuthSessions } from "@okouai/db/schema/model-provider-auth-session";
+import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
 import { orgCache } from "@okouai/db/schema/org-cache";
 import { orgConcurrencyEntitlements } from "@okouai/db/schema/org-concurrency-entitlement";
 import { orgConcurrencySubscriptions } from "@okouai/db/schema/org-concurrency-subscription";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
-import { userDisabledPaidTools } from "@okouai/db/schema/user-disabled-paid-tools";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
+import { piMemoryStage1Days } from "@okouai/db/schema/pi-memory-stage1-schedule";
 import { secrets } from "@okouai/db/schema/secret";
-import { sshConnections } from "@okouai/db/schema/ssh-connection";
-import { sshCredentials } from "@okouai/db/schema/ssh-credential";
+import { sharedThreads } from "@okouai/db/schema/shared-thread";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
-import { sharedThreads } from "@okouai/db/schema/shared-thread";
+import { sshConnections } from "@okouai/db/schema/ssh-connection";
+import { sshCredentials } from "@okouai/db/schema/ssh-credential";
 import { storages } from "@okouai/db/schema/storage";
-import { userCache } from "@okouai/db/schema/user-cache";
 import { users } from "@okouai/db/schema/user";
+import { userCache } from "@okouai/db/schema/user-cache";
+import { userDisabledPaidTools } from "@okouai/db/schema/user-disabled-paid-tools";
 import { userPermissionGrants } from "@okouai/db/schema/user-permission-grant";
 import { variables } from "@okouai/db/schema/variable";
 import { command, computed, type Computed } from "ccstate";
@@ -48,55 +45,58 @@ import {
   like,
   sql,
 } from "drizzle-orm";
+import { pgTextDecoder } from "../../lib/db-structured-result";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
-import { pgTextDecoder } from "../../lib/db-structured-result";
 import {
-  sharedThreadArtifactAuthorUserId,
   SHARED_THREAD_ARTIFACT_LOGICAL_KEY_PREFIX,
+  sharedThreadArtifactAuthorUserId,
 } from "../../lib/shared-thread-artifact";
+import { nowDate } from "../../lib/time";
 import { clerk$, createClerkReadContext } from "../external/clerk";
 import { writeDb$, type Db } from "../external/db";
+import { publishCancelToRunnerGroup } from "../external/realtime";
 import {
   deleteS3Objects,
   listS3Objects,
   listS3ObjectsUnderPrefix,
 } from "../external/s3";
-import { nowDate } from "../../lib/time";
-import { publishCancelToRunnerGroup } from "../external/realtime";
 import {
   getStripeClient,
   listAllStripeSubscriptions,
 } from "../external/stripe-client";
 import { settle, tapError } from "../utils";
-import { cancelAndRefundOrgBillingForDeletion } from "./org-deletion-billing.service";
-import { cleanupOrgMemberResources$ } from "./org-member-cleanup.service";
 import { scheduleReleasedSlotPicks$ } from "./agent-run-lifecycle.service";
-import { removeUsagePackMemberAllocation } from "./usage-pack-allocation-change.service";
-import { refundUsagePackMemberCredits } from "./usage-pack-credit-refund.service";
 import {
-  deleteBuiltinConnectorLocalState$,
-  loadStoredBuiltinConnectorRuntimeSnapshot$,
-} from "./connector-data.service";
+  releaseNeverStartedRunSlots,
+  transitionAgentRunsToTerminal,
+  type ReleasedRunSlot,
+} from "./agent-run-terminal-transition.service";
+import { cancelEmptyUsagePackSubscription$ } from "./billing-downgrade.service";
 import {
   deleteClerkAgentLifecycleData$,
   deleteStableContextLifecycleAfterAuthorityRemoval$,
 } from "./clerk-agent-lifecycle.service";
-import { deleteConnectorOwnerState } from "./connector-owner-cleanup.service";
-import { revokeMorningBriefCollectionOwnership } from "./morning-brief-collection-occurrence.service";
-import { revokeMorningBriefDeliveryOwnership } from "./morning-brief-delivery.service";
-import { revokeMorningBriefScheduleOwnership } from "./morning-brief-schedule-claim.service";
-import { deleteStoragesWithPiMemoryCandidates } from "./pi-memory-stage1-candidate.service";
 import {
-  releaseNeverStartedRunSlots,
-  type ReleasedRunSlot,
-  transitionAgentRunsToTerminal,
-} from "./agent-run-terminal-transition.service";
-import { eraseVncOwnerData$ } from "./vnc-owner-lifecycle.service";
+  deleteBuiltinConnectorLocalState$,
+  loadStoredBuiltinConnectorRuntimeSnapshot$,
+} from "./connector-data.service";
+import { deleteConnectorOwnerState } from "./connector-owner-cleanup.service";
 import {
   deleteDiscordOrgData,
   deleteDiscordUserData,
 } from "./discord-owner-cleanup.service";
+import { revokeMorningBriefCollectionOwnership } from "./morning-brief-collection-occurrence.service";
+import { revokeMorningBriefDeliveryOwnership } from "./morning-brief-delivery.service";
+import { revokeMorningBriefScheduleOwnership } from "./morning-brief-schedule-claim.service";
+import { cancelAndRefundOrgBillingForDeletion } from "./org-deletion-billing.service";
+import { cleanupOrgMemberResources$ } from "./org-member-cleanup.service";
+import { organizationAgentRunScopePredicate } from "./pi-inference-lifecycle.service";
+import { deleteStoragesWithPiMemoryCandidates } from "./pi-memory-stage1-candidate.service";
+import { cleanupSharedThreadArtifacts$ } from "./shared-thread-artifacts.service";
+import { removeUsagePackMemberAllocation } from "./usage-pack-allocation-change.service";
+import { refundUsagePackMemberCredits } from "./usage-pack-credit-refund.service";
+import { eraseVncOwnerData$ } from "./vnc-owner-lifecycle.service";
 
 const L = logger("WebhookClerkCleanup");
 const CLERK_ORG_MEMBERSHIP_PAGE_SIZE = 100;
@@ -1010,7 +1010,7 @@ export const cleanupClerkDeletedOrg$ = command(
     signal.throwIfAborted();
     // Picked only once the data is gone: deleting the organization's Agents
     // cascaded its chat threads and their queued rows, so nothing launches.
-    set(scheduleReleasedSlotPicks$, released.slots);
+    set(scheduleReleasedSlotPicks$, released.slots, signal);
   },
 );
 
@@ -1099,7 +1099,7 @@ export const cleanupClerkDeletedUser$ = command(
     }
     // Picked only once the user's data is gone, so the slots go to other
     // members' waiting threads.
-    set(scheduleReleasedSlotPicks$, released.slots);
+    set(scheduleReleasedSlotPicks$, released.slots, signal);
   },
 );
 
@@ -1147,10 +1147,11 @@ export const cleanupClerkDeletedOrgMembership$ = command(
       commitClerkDeletedOrgMembershipCleanup$,
       args,
       (slots) => {
-        set(scheduleReleasedSlotPicks$, slots);
+        set(scheduleReleasedSlotPicks$, slots, signal);
       },
       new AbortController().signal,
     );
+
     signal.throwIfAborted();
   },
 );
@@ -1159,7 +1160,7 @@ export const cleanupClerkBannedUser$ = command(
   async ({ set }, userId: string, signal: AbortSignal): Promise<void> => {
     const db = set(writeDb$);
     await cancelUserRuns(db, userId, (slots) => {
-      set(scheduleReleasedSlotPicks$, slots);
+      set(scheduleReleasedSlotPicks$, slots, signal);
     });
     signal.throwIfAborted();
     await cancelLastAdminOrgsStripeSubscriptions(db, userId);

@@ -1,17 +1,17 @@
-import { createHash } from "node:crypto";
+import type {
+  ChatThreadServiceTier,
+  CodexServiceTier,
+} from "@okouai/api-contracts/contracts/chat-threads";
 import {
   modelSettingsSchema,
   type ModelSettings,
   type ModelSettingsPatch,
   type ReasoningEffort,
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
-import type {
-  ChatThreadServiceTier,
-  CodexServiceTier,
-} from "@okouai/api-contracts/contracts/chat-threads";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatThreadEvents } from "@okouai/db/schema/chat-thread-event";
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { createHash } from "node:crypto";
 import { v5 as uuidv5 } from "uuid";
 
 import { agents } from "@okouai/db/schema/agent";
@@ -23,18 +23,18 @@ import {
 import { now, nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
+import { resolveChatReasoningEffort } from "./chat-reasoning-effort.service";
 import {
   ChatThreadEventIdConflictError,
   chatThreadEventInsertSql,
   chatThreadServiceTierFromCodex,
 } from "./chat-thread-event.service";
 import { chatThreadModelPinColumns } from "./chat-thread-model.service";
-import { resolveChatReasoningEffort } from "./chat-reasoning-effort.service";
 import {
   MODEL_FIRST_SELECTION_PROVIDER_ID,
-  resolveModelSelectionPin$,
-  type ModelFirstPin,
+  resolveModelSelectionPin,
   validateCodexServiceTier,
+  type ModelFirstPin,
 } from "./model-selection.service";
 
 const UPDATE_RETRY_MS = 24 * 60 * 60 * 1000;
@@ -442,17 +442,14 @@ const prepareMetadataModel$ = command(
     if (readMutation(args, existing)) {
       return null;
     }
-    return await set(
-      resolveModelSelectionPin$,
-      {
-        ...args.principal,
-        modelSelection: {
-          modelProviderId: MODEL_FIRST_SELECTION_PROVIDER_ID,
-          selectedModel: args.patch.model,
-        },
+    return await resolveModelSelectionPin({
+      db: set(writeDb$),
+      ...args.principal,
+      modelSelection: {
+        modelProviderId: MODEL_FIRST_SELECTION_PROVIDER_ID,
+        selectedModel: args.patch.model,
       },
-      signal,
-    );
+    });
   },
 );
 

@@ -1,71 +1,71 @@
-import { readGetStartedStatus } from "./helpers/get-started";
+import { createHash, randomUUID } from "node:crypto";
+import { gunzipSync } from "node:zlib";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import {
   scopedReviewContract,
   scopedReviewRoutes,
 } from "../test-get-started-rewards";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createHash, randomUUID } from "node:crypto";
-import { gunzipSync } from "node:zlib";
+import { readGetStartedStatus } from "./helpers/get-started";
 
 import { HeadObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
+import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   testSystemStoragePresignedUrlCacheStateContract,
   type TestSystemStoragePresignedUrlCacheStateActionBody,
 } from "@okouai/api-contracts/contracts/test-system-storage-presigned-url-cache-state";
 import {
+  workflowAutomationsContract,
   workflowsCollectionContract,
   workflowsDetailContract,
-  workflowAutomationsContract,
   workflowVisibilityContract,
   type WorkflowCreateRequest,
   type WorkflowUpdateRequest,
 } from "@okouai/api-contracts/contracts/workflows";
-import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { synthesizeWorkflowSkillMd } from "@okouai/core/skill-document";
 import {
   getCustomSkillStorageName,
   VOLUME_ORG_USER_ID,
 } from "@okouai/core/storage-names";
-import { synthesizeWorkflowSkillMd } from "@okouai/core/skill-document";
-import { HttpResponse, http } from "msw";
+import { http, HttpResponse } from "msw";
 import { onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { createDeferredPromise } from "../../utils";
-import { mockNow, now } from "../../../lib/time";
 import { mockOptionalEnv } from "../../../lib/env";
+import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import {
-  readWorkflowAutomationAutonomyFixture,
-  setRunAutonomyBudgetFixture,
-  setWorkflowAutomationAutonomyBudgetFixture,
-} from "./helpers/runtime-state";
+import { createDeferredPromise } from "../../utils";
+import { chatThreadRoutes } from "../chat-threads";
+import { testSystemStoragePresignedUrlCacheStateRoutes } from "../test-system-storage-presigned-url-cache-state";
+import { workflowAutomationsRoutes } from "../workflow-automations";
+import { workflowsRoutes } from "../workflows";
 import {
   createBddApi,
   type ApiTestUser,
   type ApiTestUserOptions,
 } from "./helpers/api-bdd";
-import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import {
   createConnectorBddApi,
   mockGmailConnectorOAuth,
   mockGoogleFormsConnectorOAuth,
   mockStripeConnectorOAuth,
 } from "./helpers/api-bdd-connectors";
+import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
+import { createRunsApi } from "./helpers/api-bdd-runs";
 import {
   mockGoogleCalendarConnectorOAuth,
   mockNotionConnectorOAuth,
 } from "./helpers/api-bdd-workflows";
-import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
-import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
-import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import { chatThreadRoutes } from "../chat-threads";
-import { workflowAutomationsRoutes } from "../workflow-automations";
-import { workflowsRoutes } from "../workflows";
-import { testSystemStoragePresignedUrlCacheStateRoutes } from "../test-system-storage-presigned-url-cache-state";
+import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
+import {
+  readWorkflowAutomationAutonomyFixture,
+  setRunAutonomyBudgetFixture,
+  setWorkflowAutomationAutonomyBudgetFixture,
+} from "./helpers/runtime-state";
 
 const context = testContext({ connectorCatalog: true });
 const bdd = createBddApi(context);
@@ -649,6 +649,7 @@ describe("workflows", () => {
   it("runs public workflows for members and hides workflows on private agents", async () => {
     const owner = user({ orgRole: "org:admin" });
     const member = user({ orgId: owner.orgId, orgRole: "org:member" });
+    await bdd.completeOnboarding(member);
     await enableWorkflowRuns(owner);
     if (!owner.orgId) {
       throw new Error("Expected a workflow owner organization");

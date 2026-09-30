@@ -1,6 +1,7 @@
 import { command } from "ccstate";
+import { writeDb$ } from "../external/db";
 import {
-  resolveDefaultModelFirstPin$,
+  resolveDefaultModelFirstPin,
   type DefaultModelFirstPin,
   type ModelFirstPin,
 } from "./model-selection.service";
@@ -30,11 +31,14 @@ export const resolveRequiredDefaultChatThreadModelPin$ = command(
     orgPlanCapabilities?: OrgPlanCapabilities | null,
     abortSignal?: AbortSignal,
   ): Promise<DefaultModelFirstPin> => {
-    const pin = await set(
-      resolveDefaultModelFirstPin$,
-      { orgId: args.orgId, userId: args.userId, orgPlanCapabilities },
-      abortSignal,
+    const pin = await resolveDefaultModelFirstPin(
+      set(writeDb$),
+      args.orgId,
+      args.userId,
+      undefined,
+      orgPlanCapabilities,
     );
+    abortSignal?.throwIfAborted();
     if (!pin.selectedModel) {
       throw new Error("A model selection is required");
     }

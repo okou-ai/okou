@@ -1,4 +1,10 @@
 import { command } from "ccstate";
+import type { DiscordChannel } from "../external/discord-client";
+import {
+  discordDmReadDenied,
+  discordUnavailable,
+  type DiscordFailureResponse,
+} from "./discord-api-response";
 import {
   discordIntegrationEnabledForOwner,
   getDiscordAppConfig,
@@ -7,18 +13,12 @@ import {
   discordUserBinding,
   type DiscordVerifiedBinding,
 } from "./discord-data.service";
-import type { DiscordChannel } from "../external/discord-client";
-import {
-  discordDmReadDenied,
-  discordUnavailable,
-  type DiscordFailureResponse,
-} from "./discord-api-response";
 import {
   resolveDiscordProviderAccess,
   type DiscordAccessMode,
 } from "./discord-provider-access";
 
-type DiscordBindingAccess =
+export type DiscordBindingAccess =
   | {
       kind: "allowed";
       binding: DiscordVerifiedBinding;

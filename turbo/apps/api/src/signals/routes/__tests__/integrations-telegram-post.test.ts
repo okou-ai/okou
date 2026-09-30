@@ -1,6 +1,6 @@
+import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
 import { Buffer } from "node:buffer";
 import { createHash, createHmac, randomInt, randomUUID } from "node:crypto";
-import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
 
 import {
   OFFICIAL_TELEGRAM_BOT_ID,
@@ -13,9 +13,9 @@ import type {
 import { HttpResponse, http } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { createApp } from "../../../app-factory";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { createApp } from "../../../app-factory";
 import { clearMockedEnv, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { nowDate } from "../../../lib/time";
 import { server } from "../../../mocks/server";
@@ -28,20 +28,20 @@ import {
 import { installTelegramContextFailureFixture } from "../../../test-fixtures/telegram-context-failure";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { settleIncludingAbort } from "../../utils";
-import { createFixtureTracker } from "./helpers/route-test";
+import { integrationsTelegramRoutes } from "../integrations-telegram";
+import { testTelegramStateRoutes } from "../test-telegram-state";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import {
   captureIntegrationInputUploads,
   expectIntegrationInputPreview,
   listIntegrationInputFileParts,
 } from "./helpers/integration-input-assets";
-import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
-import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { createFixtureTracker } from "./helpers/route-test";
 import { seedBuiltInDefaultModelKey } from "./helpers/runtime-state";
-import { testTelegramStateRoutes } from "../test-telegram-state";
-import { integrationsTelegramRoutes } from "../integrations-telegram";
 
 const TEST_APP_ROUTES = Object.freeze([...integrationsTelegramRoutes]);
 
@@ -235,6 +235,7 @@ async function seedTelegramPostFixture(
       ? OFFICIAL_LINKED_TELEGRAM_USER_ID
       : undefined,
   };
+  await authOrgApi.completeOnboarding(actorForFixture(seeded));
 
   return seeded;
 }

@@ -1,36 +1,64 @@
-import { enqueueWorkflowScheduleInput$ } from "./workflow-schedule-queue.service";
-import { enqueueStripeWorkflowInput$ } from "./workflow-stripe-queue.service";
-import { enqueueNotionWorkflowInput$ } from "./workflow-notion-queue.service";
-import { enqueueGoogleMeetWorkflowInput$ } from "./workflow-google-meet-queue.service";
-import { enqueueWorkflowInput$ } from "./workflow-input-queue.service";
-import { enqueueGmailWorkflowInput$ } from "./workflow-gmail-queue.service";
-import { enqueueGoogleCalendarWorkflowInput$ } from "./workflow-google-calendar-queue.service";
 import { command } from "ccstate";
-
+import type { Tx } from "../../lib/db-types";
+import { writeDb$ } from "../external/db";
 import { publishChatThreadMessageCreatedSafely } from "../external/realtime";
 import { settle, settleIncludingAbort } from "../utils";
+import { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
+import type { ChatInputEnqueueCommit } from "./chat-input-enqueue-observation";
 import {
-  prepareWorkflowAutomationQueueInput$,
+  enqueueChatInput,
+  scheduleEnqueuedChatThreadPick$,
+} from "./chat-thread-queue-drain.service";
+import {
+  persistedWorkflowAutomationEventPayload,
+  workflowAutomationDisplayMessage,
+} from "./workflow-automation-context.service";
+import {
+  revokePendingScheduleTicks,
   ScheduleOccurrenceUnavailableError,
-  type PreparedWorkflowAutomationQueueInput,
-} from "./workflow-chat-event-queue.service";
+  workflowAutomationQueueEventWriter,
+  type PersistWorkflowQueueSourceTransition,
+  type RunWorkflowAutomationNowArgs,
+  type RunWorkflowAutomationResult,
+  type WorkflowScheduleClaimPlan,
+} from "./workflow-automation-enqueue.service";
 import {
   censusWorkflowAdmission,
   measureWorkflowAdmissionStep,
   type WorkflowAdmissionOutcome,
   type WorkflowAdmissionSchedulePath,
 } from "./workflow-queue-admission-timing.service";
-import { scheduleEnqueuedChatThreadPick$ } from "./chat-thread-queue-drain.service";
-import { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
-import {
-  persistedWorkflowAutomationEventPayload,
-  workflowAutomationDisplayMessage,
-} from "./workflow-automation-context.service";
-import type {
-  RunWorkflowAutomationNowArgs,
-  RunWorkflowAutomationResult,
-} from "./workflow-automation-launch.service";
-import { enqueueGoogleFormsWorkflowInput$ } from "./workflow-google-forms-queue.service";
+import { persistWorkflowScheduleOccurrence } from "./workflow-schedule-queue.service";
+
+const WORKFLOW_ENQUEUE_ACTIONS = {
+  transaction: "api_dispatch_workflow_enqueue_transaction",
+  callback: "api_dispatch_workflow_enqueue_transaction_callback",
+  queue_upsert: "api_dispatch_workflow_enqueue_queue_upsert",
+} as const;
+
+function workflowEnqueueResult(
+  journaled: boolean,
+  enqueued: boolean,
+): RunWorkflowAutomationResult {
+  return {
+    kind: "enqueued",
+    scheduleOccurrence: journaled
+      ? enqueued
+        ? "claimed"
+        : "superseded"
+      : undefined,
+  };
+}
+
+function workflowAdmissionSchedulePath(
+  kind: string,
+  hasScheduleClaim: boolean,
+): WorkflowAdmissionSchedulePath {
+  if (kind !== "schedule") {
+    return "non_schedule";
+  }
+  return hasScheduleClaim ? "journaled_schedule" : "unjournaled_schedule";
+}
 
 /**
  * The producer-owned write that commits with the queue event: claim and bind
@@ -55,48 +83,59 @@ async function flushWorkflowAdmission<T>(
   return result.value;
 }
 
-function workflowQueueSchedulePath(
-  args: RunWorkflowAutomationNowArgs,
-): WorkflowAdmissionSchedulePath {
-  return args.due.automation.kind !== "schedule"
-    ? "non_schedule"
-    : args.scheduleClaim
-      ? "journaled_schedule"
-      : "unjournaled_schedule";
-}
-
-function workflowQueueInputPreparation(
-  args: RunWorkflowAutomationNowArgs,
-  timing: ApiDispatchTimingCollector,
-) {
-  if (
-    (args.googleFormsSource ||
-      args.googleCalendarSource ||
-      args.gmailSource ||
-      args.googleMeetSource ||
-      args.notionSource ||
-      args.stripeSource ||
-      args.queueReceipt) &&
-    (args.scheduleClaim || args.due.automation.kind === "schedule")
-  ) {
-    throw new Error(
-      "Provider watch admission cannot carry another source transition",
-    );
+function queueAdmissionSourceTransition(args: {
+  readonly scheduleClaim: WorkflowScheduleClaimPlan | undefined;
+  readonly persistSourceTransition:
+    | PersistWorkflowQueueSourceTransition
+    | undefined;
+  readonly replacePendingTicks:
+    | { readonly chatThreadId: string; readonly automationId: string }
+    | undefined;
+  readonly timing: ApiDispatchTimingCollector;
+}): {
+  readonly persistSourceTransition?: (tx: Tx, eventId: string) => Promise<void>;
+} {
+  const { scheduleClaim, persistSourceTransition, replacePendingTicks } = args;
+  if (!scheduleClaim && !persistSourceTransition && !replacePendingTicks) {
+    return {};
   }
   return {
-    automation: args.due.automation,
-    queueEventId: args.queueEventId,
-    workflowName: args.automationContext.workflowName,
-    displayPrompt: workflowAutomationDisplayMessage(args.automationContext),
-    agentRunSource: args.agentRunSource,
-    workflowAutomationEventType: args.automationContext.eventType,
-    workflowAutomationEventPayload: persistedWorkflowAutomationEventPayload(
-      args.automationContext.event,
-    ),
-    connectorSourceId: args.connectorSourceId,
-    chatThreadId: args.due.chatThreadId,
-    triggerBrief: args.triggerBrief,
-    timing,
+    persistSourceTransition: async (tx, eventId) => {
+      if (scheduleClaim) {
+        await measureWorkflowAdmissionStep(
+          args.timing,
+          "api_dispatch_workflow_enqueue_schedule_claim",
+          () => {
+            return persistWorkflowScheduleOccurrence(
+              tx,
+              scheduleClaim,
+              eventId,
+            );
+          },
+        );
+      }
+      if (replacePendingTicks) {
+        await measureWorkflowAdmissionStep(
+          args.timing,
+          "api_dispatch_workflow_enqueue_replace_pending_ticks",
+          async () => {
+            await revokePendingScheduleTicks(tx, {
+              ...replacePendingTicks,
+              excludeEventId: eventId,
+            });
+          },
+        );
+      }
+      if (persistSourceTransition) {
+        await measureWorkflowAdmissionStep(
+          args.timing,
+          "api_dispatch_workflow_enqueue_source_transition",
+          async () => {
+            await persistSourceTransition(tx);
+          },
+        );
+      }
+    },
   };
 }
 
@@ -109,141 +148,53 @@ function workflowQueueInputPreparation(
  * trigger waits for a launch, and a launch rejection appears in the thread as
  * `input.rejected`.
  */
-function workflowQueueEntryTiming(
-  supplied: ApiDispatchTimingCollector | undefined,
-  apiStartTime: RunWorkflowAutomationNowArgs["apiStartTime"],
-) {
-  const timing = supplied ?? new ApiDispatchTimingCollector();
-  if (!supplied) {
-    timing.recordElapsed(
-      "api_dispatch_pre_create_agent_workflow_automation_entrypoint_gap",
-      "nested",
-      apiStartTime,
-    );
-  }
-  return timing;
-}
-
-type WorkflowQueueSources = Pick<
-  RunWorkflowAutomationNowArgs,
-  | "googleFormsSource"
-  | "googleCalendarSource"
-  | "gmailSource"
-  | "googleMeetSource"
-  | "notionSource"
-  | "stripeSource"
-  | "queueReceipt"
->;
-
-function hasWorkflowQueueSource(source: WorkflowQueueSources): boolean {
-  return Boolean(
-    source.googleFormsSource ||
-    source.googleCalendarSource ||
-    source.gmailSource ||
-    source.googleMeetSource ||
-    source.notionSource ||
-    source.stripeSource,
-  );
-}
-
-/** Route prepared business values to the command that owns that source's SQL. */
-const enqueuePreparedWorkflowInput$ = command(
-  async (
-    { set },
-    input: PreparedWorkflowAutomationQueueInput,
-    source: WorkflowQueueSources,
-    orgId: string,
-    signal: AbortSignal,
-  ): Promise<string | null> => {
-    return await (source.googleFormsSource
-      ? set(
-          enqueueGoogleFormsWorkflowInput$,
-          {
-            input,
-            source: source.googleFormsSource,
-          },
-          signal,
-        )
-      : source.googleCalendarSource
-        ? set(
-            enqueueGoogleCalendarWorkflowInput$,
-            {
-              input,
-              source: source.googleCalendarSource,
-            },
-            signal,
-          )
-        : source.gmailSource
-          ? set(
-              enqueueGmailWorkflowInput$,
-              { input, source: source.gmailSource },
-              signal,
-            )
-          : source.googleMeetSource
-            ? set(
-                enqueueGoogleMeetWorkflowInput$,
-                {
-                  input,
-                  source: source.googleMeetSource,
-                },
-                signal,
-              )
-            : source.notionSource
-              ? set(
-                  enqueueNotionWorkflowInput$,
-                  { input, source: source.notionSource },
-                  signal,
-                )
-              : source.stripeSource
-                ? set(
-                    enqueueStripeWorkflowInput$,
-                    {
-                      input,
-                      source: source.stripeSource,
-                    },
-                    signal,
-                  )
-                : set(
-                    enqueueWorkflowInput$,
-                    { input, orgId, receipt: source.queueReceipt },
-                    signal,
-                  ));
-  },
-);
-
 export const runWorkflowAutomationNow$ = command(
   async (
     { set },
     args: RunWorkflowAutomationNowArgs,
     signal: AbortSignal,
   ): Promise<RunWorkflowAutomationResult> => {
+    const db = set(writeDb$);
     const { automation, chatThreadId } = args.due;
-    const timing = workflowQueueEntryTiming(args.timing, args.apiStartTime);
+    const timing = args.timing ?? new ApiDispatchTimingCollector();
+    if (!args.timing) {
+      timing.recordElapsed(
+        "api_dispatch_pre_create_agent_workflow_automation_entrypoint_gap",
+        "nested",
+        args.apiStartTime,
+      );
+    }
 
-    const { scheduleClaim } = args;
+    const { scheduleClaim, persistSourceTransition } = args;
     const replacePendingTicks =
       automation.kind === "schedule" &&
       args.replacePendingScheduleTick !== false
         ? { chatThreadId, automationId: automation.id }
         : undefined;
 
-    const preparedInput = await set(
-      prepareWorkflowAutomationQueueInput$,
-      workflowQueueInputPreparation(args, timing),
-      signal,
-    );
+    const appendInput = await workflowAutomationQueueEventWriter(db, {
+      automation,
+      queueEventId: args.queueEventId,
+      workflowName: args.automationContext.workflowName,
+      displayPrompt: workflowAutomationDisplayMessage(args.automationContext),
+      agentRunSource: args.agentRunSource,
+      workflowAutomationEventType: args.automationContext.eventType,
+      workflowAutomationEventPayload: persistedWorkflowAutomationEventPayload(
+        args.automationContext.event,
+      ),
+      connectorSourceId: args.connectorSourceId,
+      chatThreadId,
+      triggerBrief: args.triggerBrief,
+      timing,
+    });
     signal.throwIfAborted();
-    const sources: WorkflowQueueSources = {
-      googleFormsSource: args.googleFormsSource,
-      googleCalendarSource: args.googleCalendarSource,
-      gmailSource: args.gmailSource,
-      googleMeetSource: args.googleMeetSource,
-      notionSource: args.notionSource,
-      stripeSource: args.stripeSource,
-      queueReceipt: args.queueReceipt,
-    };
-    const schedulePath = workflowQueueSchedulePath(args);
+
+    const schedulePath = workflowAdmissionSchedulePath(
+      automation.kind,
+      scheduleClaim !== undefined,
+    );
     let admissionOutcome: WorkflowAdmissionOutcome = "failed";
+    let enqueueCommit: ChatInputEnqueueCommit | undefined;
     const enqueued = await flushWorkflowAdmission(
       censusWorkflowAdmission(
         schedulePath,
@@ -252,25 +203,27 @@ export const runWorkflowAutomationNow$ = command(
           "api_dispatch_pre_create_agent_workflow_automation_queue_admission",
           async () => {
             const attempt = await settle(
-              hasWorkflowQueueSource(sources) ||
-                (!scheduleClaim && !replacePendingTicks)
-                ? set(
-                    enqueuePreparedWorkflowInput$,
-                    preparedInput,
-                    sources,
-                    automation.orgId,
-                    signal,
-                  )
-                : set(
-                    enqueueWorkflowScheduleInput$,
-                    {
-                      input: preparedInput,
-                      orgId: automation.orgId,
-                      scheduleClaim,
-                      replacePendingTicks: replacePendingTicks !== undefined,
-                    },
-                    signal,
-                  ),
+              enqueueChatInput(db, {
+                chatThreadId,
+                orgId: automation.orgId,
+                onCommitted: (receipt) => {
+                  enqueueCommit = receipt;
+                },
+                appendInput,
+                measureStep: (step, operation) => {
+                  return measureWorkflowAdmissionStep(
+                    timing,
+                    WORKFLOW_ENQUEUE_ACTIONS[step],
+                    operation,
+                  );
+                },
+                ...queueAdmissionSourceTransition({
+                  scheduleClaim,
+                  persistSourceTransition,
+                  replacePendingTicks,
+                  timing,
+                }),
+              }),
             );
             if (!attempt.ok) {
               if (attempt.error instanceof ScheduleOccurrenceUnavailableError) {
@@ -308,22 +261,24 @@ export const runWorkflowAutomationNow$ = command(
     );
     signal.throwIfAborted();
 
-    // A superseded occurrence adds no queue item; the poller receives that result.
     if (enqueued) {
-      set(scheduleEnqueuedChatThreadPick$, {
-        chatThreadId,
-        publish: async () => {
-          await publishChatThreadMessageCreatedSafely({
-            userId: automation.ownerUserId,
-            orgId: automation.orgId,
-            threadId: chatThreadId,
-          });
+      set(
+        scheduleEnqueuedChatThreadPick$,
+        {
+          orgId: automation.orgId,
+          chatThreadId,
+          ...(enqueueCommit ? { enqueueCommit } : {}),
+          publish: async () => {
+            await publishChatThreadMessageCreatedSafely({
+              userId: automation.ownerUserId,
+              orgId: automation.orgId,
+              threadId: chatThreadId,
+            });
+          },
         },
-      });
+        signal,
+      );
     }
-    return {
-      kind: "enqueued",
-      scheduleOccurrence: enqueued ? "admitted" : "superseded",
-    };
+    return workflowEnqueueResult(scheduleClaim !== undefined, enqueued);
   },
 );

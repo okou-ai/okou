@@ -1,37 +1,38 @@
-import { createHash, randomUUID } from "node:crypto";
 import { modelProviderConnectionsByIdContract } from "@okouai/api-contracts/contracts/model-provider-gateways";
 import {
-  MODEL_PROVIDER_ENV_PLACEHOLDERS,
   getProviderRuntimeModel,
+  MODEL_PROVIDER_ENV_PLACEHOLDERS,
   type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { DEFAULT_PROFILE } from "@okouai/api-contracts/contracts/runners";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
+import { createHash, randomUUID } from "node:crypto";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { env } from "../../../lib/env";
+import { holdPiContextPreparationStagesFixture } from "../../../test-fixtures/pi-context-preparation";
 import { holdAgentRunPiExecutionSnapshotFixture } from "../../../test-fixtures/thread-bound-run-admission";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { modelProviderGatewayRoutes } from "../model-provider-gateways";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import {
+  assistantMessages,
+  claimEnvironment,
+  configureNativeCliArtifact,
+  createChatEventsFixture,
+  createGptUsagePricingResolution,
+  createPiUsagePricingResolution,
+  expectNoBuiltInModelUsage,
+  GPT_PI_BDD_MODELS,
+  requireOrgId,
+  userMessages,
+} from "./helpers/chat-events-fixture";
+import {
   readRunLaunchSnapshotFixture,
   readThreadSessionConversation,
 } from "./helpers/runtime-state";
-import {
-  createChatEventsFixture,
-  configureNativeCliArtifact,
-  GPT_PI_BDD_MODELS,
-  requireOrgId,
-  expectNoBuiltInModelUsage,
-  createGptUsagePricingResolution,
-  createPiUsagePricingResolution,
-  claimEnvironment,
-  userMessages,
-  assistantMessages,
-} from "./helpers/chat-events-fixture";
 
 const context = testContext({ connectorCatalog: true });
 const {
@@ -611,12 +612,24 @@ describe("CHAT-02: model-first provider policies", () => {
     async ({ selectedModel, removed }) => {
       const { actor, agentId } = await entitledChatActor();
       const gateway = await configureCustomPiModel(actor, selectedModel);
-      const gate = holdAgentRunPiExecutionSnapshotFixture({
+      const gate = holdPiContextPreparationStagesFixture({
         userId: actor.userId,
         orgId: requireOrgId(actor),
         signal: context.signal,
       });
-      onTestFinished(gate.release);
+      // Pi eligibility is observed in parallel with credentials now. Hold the
+      // provider read itself so deletion happens before its frozen snapshot.
+      for (const stage of [
+        "subscription-account",
+        "post-authorization-context",
+        "thread-session",
+        "connector-contexts",
+        "user-timezone",
+        "image-model",
+        "official-workflow",
+      ] as const) {
+        gate.release(stage);
+      }
       const clientEventId = randomUUID();
       const sent = await chat.requestSendEvent(
         actor,
@@ -635,7 +648,7 @@ describe("CHAT-02: model-first provider policies", () => {
         throw new Error("Expected the custom route send to be accepted");
       }
       expect(sent.body.runId).toBeNull();
-      await expect(gate.arrival).resolves.toMatchObject({ piExecution: true });
+      await gate.arrival("model-provider");
       const connection = setupApp({
         context,
         routes: modelProviderGatewayRoutes,
@@ -666,7 +679,7 @@ describe("CHAT-02: model-first provider policies", () => {
           [200],
         );
       }
-      gate.release();
+      gate.releaseAll();
       await flushWaitUntilForTest();
       const rejected = await waitForThreadMessages(
         actor,

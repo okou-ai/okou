@@ -1,67 +1,71 @@
-import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { command } from "ccstate";
-import {
-  and,
-  eq,
-  exists,
-  gt,
-  notExists,
-  getTableColumns,
-  inArray,
-  isNotNull,
-  isNull,
-  sql,
-} from "drizzle-orm";
-import { z } from "zod";
-import { connectors } from "@okouai/db/schema/connector";
-import { secrets } from "@okouai/db/schema/secret";
-import { variables } from "@okouai/db/schema/variable";
 import {
   googleCalendarEventCancelledEventConfigSchema,
   googleCalendarEventCreatedEventConfigSchema,
   googleCalendarEventUpdatedEventConfigSchema,
   type GoogleCalendarWatchActionRequiredReason,
 } from "@okouai/api-contracts/contracts/workflows";
+import { connectors } from "@okouai/db/schema/connector";
 import {
   googleCalendarEventSnapshots,
   googleCalendarProcessedEvents,
   googleCalendarWatchStates,
 } from "@okouai/db/schema/google-calendar-event";
+import { secrets } from "@okouai/db/schema/secret";
+import { variables } from "@okouai/db/schema/variable";
 import {
-  workflowUserAutomationThreads,
   workflowAutomations,
   workflows,
+  workflowUserAutomationThreads,
 } from "@okouai/db/schema/workflow";
+import { command } from "ccstate";
+import {
+  and,
+  eq,
+  exists,
+  getTableColumns,
+  gt,
+  inArray,
+  isNotNull,
+  isNull,
+  notExists,
+  sql,
+} from "drizzle-orm";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { z } from "zod";
 import { apiBackendUrl } from "../../lib/api-backend-url";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import { logger } from "../../lib/log";
+import { isForeignKeyViolation } from "../../lib/pg-errors";
+import { nowDate } from "../../lib/time";
 import { webUrl } from "../../lib/web-url";
 import { writeDb$ } from "../external/db";
-import { parseRawRows } from "../../lib/db-raw-rows";
-import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { onRejection, settle, tapError } from "../utils";
-import { nowDate } from "../../lib/time";
-import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
-import { loadConnectorRuntimeSnapshot$ } from "./connector-catalog-runtime.service";
-import {
-  builtinConnectorCredentialRuntimeValueRef,
-  type BuiltinConnectorCredentialConnection,
-} from "./builtin-connector-credential-runtime.service";
 import {
   AutomationEventSourceTiming,
   type AutomationEventRunTiming,
 } from "./automation-event-source-timing.service";
-import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
-import type { AutomationRow } from "./workflow-automation-launch.service";
-import { GoogleCalendarSourceTransitionChangedError } from "./workflow-google-calendar-queue.service";
-import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
-import { workflowAutomationCanFire$ } from "./workflow-automation-access.service";
-import { ensureWorkflowUserAutomationThread$ } from "./workflow-user-automation-thread.service";
+import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import {
-  GOOGLE_CALENDAR_PRIMARY_ID,
+  builtinConnectorCredentialRuntimeValueRef,
+  type BuiltinConnectorCredentialConnection,
+} from "./builtin-connector-credential-runtime.service";
+import { loadConnectorRuntimeSnapshot } from "./connector-catalog-runtime.service";
+import type { AutomationRow } from "./workflow-automation-enqueue.service";
+import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
+import {
+  GoogleCalendarSourceTransitionChangedError,
+  persistGoogleCalendarWorkflowSource,
+} from "./workflow-google-calendar-queue.service";
+
+import {
   GOOGLE_CALENDAR_EVENT_TYPES,
+  GOOGLE_CALENDAR_PRIMARY_ID,
   googleCalendarAccountProjectionStatement,
 } from "./google-calendar-automation-account.service";
+import { workflowAutomationCanFire$ } from "./workflow-automation-access.service";
+import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
+import { ensureWorkflowUserAutomationThread$ } from "./workflow-user-automation-thread.service";
 
 import {
   builtinConnectorCredentialSecretReadCondition,
@@ -343,7 +347,7 @@ export const normalizeGoogleCalendarIdForConnector$ = command(
     if (args.calendarId === GOOGLE_CALENDAR_PRIMARY_ID) {
       return args.calendarId;
     }
-    const snapshot = await set(loadConnectorRuntimeSnapshot$, signal);
+    const snapshot = await loadConnectorRuntimeSnapshot(set(writeDb$));
     signal.throwIfAborted();
     const loaded = await set(loadBuiltinConnectorCredentialConnection$, {
       snapshot,
@@ -510,7 +514,7 @@ const resolveGoogleCalendarAccess$ = command(
     signal: AbortSignal,
   ): Promise<GoogleCalendarAccessResult> => {
     const currentTime = nowDate();
-    const snapshot = await set(loadConnectorRuntimeSnapshot$, signal);
+    const snapshot = await loadConnectorRuntimeSnapshot(set(writeDb$));
     signal.throwIfAborted();
     const loaded = await set(loadBuiltinConnectorCredentialConnection$, {
       snapshot,
@@ -3002,14 +3006,32 @@ const startGoogleCalendarAutomationRun$ = command(
           connectorSourceId: args.state.connectorId,
           apiStartTime: args.apiStartTime,
           triggerSource: "automation-event",
-          googleCalendarSource: {
-            automationId: args.automation.automation.id,
-            orgId: args.automation.automation.orgId,
-            userId: args.automation.automation.ownerUserId,
-            connectorId: args.state.connectorId,
-            watchStateId: args.state.id,
-            channelId: args.state.channelId,
-            calendarId: args.state.calendarId,
+          persistSourceTransition: async (tx) => {
+            await persistGoogleCalendarWorkflowSource(
+              tx,
+              {
+                source: {
+                  automationId: args.automation.automation.id,
+                  orgId: args.automation.automation.orgId,
+                  userId: args.automation.automation.ownerUserId,
+                  connectorId: args.state.connectorId,
+                  watchStateId: args.state.id,
+                  channelId: args.state.channelId,
+                  calendarId: args.state.calendarId,
+                },
+                automationId: {
+                  automation: args.automation.automation,
+                  agentId: args.automation.agentId,
+                  chatThreadId: args.automation.chatThreadId,
+                }.automation.id,
+                chatThreadId: {
+                  automation: args.automation.automation,
+                  agentId: args.automation.agentId,
+                  chatThreadId: args.automation.chatThreadId,
+                }.chatThreadId,
+              },
+              signal,
+            );
           },
           timing: args.timing.collectorForRunStart(),
         },

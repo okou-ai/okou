@@ -1,34 +1,35 @@
+import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import {
   orgUsageAllowanceEntitlements,
   orgUsageAllowanceWindows,
   usageAllowanceAllocations,
 } from "@okouai/db/schema/org-usage-allowance";
 import { usageEvent } from "@okouai/db/schema/usage-event";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { command, computed, type Computed } from "ccstate";
 import {
   and,
   desc,
   eq,
-  gte,
   gt,
+  gte,
   inArray,
   isNotNull,
   isNull,
-  notExists,
   lte,
+  notExists,
   or,
   sql,
 } from "drizzle-orm";
+import { QueryBuilder } from "drizzle-orm/pg-core";
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import { command } from "ccstate";
-import { QueryBuilder } from "drizzle-orm/pg-core";
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
+
 import { recordBillingOperationTimings } from "../external/sandbox-op-log";
-import { safeSync } from "../utils";
 import { getStripeClient } from "../external/stripe-client";
+import { safeSync } from "../utils";
 
 type UsageAllowanceStore = Pick<Db, "execute" | "insert" | "select" | "update">;
 
@@ -121,7 +122,7 @@ function entitlementCoversAt(
   );
 }
 
-function remainingUnits(
+export function remainingUnits(
   window: Pick<UsageAllowanceWindow, "unitLimit" | "consumedUnits">,
 ): number {
   return Math.max(window.unitLimit - window.consumedUnits, 0);
@@ -304,23 +305,34 @@ export const prepareUsageAllowanceRefresh$ = command(
     },
     signal?: AbortSignal,
   ) => {
-    const db = set(writeDb$);
-    if (args.requirePendingUsage) {
-      const [pending] = await db
-        .select()
-        .from(pendingAllowanceRefreshQuery(args.orgId, args.idempotencyKeys));
-      signal?.throwIfAborted();
-      if (!pending) {
-        return undefined;
-      }
-    }
-    const [row] = await db.select().from(allowanceRefreshQuery(args.orgId));
-    signal?.throwIfAborted();
-    const prepared = await prepareAllowanceRefresh(row);
-    signal?.throwIfAborted();
-    return prepared;
+    return await prepareUsageAllowanceRefresh(set(writeDb$), args, signal);
   },
 );
+
+export async function prepareUsageAllowanceRefresh(
+  db: ReadonlyDb,
+  args: {
+    readonly orgId: string;
+    readonly requirePendingUsage?: boolean;
+    readonly idempotencyKeys?: readonly string[];
+  },
+  signal?: AbortSignal,
+): Promise<PreparedUsageAllowanceRefresh | undefined> {
+  if (args.requirePendingUsage) {
+    const [pending] = await db
+      .select()
+      .from(pendingAllowanceRefreshQuery(args.orgId, args.idempotencyKeys));
+    signal?.throwIfAborted();
+    if (!pending) {
+      return undefined;
+    }
+  }
+  const [row] = await db.select().from(allowanceRefreshQuery(args.orgId));
+  signal?.throwIfAborted();
+  const prepared = await prepareAllowanceRefresh(row);
+  signal?.throwIfAborted();
+  return prepared;
+}
 
 async function applyPreparedUsageAllowanceRefresh(
   tx: UsageAllowanceStore,
@@ -671,7 +683,7 @@ async function readWindowAvailability(
   return remainingUnits(window);
 }
 
-async function resolveAvailabilityInLockedTransaction(
+export async function resolveAvailabilityInLockedTransaction(
   tx: UsageAllowanceStore,
   orgId: string,
   refresh?: PreparedUsageAllowanceRefresh,
@@ -700,6 +712,181 @@ async function resolveAvailabilityInLockedTransaction(
     weeklyRemainingUnits,
     remainingUnits: Math.min(shortRemainingUnits, weeklyRemainingUnits),
   };
+}
+
+export type UsageAllowanceAvailabilitySnapshot =
+  | UsageAllowanceAvailability
+  | "allowance_refresh_required"
+  | null;
+
+interface UsageAllowanceReadScope {
+  readonly orgId: string;
+  readonly db?: Db;
+}
+
+type UsageAllowanceInputObject = Computed<
+  UsageAllowanceReadScope | Promise<UsageAllowanceReadScope>
+>;
+type UsageAllowanceSnapshotObject = Computed<
+  | UsageAllowanceAvailabilitySnapshot
+  | Promise<UsageAllowanceAvailabilitySnapshot>
+>;
+
+function createUsageAllowanceSnapshotObject(input$: UsageAllowanceInputObject) {
+  return computed(async (get): Promise<UsageAllowanceAvailabilitySnapshot> => {
+    const input = await get(input$);
+    const db = input.db ?? get(db$);
+    const { orgId } = input;
+    const at = nowDate();
+    const rows = await db
+      .select({
+        entitlement: {
+          status: orgUsageAllowanceEntitlements.status,
+          expiresAt: orgUsageAllowanceEntitlements.expiresAt,
+          shortWindowUnits: orgUsageAllowanceEntitlements.shortWindowUnits,
+          weeklyWindowUnits: orgUsageAllowanceEntitlements.weeklyWindowUnits,
+        },
+        window: {
+          kind: orgUsageAllowanceWindows.kind,
+          unitLimit: orgUsageAllowanceWindows.unitLimit,
+          consumedUnits: orgUsageAllowanceWindows.consumedUnits,
+        },
+      })
+      .from(orgUsageAllowanceEntitlements)
+      .leftJoin(
+        orgUsageAllowanceWindows,
+        and(
+          eq(
+            orgUsageAllowanceWindows.entitlementId,
+            orgUsageAllowanceEntitlements.id,
+          ),
+          eq(orgUsageAllowanceWindows.orgId, orgId),
+          inArray(orgUsageAllowanceWindows.kind, ["short", "weekly"]),
+          gte(
+            orgUsageAllowanceWindows.startsAt,
+            orgUsageAllowanceEntitlements.effectiveAt,
+          ),
+          lte(orgUsageAllowanceWindows.startsAt, at),
+          gt(orgUsageAllowanceWindows.expiresAt, at),
+          or(
+            isNull(orgUsageAllowanceEntitlements.expiresAt),
+            gt(orgUsageAllowanceEntitlements.expiresAt, at),
+          ),
+        ),
+      )
+      .where(
+        and(
+          eq(orgUsageAllowanceEntitlements.orgId, orgId),
+          inArray(orgUsageAllowanceEntitlements.status, [
+            ...ACTIVE_ALLOWANCE_STATUSES,
+          ]),
+          lte(orgUsageAllowanceEntitlements.effectiveAt, at),
+          or(
+            isNull(orgUsageAllowanceEntitlements.expiresAt),
+            gt(orgUsageAllowanceEntitlements.expiresAt, at),
+            isNotNull(orgUsageAllowanceEntitlements.stripeSubscriptionId),
+          ),
+        ),
+      )
+      .orderBy(desc(orgUsageAllowanceWindows.startsAt));
+    const entitlement = rows[0]?.entitlement;
+    if (!entitlement) {
+      return null;
+    }
+    if (
+      entitlement.expiresAt &&
+      entitlement.expiresAt <= activeAllowanceCutoff(entitlement.status, at)
+    ) {
+      return "allowance_refresh_required";
+    }
+    const shortWindow = rows.find((row) => {
+      return row.window?.kind === "short";
+    })?.window;
+    const weeklyWindow = rows.find((row) => {
+      return row.window?.kind === "weekly";
+    })?.window;
+    const shortRemainingUnits = shortWindow
+      ? remainingUnits(shortWindow)
+      : entitlement.shortWindowUnits;
+    const weeklyRemainingUnits = weeklyWindow
+      ? remainingUnits(weeklyWindow)
+      : entitlement.weeklyWindowUnits;
+    return {
+      shortRemainingUnits,
+      weeklyRemainingUnits,
+      remainingUnits: Math.min(shortRemainingUnits, weeklyRemainingUnits),
+    };
+  });
+}
+
+function createResolveUsageAllowanceCommand(
+  input$: UsageAllowanceInputObject,
+  availabilitySnapshot$: UsageAllowanceSnapshotObject,
+) {
+  return command(async ({ get, set }, signal: AbortSignal) => {
+    const startedAt = performance.now();
+    const [input, snapshot] = await Promise.all([
+      get(input$),
+      get(availabilitySnapshot$),
+    ]);
+    signal.throwIfAborted();
+    let lockWaitMs = 0;
+    let availability = snapshot;
+    if (availability === "allowance_refresh_required") {
+      const db = input.db ?? set(writeDb$);
+      const refresh = await prepareUsageAllowanceRefresh(
+        db,
+        { orgId: input.orgId },
+        signal,
+      );
+      availability = await db.transaction(async (tx) => {
+        const lockStartedAt = performance.now();
+        await lockOrgCredits(tx, input.orgId);
+        signal.throwIfAborted();
+        lockWaitMs = Math.round(performance.now() - lockStartedAt);
+        const refreshed = await resolveAvailabilityInLockedTransaction(
+          tx,
+          input.orgId,
+          refresh,
+        );
+        signal.throwIfAborted();
+        return refreshed;
+      });
+      signal.throwIfAborted();
+    }
+    // This is an availability snapshot, not a reservation. Preserve refresh
+    // commit timing and the original best-effort telemetry contract.
+    safeSync(() => {
+      recordBillingOperationTimings([
+        {
+          actionType: "api_billing_allowance_availability",
+          durationMs: Math.round(performance.now() - startedAt),
+          success: true,
+          dimensions: { available: availability !== null },
+        },
+        {
+          actionType: "api_billing_allowance_org_lock_wait",
+          durationMs: lockWaitMs,
+          success: true,
+        },
+      ]);
+    });
+    return availability;
+  });
+}
+
+/** Compose one allowance snapshot and its explicit refresh command. */
+export function createUsageAllowanceObjects(
+  input$: UsageAllowanceInputObject,
+  suppliedSnapshot$?: UsageAllowanceSnapshotObject,
+) {
+  const availabilitySnapshot$ =
+    suppliedSnapshot$ ?? createUsageAllowanceSnapshotObject(input$);
+  const resolveAvailability$ = createResolveUsageAllowanceCommand(
+    input$,
+    availabilitySnapshot$,
+  );
+  return { availabilitySnapshot$, resolveAvailability$ };
 }
 
 /** Read one admission snapshot without taking credit or allowance-window locks. */
@@ -793,8 +980,24 @@ export async function resolveUsageAllowanceAvailability(
   orgId: string,
 ): Promise<UsageAllowanceAvailability | null> {
   const startedAt = performance.now();
+  const snapshot = await readUsageAllowanceAvailabilitySnapshot(db, orgId);
+  return await resolveUsageAllowanceAvailabilityFromSnapshot(
+    db,
+    orgId,
+    snapshot,
+    startedAt,
+  );
+}
+
+/** Refresh an expired entitlement only after the caller has read its snapshot. */
+async function resolveUsageAllowanceAvailabilityFromSnapshot(
+  db: Db,
+  orgId: string,
+  snapshot: UsageAllowanceAvailability | "allowance_refresh_required" | null,
+  startedAt = performance.now(),
+): Promise<UsageAllowanceAvailability | null> {
   let lockWaitMs = 0;
-  let availability = await readUsageAllowanceAvailabilitySnapshot(db, orgId);
+  let availability = snapshot;
   if (availability === "allowance_refresh_required") {
     const [row] = await db.select().from(allowanceRefreshQuery(orgId));
     const refresh = await prepareAllowanceRefresh(row);

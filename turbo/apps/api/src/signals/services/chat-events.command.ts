@@ -1,34 +1,36 @@
-/** Canonical ChatEvent write commands. */
 import type { ChatInputModelSelection } from "@okouai/api-contracts/contracts/chat-input-model";
-import { resolveChatInputModelSelection$ } from "./chat-input-model.service";
-import { resolveRequiredDefaultChatThreadModelPin$ } from "./chat-thread-model.service";
-import { randomUUID } from "node:crypto";
-import { linkLayoutSegment } from "@okouai/api-contracts/contracts/link-layout";
-import { command, type Computed } from "ccstate";
 import {
   chatEventsContract,
   resolveChatEventRecommendedFollowups,
   type CodexServiceTier,
   type UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
+import { linkLayoutSegment } from "@okouai/api-contracts/contracts/link-layout";
+import type { SupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import {
   modelSettingsSchema,
   type ModelSettings,
   type ModelSettingsPatch,
   type ReasoningEffort,
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
-import type { SupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
+import { agents } from "@okouai/db/schema/agent";
 import {
   chatEvents,
   type ChatEventAttachFileMetadata,
 } from "@okouai/db/schema/chat-event";
-import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { computerUseHosts } from "@okouai/db/schema/computer-use-host";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
-import { agents } from "@okouai/db/schema/agent";
+import { command, type Computed } from "ccstate";
 import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
 import type { z } from "zod";
+import type { Tx } from "../../lib/db-types";
+import { badRequestMessage, conflict, notFound } from "../../lib/error";
+import { buildGenerationTemplatePrompt } from "../../lib/generation-template-prompt";
+import { nowDate } from "../../lib/time";
+import type { AuthContext } from "../../types/auth";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { waitUntil } from "../context/wait-until";
 import { writeDb$, type Db } from "../external/db";
@@ -36,48 +38,46 @@ import {
   publishChatThreadMessageCreatedSafely,
   publishThreadListChangedSafely,
 } from "../external/realtime";
-import { nowDate } from "../../lib/time";
-import { badRequestMessage, conflict, notFound } from "../../lib/error";
-import type { Tx } from "../../lib/db-types";
-import type { AuthContext } from "../../types/auth";
+import { bestEffort, settle } from "../utils";
 import type {
   AgentRunPreCreateSource,
   AgentRunRequestAgent,
-} from "./agent-runs-create.service";
-import { recordGetStartedWorkflow } from "./get-started-workflow.service";
-import { resolveChatReasoningEffort } from "./chat-reasoning-effort.service";
+} from "./agent-run-contracts";
+import { registerCanonicalWebInputAssets } from "./canonical-asset.service";
 import {
-  enqueueChatInput,
-  scheduleEnqueuedChatThreadPick$,
-} from "./chat-thread-queue-drain.service";
+  canonicalChatEventContent,
+  canonicalChatEventError,
+} from "./canonical-chat-event-read.service";
 import { loadPendingChatQueueEvent } from "./chat-event-queue.service";
+import { touchSentChatThreadSort } from "./chat-event-shared.service";
+import { chatEventTypeIn } from "./chat-event-type.service";
+import { attemptChatEventSideEffect } from "./chat-event-write-side-effects.service";
 import {
-  cancelRun$,
-  dispatchCancelSideEffects$,
-  shouldDispatchCancelSideEffects,
-  type CancelRunResult,
-} from "./run-cancel.service";
-import { isCodexFastServiceTierSupported } from "./model-selection.service";
-import { loadNewChatThreadDefaults$ } from "./chat-thread-defaults.service";
+  insertChatEvent,
+  insertChatEventContext,
+  replaceChatEvent,
+  revokeChatEvent,
+  type NewChatEvent,
+} from "./chat-event.service";
+import type { ChatInputEnqueueCommit } from "./chat-input-enqueue-observation";
+import { resolveChatInputModelSelection } from "./chat-input-model.service";
+import { recordChatNetworkBodyCapture } from "./chat-network-body-capture.service";
+import { resolveChatReasoningEffort } from "./chat-reasoning-effort.service";
 import {
   appendChatThreadCreatedEvent,
   insertChatThread,
 } from "./chat-thread-create.service";
-import { touchSentChatThreadSort } from "./chat-event-shared.service";
-import { attemptChatEventSideEffect } from "./chat-event-write-side-effects.service";
+import { loadNewChatThreadDefaults$ } from "./chat-thread-defaults.service";
 import {
-  revokeChatEvent,
-  insertChatEvent,
-  insertChatEventContext,
-  type NewChatEvent,
-  replaceChatEvent,
-} from "./chat-event.service";
+  appendChatThreadEvent,
+  chatThreadServiceTierFromCodex,
+} from "./chat-thread-event.service";
+import { resolveRequiredDefaultChatThreadModelPin$ } from "./chat-thread-model.service";
+import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
 import {
-  officialWorkflowQueueContextId,
-  webChatContextId,
-} from "./web-chat-queue-context.service";
-import { buildGenerationTemplatePrompt } from "../../lib/generation-template-prompt";
-import { selectedUserPresentationTemplateIds } from "./presentation-template-data.service";
+  enqueueChatInput,
+  scheduleEnqueuedChatThreadPick$,
+} from "./chat-thread-queue-drain.service";
 import {
   agentRunSourceTitleSnapshot,
   hasAgentRunSourceAnnotation,
@@ -86,24 +86,26 @@ import {
   withAgentRunSourceAnnotation,
   type ChatAgentRunSourceAnnotation,
 } from "./chat-user-message.service";
-import {
-  appendChatThreadEvent,
-  chatThreadServiceTierFromCodex,
-} from "./chat-thread-event.service";
-import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
+import { recordGetStartedWorkflow } from "./get-started-workflow.service";
+import { isCodexFastServiceTierSupported } from "./model-selection.service";
 import {
   organizationPlanCapabilities$,
   type OrgPlanCapabilities,
 } from "./org-plan-entitlement-read.service";
-import { registerCanonicalWebInputAssets } from "./canonical-asset.service";
-import { uploadedArtifactObject } from "./uploaded-artifact.service";
-import { chatEventTypeIn } from "./chat-event-type.service";
+import { selectedUserPresentationTemplateIds } from "./presentation-template-data.service";
 import {
-  canonicalChatEventContent,
-  canonicalChatEventError,
-} from "./canonical-chat-event-read.service";
-import { bestEffort, settle } from "../utils";
-import { recordChatNetworkBodyCapture } from "./chat-network-body-capture.service";
+  cancelRun$,
+  dispatchCancelSideEffects$,
+  shouldDispatchCancelSideEffects,
+  type CancelRunResult,
+} from "./run-cancel.service";
+import { uploadedArtifactObject } from "./uploaded-artifact.service";
+import {
+  officialWorkflowQueueContextId,
+  webChatContextId,
+} from "./web-chat-queue-context.service";
+
+/** Canonical ChatEvent write commands. */
 
 type SendBody = z.infer<typeof chatEventsContract.send.body>;
 
@@ -1361,17 +1363,13 @@ const prepareNormalSendInput$ = command(
       },
       signal,
     );
-    const modelSelection = await set(
-      resolveChatInputModelSelection$,
-      {
-        orgId: args.orgId,
-        userId: args.userId,
-        ...args.runSettings,
-        reasoningEffort: args.body.runOptions?.reasoningEffort,
-        orgPlanCapabilities: args.orgPlanCapabilities,
-      },
-      signal,
-    );
+    const modelSelection = await resolveChatInputModelSelection(set(writeDb$), {
+      orgId: args.orgId,
+      userId: args.userId,
+      ...args.runSettings,
+      reasoningEffort: args.body.runOptions?.reasoningEffort,
+      orgPlanCapabilities: args.orgPlanCapabilities,
+    });
     signal.throwIfAborted();
     if ("status" in modelSelection) {
       return modelSelection;
@@ -1433,6 +1431,25 @@ function settledNormalSendResponse(
   return acceptedSendResponse(threadId, createdAt, false);
 }
 
+async function validateSendThreadRevocation(
+  db: Db,
+  args: NormalSendArgs,
+  thread: SendThread,
+  signal: AbortSignal,
+) {
+  if (thread.kind !== "existing") {
+    return null;
+  }
+  const revocation = await validateNormalRevocationTarget({
+    db,
+    threadId: thread.threadId,
+    revokesEventId: args.body.revokesEventId,
+    clientEventId: args.body.clientEventId,
+  });
+  signal.throwIfAborted();
+  return revocation;
+}
+
 export const sendNormalEvent$ = command(
   async (
     { get, set },
@@ -1441,9 +1458,7 @@ export const sendNormalEvent$ = command(
   ): Promise<CreatedChatEventResponse | NormalSendFailure> => {
     const db = set(writeDb$);
     const orgPlanCapabilities =
-      args.orgPlanCapabilities$ === undefined
-        ? undefined
-        : await get(args.orgPlanCapabilities$);
+      args.orgPlanCapabilities$ && (await get(args.orgPlanCapabilities$));
     signal.throwIfAborted();
     const prepared = await prepareNormalSend(db, args, signal);
     if ("status" in prepared) {
@@ -1456,9 +1471,7 @@ export const sendNormalEvent$ = command(
     const thread = await set(
       resolveSendThread$,
       {
-        orgId: args.orgId,
-        userId: args.userId,
-        body: args.body,
+        ...args,
         orgPlanCapabilities,
         existing:
           "thread" in authorized
@@ -1471,24 +1484,20 @@ export const sendNormalEvent$ = command(
     if ("status" in thread) {
       return thread;
     }
-    if (thread.kind === "existing") {
-      const revocation = await validateNormalRevocationTarget({
-        db,
-        threadId: thread.threadId,
-        revokesEventId: args.body.revokesEventId,
-        clientEventId: args.body.clientEventId,
-      });
-      signal.throwIfAborted();
-      if (revocation) {
-        return revocation;
-      }
+    const revocation = await validateSendThreadRevocation(
+      db,
+      args,
+      thread,
+      signal,
+    );
+    signal.throwIfAborted();
+    if (revocation) {
+      return revocation;
     }
     const input = await set(
       prepareNormalSendInput$,
       {
-        orgId: args.orgId,
-        userId: args.userId,
-        body: args.body,
+        ...args,
         runSettings: thread.runSettings,
         orgPlanCapabilities,
       },
@@ -1508,9 +1517,13 @@ export const sendNormalEvent$ = command(
     const enqueued = await settle(
       (async () => {
         let createdAt: Date | undefined;
+        let enqueueCommit: ChatInputEnqueueCommit | undefined;
         const eventId = await enqueueChatInput(db, {
           chatThreadId: thread.threadId,
           orgId: args.orgId,
+          onCommitted: (receipt) => {
+            enqueueCommit = receipt;
+          },
           appendInput: async (tx) => {
             const inserted = await appendNormalSendInput(tx, args, {
               thread,
@@ -1524,20 +1537,24 @@ export const sendNormalEvent$ = command(
         if (eventId === null || createdAt === undefined) {
           return null;
         }
-        // Scheduled right after the commit, before the request's abort is
-        // observed. The sidebar touch and the UI realtime events go last,
-        // after the pick, whatever its outcome.
-        set(scheduleEnqueuedChatThreadPick$, {
-          chatThreadId: thread.threadId,
-          touch: normalSendThreadTouch(db, args, thread, createdAt),
-          publish: async () => {
-            await publishChatEventCreated({
-              ...member,
-              threadId: thread.threadId,
-            });
-            await publishThreadListChangedSafely(member);
+        // Schedule before observing abort; touch/realtime follow this pick's outcome.
+        set(
+          scheduleEnqueuedChatThreadPick$,
+          {
+            orgId: args.orgId,
+            chatThreadId: thread.threadId,
+            ...(enqueueCommit ? { enqueueCommit } : {}),
+            touch: normalSendThreadTouch(db, args, thread, createdAt),
+            publish: async () => {
+              await publishChatEventCreated({
+                ...member,
+                threadId: thread.threadId,
+              });
+              await publishThreadListChangedSafely(member);
+            },
           },
-        });
+          signal,
+        );
         return createdAt;
       })(),
       signal,
