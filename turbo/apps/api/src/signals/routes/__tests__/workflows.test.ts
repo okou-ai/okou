@@ -2553,7 +2553,7 @@ describe("workflows", () => {
     await api.requestCancelRun(actor, sourceRun.runId, [200]);
   });
 
-  it("reuses and repairs immutable workflow volume versions without moving HEAD during preparation", async () => {
+  it("reuses workflow volumes and rejects missing registered objects without moving HEAD", async () => {
     const actor = user();
     const agent = await createAgent(actor, {
       displayName: "Immutable Volume Agent",
@@ -2670,47 +2670,39 @@ describe("workflows", () => {
     );
     s3.objects.delete(firstArchiveKey);
     s3.clearWrites();
-    let observedRepairPreparation = false;
-    s3.beforeNextArchiveWrite(async (key, body) => {
-      expect(key).toBe(firstArchiveKey);
-      expect(body).toStrictEqual(firstArchive);
-      expect(
-        (await readWorkflowStorageState(actor, workflow.body.id))
-          ?.head_version_id,
-      ).toBe(secondVersionId);
-      observedRepairPreparation = true;
-    });
+    const missing = await requestUpdateWorkflow(
+      actor,
+      workflow.body.id,
+      { instruction: firstInstruction, files: firstFiles },
+      [409],
+    );
+    expect(missing.body.error.message).toContain(firstVersionId);
+    expect(s3.writes).toHaveLength(0);
+    expect(
+      (await readWorkflowStorageState(actor, workflow.body.id))
+        ?.head_version_id,
+    ).toBe(secondVersionId);
+    await expect(
+      readWorkflowStorageVersion(actor, workflow.body.id, firstVersionId),
+    ).resolves.toMatchObject({ archive_size: firstArchive.length + 1 });
 
+    // Restoring an object is an external recovery action, not a normal write.
+    s3.objects.set(firstArchiveKey, firstArchive);
     await updateWorkflow(actor, workflow.body.id, {
       instruction: firstInstruction,
       files: firstFiles,
     });
-    expect(observedRepairPreparation).toBeTruthy();
-    expect(
-      s3.writes.map((write) => {
-        return write.key;
-      }),
-    ).toStrictEqual(
-      expect.arrayContaining([
-        firstArchiveKey,
-        `${firstState.s3_prefix}/${firstVersionId}/manifest.json`,
-      ]),
-    );
-    expect(
-      s3.writes.find((write) => {
-        return write.key === firstArchiveKey;
-      })?.body,
-    ).toStrictEqual(firstArchive);
+    expect(s3.writes).toHaveLength(0);
     expect(
       (await readWorkflowStorageState(actor, workflow.body.id))
         ?.head_version_id,
     ).toBe(firstVersionId);
     await expect(
       readWorkflowStorageVersion(actor, workflow.body.id, firstVersionId),
-    ).resolves.toMatchObject({ archive_size: firstArchive.length });
+    ).resolves.toMatchObject({ archive_size: firstArchive.length + 1 });
   });
 
-  it("repairs workflow archives deterministically across path order and umask", async () => {
+  it("reuses an existing workflow archive across path order and umask", async () => {
     const actor = user();
     const agent = await createAgent(actor, {
       displayName: "Duplicate Path Volume Agent",
@@ -2746,21 +2738,15 @@ describe("workflows", () => {
       throw new Error("Expected the duplicate-path workflow archive");
     }
 
-    s3.objects.delete(archiveKey);
-    let observedRepair = false;
-    s3.beforeNextArchiveWrite((key, body) => {
-      expect(key).toBe(archiveKey);
-      expect(body).toStrictEqual(initialArchive);
-      observedRepair = true;
-    });
-
+    s3.clearWrites();
     process.umask(0o077);
     await updateWorkflow(actor, workflow.body.id, {
       files: [...duplicateFiles].reverse(),
     });
     process.umask(originalUmask);
 
-    expect(observedRepair).toBeTruthy();
+    expect(s3.writes).toHaveLength(0);
+    expect(s3.objects.get(archiveKey)).toStrictEqual(initialArchive);
     expect(
       (await readWorkflowStorageState(actor, workflow.body.id))
         ?.head_version_id,

@@ -357,7 +357,7 @@ describe("Pi resource indexing of generic Storage commits", () => {
       name: published.storageName,
     });
     const recompressed = gzipSync(gunzipSync(published.archive), { level: 0 });
-    expect(recompressed.length).not.toBe(published.archive.length);
+    expect(recompressed).not.toHaveLength(published.archive.length);
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(new Uint8Array(recompressed), {
         status: 200,
@@ -420,7 +420,7 @@ describe("Pi resource indexing of generic Storage commits", () => {
   it("indexes logical files when the registered and actual gzip sizes differ", async () => {
     const published = await publishStorage();
     const recompressed = gzipSync(gunzipSync(published.archive), { level: 0 });
-    expect(recompressed.length).not.toBe(published.archive.length);
+    expect(recompressed).not.toHaveLength(published.archive.length);
     context.mocks.s3.send.mockImplementation((request: unknown) => {
       if (request instanceof GetObjectCommand) {
         return Promise.resolve({

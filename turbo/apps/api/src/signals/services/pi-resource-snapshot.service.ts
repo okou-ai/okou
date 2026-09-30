@@ -616,6 +616,12 @@ async function loadResourceVersionIndexes(
       if (mount.empty) {
         return null;
       }
+      const registeredArchiveSize = mount.archiveSize;
+      if (registeredArchiveSize === undefined) {
+        throw resourcePreparationError(
+          new Error("Pi resource snapshot archive size is unavailable"),
+        );
+      }
       const indexed = indexes.get(mount.versionId);
       if (indexed) {
         if (indexed.storageId !== mount.storageId) {
@@ -658,7 +664,7 @@ async function loadResourceVersionIndexes(
             db: args.db,
             versionId: mount.versionId,
             projection,
-            archiveSize: mount.archiveSize ?? archive.length,
+            archiveSize: registeredArchiveSize,
             source: "captured-read",
           },
           signal,

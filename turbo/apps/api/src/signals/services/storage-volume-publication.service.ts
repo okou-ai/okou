@@ -40,6 +40,13 @@ import {
 
 const SERVER_SIDE_STORAGE_VERSION_CREATOR = "user";
 
+export class RegisteredStorageObjectsMissingError extends Error {
+  constructor(readonly versionId: string) {
+    super(`Existing Storage version ${versionId} is missing R2 objects`);
+    this.name = "RegisteredStorageObjectsMissingError";
+  }
+}
+
 interface VolumeFileInput {
   readonly path: string;
   /** Buffer for binary payloads such as logos, fonts, and page images. */
@@ -411,9 +418,7 @@ export const prepareVolumeServerSideWithDb$ = command(
         signal,
       );
       if (!objectsAvailable) {
-        throw new Error(
-          `Existing Storage version ${versionId} is missing R2 objects`,
-        );
+        throw new RegisteredStorageObjectsMissingError(versionId);
       }
       return {
         storageName: input.storageName,

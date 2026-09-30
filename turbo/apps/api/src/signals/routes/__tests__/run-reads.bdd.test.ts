@@ -1176,7 +1176,7 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
       force: true,
     });
     expect(missingPrepare.status).toBe(409);
-    expect(await missingPrepare.json()).toMatchObject({
+    await expect(missingPrepare.json()).resolves.toMatchObject({
       error: { code: "S3_FILES_MISSING" },
     });
     expect(context.mocks.s3.getSignedUrl).toHaveBeenCalledTimes(presignCount);

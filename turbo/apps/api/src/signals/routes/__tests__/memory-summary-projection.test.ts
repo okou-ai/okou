@@ -408,7 +408,7 @@ describe("memory summary projection", () => {
       archive: original,
     });
     const differentlyCompressed = gzipSync(gunzipSync(original), { level: 0 });
-    expect(differentlyCompressed.length).not.toBe(original.length);
+    expect(differentlyCompressed).not.toHaveLength(original.length);
     context.sessionHistoryBlobs.set(version.archiveKey, differentlyCompressed);
 
     await expect(run(version)).resolves.toMatchObject({ claimed: 1, ready: 1 });

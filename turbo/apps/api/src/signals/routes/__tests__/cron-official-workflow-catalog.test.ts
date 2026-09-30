@@ -1170,7 +1170,7 @@ describe("Official Workflow catalog release boundary", () => {
     });
   });
 
-  it("repairs missing immutable objects without changing accepted identity", async () => {
+  it("rejects missing registered objects without changing the accepted identity", async () => {
     const s3 = installVolumeS3Fixture();
     const name = `api-test-repair-${TEST_SUFFIX}`;
     await syncCatalog(catalog([activeDefinition(name)]));
@@ -1187,30 +1187,44 @@ describe("Official Workflow catalog release boundary", () => {
       throw new Error("Expected both immutable volume objects");
     }
 
+    const archive = s3.objects.get(archiveKey);
+    const manifest = s3.objects.get(manifestKey);
+    if (!archive || !manifest) {
+      throw new Error("Expected both registered Storage object bodies");
+    }
     s3.objects.delete(archiveKey);
     s3.clearWrites();
-    const archiveRepair = await syncCatalog(catalog([activeDefinition(name)]));
-    expect(archiveRepair.body).toStrictEqual({
-      outcome: "unchanged",
-      releaseId: expect.any(String),
-      diagnostics: [],
+    const missingArchive = await syncCatalog(catalog([activeDefinition(name)]));
+    expect(missingArchive.body).toMatchObject({
+      outcome: "rejected",
+      diagnostics: [{ code: "artifact-preparation-failed" }],
     });
-    expect(s3.objects.has(archiveKey)).toBeTruthy();
-    expect(s3.writes).toContain(archiveKey);
+    expect(s3.objects.has(archiveKey)).toBe(false);
+    expect(s3.writes).toHaveLength(0);
 
+    s3.objects.set(archiveKey, archive);
     s3.objects.delete(manifestKey);
-    s3.clearWrites();
-    const manifestRepair = await syncCatalog(catalog([activeDefinition(name)]));
-    expect(manifestRepair.body.outcome).toBe("unchanged");
-    expect(s3.objects.has(manifestKey)).toBeTruthy();
-    expect(s3.writes).toContain(manifestKey);
+    const missingManifest = await syncCatalog(
+      catalog([activeDefinition(name)]),
+    );
+    expect(missingManifest.body).toMatchObject({
+      outcome: "rejected",
+      diagnostics: [{ code: "artifact-preparation-failed" }],
+    });
+    expect(s3.objects.has(manifestKey)).toBe(false);
+    expect(s3.writes).toHaveLength(0);
 
-    const repaired = await readState(name);
-    expect(repaired.body.definition).toMatchObject({
+    // External recovery may restore bytes; normal catalog sync never repairs.
+    s3.objects.set(manifestKey, manifest);
+    const recovered = await syncCatalog(catalog([activeDefinition(name)]));
+    expect(recovered.body.outcome).toBe("unchanged");
+    expect(s3.writes).toHaveLength(0);
+    const retained = await readState(name);
+    expect(retained.body.definition).toMatchObject({
       revision: initial?.revision,
       artifact: initial?.artifact,
     });
-    expect(repaired.body.counts).toStrictEqual({
+    expect(retained.body.counts).toStrictEqual({
       releases: 1,
       revisions: 1,
       storages: 1,
@@ -1218,7 +1232,7 @@ describe("Official Workflow catalog release boundary", () => {
     });
   });
 
-  it("repairs the retained exact artifact while accepting and repeating retirement", async () => {
+  it("rejects missing objects during retirement and preserves the retained artifact", async () => {
     const s3 = installVolumeS3Fixture();
     const name = `api-test-retired-repair-${TEST_SUFFIX}`;
     await syncCatalog(catalog([activeDefinition(name)]));
@@ -1235,38 +1249,55 @@ describe("Official Workflow catalog release boundary", () => {
       throw new Error("Expected both immutable volume objects");
     }
 
+    const archive = s3.objects.get(archiveKey);
+    const manifest = s3.objects.get(manifestKey);
+    if (!archive || !manifest) {
+      throw new Error("Expected both registered Storage object bodies");
+    }
     s3.objects.delete(archiveKey);
     s3.clearWrites();
-    const retirement = await syncCatalog(catalog([retiredDefinition(name)]));
-    expect(retirement.body.outcome).toBe("accepted");
-    expect(s3.objects.has(archiveKey)).toBeTruthy();
-    expect(s3.writes).toContain(archiveKey);
+    const blockedRetirement = await syncCatalog(
+      catalog([retiredDefinition(name)]),
+    );
+    expect(blockedRetirement.body).toMatchObject({
+      outcome: "rejected",
+      diagnostics: [{ code: "artifact-preparation-failed" }],
+    });
+    expect(s3.objects.has(archiveKey)).toBe(false);
+    expect(s3.writes).toHaveLength(0);
     expect((await readState(name)).body.definition).toMatchObject({
-      lifecycle: "retired",
+      lifecycle: "active",
       revision: active?.revision,
       artifact: active?.artifact,
     });
 
+    // Recovery of missing bytes is external to the catalog's normal writes.
+    s3.objects.set(archiveKey, archive);
+    const retirement = await syncCatalog(catalog([retiredDefinition(name)]));
+    expect(retirement.body.outcome).toBe("accepted");
+    expect(s3.writes).toHaveLength(0);
     s3.objects.delete(manifestKey);
-    s3.clearWrites();
     const repeatedRetirement = await syncCatalog(
       catalog([retiredDefinition(name)]),
     );
     expect(repeatedRetirement.body).toMatchObject({
-      outcome: "unchanged",
-      releaseId: retirement.body.releaseId,
-      diagnostics: [],
+      outcome: "rejected",
+      diagnostics: [{ code: "artifact-preparation-failed" }],
     });
-    expect(s3.objects.has(manifestKey)).toBeTruthy();
-    expect(s3.writes).toContain(manifestKey);
+    expect(s3.objects.has(manifestKey)).toBe(false);
+    expect(s3.writes).toHaveLength(0);
 
-    const repaired = await readState(name);
-    expect(repaired.body.definition).toMatchObject({
+    s3.objects.set(manifestKey, manifest);
+    const recovered = await syncCatalog(catalog([retiredDefinition(name)]));
+    expect(recovered.body.outcome).toBe("unchanged");
+    expect(s3.writes).toHaveLength(0);
+    const retained = await readState(name);
+    expect(retained.body.definition).toMatchObject({
       lifecycle: "retired",
       revision: active?.revision,
       artifact: active?.artifact,
     });
-    expect(repaired.body.counts).toStrictEqual({
+    expect(retained.body.counts).toStrictEqual({
       releases: 2,
       revisions: 1,
       storages: 1,
@@ -1274,7 +1305,7 @@ describe("Official Workflow catalog release boundary", () => {
     });
   });
 
-  it("repairs every durable historical exact revision", async () => {
+  it("rejects a missing historical revision without rewriting durable versions", async () => {
     const s3 = installVolumeS3Fixture();
     const name = `api-test-historical-repair-${TEST_SUFFIX}`;
     await syncCatalog(catalog([activeDefinition(name)]));
@@ -1299,15 +1330,26 @@ describe("Official Workflow catalog release boundary", () => {
       throw new Error("Expected two exact revisions and the first archive");
     }
 
+    const firstArchive = s3.objects.get(firstArchiveKey);
+    if (!firstArchive) {
+      throw new Error("Expected the historical registered archive");
+    }
     s3.objects.delete(firstArchiveKey);
     s3.clearWrites();
-    const repair = await syncCatalog(catalog([currentCandidate]));
-    expect(repair.body.outcome).toBe("unchanged");
-    expect(s3.objects.has(firstArchiveKey)).toBeTruthy();
-    expect(s3.writes).toContain(firstArchiveKey);
+    const missingHistorical = await syncCatalog(catalog([currentCandidate]));
+    expect(missingHistorical.body).toMatchObject({
+      outcome: "rejected",
+      diagnostics: [{ code: "artifact-preparation-failed" }],
+    });
+    expect(s3.objects.has(firstArchiveKey)).toBe(false);
+    expect(s3.writes).toHaveLength(0);
+    s3.objects.set(firstArchiveKey, firstArchive);
+    const restored = await syncCatalog(catalog([currentCandidate]));
+    expect(restored.body.outcome).toBe("unchanged");
+    expect(s3.writes).toHaveLength(0);
 
-    const repaired = await readState(name);
-    expect(repaired.body.definition).toMatchObject({
+    const retained = await readState(name);
+    expect(retained.body.definition).toMatchObject({
       revision: second.revision,
       artifact: second.artifact,
     });
@@ -1323,7 +1365,7 @@ describe("Official Workflow catalog release boundary", () => {
       definition: { revision: second.revision },
       artifact: second.artifact,
     });
-    expect(repaired.body.counts).toStrictEqual({
+    expect(retained.body.counts).toStrictEqual({
       releases: 2,
       revisions: 2,
       storages: 1,
