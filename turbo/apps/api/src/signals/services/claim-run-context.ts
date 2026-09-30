@@ -12638,23 +12638,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       return { identityInput, authorization };
     },
   );
-  const authorizeClaimIdentity$ = command(
-    async (
-      { set },
-      resolvePromptInputs: boolean,
-      head: ChatQueueHeadContext,
-      signal: AbortSignal,
-    ) => {
-      const [, authorized] = await Promise.all([
-        resolvePromptInputs
-          ? set(resolvePromptLaunchInputs$, head, signal)
-          : undefined,
-        set(authorizeIdentity$, signal),
-      ]);
-      signal.throwIfAborted();
-      return authorized;
-    },
-  );
   const initializeRunPreparation$ = command(
     async ({ get, set }, timing: ClaimRunTiming, signal: AbortSignal) => {
       signal.throwIfAborted();
@@ -12669,9 +12652,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           : await set(initializeQueuedPrompt$, head, timing.run, signal);
       signal.throwIfAborted();
       const { identityInput, authorization } = await set(
-        authorizeClaimIdentity$,
-        resolvePromptInputs,
-        head,
+        authorizeIdentity$,
         signal,
       );
       signal.throwIfAborted();
@@ -12695,20 +12676,20 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         return null;
       }
       if (authorization) {
-        const rejection =
-          head.contextType === "automation"
-            ? {
-                userId: identityInput.auth.userId,
-                error: authorization.body.error,
-              }
-            : claimAssemblyRejection(
-                await get(assembly$),
-                head,
-                authorization.body.error,
-              );
-        signal.throwIfAborted();
+        const rejection: ChatQueueHeadRejection = {
+          userId: identityInput.auth.userId,
+          error: authorization.body.error,
+          ...(head.contextType === "automation"
+            ? {}
+            : { delivery: { kind: "source" as const, head } }),
+        };
         await set(rejectChatQueueHead$, { head, rejection }, signal);
         return null;
+      }
+      // Only explicit policy/allowance writes and live delivery checks wait
+      // for agent authorization. The pure input snapshots are already running.
+      if (resolvePromptInputs) {
+        await set(resolvePromptLaunchInputs$, head, signal);
       }
       return head;
     },
