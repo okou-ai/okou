@@ -154,8 +154,9 @@ async function measureEnqueueStep<T>(
 /**
  * The single enqueue for every chat input: web, CLI and MCP sends,
  * integrations, and every workflow trigger. One transaction appends the
- * run-less input and upserts the thread's `queued_chat_threads` row, clearing
- * any lease so a picker that read the queue as empty cannot delete the row.
+ * run-less input and upserts the thread's `queued_chat_threads` row, advancing
+ * its `queuedAt` without touching a live lease; the lease holder sees the
+ * change on release or empty-queue delete and schedules one new pick.
  * The entry captures the input's model at enqueue; the pick resolves that
  * decision's route and performs credit admission. Enqueue adds no explicit
  * row lock.

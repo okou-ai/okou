@@ -10,8 +10,9 @@ of the claimed thread's input, execution identity, pinned model, prompt,
 connectors, storage, complete resource preparation and the deferred URL-cache
 write. These are the two S2/S3 business-object boundaries.
 
-Both factories accept ordinary business identities only. A claim contains
-`orgId`, `chatThreadId` and `claimId`. No factory in this path receives a `State`,
+Both factories accept ordinary business identities only. The child claim contains
+`orgId`, `chatThreadId` and `claimId`; the parent also keeps the claimed
+`queuedAt`. No factory in this path receives a `State`,
 `Computed`, `Command`, getter, setter, Store, signal or business callback, including
 inside a dependency object. Nodes are defined directly in their owning closure.
 The child exposes only the three signals needed by the parent; private state is not
@@ -88,9 +89,19 @@ and the paid-subscription payment grace policy.
 
 A pick handles at most one input. Normal no-capacity, empty-queue and completed
 paths explicitly release or delete using the captured thread/token pair.
-Concurrent enqueue can invalidate that token, so stale cleanup affects zero
-rows. Unexpected errors leave the lease to expire. There is no claim heartbeat,
+Unexpected errors leave the lease to expire. There is no claim heartbeat,
 session preparation retry, or active-run conflict retry.
+
+`active_agent_runs` is written only by the last statement of the pending
+transaction, so from claim to commit the lease is the only mutual exclusion.
+Enqueue therefore never clears a lease: it only advances `queuedAt` (strictly,
+by at least 1 ms). An empty or expired lease is claimed as usual. The claim
+captures the `queuedAt` it observed. The empty-queue delete also requires that
+`queuedAt` is unchanged; when it misses, the lease is released instead. Every
+release reports whether `queuedAt` changed while the lease was held. If it did,
+new input arrived that the enqueuer's own pick could not claim, so the picker
+schedules one fresh fixed-thread pick for that thread in the background. This
+discovers new work; it is not a retry, and `pick$` never loops.
 
 An organization pass captures a finite count of currently pickable threads and
 uses one factory with an oldest-first `(queuedAt, threadId)` cursor and a set of
