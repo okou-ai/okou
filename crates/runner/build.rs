@@ -8,6 +8,7 @@ use std::{env, fs};
 use serde::Deserialize;
 
 const GUEST_BINARIES_FILE: &str = "guest-binaries.json";
+const MAX_CLI_PACKAGE_SIZE: u64 = 64 * 1024 * 1024;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -23,6 +24,7 @@ type GuestField = (&'static str, fn(&GuestBinary) -> &str);
 
 fn main() {
     println!("cargo::rustc-check-cfg=cfg(bundled_guests)");
+    println!("cargo::rustc-check-cfg=cfg(bundled_okou_cli)");
 
     // Rebuild when embedded files change (include_str! tracks deps for rustc,
     // but CI artifact caches may not — explicit rerun-if-changed ensures correctness).
@@ -47,45 +49,46 @@ fn main() {
         .expect("CARGO_MANIFEST_DIR should have a parent")
         .to_path_buf();
 
-    // Always rebuild when any of these env vars change.
+    // Either supply every Guest binary and the CLI tarball, or none of them.
+    println!("cargo::rerun-if-env-changed=GUEST_CLI_PATH");
     for guest in &guests {
         println!("cargo::rerun-if-env-changed={}", guest.path_env);
     }
-
-    // All-or-nothing: either all inventory path environment variables are set, or none.
+    let guest_cli_path = read_bundle_path("GUEST_CLI_PATH");
     let paths: Vec<_> = guests
         .iter()
-        .filter_map(|guest| {
-            std::env::var(&guest.path_env)
-                .ok()
-                .map(|value| (guest, value))
-        })
+        .filter_map(|guest| read_bundle_path(&guest.path_env).map(|value| (guest, value)))
         .collect();
-
-    if !paths.is_empty() && paths.len() != guests.len() {
-        let set: Vec<_> = paths
+    let supplied = paths.len() + usize::from(guest_cli_path.is_some());
+    if supplied != 0 && supplied != guests.len() + 1 {
+        let mut set: Vec<_> = paths
             .iter()
             .map(|(guest, _)| guest.path_env.as_str())
             .collect();
-        let missing: Vec<_> = guests
+        let mut missing: Vec<_> = guests
             .iter()
             .filter(|guest| !set.contains(&guest.path_env.as_str()))
             .map(|guest| guest.path_env.as_str())
             .collect();
+        if guest_cli_path.is_some() {
+            set.push("GUEST_CLI_PATH");
+        } else {
+            missing.push("GUEST_CLI_PATH");
+        }
         panic!(
-            "partial guest binary path env vars: set={set:?}, missing={missing:?} — must set all or none"
+            "partial Guest binary and CLI paths: set={set:?}, missing={missing:?} — must set all or none"
         );
     }
 
-    if paths.len() == guests.len() {
+    if supplied == guests.len() + 1 {
         println!("cargo::rustc-cfg=bundled_guests");
         for (guest, raw_path) in paths {
-            let resolved = if std::path::Path::new(raw_path.as_str()).is_relative() {
+            let resolved = if Path::new(raw_path.as_str()).is_relative() {
                 workspace_root.join(raw_path.as_str())
             } else {
                 PathBuf::from(raw_path.as_str())
             };
-            let abs = std::fs::canonicalize(&resolved)
+            let abs = fs::canonicalize(&resolved)
                 .unwrap_or_else(|e| panic!("{raw_path} (resolved to {}): {e}", resolved.display()));
             let abs_str = abs
                 .to_str()
@@ -93,7 +96,43 @@ fn main() {
             println!("cargo::rustc-env={}={abs_str}", guest.bundled_env);
             println!("cargo::rerun-if-changed={abs_str}");
         }
+        embed_guest_cli(
+            &guest_cli_path.expect("CLI path is required with Guest paths"),
+            &workspace_root,
+        );
     }
+}
+
+fn read_bundle_path(name: &str) -> Option<String> {
+    match env::var(name) {
+        Ok(path) => Some(path),
+        Err(env::VarError::NotPresent) => None,
+        Err(env::VarError::NotUnicode(_)) => panic!("{name} must be a UTF-8 path"),
+    }
+}
+
+fn embed_guest_cli(path: &str, workspace_root: &Path) {
+    let resolved = if Path::new(path).is_relative() {
+        workspace_root.join(path)
+    } else {
+        PathBuf::from(path)
+    };
+    let metadata = fs::symlink_metadata(&resolved)
+        .unwrap_or_else(|e| panic!("CLI package {}: {e}", resolved.display()));
+    assert!(
+        metadata.file_type().is_file()
+            && metadata.len() > 0
+            && metadata.len() <= MAX_CLI_PACKAGE_SIZE,
+        "CLI package must be a nonempty regular file no larger than {MAX_CLI_PACKAGE_SIZE} bytes: {path}"
+    );
+    let path = fs::canonicalize(&resolved)
+        .unwrap_or_else(|e| panic!("CLI package {}: {e}", resolved.display()));
+    println!("cargo::rerun-if-changed={}", path.display());
+    println!("cargo::rustc-cfg=bundled_okou_cli");
+    println!(
+        "cargo::rustc-env=BUNDLED_OKOU_CLI_PACKAGE={}",
+        path.display()
+    );
 }
 
 fn load_guest_binaries() -> Vec<GuestBinary> {
