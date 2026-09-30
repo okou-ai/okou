@@ -1205,6 +1205,7 @@ async function listOrgModelPolicies(
     writePreconditionRequired: true,
     modelsAvailableToAdd:
       modelMode === "auto" ? [] : modelsAvailableToAdd(catalog, rows),
+    workspaceDefaultModel: catalog.systemDefaultModel,
   };
   return { response, systemDefaultModel: catalog.systemDefaultModel };
 }

@@ -2,6 +2,8 @@ import {
   getBuiltInRouteProviderVendor,
   getCatalogRunModelRouteAccess,
   isBuiltInModelProviderType,
+  isCustomGatewayProviderType,
+  modelProviderTypeSchema,
 } from "@okouai/api-contracts/contracts/model-providers";
 import {
   reasoningEffortSchema,
@@ -44,10 +46,19 @@ function enabledRoutes(
 }
 
 /**
+ * A custom gateway maps catalog models onto its own upstream and has no
+ * catalog routes, so it follows the model's catalog capabilities.
+ */
+function isCustomGatewaySelection(providerType: string): boolean {
+  const parsed = modelProviderTypeSchema.safeParse(providerType);
+  return parsed.success && isCustomGatewayProviderType(parsed.data);
+}
+
+/**
  * The routes that decide a model's capabilities for a selected provider type.
- * Without a provider type, or for a provider type the catalog has no route
- * for (a custom gateway maps catalog models itself), every enabled route of
- * the model counts, Built-in first.
+ * Without a provider type, or for a custom gateway, every enabled route of
+ * the model counts, Built-in first. Any other provider type uses only its own
+ * catalog routes; with none it declares no capabilities.
  */
 function capabilityRoutes(
   catalog: ModelCatalog,
@@ -65,7 +76,10 @@ function capabilityRoutes(
   const matching = routes.filter((route) => {
     return route.providerType === selected;
   });
-  return matching.length > 0 ? matching : routes;
+  if (matching.length > 0) {
+    return matching;
+  }
+  return isCustomGatewaySelection(providerType) ? routes : [];
 }
 
 function parseEfforts(values: readonly string[]): readonly ReasoningEffort[] {

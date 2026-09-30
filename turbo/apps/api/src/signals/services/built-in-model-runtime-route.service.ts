@@ -22,7 +22,9 @@ import {
   type ModelCatalog,
 } from "./model-catalog.service";
 import {
+  builtInRoutePricingRejectionMessage,
   isBuiltInRoutePriced,
+  unpricedBuiltInRouteCategories,
   type BuiltInRoutePricing,
 } from "./built-in-route-pricing";
 
@@ -70,6 +72,40 @@ export function getCatalogBuiltInModelRouteCandidates(
       },
     ];
   });
+}
+
+/**
+ * The rejection for a new Built-in run whose model has executable catalog
+ * candidates but none with complete usage pricing, naming each route's
+ * unpriced categories. Null when some candidate is priced (no route is then
+ * available for another reason, such as a missing key or a cooldown) or the
+ * model has no executable candidate at all.
+ */
+export function unpricedBuiltInModelMessage(
+  catalog: ModelCatalog,
+  selectedModel: string,
+  routePricing: BuiltInRoutePricing,
+): string | null {
+  const routes = catalogBuiltInCandidates(catalog, selectedModel).filter(
+    (route) => {
+      return isBuiltInModelRouteProviderType(route.concreteProviderType);
+    },
+  );
+  const unpriced = routes.map((route) => {
+    return {
+      concreteProviderType: route.concreteProviderType,
+      categories: unpricedBuiltInRouteCategories(routePricing, route),
+    };
+  });
+  if (
+    unpriced.length === 0 ||
+    unpriced.some((route) => {
+      return route.categories.length === 0;
+    })
+  ) {
+    return null;
+  }
+  return builtInRoutePricingRejectionMessage(selectedModel, unpriced);
 }
 
 export interface BuiltInModelRuntimeRoute {

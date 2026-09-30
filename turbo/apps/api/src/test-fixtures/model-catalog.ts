@@ -313,6 +313,41 @@ export async function updateBuiltInRoutePricingProviderFixture(args: {
   }
 }
 
+/**
+ * Operators set a Built-in route's long-context pricing threshold directly in
+ * the database. The returned restore puts the previous threshold back.
+ */
+export async function setBuiltInRouteLongContextThresholdFixture(args: {
+  readonly model: string;
+  readonly concreteProviderType: string;
+  readonly longContextMinTotalInputTokens: number | null;
+}): Promise<() => Promise<void>> {
+  const where = and(
+    eq(modelRoutes.model, args.model),
+    eq(modelRoutes.providerType, "built-in"),
+    eq(modelRoutes.concreteProviderType, args.concreteProviderType),
+  );
+  const [previous] = await db()
+    .select({ threshold: modelRoutes.longContextMinTotalInputTokens })
+    .from(modelRoutes)
+    .where(where);
+  if (!previous) {
+    throw new Error("Expected one Built-in route to set a threshold on");
+  }
+  await db()
+    .update(modelRoutes)
+    .set({
+      longContextMinTotalInputTokens: args.longContextMinTotalInputTokens,
+    })
+    .where(where);
+  return async () => {
+    await db()
+      .update(modelRoutes)
+      .set({ longContextMinTotalInputTokens: previous.threshold })
+      .where(where);
+  };
+}
+
 /** The model's Pi admission projection from the current database catalog. */
 export async function loadPiCatalogModelFixture(
   model: string,

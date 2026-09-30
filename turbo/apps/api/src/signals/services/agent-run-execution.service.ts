@@ -197,6 +197,7 @@ import {
   type BuiltInModelRuntimeRoute,
   isBuiltInModelRuntimeRoutePermitted,
   resolveBuiltInModelRuntimeRouteFromCatalog,
+  unpricedBuiltInModelMessage,
 } from "./built-in-model-runtime-route.service";
 import {
   catalogBuiltInCandidates,
@@ -209,6 +210,7 @@ import {
 } from "./model-catalog.service";
 import {
   type BuiltInRoutePricing,
+  builtInRoutePricingRejectionMessage,
   loadBuiltInRoutePricing,
   unpricedBuiltInRouteCategories,
 } from "./built-in-route-pricing";
@@ -9600,7 +9602,12 @@ function validateBuiltInRoutePricing(args: {
     return null;
   }
   return providerUnavailable(
-    `Built-in model route ${args.route.model} ${args.route.concreteProviderType} has no usage pricing for ${unpriced.join(", ")}`,
+    builtInRoutePricingRejectionMessage(args.route.model, [
+      {
+        concreteProviderType: args.route.concreteProviderType,
+        categories: unpriced,
+      },
+    ]),
   );
 }
 
@@ -11640,6 +11647,29 @@ async function resolveRunModelProvider(
 
   if (!shouldResolveModelProvider || modelProvider) {
     return modelProvider;
+  }
+
+  // A new Built-in run whose every executable candidate lacks usage pricing
+  // is rejected as unbillable, not as an unconfigured provider.
+  if (
+    isBuiltInModelProviderType(args.modelProviderType) &&
+    !args.builtInModelRuntimeRoute
+  ) {
+    const selectedModel =
+      args.selectedModelOverride ?? args.catalog.systemDefaultModel;
+    const unpriced = unpricedBuiltInModelMessage(
+      args.catalog,
+      selectedModel,
+      await loadBuiltInRoutePricing(db, {
+        catalog: args.catalog,
+        model: selectedModel,
+        serviceTier: args.codexServiceTier,
+        resolution: options.usagePricingResolution,
+      }),
+    );
+    if (unpriced) {
+      return providerUnavailable(unpriced);
+    }
   }
 
   return providerUnavailable(

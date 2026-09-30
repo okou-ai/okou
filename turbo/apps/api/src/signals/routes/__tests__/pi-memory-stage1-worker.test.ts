@@ -5,7 +5,10 @@ import {
 } from "../../../test-fixtures/pi-memory-builtin-quota";
 import { nativeMemoryQuotaCases } from "../../../test-fixtures/pi-memory-quota";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
-import { loadPiCatalogModelFixture } from "../../../test-fixtures/model-catalog";
+import {
+  loadPiCatalogModelFixture,
+  setBuiltInRouteLongContextThresholdFixture,
+} from "../../../test-fixtures/model-catalog";
 import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
 import {
   modelProviderConnectionsMainContract,
@@ -1000,6 +1003,58 @@ describe("Pi memory Stage 1 worker", () => {
     await expect(inspectUsageCategories(atBoundary)).resolves.toStrictEqual(
       baseCategories,
     );
+  });
+
+  it("bills built-in extraction at the served route's catalog long-context threshold", async () => {
+    // An operator sets a long-context band on the served DeepSeek route; the
+    // extraction must bill that band from the same catalog it routed with.
+    const restore = await setBuiltInRouteLongContextThresholdFixture({
+      model: "deepseek-v4.1-flash",
+      concreteProviderType: "deepseek",
+      longContextMinTotalInputTokens: 272_001,
+    });
+    onTestFinished(restore);
+    const below = createStorageFixture();
+    const atBoundary = createStorageFixture();
+    const belowId = randomUUID();
+    const atBoundaryId = randomUUID();
+    await below.seed({
+      piSessionId: belowId,
+      raw: settledHistory(belowId, "total input below the boundary"),
+    });
+    await atBoundary.seed({
+      piSessionId: atBoundaryId,
+      raw: settledHistory(atBoundaryId, "total input at the boundary"),
+    });
+    installProvider(({ request }) => {
+      const boundary = JSON.stringify(request).includes("at the boundary");
+      return {
+        text: defaultProviderOutput(),
+        usage: {
+          input_tokens: boundary ? 272_001 : 272_000,
+          output_tokens: 8,
+          cached_tokens: 1,
+          cache_write_tokens: 1,
+        },
+      };
+    });
+
+    await expect(runScoped(below)).resolves.toMatchObject({ succeeded: 1 });
+    await expect(runScoped(atBoundary)).resolves.toMatchObject({
+      succeeded: 1,
+    });
+    await expect(inspectUsageCategories(below)).resolves.toStrictEqual([
+      "tokens.cache_creation",
+      "tokens.cache_read",
+      "tokens.input",
+      "tokens.output",
+    ]);
+    await expect(inspectUsageCategories(atBoundary)).resolves.toStrictEqual([
+      "tokens.cache_creation.long_context",
+      "tokens.cache_read.long_context",
+      "tokens.input.long_context",
+      "tokens.output.long_context",
+    ]);
   });
 
   it("isolates invalid sources permanently before the provider", async () => {

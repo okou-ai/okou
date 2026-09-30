@@ -172,6 +172,25 @@ export async function loadBuiltInRoutePricing(
   };
 }
 
+/**
+ * The one user-facing rejection for a Built-in run that cannot be billed:
+ * each listed route with the usage categories it would report unpriced.
+ */
+export function builtInRoutePricingRejectionMessage(
+  model: string,
+  routes: readonly {
+    readonly concreteProviderType: string;
+    readonly categories: readonly string[];
+  }[],
+): string {
+  const detail = routes
+    .map((route) => {
+      return `${route.concreteProviderType} (${route.categories.join(", ")})`;
+    })
+    .join("; ");
+  return `Built-in model ${model} has no route with complete usage pricing: ${detail}`;
+}
+
 /** Categories the route can produce that settlement could not price. */
 export function unpricedBuiltInRouteCategories(
   pricing: BuiltInRoutePricing,

@@ -33,7 +33,7 @@ import {
 import { now, nowDate } from "../../lib/time";
 import { previewAutomationBypass$ } from "../context/hono";
 import { systemSkillStorageResolution$ } from "../context/system-skill-storage-resolution";
-import { db$, rawSqlReadDb$, writeDb$ } from "../external/db";
+import { db$, rawSqlReadDb$, type ReadonlyDb, writeDb$ } from "../external/db";
 import {
   publishChatThreadMessageCreatedSafely,
   publishThreadListChangedSafely,
@@ -235,6 +235,7 @@ import {
   type BuiltInModelRuntimeRoute,
   builtInModelRuntimeRouteFromSnapshot,
   isBuiltInModelRuntimeRoutePermitted,
+  unpricedBuiltInModelMessage,
 } from "./built-in-model-runtime-route.service";
 import { builtinConnectorCredentialSecretReadCondition } from "./builtin-connector-credential-access.service";
 import {
@@ -2240,6 +2241,27 @@ type RunErrorResponse = {
   };
 };
 
+/**
+ * A Built-in pin that found no route because every executable candidate
+ * lacks usage pricing is rejected as unbillable (not as a temporary outage).
+ */
+async function unpricedBuiltInModelRejection(
+  db: ReadonlyDb,
+  args: Parameters<typeof loadBuiltInRoutePricing>[1],
+): Promise<RunErrorResponse | undefined> {
+  const message = unpricedBuiltInModelMessage(
+    args.catalog,
+    args.model,
+    await loadBuiltInRoutePricing(db, args),
+  );
+  return message
+    ? {
+        status: 503,
+        body: { error: { code: "MODEL_PROVIDER_UNAVAILABLE", message } },
+      }
+    : undefined;
+}
+
 interface InternalRunCallbackInput {
   readonly internalKind: InternalRunCallbackKind;
   readonly payload: unknown;
@@ -3506,6 +3528,17 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       const allowance = admission.needsAllowance
         ? await set(refreshUsageAllowance$, signal)
         : null;
+      // `null`: a Built-in pin with no available route.
+      const unpriced =
+        builtInModelRuntimeRoute === null && pin.selectedModel
+          ? await unpricedBuiltInModelRejection(get(db$), {
+              catalog: await get(claimCatalog$),
+              model: pin.selectedModel,
+              serviceTier: selection.codexServiceTier,
+              resolution: get(usagePricingResolution$),
+            })
+          : undefined;
+      signal.throwIfAborted();
       return {
         pin,
         providerAdmission: {
@@ -3513,6 +3546,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           cliAgentType: admission.cliAgentType,
           error:
             admission.error ??
+            unpriced ??
             (admission.needsAllowance &&
             (!allowance || allowance.remainingUnits <= 0)
               ? pickChatRunModelInsufficientCredits()
@@ -6524,6 +6558,17 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       const allowance = admission.needsAllowance
         ? await set(queuedModelRefreshUsageAllowance$, signal)
         : null;
+      // `null`: a Built-in pin with no available route.
+      const unpriced =
+        builtInModelRuntimeRoute === null && pin.selectedModel
+          ? await unpricedBuiltInModelRejection(get(db$), {
+              catalog: await get(claimCatalog$),
+              model: pin.selectedModel,
+              serviceTier: selection.codexServiceTier,
+              resolution: get(usagePricingResolution$),
+            })
+          : undefined;
+      signal.throwIfAborted();
       return {
         pin,
         providerAdmission: {
@@ -6531,6 +6576,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           cliAgentType: admission.cliAgentType,
           error:
             admission.error ??
+            unpriced ??
             (admission.needsAllowance &&
             (!allowance || allowance.remainingUnits <= 0)
               ? pickChatRunModelInsufficientCredits()

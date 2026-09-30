@@ -28,13 +28,14 @@ import {
 import { and, eq } from "drizzle-orm";
 import type { Db } from "../external/db";
 import { resolveCurrentPersonalSubscriptionBundleForApi } from "./agent-webhook-firewall-auth.service";
-import { resolveBuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
+import { resolveBuiltInModelRuntimeRouteFromCatalog } from "./built-in-model-runtime-route.service";
 import {
   catalogBuiltInCandidates,
   catalogBuiltInRoute,
   catalogProviderUpstreamModel,
   loadModelCatalog,
   type ModelCatalog,
+  ModelCatalogInvariantError,
 } from "./model-catalog.service";
 import { decryptStoredSecretValue } from "./crypto.utils";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
@@ -247,8 +248,11 @@ async function builtinCredential(
   ) {
     return skip("source_binding_invalid");
   }
-  const route = await resolveBuiltInModelRuntimeRoute(
+  // Resolve against the held snapshot so the served route and its pricing
+  // threshold come from the same catalog read.
+  const route = await resolveBuiltInModelRuntimeRouteFromCatalog(
     db,
+    args.catalog,
     PI_MEMORY_STAGE1_BUILT_IN_MODEL,
     context,
   );
@@ -263,6 +267,19 @@ async function builtinCredential(
   );
   if (!endpoint) {
     return skip("provider_model_unsupported");
+  }
+  // The served route's own pricing trigger. The route was resolved from this
+  // snapshot, so a miss is a broken invariant: fail closed rather than bill
+  // every token at the base (single-tier) categories.
+  const servedRoute = catalogBuiltInRoute(
+    args.catalog,
+    PI_MEMORY_STAGE1_BUILT_IN_MODEL,
+    route.providerType,
+  );
+  if (!servedRoute) {
+    throw new ModelCatalogInvariantError(
+      "Pi memory Stage 1 pricing threshold is missing",
+    );
   }
   const readKey = async () => {
     const [key] = await db
@@ -300,13 +317,8 @@ async function builtinCredential(
     {
       selectedModel: PI_MEMORY_STAGE1_BUILT_IN_MODEL,
       mode: "builtin",
-      // The served route's own pricing trigger.
       longContextMinTotalInputTokens:
-        catalogBuiltInRoute(
-          args.catalog,
-          PI_MEMORY_STAGE1_BUILT_IN_MODEL,
-          route.providerType,
-        )?.longContextMinTotalInputTokens ?? null,
+        servedRoute.longContextMinTotalInputTokens,
     },
     async (validationSignal) => {
       const current = await readKey();

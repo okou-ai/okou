@@ -18,6 +18,7 @@ import {
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { usageRecordRoutes } from "../usage-record";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import {
   insertCatalogModelFixture,
   updateBuiltInRouteFixture,
@@ -615,6 +616,73 @@ describe("model catalog authority", () => {
       environment: { OPENAI_MODEL: secondUpstream },
       modelUsageProvider: pricedProvider,
     });
+  });
+
+  it("rejects a Built-in run when no candidate route has complete usage pricing", async () => {
+    // Every candidate lacks a category its route can bill: the first has no
+    // pricing rows at all, the second prices only base categories while its
+    // threshold makes `.long_context` billable. Nothing may run unbilled.
+    const model = `catalog-all-unpriced-${randomUUID()}`;
+    const basePricedProvider = `catalog-all-unpriced-base-${randomUUID()}`;
+    const unpricedProvider = `catalog-all-unpriced-none-${randomUUID()}`;
+    await seedModelPricingFixture(
+      basePricedProvider,
+      uniformPrices(BASE_TOKEN_CATEGORIES, 1),
+    );
+    const { actor, agentId } = await launchCatalogModel({
+      model,
+      routes: [
+        {
+          concreteProviderType: "openrouter-codex",
+          upstreamModel: `catalog-all-unpriced-upstream-${randomUUID()}`,
+          priority: 0,
+          efforts: [],
+          defaultEffort: null,
+          pricingProvider: unpricedProvider,
+        },
+        {
+          concreteProviderType: "openai-api-key",
+          upstreamModel: `catalog-all-unpriced-upstream-${randomUUID()}`,
+          priority: 1,
+          efforts: [],
+          defaultEffort: null,
+          pricingProvider: basePricedProvider,
+          longContextMinTotalInputTokens: 500_001,
+        },
+      ],
+    });
+
+    const clientEventId = randomUUID();
+    const sent = await chatEvents.chat.requestSendEvent(
+      actor,
+      { agentId, prompt: "run without a priced route", model, clientEventId },
+      [201],
+    );
+    if (sent.status !== 201) {
+      throw new Error("Expected the chat input to be accepted");
+    }
+    expect(sent.body.runId).toBeNull();
+    await flushWaitUntilForTest();
+    // The picked input is rejected with the pricing reason; no run starts.
+    const { events } = await chatEvents.waitForThreadMessages(
+      actor,
+      sent.body.threadId,
+      (items) => {
+        return items.some((item) => {
+          return item.eventType === "input.rejected";
+        });
+      },
+    );
+    expect(
+      events.find((event) => {
+        return event.eventType === "input.rejected";
+      }),
+    ).toMatchObject({ error: "model_provider_unavailable" });
+    expect(
+      events.filter((event) => {
+        return "runId" in event && event.runId !== undefined;
+      }),
+    ).toStrictEqual([]);
   });
 
   it("bills a new model's long-context usage at its route's catalog threshold", async () => {

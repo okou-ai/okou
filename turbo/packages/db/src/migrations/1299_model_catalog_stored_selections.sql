@@ -221,17 +221,14 @@ SELECT
   thread.user_id,
   agent.org_id,
   thread.agent_id,
+  map.source,
   map.target,
   CASE
     WHEN thread.model_settings ? map.target THEN NULL
     WHEN (thread.model_settings -> map.source ->> 'effort') = ANY(route.efforts)
       THEN thread.model_settings -> map.source ->> 'effort'
     WHEN thread.model_settings -> map.source ? 'effort' THEN route.default_effort
-  END AS effort,
-  row_number() OVER (
-    PARTITION BY thread.user_id, agent.org_id
-    ORDER BY thread.id
-  ) AS rn
+  END AS effort
 FROM chat_threads AS thread
 JOIN model_selection_rewrite AS map ON map.source = thread.selected_model
 LEFT JOIN agents AS agent ON agent.id = thread.agent_id
@@ -250,17 +247,28 @@ CROSS JOIN LATERAL (
   LIMIT 1
 ) AS route;
 --> statement-breakpoint
-UPDATE chat_threads AS thread
-SET
-  selected_model = moved.target,
-  model_settings = CASE
-    WHEN moved.effort IS NULL THEN thread.model_settings
-    ELSE thread.model_settings
-      || jsonb_build_object(moved.target, jsonb_build_object('effort', moved.effort))
-  END,
-  updated_at = now()
-FROM model_selection_rewrite_threads AS moved
-WHERE thread.id = moved.thread_id;
+-- The snapshot was read without row locks. Re-check the retired selection
+-- under the UPDATE's row lock so a selection a still-serving API changed in
+-- between is kept, and drop it from the snapshot so it gets no event.
+WITH moved_threads AS (
+  UPDATE chat_threads AS thread
+  SET
+    selected_model = moved.target,
+    model_settings = CASE
+      WHEN moved.effort IS NULL THEN thread.model_settings
+      ELSE thread.model_settings
+        || jsonb_build_object(moved.target, jsonb_build_object('effort', moved.effort))
+    END,
+    updated_at = now()
+  FROM model_selection_rewrite_threads AS moved
+  WHERE thread.id = moved.thread_id
+    AND thread.selected_model = moved.source
+  RETURNING thread.id
+)
+DELETE FROM model_selection_rewrite_threads AS moved
+WHERE NOT EXISTS (
+  SELECT 1 FROM moved_threads WHERE moved_threads.id = moved.thread_id
+);
 --> statement-breakpoint
 -- Reserve one contiguous seq_id range per (user_id, org_id) stream, in key
 -- order, and append one model_selection_updated event per re-pinned thread.
@@ -286,7 +294,10 @@ INSERT INTO chat_thread_events (
 SELECT
   moved.user_id,
   moved.org_id,
-  reserved.last_seq_id - counts.cnt + moved.rn,
+  reserved.last_seq_id - counts.cnt + row_number() OVER (
+    PARTITION BY moved.user_id, moved.org_id
+    ORDER BY moved.thread_id
+  ),
   moved.thread_id,
   'model_selection_updated',
   moved.agent_id,

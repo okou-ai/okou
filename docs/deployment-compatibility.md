@@ -219,8 +219,15 @@ Old and new versions during deploy:
   repair reacts to an organization without an `is_default` row was not
   confirmed here (unverified).
 - Old App, iOS and CLI against the new API: the deprecated response fields
-  `isDefault`, `workspaceDefaultModel` and `workspaceDefaultPolicyId` are
-  removed from `GET /api/model-policies`. Released iOS builds decode
+  `isDefault` and `workspaceDefaultPolicyId` are removed from
+  `GET /api/model-policies`. `workspaceDefaultModel` is kept as a
+  compatibility field whose value is always the catalog system default:
+  released CLIs resolve a thread without a selected model to it
+  (`okou workflow automation show`, `okou chat model`), and `automation show`
+  exits with an error when it is absent. Released CLIs only use a missing
+  `isDefault` to omit the "(default)" marker. Remove `workspaceDefaultModel`
+  once the CLI floor excludes builds that read it (tracked in #37442).
+  Released iOS builds decode
   `isDefault` as required and cannot read the policy list until they upgrade;
   the owner accepted this iOS break, so no iOS compatibility is kept. A
   request `isDefault` is stripped. Old clients that
