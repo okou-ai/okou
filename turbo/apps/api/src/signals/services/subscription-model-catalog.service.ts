@@ -1,4 +1,4 @@
-import { asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import {
   getRunModelAccess,
   isCodexFastModeModel,
@@ -8,6 +8,9 @@ import {
 } from "@okouai/api-contracts/contracts/model-providers";
 import { subscriptionModelCatalog } from "@okouai/db/schema/subscription-model-catalog";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
+import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
+import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
+import { nowDate } from "../../lib/time";
 import {
   getModelReasoningEfforts,
   reasoningEffortSchema,
@@ -145,4 +148,79 @@ export async function isAutoPersonalSubscriptionRoute(args: {
       entry.model === args.model && entry.providerType === args.providerType
     );
   });
+}
+
+/**
+ * A disconnected subscription stops backing an Auto member's selection. Return
+ * that member to the org default when no policy or remaining subscription
+ * still offers the saved model.
+ */
+export async function resetStaleAutoMemberSelection(
+  db: Db,
+  orgId: string,
+  userId: string,
+): Promise<void> {
+  const [[org], [member], policies] = await Promise.all([
+    db
+      .select({ mode: orgMetadata.modelMode })
+      .from(orgMetadata)
+      .where(eq(orgMetadata.orgId, orgId))
+      .limit(1),
+    db
+      .select({ selectedModel: orgMembersMetadata.selectedModel })
+      .from(orgMembersMetadata)
+      .where(
+        and(
+          eq(orgMembersMetadata.orgId, orgId),
+          eq(orgMembersMetadata.userId, userId),
+        ),
+      )
+      .limit(1),
+    db
+      .select({
+        model: orgModelPolicies.model,
+        isDefault: orgModelPolicies.isDefault,
+      })
+      .from(orgModelPolicies)
+      .where(eq(orgModelPolicies.orgId, orgId)),
+  ]);
+  const selectedModel = member?.selectedModel;
+  const defaultPolicy = policies.find((policy) => {
+    return policy.isDefault;
+  });
+  if (
+    org?.mode !== "auto" ||
+    !selectedModel ||
+    !defaultPolicy ||
+    policies.some((policy) => {
+      return policy.model === selectedModel;
+    })
+  ) {
+    return;
+  }
+  const remaining = await loadMemberSubscriptionModels(
+    db,
+    await loadMemberModelRouteContext(db, orgId, userId),
+  );
+  if (
+    remaining.some((entry) => {
+      return entry.model === selectedModel;
+    })
+  ) {
+    return;
+  }
+  await db
+    .update(orgMembersMetadata)
+    .set({
+      selectedModel: defaultPolicy.model,
+      serviceTier: null,
+      updatedAt: nowDate(),
+    })
+    .where(
+      and(
+        eq(orgMembersMetadata.orgId, orgId),
+        eq(orgMembersMetadata.userId, userId),
+        eq(orgMembersMetadata.selectedModel, selectedModel),
+      ),
+    );
 }

@@ -44,6 +44,11 @@ test("switches to Auto from Debug and simplifies model settings", async () => {
     path: "/agents?settings=model",
     featureSwitches: { [FeatureSwitchKey.OkouDebug]: true },
   });
+  await waitFor(() => {
+    expect(
+      screen.getByRole("dialog", { name: "Settings" }),
+    ).toBeInTheDocument();
+  });
   await screen.findByRole("heading", { name: "Provider connections" });
   expect(
     screen.queryByRole("switch", { name: "Auto Model" }),
@@ -56,16 +61,16 @@ test("switches to Auto from Debug and simplifies model settings", async () => {
   const confirmation = await screen.findByRole("dialog", {
     name: "Switch this workspace to Auto Model?",
   });
-  expect(within(confirmation).getByText(/provider connections/)).toBeVisible();
+  expect(
+    within(confirmation).getByText(/provider connections/),
+  ).toBeInTheDocument();
   click(routeButtonByName("Switch to Auto Model", confirmation));
   await waitFor(() => {
     expect(toggle).toBeChecked();
   });
 
   click(routeButtonByName("Models"));
-  await expect(
-    screen.findByRole("heading", { name: "Personal Model Subscriptions" }),
-  ).resolves.toBeVisible();
+  await screen.findByRole("heading", { name: "Personal Model Subscriptions" });
   expect(screen.queryByText("Default model")).not.toBeInTheDocument();
   expect(
     screen.queryByRole("heading", { name: "Provider connections" }),

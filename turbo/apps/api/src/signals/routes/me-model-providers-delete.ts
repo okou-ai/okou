@@ -6,6 +6,8 @@ import { authRoute } from "../auth/auth-route";
 import { pathParamsOf } from "../context/request";
 import { isNotFoundResponse } from "../../lib/error";
 import { deleteUserModelProvider$ } from "../services/model-provider.service";
+import { resetStaleAutoMemberSelection } from "../services/subscription-model-catalog.service";
+import { writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 
 const deleteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -24,6 +26,8 @@ const deleteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (isNotFoundResponse(result)) {
     return result;
   }
+  await resetStaleAutoMemberSelection(set(writeDb$), auth.orgId, auth.userId);
+  signal.throwIfAborted();
   return { status: 204 as const, body: undefined };
 });
 

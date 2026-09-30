@@ -146,17 +146,14 @@ const enterAutoMode$ = command(
 const enterCustomMode$ = command(
   async ({ set }, orgId: string, signal: AbortSignal) => {
     const db = set(writeDb$);
-    const [switched] = await db
+    await db
       .update(orgMetadata)
       .set({ modelMode: "custom", updatedAt: nowDate() })
       .where(
         and(eq(orgMetadata.orgId, orgId), eq(orgMetadata.modelMode, "auto")),
-      )
-      .returning({ orgId: orgMetadata.orgId });
+      );
     signal.throwIfAborted();
-    if (!switched) {
-      return;
-    }
+    // Reconcile on every Custom request so a retry repairs a partial switch.
     const policies = await db
       .select({
         model: orgModelPolicies.model,

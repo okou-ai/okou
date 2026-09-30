@@ -463,6 +463,39 @@ describe("GET/PUT /api/model-policies", () => {
     ).toStrictEqual(["okou-1.0"]);
   });
 
+  it("returns an Auto member to the org default after disconnecting the subscription", async () => {
+    const fixture = seedFixture();
+    await seedOrgMetadata({ orgId: fixture.orgId, tier: "pro", credits: 0 });
+    await switchModelMode(fixture, "auto");
+    await connectCodexSubscription(fixture);
+    const preferences = setupApp({
+      context,
+      routes: userModelPreferenceRoutes,
+    })(userModelPreferenceContract);
+    await accept(
+      preferences.update({
+        headers: authHeaders(),
+        body: { selectedModel: "gpt-6-sol", serviceTier: "priority" },
+      }),
+      [200],
+    );
+
+    await createMiscRoutesApi(context).deletePersonalModelProvider(
+      fixture,
+      "codex-oauth-token",
+      [204],
+    );
+    useSession(fixture);
+    const preference = await accept(
+      preferences.get({ headers: authHeaders() }),
+      [200],
+    );
+    expect(preference.body).toMatchObject({
+      selectedModel: "okou-1.0",
+      serviceTier: null,
+    });
+  });
+
   it("returns subscription members to organization policies when Auto switches back to Custom", async () => {
     const fixture = seedFixture();
     await seedOrgMetadata({ orgId: fixture.orgId, tier: "pro", credits: 0 });
