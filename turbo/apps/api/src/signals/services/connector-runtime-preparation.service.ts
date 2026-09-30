@@ -20,7 +20,6 @@ import {
   loadCustomConnectorPermissionBundle,
 } from "./custom-connector-permission-bundle.service";
 import {
-  type CustomConnectorRow,
   CustomConnectorRuntimePrefixError,
   customConnectorInternalName,
   customConnectorPrefixTemplateVariableKeys,
@@ -31,6 +30,7 @@ import {
   renderCustomConnectorRuntimePrefix,
 } from "./custom-connector.service";
 import { orderByCustomConnectorId } from "./custom-connector-order";
+import type { CustomConnectorExecutionDefinition } from "./custom-connector-definition-selection";
 import { safeSync } from "../utils";
 import { effectiveCustomConnectorPermissionBundleRef } from "./feishu-custom-connector-permissions";
 import { networkPolicyForFirewallPolicy } from "./firewall-network-policy.service";
@@ -60,7 +60,7 @@ export function compactRecord<T>(
 }
 
 export type CustomConnectorRuntimeDataRows = readonly {
-  readonly connector: CustomConnectorRow;
+  readonly connector: CustomConnectorExecutionDefinition;
   readonly values: readonly CustomConnectorStoredValueRow[];
   readonly credentialAccess: CustomConnectorCredentialAccess;
 }[];

@@ -20,7 +20,7 @@ import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import { db$, writeDb$ } from "../external/db";
 import { waitUntil } from "../context/wait-until";
 import { nowDate } from "../../lib/time";
-import type { PrefetchedAgentBootstrap } from "./agent-bootstrap";
+import type { PrefetchedAgentBootstrap } from "./agent-bootstrap.service";
 import {
   activeConcurrencySubscriptionPredicate,
   totalConcurrencyLimit,

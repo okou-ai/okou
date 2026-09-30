@@ -20,7 +20,7 @@ import { db$, writeDb$, type Db } from "../external/db";
 import { publishActiveInputToRunnerGroup } from "../external/realtime";
 import { safeSync, settle, tapError } from "../utils";
 import { createPickObjects } from "./pick-chat-run.service";
-import type { PrefetchedAgentBootstrap } from "./agent-bootstrap";
+import type { PrefetchedAgentBootstrap } from "./agent-bootstrap.service";
 import type { ChatQueuePickResult } from "./chat-queue-wait-reason";
 import type { Tx } from "../../lib/db-types";
 import { listPendingChatInputs } from "./chat-event-queue.service";

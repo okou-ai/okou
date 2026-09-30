@@ -1,4 +1,3 @@
-import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { orgCustomConnectorOauthConfigs } from "@okouai/db/schema/org-custom-connector-oauth-config";
 import { userDisabledPaidTools } from "@okouai/db/schema/user-disabled-paid-tools";
@@ -12,11 +11,13 @@ import { db$ } from "../external/db";
 import {
   ORG_SENTINEL_USER_ID,
   type DisabledPaidToolsSnapshot,
-  type RunMemberSnapshot,
   type PersistedRunEnvironmentSecret,
   type PersistedRunEnvironmentVariable,
 } from "./agent-run-execution.service";
-import { customConnectorDefinitionSelection } from "./custom-connector-definition-selection";
+import {
+  customConnectorDefinitionSelection,
+  type CustomConnectorExecutionDefinition,
+} from "./custom-connector-definition-selection";
 import { normaliseCustomConnectorRow } from "./custom-connector.service";
 
 const environmentRowKindDecoder = zodEnumDriverValueDecoder(
@@ -42,25 +43,6 @@ export function createAgentDisabledPaidTools(userId: string, orgId: string) {
         return row.toolId;
       }),
     };
-  });
-}
-
-export function createAgentMemberSnapshot(userId: string, orgId: string) {
-  return computed(async (get): Promise<RunMemberSnapshot> => {
-    const [member] = await get(db$)
-      .select({
-        timezone: orgMembersMetadata.timezone,
-        selectedImageModel: orgMembersMetadata.selectedImageModel,
-      })
-      .from(orgMembersMetadata)
-      .where(
-        and(
-          eq(orgMembersMetadata.orgId, orgId),
-          eq(orgMembersMetadata.userId, userId),
-        ),
-      )
-      .limit(1);
-    return { orgId, userId, member };
   });
 }
 
@@ -95,8 +77,52 @@ export function createAgentCustomConnectorDefinitions(
           inArray(orgCustomConnectors.id, [...ids]),
         ),
       );
-    return rows.map((row) => {
-      return normaliseCustomConnectorRow(row.connector, row.oauthConfig);
+    return rows.map((row): CustomConnectorExecutionDefinition => {
+      const definition = normaliseCustomConnectorRow(
+        row.connector,
+        row.oauthConfig,
+      );
+      const config = definition.oauthConfig;
+      const shared = {
+        id: definition.id,
+        orgId: definition.orgId,
+        slug: definition.slug,
+        displayName: definition.displayName,
+        fields: definition.fields,
+        headerInjections: definition.headerInjections,
+        queryInjections: definition.queryInjections,
+        authMode: definition.authMode,
+        skillMarkdown: definition.skillMarkdown,
+        skillStorageVersionId: definition.skillStorageVersionId,
+        storageVersion: definition.storageVersion,
+        oauthConfig:
+          config === null
+            ? null
+            : {
+                providerAdapter: config.providerAdapter,
+                clientId: config.clientId,
+                encryptedClientSecret: config.encryptedClientSecret,
+                authorizationUrl: config.authorizationUrl,
+                tokenUrl: config.tokenUrl,
+                tokenEndpointAuthMethod: config.tokenEndpointAuthMethod,
+                pkceMethod: config.pkceMethod,
+                scopes: config.scopes,
+                authorizationParams: config.authorizationParams,
+              },
+      };
+      return definition.kind === "http"
+        ? {
+            ...shared,
+            kind: "http",
+            prefixTemplates: definition.prefixTemplates,
+            permissionBundleRef: definition.permissionBundleRef,
+          }
+        : {
+            ...shared,
+            kind: "mcp",
+            endpoint: definition.endpoint,
+            transport: definition.transport,
+          };
     });
   });
 }

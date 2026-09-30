@@ -48,7 +48,7 @@ import { logger } from "../../lib/log";
 import {
   createAgentBootstrap,
   type PrefetchedAgentBootstrap,
-} from "./agent-bootstrap";
+} from "./agent-bootstrap.service";
 import { resolveChatReasoningEffort } from "./chat-reasoning-effort.service";
 import {
   enqueueChatInput,

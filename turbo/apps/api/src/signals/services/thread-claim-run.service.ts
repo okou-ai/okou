@@ -1,3 +1,5 @@
+import { createBootstrapAgent } from "./agent-bootstrap-agent";
+import { agentConnectorScopeFromRows } from "./agent-connector-scope.service";
 import type { Tx } from "../../lib/db-types";
 import { waitUntil } from "../context/wait-until";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
@@ -100,8 +102,6 @@ import {
   atomicLaunchPayloadInput,
   type AtomicLaunchRunInput,
   bindStableAppendSystemPrompt,
-  bootstrapLoadTimingDimensions,
-  bootstrapMaterializeTimingDimensions,
   buildCreateAgentRunArgs,
   buildMergedVariables,
   buildNewRunCustomConnectorRuntimeContext,
@@ -152,7 +152,6 @@ import {
   matchingAuthorizedRequestObservation,
   type MaterializedAgentRunStorage,
   materializePreparedPiProvider,
-  materializeRunBootstrapContext,
   materializeStoredConnectorSnapshotRows,
   measureAgentRunPreCreate,
   mergeRecords,
@@ -195,7 +194,6 @@ import {
   resolveStoredConnectorSecrets,
   resolveValidatedPersistedStorageMounts,
   type RunBootstrapContext,
-  type RunBootstrapSnapshotRows,
   runConnectorAccountCandidatesFromRows,
   runConnectorAccountRequests,
   type RunConnectorCatalogSelection,
@@ -284,9 +282,10 @@ import { getOfficialTelegramBotConfig } from "../external/telegram-official";
 import { onRejection, safeSync, settle, tapError } from "../utils";
 import { buildAgentExecutionConfig } from "./agent-execution-config";
 import {
-  createAgentBootstrapObjects,
+  createAgentBootstrap,
+  type AgentBootstrap,
   type PrefetchedAgentBootstrap,
-} from "./agent-bootstrap";
+} from "./agent-bootstrap.service";
 import { BEFORE_DISPATCH_CANCELLED_ERROR } from "./agent-run-cancellation";
 
 import {
@@ -398,7 +397,10 @@ import {
   encryptPersistentSecretsMap,
 } from "./crypto.utils";
 import type { CustomConnectorRuntimeStorageRow } from "./custom-connector-credential-access.service";
-import type { CustomConnectorPermissionBundle } from "./custom-connector-permission-bundle.service";
+import {
+  customConnectorPermissionBundleDependencySlug,
+  type CustomConnectorPermissionBundle,
+} from "./custom-connector-permission-bundle.service";
 import { requireDiscordConversationAccess$ } from "./discord-access.service";
 import {
   type DiscordDeliveryTarget,
@@ -503,10 +505,7 @@ import {
   DueWorkflowAutomation,
 } from "./workflow-automation-enqueue.service";
 import { manualTriggerSource } from "./workflow-automation-trigger-source";
-import {
-  visibleWorkflowCondition,
-  workflowsForRunFromRows,
-} from "./workflow-data.service";
+import { visibleWorkflowCondition } from "./workflow-data.service";
 import { recordWorkflowAdmissionDuration } from "./workflow-queue-admission-timing.service";
 import { settleRejectedAutomationInput } from "./workflow-schedule-failure.service";
 import {
@@ -7514,10 +7513,8 @@ export function createThreadClaimRunObjects(
           if (observation) {
             return observation.agent;
           }
-          const { hit } = await get(claimBootstrapIdentity$);
-          return hit
-            ? (await get(claimBootstrap$)).agent
-            : await get((await get(localBootstrapObjects$)).agent$);
+          // Authorization must not join the complete speculative package.
+          return await get(await get(localAgentDefinition$));
         },
         {
           authorized_request_agent_source:
@@ -7551,9 +7548,16 @@ export function createThreadClaimRunObjects(
       head.agentId === identity.agentId;
     return { identity, hit, prefetched: hit ? prefetchedBootstrap : undefined };
   });
-  const localBootstrapObjects$ = computed(async (get) => {
+  const localAgentDefinition$ = computed(async (get) => {
+    const agentId = await get(preCreateAgentIdAgentId$);
+    if (!agentId) {
+      throw new Error("Authorization requires an Agent identity");
+    }
+    return createBootstrapAgent(agentId);
+  });
+  const localBootstrap$ = computed(async (get) => {
     const { identity } = await get(claimBootstrapIdentity$);
-    return createAgentBootstrapObjects(
+    return createAgentBootstrap(
       identity.userId,
       identity.orgId,
       identity.agentId,
@@ -7564,7 +7568,7 @@ export function createThreadClaimRunObjects(
       get(selectedIdentityInputIdentityInput$),
       get(claimBootstrapIdentity$),
     ]);
-    let snapshot: RunBootstrapSnapshotRows | undefined;
+    let snapshot: AgentBootstrap | undefined;
     return await measureAgentRunPreCreate(
       timing,
       "api_dispatch_pre_create_agent_load_bootstrap_snapshot_rows",
@@ -7573,13 +7577,22 @@ export function createThreadClaimRunObjects(
         // rejection propagates, without a second query or a retry.
         const bootstrap = prefetched
           ? await prefetched.bootstrap
-          : await get((await get(localBootstrapObjects$)).bootstrap$);
+          : await get(await get(localBootstrap$));
         snapshot = bootstrap;
         return bootstrap;
       },
       () => {
         return {
-          ...bootstrapLoadTimingDimensions(snapshot),
+          ...(snapshot
+            ? {
+                agent_run_bootstrap_workflow_winner_count_bucket: countBucket(
+                  snapshot.workflows.length,
+                ),
+                agent_run_bootstrap_permission_grant_count_bucket: countBucket(
+                  snapshot.permissionGrants.length,
+                ),
+              }
+            : {}),
           bootstrap_prefetch: hit ? "hit" : "miss",
           ...(hit
             ? {}
@@ -7593,71 +7606,83 @@ export function createThreadClaimRunObjects(
       },
     );
   });
-  const preCreateBootstrapMetadataRowsBootstrapMetadataRows$ = computed(
-    async (get) => {
-      const [{ command }, bootstrap, featureContext] = await Promise.all([
-        get(selectedIdentityInputIdentityInput$),
+  const preCreateBootstrapMetadata$ = computed(
+    async (get): Promise<RunBootstrapContext> => {
+      const [bootstrap, observed] = await Promise.all([
         get(claimBootstrap$),
         get(featureSwitchContext$),
       ]);
-      return bootstrap.metadataRows.filter((row) => {
-        if (row.kind === "feature_switch" && featureContext !== undefined) {
-          return false;
-        }
-        return (
-          row.kind !== "permission_grant" ||
-          row.expiresAt === null ||
-          row.expiresAt.getTime() > command.apiStartTime
-        );
+      const selection = bootstrap.connectorSelection;
+      const connectorScope = agentConnectorScopeFromRows({
+        connectorRows: selection.builtinConnectorSlugs.map((connectorSlug) => {
+          return {
+            connectorSlug,
+          };
+        }),
+        customConnectorRows: selection.customConnectors,
       });
+      const context = bootstrap.featureSwitchContext;
+      if (
+        observed &&
+        (observed.orgId !== context.orgId || observed.userId !== context.userId)
+      ) {
+        throw new Error("Preloaded feature-switch context scope mismatch");
+      }
+      const featureSwitchContext = observed
+        ? { ...observed, email: observed.email ?? context.email }
+        : context;
+      const expirations = bootstrap.permissionGrants.flatMap((grant) => {
+        return grant.expiresAt === null ? [] : [grant.expiresAt.getTime()];
+      });
+      const metadataSlugs = new Set(
+        selection.customConnectors.flatMap((connector) => {
+          const ref = connector.permissionBundleRef;
+          const dependency =
+            ref === null
+              ? null
+              : customConnectorPermissionBundleDependencySlug(ref);
+          return dependency === null ? [] : [dependency];
+        }),
+      );
+      return {
+        ...connectorScope,
+        userInfo: {
+          name: bootstrap.memberMetadata.profile?.name ?? null,
+          email: bootstrap.memberMetadata.profile?.email ?? null,
+          timezone: bootstrap.memberMetadata.preferences?.timezone ?? null,
+        },
+        featureSwitchContext,
+        workflows: bootstrap.workflows,
+        permissionGrants: bootstrap.permissionGrants.map(
+          ({ connectorSlug, permission, action }) => {
+            return {
+              connectorSlug,
+              permission,
+              action,
+            };
+          },
+        ),
+        permissionValidityHorizon:
+          expirations.length === 0
+            ? null
+            : new Date(Math.min(...expirations)).toISOString(),
+        connectorCatalogMetadataSlugs: [...metadataSlugs].sort(),
+      };
     },
   );
-  const preCreateWorkflowRowsWorkflowRows$ = computed(async (get) => {
-    return (await get(claimBootstrap$)).workflowRows;
-  });
-  const preCreateBootstrapRowsBootstrapRows$ = computed(
-    async (get): Promise<RunBootstrapSnapshotRows> => {
-      const [metadataRows, workflowRows] = await Promise.all([
-        get(preCreateBootstrapMetadataRowsBootstrapMetadataRows$),
-        get(preCreateWorkflowRowsWorkflowRows$),
-      ]);
-      return { metadataRows, workflowRows };
-    },
-  );
-  const preCreateBootstrapMetadata$ = computed(async (get) => {
-    const { command } = await get(selectedIdentityInputIdentityInput$);
-    const [metadataRows, featureContext] = await Promise.all([
-      get(preCreateBootstrapMetadataRowsBootstrapMetadataRows$),
-      get(featureSwitchContext$),
-    ]);
-    return materializeRunBootstrapContext(
-      { metadataRows, workflowRows: [] },
-      { userId: command.auth.userId, orgId: command.auth.orgId },
-      featureContext,
-    );
-  });
   const preCreateBootstrapBootstrap$ = computed(async (get) => {
-    const { command, timing } = await get(selectedIdentityInputIdentityInput$);
-    const [rows, metadata] = await Promise.all([
-      get(preCreateBootstrapRowsBootstrapRows$),
-      get(preCreateBootstrapMetadata$),
-    ]);
-    let context: RunBootstrapContext | undefined;
+    const { timing } = await get(selectedIdentityInputIdentityInput$);
+    const metadata = await get(preCreateBootstrapMetadata$);
     return await measureAgentRunPreCreate(
       timing,
       "api_dispatch_pre_create_agent_materialize_bootstrap_context",
       () => {
-        context = {
-          ...metadata,
-          workflows: workflowsForRunFromRows(
-            rows.workflowRows,
-            command.auth.userId,
-          ),
-        };
-        return context;
+        return metadata;
       },
-      () => {
-        return bootstrapMaterializeTimingDimensions(rows, context);
+      {
+        agent_run_bootstrap_workflow_winner_count_bucket: countBucket(
+          metadata.workflows.length,
+        ),
       },
     );
   });
@@ -7836,11 +7861,10 @@ export function createThreadClaimRunObjects(
                     : undefined;
                   const catalogHit =
                     prefetched !== undefined &&
-                    prefetched.captured.projection.kind === "ready" &&
-                    projectionIdentityKey(
-                      prefetched.captured.projection.projection.identity,
-                    ) === projectionIdentityKey(projection.identity) &&
-                    prefetched.connectorSlugs.join("\0") ===
+                    prefetched.projection.kind === "ready" &&
+                    projectionIdentityKey(prefetched.projection.identity) ===
+                      projectionIdentityKey(projection.identity) &&
+                    prefetched.projection.connectorSlugs.join("\0") ===
                       selectedSlugs.join("\0");
                   prefetchedRowsUsed = catalogHit;
                   (await get(catalogInput$)).timing.recordElapsed(
@@ -7851,7 +7875,7 @@ export function createThreadClaimRunObjects(
                     { bootstrap_catalog_prefetch: catalogHit ? "hit" : "miss" },
                   );
                   return catalogHit
-                    ? prefetched.rows.filter((row) => {
+                    ? prefetched.projection.rows.filter((row) => {
                         return uncachedSlugs.includes(row.connectorSlug);
                       })
                     : await get(
@@ -8356,15 +8380,43 @@ export function createThreadClaimRunObjects(
     preCreateConnectorCatalogConnectorCatalog$;
   const preCreateExecutionPermissionPolicies$ =
     preCreatePermissionPoliciesPermissionPolicies$;
-  const preCreateExecutionWorkflowRows$ = preCreateWorkflowRowsWorkflowRows$;
+  const preCreateExecutionWorkflows$ = computed(async (get) => {
+    return (await get(claimBootstrap$)).workflows;
+  });
   const runDisabledPaidToolsSnapshot$ = computed(async (get) => {
-    return (await get(claimBootstrap$)).disabledPaidTools;
+    const [{ identity }, bootstrap] = await Promise.all([
+      get(claimBootstrapIdentity$),
+      get(claimBootstrap$),
+    ]);
+    return {
+      orgId: identity.orgId,
+      userId: identity.userId,
+      toolIds: bootstrap.disabledPaidToolIds,
+    };
   });
   const runMemberSnapshot$ = computed(async (get) => {
-    return (await get(claimBootstrap$)).member;
+    const [{ identity }, bootstrap] = await Promise.all([
+      get(claimBootstrapIdentity$),
+      get(claimBootstrap$),
+    ]);
+    return {
+      orgId: identity.orgId,
+      userId: identity.userId,
+      member: bootstrap.memberMetadata.preferences ?? undefined,
+    };
   });
   const runEnvironmentSnapshot$ = computed(async (get) => {
-    return (await get(claimBootstrap$)).environment;
+    const [{ identity }, bootstrap] = await Promise.all([
+      get(claimBootstrapIdentity$),
+      get(claimBootstrap$),
+    ]);
+    return {
+      orgId: identity.orgId,
+      userId: identity.userId,
+      secretNames: bootstrap.environment.requestedSecretNames,
+      variables: bootstrap.environment.variables,
+      secrets: bootstrap.environment.secrets,
+    };
   });
   const resources = {
     disabledPaidTools$: runDisabledPaidToolsSnapshot$,
@@ -9922,10 +9974,7 @@ export function createThreadClaimRunObjects(
     async (get): Promise<RunWorkflowReadInput> => {
       const { command } = await get(preCreateExecutionInput$);
       const db = get(db$);
-      const workflows = workflowsForRunFromRows(
-        await get(preCreateExecutionWorkflowRows$),
-        command.auth.userId,
-      );
+      const workflows = await get(preCreateExecutionWorkflows$);
       return {
         db,
         args: {

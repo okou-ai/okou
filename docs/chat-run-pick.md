@@ -82,16 +82,21 @@ infrastructure failures, no settled-result staging and no error fallback.
 
 Web session-authenticated direct sends and verified MCP direct sends start
 `get(createAgentBootstrap(userId, orgId, agentId))` before the enqueue transaction.
-`agent-bootstrap.ts` owns this signal factory. The entry passes the ordinary
+`agent-bootstrap.service.ts` owns this signal factory. The entry passes the ordinary
 `{ userId, orgId, agentId, bootstrap: Promise<AgentBootstrap> }` object to its
 post-commit pick. It does not await it before returning the accepted-input
 response. Integration, automation, workflow-command, run-callback and other
 non-Web direct-send entries keep the canonical claim-owned read.
 
-The package joins agent/organization definition, user information, feature
-switches, built-in/custom connector grants, permissions, accessible workflows,
-member settings, disabled paid tools, persisted variables/secrets, custom
-connector definitions and catalog projections. Independent queries start together.
+The package composes normalized member metadata, scoped connector selection,
+effective permission grants, workflow winners and feature-switch context. Four
+read-only factories own those definitions; no metadata UNION rows or workflow
+candidate rows cross the bootstrap boundary. It also retains Agent facts, disabled
+paid-tool IDs, environment source values, execution-only custom definitions and
+normalized catalog identity/projection data. Custom definitions omit enabled/audit
+fields and OAuth audit identities after existing validation. Agent facts remain
+independently readable for authorization, without joining unrelated bootstrap work.
+Independent queries start together.
 Environment secrets depend on the agent's execution configuration; custom
 connector definitions and catalog projection rows depend on the connector list.
 The catalog identity query depends only on global data and starts immediately.
@@ -111,9 +116,10 @@ with a separate error observer, including duplicate sends, active-run steer,
 no-capacity and identity misses. Observing an unused rejection does not turn
 the original Promise into a successful result or change the accepted S1 response.
 
-Permission expiry remains checked against the claim's existing API start time,
-not the earlier S1 read time. Existing observed feature-switch values retain
-precedence. Model-provider feature switches use that observation directly,
+Permission overrides are filtered by application time when their read evaluates.
+The small prefetch-to-use expiry window is accepted; no use-time re-read or timer
+is added. Existing Runner permission refresh remains intact. Existing observed
+feature-switch values retain precedence. Model-provider feature switches use that observation directly,
 without waiting for bootstrap. Session-based execution resolution starts beside
 firewall/body construction, using the same authorized agent, canonical session
 snapshot, reset policy and product execution configuration.
@@ -135,6 +141,13 @@ package wait, with `bootstrap_prefetch=hit|miss` and a miss reason of
 records `bootstrap_catalog_prefetch=hit|miss` when uncached projection rows are
 needed. These overlapping waits do not measure S1 query cost and must not be
 summed. A process-cached catalog can avoid the projection selection altogether.
+Normalized bootstrap telemetry reports workflow-winner and permission-grant count
+buckets instead of raw SQL-row/candidate counts. Member profile/preferences and
+built-in/custom selection each retain a single UNION read. Splitting permission
+and feature-switch readers gives five independent reads across these four resource
+factories and feature overrides, versus the previous three metadata/member/workflow
+queries. This is a round-trip increase, not a demonstrated performance gain;
+production SQL cost and S1/S3 latency still require measurement.
 
 The identity lookups are primary-key/composite-index reads. Connector grants
 use `(org_id, user_id, agent_id)` or `(agent_id, user_id)` indexes, workflows

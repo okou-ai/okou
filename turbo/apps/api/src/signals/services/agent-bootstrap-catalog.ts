@@ -23,9 +23,27 @@ export type AgentCatalogProjectionRow = Pick<
 >;
 
 export interface AgentBootstrapCatalog {
-  readonly captured: CapturedConnectorCatalogIdentity;
-  readonly connectorSlugs: readonly ConnectorSlug[];
-  readonly rows: readonly AgentCatalogProjectionRow[];
+  readonly identity: NonNullable<
+    CapturedConnectorCatalogIdentity["identity"]
+  > | null;
+  readonly projection:
+    | {
+        readonly kind: "ready";
+        readonly identity: Extract<
+          CapturedConnectorCatalogIdentity["projection"],
+          { kind: "ready" }
+        >["projection"]["identity"];
+        readonly connectorSlugs: readonly ConnectorSlug[];
+        readonly filteredMethodKeys: readonly string[];
+        readonly rows: readonly AgentCatalogProjectionRow[];
+      }
+    | {
+        readonly kind: "unavailable";
+        readonly reason: Extract<
+          CapturedConnectorCatalogIdentity["projection"],
+          { kind: "fallback" }
+        >["reason"];
+      };
 }
 
 /** Each graph instance reads the current global identity, never a request identity. */
