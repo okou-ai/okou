@@ -3423,9 +3423,7 @@ describe("CHAT-03 run usage events", () => {
   }, 60_000);
 
   it("keeps ledger totals stable when concurrent settlement requests repeat", async () => {
-    const { actor, agentId } = await entitledChatActorWithoutRunner(
-      "Usage message agent",
-    );
+    const { actor, agentId } = await entitledChatActor("Usage message agent");
 
     const provider = `bdd-usage-${randomUUID().slice(0, 8)}`;
     const missingProvider = `${provider}-free`;
