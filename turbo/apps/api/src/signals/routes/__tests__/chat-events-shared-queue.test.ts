@@ -201,13 +201,11 @@ describe("CHAT-02: shared user message queue", () => {
     const afterReplay = await chat.listThreadEvents(actor, sent.body.threadId);
     expect(userMessages(afterReplay.events)).toHaveLength(rows.length);
     await flushWaitUntilForTest();
-    await expect(
-      (() => {
-        return context.mocks.ably.publish.mock.calls.some((call) => {
-          return call[0] === `chatThreadMessageCreated:${sent.body.threadId}`;
-        });
-      })(),
-    ).resolves.toBeTruthy();
+    expect(
+      context.mocks.ably.publish.mock.calls.some((call) => {
+        return call[0] === `chatThreadMessageCreated:${sent.body.threadId}`;
+      }),
+    ).toBeTruthy();
 
     const claimedRun = await claimChatRun(runnerGroup, runId);
     expect(claimedRun.claim.apiStartTime).toBe(apiStartedAt);
@@ -1490,13 +1488,11 @@ describe("CHAT-02: shared user message queue", () => {
       }),
     );
     await flushWaitUntilForTest();
-    await expect(
-      (() => {
-        return context.mocks.ably.publish.mock.calls.some((call) => {
-          return call[0] === `chatThreadMessageCreated:${anchor.threadId}`;
-        });
-      })(),
-    ).resolves.toBeTruthy();
+    expect(
+      context.mocks.ably.publish.mock.calls.some((call) => {
+        return call[0] === `chatThreadMessageCreated:${anchor.threadId}`;
+      }),
+    ).toBeTruthy();
 
     const followUp = await api.readRun(actor, promoted.runId);
     expect(followUp.prompt).toContain("queue-first waits for the anchor");

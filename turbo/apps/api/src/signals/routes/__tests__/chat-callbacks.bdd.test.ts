@@ -590,13 +590,11 @@ async function waitForChatThreadMessageCreatedPublish(
   threadId: string,
 ): Promise<void> {
   await flushWaitUntilForTest();
-  await expect(
-    (() => {
-      return context.mocks.ably.publish.mock.calls.some((call) => {
-        return call[0] === `chatThreadMessageCreated:${threadId}`;
-      });
-    })(),
-  ).resolves.toBeTruthy();
+  expect(
+    context.mocks.ably.publish.mock.calls.some((call) => {
+      return call[0] === `chatThreadMessageCreated:${threadId}`;
+    }),
+  ).toBeTruthy();
 }
 
 function assistantEvent(
@@ -858,20 +856,16 @@ describe("CHAT-02: completed chat callback", () => {
     });
 
     await flushWaitUntilForTest();
-    await expect(
-      (() => {
-        return context.mocks.webpush.sendNotification.mock.calls.some(
-          (call) => {
-            const payload = pushPayload(call) as Record<string, unknown>;
-            return (
-              payload.title === prompt.slice(0, 60) &&
-              payload.body === "Generated summary" &&
-              payload.url === `http://localhost:3002/chats/${first.threadId}`
-            );
-          },
+    expect(
+      context.mocks.webpush.sendNotification.mock.calls.some((call) => {
+        const payload = pushPayload(call) as Record<string, unknown>;
+        return (
+          payload.title === prompt.slice(0, 60) &&
+          payload.body === "Generated summary" &&
+          payload.url === `http://localhost:3002/chats/${first.threadId}`
         );
-      })(),
-    ).resolves.toBeTruthy();
+      }),
+    ).toBeTruthy();
     const afterAutoSend = await waitForThreadMessages(
       actor,
       first.threadId,
@@ -926,13 +920,11 @@ describe("CHAT-02: completed chat callback", () => {
     // The auto-send publishes happen in background callback processing, so
     // poll until the message channel has been published before asserting.
     await flushWaitUntilForTest();
-    await expect(
-      (() => {
-        return context.mocks.ably.publish.mock.calls.some((call) => {
-          return call[0] === `chatThreadMessageCreated:${first.threadId}`;
-        });
-      })(),
-    ).resolves.toBeTruthy();
+    expect(
+      context.mocks.ably.publish.mock.calls.some((call) => {
+        return call[0] === `chatThreadMessageCreated:${first.threadId}`;
+      }),
+    ).toBeTruthy();
     await flushWaitUntilForTest();
     expect(context.mocks.ably.publish).toHaveBeenCalledWith(
       `chatThreadMessageCreated:${first.threadId}`,
@@ -1849,19 +1841,15 @@ describe("CHAT-02: completed chat callback", () => {
     // A shortened sentence still tells the user what finished, and the only
     // alternative is the generic fallback, so this caller keeps the text.
     await flushWaitUntilForTest();
-    await expect(
-      (() => {
-        return context.mocks.webpush.sendNotification.mock.calls.some(
-          (call) => {
-            const payload = pushPayload(call) as Record<string, unknown>;
-            return (
-              payload.title === prompt.slice(0, 60) &&
-              payload.body === truncatedSummary
-            );
-          },
+    expect(
+      context.mocks.webpush.sendNotification.mock.calls.some((call) => {
+        const payload = pushPayload(call) as Record<string, unknown>;
+        return (
+          payload.title === prompt.slice(0, 60) &&
+          payload.body === truncatedSummary
         );
-      })(),
-    ).resolves.toBeTruthy();
+      }),
+    ).toBeTruthy();
   });
 
   it("falls back to the fixed notification copy when the token-limited summary strips to nothing", async () => {
@@ -1900,19 +1888,15 @@ describe("CHAT-02: completed chat callback", () => {
     await flushWaitUntilForTest();
 
     await flushWaitUntilForTest();
-    await expect(
-      (() => {
-        return context.mocks.webpush.sendNotification.mock.calls.some(
-          (call) => {
-            const payload = pushPayload(call) as Record<string, unknown>;
-            return (
-              payload.title === prompt.slice(0, 60) &&
-              payload.body === "Your task is complete"
-            );
-          },
+    expect(
+      context.mocks.webpush.sendNotification.mock.calls.some((call) => {
+        const payload = pushPayload(call) as Record<string, unknown>;
+        return (
+          payload.title === prompt.slice(0, 60) &&
+          payload.body === "Your task is complete"
         );
-      })(),
-    ).resolves.toBeTruthy();
+      }),
+    ).toBeTruthy();
     expect(
       context.mocks.webpush.sendNotification.mock.calls.every((call) => {
         const payload = pushPayload(call) as Record<string, unknown>;
@@ -2465,13 +2449,11 @@ describe("CHAT-02/RUN-03: cancellation recovery barrier", () => {
 
     await api.requestCancelRun(actor, run.runId, [200]);
     await flushWaitUntilForTest();
-    await expect(
-      (() => {
-        return context.mocks.ably.publish.mock.calls.some(([topic]) => {
-          return topic === "cancel";
-        });
-      })(),
-    ).resolves.toBeTruthy();
+    expect(
+      context.mocks.ably.publish.mock.calls.some(([topic]) => {
+        return topic === "cancel";
+      }),
+    ).toBeTruthy();
     await expectCancellationRecoveryPending(actor, run.threadId, true);
     expect(context.mocks.ably.publish).toHaveBeenCalledWith(
       `chatThreadDetailChanged:${run.threadId}`,
@@ -3426,13 +3408,11 @@ describe("CHAT-02: chat output extraction and terminal callbacks", () => {
     });
     const firstHeaders = await claimChatRun(runnerGroup, first.runId);
     await flushWaitUntilForTest();
-    await expect(
-      (() => {
-        return context.mocks.ably.publish.mock.calls.some((call) => {
-          return call[0] === `chatThreadMessageCreated:${first.threadId}`;
-        });
-      })(),
-    ).resolves.toBeTruthy();
+    expect(
+      context.mocks.ably.publish.mock.calls.some((call) => {
+        return call[0] === `chatThreadMessageCreated:${first.threadId}`;
+      }),
+    ).toBeTruthy();
     context.mocks.axiom.query.mockClear();
     context.mocks.ably.publish.mockClear();
     await webhooks.requestAgentHeartbeat(
@@ -5464,11 +5444,7 @@ describe("CHAT-02: auto-send after failures", () => {
       return lifecycleMarkers(messages, anchor.runId, "completed").length > 0;
     });
     await flushWaitUntilForTest();
-    await expect(
-      (() => {
-        return followupRequests;
-      })(),
-    ).resolves.toBe(1);
+    expect(followupRequests).toBe(1);
 
     const firstFailedPrompt = "failed before the late successful follow-up";
     const firstFailed = await startChatRun(actor, {
@@ -5687,11 +5663,7 @@ describe("CHAT-02: auto-send after failures", () => {
 
     pushGate.release();
     await flushWaitUntilForTest();
-    await expect(
-      (() => {
-        return context.mocks.webpush.sendNotification.mock.calls.length;
-      })(),
-    ).resolves.toBe(1);
+    expect(context.mocks.webpush.sendNotification.mock.calls.length).toBe(1);
 
     await queueChatEvent(actor, {
       agentId,
@@ -5717,11 +5689,7 @@ describe("CHAT-02: auto-send after failures", () => {
     await failChatRun(second.runId, secondHeaders, "boom");
     await flushWaitUntilForTest();
     await flushWaitUntilForTest();
-    await expect(
-      (() => {
-        return context.mocks.webpush.sendNotification.mock.calls.length;
-      })(),
-    ).resolves.toBe(1);
+    expect(context.mocks.webpush.sendNotification.mock.calls.length).toBe(1);
     const afterDuplicateFailure = await chat.listThreadEvents(
       actor,
       first.threadId,
@@ -6098,13 +6066,11 @@ describe("CHAT-02: thread deletion while a run is active", () => {
     });
     await claimChatRun(runnerGroup, run.runId);
     await flushWaitUntilForTest();
-    await expect(
-      (() => {
-        return context.mocks.ably.publish.mock.calls.some((call) => {
-          return call[0] === `chatThreadMessageCreated:${run.threadId}`;
-        });
-      })(),
-    ).resolves.toBeTruthy();
+    expect(
+      context.mocks.ably.publish.mock.calls.some((call) => {
+        return call[0] === `chatThreadMessageCreated:${run.threadId}`;
+      }),
+    ).toBeTruthy();
     context.mocks.axiom.query.mockClear();
     context.mocks.ably.publish.mockClear();
     await chat.deleteThread(actor, run.threadId);
@@ -6138,11 +6104,7 @@ describe("CHAT-02: push notification gating", () => {
     await completeChatRunOk(run.runId, sandboxHeaders);
 
     await flushWaitUntilForTest();
-    await expect(
-      (() => {
-        return context.mocks.webpush.sendNotification.mock.calls.length;
-      })(),
-    ).resolves.toBe(2);
+    expect(context.mocks.webpush.sendNotification.mock.calls.length).toBe(2);
     await flushWaitUntilForTest();
 
     for (const endpoint of endpoints) {
@@ -6203,11 +6165,7 @@ describe("CHAT-02: push notification gating", () => {
     await completeChatRunOk(second.runId, secondHeaders);
 
     await flushWaitUntilForTest();
-    await expect(
-      (() => {
-        return context.mocks.webpush.sendNotification.mock.calls.length;
-      })(),
-    ).resolves.toBe(1);
+    expect(context.mocks.webpush.sendNotification.mock.calls.length).toBe(1);
     expect(
       pushPayload(context.mocks.webpush.sendNotification.mock.calls[0]),
     ).toMatchObject({

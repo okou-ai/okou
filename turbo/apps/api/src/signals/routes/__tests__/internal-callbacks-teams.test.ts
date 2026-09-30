@@ -787,16 +787,14 @@ describe("Teams chat callbacks", () => {
     });
 
     await flushWaitUntilForTest();
-    await expect(
-      (() => {
-        return teamsApi.postedActivities.filter((activity) => {
-          return (
-            typeof activity.text === "string" &&
-            activity.text.includes("Add credits")
-          );
-        });
-      })(),
-    ).resolves.toStrictEqual([
+    expect(
+      teamsApi.postedActivities.filter((activity) => {
+        return (
+          typeof activity.text === "string" &&
+          activity.text.includes("Add credits")
+        );
+      }),
+    ).toStrictEqual([
       expect.objectContaining({
         replyToId: queuedActivityId,
         text: expect.stringContaining("Add credits"),
