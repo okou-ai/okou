@@ -433,6 +433,26 @@ source reader's encrypted contract does not disguise builtin plaintext keys as
 encrypted credentials. This is a real gateway slice, not complete model-source
 or fifteen-interface parity.
 
+## Selected connector source migration (in progress)
+
+Builtin Thread accounts are still selected by the existing catalog/source/default
+rules. Their exact IDs then drive `createConnectorSourceSnapshots`, which batches
+saved variables and encrypted credentials with actual org/user/target checks and
+returns an available/unavailable result per requested source in input order. It
+does not select another account, decrypt, refresh OAuth or compile policies.
+The normalized selected builtin context consumes those snapshot variables and
+credential names; eager decryption consumes the snapshot's credential values.
+
+The existing catalog-declared-name and captured connection-revision authority
+condition is retained in a caller-owned names/identity query. It reads no credential
+values a second time. Builtin decryption now runs in a private effect-owned command;
+read nodes await its preparation Promise alongside the model/launch preparation.
+Unready input exits before either new effect reads full preparation context.
+Custom runtime/structured OAuth binding migration remains unfinished and is not
+represented as completed by the source reader's custom target support. This adds
+explicit source/authority reads, without claiming a latency improvement or full
+connector-source parity.
+
 ## Pending atomic boundary
 
 The Thread child's private `createRun$` receives its privately prepared context.

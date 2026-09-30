@@ -1,3 +1,4 @@
+import { createConnectorSourceSnapshots } from "./execution-connector-sources.service";
 import { createModelSourceSnapshot } from "./execution-model-source.service";
 import { compileModelRuntime } from "./execution-model-runtime";
 import { compileModelProviderGatewayRuntime } from "./model-provider-gateway-runtime";
@@ -8635,6 +8636,11 @@ export function createThreadClaimRunObjects(
       { get },
       signal: AbortSignal,
     ): Promise<ResolvedModelProviderEnvironment | null> => {
+      const selection = await get(selectionInput$);
+      signal.throwIfAborted();
+      if (!selection) {
+        return null;
+      }
       const [context, source] = await Promise.all([
         get(pinnedContext$),
         get(selectedGatewaySource$),
@@ -9449,55 +9455,109 @@ export function createThreadClaimRunObjects(
       });
     },
   );
+  const selectedStoredConnectorRows$ = computed(async (get) => {
+    const [preparation, rows, candidates] = await Promise.all([
+      get(runConnectorPreparation$),
+      get(runStoredConnectorRow$),
+      get(accountCandidates$),
+    ]);
+    if (isRouteError(preparation)) {
+      return preparation;
+    }
+    const args = preparation.stored;
+    if (!args) {
+      return null;
+    }
+    const available = new Set(
+      allowedStoredConnectorRows(
+        rows,
+        args.allowedConnectorSlugs,
+        args.connectorCatalogSnapshot,
+        nowDate(),
+      ).map((row) => {
+        return row.access.connectorId;
+      }),
+    );
+    const selectedIds = new Set(
+      args.allowedConnectorSlugs.flatMap((connectorSlug) => {
+        const ids =
+          candidates.get(
+            connectorAccountTargetKey({ kind: "builtin", connectorSlug }),
+          ) ?? [];
+        const id = ids.find((candidate) => {
+          return available.has(candidate);
+        });
+        return id ? [id] : [];
+      }),
+    );
+    return {
+      args,
+      rows: rows.filter((row) => {
+        return selectedIds.has(row.connectorId);
+      }),
+    };
+  });
+  const selectedStoredConnectorSources$ = computed(async (get) => {
+    const selected = await get(selectedStoredConnectorRows$);
+    if (!selected || isRouteError(selected)) {
+      return [];
+    }
+    const { args } = await get(connectorInput$);
+    return await get(
+      createConnectorSourceSnapshots({
+        orgId: args.orgId,
+        userId: args.userId,
+        sources: selected.rows.map((row) => {
+          return {
+            kind: "builtin",
+            connectorSlug: row.connectorSlug,
+            sourceId: row.connectorId,
+          };
+        }),
+      }),
+    );
+  });
   const runStoredConnectorSnapshot$ = computed(
     async (
       get,
     ): Promise<
       StoredConnectorMaterializationSnapshot | null | CreateRunErrorResult
     > => {
-      const [preparation, rows, candidates] = await Promise.all([
-        get(runConnectorPreparation$),
-        get(runStoredConnectorRow$),
-        get(accountCandidates$),
+      const [selected, sources] = await Promise.all([
+        get(selectedStoredConnectorRows$),
+        get(selectedStoredConnectorSources$),
       ]);
-      if (isRouteError(preparation)) {
-        return preparation;
+      if (!selected || isRouteError(selected)) {
+        return selected;
       }
-      const args = preparation.stored;
-      if (!args) {
-        return null;
-      }
-      const available = new Set(
-        allowedStoredConnectorRows(
-          rows,
-          args.allowedConnectorSlugs,
-          args.connectorCatalogSnapshot,
-          nowDate(),
-        ).map((row) => {
-          return row.access.connectorId;
+      const available = new Map(
+        sources.flatMap((result) => {
+          return result.kind === "available"
+            ? [[result.snapshot.source.sourceId, result.snapshot] as const]
+            : [];
         }),
       );
-      const selectedIds = new Set(
-        args.allowedConnectorSlugs.flatMap((connectorSlug) => {
-          const ids =
-            candidates.get(
-              connectorAccountTargetKey({ kind: "builtin", connectorSlug }),
-            ) ?? [];
-          const id = ids.find((candidate) => {
-            return available.has(candidate);
-          });
-          return id ? [id] : [];
-        }),
-      );
+      const rows = selected.rows.flatMap((row) => {
+        const source = available.get(row.connectorId);
+        return source
+          ? [
+              {
+                ...row,
+                variableValues: source.variables,
+                secretNames: source.credentials.map((credential) => {
+                  return credential.name;
+                }),
+              },
+            ]
+          : [];
+      });
       return materializeStoredConnectorSnapshotRows(
         {
-          rows: rows.filter((row) => {
-            return selectedIds.has(row.connectorId);
-          }),
-          allowedConnectorSlugs: args.allowedConnectorSlugs,
-          connectorCatalogSnapshot: args.connectorCatalogSnapshot,
+          rows,
+          allowedConnectorSlugs: selected.args.allowedConnectorSlugs,
+          connectorCatalogSnapshot: selected.args.connectorCatalogSnapshot,
           timingDimensions: storedConnectorTimingDimensions({
-            scopeSource: args.scopeSource,
+            scopeSource: selected.args.scopeSource,
           }),
         },
         (await get(connectorInput$)).timing,
@@ -9980,7 +10040,10 @@ export function createThreadClaimRunObjects(
   });
   const runConnectorEncryptedRows$ = computed(
     async (get): Promise<readonly StoredConnectorEncryptedSecretRow[]> => {
-      const plan = await get(runConnectorEagerSecretPlan$);
+      const [plan, sources] = await Promise.all([
+        get(runConnectorEagerSecretPlan$),
+        get(selectedStoredConnectorSources$),
+      ]);
       if (isRouteError(plan) || plan.names.size === 0) {
         return [];
       }
@@ -9990,30 +10053,68 @@ export function createThreadClaimRunObjects(
         kind: "secret",
         names: plan.names,
       });
-      return await db
-        .select({
-          name: secretsTable.name,
-          encryptedValue: secretsTable.encryptedValue,
-        })
+      // Keep the existing catalog-owned-name and captured source-revision fence.
+      // This reads authority/names only; credential values come from the source snapshot.
+      const authorized = await db
+        .select({ sourceId: secretsTable.connectorId, name: secretsTable.name })
         .from(secretsTable)
         .where(builtinConnectorCredentialSecretReadCondition({ db, groups }));
+      const keys = new Set(
+        authorized.map((row) => {
+          return JSON.stringify([row.sourceId, row.name]);
+        }),
+      );
+      return sources.flatMap((result) => {
+        return result.kind === "available"
+          ? result.snapshot.credentials.filter((credential) => {
+              return keys.has(
+                JSON.stringify([
+                  result.snapshot.source.sourceId,
+                  credential.name,
+                ]),
+              );
+            })
+          : [];
+      });
     },
   );
+  const internalPreparedConnectorSecrets$ = state<Promise<
+    Record<string, string>
+  > | null>(null);
+  const resolveConnectorSecrets$ = command(
+    async ({ get }, signal: AbortSignal) => {
+      const selection = await get(selectionInput$);
+      signal.throwIfAborted();
+      if (!selection) {
+        return {};
+      }
+      const [plan, rows] = await Promise.all([
+        get(runConnectorEagerSecretPlan$),
+        get(runConnectorEncryptedRows$),
+      ]);
+      signal.throwIfAborted();
+      if (isRouteError(plan)) {
+        return {};
+      }
+      const secrets = await decryptStoredConnectorSecretRows(
+        rows,
+        {
+          featureSwitchContext: plan.input.featureSwitchContext,
+          timingDimensions: plan.timingDimensions,
+        },
+        plan.input.timing,
+      );
+      signal.throwIfAborted();
+      return secrets;
+    },
+  );
+  const prepareConnectorSecrets$ = command(({ set }, signal: AbortSignal) => {
+    const preparation = set(resolveConnectorSecrets$, signal);
+    set(internalPreparedConnectorSecrets$, preparation);
+    return preparation;
+  });
   const decryptedSecrets$ = computed(async (get) => {
-    const [plan, rows] = await Promise.all([
-      get(runConnectorEagerSecretPlan$),
-      get(runConnectorEncryptedRows$),
-    ]);
-    return isRouteError(plan)
-      ? {}
-      : await decryptStoredConnectorSecretRows(
-          rows,
-          {
-            featureSwitchContext: plan.input.featureSwitchContext,
-            timingDimensions: plan.timingDimensions,
-          },
-          plan.input.timing,
-        );
+    return (await get(internalPreparedConnectorSecrets$)) ?? {};
   });
   const connectorContext$ = computed(
     async (get): Promise<PreparedConnectorContext | CreateRunErrorResult> => {
@@ -12275,6 +12376,7 @@ export function createThreadClaimRunObjects(
         signal.throwIfAborted();
       }
       const gatewayPreparation = set(prepareGatewayModelRuntime$, signal);
+      const connectorPreparation = set(prepareConnectorSecrets$, signal);
       // Storage mounts and runtime-secret KMS do not read reconciled
       // automation configuration, so they start before launch preparation.
       const [encrypted, admission, launch] = await Promise.all([
@@ -12283,6 +12385,7 @@ export function createThreadClaimRunObjects(
         set(prepareLaunchResources$, head, signal),
         get(storageMounts$),
         gatewayPreparation,
+        connectorPreparation,
       ]);
       signal.throwIfAborted();
       if (launch.kind === "rejected") {
