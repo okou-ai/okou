@@ -69,11 +69,16 @@ from the current schema. They are not evidence of a missing production entry
 point, but need explicit fixture values or migration to ordinary API setup
 before tests can run against a trigger-free schema.
 
-- `routes/test-cron-cleanup-sandboxes-state.ts`: the lifecycle seeder inserts raw
-  usage and a completed generation job using only their live Run ID. Its
-  callers include cleanup, cancellation, queue, workflow and X deletion API
-  tests. Explicit original identity is necessary for the late-callback and
-  retained-billing cases after Run deletion.
+- `routes/test-cron-cleanup-sandboxes-state.ts` is now explicit: Run insertion
+  and canonical capture share a short transaction using the exact returned
+  database timestamp/source/thread. Raw usage carries original Run identity,
+  context and anchor; capture, raw insertion and monotone observation commit
+  together. Generation jobs carry original billing Run identity/context. No
+  trigger, row lock, replay loop or new fixture API supplies these facts.
+  A fresh isolated local database with all six application billing triggers
+  removed passed the whole cleanup/cancellation API file (47 tests). This
+  closes that fixture's source dependency, not every producer or production
+  convergence. Other fixture dependencies below remain unfinished.
 - Other direct Run setup remains in `test-pi-memory-stage1-state.ts`,
   `test-computer-use-state.ts`, `test-cron-monitor-chat-event-queue-state.ts`,
   `test-ssh-connection-state.ts`, `test-telegram-state.ts`, and the
