@@ -20,7 +20,6 @@ import {
   isLegacyChatEventSnapshotObjectKey,
   refreshChatEventSnapshotThread$,
 } from "./cron-snapshot-chat-events.service";
-import { PREVIOUS_CHAT_EVENT_SNAPSHOT_SCHEMA_VERSION } from "./chat-event-snapshot-upgrade.service";
 import { PRESIGNED_URL_TTL_SECONDS } from "@okouai/api-contracts/contracts/presigned-urls";
 
 const SNAPSHOT_URL_TTL_SECONDS = PRESIGNED_URL_TTL_SECONDS;
@@ -126,42 +125,6 @@ async function currentSnapshotPointer(
   return { ...pointer, lastSeqId: pointer.lastSeqId };
 }
 
-/**
- * Chat Event V8 transition: physical coverage of V7 pointers for threads whose
- * V8 Snapshot has not been published yet. Raw Events below it may already be
- * reclaimed, so such cursors must rebuild from a (read-time upgraded) V8
- * Snapshot. Removed in PR-3 once every Snapshot pointer is V8 and pre-V8 APIs
- * have left the rollback window.
- */
-async function previousSnapshotCoverage(
-  db: ReadonlyDb,
-  threadIds: readonly string[],
-): Promise<ReadonlyMap<string, number>> {
-  if (threadIds.length === 0) {
-    return new Map();
-  }
-  const rows = await db
-    .select({
-      threadId: chatEventSnapshots.chatThreadId,
-      lastSeqId: chatEventSnapshots.lastSeqId,
-    })
-    .from(chatEventSnapshots)
-    .where(
-      and(
-        inArray(chatEventSnapshots.chatThreadId, threadIds),
-        eq(
-          chatEventSnapshots.archiveSchemaVersion,
-          PREVIOUS_CHAT_EVENT_SNAPSHOT_SCHEMA_VERSION,
-        ),
-      ),
-    );
-  return new Map(
-    rows.map((row): readonly [string, number] => {
-      return [row.threadId, row.lastSeqId];
-    }),
-  );
-}
-
 function cursorMatches(
   cursor: { readonly lastEventId: string | null; readonly lastSeqId: number },
   args: ChatEventRowsArgs,
@@ -237,9 +200,7 @@ async function cursorContinuationSeqId(
   // the client must start from that Snapshot's paired cursor.
   if (
     args.sinceSeqId === THREAD_START_SEQ_ID &&
-    currentSnapshot === undefined &&
-    // Chat Event V8 transition (removed in PR-3): a V7 pointer is archived.
-    !(await previousSnapshotCoverage(db, [args.threadId])).has(args.threadId)
+    currentSnapshot === undefined
   ) {
     return THREAD_START_SEQ_ID;
   }
@@ -276,8 +237,7 @@ interface ChatEventBatchContinuation {
 }
 
 interface ChatEventBatchSnapshotCoverage {
-  /** Null while only a V7 pointer exists (V8 transition, removed in PR-3). */
-  readonly lastSeqId: number | null;
+  readonly lastSeqId: number;
   readonly physicalLastSeqId: number;
 }
 
@@ -433,17 +393,6 @@ export function catchUpChatThreadEvents(args: {
         },
       ),
     );
-    // Chat Event V8 transition (removed in PR-3): until a thread's V8 Snapshot
-    // exists, its V7 pointer still bounds which Raw Events may be reclaimed.
-    const previousCoverage = await previousSnapshotCoverage(
-      db,
-      laggingThreadIds.filter((threadId) => {
-        return !snapshotsByThreadId.has(threadId);
-      }),
-    );
-    for (const [threadId, physicalLastSeqId] of previousCoverage) {
-      snapshotsByThreadId.set(threadId, { lastSeqId: null, physicalLastSeqId });
-    }
 
     const { eventThreadIds, continuations, notFoundThreads } =
       resolveBatchContinuations(
@@ -510,19 +459,7 @@ export function chatThreadEventSnapshot(args: {
       let pointer = await currentSnapshotPointer(db, args.threadId);
       signal.throwIfAborted();
       if (pointer === null) {
-        // Chat Event V8 transition (removed in PR-3): publish the V8 Snapshot
-        // on demand from the thread's V7 pointer before the cron reaches it.
-        const previous = await previousSnapshotCoverage(db, [args.threadId]);
-        signal.throwIfAborted();
-        if (!previous.has(args.threadId)) {
-          return { kind: "snapshot-not-found" };
-        }
-        await set(refreshChatEventSnapshotThread$, args.threadId, signal);
-        pointer = await currentSnapshotPointer(db, args.threadId);
-        signal.throwIfAborted();
-        if (pointer === null) {
-          throw new Error("Chat Event Snapshot V8 upgrade did not publish");
-        }
+        return { kind: "snapshot-not-found" };
       }
       if (!isCurrentChatEventSnapshotObjectKey(pointer.objectKey)) {
         if (!isLegacyChatEventSnapshotObjectKey(pointer.objectKey)) {

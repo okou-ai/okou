@@ -163,10 +163,33 @@ the table or a V7 Snapshot becomes `web`.
 to 8. A thread's V8 pointer is published beside its V7 pointer by the adjacent
 V7 to V8 Snapshot migration.
 
-Release precheck: the migration runs before API promotion, so the serving API
-must no longer write any retired type, context or source. The production API
-must already contain `d687f84782c736f451682e7066caffb3696f6306` (#37225), which
-stopped the last writers. Do not release this change while production or a
+Migration `1294_retire_v7_chat_event_snapshots` deletes V7 pointer rows in
+committed 5,000-primary-key ranges and tightens the constraint to
+`archive_schema_version = 8`. Before deleting, it fails closed if any V7 pointer
+lacks a V8 pointer for the same thread; the `NOT VALID` constraint blocks new
+V7 rows while the existing rows are removed. It does not delete R2 objects.
+PR-3 also removes the V7 upgrade service, previous-pointer cron joins, read-time
+publication, V7 cursor coverage and dual-version history/MCP/provenance/export
+selection, together with their obsolete fixtures, tests and lint exemptions.
+The historical 1286 rewrite validator is retired; a focused 1294 validator
+protects pointer deletion, unchanged V8 rows, batching, fail-closed checks and
+retry. Run this migration only after no pre-V8 API can serve or be selected for
+rollback; the existing `chat-event-v8` rollback floor enforces the rollback
+boundary, and the outgoing V8 API writes only version 8.
+
+Browser open/close now accept an empty request body and no longer echo
+`lifecycleEventId`; browser create/use responses also omit that field. The Web
+client floor is 0.982.0, above the 0.979.1 build at #37225 that stopped emitting
+browser lifecycle events. Supported clients do not require the echo. The new
+App must not reach a pre-#37225 API, which is already below the V8 rollback
+floor. Released CLIs using create/use ignore the extra response fields and do
+not require `lifecycleEventId`.
+
+1286 release precheck: migration 1286 runs before API promotion, so the
+serving API must no longer write any retired type, context or source. The
+production API must already contain
+`d687f84782c736f451682e7066caffb3696f6306` (#37225), which stopped the last
+writers. Do not release this change while production or a
 rollback target predates that commit.
 
 Compatibility:

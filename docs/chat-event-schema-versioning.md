@@ -87,9 +87,9 @@ reader accepts every V8 row.
 
 ### V7 to V8 upgrade rules
 
-Migration `1286_chat_event_v8` applies these rules to the Raw Event table, and
-the adjacent V7 to V8 Snapshot migration applies the same rules to stored V7
-Snapshot objects:
+Migration `1286_chat_event_v8` applies these rules to the Raw Event table. The
+now-retired adjacent V7 to V8 Snapshot upgrade applied the same rules to stored
+V7 Snapshot objects:
 
 1. Rows of the eight deleted types are removed. Revocation edges that pointed
    at them may dangle; readers treat revocations only as a set of IDs.
@@ -108,11 +108,13 @@ The same migration rewrites `agent_runs.trigger_source` and
 already counted both as automation), converts Goal parts in thread and agent
 drafts to text parts, and removes `runGroupIndex` from saved shares.
 
-A thread's V8 Snapshot pointer is published beside its V7 pointer, so
-`chat_event_snapshots.archive_schema_version` accepts 7 and 8 during the
-transition. The V7 to V8 Snapshot migration and the V7 pointers are transition
-code: the V8 plan's PR-3 removes them after every thread's Snapshot has
-converged to V8 and no rollback target serves V7.
+During the transition, each V8 Snapshot pointer was published beside its V7
+pointer and the database accepted both versions. PR-3 removes the V7 readers,
+upgrade branches and fixtures; migration `1294_retire_v7_chat_event_snapshots`
+deletes the V7 pointers and enforces `archive_schema_version = 8`. The migration
+requires a V8 counterpart for each V7 pointer. Release only after no pre-V8 API
+can serve or be selected for rollback. Superseded R2 objects are reclaimed
+separately.
 
 ### Optional V7 failure reasons
 

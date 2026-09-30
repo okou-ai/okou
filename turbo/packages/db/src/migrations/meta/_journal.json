@@ -1513,6 +1513,13 @@
       "when": 1790743537610,
       "tag": "1293_subscription_catalog_global_order",
       "breakpoints": true
+    },
+    {
+      "idx": 1294,
+      "version": "7",
+      "when": 1790746852141,
+      "tag": "1294_retire_v7_chat_event_snapshots",
+      "breakpoints": true
     }
   ]
 }

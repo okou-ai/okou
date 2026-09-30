@@ -152,16 +152,10 @@ type BrowserServiceResult<T> = BrowserServiceOk<T> | BrowserServiceError;
 interface BrowserConnection {
   readonly browser: BrowserSession;
   readonly cdpUrl: string;
-  readonly lifecycleEventId: string | null;
 }
 
 interface BrowserMutation {
   readonly browser: BrowserSession;
-  readonly lifecycleEventId: string | null;
-}
-
-interface BrowserCloseMutation {
-  readonly lifecycleEventId: string;
 }
 
 interface BrowserScreen {
@@ -1822,7 +1816,6 @@ const startProviderInstance$ = command(
           screen: claimed.screen,
         }),
         cdpUrl: started.cdpUrl,
-        lifecycleEventId: null,
       },
     };
   },
@@ -2065,7 +2058,6 @@ const inspectActiveConnection$ = command(
             screen,
           }),
           cdpUrl,
-          lifecycleEventId: null,
         },
       };
     }
@@ -2370,7 +2362,7 @@ export const useBrowser$ = command(
 export const openBrowserForThread$ = command(
   async (
     { set },
-    args: BrowserSessionAccess & { readonly lifecycleEventId: string },
+    args: BrowserSessionAccess,
     signal: AbortSignal,
   ): Promise<BrowserServiceResult<BrowserMutation>> => {
     const db = set(writeDb$);
@@ -2390,16 +2382,12 @@ export const openBrowserForThread$ = command(
     if (connection.kind === "error") {
       return connection;
     }
-    // The viewer runs in the user's browser, so it only ever learns the live
-    // view; the CDP endpoint stays inside the agent runtime. Browser lifecycle
-    // is no longer a chat event; the request eventId is echoed for older web
-    // clients. Remove once the Web client floor excludes them (Chat Event V8
-    // PR-3).
+    // The viewer only learns the live view; the CDP endpoint stays inside
+    // the agent runtime.
     return {
       kind: "ok",
       value: {
         browser: connection.value.browser,
-        lifecycleEventId: args.lifecycleEventId,
       },
     };
   },
@@ -2408,9 +2396,9 @@ export const openBrowserForThread$ = command(
 export const closeBrowserForThread$ = command(
   async (
     { set },
-    args: BrowserSessionAccess & { readonly lifecycleEventId: string },
+    args: BrowserSessionAccess,
     signal: AbortSignal,
-  ): Promise<BrowserServiceResult<BrowserCloseMutation>> => {
+  ): Promise<BrowserServiceResult<Record<string, never>>> => {
     const db = set(writeDb$);
     const thread = await loadOwnedBrowserSidebarThread(db, args);
     signal.throwIfAborted();
@@ -2422,16 +2410,8 @@ export const closeBrowserForThread$ = command(
     if (accessError) {
       return accessError;
     }
-    // Closing the viewer does not stop the browser. Browser lifecycle is no
-    // longer a chat event; the request eventId is echoed for older web
-    // clients. Remove once the Web client floor excludes them (Chat Event V8
-    // PR-3).
-    return {
-      kind: "ok",
-      value: {
-        lifecycleEventId: args.lifecycleEventId,
-      },
-    };
+    // Closing the viewer does not stop the browser.
+    return { kind: "ok", value: {} };
   },
 );
 

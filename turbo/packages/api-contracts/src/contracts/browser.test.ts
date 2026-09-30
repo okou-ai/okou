@@ -23,7 +23,6 @@ function browserResponse() {
       updatedAt: "2026-07-30T01:00:00.000Z",
     },
     cdpUrl: "wss://cdp.browser.example",
-    lifecycleEventId: null,
   };
 }
 
@@ -34,7 +33,6 @@ describe("managed browser contracts", () => {
     expect(parsed.browser).toMatchObject({
       threadId,
     });
-    expect(parsed.lifecycleEventId).toBeNull();
   });
 
   it("parses a thread-keyed realtime payload", () => {

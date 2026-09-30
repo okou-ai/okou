@@ -33,7 +33,7 @@ import { listAllUserOrganizationMemberships } from "../external/clerk-organizati
 import type { Db } from "../external/db";
 import { readUserExportAgentInstructions$ } from "./user-export-agent-instructions.service";
 import { chatEventRowFromDbRow } from "./cron-snapshot-chat-events.service";
-import { READABLE_CHAT_EVENT_SNAPSHOT_SCHEMA_VERSIONS } from "./chat-event-snapshot-upgrade.service";
+import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "@okouai/api-contracts/contracts/chat-event-schema-version";
 import {
   readAcceptedOfficialWorkflowDefinition,
   readAcceptedOfficialWorkflowRevision,
@@ -163,14 +163,12 @@ async function snapshotHead(
     .where(
       and(
         eq(chatEventSnapshots.chatThreadId, threadId),
-        inArray(chatEventSnapshots.archiveSchemaVersion, [
-          ...READABLE_CHAT_EVENT_SNAPSHOT_SCHEMA_VERSIONS,
-        ]),
+        eq(
+          chatEventSnapshots.archiveSchemaVersion,
+          CURRENT_CHAT_EVENT_SCHEMA_VERSION,
+        ),
       ),
     )
-    // Chat Event V8 transition (removed in PR-3): until a thread's V8 Snapshot
-    // is published, export its V7 object; metadata records the version.
-    .orderBy(desc(chatEventSnapshots.archiveSchemaVersion))
     .limit(1);
   signal.throwIfAborted();
   return head;

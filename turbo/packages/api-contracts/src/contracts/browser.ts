@@ -97,18 +97,6 @@ const browserResponseSchema = z.object({
   browser: browserSessionSchema,
 });
 
-const browserLifecycleRequestSchema = z.object({
-  eventId: z.uuid(),
-});
-
-const browserMutationResponseSchema = browserResponseSchema.extend({
-  lifecycleEventId: z.uuid().nullable(),
-});
-
-const browserCloseResponseSchema = z.object({
-  lifecycleEventId: z.uuid(),
-});
-
 const browserResizeRequestSchema = z.object({
   aspectRatio: z.number().positive().finite(),
 });
@@ -135,7 +123,6 @@ const browserAuthorizationRequestApplyResponseSchema = z.object({
 
 const browserConnectionResponseSchema = browserResponseSchema.extend({
   cdpUrl: z.url(),
-  lifecycleEventId: z.uuid().nullable(),
 });
 
 const commonErrorResponses = {
@@ -201,9 +188,9 @@ export const browserContract = c.router({
     path: "/api/chat-threads/:threadId/browser/open",
     headers: authHeadersSchema,
     pathParams: browserThreadParamsSchema,
-    body: browserLifecycleRequestSchema,
+    body: z.object({}),
     responses: {
-      200: browserMutationResponseSchema,
+      200: browserResponseSchema,
       ...commonErrorResponses,
     },
     summary: "Open a chat thread's managed browser",
@@ -213,9 +200,9 @@ export const browserContract = c.router({
     path: "/api/chat-threads/:threadId/browser/close",
     headers: authHeadersSchema,
     pathParams: browserThreadParamsSchema,
-    body: browserLifecycleRequestSchema,
+    body: z.object({}),
     responses: {
-      200: browserCloseResponseSchema,
+      200: z.object({}),
       ...commonErrorResponses,
     },
     summary: "Record that the managed browser sidebar was closed",

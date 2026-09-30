@@ -123,7 +123,7 @@ test("A user can restart a reclaimed browser", async () => {
     if (params.threadId === THREAD_ID) {
       startCount += 1;
     }
-    return respond(200, { browser: activeSession, lifecycleEventId: null });
+    return respond(200, { browser: activeSession });
   });
   context.mocks.api(browserContract.leaseByThread, ({ respond }) => {
     return respond(200, { browser: activeSession });

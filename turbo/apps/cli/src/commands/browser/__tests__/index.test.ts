@@ -144,7 +144,7 @@ describe("okou browser command", () => {
         requestBody = await request.json();
         authorization = request.headers.get("authorization");
         return HttpResponse.json(
-          { browser: browser(), cdpUrl: CDP_URL, lifecycleEventId: null },
+          { browser: browser(), cdpUrl: CDP_URL },
           { status: 201 },
         );
       }),
@@ -184,7 +184,6 @@ describe("okou browser command", () => {
           {
             browser: browser("active"),
             cdpUrl: CDP_URL,
-            lifecycleEventId: null,
           },
           { status: 200 },
         );
@@ -235,7 +234,7 @@ describe("okou browser command", () => {
     server.use(
       http.post("http://localhost:3000/api/browsers", () => {
         return HttpResponse.json(
-          { browser: browser(), cdpUrl: CDP_URL, lifecycleEventId: null },
+          { browser: browser(), cdpUrl: CDP_URL },
           { status: 201 },
         );
       }),
@@ -278,7 +277,6 @@ describe("okou browser command", () => {
           {
             browser: browser("active"),
             cdpUrl: CDP_URL,
-            lifecycleEventId: null,
           },
           { status: 200 },
         );
@@ -323,7 +321,6 @@ describe("okou browser command", () => {
           {
             browser: browser("active"),
             cdpUrl: CDP_URL,
-            lifecycleEventId: null,
           },
           { status: 200 },
         );

@@ -58,12 +58,10 @@ export const chatEventSnapshots = pgTable(
         table.chatThreadId,
         table.archiveSchemaVersion,
       ),
-      // Chat Event V8 transition: V7 pointers remain until every thread's
-      // snapshot has been upgraded to V8 and the V7 API has left the rollback
-      // window. The V8 plan's PR-3 then deletes them and restores `= 8`.
+      // Migration 1294 retires V7 pointers; persisted snapshots are V8 only.
       check(
         "chat_event_snapshots_archive_schema_version_check",
-        sql`${table.archiveSchemaVersion} IN (7, 8)`,
+        sql`${table.archiveSchemaVersion} = 8`,
       ),
       check(
         "chat_event_snapshots_terminal_cursor_check",
