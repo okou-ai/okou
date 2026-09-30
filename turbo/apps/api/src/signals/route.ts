@@ -119,6 +119,7 @@ import { mcpConnectorsRoutes } from "./routes/mcp-connectors";
 import { mcpOAuthClientMetadataRoutes } from "./routes/mcp-oauth-client-metadata";
 import { mcpServerRoutes } from "./routes/mcp-server";
 import { weatherRoutes } from "./routes/weather";
+import { modelCatalogRoutes } from "./routes/model-catalog";
 import { modelPoliciesRoutes } from "./routes/model-policies";
 import { modelProviderGatewayRoutes } from "./routes/model-provider-gateways";
 import { modelProvidersRoutes } from "./routes/model-providers";
@@ -368,6 +369,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...browserRoutes,
   ...browserAuthorizationRoutes,
   ...browserUserActionRoutes,
+  ...modelCatalogRoutes,
   ...modelPoliciesRoutes,
   ...modelProviderGatewayRoutes,
   ...modelProvidersRoutes,

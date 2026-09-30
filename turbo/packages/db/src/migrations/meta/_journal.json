@@ -1527,6 +1527,13 @@
       "when": 1790753923630,
       "tag": "1295_okou_1_0_fixed_org_default",
       "breakpoints": true
+    },
+    {
+      "idx": 1296,
+      "version": "7",
+      "when": 1790755789422,
+      "tag": "1296_global_model_catalog",
+      "breakpoints": true
     }
   ]
 }
