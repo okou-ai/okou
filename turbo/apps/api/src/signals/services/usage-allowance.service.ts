@@ -516,7 +516,7 @@ async function loadActiveUsageAllowanceEntitlement(
   );
 }
 
-async function lockActiveWindowAt(
+async function readActiveWindowAt(
   tx: UsageAllowanceStore,
   args: {
     readonly orgId: string;
@@ -562,8 +562,7 @@ async function lockActiveWindowAt(
       ),
     )
     .orderBy(desc(orgUsageAllowanceWindows.startsAt))
-    .limit(1)
-    .for("update");
+    .limit(1);
   return window ?? null;
 }
 
@@ -614,7 +613,7 @@ async function ensureWindowForRun(
     readonly runCreatedAt: Date;
   },
 ): Promise<UsageAllowanceWindow> {
-  const existing = await lockActiveWindowAt(tx, {
+  const existing = await readActiveWindowAt(tx, {
     orgId: args.entitlement.orgId,
     kind: args.kind,
     at: args.runCreatedAt,
@@ -672,7 +671,7 @@ async function readWindowAvailability(
     readonly at: Date;
   },
 ): Promise<number> {
-  const window = await lockActiveWindowAt(tx, {
+  const window = await readActiveWindowAt(tx, {
     orgId: args.entitlement.orgId,
     kind: args.kind,
     at: args.at,
@@ -683,7 +682,7 @@ async function readWindowAvailability(
   return remainingUnits(window);
 }
 
-export async function resolveAvailabilityInLockedTransaction(
+export async function resolveAvailabilityInTransaction(
   tx: UsageAllowanceStore,
   orgId: string,
   refresh?: PreparedUsageAllowanceRefresh,
@@ -830,7 +829,6 @@ function createResolveUsageAllowanceCommand(
       get(availabilitySnapshot$),
     ]);
     signal.throwIfAborted();
-    let lockWaitMs = 0;
     let availability = snapshot;
     if (availability === "allowance_refresh_required") {
       const db = input.db ?? set(writeDb$);
@@ -840,11 +838,7 @@ function createResolveUsageAllowanceCommand(
         signal,
       );
       availability = await db.transaction(async (tx) => {
-        const lockStartedAt = performance.now();
-        await lockOrgCredits(tx, input.orgId);
-        signal.throwIfAborted();
-        lockWaitMs = Math.round(performance.now() - lockStartedAt);
-        const refreshed = await resolveAvailabilityInLockedTransaction(
+        const refreshed = await resolveAvailabilityInTransaction(
           tx,
           input.orgId,
           refresh,
@@ -863,11 +857,6 @@ function createResolveUsageAllowanceCommand(
           durationMs: Math.round(performance.now() - startedAt),
           success: true,
           dimensions: { available: availability !== null },
-        },
-        {
-          actionType: "api_billing_allowance_org_lock_wait",
-          durationMs: lockWaitMs,
-          success: true,
         },
       ]);
     });
@@ -996,20 +985,16 @@ async function resolveUsageAllowanceAvailabilityFromSnapshot(
   snapshot: UsageAllowanceAvailability | "allowance_refresh_required" | null,
   startedAt = performance.now(),
 ): Promise<UsageAllowanceAvailability | null> {
-  let lockWaitMs = 0;
   let availability = snapshot;
   if (availability === "allowance_refresh_required") {
     const [row] = await db.select().from(allowanceRefreshQuery(orgId));
     const refresh = await prepareAllowanceRefresh(row);
     availability = await db.transaction(async (tx) => {
-      const lockStartedAt = performance.now();
-      await lockOrgCredits(tx, orgId);
-      lockWaitMs = Math.round(performance.now() - lockStartedAt);
-      return await resolveAvailabilityInLockedTransaction(tx, orgId, refresh);
+      return await resolveAvailabilityInTransaction(tx, orgId, refresh);
     });
   }
-  // Availability is a snapshot, not a reservation. Include any refresh COMMIT
-  // in the timing; ordinary snapshots have no credit-lock wait.
+  // Availability is a snapshot, not a reservation. Include the conditional
+  // refresh COMMIT in timing; no advisory or window lock is acquired here.
   // Telemetry failure cannot deny admission; cancellation still propagates
   // via safeSync.
   safeSync(() => {
@@ -1019,11 +1004,6 @@ async function resolveUsageAllowanceAvailabilityFromSnapshot(
         durationMs: Math.round(performance.now() - startedAt),
         success: true,
         dimensions: { available: availability !== null },
-      },
-      {
-        actionType: "api_billing_allowance_org_lock_wait",
-        durationMs: lockWaitMs,
-        success: true,
       },
     ]);
   });

@@ -5,10 +5,7 @@ import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import { safeSync } from "../utils";
 import { recordBillingOperationTimings } from "../external/sandbox-op-log";
-import {
-  orgCreditCompatibilityLockSql,
-  prepareUsageAllowanceRefresh$,
-} from "./usage-allowance.service";
+import { prepareUsageAllowanceRefresh$ } from "./usage-allowance.service";
 import {
   entitlementQuery,
   planPreparedAllowanceEntitlement,
@@ -28,7 +25,6 @@ export const resolveUsageAllowanceAvailability$ = command(
   ): Promise<AllowanceAvailability | null> => {
     const db = set(writeDb$);
     const startedAt = performance.now();
-    let lockWaitMs = 0;
     const observedAt = nowDate();
     let availability = allowanceAvailability(
       await db.select().from(allowanceAvailabilityQuery(orgId, observedAt)),
@@ -43,12 +39,8 @@ export const resolveUsageAllowanceAvailability$ = command(
       );
       signal?.throwIfAborted();
       availability = await db.transaction(async (tx) => {
-        const lockStartedAt = performance.now();
-        await tx.execute(orgCreditCompatibilityLockSql(orgId));
-        signal?.throwIfAborted();
         const [owned] = await tx.select().from(entitlementQuery(orgId));
         signal?.throwIfAborted();
-        lockWaitMs = Math.round(performance.now() - lockStartedAt);
         const at = nowDate();
         const prepared = planPreparedAllowanceEntitlement(
           currentAllowanceEntitlement(owned, at),
@@ -95,11 +87,6 @@ export const resolveUsageAllowanceAvailability$ = command(
           durationMs: Math.round(performance.now() - startedAt),
           success: true,
           dimensions: { available: availability !== null },
-        },
-        {
-          actionType: "api_billing_allowance_org_lock_wait",
-          durationMs: lockWaitMs,
-          success: true,
         },
       ]);
     });

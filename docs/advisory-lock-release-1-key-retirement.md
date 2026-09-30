@@ -56,6 +56,33 @@ removed; that simplification remains explicit R1 implementation work below.
 Six application billing triggers remain. They require actual replacement;
 there is no permanent trigger exemption or third release assumption.
 
+## Key-free allowance refresh inside the Pick graph
+
+The three claim-owned allowance refresh nodes no longer call `lockOrgCredits`.
+The ordinary allowance object's refresh, direct availability refresh and public
+availability command also remove their acquisitions: six actual refresh call
+sites. `api_billing_allowance_org_lock_wait` is deleted from these paths, not
+reported as a zero-valued lock wait. Availability window reads take no explicit
+row lock. The helper is now `resolveAvailabilityInTransaction`, not a locked
+transaction abstraction.
+
+These paths only refresh existing entitlement facts and read availability; they
+never issue windows or deduct balances. Stripe preparation completes before
+SQL. Publication matches the observed entitlement snapshot and rejects a stale
+result; a short row count throws and rolls back once, so no admission uses an
+uncommitted stale refresh. No retry, new state or fence is added.
+
+The Pick diff is limited to deleting these acquisitions/timings and renaming
+the local helper. Factories still take business identities only and return the
+same objects; the authorized resource `Promise.all`, computed runner arguments,
+10-second lease and parent pending transaction are unchanged. No pending SQL or
+sequence/queue lock order changes. Admission errors still reject before commit.
+
+**The `credit_` definition is not retired yet.** Issuance and settlement retain
+separate call sites; in particular, existing exact-start window uniqueness does
+not alone arbitrate overlapping windows at different Run anchors. Those are R1
+financial implementation work, not old-version compatibility or an R2 gate.
+
 ## Serving compaction retirement
 
 Both advisory definitions, every settlement/deletion/cleanup acquisition and the

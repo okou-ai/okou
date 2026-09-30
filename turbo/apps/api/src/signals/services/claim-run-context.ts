@@ -606,11 +606,10 @@ import { buildTelegramPrompt } from "./telegram-prompt";
 import {
   ACTIVE_ALLOWANCE_STATUSES,
   activeAllowanceCutoff,
-  lockOrgCredits,
   type PreparedUsageAllowanceRefresh,
   prepareUsageAllowanceRefresh,
   remainingUnits,
-  resolveAvailabilityInLockedTransaction,
+  resolveAvailabilityInTransaction,
   type UsageAllowanceAvailabilitySnapshot,
 } from "./usage-allowance.service";
 import { activeUserPermissionGrantCondition } from "./user-permission-grants.service";
@@ -3348,18 +3347,13 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         get(allowanceSnapshot$),
       ]);
       signal.throwIfAborted();
-      let lockWaitMs = 0;
       let availability = snapshot;
       if (availability === "allowance_refresh_required") {
         const refresh = await get(preparedAllowanceRefresh$);
         signal.throwIfAborted();
         const db = set(writeDb$);
         availability = await db.transaction(async (tx) => {
-          const lockStartedAt = performance.now();
-          await lockOrgCredits(tx, input.orgId);
-          signal.throwIfAborted();
-          lockWaitMs = Math.round(performance.now() - lockStartedAt);
-          const refreshed = await resolveAvailabilityInLockedTransaction(
+          const refreshed = await resolveAvailabilityInTransaction(
             tx,
             input.orgId,
             refresh,
@@ -3376,11 +3370,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
             durationMs: Math.round(performance.now() - startedAt),
             success: true,
             dimensions: { available: availability !== null },
-          },
-          {
-            actionType: "api_billing_allowance_org_lock_wait",
-            durationMs: lockWaitMs,
-            success: true,
           },
         ]);
       });
@@ -6444,18 +6433,13 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         get(queuedModelAllowanceAllowanceSnapshot$),
       ]);
       signal.throwIfAborted();
-      let lockWaitMs = 0;
       let availability = snapshot;
       if (availability === "allowance_refresh_required") {
         const refresh = await get(preparedAllowanceRefresh$);
         signal.throwIfAborted();
         const db = set(writeDb$);
         availability = await db.transaction(async (tx) => {
-          const lockStartedAt = performance.now();
-          await lockOrgCredits(tx, input.orgId);
-          signal.throwIfAborted();
-          lockWaitMs = Math.round(performance.now() - lockStartedAt);
-          const refreshed = await resolveAvailabilityInLockedTransaction(
+          const refreshed = await resolveAvailabilityInTransaction(
             tx,
             input.orgId,
             refresh,
@@ -6472,11 +6456,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
             durationMs: Math.round(performance.now() - startedAt),
             success: true,
             dimensions: { available: availability !== null },
-          },
-          {
-            actionType: "api_billing_allowance_org_lock_wait",
-            durationMs: lockWaitMs,
-            success: true,
           },
         ]);
       });
@@ -11991,18 +11970,13 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         get(usageAllowanceSnapshot$),
       ]);
       signal.throwIfAborted();
-      let lockWaitMs = 0;
       let availability = snapshot;
       if (availability === "allowance_refresh_required") {
         const refresh = await get(preparedAllowanceRefresh$);
         signal.throwIfAborted();
         const db = set(writeDb$);
         availability = await db.transaction(async (tx) => {
-          const lockStartedAt = performance.now();
-          await lockOrgCredits(tx, input.orgId);
-          signal.throwIfAborted();
-          lockWaitMs = Math.round(performance.now() - lockStartedAt);
-          const refreshed = await resolveAvailabilityInLockedTransaction(
+          const refreshed = await resolveAvailabilityInTransaction(
             tx,
             input.orgId,
             refresh,
@@ -12019,11 +11993,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
             durationMs: Math.round(performance.now() - startedAt),
             success: true,
             dimensions: { available: availability !== null },
-          },
-          {
-            actionType: "api_billing_allowance_org_lock_wait",
-            durationMs: lockWaitMs,
-            success: true,
           },
         ]);
       });
