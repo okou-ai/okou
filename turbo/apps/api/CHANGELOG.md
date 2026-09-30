@@ -8,6 +8,22 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.700.1](https://github.com/okou-ai/okou/compare/api-v1.700.0...api-v1.700.1) (2026-09-30)
+
+
+### Bug Fixes
+
+* **browser:** safely recover tabs after native input ([#37337](https://github.com/okou-ai/okou/issues/37337)) ([e3384ea](https://github.com/okou-ai/okou/commit/e3384eab4f0c3cfdd348e85bb9a027fa07a0c26a))
+* **db:** order subscription model catalog globally ([#37409](https://github.com/okou-ai/okou/issues/37409)) ([b14b0e3](https://github.com/okou-ai/okou/commit/b14b0e3e1a43eb9074908f2bc971b294c64809e2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/db bumped to 1.315.1
+    * @okouai/pi-agent-runtime bumped to 1.44.1
+
 ## [1.700.0](https://github.com/okou-ai/okou/compare/api-v1.699.0...api-v1.700.0) (2026-09-30)
 
 

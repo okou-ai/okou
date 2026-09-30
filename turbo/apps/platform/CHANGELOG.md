@@ -11,6 +11,13 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.988.1](https://github.com/okou-ai/okou/compare/app-v0.988.0...app-v0.988.1) (2026-09-30)
+
+
+### Bug Fixes
+
+* **app:** show available model for existing threads ([#37398](https://github.com/okou-ai/okou/issues/37398)) ([3786474](https://github.com/okou-ai/okou/commit/3786474cf08c9b38523bd1de0a68cdf041243874))
+
 ## [0.988.0](https://github.com/okou-ai/okou/compare/app-v0.987.0...app-v0.988.0) (2026-09-30)
 
 
