@@ -165,6 +165,7 @@ test.each([
     context.mocks.api(modelPoliciesMainContract.list, ({ respond }) => {
       return respond(200, {
         revision: "revision-1",
+        modelMode: "custom",
         writePreconditionRequired: false,
         modelsAvailableToAdd: [],
         policies: [modelPolicy(personal, restricted)],
@@ -228,6 +229,7 @@ async function setupHeldProjectionRefresh() {
       }
       return respond(200, {
         revision: "revision-1",
+        modelMode: "custom",
         writePreconditionRequired: false,
         modelsAvailableToAdd: [],
         policies: [modelPolicy(true)],
@@ -325,6 +327,7 @@ test("A local active-account change refreshes the member projection", async () =
   context.mocks.api(modelPoliciesMainContract.list, ({ respond }) => {
     return respond(200, {
       revision: "revision-1",
+      modelMode: "custom",
       writePreconditionRequired: false,
       modelsAvailableToAdd: [],
       policies: [modelPolicy(personal)],

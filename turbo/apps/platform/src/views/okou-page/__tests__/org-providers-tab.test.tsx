@@ -1715,6 +1715,7 @@ test("Complete a stale workspace Codex reconnection", async () => {
 function enabledPolicySnapshot(): OrgModelPoliciesResponse {
   return {
     revision: "administrative-snapshot-one",
+    modelMode: "custom",
     writePreconditionRequired: true,
     workspaceDefaultModel: "gpt-5.6-luna",
     workspaceDefaultPolicyId: "00000000-0000-4000-a000-000000000211",
@@ -1780,6 +1781,7 @@ function mockPriorityPolicyWrites() {
     });
     snapshot = {
       revision: crypto.randomUUID(),
+      modelMode: "custom",
       writePreconditionRequired: true,
       workspaceDefaultModel: defaultPolicy?.model ?? null,
       workspaceDefaultPolicyId: defaultPolicy?.id ?? null,
