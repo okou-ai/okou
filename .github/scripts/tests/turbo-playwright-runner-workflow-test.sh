@@ -83,11 +83,11 @@ grep -Fq 'createRunnerCheckout' "$RUNNER_TOKEN" ||
   fail "paid runner accounts must use the public checkout API"
 grep -Fq 'fillStripeCheckout' "$RUNNER_TOKEN" ||
   fail "real runner accounts must complete the public Stripe checkout"
-if [[ "$(grep -Fc 'upgradeToPro: true' "$RUNNER_TOKEN")" -ne 4 ]]; then
-  fail "both real Codex accounts, real Claude, and mock Claude must upgrade to Pro"
-fi
-if [[ "$(grep -Fc 'upgradeToPro: false' "$RUNNER_TOKEN")" -ne 1 ]]; then
-  fail "the default mock runner account must remain on limited-free"
+# Free plans run only okou-1.0 on Built-in, so every runner account (both real
+# Codex accounts, real Claude, mock Claude, and the default mock runner) is paid.
+if [[ "$(grep -Fc 'upgradeToPro: true' "$RUNNER_TOKEN")" -ne 5 ||
+  "$(grep -Fc 'fileName: "' "$RUNNER_TOKEN")" -ne 5 ]]; then
+  fail "all five runner accounts, including the default mock runner, must upgrade to Pro"
 fi
 
 ruby -ryaml -ropen3 -rtempfile - "$WORKFLOW" "$RUNNER_MOCK_CLAUDE_BOOTSTRAP" <<'RUBY'

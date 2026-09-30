@@ -1055,11 +1055,7 @@ async function loadAutoMemberPolicies(
   member: MemberModelRouteContext,
   capabilities: OrgPlanCapabilities | null,
   policies: readonly OrgModelPolicy[],
-  auto: boolean,
 ): Promise<OrgModelPolicy[]> {
-  if (!auto) {
-    return [];
-  }
   const personalModels = await loadMemberSubscriptionModels(db, member);
   return personalModels
     .filter((entry) => {
@@ -1189,14 +1185,16 @@ async function listOrgModelPolicies(
     }),
   );
   const modelMode = await loadOrgModelMode(db, orgId);
-  const memberPolicies = await loadAutoMemberPolicies(
-    db,
-    catalog,
-    member,
-    capabilities,
-    policies,
-    modelMode === "auto",
-  );
+  const memberPolicies =
+    modelMode === "auto"
+      ? await loadAutoMemberPolicies(
+          db,
+          catalog,
+          member,
+          capabilities,
+          policies,
+        )
+      : [];
 
   const response: OrgModelPoliciesResponse = {
     modelMode,

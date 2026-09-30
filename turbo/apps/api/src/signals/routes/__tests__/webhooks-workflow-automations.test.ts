@@ -336,7 +336,7 @@ describe("POST /api/webhooks/workflow-automations/:token", () => {
   });
 
   it("does not consume a delivery key when enqueue model selection fails", async () => {
-    const { fixture, actor, workflowId } = await setupFixture();
+    const { actor, workflowId } = await setupFixture();
     const runsApi = createRunsApi(context);
     runsApi.configureRunnerGroup();
     const webhook = await createWebhookAutomation(workflowId);

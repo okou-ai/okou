@@ -583,10 +583,12 @@ async function seedModelPolicies(args: {
 /**
  * Replaces the seeded org policies with built-in Fable. Fable stays on the
  * Claude Code harness, so Telegram runs remain claimable native Runner jobs.
+ * Built-in Fable needs a paid plan, so the fixture org is upgraded to Pro.
  */
 async function seedNativeFablePolicies(
   fixture: TelegramPostFixture,
 ): Promise<void> {
+  await runsApi.grantProEntitlement(actorForFixture(fixture));
   await seedModelPolicies({ fixture, selectedModel: "claude-fable-5-1" });
   await runsApi.updateOrgModelPolicies(actorForFixture(fixture), [
     {

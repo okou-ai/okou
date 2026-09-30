@@ -5,7 +5,6 @@ import {
 import { command } from "ccstate";
 import { and, eq, isNull, or } from "drizzle-orm";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
-import {} from "@okouai/api-contracts/contracts/model-providers";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 import { agents } from "@okouai/db/schema/agent";

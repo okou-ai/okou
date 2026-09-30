@@ -5,7 +5,6 @@ import { createHash, randomBytes } from "node:crypto";
 import { command } from "ccstate";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { v5 as uuidv5 } from "uuid";
-import {} from "@okouai/api-contracts/contracts/model-providers";
 import type {
   ChatTeamsMessageFile,
   ChatTeamsMessageFiles,

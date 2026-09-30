@@ -3,7 +3,6 @@ import {
   isMemberSubscriptionRoute,
   loadedMemberModelRouteContext,
   prepareMemberModelRouteContext,
-  providerTypeForSurfaceProtocol,
   resolveEffectivePolicyRoute,
   resolveEffectivePolicyRouteFromSnapshot,
   type MemberModelRouteContext,
@@ -11,7 +10,6 @@ import {
   type ResolvedModelFirstPolicyRoute,
 } from "./effective-model-route.service";
 import {
-  getFrameworkForType,
   isBuiltInModelProviderType,
   modelProviderTypeSchema,
   type ModelProviderCredentialScope,
@@ -35,8 +33,6 @@ import {
   loadModelCatalog,
   resolveCatalogModel,
   resolveCatalogRunModel,
-  catalogBuiltInCandidates,
-  catalogHasProviderRoute,
   type ModelCatalog,
 } from "./model-catalog.service";
 import {
@@ -45,10 +41,6 @@ import {
   isCatalogFastServiceTierSupported,
   isCatalogUltrafastServiceTierSupported,
 } from "./model-route-capabilities.service";
-import {
-  checkOrgCreditsForRunAdmission,
-  checkOrgPlanRunAdmission,
-} from "./run-admission.service";
 import {
   loadOrgPlanCapabilities,
   type OrgPlanCapabilities,
