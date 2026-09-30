@@ -139,10 +139,12 @@ discovers new work; it is not a retry, and `pick$` never loops. A slow picker pa
 Integration wait notices (S1) do not use the enqueuer's `pick$` result, because
 another picker may hold the lease. After this enqueue's pick finishes (run,
 none or error), the sidebar touch and realtime publish run, then S1 reads the
-chat event this enqueue created: consumed with a run means launched, consumed
-by `input.rejected` or a recall means rejected, and a still-pending input on a
-thread with no active run and no valid lease is an org-full wait; a pending
-input on a busy or leased thread sends no notice. A rescheduled pick only picks; it sends
+chat event this enqueue created. An input already handled (a run claimed it,
+or `input.rejected` or a recall consumed it) sends no notice; otherwise a
+thread in `active_agent_runs` sends no notice, because the input steers into
+the running run; any other case sends the org-full notice. No lease or
+capacity read is made, and rare false org-full notices (for example after an
+earlier queued input is rejected ahead of this one) are an accepted gap. A rescheduled pick only picks; it sends
 no notice, running-run notification, sidebar touch or realtime event.
 
 An organization pass captures a finite count of currently pickable threads and
