@@ -6,7 +6,6 @@ use std::path::{Path, PathBuf};
 use std::{env, fs};
 
 use serde::Deserialize;
-use sha2::{Digest, Sha256};
 
 const GUEST_BINARIES_FILE: &str = "guest-binaries.json";
 const MAX_CLI_PACKAGE_SIZE: u64 = 64 * 1024 * 1024;
@@ -101,11 +100,7 @@ fn main() {
 }
 
 fn embed_source_bound_cli() {
-    for name in [
-        "RUNNER_CLI_PACKAGE_PATH",
-        "RUNNER_CLI_SOURCE_SHA",
-        "RUNNER_CLI_REQUIRED",
-    ] {
+    for name in ["RUNNER_CLI_PACKAGE_PATH", "RUNNER_CLI_REQUIRED"] {
         println!("cargo::rerun-if-env-changed={name}");
     }
     let required = match env::var("RUNNER_CLI_REQUIRED").unwrap_or_default().as_str() {
@@ -116,21 +111,10 @@ fn embed_source_bound_cli() {
     let path = env::var("RUNNER_CLI_PACKAGE_PATH")
         .ok()
         .filter(|value| !value.is_empty());
-    let source_sha = env::var("RUNNER_CLI_SOURCE_SHA")
-        .ok()
-        .filter(|value| !value.is_empty());
-    if path.is_none() && source_sha.is_none() && !required {
+    if path.is_none() && !required {
         return; // Local unit tests and development builds may omit a serving resource.
     }
     let path = path.expect("Runner CLI package path is required for an embedded build");
-    let source_sha = source_sha.expect("Runner CLI source SHA is required for an embedded build");
-    assert!(
-        source_sha.len() == 40
-            && source_sha
-                .bytes()
-                .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase()),
-        "Runner CLI source SHA must be a full lowercase Git SHA-1"
-    );
     let metadata =
         fs::symlink_metadata(&path).unwrap_or_else(|e| panic!("CLI package {path}: {e}"));
     assert!(
@@ -140,18 +124,11 @@ fn embed_source_bound_cli() {
         "CLI package must be a nonempty regular file no larger than {MAX_CLI_PACKAGE_SIZE} bytes: {path}"
     );
     let path = fs::canonicalize(&path).unwrap_or_else(|e| panic!("CLI package {path}: {e}"));
-    let package =
-        fs::read(&path).unwrap_or_else(|e| panic!("read CLI package {}: {e}", path.display()));
     println!("cargo::rerun-if-changed={}", path.display());
     println!("cargo::rustc-cfg=bundled_okou_cli");
     println!(
         "cargo::rustc-env=BUNDLED_OKOU_CLI_PACKAGE={}",
         path.display()
-    );
-    println!("cargo::rustc-env=BUNDLED_OKOU_CLI_SOURCE_SHA={source_sha}");
-    println!(
-        "cargo::rustc-env=BUNDLED_OKOU_CLI_SHA256={}",
-        hex::encode(Sha256::digest(&package))
     );
 }
 

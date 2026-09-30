@@ -576,9 +576,6 @@ jobs:
           METAL_HOSTS: ${{ steps.matrix-hosts.outputs.hosts }}
           EXPECTED_REMOTE_ARCH: ${{ matrix.unameM }}
           MANIFEST_PATH: runner-image-manifest/manifest.json
-          EMBEDDED_CLI_PACKAGE_PATH: runner-cli-intermediate/package.tgz
-          EMBEDDED_CLI_SOURCE_SHA: ${{ needs.prepare.outputs.source-head-sha }}
-          RUNNER_CLI_REQUIRED: "true"
           OKOU_CLI_ARTIFACT_DIR: ${{ steps.okou-cli.outputs.found == 'true' && steps.okou-cli.outputs.artifact-dir || '' }}
           R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}

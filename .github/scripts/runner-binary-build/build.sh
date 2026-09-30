@@ -158,7 +158,6 @@ build() {
   RUNNER_BINARY_ACTUAL_TOOLCHAIN_IMAGE="$actual_toolchain_image" \
   RUNNER_BINARY_INPUT_DIGEST="$binary_input_digest" \
   RUNNER_BINARY_METADATA_PATH="$metadata_path" \
-  RUNNER_BINARY_SOURCE_SHA="$source_sha" \
   RUNNER_CLI_PACKAGE_PATH="$cli_package" \
     "${context_root}/.github/scripts/runner-binary-build/compile.sh"
 

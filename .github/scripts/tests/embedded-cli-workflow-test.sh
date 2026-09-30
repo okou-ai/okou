@@ -46,8 +46,7 @@ jq -e '
   any(.jobs["build-runner-release-assets"].steps[];
     .name == "Cross-compile runner with embedded guests and CLI for ${{ matrix.target }}" and
     .env.RUNNER_CLI_REQUIRED == "true" and
-    .env.RUNNER_CLI_PACKAGE_PATH == "${{ github.workspace }}/runner-cli-intermediate/package.tgz" and
-    .env.RUNNER_CLI_SOURCE_SHA == "${{ needs.release-please.outputs.release_target }}") and
+    .env.RUNNER_CLI_PACKAGE_PATH == "${{ github.workspace }}/runner-cli-intermediate/package.tgz") and
   (.jobs["builds-complete"].needs | index("prepare-runner-cli") != null)
 ' <<<"$release_json" >/dev/null || {
   echo 'Release CLI producer/consumer ordering is invalid' >&2

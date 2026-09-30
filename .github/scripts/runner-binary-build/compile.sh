@@ -19,7 +19,6 @@ require_env CARGO_TARGET_DIR
 require_env RUNNER_BINARY_ACTUAL_TOOLCHAIN_IMAGE
 require_env RUNNER_BINARY_INPUT_DIGEST
 require_env RUNNER_BINARY_METADATA_PATH
-require_env RUNNER_BINARY_SOURCE_SHA
 
 case "$TARGET_TRIPLE" in
   aarch64-unknown-linux-musl|x86_64-unknown-linux-musl) ;;
@@ -31,10 +30,6 @@ if [ "$RUNNER_BINARY_ACTUAL_TOOLCHAIN_IMAGE" != "$RUNNER_BINARY_TOOLCHAIN_IMAGE"
 fi
 if [[ ! "$RUNNER_BINARY_INPUT_DIGEST" =~ ^[0-9a-f]{64}$ ]]; then
   echo "invalid runner binary input digest: ${RUNNER_BINARY_INPUT_DIGEST}" >&2
-  exit 2
-fi
-if [[ ! "$RUNNER_BINARY_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
-  echo "invalid runner binary source SHA: ${RUNNER_BINARY_SOURCE_SHA}" >&2
   exit 2
 fi
 if [ -n "${RUNNER_CLI_PACKAGE_PATH:-}" ]; then
@@ -87,7 +82,6 @@ echo "=== Cross-compiling runner with embedded guests and CLI for ${TARGET_TRIPL
   cd "$CRATES_DIR"
   CARGO_INCREMENTAL=0 env "${guest_env[@]}" \
     RUNNER_CLI_PACKAGE_PATH="${RUNNER_CLI_PACKAGE_PATH:-}" \
-    RUNNER_CLI_SOURCE_SHA="$RUNNER_BINARY_SOURCE_SHA" \
     RUNNER_CLI_REQUIRED="${RUNNER_CLI_REQUIRED:-}" cargo build \
     --locked \
     --profile "$RUNNER_BINARY_PROFILE" \

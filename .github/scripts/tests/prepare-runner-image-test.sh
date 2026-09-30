@@ -239,11 +239,6 @@ if [ "${1:-}" = "bash" ] && [ "${2:-}" = "-s" ]; then
   exit 0
 fi
 
-if [ "${1:-}" = "sudo" ] && [ "${3:-}" = "embedded-cli-info" ]; then
-  printf '%s\n' "${SSH_EMBEDDED_INFO:-}"
-  exit 0
-fi
-
 if [ "${1:-}" = "sudo" ] && [ "${2:-}" = "mkdir" ]; then
   # Artifact staging creates its remote directory outside a remote script.
   "$@"
@@ -441,10 +436,6 @@ run_remote_case() {
     SSH_UPLOAD_COUNT_FILE="${case_dir}/upload-count" \
     SSH_UPLOAD_STATUSES="${REMOTE_UPLOAD_STATUSES:-}" \
     SSH_UPLOAD_CORRUPT="${REMOTE_UPLOAD_CORRUPT:-}" \
-    SSH_EMBEDDED_INFO="${REMOTE_EMBEDDED_INFO:-}" \
-    EMBEDDED_CLI_PACKAGE_PATH="${EMBEDDED_CLI_PACKAGE_PATH:-}" \
-    EMBEDDED_CLI_SOURCE_SHA="${EMBEDDED_CLI_SOURCE_SHA:-}" \
-    RUNNER_CLI_REQUIRED="${RUNNER_CLI_REQUIRED:-}" \
     SYSTEMCTL_LOG="${case_dir}/systemctl.log" \
     SYSTEMCTL_STATE_DIR="${case_dir}/state" \
     SYSTEMCTL_LOAD_STATE_DIR="${case_dir}/load-state" \
@@ -584,38 +575,6 @@ REMOTE_REACH_GC=1 REMOTE_GC_STATUSES=255,255 \
 grep -Fq 'runner GC failed on dev-arm-1 with status 255' "${gc_transport_failure_case}/out" || fail "expected final SSH failure status"
 if grep -Fqx -- "$setup_command" "${gc_transport_failure_case}/ssh.log"; then
   fail "persistent SSH failure must not continue to runner setup"
-fi
-
-# A cached binary has already passed the transport digest gate. Its CLI
-# identity still has to agree with this build's selected package before GC or
-# rootfs operations begin, and mismatches must stop at the readback boundary.
-embedded_package="${TMPDIR}/embedded-cli-package.tgz"
-printf 'test CLI package bytes\n' > "$embedded_package"
-embedded_source_sha=$(printf 'a%.0s' {1..40})
-embedded_digest=$(sha256sum "$embedded_package" | awk '{print $1}')
-embedded_size=$(stat -c '%s' "$embedded_package")
-matching_identity=$(jq -nc --arg source "$embedded_source_sha" \
-  --arg digest "$embedded_digest" --argjson size "$embedded_size" \
-  '{sourceSha: $source, packageSha256: $digest, packageSizeBytes: $size}')
-embedded_ok_case="${TMPDIR}/embedded-identity-ok"
-prepare_remote_case "$embedded_ok_case"
-EMBEDDED_CLI_PACKAGE_PATH="$embedded_package" EMBEDDED_CLI_SOURCE_SHA="$embedded_source_sha" \
-  RUNNER_CLI_REQUIRED=true REMOTE_EMBEDDED_INFO="$matching_identity" \
-  REMOTE_REACH_GC=1 REMOTE_GC_STATUSES=0 run_remote_case "$embedded_ok_case"
-grep -Fqx "ci@dev-arm-1 sudo /var/lib/vm0-runner/bin/pr-123/runner embedded-cli-info" \
-  "${embedded_ok_case}/ssh.log" || fail "embedded CLI identity must be read back"
-if grep -q 'embedded CLI identity does not match' "${embedded_ok_case}/out"; then
-  fail "matching embedded CLI identity must pass readback"
-fi
-embedded_bad_case="${TMPDIR}/embedded-identity-bad"
-prepare_remote_case "$embedded_bad_case"
-EMBEDDED_CLI_PACKAGE_PATH="$embedded_package" EMBEDDED_CLI_SOURCE_SHA="$embedded_source_sha" \
-  RUNNER_CLI_REQUIRED=true REMOTE_EMBEDDED_INFO='{"sourceSha":"wrong"}' \
-  REMOTE_REACH_GC=1 REMOTE_GC_STATUSES=0 run_remote_case "$embedded_bad_case"
-grep -q 'embedded CLI identity does not match' "${embedded_bad_case}/out" || \
-  fail "mismatched cached CLI identity must fail closed"
-if grep -q ' gc --keep-latest' "${embedded_bad_case}/ssh.log"; then
-  fail "mismatched cached CLI identity must stop before GC"
 fi
 
 upload_success_case="${TMPDIR}/upload-success"
