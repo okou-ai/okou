@@ -1278,16 +1278,13 @@ const publishUsageAllowanceInvoice$ = command(
       return row.id;
     });
     const orgId = await db.transaction(async (tx) => {
-      await tx
-        .select({ orgId: orgMetadata.orgId })
-        .from(orgMetadata)
-        .where(eq(orgMetadata.orgId, details.orgId))
-        .for("update");
+      // No row locks: the entitlement publication is conditional on its
+      // invoice binding, and cancellation writes the entitlement before it
+      // re-checks the prepared window set (window creators lock that row).
       const [existing] = await tx
         .select({ orgId: orgUsageAllowanceEntitlements.orgId })
         .from(orgUsageAllowanceEntitlements)
-        .where(eq(orgUsageAllowanceEntitlements.orgId, details.orgId))
-        .for("update");
+        .where(eq(orgUsageAllowanceEntitlements.orgId, details.orgId));
       const at = nowDate();
       if (details.active) {
         const values = usageAllowanceInvoiceValues(args.invoiceId, details, at);
@@ -4087,20 +4084,24 @@ const publishUsageAllowanceSubscription$ = command(
       return row.id;
     });
     const result = await db.transaction(async (tx) => {
+      // No row locks: the entitlement write is conditional on the binding it
+      // was accepted from, and it precedes the prepared-window re-check so
+      // window creators (which lock the entitlement) are ordered around it.
       const [wallet] = await tx
         .select({
           stripeSubscriptionId: orgMetadata.stripeSubscriptionId,
           tier: orgMetadata.tier,
         })
         .from(orgMetadata)
-        .where(eq(orgMetadata.orgId, args.orgId))
-        .for("update");
+        .where(eq(orgMetadata.orgId, args.orgId));
       const [entitlement] = await tx
         .select()
         .from(orgUsageAllowanceEntitlements)
-        .where(eq(orgUsageAllowanceEntitlements.orgId, args.orgId))
-        .for("update");
-      if (!acceptsAllowanceSubscription({ ...args, entitlement, wallet })) {
+        .where(eq(orgUsageAllowanceEntitlements.orgId, args.orgId));
+      if (
+        !entitlement ||
+        !acceptsAllowanceSubscription({ ...args, entitlement, wallet })
+      ) {
         return false;
       }
       const at = nowDate();
@@ -4108,6 +4109,26 @@ const publishUsageAllowanceSubscription$ = command(
         args.subscription,
         at,
       );
+      const [published] = await tx
+        .update(orgUsageAllowanceEntitlements)
+        .set(publication.values)
+        .where(
+          and(
+            eq(orgUsageAllowanceEntitlements.id, entitlement.id),
+            eq(orgUsageAllowanceEntitlements.orgId, args.orgId),
+            entitlement.stripeSubscriptionId === null
+              ? isNull(orgUsageAllowanceEntitlements.stripeSubscriptionId)
+              : eq(
+                  orgUsageAllowanceEntitlements.stripeSubscriptionId,
+                  entitlement.stripeSubscriptionId,
+                ),
+          ),
+        )
+        .returning({ id: orgUsageAllowanceEntitlements.id });
+      if (!published) {
+        // The binding moved after acceptance: deterministic "not published".
+        return false;
+      }
       const windowScope = currentAllowanceWindowsWhere(args.orgId, at);
       const [unprepared] = await tx
         .select({ id: orgUsageAllowanceWindows.id })
@@ -4121,10 +4142,6 @@ const publishUsageAllowanceSubscription$ = command(
           "Usage allowance windows changed during Stripe reconciliation",
         );
       }
-      await tx
-        .update(orgUsageAllowanceEntitlements)
-        .set(publication.values)
-        .where(eq(orgUsageAllowanceEntitlements.orgId, args.orgId));
       if (publication.terminal) {
         await tx
           .update(orgUsageAllowanceWindows)
@@ -4349,15 +4366,18 @@ const publishLegacyPlanSubscription$ = command(
       return row.id;
     });
     const result = await db.transaction(async (tx) => {
+      // No row lock: publish the plan projection as a conditional write on the
+      // subscription binding first; the wallet row it writes then orders the
+      // credit-lot re-check below against grant writers.
+      const publication = legacyPlanPublication(args);
       const [wallet] = await tx
-        .select({ orgId: orgMetadata.orgId })
-        .from(orgMetadata)
+        .update(orgMetadata)
+        .set(publication.values)
         .where(and(eq(orgMetadata.orgId, args.orgId), prepared.target))
-        .for("update");
+        .returning({ orgId: orgMetadata.orgId });
       if (!wallet) {
         return false;
       }
-      const publication = legacyPlanPublication(args);
       if (publication.trialEnd) {
         const [unprepared] = await tx
           .select({ id: creditExpiresRecord.id })
@@ -4375,10 +4395,6 @@ const publishLegacyPlanSubscription$ = command(
           );
         }
       }
-      await tx
-        .update(orgMetadata)
-        .set(publication.values)
-        .where(eq(orgMetadata.orgId, args.orgId));
       if (publication.planTier && publication.planItem) {
         const [memberPack] = await tx
           .select({ id: usagePackAllocations.id })

@@ -147,14 +147,15 @@ export async function deleteCustomConnectorMemberConnectionExact(
   if (deletion.kind !== "ready") {
     return deletion;
   }
-  await deleteConnectorCredentialStorageConnection(
+  const lateSelectionCount = await deleteConnectorCredentialStorageConnection(
     db,
     { connectorId: args.memberConnectorId },
     signal,
   );
   return {
     kind: "deleted",
-    resolvedSelectionCount: deletion.resolvedSelectionCount,
+    resolvedSelectionCount:
+      deletion.resolvedSelectionCount + lateSelectionCount,
     promotedDefaultConnectionId: deletion.promotedDefaultConnectionId,
   };
 }

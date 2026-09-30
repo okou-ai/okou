@@ -619,9 +619,11 @@ async function retireUsagePackCheckout(
   usagePackSubscriptionId: string,
 ): Promise<void> {
   const at = nowDate();
-  const [pending] = await tx
-    .select({ id: usagePackSubscriptions.id })
-    .from(usagePackSubscriptions)
+  // Conditional transition: only a still-pending snapshot retires, and only
+  // the winning transition retires its allocations.
+  const [retired] = await tx
+    .update(usagePackSubscriptions)
+    .set({ subscriptionStatus: "checkout_expired", updatedAt: at })
     .where(
       and(
         eq(usagePackSubscriptions.id, usagePackSubscriptionId),
@@ -630,9 +632,8 @@ async function retireUsagePackCheckout(
         ]),
       ),
     )
-    .for("update")
-    .limit(1);
-  if (!pending) {
+    .returning({ id: usagePackSubscriptions.id });
+  if (!retired) {
     return;
   }
   await tx
@@ -641,10 +642,6 @@ async function retireUsagePackCheckout(
     .where(
       eq(usagePackAllocations.usagePackSubscriptionId, usagePackSubscriptionId),
     );
-  await tx
-    .update(usagePackSubscriptions)
-    .set({ subscriptionStatus: "checkout_expired", updatedAt: at })
-    .where(eq(usagePackSubscriptions.id, usagePackSubscriptionId));
 }
 
 type PendingUsagePackCheckoutResolution =
@@ -1359,7 +1356,6 @@ async function loadUsagePackPurchaseSnapshot(
         eq(usagePackSubscriptions.orgId, orgId),
       ),
     )
-    .for("update")
     .limit(1);
   const allocationRows = await db
     .select({
@@ -2331,6 +2327,15 @@ function checkoutPendingSnapshotCounts(
   return { before: previous.length, after: next.length };
 }
 
+/** Conditional-write predicate: the root still has the status we read. */
+function unchangedSubscriptionRootWhere(root: UsagePackSubscriptionRow) {
+  return and(
+    eq(usagePackSubscriptions.id, root.id),
+    eq(usagePackSubscriptions.orgId, root.orgId),
+    eq(usagePackSubscriptions.subscriptionStatus, root.subscriptionStatus),
+  );
+}
+
 const publishUsagePackCheckoutState$ = command(
   async (
     { set },
@@ -2345,6 +2350,9 @@ const publishUsagePackCheckoutState$ = command(
   ): Promise<void> => {
     const db = set(writeDb$);
     await db.transaction(async (tx) => {
+      // No row locks: every pending-snapshot guard writer holds the retained
+      // billing_purchase key, and the snapshot write below is conditional on
+      // the root state this decision was made from.
       await tx.execute(billingPurchaseCompatibilityLockSql(args.orgId));
       const roots = await tx
         .select()
@@ -2355,8 +2363,7 @@ const publishUsagePackCheckoutState$ = command(
             eq(usagePackSubscriptions.id, args.usagePackSubscriptionId),
           ),
         )
-        .orderBy(asc(usagePackSubscriptions.id))
-        .for("update");
+        .orderBy(asc(usagePackSubscriptions.id));
       if (
         roots.some((root) => {
           return root.orgId !== args.orgId;
@@ -2381,8 +2388,7 @@ const publishUsagePackCheckoutState$ = command(
       const [guard] = await tx
         .select()
         .from(usagePackPendingSnapshotGuards)
-        .where(eq(usagePackPendingSnapshotGuards.orgId, args.orgId))
-        .for("update");
+        .where(eq(usagePackPendingSnapshotGuards.orgId, args.orgId));
       const counts = checkoutPendingSnapshotCounts(
         roots,
         args.usagePackSubscriptionId,
@@ -2424,7 +2430,7 @@ const publishUsagePackCheckoutState$ = command(
       const cancelAtPeriodEnd = usagePackSubscriptionWillCancel(
         args.subscription,
       );
-      await tx
+      const [published] = await tx
         .update(usagePackSubscriptions)
         .set({
           tier: shape.tier,
@@ -2435,7 +2441,11 @@ const publishUsagePackCheckoutState$ = command(
           cancelAtPeriodEnd,
           updatedAt,
         })
-        .where(eq(usagePackSubscriptions.id, args.usagePackSubscriptionId));
+        .where(unchangedSubscriptionRootWhere(localSubscription))
+        .returning({ id: usagePackSubscriptions.id });
+      if (!published) {
+        throw new Error("Usage pack snapshot changed during publication");
+      }
       if (shape.projectsOrgPlan) {
         await tx
           .update(orgMetadata)
@@ -3100,14 +3110,17 @@ const commitUsagePackPlanActivation$ = command(
     const db = set(writeDb$);
     const orgId = args.context.subscription.orgId;
     await db.transaction(async (tx) => {
+      // No row locks: activation writers hold the retained usage_pack_billing
+      // and billing_purchase keys, and the subscription write below is
+      // conditional on the root status and prepared allocation set it was
+      // decided from.
       await tx.execute(usagePackBillingCompatibilityLockSql(orgId));
       await tx.execute(billingPurchaseCompatibilityLockSql(orgId));
       const roots = await tx
         .select()
         .from(usagePackSubscriptions)
         .where(activationRootsWhere(args))
-        .orderBy(asc(usagePackSubscriptions.id))
-        .for("update");
+        .orderBy(asc(usagePackSubscriptions.id));
       const subscription = activationRoot(args, roots);
       await tx
         .insert(usagePackPendingSnapshotGuards)
@@ -3116,8 +3129,7 @@ const commitUsagePackPlanActivation$ = command(
       const [guard] = await tx
         .select()
         .from(usagePackPendingSnapshotGuards)
-        .where(eq(usagePackPendingSnapshotGuards.orgId, orgId))
-        .for("update");
+        .where(eq(usagePackPendingSnapshotGuards.orgId, orgId));
       const counts = activationPendingCounts(args, roots);
       if (!guard || guard.pendingSnapshotCount !== counts.before) {
         throw new Error("Usage pack pending snapshot guard requires repair");
@@ -3126,8 +3138,7 @@ const commitUsagePackPlanActivation$ = command(
         .select()
         .from(usagePackAllocations)
         .where(activationAllocationWhere(args))
-        .orderBy(asc(usagePackAllocations.id))
-        .for("update");
+        .orderBy(asc(usagePackAllocations.id));
       const context = { subscription, allocations };
       validateUsagePackSubscriptionCorrelation(
         context,
@@ -3151,11 +3162,16 @@ const commitUsagePackPlanActivation$ = command(
       const updated = await tx
         .update(usagePackSubscriptions)
         .set(values)
-        .where(activationUnchangedAllocationsWhere(args))
+        .where(
+          and(
+            activationUnchangedAllocationsWhere(args),
+            unchangedSubscriptionRootWhere(subscription),
+          ),
+        )
         .returning({ id: usagePackSubscriptions.id });
       if (updated.length !== 1) {
         throw new Error(
-          "Usage pack allocations changed during plan activation",
+          "Usage pack subscription or allocations changed during plan activation",
         );
       }
       if (shape.projectsOrgPlan) {
@@ -3563,9 +3579,9 @@ const retireReconciledUsagePackSnapshot$ = command(
     signal.throwIfAborted();
     const db = set(writeDb$);
     await db.transaction(async (tx) => {
+      // No row locks: guard writers hold the retained billing_purchase key and
+      // the retirement below is a conditional status transition.
       await tx.execute(billingPurchaseCompatibilityLockSql(args.orgId));
-      // Outgoing trigger writers acquire the subscription before the guard.
-      // Preserve that order while owning the whole retirement commit here.
       const roots = await tx
         .select({
           id: usagePackSubscriptions.id,
@@ -3579,8 +3595,7 @@ const retireReconciledUsagePackSnapshot$ = command(
             eq(usagePackSubscriptions.id, args.usagePackSubscriptionId),
           ),
         )
-        .orderBy(asc(usagePackSubscriptions.id))
-        .for("update");
+        .orderBy(asc(usagePackSubscriptions.id));
       if (
         roots.some((root) => {
           return root.orgId !== args.orgId;
@@ -3600,8 +3615,7 @@ const retireReconciledUsagePackSnapshot$ = command(
       const [guard] = await tx
         .select()
         .from(usagePackPendingSnapshotGuards)
-        .where(eq(usagePackPendingSnapshotGuards.orgId, args.orgId))
-        .for("update");
+        .where(eq(usagePackPendingSnapshotGuards.orgId, args.orgId));
       const pendingCount = roots.filter((root) => {
         return (
           root.status === "checkout_pending" ||

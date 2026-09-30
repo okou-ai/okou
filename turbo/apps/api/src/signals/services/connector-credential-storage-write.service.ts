@@ -7,6 +7,8 @@ import { variables } from "@okouai/db/schema/variable";
 import { and, eq, inArray, isNotNull, sql, type SQL } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
+import { isForeignKeyViolation, safeSqlStateCode } from "../../lib/pg-errors";
+import { settle } from "../utils";
 import type { Db } from "../external/db";
 
 export interface ConnectorCredentialStorageDeclaration {
@@ -210,26 +212,51 @@ export async function deleteConnectorOwnedCredentialRows(
   );
 }
 
+/** RESTRICT (23001) or NO ACTION (23503) rejection from a late selection row. */
+function isSelectionReferenceViolation(error: unknown): boolean {
+  return isForeignKeyViolation(error) || safeSqlStateCode(error) === "23001";
+}
+
 export async function deleteConnectorCredentialStorageConnection(
   db: Db,
   args: {
     readonly connectorId: string;
   },
   signal: AbortSignal,
-): Promise<void> {
-  await deleteConnectorCredentialStorageConnectionsWhere(
-    db,
-    {
-      selection: eq(
-        chatThreadConnectorSelections.connectorId,
-        args.connectorId,
-      ),
-      secret: eq(secrets.connectorId, args.connectorId),
-      variable: eq(variables.connectorId, args.connectorId),
-      connection: eq(connectors.id, args.connectorId),
-    },
-    signal,
-  );
+): Promise<number> {
+  const conditions = {
+    selection: eq(chatThreadConnectorSelections.connectorId, args.connectorId),
+    secret: eq(secrets.connectorId, args.connectorId),
+    variable: eq(variables.connectorId, args.connectorId),
+    connection: eq(connectors.id, args.connectorId),
+  };
+  // A chat-thread selection can commit between this cleanup's selection
+  // delete and the account delete (no explicit lock excludes it), which the
+  // RESTRICT foreign key rejects. Each savepoint attempt removes selections
+  // committed so far; the account delete then succeeds deterministically.
+  // Returns the selections this cleanup itself resolved.
+  for (let attempt = 1; ; attempt += 1) {
+    const deleted = await settle(
+      db.transaction(async (savepoint) => {
+        const selections = await savepoint
+          .delete(chatThreadConnectorSelections)
+          .where(conditions.selection);
+        await deleteConnectorCredentialStorageConnectionsWhere(
+          savepoint,
+          conditions,
+          signal,
+        );
+        return selections.rowCount ?? 0;
+      }),
+      signal,
+    );
+    if (deleted.ok) {
+      return deleted.value;
+    }
+    if (attempt >= 3 || !isSelectionReferenceViolation(deleted.error)) {
+      throw deleted.error;
+    }
+  }
 }
 
 export async function deleteConnectorCredentialStorageConnectionsForOwner(

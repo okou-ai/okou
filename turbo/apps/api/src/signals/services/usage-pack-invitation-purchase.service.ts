@@ -992,12 +992,13 @@ const persistInvitation$ = command(
     signal?.throwIfAborted();
     const db = set(writeDb$);
     return await db.transaction(async (tx) => {
+      // No row lock: purchase writers hold the retained usage_pack_invitation
+      // key, and the publication below is a conditional status transition.
       await tx.execute(invitationPurchaseCompatibilityLockSql(purchase.id));
       const [current] = await tx
         .select()
         .from(usagePackInvitationPurchases)
         .where(eq(usagePackInvitationPurchases.id, purchase.id))
-        .for("update")
         .limit(1);
       if (!current) {
         throw new Error(
@@ -1050,7 +1051,7 @@ const persistInvitation$ = command(
       if (!allocation) {
         throw new Error("Failed to create paid pending invitation allocation");
       }
-      await tx
+      const [published] = await tx
         .update(usagePackInvitationPurchases)
         .set({
           allocationId: allocation.id,
@@ -1062,8 +1063,16 @@ const persistInvitation$ = command(
           and(
             eq(usagePackInvitationPurchases.id, current.id),
             eq(usagePackInvitationPurchases.status, current.status),
+            isNull(usagePackInvitationPurchases.clerkInvitationId),
           ),
+        )
+        .returning({ id: usagePackInvitationPurchases.id });
+      if (!published) {
+        // Roll back the allocation; the caller re-reads the purchase.
+        throw new Error(
+          "Invitation purchase changed during invite publication",
         );
+      }
       return true;
     });
   },
@@ -1257,26 +1266,9 @@ const finalizeRefund$ = command(
       await tx.execute(
         invitationPurchaseCompatibilityLockSql(claimedPurchase.id),
       );
-      const [purchase] = await tx
-        .select()
-        .from(usagePackInvitationPurchases)
-        .where(eq(usagePackInvitationPurchases.id, claimedPurchase.id))
-        .for("update")
-        .limit(1);
-      if (
-        !purchase ||
-        purchase.status !== "refunding" ||
-        purchase.refundAttempt !== claimedPurchase.refundAttempt
-      ) {
-        return;
-      }
+      // Conditional transition first: only the claimed refund attempt that is
+      // still refunding completes; a lost or stale attempt is a no-op.
       const at = nowDate();
-      if (purchase.allocationId) {
-        await tx
-          .update(usagePackAllocations)
-          .set({ status: "inactive", updatedAt: at })
-          .where(eq(usagePackAllocations.id, purchase.allocationId));
-      }
       const [refunded] = await tx
         .update(usagePackInvitationPurchases)
         .set({
@@ -1287,7 +1279,7 @@ const finalizeRefund$ = command(
         })
         .where(
           and(
-            eq(usagePackInvitationPurchases.id, purchase.id),
+            eq(usagePackInvitationPurchases.id, claimedPurchase.id),
             eq(usagePackInvitationPurchases.status, "refunding"),
             eq(
               usagePackInvitationPurchases.refundAttempt,
@@ -1295,9 +1287,17 @@ const finalizeRefund$ = command(
             ),
           ),
         )
-        .returning({ id: usagePackInvitationPurchases.id });
+        .returning({
+          allocationId: usagePackInvitationPurchases.allocationId,
+        });
       if (!refunded) {
-        throw new Error("Invitation refund changed before local completion");
+        return;
+      }
+      if (refunded.allocationId) {
+        await tx
+          .update(usagePackAllocations)
+          .set({ status: "inactive", updatedAt: at })
+          .where(eq(usagePackAllocations.id, refunded.allocationId));
       }
     });
   },
@@ -1344,13 +1344,14 @@ const removeRefundedInvitationProjection$ = command(
     }
     const allocationId = purchase.allocationId;
     await db.transaction(async (tx) => {
+      // No row lock: refund transitions hold the retained
+      // usage_pack_invitation key; finalization re-checks its attempt.
       await tx.execute(usagePackBillingCompatibilityLockSql(purchase.orgId));
       await tx.execute(invitationPurchaseCompatibilityLockSql(purchase.id));
       const [current] = await tx
         .select()
         .from(usagePackInvitationPurchases)
         .where(eq(usagePackInvitationPurchases.id, purchase.id))
-        .for("update")
         .limit(1);
       if (
         !current ||
@@ -2329,13 +2330,16 @@ const activateAcceptedPurchase$ = command(
       return;
     }
     await db.transaction(async (tx) => {
+      // No row lock on the purchase: activation holds the retained
+      // usage_pack_billing and usage_pack_invitation keys, and the final
+      // activating -> accepted transition is conditional, so a lost race rolls
+      // back its grants instead of paying twice.
       await tx.execute(usagePackBillingCompatibilityLockSql(purchase.orgId));
       await tx.execute(invitationPurchaseCompatibilityLockSql(purchase.id));
       const [current] = await tx
         .select()
         .from(usagePackInvitationPurchases)
         .where(eq(usagePackInvitationPurchases.id, purchase.id))
-        .for("update")
         .limit(1);
       if (!current || current.status === "accepted") {
         return;
@@ -2390,15 +2394,21 @@ const activateAcceptedPurchase$ = command(
           "Invitation allocation was retired or reassigned during activation",
         );
       }
-      await tx
+      const [accepted] = await tx
         .update(usagePackInvitationPurchases)
         .set({ status: "accepted", updatedAt: at })
         .where(
           and(
             eq(usagePackInvitationPurchases.id, current.id),
-            eq(usagePackInvitationPurchases.status, current.status),
+            eq(usagePackInvitationPurchases.status, "activating"),
+            eq(usagePackInvitationPurchases.acceptedUserId, acceptedUserId),
+            eq(usagePackInvitationPurchases.allocationId, allocationId),
           ),
-        );
+        )
+        .returning({ id: usagePackInvitationPurchases.id });
+      if (!accepted) {
+        throw new Error("Invitation acceptance changed during activation");
+      }
     });
     signal?.throwIfAborted();
     await set(
@@ -2466,19 +2476,9 @@ const markLateAcceptanceForRefund$ = command(
     const db = set(writeDb$);
     return await db.transaction(async (tx) => {
       await tx.execute(invitationPurchaseCompatibilityLockSql(candidate.id));
-      const [current] = await tx
-        .select()
-        .from(usagePackInvitationPurchases)
-        .where(eq(usagePackInvitationPurchases.id, candidate.id))
-        .for("update")
-        .limit(1);
-      if (
-        !current ||
-        !ACCEPTABLE_INVITATION_PURCHASE_STATUSES.has(current.status)
-      ) {
-        return false;
-      }
-      await tx
+      // Conditional transition: only a still-acceptable purchase moves to
+      // refund_pending; anything else is a deterministic "not marked".
+      const [marked] = await tx
         .update(usagePackInvitationPurchases)
         .set({
           status: "refund_pending",
@@ -2489,11 +2489,14 @@ const markLateAcceptanceForRefund$ = command(
         })
         .where(
           and(
-            eq(usagePackInvitationPurchases.id, current.id),
-            eq(usagePackInvitationPurchases.status, current.status),
+            eq(usagePackInvitationPurchases.id, candidate.id),
+            inArray(usagePackInvitationPurchases.status, [
+              ...ACCEPTABLE_INVITATION_PURCHASE_STATUSES,
+            ]),
           ),
-        );
-      return true;
+        )
+        .returning({ id: usagePackInvitationPurchases.id });
+      return marked !== undefined;
     });
   },
 );
@@ -2508,12 +2511,14 @@ const recordInvitationAcceptance$ = command(
     signal?.throwIfAborted();
     const db = set(writeDb$);
     await db.transaction(async (tx) => {
+      // No row lock: acceptance writers hold the retained
+      // usage_pack_invitation key, and the purchase transition below is
+      // conditional on the status this decision was made from.
       await tx.execute(invitationPurchaseCompatibilityLockSql(candidate.id));
       const [purchase] = await tx
         .select()
         .from(usagePackInvitationPurchases)
         .where(eq(usagePackInvitationPurchases.id, candidate.id))
-        .for("update")
         .limit(1);
       if (!purchase || purchase.status === "accepted") {
         return;
@@ -2585,7 +2590,7 @@ const recordInvitationAcceptance$ = command(
           "Invitation allocation was retired or reassigned before acceptance",
         );
       }
-      await tx
+      const [recorded] = await tx
         .update(usagePackInvitationPurchases)
         .set({
           allocationId,
@@ -2602,7 +2607,12 @@ const recordInvitationAcceptance$ = command(
             eq(usagePackInvitationPurchases.id, purchase.id),
             eq(usagePackInvitationPurchases.status, purchase.status),
           ),
-        );
+        )
+        .returning({ id: usagePackInvitationPurchases.id });
+      if (!recorded) {
+        // Roll back the allocation assignment; the purchase moved on.
+        throw new Error("Invitation purchase changed during acceptance");
+      }
     });
   },
 );

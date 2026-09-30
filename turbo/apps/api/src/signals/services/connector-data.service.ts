@@ -1184,7 +1184,7 @@ async function deleteBuiltinConnectorAccountLocalState(
   }
   signal.throwIfAborted();
 
-  await deleteConnectorCredentialStorageConnection(
+  const lateSelectionCount = await deleteConnectorCredentialStorageConnection(
     tx,
     { connectorId: existing.id },
     signal,
@@ -1192,7 +1192,11 @@ async function deleteBuiltinConnectorAccountLocalState(
   return {
     kind: "deleted" as const,
     pendingTokenRevoke,
-    deletion,
+    deletion: {
+      ...deletion,
+      resolvedSelectionCount:
+        deletion.resolvedSelectionCount + lateSelectionCount,
+    },
   };
 }
 
