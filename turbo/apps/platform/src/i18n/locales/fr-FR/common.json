@@ -4954,7 +4954,6 @@
         "description": "Connectez une passerelle gérée par un administrateur via Anthropic Messages, OpenAI Responses ou les deux.",
         "dialogDescription": "Configurez chaque protocole avec l'URL de base de l'API utilisée par Claude Code ou Codex.",
         "editTitle": "Modifier le fournisseur de modèles",
-        "empty": "Aucun fournisseur de modèles personnalisé n'est configuré.",
         "errors": {
           "invalidMappings": "Les mappages de modèles doivent être un objet JSON dont les valeurs sont les noms des modèles en amont.",
           "missingProtocol": "Activez au moins un protocole.",

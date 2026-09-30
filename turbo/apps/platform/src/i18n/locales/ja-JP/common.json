@@ -4872,7 +4872,6 @@
         "description": "Anthropic Messages、OpenAI Responses、またはその両方を介して、管理者が管理するゲートウェイに接続します。",
         "dialogDescription": "Claude Code または Codex で使用する API ベース URL をプロトコルごとに設定します。",
         "editTitle": "モデルプロバイダーを編集",
-        "empty": "カスタムモデルプロバイダーは設定されていません。",
         "errors": {
           "invalidMappings": "モデルマッピングは、値がアップストリームのモデル名である JSON オブジェクトである必要があります。",
           "missingProtocol": "少なくとも 1 つのプロトコルを有効にしてください。",
