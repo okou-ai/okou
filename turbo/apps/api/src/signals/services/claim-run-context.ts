@@ -6735,7 +6735,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   );
   const assembleWorkflowAutomationRun$ = command(
     async (
-      { get, set },
+      { get },
       signal: AbortSignal,
     ): Promise<AssembledWorkflowAutomationRun | RunFailure> => {
       const args = get(workflowAutomationLaunchInput$);
@@ -6765,7 +6765,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         "nested",
         now(),
       );
-      await set(recordQueuedWorkflowReward$, args, signal);
       return {
         kind: "assembled",
         run: {
@@ -6800,7 +6799,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       { set },
       args: AssembleWorkflowAutomationRunArgs,
       signal: AbortSignal,
-    ): Promise<void> => {
+    ): Promise<AssembleWorkflowAutomationRunArgs | null> => {
       set(workflowAutomationLaunchInternalInput$, {
         ...args,
         db: set(writeDb$),
@@ -6808,6 +6807,9 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       const assembly = await set(assembleWorkflowAutomationRun$, signal);
       signal.throwIfAborted();
       set(internalAssembly$, assembly);
+      // An assembled launch records its independent Get Started reward; the
+      // caller runs it alongside the launch reads rather than ahead of them.
+      return assembly.kind === "assembled" ? args : null;
     },
   );
   const workflowAutomationLaunchAssembly$ = computed((get) => {
@@ -12921,6 +12923,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
    */
   const prepareLaunchResources$ = command(
     async ({ get, set }, head: ChatQueueHeadContext, signal: AbortSignal) => {
+      let rewardArgs: AssembleWorkflowAutomationRunArgs | null = null;
       if (head.contextType === "automation") {
         const launch = await set(
           initializeQueuedAutomationInitializeQueuedAutomation$,
@@ -12929,12 +12932,19 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         );
         signal.throwIfAborted();
         if (launch) {
-          await set(initializeWorkflowAutomationRun$, launch, signal);
+          rewardArgs = await set(
+            initializeWorkflowAutomationRun$,
+            launch,
+            signal,
+          );
           signal.throwIfAborted();
         }
       }
-      const [runner, callbackRows, assembly, identity] = await Promise.all([
+      const [runner, , callbackRows, assembly, identity] = await Promise.all([
         set(prepareRunnerResources$, signal),
+        rewardArgs
+          ? set(recordQueuedWorkflowReward$, rewardArgs, signal)
+          : undefined,
         set(prepareCallbacks$, signal),
         get(assembly$),
         get(runIdentity$),
