@@ -83,11 +83,19 @@ guest_sha_json=$(jq -c '.guestSha256' "$FRESH_METADATA_PATH")
 # compile input is on this CI worker for the binary-input digest, so use its
 # manifest for image metadata without another download or metal upload.
 okou_cli_json='null'
+cli_manifest="${GUEST_CLI_MANIFEST_PATH:-}"
+if { [ -n "${GUEST_CLI_PATH:-}" ] && [ -z "$cli_manifest" ]; } ||
+   { [ -z "${GUEST_CLI_PATH:-}" ] && [ -n "$cli_manifest" ]; }; then
+  echo "GUEST_CLI_PATH and GUEST_CLI_MANIFEST_PATH must be provided together" >&2
+  exit 2
+fi
 if [ -n "${GUEST_CLI_PATH:-}" ]; then
   if [[ "$GUEST_CLI_PATH" != /* ]]; then
     GUEST_CLI_PATH="${REPO_ROOT}/${GUEST_CLI_PATH}"
   fi
-  cli_manifest="$(dirname "$GUEST_CLI_PATH")/manifest.json"
+  if [[ "$cli_manifest" != /* ]]; then
+    cli_manifest="${REPO_ROOT}/${cli_manifest}"
+  fi
   [ -f "$GUEST_CLI_PATH" ] && [ -f "$cli_manifest" ] || {
     echo "embedded CLI compile input is missing" >&2
     exit 2

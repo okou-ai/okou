@@ -378,41 +378,55 @@ expected_runtime_toolchain="ghcr.io/${GITHUB_REPOSITORY_OWNER:-okou-ai}/vm0-tool
 # The private compiler input contains the tarball and build-side identity.
 # Only the tarball is embedded, but both files affect the compiled Runner.
 cli_package="${TMPDIR}/cli-intermediate/package.tgz"
-cli_manifest="${TMPDIR}/cli-intermediate/manifest.json"
-mkdir -p "$(dirname "$cli_package")"
+cli_manifest="${TMPDIR}/cli-identity/install-metadata.json"
+mkdir -p "$(dirname "$cli_package")" "$(dirname "$cli_manifest")"
 printf 'fixture CLI package\n' > "$cli_package"
 printf 'fixture CLI identity\n' > "$cli_manifest"
 plain_arm_digest=$(digest_value "$repo" aarch64-unknown-linux-musl)
-embedded_arm_digest=$(GUEST_CLI_PATH="$cli_package" \
+embedded_arm_digest=$(GUEST_CLI_PATH="$cli_package" GUEST_CLI_MANIFEST_PATH="$cli_manifest" \
   digest_value "$repo" aarch64-unknown-linux-musl)
-embedded_x86_digest=$(GUEST_CLI_PATH="$cli_package" \
+embedded_x86_digest=$(GUEST_CLI_PATH="$cli_package" GUEST_CLI_MANIFEST_PATH="$cli_manifest" \
   digest_value "$repo" x86_64-unknown-linux-musl)
 [ "$plain_arm_digest" != "$embedded_arm_digest" ] \
   || fail "bundled and unbundled Runner inputs must have different cache digests"
 [ "$embedded_arm_digest" != "$embedded_x86_digest" ] \
   || fail "architecture must remain part of the source-bound digest"
-stale_revision_digest=$(GUEST_CLI_PATH="$cli_package" \
+stale_revision_digest=$(GUEST_CLI_PATH="$cli_package" GUEST_CLI_MANIFEST_PATH="$cli_manifest" \
   digest_value "$repo" aarch64-unknown-linux-musl "$baseline_revision")
 [ "$stale_revision_digest" != "$embedded_arm_digest" ] \
   || fail "source revision must remain part of the Runner cache digest"
 printf 'changed bytes\n' >> "$cli_package"
-changed_cli_digest=$(GUEST_CLI_PATH="$cli_package" \
+changed_cli_digest=$(GUEST_CLI_PATH="$cli_package" GUEST_CLI_MANIFEST_PATH="$cli_manifest" \
   digest_value "$repo" aarch64-unknown-linux-musl)
 [ "$changed_cli_digest" != "$embedded_arm_digest" ] \
   || fail "CLI byte changes must invalidate the Runner cache digest"
 printf 'changed identity\n' >> "$cli_manifest"
-changed_identity_digest=$(GUEST_CLI_PATH="$cli_package" \
+changed_identity_digest=$(GUEST_CLI_PATH="$cli_package" GUEST_CLI_MANIFEST_PATH="$cli_manifest" \
   digest_value "$repo" aarch64-unknown-linux-musl)
 [ "$changed_identity_digest" != "$changed_cli_digest" ] \
   || fail "CLI identity changes must invalidate the Runner cache digest"
-rm "$cli_manifest"
-if GUEST_CLI_PATH="$cli_package" \
+# A sibling manifest is irrelevant: only the explicitly supplied path counts.
+printf 'wrong sibling identity\n' > "$(dirname "$cli_package")/manifest.json"
+explicit_identity_digest=$(GUEST_CLI_PATH="$cli_package" GUEST_CLI_MANIFEST_PATH="$cli_manifest" \
+  digest_value "$repo" aarch64-unknown-linux-musl)
+[ "$explicit_identity_digest" = "$changed_identity_digest" ] \
+  || fail "a sibling manifest must not affect the explicit input digest"
+if GUEST_CLI_PATH="$cli_package" GUEST_CLI_MANIFEST_PATH="" \
   digest_value "$repo" aarch64-unknown-linux-musl >/dev/null 2>&1; then
-  fail "missing sibling CLI manifest must fail"
+  fail "package-only CLI input must fail even with a sibling manifest"
+fi
+if GUEST_CLI_PATH="" GUEST_CLI_MANIFEST_PATH="$cli_manifest" \
+  digest_value "$repo" aarch64-unknown-linux-musl >/dev/null 2>&1; then
+  fail "manifest-only CLI input must fail"
+fi
+rm "$cli_manifest"
+if GUEST_CLI_PATH="$cli_package" GUEST_CLI_MANIFEST_PATH="$cli_manifest" \
+  digest_value "$repo" aarch64-unknown-linux-musl >/dev/null 2>&1; then
+  fail "an explicitly provided missing CLI manifest must fail"
 fi
 printf 'fixture CLI identity\n' > "$cli_manifest"
 rm "$cli_package"
-if GUEST_CLI_PATH="$cli_package" \
+if GUEST_CLI_PATH="$cli_package" GUEST_CLI_MANIFEST_PATH="$cli_manifest" \
   digest_value "$repo" aarch64-unknown-linux-musl >/dev/null 2>&1; then
   fail "an explicitly provided missing CLI package must fail"
 fi

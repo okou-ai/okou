@@ -32,8 +32,13 @@ if [[ ! "$RUNNER_BINARY_INPUT_DIGEST" =~ ^[0-9a-f]{64}$ ]]; then
   echo "invalid runner binary input digest: ${RUNNER_BINARY_INPUT_DIGEST}" >&2
   exit 2
 fi
+if { [ -n "${GUEST_CLI_PATH:-}" ] && [ -z "${GUEST_CLI_MANIFEST_PATH:-}" ]; } ||
+   { [ -z "${GUEST_CLI_PATH:-}" ] && [ -n "${GUEST_CLI_MANIFEST_PATH:-}" ]; }; then
+  echo "GUEST_CLI_PATH and GUEST_CLI_MANIFEST_PATH must be provided together" >&2
+  exit 2
+fi
 if [ -n "${GUEST_CLI_PATH:-}" ]; then
-  for file in "$GUEST_CLI_PATH" "$(dirname "$GUEST_CLI_PATH")/manifest.json"; do
+  for file in "$GUEST_CLI_PATH" "$GUEST_CLI_MANIFEST_PATH"; do
     if [ ! -f "$file" ] || [ ! -s "$file" ]; then
       echo "Guest CLI build input is missing or empty: ${file}" >&2
       exit 1
@@ -80,7 +85,8 @@ echo "=== Cross-compiling runner with embedded guests and CLI for ${TARGET_TRIPL
 (
   cd "$CRATES_DIR"
   CARGO_INCREMENTAL=0 env "${guest_env[@]}" \
-    GUEST_CLI_PATH="${GUEST_CLI_PATH:-}" cargo build \
+    GUEST_CLI_PATH="${GUEST_CLI_PATH:-}" \
+    GUEST_CLI_MANIFEST_PATH="${GUEST_CLI_MANIFEST_PATH:-}" cargo build \
     --locked \
     --profile "$RUNNER_BINARY_PROFILE" \
     --target "$TARGET_TRIPLE" \

@@ -80,18 +80,22 @@ fn main() {
         .expect("CARGO_MANIFEST_DIR should have a parent")
         .to_path_buf();
 
-    // Either supply every Guest binary and the CLI tarball, or none of them.
+    // Supply every Guest binary, the CLI tarball and its explicit manifest, or none.
     println!("cargo::rerun-if-env-changed=GUEST_CLI_PATH");
+    println!("cargo::rerun-if-env-changed=GUEST_CLI_MANIFEST_PATH");
     for guest in &guests {
         println!("cargo::rerun-if-env-changed={}", guest.path_env);
     }
     let guest_cli_path = read_bundle_path("GUEST_CLI_PATH");
+    let guest_cli_manifest_path = read_bundle_path("GUEST_CLI_MANIFEST_PATH");
     let paths: Vec<_> = guests
         .iter()
         .filter_map(|guest| read_bundle_path(&guest.path_env).map(|value| (guest, value)))
         .collect();
-    let supplied = paths.len() + usize::from(guest_cli_path.is_some());
-    if supplied != 0 && supplied != guests.len() + 1 {
+    let supplied = paths.len()
+        + usize::from(guest_cli_path.is_some())
+        + usize::from(guest_cli_manifest_path.is_some());
+    if supplied != 0 && supplied != guests.len() + 2 {
         let mut set: Vec<_> = paths
             .iter()
             .map(|(guest, _)| guest.path_env.as_str())
@@ -101,17 +105,22 @@ fn main() {
             .filter(|guest| !set.contains(&guest.path_env.as_str()))
             .map(|guest| guest.path_env.as_str())
             .collect();
-        if guest_cli_path.is_some() {
-            set.push("GUEST_CLI_PATH");
-        } else {
-            missing.push("GUEST_CLI_PATH");
+        for (name, provided) in [
+            ("GUEST_CLI_PATH", guest_cli_path.is_some()),
+            ("GUEST_CLI_MANIFEST_PATH", guest_cli_manifest_path.is_some()),
+        ] {
+            if provided {
+                set.push(name);
+            } else {
+                missing.push(name);
+            }
         }
         panic!(
             "partial Guest binary and CLI paths: set={set:?}, missing={missing:?} — must set all or none"
         );
     }
 
-    if supplied == guests.len() + 1 {
+    if supplied == guests.len() + 2 {
         println!("cargo::rustc-cfg=bundled_guests");
         for (guest, raw_path) in paths {
             let resolved = if Path::new(raw_path.as_str()).is_relative() {
@@ -129,6 +138,7 @@ fn main() {
         }
         embed_guest_cli(
             &guest_cli_path.expect("CLI path is required with Guest paths"),
+            &guest_cli_manifest_path.expect("CLI manifest path is required with Guest paths"),
             &workspace_root,
         );
     }
@@ -178,16 +188,10 @@ fn valid_release_version(value: &str) -> bool {
         })
 }
 
-fn embed_guest_cli(path: &str, workspace_root: &Path) {
+fn embed_guest_cli(path: &str, manifest_path: &str, workspace_root: &Path) {
     let package = cli_file_path(path, workspace_root, "package", MAX_CLI_PACKAGE_SIZE);
-    let manifest = package
-        .parent()
-        .expect("CLI package must have a parent")
-        .join("manifest.json");
     let manifest_path = cli_file_path(
-        manifest
-            .to_str()
-            .unwrap_or_else(|| panic!("non-UTF-8 CLI manifest path: {}", manifest.display())),
+        manifest_path,
         workspace_root,
         "manifest",
         MAX_CLI_MANIFEST_SIZE,

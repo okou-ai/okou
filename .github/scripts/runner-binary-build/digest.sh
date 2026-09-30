@@ -23,11 +23,19 @@ esac
 revision="${RUNNER_BINARY_GIT_REVISION:-HEAD}"
 source_sha=$(git -C "$REPO_ROOT" rev-parse --verify "${revision}^{commit}")
 cli_package="${GUEST_CLI_PATH:-}"
+cli_manifest="${GUEST_CLI_MANIFEST_PATH:-}"
+if { [ -n "$cli_package" ] && [ -z "$cli_manifest" ]; } ||
+   { [ -z "$cli_package" ] && [ -n "$cli_manifest" ]; }; then
+  echo "GUEST_CLI_PATH and GUEST_CLI_MANIFEST_PATH must be provided together" >&2
+  exit 2
+fi
 if [ -n "$cli_package" ]; then
   if [[ "$cli_package" != /* ]]; then
     cli_package="${REPO_ROOT}/${cli_package}"
   fi
-  cli_manifest="$(dirname "$cli_package")/manifest.json"
+  if [[ "$cli_manifest" != /* ]]; then
+    cli_manifest="${REPO_ROOT}/${cli_manifest}"
+  fi
   for file in "$cli_package" "$cli_manifest"; do
     if [ ! -f "$file" ] || [ ! -s "$file" ]; then
       echo "runner CLI build input is missing or empty: ${file}" >&2
