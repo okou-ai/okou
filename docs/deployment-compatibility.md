@@ -4745,16 +4745,18 @@ Compatibility is negotiated per run rather than by deployment order:
   after that API was promoted. The production rollback resolver enforces this
   reader as an additional API floor so old strict readers cannot claim queued
   runs carrying the digest. Retained Runner tags are unaffected.
-- The guest agent execs the installed CLI only on a parity match at or above
-  the CLI floor. When the launch config carries
+- Official Runner binaries embed the source-bound CLI package alongside their
+  Guest binaries. A local full rootfs build without a bundled CLI remains
+  possible; neither preview nor production image preparation downloads a
+  separate CLI artifact. The
+  guest agent execs only the installed CLI on a parity match at or above the
+  CLI floor. When the launch config carries
   `requiredPiSessionConstructionDigest`, parity means the installed manifest's
   `sessionConstruction.digest` is identical, and an installed CLI without a
   digest fails parity; otherwise parity means the installed `piAgentRuntime`
   equals `requiredPiAgentRuntimeVersion`. The installed `cli` must be at or
-  above `minCliVersion` in both cases. Every other case launches the
-  commit-addressed package through `npx`, which is always built from the
-  backend's commit; a launch config without the fields, or a rootfs without an
-  installed CLI, always takes the `npx` path.
+  above `minCliVersion` in both cases. Missing or incompatible metadata now
+  fails the run explicitly; new Guest binaries never install through `npx`.
 - The runner advertises the installed versions as an optional `installedVersions`
   field of the claim body. Older backends ignore it; the current backend records
   it in claim telemetry as `runner_installed_cli_version` and
@@ -4768,13 +4770,16 @@ Compatibility is negotiated per run rather than by deployment order:
   runtime version, differs from what it bundles. A settled-session continuation
   is a complete checkpoint and is never discarded for a parity difference.
 
-Skew in either direction is therefore safe: a new backend with an old runner
-emits the fields into a launch config the old guest ignores, because the
-generated Rust bindings do not deny unknown fields; a new runner with an old
-backend sees no required version and launches through `npx`.
-Raise `PI_SANDBOX_INSTALLED_CLI_MIN_VERSION` whenever a launch-payload or
-handoff field becomes required. Retiring `CLI_PKG_URL` and the `npx` path
-follows the drain procedure below and is tracked in #35967.
+An old backend that omits the installed-CLI requirement cannot start a Pi
+run on a new Guest binary, even if the bundle is installed. Likewise, queued
+contexts requiring a newer or different CLI fail visibly rather than silently
+executing incompatible code or downloading another package. This cutover
+requires an operational compatibility and queue-drain check before promoting
+new Runners. Older already-deployed Guest binaries retain their own historical
+`npx` behavior until replaced; API context writes of `CLI_PKG_URL` remain for
+them and are not used by the new Guest. Continue raising
+`PI_SANDBOX_INSTALLED_CLI_MIN_VERSION` whenever a launch-payload or handoff
+field becomes required.
 
 ### Commit-addressed CLI artifacts
 

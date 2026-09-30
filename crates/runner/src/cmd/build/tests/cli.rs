@@ -102,36 +102,17 @@ async fn explicit_guest_paths_resolve_every_inventory_entry() {
 }
 
 #[test]
-fn build_args_reject_okou_cli_artifact_with_warm_rootfs_cache() {
+fn build_args_reject_host_cli_artifact() {
     let mut args = build_args();
     args.extend([
         "--okou-cli-artifact".to_string(),
         "/tmp/okou-cli".to_string(),
-        "--warm-rootfs-cache".to_string(),
     ]);
 
     let error = <TestBuildCli as clap::Parser>::try_parse_from(args)
         .err()
-        .expect("combined flags should fail");
-
-    assert_eq!(error.kind(), clap::error::ErrorKind::ArgumentConflict);
-}
-
-#[test]
-fn build_args_parse_okou_cli_artifact_dir() {
-    let mut args = build_args();
-    args.extend([
-        "--okou-cli-artifact".to_string(),
-        "/tmp/okou-cli".to_string(),
-    ]);
-
-    let cli = <TestBuildCli as clap::Parser>::try_parse_from(args).unwrap();
-
-    assert_eq!(
-        cli.args.okou_cli_artifact.as_deref(),
-        Some(std::path::Path::new("/tmp/okou-cli"))
-    );
-    assert_eq!(BuildMode::from_args(&cli.args), BuildMode::FullImage);
+        .expect("host CLI artifacts are unsupported");
+    assert_eq!(error.kind(), clap::error::ErrorKind::UnknownArgument);
 }
 
 #[test]

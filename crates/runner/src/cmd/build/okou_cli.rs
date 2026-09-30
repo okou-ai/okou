@@ -1,15 +1,17 @@
 //! CLI package staged for installation into the rootfs customize layer.
 //!
-//! Official Runners use their embedded `package.tgz` plus validated identity
-//! constants from the same build. For local Runners without a bundle, the
-//! legacy `--okou-cli-artifact DIR` path remains available.
+//! When bundled, the Runner uses its embedded `package.tgz` plus validated
+//! identity constants from the same build. Local builds may omit it.
 
 use std::path::{Path, PathBuf};
 
+#[cfg(test)]
+use guest_contracts::okou_cli::parse_release_version;
 use guest_contracts::okou_cli::{
     InstalledOkouCli, OKOU_CLI_INSTALLED_MANIFEST_SCHEMA_VERSION, OkouCliInstalledPackage,
-    OkouCliSessionConstruction, OkouCliVersions, parse_release_version,
+    OkouCliSessionConstruction, OkouCliVersions,
 };
+#[cfg(test)]
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
@@ -18,10 +20,13 @@ use crate::error::{RunnerError, RunnerResult};
 use super::hashes::OkouCliHashInput;
 
 pub(super) const OKOU_CLI_PACKAGE_FILE: &str = "package.tgz";
+#[cfg(test)]
 pub(super) const OKOU_CLI_MANIFEST_FILE: &str = "manifest.json";
+#[cfg(test)]
 const ARTIFACT_MANIFEST_VERSION: u32 = 1;
 const MAX_CLI_PACKAGE_SIZE: usize = 64 * 1024 * 1024;
 
+#[cfg(test)]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ArtifactManifest {
@@ -35,6 +40,7 @@ struct ArtifactManifest {
     session_construction: Option<OkouCliSessionConstruction>,
 }
 
+#[cfg(test)]
 #[derive(Deserialize)]
 struct ArtifactPackage {
     path: String,
@@ -55,10 +61,7 @@ pub(super) struct OkouCliArtifact {
 }
 
 impl OkouCliArtifact {
-    /// Load, verify, and stage the artifact found in `dir`.
-    ///
-    /// The package bytes are copied into a private temp dir so hashing and
-    /// customization consume the same bytes even if `dir` changes mid-build.
+    /// Verify and stage the embedded package, preserving the compiled identity.
     pub(super) async fn resolve_embedded() -> RunnerResult<Option<Self>> {
         #[cfg(bundled_okou_cli)]
         {
@@ -89,7 +92,8 @@ impl OkouCliArtifact {
         Ok(None)
     }
 
-    /// Legacy host-artifact path for Runners compiled without a CLI bundle.
+    /// Test-only manifest fixture for staging and integrity checks.
+    #[cfg(test)]
     pub(super) async fn resolve(dir: &Path) -> RunnerResult<Self> {
         let manifest_path = dir.join(OKOU_CLI_MANIFEST_FILE);
         let manifest_bytes = tokio::fs::read(&manifest_path).await.map_err(|e| {

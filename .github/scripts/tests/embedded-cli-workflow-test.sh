@@ -54,7 +54,13 @@ jq -e '
     .env.GUEST_CLI_PATH == "${{ github.workspace }}/runner-cli-intermediate/package.tgz" and
     .env.GUEST_CLI_MANIFEST_PATH == "${{ github.workspace }}/runner-cli-intermediate/manifest.json" and
     .env.GUEST_CLI_SOURCE_SHA == "${{ needs.release-please.outputs.release_target }}") and
-  (.jobs["builds-complete"].needs | index("prepare-runner-cli") != null)
+  (.jobs["builds-complete"].needs | index("prepare-runner-cli") != null) and
+  (.jobs["build-runner-production"].needs | index("publish-cli-versioned-artifact") == null) and
+  any(.jobs["build-runner-production"].steps[];
+    .name == "Build rootfs and snapshot on production hosts" and
+    (.env | has("OKOU_CLI_PACKAGE_URL") | not) and
+    (.run | contains("okou_cli_package_url") | not)
+  )
 ' <<<"$release_json" >/dev/null || {
   echo 'Release CLI producer/consumer ordering is invalid' >&2
   exit 1

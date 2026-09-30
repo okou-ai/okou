@@ -132,9 +132,6 @@ pub struct BuildArgs {
         arg(long, help = "Path to runner-rpc-client binary (required)")
     )]
     runner_rpc_client: Option<PathBuf>,
-    /// Legacy CLI artifact directory for a Runner built without an embedded CLI
-    #[arg(long, value_name = "DIR", conflicts_with = "warm_rootfs_cache")]
-    okou_cli_artifact: Option<PathBuf>,
     /// Profile to build (determines VM resources and disk sizes)
     #[arg(long)]
     pub profile: String,
@@ -282,8 +279,8 @@ struct RootfsBuildInput<'a> {
     template: TemplateInput<'a>,
     rootfs_paths: &'a RootfsPaths,
     guests: &'a GuestBinaries,
-    /// Versioned CLI installed into the customize layer; `None` keeps the
-    /// legacy commit-addressed `npx` launch path as the only CLI delivery.
+    /// Versioned CLI installed into the customize layer when bundled.
+    /// CLI-free local builds remain possible, but Pi launch requires an install.
     okou_cli: Option<&'a OkouCliArtifact>,
 }
 
@@ -422,20 +419,7 @@ pub async fn run_build(mut args: BuildArgs, provider: &dyn SnapshotProvider) -> 
     };
     let okou_cli = match mode {
         BuildMode::WarmRootfsCache => None,
-        BuildMode::FullImage => {
-            if let Some(embedded) = OkouCliArtifact::resolve_embedded().await? {
-                if args.okou_cli_artifact.is_some() {
-                    tracing::info!("using embedded CLI instead of legacy --okou-cli-artifact");
-                }
-                Some(embedded)
-            } else if let Some(dir) = args.okou_cli_artifact.take() {
-                Some(OkouCliArtifact::resolve(&dir).await?)
-            } else {
-                // Local/older Runners without an embedded bundle retain their
-                // historical CLI-free rootfs and Guest URL fallback.
-                None
-            }
-        }
+        BuildMode::FullImage => OkouCliArtifact::resolve_embedded().await?,
     };
 
     let hashes = match mode {

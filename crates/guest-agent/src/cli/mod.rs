@@ -104,7 +104,6 @@ const OPENAI_BASE_URL_ENV_KEY: &str = "OPENAI_BASE_URL";
 const OKOU_AGENT_ID_ENV_KEY: &str = "OKOU_AGENT_ID";
 const ENABLE_FRAMEWORK_WEB_SEARCH_ENV_KEY: &str = "OKOU_ENABLE_FRAMEWORK_WEB_SEARCH";
 const CODEX_SERVICE_TIER_CANONICAL_ENV: &str = "OKOU_CODEX_SERVICE_TIER";
-const CLI_PACKAGE_URL_ENV_KEY: &str = "CLI_PKG_URL";
 const PI_LANGFUSE_DEBUG_ENABLED_ENV_KEY: &str = "OKOU_PI_LANGFUSE_DEBUG_ENABLED";
 const LANGFUSE_PUBLIC_KEY_ENV_KEY: &str = "LANGFUSE_PUBLIC_KEY";
 const LANGFUSE_SECRET_KEY_ENV_KEY: &str = "LANGFUSE_SECRET_KEY";
@@ -612,27 +611,14 @@ fn build_pi_command_for_runtime(
             .map(|session_construction| session_construction.digest.as_str())
             .unwrap_or("<none>"),
     );
-    if decision.source == okou_cli_launch::PiCliLaunchSource::Installed {
-        return Ok(vec![
-            OKOU_CLI_LAUNCHER_PATH.to_string(),
-            "__agent-loop".to_string(),
-        ]);
+    if decision.source != okou_cli_launch::PiCliLaunchSource::Installed {
+        return Err(AgentError::Execution(format!(
+            "installed Okou CLI cannot satisfy this Pi run: {}",
+            decision.reason
+        )));
     }
-    let package_url = runtime
-        .user_env
-        .get(CLI_PACKAGE_URL_ENV_KEY)
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| {
-            AgentError::Execution(format!(
-                "{CLI_PACKAGE_URL_ENV_KEY} is required for Pi execution"
-            ))
-        })?;
     Ok(vec![
-        "npx".to_string(),
-        "--yes".to_string(),
-        "--no-audit".to_string(),
-        format!("--package={package_url}"),
-        "okou".to_string(),
+        OKOU_CLI_LAUNCHER_PATH.to_string(),
         "__agent-loop".to_string(),
     ])
 }
@@ -2671,16 +2657,7 @@ mod tests {
         runtime.pi_installed_cli_requirement = Cow::Borrowed(
             r#"{"requiredPiAgentRuntimeVersion":"1.36.0","minCliVersion":"9.352.7"}"#,
         );
-        let npx = vec![
-            "npx".to_string(),
-            "--yes".to_string(),
-            "--no-audit".to_string(),
-            "--package=https://static.okou.io/okou-cli/abc/package.tgz".to_string(),
-            "okou".to_string(),
-            "__agent-loop".to_string(),
-        ];
-
-        assert_eq!(build_pi_command_for_runtime(&runtime, None).unwrap(), npx);
+        assert!(build_pi_command_for_runtime(&runtime, None).is_err());
         let matching = installed_okou_cli_for_test("9.353.0", "1.36.0");
         assert_eq!(
             build_pi_command_for_runtime(&runtime, Some(&matching)).unwrap(),
@@ -2690,19 +2667,18 @@ mod tests {
             ]
         );
         let mismatched = installed_okou_cli_for_test("9.353.0", "1.35.9");
-        assert_eq!(
-            build_pi_command_for_runtime(&runtime, Some(&mismatched)).unwrap(),
-            npx
-        );
+        let mismatch = build_pi_command_for_runtime(&runtime, Some(&mismatched)).unwrap_err();
+        assert!(mismatch.to_string().contains("runtime_version_mismatch"));
 
-        // An execution context without a requirement keeps the npx launch.
+        // Even a legacy URL-bearing context cannot trigger a network install.
         runtime.pi_installed_cli_requirement = Cow::Borrowed("");
-        assert_eq!(
-            build_pi_command_for_runtime(&runtime, Some(&matching)).unwrap(),
-            npx
+        let missing = build_pi_command_for_runtime(&runtime, Some(&matching)).unwrap_err();
+        assert!(
+            missing
+                .to_string()
+                .contains("launch_config_without_runtime_version")
         );
 
-        // The commit-addressed package stays required for the npx path only.
         let no_url = HashMap::new();
         let mut runtime = runtime_for_command_test(env::Framework::Pi, "prompt", "", &no_url);
         runtime.pi_session_id = Cow::Borrowed("11111111-1111-4111-8111-111111111111");

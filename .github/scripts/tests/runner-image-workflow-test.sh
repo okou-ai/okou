@@ -327,15 +327,10 @@ jq -e '
   .jobs.build.strategy.matrix.include == "${{ fromJSON(needs.prepare.outputs.runner-host-groups-matrix) }}" and
   (.jobs.build.if | contains("needs.compile.result == '\''skipped'\''")) and
   (.jobs.build.if | contains("needs.compile.result == '\''success'\''")) and
-  any(.jobs.build.steps[];
-    .id == "okou-cli" and
-    .run == ".github/scripts/download-okou-cli-artifact.sh" and
-    .env.ARTIFACT_SHA == "${{ needs.prepare.outputs.source-head-sha }}" and
-    .env.ARTIFACT_REQUIRED == "false" and
-    .env.WAIT_SECONDS == "600" and
-    .env.CHECK_PUBLISHER_STATUS == "true" and
-    .env.GH_TOKEN == "${{ github.token }}"
-  ) and
+  (all(.jobs.build.steps[];
+    .run != ".github/scripts/download-okou-cli-artifact.sh" and
+    (.env.OKOU_CLI_ARTIFACT_DIR? == null)
+  )) and
   any(.jobs.build.steps[];
     .name == "Download cached runner binary from R2" and
     (.if | contains("runner-binary-hit-targets")) and

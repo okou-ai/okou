@@ -2446,7 +2446,6 @@ jobs:
         resolve-image-cache,
         build-runner-release-assets,
         runner-production-host-groups,
-        publish-cli-versioned-artifact,
       ]
     if: ${{ needs.release-please.outputs.runner_rs_release_created == 'true' }}
     runs-on: ubuntu-latest
@@ -2617,11 +2616,6 @@ jobs:
           # (decoded in previous step).
           R2_ACCOUNT_ID: ${{ needs.resolve-image-cache.outputs.r2-account-id }}
           R2_USER_STORAGES_BUCKET_NAME: ${{ needs.resolve-image-cache.outputs.r2-bucket }}
-          # Versioned Okou CLI published for this release commit; the rootfs
-          # installs it so Pi runs exec the CLI instead of npx-installing it.
-          OKOU_CLI_PACKAGE_URL: ${{ needs.publish-cli-versioned-artifact.outputs.package-url }}
-          OKOU_CLI_MANIFEST_URL: ${{ needs.publish-cli-versioned-artifact.outputs.manifest-url }}
-          OKOU_CLI_PACKAGE_SHA256: ${{ needs.publish-cli-versioned-artifact.outputs.package-sha256 }}
         run: |
           cd ansible
           ansible-playbook \
@@ -2636,9 +2630,6 @@ jobs:
             -e "r2_access_key_id=${R2_ACCESS_KEY_ID:-}" \
             -e "r2_secret_access_key=${R2_SECRET_ACCESS_KEY:-}" \
             -e "r2_bucket=${R2_USER_STORAGES_BUCKET_NAME:-}" \
-            -e "okou_cli_package_url=${OKOU_CLI_PACKAGE_URL:?versioned CLI artifact URL is required}" \
-            -e "okou_cli_manifest_url=${OKOU_CLI_MANIFEST_URL:?versioned CLI manifest URL is required}" \
-            -e "okou_cli_package_sha256=${OKOU_CLI_PACKAGE_SHA256:?versioned CLI package sha256 is required}" \
             -v
 
       - name: Calculate duration
