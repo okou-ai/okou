@@ -2864,13 +2864,14 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       .from(orgModelPolicies)
       .where(eq(orgModelPolicies.orgId, (await get(queuedModelInputsInput$)).orgId));
   });
-  const policyFacts$ = computed((get) => {
-    const facts = get(queuedModelInputsInternalPolicyFacts$);
-    if (!facts) {
-      throw new Error("Queued model policy must be prepared before routing");
-    }
-    return facts;
-  });
+  const policyFacts$ = computed(
+    async (get): Promise<EnsuredOrgModelPolicyFacts> => {
+      const written = get(queuedModelInputsInternalPolicyFacts$);
+      // Before an explicit initialization write, route from the real captured
+      // database facts. Its returned facts invalidate this read after the write.
+      return written ?? (await get(initialFacts$));
+    },
+  );
   const policy$ = computed(async (get) => {
     const [selection, facts] = await Promise.all([
       get(queuedModelInputsSelection$),
@@ -3337,8 +3338,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       personalSubscription: () => {
         return get(personalSubscription$);
       },
-      capabilities: () => {
-        return get(queuedProviderAdmissionPolicyFacts$).orgPlanCapabilities;
+      capabilities: async () => {
+        return (await get(queuedProviderAdmissionPolicyFacts$)).orgPlanCapabilities;
       },
       creditBalance: () => {
         return get(queuedProviderAdmissionCreditBalance$);
@@ -5855,13 +5856,12 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       .from(orgModelPolicies)
       .where(eq(orgModelPolicies.orgId, (await get(queuedModelInputsInput$2)).orgId));
   });
-  const queuedModelInputsPolicyFacts$ = computed((get) => {
-    const facts = get(queuedModelInputsInternalPolicyFacts$2);
-    if (!facts) {
-      throw new Error("Queued model policy must be prepared before routing");
-    }
-    return facts;
-  });
+  const queuedModelInputsPolicyFacts$ = computed(
+    async (get): Promise<EnsuredOrgModelPolicyFacts> => {
+      const written = get(queuedModelInputsInternalPolicyFacts$2);
+      return written ?? (await get(queuedModelCommandsInitialFacts$));
+    },
+  );
   const queuedModelInputsPolicy$ = computed(async (get) => {
     const [selection, facts] = await Promise.all([
       get(queuedModelInputsSelection$2),
@@ -6334,8 +6334,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       personalSubscription: () => {
         return get(personalSubscription$2);
       },
-      capabilities: () => {
-        return get(queuedProviderAdmissionPolicyFacts$2).orgPlanCapabilities;
+      capabilities: async () => {
+        return (await get(queuedProviderAdmissionPolicyFacts$2)).orgPlanCapabilities;
       },
       creditBalance: () => {
         return get(queuedProviderAdmissionCreditBalance$2);
