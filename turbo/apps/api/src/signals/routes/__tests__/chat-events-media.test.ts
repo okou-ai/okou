@@ -148,12 +148,14 @@ describe("CHAT-02: run image model snapshot", () => {
       "No executor configured: set RUNNER_DEFAULT_GROUP",
     );
     const { events } = await chat.listThreadEvents(actor, sent.body.threadId);
-    expect(events).toStrictEqual([
+    // The failed pick rejects its input; no run or image snapshot exists.
+    expect(events).toContainEqual(
       expect.objectContaining({
-        id: clientEventId,
-        eventType: "input.prompt",
+        eventType: "input.rejected",
+        revokesEventId: clientEventId,
+        error: "internal_error",
       }),
-    ]);
+    );
     await expect(
       api.listAgentRuns(actor, {
         status: "queued,pending,running,completed,failed,timeout,cancelled",
