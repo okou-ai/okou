@@ -489,7 +489,7 @@ export const rustTypeBindings = [
         rustDoc: ["API-owned dialect-aware non-secret Pi model configuration."],
         variants: {
           "openai-responses": [
-            "Public Responses route with optional priority tier.",
+            "Public Responses route with optional priority or Astra Ultrafast tier.",
           ],
           "openai-codex-responses": [
             "Native Codex Responses route with optional fast tier.",
@@ -549,7 +549,10 @@ export const rustTypeBindings = [
               rustDoc: ["Dialect-constrained request service tiers."],
               variants:
                 dialect === "OpenaiResponses"
-                  ? { priority: ["Public Responses priority service tier."] }
+                  ? {
+                      priority: ["Public Responses priority service tier."],
+                      ultrafast: ["Astra Ultrafast public API service tier."],
+                    }
                   : { fast: ["Native Codex Responses fast service tier."] },
             },
             {

@@ -404,19 +404,26 @@ describe("Pi agent model adapter", () => {
   it.each(["openai", "openai-codex"] as const)(
     "pins the official 6.1 Sol identity and prices for %s",
     (provider) => {
-      const model = resolvePiAgentModel({
-        provider,
-        baseUrl:
-          provider === "openai"
-            ? "https://api.openai.com/v1"
-            : "https://chatgpt.com/backend-api",
-        apiKey: "test-key",
-        model: "gpt-6.1-sol",
-        ...(provider === "openai-codex"
-          ? { dialect: "openai-codex-responses" as const, accountId: "test" }
-          : { dialect: "openai-responses" as const }),
-        transport: "sse",
-      });
+      const config =
+        provider === "openai-codex"
+          ? {
+              provider,
+              baseUrl: "https://chatgpt.com/backend-api",
+              apiKey: "test-key",
+              model: "gpt-6.1-sol",
+              dialect: "openai-codex-responses" as const,
+              accountId: "test",
+              transport: "sse" as const,
+            }
+          : {
+              provider,
+              baseUrl: "https://api.openai.com/v1",
+              apiKey: "test-key",
+              model: "gpt-6.1-sol",
+              dialect: "openai-responses" as const,
+              transport: "sse" as const,
+            };
+      const model = resolvePiAgentModel(config);
       expect(model).toMatchObject({
         id: "gpt-6.1-sol",
         name: "GPT 6.1 Sol",

@@ -454,7 +454,8 @@ impl<'a> CliRuntimeConfig<'a> {
             codex_fast_mode: matches!(config.framework, env::Framework::Codex)
                 && user_env_value(&config.user_env, CODEX_SERVICE_TIER_CANONICAL_ENV) == "fast",
             codex_ultrafast_mode: matches!(config.framework, env::Framework::Codex)
-                && user_env_value(&config.user_env, CODEX_SERVICE_TIER_CANONICAL_ENV) == "ultrafast",
+                && user_env_value(&config.user_env, CODEX_SERVICE_TIER_CANONICAL_ENV)
+                    == "ultrafast",
             reasoning_effort: reasoning_effort::resolve(config.framework, &config.user_env)?,
             disable_builtin_web_search,
             agent_execution_deadline,
