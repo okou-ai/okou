@@ -9641,9 +9641,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     );
     const secretQuery = db
       .select({
-        memberConnectorId: sql`${connections.id}`
-          .mapWith(pgTextDecoder)
-          .as("value_member_connector_id"),
+        memberConnectorId: connections.id,
         kind: sql`'secret'`
           .mapWith(runCustomConnectorStoredValueKindDecoder)
           .as("kind"),
@@ -9682,7 +9680,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           currentVersion,
         ),
       );
-    // The first branch keeps the member ID's runtime decoder and CTE alias.
+    // The member ID is only used by the outer JOIN, not decoded in its result.
+    // Keep the first branch's kind decoder for the returned UNION fields.
     return db
       .$with("custom_connector_runtime_values")
       .as(unionAll(secretQuery, variableQuery));
