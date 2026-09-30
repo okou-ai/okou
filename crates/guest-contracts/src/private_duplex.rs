@@ -1,7 +1,9 @@
 //! Version 1 private, run-assignment Guest duplex wire limits.
-//! One Guest-initiated vsock stream per logical channel: one activation byte,
-//! then four-byte big-endian length-prefixed opaque data in each direction.
-//! EOF half-closes the corresponding direction; errors reset the connection.
+//! One Guest-initiated vsock stream per logical channel: host `READY` acknowledges
+//! a pending slot, then host `ACTIVATE` admits the exact run assignment.
+//! Both directions then use four-byte big-endian length-prefixed opaque data.
+//! EOF half-closes its direction; framing errors invalidate the channel and
+//! require its owner to close the stream.
 
 /// Dedicated private Guest-to-host listener, independent of control and RPC.
 pub const VSOCK_PORT: u32 = 52002;
