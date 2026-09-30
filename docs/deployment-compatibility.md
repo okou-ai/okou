@@ -1,5 +1,31 @@
 # Deployment Compatibility
 
+## Astra Ultrafast temporarily disabled (2026-09-30)
+
+Ultrafast is no longer advertised in model run options. Both model pickers hide
+its entry. The API rejects new Ultrafast thread selections, member preferences,
+and sends, including sends retaining an existing Ultrafast thread pin. Users
+with such a pin must select Standard or Fast before sending again. New threads
+ignore a previously saved Ultrafast member preference and use Standard.
+Run creation and claim reject Ultrafast even on direct OpenAI API-key routes;
+already queued Ultrafast work is not silently downgraded. This pause leaves
+Standard, Fast, reasoning efforts, and GPT 6.1 Sol unchanged.
+
+No schema, enum, historical event reader, Runner protocol, or billing-category
+changes are made. Historical Ultrafast data and usage remain readable, and
+already running sandboxes are not interrupted. Old clients can still show the
+entry, but receive `400` from the new API when enabling or sending with it. An
+old API instance may still accept Ultrafast until the API rollout completes;
+the new App alone does not disable old API instances. Rolling back restores the
+previous availability. Re-enabling requires verified account-specific tier
+discovery, rather than assuming subscription eligibility from the model name.
+
+With the global model catalog below, this pause is catalog data rather than a
+code check: migration 1297 seeds the `gpt-6-astra` `openai-api-key` route with
+`service_tiers = {priority}` only, so every Ultrafast check (pickers, member
+preference, thread selection, send, run creation and claim) finds no route
+offering it and returns `400`. Re-enabling is a `model_routes` data change.
+
 ## Global model catalog and projected system default (2026-09-30)
 
 The server model catalog (`run_model_catalog` plus `model_routes`, served by

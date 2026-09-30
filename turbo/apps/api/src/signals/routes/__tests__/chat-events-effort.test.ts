@@ -15,6 +15,7 @@ const {
   chatCallbacks,
   entitledChatActor,
   sendChatRun,
+  requestSendEventRaw,
   claimChatRun,
   waitForThreadMessages,
   cancelChatRun,
@@ -451,8 +452,8 @@ describe("CHAT effort: thread configuration", () => {
     90_000,
   );
 
-  it("launches Astra Ultrafast only on the direct OpenAI API-key route", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+  it("offers Fast but not Ultrafast on the direct OpenAI Astra route", async () => {
+    const { actor, agentId } = await entitledChatActor();
     const { providerId } = await upsertOrgModelProvider(actor, {
       type: "openai-api-key",
       secret: "test-astra-ultrafast-openai-key",
@@ -471,24 +472,47 @@ describe("CHAT effort: thread configuration", () => {
       title: "Direct API Ultrafast",
       model: "gpt-6-astra",
     });
-    await chat.updateThreadModelSelection(actor, thread.id, "gpt-6-astra", {
-      codexServiceTier: "ultrafast",
+    const selection = await chat.requestUpdateThreadModelSelection(
+      actor,
+      thread.id,
+      "gpt-6-astra",
+      [400],
+      { codexServiceTier: "ultrafast" },
+    );
+    expect(selection.body).toMatchObject({
+      error: { message: "Ultrafast is unavailable for this model route" },
     });
-    await expect(
-      chat.readThreadMetadata(actor, thread.id),
-    ).resolves.toMatchObject({
-      serviceTier: "ultrafast",
-    });
-    const sent = await sendChatRun(actor, {
+    const sent = await requestSendEventRaw(actor, {
       agentId,
       threadId: thread.id,
       prompt: "Use Astra Ultrafast",
+      hasTextContent: true,
+      userMessage: {
+        version: 1,
+        parts: [{ type: "text", text: "Use Astra Ultrafast" }],
+      },
+      runOptions: { codexServiceTier: "ultrafast" },
     });
-    const claimed = await claimChatRun(runnerGroup, sent.runId);
-    expect(claimed.claim.platformEnvironment.OKOU_CODEX_SERVICE_TIER).toBe(
-      "ultrafast",
-    );
-    await cancelChatRun(actor, sent.runId, claimed.sandboxHeaders);
+    expect(sent.status).toBe(400);
+    expect(sent.body).toMatchObject({
+      error: { message: "Ultrafast is unavailable for this model route" },
+    });
+    await expect(
+      chat.readThreadMetadata(actor, thread.id),
+    ).resolves.toMatchObject({ serviceTier: null });
+    // The same route still offers Fast, and switching back to Standard clears it.
+    await chat.updateThreadModelSelection(actor, thread.id, "gpt-6-astra", {
+      codexServiceTier: "fast",
+    });
+    await expect(
+      chat.readThreadMetadata(actor, thread.id),
+    ).resolves.toMatchObject({ serviceTier: "priority" });
+    await chat.updateThreadModelSelection(actor, thread.id, "gpt-6-astra", {
+      codexServiceTier: null,
+    });
+    await expect(
+      chat.readThreadMetadata(actor, thread.id),
+    ).resolves.toMatchObject({ serviceTier: null });
   }, 90_000);
 
   it("preserves Fast when changing effort", async () => {

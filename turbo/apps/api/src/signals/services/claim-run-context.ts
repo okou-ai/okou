@@ -268,6 +268,7 @@ import {
   loadModelCatalog,
   type ModelCatalog,
 } from "./model-catalog.service";
+import { isCatalogUltrafastServiceTierSupported } from "./model-route-capabilities.service";
 import {
   chatThreadConversationRun,
   type ChatThreadExecutionSnapshot,
@@ -639,7 +640,6 @@ import {
 import { alias, unionAll } from "drizzle-orm/pg-core";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { userPermissionGrantActionSchema } from "@okouai/api-contracts/contracts/user-permission-grants";
 
 export interface ThreadClaim {
   readonly orgId: string;
@@ -2290,14 +2290,6 @@ const bootstrapMetadataRowKindDecoder = zodEnumDriverValueDecoder(
   ]),
 );
 const nullableTextDecoder = nullableDriverValueDecoder(pgTextDecoder);
-const nullableCustomConnectorPermissionNamesDecoder =
-  nullableDriverValueDecoder(zodDriverValueDecoder(z.array(z.string())));
-const nullableBootstrapMetadataSwitchesDecoder = nullableDriverValueDecoder(
-  zodDriverValueDecoder(z.record(z.string(), z.boolean())),
-);
-const nullablePermissionGrantActionDecoder = nullableDriverValueDecoder(
-  zodEnumDriverValueDecoder(userPermissionGrantActionSchema),
-);
 const persistedRunEnvironmentRowKindDecoder = zodEnumDriverValueDecoder(
   z.enum(["variable", "secret"]),
 );
@@ -2391,6 +2383,33 @@ type RunnerInputResult =
   | ReturnType<typeof prepareRunnerStorageInput>
   | CreateRunErrorResult
   | null;
+
+function storageManifestCacheLookupCondition(
+  pairs: readonly {
+    readonly scope: StorageManifestPresignedUrlCacheScope;
+    readonly cacheKey: string;
+  }[],
+) {
+  const keysByScope = new Map<
+    StorageManifestPresignedUrlCacheScope,
+    string[]
+  >();
+  for (const pair of pairs) {
+    const keys = keysByScope.get(pair.scope) ?? [];
+    keys.push(pair.cacheKey);
+    keysByScope.set(pair.scope, keys);
+  }
+  // The lookup planner supplies unique pairs and fixed-length generated keys.
+  // Grouping by scope preserves pair matching without one OR arm per key.
+  return or(
+    ...[...keysByScope].map(([scope, keys]) => {
+      return and(
+        eq(systemStoragePresignedUrlCache.scope, scope),
+        inArray(systemStoragePresignedUrlCache.cacheKey, keys),
+      );
+    }),
+  );
+}
 
 export function createClaimRunObjects(claim: ThreadClaim) {
   // One model catalog snapshot per claim: the queued input is re-resolved
@@ -4378,6 +4397,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
             runId: agentRuns.id,
             runStatus: agentRuns.status,
             isSuccess: isSuccessfulRun,
+            // candidateSource is an opaque SQL FROM fragment; a bare column
+            // cannot pass Drizzle's typed-source membership validation here.
             seqId: sql`${incompleteAnchorCandidate.seqId}`.mapWith(
               chatEvents.seqId,
             ),
@@ -4555,8 +4576,11 @@ export function createClaimRunObjects(claim: ThreadClaim) {
                   queuedUserMessageTriggerSource(contextType),
                 ),
           or(
-            sql`${agentRuns.status} IS DISTINCT FROM ${"cancelled"}`,
-            sql`${agentRuns.error} IS DISTINCT FROM ${BEFORE_DISPATCH_CANCELLED_ERROR}`,
+            or(ne(agentRuns.status, "cancelled"), isNull(agentRuns.status)),
+            or(
+              ne(agentRuns.error, BEFORE_DISPATCH_CANCELLED_ERROR),
+              isNull(agentRuns.error),
+            ),
           ),
         ),
       )
@@ -7188,20 +7212,11 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           id: sql`${userCustomConnectors.customConnectorId}::text`
             .mapWith(nullableTextDecoder)
             .as("id"),
-          detail: sql`${orgCustomConnectors.slug}`
-            .mapWith(nullableTextDecoder)
-            .as("detail"),
-          permissionNames: sql`${userCustomConnectors.permissionNames}`
-            .mapWith(nullableCustomConnectorPermissionNamesDecoder)
-            .as("permission_names"),
-          permissionBundleRef: sql`${orgCustomConnectors.permissionBundleRef}`
-            .mapWith(nullableTextDecoder)
-            .as("permission_bundle_ref"),
+          detail: orgCustomConnectors.slug,
+          permissionNames: userCustomConnectors.permissionNames,
+          permissionBundleRef: orgCustomConnectors.permissionBundleRef,
           storageVersion: orgCustomConnectors.storageVersion,
-          skillStorageVersionId:
-            sql`${orgCustomConnectors.skillStorageVersionId}`
-              .mapWith(nullableTextDecoder)
-              .as("skill_storage_version_id"),
+          skillStorageVersionId: orgCustomConnectors.skillStorageVersionId,
           isMcp: isNotNull(orgCustomConnectors.mcpEndpoint)
             .mapWith(pgBooleanDecoder)
             .as("is_mcp"),
@@ -7235,6 +7250,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           get(bootstrapCustomConnectorQuery$),
         ]);
       const includeFeatureSwitches = featureContext === undefined;
+      // Keep userInfoQuery first: its fields own the UNION's runtime decoders,
+      // including the mapped NULL fields from emptyBootstrapMetadataFields().
       const userInfoQuery = db
         .select({
           kind: sql`'user_info'`
@@ -7262,12 +7279,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
             .mapWith(bootstrapMetadataRowKindDecoder)
             .as("kind"),
           ...emptyBootstrapMetadataFields(),
-          featureUserId: sql`${userFeatureSwitches.userId}`
-            .mapWith(nullableTextDecoder)
-            .as("feature_user_id"),
-          switches: sql`${userFeatureSwitches.switches}`
-            .mapWith(nullableBootstrapMetadataSwitchesDecoder)
-            .as("switches"),
+          featureUserId: userFeatureSwitches.userId,
+          switches: userFeatureSwitches.switches,
         })
         .from(userFeatureSwitches)
         .where(
@@ -7285,9 +7298,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
             .mapWith(bootstrapMetadataRowKindDecoder)
             .as("kind"),
           ...emptyBootstrapMetadataFields(),
-          name: sql`${userBuiltinConnectors.connectorSlug}`
-            .mapWith(nullableTextDecoder)
-            .as("name"),
+          name: userBuiltinConnectors.connectorSlug,
         })
         .from(userBuiltinConnectors)
         .where(
@@ -7303,15 +7314,9 @@ export function createClaimRunObjects(claim: ThreadClaim) {
             .mapWith(bootstrapMetadataRowKindDecoder)
             .as("kind"),
           ...emptyBootstrapMetadataFields(),
-          name: sql`${userPermissionGrants.connectorSlug}`
-            .mapWith(nullableTextDecoder)
-            .as("name"),
-          detail: sql`${userPermissionGrants.permission}`
-            .mapWith(nullableTextDecoder)
-            .as("detail"),
-          action: sql`${userPermissionGrants.action}`
-            .mapWith(nullablePermissionGrantActionDecoder)
-            .as("action"),
+          name: userPermissionGrants.connectorSlug,
+          detail: userPermissionGrants.permission,
+          action: userPermissionGrants.action,
           expiresAt: userPermissionGrants.expiresAt,
         })
         .from(userPermissionGrants)
@@ -8938,12 +8943,13 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     }
     if (
       context.input.args.codexServiceTier === "ultrafast" &&
-      (provider?.type !== "openai-api-key" ||
-        provider.selectedModel !== "gpt-6-astra")
+      !isCatalogUltrafastServiceTierSupported(
+        context.input.args.catalog,
+        provider?.selectedModel,
+        provider?.type,
+      )
     ) {
-      return badRequestMessage(
-        "Astra Ultrafast requires a direct OpenAI API-key route",
-      );
+      return badRequestMessage("Ultrafast is unavailable for this model route");
     }
     const materialized = await settle(
       materializePreparedPiProvider(context.input.args, provider),
@@ -9417,12 +9423,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
             storageVersion: selectedConnectors.storageVersion,
             tokenExpiresAt: selectedConnectors.tokenExpiresAt,
             userId: selectedConnectors.userId,
-            secretNames: sql`${secretGroups.secretNames}`.mapWith(
-              nullableDriverValueDecoder(storedConnectorSecretNamesDecoder),
-            ),
-            variableValues: sql`${variableGroups.variableValues}`.mapWith(
-              nullableDriverValueDecoder(storedConnectorVariableValuesDecoder),
-            ),
+            secretNames: secretGroups.secretNames,
+            variableValues: variableGroups.variableValues,
           })
           .from(selectedConnectors)
           .leftJoin(
@@ -9534,7 +9536,11 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     }
     return db.$with("custom_connector_runtime_connections").as(
       db
-        .select(runCustomConnectorConnectionColumns())
+        .select({
+          ...runCustomConnectorConnectionColumns(),
+          // A native column keeps this ID qualified across both joined CTEs.
+          id: connectors.id,
+        })
         .from(connectors)
         .innerJoin(
           orgCustomConnectors,
@@ -9599,9 +9605,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     );
     const secretQuery = db
       .select({
-        memberConnectorId: sql`${connections.id}`
-          .mapWith(pgTextDecoder)
-          .as("value_member_connector_id"),
+        memberConnectorId: connections.id,
         kind: sql`'secret'`
           .mapWith(runCustomConnectorStoredValueKindDecoder)
           .as("kind"),
@@ -9622,9 +9626,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       );
     const variableQuery = db
       .select({
-        memberConnectorId: sql`${connections.id}`
-          .mapWith(pgTextDecoder)
-          .as("value_member_connector_id"),
+        memberConnectorId: connections.id,
         kind: sql`'variable'`
           .mapWith(runCustomConnectorStoredValueKindDecoder)
           .as("kind"),
@@ -9642,6 +9644,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           currentVersion,
         ),
       );
+    // The member ID is only used by the outer JOIN, not decoded in its result.
+    // Keep the first branch's kind decoder for the returned UNION fields.
     return db
       .$with("custom_connector_runtime_values")
       .as(unionAll(secretQuery, variableQuery));
@@ -10815,12 +10819,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     }
     const { requestedCount, pairs, cacheKeysByRequest } = lookup;
     const acquisitionCapture: PgPoolAcquisitionCapture = { acquisitions: [] };
-    const scopes = pairs.map((pair) => {
-      return pair.scope;
-    });
-    const cacheKeys = pairs.map((pair) => {
-      return pair.cacheKey;
-    });
+    const condition = storageManifestCacheLookupCondition(pairs);
     const rows = await measureApiDispatchTiming(
       args.observation?.timing,
       "api_dispatch_prepare_storage_manifest_cache_mixed_lookup",
@@ -10835,19 +10834,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
               expiresAt: systemStoragePresignedUrlCache.expiresAt,
             })
             .from(systemStoragePresignedUrlCache)
-            .innerJoin(
-              sql`unnest(
-                ${sql.param(scopes)}::varchar(64)[],
-                ${sql.param(cacheKeys)}::varchar(64)[]
-              ) AS requested(scope, cache_key)`,
-              and(
-                eq(systemStoragePresignedUrlCache.scope, sql`requested.scope`),
-                eq(
-                  systemStoragePresignedUrlCache.cacheKey,
-                  sql`requested.cache_key`,
-                ),
-              ),
-            );
+            .where(condition);
         };
         const query = args.observation
           ? withPgPoolAcquisitionCapture(acquisitionCapture, lookup)
@@ -11083,12 +11070,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       }
       const { requestedCount, pairs, cacheKeysByRequest } = lookup;
       const acquisitionCapture: PgPoolAcquisitionCapture = { acquisitions: [] };
-      const scopes = pairs.map((pair) => {
-        return pair.scope;
-      });
-      const cacheKeys = pairs.map((pair) => {
-        return pair.cacheKey;
-      });
+      const condition = storageManifestCacheLookupCondition(pairs);
       const rows = await measureApiDispatchTiming(
         args.observation?.timing,
         "api_dispatch_prepare_storage_manifest_cache_mixed_lookup",
@@ -11103,22 +11085,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
                 expiresAt: systemStoragePresignedUrlCache.expiresAt,
               })
               .from(systemStoragePresignedUrlCache)
-              .innerJoin(
-                sql`unnest(
-                ${sql.param(scopes)}::varchar(64)[],
-                ${sql.param(cacheKeys)}::varchar(64)[]
-              ) AS requested(scope, cache_key)`,
-                and(
-                  eq(
-                    systemStoragePresignedUrlCache.scope,
-                    sql`requested.scope`,
-                  ),
-                  eq(
-                    systemStoragePresignedUrlCache.cacheKey,
-                    sql`requested.cache_key`,
-                  ),
-                ),
-              );
+              .where(condition);
           };
           const query = args.observation
             ? withPgPoolAcquisitionCapture(acquisitionCapture, lookup)
@@ -11349,6 +11316,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       if (values.length === 0) {
         return;
       }
+      const excluded = alias(systemStoragePresignedUrlCache, "excluded");
       const write = await settle(
         set(writeDb$)
           .insert(systemStoragePresignedUrlCache)
@@ -11356,18 +11324,18 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           .onConflictDoUpdate({
             target: systemStoragePresignedUrlCache.cacheKey,
             set: {
-              scope: sql`excluded.scope`,
-              bucket: sql`excluded.bucket`,
-              objectKey: sql`excluded.object_key`,
-              storageVersionId: sql`excluded.storage_version_id`,
-              resolvedOrgId: sql`excluded.resolved_org_id`,
-              publicEndpoint: sql`excluded.public_endpoint`,
-              ttlSeconds: sql`excluded.ttl_seconds`,
-              presignedUrl: sql`excluded.presigned_url`,
-              expiresAt: sql`excluded.expires_at`,
-              refreshAfter: sql`excluded.refresh_after`,
-              lastRequestedAt: sql`excluded.last_requested_at`,
-              updatedAt: sql`excluded.updated_at`,
+              scope: excluded.scope,
+              bucket: excluded.bucket,
+              objectKey: excluded.objectKey,
+              storageVersionId: excluded.storageVersionId,
+              resolvedOrgId: excluded.resolvedOrgId,
+              publicEndpoint: excluded.publicEndpoint,
+              ttlSeconds: excluded.ttlSeconds,
+              presignedUrl: excluded.presignedUrl,
+              expiresAt: excluded.expiresAt,
+              refreshAfter: excluded.refreshAfter,
+              lastRequestedAt: excluded.lastRequestedAt,
+              updatedAt: excluded.updatedAt,
             },
           }),
       );

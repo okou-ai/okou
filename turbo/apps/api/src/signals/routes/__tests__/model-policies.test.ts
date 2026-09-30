@@ -1794,6 +1794,61 @@ describe("GET/PUT /api/model-policies", () => {
     });
   });
 
+  it("offers Fast but not Ultrafast on the direct OpenAI Astra route", async () => {
+    const fixture = await seedFixture();
+    useSession(fixture);
+    await seedOrgMetadata({
+      orgId: fixture.orgId,
+      tier: "pro",
+      credits: 1_000_000,
+    });
+    const providerId = await createOrgProvider(fixture, "openai-api-key");
+    await accept(
+      apiClient().update({
+        headers: authHeaders(),
+        body: {
+          revision: await currentPolicyRevision(),
+          policies: [
+            {
+              model: "gpt-6-astra",
+              defaultProviderType: "openai-api-key",
+              credentialScope: "org",
+              modelProviderId: providerId,
+            },
+          ],
+        },
+      }),
+      [200],
+    );
+    const preferences = setupApp({
+      context,
+      routes: userModelPreferenceRoutes,
+    })(userModelPreferenceContract);
+    // Astra Ultrafast is temporarily disabled as catalog data: the seeded
+    // direct OpenAI route no longer lists the ultrafast service tier.
+    const ultrafast = await accept(
+      preferences.update({
+        headers: authHeaders(),
+        body: { selectedModel: "gpt-6-astra", serviceTier: "ultrafast" },
+      }),
+      [400],
+    );
+    expect(ultrafast.body).toMatchObject({
+      error: { message: "Ultrafast is unavailable for this model route" },
+    });
+    const priority = await accept(
+      preferences.update({
+        headers: authHeaders(),
+        body: { selectedModel: "gpt-6-astra", serviceTier: "priority" },
+      }),
+      [200],
+    );
+    expect(priority.body).toMatchObject({
+      selectedModel: "gpt-6-astra",
+      serviceTier: "priority",
+    });
+  });
+
   it("stores priority with a GPT 5.6 user model preference", async () => {
     const fixture = await seedFixture();
     useSession(fixture);

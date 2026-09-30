@@ -205,6 +205,7 @@ import {
   catalogProviderUpstreamModel,
   type ModelCatalog,
 } from "./model-catalog.service";
+import { isCatalogUltrafastServiceTierSupported } from "./model-route-capabilities.service";
 import { resolveRunSelectionModel } from "./model-selection.service";
 import {
   type ConnectorSlug,
@@ -13047,12 +13048,13 @@ function createRunModelProviderObjects(
     }
     if (
       context.input.args.codexServiceTier === "ultrafast" &&
-      (provider?.type !== "openai-api-key" ||
-        provider.selectedModel !== "gpt-6-astra")
+      !isCatalogUltrafastServiceTierSupported(
+        context.input.args.catalog,
+        provider?.selectedModel,
+        provider?.type,
+      )
     ) {
-      return badRequestMessage(
-        "Astra Ultrafast requires a direct OpenAI API-key route",
-      );
+      return badRequestMessage("Ultrafast is unavailable for this model route");
     }
     const materialized = await settle(
       materializePreparedPiProvider(context.input.args, provider),

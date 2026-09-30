@@ -644,7 +644,7 @@ export const SEEDED_MODEL_CATALOG: PiCatalogSource = {
       upstreamModel: "gpt-6-astra",
       enabled: true,
       priority: 0,
-      serviceTiers: ["priority", "ultrafast"],
+      serviceTiers: ["priority"],
     },
     {
       model: "gpt-6-astra",

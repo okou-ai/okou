@@ -177,7 +177,7 @@ test("Ultrafast is absent for built-in Astra", async () => {
   ).toBeNull();
 });
 
-test("Direct OpenAI Astra sends the priced Ultrafast tier", async () => {
+test("Direct OpenAI Astra hides Ultrafast and sends Standard", async () => {
   const creates: { serviceTier?: string | null }[] = [];
   installRunChat({
     selectedModel: "gpt-6-astra",
@@ -196,24 +196,21 @@ test("Direct OpenAI Astra sends the priced Ultrafast tier", async () => {
   });
   await screen.findByRole("textbox", { name: "Message" });
   const panel = await openPanel("GPT 6 Astra, Max");
-  const toggle = within(panel).getByRole("switch", { name: "Ultrafast mode" });
-  expect(toggle).toHaveAccessibleDescription(/8×.*6×/u);
-  click(toggle);
-  await waitFor(() => {
-    expect(toggle).toBeChecked();
-  });
-  await expect(
-    findButton("GPT 6 Astra, Max, Ultrafast"),
-  ).resolves.toBeVisible();
+  expect(
+    within(panel).queryByRole("switch", { name: "Ultrafast mode" }),
+  ).toBeNull();
+  expect(
+    within(panel).getByRole("switch", { name: "Fast mode" }),
+  ).not.toBeChecked();
   await userEvent.setup({ delay: null }).keyboard("{Escape}");
   const composer = await screen.findByRole("textbox", { name: "Message" });
-  await fillComposer(composer, "Run this on Astra Ultrafast");
+  await fillComposer(composer, "Run this on Astra Standard");
   click(await findButton("Send"));
   await waitFor(() => {
     expect(creates).toContainEqual(
       expect.objectContaining({
         model: "gpt-6-astra",
-        serviceTier: "ultrafast",
+        serviceTier: null,
       }),
     );
   });

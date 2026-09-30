@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { RESUME_SESSION_HISTORY_MAX_BYTES } from "@okouai/api-contracts/contracts/runners";
 import { testUsageSettlementContract } from "@okouai/api-contracts/contracts/test-usage-settlement";
+import { testUsageStateContract } from "@okouai/api-contracts/contracts/test-usage-state";
 import { webhookTelemetryContract } from "@okouai/api-contracts/contracts/webhooks";
 import { createStore } from "ccstate";
 import { HttpResponse, http } from "msw";
@@ -11,6 +12,7 @@ import { getApiTestMocks } from "../../../__tests__/mocks";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { usageEventCompactionDbFixture } from "../../../test-fixtures/db-fixture";
 import {
   deleteUsagePricingRows,
   seedUsagePricingRows,
@@ -19,12 +21,15 @@ import { server } from "../../../mocks/server";
 import { createBddApi } from "../../routes/__tests__/helpers/api-bdd";
 import { createRunsApi } from "../../routes/__tests__/helpers/api-bdd-runs";
 import {
+  attachUsageAllowance$,
   deleteUsageData$,
   deleteUsageStateFixture$,
   insertUsageEvent$,
+  materializeHourlyUsage$,
   seedUsageStateFixture$,
 } from "../../routes/__tests__/helpers/usage-state";
 import { testUsageSettlementRoutes } from "../../routes/test-usage-settlement";
+import { testUsageStateRoutes } from "../../routes/test-usage-state";
 import { webhooksAgentHealthUsageTelemetryRoutes } from "../../routes/webhooks-agent-health-usage-telemetry";
 import { createDeferredPromise } from "../../utils";
 import {
@@ -216,6 +221,208 @@ describe("shared SDK ingestion", () => {
         },
       ],
     );
+  });
+
+  it("reports the largest selected compaction grain without exposing an identity", async () => {
+    // Telemetry-client suite exception: no API read endpoint exposes this event.
+    mockEnv("ENV", "development");
+    const store = createStore();
+    const fixture = await store.set(
+      seedUsageStateFixture$,
+      undefined,
+      context.signal,
+    );
+    const client = setupApp({ context, routes: testUsageStateRoutes })(
+      testUsageStateContract,
+    );
+    const compact = async () => {
+      context.mocks.axiom.sdkIngest.mockClear();
+      return await accept(
+        client.compact({ body: { orgId: fixture.orgId } }),
+        [200],
+      );
+    };
+    const expectGrainMax = (expected: number) => {
+      const batchEvents = context.mocks.axiom.sdkIngest.mock.calls
+        .filter(([dataset]) => {
+          return dataset === "vm0-sandbox-op-log-dev";
+        })
+        .flatMap(([, events]) => {
+          return Array.isArray(events) ? events : [];
+        })
+        .filter((event): event is Record<string, unknown> => {
+          return (
+            typeof event === "object" &&
+            event !== null &&
+            event.op_type === "api_billing_usage_compaction_batch"
+          );
+        });
+      expect(batchEvents).toHaveLength(1);
+      expect(batchEvents[0]).toMatchObject({
+        source: "api",
+        operation_domain: "billing",
+        op_type: "api_billing_usage_compaction_batch",
+        success: true,
+        max_grain_source_rows: expected,
+      });
+      expect(Object.keys(batchEvents[0] ?? {}).sort()).toStrictEqual(
+        [
+          "_time",
+          "source",
+          "operation_domain",
+          "op_type",
+          "duration_ms",
+          "success",
+          "raw_seed_limit",
+          "seeded_raw_rows",
+          "selected_grains",
+          "raw_rows_deleted",
+          "hourly_rows_deleted",
+          "hourly_rows_inserted",
+          "billing_error_held_rows",
+          "logical_input_rows",
+          "max_grain_source_rows",
+          "logical_compression_ratio",
+          "has_more",
+        ].sort(),
+      );
+    };
+
+    onTestFinished(async () => {
+      await store.set(deleteUsageStateFixture$, fixture, context.signal);
+    });
+    await usageEventCompactionDbFixture(randomUUID(), async () => {
+      const empty = await compact();
+      expect(empty.body).toMatchObject({
+        selectedGrains: 0,
+        rawRowsDeleted: 0,
+        reconciled: true,
+      });
+      expect(Object.keys(empty.body)).not.toContain("maxGrainSourceRows");
+      expectGrainMax(0);
+
+      for (const [category, count] of [
+        ["large", 501],
+        ["smaller", 3],
+      ] as const) {
+        await store.set(
+          insertUsageEvent$,
+          {
+            ...fixture,
+            category,
+            count,
+            status: "processed",
+            processedAt: new Date(
+              category === "large"
+                ? "2026-08-01T00:15:00.000Z"
+                : "2026-08-01T01:15:00.000Z",
+            ),
+          },
+          context.signal,
+        );
+      }
+      const large = await compact();
+      expect(large.body).toMatchObject({
+        seededRawRows: 500,
+        selectedGrains: 1,
+        rawRowsDeleted: 501,
+        hasMore: true,
+        reconciled: true,
+      });
+      expectGrainMax(501);
+
+      const remaining = await compact();
+      expect(remaining.body).toMatchObject({
+        selectedGrains: 1,
+        rawRowsDeleted: 3,
+        reconciled: true,
+      });
+      expectGrainMax(3);
+
+      for (const [category, count] of [
+        ["two", 2],
+        ["three", 3],
+      ] as const) {
+        await store.set(
+          insertUsageEvent$,
+          {
+            ...fixture,
+            category,
+            count,
+            status: "processed",
+            processedAt: new Date("2026-08-01T00:15:00.000Z"),
+          },
+          context.signal,
+        );
+      }
+      const multiple = await compact();
+      expect(multiple.body).toMatchObject({
+        selectedGrains: 2,
+        rawRowsDeleted: 5,
+        quantity: "5",
+        reconciled: true,
+      });
+      expectGrainMax(3);
+
+      for (const quantity of [2, 3]) {
+        await store.set(
+          insertUsageEvent$,
+          {
+            ...fixture,
+            category: "old-hourly",
+            status: "processed",
+            quantity,
+            processedAt: new Date("2026-08-01T00:15:00.000Z"),
+          },
+          context.signal,
+        );
+      }
+      await store.set(
+        materializeHourlyUsage$,
+        { ...fixture, runId: null },
+        context.signal,
+      );
+      await store.set(
+        insertUsageEvent$,
+        {
+          ...fixture,
+          category: "old-hourly",
+          status: "processed",
+          processedAt: new Date("2026-08-01T00:15:00.000Z"),
+        },
+        context.signal,
+      );
+      const windowedId = await store.set(
+        insertUsageEvent$,
+        {
+          ...fixture,
+          category: "windowed",
+          status: "processed",
+          processedAt: new Date("2026-08-01T00:15:00.000Z"),
+        },
+        context.signal,
+      );
+      await store.set(
+        attachUsageAllowance$,
+        {
+          orgId: fixture.orgId,
+          runId: null,
+          usageEventId: windowedId,
+          unitsApplied: 5,
+          consumedUnits: 5,
+        },
+        context.signal,
+      );
+      const reconsolidated = await compact();
+      expect(reconsolidated.body).toMatchObject({
+        rawRowsDeleted: 2,
+        hourlyRowsDeleted: 2,
+        selectedGrains: 2,
+        allowanceUnits: "5",
+        reconciled: true,
+      });
+      expectGrainMax(3);
+    });
   });
 
   it("emits settlement phases only for committed nonempty work", async () => {

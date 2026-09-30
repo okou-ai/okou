@@ -152,10 +152,9 @@ function routesFor(model: string): MockCatalogRoute[] {
       upstreamModel: gatewayUpstreamModel(model, providerType),
       providerType,
       concreteProviderType: providerType,
-      serviceTiers:
-        model === "gpt-6-astra" && providerType === "openai-api-key"
-          ? ["priority", "ultrafast"]
-          : [...profile.serviceTiers],
+      // Astra Ultrafast is temporarily disabled: the seeded direct OpenAI
+      // route offers no Ultrafast tier, as in migration 1297.
+      serviceTiers: [...profile.serviceTiers],
       defaultServiceTier: null,
       priceTier: null,
     });

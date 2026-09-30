@@ -580,9 +580,7 @@ export function validateCodexServiceTier(params: {
       params.pin.modelProviderType,
     )
       ? undefined
-      : badRequestMessage(
-          "Astra Ultrafast requires a direct OpenAI API-key route",
-        );
+      : badRequestMessage("Ultrafast is unavailable for this model route");
   }
   if (params.codexServiceTier !== "fast") {
     return undefined;

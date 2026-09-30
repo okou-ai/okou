@@ -90,9 +90,7 @@ function validateUltrafastServiceTier(args: {
       configuredPolicyProviderType(args.catalog, args.configuredPolicy),
     )
   ) {
-    return badRequestMessage(
-      "Astra Ultrafast requires a direct OpenAI API-key route",
-    );
+    return badRequestMessage("Ultrafast is unavailable for this model route");
   }
   return undefined;
 }
