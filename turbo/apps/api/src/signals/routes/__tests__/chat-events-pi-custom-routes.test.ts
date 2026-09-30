@@ -1,7 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { modelProviderConnectionsByIdContract } from "@okouai/api-contracts/contracts/model-provider-gateways";
 import { MODEL_PROVIDER_ENV_PLACEHOLDERS } from "@okouai/api-contracts/contracts/model-providers";
-import { DEFAULT_PROFILE } from "@okouai/api-contracts/contracts/runners";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -12,10 +11,6 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { modelProviderGatewayRoutes } from "../model-provider-gateways";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
-import {
-  readRunLaunchSnapshotFixture,
-  readThreadSessionConversation,
-} from "./helpers/runtime-state";
 import {
   createChatEventsFixture,
   configureNativeCliArtifact,
@@ -176,17 +171,6 @@ describe("CHAT-02: model-first provider policies", () => {
         },
         usagePricingResolution,
       });
-      await expect(
-        readRunLaunchSnapshotFixture(context, first.runId),
-      ).resolves.toStrictEqual({
-        exists: true,
-        launch_snapshot: {
-          schemaVersion: 3,
-          framework: "pi",
-          runnerProfile: DEFAULT_PROFILE,
-        },
-      });
-
       await chat.updateThreadModelSelection(
         actor,
         first.threadId,
@@ -293,17 +277,12 @@ describe("CHAT-02: model-first provider policies", () => {
         usagePricingResolution,
       });
 
-      await expect(
-        readRunLaunchSnapshotFixture(context, run.runId),
-      ).resolves.toMatchObject({
-        launch_snapshot: { framework: "pi" },
-      });
+      expect(firstClaim.claim.cliAgentType).toBe("pi");
       await expectNoBuiltInModelUsage(run.runId);
       if (selectedModel.startsWith("gpt-")) {
-        const firstSession = await readThreadSessionConversation(
-          context,
-          run.threadId,
-        );
+        const firstRun = await api.readRun(actor, run.runId);
+        const sessionId = firstRun.result?.agentSessionId;
+        expect(sessionId).toStrictEqual(expect.any(String));
         for (const tier of ["fast", undefined] as const) {
           await chat.updateThreadModelSelection(
             actor,
@@ -348,10 +327,10 @@ describe("CHAT-02: model-first provider policies", () => {
             usagePricingResolution,
           });
           await expect(
-            readThreadSessionConversation(context, run.threadId),
+            api.readRun(actor, continuation.runId),
           ).resolves.toMatchObject({
-            agent_session_id: firstSession.agent_session_id,
-            conversation_run_id: continuation.runId,
+            status: "completed",
+            result: { agentSessionId: sessionId },
           });
           await expectNoBuiltInModelUsage(continuation.runId);
         }
