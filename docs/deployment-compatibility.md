@@ -4771,10 +4771,11 @@ Compatibility is negotiated per run rather than by deployment order:
   artifact has a digest. The backend records it as
   `runner_installed_pi_session_construction_digest`; older installed artifacts
   omit it.
-- The CLI restarts a pending-tool API-first handoff from H0 as `sandbox-first`
-  when the required session-construction digest, or without one the required
-  runtime version, differs from what it bundles. A settled-session continuation
-  is a complete checkpoint and is never discarded for a parity difference.
+- Parity is checked by the Guest before spawning the CLI. A parity miss selects
+  the task's captured package rather than changing the restored session or
+  executing the incompatible installed bundle. The sandbox CLI opens the
+  restored session through the official RPC host; no digest-based H0 restart
+  is performed by that CLI path.
 
 An old backend that omits the installed-CLI requirement keeps using the
 captured `CLI_PKG_URL` through `npx`. Queued contexts requiring a newer or
