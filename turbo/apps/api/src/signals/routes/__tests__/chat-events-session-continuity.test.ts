@@ -718,7 +718,7 @@ describe("CHAT-02: run-level model overrides", () => {
     await cancelChatRun(actor, second.runId, secondClaim.sandboxHeaders);
   }, 90_000);
 
-  it("fails a changed canonical snapshot without consuming or retrying the input", async () => {
+  it("rejects the input of a changed canonical snapshot without retrying it", async () => {
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
 
@@ -813,7 +813,19 @@ describe("CHAT-02: run-level model overrides", () => {
         id: secondEventId,
         eventType: "input.prompt",
       }),
+      expect.objectContaining({
+        eventType: "input.rejected",
+        revokesEventId: secondEventId,
+      }),
     ]);
+    // The failed commit is not retried; its picked input ends rejected.
+    expect(events.events).toContainEqual(
+      expect.objectContaining({
+        eventType: "input.rejected",
+        revokesEventId: secondEventId,
+        error: "internal_error",
+      }),
+    );
     await expect(
       readThreadSessionBinding(context, first.threadId),
     ).resolves.toStrictEqual(firstBinding);

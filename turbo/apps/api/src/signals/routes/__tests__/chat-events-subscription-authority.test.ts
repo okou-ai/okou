@@ -201,7 +201,7 @@ describe("CHAT-02: run-level model overrides", () => {
       ]);
     });
 
-    it("preserves the input when a captured account disconnects and session preparation fails", async () => {
+    it("rejects the input when a captured account disconnects and session preparation fails", async () => {
       const f = await prepareSubscriptionThread();
       const clientEventId = randomUUID();
       await sendHeldInput(
@@ -231,12 +231,13 @@ describe("CHAT-02: run-level model overrides", () => {
 
       await expect(clearAllDetached()).rejects.toBe(sessionError);
       const { events } = await chat.listThreadEvents(f.actor, f.thread.id);
-      expect(events).toStrictEqual([
+      expect(events).toContainEqual(
         expect.objectContaining({
-          eventType: "input.prompt",
-          id: clientEventId,
+          eventType: "input.rejected",
+          revokesEventId: clientEventId,
+          error: "internal_error",
         }),
-      ]);
+      );
       await expect(
         api.listAgentRuns(f.actor, {
           status: "queued,pending,running,completed,failed,timeout,cancelled",

@@ -1525,7 +1525,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(drained.body.job).toBeNull();
   });
 
-  it("preserves a queued AgentPhone input when launch preparation fails with debug enabled", async () => {
+  it("rejects a queued AgentPhone input when launch preparation fails with debug enabled", async () => {
     mockEnv("APP_URL", "https://app.okou.ai");
     const ap = createAgentPhoneBddApi(context);
     const integrations = createBddIntegrationApi(context);
@@ -1593,13 +1593,18 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       throw new Error("Expected the original queued input after the failure");
     }
     expect(pending.runId).toBeUndefined();
-    expect(messages.events).not.toContainEqual(
-      expect.objectContaining({ revokesEventId: pending.id }),
+    // The picked input ends rejected rather than waiting at the queue head.
+    expect(messages.events).toContainEqual(
+      expect.objectContaining({
+        eventType: "input.rejected",
+        revokesEventId: pending.id,
+        error: "internal_error",
+      }),
     );
   });
 
   it.each([false, true])(
-    "preserves input after an infrastructure failure without sending an admission error (unlinked: %s)",
+    "rejects input after an infrastructure failure without sending an admission error (unlinked: %s)",
     async (unlink) => {
       const runs = createRunsApi(context);
       const ap = createAgentPhoneBddApi(context);
@@ -1670,8 +1675,14 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
           id: pending.id,
         }),
       );
-      expect(settled.events).not.toContainEqual(
-        expect.objectContaining({ revokesEventId: pending.id }),
+      // The failure propagates and the picked input ends rejected without
+      // an integration admission reply.
+      expect(settled.events).toContainEqual(
+        expect.objectContaining({
+          eventType: "input.rejected",
+          revokesEventId: pending.id,
+          error: "internal_error",
+        }),
       );
       expect(
         settled.events.some((event) => {

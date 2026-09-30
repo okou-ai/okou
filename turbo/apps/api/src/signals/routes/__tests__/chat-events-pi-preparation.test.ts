@@ -95,7 +95,7 @@ describe("CHAT-02: model-first provider policies", () => {
     await cancelChatRun(actor, run.runId, claimed.sandboxHeaders);
   }, 30_000);
 
-  it("preserves the input after the first preparation failure without waiting for another branch", async () => {
+  it("rejects the input after the first preparation failure without waiting for another branch", async () => {
     const { actor, agentId } = await entitledChatActor();
     const orgId = requireOrgId(actor);
     await configureBuiltInPiModel(actor, "gpt-6-luna");
@@ -145,13 +145,15 @@ describe("CHAT-02: model-first provider policies", () => {
     await preparation.departure("post-authorization-context");
     preparation.releaseAll();
     const events = await chat.listThreadEvents(actor, thread.id);
-    // An infrastructure failure keeps the original input pending.
-    expect(events.events).toStrictEqual([
+    // The first infrastructure failure propagates and the picked input ends
+    // rejected rather than pending.
+    expect(events.events).toContainEqual(
       expect.objectContaining({
-        eventType: "input.prompt",
-        id: clientEventId,
+        eventType: "input.rejected",
+        revokesEventId: clientEventId,
+        error: "internal_error",
       }),
-    ]);
+    );
     expect(
       events.events.filter((event) => {
         return event.runId !== undefined;

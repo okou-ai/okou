@@ -357,7 +357,7 @@ describe("personal subscription run identity", () => {
     },
   );
 
-  it("preserves the input without capturing run recovery identity when launch preparation fails", async () => {
+  it("rejects the input without capturing run recovery identity when launch preparation fails", async () => {
     const f = await fixture("codex-oauth-token");
     const preparationError = new Error("Archive signing failed");
     context.mocks.s3.getSignedUrl.mockRejectedValue(preparationError);
@@ -379,12 +379,20 @@ describe("personal subscription run identity", () => {
     expect(sent.body.runId).toBeNull();
     await expect(clearAllDetached()).rejects.toBe(preparationError);
     const { events } = await chat.listThreadEvents(f.actor, sent.body.threadId);
-    expect(events).toStrictEqual([
+    expect(events).toContainEqual(
       expect.objectContaining({
         id: clientEventId,
         eventType: "input.prompt",
       }),
-    ]);
+    );
+    // The picked input ends rejected; no run or recovery identity exists.
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        eventType: "input.rejected",
+        revokesEventId: clientEventId,
+        error: "internal_error",
+      }),
+    );
     await expect(
       runs.listAgentRuns(f.actor, {
         status: "queued,pending,running,completed,failed,timeout,cancelled",
