@@ -12979,7 +12979,16 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       timing: ClaimRunTiming,
       signal: AbortSignal,
     ): Promise<RunContext | { readonly kind: "passed" }> => {
+      const diagnosticStartedAt = performance.now();
       const head = await set(initializeRunPreparation$, timing, signal);
+      // TEMP(ci-diagnostic): remove after locating the CI pick latency.
+      if (process.env.VITEST) {
+        log.info("PICK_DIAG", {
+          phase: "init",
+          thread: claim.chatThreadId,
+          ms: Math.round(performance.now() - diagnosticStartedAt),
+        });
+      }
       signal.throwIfAborted();
       if (!head) {
         return { kind: "passed" };
