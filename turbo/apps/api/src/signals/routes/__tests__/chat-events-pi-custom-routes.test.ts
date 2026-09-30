@@ -12,7 +12,11 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { env } from "../../../lib/env";
 import { holdAgentRunPiExecutionSnapshotFixture } from "../../../test-fixtures/thread-bound-run-admission";
-import { holdPiContextPreparationStagesFixture } from "../../../test-fixtures/pi-context-preparation";
+import {
+  withDatabaseTransactionBarrierFixture,
+  barrierQueryText,
+  barrierQueryBinds,
+} from "../../../test-fixtures/database-transaction-barrier";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { modelProviderGatewayRoutes } from "../model-provider-gateways";
 import type { ApiTestUser } from "./helpers/api-bdd";
@@ -612,92 +616,82 @@ describe("CHAT-02: model-first provider policies", () => {
     async ({ selectedModel, removed }) => {
       const { actor, agentId } = await entitledChatActor();
       const gateway = await configureCustomPiModel(actor, selectedModel);
-      const gate = holdPiContextPreparationStagesFixture({
-        userId: actor.userId,
-        orgId: requireOrgId(actor),
-        signal: context.signal,
-      });
-      // Pi eligibility is observed in parallel with credentials now. Hold the
-      // provider read itself so deletion happens before its frozen snapshot.
-      for (const stage of [
-        "subscription-account",
-        "post-authorization-context",
-        "thread-session",
-        "connector-contexts",
-        "user-timezone",
-        "image-model",
-        "official-workflow",
-      ] as const) {
-        gate.release(stage);
-      }
       const clientEventId = randomUUID();
-      const sent = await chat.requestSendEvent(
-        actor,
+      const sent = await withDatabaseTransactionBarrierFixture(
         {
-          agentId,
-          clientEventId,
-          model: selectedModel,
-          prompt: "fail the unavailable custom route before any model call",
-          ...(selectedModel === "deepseek-v4.1-flash"
-            ? {}
-            : { runOptions: { codexServiceTier: "fast" as const } }),
-        },
-        [201],
-      );
-      if (sent.status !== 201) {
-        throw new Error("Expected the custom route send to be accepted");
-      }
-      expect(sent.body.runId).toBeNull();
-      await gate.arrival("model-provider");
-      const connection = setupApp({
-        context,
-        routes: modelProviderGatewayRoutes,
-      })(modelProviderConnectionsByIdContract);
-      if (removed === "connection") {
-        await accept(
-          connection.delete({
-            headers: sessionHeaders(actor),
-            params: { id: gateway.connection.id },
-          }),
-          [204],
-        );
-      } else {
-        await accept(
-          connection.update({
-            headers: sessionHeaders(actor),
-            params: { id: gateway.connection.id },
-            body: {
-              displayName: gateway.connection.displayName,
-              surfaces: [
-                {
-                  ...gateway.surface,
-                  modelMappings: { "gpt-6-astra": "unrelated-upstream-alias" },
-                },
-              ],
-            },
-          }),
-          [200],
-        );
-      }
-      gate.releaseAll();
-      await flushWaitUntilForTest();
-      const rejected = await waitForThreadMessages(
-        actor,
-        sent.body.threadId,
-        (items) => {
-          return (
-            userMessages(items).some((message) => {
-              return (
-                message.eventType === "input.rejected" &&
-                message.revokesEventId === clientEventId
+          select: (queryArgs) => {
+            const text = barrierQueryText(queryArgs);
+            return (
+              text.includes('from "model_provider_surfaces"') &&
+              text.includes('"secrets"."encrypted_value"') &&
+              barrierQueryBinds(queryArgs, gateway.surfaceId) &&
+              barrierQueryBinds(queryArgs, requireOrgId(actor))
+            );
+          },
+          stopAt: (_queryArgs, selecting) => {
+            return selecting;
+          },
+          work: async (barrier) => {
+            const sending = chat.requestSendEvent(
+              actor,
+              {
+                agentId,
+                clientEventId,
+                model: selectedModel,
+                prompt:
+                  "fail the unavailable custom route before any model call",
+                ...(selectedModel === "deepseek-v4.1-flash"
+                  ? {}
+                  : { runOptions: { codexServiceTier: "fast" as const } }),
+              },
+              [201],
+            );
+            await barrier.entered;
+            const sent = await sending;
+            if (sent.status !== 201) {
+              throw new Error("Expected the custom route send to be accepted");
+            }
+            expect(sent.body.runId).toBeNull();
+            const connection = setupApp({
+              context,
+              routes: modelProviderGatewayRoutes,
+            })(modelProviderConnectionsByIdContract);
+            if (removed === "connection") {
+              await accept(
+                connection.delete({
+                  headers: sessionHeaders(actor),
+                  params: { id: gateway.connection.id },
+                }),
+                [204],
               );
-            }) &&
-            assistantMessages(items).some((message) => {
-              return message.eventType === "output.error";
-            })
-          );
+            } else {
+              await accept(
+                connection.update({
+                  headers: sessionHeaders(actor),
+                  params: { id: gateway.connection.id },
+                  body: {
+                    displayName: gateway.connection.displayName,
+                    surfaces: [
+                      {
+                        ...gateway.surface,
+                        modelMappings: {
+                          "gpt-6-astra": "unrelated-upstream-alias",
+                        },
+                      },
+                    ],
+                  },
+                }),
+                [200],
+              );
+            }
+            barrier.release();
+            await flushWaitUntilForTest();
+            return sent;
+          },
         },
+        context.signal,
       );
+      const rejected = await chat.listThreadEvents(actor, sent.body.threadId);
       expect(
         userMessages(rejected.events).filter((message) => {
           return message.revokesEventId === clientEventId;
