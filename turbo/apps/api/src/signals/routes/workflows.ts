@@ -113,7 +113,6 @@ import { resolveOfficialWorkflowBlueprintForReconciliation } from "../services/o
 import {
   commitPreparedVolumeServerSide,
   prepareVolumeServerSide$,
-  RegisteredStorageObjectsMissingError,
   type PreparedServerSideVolume,
 } from "../services/storage-volume-publication.service";
 import {
@@ -840,26 +839,17 @@ const updateWorkflowInner$ = command(
       }
     }
 
-    const updateResult = await settle(
-      set(
-        updateWorkflow$,
-        {
-          workflow: visible.workflow,
-          body: bodyResult.data,
-          updatedByUserId: auth.userId,
-        },
-        signal,
-      ),
+    const updated = await set(
+      updateWorkflow$,
+      {
+        workflow: visible.workflow,
+        body: bodyResult.data,
+        updatedByUserId: auth.userId,
+      },
       signal,
     );
-    if (!updateResult.ok) {
-      if (updateResult.error instanceof RegisteredStorageObjectsMissingError) {
-        return conflict(updateResult.error.message);
-      }
-      throw updateResult.error;
-    }
     signal.throwIfAborted();
-    if (!updateResult.value) {
+    if (!updated) {
       return conflict("Workflow changed during update; retry the request");
     }
 

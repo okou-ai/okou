@@ -23,12 +23,7 @@ import {
   publishPiResourceVersionIndex,
 } from "./pi-resource-version-index.service";
 import { writeDb$, type Db } from "../external/db";
-import {
-  putS3Object,
-  s3ObjectExists,
-  s3ObjectHead,
-  verifyS3FilesExist,
-} from "../external/s3";
+import { putS3Object } from "../external/s3";
 import { onRejection } from "../utils";
 import { newStorageS3Location } from "./storage-s3-prefix.utils";
 import {
@@ -39,13 +34,6 @@ import {
 } from "./storage-version-registration.service";
 
 const SERVER_SIDE_STORAGE_VERSION_CREATOR = "user";
-
-export class RegisteredStorageObjectsMissingError extends Error {
-  constructor(readonly versionId: string) {
-    super(`Existing Storage version ${versionId} is missing R2 objects`);
-    this.name = "RegisteredStorageObjectsMissingError";
-  }
-}
 
 interface VolumeFileInput {
   readonly path: string;
@@ -207,7 +195,7 @@ async function createVolumeArchive(
   return archiveBuffer;
 }
 
-const uploadAndVerifyVolumeObjects$ = command(
+const uploadVolumeObjects$ = command(
   async (
     { get },
     args: {
@@ -215,8 +203,6 @@ const uploadAndVerifyVolumeObjects$ = command(
       readonly s3Key: string;
       readonly archiveBuffer: Buffer;
       readonly manifest: S3StorageManifest;
-      readonly fileCount: number;
-      readonly storageName: string;
     },
     signal: AbortSignal,
   ): Promise<void> => {
@@ -246,48 +232,6 @@ const uploadAndVerifyVolumeObjects$ = command(
         throw uploadResult.reason;
       }
     }
-
-    const uploadVerified = await get(
-      verifyS3FilesExist(args.bucketName, args.s3Key, args.fileCount),
-    );
-    signal.throwIfAborted();
-    if (!uploadVerified) {
-      throw new Error(
-        `Uploaded volume files are not available for ${args.storageName}`,
-      );
-    }
-  },
-);
-
-const registeredVolumeObjects$ = command(
-  async (
-    { get },
-    args: {
-      readonly bucketName: string;
-      readonly s3Key: string;
-      readonly fileCount: number;
-    },
-    signal: AbortSignal,
-  ): Promise<boolean> => {
-    const [manifestExists, archiveHead] = await Promise.all([
-      get(s3ObjectExists(args.bucketName, `${args.s3Key}/manifest.json`)),
-      args.fileCount > 0
-        ? get(s3ObjectHead(args.bucketName, `${args.s3Key}/archive.tar.gz`))
-        : Promise.resolve(null),
-    ]);
-    signal.throwIfAborted();
-    if (!manifestExists) {
-      return false;
-    }
-    if (archiveHead === null) {
-      return true;
-    }
-    return (
-      archiveHead.kind === "found" &&
-      archiveHead.contentLength !== undefined &&
-      Number.isSafeInteger(archiveHead.contentLength) &&
-      archiveHead.contentLength > 0
-    );
   },
 );
 
@@ -412,14 +356,6 @@ export const prepareVolumeServerSideWithDb$ = command(
     const existing = await readStorageVersion(writeDb, versionId, signal);
     if (existing) {
       assertServerSideVersionIdentity(existing, expectedVersion);
-      const objectsAvailable = await set(
-        registeredVolumeObjects$,
-        { bucketName, s3Key, fileCount: files.length },
-        signal,
-      );
-      if (!objectsAvailable) {
-        throw new RegisteredStorageObjectsMissingError(versionId);
-      }
       return {
         storageName: input.storageName,
         version: existing,
@@ -438,14 +374,12 @@ export const prepareVolumeServerSideWithDb$ = command(
       files: fileEntries,
     };
     await set(
-      uploadAndVerifyVolumeObjects$,
+      uploadVolumeObjects$,
       {
         bucketName,
         s3Key,
         archiveBuffer,
         manifest,
-        fileCount: files.length,
-        storageName: input.storageName,
       },
       signal,
     );

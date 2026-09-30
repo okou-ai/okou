@@ -400,6 +400,7 @@ export function listS3ObjectsPage(
   bucket: string,
   prefix: string,
   maxKeys: number,
+  signal?: AbortSignal,
 ): Computed<Promise<S3ObjectPage>> {
   if (!Number.isInteger(maxKeys) || maxKeys <= 0 || maxKeys > 1000) {
     throw new Error("S3 list page size must be an integer between 1 and 1000");
@@ -412,7 +413,9 @@ export function listS3ObjectsPage(
         Prefix: prefix,
         MaxKeys: maxKeys,
       }),
+      { abortSignal: signal },
     );
+    signal?.throwIfAborted();
     const objects = (response.Contents ?? []).flatMap((item) => {
       if (!item.Key || item.Size === undefined || !item.LastModified) {
         return [];

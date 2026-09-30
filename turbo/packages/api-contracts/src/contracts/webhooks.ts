@@ -1140,7 +1140,6 @@ export const webhookStoragesPrepareContract = c.router({
       400: apiErrorSchema,
       401: apiErrorSchema,
       404: apiErrorSchema,
-      409: apiErrorSchema,
       413: apiErrorSchema,
       500: apiErrorSchema,
     },
@@ -1186,7 +1185,6 @@ export const webhookStoragesCommitContract = c.router({
       400: apiErrorSchema,
       401: apiErrorSchema,
       404: apiErrorSchema,
-      409: apiErrorSchema, // S3 files missing
       413: apiErrorSchema,
       500: apiErrorSchema,
     },

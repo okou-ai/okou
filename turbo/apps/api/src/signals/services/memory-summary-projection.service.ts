@@ -32,7 +32,7 @@ import { writeDb$, type Db } from "../external/db";
 import {
   downloadS3BufferWithMaxBytes,
   S3ObjectSizeLimitError,
-  s3ObjectHead,
+  isS3NotFoundError,
 } from "../external/s3";
 import { safeJsonParse, safeSync, settle } from "../utils";
 
@@ -510,18 +510,6 @@ const downloadProjectionManifest$ = command(
   ): Promise<ManifestValidationResult> => {
     const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
     const manifestKey = `${work.s3Key}/manifest.json`;
-    const manifestHead = await get(s3ObjectHead(bucket, manifestKey));
-    signal.throwIfAborted();
-    if (manifestHead.kind === "missing") {
-      return { status: "missing" };
-    }
-    if (
-      manifestHead.contentLength !== undefined &&
-      manifestHead.contentLength > MANIFEST_MAX_BYTES
-    ) {
-      return { status: "over_limit" };
-    }
-
     const manifestDownload = await settle(
       get(
         downloadS3BufferWithMaxBytes(
@@ -534,6 +522,9 @@ const downloadProjectionManifest$ = command(
       signal,
     );
     if (!manifestDownload.ok) {
+      if (isS3NotFoundError(manifestDownload.error)) {
+        return { status: "missing" };
+      }
       if (manifestDownload.error instanceof S3ObjectSizeLimitError) {
         return { status: "over_limit" };
       }
@@ -558,18 +549,6 @@ const downloadProjectionArchive$ = command(
     // The registered archiveSize is a hint, not a physical identity. A
     // previously issued upload URL can leave a different gzip size for the
     // same logical version; enforce limits on the actual object instead.
-    const archiveHead = await get(s3ObjectHead(bucket, archiveKey));
-    signal.throwIfAborted();
-    if (archiveHead.kind === "missing") {
-      return { status: "missing" };
-    }
-    if (
-      archiveHead.contentLength !== undefined &&
-      archiveHead.contentLength > ARCHIVE_MAX_BYTES
-    ) {
-      return { status: "over_limit" };
-    }
-
     const archiveDownload = await settle(
       get(
         downloadS3BufferWithMaxBytes(
@@ -582,6 +561,9 @@ const downloadProjectionArchive$ = command(
       signal,
     );
     if (!archiveDownload.ok) {
+      if (isS3NotFoundError(archiveDownload.error)) {
+        return { status: "missing" };
+      }
       if (archiveDownload.error instanceof S3ObjectSizeLimitError) {
         return { status: "over_limit" };
       }

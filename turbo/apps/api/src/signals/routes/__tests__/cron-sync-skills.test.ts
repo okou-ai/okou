@@ -877,6 +877,7 @@ describe("GET /api/cron/sync-skills", () => {
 
     expect(result).toMatchObject({ success: true, synced: 1, failed: 0 });
     expect(s3CallsByName("PutObjectCommand")).toHaveLength(0);
+    expect(s3CallsByName("HeadObjectCommand")).toHaveLength(0);
     await expect(
       findSystemStorageByName(firstVersion.storageName),
     ).resolves.toMatchObject({
@@ -888,66 +889,54 @@ describe("GET /api/cron/sync-skills", () => {
     ).resolves.toMatchObject({ commitSha: finalCommitSha });
   });
 
-  it("rejects missing objects for an unchanged registered skill version", async () => {
-    const fixture = useCronSyncSkillsFixture();
-    await seedCurrentSeedSkillVersions(fixture);
-    const firstCommitSha = newCommitSha();
-    const tarball = createFullTarball(fixture, [fixture.alphaSkill]);
-    setupMswHandlers(firstCommitSha, tarball);
-    await expect(syncOwnedSkills(fixture)).resolves.toMatchObject({
-      synced: 1,
-      failed: 0,
-    });
-    const version = buildMockSkillVersion(fixture, fixture.alphaSkill);
-    const storage = await findSystemStorageByName(version.storageName);
-    if (!storage) {
-      throw new Error("Expected the registered skill Storage");
-    }
-    const archiveKey = `${storage.s3Prefix}/${version.versionHash}/archive.tar.gz`;
-    context.mocks.s3.send.mockClear();
-    context.mocks.s3.send.mockImplementation((command: unknown) => {
-      if (
-        commandName(command) === "HeadObjectCommand" &&
-        commandInput(command).Key === archiveKey
-      ) {
-        return Promise.reject(
-          Object.assign(new Error("Archive is missing"), {
-            name: "NotFound",
-            $metadata: { httpStatusCode: 404 },
-          }),
-        );
-      }
-      return Promise.resolve({});
-    });
-    const nextCommitSha = newCommitSha();
-    setupMswHandlers(nextCommitSha, tarball);
-    const missing = await syncOwnedSkills(fixture);
-    expect(missing).toMatchObject({
-      success: true,
-      synced: 0,
-      skipped: fixture.requiredSeedSkillNames.length,
-      failed: 1,
-    });
-    expect(s3CallsByName("PutObjectCommand")).toHaveLength(0);
-    await expect(findSkillByUrl(version.url)).resolves.toMatchObject({
-      versionHash: version.versionHash,
-      commitSha: firstCommitSha,
-    });
+  it.each(["archive.tar.gz", "manifest.json"])(
+    "registers a new skill version only after its %s upload succeeds",
+    async (filename) => {
+      const fixture = useCronSyncSkillsFixture();
+      await seedCurrentSeedSkillVersions(fixture);
+      const commitSha = newCommitSha();
+      const tarball = createFullTarball(fixture, [fixture.alphaSkill]);
+      setupMswHandlers(commitSha, tarball);
+      const version = buildMockSkillVersion(fixture, fixture.alphaSkill);
+      context.mocks.s3.send.mockImplementation((command: unknown) => {
+        const key = commandInput(command).Key;
+        if (
+          commandName(command) === "PutObjectCommand" &&
+          typeof key === "string" &&
+          key.endsWith(`/${version.versionHash}/${filename}`)
+        ) {
+          return Promise.reject(new Error("Upload did not succeed"));
+        }
+        return Promise.resolve({});
+      });
+      await expect(syncOwnedSkills(fixture)).resolves.toMatchObject({
+        synced: 0,
+        failed: 1,
+      });
+      await expect(findSkillByUrl(version.url)).resolves.toBeNull();
+      await expect(
+        findSystemStorageByName(version.storageName),
+      ).resolves.toMatchObject({
+        headVersionId: null,
+        archiveSize: null,
+      });
 
-    // Once R2 is recovered externally, retry the same source revision.
-    context.mocks.s3.send.mockResolvedValue({});
-    await expect(syncOwnedSkills(fixture)).resolves.toMatchObject({
-      success: true,
-      synced: 0,
-      skipped: fixture.requiredSeedSkillNames.length + 1,
-      failed: 0,
-    });
-    expect(s3CallsByName("PutObjectCommand")).toHaveLength(0);
-    await expect(findSkillByUrl(version.url)).resolves.toMatchObject({
-      versionHash: version.versionHash,
-      commitSha: nextCommitSha,
-    });
-  });
+      context.mocks.s3.send.mockResolvedValue({});
+      await expect(syncOwnedSkills(fixture)).resolves.toMatchObject({
+        synced: 1,
+        failed: 0,
+      });
+      await expect(
+        findSystemStorageByName(version.storageName),
+      ).resolves.toMatchObject({
+        headVersionId: version.versionHash,
+      });
+      await expect(findSkillByUrl(version.url)).resolves.toMatchObject({
+        versionHash: version.versionHash,
+        commitSha,
+      });
+    },
+  );
 
   it("records ready stable-context demand in the system-skill V2 transaction", async () => {
     const fixture = useCronSyncSkillsFixture();

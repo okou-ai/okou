@@ -1170,55 +1170,15 @@ describe("Official Workflow catalog release boundary", () => {
     });
   });
 
-  it("rejects missing registered objects without changing the accepted identity", async () => {
-    const s3 = installVolumeS3Fixture();
-    const name = `api-test-repair-${TEST_SUFFIX}`;
+  it("reuses registered objects without changing the accepted identity", async () => {
+    installVolumeS3Fixture();
+    const name = `api-test-reuse-${TEST_SUFFIX}`;
     await syncCatalog(catalog([activeDefinition(name)]));
     const initial = (await readState(name)).body.definition;
-    const archiveKey = [...s3.objects.keys()].find((key) => {
-      return key.endsWith("/archive.tar.gz");
-    });
-    const manifestKey = [...s3.objects.keys()].find((key) => {
-      return key.endsWith("/manifest.json");
-    });
-    expect(archiveKey).toBeDefined();
-    expect(manifestKey).toBeDefined();
-    if (!archiveKey || !manifestKey) {
-      throw new Error("Expected both immutable volume objects");
-    }
-
-    const archive = s3.objects.get(archiveKey);
-    const manifest = s3.objects.get(manifestKey);
-    if (!archive || !manifest) {
-      throw new Error("Expected both registered Storage object bodies");
-    }
-    s3.objects.delete(archiveKey);
-    s3.clearWrites();
-    const missingArchive = await syncCatalog(catalog([activeDefinition(name)]));
-    expect(missingArchive.body).toMatchObject({
-      outcome: "rejected",
-      diagnostics: [{ code: "artifact-preparation-failed" }],
-    });
-    expect(s3.objects.has(archiveKey)).toBeFalsy();
-    expect(s3.writes).toHaveLength(0);
-
-    s3.objects.set(archiveKey, archive);
-    s3.objects.delete(manifestKey);
-    const missingManifest = await syncCatalog(
-      catalog([activeDefinition(name)]),
-    );
-    expect(missingManifest.body).toMatchObject({
-      outcome: "rejected",
-      diagnostics: [{ code: "artifact-preparation-failed" }],
-    });
-    expect(s3.objects.has(manifestKey)).toBeFalsy();
-    expect(s3.writes).toHaveLength(0);
-
-    // External recovery may restore bytes; normal catalog sync never repairs.
-    s3.objects.set(manifestKey, manifest);
-    const recovered = await syncCatalog(catalog([activeDefinition(name)]));
-    expect(recovered.body.outcome).toBe("unchanged");
-    expect(s3.writes).toHaveLength(0);
+    context.mocks.s3.send.mockClear();
+    const repeated = await syncCatalog(catalog([activeDefinition(name)]));
+    expect(repeated.body.outcome).toBe("unchanged");
+    expect(context.mocks.s3.send).not.toHaveBeenCalled();
     const retained = await readState(name);
     expect(retained.body.definition).toMatchObject({
       revision: initial?.revision,
@@ -1232,65 +1192,17 @@ describe("Official Workflow catalog release boundary", () => {
     });
   });
 
-  it("rejects missing objects during retirement and preserves the retained artifact", async () => {
-    const s3 = installVolumeS3Fixture();
-    const name = `api-test-retired-repair-${TEST_SUFFIX}`;
+  it("reuses the retained artifact through retirement and repeated sync", async () => {
+    installVolumeS3Fixture();
+    const name = `api-test-retired-reuse-${TEST_SUFFIX}`;
     await syncCatalog(catalog([activeDefinition(name)]));
     const active = (await readState(name)).body.definition;
-    const archiveKey = [...s3.objects.keys()].find((key) => {
-      return key.endsWith("/archive.tar.gz");
-    });
-    const manifestKey = [...s3.objects.keys()].find((key) => {
-      return key.endsWith("/manifest.json");
-    });
-    expect(archiveKey).toBeDefined();
-    expect(manifestKey).toBeDefined();
-    if (!archiveKey || !manifestKey) {
-      throw new Error("Expected both immutable volume objects");
-    }
-
-    const archive = s3.objects.get(archiveKey);
-    const manifest = s3.objects.get(manifestKey);
-    if (!archive || !manifest) {
-      throw new Error("Expected both registered Storage object bodies");
-    }
-    s3.objects.delete(archiveKey);
-    s3.clearWrites();
-    const blockedRetirement = await syncCatalog(
-      catalog([retiredDefinition(name)]),
-    );
-    expect(blockedRetirement.body).toMatchObject({
-      outcome: "rejected",
-      diagnostics: [{ code: "artifact-preparation-failed" }],
-    });
-    expect(s3.objects.has(archiveKey)).toBeFalsy();
-    expect(s3.writes).toHaveLength(0);
-    expect((await readState(name)).body.definition).toMatchObject({
-      lifecycle: "active",
-      revision: active?.revision,
-      artifact: active?.artifact,
-    });
-
-    // Recovery of missing bytes is external to the catalog's normal writes.
-    s3.objects.set(archiveKey, archive);
+    context.mocks.s3.send.mockClear();
     const retirement = await syncCatalog(catalog([retiredDefinition(name)]));
     expect(retirement.body.outcome).toBe("accepted");
-    expect(s3.writes).toHaveLength(0);
-    s3.objects.delete(manifestKey);
-    const repeatedRetirement = await syncCatalog(
-      catalog([retiredDefinition(name)]),
-    );
-    expect(repeatedRetirement.body).toMatchObject({
-      outcome: "rejected",
-      diagnostics: [{ code: "artifact-preparation-failed" }],
-    });
-    expect(s3.objects.has(manifestKey)).toBeFalsy();
-    expect(s3.writes).toHaveLength(0);
-
-    s3.objects.set(manifestKey, manifest);
-    const recovered = await syncCatalog(catalog([retiredDefinition(name)]));
-    expect(recovered.body.outcome).toBe("unchanged");
-    expect(s3.writes).toHaveLength(0);
+    const repeated = await syncCatalog(catalog([retiredDefinition(name)]));
+    expect(repeated.body.outcome).toBe("unchanged");
+    expect(context.mocks.s3.send).not.toHaveBeenCalled();
     const retained = await readState(name);
     expect(retained.body.definition).toMatchObject({
       lifecycle: "retired",
@@ -1305,49 +1217,24 @@ describe("Official Workflow catalog release boundary", () => {
     });
   });
 
-  it("rejects a missing historical revision without rewriting durable versions", async () => {
-    const s3 = installVolumeS3Fixture();
-    const name = `api-test-historical-repair-${TEST_SUFFIX}`;
+  it("retains historical revisions without probing or rewriting their objects", async () => {
+    installVolumeS3Fixture();
+    const name = `api-test-historical-reuse-${TEST_SUFFIX}`;
     await syncCatalog(catalog([activeDefinition(name)]));
     const first = (await readState(name)).body.definition;
-    expect(first?.revision).toBeDefined();
-    expect(first?.artifact.storageVersion).toBeDefined();
-
     const currentCandidate = activeDefinition(name, {
       instruction: "Use the second durable revision.",
     });
     await syncCatalog(catalog([currentCandidate]));
     const second = (await readState(name)).body.definition;
-    expect(second?.revision).not.toBe(first?.revision);
-    const firstArchiveKey = [...s3.objects.keys()].find((key) => {
-      return (
-        key.includes(`/${first?.artifact.storageVersion}/`) &&
-        key.endsWith("/archive.tar.gz")
-      );
-    });
-    expect(firstArchiveKey).toBeDefined();
-    if (!firstArchiveKey || !first?.revision || !second?.revision) {
-      throw new Error("Expected two exact revisions and the first archive");
+    if (!first?.revision || !second?.revision) {
+      throw new Error("Expected two exact registered revisions");
     }
-
-    const firstArchive = s3.objects.get(firstArchiveKey);
-    if (!firstArchive) {
-      throw new Error("Expected the historical registered archive");
-    }
-    s3.objects.delete(firstArchiveKey);
-    s3.clearWrites();
-    const missingHistorical = await syncCatalog(catalog([currentCandidate]));
-    expect(missingHistorical.body).toMatchObject({
-      outcome: "rejected",
-      diagnostics: [{ code: "artifact-preparation-failed" }],
-    });
-    expect(s3.objects.has(firstArchiveKey)).toBeFalsy();
-    expect(s3.writes).toHaveLength(0);
-    s3.objects.set(firstArchiveKey, firstArchive);
-    const restored = await syncCatalog(catalog([currentCandidate]));
-    expect(restored.body.outcome).toBe("unchanged");
-    expect(s3.writes).toHaveLength(0);
-
+    expect(second.revision).not.toBe(first.revision);
+    context.mocks.s3.send.mockClear();
+    const repeated = await syncCatalog(catalog([currentCandidate]));
+    expect(repeated.body.outcome).toBe("unchanged");
+    expect(context.mocks.s3.send).not.toHaveBeenCalled();
     const retained = await readState(name);
     expect(retained.body.definition).toMatchObject({
       revision: second.revision,

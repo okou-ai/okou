@@ -36,7 +36,7 @@ import { userCache } from "@okouai/db/schema/user-cache";
 import { users } from "@okouai/db/schema/user";
 import { userPermissionGrants } from "@okouai/db/schema/user-permission-grant";
 import { variables } from "@okouai/db/schema/variable";
-import { command, computed, type Computed } from "ccstate";
+import { command } from "ccstate";
 import {
   and,
   asc,
@@ -57,10 +57,9 @@ import {
 import { clerk$, createClerkReadContext } from "../external/clerk";
 import { writeDb$, type Db } from "../external/db";
 import {
-  deleteS3Objects,
-  listS3Objects,
-  listS3ObjectsUnderPrefix,
-} from "../external/s3";
+  enqueueStorageObjectCleanup,
+  executeStorageObjectCleanupWork$,
+} from "./storage-object-cleanup.service";
 import { nowDate } from "../../lib/time";
 import { publishCancelToRunnerGroup } from "../external/realtime";
 import {
@@ -611,111 +610,118 @@ async function isClerkOrgEmptyAfterDeletingUser(
   }
 }
 
-function deleteObjectsForPrefixes(
-  bucket: string,
-  prefixes: readonly string[],
-): Computed<Promise<void>> {
-  return computed(async (get): Promise<void> => {
-    for (const prefix of prefixes) {
-      const objects = await get(listS3Objects(bucket, prefix));
-      if (objects.length === 0) {
-        continue;
-      }
-      await get(
-        deleteS3Objects(
-          bucket,
-          objects.map((object) => {
-            return object.key;
-          }),
-        ),
-      );
-    }
-  });
-}
+type ClerkStorageCleanupScope =
+  | { readonly kind: "organization"; readonly orgId: string }
+  | { readonly kind: "user"; readonly userId: string };
 
-function deleteUserObjectsForPrefixes(
-  bucket: string,
-  prefixes: readonly string[],
-): Computed<Promise<void>> {
-  return computed(async (get): Promise<void> => {
-    for (const prefix of prefixes) {
-      const objects = await get(listS3ObjectsUnderPrefix(bucket, prefix));
-      if (objects.length === 0) {
-        continue;
-      }
-      await get(
-        deleteS3Objects(
-          bucket,
-          objects.map((object) => {
-            return object.key;
-          }),
-        ),
-      );
-    }
-  });
-}
-
-function deleteOrgS3Data(db: Db, orgId: string): Computed<Promise<void>> {
-  return computed(async (get): Promise<void> => {
-    const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
-    const storageRows = await db
-      .select({ s3Prefix: storages.s3Prefix })
-      .from(storages)
-      .where(eq(storages.orgId, orgId));
-    await get(
-      deleteObjectsForPrefixes(
-        bucket,
-        storageRows.map((row) => {
-          return row.s3Prefix;
-        }),
-      ),
-    );
-
-    const exportRows = await db
-      .select({ s3Key: exportJobs.s3Key })
-      .from(exportJobs)
-      .where(and(eq(exportJobs.orgId, orgId), isNotNull(exportJobs.s3Key)));
-    const exportKeys = exportRows.flatMap((row) => {
-      return row.s3Key ? [row.s3Key] : [];
-    });
-    await get(deleteS3Objects(bucket, exportKeys));
-  });
-}
-
-function deleteUserS3Data(db: Db, userId: string): Computed<Promise<void>> {
-  return computed(async (get): Promise<void> => {
-    const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
-    const userStorageRows = await db
-      .select({ s3Prefix: storages.s3Prefix })
+async function deleteClerkStorageReferences(
+  db: Db,
+  scope: ClerkStorageCleanupScope,
+  signal: AbortSignal,
+): Promise<string[]> {
+  return await db.transaction(async (tx) => {
+    const rows = await tx
+      .select({
+        id: storages.id,
+        orgId: storages.orgId,
+        userId: storages.userId,
+        s3Prefix: storages.s3Prefix,
+      })
       .from(storages)
       .where(
-        and(
-          eq(storages.userId, userId),
-          eq(
-            storages.s3Prefix,
-            sql`${storages.orgId} || '/' || ${storages.id}::text`,
-          ),
+        scope.kind === "organization"
+          ? eq(storages.orgId, scope.orgId)
+          : eq(storages.userId, scope.userId),
+      )
+      .orderBy(asc(storages.id))
+      .for("update");
+    signal.throwIfAborted();
+    if (rows.length === 0) {
+      return [];
+    }
+    await deleteStoragesWithPiMemoryCandidates(
+      tx,
+      inArray(
+        storages.id,
+        rows.map((row) => row.id),
+      ),
+    );
+    signal.throwIfAborted();
+    const jobIds: string[] = [];
+    for (const row of rows) {
+      // Preserve the existing user-deletion boundary: legacy prefixes may be
+      // shared. Org-owned instruction Storage belongs to retained Agents.
+      if (scope.kind === "user" && row.s3Prefix !== `${row.orgId}/${row.id}`) {
+        continue;
+      }
+      jobIds.push(
+        await enqueueStorageObjectCleanup(
+          tx,
+          {
+            bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
+            target: { kind: "prefix", value: row.s3Prefix },
+            userId: row.userId,
+            orgId: row.orgId,
+          },
+          signal,
         ),
       );
+    }
+    return jobIds;
+  });
+}
 
-    // Agents the user owns are retained, so their instructions Storage is too.
-    const prefixes = [
-      ...new Set(
-        userStorageRows.map((row) => {
-          return row.s3Prefix;
-        }),
-      ),
-    ];
-    await get(deleteUserObjectsForPrefixes(bucket, prefixes));
-
-    const exportRows = await db
-      .select({ s3Key: exportJobs.s3Key })
+async function deleteClerkExportReferences(
+  db: Db,
+  scope: ClerkStorageCleanupScope,
+  signal: AbortSignal,
+): Promise<string[]> {
+  return await db.transaction(async (tx) => {
+    const rows = await tx
+      .select({
+        id: exportJobs.id,
+        orgId: exportJobs.orgId,
+        userId: exportJobs.userId,
+        s3Key: exportJobs.s3Key,
+      })
       .from(exportJobs)
-      .where(and(eq(exportJobs.userId, userId), isNotNull(exportJobs.s3Key)));
-    const exportKeys = exportRows.flatMap((row) => {
-      return row.s3Key ? [row.s3Key] : [];
-    });
-    await get(deleteS3Objects(bucket, exportKeys));
+      .where(
+        scope.kind === "organization"
+          ? eq(exportJobs.orgId, scope.orgId)
+          : eq(exportJobs.userId, scope.userId),
+      )
+      .orderBy(asc(exportJobs.id))
+      .for("update");
+    signal.throwIfAborted();
+    if (rows.length === 0) {
+      return [];
+    }
+    await tx.delete(exportJobs).where(
+      inArray(
+        exportJobs.id,
+        rows.map((row) => row.id),
+      ),
+    );
+    signal.throwIfAborted();
+    const jobIds: string[] = [];
+    for (const row of rows) {
+      if (row.s3Key === null) {
+        continue;
+      }
+      jobIds.push(
+        await enqueueStorageObjectCleanup(
+          tx,
+          {
+            bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
+            target: { kind: "key", value: row.s3Key },
+            userId: row.userId,
+            orgId: row.orgId,
+          },
+          signal,
+        ),
+      );
+    }
+    return jobIds;
   });
 }
 
@@ -724,7 +730,7 @@ async function deleteOrgData(
   orgId: string,
   onSlotsReleased: SlotsReleased,
   signal: AbortSignal,
-): Promise<void> {
+): Promise<string[]> {
   await cancelOrgRuns(db, orgId, onSlotsReleased);
   await deleteDiscordOrgData(db, orgId);
   signal.throwIfAborted();
@@ -779,9 +785,11 @@ async function deleteOrgData(
       .where(eq(cloudflareAccessConfigs.orgId, orgId));
   });
   await deleteConnectorOwnerState(db, { kind: "organization", orgId }, signal);
-  await db.transaction(async (tx) => {
-    await deleteStoragesWithPiMemoryCandidates(tx, eq(storages.orgId, orgId));
-  });
+  const cleanupJobIds = await deleteClerkStorageReferences(
+    db,
+    { kind: "organization", orgId },
+    signal,
+  );
   await db.delete(modelProviders).where(eq(modelProviders.orgId, orgId));
   await db
     .delete(modelProviderAuthSessions)
@@ -794,7 +802,13 @@ async function deleteOrgData(
   await db
     .delete(builtinConnectorExternalCodeSessions)
     .where(eq(builtinConnectorExternalCodeSessions.orgId, orgId));
-  await db.delete(exportJobs).where(eq(exportJobs.orgId, orgId));
+  cleanupJobIds.push(
+    ...(await deleteClerkExportReferences(
+      db,
+      { kind: "organization", orgId },
+      signal,
+    )),
+  );
   await db
     .delete(orgConcurrencyEntitlements)
     .where(eq(orgConcurrencyEntitlements.orgId, orgId));
@@ -821,6 +835,7 @@ async function deleteOrgData(
     .where(eq(morningBriefEnrollments.orgId, orgId));
   await db.delete(orgModelPolicies).where(eq(orgModelPolicies.orgId, orgId));
   await db.delete(orgMetadata).where(eq(orgMetadata.orgId, orgId));
+  return cleanupJobIds;
 }
 
 async function deleteUserData(
@@ -828,7 +843,7 @@ async function deleteUserData(
   userId: string,
   onSlotsReleased: SlotsReleased,
   signal: AbortSignal,
-): Promise<void> {
+): Promise<string[]> {
   await cancelUserRuns(db, userId, onSlotsReleased);
   await deleteDiscordUserData(db, userId);
   signal.throwIfAborted();
@@ -870,9 +885,11 @@ async function deleteUserData(
       .delete(cloudflareAccessConfigs)
       .where(eq(cloudflareAccessConfigs.userId, userId));
   });
-  await db.transaction(async (tx) => {
-    await deleteStoragesWithPiMemoryCandidates(tx, eq(storages.userId, userId));
-  });
+  const cleanupJobIds = await deleteClerkStorageReferences(
+    db,
+    { kind: "user", userId },
+    signal,
+  );
   await db
     .delete(piMemoryStage1Days)
     .where(eq(piMemoryStage1Days.userId, userId));
@@ -883,7 +900,13 @@ async function deleteUserData(
   await deleteConnectorOwnerState(db, { kind: "user", userId }, signal);
   await db.delete(secrets).where(eq(secrets.userId, userId));
   await db.delete(variables).where(eq(variables.userId, userId));
-  await db.delete(exportJobs).where(eq(exportJobs.userId, userId));
+  cleanupJobIds.push(
+    ...(await deleteClerkExportReferences(
+      db,
+      { kind: "user", userId },
+      signal,
+    )),
+  );
   await db.delete(cliTokens).where(eq(cliTokens.userId, userId));
   await db.delete(composeJobs).where(eq(composeJobs.userId, userId));
   await db
@@ -916,10 +939,11 @@ async function deleteUserData(
   await db.delete(userCache).where(eq(userCache.userId, userId));
   signal.throwIfAborted();
   await db.delete(users).where(eq(users.id, userId));
+  return cleanupJobIds;
 }
 
 export const cleanupClerkDeletedOrg$ = command(
-  async ({ get, set }, orgId: string, signal: AbortSignal): Promise<void> => {
+  async ({ set }, orgId: string, signal: AbortSignal): Promise<void> => {
     const db = set(writeDb$);
     const released = releasedSlotCollector();
     await eraseVncOwnerData(db, { kind: "organization", orgId });
@@ -941,13 +965,21 @@ export const cleanupClerkDeletedOrg$ = command(
     );
     await set(cleanupOrgExternalServices$, db, orgId, false, signal);
     signal.throwIfAborted();
-    await get(deleteOrgS3Data(db, orgId));
-    signal.throwIfAborted();
-    await deleteOrgData(db, orgId, released.collect, signal);
+    const cleanupJobIds = await deleteOrgData(
+      db,
+      orgId,
+      released.collect,
+      signal,
+    );
     signal.throwIfAborted();
     // Picked only once the data is gone: deleting the organization's Agents
     // cascaded its chat threads and their queued rows, so nothing launches.
     set(scheduleReleasedSlotPicks$, released.slots);
+    await set(
+      executeStorageObjectCleanupWork$,
+      { jobIds: cleanupJobIds },
+      signal,
+    );
   },
 );
 
@@ -1021,22 +1053,27 @@ export const cleanupClerkDeletedUser$ = command(
       signal.throwIfAborted();
     }
 
-    await get(deleteUserS3Data(db, userId));
+    const cleanupJobIds = await deleteUserData(
+      db,
+      userId,
+      released.collect,
+      signal,
+    );
     signal.throwIfAborted();
     for (const orgId of emptyOrgIds) {
-      await get(deleteOrgS3Data(db, orgId));
-      signal.throwIfAborted();
-    }
-
-    await deleteUserData(db, userId, released.collect, signal);
-    signal.throwIfAborted();
-    for (const orgId of emptyOrgIds) {
-      await deleteOrgData(db, orgId, released.collect, signal);
+      cleanupJobIds.push(
+        ...(await deleteOrgData(db, orgId, released.collect, signal)),
+      );
       signal.throwIfAborted();
     }
     // Picked only once the user's data is gone, so the slots go to other
     // members' waiting threads.
     set(scheduleReleasedSlotPicks$, released.slots);
+    await set(
+      executeStorageObjectCleanupWork$,
+      { jobIds: cleanupJobIds },
+      signal,
+    );
   },
 );
 

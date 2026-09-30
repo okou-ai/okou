@@ -1,0 +1,268 @@
+import { randomUUID } from "node:crypto";
+
+import {
+  DeleteObjectsCommand,
+  HeadObjectCommand,
+  ListObjectsV2Command,
+} from "@aws-sdk/client-s3";
+import { testStorageObjectCleanupContract } from "@okouai/api-contracts/contracts/test-storage-object-cleanup";
+import { describe, expect, it } from "vitest";
+
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { flushWaitUntilForTest } from "../../context/wait-until";
+import { testStorageObjectCleanupRoutes } from "../test-storage-object-cleanup";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { storageTextFile } from "./helpers/api-bdd-storage-files";
+import { createStoragesBddApi } from "./helpers/api-bdd-storages";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+
+const context = testContext();
+const bdd = createBddApi(context);
+const storages = createStoragesBddApi(context);
+const webhooks = createWebhookCallbackApi(context);
+
+function objectStore() {
+  const objects = new Map<string, Buffer>();
+  let failure: "list" | "partial-delete" | "lost-delete-receipt" | undefined;
+  let beforeList: (() => Promise<void>) | undefined;
+  context.mocks.s3.send.mockImplementation(async (command: unknown) => {
+    if (command instanceof HeadObjectCommand) {
+      const body = command.input.Key
+        ? objects.get(command.input.Key)
+        : undefined;
+      if (!body) {
+        throw Object.assign(new Error("Missing object"), {
+          name: "NotFound",
+          $metadata: { httpStatusCode: 404 },
+        });
+      }
+      return { ContentLength: body.length };
+    }
+    if (command instanceof ListObjectsV2Command) {
+      if (beforeList) {
+        await beforeList();
+      }
+      if (failure === "list") {
+        failure = undefined;
+        throw new Error("R2 listing failed");
+      }
+      const prefix = command.input.Prefix ?? "";
+      const keys = [...objects.keys()]
+        .filter((key) => key.startsWith(prefix))
+        .sort();
+      const page = keys.slice(0, command.input.MaxKeys ?? 1000);
+      return {
+        Contents: page.map((key) => ({
+          Key: key,
+          Size: objects.get(key)?.length ?? 0,
+          LastModified: new Date(0),
+        })),
+        IsTruncated: page.length < keys.length,
+      };
+    }
+    if (command instanceof DeleteObjectsCommand) {
+      const keys =
+        command.input.Delete?.Objects?.flatMap((object) =>
+          object.Key ? [object.Key] : [],
+        ) ?? [];
+      if (failure === "partial-delete") {
+        failure = undefined;
+        const [removed, remaining] = keys;
+        if (removed) {
+          objects.delete(removed);
+        }
+        return {
+          Errors: [
+            {
+              Key: remaining,
+              Code: "InternalError",
+              Message: "Partial delete failed",
+            },
+          ],
+        };
+      }
+      for (const key of keys) {
+        objects.delete(key);
+      }
+      if (failure === "lost-delete-receipt") {
+        failure = undefined;
+        throw new Error(
+          "Delete response was lost after R2 removed the objects",
+        );
+      }
+      return {};
+    }
+    return {};
+  });
+  return {
+    objects,
+    failNext(value: "list" | "partial-delete" | "lost-delete-receipt") {
+      failure = value;
+    },
+    beforeListing(callback: () => Promise<void>) {
+      beforeList = callback;
+    },
+  };
+}
+
+async function publish(actor: ApiTestUser, objects: Map<string, Buffer>) {
+  const storageName = `cleanup-${randomUUID()}`;
+  storages.mockStoragePresignedUrls();
+  const files = [storageTextFile("content.txt", "retained storage content")];
+  const prepared = await storages.prepareStorage(actor, {
+    storageName,
+    storageOwner: "user",
+    files,
+  });
+  if (!prepared.uploads) {
+    throw new Error("Expected a new Storage upload");
+  }
+  const archiveKey = prepared.uploads.archive.key;
+  const manifestKey = prepared.uploads.manifest.key;
+  objects.set(archiveKey, Buffer.from("synthetic archive bytes"));
+  objects.set(manifestKey, Buffer.from(JSON.stringify({ files })));
+  await storages.commitStorage(actor, {
+    storageName,
+    storageOwner: "user",
+    versionId: prepared.versionId,
+    files,
+  });
+  return {
+    storageName,
+    archiveKey,
+    manifestKey,
+    prefix: archiveKey.slice(
+      0,
+      archiveKey.lastIndexOf(`/${prepared.versionId}/`),
+    ),
+  };
+}
+
+async function deleteOwner(actor: ApiTestUser, kind: "user" | "organization") {
+  webhooks.configureClerkWebhookSecret();
+  context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
+    data: [],
+  });
+  webhooks.verifyNextClerkWebhook({
+    type: kind === "user" ? "user.deleted" : "organization.deleted",
+    data: { id: kind === "user" ? actor.userId : actor.orgId },
+  });
+  await webhooks.requestClerkWebhook("{}", {}, [200]);
+  await flushWaitUntilForTest();
+}
+
+async function retry(actor: ApiTestUser, kind: "user" | "organization") {
+  if (!actor.orgId) {
+    throw new Error("Expected an organization-scoped actor");
+  }
+  return await accept(
+    setupApp({ context, routes: testStorageObjectCleanupRoutes })(
+      testStorageObjectCleanupContract,
+    ).retry({
+      body:
+        kind === "user"
+          ? { kind, userId: actor.userId }
+          : { kind, orgId: actor.orgId },
+    }),
+    [200],
+  );
+}
+
+describe("Clerk Storage cleanup after reference deletion", () => {
+  it.each(["user", "organization"] as const)(
+    "resumes %s cleanup after R2 listing fails and the Storage references are gone",
+    async (kind) => {
+      const actor = bdd.user();
+      const peer = bdd.user(kind === "user" ? { orgId: actor.orgId } : {});
+      const s3 = objectStore();
+      const target = await publish(actor, s3.objects);
+      const retained = await publish(peer, s3.objects);
+      const siblingKey = `${target.prefix}-sibling/keep.txt`;
+      s3.objects.set(siblingKey, Buffer.from("outside the deleted prefix"));
+      s3.beforeListing(async () => {
+        expect(await storages.listStorages(actor, "user")).not.toContainEqual(
+          expect.objectContaining({ name: target.storageName }),
+        );
+      });
+      s3.failNext("list");
+      await deleteOwner(actor, kind);
+      expect(await storages.listStorages(actor, "user")).not.toContainEqual(
+        expect.objectContaining({ name: target.storageName }),
+      );
+      expect(s3.objects.has(target.archiveKey)).toBe(true);
+      // The retry resolves only durable cleanup inventory: no Storage row
+      // remains from which to recover the prefix after a worker restart.
+      await expect(retry(actor, kind)).resolves.toMatchObject({
+        body: { processed: 1 },
+      });
+      expect(s3.objects.has(target.archiveKey)).toBe(false);
+      expect(s3.objects.has(target.manifestKey)).toBe(false);
+      expect(s3.objects.has(retained.archiveKey)).toBe(true);
+      expect(s3.objects.has(retained.manifestKey)).toBe(true);
+      expect(s3.objects.has(siblingKey)).toBe(true);
+      expect(await storages.listStorages(peer, "user")).toContainEqual(
+        expect.objectContaining({ name: retained.storageName }),
+      );
+      await expect(retry(actor, kind)).resolves.toMatchObject({
+        body: { processed: 0 },
+      });
+    },
+  );
+
+  it("retries only the remaining objects after a partial DeleteObjects response", async () => {
+    const actor = bdd.user();
+    const s3 = objectStore();
+    const target = await publish(actor, s3.objects);
+    s3.failNext("partial-delete");
+    await deleteOwner(actor, "user");
+    expect(
+      [...s3.objects.keys()].filter((key) =>
+        key.startsWith(`${target.prefix}/`),
+      ),
+    ).toHaveLength(1);
+    await retry(actor, "user");
+    expect(s3.objects.has(target.archiveKey)).toBe(false);
+    expect(s3.objects.has(target.manifestKey)).toBe(false);
+  });
+
+  it("completes a retry after a successful R2 delete loses its response", async () => {
+    const actor = bdd.user();
+    const s3 = objectStore();
+    const target = await publish(actor, s3.objects);
+    s3.failNext("lost-delete-receipt");
+    await deleteOwner(actor, "user");
+    expect(s3.objects.has(target.archiveKey)).toBe(false);
+    expect(s3.objects.has(target.manifestKey)).toBe(false);
+    await expect(retry(actor, "user")).resolves.toMatchObject({
+      body: { processed: 1 },
+    });
+    await expect(retry(actor, "user")).resolves.toMatchObject({
+      body: { processed: 0 },
+    });
+  });
+
+  it("continues a bounded prefix page from durable inventory", async () => {
+    const actor = bdd.user();
+    const s3 = objectStore();
+    const target = await publish(actor, s3.objects);
+    for (let index = 0; index < 1001; index++) {
+      s3.objects.set(
+        `${target.prefix}/extra-${index}.txt`,
+        Buffer.from("extra"),
+      );
+    }
+    await deleteOwner(actor, "user");
+    expect(
+      [...s3.objects.keys()].filter((key) =>
+        key.startsWith(`${target.prefix}/`),
+      ),
+    ).toHaveLength(3);
+    await retry(actor, "user");
+    expect(
+      [...s3.objects.keys()].filter((key) =>
+        key.startsWith(`${target.prefix}/`),
+      ),
+    ).toHaveLength(0);
+  });
+});

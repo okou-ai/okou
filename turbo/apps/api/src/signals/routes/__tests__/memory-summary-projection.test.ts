@@ -410,8 +410,14 @@ describe("memory summary projection", () => {
     const differentlyCompressed = gzipSync(gunzipSync(original), { level: 0 });
     expect(differentlyCompressed).not.toHaveLength(original.length);
     context.sessionHistoryBlobs.set(version.archiveKey, differentlyCompressed);
+    context.mocks.s3.send.mockClear();
 
     await expect(run(version)).resolves.toMatchObject({ claimed: 1, ready: 1 });
+    expect(
+      context.mocks.s3.send.mock.calls.filter(([command]) => {
+        return command instanceof HeadObjectCommand;
+      }),
+    ).toHaveLength(0);
     await expect(read(version)).resolves.toMatchObject({
       content: summary.toString("utf8"),
       source_size: summary.length,

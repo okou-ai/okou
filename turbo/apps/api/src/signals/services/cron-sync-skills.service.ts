@@ -36,7 +36,6 @@ import {
   deleteS3Objects,
   listS3ObjectsUnderPrefix,
   putS3Object,
-  verifyS3FilesExist,
 } from "../external/s3";
 import { createDeferredPromise, safeSync, tapError } from "../utils";
 import {
@@ -337,7 +336,7 @@ function hasCurrentSkillVersion(
   },
   signal: AbortSignal,
 ): Computed<Promise<boolean>> {
-  return computed(async (get): Promise<boolean> => {
+  return computed(async (): Promise<boolean> => {
     const [existingSkill] = await args.db
       .select({ versionHash: skills.versionHash, storageId: skills.storageId })
       .from(skills)
@@ -352,7 +351,6 @@ function hasCurrentSkillVersion(
     const [version] = await args.db
       .select({
         storageId: storageVersions.storageId,
-        s3Key: storageVersions.s3Key,
         fileCount: storageVersions.fileCount,
         archiveSize: storageVersions.archiveSize,
       })
@@ -367,21 +365,6 @@ function hasCurrentSkillVersion(
     ) {
       throw new Error("Current skill references an invalid Storage version");
     }
-    if (
-      !(await get(
-        verifyS3FilesExist(
-          env("R2_USER_STORAGES_BUCKET_NAME"),
-          version.s3Key,
-          version.fileCount,
-        ),
-      ))
-    ) {
-      throw new Error(
-        `Existing skill Storage version ${args.versionHash} is missing R2 objects`,
-      );
-    }
-    signal.throwIfAborted();
-
     const { indexes } = await readPiResourceVersionIndexes(
       args.db,
       [args.versionHash],
@@ -663,21 +646,6 @@ function syncSingleSkill(
     ) {
       throw new StorageVersionIdentityConflictError(context.versionHash);
     }
-    if (
-      existing &&
-      !(await get(
-        verifyS3FilesExist(
-          env("R2_USER_STORAGES_BUCKET_NAME"),
-          existing.s3Key,
-          context.files.length,
-        ),
-      ))
-    ) {
-      throw new Error(
-        `Existing skill Storage version ${context.versionHash} is missing R2 objects`,
-      );
-    }
-    signal.throwIfAborted();
     const upload = existing
       ? {
           archiveBuffer: (await createSkillArchive(context.files))

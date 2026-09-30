@@ -27,7 +27,6 @@ import {
   s3ObjectExists,
   s3ObjectHead,
   type S3ObjectHead,
-  verifyS3FilesExist,
 } from "../external/s3";
 import { enqueueMemorySummaryProjection } from "./memory-summary-projection.service";
 import { notifyPiMemoryPhase2ExternalHeadChange } from "./pi-memory-phase2-job.service";
@@ -141,16 +140,6 @@ type StorageErrorResponse =
       };
     };
 
-type MissingStorageFilesResponse = {
-  readonly status: 409;
-  readonly body: {
-    readonly error: {
-      readonly message: string;
-      readonly code: "S3_FILES_MISSING";
-    };
-  };
-};
-
 type PrepareStorageResponse =
   | {
       readonly status: 200;
@@ -169,8 +158,7 @@ type PrepareStorageResponse =
         };
       };
     }
-  | StorageErrorResponse
-  | MissingStorageFilesResponse;
+  | StorageErrorResponse;
 
 type CommitStorageResponse =
   | {
@@ -184,8 +172,7 @@ type CommitStorageResponse =
         readonly deduplicated?: boolean;
       };
     }
-  | StorageErrorResponse
-  | MissingStorageFilesResponse;
+  | StorageErrorResponse;
 
 function payloadTooLarge(message: string): StorageErrorResponse {
   return {
@@ -596,45 +583,6 @@ function resolvePreparedFiles(
   });
 }
 
-function existingStorageVersionState(
-  args: {
-    readonly db: Db;
-    readonly bucket: string;
-    readonly storageId: string;
-    readonly allowMissingObjectsForEmptyVersion: boolean;
-    readonly versionId: string;
-  },
-  signal: AbortSignal,
-): Computed<Promise<"new" | "available" | "missing">> {
-  return computed(async (get): Promise<"new" | "available" | "missing"> => {
-    const existingVersion = await findStorageVersion({
-      db: args.db,
-      storageId: args.storageId,
-      versionId: args.versionId,
-    });
-    signal.throwIfAborted();
-
-    if (!existingVersion) {
-      return "new";
-    }
-
-    const exists = await get(
-      verifyS3FilesExist(
-        args.bucket,
-        existingVersion.s3Key,
-        existingVersion.fileCount,
-        {
-          allowMissingObjectsForEmptyVersion:
-            args.allowMissingObjectsForEmptyVersion,
-        },
-      ),
-    );
-    signal.throwIfAborted();
-
-    return exists ? "available" : "missing";
-  });
-}
-
 function createStorageUploadResponse(
   args: {
     readonly bucket: string;
@@ -681,18 +629,6 @@ function createStorageUploadResponse(
       },
     };
   });
-}
-
-function s3FilesMissingConflict(): MissingStorageFilesResponse {
-  return {
-    status: 409,
-    body: {
-      error: {
-        message: "S3 files missing for an existing Storage version",
-        code: "S3_FILES_MISSING",
-      },
-    },
-  };
 }
 
 type ArchiveVerification =
@@ -790,36 +726,27 @@ function verifyStorageCommit(
 ): Computed<Promise<VerifiedStorageCommit | CommitStorageResponse>> {
   return computed(
     async (get): Promise<VerifiedStorageCommit | CommitStorageResponse> => {
-      if (args.version?.fileCount === 0) {
+      // Registration follows successful upload verification. Reuse its
+      // committed metadata without probing the objects again.
+      if (args.version) {
         return {
           archiveSize: args.version.archiveSize,
           s3Key: args.version.s3Key,
         };
       }
 
-      const s3Key =
-        args.version?.s3Key ??
-        `${args.storage.s3Prefix}/${args.input.versionId}`;
+      const s3Key = `${args.storage.s3Prefix}/${args.input.versionId}`;
       const verification = await get(
         verifyUploadedStorageFiles(
           {
             bucket: args.bucket,
             s3Key,
-            fileCount: args.version?.fileCount ?? args.input.files.length,
+            fileCount: args.input.files.length,
           },
           signal,
         ),
       );
       signal.throwIfAborted();
-
-      if (args.version) {
-        return verification.kind === "verified"
-          ? {
-              archiveSize: args.version.archiveSize,
-              s3Key,
-            }
-          : s3FilesMissingConflict();
-      }
 
       switch (verification.kind) {
         case "verified": {
@@ -1363,24 +1290,14 @@ export const prepareStorageUploadForStorage$ = command(
     signal.throwIfAborted();
     const versionId = computeContentHashFromHashes(storage.id, mergedFiles);
 
-    const versionState = await get(
-      existingStorageVersionState(
-        {
-          db: writeDb,
-          bucket,
-          storageId: storage.id,
-          allowMissingObjectsForEmptyVersion: true,
-          versionId,
-        },
-        signal,
-      ),
-    );
+    const existingVersion = await findStorageVersion({
+      db: writeDb,
+      storageId: storage.id,
+      versionId,
+    });
     signal.throwIfAborted();
-    if (versionState === "available") {
+    if (existingVersion) {
       return { status: 200, body: { versionId, existing: true } };
-    }
-    if (versionState === "missing") {
-      return s3FilesMissingConflict();
     }
 
     return await get(

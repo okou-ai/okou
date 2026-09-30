@@ -2553,7 +2553,7 @@ describe("workflows", () => {
     await api.requestCancelRun(actor, sourceRun.runId, [200]);
   });
 
-  it("reuses workflow volumes and rejects missing registered objects without moving HEAD", async () => {
+  it("reuses registered workflow volumes without uploading or reconciling archive size", async () => {
     const actor = user();
     const agent = await createAgent(actor, {
       displayName: "Immutable Volume Agent",
@@ -2668,26 +2668,8 @@ describe("workflows", () => {
       firstVersionId,
       firstArchive.length + 1,
     );
-    s3.objects.delete(firstArchiveKey);
     s3.clearWrites();
-    const missing = await requestUpdateWorkflow(
-      actor,
-      workflow.body.id,
-      { instruction: firstInstruction, files: firstFiles },
-      [409],
-    );
-    expect(missing.body.error.message).toContain(firstVersionId);
-    expect(s3.writes).toHaveLength(0);
-    expect(
-      (await readWorkflowStorageState(actor, workflow.body.id))
-        ?.head_version_id,
-    ).toBe(secondVersionId);
-    await expect(
-      readWorkflowStorageVersion(actor, workflow.body.id, firstVersionId),
-    ).resolves.toMatchObject({ archive_size: firstArchive.length + 1 });
-
-    // Restoring an object is an external recovery action, not a normal write.
-    s3.objects.set(firstArchiveKey, firstArchive);
+    context.mocks.s3.send.mockClear();
     await updateWorkflow(actor, workflow.body.id, {
       instruction: firstInstruction,
       files: firstFiles,
@@ -2700,6 +2682,7 @@ describe("workflows", () => {
     await expect(
       readWorkflowStorageVersion(actor, workflow.body.id, firstVersionId),
     ).resolves.toMatchObject({ archive_size: firstArchive.length + 1 });
+    expect(context.mocks.s3.send).not.toHaveBeenCalled();
   });
 
   it("reuses an existing workflow archive across path order and umask", async () => {

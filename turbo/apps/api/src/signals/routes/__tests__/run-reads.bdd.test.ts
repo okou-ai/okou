@@ -1163,24 +1163,10 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
       files: [volumeFile],
     });
     const presignCount = context.mocks.s3.getSignedUrl.mock.calls.length;
+    context.mocks.s3.send.mockClear();
     context.mocks.s3.send.mockRejectedValue(
-      Object.assign(new Error("Missing Storage objects"), {
-        name: "NotFound",
-        $metadata: { httpStatusCode: 404 },
-      }),
+      new Error("Registered version reuse must not access R2"),
     );
-    const missingPrepare = await storages.prepareStorageResponse(actor, {
-      storageName: volumeName,
-      storageOwner: "organization",
-      files: [volumeFile],
-      force: true,
-    });
-    expect(missingPrepare.status).toBe(409);
-    await expect(missingPrepare.json()).resolves.toMatchObject({
-      error: { code: "S3_FILES_MISSING" },
-    });
-    expect(context.mocks.s3.getSignedUrl).toHaveBeenCalledTimes(presignCount);
-    storages.mockStorageObjectsExist(volumeArchiveSize);
     const repeatedPrepare = await storages.prepareStorage(actor, {
       storageName: volumeName,
       storageOwner: "organization",
@@ -1192,14 +1178,14 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
       existing: true,
     });
     expect(context.mocks.s3.getSignedUrl).toHaveBeenCalledTimes(presignCount);
-    // Even a later R2 response size change cannot rewrite a committed version.
-    storages.mockStorageObjectsExist(23_456);
     await storages.commitStorage(actor, {
       storageName: volumeName,
       storageOwner: "organization",
       versionId: volumeVersion,
       files: [volumeFile],
     });
+    expect(context.mocks.s3.send).not.toHaveBeenCalled();
+    storages.mockStorageObjectsExist(volumeArchiveSize);
 
     const composeName = `bdd-resume-${randomUUID().slice(0, 8)}`;
     const compose = await api.createDirectAgent(actor, {

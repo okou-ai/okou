@@ -74,6 +74,8 @@ surface; the index does not replace their detailed rules.
   and the consumer/data/rollback gates before schema contraction.
 - [User data export](./user-data-export.md): ZIP v2 contents, readable instruction
   scope, canonical chat history, checksum semantics, and download compatibility.
+- [Storage version publication](./storage-version-publication.md): R2-first
+  version registration, DB-only reuse, and durable reference-first Clerk cleanup.
 - [Connector catalog rejections](./connector-catalog-rejections.md): safe
   validation reasons, cached rejection records, retained snapshots and recovered
   publication-order evidence.

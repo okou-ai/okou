@@ -1,5 +1,24 @@
 # Deployment Compatibility
 
+## Storage version reuse and reference-first Clerk cleanup
+
+Registered Storage versions are reused from their database metadata without an
+R2 existence probe or normal re-upload. Server-side publishers await archive and
+manifest PUT success before registering a version; client-direct first commits
+retain pre-transaction upload verification. The initial empty artifact remains
+an explicitly archive-less version. No Storage row shape changes.
+
+Clerk deletion now commits Storage/export reference removal together with
+handler-version-1 `storage-object-cleanup` jobs in the existing `background_jobs`
+table before touching those R2 objects. Prefixes and output keys survive owner
+and source-row deletion, partial provider failures, and worker lease expiry.
+Older workers ignore this new kind and cannot erase the queued obligation; a
+rollback delays cleanup until compatible workers return. Older deletion code
+still uses R2-first ordering until it drains. Existing user-deletion jobs retain
+their current handler/checkpoint contract and can resume through the new code.
+See [Storage version publication](storage-version-publication.md) for the bounded
+cleanup, legacy shared-prefix policy, and remaining immutable-key/late-PUT scope.
+
 ## Integration model commands are thread-scoped (2026-09-29)
 
 The integration `/model` command now reads the effective model of an existing
