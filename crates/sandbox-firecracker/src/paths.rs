@@ -193,6 +193,14 @@ impl SockPaths {
             .join(format!("vsock.sock_{}", runner_rpc_proto::VSOCK_PORT))
     }
 
+    /// Dedicated private Guest duplex transport (no public sandbox port).
+    pub(crate) fn guest_duplex(&self) -> PathBuf {
+        self.vsock_dir().join(format!(
+            "vsock.sock_{}",
+            guest_contracts::private_duplex::VSOCK_PORT
+        ))
+    }
+
     /// Okou control server Unix-domain socket, `control.sock`.
     pub fn control_sock(&self) -> PathBuf {
         self.dir.join("control.sock")
@@ -268,8 +276,8 @@ impl SnapshotOutputPaths {
     /// `sock_id` identifies the socket directory under `/run/vm0/sock/` —
     /// typically the config hash so each snapshot gets a unique path. It must
     /// satisfy the Firecracker socket-ID requirements documented on
-    /// [`sandbox::SnapshotCreateConfig::id`], including room for the `_52000`
-    /// guest-control listener suffix.
+    /// [`sandbox::SnapshotCreateConfig::id`], including room for the
+    /// `_52000` control, `_52001` RPC and `_52002` duplex listener suffixes.
     ///
     /// This helper only constructs paths; it does not validate `sock_id`.
     /// Callers must ensure these requirements are met before using the returned
@@ -342,6 +350,7 @@ mod tests {
         let api = sock.api_sock();
         let vsock = sock.vsock();
         let control_listener = format!("{}_{}", vsock.display(), guest_control_proto::VSOCK_PORT);
+        let duplex_listener = sock.guest_duplex();
 
         assert!(
             api.as_os_str().len() <= 107,
@@ -358,6 +367,11 @@ mod tests {
         assert!(
             control_listener.len() <= 107,
             "snapshot control listener path too long: {control_listener}"
+        );
+        assert!(
+            duplex_listener.as_os_str().len() <= 107,
+            "snapshot duplex listener path too long: {}",
+            duplex_listener.display()
         );
     }
 

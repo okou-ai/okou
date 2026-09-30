@@ -2068,6 +2068,44 @@ describe("GET/PUT /api/model-policies", () => {
     });
   });
 
+  it("rejects an Ultrafast default even on a direct OpenAI Astra route", async () => {
+    const fixture = seedFixture();
+    useSession(fixture);
+    const providerId = await createOrgProvider(fixture, "openai-api-key");
+    await accept(
+      apiClient().update({
+        headers: authHeaders(),
+        body: {
+          revision: await currentPolicyRevision(),
+          policies: [
+            {
+              model: "gpt-6-astra",
+              isDefault: true,
+              defaultProviderType: "openai-api-key",
+              credentialScope: "org",
+              modelProviderId: providerId,
+            },
+          ],
+        },
+      }),
+      [200],
+    );
+    const preferences = setupApp({
+      context,
+      routes: userModelPreferenceRoutes,
+    })(userModelPreferenceContract);
+    const response = await accept(
+      preferences.update({
+        headers: authHeaders(),
+        body: { selectedModel: "gpt-6-astra", serviceTier: "ultrafast" },
+      }),
+      [400],
+    );
+    expect(response.body).toMatchObject({
+      error: { message: "Astra Ultrafast is temporarily disabled" },
+    });
+  });
+
   it("stores priority with a GPT 5.6 user model preference", async () => {
     const fixture = await seedFixture();
     useSession(fixture);

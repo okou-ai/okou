@@ -1,5 +1,25 @@
 # Deployment Compatibility
 
+## Astra Ultrafast temporarily disabled (2026-09-30)
+
+Ultrafast is no longer advertised in model run options. Both model pickers hide
+its entry. The API rejects new Ultrafast thread selections, member preferences,
+and sends, including sends retaining an existing Ultrafast thread pin. Users
+with such a pin must select Standard or Fast before sending again. New threads
+ignore a previously saved Ultrafast member preference and use Standard.
+Run creation and claim reject Ultrafast even on direct OpenAI API-key routes;
+already queued Ultrafast work is not silently downgraded. This pause leaves
+Standard, Fast, reasoning efforts, and GPT 6.1 Sol unchanged.
+
+No schema, enum, historical event reader, Runner protocol, or billing-category
+changes are made. Historical Ultrafast data and usage remain readable, and
+already running sandboxes are not interrupted. Old clients can still show the
+entry, but receive `400` from the new API when enabling or sending with it. An
+old API instance may still accept Ultrafast until the API rollout completes;
+the new App alone does not disable old API instances. Rolling back restores the
+previous availability. Re-enabling requires verified account-specific tier
+discovery, rather than assuming subscription eligibility from the model name.
+
 ## Integration model commands are thread-scoped (2026-09-29)
 
 The integration `/model` command now reads the effective model of an existing

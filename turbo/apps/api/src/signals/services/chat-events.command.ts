@@ -689,22 +689,23 @@ function requestedThreadRunSettings(
       "Codex fast mode is only available for GPT 5.6 runs",
     );
   }
-  if (requestedTier === "ultrafast" && selectedModel !== "gpt-6-astra") {
-    return badRequestMessage("Astra Ultrafast is unavailable for this model");
-  }
   // A model or run-option selection carries its tier; an effort-only change
   // or a send without selections keeps the thread's stored tier.
   const keepsStoredTier =
     requestedTier === undefined &&
     (body.runOptions?.reasoningEffort !== undefined ||
       (body.model === undefined && body.runOptions === undefined));
+  const codexServiceTier = keepsStoredTier
+    ? current.codexServiceTier
+    : (requestedTier ?? null);
+  if (codexServiceTier === "ultrafast") {
+    return badRequestMessage("Astra Ultrafast is temporarily disabled");
+  }
   return {
     selectedModel,
     modelSettings: effort.modelSettings,
     modelSettingsPatch: effort.modelSettingsPatch,
-    codexServiceTier: keepsStoredTier
-      ? current.codexServiceTier
-      : (requestedTier ?? null),
+    codexServiceTier,
   };
 }
 

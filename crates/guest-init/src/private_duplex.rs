@@ -1,0 +1,279 @@
+//! Guest-side worker for the independent, private run-scoped duplex transport.
+//! Started by guest-init in its existing PID 2 child; no separate daemon.
+//! No exec, file, chat, SSH or VNC method is interpreted here.
+
+use std::io::{self, Read, Write};
+use std::os::unix::net::UnixStream;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
+
+use guest_contracts::private_duplex::{
+    ACTIVATE, ACTIVATED, MAX_FRAME_BYTES, MAX_STREAMS_PER_RUN, READY, VSOCK_PORT,
+};
+const RETRY: Duration = Duration::from_millis(100);
+// Bound a stalled ingress acknowledgement so the only pending Guest worker
+// can close this attempt and retry. Runner and Guest ship as one artifact.
+const INGRESS_ACK_TIMEOUT: Duration = Duration::from_secs(5);
+
+struct WorkerCount(Arc<AtomicUsize>);
+impl Drop for WorkerCount {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+
+/// Run separately from the guest control loop. Only one idle connection waits
+/// for host activation; no per-sandbox pool of speculative guest workers.
+pub(super) fn run() {
+    let active = Arc::new(AtomicUsize::new(0));
+    loop {
+        if active.load(Ordering::Acquire) >= MAX_STREAMS_PER_RUN {
+            std::thread::sleep(RETRY);
+            continue;
+        }
+        match connect_vsock() {
+            Ok(mut stream) => {
+                if await_activation(&mut stream, INGRESS_ACK_TIMEOUT).is_err() {
+                    std::thread::sleep(RETRY);
+                    continue;
+                }
+                if start_worker(stream, &active, |stream, count| {
+                    std::thread::Builder::new()
+                        .name("gdup-echo".into())
+                        .spawn(move || {
+                            let _count = count;
+                            let _ = serve_echo(stream);
+                        })
+                })
+                .is_err()
+                {
+                    std::thread::sleep(RETRY);
+                }
+            }
+            Err(_) => std::thread::sleep(RETRY),
+        }
+    }
+}
+
+/// Count before spawning; the moved guard and socket are dropped on spawn failure.
+/// Only the successfully started worker may acknowledge readiness.
+fn start_worker(
+    stream: UnixStream,
+    active: &Arc<AtomicUsize>,
+    spawn: impl FnOnce(UnixStream, WorkerCount) -> io::Result<std::thread::JoinHandle<()>>,
+) -> io::Result<std::thread::JoinHandle<()>> {
+    active.fetch_add(1, Ordering::AcqRel);
+    spawn(stream, WorkerCount(Arc::clone(active)))
+}
+
+/// Connect only to the dedicated private host listener. Do not use the control
+/// service's connector: this worker owns its own port and lifecycle.
+#[cfg(target_os = "linux")]
+fn connect_vsock() -> io::Result<UnixStream> {
+    use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+
+    // SAFETY: valid socket constants; ownership is adopted only on success.
+    let raw = unsafe { libc::socket(libc::AF_VSOCK, libc::SOCK_STREAM | libc::SOCK_CLOEXEC, 0) };
+    if raw < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: this socket has exactly one owner, including on connect failure.
+    let fd = unsafe { OwnedFd::from_raw_fd(raw) };
+    let address = libc::sockaddr_vm {
+        svm_family: libc::AF_VSOCK as u16,
+        svm_reserved1: 0,
+        svm_port: VSOCK_PORT,
+        svm_cid: libc::VMADDR_CID_HOST,
+        svm_zero: [0; 4],
+    };
+    // SAFETY: fd is owned and address is initialized and live for this call.
+    let result = unsafe {
+        libc::connect(
+            fd.as_raw_fd(),
+            std::ptr::from_ref(&address).cast(),
+            std::mem::size_of_val(&address) as libc::socklen_t,
+        )
+    };
+    if result < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    // AF_VSOCK stream descriptors support read/write/shutdown without AF_UNIX addresses.
+    Ok(UnixStream::from(fd))
+}
+
+#[cfg(not(target_os = "linux"))]
+fn connect_vsock() -> io::Result<UnixStream> {
+    Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        "duplex transport requires Linux vsock",
+    ))
+}
+
+fn await_activation(stream: &mut UnixStream, ack_timeout: Duration) -> io::Result<()> {
+    stream.set_read_timeout(Some(ack_timeout))?;
+    let mut marker = [0];
+    stream.read_exact(&mut marker)?;
+    if marker != [READY] {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "duplex ingress not acknowledged",
+        ));
+    }
+    // READY is not authority. The acknowledged idle connection waits for
+    // exact-run activation without churning through the single pending slot.
+    stream.set_read_timeout(None)?;
+    stream.read_exact(&mut marker)?;
+    if marker != [ACTIVATE] {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "duplex not activated",
+        ));
+    }
+    Ok(())
+}
+
+/// Finite frame buffer and per-direction ordered, backpressured echo. EOF of
+/// the inbound direction sends EOF outward; malformed/oversized frames close the stream.
+fn serve_echo(mut stream: UnixStream) -> io::Result<()> {
+    let mut data = Vec::new();
+    data.try_reserve_exact(MAX_FRAME_BYTES)
+        .map_err(|error| io::Error::new(io::ErrorKind::OutOfMemory, error))?;
+    data.resize(MAX_FRAME_BYTES, 0);
+    // A successful ACTIVATE write on the host is not worker readiness. Confirm
+    // only from this running worker, after its bounded frame buffer is initialized.
+    stream.write_all(&[ACTIVATED])?;
+    loop {
+        let mut header = [0u8; 4];
+        if stream.read(&mut header[..1])? == 0 {
+            return stream.shutdown(std::net::Shutdown::Write);
+        }
+        stream.read_exact(&mut header[1..])?;
+        let size = u32::from_be_bytes(header) as usize;
+        if size > MAX_FRAME_BYTES {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "guest frame too large",
+            ));
+        }
+        let payload = data
+            .get_mut(..size)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "guest frame too large"))?;
+        stream.read_exact(payload)?;
+        stream.write_all(&header)?;
+        stream.write_all(payload)?;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn dedicated_ingress_acknowledges_before_assignment_activation() {
+        let (mut guest, mut host) = UnixStream::pair().unwrap();
+        let active = Arc::new(AtomicUsize::new(0));
+        let count = Arc::clone(&active);
+        let worker = std::thread::spawn(move || {
+            await_activation(&mut guest, Duration::from_millis(100)).unwrap();
+            start_worker(guest, &count, |stream, count| {
+                Ok(std::thread::spawn(move || {
+                    let _count = count;
+                    serve_echo(stream).unwrap();
+                }))
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+        });
+        host.write_all(&[READY]).unwrap();
+        host.write_all(&[ACTIVATE]).unwrap();
+        let mut ready = [0];
+        host.read_exact(&mut ready).unwrap();
+        assert_eq!(ready, [ACTIVATED]);
+        host.write_all(b"\0\0\0\x03one").unwrap();
+        host.shutdown(std::net::Shutdown::Write).unwrap();
+        let mut echo = [0; 7];
+        host.read_exact(&mut echo).unwrap();
+        assert_eq!(&echo, b"\0\0\0\x03one");
+        worker.join().unwrap();
+        assert_eq!(active.load(Ordering::Acquire), 0);
+    }
+
+    #[test]
+    fn worker_spawn_failure_closes_without_ready_and_releases_capacity() {
+        let (mut guest, mut host) = UnixStream::pair().unwrap();
+        let active = Arc::new(AtomicUsize::new(0));
+        host.write_all(&[READY, ACTIVATE]).unwrap();
+        await_activation(&mut guest, Duration::from_millis(100)).unwrap();
+        let error = start_worker(guest, &active, |_stream, _count| {
+            Err(io::Error::other("injected worker spawn failure"))
+        })
+        .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::Other);
+        assert_eq!(host.read(&mut [0]).unwrap(), 0);
+        assert_eq!(active.load(Ordering::Acquire), 0);
+    }
+
+    #[test]
+    fn missing_ingress_ack_times_out_without_activation() {
+        let (mut guest, _unresponsive_host) = UnixStream::pair().unwrap();
+        let worker =
+            std::thread::spawn(move || await_activation(&mut guest, Duration::from_millis(20)));
+        assert!(matches!(
+            worker.join().unwrap().unwrap_err().kind(),
+            io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+        ));
+    }
+
+    #[test]
+    fn echo_preserves_order_and_half_close() {
+        let (mut host, guest) = UnixStream::pair().unwrap();
+        let worker = std::thread::spawn(move || serve_echo(guest));
+        let mut ready = [0];
+        host.read_exact(&mut ready).unwrap();
+        assert_eq!(ready, [ACTIVATED]);
+        for frame in [b"first".as_slice(), b"second".as_slice()] {
+            host.write_all(&(frame.len() as u32).to_be_bytes()).unwrap();
+            host.write_all(frame).unwrap();
+        }
+        host.shutdown(std::net::Shutdown::Write).unwrap();
+        for frame in [b"first".as_slice(), b"second".as_slice()] {
+            let mut header = [0u8; 4];
+            host.read_exact(&mut header).unwrap();
+            let mut bytes = vec![0u8; u32::from_be_bytes(header) as usize];
+            host.read_exact(&mut bytes).unwrap();
+            assert_eq!(bytes, frame);
+        }
+        let mut end = [0u8];
+        assert_eq!(host.read(&mut end).unwrap(), 0);
+        worker.join().unwrap().unwrap();
+    }
+
+    #[test]
+    fn truncated_frames_are_rejected_without_echoing_partial_data() {
+        for truncated in [b"\0\0".as_slice(), b"\0\0\0\x03xy".as_slice()] {
+            let (mut host, guest) = UnixStream::pair().unwrap();
+            host.write_all(truncated).unwrap();
+            host.shutdown(std::net::Shutdown::Write).unwrap();
+            assert_eq!(
+                serve_echo(guest).unwrap_err().kind(),
+                io::ErrorKind::UnexpectedEof
+            );
+            let mut ready = [0];
+            host.read_exact(&mut ready).unwrap();
+            assert_eq!(ready, [ACTIVATED]);
+            assert_eq!(host.read(&mut [0]).unwrap(), 0);
+        }
+    }
+
+    #[test]
+    fn oversized_frame_is_rejected() {
+        let (mut host, guest) = UnixStream::pair().unwrap();
+        host.write_all(&((MAX_FRAME_BYTES + 1) as u32).to_be_bytes())
+            .unwrap();
+        assert_eq!(
+            serve_echo(guest).unwrap_err().kind(),
+            io::ErrorKind::InvalidData
+        );
+    }
+}

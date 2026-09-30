@@ -28,7 +28,7 @@ control and RPC services, shared contracts, and developer/test support.
 | runner-rpc-proto         | Bounded framing and stream contracts for calls to Runner services                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | runner-rpc-client        | Guest-side Runner RPC caller/helper, without business-method dispatch                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | process-control-ipc      | Guest-local process control, Unix transport and descriptor handoff                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| guest-init               | Guest PID 1 initialization, signal supervision and child reaping                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| guest-init               | Guest PID 1 initialization, signal supervision, child reaping and private duplex worker composition                                                                                                                                                                                                                                                                                                                                                                                                              |
 | guest-agent              | Agent CLI lifecycle, heartbeat, events, checkpoints and session management                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | guest-tool-exec          | Tool hook adaptation and placement-before-exec launcher                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | guest-storage-apply      | Storage/artifact manifest application: cleanup, preparation, extraction and instruction normalization                                                                                                                                                                                                                                                                                                                                                                                                            |
@@ -63,7 +63,8 @@ Runner -> runner-lifecycle -> runner-storage, runner-host, runner-types, sandbox
 Runner -> runner-executor -> runner-provider, runner-storage, runner-network, runner-remote, runner-lifecycle, runner-host, runner-types
 Runner -> runner-supervisor -> runner-executor, runner-lifecycle, runner-network, runner-storage, runner-provider, runner-host, runner-types, sandbox
 Runner -> guest-control-client -> guest-control-server (guest-init child)
-Guest  -> runner-rpc-client    -> Runner service endpoint
+Guest  -> guest-init::private_duplex -> private 52002 host listener (same child)
+Guest  -> runner-rpc-client   -> Runner service endpoint
 Guest  -> process-control-ipc  -> guest-local process control / placement
 ```
 
@@ -72,8 +73,9 @@ The guest opens the guest-control connection; Runner accepts it and calls guest
 operations. The transport remains vsock forwarded through Firecracker Unix
 sockets (or direct Unix sockets in integration tests). These services do not
 implement a generic vsock protocol. Runner uses sandbox-firecracker through the
-sandbox interfaces; guest-init remains PID 1 and embeds the control service in
-its child. No new daemon or crate boundary is implied by these names.
+sandbox interfaces; guest-init remains PID 1 and composes the control
+service and its own private duplex worker module in the existing child.
+Separating the 52002 protocol does not create a new daemon, binary or crate.
 
 A `guest-` package prefix is not an artifact inventory. The authoritative
 [guest binary inventory](runner/guest-binaries.json) separately records each

@@ -675,7 +675,6 @@ describe("Morning Brief legacy schedule claim journal", () => {
       }),
       [200],
     );
-    await flushWaitUntilForTest();
   }
 
   async function briefThreadId(
