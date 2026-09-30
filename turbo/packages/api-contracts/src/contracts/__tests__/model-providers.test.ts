@@ -11,10 +11,7 @@ import {
   getModelImageInputSupport,
   modelSupportsImageInput,
   getSelectableProviderTypes,
-  getProviderRuntimeModel,
   getProvidersForModel,
-  getBuiltInConcreteProviderType,
-  getBuiltInModelRouteCandidates,
   getBuiltInModelRouteVendors,
   isModelSupportedByProvider,
   isSupportedRunModel,
@@ -35,10 +32,8 @@ import {
   upsertModelProviderRequestSchema,
   updateOrgModelPolicySchema,
   updateOrgModelPoliciesRequestSchema,
-  BUILT_IN_MODEL_TO_PROVIDER,
   MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS,
   SUPPORTED_RUN_MODELS,
-  ACTIVE_RUN_MODELS,
   MODEL_PROVIDER_FIREWALL_CONFIGS,
   MODEL_PROVIDER_ENV_PLACEHOLDERS,
   MODEL_PROVIDER_TYPES,
@@ -244,14 +239,6 @@ describe("model-first canonical catalog", () => {
       "codex-oauth-token",
     ]);
     expect(getProvidersForModel("openai/gpt-6.1-sol")).toEqual([]);
-    expect(getBuiltInModelRouteCandidates("gpt-6.1-sol")).toEqual([
-      {
-        selectedModel: "gpt-6.1-sol",
-        providerType: "openai-api-key",
-        upstreamModel: "gpt-6.1-sol",
-        vendor: "openai",
-      },
-    ]);
   });
 
   it("returns compatible provider types for canonical models", () => {
@@ -457,268 +444,19 @@ describe("model-first canonical catalog", () => {
     ).toBe(false);
   });
 
-  it("maps canonical models to provider runtime model ids", () => {
-    expect(getProviderRuntimeModel("openrouter-api-key", "glm-5.2")).toBe(
-      "glm-5.2",
-    );
-    expect(getProviderRuntimeModel("openrouter-api-key", "mimo-v2.5")).toBe(
-      "mimo-v2.5",
-    );
-    expect(getProviderRuntimeModel("openrouter-api-key", "hy3-preview")).toBe(
-      "hy3-preview",
-    );
-    expect(getProviderRuntimeModel("openrouter-api-key", "MiniMax-M3")).toBe(
-      "MiniMax-M3",
-    );
-    expect(
-      getProviderRuntimeModel("anthropic-api-key", "claude-opus-4-8"),
-    ).toBe("claude-opus-4-8");
-    expect(
-      getProviderRuntimeModel("anthropic-api-key", "claude-opus-5-5"),
-    ).toBe("claude-opus-5-5");
-    expect(
-      getProviderRuntimeModel("openrouter-api-key", "claude-opus-5-5"),
-    ).toBe("anthropic/claude-opus-5.5");
-    expect(
-      getProviderRuntimeModel("vercel-ai-gateway", "claude-opus-5-5"),
-    ).toBe("anthropic/claude-opus-5.5");
-    expect(getProviderRuntimeModel("anthropic-api-key", "claude-opus-5")).toBe(
-      "claude-opus-5",
-    );
-    expect(getProviderRuntimeModel("openrouter-api-key", "claude-opus-5")).toBe(
-      "anthropic/claude-opus-5",
-    );
-    expect(getProviderRuntimeModel("vercel-ai-gateway", "claude-opus-5")).toBe(
-      "anthropic/claude-opus-5",
-    );
-    expect(
-      getProviderRuntimeModel("anthropic-api-key", "claude-sonnet-5"),
-    ).toBe("claude-sonnet-5");
-    expect(
-      getProviderRuntimeModel("openrouter-api-key", "claude-sonnet-5"),
-    ).toBe("anthropic/claude-sonnet-5");
-    expect(
-      getProviderRuntimeModel("vercel-ai-gateway", "claude-sonnet-5"),
-    ).toBe("anthropic/claude-sonnet-5");
-    expect(
-      getProviderRuntimeModel("openrouter-api-key", "claude-fable-5-1"),
-    ).toBe("anthropic/claude-fable-5.1");
-    expect(
-      getProviderRuntimeModel("vercel-ai-gateway", "claude-fable-5-1"),
-    ).toBe("anthropic/claude-fable-5.1");
-    expect(getProviderRuntimeModel("openai-api-key", "gpt-5.5")).toBe(
-      "gpt-5.5",
-    );
-    expect(getProviderRuntimeModel("openai-api-key", "gpt-6-astra")).toBe(
-      "gpt-6-astra",
-    );
-    expect(getProviderRuntimeModel("openrouter-codex", "gpt-6-astra")).toBe(
-      "openai/gpt-6-astra",
-    );
-    expect(getProviderRuntimeModel("built-in", "gpt-6-astra")).toBe(
-      "gpt-6-astra",
-    );
-    expect(getBuiltInConcreteProviderType("gpt-6-astra")).toBe(
-      "openai-api-key",
-    );
-    expect(getProviderRuntimeModel("openai-api-key", "gpt-5.6-sol")).toBe(
-      "gpt-5.6-sol",
-    );
-    expect(getProviderRuntimeModel("built-in", "gpt-5.6-sol")).toBe(
-      "gpt-5.6-sol",
-    );
-    expect(getBuiltInConcreteProviderType("gpt-5.6-sol")).toBe(
-      "openai-api-key",
-    );
-    expect(
-      getProviderRuntimeModel("openrouter-codex", "deepseek-v4.1-flash"),
-    ).toBe("deepseek/deepseek-v4.1-flash");
-    expect(getProviderRuntimeModel("built-in", "deepseek-v4.1-flash")).toBe(
-      "deepseek-flash",
-    );
-    expect(getProviderRuntimeModel("openrouter-api-key", "custom/model")).toBe(
-      "custom/model",
-    );
-  });
-
-  it("routes Claude Opus 5.5 through Anthropic with an OpenRouter fallback", () => {
-    expect(getBuiltInModelRouteCandidates("claude-opus-5-5")).toEqual([
-      {
-        selectedModel: "claude-opus-5-5",
-        providerType: "anthropic-api-key",
-        upstreamModel: "claude-opus-5-5",
-        vendor: "anthropic",
-      },
-      {
-        selectedModel: "claude-opus-5-5",
-        providerType: "openrouter-api-key",
-        upstreamModel: "anthropic/claude-opus-5.5",
-        vendor: "openrouter",
-      },
-    ]);
-  });
-
-  it("routes GPT 6 Astra through OpenAI with an OpenRouter fallback", () => {
-    expect(getBuiltInModelRouteCandidates("gpt-6-astra")).toEqual([
-      {
-        selectedModel: "gpt-6-astra",
-        providerType: "openai-api-key",
-        upstreamModel: "gpt-6-astra",
-        vendor: "openai",
-      },
-      {
-        selectedModel: "gpt-6-astra",
-        providerType: "openrouter-codex",
-        upstreamModel: "openai/gpt-6-astra",
-        vendor: "openrouter",
-      },
-    ]);
-    expect(getBuiltInModelRouteCandidates("gpt-6-sol")).toEqual([
-      {
-        selectedModel: "gpt-6-sol",
-        providerType: "openai-api-key",
-        upstreamModel: "gpt-6-sol",
-        vendor: "openai",
-      },
-      {
-        selectedModel: "gpt-6-sol",
-        providerType: "openrouter-codex",
-        upstreamModel: "openai/gpt-6-sol",
-        vendor: "openrouter",
-      },
-    ]);
-    expect(getBuiltInModelRouteCandidates("gpt-6-luna")).toEqual([
-      {
-        selectedModel: "gpt-6-luna",
-        providerType: "openai-api-key",
-        upstreamModel: "gpt-6-luna",
-        vendor: "openai",
-      },
-      {
-        selectedModel: "gpt-6-luna",
-        providerType: "openrouter-codex",
-        upstreamModel: "openai/gpt-6-luna",
-        vendor: "openrouter",
-      },
-    ]);
-  });
-
-  it("routes DeepSeek V4.1 Flash through DeepSeek with an OpenRouter fallback", () => {
-    expect(getBuiltInModelRouteCandidates("deepseek-v4.1-flash")).toEqual([
-      {
-        selectedModel: "deepseek-v4.1-flash",
-        providerType: "deepseek",
-        upstreamModel: "deepseek-flash",
-        vendor: "deepseek",
-      },
-      {
-        selectedModel: "deepseek-v4.1-flash",
-        providerType: "openrouter-codex",
-        upstreamModel: "deepseek/deepseek-v4.1-flash",
-        vendor: "openrouter",
-      },
-    ]);
-    expect(getBuiltInConcreteProviderType("deepseek-v4.1-flash")).toBe(
-      "deepseek",
-    );
-  });
-
-  it.each(["deepseek-v4-flash"] as const)(
-    "routes built-in model %s directly through DeepSeek",
-    (model) => {
-      expect(getBuiltInConcreteProviderType(model)).toBe("deepseek");
-      expect(getProviderRuntimeModel("built-in", model)).toBe(model);
-    },
-  );
-
-  it.each([
-    "claude-fable-5-1",
-    "claude-opus-5-5",
-    "claude-opus-5",
-    "claude-sonnet-5-5",
-    "claude-sonnet-5",
-  ] as const)(
-    "routes built-in model %s directly through Anthropic",
-    (model) => {
-      expect(getBuiltInConcreteProviderType(model)).toBe("anthropic-api-key");
-      expect(getProviderRuntimeModel("built-in", model)).toBe(model);
-    },
-  );
-
-  it("defines statically compilable built-in routes for every active model", () => {
-    expect(Object.keys(BUILT_IN_MODEL_TO_PROVIDER)).toEqual([
-      "claude-fable-5-1",
-      "claude-opus-5-5",
-      "claude-opus-5",
-      "claude-sonnet-5-5",
-      "claude-sonnet-5",
-      "okou-1.0",
-      "deepseek-v4.1-flash",
-      "deepseek-v4-flash",
-      "gpt-6-astra",
-      "gpt-6.1-sol",
-      "gpt-6-sol",
-      "gpt-6-luna",
-      "gpt-5.6-sol",
-      "gpt-5.6-luna",
-    ]);
+  it("lists every Built-in route provider vendor", () => {
     expect(getBuiltInModelRouteVendors()).toEqual([
       "anthropic",
       "openrouter",
       "deepseek",
       "openai",
     ]);
-
-    for (const model of ACTIVE_RUN_MODELS) {
-      const candidates = getBuiltInModelRouteCandidates(model);
-      expect(candidates).toHaveLength(
-        isOkouRunModel(model) ||
-          model === "claude-sonnet-5-5" ||
-          model === "gpt-6.1-sol"
-          ? 1
-          : 2,
-      );
-      expect(candidates[0]?.providerType).toBe(
-        getBuiltInConcreteProviderType(model),
-      );
-      expect(
-        new Set(
-          candidates.map((candidate) => {
-            return `${candidate.providerType}:${candidate.upstreamModel}`;
-          }),
-        ).size,
-      ).toBe(candidates.length);
-
-      const frameworks = new Set(
-        candidates.map((candidate) => {
-          const config = MODEL_PROVIDER_TYPES[candidate.providerType];
-          expect(getSecretNameForType(candidate.providerType)).toBeTruthy();
-          expect(
-            getModelProviderEnvBindings(candidate.providerType),
-          ).toBeTruthy();
-          expect(getModelProviderFirewall(candidate.providerType)).toBeTruthy();
-          if (!isOkouRunModel(model)) {
-            expect(config.models).toContain(candidate.upstreamModel);
-          }
-          return getFrameworkForType(candidate.providerType);
-        }),
-      );
-      expect(frameworks.size).toBe(1);
-    }
   });
 
-  it.each([["okou-1.0", "@preset/okou-1-0"]] as const)(
-    "routes %s only through its built-in OpenRouter preset",
-    (model, preset) => {
+  it.each(["okou-1.0"] as const)(
+    "offers %s only through the Built-in provider",
+    (model) => {
       expect(getProvidersForModel(model)).toEqual(["built-in"]);
-      expect(getBuiltInModelRouteCandidates(model)).toEqual([
-        {
-          selectedModel: model,
-          providerType: "openrouter-codex",
-          upstreamModel: preset,
-          vendor: "openrouter",
-        },
-      ]);
     },
   );
 
@@ -886,22 +624,13 @@ describe("model selection for Claude-compatible gateway providers", () => {
       expect(
         isModelSupportedByProvider("anthropic/claude-fable-5.1", type),
       ).toBe(true);
-      expect(getProviderRuntimeModel(type, "claude-fable-5-1")).toBe(
-        "anthropic/claude-fable-5.1",
-      );
       expect(getModels(type)).toContain("anthropic/claude-opus-5.5");
       expect(
         isModelSupportedByProvider("anthropic/claude-opus-5.5", type),
       ).toBe(true);
-      expect(getProviderRuntimeModel(type, "claude-opus-5-5")).toBe(
-        "anthropic/claude-opus-5.5",
-      );
       expect(getModels(type)).toContain("anthropic/claude-opus-5");
       expect(isModelSupportedByProvider("anthropic/claude-opus-5", type)).toBe(
         true,
-      );
-      expect(getProviderRuntimeModel(type, "claude-opus-5")).toBe(
-        "anthropic/claude-opus-5",
       );
     },
   );
@@ -1017,9 +746,6 @@ describe("deepseek Responses provider", () => {
         selectedModel: defaultModel,
       }).success,
     ).toBe(true);
-    expect(getProviderRuntimeModel("deepseek", defaultModel)).toBe(
-      "deepseek-flash",
-    );
     expect(getModelProviderCodexRuntimeConfig("deepseek")).toMatchObject({
       modelCatalog: {
         models: expect.arrayContaining([
@@ -1057,21 +783,6 @@ describe("deepseek Responses provider", () => {
       ]);
     },
   );
-
-  it("retains the legacy Flash route and billing identity", () => {
-    expect(getBuiltInModelRouteCandidates("deepseek-v4-flash")).toEqual([
-      expect.objectContaining({
-        selectedModel: "deepseek-v4-flash",
-        providerType: "deepseek",
-        upstreamModel: "deepseek-v4-flash",
-      }),
-      expect.objectContaining({
-        selectedModel: "deepseek-v4-flash",
-        providerType: "openrouter-codex",
-        upstreamModel: "deepseek/deepseek-v4-flash",
-      }),
-    ]);
-  });
 
   it("configures the official DeepSeek Responses model catalog", () => {
     expect(getModelProviderCodexRuntimeConfig("deepseek")).toMatchObject({
@@ -1608,21 +1319,6 @@ describe("codex-framework gateway providers (openrouter-codex, vercel-ai-gateway
     expect(selectable).toContain("vercel-ai-gateway-codex");
   });
 
-  it("translates canonical models to vendor-prefixed runtime IDs", () => {
-    expect(getProviderRuntimeModel("openrouter-codex", "gpt-6-astra")).toBe(
-      "openai/gpt-6-astra",
-    );
-    expect(getProviderRuntimeModel("openrouter-codex", "gpt-6-sol")).toBe(
-      "openai/gpt-6-sol",
-    );
-    expect(getProviderRuntimeModel("openrouter-codex", "gpt-6-luna")).toBe(
-      "openai/gpt-6-luna",
-    );
-    expect(
-      getProviderRuntimeModel("openrouter-codex", "deepseek-v4.1-flash"),
-    ).toBe("deepseek/deepseek-v4.1-flash");
-  });
-
   it("share the secretName with their claude-code twin gateway", () => {
     // Same API key powers both protocols on the same upstream gateway.
     // The codex twin must not invent a separate secret environment name.
@@ -1803,9 +1499,6 @@ describe("built-in provider discriminator contract", () => {
       "Built-in model",
     );
     expect(isModelSupportedByProvider("gpt-5.6-sol", "built-in")).toBe(true);
-    expect(getProviderRuntimeModel("built-in", "gpt-5.6-sol")).toBe(
-      "gpt-5.6-sol",
-    );
     expect(getSecretNameForType("built-in")).toBeUndefined();
     expect(getModelProviderFirewall("anthropic-api-key")).toBeDefined();
     expect(MODEL_PROVIDER_FIREWALL_CONFIGS).not.toHaveProperty("built-in");

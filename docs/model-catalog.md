@@ -89,35 +89,30 @@ Retiring X in favor of Y: if `Y.lineage_rank <= X.lineage_rank`, raise
 `ON UPDATE CASCADE` refreshes their copies), then set `X.replaced_by = Y` and
 `X.replaced_by_lineage_rank = Y.lineage_rank` in one statement.
 
-## Unrecognized catalog rows
+## Decisions
 
-Production `run_model_catalog` also holds three rows the code does not
-recognize: `gpt-5.6-terra`, `okou-1.0-pro` and `okou-1.0-max`. They were seeded
-by earlier migrations (1191 and 1194) and their code support was removed by
-#37363 and #37368. There is no generic delete of unrecognized rows: migration
-1297 keeps them, labels them with their own ID, sorts them after every
-recognized model, sets `allow_new_org_policy = false` and gives them no
-`model_routes`, so nothing can execute them. They are not `replaced_by`
-anything, so `GET /api/model-catalog` lists them with `replacedBy` null, but
-the API never offers or accepts them for a policy or run because they have no
-runtime adapter and no route. As of MaskDB on 2026-09-30 no row in
-`chat_threads`, `org_model_policies`, `org_members_metadata`, `agents` or
-`model_providers` references them (MaskDB does not expose `run_model_catalog`
-itself, so the rows' presence is unverified).
+Open owner (Ethan) decisions. Each row below **needs a replacement target**;
+none has been specified yet, so none is seeded or guessed:
 
-This conflicts with the rule that `replaced_by` is the only retirement
-description: with `replaced_by` null they read as active, and only
-`allow_new_org_policy = false` (a column the end state drops) and the absence
-of routes keep them unusable. The owner (Ethan) decides per row:
+| Catalog row     | Status                   |
+| --------------- | ------------------------ |
+| `gpt-5.6-terra` | needs replacement target |
+| `okou-1.0-pro`  | needs replacement target |
+| `okou-1.0-max`  | needs replacement target |
 
-1. Delete the row: safe while nothing references it and no `replaced_by`
-   points at it.
-2. Retire it into an approved replacement X (`replaced_by = X`, raising X's
-   `lineage_rank` above 100 first if needed).
-3. Keep it as an active model by adding enabled `model_routes` and a runtime
-   adapter.
-
-Until then their data is unchanged.
+These rows were seeded by earlier migrations (1191 and 1194) and their code
+support was removed by #37363 and #37368. Until a target is decided they
+remain `replaced_by = NULL` with no `model_routes` and
+`allow_new_org_policy = false` (migration 1297 labels them with their own ID
+and sorts them after every recognized model). `GET /api/model-catalog`
+therefore lists them with `replacedBy` null, and the API never offers or
+accepts them for a policy or run because they have no route and no runtime
+adapter. This is a known conflict with the end state, where `replaced_by` is
+the only retirement description and `allow_new_org_policy` is dropped: the
+column cannot be dropped until each row is retired into its target. As of
+MaskDB on 2026-09-30 no row in `chat_threads`, `org_model_policies`,
+`org_members_metadata`, `agents` or `model_providers` references them
+(MaskDB does not expose `run_model_catalog` itself).
 
 ## System default
 
@@ -157,13 +152,11 @@ Upstream model IDs on BYOK and subscription routes come from the route's
 `upstream_model` in the API (`catalogProviderUpstreamModel`); the API no
 longer calls `getProviderRuntimeModel`.
 
-Not yet read from `model_routes` (still static code, not implemented):
-
-- `@okouai/core` `pi-execution.ts` still builds Pi Built-in candidates and
-  upstream IDs from `getBuiltInModelRouteCandidates` and
-  `getProviderRuntimeModel` in `@okouai/api-contracts`.
-- `packages/db/scripts/test-model-catalog-seed.ts` checks the seeded routes
-  against those same static tables.
+Pi eligibility is catalog data too: migration `1300_model_catalog_pi_route_class`
+adds `run_model_catalog.pi_route_class` (`claude-native`, `gpt-codex`,
+`deepseek`; NULL means not Pi-eligible) and `@okouai/core` `pi-execution.ts`
+reads it from the catalog row. This work is in progress in the same PR; see
+the PR body for its verified state.
 
 No silent cross-provider billing: credentials, BYOK, subscription or
 custom-gateway bindings and upstream IDs of a retired model are never copied
@@ -187,26 +180,56 @@ per execution (Pi or not, and the concrete provider for DeepSeek).
 
 ## Run-scoped snapshot and admission
 
-Run creation loads the catalog once (`loadModelCatalog` in
-`agent-run-create.service.ts`) and passes that snapshot to provider
-resolution and run admission, so one run's route decision does not mix two
-catalog reads. Admission (`checkOrgPlanRunAdmission` and
-`checkCatalogRunRoute` in `run-admission.service.ts`) requires the selected
-model to be an active catalog model and a Built-in run to have an enabled
-Built-in route. A provider-native model ID outside the catalog is accepted on
-the provider's own route; it is rejected as retired only when every catalog
-model it is the `upstream_model` of is retired. Reasoning efforts come from
-the route (`catalogRouteEfforts`, `catalogRouteDefaultEffort`), and member
-preference service tiers from the route's `service_tiers`
-(`isCatalogFastServiceTierSupported`, `isCatalogUltrafastServiceTierSupported`
-in `model-selection.service.ts`).
+Each run decision reads one catalog snapshot. The queue pick
+(`createClaimRunObjects` in `claim-run-context.ts`) loads it once per claim
+(`claimCatalog$`) and passes it to every step from model resolution to run
+creation: policy projection, model pin, provider admission, Built-in route
+and framework, provider environment, reasoning effort, usage context and
+final admission. A run created outside the queue (`agent-run-execution`)
+loads it once per creation (`catalog$`) and carries it on
+`CreateAgentRunArgs.catalog`; the provider environment takes the system
+default from that snapshot. A chat send loads it once for its validation,
+thread settings and input model capture.
+
+The queued or requested model resolves through one function on every path,
+`resolveRunSelectionModel` (`model-selection.service.ts`): the catalog model
+the ID names — the ID itself, or a route `upstream_model` that belongs to
+exactly one catalog model (`catalogModelForSelectedId`, for example
+`deepseek/deepseek-v4-flash`) — followed along its replacement chain. Enqueue
+validation, the pick (chat and workflow-automation copies of the pick graph),
+`resolveModelSelectionPin` and run preparation (`selectedModelOverride`) all
+call it; an ID the catalog does not know is rejected at enqueue and pick and
+stays the provider's own model on a direct run.
+
+The pick never writes model policies. The former lazy per-organization
+policy seeding (`ensureOrgModelPoliciesLocked` under the policy advisory lock)
+is removed from the pick: `orgModelPolicyFactsFromSnapshot` projects the
+catalog's system default into the policy list read-only, which covers the
+case the seeding handled (an organization without a stored default policy).
+
+Admission (`checkOrgPlanRunAdmission` and `checkCatalogRunRoute` in
+`run-admission.service.ts`) requires the selected model to be an active
+catalog model and a Built-in run to have an enabled Built-in route. The
+selected ID is normalized through the catalog as above before both the route
+check and the restricted-plan check (`catalogRunModelRouteAccess`), so a
+provider-prefixed ID is judged as the model it names. An ID that names no
+catalog model is accepted only on the provider's own route and rejected as
+retired when every catalog model it is an upstream of is retired. Reasoning
+efforts come from the route (`catalogRouteEfforts`,
+`catalogRouteDefaultEffort`), and member preference service tiers from the
+route's `service_tiers` (`isCatalogFastServiceTierSupported`,
+`isCatalogUltrafastServiceTierSupported` in `model-selection.service.ts`).
+
+Remaining reads outside the snapshot: `loadMemberSubscriptionModels`
+(`subscription-model-catalog.service.ts`) still reads subscription routes
+from `model_routes` separately during the pick.
 
 ## Queued inputs and history
 
-A queued input captures its model at enqueue. At dispatch the captured model
-is re-resolved against the current catalog, so a model retired after enqueue
-runs as its final replacement; an unknown model is left as captured so run
-admission rejects it explicitly. Historical runs, chat events (including
+A queued input captures its model at enqueue. At the pick the captured model
+is re-resolved against the claim's catalog snapshot, so a model retired after
+enqueue runs as its final replacement; an unknown model is rejected
+explicitly. Runs that already started are never re-resolved. Historical runs, chat events (including
 queued-input events), usage and billing keep the original model ID and are
 never rewritten.
 
@@ -277,10 +300,17 @@ data (migration `1299_model_catalog_restricted_plans`, returned by
 `getCatalogRunModelRouteAccess` (`@okouai/api-contracts`) applies the flags;
 a model outside the catalog is never allowed on a restricted Built-in route.
 The API reads them through `catalogRunModelRouteAccess` for policy writes and
-run admission, and admission names the model's `display_name` in the paid-plan
+run admission, after normalizing the selected ID through the catalog (a
+provider-prefixed upstream ID of exactly one catalog model is that model),
+consistently with `checkCatalogRunRoute`, and admission names the model's `display_name` in the paid-plan
 error when the model is off restricted plans on every route. The Platform
 reads the same flags from the catalog response. Adding a model therefore needs
 no code change for plan access: its flags decide.
+
+`packages/db/scripts/test-model-catalog-seed.ts` (run by the migration
+consistency check) verifies the seeded entitlement: both flags are set on
+every row, `built_in_on_restricted_plans` is true for exactly the five models
+above and `own_routes_on_restricted_plans` is false for exactly the two above.
 
 Custom-gateway mapping is also route data: a model may be served by a custom
 gateway when it has no enabled non-Built-in route, or when one of those routes

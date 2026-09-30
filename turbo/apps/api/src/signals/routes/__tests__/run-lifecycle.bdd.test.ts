@@ -5673,6 +5673,40 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     await api.requestCancelRun(actor, run.runId, [200]);
   });
 
+  it("runs a provider-prefixed ID of a restricted-plan model on Built-in", async () => {
+    const api = createRunsApi(context);
+    const selectedModel = "deepseek-v4-flash";
+    await seedBuiltInModelKey(selectedModel);
+    const { actor, runnerGroup } = await entitledRunActor();
+    if (!actor.orgId) {
+      throw new Error("Expected the restricted-plan actor to have an org");
+    }
+    const compose = await api.createDirectAgent(actor, {
+      version: "1",
+      agents: { main: { framework: "codex" } },
+    });
+    await upsertOrgPlanEntitlementFixture({
+      orgId: actor.orgId,
+      status: "active",
+      supportByok: true,
+      restrictedBuiltInModels: true,
+    });
+
+    // The OpenRouter upstream ID names exactly one catalog model, which the
+    // catalog allows on restricted plans.
+    const run = await api.createDirectRun(actor, {
+      agentId: compose.agentId,
+      prompt: "provider-prefixed built-in model",
+      selectedModelProviderType: "built-in",
+      selectedModelOverride: "deepseek/deepseek-v4-flash",
+    });
+    await api.heartbeatRunner(runnerGroup);
+    const claim = await api.claimRunnerJob(run.runId);
+    await expectBuiltInModelRunRuntimeRoute(run.runId, selectedModel);
+    expect(claim.modelUsageProvider).toBe(selectedModel);
+    await api.requestCancelRun(actor, run.runId, [200]);
+  });
+
   it("claims built-in GPT 5.6 chat runs through Pi with the selected OpenAI runtime model", async () => {
     const api = createRunsApi(context);
     const chat = createChatFilesBddApi(context);

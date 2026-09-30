@@ -508,7 +508,6 @@ export {
   getCustomModelPlaceholder,
   // Provider compatibility
   getProvidersForModel,
-  getProviderRuntimeModel,
   isModelSupportedByProvider,
   isSupportedRunModel,
   normalizeRunModelId,
@@ -538,9 +537,7 @@ export {
   type UpdateOrgModelPoliciesRequest,
   type SupportedRunModel,
   type ModelProviderCredentialScope,
-  type BuiltInModelRouteCandidate,
   type BuiltInModelRouteProviderType,
-  type BuiltInModelRouteTarget,
   // Multi-auth provider types
   type SecretFieldConfig,
   type AuthMethodConfig,
@@ -548,12 +545,9 @@ export {
   MODEL_PROVIDER_FIREWALL_CONFIGS,
   getModelProviderFirewall,
   // Built-in provider
-  BUILT_IN_MODEL_TO_PROVIDER,
   BUILT_IN_MODEL_ROUTE_PROVIDERS,
   BUILT_IN_MODEL_ALIAS_TO_MODEL,
-  getBuiltInModelRouteCandidates,
   getBuiltInModelRouteVendors,
-  getBuiltInConcreteProviderType,
   normalizeBuiltInModelId,
 } from "./model-providers";
 export {

@@ -200,11 +200,12 @@ import {
 } from "./built-in-model-runtime-route.service";
 import {
   catalogBuiltInCandidates,
+  catalogHasProviderRoute,
   loadModelCatalog,
-  loadSystemDefaultRunModel,
   catalogProviderUpstreamModel,
   type ModelCatalog,
 } from "./model-catalog.service";
+import { resolveRunSelectionModel } from "./model-selection.service";
 import {
   type ConnectorSlug,
   connectorSlugSchema,
@@ -397,7 +398,7 @@ import {
   getOpenRouterBaseUrl,
 } from "@okouai/api-contracts/contracts/openrouter-routing";
 import { isCloudModelMappingValid } from "@okouai/api-contracts/contracts/cloud-model-mapping";
-import { isPiNativeModel, isPiDeepSeekModel } from "@okouai/core/pi-execution";
+import { piCatalogModel } from "@okouai/core/pi-execution";
 import { resolvePiSandboxModelConfig } from "./pi-sandbox-config";
 import { piNativeFirewall } from "@okouai/api-contracts/contracts/pi-native-firewall";
 import { customConnectorDefinitionSelection } from "./custom-connector-definition-selection";
@@ -6087,7 +6088,12 @@ function resolveMultiAuthRuntimeModel(
     cloud &&
     args.piExecution &&
     (!selectedModel ||
-      !isCloudModelMappingValid(args.type, selectedModel, runtimeModel))
+      !isCloudModelMappingValid(
+        args.type,
+        selectedModel,
+        runtimeModel,
+        catalogHasProviderRoute(args.catalog, selectedModel, args.type),
+      ))
   ) {
     throw new PiNativeConfigurationError(
       "Cloud provider requires its explicitly configured deployment or profile",
@@ -6539,7 +6545,7 @@ async function resolveCandidateModelProviderEnvironment(
     const selectedModel =
       args.selectedModelOverride ??
       row.selectedModel ??
-      (await loadSystemDefaultRunModel(db));
+      args.catalog.systemDefaultModel;
     const provider = await builtInModelProviderEnvironment(
       db,
       args.catalog,
@@ -6583,7 +6589,7 @@ async function resolveModelProviderEnvironment(
     const provider = await builtInModelProviderEnvironment(
       db,
       args.catalog,
-      args.selectedModelOverride ?? (await loadSystemDefaultRunModel(db)),
+      args.selectedModelOverride ?? args.catalog.systemDefaultModel,
       args.featureSwitchContext,
       args.builtInModelRuntimeRoute,
     );
@@ -11298,8 +11304,13 @@ export async function materializePreparedPiProvider(
   if (!createArgs.piExecution) {
     return provider;
   }
+  const catalogModel = piCatalogModel(
+    createArgs.catalog,
+    provider?.selectedModel,
+  );
   const config = resolvePiSandboxModelConfig(
     provider,
+    catalogModel,
     createArgs.codexServiceTier,
     createArgs.agentRunMetadata?.reasoningEffort,
   );
@@ -11315,7 +11326,7 @@ export async function materializePreparedPiProvider(
     if (
       !("schemaVersion" in config) &&
       (provider.type === "deepseek" || provider.type === "openrouter-codex") &&
-      isPiDeepSeekModel(provider.selectedModel)
+      catalogModel?.piRouteClass === "deepseek"
     ) {
       const credential = safeSync(() => {
         return assertPiNativeCredential(
@@ -11376,7 +11387,7 @@ export async function materializePreparedPiProvider(
 export function resolvePreparedPiModelConfig(args: {
   readonly createArgs: Pick<
     CreateAgentRunArgs,
-    "piExecution" | "codexServiceTier" | "agentRunMetadata"
+    "catalog" | "piExecution" | "codexServiceTier" | "agentRunMetadata"
   >;
   readonly modelProvider: ResolvedModelProviderEnvironment | null;
 }): PiModelConfig | undefined {
@@ -11385,6 +11396,7 @@ export function resolvePreparedPiModelConfig(args: {
   }
   const config = resolvePiSandboxModelConfig(
     args.modelProvider,
+    piCatalogModel(args.createArgs.catalog, args.modelProvider?.selectedModel),
     args.createArgs.codexServiceTier,
     args.createArgs.agentRunMetadata?.reasoningEffort,
   );
@@ -12873,10 +12885,13 @@ export async function regularProviderEnvironmentFromSnapshot(
   if (!isSingleSecretModelProviderConfig(config) || !row.encryptedValue) {
     return null;
   }
+  const piRouteClass = piCatalogModel(
+    args.catalog,
+    args.selectedModelOverride,
+  )?.piRouteClass;
   const captureSecret =
     args.piExecution &&
-    (isPiNativeModel(args.selectedModelOverride) ||
-      isPiDeepSeekModel(args.selectedModelOverride));
+    (piRouteClass === "claude-native" || piRouteClass === "deepseek");
   if (getModelProviderFirewall(row.type) !== undefined && !captureSecret) {
     return modelProviderEnvironment({
       catalog: args.catalog,
@@ -14648,6 +14663,7 @@ export interface RunWorkflowReadInput {
   readonly db: ReadonlyDb;
   readonly args: Pick<
     CreateAgentRunArgs,
+    | "catalog"
     | "orgId"
     | "userId"
     | "injectSkillVolumes"
@@ -15487,7 +15503,7 @@ function createPrepareAgentRunCommand(
       // A preview request that passed the protection guard carries the bypass as
       // API-authored environment while the runner preserves its existing filter.
       const previewAutomationBypass = get(previewAutomationBypass$);
-      const args = previewAutomationBypass
+      const requestArgs = previewAutomationBypass
         ? {
             ...input.args,
             platformEnvironment: {
@@ -15496,6 +15512,20 @@ function createPrepareAgentRunCommand(
             },
           }
         : input.args;
+      // The requested model resolves against the run's catalog snapshot with
+      // the queue pick's resolution: a provider-prefixed upstream ID names its
+      // catalog model and a replaced model runs as its final replacement. An
+      // ID the catalog does not know stays the provider's own model.
+      const requestedModel = requestArgs.selectedModelOverride;
+      const args =
+        requestedModel === undefined
+          ? requestArgs
+          : {
+              ...requestArgs,
+              selectedModelOverride:
+                resolveRunSelectionModel(requestArgs.catalog, requestedModel) ??
+                requestedModel,
+            };
       const { timing } = input;
       const db = set(writeDb$);
       if (input.checkOrgPlanStatusBeforeContext) {
@@ -17456,6 +17486,7 @@ function createPreCreateOfficialWorkflowObjects(
   input$: ReturnType<typeof createPreCreateInput>,
   workflowRows$: ReturnType<typeof createPreCreateWorkflowRows>,
   { framework$, modelRoute$ }: ReturnType<typeof createPreCreateModelObjects>,
+  catalog$: AsyncRead<ModelCatalog>,
 ) {
   const workflowInput$ = computed(
     async (get): Promise<RunWorkflowReadInput> => {
@@ -17468,6 +17499,7 @@ function createPreCreateOfficialWorkflowObjects(
       return {
         db,
         args: {
+          catalog: await get(catalog$),
           orgId: command.auth.orgId,
           userId: command.auth.userId,
           injectSkillVolumes: { workflows },
@@ -18069,6 +18101,7 @@ function createPreCreateExecutionObjects(args: {
     input$,
     workflowRows$,
     model,
+    args.catalog$,
   );
   const userTimezone$ = computed(async (get) => {
     return (await get(bootstrapMetadata$)).userInfo.timezone ?? undefined;
@@ -18283,6 +18316,7 @@ function createSelectedAgentRunReadGraph(
   });
   return {
     input$,
+    catalog$,
     identityInput$,
     agentId$,
     agent$,
@@ -18394,6 +18428,7 @@ function createSelectedStorageInputObject(
         : requestedFramework;
       const piSandbox = resolvePreparedPiModelConfig({
         createArgs: {
+          catalog: await get(graph.catalog$),
           piExecution: selectedRunPiExecution(input.command),
           codexServiceTier: input.command.codexServiceTier,
           agentRunMetadata: { reasoningEffort: input.command.reasoningEffort },

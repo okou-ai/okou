@@ -1,6 +1,5 @@
 import {
   isBuiltInModelProviderType,
-  normalizeBuiltInModelId,
   RETIRED_RUN_MODEL_MESSAGE,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
@@ -31,7 +30,10 @@ import {
   createUsageAllowanceObjects,
   resolveUsageAllowanceAvailability,
 } from "./usage-allowance.service";
-import { catalogRunModelRouteAccess } from "./model-route-capabilities.service";
+import {
+  catalogModelForSelectedId,
+  catalogRunModelRouteAccess,
+} from "./model-route-capabilities.service";
 import {
   catalogHasProviderRoute,
   isCatalogModelRunnable,
@@ -457,9 +459,11 @@ export function checkCatalogRunRoute(
   if (!params.selectedModel) {
     return undefined;
   }
-  const model = normalizeBuiltInModelId(params.selectedModel);
+  // Normalized through the catalog like the plan check: a catalog model ID,
+  // or a route upstream ID that names exactly one catalog model.
+  const model = catalogModelForSelectedId(catalog, params.selectedModel);
   const builtIn = isBuiltInModelProviderType(params.modelProviderType);
-  if (catalog.byModel.has(model)) {
+  if (model !== null) {
     if (!isCatalogModelRunnable(catalog, model)) {
       return badRequestMessage(RETIRED_RUN_MODEL_MESSAGE);
     }
@@ -511,7 +515,9 @@ export function checkOrgPlanRunAdmission(params: {
   // paid plan by name.
   const restrictedModel =
     modelAccess === "pro_required" && params.selectedModel
-      ? params.catalog.byModel.get(params.selectedModel)
+      ? params.catalog.byModel.get(
+          catalogModelForSelectedId(params.catalog, params.selectedModel) ?? "",
+        )
       : undefined;
   if (restrictedModel && !restrictedModel.ownRoutesOnRestrictedPlans) {
     return paidPlanRequired(restrictedModel.displayName);

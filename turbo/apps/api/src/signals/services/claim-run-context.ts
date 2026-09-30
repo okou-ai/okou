@@ -266,7 +266,6 @@ import {
   catalogBuiltInCandidates,
   catalogHasProviderRoute,
   loadModelCatalog,
-  resolveCatalogRunModel,
   type ModelCatalog,
 } from "./model-catalog.service";
 import {
@@ -396,6 +395,7 @@ import {
   modelProviderWriteTypeForLaunch,
   type ProviderModelSupport,
   resolveQueuedModelSelectionPinFromSnapshot,
+  resolveRunSelectionModel,
 } from "./model-selection.service";
 import {
   acceptedCatalogFromRow,
@@ -418,6 +418,7 @@ import {
   type OrgPlanCapabilities,
   runtimeStatusForEntitlement,
 } from "./org-plan-entitlement-read.service";
+import { piCatalogModel } from "@okouai/core/pi-execution";
 import { shouldUsePiExecution } from "./pi-sandbox-config";
 import {
   additionalVolumesForRun,
@@ -1579,7 +1580,7 @@ function workflowModelContext(
   const piExecution = shouldUsePiExecution({
     chatThreadId,
     modelProviderType: effectiveModelProvider,
-    selectedModel,
+    catalogModel: piCatalogModel(catalog, selectedModel),
     codexServiceTier: runCodexServiceTier,
     builtInModelRuntimeRoute: builtInModelRuntimeRoute ?? undefined,
   });
@@ -2737,7 +2738,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           selection !== null &&
           selection !== undefined &&
           policy.model ===
-            (resolveCatalogRunModel(facts.catalog, selection.selectedModel) ??
+            (resolveRunSelectionModel(facts.catalog, selection.selectedModel) ??
               selection.selectedModel)
         );
       }) ?? null
@@ -2766,7 +2767,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         get(orgMetadata$),
       ]);
       if (
-        ((!policy || !modelPolicyUsesPersonalMetadata(await get(claimCatalog$), policy)) &&
+        ((!policy ||
+          !modelPolicyUsesPersonalMetadata(await get(claimCatalog$), policy)) &&
           org?.modelMode !== "auto") ||
         userId === "__no_preference__" ||
         userId === agentRunsCreateORG_SENTINEL_USER_ID
@@ -3371,17 +3373,17 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       if (!selection) {
         return badRequestMessage("Queued input is missing its model selection");
       }
-      // Re-resolve the captured model against the catalog current at the
-      // pick; a replaced model routes to its final replacement.
+      // Re-resolve the captured model against the claim's catalog snapshot
+      // (current at the pick, not at enqueue) with the same resolution as
+      // enqueue and run creation; a replaced model routes to its final
+      // replacement. Already-started runs are never re-resolved.
       if (
-        !resolveCatalogRunModel(
+        !resolveRunSelectionModel(
           await get(claimCatalog$),
           selection.selectedModel,
         )
       ) {
-        return badRequestMessage(
-          `Unknown model "${selection.selectedModel}"`,
-        );
+        return badRequestMessage(`Unknown model "${selection.selectedModel}"`);
       }
       await set(initializeModelPolicy$, signal);
       const pin = await get(modelPin$);
@@ -4901,6 +4903,10 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           effectiveModelProvider:
             model.providerAdmission.effectiveModelProvider,
           builtInModelRuntimeRoute: model.builtInModelRuntimeRoute ?? undefined,
+          piCatalogModel: piCatalogModel(
+            await get(claimCatalog$),
+            model.pin.selectedModel,
+          ),
           cliAgentType: model.providerAdmission.cliAgentType,
           codexServiceTier: model.runCodexServiceTier,
           reasoningEffort: model.reasoningEffort,
@@ -5784,7 +5790,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           selection !== null &&
           selection !== undefined &&
           policy.model ===
-            (resolveCatalogRunModel(facts.catalog, selection.selectedModel) ??
+            (resolveRunSelectionModel(facts.catalog, selection.selectedModel) ??
               selection.selectedModel)
         );
       }) ?? null
@@ -5813,7 +5819,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         get(queuedModelInputsOrgMetadata$),
       ]);
       if (
-        ((!policy || !modelPolicyUsesPersonalMetadata(await get(claimCatalog$), policy)) &&
+        ((!policy ||
+          !modelPolicyUsesPersonalMetadata(await get(claimCatalog$), policy)) &&
           org?.modelMode !== "auto") ||
         userId === "__no_preference__" ||
         userId === agentRunsCreateORG_SENTINEL_USER_ID
@@ -6428,17 +6435,17 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       if (!selection) {
         return badRequestMessage("Queued input is missing its model selection");
       }
-      // Re-resolve the captured model against the catalog current at the
-      // pick; a replaced model routes to its final replacement.
+      // Re-resolve the captured model against the claim's catalog snapshot
+      // (current at the pick, not at enqueue) with the same resolution as
+      // enqueue and run creation; a replaced model routes to its final
+      // replacement. Already-started runs are never re-resolved.
       if (
-        !resolveCatalogRunModel(
+        !resolveRunSelectionModel(
           await get(claimCatalog$),
           selection.selectedModel,
         )
       ) {
-        return badRequestMessage(
-          `Unknown model "${selection.selectedModel}"`,
-        );
+        return badRequestMessage(`Unknown model "${selection.selectedModel}"`);
       }
       await set(queuedModelInitializeModelPolicy$, signal);
       const pin = await get(queuedModelModelPin$);
@@ -10050,6 +10057,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       return {
         db,
         args: {
+          catalog: await get(claimCatalog$),
           orgId: command.auth.orgId,
           userId: command.auth.userId,
           injectSkillVolumes: { workflows },
@@ -10413,6 +10421,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         : requestedFramework;
       const piSandbox = resolvePreparedPiModelConfig({
         createArgs: {
+          catalog: await get(claimCatalog$),
           piExecution: selectedRunPiExecution(input.command),
           codexServiceTier: input.command.codexServiceTier,
           agentRunMetadata: { reasoningEffort: input.command.reasoningEffort },

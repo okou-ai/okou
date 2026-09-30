@@ -38,6 +38,7 @@ import {
   type ModelCatalog,
 } from "./model-catalog.service";
 import {
+  catalogModelForSelectedId,
   catalogRunModelRouteAccess,
   isCatalogFastServiceTierSupported,
   isCatalogUltrafastServiceTierSupported,
@@ -157,11 +158,13 @@ async function prepareModelRoutingFacts(params: {
   readonly userId: string;
   readonly selectedModel: string | null;
   readonly orgPlanCapabilities?: OrgPlanCapabilities | null;
+  readonly catalog?: ModelCatalog;
 }): Promise<ModelRoutingFacts> {
   const policyFactsPromise = loadOrgModelPolicyFacts(
     params.db,
     params.orgId,
     params.orgPlanCapabilities,
+    params.catalog,
   );
   const [policyFacts, org] = await Promise.all([
     policyFactsPromise,
@@ -282,6 +285,22 @@ function replacementRouteCompatible(
     replacementPolicy.defaultProviderType === original.defaultProviderType &&
     replacementPolicy.credentialScope === original.credentialScope
   );
+}
+
+/**
+ * The model a queued or requested run selection runs as, against one
+ * run-scoped catalog snapshot: the catalog model the ID names (directly or as
+ * the upstream ID of exactly one catalog model), followed along its
+ * replacement chain to the final active model. Enqueue validation, the queue
+ * pick and run creation all use this, so the same ID resolves identically on
+ * every path. Null for an ID the catalog does not know.
+ */
+export function resolveRunSelectionModel(
+  catalog: ModelCatalog,
+  selectedId: string,
+): string | null {
+  const model = catalogModelForSelectedId(catalog, selectedId);
+  return model === null ? null : resolveCatalogRunModel(catalog, model);
 }
 
 /** Whether a selection names a model the catalog has replaced. */
@@ -425,6 +444,8 @@ export async function resolveModelSelectionPin(params: {
   readonly modelSelection: ModelSelectionRequest;
   /** The organization's plan, when the caller already read it in this request. */
   readonly orgPlanCapabilities?: OrgPlanCapabilities | null;
+  /** The request's catalog snapshot, when the caller already loaded it. */
+  readonly catalog?: ModelCatalog;
 }): Promise<
   | ModelFirstPin
   | ReturnType<typeof badRequestMessage>
@@ -434,8 +455,8 @@ export async function resolveModelSelectionPin(params: {
   // Legacy clients can still send a replaced model ID: resolve it to the final
   // active model. Only the model is replaced; the route below is chosen again
   // for that model, and an incompatible explicit provider is rejected.
-  const catalog = await loadModelCatalog(db);
-  const resolvedModel = resolveCatalogRunModel(
+  const catalog = params.catalog ?? (await loadModelCatalog(db));
+  const resolvedModel = resolveRunSelectionModel(
     catalog,
     params.modelSelection.selectedModel,
   );
@@ -495,6 +516,7 @@ export async function resolveModelSelectionPin(params: {
     userId,
     selectedModel: modelSelection.selectedModel,
     orgPlanCapabilities: params.orgPlanCapabilities,
+    catalog,
   });
   // Resolve the configured route without plan filtering first. Model access is
   // decided from that route so BYOK never inherits a built-in-only model gate.
@@ -604,7 +626,7 @@ export function resolveQueuedModelSelectionPinFromSnapshot(params: {
   | ReturnType<typeof insufficientCredits> {
   // Queued inputs re-check their captured model at the pick: a model replaced
   // after enqueue resolves to its final replacement before the run starts.
-  const selectedModel = resolveCatalogRunModel(
+  const selectedModel = resolveRunSelectionModel(
     params.catalog,
     params.selectedModel,
   );

@@ -7,6 +7,7 @@ import { env } from "../../../lib/env";
 import { now, withMockNowForTest } from "../../../lib/time";
 import { stagePreAddabilityModelPolicyFixture } from "../../../test-fixtures/org-model-policies";
 import { replacePiSessionHistoryJsonlFixture } from "../../../test-fixtures/chat-events";
+import { setModelPiRouteClassFixture } from "../../../test-fixtures/model-catalog";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { chatEventDisplayText } from "./helpers/chat-event";
@@ -203,6 +204,48 @@ describe("CHAT-02: model-first provider policies", () => {
     },
     90_000,
   );
+
+  it("launches a model on the runtime its catalog Pi route class selects", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const withOpenRouterRoute = await configureBuiltInPiModelOnOpenRouter(
+      actor,
+      "gpt-6-luna",
+    );
+    mockPiResourceArchiveDownloads();
+    mockPiCheckpointObjectStore();
+    const launch = async (prompt: string) => {
+      const run = await withOpenRouterRoute(async () => {
+        return await sendChatRun(actor, {
+          agentId,
+          prompt,
+          model: "gpt-6-luna",
+        });
+      });
+      await flushWaitUntilForTest();
+      const snapshot = await readRunLaunchSnapshotFixture(context, run.runId);
+      const { claim } = await claimChatRun(runnerGroup, run.runId);
+      await cancelChatRun(actor, run.runId);
+      return { snapshot, claim };
+    };
+
+    // An operator takes the model off Pi: it launches on its vendor harness.
+    const restore = await setModelPiRouteClassFixture("gpt-6-luna", null);
+    const vendor = await launch("run on the vendor harness");
+    await restore();
+    expect(vendor.snapshot).toMatchObject({
+      launch_snapshot: { framework: "codex" },
+    });
+    expect(vendor.claim.cliAgentType).toBe("codex");
+
+    // The seeded `gpt-codex` class launches the same route on Pi.
+    const pi = await launch("run on Pi");
+    expect(pi.snapshot).toMatchObject({ launch_snapshot: { framework: "pi" } });
+    expect(pi.claim.cliAgentType).toBe("pi");
+    expect(pi.claim.piModelConfig).toMatchObject({
+      provider: "openrouter",
+      model: "openai/gpt-6-luna",
+    });
+  });
 
   it("transfers pre-migration OpenRouter Chat JSONL by reference", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();

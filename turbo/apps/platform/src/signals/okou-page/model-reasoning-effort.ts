@@ -63,7 +63,7 @@ export function availableChatReasoningEfforts(
     return [];
   }
   const piExecution = isPiExecutionRoute({
-    selectedModel: selection.selectedModel,
+    catalogModel: catalog.piModel(selection.selectedModel),
     modelProviderType: route.providerType,
     runtimeProviderType,
     codexServiceTier: selection.codexServiceTier ?? undefined,

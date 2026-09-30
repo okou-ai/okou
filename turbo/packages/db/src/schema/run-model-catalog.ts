@@ -71,6 +71,13 @@ export const runModelCatalog = pgTable(
     ownRoutesOnRestrictedPlans: boolean("own_routes_on_restricted_plans")
       .notNull()
       .default(true),
+    /**
+     * The family of Pi route rules that admits the model
+     * (`claude-native`, `gpt-codex` or `deepseek`). NULL means the model is
+     * not Pi-eligible and runs on its vendor harness; a new model stays off
+     * Pi until an operator sets it.
+     */
+    piRouteClass: varchar("pi_route_class", { length: 32 }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
@@ -100,6 +107,10 @@ export const runModelCatalog = pgTable(
       uniqueIndex("idx_run_model_catalog_one_system_default")
         .on(table.isSystemDefault)
         .where(sql`${table.isSystemDefault}`),
+      check(
+        "chk_run_model_catalog_pi_route_class",
+        sql`${table.piRouteClass} IS NULL OR ${table.piRouteClass} IN ('claude-native', 'gpt-codex', 'deepseek')`,
+      ),
       check(
         "chk_run_model_catalog_default_active",
         sql`NOT ${table.isSystemDefault} OR ${table.replacedBy} IS NULL`,

@@ -1,5 +1,8 @@
 import { command } from "ccstate";
-import { modelCatalogContract } from "@okouai/api-contracts/contracts/model-catalog";
+import {
+  isPiRouteClass,
+  modelCatalogContract,
+} from "@okouai/api-contracts/contracts/model-catalog";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { db$ } from "../external/db";
@@ -32,6 +35,9 @@ const getModelCatalogInner$ = command(async ({ get }, signal: AbortSignal) => {
           priceTier: catalogBuiltInPriceTier(catalog, row.model),
           builtInOnRestrictedPlans: row.builtInOnRestrictedPlans,
           ownRoutesOnRestrictedPlans: row.ownRoutesOnRestrictedPlans,
+          piRouteClass: isPiRouteClass(row.piRouteClass)
+            ? row.piRouteClass
+            : null,
         };
       }),
       routes: catalog.routes.map((route) => {

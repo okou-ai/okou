@@ -114,6 +114,16 @@ function profileFor(model: string): MockModelProfile {
   };
 }
 
+function gatewayUpstreamModel(model: string, providerType: string): string {
+  if (
+    providerType !== "openrouter-codex" &&
+    providerType !== "vercel-ai-gateway-codex"
+  ) {
+    return model;
+  }
+  return `${model.startsWith("deepseek-") ? "deepseek" : "openai"}/${model}`;
+}
+
 function routesFor(model: string): MockCatalogRoute[] {
   const profile = profileFor(model);
   const base = {
@@ -138,6 +148,8 @@ function routesFor(model: string): MockCatalogRoute[] {
   for (const providerType of profile.byok) {
     routes.push({
       ...base,
+      // Gateway routes send the vendor-prefixed upstream ID, as seeded.
+      upstreamModel: gatewayUpstreamModel(model, providerType),
       providerType,
       concreteProviderType: providerType,
       serviceTiers:
@@ -181,6 +193,24 @@ const RESTRICTED_PLAN_OWN_ROUTE_EXCLUSIONS: readonly string[] = [
   "gpt-6.1-sol",
 ];
 
+/** Seeded `run_model_catalog.pi_route_class` (migration 1300). */
+const PI_ROUTE_CLASS_BY_MODEL: Readonly<
+  Record<string, "claude-native" | "gpt-codex" | "deepseek">
+> = {
+  "okou-1.0": "gpt-codex",
+  "claude-opus-5-5": "claude-native",
+  "claude-opus-5": "claude-native",
+  "claude-sonnet-5-5": "claude-native",
+  "claude-sonnet-5": "claude-native",
+  "gpt-6.1-sol": "gpt-codex",
+  "gpt-6-sol": "gpt-codex",
+  "gpt-6-luna": "gpt-codex",
+  "gpt-5.6-sol": "gpt-codex",
+  "gpt-5.6-luna": "gpt-codex",
+  "deepseek-v4.1-flash": "deepseek",
+  "deepseek-v4-flash": "deepseek",
+};
+
 /** The seeded catalog's system default. */
 export const MOCK_SYSTEM_DEFAULT_MODEL = "okou-1.0";
 
@@ -201,6 +231,7 @@ export function createMockModelCatalog(
           RESTRICTED_PLAN_BUILT_IN_MODELS.includes(model),
         ownRoutesOnRestrictedPlans:
           !RESTRICTED_PLAN_OWN_ROUTE_EXCLUSIONS.includes(model),
+        piRouteClass: PI_ROUTE_CLASS_BY_MODEL[model] ?? null,
       };
     },
   );

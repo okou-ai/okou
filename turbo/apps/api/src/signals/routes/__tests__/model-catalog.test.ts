@@ -218,6 +218,7 @@ describe("GET /api/model-catalog", () => {
         priceTier: "$",
         builtInOnRestrictedPlans: true,
         ownRoutesOnRestrictedPlans: true,
+        piRouteClass: "gpt-codex",
       },
     ]);
     expect(
@@ -234,6 +235,7 @@ describe("GET /api/model-catalog", () => {
       priceTier: null,
       builtInOnRestrictedPlans: false,
       ownRoutesOnRestrictedPlans: true,
+      piRouteClass: null,
     });
     expect(
       models.find((row) => {
@@ -465,6 +467,7 @@ describe("stored selections of replaced models", () => {
       priceTier: null,
       builtInOnRestrictedPlans: false,
       ownRoutesOnRestrictedPlans: true,
+      piRouteClass: null,
     });
 
     const preference = await accept(

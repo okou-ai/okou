@@ -426,6 +426,9 @@ export type DirectRunFixtureRequest = Omit<
 > & {
   readonly triggerSource?: TriggerSource;
   readonly connectorScope?: CreateAgentRunArgs["connectorScope"];
+  /** A requested model and route, as a caller that selects them passes them. */
+  readonly selectedModelOverride?: string;
+  readonly selectedModelProviderType?: string;
   readonly ownedSystemStorageMounts?: readonly {
     readonly storageId: string;
     readonly version?: string;
@@ -485,7 +488,13 @@ export async function createDirectRunFixture(args: {
   readonly body: DirectRunFixtureRequest;
   readonly signal: AbortSignal;
 }) {
-  const { connectorScope, ownedSystemStorageMounts, ...body } = args.body;
+  const {
+    connectorScope,
+    ownedSystemStorageMounts,
+    selectedModelOverride,
+    selectedModelProviderType,
+    ...body
+  } = args.body;
   const resolvedOwnedSystemStorageMounts =
     await resolveOwnedSystemStorageMounts(
       ownedSystemStorageMounts,
@@ -499,7 +508,8 @@ export async function createDirectRunFixture(args: {
       userId: args.userId,
       orgId: args.orgId,
       apiStartTime: now(),
-      modelProviderType: body.modelProviderType,
+      modelProviderType: selectedModelProviderType ?? body.modelProviderType,
+      ...(selectedModelOverride === undefined ? {} : { selectedModelOverride }),
       piExecution: false,
       testOnlyResolveDirectRun: resolveDirectRun,
       connectorScope: connectorScope ?? {

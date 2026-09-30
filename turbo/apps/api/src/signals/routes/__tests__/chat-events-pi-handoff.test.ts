@@ -1,5 +1,4 @@
 import { createHash, randomUUID } from "node:crypto";
-import { getProviderRuntimeModel } from "@okouai/api-contracts/contracts/model-providers";
 import { gzipSync, zstdCompressSync } from "node:zlib";
 import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
 import {
@@ -21,6 +20,7 @@ import {
   replacePiSessionHistoryInlineFixture,
   replacePiSessionHistoryJsonlFixture,
 } from "../../../test-fixtures/chat-events";
+import { loadPiCatalogModelFixture } from "../../../test-fixtures/model-catalog";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { readThreadSessionConversation } from "./helpers/runtime-state";
 import {
@@ -57,6 +57,15 @@ const {
   completeSandboxFirstPiRun,
   queueCapabilityProvenPiRun,
 } = createChatEventsFixture(context);
+
+async function builtInCatalogUpstreamModel(model: string): Promise<string> {
+  const upstreamModel = (await loadPiCatalogModelFixture(model))?.builtIn[0]
+    ?.upstreamModel;
+  if (upstreamModel === undefined) {
+    throw new Error(`Expected a Built-in catalog route for ${model}`);
+  }
+  return upstreamModel;
+}
 
 describe("CHAT-02: model-first provider policies", () => {
   it.each(["identity", "gzip", "zstd"] as const)(
@@ -625,7 +634,7 @@ describe("CHAT-02: model-first provider policies", () => {
         prompt: firstPrompt,
         responsesModel: {
           provider: "deepseek",
-          model: getProviderRuntimeModel("built-in", "deepseek-v4-flash"),
+          model: await builtInCatalogUpstreamModel("deepseek-v4-flash"),
         },
         run: first,
         usagePricingResolution: await createGptUsagePricingResolution(),
@@ -707,7 +716,7 @@ describe("CHAT-02: model-first provider policies", () => {
       const claimed = await claimChatRun(runnerGroup, run.runId);
       expect(claimed.claim.piModelConfig).toMatchObject({
         provider: isDeepSeek ? "deepseek" : "openai",
-        model: getProviderRuntimeModel("built-in", selectedModel),
+        model: await builtInCatalogUpstreamModel(selectedModel),
       });
       expect(claimed.claim.piModelConfig).not.toHaveProperty("api");
       expect(claimed.claim.piModelConfig).not.toHaveProperty("serviceTier");

@@ -1555,6 +1555,13 @@
       "when": 1790765203488,
       "tag": "1299_model_catalog_restricted_plans",
       "breakpoints": true
+    },
+    {
+      "idx": 1300,
+      "version": "7",
+      "when": 1790770626342,
+      "tag": "1300_model_catalog_pi_route_class",
+      "breakpoints": true
     }
   ]
 }

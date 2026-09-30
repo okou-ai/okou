@@ -4,6 +4,21 @@ import { apiErrorSchema } from "./errors";
 
 const c = initContract();
 
+/** The Pi route classes `run_model_catalog.pi_route_class` may hold. */
+export const PI_ROUTE_CLASSES = [
+  "claude-native",
+  "gpt-codex",
+  "deepseek",
+] as const;
+
+export type PiRouteClass = (typeof PI_ROUTE_CLASSES)[number];
+
+export function isPiRouteClass(value: unknown): value is PiRouteClass {
+  return PI_ROUTE_CLASSES.some((routeClass) => {
+    return routeClass === value;
+  });
+}
+
 const modelCatalogModelSchema = z.object({
   model: z.string(),
   displayName: z.string(),
@@ -28,6 +43,11 @@ const modelCatalogModelSchema = z.object({
    * (BYOK, personal subscriptions and custom gateways).
    */
   ownRoutesOnRestrictedPlans: z.boolean(),
+  /**
+   * Which family of Pi route rules admits the model; null when the model is
+   * not Pi-eligible and always runs on its vendor harness.
+   */
+  piRouteClass: z.enum(PI_ROUTE_CLASSES).nullable(),
 });
 
 const modelCatalogRouteSchema = z.object({
@@ -69,3 +89,28 @@ export const modelCatalogContract = c.router({
 });
 
 export type ModelCatalogContract = typeof modelCatalogContract;
+
+const THIRD_PARTY_GATEWAY_PROVIDER_TYPES: ReadonlySet<string> = new Set([
+  "openrouter-api-key",
+  "vercel-ai-gateway",
+  "openrouter-codex",
+  "vercel-ai-gateway-codex",
+]);
+
+/**
+ * Whether an organization's custom gateway may serve a model, from the
+ * provider types of the model's enabled non-Built-in routes. A model offered
+ * on its own routes only through the vendor's API and subscription (no
+ * third-party gateway route) is not served through custom gateways either;
+ * models without own routes are left to the gateway mapping.
+ */
+export function ownRoutesAllowCustomGateway(
+  ownRouteProviderTypes: readonly string[],
+): boolean {
+  return (
+    ownRouteProviderTypes.length === 0 ||
+    ownRouteProviderTypes.some((providerType) => {
+      return THIRD_PARTY_GATEWAY_PROVIDER_TYPES.has(providerType);
+    })
+  );
+}

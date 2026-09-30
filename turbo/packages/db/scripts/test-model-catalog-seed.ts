@@ -11,6 +11,66 @@ interface CatalogRow {
   sort_order: number;
   is_system_default: boolean;
   replaced_by: string | null;
+  built_in_on_restricted_plans: boolean | null;
+  own_routes_on_restricted_plans: boolean | null;
+}
+
+/**
+ * Restricted (limited-free) plan entitlement seeded by migration 1299, the
+ * former code allowlist. `org_plan_entitlements.restricted_built_in_models`
+ * is only the boolean plan capability; these catalog flags decide the models.
+ */
+const BUILT_IN_ON_RESTRICTED_PLANS: readonly string[] = [
+  "deepseek-v4-flash",
+  "deepseek-v4.1-flash",
+  "gpt-5.6-luna",
+  "gpt-6-luna",
+  "okou-1.0",
+];
+const OWN_ROUTES_OFF_RESTRICTED_PLANS: readonly string[] = [
+  "claude-sonnet-5-5",
+  "gpt-6.1-sol",
+];
+
+function modelsWhere(
+  rows: readonly CatalogRow[],
+  predicate: (row: CatalogRow) => boolean,
+): string[] {
+  return rows
+    .filter(predicate)
+    .map((row) => {
+      return row.model;
+    })
+    .sort();
+}
+
+function assertRestrictedPlanFlags(rows: readonly CatalogRow[]): void {
+  for (const row of rows) {
+    assert.equal(
+      typeof row.built_in_on_restricted_plans,
+      "boolean",
+      `${row.model}: built_in_on_restricted_plans`,
+    );
+    assert.equal(
+      typeof row.own_routes_on_restricted_plans,
+      "boolean",
+      `${row.model}: own_routes_on_restricted_plans`,
+    );
+  }
+  assert.deepEqual(
+    modelsWhere(rows, (row) => {
+      return row.built_in_on_restricted_plans === true;
+    }),
+    [...BUILT_IN_ON_RESTRICTED_PLANS].sort(),
+    "Built-in models allowed on restricted plans",
+  );
+  assert.deepEqual(
+    modelsWhere(rows, (row) => {
+      return row.own_routes_on_restricted_plans === false;
+    }),
+    [...OWN_ROUTES_OFF_RESTRICTED_PLANS].sort(),
+    "models kept off restricted plans on own routes",
+  );
 }
 
 interface RouteRow {
@@ -148,7 +208,8 @@ function assertRoutes(
  * Validates the internal consistency of the seeded global model catalog:
  * replacement chains, one system default, and route capabilities that agree
  * with themselves (defaults inside their lists, one pricing link and price
- * tier per Built-in route), plus the subscription catalog mirror.
+ * tier per Built-in route), the restricted-plan entitlement flags, plus the
+ * subscription catalog mirror.
  */
 export async function validateModelCatalogSeed(
   databaseUrl: string,
@@ -157,10 +218,12 @@ export async function validateModelCatalogSeed(
   await client.connect();
   try {
     const catalog = await client.query<CatalogRow>(
-      `SELECT model, display_name, sort_order, is_system_default, replaced_by
+      `SELECT model, display_name, sort_order, is_system_default, replaced_by,
+         built_in_on_restricted_plans, own_routes_on_restricted_plans
        FROM run_model_catalog ORDER BY sort_order, model`,
     );
     assertCatalogRows(catalog.rows);
+    assertRestrictedPlanFlags(catalog.rows);
     const routes = await client.query<RouteRow>(
       `SELECT model, provider_type, concrete_provider_type, subscription_type,
          enabled, priority, service_tiers, default_service_tier, efforts,

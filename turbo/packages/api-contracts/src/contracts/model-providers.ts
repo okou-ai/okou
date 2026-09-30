@@ -3,7 +3,6 @@ import { z } from "zod";
 import DEEPSEEK_V4_FLASH_MODEL_CATALOG from "./deepseek-model-catalog.json" with { type: "json" };
 import {
   OKOU_MODEL_CODEX_CATALOG,
-  OKOU_MODEL_METADATA,
   OKOU_RUN_MODELS,
   type OkouRunModel,
 } from "./okou-model-metadata";
@@ -244,18 +243,6 @@ export function getCatalogRunModelRouteAccess(
   return allowed ? "allowed" : "pro_required";
 }
 
-/**
- * Runtime guard: a recognized ID (or provider alias) this code can no longer
- * execute. Product retirement and replacement are resolved from the catalog
- * before admission; this only stops an unresolved ID from reaching a runner.
- */
-export function hasNoRuntimeExecutionRoute(
-  model: string | null | undefined,
-): boolean {
-  const canonical = normalizeBuiltInModelId(model?.trim().toLowerCase() ?? "");
-  return RETIRED_RUN_MODEL_SET.has(canonical);
-}
-
 /** Whether this code has a runtime execution route for the model. */
 export function isActiveRunModel(
   model: string | null | undefined,
@@ -296,176 +283,6 @@ const BUILT_IN_ROUTE_PROVIDER_VENDORS: ReadonlyMap<string, string> = new Map(
     return [type, provider.vendor];
   }),
 );
-
-export interface BuiltInModelRouteCandidate {
-  readonly concreteType: BuiltInModelRouteProviderType;
-  // Overrides the display-name when substituting `$model` in the concrete
-  // provider's env bindings. Needed when the upstream API expects a
-  // different identifier than what we show to users.
-  readonly apiModel?: string;
-}
-
-interface ModelConfig {
-  readonly candidates: readonly [
-    BuiltInModelRouteCandidate,
-    ...BuiltInModelRouteCandidate[],
-  ];
-}
-
-// Execution routes contain only active models. Historical recognition and
-// retirement validation must not depend on a model retaining an executable route.
-export const BUILT_IN_MODEL_TO_PROVIDER = {
-  "claude-fable-5-1": {
-    candidates: [
-      { concreteType: "anthropic-api-key" },
-      {
-        concreteType: "openrouter-api-key",
-        apiModel: "anthropic/claude-fable-5.1",
-      },
-    ],
-  },
-  "claude-opus-5-5": {
-    candidates: [
-      { concreteType: "anthropic-api-key" },
-      {
-        concreteType: "openrouter-api-key",
-        apiModel: "anthropic/claude-opus-5.5",
-      },
-    ],
-  },
-  "claude-opus-5": {
-    candidates: [
-      { concreteType: "anthropic-api-key" },
-      {
-        concreteType: "openrouter-api-key",
-        apiModel: "anthropic/claude-opus-5",
-      },
-    ],
-  },
-  "claude-sonnet-5-5": {
-    candidates: [{ concreteType: "anthropic-api-key" }],
-  },
-  "claude-sonnet-5": {
-    candidates: [
-      { concreteType: "anthropic-api-key" },
-      {
-        concreteType: "openrouter-api-key",
-        apiModel: "anthropic/claude-sonnet-5",
-      },
-    ],
-  },
-  "okou-1.0": {
-    candidates: [
-      {
-        concreteType: "openrouter-codex",
-        apiModel: OKOU_MODEL_METADATA["okou-1.0"].presetModel,
-      },
-    ],
-  },
-  "deepseek-v4.1-flash": {
-    candidates: [
-      { concreteType: "deepseek", apiModel: "deepseek-flash" },
-      {
-        concreteType: "openrouter-codex",
-        apiModel: "deepseek/deepseek-v4.1-flash",
-      },
-    ],
-  },
-  "deepseek-v4-flash": {
-    candidates: [
-      { concreteType: "deepseek" },
-      {
-        concreteType: "openrouter-codex",
-        apiModel: "deepseek/deepseek-v4-flash",
-      },
-    ],
-  },
-  // Permanent Built-in availability routing: prefer OpenAI, then use
-  // OpenRouter when the primary candidate has no key or is in cooldown.
-  // This is operational routing, not a cross-version compatibility bridge.
-  "gpt-6-astra": {
-    candidates: [
-      { concreteType: "openai-api-key" },
-      {
-        concreteType: "openrouter-codex",
-        apiModel: "openai/gpt-6-astra",
-      },
-    ],
-  },
-  "gpt-6.1-sol": {
-    candidates: [{ concreteType: "openai-api-key" }],
-  },
-  "gpt-6-sol": {
-    candidates: [
-      { concreteType: "openai-api-key" },
-      {
-        concreteType: "openrouter-codex",
-        apiModel: "openai/gpt-6-sol",
-      },
-    ],
-  },
-  "gpt-6-luna": {
-    candidates: [
-      { concreteType: "openai-api-key" },
-      {
-        concreteType: "openrouter-codex",
-        apiModel: "openai/gpt-6-luna",
-      },
-    ],
-  },
-  "gpt-5.6-sol": {
-    candidates: [
-      { concreteType: "openai-api-key" },
-      {
-        concreteType: "openrouter-codex",
-        apiModel: "openai/gpt-5.6-sol",
-      },
-    ],
-  },
-  "gpt-5.6-luna": {
-    candidates: [
-      { concreteType: "openai-api-key" },
-      {
-        concreteType: "openrouter-codex",
-        apiModel: "openai/gpt-5.6-luna",
-      },
-    ],
-  },
-} as const satisfies Record<ActiveRunModel, ModelConfig>;
-
-export interface BuiltInModelRouteTarget {
-  readonly selectedModel: SupportedRunModel;
-  readonly providerType: BuiltInModelRouteProviderType;
-  readonly upstreamModel: string;
-  readonly vendor: string;
-}
-
-function builtInPrimaryCandidate(model: string): BuiltInModelRouteCandidate {
-  if (!isActiveRunModel(model)) {
-    throw new Error(
-      `Unknown built-in model "${model}". Valid models: ${Object.keys(BUILT_IN_MODEL_TO_PROVIDER).join(", ")}`,
-    );
-  }
-  return BUILT_IN_MODEL_TO_PROVIDER[model].candidates[0];
-}
-
-export function getBuiltInModelRouteCandidates(
-  model: string,
-): readonly BuiltInModelRouteTarget[] {
-  if (!isActiveRunModel(model)) {
-    throw new Error(
-      `Unknown built-in model "${model}". Valid models: ${Object.keys(BUILT_IN_MODEL_TO_PROVIDER).join(", ")}`,
-    );
-  }
-  return BUILT_IN_MODEL_TO_PROVIDER[model].candidates.map((candidate) => {
-    return {
-      selectedModel: model,
-      providerType: candidate.concreteType,
-      upstreamModel: "apiModel" in candidate ? candidate.apiModel : model,
-      vendor: BUILT_IN_MODEL_ROUTE_PROVIDERS[candidate.concreteType].vendor,
-    };
-  });
-}
 
 /** Vendors of every concrete provider a Built-in route can use (key pools). */
 export function getBuiltInModelRouteVendors(): readonly string[] {
@@ -1048,36 +865,6 @@ const MODEL_FIRST_PROVIDER_COMPATIBILITY = {
   "deepseek-v4-flash": ["built-in", "deepseek", "openrouter-codex"],
 } as const satisfies Record<ActiveRunModel, readonly ModelProviderType[]>;
 
-const PROVIDER_RUNTIME_MODEL_ALIASES: Partial<
-  Record<ModelProviderType, Partial<Record<ActiveRunModel, string>>>
-> = {
-  "openrouter-api-key": {
-    "claude-fable-5-1": "anthropic/claude-fable-5.1",
-    "claude-opus-5-5": "anthropic/claude-opus-5.5",
-    "claude-opus-5": "anthropic/claude-opus-5",
-    "claude-sonnet-5": "anthropic/claude-sonnet-5",
-  },
-  "vercel-ai-gateway": {
-    "claude-fable-5-1": "anthropic/claude-fable-5.1",
-    "claude-opus-5-5": "anthropic/claude-opus-5.5",
-    "claude-opus-5": "anthropic/claude-opus-5",
-    "claude-sonnet-5": "anthropic/claude-sonnet-5",
-  },
-  "openrouter-codex": {
-    "deepseek-v4.1-flash": "deepseek/deepseek-v4.1-flash",
-    "deepseek-v4-flash": "deepseek/deepseek-v4-flash",
-    "gpt-6-astra": "openai/gpt-6-astra",
-    "gpt-6-sol": "openai/gpt-6-sol",
-    "gpt-6-luna": "openai/gpt-6-luna",
-    "gpt-5.6-sol": "openai/gpt-5.6-sol",
-    "gpt-5.6-luna": "openai/gpt-5.6-luna",
-  },
-  "vercel-ai-gateway-codex": {
-    "gpt-5.6-sol": "openai/gpt-5.6-sol",
-    "gpt-5.6-luna": "openai/gpt-5.6-luna",
-  },
-};
-
 const CANONICAL_RUN_MODEL_ALIASES: Readonly<Record<string, SupportedRunModel>> =
   {
     "deepseek/deepseek-v4.1-flash": "deepseek-v4.1-flash",
@@ -1112,20 +899,6 @@ export function isModelSupportedByProvider(
   return getProvidersForModel(model).includes(
     isBuiltInModelProviderType(type) ? "built-in" : type,
   );
-}
-
-export function getProviderRuntimeModel(
-  type: ModelProviderType,
-  model: string,
-): string {
-  const canonical = normalizeRunModelId(model);
-  if (!isActiveRunModel(canonical)) {
-    return model;
-  }
-  if (isBuiltInModelProviderType(type)) {
-    return builtInPrimaryCandidate(canonical).apiModel ?? canonical;
-  }
-  return PROVIDER_RUNTIME_MODEL_ALIASES[type]?.[canonical] ?? canonical;
 }
 
 /**
@@ -1163,16 +936,6 @@ export const modelProviderTypeSchema = z.enum(MODEL_PROVIDER_TYPE_IDS);
 export const modelProviderWriteTypeSchema = z.enum(MODEL_PROVIDER_TYPE_IDS);
 
 export const modelProviderFrameworkSchema = z.enum(["claude-code", "codex"]);
-
-/**
- * Get the concrete provider type for a built-in model.
- * Throws if the model is not in the built-in model mapping.
- */
-export function getBuiltInConcreteProviderType(
-  model: string,
-): BuiltInModelRouteProviderType {
-  return builtInPrimaryCandidate(model).concreteType;
-}
 
 /**
  * Get framework for a model provider type

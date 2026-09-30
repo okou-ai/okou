@@ -487,11 +487,10 @@ function sortRowsByCatalog(
 }
 
 /**
- * A caller that already read the organization's plan in this request supplies
- * it; otherwise the plan and the policies are read in parallel. The system
- * default is projected, so reading policies never writes.
+ * Build policy facts from rows already read with a run-scoped catalog. The
+ * queue pick uses this: the system default is projected from the catalog, so
+ * the pick never seeds per-organization policies.
  */
-/** Build policy facts from rows already read with a run-scoped catalog. */
 export function orgModelPolicyFactsFromSnapshot(args: {
   readonly catalog: ModelCatalog;
   readonly orgId: string;
@@ -508,26 +507,30 @@ export function orgModelPolicyFactsFromSnapshot(args: {
   };
 }
 
+/**
+ * A caller that already read the organization's plan or the catalog in this
+ * request supplies them; otherwise they are read in parallel with the
+ * policies. The system default is projected, so reading policies never writes.
+ */
 export async function loadOrgModelPolicyFacts(
   db: Db,
   orgId: string,
   suppliedPlanCapabilities?: OrgPlanCapabilities | null,
+  suppliedCatalog?: ModelCatalog,
 ): Promise<EnsuredOrgModelPolicyFacts> {
   const [orgPlanCapabilities, stored, catalog] = await Promise.all([
     suppliedPlanCapabilities === undefined
       ? loadOrgPlanCapabilities(db, orgId)
       : suppliedPlanCapabilities,
     loadRows(db, orgId),
-    loadModelCatalog(db),
+    suppliedCatalog ?? loadModelCatalog(db),
   ]);
-  return {
-    orgPlanCapabilities,
-    policies: projectPolicyRows(catalog, orgId, stored),
-    replacedPolicies: stored.filter((row) => {
-      return resolveCatalogModel(catalog, row.model).kind === "replaced";
-    }),
+  return orgModelPolicyFactsFromSnapshot({
     catalog,
-  };
+    orgId,
+    orgPlanCapabilities,
+    stored,
+  });
 }
 
 async function listOrgProviderRoutes(
@@ -683,6 +686,11 @@ async function validateOrgProviderRoute(
       policy.defaultProviderType,
       policy.model,
       provider.selectedModel,
+      catalogHasProviderRoute(
+        catalog,
+        policy.model,
+        policy.defaultProviderType,
+      ),
     )
   ) {
     return "Cloud route requires an explicit compatible saved deployment or profile";
@@ -882,7 +890,14 @@ function getRouteStatus(params: {
       reason: "The selected workspace provider is missing.",
     };
   }
-  if (!isCloudModelMappingValid(providerType, model, provider.selectedModel)) {
+  if (
+    !isCloudModelMappingValid(
+      providerType,
+      model,
+      provider.selectedModel,
+      catalogHasProviderRoute(catalog, model, providerType),
+    )
+  ) {
     return {
       status: "invalid",
       reason:

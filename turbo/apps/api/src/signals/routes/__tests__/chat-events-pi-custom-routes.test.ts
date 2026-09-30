@@ -2,7 +2,6 @@ import { createHash, randomUUID } from "node:crypto";
 import { modelProviderConnectionsByIdContract } from "@okouai/api-contracts/contracts/model-provider-gateways";
 import {
   MODEL_PROVIDER_ENV_PLACEHOLDERS,
-  getProviderRuntimeModel,
   type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { DEFAULT_PROFILE } from "@okouai/api-contracts/contracts/runners";
@@ -13,6 +12,7 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { env } from "../../../lib/env";
 import { holdAgentRunPiExecutionSnapshotFixture } from "../../../test-fixtures/thread-bound-run-admission";
 import { holdPiContextPreparationStagesFixture } from "../../../test-fixtures/pi-context-preparation";
+import { loadPiCatalogModelFixture } from "../../../test-fixtures/model-catalog";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { modelProviderGatewayRoutes } from "../model-provider-gateways";
 import type { ApiTestUser } from "./helpers/api-bdd";
@@ -118,6 +118,15 @@ function s3GetObjectCommandCalls(): readonly unknown[] {
   });
 }
 
+async function builtInCatalogUpstreamModel(model: string): Promise<string> {
+  const upstreamModel = (await loadPiCatalogModelFixture(model))?.builtIn[0]
+    ?.upstreamModel;
+  if (upstreamModel === undefined) {
+    throw new Error(`Expected a Built-in catalog route for ${model}`);
+  }
+  return upstreamModel;
+}
+
 describe("CHAT-02: model-first provider policies", () => {
   it.each([
     "deepseek-v4-flash",
@@ -134,7 +143,7 @@ describe("CHAT-02: model-first provider policies", () => {
 
       mockPiResourceArchiveDownloads();
       const checkpointObjects = mockPiCheckpointObjectStore();
-      const runtimeModel = getProviderRuntimeModel("built-in", selectedModel);
+      const runtimeModel = await builtInCatalogUpstreamModel(selectedModel);
       const firstPrompt = "persist this turn in the native Pi session";
       const first = await sendChatRun(
         actor,

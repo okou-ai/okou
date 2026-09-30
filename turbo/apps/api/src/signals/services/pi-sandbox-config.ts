@@ -1,8 +1,7 @@
 import {
   isPiExecutionRoute,
-  isPiNativeModel,
-  isPiGptModel,
-  isPiDeepSeekModel,
+  type PiCatalogModel,
+  type PiRouteClass,
 } from "@okouai/core/pi-execution";
 import {
   piThinkingLevelForEffort,
@@ -99,20 +98,21 @@ export function gptApiKeyPiRoute(
 }
 
 function piCatalogProvider(
-  selectedModel: string | null | undefined,
+  routeClass: PiRouteClass | null,
 ): PiCatalogProvider | null {
-  if (isPiGptModel(selectedModel)) {
+  if (routeClass === "gpt-codex") {
     return "openai";
   }
-  return isPiDeepSeekModel(selectedModel) ? "deepseek" : null;
+  return routeClass === "deepseek" ? "deepseek" : null;
 }
 
 function piRuntimeContract(args: {
   readonly providerType: string;
   readonly selectedModel: string;
+  readonly routeClass: PiRouteClass | null;
   readonly codexServiceTier: "fast" | "ultrafast" | undefined;
 }): PiRuntimeContract {
-  if (isPiGptModel(args.selectedModel) && !isOkouRunModel(args.selectedModel)) {
+  if (args.routeClass === "gpt-codex" && !isOkouRunModel(args.selectedModel)) {
     return {
       thinkingLevel: "max",
       ...((isBuiltInModelProviderType(args.providerType) ||
@@ -151,14 +151,15 @@ function piProvider(
 export function shouldUsePiExecution(args: {
   readonly chatThreadId: string | undefined;
   readonly modelProviderType: string | null | undefined;
-  readonly selectedModel: string | null | undefined;
+  /** The selected model's catalog projection (`piCatalogModel`). */
+  readonly catalogModel: PiCatalogModel | null;
   readonly codexServiceTier: "fast" | "ultrafast" | undefined;
   readonly builtInModelRuntimeRoute: BuiltInModelRuntimeRoute | undefined;
 }): boolean {
   return (
     Boolean(args.chatThreadId) &&
     isPiExecutionRoute({
-      selectedModel: args.selectedModel,
+      catalogModel: args.catalogModel,
       modelProviderType: args.modelProviderType,
       runtimeProviderType:
         args.builtInModelRuntimeRoute?.providerType ?? args.modelProviderType,
@@ -179,12 +180,13 @@ interface PiModelProviderConfigInput extends PiNativeModelProviderInput {
 
 function resolveCodexSubscriptionPiModelConfig(
   provider: PiModelProviderConfigInput,
+  routeClass: PiRouteClass | null,
   codexServiceTier: "fast" | "ultrafast" | undefined,
 ): PiModelConfig | null {
   if (
     provider.type !== "codex-oauth-token" ||
     codexServiceTier === "ultrafast" ||
-    !isPiGptModel(provider.selectedModel) ||
+    routeClass !== "gpt-codex" ||
     provider.inlineFirewall === true ||
     provider.credentialHeader !== undefined ||
     (provider.concreteType !== undefined &&
@@ -252,6 +254,7 @@ function resolveCodexSubscriptionPiModelConfig(
 
 function resolveCustomGatewayPiModelConfig(
   provider: PiModelProviderConfigInput,
+  routeClass: PiRouteClass | null,
   codexServiceTier: "fast" | "ultrafast" | undefined,
 ): PiModelConfig | null {
   if (
@@ -262,7 +265,7 @@ function resolveCustomGatewayPiModelConfig(
   ) {
     return null;
   }
-  const catalogProvider = piCatalogProvider(provider.selectedModel);
+  const catalogProvider = piCatalogProvider(routeClass);
   const baseUrl = provider.environment.OPENAI_BASE_URL;
   const model = provider.environment.OPENAI_MODEL;
   if (!catalogProvider || !baseUrl || !model) {
@@ -271,6 +274,7 @@ function resolveCustomGatewayPiModelConfig(
   const runtimeContract = piRuntimeContract({
     providerType: provider.type,
     selectedModel: provider.selectedModel,
+    routeClass,
     codexServiceTier,
   });
   const config = {
@@ -304,7 +308,7 @@ function resolveGptApiKeyPiModelConfig(
   const route = gptApiKeyPiRoute(provider.type);
   if (
     !route ||
-    !isPiGptModel(provider.selectedModel) ||
+    !provider.selectedModel ||
     provider.inlineFirewall === true ||
     provider.credentialHeader !== undefined ||
     (provider.concreteType !== undefined &&
@@ -373,7 +377,8 @@ function resolveGptApiKeyPiModelConfig(
 
 function resolvePiRouteModelConfig(
   provider: PiModelProviderConfigInput | null,
-  codexServiceTier: "fast" | "ultrafast" | undefined = undefined,
+  catalogModel: PiCatalogModel | null,
+  codexServiceTier: "fast" | "ultrafast" | undefined,
 ): PiModelConfig | null {
   if (!provider || !provider.selectedModel) {
     return null;
@@ -381,29 +386,40 @@ function resolvePiRouteModelConfig(
   if (provider.piModelConfig) {
     return provider.piModelConfig;
   }
-  if (isPiNativeModel(provider.selectedModel)) {
-    return resolvePiNativeModelConfig(provider);
+  const routeClass =
+    catalogModel?.model === provider.selectedModel
+      ? catalogModel.piRouteClass
+      : null;
+  if (routeClass === "claude-native" && catalogModel) {
+    return resolvePiNativeModelConfig(provider, catalogModel);
   }
   if (provider.type === "codex-oauth-token") {
-    return resolveCodexSubscriptionPiModelConfig(provider, codexServiceTier);
+    return resolveCodexSubscriptionPiModelConfig(
+      provider,
+      routeClass,
+      codexServiceTier,
+    );
   }
   if (provider.type === "custom-openai-responses") {
-    return resolveCustomGatewayPiModelConfig(provider, codexServiceTier);
+    return resolveCustomGatewayPiModelConfig(
+      provider,
+      routeClass,
+      codexServiceTier,
+    );
   }
-  if (
-    isGptApiKeyPiProviderType(provider.type) &&
-    isPiGptModel(provider.selectedModel)
-  ) {
+  if (isGptApiKeyPiProviderType(provider.type) && routeClass === "gpt-codex") {
     return resolveGptApiKeyPiModelConfig(provider, codexServiceTier);
   }
   return resolveResponsesPiModelConfig(
     { ...provider, selectedModel: provider.selectedModel },
+    routeClass,
     codexServiceTier,
   );
 }
 
 function resolveResponsesPiModelConfig(
   provider: PiModelProviderConfigInput & { readonly selectedModel: string },
+  routeClass: PiRouteClass | null,
   codexServiceTier: "fast" | "ultrafast" | undefined,
 ): PiModelConfig | null {
   if (provider.inlineFirewall) {
@@ -458,6 +474,7 @@ function resolveResponsesPiModelConfig(
   const runtimeContract = piRuntimeContract({
     providerType: provider.type,
     selectedModel: provider.selectedModel,
+    routeClass,
     codexServiceTier,
   });
   const config = {
@@ -488,10 +505,15 @@ function resolveResponsesPiModelConfig(
 /** Apply the run's effective effort to every Pi dialect before capturing its launch context. */
 export function resolvePiSandboxModelConfig(
   provider: PiModelProviderConfigInput | null,
+  catalogModel: PiCatalogModel | null,
   codexServiceTier: "fast" | "ultrafast" | undefined = undefined,
   reasoningEffort: ReasoningEffort | null | undefined = undefined,
 ): PiModelConfig | null {
-  const config = resolvePiRouteModelConfig(provider, codexServiceTier);
+  const config = resolvePiRouteModelConfig(
+    provider,
+    catalogModel,
+    codexServiceTier,
+  );
   if (
     !config ||
     isOkouRunModel(provider?.selectedModel) ||

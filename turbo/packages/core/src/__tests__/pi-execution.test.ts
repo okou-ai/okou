@@ -1,5 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { isPiExecutionRoute } from "../pi-execution";
+import {
+  isPiExecutionRoute,
+  piCatalogModel,
+  piRouteCatalogIdentities,
+  type PiCatalogSource,
+  type PiRouteClass,
+} from "../pi-execution";
+import { SEEDED_MODEL_CATALOG } from "./seeded-model-catalog";
+
+function catalogModel(model: string) {
+  return piCatalogModel(SEEDED_MODEL_CATALOG, model);
+}
 
 describe("DeepSeek Pi admission", () => {
   it.each([
@@ -17,7 +28,7 @@ describe("DeepSeek Pi admission", () => {
     (modelProviderType, runtimeProviderType, supported) => {
       expect(
         isPiExecutionRoute({
-          selectedModel: "deepseek-v4.1-flash",
+          catalogModel: catalogModel("deepseek-v4.1-flash"),
           modelProviderType,
           runtimeProviderType,
           codexServiceTier: undefined,
@@ -37,7 +48,7 @@ describe("DeepSeek Pi admission", () => {
       ]) {
         expect(
           isPiExecutionRoute({
-            selectedModel,
+            catalogModel: catalogModel(selectedModel),
             modelProviderType,
             runtimeProviderType: "deepseek",
             codexServiceTier: undefined,
@@ -52,7 +63,7 @@ describe("DeepSeek Pi admission", () => {
     (selectedModel) => {
       expect(
         isPiExecutionRoute({
-          selectedModel,
+          catalogModel: catalogModel(selectedModel),
           modelProviderType: "built-in",
           runtimeProviderType: "deepseek",
           codexServiceTier: undefined,
@@ -68,7 +79,7 @@ describe("Okou preset Pi admission", () => {
     (selectedModel) => {
       expect(
         isPiExecutionRoute({
-          selectedModel,
+          catalogModel: catalogModel(selectedModel),
           modelProviderType: "built-in",
           runtimeProviderType: "openrouter-codex",
           codexServiceTier: undefined,
@@ -93,11 +104,98 @@ describe("Okou preset Pi admission", () => {
       ]) {
         expect(
           isPiExecutionRoute({
-            selectedModel,
+            catalogModel: catalogModel(selectedModel),
             ...rejected,
           }),
         ).toBe(false);
       }
     },
   );
+});
+
+describe("catalog-driven Pi admission", () => {
+  it("admits a new catalog model through its catalog route alone", () => {
+    const catalog: PiCatalogSource = {
+      models: [{ model: "acme-luna-preview", piRouteClass: "gpt-codex" }],
+      routes: [
+        {
+          model: "acme-luna-preview",
+          providerType: "built-in",
+          concreteProviderType: "openai-api-key",
+          subscriptionType: null,
+          upstreamModel: "gpt-6-luna",
+          enabled: true,
+          priority: 0,
+          serviceTiers: ["priority"],
+        },
+      ],
+    };
+    const route = {
+      catalogModel: piCatalogModel(catalog, "acme-luna-preview"),
+      modelProviderType: "built-in",
+      runtimeProviderType: "openai-api-key",
+      codexServiceTier: undefined,
+    };
+    expect(isPiExecutionRoute(route)).toBe(true);
+    expect(piRouteCatalogIdentities(route)).toStrictEqual([
+      { provider: "openai", model: "gpt-6-luna" },
+    ]);
+  });
+
+  function deepSeekV4Catalog(
+    piRouteClass: PiRouteClass,
+    openRouterUpstream: string,
+  ): PiCatalogSource {
+    return {
+      models: [{ model: "deepseek-v4-flash", piRouteClass }],
+      routes: SEEDED_MODEL_CATALOG.routes
+        .filter((route) => {
+          return route.model === "deepseek-v4-flash";
+        })
+        .map((route) => {
+          return route.providerType === "built-in" &&
+            route.concreteProviderType === "openrouter-codex"
+            ? { ...route, upstreamModel: openRouterUpstream }
+            : route;
+        }),
+    };
+  }
+
+  it.each([
+    ["deepseek", true],
+    ["gpt-codex", false],
+  ] as const)(
+    "lets the %s route class decide the deepseek BYOK route",
+    (piRouteClass, admitted) => {
+      const catalog = deepSeekV4Catalog(
+        piRouteClass,
+        "deepseek/deepseek-v4-flash",
+      );
+      expect(
+        isPiExecutionRoute({
+          catalogModel: piCatalogModel(catalog, "deepseek-v4-flash"),
+          modelProviderType: "deepseek",
+          runtimeProviderType: "deepseek",
+          codexServiceTier: undefined,
+        }),
+      ).toBe(admitted);
+    },
+  );
+
+  it("follows the catalog route's upstream model for the runtime identity", () => {
+    const catalog = deepSeekV4Catalog(
+      "deepseek",
+      "deepseek/deepseek-v4.1-flash",
+    );
+    const route = {
+      catalogModel: piCatalogModel(catalog, "deepseek-v4-flash"),
+      modelProviderType: "built-in",
+      runtimeProviderType: "openrouter-codex",
+      codexServiceTier: undefined,
+    };
+    expect(piRouteCatalogIdentities(route)).toStrictEqual([
+      { provider: "openrouter", model: "deepseek/deepseek-v4.1-flash" },
+    ]);
+    expect(isPiExecutionRoute(route)).toBe(true);
+  });
 });

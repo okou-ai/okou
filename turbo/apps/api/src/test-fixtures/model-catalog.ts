@@ -2,7 +2,10 @@ import { and, eq } from "drizzle-orm";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { modelRoutes } from "@okouai/db/schema/model-route";
 import { runModelCatalog } from "@okouai/db/schema/run-model-catalog";
+import type { PiRouteClass } from "@okouai/api-contracts/contracts/model-catalog";
+import { piCatalogModel, type PiCatalogModel } from "@okouai/core/pi-execution";
 import { db } from "../lib/db";
+import { loadModelCatalog } from "../signals/services/model-catalog.service";
 
 /**
  * Operators switch the system default directly in the database. Clear the old
@@ -233,4 +236,38 @@ export async function updateBuiltInRouteFixture(args: {
   if (updated.length !== 1) {
     throw new Error("Expected one Built-in route to be updated");
   }
+}
+
+/** The model's Pi admission projection from the current database catalog. */
+export async function loadPiCatalogModelFixture(
+  model: string,
+): Promise<PiCatalogModel | null> {
+  return piCatalogModel(await loadModelCatalog(db()), model);
+}
+
+/**
+ * Operators set a model's Pi route class directly in the database. The
+ * returned restore puts the previous class back.
+ */
+export async function setModelPiRouteClassFixture(
+  model: string,
+  piRouteClass: PiRouteClass | null,
+): Promise<() => Promise<void>> {
+  const [previous] = await db()
+    .select({ piRouteClass: runModelCatalog.piRouteClass })
+    .from(runModelCatalog)
+    .where(eq(runModelCatalog.model, model));
+  if (!previous) {
+    throw new Error(`Expected catalog model ${model}`);
+  }
+  await db()
+    .update(runModelCatalog)
+    .set({ piRouteClass })
+    .where(eq(runModelCatalog.model, model));
+  return async () => {
+    await db()
+      .update(runModelCatalog)
+      .set({ piRouteClass: previous.piRouteClass })
+      .where(eq(runModelCatalog.model, model));
+  };
 }

@@ -188,8 +188,38 @@ export function isCatalogUltrafastServiceTierSupported(
 }
 
 /**
- * Plan access of a model on a route, from the model's catalog row. A model
- * outside the catalog is never allowed on a restricted Built-in route.
+ * The catalog model a selected ID names: the catalog model itself, or the one
+ * catalog model whose route `upstream_model` it is (a provider-prefixed ID
+ * such as `deepseek/deepseek-v4-flash`). An upstream ID shared by several
+ * catalog models, or any other ID, names no catalog model. Replacement is not
+ * followed here.
+ */
+export function catalogModelForSelectedId(
+  catalog: ModelCatalog,
+  selectedId: string,
+): string | null {
+  const id = selectedId.trim();
+  if (catalog.byModel.has(id)) {
+    return id;
+  }
+  const models = new Set(
+    catalog.routes
+      .filter((route) => {
+        return route.upstreamModel === id;
+      })
+      .map((route) => {
+        return route.model;
+      }),
+  );
+  const [only] = models;
+  return models.size === 1 && only !== undefined ? only : null;
+}
+
+/**
+ * Plan access of a model on a route, from the model's catalog row. A selected
+ * ID is normalized through the catalog first (see
+ * `catalogModelForSelectedId`). A model outside the catalog is never allowed
+ * on a restricted Built-in route.
  */
 export function catalogRunModelRouteAccess(
   catalog: ModelCatalog,
@@ -201,7 +231,7 @@ export function catalogRunModelRouteAccess(
     return "allowed";
   }
   return getCatalogRunModelRouteAccess(
-    catalog.byModel.get(model.trim()),
+    catalog.byModel.get(catalogModelForSelectedId(catalog, model) ?? ""),
     providerType,
     restrictedBuiltInModels,
   );

@@ -3,6 +3,7 @@ import {
   modelCatalogContract,
   type ModelCatalogResponse,
 } from "@okouai/api-contracts/contracts/model-catalog";
+import { piCatalogModel, type PiCatalogModel } from "@okouai/core/pi-execution";
 import { apiClient$ } from "../api-client.ts";
 import { accept } from "../../lib/accept.ts";
 
@@ -60,6 +61,8 @@ export interface ModelCatalog {
   ): boolean;
   /** Distinct selectable provider route types with an enabled route. */
   providerTypes(model: string): readonly string[];
+  /** The model's Pi admission projection; null outside the catalog. */
+  piModel(model: string | null | undefined): PiCatalogModel | null;
 }
 
 function unique(values: readonly string[]): string[] {
@@ -210,6 +213,9 @@ export function createModelCatalog(
           return route.providerType;
         }),
       );
+    },
+    piModel(model) {
+      return piCatalogModel(response, model);
     },
   };
 }

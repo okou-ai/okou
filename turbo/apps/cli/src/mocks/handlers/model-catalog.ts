@@ -146,6 +146,7 @@ export const MODEL_CATALOG_RESPONSE: ModelCatalogResponse = {
         priceTier,
         builtInOnRestrictedPlans: model === "okou-1.0",
         ownRoutesOnRestrictedPlans: true,
+        piRouteClass: null,
       };
     },
   ),

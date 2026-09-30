@@ -19,7 +19,7 @@ import {
   resolveModelSelectionPin,
   isReplacedModelSelection,
 } from "./model-selection.service";
-import { loadModelCatalog } from "./model-catalog.service";
+import { loadModelCatalog, type ModelCatalog } from "./model-catalog.service";
 import { isCatalogFastServiceTierSupported } from "./model-route-capabilities.service";
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 
@@ -39,8 +39,11 @@ export async function resolveChatInputModelSelection(
     readonly reasoningEffort?: ReasoningEffort;
     /** The organization's plan, when the caller already read it in this request. */
     readonly orgPlanCapabilities?: OrgPlanCapabilities | null;
+    /** The request's catalog snapshot, when the caller already loaded it. */
+    readonly catalog?: ModelCatalog;
   },
 ) {
+  const catalog = args.catalog ?? (await loadModelCatalog(db));
   let selectedModel = args.selectedModel;
   let modelProviderType: string | null = null;
   let codexServiceTier = args.codexServiceTier;
@@ -54,9 +57,9 @@ export async function resolveChatInputModelSelection(
           selectedModel,
         },
         orgPlanCapabilities: args.orgPlanCapabilities,
+        catalog,
       })
     : null;
-  const catalog = await loadModelCatalog(db);
   if (
     selected &&
     "status" in selected &&

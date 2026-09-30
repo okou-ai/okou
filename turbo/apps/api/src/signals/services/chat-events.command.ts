@@ -37,11 +37,8 @@ import {
 } from "../external/realtime";
 import { nowDate } from "../../lib/time";
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
-import {
-  loadModelCatalog,
-  resolveCatalogRunModel,
-  type ModelCatalog,
-} from "./model-catalog.service";
+import { loadModelCatalog, type ModelCatalog } from "./model-catalog.service";
+import { resolveRunSelectionModel } from "./model-selection.service";
 import type { Tx } from "../../lib/db-types";
 import type { AuthContext } from "../../types/auth";
 import type {
@@ -801,6 +798,7 @@ type SendThread = ExistingSendThread | NewSendThread;
 
 async function resolveExistingSendThread(
   db: Db,
+  catalog: ModelCatalog,
   args: NormalSendArgs,
   thread: ExistingSendThreadRow,
   agentId: string,
@@ -813,11 +811,7 @@ async function resolveExistingSendThread(
     computerUseHostId: thread.computerUseHostId,
     cloudBrowserEnabled: thread.cloudBrowserEnabled,
   };
-  const runSettings = requestedThreadRunSettings(
-    await loadModelCatalog(db),
-    args.body,
-    current,
-  );
+  const runSettings = requestedThreadRunSettings(catalog, args.body, current);
   if ("status" in runSettings) {
     return runSettings;
   }
@@ -843,6 +837,7 @@ async function resolveExistingSendThread(
 
 async function resolveNewSendThread(
   db: Db,
+  catalog: ModelCatalog,
   args: NormalSendArgs,
   orgPlanCapabilities: OrgPlanCapabilities | null | undefined,
 ): Promise<NewSendThread | NormalSendFailure> {
@@ -859,20 +854,16 @@ async function resolveNewSendThread(
         )
       : null;
   const defaults = await loadNewChatThreadDefaults(db, member);
-  const runSettings = requestedThreadRunSettings(
-    await loadModelCatalog(db),
-    args.body,
-    {
-      selectedModel: initialModel?.selectedModel ?? null,
-      modelSettings: defaults.modelSettings,
-      codexServiceTier:
-        initialModel?.serviceTier === "priority"
-          ? "fast"
-          : initialModel?.serviceTier === "ultrafast"
-            ? "ultrafast"
-            : null,
-    },
-  );
+  const runSettings = requestedThreadRunSettings(catalog, args.body, {
+    selectedModel: initialModel?.selectedModel ?? null,
+    modelSettings: defaults.modelSettings,
+    codexServiceTier:
+      initialModel?.serviceTier === "priority"
+        ? "fast"
+        : initialModel?.serviceTier === "ultrafast"
+          ? "ultrafast"
+          : null,
+  });
   if ("status" in runSettings) {
     return runSettings;
   }
@@ -1261,6 +1252,7 @@ async function appendNormalSendInput(
  */
 async function prepareNormalSend(
   db: Db,
+  catalog: ModelCatalog,
   args: NormalSendArgs,
   orgPlanCapabilities: OrgPlanCapabilities | null | undefined,
   signal: AbortSignal,
@@ -1322,11 +1314,12 @@ async function prepareNormalSend(
     "thread" in authorized
       ? await resolveExistingSendThread(
           db,
+          catalog,
           args,
           authorized.thread,
           authorized.agent.id,
         )
-      : await resolveNewSendThread(db, args, orgPlanCapabilities);
+      : await resolveNewSendThread(db, catalog, args, orgPlanCapabilities);
   signal.throwIfAborted();
   if ("status" in thread) {
     return thread;
@@ -1396,19 +1389,22 @@ export const sendNormalEvent$ = command(
         ? undefined
         : await get(args.orgPlanCapabilities$);
     signal.throwIfAborted();
-    // An explicit model the catalog (or this runtime) cannot resolve is an
-    // error, never a silent switch to the system default. Stored thread
-    // selections keep their existing fallback.
+    // One catalog snapshot for the whole send. An explicit model the catalog
+    // cannot resolve is an error, never a silent switch to the system
+    // default; stored thread selections keep their existing fallback. The
+    // pick resolves the captured model with the same function
+    // (`resolveRunSelectionModel`) against the catalog current at the pick.
+    const catalog = await loadModelCatalog(db);
+    signal.throwIfAborted();
     if (
       args.body.model !== undefined &&
-      resolveCatalogRunModel(await loadModelCatalog(db), args.body.model) ===
-        null
+      resolveRunSelectionModel(catalog, args.body.model) === null
     ) {
       return badRequestMessage(`Unknown model "${args.body.model}"`);
     }
-    signal.throwIfAborted();
     const prepared = await prepareNormalSend(
       db,
+      catalog,
       args,
       orgPlanCapabilities,
       signal,
@@ -1432,6 +1428,7 @@ export const sendNormalEvent$ = command(
       ...thread.runSettings,
       reasoningEffort: args.body.runOptions?.reasoningEffort,
       orgPlanCapabilities,
+      catalog,
     });
     signal.throwIfAborted();
     if ("status" in modelSelection) {

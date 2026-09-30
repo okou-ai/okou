@@ -17,6 +17,8 @@ type CatalogModel = Readonly<{
   builtInOnRestrictedPlans: boolean;
   /** Restricted plans may run the model on their own provider routes. */
   ownRoutesOnRestrictedPlans: boolean;
+  /** Pi route class (`run_model_catalog.pi_route_class`); null = not Pi-eligible. */
+  piRouteClass: string | null;
 }>;
 
 export type CatalogRoute = Readonly<{
@@ -321,6 +323,7 @@ export async function loadModelCatalog(
         replacedBy: runModelCatalog.replacedBy,
         builtInOnRestrictedPlans: runModelCatalog.builtInOnRestrictedPlans,
         ownRoutesOnRestrictedPlans: runModelCatalog.ownRoutesOnRestrictedPlans,
+        piRouteClass: runModelCatalog.piRouteClass,
       })
       .from(runModelCatalog)
       .orderBy(asc(runModelCatalog.sortOrder), asc(runModelCatalog.model)),

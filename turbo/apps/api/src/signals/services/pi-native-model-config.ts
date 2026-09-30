@@ -1,5 +1,8 @@
 import { piNativeCatalogModelSchema } from "@okouai/api-contracts/contracts/pi-native-models";
-import { isPiNativeRoute } from "@okouai/core/pi-execution";
+import {
+  isPiNativeRoute,
+  type PiCatalogModel,
+} from "@okouai/core/pi-execution";
 import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
 import {
   piModelConfigV4Schema,
@@ -34,10 +37,14 @@ export interface PiNativeModelProviderInput {
   };
 }
 
-function nativeConfigIdentity(provider: PiNativeModelProviderInput) {
+function nativeConfigIdentity(
+  provider: PiNativeModelProviderInput,
+  catalogEntry: PiCatalogModel,
+) {
   const catalogModel = piNativeCatalogModelSchema.parse(provider.selectedModel);
   if (
-    !isPiNativeRoute(provider.type, catalogModel) ||
+    catalogEntry.model !== catalogModel ||
+    !isPiNativeRoute(provider.type, catalogEntry) ||
     !provider.credentialOwner
   ) {
     throw new PiNativeConfigurationError(
@@ -118,8 +125,9 @@ function resolveNativeBedrockConfig(
 /** Build native launch metadata from the selected provider, never ambient auth. */
 export function resolvePiNativeModelConfig(
   provider: PiNativeModelProviderInput,
+  catalogModel: PiCatalogModel,
 ): PiModelConfigV4 {
-  const common = nativeConfigIdentity(provider);
+  const common = nativeConfigIdentity(provider, catalogModel);
   const route = provider.concreteType ?? provider.type;
   const environment = provider.environment;
   if (route === "aws-bedrock") {

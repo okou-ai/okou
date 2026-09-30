@@ -89,11 +89,21 @@ Migrations:
   two restricted-plan flags to `run_model_catalog` with defaults and seeds
   them from the former code allowlist. Additive; the previous API ignores the
   columns.
-- Unrecognized rows `gpt-5.6-terra`, `okou-1.0-pro`, `okou-1.0-max`: with
-  `replaced_by` null they read as active under the end-state rule, and only
-  `allow_new_org_policy = false` plus missing routes keep them unusable. The
-  owner must delete, retire (into an approved replacement) or route each one
-  before `allow_new_org_policy` is dropped; see the design note.
+- `1300_model_catalog_pi_route_class` (in progress in this PR) adds nullable
+  `run_model_catalog.pi_route_class` with a check constraint and seeds it
+  from the former `@okouai/core` Pi policy. Additive; the previous API
+  ignores the column and keeps its static Pi policy.
+- Unrecognized rows `gpt-5.6-terra`, `okou-1.0-pro`, `okou-1.0-max`: each
+  needs a replacement target from the owner (not yet decided, not seeded).
+  Until then they stay `replaced_by` null with no routes and
+  `allow_new_org_policy = false`, which reads as active under the end-state
+  rule; `allow_new_org_policy` cannot be dropped before they are retired.
+  See the design note's Decisions.
+- Queue pick: an input enqueued by the previous API is re-resolved by the new
+  API against the catalog at the pick (provider-prefixed upstream IDs and
+  replacements included); runs that already started are unaffected. The
+  pick no longer seeds per-organization policies under the policy advisory
+  lock; the projected system default replaces that write.
 
 Old and new versions during deploy:
 

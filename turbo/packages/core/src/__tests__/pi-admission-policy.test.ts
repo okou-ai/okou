@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   ACTIVE_RUN_MODELS,
-  getBuiltInModelRouteCandidates,
   getProvidersForModel,
 } from "@okouai/api-contracts/contracts/model-providers";
 import {
@@ -9,17 +8,15 @@ import {
   modelProductLine,
 } from "../model-product-line";
 import {
-  isPiDeepSeekModel,
   isPiExecutionRoute,
-  isPiGptModel,
-  isPiNativeModel,
   isPiPolicyAdmittedRoute,
   isPiRouteRuntimeCapable,
+  piCatalogModel,
   piRouteCatalogIdentities,
-  PI_MODEL_POLICY,
-  type PiModelPolicyCoversEveryActiveModel,
+  type PiExecutionRouteArgs,
 } from "../pi-execution";
 import { PI_RUNTIME_RESOLVABLE_MODELS } from "../pi-runtime-capability";
+import { SEEDED_MODEL_CATALOG } from "./seeded-model-catalog";
 
 /**
  * Every active model against every provider in its
@@ -37,6 +34,7 @@ import { PI_RUNTIME_RESOLVABLE_MODELS } from "../pi-runtime-capability";
  * unexplained diff is a regression.
  */
 const EXPECTED_ADMITTED_ROUTES = [
+  "okou-1.0 | built-in | built-in | standard",
   "okou-1.0 | built-in | openrouter-codex | standard",
   "claude-opus-5-5 | built-in | built-in | standard",
   "claude-opus-5-5 | built-in | built-in | fast",
@@ -204,6 +202,40 @@ function label(combination: Combination): string {
   ].join(" | ");
 }
 
+function routeArgs(combination: Combination): PiExecutionRouteArgs {
+  return {
+    catalogModel: piCatalogModel(
+      SEEDED_MODEL_CATALOG,
+      combination.selectedModel,
+    ),
+    modelProviderType: combination.modelProviderType,
+    runtimeProviderType: combination.runtimeProviderType,
+    codexServiceTier: combination.codexServiceTier,
+  };
+}
+
+function seededModelsWithRouteClass(
+  routeClass: string | null,
+): readonly string[] {
+  return SEEDED_MODEL_CATALOG.models
+    .filter((entry) => {
+      return entry.piRouteClass === routeClass;
+    })
+    .map((entry) => {
+      return entry.model;
+    });
+}
+
+function seededBuiltInProviderTypes(selectedModel: string): readonly string[] {
+  const model = piCatalogModel(SEEDED_MODEL_CATALOG, selectedModel);
+  if (!model) {
+    throw new Error(`Seeded catalog has no row for ${selectedModel}`);
+  }
+  return model.builtIn.map((route) => {
+    return route.concreteProviderType;
+  });
+}
+
 function enumerateCombinations(): readonly Combination[] {
   const combinations: Combination[] = [];
   for (const selectedModel of ACTIVE_RUN_MODELS) {
@@ -215,14 +247,7 @@ function enumerateCombinations(): readonly Combination[] {
     for (const modelProviderType of providers) {
       const runtimes =
         modelProviderType === "built-in"
-          ? [
-              "built-in",
-              ...getBuiltInModelRouteCandidates(selectedModel).map(
-                (candidate) => {
-                  return candidate.providerType;
-                },
-              ),
-            ]
+          ? ["built-in", ...seededBuiltInProviderTypes(selectedModel)]
           : [modelProviderType];
       for (const runtimeProviderType of runtimes) {
         for (const codexServiceTier of [undefined, "fast"] as const) {
@@ -239,47 +264,27 @@ function enumerateCombinations(): readonly Combination[] {
   return combinations;
 }
 
-describe("Pi admission policy table", () => {
-  it("records a decision for exactly the active run models", () => {
-    expect(Object.keys(PI_MODEL_POLICY).sort()).toStrictEqual(
-      [...ACTIVE_RUN_MODELS].sort(),
-    );
-    // The type alias fails `tsc` when the table and `ActiveRunModel` diverge,
-    // so a new `SUPPORTED_RUN_MODELS` entry cannot compile without a decision.
-    const coversEveryActiveModel: PiModelPolicyCoversEveryActiveModel = true;
-    expect(coversEveryActiveModel).toBe(true);
-  });
-
-  it("explains every model kept off the Pi loop", () => {
-    const excluded = Object.entries(PI_MODEL_POLICY).filter(([, policy]) => {
-      return !policy.pi;
-    });
-    expect(
-      excluded.map(([model]) => {
-        return model;
-      }),
-    ).toStrictEqual(["claude-fable-5-1", "gpt-6-astra"]);
-    for (const [model, policy] of excluded) {
-      expect(policy.pi, model).toBe(false);
-      if (!policy.pi) {
-        expect(policy.exception.length, model).toBeGreaterThan(0);
-        expect(policy.reason.length, model).toBeGreaterThan(0);
-      }
+describe("Pi route classes in the seeded catalog", () => {
+  it("carries a catalog row for every active run model", () => {
+    for (const model of ACTIVE_RUN_MODELS) {
+      expect(piCatalogModel(SEEDED_MODEL_CATALOG, model)?.model, model).toBe(
+        model,
+      );
     }
   });
 
-  it("keeps the family sets credential capture and billing read", () => {
+  it("keeps the route classes credential capture and billing read", () => {
     // `agent-run-create.service.ts` captures a provider secret for the native
-    // and DeepSeek families, and the Pi usage services select API-owned billing
-    // entries for the GPT family. Editing a `route` in the table moves those
+    // and DeepSeek classes, and the Pi usage services select API-owned billing
+    // entries for the GPT class. Moving a model's `pi_route_class` moves those
     // decisions, so the sets are pinned here and not only through admission.
-    expect(ACTIVE_RUN_MODELS.filter(isPiNativeModel)).toStrictEqual([
+    expect(seededModelsWithRouteClass("claude-native")).toStrictEqual([
       "claude-opus-5-5",
       "claude-opus-5",
       "claude-sonnet-5-5",
       "claude-sonnet-5",
     ]);
-    expect(ACTIVE_RUN_MODELS.filter(isPiGptModel)).toStrictEqual([
+    expect(seededModelsWithRouteClass("gpt-codex")).toStrictEqual([
       "okou-1.0",
       "gpt-6.1-sol",
       "gpt-6-sol",
@@ -287,32 +292,29 @@ describe("Pi admission policy table", () => {
       "gpt-5.6-sol",
       "gpt-5.6-luna",
     ]);
-    expect(ACTIVE_RUN_MODELS.filter(isPiDeepSeekModel)).toStrictEqual([
+    expect(seededModelsWithRouteClass("deepseek")).toStrictEqual([
       "deepseek-v4.1-flash",
       "deepseek-v4-flash",
     ]);
   });
 
   it("keeps every frontier product line on its vendor harness", () => {
-    // The epic's rule, enforced rather than restated per model: a frontier line
-    // runs on its vendor's harness, everything else is Pi-eligible. Adding a
-    // Fable or Astra model with `pi: true` fails here instead of quietly
-    // reaching Pi.
-    const frontier = Object.entries(PI_MODEL_POLICY).filter(([model]) => {
-      return isFrontierModelProductLine(model);
+    // The epic's rule, enforced on the catalog data rather than restated per
+    // model: a frontier line runs on its vendor's harness. Seeding a Fable or
+    // Astra model with a Pi route class fails here instead of quietly reaching
+    // Pi.
+    const frontier = SEEDED_MODEL_CATALOG.models.filter((entry) => {
+      return isFrontierModelProductLine(entry.model);
     });
     // Without this the loop below would pass on an empty set, which is exactly
     // what a broken classifier produces.
     expect(
-      frontier.map(([model]) => {
-        return model;
+      frontier.map((entry) => {
+        return entry.model;
       }),
     ).toStrictEqual(["claude-fable-5-1", "gpt-6-astra"]);
-    for (const [model, policy] of frontier) {
-      expect(policy.pi, model).toBe(false);
-      if (!policy.pi) {
-        expect(policy.exception, model).toBe("frontier-vendor-harness");
-      }
+    for (const entry of frontier) {
+      expect(entry.piRouteClass, entry.model).toBeNull();
     }
   });
 
@@ -326,22 +328,6 @@ describe("Pi admission policy table", () => {
     });
     expect(unclassified).toStrictEqual([]);
   });
-
-  it("classifies a retired or unknown model into no family", () => {
-    for (const model of [
-      "claude-fable-5",
-      "gpt-5.5",
-      "claude-opus-4-8",
-      "claude-sonnet-4-6",
-      "deepseek-v4-pro",
-      "deepseek-flash",
-      null,
-    ]) {
-      expect(isPiNativeModel(model), String(model)).toBe(false);
-      expect(isPiGptModel(model), String(model)).toBe(false);
-      expect(isPiDeepSeekModel(model), String(model)).toBe(false);
-    }
-  });
 });
 
 describe("Pi admission decisions", () => {
@@ -350,7 +336,7 @@ describe("Pi admission decisions", () => {
     expect(combinations).toHaveLength(ENUMERATED_COMBINATIONS);
     const admitted = combinations
       .filter((combination) => {
-        return isPiExecutionRoute(combination);
+        return isPiExecutionRoute(routeArgs(combination));
       })
       .map(label);
     expect(admitted).toStrictEqual([...EXPECTED_ADMITTED_ROUTES]);
@@ -368,11 +354,15 @@ describe("Pi admission decisions", () => {
     for (const combination of fableRoutes) {
       // Both layers, because the capability gate would refuse these routes on
       // its own now that the identity is gone. Asserting only the end result
-      // would let the table silently readmit the line.
-      expect(isPiPolicyAdmittedRoute(combination), label(combination)).toBe(
-        false,
-      );
-      expect(isPiExecutionRoute(combination), label(combination)).toBe(false);
+      // would let the catalog silently readmit the line.
+      expect(
+        isPiPolicyAdmittedRoute(routeArgs(combination)),
+        label(combination),
+      ).toBe(false);
+      expect(
+        isPiExecutionRoute(routeArgs(combination)),
+        label(combination),
+      ).toBe(false);
     }
   });
 
@@ -384,7 +374,7 @@ describe("Pi admission decisions", () => {
     "admits %s when its Pi 0.87.1 catalog route is available",
     (selectedModel, providerType) => {
       const route = {
-        selectedModel,
+        catalogModel: piCatalogModel(SEEDED_MODEL_CATALOG, selectedModel),
         modelProviderType: providerType,
         runtimeProviderType: providerType,
         codexServiceTier: undefined,
@@ -401,10 +391,10 @@ describe("Pi runtime capability data", () => {
     for (const combination of enumerateCombinations()) {
       // Enumerated before the capability gate, so a missing entry cannot hide
       // by removing its own route from the comparison.
-      if (!isPiPolicyAdmittedRoute(combination)) {
+      if (!isPiPolicyAdmittedRoute(routeArgs(combination))) {
         continue;
       }
-      for (const identity of piRouteCatalogIdentities(combination)) {
+      for (const identity of piRouteCatalogIdentities(routeArgs(combination))) {
         requested.add(`${identity.provider} | ${identity.model}`);
       }
     }
@@ -415,6 +405,23 @@ describe("Pi runtime capability data", () => {
         });
       },
     );
-    expect([...requested].sort()).toStrictEqual([...declared].sort());
+    // The catalog lets any organization's custom Responses gateway serve
+    // okou-1.0, so route rules admit it there; the pinned runtime cannot
+    // resolve that identity, and the capability gate keeps the route off Pi.
+    const capabilityRefused = ["openai | okou-1.0"];
+    expect([...requested].sort()).toStrictEqual(
+      [...declared, ...capabilityRefused].sort(),
+    );
+  });
+
+  it("refuses okou-1.0 on a custom Responses gateway at the capability gate", () => {
+    const route = {
+      catalogModel: piCatalogModel(SEEDED_MODEL_CATALOG, "okou-1.0"),
+      modelProviderType: "custom-openai-responses",
+      runtimeProviderType: "custom-openai-responses",
+      codexServiceTier: undefined,
+    };
+    expect(isPiPolicyAdmittedRoute(route)).toBe(true);
+    expect(isPiRouteRuntimeCapable(route)).toBe(false);
   });
 });
