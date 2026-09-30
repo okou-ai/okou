@@ -110,18 +110,16 @@ describe("chatEvents schema", () => {
     const checkNames = config.checks.map((check) => {
       return check.name;
     });
-    expect(checkNames).toEqual(
-      expect.arrayContaining([
-        "chat_events_input_user_message_payload_check",
-        "chat_events_input_payload_content_check",
-        "chat_events_failure_reason_event_type_check",
-        "chat_events_official_workflow_queue_claim_check",
-        "chat_events_event_type_check",
-        "chat_events_context_pair_check",
-        "chat_events_context_type_check",
-        "chat_events_input_context_type_check",
-      ]),
-    );
+    expect([...checkNames].sort()).toStrictEqual([
+      "chat_events_context_pair_check",
+      "chat_events_context_type_check",
+      "chat_events_event_type_check",
+      "chat_events_failure_reason_event_type_check",
+      "chat_events_input_context_type_check",
+      "chat_events_input_payload_content_check",
+      "chat_events_input_user_message_payload_check",
+      "chat_events_official_workflow_queue_claim_check",
+    ]);
     const officialWorkflowQueueClaimCheck = config.checks.find((check) => {
       return check.name === "chat_events_official_workflow_queue_claim_check";
     });
@@ -154,14 +152,6 @@ describe("chatEvents schema", () => {
     );
     expect(failureReasonEventTypeSql).toContain(
       '"chat_events"."event_type" = \'run.failed\'',
-    );
-    expect(checkNames).not.toEqual(
-      expect.arrayContaining([
-        "chat_events_input_user_message_check",
-        "chat_events_input_content_check",
-        "chat_events_goal_open_content_check",
-        "chat_events_goal_close_content_check",
-      ]),
     );
   });
 

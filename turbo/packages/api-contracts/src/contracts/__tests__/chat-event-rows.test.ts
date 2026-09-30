@@ -280,16 +280,21 @@ describe("canonical row projection preserves the public ChatEvent contract", () 
     }).toThrow();
   });
 
-  it("emits the canonical interrupt run as interruptsRunId, never runId", () => {
+  it("serializes a canonical interrupt with its target run", () => {
     const target = "00000000-0000-4000-8000-000000000010";
     const projected = chatEventFromRow(
       canonicalRow({ eventType: "control.interrupt", runId: target }),
     );
-    expect(projected).toMatchObject({
+    expect(JSON.parse(JSON.stringify(projected))).toStrictEqual({
+      id: "00000000-0000-4000-8000-000000000003",
+      threadId: "00000000-0000-4000-8000-000000000002",
+      content: null,
+      seqId: 2,
+      sequenceNumber: null,
+      createdAt: CREATED_AT,
       eventType: "control.interrupt",
       interruptsRunId: target,
     });
-    expect(projected.runId).toBeUndefined();
   });
 
   it("defensively hides citation envelopes from historical cached rows", () => {
@@ -362,14 +367,25 @@ describe("canonical row projection preserves the public ChatEvent contract", () 
 
   it("accepts an optional failure reason only on failed runs", () => {
     const runId = "00000000-0000-4000-8000-000000000013";
-    const historical = chatEventFromRow(
+    const withoutReason = chatEventFromRow(
       canonicalRow({
         eventType: "run.failed",
         runId,
-        payload: { error: "historical runner error" },
+        payload: { error: "runner error" },
       }),
     );
-    expect(historical).not.toHaveProperty("failureReason");
+    expect(JSON.parse(JSON.stringify(withoutReason))).toStrictEqual({
+      id: "00000000-0000-4000-8000-000000000003",
+      threadId: "00000000-0000-4000-8000-000000000002",
+      content: null,
+      runId,
+      seqId: 2,
+      sequenceNumber: null,
+      createdAt: CREATED_AT,
+      eventType: "run.failed",
+      error: "runner error",
+      runLifecycleEvent: "failed",
+    });
 
     const withReason = chatEventFromRow(
       canonicalRow({
