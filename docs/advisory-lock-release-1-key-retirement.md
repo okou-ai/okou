@@ -137,8 +137,9 @@ retried. The receipt, state transitions and grants commit together, so any
 failure rolls back every mutation. The ordinary receipt FK keeps its existing
 subscription parent; no new parent/row lock is introduced.
 
-Allocation completion matches the prepared organization, subscription, recipient,
-source/replacement allocation, source/target Price and package values. Grant
+Allocation completion matches the prepared organization, subscription, change
+kind/group, recipient, source/replacement allocation, source/target Price and
+package values. Grant
 identities still contain change/invoice/grant type; refundable amounts retain
 the original invoice-line source. Paid invoice replay cannot publish another
 grant or complete a change that was reassigned while amounts were prepared.

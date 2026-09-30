@@ -3942,6 +3942,8 @@ function fulfillmentChangeIdentity(change: UsagePackAllocationChangeRow) {
       usagePackAllocationChanges.usagePackSubscriptionId,
       change.usagePackSubscriptionId,
     ),
+    eq(usagePackAllocationChanges.kind, change.kind),
+    sql`${usagePackAllocationChanges.subscriptionChangeId} IS NOT DISTINCT FROM ${change.subscriptionChangeId}`,
     sql`${usagePackAllocationChanges.userId} IS NOT DISTINCT FROM ${change.userId}`,
     sql`${usagePackAllocationChanges.sourceAllocationId} IS NOT DISTINCT FROM ${change.sourceAllocationId}`,
     sql`${usagePackAllocationChanges.replacementAllocationId} IS NOT DISTINCT FROM ${change.replacementAllocationId}`,
