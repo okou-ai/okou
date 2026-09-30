@@ -695,9 +695,11 @@ describe("CHAT-02: model-first provider policies", () => {
         clientEventId,
       );
       await flushWaitUntilForTest();
+      // Deletion before pick invalidates the public policy pin; a wrong
+      // provider key is also an invalid request, not a substitute route.
       expect(picked).toMatchObject({
         eventType: "input.rejected",
-        error: boundary === "deleted" ? "provider_unavailable" : "bad_request",
+        error: "bad_request",
       });
     },
     90_000,
