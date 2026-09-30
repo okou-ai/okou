@@ -572,6 +572,18 @@ export function occurrences(haystack: string, needle: string): number {
   return haystack.split(needle).length - 1;
 }
 
+export async function readThreadMessagesAfterBackgroundWork(
+  chat: ReturnType<typeof createChatFilesBddApi>,
+  actor: ApiTestUser,
+  threadId: string,
+  predicate: (messages: readonly ChatEvent[]) => boolean,
+) {
+  await flushWaitUntilForTest();
+  const page = await chat.listThreadEvents(actor, threadId);
+  expect(predicate(page.events)).toBeTruthy();
+  return page;
+}
+
 export function createChatEventsFixture(context: TestContext) {
   const bdd = createBddApi(context);
 
@@ -1002,25 +1014,10 @@ export function createChatEventsFixture(context: TestContext) {
     };
   }
 
-  async function waitForThreadMessages(
-    actor: ApiTestUser,
-    threadId: string,
-    predicate: (messages: readonly ChatEvent[]) => boolean,
-  ) {
-    let page: Awaited<ReturnType<typeof chat.listThreadEvents>> | undefined;
-    await expect
-      .poll(async () => {
-        page = await chat.listThreadEvents(actor, threadId);
-        return predicate(page.events);
-      })
-      .toBe(true);
-    if (!page) {
-      throw new Error(
-        `Expected chat thread ${threadId} messages to be readable`,
-      );
-    }
-    return page;
-  }
+  const waitForThreadMessages = readThreadMessagesAfterBackgroundWork.bind(
+    null,
+    chat,
+  );
 
   async function waitForRunUserMessage(
     actor: ApiTestUser,

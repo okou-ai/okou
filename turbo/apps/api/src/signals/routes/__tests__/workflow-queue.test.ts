@@ -675,11 +675,12 @@ describe("workflow queue", () => {
     ]);
 
     await requestRunCompletionThroughSandbox(scenario, firstRunId);
-    await expect
-      .poll(() => {
+    await flushWaitUntilForTest();
+    await expect(
+      (() => {
         return workflowRunIds(automation.threadId);
-      })
-      .toHaveLength(2);
+      })(),
+    ).resolves.toHaveLength(2);
     const secondRunId = (await workflowRunIds(automation.threadId))[1];
     if (!secondRunId) {
       throw new Error("Expected one queued event to create the next run");
@@ -689,11 +690,12 @@ describe("workflow queue", () => {
     ).resolves.toHaveLength(1);
 
     await requestRunCompletionThroughSandbox(scenario, secondRunId);
-    await expect
-      .poll(() => {
+    await flushWaitUntilForTest();
+    await expect(
+      (() => {
         return workflowRunIds(automation.threadId);
-      })
-      .toHaveLength(3);
+      })(),
+    ).resolves.toHaveLength(3);
     await expect(
       pendingAutomationEvents(automation.threadId),
     ).resolves.toHaveLength(0);
@@ -836,11 +838,12 @@ describe("workflow queue", () => {
       // Freeing the slot picks the queued thread.
       await runsApi.requestCancelRun(scenario.actor, blockerRunId, [200]);
       await flushWaitUntilForTest();
-      await expect
-        .poll(() => {
+      await flushWaitUntilForTest();
+      await expect(
+        (() => {
           return workflowRunIds(automation.threadId);
-        })
-        .toHaveLength(2);
+        })(),
+      ).resolves.toHaveLength(2);
       await expect(
         pendingAutomationEvents(automation.threadId),
       ).resolves.toStrictEqual([]);

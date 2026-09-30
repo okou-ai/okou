@@ -106,13 +106,14 @@ async function createCancelledThread(args: {
   await flushWaitUntilForTest();
 
   let finished: ReturnType<typeof terminalEvent>;
-  await expect
-    .poll(async () => {
+  await flushWaitUntilForTest();
+  await expect(
+    (async () => {
       const page = await chat.listThreadEvents(args.actor, sent.threadId);
       finished = terminalEvent(page.events, sent.runId);
       return finished?.createdAt ?? null;
-    })
-    .not.toBeNull();
+    })(),
+  ).resolves.not.toBeNull();
   if (!finished) {
     throw new Error("Expected the cancelled Run to append a terminal event");
   }

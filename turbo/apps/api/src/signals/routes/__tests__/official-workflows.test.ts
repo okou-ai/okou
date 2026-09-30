@@ -9441,8 +9441,9 @@ describe("Official Workflow Run admission", () => {
       );
       await flushWaitUntilForTest();
       let resumedRunId: string | null | undefined;
-      await expect
-        .poll(async () => {
+      await flushWaitUntilForTest();
+      await expect(
+        (async () => {
           const events = await chat.listThreadEvents(
             actor,
             first.body.chatThreadId,
@@ -9455,8 +9456,8 @@ describe("Official Workflow Run admission", () => {
           });
           resumedRunId = consumed[0]?.runId;
           return consumed;
-        })
-        .toMatchObject([{ runId: expect.any(String) }]);
+        })(),
+      ).resolves.toMatchObject([{ runId: expect.any(String) }]);
       if (!resumedRunId) {
         throw new Error("Expected queued Official Workflow Run");
       }
@@ -9688,8 +9689,9 @@ describe("Official Workflow Run admission", () => {
       );
       await flushWaitUntilForTest();
 
-      await expect
-        .poll(async () => {
+      await flushWaitUntilForTest();
+      await expect(
+        (async () => {
           const events = await listOfficialQueueEvents(
             actor,
             first.body.chatThreadId,
@@ -9702,8 +9704,8 @@ describe("Official Workflow Run admission", () => {
               event.error === "conflict"
             );
           }).length;
-        })
-        .toBe(1);
+        })(),
+      ).resolves.toBe(1);
       const afterOfficialFailure = await listOfficialQueueEvents(
         actor,
         first.body.chatThreadId,
@@ -9765,8 +9767,9 @@ describe("Official Workflow Run admission", () => {
       });
       await flushWaitUntilForTest();
       let ordinaryRunId: string | undefined;
-      await expect
-        .poll(async () => {
+      await flushWaitUntilForTest();
+      await expect(
+        (async () => {
           const listed = await runs.listAgentRuns(actor, {
             agent: agentId,
             limit: 100,
@@ -9775,8 +9778,8 @@ describe("Official Workflow Run admission", () => {
             return run.prompt === ordinaryPrompt;
           })?.id;
           return ordinaryRunId;
-        })
-        .toStrictEqual(expect.any(String));
+        })(),
+      ).resolves.toStrictEqual(expect.any(String));
       if (!ordinaryRunId) {
         throw new Error("Expected ordinary queued control Run");
       }

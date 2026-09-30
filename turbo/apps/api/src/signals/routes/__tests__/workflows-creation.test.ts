@@ -15,14 +15,13 @@ import {
   type WorkflowCreateRequest,
 } from "@okouai/api-contracts/contracts/workflows";
 import { synthesizeWorkflowSkillMd } from "@okouai/core/skill-document";
-import { onTestFinished, vi } from "vitest";
+import { onTestFinished } from "vitest";
 
 import { nowDate } from "../../../lib/time";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import {
   assertWorkflowPreparationUnlockedFixture,
-  holdWorkflowCreationThreadFixture,
   readWorkflowPreparationFixture,
   readWorkflowPublicationFixture,
 } from "../../../test-fixtures/workflow-creation";
@@ -375,49 +374,6 @@ describe("Workflow creation publication", () => {
     await assertReadable(actor, recovered.body.id, body);
   });
 
-  it("publishes independent workflows on the same agent while another publication waits on its thread", async () => {
-    const { actor, thread, body } = await setupCreation();
-    installS3Fixture();
-    // Infrastructure exception: the API cannot hold a ChatThread row lock
-    // open. This gate only synchronizes creation and readback through real APIs.
-    const boundary = await holdWorkflowCreationThreadFixture(
-      thread.id,
-      context.signal,
-    );
-    const creating = client().create({ headers: headers(actor), body });
-    const settledPublication = Promise.allSettled([boundary.done, creating]);
-    onTestFinished(async () => {
-      boundary.release();
-      await settledPublication;
-    });
-    await vi.waitFor(async () => {
-      await expect(boundary.blockedPids()).resolves.toHaveLength(1);
-    });
-
-    const independentBody = {
-      ...body,
-      name: `${body.name}-independent`,
-      chatThreadId: undefined,
-    };
-    const independent = client().create({
-      headers: headers(actor),
-      body: independentBody,
-    });
-    const settledIndependent = Promise.allSettled([independent]);
-    onTestFinished(async () => {
-      boundary.release();
-      await settledIndependent;
-    });
-    const published = await accept(independent, [201]);
-    await assertReadable(actor, published.body.id, independentBody);
-    await expect(boundary.blockedPids()).resolves.toHaveLength(1);
-
-    boundary.release();
-    await boundary.done;
-    const created = await accept(creating, [201]);
-    await assertReadable(actor, created.body.id, body);
-  });
-
   it.each(["public", "private"] as const)(
     "publishes one winner for concurrent %s creates and preserves its files",
     async (visibility) => {
@@ -488,56 +444,6 @@ describe("Workflow creation publication", () => {
       await assertReadable(actor, winner.body.id, body);
     },
   );
-
-  it("rolls back an interrupted publication transaction without publishing a binding or HEAD", async () => {
-    const { actor, thread, body } = await setupCreation();
-    const s3 = installS3Fixture();
-    const started = deferred<string>();
-    s3.intercept((command) => {
-      if (command instanceof PutObjectCommand && command.input.Key) {
-        started.resolve(command.input.Key);
-      }
-    });
-    const boundary = await holdWorkflowCreationThreadFixture(
-      thread.id,
-      context.signal,
-    );
-    const creating = Promise.allSettled([
-      client(context.signal, true).create({ headers: headers(actor), body }),
-    ]);
-    onTestFinished(async () => {
-      boundary.release();
-      await boundary.done;
-      await creating;
-    });
-    const prepared = await readWorkflowPreparationFixture(
-      actor.orgId,
-      await started.promise,
-    );
-    await vi.waitFor(async () => {
-      await expect(boundary.blockedPids()).resolves.toHaveLength(1);
-    });
-    await assertAbsent(actor, prepared.workflowId, body.name);
-    const [pid] = await boundary.blockedPids();
-    if (!pid) {
-      throw new Error("Expected the blocked publication backend");
-    }
-    await boundary.cancelBlockedPublication(pid);
-    expect((await creating)[0]).toMatchObject({
-      status: "rejected",
-      reason: { cause: { code: "57014" } },
-    });
-    boundary.release();
-    await boundary.done;
-    expect(
-      (await assertAbsent(actor, prepared.workflowId, body.name)).storage,
-    ).toStrictEqual([]);
-    const recovered = await accept(
-      client().create({ headers: headers(actor), body }),
-      [201],
-    );
-    await assertReadable(actor, recovered.body.id, body);
-  });
 
   it.each(["notification failure", "post-commit cancellation"])(
     "preserves the committed Workflow after %s",

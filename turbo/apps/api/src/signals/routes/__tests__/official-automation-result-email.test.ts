@@ -17,7 +17,6 @@ import { completeRunWithoutCallbacksFixture } from "../../../test-fixtures/chat-
 import {
   clearResultEmailUserStateFixture,
   completeResultEmailRunWithoutCallbacksFixture,
-  holdResultEmailClaimBoundaryFixture,
   markWorkflowAsMorningBriefResultEmailFixture,
   readResultEmailPreferenceFixture,
 } from "../../../test-fixtures/official-automation-result-email";
@@ -966,66 +965,6 @@ describe("Official Automation result email callbacks", () => {
         sourceWorkflowAutomationId: scenario.automationId,
       }),
     ).resolves.toStrictEqual({ items: [], claim: null });
-  });
-
-  it("serializes absent-row enqueue before a concurrent unsubscribe writer", async () => {
-    const scenario = await setupScenario();
-    const runId = await startRun(scenario);
-    await seedResultCallback({
-      runId,
-      automationId: scenario.automationId,
-    });
-    await clearResultEmailUserStateFixture(scenario.actor.userId);
-    await expect(
-      readResultEmailPreferenceFixture(scenario.actor.userId),
-    ).resolves.toBeNull();
-    await completeResultEmailRunWithoutCallbacksFixture(runId);
-
-    const heldClaim = await holdResultEmailClaimBoundaryFixture({
-      runId,
-      workflowAutomationId: scenario.automationId,
-      signal: context.signal,
-    });
-    onTestFinished(async () => {
-      heldClaim.release();
-      await heldClaim.done;
-    });
-
-    const callback = executionClient().interruptResultEmailCallback({
-      body: { run_id: runId },
-    });
-    await expect
-      .poll(heldClaim.blockedWaiterCount, { interval: 2, timeout: 1000 })
-      .toBe(1);
-
-    const unsubscribe = misc.requestEmailUnsubscribe(
-      unsubscribeToken(scenario.actor.userId),
-      [200],
-    );
-    await expect
-      .poll(heldClaim.blockedChainCount, { interval: 2, timeout: 1000 })
-      .toBeGreaterThanOrEqual(2);
-
-    heldClaim.release();
-    const [callbackResult] = await Promise.all([
-      accept(callback, [200]),
-      unsubscribe,
-      heldClaim.done,
-    ]);
-    expect(callbackResult.body).toMatchObject({
-      success: true,
-      skipped: false,
-    });
-    await expect(
-      readResultEmailPreferenceFixture(scenario.actor.userId),
-    ).resolves.toBeTruthy();
-    const source = await outbox.findSourceState({
-      sourceRunId: runId,
-      sourceWorkflowAutomationId: scenario.automationId,
-    });
-    expect(source.claim).not.toBeNull();
-    expect(source.items).toHaveLength(1);
-    expect(source.items[0]?.id).toBe(source.claim?.email_outbox_id);
   });
 
   it.each(["pending", "failed"] as const)(

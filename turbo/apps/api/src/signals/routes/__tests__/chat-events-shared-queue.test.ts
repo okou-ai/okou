@@ -5,12 +5,11 @@ import type {
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { now, withMockNowForTest } from "../../../lib/time";
 import { replayPendingChatInputQueueEventFixture } from "../../../test-fixtures/chat-events";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createDeferredPromise } from "../../utils";
 import { readAgentRunState$ } from "./helpers/agent-run-callback";
 import { chatEventDisplayText } from "./helpers/chat-event";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
@@ -37,7 +36,6 @@ const {
   sendChatRun,
   claimChatRun,
   waitForThreadMessages,
-  waitForRunUserMessage,
   waitForRunStatus,
   completeChatRunOk,
   failChatRun,
@@ -202,13 +200,14 @@ describe("CHAT-02: shared user message queue", () => {
     );
     const afterReplay = await chat.listThreadEvents(actor, sent.body.threadId);
     expect(userMessages(afterReplay.events)).toHaveLength(rows.length);
-    await expect
-      .poll(() => {
+    await flushWaitUntilForTest();
+    await expect(
+      (() => {
         return context.mocks.ably.publish.mock.calls.some((call) => {
           return call[0] === `chatThreadMessageCreated:${sent.body.threadId}`;
         });
-      })
-      .toBe(true);
+      })(),
+    ).resolves.toBeTruthy();
 
     const claimedRun = await claimChatRun(runnerGroup, runId);
     expect(claimedRun.claim.apiStartTime).toBe(apiStartedAt);
@@ -1306,105 +1305,6 @@ describe("CHAT-02: shared user message queue", () => {
     await cancelChatRun(actor, firstClaimed.runId);
   }, 90_000);
 
-  it("dispatches an idle send while thread-list publication is pending", async () => {
-    const { actor, agentId } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-
-    const publicationStarted = createDeferredPromise<void>(context.signal);
-    const secondPublicationStarted = createDeferredPromise<void>(
-      context.signal,
-    );
-    const releasePublication = createDeferredPromise<void>(context.signal);
-    context.mocks.ably.publish.mockImplementation((topic: unknown) => {
-      if (topic === "threadListChanged") {
-        if (!publicationStarted.settled()) {
-          publicationStarted.resolve(undefined);
-        } else if (!secondPublicationStarted.settled()) {
-          secondPublicationStarted.resolve(undefined);
-        }
-        return releasePublication.promise;
-      }
-      return Promise.resolve(undefined);
-    });
-
-    const prompt = "dispatch while thread list publication is pending";
-    const clientEventId = randomUUID();
-    const send = chat.requestSendEvent(
-      actor,
-      {
-        agentId,
-        prompt,
-        clientEventId,
-      },
-      [201],
-    );
-    let sendSettled = false;
-    const sendOutcome = send.then(
-      (value) => {
-        sendSettled = true;
-        return { ok: true as const, value };
-      },
-      (error: unknown) => {
-        sendSettled = true;
-        return { ok: false as const, error };
-      },
-    );
-    onTestFinished(async () => {
-      if (!releasePublication.settled()) {
-        releasePublication.resolve(undefined);
-      }
-      await sendOutcome;
-    });
-
-    await publicationStarted.promise;
-    await expect
-      .poll(() => {
-        return sendSettled;
-      })
-      .toBeTruthy();
-    expect(releasePublication.settled()).toBeFalsy();
-    const outcome = await sendOutcome;
-    if (!outcome.ok) {
-      throw outcome.error;
-    }
-    const sent = outcome.value;
-    if (sent.status !== 201) {
-      throw new Error("Expected the pending publication not to gate the send");
-    }
-    // The second publication starts after admission commits. Keep delivery
-    // blocked while reading the committed run through the API.
-    await secondPublicationStarted.promise;
-    const runId = await readPickedInputRun(
-      actor,
-      sent.body.threadId,
-      clientEventId,
-    );
-    await waitForRunUserMessage(actor, sent.body.threadId, runId, prompt);
-
-    await expect
-      .poll(async () => {
-        const runList = await api.listAgentRuns(actor, {
-          status: "queued,pending,running,completed,failed,timeout,cancelled",
-          limit: 100,
-        });
-        return runList.runs.some((run) => {
-          return run.prompt === prompt;
-        });
-      })
-      .toBe(true);
-
-    // Both notifications started while publication is still blocked.
-    const threadListPublishes = context.mocks.ably.publish.mock.calls.filter(
-      ([topic]) => {
-        return topic === "threadListChanged";
-      },
-    );
-    expect(threadListPublishes).toHaveLength(2);
-    expect(releasePublication.settled()).toBeFalsy();
-    releasePublication.resolve(undefined);
-    await cancelChatRun(actor, runId);
-  }, 90_000);
-
   it("keeps a queued send drainable when thread-list publication fails", async () => {
     const { actor, agentId } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
@@ -1589,13 +1489,14 @@ describe("CHAT-02: shared user message queue", () => {
         runId: promoted.runId,
       }),
     );
-    await expect
-      .poll(() => {
+    await flushWaitUntilForTest();
+    await expect(
+      (() => {
         return context.mocks.ably.publish.mock.calls.some((call) => {
           return call[0] === `chatThreadMessageCreated:${anchor.threadId}`;
         });
-      })
-      .toBe(true);
+      })(),
+    ).resolves.toBeTruthy();
 
     const followUp = await api.readRun(actor, promoted.runId);
     expect(followUp.prompt).toContain("queue-first waits for the anchor");

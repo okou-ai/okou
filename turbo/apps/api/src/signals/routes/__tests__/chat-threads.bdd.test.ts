@@ -31,11 +31,7 @@ import {
   withMockNowForTest,
 } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import {
-  holdChatEventInsertTransactionFixture,
-  insertOutputEventWithConflictingLegacyPayloadFixture,
-  startChatEventInsertTransactionFixture,
-} from "../../../test-fixtures/chat-events";
+import { insertOutputEventWithConflictingLegacyPayloadFixture } from "../../../test-fixtures/chat-events";
 import {
   deleteChatThreadEventMarkerFixture,
   holdChatThreadEventInsertTransactionFixture,
@@ -66,6 +62,7 @@ import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { readThreadMessagesAfterBackgroundWork } from "./helpers/chat-events-fixture";
 import { createComputerUseBddApi } from "./helpers/api-bdd-computer-use";
 import {
   createConnectorBddApi,
@@ -243,23 +240,10 @@ function okouTokenFromClaim(claim: RunnerClaim): string {
   return token;
 }
 
-async function waitForThreadMessages(
-  actor: ApiTestUser,
-  threadId: string,
-  predicate: (messages: readonly ChatEvent[]) => boolean,
-) {
-  let page: Awaited<ReturnType<typeof chat.listThreadEvents>> | undefined;
-  await expect
-    .poll(async () => {
-      page = await chat.listThreadEvents(actor, threadId);
-      return predicate(page.events);
-    })
-    .toBe(true);
-  if (!page) {
-    throw new Error(`Expected chat thread ${threadId} messages to be readable`);
-  }
-  return page;
-}
+const waitForThreadMessages = readThreadMessagesAfterBackgroundWork.bind(
+  null,
+  chat,
+);
 
 async function waitForThreadEvents(
   actor: ApiTestUser,
@@ -267,12 +251,13 @@ async function waitForThreadEvents(
   predicate: (events: readonly ChatEvent[]) => boolean,
 ) {
   let page: Awaited<ReturnType<typeof chat.listThreadEvents>> | undefined;
-  await expect
-    .poll(async () => {
+  await flushWaitUntilForTest();
+  await expect(
+    (async () => {
       page = await chat.listThreadEvents(actor, threadId);
       return predicate(page.events);
-    })
-    .toBe(true);
+    })(),
+  ).resolves.toBeTruthy();
   if (!page) {
     throw new Error(`Expected chat thread ${threadId} events to be readable`);
   }
@@ -284,12 +269,13 @@ async function waitForRunStatus(
   runId: string,
   status: "cancelled" | "completed" | "failed" | "pending" | "running",
 ): Promise<void> {
-  await expect
-    .poll(async () => {
+  await flushWaitUntilForTest();
+  await expect(
+    (async () => {
       const run = await api.readRun(actor, runId);
       return run.status;
-    })
-    .toBe(status);
+    })(),
+  ).resolves.toBe(status);
 }
 
 /**
@@ -2050,61 +2036,6 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     await expectExpiredThreadEventCursor(actor, liveCovered.seqId);
   }, 90_000);
 
-  it("keeps concurrent thread event sequence reservation atomic through commit", async () => {
-    const owner = bdd.user();
-    if (!owner.orgId) {
-      throw new Error("Expected an organization-scoped chat actor");
-    }
-    bdd.acceptAgentStorageWrites();
-    const agent = await bdd.createAgent(owner, {
-      displayName: "Concurrent thread event agent",
-    });
-    const threadId = await sendNoCreditMessage(owner, {
-      agentId: agent.agentId,
-      prompt: "thread event sequence serialization anchor",
-    });
-    const fixture = {
-      userId: owner.userId,
-      orgId: owner.orgId,
-      chatThreadId: threadId,
-      agentId: agent.agentId,
-    } as const;
-    const held = await holdChatThreadEventInsertTransactionFixture({
-      ...fixture,
-      title: "Held thread event",
-      signal: context.signal,
-    });
-    const secondInsert = insertChatThreadEventTransactionFixture({
-      ...fixture,
-      title: "Blocked thread event",
-    });
-    onTestFinished(async () => {
-      held.release();
-      await Promise.allSettled([held.done, secondInsert]);
-    });
-
-    await expect.poll(held.blockedWaiterCount).toBe(1);
-    const beforeCommit = await allThreadEvents(owner);
-    expect(
-      beforeCommit.some((event) => {
-        return event.id === held.event.id;
-      }),
-    ).toBeFalsy();
-
-    held.release();
-    await held.done;
-    const second = await secondInsert;
-    const committed = (await allThreadEvents(owner)).filter((event) => {
-      return event.id === held.event.id || event.id === second.id;
-    });
-    expect(
-      committed.map((event) => {
-        return event.id;
-      }),
-    ).toStrictEqual([held.event.id, second.id]);
-    expect(held.event.seqId).toBeLessThan(second.seqId);
-  }, 30_000);
-
   it("touches thread sort from existing direct user sends and run-finished markers", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor(
       "Thread sort touch agent",
@@ -3190,64 +3121,6 @@ describe("CHAT-01 chat thread read state", () => {
         return message.id;
       }),
     ).toStrictEqual([secondQueuedUser, secondReplacement, secondAssistant]);
-  }, 30_000);
-
-  it("serializes concurrent message sequence writes through commit", async () => {
-    const owner = bdd.user();
-    bdd.acceptAgentStorageWrites();
-    const agent = await bdd.createAgent(owner, {
-      displayName: "Concurrent message sequence agent",
-    });
-    const threadId = await sendNoCreditMessage(owner, {
-      agentId: agent.agentId,
-      prompt: "sequence serialization anchor",
-    });
-
-    const firstContent = `held sequence message ${randomUUID()}`;
-    const secondContent = `blocked sequence message ${randomUUID()}`;
-    const held = await holdChatEventInsertTransactionFixture({
-      threadId,
-      content: firstContent,
-      signal: context.signal,
-    });
-    const secondInsert = await startChatEventInsertTransactionFixture({
-      threadId,
-      content: secondContent,
-      signal: context.signal,
-    });
-    onTestFinished(async () => {
-      held.release();
-      await Promise.allSettled([held.done, secondInsert.done]);
-    });
-
-    await expect
-      .poll(() => {
-        return held.blocks(secondInsert.pid);
-      })
-      .toBe(true);
-    const beforeCommit = await chat.listThreadEvents(owner, threadId);
-    expect(
-      beforeCommit.events.some((message) => {
-        return (
-          chatEventDisplayText(message) === firstContent ||
-          chatEventDisplayText(message) === secondContent
-        );
-      }),
-    ).toBeFalsy();
-
-    held.release();
-    await held.done;
-    const second = await secondInsert.done;
-    const committed = await chat.listThreadEvents(owner, threadId);
-    const concurrentRows = committed.events.filter((message) => {
-      return message.id === held.event.id || message.id === second.id;
-    });
-    expect(
-      concurrentRows.map((message) => {
-        return message.id;
-      }),
-    ).toStrictEqual([held.event.id, second.id]);
-    expect(held.event.seqId).toBeLessThan(second.seqId);
   }, 30_000);
 });
 

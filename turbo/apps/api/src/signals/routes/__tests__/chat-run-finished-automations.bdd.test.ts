@@ -221,15 +221,13 @@ async function claimChatRun(
 ): Promise<{ readonly authorization: string }> {
   await api.heartbeatRunner(runnerGroup);
   let claim: Awaited<ReturnType<typeof api.requestClaimRunnerJob>> | undefined;
-  await expect
-    .poll(
-      async () => {
-        claim = await api.requestClaimRunnerJob(true, runId, [200, 404]);
-        return claim.status;
-      },
-      { interval: 100, timeout: 10_000 },
-    )
-    .toBe(200);
+  await flushWaitUntilForTest();
+  await expect(
+    (async () => {
+      claim = await api.requestClaimRunnerJob(true, runId, [200, 404]);
+      return claim.status;
+    })(),
+  ).resolves.toBe(200);
   if (!claim || claim.status !== 200) {
     throw new Error("Expected the chat run to be claimable");
   }
@@ -279,14 +277,12 @@ async function completeChatRunOk(
 }
 
 async function expectAutomationFired(automationId: string): Promise<void> {
-  await expect
-    .poll(
-      () => {
-        return automationLastRunAt(automationId);
-      },
-      { interval: 100, timeout: 10_000 },
-    )
-    .toBeTruthy();
+  await flushWaitUntilForTest();
+  await expect(
+    (() => {
+      return automationLastRunAt(automationId);
+    })(),
+  ).resolves.toBeTruthy();
 }
 
 async function expectAutomationSourceAnnotation(
@@ -668,8 +664,9 @@ describe("chat-run-finished workflow automations", () => {
       const triggered = await api.claimRunnerJob(automationInput.runId);
       expect(triggered.prompt).toContain(status);
       let nextRunId: string | undefined;
-      await expect
-        .poll(async () => {
+      await flushWaitUntilForTest();
+      await expect(
+        (async () => {
           const events = await chat.listThreadEvents(fixture.actor, threadId);
           nextRunId =
             events.events.find((event) => {
@@ -679,8 +676,8 @@ describe("chat-run-finished workflow automations", () => {
               );
             })?.runId ?? undefined;
           return nextRunId;
-        })
-        .toBeTruthy();
+        })(),
+      ).resolves.toBeTruthy();
       expect(nextRunId).not.toBe(runId);
       await expect(lifecycleMarkerCount(run, status)).resolves.toBe(1);
       expect(slackThreadDeliveryCount(run)).toBe(1);
@@ -963,8 +960,9 @@ describe("chat-run-finished workflow automations", () => {
       await completeChatRunOk(run.runId, sandboxHeaders);
 
       let automationThreadId: string | null = null;
-      await expect
-        .poll(async () => {
+      await flushWaitUntilForTest();
+      await expect(
+        (async () => {
           const automation = await accept(
             automationsClient().get({
               headers: authHeaders(),
@@ -974,15 +972,16 @@ describe("chat-run-finished workflow automations", () => {
           );
           automationThreadId = automation.body.chatThreadId;
           return automationThreadId;
-        })
-        .toStrictEqual(expect.any(String));
+        })(),
+      ).resolves.toStrictEqual(expect.any(String));
       const exhaustedAutomationThreadId = automationThreadId;
       if (!exhaustedAutomationThreadId) {
         throw new Error("Expected the automation chat thread");
       }
 
-      await expect
-        .poll(async () => {
+      await flushWaitUntilForTest();
+      await expect(
+        (async () => {
           const messages = await chat.listThreadEvents(
             fixture.actor,
             exhaustedAutomationThreadId,
@@ -990,11 +989,11 @@ describe("chat-run-finished workflow automations", () => {
           return messages.events.find((event) => {
             return event.eventType === "output.error";
           });
-        })
-        .toMatchObject({
-          eventType: "output.error",
-          error: "AUTONOMY_BUDGET_EXHAUSTED",
-        });
+        })(),
+      ).resolves.toMatchObject({
+        eventType: "output.error",
+        error: "AUTONOMY_BUDGET_EXHAUSTED",
+      });
       await expect(
         readWorkflowAutomationAutonomyFixture(context, automationId),
       ).resolves.toMatchObject({

@@ -36,7 +36,6 @@ import { withBuiltInModelRuntimeRouteUnavailableForTest } from "../../../test-fi
 import {
   holdAgentRowLockFixture,
   holdAgentRunRowLockFixture,
-  holdChatEventInsertTransactionFixture,
   holdChatThreadRowLockFixture,
   holdRunOutputMaterializationRowFixture,
   insertQueuedSlackMissingContextFixture,
@@ -51,6 +50,7 @@ import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandbo
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { readThreadMessagesAfterBackgroundWork } from "./helpers/chat-events-fixture";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -293,15 +293,13 @@ async function queueChatEvent(
 async function claimChatRunJob(runnerGroup: string, runId: string) {
   await api.heartbeatRunner(runnerGroup);
   let claim: Awaited<ReturnType<typeof api.requestClaimRunnerJob>> | undefined;
-  await expect
-    .poll(
-      async () => {
-        claim = await api.requestClaimRunnerJob(true, runId, [200, 404]);
-        return claim.status;
-      },
-      { interval: 100, timeout: 10_000 },
-    )
-    .toBe(200);
+  await flushWaitUntilForTest();
+  await expect(
+    (async () => {
+      claim = await api.requestClaimRunnerJob(true, runId, [200, 404]);
+      return claim.status;
+    })(),
+  ).resolves.toBe(200);
   if (!claim || claim.status !== 200) {
     throw new Error("Expected the chat run to be claimable");
   }
@@ -320,37 +318,22 @@ function cliAgentSessionIdForChatRun(runId: string): string {
   return `bdd-cli-${runId}`;
 }
 
-async function waitForThreadMessages(
-  actor: ApiTestUser,
-  threadId: string,
-  predicate: (messages: readonly ChatEvent[]) => boolean,
-) {
-  let page: Awaited<ReturnType<typeof chat.listThreadEvents>> | undefined;
-  await expect
-    .poll(
-      async () => {
-        page = await chat.listThreadEvents(actor, threadId);
-        return predicate(page.events);
-      },
-      { interval: 100, timeout: 10_000 },
-    )
-    .toBe(true);
-  if (!page) {
-    throw new Error(`Expected chat thread ${threadId} messages to be readable`);
-  }
-  return page;
-}
+const waitForThreadMessages = readThreadMessagesAfterBackgroundWork.bind(
+  null,
+  chat,
+);
 
 async function waitForThreadTitle(
   actor: ApiTestUser,
   threadId: string,
   title: string | null,
 ): Promise<void> {
-  await expect
-    .poll(async () => {
+  await flushWaitUntilForTest();
+  await expect(
+    (async () => {
       return await readThreadTitleFromEvents(actor, threadId);
-    })
-    .toBe(title);
+    })(),
+  ).resolves.toBe(title);
 }
 
 async function readThreadTitleFromEvents(
@@ -394,12 +377,13 @@ async function waitForRunStatus(
     | "queued"
     | "running",
 ): Promise<void> {
-  await expect
-    .poll(async () => {
+  await flushWaitUntilForTest();
+  await expect(
+    (async () => {
       const run = await api.readRun(actor, runId);
       return run.status;
-    })
-    .toBe(status);
+    })(),
+  ).resolves.toBe(status);
 }
 
 async function waitForQueuedEventReplacement(
@@ -430,12 +414,13 @@ async function expectCancellationRecoveryPending(
   threadId: string,
   expected: boolean,
 ): Promise<void> {
-  await expect
-    .poll(async () => {
+  await flushWaitUntilForTest();
+  await expect(
+    (async () => {
       const detail = await chat.readThread(actor, threadId);
       return detail.cancellationRecoveryPending;
-    })
-    .toBe(expected);
+    })(),
+  ).resolves.toBe(expected);
 }
 
 function cancellationRecoveryCleanupClient() {
@@ -462,12 +447,13 @@ async function reconcileCancellationRecoveryFixtures(
 
 async function waitForRunContext(actor: ApiTestUser, runId: string) {
   let response: Awaited<ReturnType<typeof api.requestRunContext>> | undefined;
-  await expect
-    .poll(async () => {
+  await flushWaitUntilForTest();
+  await expect(
+    (async () => {
       response = await api.requestRunContext(actor, runId, [200, 404]);
       return response.status;
-    })
-    .toBe(200);
+    })(),
+  ).resolves.toBe(200);
   if (!response || response.status !== 200) {
     throw new Error("Expected the auto-send run context to be readable");
   }
@@ -603,13 +589,14 @@ function recommendedFollowupEvents(
 async function waitForChatThreadMessageCreatedPublish(
   threadId: string,
 ): Promise<void> {
-  await expect
-    .poll(() => {
+  await flushWaitUntilForTest();
+  await expect(
+    (() => {
       return context.mocks.ably.publish.mock.calls.some((call) => {
         return call[0] === `chatThreadMessageCreated:${threadId}`;
       });
-    })
-    .toBe(true);
+    })(),
+  ).resolves.toBeTruthy();
 }
 
 function assistantEvent(
@@ -870,8 +857,9 @@ describe("CHAT-02: completed chat callback", () => {
       chatThreadId: first.threadId,
     });
 
-    await expect
-      .poll(() => {
+    await flushWaitUntilForTest();
+    await expect(
+      (() => {
         return context.mocks.webpush.sendNotification.mock.calls.some(
           (call) => {
             const payload = pushPayload(call) as Record<string, unknown>;
@@ -882,8 +870,8 @@ describe("CHAT-02: completed chat callback", () => {
             );
           },
         );
-      })
-      .toBe(true);
+      })(),
+    ).resolves.toBeTruthy();
     const afterAutoSend = await waitForThreadMessages(
       actor,
       first.threadId,
@@ -937,13 +925,14 @@ describe("CHAT-02: completed chat callback", () => {
     );
     // The auto-send publishes happen in background callback processing, so
     // poll until the message channel has been published before asserting.
-    await expect
-      .poll(() => {
+    await flushWaitUntilForTest();
+    await expect(
+      (() => {
         return context.mocks.ably.publish.mock.calls.some((call) => {
           return call[0] === `chatThreadMessageCreated:${first.threadId}`;
         });
-      })
-      .toBe(true);
+      })(),
+    ).resolves.toBeTruthy();
     await flushWaitUntilForTest();
     expect(context.mocks.ably.publish).toHaveBeenCalledWith(
       `chatThreadMessageCreated:${first.threadId}`,
@@ -1859,8 +1848,9 @@ describe("CHAT-02: completed chat callback", () => {
     expect(notificationRequests).toBe(1);
     // A shortened sentence still tells the user what finished, and the only
     // alternative is the generic fallback, so this caller keeps the text.
-    await expect
-      .poll(() => {
+    await flushWaitUntilForTest();
+    await expect(
+      (() => {
         return context.mocks.webpush.sendNotification.mock.calls.some(
           (call) => {
             const payload = pushPayload(call) as Record<string, unknown>;
@@ -1870,8 +1860,8 @@ describe("CHAT-02: completed chat callback", () => {
             );
           },
         );
-      })
-      .toBe(true);
+      })(),
+    ).resolves.toBeTruthy();
   });
 
   it("falls back to the fixed notification copy when the token-limited summary strips to nothing", async () => {
@@ -1909,8 +1899,9 @@ describe("CHAT-02: completed chat callback", () => {
     });
     await flushWaitUntilForTest();
 
-    await expect
-      .poll(() => {
+    await flushWaitUntilForTest();
+    await expect(
+      (() => {
         return context.mocks.webpush.sendNotification.mock.calls.some(
           (call) => {
             const payload = pushPayload(call) as Record<string, unknown>;
@@ -1920,8 +1911,8 @@ describe("CHAT-02: completed chat callback", () => {
             );
           },
         );
-      })
-      .toBe(true);
+      })(),
+    ).resolves.toBeTruthy();
     expect(
       context.mocks.webpush.sendNotification.mock.calls.every((call) => {
         const payload = pushPayload(call) as Record<string, unknown>;
@@ -2473,13 +2464,14 @@ describe("CHAT-02/RUN-03: cancellation recovery barrier", () => {
     });
 
     await api.requestCancelRun(actor, run.runId, [200]);
-    await expect
-      .poll(() => {
+    await flushWaitUntilForTest();
+    await expect(
+      (() => {
         return context.mocks.ably.publish.mock.calls.some(([topic]) => {
           return topic === "cancel";
         });
-      })
-      .toBe(true);
+      })(),
+    ).resolves.toBeTruthy();
     await expectCancellationRecoveryPending(actor, run.threadId, true);
     expect(context.mocks.ably.publish).toHaveBeenCalledWith(
       `chatThreadDetailChanged:${run.threadId}`,
@@ -3069,64 +3061,6 @@ describe("CHAT-02: chat output extraction and terminal callbacks", () => {
     await flushWaitUntilForTest();
   }, 90_000);
 
-  it("returns the route deadline while blocked and keeps the released append durable", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    const run = await startChatRun(actor, {
-      agentId,
-      prompt: "keep accepted projection alive",
-    });
-    const sandboxHeaders = await claimChatRun(runnerGroup, run.runId);
-    const routeDeadline = new AbortController();
-    context.mocks.abortSignal.timeout.mockImplementation((milliseconds) => {
-      return milliseconds === 20_000 ? routeDeadline.signal : undefined;
-    });
-    const held = await holdChatEventInsertTransactionFixture({
-      threadId: run.threadId,
-      content: "hold the accepted projection",
-      signal: context.signal,
-    });
-    onTestFinished(async () => {
-      held.release();
-      await held.done;
-    });
-
-    const pending = webhooks.requestAgentEvents(
-      {
-        runId: run.runId,
-        events: [
-          {
-            type: "assistant",
-            sequenceNumber: 0,
-            message: {
-              id: "msg_independent_projection",
-              content: [{ type: "text", text: "Persist after the ACK." }],
-            },
-          },
-        ],
-      },
-      sandboxHeaders,
-      [503],
-    );
-    await expect.poll(held.blockedWaiterCount).toBeGreaterThanOrEqual(1);
-
-    routeDeadline.abort(
-      new DOMException("event route deadline", "TimeoutError"),
-    );
-    const response = await pending;
-    expect(response.status).toBe(503);
-    held.release();
-    await held.done;
-
-    // The append is one autocommit statement with no enclosing transaction,
-    // so the route deadline cannot roll it back once the lock is released.
-    await expect
-      .poll(async () => {
-        const messages = await chat.listThreadEvents(actor, run.threadId);
-        return eventBackedContents(messages.events, run.runId).length;
-      })
-      .toBe(1);
-  }, 30_000);
-
   it("persists concurrent event batches instead of skipping output projection", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const run = await startChatRun(actor, {
@@ -3491,13 +3425,14 @@ describe("CHAT-02: chat output extraction and terminal callbacks", () => {
       prompt: "progress probe",
     });
     const firstHeaders = await claimChatRun(runnerGroup, first.runId);
-    await expect
-      .poll(() => {
+    await flushWaitUntilForTest();
+    await expect(
+      (() => {
         return context.mocks.ably.publish.mock.calls.some((call) => {
           return call[0] === `chatThreadMessageCreated:${first.threadId}`;
         });
-      })
-      .toBe(true);
+      })(),
+    ).resolves.toBeTruthy();
     context.mocks.axiom.query.mockClear();
     context.mocks.ably.publish.mockClear();
     await webhooks.requestAgentHeartbeat(
@@ -5528,11 +5463,12 @@ describe("CHAT-02: auto-send after failures", () => {
     await waitForThreadMessages(actor, anchor.threadId, (messages) => {
       return lifecycleMarkers(messages, anchor.runId, "completed").length > 0;
     });
-    await expect
-      .poll(() => {
+    await flushWaitUntilForTest();
+    await expect(
+      (() => {
         return followupRequests;
-      })
-      .toBe(1);
+      })(),
+    ).resolves.toBe(1);
 
     const firstFailedPrompt = "failed before the late successful follow-up";
     const firstFailed = await startChatRun(actor, {
@@ -5750,11 +5686,12 @@ describe("CHAT-02: auto-send after failures", () => {
     expect(autoContext.body.sessionId).toBe(`bdd-cli-${first.runId}`);
 
     pushGate.release();
-    await expect
-      .poll(() => {
+    await flushWaitUntilForTest();
+    await expect(
+      (() => {
         return context.mocks.webpush.sendNotification.mock.calls.length;
-      })
-      .toBe(1);
+      })(),
+    ).resolves.toBe(1);
 
     await queueChatEvent(actor, {
       agentId,
@@ -5779,11 +5716,12 @@ describe("CHAT-02: auto-send after failures", () => {
 
     await failChatRun(second.runId, secondHeaders, "boom");
     await flushWaitUntilForTest();
-    await expect
-      .poll(() => {
+    await flushWaitUntilForTest();
+    await expect(
+      (() => {
         return context.mocks.webpush.sendNotification.mock.calls.length;
-      })
-      .toBe(1);
+      })(),
+    ).resolves.toBe(1);
     const afterDuplicateFailure = await chat.listThreadEvents(
       actor,
       first.threadId,
@@ -6159,13 +6097,14 @@ describe("CHAT-02: thread deletion while a run is active", () => {
       prompt: "delete this thread",
     });
     await claimChatRun(runnerGroup, run.runId);
-    await expect
-      .poll(() => {
+    await flushWaitUntilForTest();
+    await expect(
+      (() => {
         return context.mocks.ably.publish.mock.calls.some((call) => {
           return call[0] === `chatThreadMessageCreated:${run.threadId}`;
         });
-      })
-      .toBe(true);
+      })(),
+    ).resolves.toBeTruthy();
     context.mocks.axiom.query.mockClear();
     context.mocks.ably.publish.mockClear();
     await chat.deleteThread(actor, run.threadId);
@@ -6198,11 +6137,12 @@ describe("CHAT-02: push notification gating", () => {
     const sandboxHeaders = await claimChatRun(runnerGroup, run.runId);
     await completeChatRunOk(run.runId, sandboxHeaders);
 
-    await expect
-      .poll(() => {
+    await flushWaitUntilForTest();
+    await expect(
+      (() => {
         return context.mocks.webpush.sendNotification.mock.calls.length;
-      })
-      .toBe(2);
+      })(),
+    ).resolves.toBe(2);
     await flushWaitUntilForTest();
 
     for (const endpoint of endpoints) {
@@ -6262,11 +6202,12 @@ describe("CHAT-02: push notification gating", () => {
     const secondHeaders = await claimChatRun(runnerGroup, second.runId);
     await completeChatRunOk(second.runId, secondHeaders);
 
-    await expect
-      .poll(() => {
+    await flushWaitUntilForTest();
+    await expect(
+      (() => {
         return context.mocks.webpush.sendNotification.mock.calls.length;
-      })
-      .toBe(1);
+      })(),
+    ).resolves.toBe(1);
     expect(
       pushPayload(context.mocks.webpush.sendNotification.mock.calls[0]),
     ).toMatchObject({

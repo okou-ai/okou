@@ -316,8 +316,9 @@ async function waitForScheduleCallback(
   scenario: Scenario,
   runId: string,
 ): Promise<void> {
-  await expect
-    .poll(async () => {
+  await flushWaitUntilForTest();
+  await expect(
+    (async () => {
       const callbacks = await store.set(
         readAgentRunCallbacks$,
         { orgId: scenario.orgId, userId: scenario.userId, runId },
@@ -329,8 +330,8 @@ async function waitForScheduleCallback(
           callback.internalKind === "workflow-automation:loop"
         );
       })?.status;
-    })
-    .toBe("delivered");
+    })(),
+  ).resolves.toBe("delivered");
 }
 
 async function deleteWorkflowViaApi(scenario: Scenario): Promise<void> {
@@ -1080,11 +1081,12 @@ describe("okou workflow automation scheduler", () => {
     });
     await completeRunThroughSandbox(scenario, run.runId, 0);
 
-    await expect
-      .poll(async () => {
+    await flushWaitUntilForTest();
+    await expect(
+      (async () => {
         return (await wf.readAutomation(created.body.id)).nextRunAt;
-      })
-      .not.toBeNull();
+      })(),
+    ).resolves.not.toBeNull();
     const automation = await wf.readAutomation(created.body.id);
     expect(automation.enabled).toBeTruthy();
   });
@@ -1121,11 +1123,12 @@ describe("okou workflow automation scheduler", () => {
     });
     await completeRunThroughSandbox(scenario, run.runId, 0);
 
-    await expect
-      .poll(async () => {
+    await flushWaitUntilForTest();
+    await expect(
+      (async () => {
         return (await wf.readAutomation(automation.automationId)).nextRunAt;
-      })
-      .not.toBeNull();
+      })(),
+    ).resolves.not.toBeNull();
     const read = await wf.readAutomation(automation.automationId);
     if (!read.nextRunAt) {
       throw new Error("Expected the loop automation to be rescheduled");
@@ -1418,7 +1421,8 @@ describe("okou workflow automation scheduler", () => {
     };
 
     const firstThreadId = await fireAndFailNextRun();
-    await expect.poll(readFailureState).toStrictEqual({
+    await flushWaitUntilForTest();
+    await expect(readFailureState()).resolves.toStrictEqual({
       enabled: true,
       nextRunAt: expect.any(String),
       nextRunAtIsFuture: true,
@@ -1426,7 +1430,8 @@ describe("okou workflow automation scheduler", () => {
 
     mockNow(base + 320_000);
     const secondThreadId = await fireAndFailNextRun();
-    await expect.poll(readFailureState).toStrictEqual({
+    await flushWaitUntilForTest();
+    await expect(readFailureState()).resolves.toStrictEqual({
       enabled: true,
       nextRunAt: expect.any(String),
       nextRunAtIsFuture: true,
@@ -1438,7 +1443,8 @@ describe("okou workflow automation scheduler", () => {
     expect(new Set([firstThreadId, secondThreadId, thirdThreadId]).size).toBe(
       1,
     );
-    await expect.poll(readFailureState).toStrictEqual({
+    await flushWaitUntilForTest();
+    await expect(readFailureState()).resolves.toStrictEqual({
       enabled: false,
       nextRunAt: null,
       nextRunAtIsFuture: false,

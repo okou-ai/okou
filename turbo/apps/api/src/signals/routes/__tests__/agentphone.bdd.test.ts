@@ -225,13 +225,14 @@ async function claimDispatchedRun(runnerGroup: string): Promise<{
   const runs = createRunsApi(context);
   await runs.heartbeatRunner(runnerGroup);
   let runId: string | undefined;
-  await expect
-    .poll(async () => {
+  await flushWaitUntilForTest();
+  await expect(
+    (async () => {
       const poll = await runs.pollRunner(runnerGroup);
       runId = poll.body.job?.runId;
       return runId ?? null;
-    })
-    .not.toBeNull();
+    })(),
+  ).resolves.not.toBeNull();
   if (!runId) {
     throw new Error("Expected an AgentPhone run to be dispatched");
   }
@@ -387,22 +388,24 @@ async function waitForTyping(
   sends: AgentPhoneSendCapture,
   expected: readonly string[],
 ): Promise<void> {
-  await expect
-    .poll(() => {
+  await flushWaitUntilForTest();
+  await expect(
+    (() => {
       return sends.typing;
-    })
-    .toStrictEqual(expected);
+    })(),
+  ).resolves.toStrictEqual(expected);
 }
 
 async function waitForSendCount(
   sends: AgentPhoneSendCapture,
   count: number,
 ): Promise<void> {
-  await expect
-    .poll(() => {
+  await flushWaitUntilForTest();
+  await expect(
+    (() => {
       return sends.messages.length;
-    })
-    .toBeGreaterThanOrEqual(count);
+    })(),
+  ).resolves.toBeGreaterThanOrEqual(count);
 }
 
 async function waitForSendMatching(
@@ -411,12 +414,13 @@ async function waitForSendMatching(
   predicate: (send: AgentPhoneProviderSend) => boolean,
 ): Promise<AgentPhoneProviderSend> {
   let matched: AgentPhoneProviderSend | undefined;
-  await expect
-    .poll(() => {
+  await flushWaitUntilForTest();
+  await expect(
+    (() => {
       matched = sends.messages.slice(startIndex).find(predicate);
       return matched !== undefined;
-    })
-    .toBe(true);
+    })(),
+  ).resolves.toBeTruthy();
   if (!matched) {
     throw new Error("Expected a matching AgentPhone provider send");
   }
@@ -429,11 +433,12 @@ async function waitForRunSessionId(
   expected: string,
 ): Promise<void> {
   const ap = createAgentPhoneBddApi(context);
-  await expect
-    .poll(async () => {
+  await flushWaitUntilForTest();
+  await expect(
+    (async () => {
       return await ap.readRunSessionId(actor, runId);
-    })
-    .toBe(expected);
+    })(),
+  ).resolves.toBe(expected);
 }
 
 async function waitForRunSessionIdPresent(
@@ -442,13 +447,14 @@ async function waitForRunSessionIdPresent(
 ): Promise<string> {
   const ap = createAgentPhoneBddApi(context);
   let sessionId: string | undefined;
-  await expect
-    .poll(async () => {
+  await flushWaitUntilForTest();
+  await expect(
+    (async () => {
       const result = await settle(ap.readRunSessionId(actor, runId));
       sessionId = result.ok ? result.value : undefined;
       return sessionId ?? null;
-    })
-    .not.toBeNull();
+    })(),
+  ).resolves.not.toBeNull();
   if (!sessionId) {
     throw new Error(`Expected run ${runId} to expose a session id`);
   }

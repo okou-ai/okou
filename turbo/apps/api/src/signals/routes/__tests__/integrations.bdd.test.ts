@@ -933,8 +933,9 @@ async function expectSlackPiOwnership(args: {
   readonly runId: string;
   readonly assistantText: string;
 }): Promise<void> {
-  await expect
-    .poll(async () => {
+  await flushWaitUntilForTest();
+  await expect(
+    (async () => {
       const callbacks = await callbackStore.set(
         readAgentRunCallbacks$,
         {
@@ -947,8 +948,8 @@ async function expectSlackPiOwnership(args: {
       return callbacks.find((callback) => {
         return callback.internalKind === "slack:chat";
       })?.status;
-    })
-    .toBe("delivered");
+    })(),
+  ).resolves.toBe("delivered");
   const callbacks = await callbackStore.set(
     readAgentRunCallbacks$,
     {
@@ -1058,11 +1059,12 @@ async function cancelContinuedSlackPiTurn(args: {
   readonly turn: Awaited<ReturnType<typeof claimContinuedSlackPiTurn>>;
 }): Promise<void> {
   await runs.requestCancelRun(args.scenario.actor, args.turn.runId, [200]);
-  await expect
-    .poll(async () => {
+  await flushWaitUntilForTest();
+  await expect(
+    (async () => {
       return (await runs.readRun(args.scenario.actor, args.turn.runId)).status;
-    })
-    .toBe("cancelled");
+    })(),
+  ).resolves.toBe("cancelled");
   await webhooks.requestAgentComplete(
     { runId: args.turn.runId, exitCode: 1, error: "Run cancelled" },
     { authorization: `Bearer ${args.turn.claim.sandboxToken}` },
@@ -2983,8 +2985,9 @@ describe("INT-01: Slack app deep webhook flows", () => {
       if (!completion.ok) {
         throw completion.error;
       }
-      await expect
-        .poll(async () => {
+      await flushWaitUntilForTest();
+      await expect(
+        (async () => {
           const callbacks = await callbackStore.set(
             readAgentRunCallbacks$,
             {
@@ -2998,8 +3001,8 @@ describe("INT-01: Slack app deep webhook flows", () => {
             return callback.internalKind === "slack:chat";
           });
           return delivery?.status;
-        })
-        .toBe("delivered");
+        })(),
+      ).resolves.toBe("delivered");
       const run1Delivery = (
         await callbackStore.set(
           readAgentRunCallbacks$,
@@ -3341,8 +3344,9 @@ describe("INT-01: Slack app deep webhook flows", () => {
         } else {
           await flushWaitUntilForTest();
         }
-        await expect
-          .poll(async () => {
+        await flushWaitUntilForTest();
+        await expect(
+          (async () => {
             const callbacks = await callbackStore.set(
               readAgentRunCallbacks$,
               {
@@ -3356,8 +3360,8 @@ describe("INT-01: Slack app deep webhook flows", () => {
               return callback.internalKind === "slack:chat";
             });
             return delivery?.status;
-          })
-          .toBe("failed");
+          })(),
+        ).resolves.toBe("failed");
         const failedDelivery = (
           await callbackStore.set(
             readAgentRunCallbacks$,
@@ -3419,11 +3423,12 @@ describe("INT-01: Slack app deep webhook flows", () => {
           });
           const cancelledRunId = await pollSlackRun(runnerGroup);
           await runs.requestCancelRun(actor, cancelledRunId, [200]);
-          await expect
-            .poll(async () => {
+          await flushWaitUntilForTest();
+          await expect(
+            (async () => {
               return (await runs.readRun(actor, cancelledRunId)).status;
-            })
-            .toBe("cancelled");
+            })(),
+          ).resolves.toBe("cancelled");
           await flushWaitUntilForTest();
           expect(
             context.mocks.slack.assistant.threads.setStatus,
@@ -4912,15 +4917,16 @@ describe("INT-01: Slack app deep webhook flows", () => {
     expect(context.mocks.slack.views.publish).not.toHaveBeenCalled();
 
     await integrations.postSlackEvent(teamId, { type: "app_uninstalled" });
-    await expect
-      .poll(async () => {
+    await flushWaitUntilForTest();
+    await expect(
+      (async () => {
         const status = await integrations.requestSlackIntegrationStatus(
           actor,
           [200],
         );
         return "isInstalled" in status.body ? status.body.isInstalled : null;
-      })
-      .toBe(false);
+      })(),
+    ).resolves.toBeFalsy();
     const orgStatus = await integrations.requestSlackIntegrationStatus(
       actor,
       [200],
@@ -4937,12 +4943,13 @@ describe("INT-01: Slack app deep webhook flows", () => {
     await integrations.postSlackEvent(unbound.teamId, {
       type: "app_uninstalled",
     });
-    await expect
-      .poll(async () => {
+    await flushWaitUntilForTest();
+    await expect(
+      (async () => {
         const state = await integrations.readSlackTestState(unbound.teamId);
         return state.installation;
-      })
-      .toBeNull();
+      })(),
+    ).resolves.toBeNull();
     const unboundState = await integrations.readSlackTestState(unbound.teamId);
     expect(unboundState.installation).toBeNull();
 
@@ -4956,12 +4963,13 @@ describe("INT-01: Slack app deep webhook flows", () => {
       type: "tokens_revoked",
       tokens: { bot: ["xoxb-revoked"] },
     });
-    await expect
-      .poll(async () => {
+    await flushWaitUntilForTest();
+    await expect(
+      (async () => {
         const state = await integrations.readSlackTestState(revoked.teamId);
         return state.installation;
-      })
-      .toBeNull();
+      })(),
+    ).resolves.toBeNull();
     const revokedState = await integrations.readSlackTestState(revoked.teamId);
     expect(revokedState.installation).toBeNull();
     expect(revokedState.connections).toHaveLength(0);
@@ -5904,12 +5912,13 @@ describe("INT-02: Telegram integration", () => {
     // those side effects to settle before checking that later typing refreshes
     // no longer see pending Telegram callbacks.
     await runs.requestCancelRun(actor, runId, [200]);
-    await expect
-      .poll(async () => {
+    await flushWaitUntilForTest();
+    await expect(
+      (async () => {
         const run = await runs.readRun(actor, runId);
         return run.status;
-      })
-      .toBe("cancelled");
+      })(),
+    ).resolves.toBe("cancelled");
     await flushWaitUntilForTest();
     const actionsAfterCancel = chatActions.length;
     const idleTyping = await webhooks.requestAgentEvents(

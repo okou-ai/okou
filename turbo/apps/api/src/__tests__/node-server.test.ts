@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { onTestFinished } from "vitest";
 
 import { testContext } from "./test-context";
+import { createDeferredPromise } from "../signals/utils";
 
 const context = testContext();
 
@@ -87,6 +88,24 @@ async function openSocket(port: number) {
   return {
     socket,
     closed,
+    waitForHealthResponse: () => {
+      const healthResponse = createDeferredPromise<void>(context.signal);
+      const received = () => {
+        if (response.includes('{"status":"ok"}')) {
+          socket.off("data", received);
+          socket.off("error", failed);
+          healthResponse.resolve(undefined);
+        }
+      };
+      const failed = (error: Error) => {
+        socket.off("data", received);
+        healthResponse.reject(error);
+      };
+      socket.on("data", received);
+      socket.once("error", failed);
+      received();
+      return healthResponse.promise;
+    },
     response: () => {
       return response;
     },
@@ -106,9 +125,8 @@ describe("standalone Node server shutdown", () => {
       const server = await startChild();
       const peer = await openSocket(server.port);
       request(peer.socket, "/health");
-      await vi.waitFor(() => {
-        expect(peer.response()).toContain('{"status":"ok"}');
-      });
+      await peer.waitForHealthResponse();
+      expect(peer.response()).toContain('{"status":"ok"}');
       server.child.kill(signal);
       await peer.closed;
       await expect(server.exited).resolves.toStrictEqual({

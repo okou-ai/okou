@@ -1070,16 +1070,17 @@ describe("shared thread routes", () => {
     await completeChatRunWithMessage(owner, run.runId, assistantText);
 
     let events: readonly SharedThreadEventRef[] | undefined;
-    await expect
-      .poll(async () => {
+    await flushWaitUntilForTest();
+    await expect(
+      (async () => {
         events = await listSharedThreadEventRefs(owner.actor, run.threadId);
         return events.some((event) => {
           return (
             event.eventType === "run.completed" && event.runId === run.runId
           );
         });
-      })
-      .toBe(true);
+      })(),
+    ).resolves.toBeTruthy();
     if (!events) {
       throw new Error("Expected completed shared-thread fixture events");
     }

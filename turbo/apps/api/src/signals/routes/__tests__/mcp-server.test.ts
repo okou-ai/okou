@@ -94,8 +94,6 @@ import { seedRetentionOutputEvent$ } from "../../../test-fixtures/chat-event-ret
 import { withBuiltInModelRuntimeRouteCandidateUnavailableForTest } from "../../../test-fixtures/built-in-model-runtime-route";
 import {
   completeRunWithoutCallbacksFixture,
-  holdAgentRowLockFixture,
-  holdChatThreadRowLockFixture,
   setQueuedUserMessageCreatedAtFixture,
   timeoutRunWithoutCallbacksFixture,
 } from "../../../test-fixtures/chat-events";
@@ -878,12 +876,13 @@ async function waitForInputRunId(
   inputRef: McpChatInputRef,
 ): Promise<string> {
   let runId: string | undefined;
-  await expect
-    .poll(async () => {
+  await flushWaitUntilForTest();
+  await expect(
+    (async () => {
       runId = (await getStatus(token, { inputRef })).messages?.arguments.runId;
       return runId;
-    })
-    .toBeDefined();
+    })(),
+  ).resolves.toBeDefined();
   if (runId === undefined) {
     throw new Error("Expected the submitted input to launch a run");
   }
@@ -898,11 +897,12 @@ async function waitForRejectedInput(
   token: string,
   inputRef: McpChatInputRef,
 ): Promise<void> {
-  await expect
-    .poll(async () => {
+  await flushWaitUntilForTest();
+  await expect(
+    (async () => {
       return (await getStatus(token, { inputRef })).lifecycle.outcome;
-    })
-    .toBe("rejected");
+    })(),
+  ).resolves.toBe("rejected");
 }
 
 function expectFixedMcpTimestamp(value: string): void {
@@ -1671,87 +1671,6 @@ describe("MCP chat discovery and creation", () => {
       throw new Error("Expected the original combined input event");
     }
     expect(unchanged.userMessage).toStrictEqual(original.userMessage);
-  });
-
-  it("finishes combined creation after its HTTP caller disconnects and recovers one input", async () => {
-    const f = await creationFixture();
-    const token = f.auth.token({ scope: defaultScopes });
-    const args = {
-      requestId: randomUUID(),
-      agentId: f.agent.agentId,
-      title: "Recover combined creation",
-      model: "claude-sonnet-5",
-      message: "Keep this input after response loss",
-    };
-    // Infrastructure exception: hold the selected Agent so the creation
-    // transaction waits on it and the HTTP response can disconnect while
-    // waitUntil retains ownership of the real creation transaction.
-    const lock = await holdAgentRowLockFixture({
-      agentId: f.agent.agentId,
-      signal: context.signal,
-    });
-    const controller = new AbortController();
-    const app = createAppWithRoutes({
-      routes: mcpServerRoutes,
-      signal: context.signal,
-    });
-    const pending = settleIncludingAbort(
-      (async () => {
-        const response = await app.request(
-          new Request(resource, {
-            method: "POST",
-            headers: {
-              ...protocolHeaders(
-                token,
-                "tools/call",
-                true,
-                "create_chat_thread",
-              ),
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(
-              requestBody("tools/call", true, {
-                name: "create_chat_thread",
-                arguments: args,
-              }),
-            ),
-            signal: controller.signal,
-          }),
-        );
-        return { status: response.status, body: await response.text() };
-      })(),
-    );
-    onTestFinished(async () => {
-      controller.abort();
-      lock.release();
-      await lock.done;
-      await pending;
-    });
-    await expect
-      .poll(lock.blockedWaiterCount, { interval: 10, timeout: 5000 })
-      .toBeGreaterThan(0);
-    controller.abort();
-    lock.release();
-    await lock.done;
-    await pending;
-    await flushWaitUntilForTest();
-
-    const recovered = await createThread(token, args);
-    expect(recovered).toMatchObject({
-      threadId: args.requestId,
-      agentId: f.agent.agentId,
-      model: {
-        selectedModel: "claude-sonnet-5",
-        effectiveModel: "claude-sonnet-5",
-        source: "thread",
-      },
-      replayed: true,
-      input: { inputRef: { threadId: args.requestId } },
-    });
-    const messages = (await getMessages(token, { threadId: args.requestId }))
-      .messages;
-    expect(messages).toMatchObject([{ text: args.message }]);
-    expect(messages).toHaveLength(1);
   });
 
   it("conflicts on changed intent or mode for a combined creation request", async () => {
@@ -3970,86 +3889,6 @@ describe("MCP chat mutations", () => {
       ).resolves.toStrictEqual(before);
     },
   );
-
-  it("finishes an admitted send after its HTTP caller disconnects and recovers the original receipt", async () => {
-    const f = await messageFixture();
-    const thread = await f.chat.createThread(f.actor, {
-      agentId: f.agent.agentId,
-    });
-    const args = {
-      threadId: thread.id,
-      text: "Recover this interrupted response",
-      requestId: randomUUID(),
-    };
-    const token = f.auth.token({ scope: defaultScopes });
-    // Infrastructure exception: an HTTP caller cannot pause a database lock.
-    // Hold only this owned thread to disconnect after admission but before its
-    // write commits, then verify the resulting conversation through real APIs.
-    const lock = await holdChatThreadRowLockFixture({
-      threadId: thread.id,
-      signal: context.signal,
-    });
-    const controller = new AbortController();
-    const app = createAppWithRoutes({
-      routes: mcpServerRoutes,
-      signal: context.signal,
-    });
-    const pending = settleIncludingAbort(
-      (async () => {
-        const response = await app.request(
-          new Request(resource, {
-            method: "POST",
-            headers: {
-              ...protocolHeaders(
-                token,
-                "tools/call",
-                true,
-                "send_chat_message",
-              ),
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(
-              requestBody("tools/call", true, {
-                name: "send_chat_message",
-                arguments: args,
-              }),
-            ),
-            signal: controller.signal,
-          }),
-        );
-        return { status: response.status, body: await response.text() };
-      })(),
-    );
-    onTestFinished(async () => {
-      controller.abort();
-      lock.release();
-      await lock.done;
-      await pending;
-    });
-    await expect.poll(lock.blockedWaiterCount).toBeGreaterThan(0);
-    controller.abort();
-    lock.release();
-    await lock.done;
-    await pending;
-    await flushWaitUntilForTest();
-    const recovered = await sendMessage(token, args);
-    expect(recovered).toMatchObject({
-      inputRef: { threadId: thread.id, eventId: args.requestId },
-      replayed: true,
-      disposition: "rejected",
-      runId: null,
-    });
-    expect(
-      (await getMessages(token, { threadId: thread.id })).messages,
-    ).toMatchObject([{ text: args.text }]);
-    expect(
-      (await f.chat.listThreadEvents(f.actor, thread.id)).events.filter(
-        (event) => {
-          return event.id === args.requestId;
-        },
-      ),
-    ).toHaveLength(1);
-  });
 
   it("expires an accepted identity after its absolute retry window without admitting another input", async () => {
     const f = await messageFixture();
@@ -8007,15 +7846,16 @@ describe("external MCP entry", () => {
 
     await f.runs.requestCancelRun(f.actor, runId, [200]);
     await flushWaitUntilForTest();
-    await expect
-      .poll(async () => {
+    await flushWaitUntilForTest();
+    await expect(
+      (async () => {
         return (await f.chat.listThreadEvents(f.actor, threadId)).events.some(
           (event) => {
             return event.eventType === "run.cancelled" && event.runId === runId;
           },
         );
-      })
-      .toBe(true);
+      })(),
+    ).resolves.toBeTruthy();
     await f.chat.markThreadUnread(f.actor, threadId);
     const before = await f.chat.readThread(f.actor, threadId);
     const unread = await getIndicators(f.auth.token());

@@ -40,11 +40,12 @@ async function waitForThreadTitle(
   threadId: string,
   title: string | null,
 ): Promise<void> {
-  await expect
-    .poll(async () => {
+  await flushWaitUntilForTest();
+  await expect(
+    (async () => {
       return await readThreadTitleFromEvents(actor, threadId);
-    })
-    .toBe(title);
+    })(),
+  ).resolves.toBe(title);
 }
 
 async function readThreadTitleFromEvents(

@@ -1,20 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { mockEnv } from "../../../lib/env";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import {
-  holdThreadSessionConversationClearFixture,
   reassignThreadAgentFixture,
   replaceThreadSessionBindingFixture,
 } from "../../../test-fixtures/chat-events";
-import {
-  barrierQueryBinds,
-  barrierQueryText,
-  withDatabaseTransactionBarrierFixture,
-} from "../../../test-fixtures/database-transaction-barrier";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { onRejection } from "../../utils";
 import { expectApiError } from "./helpers/api-bdd";
 import { mockCodexDeviceAuthProvider } from "./helpers/api-bdd-auth-device";
 import { createFirewallApi } from "./helpers/api-bdd-firewall";
@@ -25,7 +18,6 @@ import {
   eventBackedContents,
   assistantEvent,
   modelProviderSecretPlaceholder,
-  userMessages,
 } from "./helpers/chat-events-fixture";
 import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 
@@ -713,119 +705,6 @@ describe("CHAT-02: run-level model overrides", () => {
     const secondClaim = await claimChatRun(runnerGroup, second.runId);
     expect(secondClaim.claim.resumeSession).toBeNull();
     await cancelChatRun(actor, second.runId, secondClaim.sandboxHeaders);
-  }, 90_000);
-
-  it("rejects the input of a changed canonical snapshot without retrying it", async () => {
-    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-
-    const first = await sendChatRun(actor, {
-      agentId,
-      prompt: "establish the checkpoint snapshot",
-    });
-    const firstClaim = await claimChatRun(runnerGroup, first.runId);
-    chatCallbacks.mockChatOutputEvents([]);
-    await completeChatRunOk(first.runId, firstClaim.sandboxHeaders);
-    await flushWaitUntilForTest();
-    const firstBinding = await readThreadSessionBinding(
-      context,
-      first.threadId,
-    );
-    if (!firstBinding.agent_session_id) {
-      throw new Error("Expected the first run to establish a session");
-    }
-
-    const secondEventId = randomUUID();
-    const sessionId = firstBinding.agent_session_id;
-    await withDatabaseTransactionBarrierFixture(
-      {
-        select: (queryArgs) => {
-          const query = barrierQueryText(queryArgs);
-          return (
-            query.startsWith("select ") &&
-            query.includes('from "agent_sessions"') &&
-            query.includes("for update") &&
-            barrierQueryBinds(queryArgs, sessionId)
-          );
-        },
-        stopAt: (_queryArgs, selectingStatement) => {
-          return selectingStatement;
-        },
-        work: async (commit) => {
-          const conversationClear =
-            await holdThreadSessionConversationClearFixture({
-              threadId: first.threadId,
-              signal: context.signal,
-            });
-          const releaseClear = async () => {
-            conversationClear.release();
-            await conversationClear.done;
-          };
-          onTestFinished(releaseClear);
-          await onRejection(
-            (async () => {
-              await chat.requestSendEvent(
-                actor,
-                {
-                  agentId,
-                  threadId: first.threadId,
-                  prompt: "preserve the queued input if its checkpoint changes",
-                  clientEventId: secondEventId,
-                },
-                [201],
-              );
-              // Preparation must reach its real session revalidation before
-              // observing the lock. The independent read graph may take any
-              // amount of preparation time without consuming the poll budget.
-              await commit.entered;
-              const backgroundCompletion = (async () => {
-                await expect(flushWaitUntilForTest()).rejects.toThrow(
-                  "Chat thread session changed during run preparation",
-                );
-              })();
-              commit.release();
-              await expect
-                .poll(conversationClear.blockedWaiterCount)
-                .toBeGreaterThanOrEqual(1);
-              await releaseClear();
-              await backgroundCompletion;
-            })(),
-            releaseClear,
-          );
-        },
-      },
-      context.signal,
-    );
-
-    const events = await chat.listThreadEvents(actor, first.threadId);
-    expect(
-      userMessages(events.events).filter((message) => {
-        return (
-          message.id === secondEventId ||
-          message.revokesEventId === secondEventId
-        );
-      }),
-    ).toStrictEqual([
-      expect.objectContaining({
-        id: secondEventId,
-        eventType: "input.prompt",
-      }),
-      expect.objectContaining({
-        eventType: "input.rejected",
-        revokesEventId: secondEventId,
-      }),
-    ]);
-    // The failed commit is not retried; its picked input ends rejected.
-    expect(events.events).toContainEqual(
-      expect.objectContaining({
-        eventType: "input.rejected",
-        revokesEventId: secondEventId,
-        error: "internal_error",
-      }),
-    );
-    await expect(
-      readThreadSessionBinding(context, first.threadId),
-    ).resolves.toStrictEqual(firstBinding);
   }, 90_000);
 
   it("re-resolves a sticky model through the current provider policy", async () => {

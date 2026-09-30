@@ -325,19 +325,13 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
     let response:
       | Awaited<ReturnType<typeof runsApi.requestClaimRunnerJob>>
       | undefined;
-    await expect
-      .poll(
-        async () => {
-          response = await runsApi.requestClaimRunnerJob(
-            true,
-            runId,
-            [200, 404],
-          );
-          return response.status;
-        },
-        { interval: 100, timeout: 10_000 },
-      )
-      .toBe(200);
+    await flushWaitUntilForTest();
+    await expect(
+      (async () => {
+        response = await runsApi.requestClaimRunnerJob(true, runId, [200, 404]);
+        return response.status;
+      })(),
+    ).resolves.toBe(200);
     if (!response || response.status !== 200) {
       throw new Error("Expected the canonical upload run to be claimable");
     }

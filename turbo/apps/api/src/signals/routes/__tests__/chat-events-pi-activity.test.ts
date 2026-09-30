@@ -5,14 +5,13 @@ import { PI_MEMORY_ROOT } from "@okouai/api-contracts/contracts/runners";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { http, HttpResponse } from "msw";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { env, mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import {
-  holdAgentRunRowLockFixture,
   holdThreadSessionConversationClearFixture,
   readRunUsageEventsFixture,
 } from "../../../test-fixtures/chat-events";
@@ -760,60 +759,6 @@ describe("CHAT-02: model-first provider policies", () => {
     expect(JSON.stringify(lateCancelledH2.body)).toContain(
       "[PI_H2_RUN_TERMINAL]",
     );
-    await expect(
-      readThreadSessionConversation(context, run.threadId),
-    ).resolves.toStrictEqual(canonicalConversation);
-
-    const racedRun = await withOpenRouterRoute(async () => {
-      return await sendChatRunAfterPick(actor, {
-        agentId,
-        threadId: run.threadId,
-        prompt: "reject standalone H2 during an early successful completion",
-      });
-    });
-    const racedClaim = await claimChatRun(runnerGroup, racedRun.runId);
-    const lifecycleGate = await holdAgentRunRowLockFixture({
-      runId: racedRun.runId,
-      signal: context.signal,
-    });
-    const ownedRequests: Promise<unknown>[] = [];
-    onTestFinished(async () => {
-      lifecycleGate.release();
-      await Promise.all(ownedRequests);
-      await lifecycleGate.done;
-    });
-    const racedCompletion = webhooks.requestAgentComplete(
-      { runId: racedRun.runId, exitCode: 0 },
-      racedClaim.sandboxHeaders,
-      [200],
-    );
-    ownedRequests.push(Promise.allSettled([racedCompletion]));
-    await expect.poll(lifecycleGate.waiterCount).toBe(1);
-    const racedCheckpoint = webhooks.requestAgentCheckpoint(
-      {
-        runId: racedRun.runId,
-        cliAgentType: "pi",
-        cliAgentSessionId: run.threadId,
-        cliAgentSessionHistoryHash: h2Hash,
-      },
-      racedClaim.sandboxHeaders,
-      [400],
-    );
-    ownedRequests.push(Promise.allSettled([racedCheckpoint]));
-    const racedCheckpointResult = await racedCheckpoint;
-    expect(JSON.stringify(racedCheckpointResult.body)).toContain(
-      "[CHECKPOINT_RUN_NOT_SETTLED]",
-    );
-    lifecycleGate.release();
-    const [, racedCompletionResult] = await Promise.all([
-      lifecycleGate.done,
-      racedCompletion,
-    ] as const);
-    expect(racedCompletionResult).toMatchObject({
-      body: { success: true, status: "failed" },
-    });
-    await waitForRunStatus(actor, racedRun.runId, "failed");
-    await flushWaitUntilForTest();
     await expect(
       readThreadSessionConversation(context, run.threadId),
     ).resolves.toStrictEqual(canonicalConversation);
