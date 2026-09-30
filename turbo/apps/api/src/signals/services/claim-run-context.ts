@@ -6951,28 +6951,9 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     },
   );
   const preCreateAgentIdAgentId$ = computed(async (get) => {
-    const { command: args } = await get(selectedIdentityInputIdentityInput$);
-    const db = get(db$);
-    return await (async () => {
-      if (args.body.agentId) {
-        return args.body.agentId;
-      }
-      if (!args.body.sessionId) {
-        return null;
-      }
-      const [session] = await db
-        .select({ agentId: agentSessions.agentId })
-        .from(agentSessions)
-        .where(
-          and(
-            eq(agentSessions.id, args.body.sessionId),
-            eq(agentSessions.userId, args.auth.userId),
-            eq(agentSessions.orgId, args.auth.orgId),
-          ),
-        )
-        .limit(1);
-      return session?.agentId ?? null;
-    })();
+    // Raw configuration reads need the captured agent, not a valid launch.
+    // Source validation can reject the input while these finite reads finish.
+    return (await get(claimReadIdentity$))?.agentId ?? null;
   });
   const preCreateRequestObservationRequestObservation$ = computed(
     async (get) => {
@@ -6986,17 +6967,11 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   const preCreateAgentAgent$ = computed(
     async (get): Promise<AgentRunRecord | null> => {
       const db = get(db$);
-      const [agentId, observation] = await Promise.all([
-        get(preCreateAgentIdAgentId$),
-        get(preCreateRequestObservationRequestObservation$),
-      ]);
+      const agentId = await get(preCreateAgentIdAgentId$);
       if (!agentId) {
         return null;
       }
       return await (async () => {
-        if (observation) {
-          return observation.agent;
-        }
         const [agent] = await db
           .select({
             id: agents.id,
