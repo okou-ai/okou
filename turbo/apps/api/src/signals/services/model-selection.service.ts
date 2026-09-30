@@ -7,12 +7,9 @@ import {
 } from "./effective-model-route.service";
 import {
   getFrameworkForType,
-  getBuiltInConcreteProviderType,
   isCodexFastModeModel,
   isBuiltInModelProviderType,
   getRunModelRouteAccess,
-  isSupportedRunModel,
-  isModelSupportedByProvider,
   modelProviderTypeSchema,
   type ModelProviderCredentialScope,
   type ModelProviderWriteType,
@@ -42,6 +39,8 @@ import {
   loadModelCatalog,
   resolveCatalogModel,
   resolveCatalogRunModel,
+  catalogBuiltInCandidates,
+  catalogHasProviderRoute,
   type ModelCatalog,
 } from "./model-catalog.service";
 import {
@@ -234,6 +233,7 @@ async function resolveValidPolicyRoute(params: {
   }
   if (policy) {
     return await resolveEffectivePolicyRoute({
+      catalog: params.facts.catalog,
       db: params.facts[modelRoutingFactsSource],
       orgId: params.facts.identity.orgId,
       member: params.facts.member,
@@ -480,22 +480,12 @@ export async function resolveModelSelectionPin(params: {
     ) {
       return insufficientCredits();
     }
-    if (
-      isBuiltInModelProviderType(provider.type) &&
-      !isSupportedRunModel(modelSelection.selectedModel)
-    ) {
-      return badRequestMessage("Invalid model selection");
-    }
     return {
       modelProviderId: modelSelection.modelProviderId,
       modelProviderType: null,
       modelProviderCredentialScope: null,
       selectedModel: modelSelection.selectedModel,
     };
-  }
-
-  if (!isSupportedRunModel(modelSelection.selectedModel)) {
-    return badRequestMessage("Invalid model selection");
   }
 
   const facts = await prepareModelRoutingFacts({
@@ -642,19 +632,33 @@ export async function resolveModelFirstProviderAdmission(params: {
     effectiveModelProvider,
   );
   const knownProvider = parsedProvider.success ? parsedProvider.data : null;
+  const catalog = await loadModelCatalog(params.db);
+  // Built-in runs use the protocol framework of the model's primary catalog
+  // candidate.
+  const [primaryBuiltIn] =
+    selectedModel === null
+      ? []
+      : catalogBuiltInCandidates(catalog, selectedModel);
+  const primaryConcrete = modelProviderTypeSchema.safeParse(
+    primaryBuiltIn?.concreteProviderType,
+  );
   const cliAgentType = knownProvider
     ? getFrameworkForType(
-        isBuiltInModelProviderType(knownProvider) &&
-          isSupportedRunModel(selectedModel)
-          ? getBuiltInConcreteProviderType(selectedModel)
+        isBuiltInModelProviderType(knownProvider) && primaryConcrete.success
+          ? primaryConcrete.data
           : knownProvider,
       )
     : null;
   if (
     params.providerModelSupport === "validate" &&
-    isSupportedRunModel(selectedModel) &&
+    selectedModel !== null &&
+    catalog.byModel.has(selectedModel) &&
     (!knownProvider ||
-      !isModelSupportedByProvider(selectedModel, knownProvider)) &&
+      !catalogHasProviderRoute(
+        catalog,
+        selectedModel,
+        isBuiltInModelProviderType(knownProvider) ? "built-in" : knownProvider,
+      )) &&
     !(await customSurfaceMapsModel({
       db: params.db,
       orgId: params.orgId,

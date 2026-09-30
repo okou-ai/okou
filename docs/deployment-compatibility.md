@@ -5,8 +5,10 @@
 The server model catalog (`run_model_catalog` plus `model_routes`, served by
 `GET /api/model-catalog`) becomes the only authority for model names, order,
 the system default, retirement and replacement, price tiers and route
-capabilities; code model lists, labels and `ORG_DEFAULT_RUN_MODEL` are no
-longer product authority. The organization default is not configurable: the
+capabilities; code model labels and `ORG_DEFAULT_RUN_MODEL` are no longer
+product authority, and the system default is the DB row with
+`is_system_default = true`. Code still owns runtime adapters and the static
+limited-free plan allowlist (`isLimitedFree1RestrictedRunModel`). The organization default is not configurable: the
 catalog system default (`okou-1.0`, Auto) is projected into every
 organization's `GET /api/model-policies` as a non-deletable system policy and
 is not stored per organization. Resolution is thread selection, then member
@@ -15,7 +17,12 @@ resolve along the replacement chain (`claude-fable-5` → `claude-fable-5-1`,
 `claude-opus-4-8` → `claude-opus-5-5`, `claude-sonnet-4-6` →
 `claude-sonnet-5-5`, `deepseek-v4-pro` and `gpt-5.5` → `gpt-6-luna`); a
 replacement never transplants credentials, and a selection whose provider type
-has no route on the replacement fails explicitly. The `OkouModels` feature
+has no route on the replacement fails explicitly. Chains may have several hops,
+constrained by `lineage_rank` (each hop strictly increases it). App credit
+usage and history show a run's own model name from the catalog, including
+retired models, never the replacement's name. Built-in runtime candidates
+come from enabled `model_routes` rows; BYOK and subscription upstream IDs are
+still static code (see the design note). The `OkouModels` feature
 switch is removed. See [the design note](model-catalog.md).
 
 Migrations:
@@ -31,8 +38,16 @@ Migrations:
   (Built-in candidates, BYOK compatibility and a copy of
   `subscription_model_catalog`), and fails rather than dropping rows if that
   table lists a model outside the active catalog. Existing
-  `allow_new_org_policy` values are preserved; unrecognized rows are kept
-  without routes and non-addable.
+  `allow_new_org_policy` values are preserved. There is no generic delete:
+  unrecognized rows are kept with their ID as label, sorted last,
+  `allow_new_org_policy = false` and no routes. In production these are
+  `gpt-5.6-terra`, `okou-1.0-pro` and `okou-1.0-max` (seeded by migrations
+  1191 and 1194; code support removed by #37363 and #37368; MaskDB on
+  2026-09-30 shows zero references in `chat_threads`, `org_model_policies`,
+  `org_members_metadata`, `agents` and `model_providers`). Their retirement or
+  deletion is pending an owner decision (Ethan). They are not `replaced_by`
+  anything, so the catalog response lists them with `replacedBy` null; the
+  API does not offer or accept them because they have no adapter or route.
 - `1297_model_catalog_stored_selections` rewrites mutable stored selections of
   retired models to their final replacement: `org_model_policies.model` (only
   onto a replacement route of the same provider type; incompatible retired

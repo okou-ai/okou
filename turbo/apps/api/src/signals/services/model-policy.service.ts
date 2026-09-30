@@ -19,11 +19,8 @@ import { and, asc, eq, inArray, notInArray, sql } from "drizzle-orm";
 import {
   MODEL_PROVIDER_TYPES,
   getFrameworkForType,
-  getBuiltInConcreteProviderType,
   isBuiltInModelProviderType,
-  isModelSupportedByProvider,
   getRunModelRouteAccess,
-  isSupportedRunModel,
   RETIRED_RUN_MODEL_MESSAGE,
   type ModelProviderCredentialScope,
   type OrgModelPoliciesResponse,
@@ -55,6 +52,8 @@ import {
   catalogHasProviderRoute,
   catalogModelRank,
   isCatalogModelAddable,
+  isCatalogModelRunnable,
+  catalogBuiltInCandidates,
   loadModelCatalog,
   resolveCatalogModel,
   type ModelCatalog,
@@ -186,8 +185,7 @@ function projectPolicyRows(
     ...stored.filter((row) => {
       return (
         row.model !== defaultModel &&
-        isCatalogModelAddable(catalog, row.model) &&
-        isSupportedRunModel(row.model)
+        parseSupportedModel(catalog, row.model) !== null
       );
     }),
   ]);
@@ -201,7 +199,7 @@ function bad<T>(message: string): ServiceResult<T> {
   return { ok: false, message };
 }
 
-function planRestricted<T>(model?: SupportedRunModel): ServiceResult<T> {
+function planRestricted<T>(model?: string): ServiceResult<T> {
   return {
     ok: false,
     response:
@@ -225,21 +223,22 @@ function providerTypeForSurface(protocol: string): ModelProviderType | null {
 }
 
 function surfaceSupportsModel(
+  catalog: ModelCatalog,
   surface: SurfaceRouteInfo,
   model: string,
 ): boolean {
-  if (
-    !isSupportedRunModel(model) ||
-    model === "claude-sonnet-5-5" ||
-    model === "gpt-6.1-sol"
-  ) {
+  if (model === "claude-sonnet-5-5" || model === "gpt-6.1-sol") {
     return false;
   }
+  // A custom gateway serves the model through the same protocol framework as
+  // the model's primary Built-in catalog candidate.
+  const [primary] = catalogBuiltInCandidates(catalog, model);
+  const concreteType = parseProviderType(primary?.concreteProviderType ?? "");
   const providerType = providerTypeForSurface(surface.protocol);
   return (
     providerType !== null &&
-    getFrameworkForType(providerType) ===
-      getFrameworkForType(getBuiltInConcreteProviderType(model)) &&
+    concreteType !== null &&
+    getFrameworkForType(providerType) === getFrameworkForType(concreteType) &&
     typeof surface.modelMappings[model] === "string"
   );
 }
@@ -248,11 +247,13 @@ function parseProviderType(value: string): ModelProviderType | null {
   return value in MODEL_PROVIDER_TYPES ? (value as ModelProviderType) : null;
 }
 
+/** The catalog alone decides which models can be configured. */
 function parseSupportedModel(
   catalog: ModelCatalog,
   value: string,
-): SupportedRunModel | null {
-  return isSupportedRunModel(value) && isCatalogModelAddable(catalog, value)
+): string | null {
+  return isCatalogModelAddable(catalog, value) &&
+    isCatalogModelRunnable(catalog, value)
     ? value
     : null;
 }
@@ -355,7 +356,7 @@ function policiesByModel(
 function modelsAvailableToAdd(
   catalog: ModelCatalog,
   rows: readonly OrgModelPolicyRow[],
-): SupportedRunModel[] {
+): string[] {
   const configured = new Set(
     rows.map((row) => {
       return row.model;
@@ -555,6 +556,7 @@ async function listOrgSurfaceRoutes(
 
 async function validateOrgProviderRoute(
   db: Db,
+  catalog: ModelCatalog,
   orgId: string,
   policy: UpdateOrgModelPolicy,
 ): Promise<string | null> {
@@ -592,12 +594,14 @@ async function validateOrgProviderRoute(
     ) {
       return "Selected custom gateway protocol does not match the route";
     }
-    return surfaceSupportsModel(surface, policy.model)
+    return surfaceSupportsModel(catalog, surface, policy.model)
       ? null
       : `Model "${policy.model}" is not mapped on the selected custom gateway surface`;
   }
 
-  if (!isModelSupportedByProvider(policy.model, policy.defaultProviderType)) {
+  if (
+    !catalogHasProviderRoute(catalog, policy.model, policy.defaultProviderType)
+  ) {
     return `Model "${policy.model}" is not supported by provider "${policy.defaultProviderType}"`;
   }
 
@@ -711,7 +715,7 @@ async function validateUpdatePolicies(
 
   for (const policy of policies) {
     const resolution = resolveCatalogModel(catalog, policy.model);
-    if (resolution.kind === "unknown" || !isSupportedRunModel(policy.model)) {
+    if (resolution.kind === "unknown") {
       return bad(`Unknown model "${policy.model}"`);
     }
     if (resolution.kind === "replaced") {
@@ -756,7 +760,12 @@ async function validateUpdatePolicies(
       );
     }
 
-    const routeError = await validateOrgProviderRoute(db, orgId, policy);
+    const routeError = await validateOrgProviderRoute(
+      db,
+      catalog,
+      orgId,
+      policy,
+    );
     if (routeError) {
       return bad(routeError);
     }
@@ -766,7 +775,8 @@ async function validateUpdatePolicies(
 }
 
 function getRouteStatus(params: {
-  readonly model: SupportedRunModel;
+  readonly catalog: ModelCatalog;
+  readonly model: string;
   readonly providerType: ModelProviderType;
   readonly credentialScope: ModelProviderCredentialScope;
   readonly modelProviderId: string | null;
@@ -778,6 +788,7 @@ function getRouteStatus(params: {
   readonly reason: string | null;
 } {
   const {
+    catalog,
     model,
     providerType,
     credentialScope,
@@ -792,7 +803,7 @@ function getRouteStatus(params: {
     if (
       !surface ||
       providerTypeForSurface(surface.protocol) !== providerType ||
-      !surfaceSupportsModel(surface, model)
+      !surfaceSupportsModel(catalog, surface, model)
     ) {
       return {
         status: "missing_provider",
@@ -802,7 +813,7 @@ function getRouteStatus(params: {
     return { status: "valid", reason: null };
   }
 
-  if (!isModelSupportedByProvider(model, providerType)) {
+  if (!catalogHasProviderRoute(catalog, model, providerType)) {
     return {
       status: "invalid",
       reason: "Provider does not support this model.",
@@ -863,6 +874,7 @@ function serializePolicy(
   }
 
   const route = getRouteStatus({
+    catalog,
     model,
     providerType,
     credentialScope,
@@ -1025,6 +1037,7 @@ async function listOrgModelPolicies(
       )
         ? await resolveBuiltInModelRuntimeRouteWithKeys(
             db,
+            catalog,
             policy.model,
             featureSwitchContext,
             keyIdsByVendor,
@@ -1036,6 +1049,7 @@ async function listOrgModelPolicies(
         ? { ...policy, runtimeProviderType: runtimeRoute?.providerType ?? null }
         : policy;
       const effective = await resolveEffectivePolicyRoute({
+        catalog,
         db,
         orgId,
         policy: row,

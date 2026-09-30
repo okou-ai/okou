@@ -488,6 +488,7 @@ export async function listMcpModels(
         await budget.beforeQuery(tx);
         const route = await resolveEffectivePolicyRoute({
           db: tx,
+          catalog,
           orgId: principal.orgId,
           policy,
           member,

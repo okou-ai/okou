@@ -73,6 +73,7 @@ export async function mcpChatThreadModels(
   for (const policy of policies) {
     const route = await resolveEffectivePolicyRoute({
       db,
+      catalog,
       orgId: principal.orgId,
       member,
       capabilities: routeCapabilities,

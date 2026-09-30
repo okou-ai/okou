@@ -1,9 +1,8 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 
 import {
-  getBuiltInModelRouteCandidates,
+  BUILT_IN_MODEL_ROUTE_PROVIDERS,
   type BuiltInModelRouteProviderType,
-  type BuiltInModelRouteTarget,
 } from "@okouai/api-contracts/contracts/model-providers";
 import {
   isFeatureEnabled,
@@ -13,11 +12,56 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { builtInModelCandidateCooldown } from "@okouai/db/schema/built-in-model-cooldown";
 import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import { computed, type Computed } from "ccstate";
-import { and, eq, gt } from "drizzle-orm";
+import { and, eq, gt, inArray } from "drizzle-orm";
 
 import { singleton } from "../../lib/singleton";
 import { nowDate } from "../../lib/time";
 import { db$, type Db, type ReadonlyDb } from "../external/db";
+import {
+  catalogBuiltInCandidates,
+  loadModelCatalog,
+  type ModelCatalog,
+} from "./model-catalog.service";
+
+/** One enabled Built-in `model_routes` candidate with a known adapter. */
+interface BuiltInModelRouteTarget {
+  readonly selectedModel: string;
+  readonly providerType: BuiltInModelRouteProviderType;
+  readonly upstreamModel: string;
+  readonly vendor: string;
+}
+
+function isBuiltInModelRouteProviderType(
+  value: string,
+): value is BuiltInModelRouteProviderType {
+  return value in BUILT_IN_MODEL_ROUTE_PROVIDERS;
+}
+
+/**
+ * Built-in candidates come from the catalog's enabled `built-in` routes in
+ * priority order. The concrete provider's protocol adapter (vendor key pool,
+ * env bindings) stays in code, so a route naming a provider this API cannot
+ * execute is skipped rather than guessed.
+ */
+export function getCatalogBuiltInModelRouteCandidates(
+  catalog: ModelCatalog,
+  selectedModel: string,
+): readonly BuiltInModelRouteTarget[] {
+  return catalogBuiltInCandidates(catalog, selectedModel).flatMap((route) => {
+    const providerType = route.concreteProviderType;
+    if (!isBuiltInModelRouteProviderType(providerType)) {
+      return [];
+    }
+    return [
+      {
+        selectedModel,
+        providerType,
+        upstreamModel: route.upstreamModel,
+        vendor: BUILT_IN_MODEL_ROUTE_PROVIDERS[providerType].vendor,
+      },
+    ];
+  });
+}
 
 export interface BuiltInModelRuntimeRoute {
   readonly selectedModel: string;
@@ -109,10 +153,14 @@ function routeFromTarget(
 }
 
 function eligibleBuiltInModelRouteCandidates(
+  catalog: ModelCatalog,
   selectedModel: string,
   featureSwitchContext: FeatureSwitchContext,
 ): readonly BuiltInModelRouteTarget[] {
-  const candidates = getBuiltInModelRouteCandidates(selectedModel);
+  const candidates = getCatalogBuiltInModelRouteCandidates(
+    catalog,
+    selectedModel,
+  );
   const useAlternativeRouting =
     isFeatureEnabled(
       FeatureSwitchKey.DeepSeekAlternativeRouting,
@@ -130,16 +178,18 @@ function eligibleBuiltInModelRouteCandidates(
 }
 
 export function isBuiltInModelRuntimeRoutePermitted(
+  catalog: ModelCatalog,
   route: BuiltInModelRuntimeRoute,
 ): boolean {
-  return getBuiltInModelRouteCandidates(route.selectedModel).some(
-    (candidate) => {
-      return (
-        candidate.providerType === route.providerType &&
-        candidate.upstreamModel === route.upstreamModel
-      );
-    },
-  );
+  return getCatalogBuiltInModelRouteCandidates(
+    catalog,
+    route.selectedModel,
+  ).some((candidate) => {
+    return (
+      candidate.providerType === route.providerType &&
+      candidate.upstreamModel === route.upstreamModel
+    );
+  });
 }
 
 /** Operator-managed key id for each vendor; the vendor column is unique. */
@@ -165,63 +215,75 @@ export const builtInModelKeyIdsByVendor$: Computed<
   return await loadBuiltInModelKeyIdsByVendor(get(db$));
 });
 
+/** Loads the catalog once; callers that already hold it use the variant below. */
 export async function resolveBuiltInModelRuntimeRoute(
   db: Db,
   selectedModel: string,
   featureSwitchContext: FeatureSwitchContext,
 ): Promise<BuiltInModelRuntimeRoute | null> {
+  const [catalog, keyIdsByVendor] = await Promise.all([
+    loadModelCatalog(db),
+    loadBuiltInModelKeyIdsByVendor(db),
+  ]);
   return await resolveBuiltInModelRuntimeRouteWithKeys(
     db,
+    catalog,
     selectedModel,
     featureSwitchContext,
-    await loadBuiltInModelKeyIdsByVendor(db),
+    keyIdsByVendor,
   );
 }
 
 export async function resolveBuiltInModelRuntimeRouteWithKeys(
   db: Db,
+  catalog: ModelCatalog,
   selectedModel: string,
   featureSwitchContext: FeatureSwitchContext,
   keyIdsByVendor: BuiltInModelKeyIdsByVendor,
 ): Promise<BuiltInModelRuntimeRoute | null> {
-  const timestamp = nowDate();
-  for (const target of eligibleBuiltInModelRouteCandidates(
+  const candidates = eligibleBuiltInModelRouteCandidates(
+    catalog,
     selectedModel,
     featureSwitchContext,
-  )) {
-    if (runtimeRouteUnavailableForTest(target)) {
-      continue;
-    }
-    const keyId = keyIdsByVendor.get(target.vendor);
-    if (keyId === undefined) {
-      continue;
-    }
-
-    const builtInCooldowns = await db
-      .select({
-        unavailableUntil: builtInModelCandidateCooldown.unavailableUntil,
-      })
-      .from(builtInModelCandidateCooldown)
-      .where(
-        and(
-          eq(builtInModelCandidateCooldown.selectedModel, target.selectedModel),
-          eq(
-            builtInModelCandidateCooldown.modelRuntimeProvider,
-            target.providerType,
-          ),
-          eq(
-            builtInModelCandidateCooldown.modelRuntimeModel,
-            target.upstreamModel,
-          ),
-          gt(builtInModelCandidateCooldown.unavailableUntil, timestamp),
+  ).filter((target) => {
+    return (
+      !runtimeRouteUnavailableForTest(target) &&
+      keyIdsByVendor.has(target.vendor)
+    );
+  });
+  if (candidates.length === 0) {
+    return null;
+  }
+  // One read covers every candidate's cooldown, keeping the hot path bounded.
+  const cooling = await db
+    .select({
+      provider: builtInModelCandidateCooldown.modelRuntimeProvider,
+      model: builtInModelCandidateCooldown.modelRuntimeModel,
+    })
+    .from(builtInModelCandidateCooldown)
+    .where(
+      and(
+        eq(builtInModelCandidateCooldown.selectedModel, selectedModel),
+        inArray(
+          builtInModelCandidateCooldown.modelRuntimeProvider,
+          candidates.map((target) => {
+            return target.providerType;
+          }),
         ),
-      )
-      .limit(1);
-    if (builtInCooldowns.length > 0) {
-      continue;
+        gt(builtInModelCandidateCooldown.unavailableUntil, nowDate()),
+      ),
+    );
+  for (const target of candidates) {
+    const cooled = cooling.some((row) => {
+      return (
+        row.provider === target.providerType &&
+        row.model === target.upstreamModel
+      );
+    });
+    const keyId = keyIdsByVendor.get(target.vendor);
+    if (!cooled && keyId !== undefined) {
+      return routeFromTarget(target, { id: keyId });
     }
-
-    return routeFromTarget(target, { id: keyId });
   }
   return null;
 }

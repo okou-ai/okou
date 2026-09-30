@@ -9,6 +9,12 @@ import { modelCatalogRoutes } from "../model-catalog";
 import { modelPoliciesRoutes } from "../model-policies";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import { userModelPreferenceRoutes } from "../user-model-preference";
+import { randomUUID } from "node:crypto";
+import {
+  insertCatalogModelFixture,
+  updateBuiltInRouteFixture,
+} from "../../../test-fixtures/model-catalog";
+import { seedBuiltInModelCandidateKeys } from "./helpers/runtime-state";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -135,5 +141,64 @@ describe("model catalog authority", () => {
       [200],
     );
     expect(updated.body.selectedModel).toBe("claude-fable-5-1");
+  });
+
+  it("launches a new catalog model on a supported protocol from rows alone", async () => {
+    const model = `catalog-launch-${randomUUID()}`;
+    const restore = await insertCatalogModelFixture({
+      model,
+      displayName: "Catalog Launch",
+      sortOrder: 100_000,
+      builtInRoutes: [
+        {
+          concreteProviderType: "openrouter-codex",
+          upstreamModel: "openai/catalog-launch",
+          priority: 0,
+          efforts: ["low", "high"],
+          defaultEffort: "high",
+        },
+        {
+          concreteProviderType: "openai-api-key",
+          upstreamModel: "catalog-launch",
+          priority: 1,
+          efforts: ["low", "high"],
+          defaultEffort: "high",
+        },
+      ],
+    });
+    onTestFinished(restore);
+    signInAdmin();
+    await seedBuiltInModelCandidateKeys(context, model);
+    const initial = await listPolicies();
+    expect(initial.modelsAvailableToAdd).toContain(model);
+
+    const added = await accept(
+      policiesApi().update({
+        headers: authHeaders(),
+        body: { revision: initial.revision, policies: [builtIn(model)] },
+      }),
+      [200],
+    );
+    const launched = (body: typeof added.body) => {
+      return body.policies.find((policy) => {
+        return policy.model === model;
+      });
+    };
+    expect(launched(added.body)).toMatchObject({
+      model,
+      defaultProviderType: "built-in",
+      runtimeProviderType: "openrouter-codex",
+    });
+
+    // Disabling the first-priority candidate moves Built-in execution to the
+    // next enabled route.
+    await updateBuiltInRouteFixture({
+      model,
+      concreteProviderType: "openrouter-codex",
+      enabled: false,
+    });
+    expect(launched(await listPolicies())).toMatchObject({
+      runtimeProviderType: "openai-api-key",
+    });
   });
 });

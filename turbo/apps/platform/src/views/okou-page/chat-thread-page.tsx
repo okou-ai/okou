@@ -8261,6 +8261,7 @@ function UsageChip({
   setOpen: (open: boolean) => void;
 }) {
   const total = formatCredits(usage.totalCredits);
+  const catalog = useLastResolved(modelCatalog$);
   const displayRows = buildCreditUsageDisplayRows(
     usage.breakdown.flatMap((kindBreakdown) => {
       return kindBreakdown.providers.map((providerBreakdown) => {
@@ -8271,6 +8272,7 @@ function UsageChip({
         };
       });
     }),
+    catalog,
   );
 
   return (

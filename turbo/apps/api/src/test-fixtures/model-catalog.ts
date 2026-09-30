@@ -1,5 +1,6 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
+import { modelRoutes } from "@okouai/db/schema/model-route";
 import { runModelCatalog } from "@okouai/db/schema/run-model-catalog";
 import { db } from "../lib/db";
 
@@ -148,5 +149,87 @@ export async function stageLegacyChatThreadSelectedModelFixture(args: {
     .returning({ id: chatThreads.id });
   if (updated.length !== 1) {
     throw new Error("Expected one chat thread selection to be staged");
+  }
+}
+
+/** One Built-in candidate route of a fixture catalog model. */
+export interface BuiltInRouteFixture {
+  readonly concreteProviderType:
+    | "anthropic-api-key"
+    | "openrouter-api-key"
+    | "deepseek"
+    | "openrouter-codex"
+    | "openai-api-key";
+  readonly upstreamModel: string;
+  readonly priority: number;
+  readonly efforts: readonly string[];
+  readonly defaultEffort: string | null;
+}
+
+/**
+ * Operators launch a model on an already supported protocol purely by
+ * inserting catalog and route rows. Both inserts share one transaction; the
+ * restore deletes the routes before the catalog row.
+ */
+export async function insertCatalogModelFixture(args: {
+  readonly model: string;
+  readonly displayName: string;
+  readonly sortOrder: number;
+  readonly builtInRoutes: readonly BuiltInRouteFixture[];
+}): Promise<() => Promise<void>> {
+  await db().transaction(async (tx) => {
+    await tx.insert(runModelCatalog).values({
+      model: args.model,
+      displayName: args.displayName,
+      sortOrder: args.sortOrder,
+      lineageRank: 0,
+    });
+    await tx.insert(modelRoutes).values(
+      args.builtInRoutes.map((route) => {
+        return {
+          model: args.model,
+          providerType: "built-in",
+          concreteProviderType: route.concreteProviderType,
+          upstreamModel: route.upstreamModel,
+          priority: route.priority,
+          serviceTiers: [],
+          efforts: [...route.efforts],
+          defaultEffort: route.defaultEffort,
+          priceTier: "$",
+          pricingKind: "model",
+          pricingProvider: args.model,
+        };
+      }),
+    );
+  });
+  return async () => {
+    await db().transaction(async (tx) => {
+      await tx.delete(modelRoutes).where(eq(modelRoutes.model, args.model));
+      await tx
+        .delete(runModelCatalog)
+        .where(eq(runModelCatalog.model, args.model));
+    });
+  };
+}
+
+/** Operators reorder or disable a Built-in candidate directly in the database. */
+export async function updateBuiltInRouteFixture(args: {
+  readonly model: string;
+  readonly concreteProviderType: string;
+  readonly enabled: boolean;
+}): Promise<void> {
+  const updated = await db()
+    .update(modelRoutes)
+    .set({ enabled: args.enabled })
+    .where(
+      and(
+        eq(modelRoutes.model, args.model),
+        eq(modelRoutes.providerType, "built-in"),
+        eq(modelRoutes.concreteProviderType, args.concreteProviderType),
+      ),
+    )
+    .returning({ id: modelRoutes.id });
+  if (updated.length !== 1) {
+    throw new Error("Expected one Built-in route to be updated");
   }
 }

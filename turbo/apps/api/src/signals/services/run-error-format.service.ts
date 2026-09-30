@@ -19,11 +19,7 @@ import { eq } from "drizzle-orm";
 import { env } from "../../lib/env";
 import { db$, type ReadonlyDb } from "../external/db";
 import { getMemberRoleAndUpdateCache$ } from "./auth.service";
-import {
-  catalogDisplayName,
-  loadModelCatalog,
-  resolveCatalogModel,
-} from "./model-catalog.service";
+import { catalogDisplayName, loadModelCatalog } from "./model-catalog.service";
 
 const INSUFFICIENT_CREDITS_MARKER = "insufficient_credits";
 const PRO_REQUIRED_MARKER = "pro_required";
@@ -63,7 +59,9 @@ function buildPersonalModelProvidersUrl(): string {
 function buildClaudeCodeCredentialRecoveryUrl(params: {
   readonly modelProviderType: ModelProviderType | null | undefined;
   readonly modelProviderCredentialScope:
-    ModelProviderCredentialScope | null | undefined;
+    | ModelProviderCredentialScope
+    | null
+    | undefined;
 }): string {
   if (
     params.modelProviderType === "claude-code-oauth-token" &&
@@ -161,19 +159,16 @@ function runErrorProviderContext(
 
 /**
  * User-facing name of a run's model: the catalog display name of the model
- * its selection resolves to. Models outside the catalog are shown verbatim.
+ * the run actually used. Retired catalog rows keep their own display name, so
+ * history never shows a replacement's name. Models outside the catalog are
+ * shown verbatim.
  */
 async function resolveRunModelDisplayName(
   db: ReadonlyDb,
   selectedModel: string,
 ): Promise<string> {
   const catalog = await loadModelCatalog(db);
-  const model = normalizeRunModelId(selectedModel.trim());
-  const resolution = resolveCatalogModel(catalog, model);
-  return catalogDisplayName(
-    catalog,
-    resolution.kind === "unknown" ? model : resolution.resolvedModel,
-  );
+  return catalogDisplayName(catalog, normalizeRunModelId(selectedModel.trim()));
 }
 
 function formatRunErrorLikeWebMessage(

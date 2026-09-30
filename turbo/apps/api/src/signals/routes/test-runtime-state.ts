@@ -4,10 +4,6 @@ import {
   PI_NATIVE_CREDENTIAL_PLACEHOLDER,
 } from "@okouai/api-contracts/contracts/pi-native";
 import { piNativeFirewall } from "@okouai/api-contracts/contracts/pi-native-firewall";
-import {
-  getBuiltInModelRouteCandidates,
-  getBuiltInVendor,
-} from "@okouai/api-contracts/contracts/model-providers";
 import { command } from "ccstate";
 import {
   testRuntimeStateContract,
@@ -47,6 +43,7 @@ import {
   releaseBuiltInModelKeyFixture,
 } from "../services/built-in-model-key-fixture";
 import {
+  getCatalogBuiltInModelRouteCandidates,
   resolveBuiltInModelRuntimeRoute,
   type BuiltInModelRuntimeRoute,
 } from "../services/built-in-model-runtime-route.service";
@@ -61,7 +58,23 @@ import {
   isTestEndpointAllowed,
   testEndpointNotFoundResponse,
 } from "./test-endpoint-helpers";
-import { loadSystemDefaultRunModel } from "../services/model-catalog.service";
+import {
+  loadModelCatalog,
+  loadSystemDefaultRunModel,
+} from "../services/model-catalog.service";
+
+/** Vendors of the model's enabled Built-in catalog candidates, in order. */
+async function builtInCandidateVendors(
+  db: Db,
+  selectedModel: string,
+): Promise<readonly string[]> {
+  return getCatalogBuiltInModelRouteCandidates(
+    await loadModelCatalog(db),
+    selectedModel,
+  ).map((candidate) => {
+    return candidate.vendor;
+  });
+}
 
 // Test-only support actions for generic infrastructure fixtures.
 
@@ -116,7 +129,10 @@ async function seedBuiltInModelKey(
   selectedModel: string,
   signal: AbortSignal,
 ): Promise<string> {
-  const vendor = getBuiltInVendor(selectedModel);
+  const [vendor] = await builtInCandidateVendors(db, selectedModel);
+  if (vendor === undefined) {
+    throw new Error(`Expected a Built-in catalog route for ${selectedModel}`);
+  }
   await acquireBuiltInModelKeyFixture(db, fixtureId, [
     {
       vendor,
@@ -133,11 +149,7 @@ async function seedBuiltInModelCandidateKeys(
   selectedModel: string,
   signal: AbortSignal,
 ): Promise<string> {
-  const vendors = new Set(
-    getBuiltInModelRouteCandidates(selectedModel).map((candidate) => {
-      return candidate.vendor;
-    }),
-  );
+  const vendors = new Set(await builtInCandidateVendors(db, selectedModel));
   await acquireBuiltInModelKeyFixture(
     db,
     fixtureId,
@@ -983,7 +995,9 @@ type TimingStateAction = Extract<
   TestRuntimeStateActionBody,
   {
     action:
-      "clear-run-api-start" | "read-run-api-start" | "steer-run-time-budget";
+      | "clear-run-api-start"
+      | "read-run-api-start"
+      | "steer-run-time-budget";
   }
 >;
 

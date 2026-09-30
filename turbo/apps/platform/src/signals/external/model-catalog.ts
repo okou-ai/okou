@@ -31,6 +31,13 @@ export interface ModelCatalog {
   isActive(model: string | null | undefined): boolean;
   /** The catalog display name, or the raw model ID when it is unknown. */
   displayName(model: string): string;
+  /**
+   * The catalog model a recorded identifier names: the model ID itself, or
+   * the one model whose route sends it upstream (for example
+   * `openai/gpt-6-luna`). Retired models count, so history keeps its own
+   * model; undefined when unknown or ambiguous.
+   */
+  modelForIdentifier(identifier: string): string | undefined;
   sortOrder(model: string): number;
   /** Compare two model IDs by catalog order; unknown models sort last. */
   compare(left: string, right: string): number;
@@ -57,6 +64,34 @@ export interface ModelCatalog {
 
 function unique(values: readonly string[]): string[] {
   return [...new Set(values)];
+}
+
+/**
+ * Resolve a recorded identifier to its catalog model. Every route, enabled or
+ * not, names its model: history may carry the upstream ID of a route that is
+ * disabled today. An upstream ID shared by several models is ambiguous.
+ */
+function createIdentifierLookup(
+  byModel: ReadonlyMap<string, CatalogModelEntry>,
+  routes: readonly CatalogRouteEntry[],
+): (identifier: string) => string | undefined {
+  const modelsByUpstream = new Map<string, Set<string>>();
+  for (const route of routes) {
+    const models = modelsByUpstream.get(route.upstreamModel) ?? new Set();
+    models.add(route.model);
+    modelsByUpstream.set(route.upstreamModel, models);
+  }
+  return (identifier) => {
+    if (byModel.has(identifier)) {
+      return identifier;
+    }
+    const candidates = modelsByUpstream.get(identifier);
+    if (candidates?.size !== 1) {
+      return undefined;
+    }
+    const [model] = candidates;
+    return model !== undefined && byModel.has(model) ? model : undefined;
+  };
 }
 
 export function createModelCatalog(
@@ -124,6 +159,7 @@ export function createModelCatalog(
     displayName(model) {
       return byModel.get(model)?.displayName ?? model;
     },
+    modelForIdentifier: createIdentifierLookup(byModel, response.routes),
     sortOrder,
     compare(left, right) {
       const difference = sortOrder(left) - sortOrder(right);

@@ -5,10 +5,12 @@ The run model catalog lives in two database tables, `run_model_catalog` and
 is the only product authority for model names, ordering, the system default,
 retirement and replacement, display price tiers and route capabilities
 (service tiers and reasoning efforts). App, iOS, CLI and integrations read it
-instead of code constants. Code keeps only runtime knowledge that cannot live
-in data: the protocol adapter of each executable model (framework, environment
-bindings, context limits). A catalog model without an adapter cannot be the
-system default and is rejected when selected.
+instead of code constants for names, order, the default and replacement. Code
+still keeps runtime knowledge that is not catalog data: the protocol adapter
+of each executable model (framework, environment bindings, context limits), and
+the plan policy described under [Plan restriction](#plan-restriction). A
+catalog model without an adapter cannot be the system default, is never
+offered for a new policy and is rejected when selected.
 
 ## Catalog tables
 
@@ -60,13 +62,18 @@ subscription routes (formerly `subscription_model_catalog`) are
 ## Replacement chains
 
 A retired model cannot be added, and every stored selection of it resolves to
-the final active model of its chain. Chains may have several hops. The API
+the final active model of its chain. Chains may have several hops (A → B → C):
+the schema only requires each hop to point at an existing row with a strictly
+higher `lineage_rank` (see [Constraint design](#constraint-design)), so a
+replacement target may itself be retired later without rewriting its
+referrers. The API
 loader (`model-catalog.service.ts`) follows `replaced_by` hop by hop and fails
 the request on a dangling target or cycle instead of picking a model;
 `resolveCatalogModel` returns the final active model or an explicit unknown
 result and never substitutes the system default.
 
-Approved replacements (owner decisions, 2026-09-30), all single-hop today:
+Approved replacements (owner decisions, 2026-09-30). The seeded data happens
+to be single-hop; nothing in the schema or the loader depends on that:
 
 | Retired model       | Replacement         |
 | ------------------- | ------------------- |
@@ -81,10 +88,28 @@ Retiring X in favor of Y: if `Y.lineage_rank <= X.lineage_rank`, raise
 `ON UPDATE CASCADE` refreshes their copies), then set `X.replaced_by = Y` and
 `X.replaced_by_lineage_rank = Y.lineage_rank` in one statement.
 
+## Unrecognized catalog rows
+
+Production `run_model_catalog` also holds three rows the code does not
+recognize: `gpt-5.6-terra`, `okou-1.0-pro` and `okou-1.0-max`. They were seeded
+by earlier migrations (1191 and 1194) and their code support was removed by
+#37363 and #37368. There is no generic delete of unrecognized rows: migration
+1296 keeps them, labels them with their own ID, sorts them after every
+recognized model, sets `allow_new_org_policy = false` and gives them no
+`model_routes`, so nothing can execute them. They are not `replaced_by`
+anything, so `GET /api/model-catalog` lists them with `replacedBy` null, but
+the API never offers or accepts them for a policy or run because they have no
+runtime adapter and no route. As of MaskDB on 2026-09-30 no row in
+`chat_threads`, `org_model_policies`, `org_members_metadata`, `agents` or
+`model_providers` references them. Whether to retire (with a replacement) or
+delete them is pending an owner decision (Ethan).
+
 ## System default
 
-Exactly one active model is the system default (`okou-1.0`, Auto, today). It
-is not stored per organization: `GET /api/model-policies` projects it into
+Exactly one active model is the system default (`okou-1.0`, Auto, today). The
+database owns it: the API reads the single row with `is_system_default = true`
+on every request (no code constant such as `ORG_DEFAULT_RUN_MODEL` decides it).
+It is not stored per organization: `GET /api/model-policies` projects it into
 every organization's policy list as a non-deletable Built-in system policy
 with a stable derived ID. `PUT /api/model-policies` does not need to list it;
 a client that still sends it is accepted and that entry is ignored. Stored
@@ -97,7 +122,29 @@ new one, in one transaction); it needs no per-organization data migration.
 
 A replacement resolves only the model. The route is chosen again among the
 replacement's own `model_routes` under the caller's permissions, provider
-connections and plan. Built-in routes fall back by ascending `priority`.
+connections and plan.
+
+What runtime routing reads from `model_routes` today:
+
+- Built-in candidates: the enabled `built-in` routes of the model, in
+  ascending `priority`, with their `concrete_provider_type` and
+  `upstream_model`. Only a concrete provider whose adapter (vendor key pool,
+  environment bindings) exists in code is used; any other candidate is
+  skipped. A previously captured Built-in route is re-checked against the
+  current enabled candidates. The Built-in framework follows the primary
+  candidate's concrete provider.
+- Provider-type compatibility: whether a model can run on a selected BYOK,
+  subscription or Built-in route is an enabled `model_routes` row of that
+  provider type.
+- Personal subscription models are listed from subscription routes.
+
+Not yet read from `model_routes` (still static code):
+
+- The upstream model ID sent on BYOK and subscription routes
+  (`getProviderRuntimeModel` in `@okouai/api-contracts`).
+- The Pi sandbox configuration's expected Built-in upstream check
+  (`pi-sandbox-config.ts`, `getBuiltInModelRouteCandidates`) and test runtime
+  state helpers.
 
 No silent cross-provider billing: credentials, BYOK, subscription or
 custom-gateway bindings and upstream IDs of a retired model are never copied
@@ -128,6 +175,17 @@ admission rejects it explicitly. Historical runs, chat events (including
 queued-input events), usage and billing keep the original model ID and are
 never rewritten.
 
+History shows the model the run actually used, under that model's own name.
+Retired rows stay in the catalog with their own `display_name`, so a run or
+credit-usage row of `claude-opus-4-8` reads "Claude Opus 4.8", not the name of
+its replacement. The App's credit-usage rows (`lib/credit-usage-display.ts`)
+name run models only from the catalog: a recorded ID that is a catalog model
+uses that row; an upstream route ID such as `openai/gpt-6-luna` maps to the one
+catalog model whose `model_routes.upstream_model` it is; anything else is
+shown verbatim. Image and video generation models are not run models and are
+not in this catalog; their labels still come from the generation model tables
+in `@okouai/core`.
+
 ## Stored-configuration migration
 
 Migration `1297_model_catalog_stored_selections` rewrites mutable stored
@@ -155,8 +213,8 @@ takes the per-organization policy advisory locks in `org_id` order.
 Never touched: history (`agent_runs`, `chat_events` including queued inputs,
 usage and billing, session conversations) and custom-gateway
 `model_mappings`. `org_plan_entitlements.restricted_built_in_models` is a
-boolean flag that turns on the code's limited-free restricted-model rule; it
-stores no model IDs, so there is nothing to rewrite there.
+boolean and stores no model IDs, so there is nothing to rewrite there (see
+[Plan restriction](#plan-restriction)).
 
 Production impact: as of MaskDB on 2026-09-30, no chat thread, organization
 policy, member preference, agent or model provider references any of
@@ -164,6 +222,20 @@ policy, member preference, agent or model provider references any of
 `gpt-5.5`, `gpt-5.6-terra`, `okou-1.0-pro` or `okou-1.0-max`. The migration
 therefore rewrites zero production rows, and the single-transaction thread
 scan needs no batching.
+
+## Plan restriction
+
+`org_plan_entitlements.restricted_built_in_models` is a boolean. When it is
+true, `isLimitedFree1RestrictedRunModel` in `@okouai/api-contracts` decides
+which Built-in models need a Pro plan. That rule is still static plan policy
+in code, not catalog data: an allowlist of `okou-1.0`, `gpt-6-luna`,
+`gpt-5.6-luna`, `deepseek-v4.1-flash` and `deepseek-v4-flash` (after
+normalizing provider-prefixed aliases); every other model is restricted.
+`getRunModelRouteAccess` exempts known non-Built-in provider routes (BYOK and
+subscriptions), except `claude-sonnet-5-5` and `gpt-6.1-sol`, which are
+hard-coded as restricted on every route. A newly added catalog model is
+therefore restricted on Built-in routes of limited-free plans until the code
+allowlist changes.
 
 ## Constraint design
 

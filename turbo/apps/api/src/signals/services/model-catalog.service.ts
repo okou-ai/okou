@@ -172,21 +172,57 @@ export function resolveCatalogModel(
 }
 
 /**
- * The final active model for a stored selection when this API can execute it.
- * Null means unknown to the catalog or to the runtime adapters; callers
- * surface that as an explicit error.
+ * The final active model for a stored selection when it is runnable: the
+ * catalog resolves it to an active model with at least one enabled route.
+ * Route-specific checks (the chosen provider type) happen at route selection.
  */
 export function resolveCatalogRunModel(
   catalog: ModelCatalog,
   model: string,
-): SupportedRunModel | null {
+): string | null {
   const resolution = resolveCatalogModel(catalog, model);
   if (resolution.kind === "unknown") {
     return null;
   }
-  return isSupportedRunModel(resolution.resolvedModel)
+  return catalog.routes.some((route) => {
+    return route.enabled && route.model === resolution.resolvedModel;
+  })
     ? resolution.resolvedModel
     : null;
+}
+
+/**
+ * Whether the catalog runs the model directly: it is active and has an
+ * enabled route. A retired or unknown ID must be resolved before admission.
+ */
+export function isCatalogModelRunnable(
+  catalog: ModelCatalog,
+  model: string,
+): boolean {
+  return resolveCatalogRunModel(catalog, model) === model;
+}
+
+/** Enabled Built-in candidates of a model in ascending fallback priority. */
+export function catalogBuiltInCandidates(
+  catalog: ModelCatalog,
+  model: string,
+): readonly CatalogRoute[] {
+  return [...catalogRoutesFor(catalog, model, "built-in")].sort((a, b) => {
+    return a.priority - b.priority;
+  });
+}
+
+/**
+ * Upstream model ID of the model's enabled route for a selected (non
+ * Built-in) provider type, or null when the catalog has no such route.
+ */
+export function catalogProviderUpstreamModel(
+  catalog: ModelCatalog,
+  model: string,
+  providerType: string,
+): string | null {
+  const [route] = catalogRoutesFor(catalog, model, providerType);
+  return route?.upstreamModel ?? null;
 }
 
 /** Only active models (`replaced_by IS NULL`) may be newly configured. */
