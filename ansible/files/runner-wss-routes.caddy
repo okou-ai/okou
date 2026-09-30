@@ -1,0 +1,14 @@
+# Managed by ansible/playbooks/stage-runner-wss-ingress.yml.
+# Static host ingress. The route selects a Runner socket, never authorizes a run.
+# Keep the ID matcher anchored: no path suffix, encoded path, port or file choice.
+@runner_ws {
+    path_regexp runner ^/ws/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$
+    # Caddy matches path_regexp on a cleaned/decoded path. Require the raw
+    # request target to be canonical too: no encoded IDs, double slashes,
+    # traversal or query strings can select a socket.
+    expression `{http.request.orig_uri}.matches("^/ws/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")`
+}
+route {
+    reverse_proxy @runner_ws unix//run/okou-ws/{re.runner.1}.sock
+    respond 404
+}

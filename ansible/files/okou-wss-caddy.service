@@ -1,0 +1,31 @@
+# Managed by ansible/playbooks/stage-runner-wss-ingress.yml.
+[Unit]
+Description=Okou Runner WSS ingress (activation requires separate approval)
+After=network-online.target systemd-tmpfiles-setup.service
+Wants=network-online.target
+RequiresMountsFor=/var/lib/okou-wss-caddy
+
+[Service]
+Type=notify
+User=okou-wss-caddy
+Group=okou-wss-caddy
+Environment=XDG_DATA_HOME=/var/lib/okou-wss-caddy/data
+ExecStart=/usr/bin/caddy run --config /etc/okou-wss/Caddyfile --adapter caddyfile
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=30s
+LimitNOFILE=1048576
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ReadWritePaths=/var/lib/okou-wss-caddy
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

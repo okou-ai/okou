@@ -25,6 +25,17 @@ ANSIBLE_CONFIG="$ansible_config" \
   -e "ansible_user=test" \
   "$playbook" >/dev/null
 
+ANSIBLE_CONFIG="$ansible_config" \
+  ANSIBLE_NOCOLOR=1 \
+  ansible-playbook \
+  -i "localhost," \
+  --connection=local \
+  --syntax-check \
+  -e "ansible_user=test wss_nonproduction_stage=true wss_acme_email=ops@example.net" \
+  "$repo_root/ansible/playbooks/stage-runner-wss-ingress.yml" >/dev/null
+
+python3 "$repo_root/ansible/tests/test_runner_wss_host_provision.py"
+
 python3 - "$playbook" <<'PY'
 from pathlib import Path
 import sys
@@ -54,4 +65,4 @@ if actual != expected:
     raise SystemExit(f"unexpected /dev/kvm file task: {actual!r}")
 PY
 
-echo "provision-runner-kvm-test: ok"
+echo "provision-runner-kvm-and-wss-test: ok"
