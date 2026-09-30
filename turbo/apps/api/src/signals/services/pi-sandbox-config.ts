@@ -16,8 +16,6 @@ import {
 } from "@okouai/api-contracts/contracts/runners";
 import {
   getModelProviderPiEndpoint,
-  getBuiltInModelRouteCandidates,
-  getProviderRuntimeModel,
   getSecretNameForType,
   isBuiltInModelProviderType,
   isOkouRunModel,
@@ -423,13 +421,9 @@ function resolveResponsesPiModelConfig(
     return null;
   }
   const model = provider.environment.OPENAI_MODEL ?? provider.selectedModel;
-  const expectedModel = isBuiltInModelProviderType(provider.type)
-    ? getBuiltInModelRouteCandidates(provider.selectedModel).find(
-        (candidate) => {
-          return candidate.providerType === concreteType.data;
-        },
-      )?.upstreamModel
-    : getProviderRuntimeModel(concreteType.data, provider.selectedModel);
+  // The provider environment was built from the catalog route; its upstream
+  // model is the only model this Pi route may send.
+  const expectedModel = provider.upstreamModel;
   if (model !== expectedModel) {
     return null;
   }

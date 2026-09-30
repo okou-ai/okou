@@ -304,7 +304,9 @@ export function catalogModelRank(catalog: ModelCatalog, model: string): number {
  * the two reads are small. Correctness (a changed default is visible to the
  * next request) wins over caching until a measured need appears.
  */
-export async function loadModelCatalog(db: ReadonlyDb): Promise<ModelCatalog> {
+export async function loadModelCatalog(
+  db: Pick<ReadonlyDb, "select">,
+): Promise<ModelCatalog> {
   const [models, routes] = await Promise.all([
     db
       .select({

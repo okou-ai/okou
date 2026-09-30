@@ -89,7 +89,6 @@ import {
   getModelProviderEnvBindings,
   getModelImageInputSupport,
   getFrameworkForType,
-  getProviderRuntimeModel,
   getSecretNameForType,
   getSecretsForAuthMethod,
   hasAuthMethods,
@@ -371,6 +370,8 @@ import {
   catalogBuiltInCandidates,
   loadModelCatalog,
   loadSystemDefaultRunModel,
+  catalogProviderUpstreamModel,
+  type ModelCatalog,
 } from "./model-catalog.service";
 import { activateUsageAllowanceWindowsForRun } from "./usage-allowance.service";
 import {
@@ -397,7 +398,7 @@ import {
 } from "./agent-run-metadata-write.service";
 import {
   isBuiltInModelRuntimeRoutePermitted,
-  resolveBuiltInModelRuntimeRoute,
+  resolveBuiltInModelRuntimeRouteFromCatalog,
   type BuiltInModelRuntimeRoute,
 } from "./built-in-model-runtime-route.service";
 
@@ -945,6 +946,8 @@ interface ResolvedModelProviderEnvironment {
   readonly secretConnectorMetadataMap?: Record<string, SecretConnectorMetadata>;
   readonly codexRuntimeConfig?: ModelProviderCodexRuntimeConfig;
   readonly builtInModelRuntimeRoute?: BuiltInModelRuntimeRoute;
+  /** Catalog route `upstream_model` placed into the provider environment. */
+  readonly upstreamModel?: string;
   readonly credentialHeader?: NonNullable<
     PiModelConfigLegacy["credentialHeader"]
   >;
@@ -2271,7 +2274,24 @@ function resolveModelProviderCodexRuntimeConfig(args: {
   };
 }
 
+/**
+ * Upstream model ID sent to a selected (non Built-in) provider: the catalog
+ * route's `upstream_model`. A model outside the catalog (custom deployments)
+ * is sent verbatim.
+ */
+function providerUpstreamModel(
+  catalog: ModelCatalog,
+  type: ModelProviderType,
+  model: string,
+): string {
+  return (
+    catalogProviderUpstreamModel(catalog, normalizeRunModelId(model), type) ??
+    model
+  );
+}
+
 function modelProviderEnvironment(args: {
+  readonly catalog: ModelCatalog;
   readonly id: string | null;
   readonly type: ModelProviderType;
   readonly config: SingleSecretModelProviderConfig;
@@ -2298,7 +2318,9 @@ function modelProviderEnvironment(args: {
     defaultModel: args.config.defaultModel,
     envBindings,
   });
-  const runtimeModel = model ? getProviderRuntimeModel(args.type, model) : "";
+  const runtimeModel = model
+    ? providerUpstreamModel(args.catalog, args.type, model)
+    : "";
   const environmentSecret = modelProviderEnvironmentSecretValue(
     args.type,
     args.config.secretName,
@@ -2323,6 +2345,7 @@ function modelProviderEnvironment(args: {
     credentialOwner:
       args.sourceUserId === ORG_SENTINEL_USER_ID ? "organization" : "member",
     environment,
+    ...(runtimeModel ? { upstreamModel: runtimeModel } : {}),
     secrets,
     selectedModel: model,
     ...(codexRuntimeConfig ? { codexRuntimeConfig } : {}),
@@ -2444,6 +2467,7 @@ function providerEnvironmentFromSecretMap(
 
 function resolveMultiAuthRuntimeModel(
   args: {
+    readonly catalog: ModelCatalog;
     readonly type: ModelProviderType;
     readonly configuredModel?: string | null;
     readonly piExecution?: boolean;
@@ -2455,7 +2479,7 @@ function resolveMultiAuthRuntimeModel(
     cloud && args.configuredModel !== undefined
       ? args.configuredModel
       : selectedModel
-        ? getProviderRuntimeModel(args.type, selectedModel)
+        ? providerUpstreamModel(args.catalog, args.type, selectedModel)
         : null;
   if (
     cloud &&
@@ -2535,6 +2559,7 @@ async function loadModelProviderEnvironmentSecretRows(
 async function multiAuthModelProviderEnvironment(
   db: Db,
   args: {
+    readonly catalog: ModelCatalog;
     readonly id: string | null;
     readonly orgId: string;
     readonly userId: string;
@@ -2636,6 +2661,7 @@ async function multiAuthModelProviderEnvironment(
       args.userId === ORG_SENTINEL_USER_ID ? "organization" : "member",
     authMethod: args.authMethod,
     environment,
+    ...(runtimeModel ? { upstreamModel: runtimeModel } : {}),
     secrets: hasFirewallAuth ? {} : forwardableSecrets,
     selectedModel,
     secretConnectorMap: authMaps?.secretConnectorMap,
@@ -2645,6 +2671,7 @@ async function multiAuthModelProviderEnvironment(
 
 async function builtInModelProviderEnvironment(
   db: Db,
+  catalog: ModelCatalog,
   selectedModel: string,
   featureSwitchContext: FeatureSwitchContext,
   resolvedRoute?: BuiltInModelRuntimeRoute,
@@ -2656,17 +2683,15 @@ async function builtInModelProviderEnvironment(
   // freshly resolved one already comes from the catalog.
   if (
     resolvedRoute &&
-    !isBuiltInModelRuntimeRoutePermitted(
-      await loadModelCatalog(db),
-      resolvedRoute,
-    )
+    !isBuiltInModelRuntimeRoutePermitted(catalog, resolvedRoute)
   ) {
     return null;
   }
   const route =
     resolvedRoute ??
-    (await resolveBuiltInModelRuntimeRoute(
+    (await resolveBuiltInModelRuntimeRouteFromCatalog(
       db,
+      catalog,
       selectedModel,
       featureSwitchContext,
     ));
@@ -2727,12 +2752,15 @@ async function builtInModelProviderEnvironment(
     secrets: { [secretName]: key.apiKey },
     selectedModel,
     builtInModelRuntimeRoute: route,
+    upstreamModel: route.upstreamModel,
     ...(usesUsEndpoint ? { firewall } : {}),
     ...(codexRuntimeConfig ? { codexRuntimeConfig } : {}),
   };
 }
 
 interface ResolveModelProviderEnvironmentArgs {
+  /** Loaded once per run and shared by every candidate route. */
+  readonly catalog: ModelCatalog;
   readonly orgId: string;
   readonly userId: string;
   readonly framework: SupportedFramework;
@@ -2894,6 +2922,7 @@ async function resolvePersonalModelProviderAccountEnvironment(
 
   if (hasAuthMethods(account.type)) {
     return await multiAuthModelProviderEnvironment(db, {
+      catalog: args.catalog,
       id: account.id,
       orgId: account.orgId,
       userId: account.userId,
@@ -2950,6 +2979,7 @@ async function resolvePersonalModelProviderAccountEnvironment(
     return null;
   }
   return modelProviderEnvironment({
+    catalog: args.catalog,
     id: account.id,
     type: account.type,
     config,
@@ -3072,6 +3102,7 @@ async function resolveMultiAuthCandidate(
     >,
   ) => {
     return multiAuthModelProviderEnvironment(reader, {
+      catalog: args.catalog,
       id: row.id,
       orgId: args.orgId,
       userId: row.userId,
@@ -3128,6 +3159,7 @@ async function resolveCandidateModelProviderEnvironment(
       (await loadSystemDefaultRunModel(db));
     const provider = await builtInModelProviderEnvironment(
       db,
+      args.catalog,
       selectedModel,
       args.featureSwitchContext,
       args.builtInModelRuntimeRoute,
@@ -3164,6 +3196,7 @@ async function resolveCandidateModelProviderEnvironment(
       isPiDeepSeekModel(args.selectedModelOverride));
   if (getModelProviderFirewall(row.type) !== undefined && !captureSecret) {
     return modelProviderEnvironment({
+      catalog: args.catalog,
       id: row.id,
       type: row.type,
       config,
@@ -3180,6 +3213,7 @@ async function resolveCandidateModelProviderEnvironment(
     return null;
   }
   return modelProviderEnvironment({
+    catalog: args.catalog,
     id: row.id,
     type: row.type,
     config,
@@ -3197,6 +3231,7 @@ async function resolveModelProviderEnvironment(
   if (isBuiltInModelProviderType(args.modelProviderType)) {
     const provider = await builtInModelProviderEnvironment(
       db,
+      args.catalog,
       args.selectedModelOverride ?? (await loadSystemDefaultRunModel(db)),
       args.featureSwitchContext,
       args.builtInModelRuntimeRoute,
@@ -7190,6 +7225,7 @@ function validateModelUsageProviderInvariant(args: {
 }
 
 function prepareModelUsageContext(args: {
+  readonly catalog: ModelCatalog;
   readonly modelProvider: ResolvedModelProviderEnvironment | null;
   readonly permissionManifest: PermissionManifest | undefined;
 }): ModelUsageContext | CreateRunErrorResult {
@@ -7197,7 +7233,10 @@ function prepareModelUsageContext(args: {
     modelProvider: args.modelProvider,
     permissions: args.permissionManifest,
   });
-  const modelUsageProvider = modelUsageProviderForContext(args.modelProvider);
+  const modelUsageProvider = modelUsageProviderForContext(
+    args.catalog,
+    args.modelProvider,
+  );
   const validation = validateModelUsageProviderInvariant({
     modelProvider: args.modelProvider,
     billableFirewalls,
@@ -7208,14 +7247,16 @@ function prepareModelUsageContext(args: {
 }
 
 function modelUsageProviderForContext(
+  catalog: ModelCatalog,
   modelProvider: ResolvedModelProviderEnvironment | null,
 ): string | undefined {
-  // The selected model was resolved against the catalog before the provider
-  // environment was built, so its canonical ID is the usage model.
+  // Usage is reported per catalog model; a provider-only model ID (for
+  // example a BYOK provider default) has no catalog pricing identity.
   if (!modelProvider?.selectedModel) {
     return undefined;
   }
-  return normalizeRunModelId(modelProvider.selectedModel);
+  const model = normalizeRunModelId(modelProvider.selectedModel);
+  return catalog.byModel.has(model) ? model : undefined;
 }
 
 function sessionStorageMountsForPersistence(args: {
@@ -9322,6 +9363,7 @@ async function resolveRunModelProvider(
     isBuiltInModelProviderType(args.modelProviderType);
   const modelProvider = shouldResolveModelProvider
     ? await resolveModelProviderEnvironment(db, {
+        catalog: await loadModelCatalog(db),
         orgId: args.orgId,
         userId: args.userId,
         framework: options.framework,
@@ -10349,6 +10391,7 @@ async function prepareRunRuntimeContext(
   }
   const { connectorContext, permissionManifest } = preparedConnectorContext;
   const modelUsageContext = prepareModelUsageContext({
+    catalog: await loadModelCatalog(args.db),
     modelProvider,
     permissionManifest,
   });

@@ -1,9 +1,6 @@
 import { piNativeCatalogModelSchema } from "@okouai/api-contracts/contracts/pi-native-models";
 import { isPiNativeRoute } from "@okouai/core/pi-execution";
-import {
-  getProviderRuntimeModel,
-  isBuiltInModelProviderType,
-} from "@okouai/api-contracts/contracts/model-providers";
+import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
 import {
   piModelConfigV4Schema,
   type PiModelConfigV4,
@@ -27,6 +24,8 @@ export interface PiNativeModelProviderInput {
   readonly concreteType?: string;
   readonly selectedModel: string | null;
   readonly environment: Readonly<Record<string, string>>;
+  /** The catalog route's upstream model the provider environment carries. */
+  readonly upstreamModel?: string;
   readonly credentialOwner?: PiModelConfigV4["credentialOwner"];
   readonly authMethod?: string | null;
   readonly credentialHeader?: {
@@ -121,7 +120,6 @@ export function resolvePiNativeModelConfig(
   provider: PiNativeModelProviderInput,
 ): PiModelConfigV4 {
   const common = nativeConfigIdentity(provider);
-  const catalogModel = common.catalogModel;
   const route = provider.concreteType ?? provider.type;
   const environment = provider.environment;
   if (route === "aws-bedrock") {
@@ -151,8 +149,7 @@ export function resolvePiNativeModelConfig(
     : undefined;
   if (fixed) {
     if (
-      common.model !==
-        getProviderRuntimeModel(route as keyof typeof standard, catalogModel) ||
+      common.model !== provider.upstreamModel ||
       (environment.ANTHROPIC_BASE_URL !== undefined &&
         environment.ANTHROPIC_BASE_URL !== fixed.baseUrl)
     ) {

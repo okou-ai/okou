@@ -1,9 +1,7 @@
 import type { PiMemoryQuotaSource } from "./pi-memory-quota.service";
 import { getModelProviderPiEndpoint } from "@okouai/api-contracts/contracts/model-provider-firewalls";
 import {
-  getProviderRuntimeModel,
   getSecretNameForType,
-  isModelSupportedByProvider,
   type BuiltInModelRouteProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { getOpenRouterBaseUrl } from "@okouai/api-contracts/contracts/openrouter-routing";
@@ -31,6 +29,10 @@ import { and, eq } from "drizzle-orm";
 import type { Db } from "../external/db";
 import { resolveCurrentPersonalSubscriptionBundleForApi } from "./agent-webhook-firewall-auth.service";
 import { resolveBuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
+import {
+  catalogProviderUpstreamModel,
+  loadModelCatalog,
+} from "./model-catalog.service";
 import { decryptStoredSecretValue } from "./crypto.utils";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import { gptApiKeyPiRoute } from "./pi-sandbox-config";
@@ -449,7 +451,12 @@ async function apiKeyCredential(
 ): Promise<PiMemoryStage1CredentialResult> {
   const { db, source, binding, context } = args;
   const type = route.productProviderType;
-  if (!isModelSupportedByProvider(PI_MEMORY_STAGE1_BYOK_MODEL, type)) {
+  const upstreamModel = catalogProviderUpstreamModel(
+    await loadModelCatalog(db),
+    PI_MEMORY_STAGE1_BYOK_MODEL,
+    type,
+  );
+  if (upstreamModel === null) {
     return skip("provider_model_unsupported");
   }
   const secretOwner = binding.scope === "org" ? "__org__" : source.userId;
@@ -493,7 +500,7 @@ async function apiKeyCredential(
     {
       provider: route.provider,
       baseUrl: endpoint.baseUrl,
-      model: getProviderRuntimeModel(type, PI_MEMORY_STAGE1_BYOK_MODEL),
+      model: upstreamModel,
       ...(type === "vercel-ai-gateway-codex"
         ? { catalogModel: PI_MEMORY_STAGE1_BYOK_MODEL }
         : {}),

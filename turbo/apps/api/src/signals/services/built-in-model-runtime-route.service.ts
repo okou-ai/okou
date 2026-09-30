@@ -234,6 +234,22 @@ export async function resolveBuiltInModelRuntimeRoute(
   );
 }
 
+/** For callers that already hold the request- or run-scoped catalog. */
+export async function resolveBuiltInModelRuntimeRouteFromCatalog(
+  db: Db,
+  catalog: ModelCatalog,
+  selectedModel: string,
+  featureSwitchContext: FeatureSwitchContext,
+): Promise<BuiltInModelRuntimeRoute | null> {
+  return await resolveBuiltInModelRuntimeRouteWithKeys(
+    db,
+    catalog,
+    selectedModel,
+    featureSwitchContext,
+    await loadBuiltInModelKeyIdsByVendor(db),
+  );
+}
+
 export async function resolveBuiltInModelRuntimeRouteWithKeys(
   db: Db,
   catalog: ModelCatalog,
