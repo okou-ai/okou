@@ -3440,12 +3440,18 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     async ({ get, set }, signal: AbortSignal) => {
       const input = await get(queuedModelCommandsInput$);
       signal.throwIfAborted();
+      const initial = await get(initialFacts$);
+      signal.throwIfAborted();
       const facts =
         input.userId === "__no_preference__"
-          ? await get(initialFacts$)
+          ? initial
           : await set(ensureModelPolicy$, signal);
       signal.throwIfAborted();
-      set(queuedModelCommandsInternalPolicyFacts$, facts);
+      // No write means the captured facts remain authoritative. Do not
+      // invalidate their dependent reads merely by republishing that object.
+      if (facts !== initial) {
+        set(queuedModelCommandsInternalPolicyFacts$, facts);
+      }
     },
   );
   const commands = {
@@ -6352,12 +6358,16 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     async ({ get, set }, signal: AbortSignal) => {
       const input = await get(queuedModelCommandsInput$2);
       signal.throwIfAborted();
+      const initial = await get(queuedModelCommandsInitialFacts$);
+      signal.throwIfAborted();
       const facts =
         input.userId === "__no_preference__"
-          ? await get(queuedModelCommandsInitialFacts$)
+          ? initial
           : await set(queuedModelCommandsEnsureModelPolicy$, signal);
       signal.throwIfAborted();
-      set(queuedModelCommandsInternalPolicyFacts$2, facts);
+      if (facts !== initial) {
+        set(queuedModelCommandsInternalPolicyFacts$2, facts);
+      }
     },
   );
   const queuedModelCommands = {
@@ -8084,6 +8094,13 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     preCreatePermissionPoliciesPermissionPolicies$;
   const preCreateExecutionWorkflowRows$ = preCreateWorkflowRowsWorkflowRows$;
   const scope$ = computed(async (get) => {
+    const head = await get(head$);
+    if (!head) {
+      throw new Error("Member reads require the selected head");
+    }
+    if (head.contextType !== "automation") {
+      return { orgId: head.orgId, userId: head.userId };
+    }
     const identity = await get(preCreateBootstrapQueryArgsBootstrapQueryArgs$);
     return { orgId: identity.orgId, userId: identity.userId };
   });
@@ -12442,16 +12459,66 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       return { kind: "passed" };
     },
   );
-  const readClaimInputSources$ = command(
+  const readClaimStorageSources$ = command(
     async ({ get }, head: ChatQueueHeadContext, signal: AbortSignal) => {
+      const automation = head.contextType === "automation";
+      if (automation && !(await get(capturedAutomationTarget$))) {
+        signal.throwIfAborted();
+        return;
+      }
+      const initial = await get(
+        automation ? queuedModelCommandsInitialFacts$ : initialFacts$,
+      );
+      signal.throwIfAborted();
+      const needsPolicyWrite =
+        initial.policies.length === 0 ||
+        shouldReplaceExistingDefaultForPlan(
+          initial.policies.find((policy) => {return policy.isDefault}),
+          modelPolicyCapabilities(initial.orgPlanCapabilities),
+        );
+      if (needsPolicyWrite) {
+        return;
+      }
+      const pin = await get(automation ? queuedModelModelPin$ : modelPin$);
+      signal.throwIfAborted();
+      if ("status" in pin) {
+        return;
+      }
+      const admission = await get(
+        automation ? queuedModelProviderAdmission$ : providerAdmission$,
+      );
+      signal.throwIfAborted();
+      if (admission.needsAllowance || admission.error) {
+        return;
+      }
+      // No initialization write can change these inputs. Start the actual
+      // memoized mount/index/URL read graph, not a throwaway prefetch query.
+      await get(storagePlan$);
+      signal.throwIfAborted();
+    },
+  );
+  const readClaimAgentSources$ = command(
+    async ({ get }, signal: AbortSignal) => {
       const identity = await get(claimReadIdentity$);
       signal.throwIfAborted();
       if (!identity) {
         return;
       }
-      const commonReads = [
+      await Promise.all([
         get(preCreateBootstrapMetadataRowsBootstrapMetadataRows$),
         get(preCreateWorkflowRowsWorkflowRows$),
+        get(runEnvironmentSnapshot$),
+      ]);
+      signal.throwIfAborted();
+    },
+  );
+  const readClaimInputSources$ = command(
+    async ({ get, set }, head: ChatQueueHeadContext, signal: AbortSignal) => {
+      // Model/member reads have no agent-identity barrier. Agent-specific
+      // rows start concurrently and wait only for the selected agent itself.
+      const commonReads = [
+        set(readClaimAgentSources$, signal),
+        set(readClaimStorageSources$, head, signal),
         get(runMemberSnapshot$),
         get(runDisabledPaidToolsSnapshot$),
       ];
