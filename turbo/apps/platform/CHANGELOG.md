@@ -11,6 +11,27 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.988.2](https://github.com/okou-ai/okou/compare/app-v0.988.1...app-v0.988.2) (2026-09-30)
+
+
+### Bug Fixes
+
+* **app:** stabilize easy model settings loading ([#37414](https://github.com/okou-ai/okou/issues/37414)) ([7ed981c](https://github.com/okou-ai/okou/commit/7ed981c44066752620fba8ea19637fa8a90bf4b9))
+* skip hidden archived threads when moving pinned chats ([#37412](https://github.com/okou-ai/okou/issues/37412)) ([9890270](https://github.com/okou-ai/okou/commit/98902700a8f47049761472bf5dd908286d76941e))
+
+
+### Refactoring
+
+* **chat:** complete chat event v8 transition cleanup ([#37411](https://github.com/okou-ai/okou/issues/37411)) ([cd4aac5](https://github.com/okou-ai/okou/commit/cd4aac5fa635dd7f71eb82756529c5643c552cc9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.531.1
+    * @okouai/core bumped to 8.724.1
+
 ## [0.988.1](https://github.com/okou-ai/okou/compare/app-v0.988.0...app-v0.988.1) (2026-09-30)
 
 

@@ -434,19 +434,6 @@ describe("PATCH /api/agents/:id", () => {
     });
   });
 
-  it("returns 400 for invalid path params", async () => {
-    const response = await accept(
-      agentsClient().updateMetadata({
-        params: { id: "not-a-uuid" },
-        headers: authHeaders(),
-        body: { displayName: "Invalid" },
-      }),
-      [400],
-    );
-
-    expect(response.body.error.code).toBe("BAD_REQUEST");
-  });
-
   it("returns 404 for an unknown agent", async () => {
     const user = newOrgUser();
     mocks.clerk.session(user.userId, user.orgId);

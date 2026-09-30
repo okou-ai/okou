@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.5](https://github.com/okou-ai/okou/compare/runner-provider-v0.4.4...runner-provider-v0.4.5) (2026-09-30)
+
+
+### Refactoring
+
+* **chat:** complete chat event v8 transition cleanup ([#37411](https://github.com/okou-ai/okou/issues/37411)) ([cd4aac5](https://github.com/okou-ai/okou/commit/cd4aac5fa635dd7f71eb82756529c5643c552cc9))
+
 ## [0.4.4](https://github.com/okou-ai/okou/compare/runner-provider-v0.4.3...runner-provider-v0.4.4) (2026-09-30)
 
 ## [0.4.3](https://github.com/okou-ai/okou/compare/runner-provider-v0.4.2...runner-provider-v0.4.3) (2026-09-29)
