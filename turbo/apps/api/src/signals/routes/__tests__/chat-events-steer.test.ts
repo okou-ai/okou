@@ -90,6 +90,9 @@ describe("CHAT-02: steering input prompts into a running run", () => {
       api.nextSteerableInput(token, active.runId),
     ).resolves.toStrictEqual(next);
 
+    // Finish both enqueue-owned publications before observing declarations;
+    // an accepted send does not await its pick/publication background work.
+    await flushWaitUntilForTest();
     context.mocks.ably.publish.mockClear();
     const declarations = await Promise.all([
       api.requestDeclareSteeredInputAs(

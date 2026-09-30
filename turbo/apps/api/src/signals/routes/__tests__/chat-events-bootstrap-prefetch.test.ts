@@ -133,9 +133,8 @@ describe("chat agent bootstrap prefetch", () => {
       }
       const run = await api.readRun(actor, associated.runId);
       expect(run).toMatchObject({ prompt: "prepare my agent" });
-      await expect(
-        chat.readThread(actor, sent.body.threadId),
-      ).resolves.toMatchObject({ agentId });
+      const metadata = await chat.readThreadMetadata(actor, sent.body.threadId);
+      expect(metadata.agentId).toBe(agentId);
       const claimed = await claimChatRun(runnerGroup, associated.runId);
       expect(claimed.claim.platformEnvironment).toHaveProperty("OKOU_TOKEN");
       await cancelChatRun(actor, associated.runId, claimed.sandboxHeaders);
