@@ -848,11 +848,6 @@ impl ConnectionDispatcher {
 /// Connect to vsock (Linux only - this binary runs inside Firecracker VM)
 #[cfg(target_os = "linux")]
 pub fn connect_vsock() -> io::Result<UnixStream> {
-    connect_vsock_port(guest_control_proto::VSOCK_PORT)
-}
-
-#[cfg(target_os = "linux")]
-pub(crate) fn connect_vsock_port(port: u32) -> io::Result<UnixStream> {
     use std::os::unix::io::FromRawFd;
 
     // SAFETY: Creating a vsock socket with valid constants. fd is checked for errors below.
@@ -864,7 +859,7 @@ pub(crate) fn connect_vsock_port(port: u32) -> io::Result<UnixStream> {
     let addr = libc::sockaddr_vm {
         svm_family: libc::AF_VSOCK as u16,
         svm_reserved1: 0,
-        svm_port: port,
+        svm_port: guest_control_proto::VSOCK_PORT,
         svm_cid: VSOCK_CID_HOST,
         svm_zero: [0; 4],
     };
@@ -892,11 +887,6 @@ pub(crate) fn connect_vsock_port(port: u32) -> io::Result<UnixStream> {
 /// Stub for non-Linux platforms (for IDE support)
 #[cfg(not(target_os = "linux"))]
 pub fn connect_vsock() -> io::Result<UnixStream> {
-    connect_vsock_port(guest_control_proto::VSOCK_PORT)
-}
-
-#[cfg(not(target_os = "linux"))]
-pub(crate) fn connect_vsock_port(_port: u32) -> io::Result<UnixStream> {
     Err(io::Error::new(
         io::ErrorKind::Unsupported,
         "vsock is only supported on Linux",
@@ -1306,12 +1296,6 @@ fn retry_or_fail(failure: ReconnectFailure, attempts: u32) -> io::Result<()> {
 /// the connection is lost when VM is paused and resumed.
 pub fn run(unix_socket: Option<&str>) -> io::Result<()> {
     log("INFO", "Starting guest-control-server...");
-    if unix_socket.is_none() {
-        std::thread::Builder::new()
-            .name("guest-private-duplex-connect".into())
-            .spawn(super::private_duplex::run)?;
-    }
-
     let mut attempts = 0u32;
     // The Unix transport exists for host-side integration tests and does not
     // own the guest cgroup hierarchy. Deployed guests connect over vsock.

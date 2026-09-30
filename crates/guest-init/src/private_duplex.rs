@@ -1,4 +1,5 @@
-//! Inert private echo consumer for the run-scoped Guest duplex transport.
+//! Guest-side worker for the independent, private run-scoped duplex transport.
+//! Started by guest-init in its existing PID 2 child; no separate daemon.
 //! No exec, file, chat, SSH or VNC method is interpreted here.
 
 use std::io::{self, Read, Write};
@@ -24,14 +25,14 @@ impl Drop for WorkerCount {
 
 /// Run separately from the guest control loop. Only one idle connection waits
 /// for host activation; no per-sandbox pool of speculative guest workers.
-pub(crate) fn run() {
+pub(super) fn run() {
     let active = Arc::new(AtomicUsize::new(0));
     loop {
         if active.load(Ordering::Acquire) >= MAX_STREAMS_PER_RUN {
             std::thread::sleep(RETRY);
             continue;
         }
-        match super::connection::connect_vsock_port(VSOCK_PORT) {
+        match connect_vsock() {
             Ok(mut stream) => {
                 if await_activation(&mut stream, INGRESS_ACK_TIMEOUT).is_err() {
                     std::thread::sleep(RETRY);
@@ -40,7 +41,7 @@ pub(crate) fn run() {
                 active.fetch_add(1, Ordering::AcqRel);
                 let count = WorkerCount(Arc::clone(&active));
                 if std::thread::Builder::new()
-                    .name("guest-duplex".into())
+                    .name("gdup-echo".into())
                     .spawn(move || {
                         let _count = count;
                         let _ = serve_echo(stream);
@@ -54,6 +55,49 @@ pub(crate) fn run() {
             Err(_) => std::thread::sleep(RETRY),
         }
     }
+}
+
+/// Connect only to the dedicated private host listener. Do not use the control
+/// service's connector: this worker owns its own port and lifecycle.
+#[cfg(target_os = "linux")]
+fn connect_vsock() -> io::Result<UnixStream> {
+    use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+
+    // SAFETY: valid socket constants; ownership is adopted only on success.
+    let raw = unsafe { libc::socket(libc::AF_VSOCK, libc::SOCK_STREAM | libc::SOCK_CLOEXEC, 0) };
+    if raw < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: this socket has exactly one owner, including on connect failure.
+    let fd = unsafe { OwnedFd::from_raw_fd(raw) };
+    let address = libc::sockaddr_vm {
+        svm_family: libc::AF_VSOCK as u16,
+        svm_reserved1: 0,
+        svm_port: VSOCK_PORT,
+        svm_cid: libc::VMADDR_CID_HOST,
+        svm_zero: [0; 4],
+    };
+    // SAFETY: fd is owned and address is initialized and live for this call.
+    let result = unsafe {
+        libc::connect(
+            fd.as_raw_fd(),
+            std::ptr::from_ref(&address).cast(),
+            std::mem::size_of_val(&address) as libc::socklen_t,
+        )
+    };
+    if result < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    // AF_VSOCK stream descriptors support read/write/shutdown without AF_UNIX addresses.
+    Ok(UnixStream::from(fd))
+}
+
+#[cfg(not(target_os = "linux"))]
+fn connect_vsock() -> io::Result<UnixStream> {
+    Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        "duplex transport requires Linux vsock",
+    ))
 }
 
 fn await_activation(stream: &mut UnixStream, ack_timeout: Duration) -> io::Result<()> {
@@ -80,8 +124,8 @@ fn await_activation(stream: &mut UnixStream, ack_timeout: Duration) -> io::Resul
 }
 
 /// Finite frame buffer and per-direction ordered, backpressured echo. EOF of
-/// the inbound direction sends EOF outward; malformed/oversized frames reset.
-pub(crate) fn serve_echo(mut stream: UnixStream) -> io::Result<()> {
+/// the inbound direction sends EOF outward; malformed/oversized frames close the stream.
+fn serve_echo(mut stream: UnixStream) -> io::Result<()> {
     let mut data = vec![0u8; MAX_FRAME_BYTES];
     loop {
         let mut header = [0u8; 4];
