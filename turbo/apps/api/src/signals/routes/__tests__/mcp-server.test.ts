@@ -108,6 +108,7 @@ import { createRouteMocks } from "./helpers/route-test";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import { setOrgDefaultAgentFixture } from "../../../test-fixtures/org-metadata";
 import { createBddApi } from "./helpers/api-bdd";
+import { makeCodexAuthJson } from "./helpers/api-bdd-auth-device";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
@@ -1275,7 +1276,7 @@ describe("MCP chat discovery and creation", () => {
     const { subscriptionId } = await runs.grantProEntitlement(f.actor);
     await runs.updateOrgModelPolicies(f.actor, [
       {
-        model: "gpt-5.6-luna",
+        model: "gpt-6-luna",
         preferred: true,
         defaultProviderType: "codex-oauth-token",
         credentialScope: "member",
@@ -1285,10 +1286,38 @@ describe("MCP chat discovery and creation", () => {
     const token = f.auth.token({ scope: defaultScopes });
     expect((await listModels(token)).models).toContainEqual(
       expect.objectContaining({
-        id: "gpt-5.6-luna",
+        id: "gpt-6-luna",
         selectable: true,
         availability: "connection_required",
       }),
+    );
+    await updateFeatureSwitchesForUser(
+      context,
+      { userId: f.auth.userId, orgId: f.auth.orgId },
+      { [FeatureSwitchKey.PersonalModelProviderAccounts]: true },
+    );
+    await createMiscRoutesApi(context).upsertPersonalModelProvider(
+      f.actor,
+      {
+        type: "codex-oauth-token",
+        authMethod: "auth_json",
+        secrets: {
+          CODEX_AUTH_JSON: makeCodexAuthJson({
+            accountId: `account-${randomUUID()}`,
+          }),
+        },
+      },
+      [200, 201],
+    );
+    createRouteMocks(context).clerk.session(f.auth.userId, f.auth.orgId);
+    await accept(
+      setupApp({ context, routes: userModelPreferenceRoutes })(
+        userModelPreferenceContract,
+      ).update({
+        headers: { authorization: "Bearer clerk-session" },
+        body: { selectedModel: "gpt-6-luna", serviceTier: "priority" },
+      }),
+      [200],
     );
     await createWebhookCallbackApi(context).postStripeEvent(
       {
@@ -1299,23 +1328,27 @@ describe("MCP chat discovery and creation", () => {
       [200],
     );
 
-    // Every runnable plan supports BYOK, so the member subscription route
-    // survives the downgrade and the policies need no synchronization.
+    // The member's own connected subscription route is exempt from the free
+    // plan restriction, so it stays available and remains the member default.
     const models = await listModels(token);
     expect(models.defaultModel).toStrictEqual({
-      model: "gpt-5.6-luna",
+      model: "gpt-6-luna",
       source: "member_default",
     });
     expect(models.models).toContainEqual(
-      expect.objectContaining({ id: "gpt-5.6-luna", selectable: true }),
+      expect.objectContaining({
+        id: "gpt-6-luna",
+        selectable: true,
+        availability: "available",
+      }),
     );
     const created = await createThread(token, {
       requestId: randomUUID(),
       agentId: f.agent.agentId,
       title: "After plan synchronization",
-      model: "gpt-5.6-luna",
+      model: "gpt-6-luna",
     });
-    expect(created.model.selectedModel).toBe("gpt-5.6-luna");
+    expect(created.model.selectedModel).toBe("gpt-6-luna");
     expect(
       (await getMessages(token, { threadId: created.threadId })).messages,
     ).toStrictEqual([]);
