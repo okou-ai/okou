@@ -10,7 +10,7 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use guest_control_client::{ExecOperationResult, ExecOwnedCapturedOutput, GuestControlClient};
-use guest_control_proto::ExecTermination;
+use guest_control_proto::{ExecTermination, VSOCK_PORT};
 use nix::sys::inotify::{AddWatchFlags, InitFlags, Inotify};
 pub(crate) use shell_quote::quote_shell_arg as shell_quote;
 use tokio::io::unix::AsyncFd;
@@ -253,7 +253,7 @@ impl Harness {
         let dir_guard = create_temp_dir("guest-control-tests");
         let dir = dir_guard.path().to_path_buf();
         let base_path = dir.join("vsock").to_string_lossy().to_string();
-        let listener_path = format!("{base_path}_1000");
+        let listener_path = format!("{base_path}_{VSOCK_PORT}");
         let listener = std::path::PathBuf::from(&listener_path);
 
         let host_base_path = base_path.clone();

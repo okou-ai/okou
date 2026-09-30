@@ -23,7 +23,7 @@ Apply these questions in order:
    vsock port. Keep host-only work in the Runner and Guest-local work in the
    Guest.
 2. **Does the Runner direct or supervise work inside the Guest as part of
-   sandbox control?** Use the long-lived control connection on port **1000**.
+   sandbox control?** Use the long-lived control connection on port **52000**.
    Exec, Guest file writes, quiesce, restore, and shutdown belong here: the
    Runner owns the sequenced operation and the Guest returns responses, output,
    and protocol control frames.
@@ -33,7 +33,7 @@ Apply these questions in order:
    new port. `run.usage`, `ssh.*`, and `vnc.*` belong here; file methods use the
    existing opt-in binary stream contract.
 
-Port 1000 has one accepted control connection: the Guest control service owns its
+Port 52000 has one accepted control connection: the Guest control service owns its
 end, and the host removes the listener after acceptance. Its current reader
 routes Guest frames as control/exec events or replies to host-owned sequences;
 it is **not** a generic Guest-origin RPC dispatcher. A standalone helper cannot
@@ -57,7 +57,7 @@ listener does not create a second source of authority. See the
 [dispatch owner](../crates/runner-remote/src/guest_rpc/mod.rs).
 
 **Before changing this split:** a smaller socket count is not evidence of lower
-latency or simpler maintenance. Moving only `run.usage` to 1000 would leave
+latency or simpler maintenance. Moving only `run.usage` to 52000 would leave
 SSH/VNC on 52001 while adding a reverse-request bridge; it would not remove the
 52001 listener. A full consolidation must preserve the existing RPC terminal
 plus EOF, file streaming, deadlines, no-replay and exact-Run/park semantics,

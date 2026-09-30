@@ -131,8 +131,8 @@ pub const MSG_WRITE_FILE_STREAM_CREDIT: u8 = 0x25;
 /// Guest-to-host protocol error response.
 pub const MSG_ERROR: u8 = 0xFF;
 
-/// Default vsock port for host-guest communication.
-pub const VSOCK_PORT: u32 = 1000;
+/// Guest control vsock port on host CID 2 (distinct from Guest-to-Runner RPC 52001).
+pub const VSOCK_PORT: u32 = 52000;
 
 /// Exec-start payload flag requesting sudo execution.
 pub const EXEC_FLAG_SUDO: u8 = 0x01;
