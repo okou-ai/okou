@@ -176,6 +176,52 @@ describe("Pi resource indexing of generic Storage commits", () => {
     ]);
   });
 
+  it("builds stable context when a captured gzip hint differs from the ready index", async () => {
+    const published = await publishStorage();
+    if (!published.actor.orgId) {
+      throw new Error("Expected an organization-scoped actor");
+    }
+    await expect(run(published.versionId)).resolves.toMatchObject({
+      claimed: 1,
+      ready: 1,
+    });
+    const agent = await bdd.createAgent(published.actor, {
+      displayName: "Stale gzip hint agent",
+    });
+    // An earlier API could update a version's archive size after this demand
+    // captured it. The index still represents the same logical file content.
+    const headId = await seedPiStableContextStorageDemandFixture({
+      orgId: published.actor.orgId,
+      userId: published.actor.userId,
+      agentId: agent.agentId,
+      storageName: published.storageName,
+      versionId: published.versionId,
+      archiveSize: published.archive.length + 1,
+    });
+    const result = await accept(
+      setupApp({ context, routes: testPiResourceIndexWorkRoutes })(
+        testPiResourceIndexWorkContract,
+      ).run({
+        body: {
+          versionIds: [published.versionId],
+          stableContextOwner: {
+            orgId: published.actor.orgId,
+            userId: published.actor.userId,
+            agentId: agent.agentId,
+          },
+        },
+      }),
+      [200],
+    );
+    expect(result.body.stableContext).toMatchObject({ failed: 0 });
+    await expect(
+      readPiStableContextStorageDemandFixture(headId),
+    ).resolves.toMatchObject({
+      status: "ready",
+      artifactDigest: expect.any(String),
+    });
+  });
+
   it("keeps an archive-less empty writeback empty after its index is ready", async () => {
     const actor = bdd.user();
     if (!actor.orgId) {
