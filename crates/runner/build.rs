@@ -16,7 +16,6 @@ const MAX_CLI_MANIFEST_SIZE: u64 = 16 * 1024;
 #[serde(rename_all = "camelCase")]
 struct CliManifest {
     version: u32,
-    commit_sha: String,
     package: CliPackage,
     versions: CliVersions,
     session_construction: CliSessionConstruction,
@@ -83,22 +82,10 @@ fn main() {
 
     // Either supply every Guest binary and the CLI tarball, or none of them.
     println!("cargo::rerun-if-env-changed=GUEST_CLI_PATH");
-    println!("cargo::rerun-if-env-changed=GUEST_CLI_MANIFEST_PATH");
-    println!("cargo::rerun-if-env-changed=GUEST_CLI_SOURCE_SHA");
     for guest in &guests {
         println!("cargo::rerun-if-env-changed={}", guest.path_env);
     }
     let guest_cli_path = read_bundle_path("GUEST_CLI_PATH");
-    let guest_cli_manifest = read_bundle_path("GUEST_CLI_MANIFEST_PATH");
-    let source_sha = read_bundle_path("GUEST_CLI_SOURCE_SHA");
-    assert!(
-        guest_cli_path.is_some() == guest_cli_manifest.is_some(),
-        "GUEST_CLI_PATH and GUEST_CLI_MANIFEST_PATH must both be set or both be absent"
-    );
-    assert!(
-        guest_cli_path.is_some() == source_sha.is_some(),
-        "GUEST_CLI_SOURCE_SHA must be provided with the CLI package and manifest"
-    );
     let paths: Vec<_> = guests
         .iter()
         .filter_map(|guest| read_bundle_path(&guest.path_env).map(|value| (guest, value)))
@@ -142,8 +129,6 @@ fn main() {
         }
         embed_guest_cli(
             &guest_cli_path.expect("CLI path is required with Guest paths"),
-            &guest_cli_manifest.expect("CLI manifest is required with CLI path"),
-            source_sha.as_deref(),
             &workspace_root,
         );
     }
@@ -193,15 +178,16 @@ fn valid_release_version(value: &str) -> bool {
         })
 }
 
-fn embed_guest_cli(
-    path: &str,
-    manifest_path: &str,
-    source_sha: Option<&str>,
-    workspace_root: &Path,
-) {
+fn embed_guest_cli(path: &str, workspace_root: &Path) {
     let package = cli_file_path(path, workspace_root, "package", MAX_CLI_PACKAGE_SIZE);
+    let manifest = package
+        .parent()
+        .expect("CLI package must have a parent")
+        .join("manifest.json");
     let manifest_path = cli_file_path(
-        manifest_path,
+        manifest
+            .to_str()
+            .unwrap_or_else(|| panic!("non-UTF-8 CLI manifest path: {}", manifest.display())),
         workspace_root,
         "manifest",
         MAX_CLI_MANIFEST_SIZE,
@@ -210,16 +196,6 @@ fn embed_guest_cli(
         serde_json::from_slice(&fs::read(&manifest_path).expect("read CLI manifest"))
             .expect("parse CLI manifest");
     assert_eq!(manifest.version, 1, "unsupported CLI manifest version");
-    assert!(
-        valid_lower_hex(&manifest.commit_sha, 40),
-        "invalid CLI source SHA"
-    );
-    if let Some(source_sha) = source_sha {
-        assert_eq!(
-            manifest.commit_sha, source_sha,
-            "CLI source SHA does not match Runner source"
-        );
-    }
     assert_eq!(
         manifest.package.path, "package.tgz",
         "unexpected CLI package path"

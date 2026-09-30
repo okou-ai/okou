@@ -1911,6 +1911,22 @@ mod tests {
     }
 
     #[test]
+    fn startup_boundary_reports_closed_or_malformed_stdout() {
+        let boundary = PiRpcStartupBoundary::default();
+        assert!(boundary.requires_boundary());
+        assert!(
+            PiRpcStartupBoundary::missing_error()
+                .to_string()
+                .contains("PI_HANDOFF_BOUNDARY_MISSING")
+        );
+        assert!(
+            PiRpcStartupBoundary::malformed_record_error()
+                .to_string()
+                .contains("PI_HANDOFF_BOUNDARY_INVALID")
+        );
+    }
+
+    #[test]
     fn only_records_the_projection_ignores_are_discardable_when_oversized() {
         assert!(oversized_record_is_discardable("agent_end"));
 

@@ -382,41 +382,38 @@ cli_manifest="${TMPDIR}/cli-intermediate/manifest.json"
 mkdir -p "$(dirname "$cli_package")"
 printf 'fixture CLI package\n' > "$cli_package"
 printf 'fixture CLI identity\n' > "$cli_manifest"
-embedded_digest_value() {
-  GUEST_CLI_MANIFEST_PATH="$cli_manifest" digest_value "$@"
-}
 plain_arm_digest=$(digest_value "$repo" aarch64-unknown-linux-musl)
 embedded_arm_digest=$(GUEST_CLI_PATH="$cli_package" \
-  embedded_digest_value "$repo" aarch64-unknown-linux-musl)
+  digest_value "$repo" aarch64-unknown-linux-musl)
 embedded_x86_digest=$(GUEST_CLI_PATH="$cli_package" \
-  embedded_digest_value "$repo" x86_64-unknown-linux-musl)
+  digest_value "$repo" x86_64-unknown-linux-musl)
 [ "$plain_arm_digest" != "$embedded_arm_digest" ] \
   || fail "bundled and unbundled Runner inputs must have different cache digests"
 [ "$embedded_arm_digest" != "$embedded_x86_digest" ] \
   || fail "architecture must remain part of the source-bound digest"
 stale_revision_digest=$(GUEST_CLI_PATH="$cli_package" \
-  embedded_digest_value "$repo" aarch64-unknown-linux-musl "$baseline_revision")
+  digest_value "$repo" aarch64-unknown-linux-musl "$baseline_revision")
 [ "$stale_revision_digest" != "$embedded_arm_digest" ] \
   || fail "source revision must remain part of the Runner cache digest"
 printf 'changed bytes\n' >> "$cli_package"
 changed_cli_digest=$(GUEST_CLI_PATH="$cli_package" \
-  embedded_digest_value "$repo" aarch64-unknown-linux-musl)
+  digest_value "$repo" aarch64-unknown-linux-musl)
 [ "$changed_cli_digest" != "$embedded_arm_digest" ] \
   || fail "CLI byte changes must invalidate the Runner cache digest"
 printf 'changed identity\n' >> "$cli_manifest"
 changed_identity_digest=$(GUEST_CLI_PATH="$cli_package" \
-  embedded_digest_value "$repo" aarch64-unknown-linux-musl)
+  digest_value "$repo" aarch64-unknown-linux-musl)
 [ "$changed_identity_digest" != "$changed_cli_digest" ] \
   || fail "CLI identity changes must invalidate the Runner cache digest"
 rm "$cli_manifest"
 if GUEST_CLI_PATH="$cli_package" \
-  embedded_digest_value "$repo" aarch64-unknown-linux-musl >/dev/null 2>&1; then
-  fail "an explicitly provided missing CLI manifest must fail"
+  digest_value "$repo" aarch64-unknown-linux-musl >/dev/null 2>&1; then
+  fail "missing sibling CLI manifest must fail"
 fi
 printf 'fixture CLI identity\n' > "$cli_manifest"
 rm "$cli_package"
 if GUEST_CLI_PATH="$cli_package" \
-  embedded_digest_value "$repo" aarch64-unknown-linux-musl >/dev/null 2>&1; then
+  digest_value "$repo" aarch64-unknown-linux-musl >/dev/null 2>&1; then
   fail "an explicitly provided missing CLI package must fail"
 fi
 

@@ -657,8 +657,6 @@ jq -n --arg sha "$cli_sha" --argjson size "$cli_size" '{
 metadata_case="${TMPDIR}/embedded-cli-metadata"
 prepare_remote_case "$metadata_case"
 GUEST_CLI_PATH="${cli_input}/package.tgz" \
-  GUEST_CLI_MANIFEST_PATH="${cli_input}/manifest.json" \
-  RUNNER_BINARY_GIT_REVISION=abc \
   REMOTE_REACH_GC=1 REMOTE_GC_STATUSES=0 REMOTE_UPLOAD_STATUSES=0 \
   run_remote_case "$metadata_case"
 [ "$(< "${metadata_case}/upload-count")" -eq 1 ] || fail "compile input must not be uploaded to metal"
@@ -669,9 +667,7 @@ fi
 printf 'tampered\n' > "${cli_input}/package.tgz"
 tampered_case="${TMPDIR}/embedded-cli-tampered"
 prepare_remote_case "$tampered_case"
-GUEST_CLI_PATH="${cli_input}/package.tgz" \
-  GUEST_CLI_MANIFEST_PATH="${cli_input}/manifest.json" \
-  RUNNER_BINARY_GIT_REVISION=abc run_remote_case "$tampered_case"
+GUEST_CLI_PATH="${cli_input}/package.tgz" run_remote_case "$tampered_case"
 grep -q 'embedded CLI compile input does not match' "${tampered_case}/err" || fail "tampered compile input must fail"
 [ ! -s "${tampered_case}/ssh.log" ] || fail "tampered compile input must fail before SSH"
 

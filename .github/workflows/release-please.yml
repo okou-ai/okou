@@ -2265,8 +2265,6 @@ jobs:
         env:
           TARGET_TRIPLE: ${{ matrix.target }}
           GUEST_CLI_PATH: ${{ github.workspace }}/runner-cli-intermediate/package.tgz
-          GUEST_CLI_MANIFEST_PATH: ${{ github.workspace }}/runner-cli-intermediate/manifest.json
-          GUEST_CLI_SOURCE_SHA: ${{ needs.release-please.outputs.release_target }}
         run: |
           . .github/scripts/runner-guest-binaries.sh
           runner_guest_binaries_load

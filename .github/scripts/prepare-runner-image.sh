@@ -83,33 +83,26 @@ guest_sha_json=$(jq -c '.guestSha256' "$FRESH_METADATA_PATH")
 # compile input is on this CI worker for the binary-input digest, so use its
 # manifest for image metadata without another download or metal upload.
 okou_cli_json='null'
-if [ -n "${GUEST_CLI_PATH:-}" ] || [ -n "${GUEST_CLI_MANIFEST_PATH:-}" ]; then
-  require_env GUEST_CLI_PATH
-  require_env GUEST_CLI_MANIFEST_PATH
-  require_env RUNNER_BINARY_GIT_REVISION
+if [ -n "${GUEST_CLI_PATH:-}" ]; then
   if [[ "$GUEST_CLI_PATH" != /* ]]; then
     GUEST_CLI_PATH="${REPO_ROOT}/${GUEST_CLI_PATH}"
   fi
-  if [[ "$GUEST_CLI_MANIFEST_PATH" != /* ]]; then
-    GUEST_CLI_MANIFEST_PATH="${REPO_ROOT}/${GUEST_CLI_MANIFEST_PATH}"
-  fi
-  [ -f "$GUEST_CLI_PATH" ] && [ -f "$GUEST_CLI_MANIFEST_PATH" ] || {
+  cli_manifest="$(dirname "$GUEST_CLI_PATH")/manifest.json"
+  [ -f "$GUEST_CLI_PATH" ] && [ -f "$cli_manifest" ] || {
     echo "embedded CLI compile input is missing" >&2
     exit 2
   }
   cli_sha=$(sha256sum "$GUEST_CLI_PATH" | awk '{print $1}')
   cli_size=$(stat -c '%s' "$GUEST_CLI_PATH")
-  jq -e --arg sha "$cli_sha" --argjson size "$cli_size" \
-    --arg source "$RUNNER_BINARY_GIT_REVISION" '
-    .commitSha == $source and
+  jq -e --arg sha "$cli_sha" --argjson size "$cli_size" '
     .package.path == "package.tgz" and
     .package.sha256 == $sha and
     .package.size == $size and
     (.versions.cli | type == "string" and length > 0) and
     (.versions.piAgentRuntime | type == "string" and length > 0) and
     (.versions.piSdk | type == "string" and length > 0)
-  ' "$GUEST_CLI_MANIFEST_PATH" >/dev/null || {
-    echo "embedded CLI compile input does not match its manifest or source" >&2
+  ' "$cli_manifest" >/dev/null || {
+    echo "embedded CLI compile input does not match its manifest" >&2
     exit 2
   }
   okou_cli_json=$(jq -c '{
@@ -117,7 +110,7 @@ if [ -n "${GUEST_CLI_PATH:-}" ] || [ -n "${GUEST_CLI_MANIFEST_PATH:-}" ]; then
     piAgentRuntimeVersion: .versions.piAgentRuntime,
     piSdkVersion: .versions.piSdk,
     packageSha256: .package.sha256
-  }' "$GUEST_CLI_MANIFEST_PATH")
+  }' "$cli_manifest")
 fi
 
 prepare_host() {

@@ -21,12 +21,12 @@ jq -e '
   $steps[$upload].with.name == "runner-cli-${{ github.run_id }}" and
   $steps[$upload].with.overwrite == true and
   $steps[$plan].env.GUEST_CLI_PATH == "runner-cli-intermediate/package.tgz" and
-  $steps[$plan].env.GUEST_CLI_MANIFEST_PATH == "runner-cli-intermediate/manifest.json" and
+  ($steps[$plan].env | has("GUEST_CLI_MANIFEST_PATH") | not) and
   $steps[$plan].env.RUNNER_BINARY_GIT_REVISION == "${{ steps.identity.outputs.source-head-sha }}" and
   .jobs.compile.env.RUNNER_BINARY_GIT_REVISION == "${{ needs.prepare.outputs.source-head-sha }}" and
   (["compile", "build", "asset"] | all(.[]; . as $job |
     $root.jobs[$job].env.GUEST_CLI_PATH == "runner-cli-intermediate/package.tgz" and
-    $root.jobs[$job].env.GUEST_CLI_MANIFEST_PATH == "runner-cli-intermediate/manifest.json" and
+    ($root.jobs[$job].env | has("GUEST_CLI_MANIFEST_PATH") | not) and
     $root.jobs[$job].env.RUNNER_BINARY_GIT_REVISION == "${{ needs.prepare.outputs.source-head-sha }}" and
     any($root.jobs[$job].steps[];
       .name == "Download private CLI build input" and
@@ -52,8 +52,8 @@ jq -e '
   any(.jobs["build-runner-release-assets"].steps[];
     .name == "Cross-compile runner with embedded guests and CLI for ${{ matrix.target }}" and
     .env.GUEST_CLI_PATH == "${{ github.workspace }}/runner-cli-intermediate/package.tgz" and
-    .env.GUEST_CLI_MANIFEST_PATH == "${{ github.workspace }}/runner-cli-intermediate/manifest.json" and
-    .env.GUEST_CLI_SOURCE_SHA == "${{ needs.release-please.outputs.release_target }}") and
+    (.env | has("GUEST_CLI_MANIFEST_PATH") | not) and
+    (.env | has("GUEST_CLI_SOURCE_SHA") | not)) and
   (.jobs["builds-complete"].needs | index("prepare-runner-cli") != null) and
   (.jobs["build-runner-production"].needs | index("publish-cli-versioned-artifact") == null) and
   any(.jobs["build-runner-production"].steps[];
