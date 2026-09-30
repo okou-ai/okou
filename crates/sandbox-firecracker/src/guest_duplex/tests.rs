@@ -1,7 +1,12 @@
 use super::*;
 use std::os::unix::fs::PermissionsExt;
+use std::sync::atomic::AtomicU8;
+
+use guest_control_client::GuestControlClient;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::time::timeout;
+
+use crate::park_coordinator::ParkCoordinator;
 
 struct Fixture {
     _dir: tempfile::TempDir,
@@ -78,8 +83,8 @@ impl Fixture {
         fixture.bind();
         fixture
     }
-    fn context(&self) -> ContextData {
-        ContextData {
+    fn context(&self) -> GuestEndpointContext {
+        GuestEndpointContext {
             sandbox_id: "sandbox-a".into(),
             state: Arc::clone(&self.state),
             guest: Arc::clone(&self.guest),
@@ -202,6 +207,27 @@ async fn endpoint_close_drops_idle_even_with_retained_acceptor() {
 }
 
 #[tokio::test]
+async fn runtime_exit_finishes_idle_drain_with_retained_acceptor() {
+    let mut fixture = Fixture::new().await;
+    let mut guest = fixture.connect().await;
+    let old = fixture.acceptor("run-a");
+    fixture.runtime_cancel.cancel();
+    timeout(
+        Duration::from_secs(1),
+        &mut fixture.endpoint.as_mut().unwrap()._drain,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert!(!fixture.path.exists());
+    assert_eq!(
+        guest.read_u8().await.unwrap_err().kind(),
+        io::ErrorKind::UnexpectedEof
+    );
+    assert!(old.accept().await.is_err());
+}
+
+#[tokio::test]
 async fn duplicate_bind_preserves_original_and_runtime_exit_revokes_active_stream() {
     let fixture = Fixture::new().await;
     assert!(
@@ -245,12 +271,7 @@ async fn duplex_close_revokes_only_duplex_not_existing_rpc_work() {
     let rpc_path = fixture._dir.path().join("rpc.sock");
     let rpc = crate::guest_rpc::GuestRpcEndpoint::bind(
         rpc_path.clone(),
-        crate::guest_rpc::GuestRpcContext {
-            sandbox_id: "sandbox-a".into(),
-            state: Arc::clone(&fixture.state),
-            guest: Arc::clone(&fixture.guest),
-            coordinator: fixture.coordinator.clone(),
-        },
+        fixture.context(),
         fixture.runtime_cancel.clone(),
     )
     .unwrap();
@@ -282,12 +303,7 @@ async fn rpc_close_revokes_only_rpc_not_existing_duplex_work() {
     let rpc_path = fixture._dir.path().join("rpc.sock");
     let rpc = crate::guest_rpc::GuestRpcEndpoint::bind(
         rpc_path.clone(),
-        crate::guest_rpc::GuestRpcContext {
-            sandbox_id: "sandbox-a".into(),
-            state: Arc::clone(&fixture.state),
-            guest: Arc::clone(&fixture.guest),
-            coordinator: fixture.coordinator.clone(),
-        },
+        fixture.context(),
         fixture.runtime_cancel.clone(),
     )
     .unwrap();

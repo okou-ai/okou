@@ -2,33 +2,24 @@
 
 use std::io;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use guest_control_client::GuestControlClient;
 use sandbox::{AcceptedGuestRpc, GuestRpcAcceptor};
 use tokio::net::UnixListener;
 use tokio_util::sync::CancellationToken;
 
-use crate::guest_endpoint_operations::{EndpointOperations, ReservedStream};
-use crate::park_coordinator::ParkCoordinator;
+use crate::guest_endpoint_operations::{EndpointOperations, GuestEndpointContext, ReservedStream};
 use crate::runtime_dirs::set_private_runtime_socket_mode;
 use crate::sandbox::SandboxState;
-
-pub(crate) struct GuestRpcContext {
-    pub(crate) sandbox_id: String,
-    pub(crate) state: Arc<AtomicU8>,
-    pub(crate) guest: Arc<tokio::sync::Mutex<Option<Arc<GuestControlClient>>>>,
-    pub(crate) coordinator: ParkCoordinator,
-}
 
 struct Shared {
     listener: Mutex<Option<Arc<UnixListener>>>,
     active: EndpointOperations,
     path: PathBuf,
     closed: CancellationToken,
-    context: GuestRpcContext,
+    context: GuestEndpointContext,
 }
 
 impl Shared {
@@ -68,7 +59,7 @@ pub(crate) struct GuestRpcEndpoint {
 impl GuestRpcEndpoint {
     pub(crate) fn bind(
         path: PathBuf,
-        context: GuestRpcContext,
+        context: GuestEndpointContext,
         runtime_cancel: CancellationToken,
     ) -> io::Result<Self> {
         // The parent is the already-validated 0700 sandbox vsock directory.
@@ -121,7 +112,7 @@ impl GuestRpcAcceptor for Acceptor {
             .shared
             .context
             .coordinator
-            .guest_rpc_assignment_cancellation(&self.run_id)?;
+            .guest_assignment_cancellation(&self.run_id)?;
         let listener = self
             .shared
             .listener
@@ -147,7 +138,7 @@ impl GuestRpcAcceptor for Acceptor {
             .shared
             .context
             .coordinator
-            .reserve_guest_rpc_operation(&self.run_id, &guest)?;
+            .reserve_guest_operation(&self.run_id, &guest)?;
         let operation = Arc::new(cancelled);
         self.shared.active.track(&operation, &self.shared.closed);
         if operation.is_cancelled() || self.shared.ensure_running().is_err() {

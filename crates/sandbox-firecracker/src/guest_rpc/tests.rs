@@ -1,12 +1,16 @@
 use super::*;
 
 use std::os::unix::fs::PermissionsExt;
+use std::sync::atomic::AtomicU8;
 use std::time::Duration;
 
+use guest_control_client::GuestControlClient;
 use runner_rpc_proto::{Delivery, ErrorCode, Response, ResponseReader, ResponseWriter};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 use tokio::time::timeout;
+
+use crate::park_coordinator::ParkCoordinator;
 
 struct Fixture {
     _dir: tempfile::TempDir,
@@ -88,8 +92,8 @@ impl Fixture {
         fixture
     }
 
-    fn context(&self) -> GuestRpcContext {
-        GuestRpcContext {
+    fn context(&self) -> GuestEndpointContext {
+        GuestEndpointContext {
             sandbox_id: "sandbox-a".into(),
             state: Arc::clone(&self.state),
             guest: Arc::clone(&self.guest),

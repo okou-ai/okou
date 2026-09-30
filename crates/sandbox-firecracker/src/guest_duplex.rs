@@ -3,33 +3,24 @@
 
 use std::io;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
 use guest_contracts::private_duplex::{ACTIVATE, READY};
-use guest_control_client::GuestControlClient;
 use sandbox::{AcceptedGuestDuplex, GuestDuplexAcceptor};
 use tokio::io::AsyncWriteExt;
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-use crate::guest_endpoint_operations::{EndpointOperations, ReservedStream};
-use crate::park_coordinator::ParkCoordinator;
+use crate::guest_endpoint_operations::{EndpointOperations, GuestEndpointContext, ReservedStream};
 use crate::runtime_dirs::set_private_runtime_socket_mode;
 use crate::sandbox::SandboxState;
 
 const ATTACH_TIMEOUT: Duration = Duration::from_secs(2);
 const INGRESS_ACK_TIMEOUT: Duration = Duration::from_secs(2);
-
-pub(crate) struct ContextData {
-    pub sandbox_id: String,
-    pub state: Arc<AtomicU8>,
-    pub guest: Arc<tokio::sync::Mutex<Option<Arc<GuestControlClient>>>>,
-    pub coordinator: ParkCoordinator,
-}
 
 struct Shared {
     listener: Mutex<Option<Arc<UnixListener>>>,
@@ -37,7 +28,7 @@ struct Shared {
     active: EndpointOperations,
     path: PathBuf,
     closed: CancellationToken,
-    context: ContextData,
+    context: GuestEndpointContext,
 }
 
 impl Shared {
@@ -72,13 +63,15 @@ impl Shared {
 pub(crate) struct Endpoint {
     shared: Arc<Shared>,
     ingress: tokio::task::JoinHandle<()>,
+    // Must finish after close, including when an old acceptor retains Shared.
+    _drain: tokio::task::JoinHandle<()>,
     cleanup: tokio::task::JoinHandle<()>,
 }
 
 impl Endpoint {
     pub(crate) fn bind(
         path: PathBuf,
-        context: ContextData,
+        context: GuestEndpointContext,
         runtime_cancel: CancellationToken,
     ) -> io::Result<Self> {
         // The parent is the validated private 0700 sandbox vsock directory.
@@ -101,7 +94,7 @@ impl Endpoint {
         // A retained old acceptor can keep Shared alive across park. Drain its
         // acknowledged idle socket immediately when the endpoint closes.
         let drain_shared = Arc::clone(&shared);
-        tokio::spawn(async move {
+        let drain = tokio::spawn(async move {
             drain_shared.closed.cancelled().await;
             let mut pending = drain_shared.pending.lock().await;
             pending.close();
@@ -115,6 +108,7 @@ impl Endpoint {
         Ok(Self {
             shared,
             ingress,
+            _drain: drain,
             cleanup,
         })
     }
@@ -132,6 +126,8 @@ impl Drop for Endpoint {
         self.shared.close();
         self.ingress.abort();
         self.cleanup.abort();
+        // Do not abort drain: it closes an idle socket even when a stale
+        // acceptor keeps the receiver alive after this Endpoint is dropped.
     }
 }
 
@@ -181,7 +177,7 @@ impl GuestDuplexAcceptor for Acceptor {
             .shared
             .context
             .coordinator
-            .guest_rpc_assignment_cancellation(&self.run_id)?;
+            .guest_assignment_cancellation(&self.run_id)?;
         let mut stream = tokio::select! {
             biased;
             () = self.shared.closed.cancelled() => return Err(unavailable()),
@@ -204,7 +200,7 @@ impl GuestDuplexAcceptor for Acceptor {
             .shared
             .context
             .coordinator
-            .reserve_guest_rpc_operation(&self.run_id, &guest)?;
+            .reserve_guest_operation(&self.run_id, &guest)?;
         let operation = Arc::new(cancelled);
         self.shared.active.track(&operation, &self.shared.closed);
         if operation.is_cancelled() || self.shared.ensure_running().is_err() {

@@ -6,14 +6,25 @@
 use std::future::Future;
 use std::io;
 use std::pin::Pin;
+use std::sync::atomic::AtomicU8;
 use std::sync::{Arc, Mutex, Weak};
 use std::task::{Context, Poll};
 
-use guest_control_client::ExternalOperationReservation;
+use guest_control_client::{ExternalOperationReservation, GuestControlClient};
 use sandbox::GuestRpcStream;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::net::UnixStream;
 use tokio_util::sync::{CancellationToken, WaitForCancellationFutureOwned};
+
+use crate::park_coordinator::ParkCoordinator;
+
+/// Shared sandbox assignment authority, never shared listener or stream state.
+pub(crate) struct GuestEndpointContext {
+    pub(crate) sandbox_id: String,
+    pub(crate) state: Arc<AtomicU8>,
+    pub(crate) guest: Arc<tokio::sync::Mutex<Option<Arc<GuestControlClient>>>>,
+    pub(crate) coordinator: ParkCoordinator,
+}
 
 #[derive(Default)]
 pub(crate) struct EndpointOperations {

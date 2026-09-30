@@ -1715,15 +1715,19 @@ impl FirecrackerSandbox {
         Ok(())
     }
 
+    fn guest_endpoint_context(&self) -> crate::guest_endpoint_operations::GuestEndpointContext {
+        crate::guest_endpoint_operations::GuestEndpointContext {
+            sandbox_id: self.id.clone(),
+            state: Arc::clone(&self.state),
+            guest: Arc::clone(&self.guest),
+            coordinator: self.park_coordinator.clone(),
+        }
+    }
+
     fn bind_guest_duplex_endpoint(&self) -> io::Result<crate::guest_duplex::Endpoint> {
         crate::guest_duplex::Endpoint::bind(
             self.sock_paths.guest_duplex(),
-            crate::guest_duplex::ContextData {
-                sandbox_id: self.id.clone(),
-                state: Arc::clone(&self.state),
-                guest: Arc::clone(&self.guest),
-                coordinator: self.park_coordinator.clone(),
-            },
+            self.guest_endpoint_context(),
             self.runtime_cancel.clone(),
         )
     }
@@ -1731,12 +1735,7 @@ impl FirecrackerSandbox {
     fn bind_guest_rpc_endpoint(&self) -> io::Result<crate::guest_rpc::GuestRpcEndpoint> {
         crate::guest_rpc::GuestRpcEndpoint::bind(
             self.sock_paths.guest_rpc(),
-            crate::guest_rpc::GuestRpcContext {
-                sandbox_id: self.id.clone(),
-                state: Arc::clone(&self.state),
-                guest: Arc::clone(&self.guest),
-                coordinator: self.park_coordinator.clone(),
-            },
+            self.guest_endpoint_context(),
             self.runtime_cancel.clone(),
         )
     }

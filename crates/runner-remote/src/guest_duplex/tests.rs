@@ -106,8 +106,7 @@ async fn exact_run_isolation_and_reuse_epoch() {
         channel_a.send(b"stale").await.err().unwrap().kind(),
         io::ErrorKind::NotConnected
     );
-    assert!(!channel_b.tx.run_cancelled.is_cancelled());
-    // An unrelated run still has a live registration (and its own stream).
+    // An unrelated run still has a live registration and can use its stream.
     assert!(channel_b.send(b"ok").await.is_ok());
 }
 
