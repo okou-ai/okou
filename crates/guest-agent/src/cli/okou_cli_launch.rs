@@ -6,8 +6,8 @@
 //! floor the bundle satisfies. Parity is the session-construction digest when
 //! the launch config carries one (it moves only when code feeding the
 //! constructed session changes), and the exact `pi-agent-runtime` version
-//! otherwise. Every other case rejects launch instead of downloading or
-//! executing an incompatible CLI. The requirements travel in the execution
+//! otherwise. Every other case keeps the commit-addressed `npx` launch,
+//! using the package URL captured by the API. The requirements travel in the execution
 //! context (`piInstalledCliRequirement`).
 
 use std::path::Path;
@@ -18,15 +18,15 @@ use guest_contracts::okou_cli::{InstalledOkouCli, parse_release_version};
 pub(super) enum PiCliLaunchSource {
     /// Exec the bundle installed in the rootfs.
     Installed,
-    /// Refuse to execute when the installed bundle cannot satisfy this run.
-    Rejected,
+    /// Install and run the task's commit-addressed package through `npx`.
+    Npx,
 }
 
 impl PiCliLaunchSource {
     pub(super) fn as_str(self) -> &'static str {
         match self {
             Self::Installed => "installed",
-            Self::Rejected => "rejected",
+            Self::Npx => "npx",
         }
     }
 }
@@ -39,9 +39,9 @@ pub(super) struct PiCliLaunchDecision {
 }
 
 impl PiCliLaunchDecision {
-    fn reject(reason: &'static str) -> Self {
+    fn npx(reason: &'static str) -> Self {
         Self {
-            source: PiCliLaunchSource::Rejected,
+            source: PiCliLaunchSource::Npx,
             reason,
         }
     }
@@ -50,7 +50,7 @@ impl PiCliLaunchDecision {
 /// Installed-CLI launch requirements the API captured for the run.
 ///
 /// Every field is absent when the execution context carries no requirement;
-/// such runs cannot prove parity and fail visibly. The session-construction
+/// such runs launch through `npx`. The session-construction
 /// digest, when present, replaces the runtime version as the parity key.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct PiRuntimeRequirement<'a> {
@@ -78,8 +78,8 @@ impl<'a> PiRuntimeRequirement<'a> {
 
 /// Read the manifest the runner build installed, if any.
 ///
-/// A missing or invalid manifest is reported; the caller refuses to launch
-/// without a verified installed bundle.
+/// A missing or invalid manifest disables the installed fast path; the caller
+/// uses the task's package URL through `npx` instead.
 pub(super) fn load_installed_okou_cli() -> Option<InstalledOkouCli> {
     let path = installed_cli_manifest_path();
     match load_installed_okou_cli_from(Path::new(path)) {
@@ -139,30 +139,30 @@ pub(super) fn select_pi_cli_launch(
     installed: Option<&InstalledOkouCli>,
 ) -> PiCliLaunchDecision {
     let Some(installed) = installed else {
-        return PiCliLaunchDecision::reject("no_installed_cli");
+        return PiCliLaunchDecision::npx("no_installed_cli");
     };
     let parity = match requirement.required_pi_session_construction_digest {
         Some(required_digest) => {
             let Some(session_construction) = installed.session_construction.as_ref() else {
-                return PiCliLaunchDecision::reject("installed_cli_without_session_construction");
+                return PiCliLaunchDecision::npx("installed_cli_without_session_construction");
             };
             if required_digest != session_construction.digest {
-                return PiCliLaunchDecision::reject("session_construction_mismatch");
+                return PiCliLaunchDecision::npx("session_construction_mismatch");
             }
             "session_construction_match"
         }
         None => {
             let Some(required_runtime) = requirement.required_pi_agent_runtime_version else {
-                return PiCliLaunchDecision::reject("launch_config_without_runtime_version");
+                return PiCliLaunchDecision::npx("launch_config_without_runtime_version");
             };
             if required_runtime != installed.versions.pi_agent_runtime {
-                return PiCliLaunchDecision::reject("runtime_version_mismatch");
+                return PiCliLaunchDecision::npx("runtime_version_mismatch");
             }
             "runtime_version_match"
         }
     };
     let Some(min_cli) = requirement.min_cli_version else {
-        return PiCliLaunchDecision::reject("launch_config_without_cli_floor");
+        return PiCliLaunchDecision::npx("launch_config_without_cli_floor");
     };
     match (
         parse_release_version(min_cli),
@@ -172,8 +172,8 @@ pub(super) fn select_pi_cli_launch(
             source: PiCliLaunchSource::Installed,
             reason: parity,
         },
-        (Some(_), Some(_)) => PiCliLaunchDecision::reject("cli_below_floor"),
-        _ => PiCliLaunchDecision::reject("invalid_version"),
+        (Some(_), Some(_)) => PiCliLaunchDecision::npx("cli_below_floor"),
+        _ => PiCliLaunchDecision::npx("invalid_version"),
     }
 }
 
@@ -269,11 +269,11 @@ mod tests {
     }
 
     #[test]
-    fn missing_execution_context_requirement_rejects_launch() {
+    fn missing_execution_context_requirement_uses_npx() {
         let absent = PiRuntimeRequirement::from_value(None);
         assert_eq!(absent, requirement(None, None));
         let decision = select_pi_cli_launch(&absent, Some(&installed("9.353.0", "1.36.0")));
-        assert_eq!(decision.source, PiCliLaunchSource::Rejected);
+        assert_eq!(decision.source, PiCliLaunchSource::Npx);
         assert_eq!(decision.reason, "launch_config_without_runtime_version");
 
         assert_eq!(
@@ -333,13 +333,13 @@ mod tests {
         ];
         for (requirement, installed, reason) in cases {
             let decision = select_pi_cli_launch(&requirement, Some(installed));
-            assert_eq!(decision.source, PiCliLaunchSource::Rejected, "{reason}");
+            assert_eq!(decision.source, PiCliLaunchSource::Npx, "{reason}");
             assert_eq!(decision.reason, reason);
         }
     }
 
     #[test]
-    fn every_other_case_rejects_with_a_bounded_reason() {
+    fn every_other_case_uses_npx_with_a_bounded_reason() {
         let cli = installed("9.353.0", "1.36.0");
         let cases = [
             (
@@ -375,7 +375,7 @@ mod tests {
         ];
         for (requirement, installed, reason) in cases {
             let decision = select_pi_cli_launch(&requirement, installed);
-            assert_eq!(decision.source, PiCliLaunchSource::Rejected, "{reason}");
+            assert_eq!(decision.source, PiCliLaunchSource::Npx, "{reason}");
             assert_eq!(decision.reason, reason);
         }
     }

@@ -611,14 +611,27 @@ fn build_pi_command_for_runtime(
             .map(|session_construction| session_construction.digest.as_str())
             .unwrap_or("<none>"),
     );
-    if decision.source != okou_cli_launch::PiCliLaunchSource::Installed {
-        return Err(AgentError::Execution(format!(
-            "installed Okou CLI cannot satisfy this Pi run: {}",
-            decision.reason
-        )));
+    if decision.source == okou_cli_launch::PiCliLaunchSource::Installed {
+        return Ok(vec![
+            okou_cli_launch::installed_cli_launcher_path().to_string(),
+            "__agent-loop".to_string(),
+        ]);
     }
+    // Keep the task's API-captured package identity on a parity miss; never
+    // substitute a moving latest package or execute the incompatible install.
+    let package_url = runtime
+        .user_env
+        .get("CLI_PKG_URL")
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            AgentError::Execution("CLI_PKG_URL is required for Pi execution".to_string())
+        })?;
     Ok(vec![
-        okou_cli_launch::installed_cli_launcher_path().to_string(),
+        "npx".to_string(),
+        "--yes".to_string(),
+        "--no-audit".to_string(),
+        format!("--package={package_url}"),
+        "okou".to_string(),
         "__agent-loop".to_string(),
     ])
 }
@@ -2640,6 +2653,19 @@ mod tests {
             ]
         );
 
+        installed.session_construction.as_mut().unwrap().digest = "e".repeat(64);
+        assert_eq!(
+            build_pi_command_for_runtime(&runtime, Some(&installed)).unwrap(),
+            vec![
+                "npx".to_string(),
+                "--yes".to_string(),
+                "--no-audit".to_string(),
+                "--package=https://static.okou.io/okou-cli/abc/package.tgz".to_string(),
+                "okou".to_string(),
+                "__agent-loop".to_string()
+            ]
+        );
+
         runtime.pi_installed_cli_requirement = Cow::Borrowed("not json");
         assert!(build_pi_command_for_runtime(&runtime, Some(&installed)).is_err());
     }
@@ -2657,7 +2683,18 @@ mod tests {
         runtime.pi_installed_cli_requirement = Cow::Borrowed(
             r#"{"requiredPiAgentRuntimeVersion":"1.36.0","minCliVersion":"9.352.7"}"#,
         );
-        assert!(build_pi_command_for_runtime(&runtime, None).is_err());
+        let fallback = vec![
+            "npx".to_string(),
+            "--yes".to_string(),
+            "--no-audit".to_string(),
+            "--package=https://static.okou.io/okou-cli/abc/package.tgz".to_string(),
+            "okou".to_string(),
+            "__agent-loop".to_string(),
+        ];
+        assert_eq!(
+            build_pi_command_for_runtime(&runtime, None).unwrap(),
+            fallback
+        );
         let matching = installed_okou_cli_for_test("9.353.0", "1.36.0");
         assert_eq!(
             build_pi_command_for_runtime(&runtime, Some(&matching)).unwrap(),
@@ -2667,16 +2704,16 @@ mod tests {
             ]
         );
         let mismatched = installed_okou_cli_for_test("9.353.0", "1.35.9");
-        let mismatch = build_pi_command_for_runtime(&runtime, Some(&mismatched)).unwrap_err();
-        assert!(mismatch.to_string().contains("runtime_version_mismatch"));
+        assert_eq!(
+            build_pi_command_for_runtime(&runtime, Some(&mismatched)).unwrap(),
+            fallback
+        );
 
-        // Even a legacy URL-bearing context cannot trigger a network install.
+        // Legacy URL-bearing contexts keep their API-captured package.
         runtime.pi_installed_cli_requirement = Cow::Borrowed("");
-        let missing = build_pi_command_for_runtime(&runtime, Some(&matching)).unwrap_err();
-        assert!(
-            missing
-                .to_string()
-                .contains("launch_config_without_runtime_version")
+        assert_eq!(
+            build_pi_command_for_runtime(&runtime, Some(&matching)).unwrap(),
+            fallback
         );
 
         let no_url = HashMap::new();
@@ -2688,7 +2725,12 @@ mod tests {
             r#"{"requiredPiAgentRuntimeVersion":"1.36.0","minCliVersion":"9.352.7"}"#,
         );
         assert!(build_pi_command_for_runtime(&runtime, Some(&matching)).is_ok());
-        assert!(build_pi_command_for_runtime(&runtime, None).is_err());
+        assert!(
+            build_pi_command_for_runtime(&runtime, None)
+                .unwrap_err()
+                .to_string()
+                .contains("CLI_PKG_URL is required")
+        );
     }
 
     #[test]

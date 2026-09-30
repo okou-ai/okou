@@ -1,5 +1,5 @@
-//! A legacy URL-bearing Pi context must not launch `npx` when the installed
-//! CLI requirement is missing. Fail visibly rather than downloading code.
+//! A parity miss or legacy context uses the task's captured package through
+//! `npx`. The local mock records invocation and performs no network access.
 
 mod common;
 
@@ -9,14 +9,17 @@ use std::os::unix::fs::PermissionsExt;
 use std::time::Duration;
 
 #[tokio::test]
-async fn pi_run_without_installed_requirement_never_launches_npx()
+async fn pi_parity_miss_and_legacy_context_use_captured_package()
 -> Result<(), Box<dyn std::error::Error>> {
     let tmp = tempfile::tempdir()?;
     let server = common::RecordingServer::start(200, Duration::ZERO).await?;
     let bin_dir = tmp.path().join("bin");
     std::fs::create_dir_all(&bin_dir)?;
     let npx = bin_dir.join("npx");
-    std::fs::write(&npx, "#!/bin/sh\ntouch \"$HOME/npx-invoked\"\nexit 0\n")?;
+    std::fs::write(
+        &npx,
+        "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$HOME/npx-args\"\nexit 23\n",
+    )?;
     let mut permissions = std::fs::metadata(&npx)?.permissions();
     permissions.set_mode(0o700);
     std::fs::set_permissions(&npx, permissions)?;
@@ -49,7 +52,7 @@ async fn pi_run_without_installed_requirement_never_launches_npx()
         common::set_run_payload_file_env_for_test(
             &runtime_dir,
             &guest_contracts::env::RunPayload {
-                prompt: "reject Pi launch without an installed CLI requirement".to_string(),
+                prompt: "launch the captured CLI for a legacy Pi context".to_string(),
                 pi_launch_config: r#"{"schemaVersion":2}"#.to_string(),
                 pi_model_config: "{}".to_string(),
                 pi_session_id: "11111111-1111-4111-8111-111111111111".to_string(),
@@ -67,26 +70,35 @@ async fn pi_run_without_installed_requirement_never_launches_npx()
     common::ensure_canonical_workspace_for_test()?;
     std::env::set_current_dir(tmp.path())?;
 
-    let runtime = common::guest_runtime_from_process_env()?;
-    let result = tokio::time::timeout(
-        Duration::from_secs(10),
-        common::execute_cli_for_runtime(
-            &runtime,
-            &SecretMasker::from_raw(""),
-            common::spawn_dummy_heartbeat(),
-        ),
-    )
-    .await
-    .expect("Pi launch must fail without waiting for a network fallback");
+    let mut runtime = common::guest_runtime_from_process_env()?;
+    for requirement in [
+        "",
+        // The feature-backed installed fixture has digest dddd..., so this
+        // requirement exercises a genuine digest mismatch in coverage CI.
+        r#"{"requiredPiAgentRuntimeVersion":"1.36.0","minCliVersion":"9.353.0","requiredPiSessionConstructionDigest":"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"}"#,
+    ] {
+        runtime.config.pi_installed_cli_requirement = requirement.to_string();
+        let result = tokio::time::timeout(
+            Duration::from_secs(10),
+            common::execute_cli_for_runtime(
+                &runtime,
+                &SecretMasker::from_raw(""),
+                common::spawn_dummy_heartbeat(),
+            ),
+        )
+        .await
+        .expect("local npx mock must finish within the test budget")
+        .expect("the local fallback process must be launched");
+        assert_ne!(
+            result.exit_code, 0,
+            "the mock intentionally fails before RPC startup"
+        );
+        assert_eq!(
+            std::fs::read_to_string(tmp.path().join("npx-args"))?,
+            "--yes\n--no-audit\n--package=https://example.invalid/current-okou-cli.tgz\nokou\n__agent-loop\n"
+        );
+        std::fs::remove_file(tmp.path().join("npx-args"))?;
+    }
     std::env::set_current_dir(&original_directory)?;
-
-    let error = result.expect_err("the installed CLI requirement is missing");
-    assert!(
-        error
-            .to_string()
-            .contains("installed Okou CLI cannot satisfy this Pi run"),
-        "unexpected Pi launch error: {error}"
-    );
-    assert!(!tmp.path().join("npx-invoked").exists());
     Ok(())
 }

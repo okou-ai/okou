@@ -4755,8 +4755,10 @@ Compatibility is negotiated per run rather than by deployment order:
   `sessionConstruction.digest` is identical, and an installed CLI without a
   digest fails parity; otherwise parity means the installed `piAgentRuntime`
   equals `requiredPiAgentRuntimeVersion`. The installed `cli` must be at or
-  above `minCliVersion` in both cases. Missing or incompatible metadata now
-  fails the run explicitly; new Guest binaries never install through `npx`.
+  above `minCliVersion` in both cases. Missing or incompatible installed
+  metadata selects the existing `npx` path using the task's API-captured
+  `CLI_PKG_URL`, not a moving latest package. A missing package URL on that
+  path still fails the run explicitly.
 - The runner advertises the installed versions as an optional `installedVersions`
   field of the claim body. Older backends ignore it; the current backend records
   it in claim telemetry as `runner_installed_cli_version` and
@@ -4770,16 +4772,15 @@ Compatibility is negotiated per run rather than by deployment order:
   runtime version, differs from what it bundles. A settled-session continuation
   is a complete checkpoint and is never discarded for a parity difference.
 
-An old backend that omits the installed-CLI requirement cannot start a Pi
-run on a new Guest binary, even if the bundle is installed. Likewise, queued
-contexts requiring a newer or different CLI fail visibly rather than silently
-executing incompatible code or downloading another package. This cutover
-requires an operational compatibility and queue-drain check before promoting
-new Runners. Older already-deployed Guest binaries retain their own historical
-`npx` behavior until replaced; API context writes of `CLI_PKG_URL` remain for
-them and are not used by the new Guest. Continue raising
-`PI_SANDBOX_INSTALLED_CLI_MIN_VERSION` whenever a launch-payload or handoff
-field becomes required.
+An old backend that omits the installed-CLI requirement keeps using the
+captured `CLI_PKG_URL` through `npx`. Queued contexts requiring a newer or
+otherwise incompatible CLI also retain this path rather than executing the
+incompatible rootfs install. The installed CLI is a parity-checked fast path,
+not an admission requirement; retaining the existing fallback avoids failing
+runs solely because API and Runner releases differ. Network/package failures
+on the fallback can still fail a run, and production rollout verification is
+still required. Continue raising `PI_SANDBOX_INSTALLED_CLI_MIN_VERSION`
+whenever a launch-payload or handoff field becomes required.
 
 ### Commit-addressed CLI artifacts
 
