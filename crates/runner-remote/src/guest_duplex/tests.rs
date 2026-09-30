@@ -185,6 +185,34 @@ async fn concurrent_streams_and_malformed_frame_fail_only_its_stream() {
 }
 
 #[tokio::test]
+async fn truncated_header_or_payload_poison_only_the_affected_stream() {
+    let registry = RunGuestChannels::default();
+    let fixture = Fixture::new();
+    let run = RunId::new_v4();
+    let _registration = fixture.register(&registry, run, "a", &CancellationToken::new());
+    for truncated in [b"\0\0".as_slice(), b"\0\0\0\x03xy".as_slice()] {
+        let mut partial_guest = fixture.guest("a").await;
+        let mut healthy_guest = fixture.guest("a").await;
+        let mut partial = registry.open(run).await.unwrap();
+        let mut healthy = registry.open(run).await.unwrap();
+        partial_guest.write_all(truncated).await.unwrap();
+        partial_guest.shutdown().await.unwrap();
+        assert_eq!(
+            partial.recv().await.unwrap_err().kind(),
+            io::ErrorKind::UnexpectedEof
+        );
+        assert_eq!(
+            partial.send(b"late").await.unwrap_err().kind(),
+            io::ErrorKind::NotConnected
+        );
+        healthy.send(b"ok").await.unwrap();
+        let mut frame = [0; 6];
+        healthy_guest.read_exact(&mut frame).await.unwrap();
+        assert_eq!(&frame, b"\0\0\0\x02ok");
+    }
+}
+
+#[tokio::test]
 async fn stalled_guest_backpressures_writer_and_run_cancel_interrupts_it() {
     let registry = RunGuestChannels::default();
     let fixture = Fixture::new();

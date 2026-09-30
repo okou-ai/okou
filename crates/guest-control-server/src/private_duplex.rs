@@ -153,6 +153,20 @@ mod tests {
     }
 
     #[test]
+    fn truncated_frames_are_rejected_without_echoing_partial_data() {
+        for truncated in [b"\0\0".as_slice(), b"\0\0\0\x03xy".as_slice()] {
+            let (mut host, guest) = UnixStream::pair().unwrap();
+            host.write_all(truncated).unwrap();
+            host.shutdown(std::net::Shutdown::Write).unwrap();
+            assert_eq!(
+                serve_echo(guest).unwrap_err().kind(),
+                io::ErrorKind::UnexpectedEof
+            );
+            assert_eq!(host.read(&mut [0]).unwrap(), 0);
+        }
+    }
+
+    #[test]
     fn oversized_frame_is_rejected() {
         let (mut host, guest) = UnixStream::pair().unwrap();
         host.write_all(&((MAX_FRAME_BYTES + 1) as u32).to_be_bytes())
