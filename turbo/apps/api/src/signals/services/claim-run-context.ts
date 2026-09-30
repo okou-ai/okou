@@ -8906,11 +8906,9 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     modelRoute$: modelRoute$,
   };
   const connectorInput$ = computed(
-    async (get): Promise<RunConnectorReadInput> => {
+    async (get): Promise<Omit<RunConnectorReadInput, "db">> => {
       const { command, timing } = await get(preCreateExecutionIdentityInput$);
-      const db = get(db$);
       return {
-        db,
         timing,
         args: {
           orgId: command.auth.orgId,
@@ -8938,7 +8936,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       .featureSwitchContext;
   });
   const runCustomConnectorDefinitionRows$ = computed(async (get) => {
-    const { db, args, timing } = await get(connectorInput$);
+    const db = get(db$);
+    const { args, timing } = await get(connectorInput$);
     const ids = (await get(preCreateConnectorScope$)).allowedCustomConnectorIds;
     if (ids.length === 0) {
       return [];
@@ -8978,7 +8977,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     });
   });
   const runOwnedConnectorThread$ = computed(async (get) => {
-    const { db, args } = await get(connectorInput$);
+    const db = get(db$);
+    const { args } = await get(connectorInput$);
     if (args.chatThreadId === undefined) {
       return null;
     }
@@ -9000,7 +9000,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   });
   const runThreadSelectionRow$ = computed(
     async (get): Promise<readonly ConnectorAccountSelection[]> => {
-      const { db, args } = await get(connectorInput$);
+      const db = get(db$);
+      const { args } = await get(connectorInput$);
       const [thread, scope] = await Promise.all([
         get(runOwnedConnectorThread$),
         get(preCreateConnectorScope$),
@@ -9035,7 +9036,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     },
   );
   const runConnectorAccountRows$ = computed(async (get) => {
-    const { db, args } = await get(connectorInput$);
+    const db = get(db$);
+    const { args } = await get(connectorInput$);
     const scope = await get(preCreateConnectorScope$);
     const selections = await get(runThreadSelectionRow$);
     const sourceIds = [
@@ -9250,7 +9252,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     },
   );
   const runStoredConnectorSelectionView$ = computed(async (get) => {
-    const { db, args } = await get(connectorInput$);
+    const db = get(db$);
+    const { args } = await get(connectorInput$);
     const candidates = await get(accountCandidates$);
     const connectorIds = (
       await get(preCreateConnectorScope$)
@@ -9298,7 +9301,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     async (
       get,
     ): Promise<readonly StoredConnectorMaterializationSnapshotRow[]> => {
-      const { db, args, timing } = await get(connectorInput$);
+      const db = get(db$);
+      const { args, timing } = await get(connectorInput$);
       const selectedConnectors = await get(runStoredConnectorSelectionView$);
       if (!selectedConnectors) {
         return [];
@@ -9457,7 +9461,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     },
   );
   const runCustomConnectorConnectionView$ = computed(async (get) => {
-    const { db, args } = await get(connectorInput$);
+    const db = get(db$);
+    const { args } = await get(connectorInput$);
     const candidates = await get(accountCandidates$);
     const connectorIds = (await get(preCreateConnectorScope$))
       .allowedCustomConnectorIds;
@@ -9524,7 +9529,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     );
   });
   const runCustomConnectorValueView$ = computed(async (get) => {
-    const { db, args } = await get(connectorInput$);
+    const db = get(db$);
+    const { args } = await get(connectorInput$);
     const connections = await get(runCustomConnectorConnectionView$);
     if (!connections) {
       return null;
@@ -9589,7 +9595,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   });
   const runCustomConnectorStoredRows$ = computed(
     async (get): Promise<readonly CustomConnectorRuntimeStorageRow[]> => {
-      const { db, timing } = await get(connectorInput$);
+      const db = get(db$);
+      const { timing } = await get(connectorInput$);
       const [connections, values] = await Promise.all([
         get(runCustomConnectorConnectionView$),
         get(runCustomConnectorValueView$),
