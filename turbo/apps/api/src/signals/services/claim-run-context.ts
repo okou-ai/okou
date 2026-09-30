@@ -12466,6 +12466,11 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       if (admission.needsAllowance || admission.error) {
         return;
       }
+      if (!(await get(selectionInput$))) {
+        signal.throwIfAborted();
+        return;
+      }
+      signal.throwIfAborted();
       // No initialization write can change these inputs. Start the actual
       // memoized mount/index/URL read graph, not a throwaway prefetch query.
       await get(storagePlan$);
