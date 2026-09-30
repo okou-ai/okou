@@ -3632,15 +3632,43 @@ JWT claims. Access and refresh tokens remain placeholders; the firewall still
 injects real credentials into outbound requests.
 
 The API retains the existing placeholder `CHATGPT_ACCOUNT_ID` for the firewall
-and Pi. PR #36402 deployed the additive ID field while the Runner stayed on
-Codex 0.155.1. The Runner now upgrades to 0.156.1 after that API rollout and
-old claimable contexts have drained. An older Runner ignores the additive field.
-A newer Runner served by an older API, or claiming a context without the field,
-still writes the original placeholder account ID; that combination is not
-supported with Codex 0.156.1 and may fail workspace routing. An explicitly
-empty field remains rejected. API rollback before #36402 therefore also
-requires rolling back the Runner. Removing the missing-field compatibility
-branch is tracked by #36420.
+and Pi. PR #36402 deployed the additive selected-ID field before #36422 upgraded
+the Runner to Codex 0.156.1. The guest now requires a non-empty
+`CODEX_OAUTH_ACCOUNT_ID` in OAuth mode: missing, empty, or whitespace-only values
+fail setup before creating or replacing `auth.json` or the runtime model catalog.
+It no longer substitutes a fabricated workspace identity. API-key, no-auth, and
+Pi behavior is unchanged.
+
+An API containing #36402's writer works with both the previous and new guest.
+An older API or persisted context without the selected-ID field remains
+unsupported with Codex 0.156.1; the new guest rejects it before auth publication
+instead of attempting workspace discovery with a placeholder. The existing
+production rollback resolver requires targets to descend from
+`45b537a596a153a91b76c3bc7223187840f52775` (#37242), which contains the selected-ID
+writer at `422349af6b60adf89b7719a440b89ba76c10e25f` (#36402). This cleanup adds no
+rollback restriction or data migration. Any separately authorized rollback
+before #36402 would also need the older compatible Runner.
+
+Removal evidence recorded for #36420 on 2026-09-30 at 16:54 UTC:
+
+- Read-only MaskDB queries returned zero Codex OAuth runs created before
+  `2026-09-24 00:30:00` in `queued`, `pending`, or `running`, and zero persisted
+  `runner_job_queue` rows before that cutoff across all providers. The cutoff
+  conservatively follows the API writer's recorded 00:18:51 UTC deployment.
+  Execution-context JSON was not retrieved; these are old-row inventories, not a
+  direct field-presence census.
+- Production API deployment `6764085091` at main
+  `12bf1328f729cb92261515cb20331d0d49023a77` succeeded at 16:04:04 UTC and contains
+  the writer. GitHub ancestry comparison confirms the enforced rollback boundary
+  above also contains it.
+- #36422 recorded the owner's confirmation that old Runners and claimable old
+  contexts were drained, plus a successful real Codex OAuth run on local-11.
+  Those are historical upgrade receipts, not a new host-version inventory or a
+  live run of this cleanup head.
+
+Recheck these conditions before merge/release if serving or rollback state
+changes. This cleanup does not change the provider credential-rotation policy
+or claim a workspace-switch fix.
 
 ## Chat thread archived flag (2026-09-24)
 
