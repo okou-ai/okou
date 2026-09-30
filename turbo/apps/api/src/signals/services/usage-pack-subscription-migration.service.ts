@@ -25,6 +25,7 @@ import {
   inArray,
   isNull,
   lte,
+  notExists,
   or,
   sql,
 } from "drizzle-orm";
@@ -1812,6 +1813,33 @@ async function persistMigrationInvoiceState(
   return updated ?? migration;
 }
 
+/** The Stripe binding, not the conversion UUID, owns the subscription root. */
+async function migrationSubscriptionRoot(
+  db: Pick<Db, "select">,
+  migration: MigrationRow,
+) {
+  const [root] = await db
+    .select()
+    .from(usagePackSubscriptions)
+    .where(
+      eq(
+        usagePackSubscriptions.stripeSubscriptionId,
+        migration.stripeSubscriptionId,
+      ),
+    )
+    .limit(1);
+  if (
+    root &&
+    (root.orgId !== migration.orgId ||
+      root.stripeCustomerId !== migration.stripeCustomerId)
+  ) {
+    throw new Error(
+      `Usage pack migration ${migration.id} subscription belongs to another billing owner`,
+    );
+  }
+  return root ?? null;
+}
+
 const materializeUsagePackSnapshot$ = command(
   async (
     { set },
@@ -1821,23 +1849,19 @@ const materializeUsagePackSnapshot$ = command(
       readonly subscription: StripeSubscription;
     },
     signal: AbortSignal,
-  ): Promise<void> => {
+  ): Promise<string> => {
     const db = set(writeDb$);
     const { migration, selections, subscription } = args;
     const expectedConfiguration = migrationScheduleRevisionHash(
       migration,
       selections,
     );
-    await db.transaction(async (tx) => {
+    const usagePackSubscriptionId = await db.transaction(async (tx) => {
       await tx.execute(usagePackBillingLockSql(migration.orgId));
-      // No row locks: materialization runs under the retained
-      // usage_pack_billing key and the snapshot insert is keyed by the
-      // migration id, so a duplicate materialization cannot insert twice.
-      const [existing] = await tx
-        .select()
-        .from(usagePackSubscriptions)
-        .where(eq(usagePackSubscriptions.id, migration.id))
-        .limit(1);
+      // A Plan root already bound to this Stripe subscription keeps both
+      // identities. The migration UUID identifies the conversion operation,
+      // not a second root competing for the same unique provider binding.
+      const existing = await migrationSubscriptionRoot(tx, migration);
       const [locked] = await tx
         .select()
         .from(usagePackSubscriptionMigrations)
@@ -1865,11 +1889,15 @@ const materializeUsagePackSnapshot$ = command(
         locked,
         currentSelections,
       );
+      const rootId = existing?.id ?? migration.id;
+      const convertingPlanRoot =
+        existing !== null &&
+        existing.stripePlanPriceId !== migration.stripePlanPriceId;
       if (!existing) {
-        // Actual Stripe states are never the local pending Checkout states;
-        // materialization neither claims nor changes the pending count.
+        // Historical rootless Plans retain their already-persisted conversion
+        // UUID. No new identity is generated at payment or reconciliation.
         await tx.insert(usagePackSubscriptions).values({
-          id: migration.id,
+          id: rootId,
           orgId: migration.orgId,
           tier: migration.targetTier,
           stripePlanPriceId: migration.stripePlanPriceId,
@@ -1878,11 +1906,73 @@ const materializeUsagePackSnapshot$ = command(
           subscriptionStatus: subscription.status,
           cancelAtPeriodEnd: subscription.cancel_at_period_end,
         });
+      } else if (convertingPlanRoot) {
+        const [converted] = await tx
+          .update(usagePackSubscriptions)
+          .set({
+            tier: migration.targetTier,
+            stripePlanPriceId: migration.stripePlanPriceId,
+            subscriptionStatus: subscription.status,
+            cancelAtPeriodEnd: subscription.cancel_at_period_end,
+            updatedAt: nowDate(),
+          })
+          .where(
+            and(
+              eq(usagePackSubscriptions.id, rootId),
+              eq(usagePackSubscriptions.orgId, migration.orgId),
+              eq(
+                usagePackSubscriptions.stripeCustomerId,
+                migration.stripeCustomerId,
+              ),
+              eq(
+                usagePackSubscriptions.stripeSubscriptionId,
+                migration.stripeSubscriptionId,
+              ),
+              eq(usagePackSubscriptions.tier, migration.sourceTier),
+              inArray(usagePackSubscriptions.subscriptionStatus, [
+                "active",
+                "trialing",
+                "past_due",
+                "unpaid",
+                "canceled",
+                "incomplete_expired",
+                "paused",
+              ]),
+              eq(
+                usagePackSubscriptions.stripePlanPriceId,
+                migration.legacyStripePriceId,
+              ),
+              eq(
+                usagePackSubscriptions.subscriptionStatus,
+                existing.subscriptionStatus,
+              ),
+              notExists(
+                tx
+                  .select({ id: usagePackAllocations.id })
+                  .from(usagePackAllocations)
+                  .where(
+                    eq(usagePackAllocations.usagePackSubscriptionId, rootId),
+                  ),
+              ),
+            ),
+          )
+          .returning({ id: usagePackSubscriptions.id });
+        if (!converted) {
+          throw new Error(
+            `Usage pack migration ${migration.id} source Plan changed`,
+          );
+        }
+      } else if (existing.tier !== migration.targetTier) {
+        throw new Error(
+          `Usage pack migration ${migration.id} snapshot changed`,
+        );
+      }
+      if (!existing || convertingPlanRoot) {
         if (selections.length > 0) {
           await tx.insert(usagePackAllocations).values(
             selections.map((selection) => {
               return {
-                usagePackSubscriptionId: migration.id,
+                usagePackSubscriptionId: rootId,
                 orgId: migration.orgId,
                 userId: selection.userId,
                 invitationId: selection.invitationId,
@@ -1894,31 +1984,35 @@ const materializeUsagePackSnapshot$ = command(
           );
         }
       } else {
-        if (
-          existing.orgId !== migration.orgId ||
-          existing.stripeCustomerId !== migration.stripeCustomerId ||
-          existing.stripeSubscriptionId !== migration.stripeSubscriptionId ||
-          existing.stripePlanPriceId !== migration.stripePlanPriceId
-        ) {
-          throw new Error(
-            `Usage pack migration ${migration.id} snapshot changed`,
-          );
-        }
         const allocations = await tx
-          .select({ id: usagePackAllocations.id })
+          .select()
           .from(usagePackAllocations)
-          .where(
-            eq(usagePackAllocations.usagePackSubscriptionId, migration.id),
-          );
-        if (allocations.length !== selections.length) {
+          .where(eq(usagePackAllocations.usagePackSubscriptionId, rootId));
+        const sameSelections = selections.every((selection) => {
+          return allocations.some((allocation) => {
+            return (
+              allocation.orgId === migration.orgId &&
+              allocation.userId === selection.userId &&
+              allocation.invitationId === selection.invitationId &&
+              allocation.usagePackUsd === selection.usagePackUsd &&
+              allocation.stripePriceId === selection.stripePriceId
+            );
+          });
+        });
+        if (
+          allocations.length !== selections.length ||
+          (locked.status !== "completed" && !sameSelections)
+        ) {
           throw new Error(
             `Usage pack migration ${migration.id} allocations changed`,
           );
         }
       }
       signal.throwIfAborted();
+      return rootId;
     });
     signal.throwIfAborted();
+    return usagePackSubscriptionId;
   },
 );
 
@@ -2164,11 +2258,15 @@ async function completeLockedMigration(
 const completeMigrationInvitations$ = command(
   async (
     { set },
-    args: { readonly migration: MigrationRow; readonly invoice: StripeInvoice },
+    args: {
+      readonly migration: MigrationRow;
+      readonly invoice: StripeInvoice;
+      readonly usagePackSubscriptionId: string;
+    },
     signal: AbortSignal,
   ): Promise<void> => {
     const db = set(writeDb$);
-    const { migration, invoice } = args;
+    const { migration, invoice, usagePackSubscriptionId } = args;
     const selections = await db
       .select()
       .from(usagePackSubscriptionMigrationSelections)
@@ -2216,10 +2314,21 @@ const completeMigrationInvitations$ = command(
         locked,
         currentSelections,
       );
+      const root = await migrationSubscriptionRoot(tx, migration);
+      if (root?.id !== usagePackSubscriptionId) {
+        throw new Error(
+          `Usage pack migration ${migration.id} lost correlation`,
+        );
+      }
       const allocations = await tx
         .select()
         .from(usagePackAllocations)
-        .where(eq(usagePackAllocations.usagePackSubscriptionId, migration.id));
+        .where(
+          eq(
+            usagePackAllocations.usagePackSubscriptionId,
+            usagePackSubscriptionId,
+          ),
+        );
       if (allocations.length !== selections.length) {
         throw new Error(
           `Usage pack migration ${migration.id} allocations changed`,
@@ -2248,7 +2357,7 @@ const completeMigrationInvitations$ = command(
         }
         const amountPaidCents = paidAmounts.get(selection.id) ?? 0;
         await tx.insert(usagePackInvitationPurchases).values({
-          usagePackSubscriptionId: migration.id,
+          usagePackSubscriptionId,
           allocationId: allocation.id,
           orgId: migration.orgId,
           normalizedEmail: selection.normalizedEmail,
@@ -2288,6 +2397,7 @@ const completeMigrationInvitations$ = command(
 function correlatedMigrationInvoice(
   invoice: StripeInvoice,
   migration: MigrationRow,
+  usagePackSubscriptionId: string,
 ): UsagePackInvoiceInput {
   const subscriptionDetails = invoice.parent?.subscription_details;
   if (!subscriptionDetails) {
@@ -2297,7 +2407,7 @@ function correlatedMigrationInvoice(
     orgId: migration.orgId,
     tier: migration.targetTier,
     planPriceId: migration.stripePlanPriceId,
-    usagePackSubscriptionId: migration.id,
+    usagePackSubscriptionId,
   });
   return {
     ...invoice,
@@ -2338,7 +2448,7 @@ const finalizeAppliedMigration$ = command(
         },
       };
     }
-    await set(
+    const usagePackSubscriptionId = await set(
       materializeUsagePackSnapshot$,
       { migration, selections, subscription },
       signal,
@@ -2348,7 +2458,7 @@ const finalizeAppliedMigration$ = command(
       orgId: migration.orgId,
       tier: migration.targetTier,
       planPriceId: migration.stripePlanPriceId,
-      usagePackSubscriptionId: migration.id,
+      usagePackSubscriptionId,
     });
     const tagged = await getStripeClient().subscriptions.update(
       migration.stripeSubscriptionId,
@@ -2366,7 +2476,7 @@ const finalizeAppliedMigration$ = command(
     }
     const invoiceOutcome = await set(
       handleUsagePackInvoicePaid$,
-      correlatedMigrationInvoice(invoice, migration),
+      correlatedMigrationInvoice(invoice, migration, usagePackSubscriptionId),
       signal,
     );
     if (!invoiceOutcome.handled) {
@@ -2374,7 +2484,11 @@ const finalizeAppliedMigration$ = command(
         `Usage pack migration invoice ${invoice.id} was not handled`,
       );
     }
-    await set(completeMigrationInvitations$, { migration, invoice }, signal);
+    await set(
+      completeMigrationInvitations$,
+      { migration, invoice, usagePackSubscriptionId },
+      signal,
+    );
     signal.throwIfAborted();
     L.debug("usage pack subscription migration completed", {
       migrationId: migration.id,
@@ -2870,9 +2984,16 @@ export const handleUsagePackMigrationInvoicePaid$ = command(
       }
     }
     if (migration.status === "completed") {
+      const root = await migrationSubscriptionRoot(db, migration);
+      signal.throwIfAborted();
+      if (!root) {
+        throw new Error(
+          `Completed usage pack migration ${migration.id} lost correlation`,
+        );
+      }
       const outcome = await set(
         handleUsagePackInvoicePaid$,
-        correlatedMigrationInvoice(currentInvoice, migration),
+        correlatedMigrationInvoice(currentInvoice, migration, root.id),
         signal,
       );
       return { handled: outcome.handled, orgId: migration.orgId };
