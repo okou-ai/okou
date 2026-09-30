@@ -52,15 +52,15 @@ const MAX_UNIX_SOCKET_PATH_BYTES: usize = 107;
 /// `runtime_paths.sock_base()/<sock_id>`, where [`RuntimePaths::sock_base`]
 /// supplies the base. This helper only derives and validates the path; it does
 /// not create, inspect, or modify filesystem entries. It also checks that the
-/// corresponding [`SockPaths::vsock`] path is no longer than 107 bytes, the
-/// maximum usable length of a Unix socket path. Because it does not inspect
-/// filesystem entries, it does not apply the directory ownership or access
-/// checks used by the preparation helpers.
+/// port-suffixed Guest control and Guest-to-Runner RPC listeners derived from
+/// [`SockPaths::vsock`] fit within the 107-byte usable Unix socket pathname
+/// limit. Because it does not inspect filesystem entries, it does not apply
+/// the directory ownership or access checks used by the preparation helpers.
 ///
 /// # Errors
 ///
 /// Returns [`io::ErrorKind::InvalidInput`] for an empty, nested, or otherwise
-/// invalid ID, or when the derived vsock path is too long.
+/// invalid ID, or when a derived vsock listener path is too long.
 pub(crate) fn checked_runtime_sock_dir(
     runtime_paths: &RuntimePaths,
     sock_id: &str,
@@ -68,7 +68,7 @@ pub(crate) fn checked_runtime_sock_dir(
     validate_runtime_sock_id(sock_id)?;
     let sock_dir = runtime_paths.sock_dir(sock_id);
     let sock_paths = SockPaths::new(sock_dir.clone());
-    validate_runtime_vsock_path_len(sock_id, &sock_paths.vsock())?;
+    validate_runtime_vsock_listener_path_len(sock_id, &sock_paths.vsock())?;
     Ok(sock_dir)
 }
 
@@ -139,9 +139,9 @@ pub(crate) fn prepare_runtime_socket_dir(sock_paths: &SockPaths) -> io::Result<(
 /// `vsock_bind_dir` must have the lexical shape
 /// `<sock-base>/<sock-id>/vsock`, where `<sock-base>` is supplied by
 /// [`RuntimePaths::sock_base`] and `sock-id` follows the same single-segment
-/// ASCII rule as [`checked_runtime_sock_dir`]. The
-/// corresponding `vsock/vsock.sock` path must fit within the 107-byte Unix
-/// socket path limit. The socket base and per-ID directory are created or
+/// ASCII rule as [`checked_runtime_sock_dir`]. The port-suffixed Guest control
+/// and RPC listener paths must fit within the 107-byte usable Unix socket
+/// pathname limit. The socket base and per-ID directory are created or
 /// normalized to `0711`; the `vsock` directory is created or normalized to
 /// `0700`. Each checked directory must be a non-symlink directory owned by
 /// root or the effective UID and must be writable and traversable by the
@@ -156,8 +156,8 @@ pub(crate) fn prepare_runtime_socket_dir(sock_paths: &SockPaths) -> io::Result<(
 ///
 /// Returns [`io::ErrorKind::InvalidInput`] when the path is outside the socket
 /// base, does not have the required shape, contains an invalid ID, or produces
-/// an overlong vsock path. Filesystem, ownership, mode, or access failures are
-/// returned for the directory preparation steps.
+/// an overlong vsock listener path. Filesystem, ownership, mode, or access
+/// failures are returned for the directory preparation steps.
 pub(crate) fn prepare_private_runtime_vsock_dir(vsock_bind_dir: &Path) -> io::Result<()> {
     prepare_private_vsock_dir_under(&RuntimePaths::new().sock_base(), vsock_bind_dir)
 }
@@ -218,7 +218,7 @@ fn prepare_private_vsock_dir_under(sock_base: &Path, vsock_bind_dir: &Path) -> i
         .to_str()
         .ok_or_else(|| invalid_runtime_sock_id(&sock_id.to_string_lossy()))?;
     validate_runtime_sock_id(sock_id)?;
-    validate_runtime_vsock_path_len(sock_id, &vsock_bind_dir.join("vsock.sock"))?;
+    validate_runtime_vsock_listener_path_len(sock_id, &vsock_bind_dir.join("vsock.sock"))?;
 
     ensure_traversable_runtime_dir(sock_base)?;
     let sock_dir = vsock_bind_dir.parent().ok_or_else(|| {
@@ -345,14 +345,19 @@ fn validate_runtime_sock_id(sock_id: &str) -> io::Result<()> {
     Ok(())
 }
 
-fn validate_runtime_vsock_path_len(sock_id: &str, vsock_path: &Path) -> io::Result<()> {
-    let vsock_path_len = vsock_path.as_os_str().as_bytes().len();
-    if vsock_path_len > MAX_UNIX_SOCKET_PATH_BYTES {
+fn validate_runtime_vsock_listener_path_len(sock_id: &str, vsock_path: &Path) -> io::Result<()> {
+    // Both listeners use the same Firecracker UDS base, suffixed by _<port>.
+    let longest_port_len = guest_control_proto::VSOCK_PORT
+        .to_string()
+        .len()
+        .max(runner_rpc_proto::VSOCK_PORT.to_string().len());
+    let listener_path_len = vsock_path.as_os_str().as_bytes().len() + 1 + longest_port_len;
+    if listener_path_len > MAX_UNIX_SOCKET_PATH_BYTES {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             format!(
-                "runtime socket id {sock_id:?} makes vsock path too long: {} bytes (max {})",
-                vsock_path_len, MAX_UNIX_SOCKET_PATH_BYTES
+                "runtime socket id {sock_id:?} makes vsock listener path too long: {} bytes (max {})",
+                listener_path_len, MAX_UNIX_SOCKET_PATH_BYTES
             ),
         ));
     }
@@ -506,14 +511,26 @@ mod tests {
     }
 
     #[test]
-    fn checked_runtime_sock_dir_rejects_overlong_vsock_path() {
+    fn checked_runtime_sock_dir_reserves_listener_suffix() {
+        let runtime_paths = RuntimePaths::new();
+        let valid_id = "a".repeat(70);
+        let overlong_id = "a".repeat(71);
+
+        assert!(checked_runtime_sock_dir(&runtime_paths, &valid_id).is_ok());
+        let err = checked_runtime_sock_dir(&runtime_paths, &overlong_id).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
+        assert!(err.to_string().contains("vsock listener path too long"));
+    }
+
+    #[test]
+    fn checked_runtime_sock_dir_rejects_overlong_vsock_listener_path() {
         let tmp = tempfile::tempdir().unwrap();
         let runtime_paths = RuntimePaths::with_dir_for_test(tmp.path().to_path_buf());
         let sock_id = "a".repeat(200);
 
         let err = checked_runtime_sock_dir(&runtime_paths, &sock_id).unwrap_err();
 
-        assert!(err.to_string().contains("vsock path too long"));
+        assert!(err.to_string().contains("vsock listener path too long"));
     }
 
     #[test]
@@ -591,14 +608,35 @@ mod tests {
     }
 
     #[test]
-    fn prepare_private_vsock_dir_under_rejects_overlong_vsock_path() {
+    fn prepare_private_vsock_dir_under_rejects_overlong_vsock_listener_path() {
         let tmp = tempfile::tempdir().unwrap();
         let sock_base = tmp.path().join("sock");
         let vsock_dir = sock_base.join("a".repeat(200)).join("vsock");
 
         let err = prepare_private_vsock_dir_under(&sock_base, &vsock_dir).unwrap_err();
 
-        assert!(err.to_string().contains("vsock path too long"));
+        assert!(err.to_string().contains("vsock listener path too long"));
+    }
+
+    #[test]
+    fn prepare_private_vsock_dir_under_reserves_listener_suffix_before_creating_dirs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let sock_base = tmp.path().join("sock");
+        let id_len = MAX_UNIX_SOCKET_PATH_BYTES
+            - sock_base.as_os_str().as_bytes().len()
+            - 1
+            - "/vsock/vsock.sock".len();
+        let vsock_dir = sock_base.join("a".repeat(id_len)).join("vsock");
+        assert_eq!(
+            vsock_dir.join("vsock.sock").as_os_str().as_bytes().len(),
+            MAX_UNIX_SOCKET_PATH_BYTES
+        );
+
+        let err = prepare_private_vsock_dir_under(&sock_base, &vsock_dir).unwrap_err();
+
+        assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
+        assert!(err.to_string().contains("vsock listener path too long"));
+        assert!(!sock_base.exists());
     }
 
     #[test]

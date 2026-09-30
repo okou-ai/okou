@@ -25,11 +25,11 @@ pub struct SnapshotCreateConfig {
     /// | 70 | 101 | 107 | Yes |
     /// | 71 | 102 | 108 | No |
     ///
-    /// Firecracker's early validation rejects invalid ID syntax and unsuffixed
-    /// paths longer than 107 bytes as [`SnapshotError::Setup`] before checking
-    /// prerequisites or cleaning snapshot output. It does not reserve the
-    /// listener suffix: IDs of 71 through 76 ASCII bytes under the default root
-    /// pass that length check but exceed the later listener's pathname limit.
+    /// Firecracker's early validation reserves the longer of the Guest control
+    /// and Guest-to-Runner RPC listener suffixes. Invalid ID syntax or a
+    /// port-suffixed listener path longer than 107 bytes is rejected as
+    /// [`SnapshotError::Setup`] before checking prerequisites or cleaning
+    /// snapshot output. Under the default root, a 71-byte ID fails this check.
     /// Other providers may impose different requirements; this provider-specific
     /// contract is not enforced by the provider-neutral configuration type.
     pub id: String,
