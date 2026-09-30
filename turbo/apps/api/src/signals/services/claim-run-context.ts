@@ -5199,10 +5199,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       return null;
     }
     const { head, runTiming: timing } = get(promptInputInput$);
-    const db = get(db$);
     const args = await get(promptArgsArgs$);
     return {
-      db,
       timing,
       auth: {
         tokenType: "session" as const,
@@ -5237,7 +5235,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       modelRoute: model.route,
     });
     return {
-      db: identity.db,
       timing: identity.timing,
       command: {
         auth: identity.auth,
@@ -7480,8 +7477,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   );
   const catalogInput$ = computed(async (get) => {
     const { timing } = await get(selectedIdentityInputIdentityInput$);
-    const db = get(db$);
-    return { db, timing };
+    return { timing };
   });
   const requestedSlugs$ = computed(async (get) => {
     const bootstrap = await get(preCreateBootstrapMetadata$);
@@ -7491,8 +7487,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     };
   });
   const catalogReadInput$ = computed(async (get) => {
-    const { db, timing } = await get(catalogInput$);
-    return { db, timing: new ConnectorCatalogLoadTiming(timing, undefined) };
+    const { timing } = await get(catalogInput$);
+    return { timing: new ConnectorCatalogLoadTiming(timing, undefined) };
   });
   const connectorCatalogIdentity$ = computed(
     async (get): Promise<CapturedConnectorCatalogIdentity | undefined> => {
@@ -7507,7 +7503,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       const row = await input.timing.measure(
         "api_dispatch_connector_catalog_query_projection_identity",
         async () => {
-          const [row] = await input.db
+          const [row] = await get(db$)
             .select({
               projectionSetId: connectorCatalogRuntimeProjectionSets.id,
               schemaVersion: connectorCatalogActiveSnapshot.schemaVersion,
@@ -7625,7 +7621,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     };
   });
   const runtimeCatalogProjectionRowsProjectionRows$ = computed(async (get) => {
-    const [captured, requested, { db, timing }] = await Promise.all([
+    const db = get(db$);
+    const [captured, requested, { timing }] = await Promise.all([
       get(connectorCatalogIdentity$),
       get(runtimeCatalogInputRequestedSlugs$),
       get(catalogReadInput$),
@@ -7712,7 +7709,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     ) {
       return undefined;
     }
-    const { db, timing } = await get(catalogReadInput$);
+    const db = get(db$);
+    const { timing } = await get(catalogReadInput$);
     return await timing.measure(
       "api_dispatch_connector_catalog_count_projection_rows",
       async () => {
@@ -7755,7 +7753,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       const row = await input.timing.measure(
         "api_dispatch_connector_catalog_query_projection_identity",
         async () => {
-          const [row] = await input.db
+          const [row] = await get(db$)
             .select({
               projectionSetId: connectorCatalogRuntimeProjectionSets.id,
               schemaVersion: connectorCatalogActiveSnapshot.schemaVersion,
@@ -7919,7 +7917,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     const row = await args.timing.measure(
       "api_dispatch_connector_catalog_query_payload",
       async () => {
-        const [row] = await args.db
+        const [row] = await get(db$)
           .select({
             catalogRawSize: connectorCatalogActiveSnapshot.catalogRawSize,
             catalogGzip: connectorCatalogActiveSnapshot.catalogGzip,
@@ -8268,8 +8266,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   const preCreateExecutionWorkflowRows$ = preCreateWorkflowRowsWorkflowRows$;
   const scope$ = computed(async (get) => {
     const { command } = await get(preCreateExecutionIdentityInput$);
-    const db = get(db$);
-    return { db, orgId: command.auth.orgId, userId: command.auth.userId };
+    return { orgId: command.auth.orgId, userId: command.auth.userId };
   });
   const environmentInput$ = computed(async (get) => {
     const scope = await get(scope$);
@@ -8287,7 +8284,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   const runDisabledPaidToolsSnapshot$ = computed(
     async (get): Promise<DisabledPaidToolsSnapshot> => {
       const args = await get(scope$);
-      const { db } = args;
+      const db = get(db$);
       const rows = await db
         .select({ toolId: userDisabledPaidTools.toolId })
         .from(userDisabledPaidTools)
@@ -8310,7 +8307,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   const runMemberSnapshot$ = computed(
     async (get): Promise<RunMemberSnapshot> => {
       const args = await get(scope$);
-      const { db } = args;
+      const db = get(db$);
       const [member] = await db
         .select({
           timezone: orgMembersMetadata.timezone,
@@ -8332,7 +8329,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     if (isRouteError(args)) {
       return args;
     }
-    const { db, secretNames: secretNamesToLoad } = args;
+    const db = get(db$);
+    const { secretNames: secretNamesToLoad } = args;
     const variableQuery = db
       .select({
         kind: sql`'variable'`
@@ -8410,7 +8408,11 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     environment$: runEnvironmentSnapshot$,
   };
   const providerInput$ = computed(
-    async (get): Promise<RunModelProviderReadInput | CreateRunErrorResult> => {
+    async (
+      get,
+    ): Promise<
+      Omit<RunModelProviderReadInput, "db"> | CreateRunErrorResult
+    > => {
       const input = await get(preCreateExecutionInput$);
       const [agent, account] = await Promise.all([
         get(preCreateExecutionAgent$),
@@ -8423,7 +8425,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         throw new Error("Agent disappeared after preparation authorization");
       }
       return {
-        db: get(db$),
         timing: input.timing,
         args: {
           ...selectedRunModelProviderArgs(
@@ -8465,7 +8466,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       return validation;
     }
     const composeFramework = validation.framework;
-    const db = input.db;
+    const db = get(db$);
     const args = input.args;
     if (args.modelProviderType && isModelProviderType(args.modelProviderType)) {
       return (
@@ -8600,7 +8601,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     ) {
       return null;
     }
-    const [row] = await context.input.db
+    const [row] = await get(db$)
       .select({
         id: modelProviderSurfaces.id,
         protocol: modelProviderSurfaces.protocol,
@@ -8660,7 +8661,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       ) {
         return null;
       }
-      const [key] = await context.input.db
+      const [key] = await get(db$)
         .select({ apiKey: builtInModelKeys.apiKey })
         .from(builtInModelKeys)
         .where(eq(builtInModelKeys.id, route.modelKeyId))
@@ -8687,7 +8688,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     ) {
       return null;
     }
-    const rows = await context.input.db
+    const rows = await get(db$)
       .select({
         account: modelProviderAccounts,
         selectedModel: modelProviders.selectedModel,
@@ -8750,7 +8751,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     const multiAuth = hasAuthMethods(type);
     const hasFirewallAuth =
       multiAuth && getModelProviderFirewall(type) !== undefined;
-    const rows = await context.input.db
+    const rows = await get(db$)
       .select({
         provider: {
           id: modelProviders.id,
