@@ -180,6 +180,18 @@ notification traffic are accepted; precise synchronous remote teardown is not
 required. This removes the need to globally order ordinary local stop against
 every new remote watch merely to avoid a late `users.stop` stopping that watch.
 
+**R1-only rolling exception — September 30 coordination instruction.** Outgoing
+APIs still call mailbox-wide `users.stop`. Until their serving and in-flight
+requests are drained and no stop-capable rollback target remains, R1 keeps
+`users.watch` under the existing `workflow_watch:gmail` transaction-scoped key
+with only finite local conditional publication. This is the explicitly allowed
+external-I/O-in-transaction exception; OAuth/KMS/profile work remains outside.
+New writers never call stop and arbitrate publication with existing conditions
+and uniqueness, not the key. R2 moves watch HTTP outside the SQL transaction
+and deletes the key. The accepted no-interruption guarantee is not replaced by
+an unapproved rolling notification gap. See the [key-retirement inventory](./advisory-lock-release-1-key-retirement.md#gmail-rolling-compatibility-exception)
+for the unimplemented alternative and exact removal gate.
+
 **Google Calendar: channel replacement and recovery may have notification gaps.**
 Create or renew remote channels outside database transactions and conditionally
 publish the current channel. Stop superseded or unpublished candidates on a

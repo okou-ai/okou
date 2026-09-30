@@ -719,9 +719,14 @@ const publishGmailWatch$ = command(
     const db = set(writeDb$);
     const currentTime = nowDate();
     return await db.transaction(async (tx) => {
-      // R1 compatibility only: outgoing APIs still call users.stop under this
-      // key. Release 2 moves watch HTTP before this transaction after those
-      // writers and rollback targets are gone; R1 writers never call stop.
+      // Authorized R1 exception: outgoing reconcileGmailPhysicalScope and
+      // account cleanup call mailbox-wide users.stop under this key. Keep only
+      // watch HTTP and conditional local publication in this boundary so an
+      // old stop cannot interrupt another enabled consumer's new watch.
+      // New/new publication uses the unique upsert and live-source predicates,
+      // not this key. R2 moves watch HTTP outside SQL and deletes the key only
+      // after serving/in-flight stop writers and stop-capable rollback targets
+      // are gone. Do not add credential, KMS or other provider work here.
       await tx.execute(gmailLifecycleLockStatement(args));
       const [existing] = await tx
         .select({
