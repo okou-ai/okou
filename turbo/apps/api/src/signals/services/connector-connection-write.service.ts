@@ -226,6 +226,12 @@ export async function resolveConnectorConnectionMutation(
     );
   }
 
+  // Builtin sibling reads run after the ordered account-rows lock above. Any
+  // second locking read would lock siblings committed since then out of id
+  // order and deadlock with writers taking the ordered lock, so builtin reads
+  // do not lock again. Custom targets keep FOR UPDATE.
+  const lockSiblingReads = args.target.kind !== "builtin";
+
   if (args.mutation.intent === "reconnect") {
     const [existing] = await db
       .select(existingConnectorConnectionSelection())
@@ -254,7 +260,7 @@ export async function resolveConnectorConnectionMutation(
   }
 
   if (args.mutation.intent === "add" && args.matchExternalId !== undefined) {
-    const existingByExternalId = await db
+    const byExternalId = db
       .select(existingConnectorConnectionSelection())
       .from(connectors)
       .where(
@@ -266,8 +272,10 @@ export async function resolveConnectorConnectionMutation(
         ),
       )
       .orderBy(connectors.id)
-      .for("update")
       .limit(2);
+    const existingByExternalId = lockSiblingReads
+      ? await byExternalId.for("update")
+      : await byExternalId;
     const [existing, duplicate] = existingByExternalId;
     if (existing) {
       const resolution: ConnectorConnectionMutationResolution = duplicate
@@ -284,7 +292,7 @@ export async function resolveConnectorConnectionMutation(
     }
   }
 
-  const existing = await db
+  const siblings = db
     .select(existingConnectorConnectionSelection())
     .from(connectors)
     .where(
@@ -295,8 +303,10 @@ export async function resolveConnectorConnectionMutation(
       ),
     )
     .orderBy(connectors.id)
-    .for("update")
     .limit(2);
+  const existing = lockSiblingReads
+    ? await siblings.for("update")
+    : await siblings;
   let resolution: ConnectorConnectionMutationResolution;
   if (existing.length > 0 && !args.allowSiblings) {
     resolution = { kind: "sibling-disabled" };

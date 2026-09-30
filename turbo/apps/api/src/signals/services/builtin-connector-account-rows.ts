@@ -5,10 +5,12 @@ import { connectors } from "@okouai/db/schema/connector";
  * Row-level arbitration for one member's builtin connector accounts.
  *
  * Locks every existing account row of `(org, user, slug)` in id order with
- * `FOR NO KEY UPDATE`, the same order custom-account writers use. It replaces
- * the former `connector_state` advisory key for writers that change the
- * account set, its default, or state that must not outlive an account. It
- * does not block foreign-key KEY SHARE checks from selections or queue rows.
+ * `FOR UPDATE`, the same order custom-account writers use. It replaces the
+ * former `connector_state` advisory key for writers that change the account
+ * set, its default, or state that must not outlive an account. `FOR UPDATE`
+ * (not a weaker mode) is deliberate: account writers later `FOR UPDATE` the
+ * same rows, and upgrading a weaker row lock while another writer queues on
+ * the tuple deadlocks.
  *
  * An absent owner locks nothing: without an account row there is no account
  * state to protect, and first-account creation is arbitrated by the
@@ -27,5 +29,5 @@ export function builtinConnectorAccountRowsLockSql(owner: {
       AND ${connectors.userId} = ${owner.userId}
       AND ${connectors.connectorSlug} = ${owner.connectorSlug}
     ORDER BY ${connectors.id}
-    FOR NO KEY UPDATE`;
+    FOR UPDATE`;
 }
