@@ -897,12 +897,14 @@ describe("Morning Brief schedule lifecycle through public APIs", () => {
       throw new Error("Expected ordinary loop Run");
     }
     await cancelRunAndFlush(brief.actor, loopRunId);
+    await expect(runs.readRun(brief.actor, loopRunId)).resolves.toMatchObject({
+      status: "cancelled",
+    });
     await expect(
       workflowBdd.readAutomation(ordinaryLoop.body.id),
     ).resolves.toMatchObject({
       enabled: true,
-      consecutiveFailures: 1,
-      nextRunAt: expect.any(String),
+      nextRunAt: new Date(now() + 300_000).toISOString(),
     });
 
     const ordinaryCron = await accept(
@@ -934,12 +936,18 @@ describe("Morning Brief schedule lifecycle through public APIs", () => {
       throw new Error("Expected ordinary cron Run");
     }
     await cancelRunAndFlush(brief.actor, cronRunId);
+    await expect(runs.readRun(brief.actor, cronRunId)).resolves.toMatchObject({
+      status: "cancelled",
+    });
     await expect(
       workflowBdd.readAutomation(ordinaryCron.body.id),
     ).resolves.toMatchObject({
       enabled: true,
-      consecutiveFailures: 1,
-      nextRunAt: expect.any(String),
+      nextRunAt: briefOccurrenceAfter(
+        "0 9 * * *",
+        "UTC",
+        new Date(now()),
+      )?.toISOString(),
     });
   });
 
