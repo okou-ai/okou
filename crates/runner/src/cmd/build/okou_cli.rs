@@ -5,25 +5,32 @@
 
 use std::path::{Path, PathBuf};
 
+use guest_contracts::okou_cli::InstalledOkouCli;
 #[cfg(test)]
 use guest_contracts::okou_cli::parse_release_version;
+#[cfg(any(test, bundled_okou_cli))]
 use guest_contracts::okou_cli::{
-    InstalledOkouCli, OKOU_CLI_INSTALLED_MANIFEST_SCHEMA_VERSION, OkouCliInstalledPackage,
+    OKOU_CLI_INSTALLED_MANIFEST_SCHEMA_VERSION, OkouCliInstalledPackage,
     OkouCliSessionConstruction, OkouCliVersions,
 };
 #[cfg(test)]
 use serde::Deserialize;
+#[cfg(any(test, bundled_okou_cli))]
 use sha2::{Digest, Sha256};
 
-use crate::error::{RunnerError, RunnerResult};
+#[cfg(any(test, bundled_okou_cli))]
+use crate::error::RunnerError;
+use crate::error::RunnerResult;
 
 use super::hashes::OkouCliHashInput;
 
+#[cfg(any(test, bundled_okou_cli))]
 pub(super) const OKOU_CLI_PACKAGE_FILE: &str = "package.tgz";
 #[cfg(test)]
 pub(super) const OKOU_CLI_MANIFEST_FILE: &str = "manifest.json";
 #[cfg(test)]
 const ARTIFACT_MANIFEST_VERSION: u32 = 1;
+#[cfg(any(test, bundled_okou_cli))]
 const MAX_CLI_PACKAGE_SIZE: usize = 64 * 1024 * 1024;
 
 #[cfg(test)]
@@ -164,6 +171,7 @@ impl OkouCliArtifact {
         .await
     }
 
+    #[cfg(any(test, bundled_okou_cli))]
     async fn stage_verified(
         package_bytes: &[u8],
         expected_sha256: &str,
