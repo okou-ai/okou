@@ -12931,14 +12931,17 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           signal,
         );
         signal.throwIfAborted();
-        if (launch) {
-          rewardArgs = await set(
-            initializeWorkflowAutomationRun$,
-            launch,
-            signal,
-          );
-          signal.throwIfAborted();
+        if (!launch) {
+          // The automation input was already rejected from its reads; no
+          // launch read can change that, so none is started.
+          return { kind: "rejected" as const, assembly: await get(assembly$) };
         }
+        rewardArgs = await set(
+          initializeWorkflowAutomationRun$,
+          launch,
+          signal,
+        );
+        signal.throwIfAborted();
       }
       const [runner, , callbackRows, assembly, identity] = await Promise.all([
         set(prepareRunnerResources$, signal),
@@ -12954,7 +12957,13 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         get(runEnvironmentSnapshot$),
       ]);
       signal.throwIfAborted();
-      return { runner, callbackRows, assembly, identity };
+      return {
+        kind: "prepared" as const,
+        runner,
+        callbackRows,
+        assembly,
+        identity,
+      };
     },
   );
   const prepareClaimResources$ = command(
@@ -12972,6 +12981,9 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         get(storageMounts$),
       ]);
       signal.throwIfAborted();
+      if (launch.kind === "rejected") {
+        return { kind: "rejected" as const, assembly: launch.assembly };
+      }
       const [input, storage, runnerInput] = launch.runner;
       const contextDraft = set(
         claimRunPrepareStoredContextDraft$,
@@ -12979,15 +12991,18 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         encrypted,
         signal,
       );
-      return [
-        input,
-        storage,
-        launch.callbackRows,
-        contextDraft,
-        launch.assembly,
-        launch.identity,
-        admission,
-      ] as const;
+      return {
+        kind: "prepared" as const,
+        resources: [
+          input,
+          storage,
+          launch.callbackRows,
+          contextDraft,
+          launch.assembly,
+          launch.identity,
+          admission,
+        ] as const,
+      };
     },
   );
   const prepareRunContext$ = command(
@@ -13026,6 +13041,22 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         );
         return { kind: "passed" };
       }
+      signal.throwIfAborted();
+      if (resources.value.kind === "rejected") {
+        const early = resources.value.assembly;
+        await set(
+          rejectChatQueueHead$,
+          {
+            head,
+            rejection:
+              early.kind === "rejected"
+                ? early.rejection
+                : unreadyQueueHeadRejection(head),
+          },
+          signal,
+        );
+        return { kind: "passed" };
+      }
       const [
         input,
         storage,
@@ -13034,8 +13065,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         assembly,
         identity,
         admission,
-      ] = resources.value;
-      signal.throwIfAborted();
+      ] = resources.value.resources;
       if (assembly.kind !== "assembled") {
         await set(
           rejectChatQueueHead$,
