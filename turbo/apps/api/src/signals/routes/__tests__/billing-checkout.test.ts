@@ -1856,40 +1856,63 @@ describe("POST /api/billing/checkout", () => {
       lines: { has_more: false, data: [] },
       parent: null,
     });
-    let createdSubscription:
-      | {
-          readonly id: string;
-          readonly customer: string;
-          readonly status: string;
-          readonly metadata: Readonly<Record<string, string>>;
-          readonly items: {
-            readonly data: readonly {
-              readonly price: { readonly id: string };
-            }[];
-          };
-        }
-      | undefined;
-    context.mocks.stripe.subscriptions.list.mockResolvedValue({
-      data: [],
-      has_more: false,
-    });
-    context.mocks.stripe.subscriptions.create.mockImplementation((input) => {
-      createdSubscription = {
-        id: `sub_${randomUUID().slice(0, 8)}`,
-        customer: customerId,
-        status: "active",
-        metadata: stripeInputMetadata(input),
-        items: { data: [{ price: { id: TEST_PRICE_PRO } }] },
+    interface CreatedSubscription {
+      readonly id: string;
+      readonly customer: string;
+      status: string;
+      readonly metadata: Readonly<Record<string, string>>;
+      readonly items: {
+        readonly data: readonly {
+          readonly price: { readonly id: string };
+        }[];
       };
-      context.mocks.stripe.subscriptions.list.mockResolvedValue({
-        data: [createdSubscription],
+    }
+    // Stripe state is cumulative: every creation stays listable, and a
+    // cancellation only changes its status.
+    const stripeSubscriptions: CreatedSubscription[] = [];
+    // No lock spans the purchase's provider I/O. Hold a later creation until
+    // Stripe has been read after the first one, so exactly one purchase can
+    // observe the other before paying.
+    const readAfterFirstCreation = createDeferredPromise<void>(context.signal);
+    context.mocks.stripe.subscriptions.list.mockImplementation(() => {
+      if (stripeSubscriptions.length > 0 && !readAfterFirstCreation.settled()) {
+        readAfterFirstCreation.resolve();
+      }
+      return Promise.resolve({
+        data: stripeSubscriptions.map((subscription) => {
+          return { ...subscription };
+        }),
         has_more: false,
       });
-      return Promise.resolve({
-        ...createdSubscription,
-        latest_invoice: null,
-      });
     });
+    context.mocks.stripe.subscriptions.cancel.mockImplementation(
+      (id: unknown) => {
+        const subscription = stripeSubscriptions.find((candidate) => {
+          return candidate.id === id;
+        });
+        if (!subscription) {
+          throw new Error(`Unknown test subscription ${String(id)}`);
+        }
+        subscription.status = "canceled";
+        return Promise.resolve({ ...subscription });
+      },
+    );
+    context.mocks.stripe.subscriptions.create.mockImplementation(
+      async (input) => {
+        if (stripeSubscriptions.length > 0) {
+          await readAfterFirstCreation.promise;
+        }
+        const subscription: CreatedSubscription = {
+          id: `sub_${randomUUID().slice(0, 8)}`,
+          customer: customerId,
+          status: "active",
+          metadata: stripeInputMetadata(input),
+          items: { data: [{ price: { id: TEST_PRICE_PRO } }] },
+        };
+        stripeSubscriptions.push(subscription);
+        return { ...subscription, latest_invoice: null };
+      },
+    );
 
     const client = setupApp({ context, routes: billingCheckoutRoutes })(
       billingCheckoutContract,
@@ -1962,9 +1985,19 @@ describe("POST /api/billing/checkout", () => {
         code: "CONFLICT",
       },
     });
+    // A purchase that lost the post-creation Stripe read released its unpaid
+    // subscription; exactly one Pro subscription remains.
+    const remaining = stripeSubscriptions.filter((subscription) => {
+      return subscription.status !== "canceled";
+    });
+    expect(remaining).toHaveLength(1);
+    const [createdSubscription] = remaining;
     if (!createdSubscription) {
       throw new Error("Expected the winning Pro subscription");
     }
+    expect(context.mocks.stripe.subscriptions.cancel).toHaveBeenCalledTimes(
+      stripeSubscriptions.length - 1,
+    );
     context.mocks.stripe.subscriptions.list.mockResolvedValue({
       data: [
         createdSubscription,
@@ -1991,7 +2024,9 @@ describe("POST /api/billing/checkout", () => {
       [409],
     );
     expect(replay.body).toStrictEqual(staleUpgrade.body);
-    expect(context.mocks.stripe.subscriptions.create).toHaveBeenCalledTimes(1);
+    expect(context.mocks.stripe.subscriptions.create).toHaveBeenCalledTimes(
+      stripeSubscriptions.length,
+    );
     expect(context.mocks.stripe.invoices.pay).not.toHaveBeenCalled();
   });
 
@@ -4229,6 +4264,144 @@ describe("POST /api/billing/usage-pack-checkout", () => {
       },
     });
     expect(context.mocks.stripe.subscriptions.create).not.toHaveBeenCalled();
+  });
+
+  it("releases an unpaid usage pack subscription when a replacement retires its snapshot mid-confirmation", async () => {
+    const fixture = createOrgFixture();
+    authenticateOrg(fixture);
+    const customerId = `cus_${randomUUID()}`;
+    const paymentMethodId = `pm_${randomUUID()}`;
+    context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+      {
+        data: [
+          {
+            role: "org:admin",
+            publicUserData: { userId: fixture.userId },
+            createdAt: now(),
+          },
+        ],
+      },
+    );
+    context.mocks.clerk.organizations.getOrganizationInvitationList.mockResolvedValue(
+      { data: [] },
+    );
+    context.mocks.stripe.customers.create.mockResolvedValue({ id: customerId });
+    context.mocks.stripe.customers.retrieve.mockResolvedValue({
+      id: customerId,
+      invoice_settings: { default_payment_method: paymentMethodId },
+    });
+    context.mocks.stripe.invoices.createPreview.mockResolvedValue({
+      id: `in_preview_${randomUUID()}`,
+      customer: customerId,
+      amount_due: 4000,
+      currency: "usd",
+      status: null,
+      metadata: {},
+      hosted_invoice_url: null,
+      lines: { has_more: false, data: [] },
+      parent: null,
+    });
+    context.mocks.stripe.subscriptions.list.mockResolvedValue({
+      data: [],
+      has_more: false,
+    });
+
+    const client = setupApp({ context, routes: billingCheckoutRoutes })(
+      billingUsagePackCheckoutContract,
+    );
+    const purchaseBody = {
+      tier: "pro" as const,
+      supportsInAppPreview: true,
+      memberUsagePacks: [
+        { memberId: fixture.userId, usagePackUsd: 20 as const },
+      ],
+      successUrl: `${APP_ORIGIN}/billing?billing=success`,
+      cancelUrl: `${APP_ORIGIN}/billing?billing=canceled`,
+    };
+    const preview = await accept(
+      client.create({
+        body: purchaseBody,
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [200],
+    );
+    if (!("previewToken" in preview.body)) {
+      throw new Error("Expected a usage pack purchase preview");
+    }
+
+    // No lock spans the provider call: a replacement preview retires the
+    // confirmed snapshot while its Stripe subscription is being created.
+    const subscriptionId = `sub_${randomUUID()}`;
+    let confirmedSnapshotId: string | undefined;
+    context.mocks.stripe.subscriptions.create.mockImplementation(
+      async (input) => {
+        const metadata = stripeInputMetadata(input);
+        confirmedSnapshotId = metadata.usagePackSubscriptionId;
+        await accept(
+          client.create({
+            body: {
+              ...purchaseBody,
+              memberUsagePacks: [
+                { memberId: fixture.userId, usagePackUsd: 50 },
+              ],
+            },
+            headers: { authorization: "Bearer clerk-session" },
+          }),
+          [200],
+        );
+        return {
+          id: subscriptionId,
+          customer: customerId,
+          status: "incomplete",
+          metadata,
+          items: { data: [{ price: { id: TEST_PRICE_USAGE_PACK_PLAN_PRO } }] },
+          latest_invoice: {
+            id: `in_${randomUUID()}`,
+            customer: customerId,
+            status: "open",
+            amount_due: 4000,
+            currency: "usd",
+            metadata,
+            hosted_invoice_url: null,
+            lines: { has_more: false, data: [] },
+            parent: null,
+          },
+        };
+      },
+    );
+    context.mocks.stripe.subscriptions.cancel.mockResolvedValue({
+      id: subscriptionId,
+      status: "canceled",
+    });
+
+    const confirmation = await accept(
+      client.confirm({
+        body: { previewToken: preview.body.previewToken },
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [409],
+    );
+
+    expect(confirmation.body).toStrictEqual({
+      error: {
+        message: "Usage pack purchase preview is no longer valid",
+        code: "CONFLICT",
+      },
+    });
+    expect(context.mocks.stripe.subscriptions.cancel).toHaveBeenCalledWith(
+      subscriptionId,
+    );
+    expect(context.mocks.stripe.invoices.pay).not.toHaveBeenCalled();
+    if (!confirmedSnapshotId) {
+      throw new Error("Expected the confirmed usage pack snapshot ID");
+    }
+    expect(
+      (await readUsagePackState(fixture.orgId, confirmedSnapshotId))
+        .subscription,
+    ).toMatchObject({
+      subscriptionStatus: "checkout_expired",
+      stripeSubscriptionId: null,
+    });
   });
 
   it("attempts the saved card for an open usage pack invoice", async () => {

@@ -17,7 +17,7 @@ import { z } from "zod";
 import { env } from "../../lib/env";
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
-import { writeDb$ } from "../external/db";
+import { writeDb$, type Db } from "../external/db";
 import {
   getStripeClient,
   listAllStripeSubscriptions,
@@ -37,7 +37,7 @@ import {
   completeBillingOperationInvoice,
   completeBillingOperationInvoiceWithInvoice,
 } from "./billing-operation-invoice.service";
-import { billingPurchaseCompatibilityLockSql } from "./billing-purchase-lock.service";
+import { awaitBillingPurchaseCompatibilityBarrier } from "./billing-purchase-lock.service";
 import {
   createBillingPreviewToken,
   parseBillingPreviewToken,
@@ -840,6 +840,62 @@ function expandedLatestInvoice(
     : null;
 }
 
+function planPurchaseStateArgs(
+  stripe: StripeClient,
+  orgId: string,
+  preview: PlanPurchasePreviewToken,
+) {
+  return {
+    stripe,
+    orgId,
+    customerId: preview.customerId,
+    purchaseId: preview.purchaseId,
+    sourceSubscriptionId: preview.sourceSubscriptionId,
+    targetTier: preview.tier,
+    targetPriceId: preview.priceId,
+    immediateAmountCents: preview.immediateAmountCents,
+    currency: preview.currency,
+  };
+}
+
+function hasCompetingPlanPurchase(
+  subscriptions: readonly StripeSubscription[],
+  args: {
+    readonly orgId: string;
+    readonly sourceSubscriptionId: string | null;
+    readonly targetTier: SubscriptionCheckoutTier;
+  },
+  existingSummary: StripeSubscription | undefined,
+): boolean {
+  return subscriptions.some((subscription) => {
+    const tier = tierForKnownPriceId(
+      knownPlanPriceItem(subscription.items.data)?.price.id ?? "",
+    );
+    // A legacy incomplete binding can still have its former paid Plan.
+    // Only recovery of that exact bound purchase may replace it. An unrelated
+    // active Plan is a competing purchase, even when this preview wants Team.
+    const isReplaceableActivePlan =
+      existingSummary !== undefined &&
+      existingSummary.id === args.sourceSubscriptionId &&
+      tier !== null &&
+      (subscription.status === "active" ||
+        subscription.status === "trialing") &&
+      !checkoutWouldReplaceWithSameOrLowerTier({
+        currentTier: tier,
+        targetTier: args.targetTier,
+      });
+    return (
+      subscription.id !== args.sourceSubscriptionId &&
+      subscription.id !== existingSummary?.id &&
+      subscription.metadata?.orgId === args.orgId &&
+      tier !== null &&
+      !isReplaceableActivePlan &&
+      subscription.status !== "canceled" &&
+      subscription.status !== "incomplete_expired"
+    );
+  });
+}
+
 async function planPurchaseSubscriptionState(
   args: {
     readonly stripe: StripeClient;
@@ -875,33 +931,11 @@ async function planPurchaseSubscriptionState(
     );
   });
   const existingSummary = exactPurchase ?? resumablePurchase;
-  const hasCompetingPurchase = subscriptions.some((subscription) => {
-    const tier = tierForKnownPriceId(
-      knownPlanPriceItem(subscription.items.data)?.price.id ?? "",
-    );
-    // A legacy incomplete binding can still have its former paid Plan.
-    // Only recovery of that exact bound purchase may replace it. An unrelated
-    // active Plan is a competing purchase, even when this preview wants Team.
-    const isReplaceableActivePlan =
-      existingSummary !== undefined &&
-      existingSummary.id === args.sourceSubscriptionId &&
-      tier !== null &&
-      (subscription.status === "active" ||
-        subscription.status === "trialing") &&
-      !checkoutWouldReplaceWithSameOrLowerTier({
-        currentTier: tier,
-        targetTier: args.targetTier,
-      });
-    return (
-      subscription.id !== args.sourceSubscriptionId &&
-      subscription.id !== existingSummary?.id &&
-      subscription.metadata?.orgId === args.orgId &&
-      tier !== null &&
-      !isReplaceableActivePlan &&
-      subscription.status !== "canceled" &&
-      subscription.status !== "incomplete_expired"
-    );
-  });
+  const hasCompetingPurchase = hasCompetingPlanPurchase(
+    subscriptions,
+    args,
+    existingSummary,
+  );
   if (hasCompetingPurchase || !existingSummary) {
     return { existing: null, hasCompetingPurchase };
   }
@@ -1011,6 +1045,7 @@ export const startPlanPurchase$ = command(
 
 async function createConfirmedPlanSubscription(
   args: {
+    readonly db: Pick<Db, "transaction">;
     readonly stripe: StripeClient;
     readonly orgId: string;
     readonly preview: PlanPurchasePreviewToken;
@@ -1018,7 +1053,7 @@ async function createConfirmedPlanSubscription(
   },
   signal: AbortSignal,
 ): Promise<ConfirmPlanPurchaseResult> {
-  const { stripe, orgId, preview, paymentMethod } = args;
+  const { db, stripe, orgId, preview, paymentMethod } = args;
   const currentPreview = await stripe.invoices.createPreview({
     customer: preview.customerId,
     preview_mode: "next",
@@ -1061,6 +1096,29 @@ async function createConfirmedPlanSubscription(
     { idempotencyKey: `plan-purchase:${preview.purchaseId}:subscription` },
   );
   signal.throwIfAborted();
+  // No lock spans provider I/O. Every purchase writer reads Stripe again after
+  // creating its own subscription, so of two concurrent purchases at least one
+  // observes the other and releases its unpaid subscription before payment.
+  // The barrier extends that to outgoing writers, which create inside their
+  // billing_purchase section.
+  await awaitBillingPurchaseCompatibilityBarrier(db, orgId);
+  signal.throwIfAborted();
+  const current = await listAllStripeSubscriptions(
+    stripe,
+    { customer: preview.customerId, status: "all" },
+    signal,
+  );
+  if (
+    hasCompetingPlanPurchase(
+      current,
+      planPurchaseStateArgs(stripe, orgId, preview),
+      subscription,
+    )
+  ) {
+    await stripe.subscriptions.cancel(subscription.id);
+    signal.throwIfAborted();
+    return { status: "invalid_preview" };
+  }
   const completion = await completeBillingOperationInvoiceWithInvoice(
     stripe,
     expandedLatestInvoice(subscription),
@@ -1131,110 +1189,94 @@ export const confirmPlanPurchase$ = command(
     }
 
     const db = set(writeDb$);
-    return await db.transaction(
-      async (tx): Promise<ConfirmPlanPurchaseResult> => {
-        // Outgoing APIs admit Plan purchases through this boundary. Keep it
-        // during Release 1 while cross-preview purchase admission is completed;
-        // the transaction remains owned by this command rather than a helper.
-        await tx.execute(billingPurchaseCompatibilityLockSql(orgId));
-        signal.throwIfAborted();
-        const stripe = getStripeClient();
-        const subscriptionState = await planPurchaseSubscriptionState(
-          {
-            stripe,
-            orgId,
-            customerId: preview.customerId,
-            purchaseId: preview.purchaseId,
-            sourceSubscriptionId: preview.sourceSubscriptionId,
-            targetTier: preview.tier,
-            targetPriceId: preview.priceId,
-            immediateAmountCents: preview.immediateAmountCents,
-            currency: preview.currency,
-          },
-          signal,
-        );
-        if (subscriptionState.hasCompetingPurchase) {
-          return { status: "invalid_preview" };
-        }
-        if (subscriptionState.existing) {
-          return await completeExistingPlanPurchase(
-            stripe,
-            preview,
-            subscriptionState.existing,
-            signal,
-          );
-        }
+    // Provider I/O runs outside every transaction; admission is decided from
+    // Stripe state and re-checked after creation (see
+    // createConfirmedPlanSubscription) instead of holding billing_purchase.
+    const stripe = getStripeClient();
+    const subscriptionState = await planPurchaseSubscriptionState(
+      planPurchaseStateArgs(stripe, orgId, preview),
+      signal,
+    );
+    if (subscriptionState.hasCompetingPurchase) {
+      return { status: "invalid_preview" };
+    }
+    if (subscriptionState.existing) {
+      return await completeExistingPlanPurchase(
+        stripe,
+        preview,
+        subscriptionState.existing,
+        signal,
+      );
+    }
 
-        const [org] = await tx
-          .select({
-            customerId: orgMetadata.stripeCustomerId,
-            subscriptionId: orgMetadata.stripeSubscriptionId,
-            tier: orgMetadata.tier,
-          })
-          .from(orgMetadata)
-          .where(eq(orgMetadata.orgId, orgId))
-          .for("update")
-          .limit(1);
-        signal.throwIfAborted();
-        if (
-          !org ||
-          org.customerId !== preview.customerId ||
-          org.subscriptionId !== preview.sourceSubscriptionId ||
-          checkoutWouldReplaceWithSameOrLowerTier({
-            currentTier: org.tier,
-            targetTier: preview.tier,
-          })
-        ) {
-          return { status: "invalid_preview" };
-        }
+    const [org] = await db
+      .select({
+        customerId: orgMetadata.stripeCustomerId,
+        subscriptionId: orgMetadata.stripeSubscriptionId,
+        tier: orgMetadata.tier,
+      })
+      .from(orgMetadata)
+      .where(eq(orgMetadata.orgId, orgId))
+      .limit(1);
+    signal.throwIfAborted();
+    if (
+      !org ||
+      org.customerId !== preview.customerId ||
+      org.subscriptionId !== preview.sourceSubscriptionId ||
+      checkoutWouldReplaceWithSameOrLowerTier({
+        currentTier: org.tier,
+        targetTier: preview.tier,
+      })
+    ) {
+      return { status: "invalid_preview" };
+    }
 
-        const route = await resolveBillingPurchaseRoute(
-          {
-            stripe,
-            supportsInAppPreview: true,
-            customerId: preview.customerId,
-            subscriptionId: preview.sourceSubscriptionId,
-          },
-          signal,
-        );
-        if (route.kind === "checkout") {
-          const url = await createPlanCheckoutSession(
-            stripe,
-            preview.customerId,
-            {
-              orgId,
-              tier: preview.tier,
-              priceId: preview.priceId,
-              trialDays: preview.trialDays,
-              successUrl: preview.successUrl,
-              cancelUrl: preview.cancelUrl,
-              checkoutIdempotencyKey: `plan-purchase:${preview.purchaseId}:checkout`,
-              purchaseCreatedAt: purchasePreviewCreatedAt(preview),
-            },
-            signal,
-          );
-          return {
-            status: "confirmed",
-            response: { status: "checkout_required", checkoutUrl: url },
-            paidInvoice: null,
-          };
-        }
-        if (
-          route.customerId !== preview.customerId ||
-          route.paymentMethodId !== preview.paymentMethodId
-        ) {
-          return { status: "invalid_preview" };
-        }
-        return await createConfirmedPlanSubscription(
-          {
-            stripe,
-            orgId,
-            preview,
-            paymentMethod: route,
-          },
-          signal,
-        );
+    const route = await resolveBillingPurchaseRoute(
+      {
+        stripe,
+        supportsInAppPreview: true,
+        customerId: preview.customerId,
+        subscriptionId: preview.sourceSubscriptionId,
       },
+      signal,
+    );
+    if (route.kind === "checkout") {
+      const url = await createPlanCheckoutSession(
+        stripe,
+        preview.customerId,
+        {
+          orgId,
+          tier: preview.tier,
+          priceId: preview.priceId,
+          trialDays: preview.trialDays,
+          successUrl: preview.successUrl,
+          cancelUrl: preview.cancelUrl,
+          checkoutIdempotencyKey: `plan-purchase:${preview.purchaseId}:checkout`,
+          purchaseCreatedAt: purchasePreviewCreatedAt(preview),
+        },
+        signal,
+      );
+      return {
+        status: "confirmed",
+        response: { status: "checkout_required", checkoutUrl: url },
+        paidInvoice: null,
+      };
+    }
+    if (
+      route.customerId !== preview.customerId ||
+      route.paymentMethodId !== preview.paymentMethodId
+    ) {
+      return { status: "invalid_preview" };
+    }
+    return await createConfirmedPlanSubscription(
+      {
+        db,
+        stripe,
+        orgId,
+        preview,
+        paymentMethod: route,
+      },
+      signal,
     );
   },
 );

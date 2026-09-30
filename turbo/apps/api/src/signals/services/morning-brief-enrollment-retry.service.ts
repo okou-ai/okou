@@ -67,7 +67,7 @@ export const deferMorningBriefPrerequisite$ = command(
   },
 );
 
-/** Inline callers and workers claim while holding the same member lock. */
+/** Inline callers and workers exclude each other through this conditional lease claim. */
 export const claimMorningBriefEnrollment$ = command(
   async (
     { set },

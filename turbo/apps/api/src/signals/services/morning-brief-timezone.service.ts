@@ -8,7 +8,6 @@ import { morningBriefScheduleClaims } from "@okouai/db/schema/morning-brief-sche
 import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
-import { delay } from "signal-timers";
 import { z } from "zod";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { pgTextDecoder } from "../../lib/db-structured-result";
@@ -24,12 +23,11 @@ import {
   withFreshMorningBriefSnapshot,
 } from "./morning-brief-native-schedule.service";
 import {
-  morningBriefPreferenceCompatibilitySql,
+  awaitMorningBriefPreferenceCompatibility,
   morningBriefTimezoneTargetSql,
 } from "./morning-brief-preference-sql";
 import { calculateNextRun } from "./time-automation";
 
-const lockRow = z.object({ acquired: z.boolean() });
 const timezoneTarget = z.object({
   workflowId: z.string(),
   timezone: z.string().nullable(),
@@ -68,13 +66,14 @@ function automationTimezoneValues(
 /**
  * A timezone edit preserves enabled choice and every admitted execution's epoch.
  *
- * The member preference key (unchanged) still admits one timezone writer per
- * member, but no row is locked. The native row and each Morning Brief
+ * No lock is held and no row is locked. The native row and each Morning Brief
  * automation are read with their row versions, their successors are computed
- * from the current cron and the new timezone, and each is written with a
- * conditional UPDATE on that version. A concurrent settlement, toggle or
- * reconciliation commit rolls the attempt back and it recomputes from fresh
- * state.
+ * from the current cron and the timezone read in the same transaction, and
+ * each is written with a conditional UPDATE on that version. A concurrent
+ * settlement, toggle, reconciliation or timezone commit rolls the attempt back
+ * and it recomputes from fresh state. An installation that commits after this
+ * read runs this synchronization itself once installed, so one of the two
+ * writers always observes the other.
  */
 export const synchronizeMorningBriefTimezone$ = command(
   async (
@@ -87,120 +86,105 @@ export const synchronizeMorningBriefTimezone$ = command(
   ): Promise<void> => {
     const owner = { orgId: args.orgId, userId: args.member.userId };
     const db = set(writeDb$);
-    while (true) {
-      signal.throwIfAborted();
-      const acquired = await withFreshMorningBriefSnapshot(() => {
-        return db.transaction(async (tx) => {
-          const lock = parseRawRows(
-            lockRow,
-            await tx.execute(morningBriefPreferenceCompatibilitySql(owner)),
-          );
-          if (lock[0]?.acquired !== true) {
-            return false;
-          }
-          const [target] = parseRawRows(
-            timezoneTarget,
-            await tx.execute(morningBriefTimezoneTargetSql(owner)),
-          );
-          if (!target?.timezone || !isValidTimeZone(target.timezone)) {
-            return true;
-          }
-          const { workflowId, timezone } = target;
-          const native = await readMorningBriefNativeScheduleForWrite(
-            tx,
-            owner,
-          );
-          const automations = await tx
-            .select({
-              row: workflowAutomations,
-              rowVersion: sql`${workflowAutomations}.xmin::text`.mapWith(
-                pgTextDecoder,
+    signal.throwIfAborted();
+    await awaitMorningBriefPreferenceCompatibility(db, owner);
+    signal.throwIfAborted();
+    await withFreshMorningBriefSnapshot(() => {
+      return db.transaction(async (tx) => {
+        const [target] = parseRawRows(
+          timezoneTarget,
+          await tx.execute(morningBriefTimezoneTargetSql(owner)),
+        );
+        if (!target?.timezone || !isValidTimeZone(target.timezone)) {
+          return;
+        }
+        const { workflowId, timezone } = target;
+        const native = await readMorningBriefNativeScheduleForWrite(tx, owner);
+        const automations = await tx
+          .select({
+            row: workflowAutomations,
+            rowVersion: sql`${workflowAutomations}.xmin::text`.mapWith(
+              pgTextDecoder,
+            ),
+          })
+          .from(workflowAutomations)
+          .where(
+            and(
+              eq(workflowAutomations.workflowId, workflowId),
+              eq(
+                workflowAutomations.officialBlueprintKey,
+                MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
               ),
-            })
-            .from(workflowAutomations)
+            ),
+          );
+        const at = nowDate();
+        if (native !== undefined) {
+          const [occurrence] = await tx
+            .select()
+            .from(morningBriefNativeOccurrences)
+            .where(unsettledOccurrenceWhere(owner))
+            .orderBy(morningBriefNativeOccurrences.scheduledFor)
+            .limit(1);
+          const [claim] = await tx
+            .select({ settlement: morningBriefScheduleClaims.settlement })
+            .from(morningBriefScheduleClaims)
+            .where(
+              native.row.legacyAutomationId === null
+                ? isNull(morningBriefScheduleClaims.automationId)
+                : eq(
+                    morningBriefScheduleClaims.automationId,
+                    native.row.legacyAutomationId,
+                  ),
+            )
+            .orderBy(desc(morningBriefScheduleClaims.claimSequence))
+            .limit(1);
+          const plan = morningBriefLogicalChoicePlan(
+            native.row,
+            { timezone },
+            occurrence,
+            native.row.phase === "legacy" &&
+              native.row.legacyAutomationId !== null &&
+              claim?.settlement === "unsettled",
+            at,
+          );
+          const [applied] = await tx
+            .update(morningBriefNativeSchedules)
+            .set(plan.values)
             .where(
               and(
-                eq(workflowAutomations.workflowId, workflowId),
-                eq(
-                  workflowAutomations.officialBlueprintKey,
-                  MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
-                ),
+                morningBriefScheduleWhere(owner),
+                morningBriefNativeRowVersionCondition(native.rowVersion),
               ),
-            );
-          const at = nowDate();
-          if (native !== undefined) {
-            const [occurrence] = await tx
-              .select()
-              .from(morningBriefNativeOccurrences)
-              .where(unsettledOccurrenceWhere(owner))
-              .orderBy(morningBriefNativeOccurrences.scheduledFor)
-              .limit(1);
-            const [claim] = await tx
-              .select({ settlement: morningBriefScheduleClaims.settlement })
-              .from(morningBriefScheduleClaims)
-              .where(
-                native.row.legacyAutomationId === null
-                  ? isNull(morningBriefScheduleClaims.automationId)
-                  : eq(
-                      morningBriefScheduleClaims.automationId,
-                      native.row.legacyAutomationId,
-                    ),
-              )
-              .orderBy(desc(morningBriefScheduleClaims.claimSequence))
-              .limit(1);
-            const plan = morningBriefLogicalChoicePlan(
-              native.row,
-              { timezone },
-              occurrence,
-              native.row.phase === "legacy" &&
-                native.row.legacyAutomationId !== null &&
-                claim?.settlement === "unsettled",
-              at,
-            );
-            const [applied] = await tx
-              .update(morningBriefNativeSchedules)
-              .set(plan.values)
-              .where(
-                and(
-                  morningBriefScheduleWhere(owner),
-                  morningBriefNativeRowVersionCondition(native.rowVersion),
-                ),
-              )
-              .returning({
-                ownerEpoch: morningBriefNativeSchedules.ownerEpoch,
-              });
-            if (applied === undefined) {
-              throw new MorningBriefSnapshotChanged();
-            }
+            )
+            .returning({
+              ownerEpoch: morningBriefNativeSchedules.ownerEpoch,
+            });
+          if (applied === undefined) {
+            throw new MorningBriefSnapshotChanged();
           }
-          for (const { row, rowVersion } of automations) {
-            const values = automationTimezoneValues(row, timezone, at);
-            if (values === undefined) {
-              continue;
-            }
-            const [applied] = await tx
-              .update(workflowAutomations)
-              .set(values)
-              .where(
-                and(
-                  eq(workflowAutomations.id, row.id),
-                  sql`${workflowAutomations}.xmin::text = ${rowVersion}`,
-                ),
-              )
-              .returning({ id: workflowAutomations.id });
-            if (applied === undefined) {
-              throw new MorningBriefSnapshotChanged();
-            }
+        }
+        for (const { row, rowVersion } of automations) {
+          const values = automationTimezoneValues(row, timezone, at);
+          if (values === undefined) {
+            continue;
           }
-          signal.throwIfAborted();
-          return true;
-        });
-      }, signal);
-      signal.throwIfAborted();
-      if (acquired) {
-        return;
-      }
-      await delay(25, { signal });
-    }
+          const [applied] = await tx
+            .update(workflowAutomations)
+            .set(values)
+            .where(
+              and(
+                eq(workflowAutomations.id, row.id),
+                sql`${workflowAutomations}.xmin::text = ${rowVersion}`,
+              ),
+            )
+            .returning({ id: workflowAutomations.id });
+          if (applied === undefined) {
+            throw new MorningBriefSnapshotChanged();
+          }
+        }
+        signal.throwIfAborted();
+      });
+    }, signal);
+    signal.throwIfAborted();
   },
 );

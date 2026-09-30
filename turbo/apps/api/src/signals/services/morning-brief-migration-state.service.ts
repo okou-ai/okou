@@ -263,8 +263,9 @@ async function loadMorningBriefAutomationState(
 /**
  * Compose the member's authoritative Morning Brief state.
  *
- * This is a read, not a snapshot: call it inside the caller's transaction or
- * preference lock when the result has to stay true while acting on it.
+ * This is a read, not a snapshot: call it inside the caller's transaction, or
+ * re-read after a conditional write, when the result has to stay true while
+ * acting on it.
  */
 export async function loadMorningBriefMigrationState(
   db: MorningBriefStateReader,

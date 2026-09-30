@@ -5,13 +5,34 @@ import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { workflows } from "@okouai/db/schema/workflow";
 import { sql } from "drizzle-orm";
+import type { Db } from "../external/db";
 import type { MorningBriefMemberIdentity } from "./morning-brief-enrollment-data.service";
 
-export function morningBriefPreferenceCompatibilitySql(
+function morningBriefPreferenceCompatibilitySql(
   owner: MorningBriefMemberIdentity,
 ) {
   // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-  return sql`SELECT pg_try_advisory_xact_lock(hashtextextended(${`morning_brief_preference:${owner.orgId}:${owner.userId}`}, 0)) AS acquired`;
+  return sql`SELECT pg_advisory_xact_lock(hashtextextended(${`morning_brief_preference:${owner.orgId}:${owner.userId}`}, 0))`;
+}
+
+/**
+ * Wait until no outgoing Morning Brief preference operation is in progress.
+ *
+ * Outgoing writers hold this member key (acquired with a try-lock) across
+ * their whole multi-step operation, including Clerk and other provider calls.
+ * Current writers take no lock across work: every step is a conditional write
+ * and the steps re-read after writing (see morning-brief-preference.service).
+ * They only wait here, in a transaction that performs no other statement and
+ * commits immediately, so an in-flight outgoing operation finishes first.
+ * Remove once no deployed API version holds the key.
+ */
+export async function awaitMorningBriefPreferenceCompatibility(
+  db: Pick<Db, "transaction">,
+  owner: MorningBriefMemberIdentity,
+): Promise<void> {
+  await db.transaction(async (tx) => {
+    await tx.execute(morningBriefPreferenceCompatibilitySql(owner));
+  });
 }
 
 /** Preserve the enrollment, visible default Agent, then oldest-installation precedence. */

@@ -1,4 +1,5 @@
-import { morningBriefPreferenceCompatibilitySql } from "./morning-brief-preference-sql";
+import { awaitMorningBriefPreferenceCompatibility } from "./morning-brief-preference-sql";
+import { synchronizeMorningBriefTimezone$ } from "./morning-brief-timezone.service";
 import {
   MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
   MORNING_BRIEF_OFFICIAL_DEFINITION_NAME,
@@ -10,8 +11,6 @@ import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollm
 import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
-import { delay } from "signal-timers";
-import { z } from "zod";
 
 import { clerk$ } from "../external/clerk";
 import { settle } from "../utils";
@@ -36,9 +35,8 @@ import {
   loadMorningBriefOwnership,
   type MorningBriefMigrationState,
 } from "./morning-brief-migration-state.service";
-import { executeRawRows } from "../../lib/db-raw-rows";
 import { completeAndMaterializeMorningBriefEnrollment$ } from "./morning-brief-materialization.service";
-import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
+import { writeDb$, type ReadonlyDb } from "../external/db";
 import {
   installOfficialWorkflow$,
   loadOfficialWorkflowUserTimezone,
@@ -49,8 +47,6 @@ import {
   enableWorkflowAutomation$,
 } from "./workflow-automation.service";
 import type { WorkflowMember } from "./workflow-data.service";
-
-const MORNING_BRIEF_LOCK_RETRY_MS = 25;
 
 export type MorningBriefPreferenceFailure = {
   readonly kind: "bad-request" | "conflict";
@@ -241,34 +237,6 @@ async function loadInstalledPreference(
   );
 }
 
-const lockRowSchema = z.object({ acquired: z.boolean() });
-
-async function withMorningBriefPreferenceLock<T>(
-  db: Db,
-  args: MorningBriefPreferenceArgs,
-  signal: AbortSignal,
-  operation: () => Promise<T>,
-): Promise<T> {
-  while (true) {
-    const result = await db.transaction(async (tx) => {
-      const rows = await executeRawRows(
-        tx,
-        morningBriefPreferenceCompatibilitySql(morningBriefOwner(args)),
-        lockRowSchema,
-      );
-      if (rows[0]?.acquired !== true) {
-        return { acquired: false as const };
-      }
-      signal.throwIfAborted();
-      return { acquired: true as const, value: await operation() };
-    });
-    if (result.acquired) {
-      return result.value;
-    }
-    await delay(MORNING_BRIEF_LOCK_RETRY_MS, { signal });
-  }
-}
-
 /** Read the live Official Workflow installation without writing or repairing it. */
 export const morningBriefPreference$ = command(
   async (
@@ -417,6 +385,8 @@ const installMorningBriefEnrollment$ = command(
         signal,
       );
       signal.throwIfAborted();
+      await set(synchronizeMorningBriefTimezone$, args, signal);
+      signal.throwIfAborted();
       return { outcome: "installed", workflowId: installed.workflowId };
     }
 
@@ -538,7 +508,7 @@ const attemptMorningBriefEnrollment$ = command(
   },
 );
 
-const ensureMorningBriefWhileLocked$ = command(
+const ensureMorningBriefEnrollment$ = command(
   async (
     { set },
     args: EnsureMorningBriefDefaultEnabledArgs,
@@ -645,11 +615,12 @@ export const ensureMorningBriefDefaultEnabled$ = command(
     args: EnsureMorningBriefDefaultEnabledArgs,
     signal: AbortSignal,
   ): Promise<EnsureMorningBriefDefaultEnabledResult> => {
-    const db = set(writeDb$);
-    return await withMorningBriefPreferenceLock(db, args, signal, async () => {
-      const outcome = await set(ensureMorningBriefWhileLocked$, args, signal);
-      return outcome;
-    });
+    await awaitMorningBriefPreferenceCompatibility(
+      set(writeDb$),
+      morningBriefOwner(args),
+    );
+    signal.throwIfAborted();
+    return await set(ensureMorningBriefEnrollment$, args, signal);
   },
 );
 
@@ -712,9 +683,15 @@ const createMorningBriefFromPreference$ = command(
     );
     signal.throwIfAborted();
     if (installed.kind !== "ok") {
-      const raced = await loadInstalledPreference(db, args);
+      const state = await loadMorningBriefMigrationState(db, identity);
       signal.throwIfAborted();
-      return raced.kind === "ok" && raced.workflowId
+      const raced = await projectInstalledPreference(db, args, state);
+      signal.throwIfAborted();
+      // No lock serializes concurrent requests: an installation another
+      // request is still committing reports the recorded choice as preparing;
+      // that installer completes it from the durable choice.
+      return raced.kind === "ok" &&
+        (raced.workflowId !== undefined || state.kind === "pending")
         ? raced
         : conflict(
             "MORNING_BRIEF_STATE_CONFLICT",
@@ -728,11 +705,72 @@ const createMorningBriefFromPreference$ = command(
       signal,
     );
     signal.throwIfAborted();
+    await set(synchronizeMorningBriefTimezone$, args, signal);
+    signal.throwIfAborted();
     return await loadInstalledPreference(db, args);
   },
 );
 
-const updateMorningBriefWhileLocked$ = command(
+/**
+ * Re-read after recording a choice made while no installation was ready.
+ *
+ * No lock spans the preference operation. An automatic enrollment may have
+ * committed its installation after this request read ownership; that installer
+ * re-reads the durable choice only once, before completing. Whichever of the
+ * two commits second observes the other: here, an installed brief whose
+ * automation disagrees with the still-current choice is toggled through the
+ * conditional automation writer.
+ */
+const convergeRacedMorningBriefInstallation$ = command(
+  async (
+    { set },
+    args: MorningBriefPreferenceMutationArgs,
+    recorded: MorningBriefPreferenceResult & { readonly workflowId?: string },
+    signal: AbortSignal,
+  ): Promise<MorningBriefPreferenceResult> => {
+    const db = set(writeDb$);
+    const current = await loadInstalledPreference(db, args);
+    signal.throwIfAborted();
+    if (
+      current.kind !== "ok" ||
+      current.workflowId === undefined ||
+      current.preference.enabled === args.enabled
+    ) {
+      return recorded;
+    }
+    const enrollment = await set(
+      loadMorningBriefEnrollment$,
+      morningBriefOwner(args),
+      signal,
+    );
+    signal.throwIfAborted();
+    // Converge only toward the durable choice this request recorded; a later
+    // choice or membership change owns convergence toward itself.
+    const stillChosen = args.enabled
+      ? enrollment?.state === "pending" || enrollment?.state === "completed"
+      : enrollment?.state === "cancelled";
+    if (!stillChosen) {
+      return recorded;
+    }
+    const automationId = await loadMorningBriefAutomationId(
+      db,
+      current.workflowId,
+    );
+    signal.throwIfAborted();
+    if (automationId === null) {
+      return current;
+    }
+    await set(
+      args.enabled ? enableWorkflowAutomation$ : disableWorkflowAutomation$,
+      { orgId: args.orgId, member: args.member, automationId },
+      signal,
+    );
+    signal.throwIfAborted();
+    return await loadInstalledPreference(db, args);
+  },
+);
+
+const applyMorningBriefPreference$ = command(
   async (
     { set },
     args: MorningBriefPreferenceMutationArgs,
@@ -746,13 +784,29 @@ const updateMorningBriefWhileLocked$ = command(
     if (!installation) {
       await set(recordMorningBriefChoice$, identity, args.enabled, signal);
       signal.throwIfAborted();
-      return await set(createMorningBriefFromPreference$, args, signal);
+      const created = await set(
+        createMorningBriefFromPreference$,
+        args,
+        signal,
+      );
+      signal.throwIfAborted();
+      return await set(
+        convergeRacedMorningBriefInstallation$,
+        args,
+        created,
+        signal,
+      );
     }
 
     if (installation.installationState !== "installed") {
       await set(recordMorningBriefChoice$, identity, args.enabled, signal);
       signal.throwIfAborted();
-      return await loadInstalledPreference(db, args);
+      return await set(
+        convergeRacedMorningBriefInstallation$,
+        args,
+        await loadInstalledPreference(db, args),
+        signal,
+      );
     }
 
     if (args.enabled) {
@@ -831,9 +885,8 @@ const updateMorningBriefWhileLocked$ = command(
       signal.throwIfAborted();
     }
     // The generic automation writer recognizes the selected Morning Brief and
-    // commits the legacy bit and durable choice in one transaction. The
-    // preference advisory lock held by this caller is the first lock in that
-    // writer's documented schedule → automation → occurrence order.
+    // commits the legacy bit and durable choice in one conditional
+    // transaction, so the last toggle to commit leaves both consistent.
     return await loadInstalledPreference(db, args);
   },
 );
@@ -844,17 +897,11 @@ export const updateMorningBriefPreference$ = command(
     args: MorningBriefPreferenceMutationArgs,
     signal: AbortSignal,
   ): Promise<MorningBriefPreferenceResult> => {
-    const db = set(writeDb$);
-    const result = await withMorningBriefPreferenceLock(
-      db,
-      args,
-      signal,
-      async () => {
-        const outcome = await set(updateMorningBriefWhileLocked$, args, signal);
-        return outcome;
-      },
+    await awaitMorningBriefPreferenceCompatibility(
+      set(writeDb$),
+      morningBriefOwner(args),
     );
     signal.throwIfAborted();
-    return result;
+    return await set(applyMorningBriefPreference$, args, signal);
   },
 );

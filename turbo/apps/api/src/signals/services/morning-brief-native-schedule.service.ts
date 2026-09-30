@@ -24,8 +24,9 @@ import { calculateNextRun } from "./time-automation";
  *
  * - **Lock order.** A writer that touches both the legacy automation and this
  *   row takes the member's Morning Brief preference/admission lock first when
- *   applicable, then the owner key while this row is still absent, then this
- *   row's `FOR UPDATE`, the selected legacy automation, its S7a
+ *   applicable (outgoing preference writers only; current ones hold no lock
+ *   across their operation), then the owner key while this row is still
+ *   absent, then this row's `FOR UPDATE`, the selected legacy automation, its S7a
  *   claim/Run/callback rows, and finally any native occurrence row. Nothing
  *   else is allowed, so Settings, reconciliation, deletion and cron writers
  *   cannot deadlock against each other.

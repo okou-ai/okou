@@ -1033,11 +1033,10 @@ describe("POST /api/model-providers", () => {
       },
     );
     expect(providers).toHaveLength(1);
+    // The listed secret names describe the applied auth method; the upsert
+    // response lists only the submitted secrets, so compare the method.
     expect(providers[0]?.authMethod).toBe(
       lastApplied?.body.provider.authMethod,
-    );
-    expect(providers[0]?.secretNames).toStrictEqual(
-      lastApplied?.body.provider.secretNames,
     );
   });
 
