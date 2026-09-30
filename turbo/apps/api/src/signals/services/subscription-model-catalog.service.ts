@@ -14,7 +14,7 @@ import {
   reasoningEffortSchema,
   type ReasoningEffort,
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
-import type { Db } from "../external/db";
+import type { Db, ReadonlyDb } from "../external/db";
 import {
   loadMemberModelRouteContext,
   type MemberModelRouteContext,
@@ -36,7 +36,7 @@ export type MemberSubscriptionModel = Readonly<{
 
 /** Membership-scoped catalog: no connected account, no subscription models. */
 export async function loadMemberSubscriptionModels(
-  db: Db,
+  db: Pick<Db, "select">,
   member: MemberModelRouteContext | PreparedMemberModelRouteContext,
 ): Promise<readonly MemberSubscriptionModel[]> {
   const subscriptions =
@@ -121,7 +121,7 @@ export async function loadMemberSubscriptionModels(
 
 /** Only an Auto member's connected, catalog-listed subscription is plan-exempt. */
 export async function isAutoPersonalSubscriptionRoute(args: {
-  db: Db;
+  db: ReadonlyDb;
   orgId: string;
   userId: string;
   model: string | null | undefined;

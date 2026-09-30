@@ -57,7 +57,7 @@ import {
   type DiscordChatEventContext,
 } from "./chat-event.service";
 import {
-  createEnqueuedChatThreadPickScheduler,
+  scheduleEnqueuedChatThreadPick$,
   enqueueChatInput,
   type ChatQueuePick,
 } from "./chat-thread-queue-drain.service";
@@ -1170,9 +1170,6 @@ const sendIngressQueueWaitNotice$ = command(
   },
 );
 
-const scheduleDiscordIngressChatThreadPick$ =
-  createEnqueuedChatThreadPickScheduler(sendIngressQueueWaitNotice$);
-
 export const processCanonicalDiscordIngress$ = command(
   async (
     { set },
@@ -1220,21 +1217,35 @@ export const processCanonicalDiscordIngress$ = command(
       orgId: ingress.orgId,
     });
     signal.throwIfAborted();
-    set(scheduleDiscordIngressChatThreadPick$, {
-      chatThreadId: ingress.chatThreadId,
-      afterPick: {
-        ingressId: args.ingressId,
-        connectionId: ingress.connectionId,
-        channelId: ingress.destinationChannelId,
+    set(
+      scheduleEnqueuedChatThreadPick$,
+      {
+        orgId: ingress.orgId,
+        chatThreadId: ingress.chatThreadId,
+        // The ingress id is the enqueued input's chat event id.
+        eventId: args.ingressId,
+        afterPick: async (pick, pickSignal) => {
+          await set(
+            sendIngressQueueWaitNotice$,
+            {
+              ingressId: args.ingressId,
+              connectionId: ingress.connectionId,
+              channelId: ingress.destinationChannelId,
+            },
+            pick,
+            pickSignal,
+          );
+        },
+        publish: async () => {
+          await publishChatThreadMessageCreatedSafely({
+            userId: ingress.userId,
+            orgId: ingress.orgId,
+            threadId: ingress.chatThreadId,
+          });
+        },
       },
-      publish: async () => {
-        await publishChatThreadMessageCreatedSafely({
-          userId: ingress.userId,
-          orgId: ingress.orgId,
-          threadId: ingress.chatThreadId,
-        });
-      },
-    });
+      signal,
+    );
     return true;
   },
 );

@@ -2,6 +2,7 @@ mod benchmark;
 mod build;
 mod config;
 mod doctor;
+mod embedded_cli;
 mod exec;
 mod gc;
 mod kill;
@@ -16,6 +17,8 @@ pub use benchmark::{BenchmarkArgs, run_benchmark};
 pub use build::{BuildArgs, run_build};
 pub use config::{ConfigArgs, run_config};
 pub use doctor::{DoctorArgs, run_doctor};
+#[cfg(bundled_okou_cli)]
+pub(crate) use embedded_cli::package as embedded_cli_package;
 pub use exec::{ExecArgs, run_exec};
 pub use gc::{GcArgs, run_gc};
 pub use kill::{KillArgs, run_kill};

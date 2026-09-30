@@ -298,6 +298,9 @@ async fn main() -> ExitCode {
     let result = match cli.command {
         Command::Setup => cmd::run_setup().await.map(|()| ExitCode::SUCCESS),
         Command::Build(args) => {
+            // Retain the package bytes until rootfs installation consumes them.
+            #[cfg(bundled_okou_cli)]
+            let _ = std::hint::black_box(cmd::embedded_cli_package());
             cmd::run_build(args, &sandbox_firecracker::FirecrackerSnapshotProvider)
                 .await
                 .map(|()| ExitCode::SUCCESS)

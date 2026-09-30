@@ -9,7 +9,7 @@ capabilities; code model labels and `ORG_DEFAULT_RUN_MODEL` are no longer
 product authority, and the system default is the DB row with
 `is_system_default = true`. Code still owns runtime adapters. Limited-free
 plan access is catalog data (`built_in_on_restricted_plans`,
-`own_routes_on_restricted_plans`, migration 1298), read by model policy
+`own_routes_on_restricted_plans`, migration 1299), read by model policy
 writes, run admission and the Platform; the static
 `isLimitedFree1RestrictedRunModel` allowlist is gone. Custom-gateway mapping
 follows the model's routes instead of hard-coded model IDs. The organization default is not configurable: the
@@ -33,10 +33,10 @@ switch is removed. See [the design note](model-catalog.md).
 
 Migrations:
 
-- `1295_okou_1_0_fixed_org_default` intentionally changes no data. It copies
+- `1296_okou_1_0_fixed_org_default` intentionally changes no data. It copies
   no per-organization default row and leaves `org_model_policies.is_default`
   and its values untouched.
-- `1296_global_model_catalog` adds `display_name`, `sort_order`,
+- `1297_global_model_catalog` adds `display_name`, `sort_order`,
   `is_system_default`, `replaced_by`, `lineage_rank` and
   `replaced_by_lineage_rank` to `run_model_catalog` (rank-based acyclic
   replacement chains, no triggers) and adds `model_routes`. It seeds every
@@ -54,7 +54,7 @@ Migrations:
   deletion is pending an owner decision (Ethan). They are not `replaced_by`
   anything, so the catalog response lists them with `replacedBy` null; the
   API does not offer or accept them because they have no adapter or route.
-- `1297_model_catalog_stored_selections` rewrites mutable stored selections of
+- `1298_model_catalog_stored_selections` rewrites mutable stored selections of
   retired models to their final replacement: `org_model_policies.model` (only
   onto a replacement route of the same provider type; incompatible retired
   policies are dropped and merged duplicates keep one row, moving the legacy
@@ -71,8 +71,8 @@ Migrations:
   queued inputs at dispatch. `org_plan_entitlements.restricted_built_in_models`
   is a boolean flag (MaskDB: 968 true and 32 false in the first 1000 rows) that
   turns on the catalog's restricted-plan flags and stores no model IDs, so
-  1297 has nothing to rewrite there.
-- Production impact of 1297: as of MaskDB on 2026-09-30, no chat thread,
+  1298 has nothing to rewrite there.
+- Production impact of 1298: as of MaskDB on 2026-09-30, no chat thread,
   organization policy, member preference, agent or model provider references
   any of `claude-fable-5`, `claude-opus-4-8`, `claude-sonnet-4-6`,
   `deepseek-v4-pro`, `gpt-5.5`, `gpt-5.6-terra`, `okou-1.0-pro` or
@@ -81,11 +81,11 @@ Migrations:
   on synthetic data at production scale (162,621 chat threads, 32,810
   policies) the whole migration took 0.21 s with zero matches and 1.01 s with
   10% matches, and 1.29 s at 5x scale with 1% matches, far below a 10 s
-  statement timeout, so batching is unnecessary. 1297 analyzes its rewrite
+  statement timeout, so batching is unnecessary. 1298 analyzes its rewrite
   map before the chat thread scan; without it the planner sorted every thread
   first (2.0 s at 5x). Evidence and the verified/unverified boundary:
-  `turbo/packages/db/MIGRATIONS.md`, "Migration 1297 performance evidence".
-- `1298_model_catalog_restricted_plans` adds the
+  `turbo/packages/db/MIGRATIONS.md`, "Migration 1298 performance evidence".
+- `1299_model_catalog_restricted_plans` adds the
   two restricted-plan flags to `run_model_catalog` with defaults and seeds
   them from the former code allowlist. Additive; the previous API ignores the
   columns.
@@ -100,7 +100,7 @@ Old and new versions during deploy:
 - Previous API after the migrations: it ignores the new catalog columns and
   `model_routes` and still reads `allow_new_org_policy`,
   `subscription_model_catalog` and `is_default`, all of which are kept. After
-  1297 it no longer finds policies of the retired models, which its code
+  1298 it no longer finds policies of the retired models, which its code
   already treats as retired. The new API clears `is_default` on its policy
   writes and does not store a default row; how the previous API's default
   repair reacts to an organization without an `is_default` row was not
@@ -119,9 +119,9 @@ Old and new versions during deploy:
   until upgraded.
 - New App, iOS and CLI require `GET /api/model-catalog`, which ships with this
   API release; they are released after it.
-- Rollback: 1296 and 1297 are forward-only data changes that the previous API
+- Rollback: 1297 and 1298 are forward-only data changes that the previous API
   tolerates (it ignores the new columns and table). Rewritten selections stay
-  on their replacements after a rollback; rows dropped by 1297 (retired
+  on their replacements after a rollback; rows dropped by 1298 (retired
   policies with no compatible replacement route) are not restored.
 
 ## Integration model commands are thread-scoped (2026-09-29)
@@ -7495,3 +7495,58 @@ returns the original message instead of creating another. After the one-minute
 replay window the delivery stays uncertain and is never sent again. Explicit
 Discord rate-limit delays are persisted with the delivery attempt; subsequent
 completion requests return the remaining delay without sending early.
+
+## Canonical Chat application sessions
+
+Migration `1295_chat_thread_canonical_session` adds a unique index on
+`chat_threads.agent_session_id`. A thread may have no session before its first
+admitted run, and PostgreSQL continues to allow multiple null bindings. An
+application session may be the current binding of at most one thread. Historical
+sessions no longer referenced by a thread and threadless sessions remain intact;
+no historical run, conversation, checkpoint, or session ID is rewritten.
+
+Before production migration, audit duplicate non-null bindings with:
+
+```sql
+SELECT agent_session_id, count(*)
+FROM chat_threads
+WHERE agent_session_id IS NOT NULL
+GROUP BY agent_session_id
+HAVING count(*) > 1;
+```
+
+The migration rejects duplicates instead of assigning a different owner or
+silently detaching history. Any existing duplicates require an explicit repair
+based on their ownership and run provenance before rollout. The migration is
+non-transactional and builds the index with `CREATE UNIQUE INDEX CONCURRENTLY`,
+so chat thread writes are not blocked while it waits for older transactions.
+A duplicate fails the build and leaves an INVALID index, which the migration
+drops (`DROP INDEX CONCURRENTLY IF EXISTS`) before its next attempt; a failed
+build does not authorize production data changes.
+
+New admission preserves the thread's valid application session ID when its
+agent, runtime, or model family changes. It resets the native conversation
+checkpoint within that same session and replays visible prior turns when native
+history cannot be resumed. The same pending transaction updates session identity
+and storage, binds the run and consumed input, and creates the runner job; its
+last statement claims the unique active-run slot. A stale session snapshot or
+active-run uniqueness conflict rolls back the launch and fails the background
+pick without automatic preparation retries.
+
+Stable identity applies to an existing session owned by the thread's user and
+organization. The existing recovery behavior for a missing, deleted, or
+foreign-owned session binding is retained: admission refuses to resume that
+session, creates a new authorized application session, and repairs the thread's
+current binding in the pending transaction. It does not reuse the foreign ID or
+delete either session's history. The one-to-one guarantee covers valid current
+bindings; it does not claim that an invalid historical binding preserves its ID
+or that a thread has never referenced another detached session.
+
+An outgoing API remains compatible with the added unique index, but it can
+still replace a thread's application session during native-history rotation.
+Stable application identity therefore requires all admission writers to run the
+new implementation. Rolling back the API can restore rotation without corrupting
+retained history or invalidating the index. Native Runner checkpoint and claim
+protocols keep their existing shapes, so a running older Runner can finish the
+run it already owns. This change does not restore the removed thread/session
+foreign keys.

@@ -1135,6 +1135,7 @@ describe("Teams chat callbacks", () => {
         orgId: secondFixture.orgId,
         orgRole: "org:admin",
       });
+      await authOrgApi.completeOnboarding(secondActor);
       // The participant's new input starts from their own model preference.
       await createBddIntegrationApi(context).updateUserModelPreference(
         secondActor,

@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
-workflow=$(yq -o=json '.' "$root/.github/workflows/release-please.yml")
 # Exercise the release selector for iOS-only, mixed, and unrelated releases using
 # the actual expression, then check the data handed to the publishing commands.
-WORKFLOW_JSON="$workflow" python3 - <<'PY'
-import json, os
-workflow = json.loads(os.environ['WORKFLOW_JSON'])
+# Read the workflow inside Python: the serialized YAML may exceed Linux's
+# per-argument environment size when passed as WORKFLOW_JSON.
+python3 - "$root/.github/workflows/release-please.yml" <<'PY'
+import json, subprocess, sys
+workflow = json.loads(subprocess.check_output(['yq', '-o=json', '.', sys.argv[1]], text=True))
 job = workflow['jobs']['publish-ios-testflight']
 condition = job['if'].removeprefix('${{').removesuffix('}}').strip()
 for value, expected in [('true', True), ('false', False), ('', False)]:

@@ -649,6 +649,7 @@ describe("workflows", () => {
   it("runs public workflows for members and hides workflows on private agents", async () => {
     const owner = user({ orgRole: "org:admin" });
     const member = user({ orgId: owner.orgId, orgRole: "org:member" });
+    await bdd.completeOnboarding(member);
     await enableWorkflowRuns(owner);
     if (!owner.orgId) {
       throw new Error("Expected a workflow owner organization");

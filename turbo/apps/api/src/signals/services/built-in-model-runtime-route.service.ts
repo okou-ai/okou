@@ -1,5 +1,4 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-
 import {
   BUILT_IN_MODEL_ROUTE_PROVIDERS,
   type BuiltInModelRouteProviderType,
@@ -16,7 +15,7 @@ import { and, eq, gt, inArray } from "drizzle-orm";
 
 import { singleton } from "../../lib/singleton";
 import { nowDate } from "../../lib/time";
-import { db$, type Db, type ReadonlyDb } from "../external/db";
+import { db$, type ReadonlyDb } from "../external/db";
 import {
   catalogBuiltInCandidates,
   loadModelCatalog,
@@ -217,7 +216,7 @@ export const builtInModelKeyIdsByVendor$: Computed<
 
 /** Loads the catalog once; callers that already hold it use the variant below. */
 export async function resolveBuiltInModelRuntimeRoute(
-  db: Db,
+  db: ReadonlyDb,
   selectedModel: string,
   featureSwitchContext: FeatureSwitchContext,
 ): Promise<BuiltInModelRuntimeRoute | null> {
@@ -236,7 +235,7 @@ export async function resolveBuiltInModelRuntimeRoute(
 
 /** For callers that already hold the request- or run-scoped catalog. */
 export async function resolveBuiltInModelRuntimeRouteFromCatalog(
-  db: Db,
+  db: ReadonlyDb,
   catalog: ModelCatalog,
   selectedModel: string,
   featureSwitchContext: FeatureSwitchContext,
@@ -251,7 +250,7 @@ export async function resolveBuiltInModelRuntimeRouteFromCatalog(
 }
 
 export async function resolveBuiltInModelRuntimeRouteWithKeys(
-  db: Db,
+  db: ReadonlyDb,
   catalog: ModelCatalog,
   selectedModel: string,
   featureSwitchContext: FeatureSwitchContext,
@@ -300,6 +299,42 @@ export async function resolveBuiltInModelRuntimeRouteWithKeys(
     if (!cooled && keyId !== undefined) {
       return routeFromTarget(target, { id: keyId });
     }
+  }
+  return null;
+}
+
+/** Choose the same first eligible route from one batched cooldown snapshot. */
+export function builtInModelRuntimeRouteFromSnapshot(args: {
+  readonly catalog: ModelCatalog;
+  readonly selectedModel: string;
+  readonly featureSwitchContext: FeatureSwitchContext;
+  readonly keyIdsByVendor: BuiltInModelKeyIdsByVendor;
+  readonly cooldowns: readonly {
+    readonly modelRuntimeProvider: string;
+    readonly modelRuntimeModel: string;
+  }[];
+}): BuiltInModelRuntimeRoute | null {
+  for (const target of eligibleBuiltInModelRouteCandidates(
+    args.catalog,
+    args.selectedModel,
+    args.featureSwitchContext,
+  )) {
+    if (runtimeRouteUnavailableForTest(target)) {
+      continue;
+    }
+    const id = args.keyIdsByVendor.get(target.vendor);
+    if (
+      id === undefined ||
+      args.cooldowns.some((cooldown) => {
+        return (
+          cooldown.modelRuntimeProvider === target.providerType &&
+          cooldown.modelRuntimeModel === target.upstreamModel
+        );
+      })
+    ) {
+      continue;
+    }
+    return routeFromTarget(target, { id });
   }
   return null;
 }

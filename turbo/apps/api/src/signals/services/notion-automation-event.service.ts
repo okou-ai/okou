@@ -51,8 +51,8 @@ import type {
   RunWorkflowAutomationNowArgs,
   RunWorkflowAutomationResult,
   AutomationRow,
-} from "./workflow-automation-launch.service";
-import type { WorkflowQueueAdmissionTransaction } from "./workflow-chat-event-queue.service";
+  WorkflowQueueAdmissionTransaction,
+} from "./workflow-automation-enqueue.service";
 import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
 import { lockConnectorAccountTarget } from "./auth-state-lock.service";
 import {

@@ -1,13 +1,4 @@
-/**
- * Test fixtures for retired agent-run API capabilities.
- *
- * Production no longer exposes direct-run creation or run listing, while the
- * integration suites still need those capabilities to construct and inspect
- * runner state. Keep the exception at this narrow service boundary and assert
- * product behavior through the remaining production routes.
- */
 import { randomUUID } from "node:crypto";
-
 import { createStore, state } from "ccstate";
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
 import type { ModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
@@ -25,14 +16,11 @@ import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import { storages } from "@okouai/db/schema/storage";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import { and, count, eq, inArray } from "drizzle-orm";
-
 import { db } from "../lib/db";
 import { badRequestMessage, notFound } from "../lib/error";
 import { now } from "../lib/time";
-import {
-  createAgentRun$,
-  type CreateAgentRunArgs,
-} from "../signals/services/agent-run-create.service";
+import { createAgentRun$ } from "../signals/services/background-agent-run.service";
+import type { CreateAgentRunArgs } from "../signals/services/agent-run-execution.service";
 import { buildAgentExecutionConfig } from "../signals/services/agent-execution-config";
 import { agentRunList } from "../signals/services/agent-runs.service";
 import {
@@ -42,6 +30,15 @@ import {
 import { projectLegacyWritebackArtifacts } from "../signals/services/storage-legacy-projection.service";
 import { decryptPersistentSecretsMap } from "../signals/services/crypto.utils";
 import { loadModelCatalog } from "../signals/services/model-catalog.service";
+
+/**
+ * Test fixtures for retired agent-run API capabilities.
+ *
+ * Production no longer exposes direct-run creation or run listing, while the
+ * integration suites still need those capabilities to construct and inspect
+ * runner state. Keep the exception at this narrow service boundary and assert
+ * product behavior through the remaining production routes.
+ */
 
 const store = createStore();
 

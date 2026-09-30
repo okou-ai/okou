@@ -13,6 +13,7 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { nowDate } from "../../../lib/time";
 import { readStorageS3PrefixFixture } from "../../../test-fixtures/storage";
+import { seedReadOnlyPresignedUrlCacheFixture } from "../../../test-fixtures/storage-presigned-url-cache";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import {
   createRunsApi,
@@ -442,13 +443,20 @@ describe("system storage presigned URL cache", () => {
       archiveUrl,
     };
 
+    await seedOwnedStorageCacheRow({
+      fixture,
+      versionId,
+      presignedUrl: archiveUrl,
+      expiresAt: new Date(nowDate().getTime() + 2 * 24 * 60 * 60 * 1000),
+      refreshAfter: new Date(nowDate().getTime() + 24 * 60 * 60 * 1000),
+    });
     const first = await createAndClaimOwnedSystemStorage({
       ...runFixture,
       fixture,
-      prompt: "warm the owned system storage URL cache",
+      prompt: "use the owned system storage URL cache",
     });
     expect(first.mount).toStrictEqual(expectedMount);
-    expect(signedCount(objectKey)).toBe(1);
+    expect(signedCount(objectKey)).toBe(0);
     expect(
       sortedCacheSnapshots(await readOwnedStorageCache(fixture)),
     ).toStrictEqual([
@@ -461,7 +469,7 @@ describe("system storage presigned URL cache", () => {
       prompt: "reuse the owned system storage URL cache",
     });
     expect(second.mount).toStrictEqual(expectedMount);
-    expect(signedCount(objectKey)).toBe(1);
+    expect(signedCount(objectKey)).toBe(0);
     expect(
       sortedCacheSnapshots(await readOwnedStorageCache(fixture)),
     ).toStrictEqual([
@@ -501,6 +509,29 @@ describe("system storage presigned URL cache", () => {
     const mountPaths = Array.from({ length: 51 }, (_, index) => {
       return `/mixed-batch/${String(index)}`;
     });
+    await seedOwnedStorageCacheRow({
+      fixture,
+      versionId,
+      presignedUrl: expectedPresignedUrl(systemObjectKey, 1),
+      expiresAt: new Date(nowDate().getTime() + 2 * 24 * 60 * 60 * 1000),
+      refreshAfter: new Date(nowDate().getTime() + 24 * 60 * 60 * 1000),
+    });
+    if (!runFixture.actor.orgId) {
+      throw new Error("Expected an organization-scoped cache actor");
+    }
+    onTestFinished(
+      await seedReadOnlyPresignedUrlCacheFixture(
+        {
+          bucket: BUCKET,
+          objectKey: readOnlyObjectKey,
+          storageVersionId: prepared.versionId,
+          resolvedOrgId: runFixture.actor.orgId,
+          publicEndpoint: true,
+        },
+        expectedPresignedUrl(readOnlyObjectKey, 1),
+        context.signal,
+      ),
+    );
     const api = createRunsApi(context);
     const createAndClaim = async (prompt: string) => {
       const run = await api.createDirectRun(runFixture.actor, {
@@ -558,13 +589,13 @@ describe("system storage presigned URL cache", () => {
       },
     ];
     await expect(
-      createAndClaim("warm the mixed-scope storage URL cache"),
+      createAndClaim("use the mixed-scope storage URL cache"),
     ).resolves.toStrictEqual(expected);
     await expect(
       createAndClaim("reuse the mixed-scope storage URL cache"),
     ).resolves.toStrictEqual(expected);
-    expect(signedCount(readOnlyObjectKey)).toBe(1);
-    expect(signedCount(systemObjectKey)).toBe(1);
+    expect(signedCount(readOnlyObjectKey)).toBe(0);
+    expect(signedCount(systemObjectKey)).toBe(0);
   });
 
   it("refreshes a hard-expired row with a new exact URL", async () => {
@@ -634,6 +665,13 @@ describe("system storage presigned URL cache", () => {
     const signedCount = mockUniquePresignedUrls();
     const systemObjectKey = storageArchiveKey(fixture, versionId);
     const systemArchiveUrl = expectedPresignedUrl(systemObjectKey, 1);
+    await seedOwnedStorageCacheRow({
+      fixture,
+      versionId,
+      presignedUrl: systemArchiveUrl,
+      expiresAt: new Date(nowDate().getTime() + 2 * 24 * 60 * 60 * 1000),
+      refreshAfter: new Date(nowDate().getTime() + 24 * 60 * 60 * 1000),
+    });
 
     const systemRun = await createAndClaimOwnedSystemStorage({
       ...runFixture,
@@ -647,7 +685,7 @@ describe("system storage presigned URL cache", () => {
       archiveSize: 1024,
       archiveUrl: systemArchiveUrl,
     });
-    expect(signedCount(systemObjectKey)).toBe(1);
+    expect(signedCount(systemObjectKey)).toBe(0);
 
     await stateAction({
       action: "cleanup-owned-storages",

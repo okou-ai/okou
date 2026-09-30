@@ -4,7 +4,6 @@ import { morningBriefScheduleClaims } from "@okouai/db/schema/morning-brief-sche
 import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { workflowScheduleSkips } from "@okouai/db/schema/workflow-schedule-skip";
 import { and, eq, isNull } from "drizzle-orm";
-
 import type { Db } from "../external/db";
 import type { Tx } from "../../lib/db-types";
 import { calculateNextRun } from "./time-automation";
@@ -12,7 +11,7 @@ import {
   lockMorningBriefLegacyWriterAuthority,
   settleSelectedLegacyMorningBriefObligation,
 } from "./morning-brief-native-schedule.service";
-import { hasPendingAutomationEvent } from "./workflow-chat-event-queue.service";
+import { hasPendingAutomationEvent } from "./workflow-automation-enqueue.service";
 import { loadWorkflowUserAutomationThreadId } from "./workflow-user-automation-thread.service";
 import { SCHEDULE_GRACE_MS, scheduleExpired } from "./schedule-expiry-policy";
 

@@ -27,7 +27,7 @@ const OPENAI_BYOK = [
   "custom-openai-responses",
 ] as const;
 
-// Mirrors the seeded production catalog (migration 1296), including retired
+// Mirrors the seeded production catalog (migration 1297), including retired
 // models and their single-hop replacements.
 const MODEL_ROWS: readonly (readonly [
   model: string,
@@ -168,7 +168,7 @@ function resolveReplacement(model: string): string {
   return row?.[3] ? resolveReplacement(row[3]) : model;
 }
 
-// Plan policy seeded by migration 1298.
+// Plan policy seeded by migration 1299.
 const RESTRICTED_PLAN_BUILT_IN_MODELS: readonly string[] = [
   "okou-1.0",
   "gpt-6-luna",

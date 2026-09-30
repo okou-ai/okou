@@ -63,17 +63,13 @@ async function entitledChatActor() {
   return result;
 }
 
-/** Resolves the run that launched a queued input once its thread is picked. */
-async function waitForPickedInputRun(
+/** Reads a committed input claim after observing its admission boundary. */
+async function readPickedInputRun(
   actor: Parameters<typeof chat.listThreadEvents>[0],
   threadId: string,
   eventId: string,
 ): Promise<string> {
-  const page = await waitForThreadMessages(actor, threadId, (events) => {
-    return userMessages(events).some((event) => {
-      return event.revokesEventId === eventId && event.runId !== undefined;
-    });
-  });
+  const page = await chat.listThreadEvents(actor, threadId);
   const runId = userMessages(page.events).find((event) => {
     return event.revokesEventId === eventId;
   })?.runId;
@@ -121,7 +117,8 @@ describe("CHAT-02: shared user message queue", () => {
       );
     }
     expect(sent.body.runId).toBeNull();
-    const runId = await waitForPickedInputRun(
+    await flushWaitUntilForTest();
+    const runId = await readPickedInputRun(
       actor,
       sent.body.threadId,
       messageId,
@@ -280,7 +277,8 @@ describe("CHAT-02: shared user message queue", () => {
       throw new Error("Expected the later Web send to be accepted");
     }
     expect(sent.body.runId).toBeNull();
-    const runId = await waitForPickedInputRun(actor, anchor.threadId, nextId);
+    await flushWaitUntilForTest();
+    const runId = await readPickedInputRun(actor, anchor.threadId, nextId);
     const claimed = await waitForThreadMessages(
       actor,
       anchor.threadId,
@@ -328,7 +326,8 @@ describe("CHAT-02: shared user message queue", () => {
       throw new Error("Expected the forwarded prompt to be accepted");
     }
     expect(forwarded.body.runId).toBeNull();
-    const forwardedRunId = await waitForPickedInputRun(
+    await flushWaitUntilForTest();
+    const forwardedRunId = await readPickedInputRun(
       actor,
       targetThread.id,
       forwardedEventId,
@@ -445,7 +444,8 @@ describe("CHAT-02: shared user message queue", () => {
       throw new Error("Expected the first delegated prompt to be accepted");
     }
     expect(firstSend.body.runId).toBeNull();
-    const firstTargetRunId = await waitForPickedInputRun(
+    await flushWaitUntilForTest();
+    const firstTargetRunId = await readPickedInputRun(
       actor,
       firstTargetThread.id,
       firstEventId,
@@ -650,7 +650,7 @@ describe("CHAT-02: shared user message queue", () => {
     // keeps the delegated autonomy budget carried by the queued input.
     await cancelChatRun(actor, firstTargetRunId);
     await flushWaitUntilForTest();
-    const secondTargetRunId = await waitForPickedInputRun(
+    const secondTargetRunId = await readPickedInputRun(
       actor,
       secondTargetThread.id,
       secondEventId,
@@ -660,7 +660,7 @@ describe("CHAT-02: shared user message queue", () => {
     ).resolves.toBe(9);
     await cancelChatRun(actor, secondTargetRunId);
     await flushWaitUntilForTest();
-    const nowTargetRunId = await waitForPickedInputRun(
+    const nowTargetRunId = await readPickedInputRun(
       actor,
       nowTargetThread.id,
       nowEventId,
@@ -803,7 +803,7 @@ describe("CHAT-02: shared user message queue", () => {
       context,
       rotatedAnchor.threadId,
     );
-    expect(rotatedBinding.agent_session_id).not.toBe(
+    expect(rotatedBinding.agent_session_id).toBe(
       originalBinding.agent_session_id,
     );
     const rotatedClaim = await claimChatRun(runnerGroup, rotatedRunId);
@@ -912,7 +912,8 @@ describe("CHAT-02: shared user message queue", () => {
     if (delegated.status !== 201) {
       throw new Error("Expected the last allowed delegation to be accepted");
     }
-    const delegatedRunId = await waitForPickedInputRun(
+    await flushWaitUntilForTest();
+    const delegatedRunId = await readPickedInputRun(
       actor,
       target.id,
       delegatedEventId,
@@ -941,6 +942,7 @@ describe("CHAT-02: shared user message queue", () => {
       body: { runId: null, threadId: blockedTarget.id },
     });
     // The pick rejects the exhausted budget in the thread instead of the send.
+    await flushWaitUntilForTest();
     const targetMessages = await waitForThreadMessages(
       actor,
       blockedTarget.id,
@@ -1369,7 +1371,10 @@ describe("CHAT-02: shared user message queue", () => {
     if (sent.status !== 201) {
       throw new Error("Expected the pending publication not to gate the send");
     }
-    const runId = await waitForPickedInputRun(
+    // The second publication starts after admission commits. Keep delivery
+    // blocked while reading the committed run through the API.
+    await secondPublicationStarted.promise;
+    const runId = await readPickedInputRun(
       actor,
       sent.body.threadId,
       clientEventId,
@@ -1388,10 +1393,7 @@ describe("CHAT-02: shared user message queue", () => {
       })
       .toBe(true);
 
-    // The run and its message are visible before the background pick finishes
-    // publishing. Wait for both notifications to start while delivery is still
-    // blocked, rather than racing the pick's second publication.
-    await secondPublicationStarted.promise;
+    // Both notifications started while publication is still blocked.
     const threadListPublishes = context.mocks.ably.publish.mock.calls.filter(
       ([topic]) => {
         return topic === "threadListChanged";
@@ -1455,6 +1457,7 @@ describe("CHAT-02: shared user message queue", () => {
     expect(threadListPublishes).toHaveLength(1);
 
     await cancelChatRun(actor, anchor.runId);
+    await flushWaitUntilForTest();
     const messages = await waitForThreadMessages(
       actor,
       anchor.threadId,
@@ -1542,6 +1545,7 @@ describe("CHAT-02: shared user message queue", () => {
     context.mocks.ably.publish.mockClear();
     chatCallbacks.mockChatOutputEvents([]);
     await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders);
+    await flushWaitUntilForTest();
     const messages = await waitForThreadMessages(
       actor,
       anchor.threadId,

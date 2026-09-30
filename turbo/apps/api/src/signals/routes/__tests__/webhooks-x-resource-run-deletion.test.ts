@@ -45,6 +45,7 @@ describe("X resource account cleanup and ordinary Run deletion", () => {
     // The deleted user invokes another owner's Agent. Clerk retains that
     // Agent, isolating the direct Run/ledger lock order.
     const actor = fixture.bdd.user({ orgId });
+    await fixture.bdd.completeOnboarding(actor);
     await fixture.chat.updateUserModelPreference(actor, "claude-fable-5-1");
 
     // User deletion retains the deleted user's own Agent too.

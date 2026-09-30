@@ -2,7 +2,6 @@ import { resolveEnqueuedChatInputModel } from "./chat-input-model.service";
 import { touchNativeChatThread } from "./native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 import { createHash, randomBytes } from "node:crypto";
-
 import { command } from "ccstate";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { v5 as uuidv5 } from "uuid";
@@ -25,7 +24,6 @@ import type {
 } from "@okouai/api-contracts/contracts/teams-bot";
 import { and, eq, or } from "drizzle-orm";
 import { convert } from "html-to-text";
-
 import { env } from "../../lib/env";
 import { inferMimetype } from "../../lib/mimetype";
 import { logger } from "../../lib/log";
@@ -1750,19 +1748,25 @@ const runAgentForTeams$ = command(
       orgId: args.installation.orgId,
     });
     signal.throwIfAborted();
-    set(scheduleEnqueuedChatThreadPick$, {
-      chatThreadId: persisted.chatThreadId,
-      afterPick: async (pick, pickSignal) => {
-        await replyTeamsChatQueueWait(args.activity, pick.reason, pickSignal);
+    set(
+      scheduleEnqueuedChatThreadPick$,
+      {
+        orgId: args.installation.orgId,
+        chatThreadId: persisted.chatThreadId,
+        eventId: persisted.chatEventId,
+        afterPick: async (pick, pickSignal) => {
+          await replyTeamsChatQueueWait(args.activity, pick.reason, pickSignal);
+        },
+        publish: async () => {
+          await publishChatThreadMessageCreatedSafely({
+            userId: args.connection.userId,
+            orgId: args.installation.orgId,
+            threadId: persisted.chatThreadId,
+          });
+        },
       },
-      publish: async () => {
-        await publishChatThreadMessageCreatedSafely({
-          userId: args.connection.userId,
-          orgId: args.installation.orgId,
-          threadId: persisted.chatThreadId,
-        });
-      },
-    });
+      signal,
+    );
     return { kind: "accepted" };
   },
 );

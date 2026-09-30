@@ -1,4 +1,3 @@
-/** Canonical ChatEvent write commands. */
 import type { ChatInputModelSelection } from "@okouai/api-contracts/contracts/chat-input-model";
 import { resolveChatInputModelSelection } from "./chat-input-model.service";
 import { resolveRequiredDefaultChatThreadModelPin } from "./chat-thread-model.service";
@@ -48,7 +47,7 @@ import type { AuthContext } from "../../types/auth";
 import type {
   AgentRunPreCreateSource,
   AgentRunRequestAgent,
-} from "./agent-runs-create.service";
+} from "./agent-run-contracts";
 import { recordGetStartedWorkflow } from "./get-started-workflow.service";
 import { resolveChatReasoningEffort } from "./chat-reasoning-effort.service";
 import {
@@ -56,6 +55,7 @@ import {
   scheduleEnqueuedChatThreadPick$,
 } from "./chat-thread-queue-drain.service";
 import { loadPendingChatQueueEvent } from "./chat-event-queue.service";
+import type { ChatInputEnqueueCommit } from "./chat-input-enqueue-observation";
 import {
   cancelRun$,
   dispatchCancelSideEffects$,
@@ -112,6 +112,8 @@ import {
 } from "./canonical-chat-event-read.service";
 import { bestEffort, settle } from "../utils";
 import { recordChatNetworkBodyCapture } from "./chat-network-body-capture.service";
+
+/** Canonical ChatEvent write commands. */
 
 type SendBody = z.infer<typeof chatEventsContract.send.body>;
 
@@ -1456,9 +1458,13 @@ export const sendNormalEvent$ = command(
     const enqueued = await settle(
       (async () => {
         let createdAt: Date | undefined;
+        let enqueueCommit: ChatInputEnqueueCommit | undefined;
         const eventId = await enqueueChatInput(db, {
           chatThreadId: thread.threadId,
           orgId: args.orgId,
+          onCommitted: (receipt) => {
+            enqueueCommit = receipt;
+          },
           appendInput: async (tx) => {
             const inserted = await appendNormalSendInput(tx, args, {
               thread,
@@ -1475,17 +1481,23 @@ export const sendNormalEvent$ = command(
         // Scheduled right after the commit, before the request's abort is
         // observed. The sidebar touch and the UI realtime events go last,
         // after the pick, whatever its outcome.
-        set(scheduleEnqueuedChatThreadPick$, {
-          chatThreadId: thread.threadId,
-          touch: normalSendThreadTouch(db, args, thread, createdAt),
-          publish: async () => {
-            await publishChatEventCreated({
-              ...member,
-              threadId: thread.threadId,
-            });
-            await publishThreadListChangedSafely(member);
+        set(
+          scheduleEnqueuedChatThreadPick$,
+          {
+            orgId: args.orgId,
+            chatThreadId: thread.threadId,
+            ...(enqueueCommit ? { enqueueCommit } : {}),
+            touch: normalSendThreadTouch(db, args, thread, createdAt),
+            publish: async () => {
+              await publishChatEventCreated({
+                ...member,
+                threadId: thread.threadId,
+              });
+              await publishThreadListChangedSafely(member);
+            },
           },
-        });
+          signal,
+        );
         return createdAt;
       })(),
       signal,

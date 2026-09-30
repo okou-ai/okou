@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.49.46](https://github.com/okou-ai/okou/compare/desktop-v0.49.45...desktop-v0.49.46) (2026-09-30)
+
+
+### Refactoring
+
+* **api:** centralize chat run picking and preparation ([#37360](https://github.com/okou-ai/okou/issues/37360)) ([04d2b09](https://github.com/okou-ai/okou/commit/04d2b09a1e4feddbf3b73adc27c7290d89e0b66d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.531.2
+
+## [0.49.45](https://github.com/okou-ai/okou/compare/desktop-v0.49.44...desktop-v0.49.45) (2026-09-30)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.531.1
+
 ## [0.49.44](https://github.com/okou-ai/okou/compare/desktop-v0.49.43...desktop-v0.49.44) (2026-09-30)
 
 

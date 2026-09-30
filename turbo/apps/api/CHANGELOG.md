@@ -8,6 +8,40 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.700.3](https://github.com/okou-ai/okou/compare/api-v1.700.2...api-v1.700.3) (2026-09-30)
+
+
+### Refactoring
+
+* **api:** centralize chat run picking and preparation ([#37360](https://github.com/okou-ai/okou/issues/37360)) ([04d2b09](https://github.com/okou-ai/okou/commit/04d2b09a1e4feddbf3b73adc27c7290d89e0b66d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.531.2
+    * @okouai/core bumped to 8.724.2
+    * @okouai/db bumped to 1.315.3
+    * @okouai/pi-agent-runtime bumped to 1.44.3
+
+## [1.700.2](https://github.com/okou-ai/okou/compare/api-v1.700.1...api-v1.700.2) (2026-09-30)
+
+
+### Refactoring
+
+* **chat:** complete chat event v8 transition cleanup ([#37411](https://github.com/okou-ai/okou/issues/37411)) ([cd4aac5](https://github.com/okou-ai/okou/commit/cd4aac5fa635dd7f71eb82756529c5643c552cc9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.531.1
+    * @okouai/core bumped to 8.724.1
+    * @okouai/db bumped to 1.315.2
+    * @okouai/pi-agent-runtime bumped to 1.44.2
+
 ## [1.700.1](https://github.com/okou-ai/okou/compare/api-v1.700.0...api-v1.700.1) (2026-09-30)
 
 

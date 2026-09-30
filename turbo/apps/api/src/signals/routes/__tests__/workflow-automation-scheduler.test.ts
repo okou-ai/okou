@@ -30,7 +30,7 @@ import { createApp } from "../../../app-factory";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { mockEnv } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
-import type { ApiTestUser } from "./helpers/api-bdd";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { mockGmailConnectorOAuth } from "./helpers/api-bdd-connectors";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
@@ -849,6 +849,7 @@ describe("okou workflow automation scheduler", () => {
         orgId: scenario.orgId,
         orgRole: "org:member",
       });
+      await createBddApi(context).completeOnboarding(member);
       // The same membership cache fixture and real CLI read used by the scheduler's access test.
       await store.set(
         seedOrgMembership$,
@@ -886,22 +887,21 @@ describe("okou workflow automation scheduler", () => {
         await runsApi.requestCancelRun(scenario.actor, blocker, [200]);
       }
       mocks.clerk.session(member.userId, scenario.orgId, "org:member");
-      await expect
-        .poll(async () => {
-          return (await workflowRunMessages(threadId)).length;
-        })
-        .toBe(1);
+      // Slot release schedules the next pick. Own that work before checking
+      // the account captured by the newly admitted automation run.
+      await flushWaitUntilForTest();
+      await expect(workflowRunMessages(threadId)).resolves.toHaveLength(1);
       const message = await onlyWorkflowRunMessage(threadId);
       // The run binds the owner's account current at run creation: the
       // original account for an immediate launch, the later one for a pick.
       const expectedOwner = queuedLaunch
         ? { ...later, identity: "later-owner-account" }
         : { ...owner, identity: "automation-owner" };
-      await expect
-        .poll(async () => {
-          return (await runsApi.readRun(member, message.runId)).status;
-        })
-        .toBe("pending");
+      await expect(
+        runsApi.readRun(member, message.runId),
+      ).resolves.toMatchObject({
+        status: "pending",
+      });
       await runsApi.heartbeatRunner(scenario.runnerGroup);
       const claim = await runsApi.claimRunnerJob(message.runId);
       expect(claim.cliAgentType).toBe("codex");
@@ -1355,13 +1355,14 @@ describe("okou workflow automation scheduler", () => {
         1,
         "insufficient_credits",
       );
-      await expect
-        .poll(async () => {
-          const read = await wf.readAutomation(automation.automationId);
-          return { enabled: read.enabled, nextRunAt: read.nextRunAt };
-        })
-        .toStrictEqual({ enabled: true, nextRunAt: expect.any(String) });
+      // The completion reschedules the loop in background work; drain it
+      // instead of polling on wall-clock intervals.
+      await flushWaitUntilForTest();
       const read = await wf.readAutomation(automation.automationId);
+      expect({
+        enabled: read.enabled,
+        nextRunAt: read.nextRunAt,
+      }).toStrictEqual({ enabled: true, nextRunAt: expect.any(String) });
       if (!read.nextRunAt) {
         throw new Error("Expected the next run after insufficient credits");
       }

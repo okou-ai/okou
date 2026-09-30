@@ -40,7 +40,7 @@ function jsonHttpException(status: 409 | 422, message: string) {
 }
 
 describe("CHAT-02: model-first provider policies", () => {
-  it("overlaps captured legacy context branches and skips deferred cache identity", async () => {
+  it("overlaps provider and catalog preparation and skips deferred cache identity", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const orgId = requireOrgId(actor);
     await api.heartbeatRunner(runnerGroup);
@@ -54,6 +54,9 @@ describe("CHAT-02: model-first provider policies", () => {
       orgId,
       signal: context.signal,
     });
+    preparation.release("user-timezone");
+    preparation.release("image-model");
+    preparation.release("official-workflow");
     const countedRun = withStableAgentPromptBuildCountFixture(async () => {
       return await sendChatRun(
         actor,
@@ -70,28 +73,14 @@ describe("CHAT-02: model-first provider policies", () => {
     await Promise.all([
       preparation.arrival("post-authorization-context"),
       preparation.arrival("thread-session"),
+      preparation.arrival("model-provider"),
     ]);
     expect(preparation.hasArrived("subscription-account")).toBeFalsy();
-    expect(preparation.hasArrived("model-provider")).toBeFalsy();
-    expect(preparation.hasArrived("connector-contexts")).toBeFalsy();
     preparation.release("post-authorization-context");
     preparation.release("thread-session");
 
-    await Promise.all([
-      preparation.arrival("model-provider"),
-      preparation.arrival("connector-contexts"),
-    ]);
-    expect(preparation.hasArrived("user-timezone")).toBeFalsy();
-    expect(preparation.hasArrived("image-model")).toBeFalsy();
-    expect(preparation.hasArrived("official-workflow")).toBeFalsy();
-    preparation.release("model-provider");
-    preparation.release("connector-contexts");
-
-    await Promise.all([
-      preparation.arrival("user-timezone"),
-      preparation.arrival("image-model"),
-      preparation.arrival("official-workflow"),
-    ]);
+    // Connector preparation reaches its boundary while the provider is held.
+    await preparation.arrival("connector-contexts");
     preparation.releaseAll();
 
     const {
@@ -106,7 +95,7 @@ describe("CHAT-02: model-first provider policies", () => {
     await cancelChatRun(actor, run.runId, claimed.sandboxHeaders);
   }, 30_000);
 
-  it("settles simultaneous legacy preparation failures in the background pick without post-admission effects", async () => {
+  it("rejects the input after the first preparation failure without waiting for another branch", async () => {
     const { actor, agentId } = await entitledChatActor();
     const orgId = requireOrgId(actor);
     await configureBuiltInPiModel(actor, "gpt-6-luna");
@@ -119,7 +108,8 @@ describe("CHAT-02: model-first provider policies", () => {
       signal: context.signal,
     });
     const clientEventId = randomUUID();
-    const prompt = "reject simultaneous legacy preparation failures";
+    const prompt =
+      "fail fast on session preparation while authorization is pending";
     // The send only enqueues; preparation runs in the background pick.
     const sent = await chat.requestSendEvent(
       actor,
@@ -143,35 +133,27 @@ describe("CHAT-02: model-first provider policies", () => {
       preparation.arrival("post-authorization-context"),
       preparation.arrival("thread-session"),
     ]);
-    preparation.reject(
-      "thread-session",
-      jsonHttpException(422, "session preparation failed"),
+    const sessionError = jsonHttpException(422, "session preparation failed");
+    const failedPick = flushWaitUntilForTest();
+    preparation.reject("thread-session", sessionError);
+    await expect(failedPick).rejects.toBe(sessionError);
+    const authorizationError = jsonHttpException(
+      409,
+      "authorization preparation failed",
     );
-    await preparation.departure("thread-session");
-    preparation.reject(
-      "post-authorization-context",
-      jsonHttpException(409, "authorization preparation failed"),
-    );
+    preparation.reject("post-authorization-context", authorizationError);
     await preparation.departure("post-authorization-context");
-    await flushWaitUntilForTest();
     preparation.releaseAll();
     const events = await chat.listThreadEvents(actor, thread.id);
-    // An unexpected pick failure rejects the input without launching a run.
-    expect(events.events).toStrictEqual([
-      expect.objectContaining({
-        eventType: "input.prompt",
-        id: clientEventId,
-      }),
+    // The first infrastructure failure propagates and the picked input ends
+    // rejected rather than pending.
+    expect(events.events).toContainEqual(
       expect.objectContaining({
         eventType: "input.rejected",
         revokesEventId: clientEventId,
         error: "internal_error",
       }),
-      expect.objectContaining({
-        eventType: "output.error",
-        error: "internal_error",
-      }),
-    ]);
+    );
     expect(
       events.events.filter((event) => {
         return event.runId !== undefined;

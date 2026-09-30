@@ -1,5 +1,4 @@
 import { createHash, randomUUID } from "node:crypto";
-
 import type { ChatEventPayload } from "@okouai/db/jsonb-contracts/chat-event";
 import type { ChatFeishuMessageFiles } from "@okouai/db/jsonb-contracts/chat-feishu-context";
 import type {
@@ -29,7 +28,6 @@ import { usageEvent } from "@okouai/db/schema/usage-event";
 import { and, count, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { Pool } from "pg";
-
 import { closeDbPool, db } from "../lib/db";
 import { executeRawRows } from "../lib/db-raw-rows";
 import type { Tx } from "../lib/db-types";
@@ -1027,19 +1025,6 @@ async function transitiveBlockedWaiterCount(
   return rows[0]?.waiterCount ?? 0;
 }
 
-async function directBlockedWaiterCount(holderPid: number): Promise<number> {
-  const rows = await executeRawRows(
-    db(),
-    sql`
-      SELECT ${count()}::int AS "waiterCount"
-      FROM pg_stat_activity AS activity
-      WHERE ${holderPid} = ANY(pg_blocking_pids(activity.pid))
-    `,
-    waiterCountRowSchema,
-  );
-  return rows[0]?.waiterCount ?? 0;
-}
-
 function normalizeBlockedQuery(query: string): string {
   return query.toLowerCase().replaceAll(/\s+/g, " ").trim();
 }
@@ -1374,17 +1359,6 @@ export async function holdChatThreadDeleteTransactionFixture(args: {
   };
 }
 
-async function pidIsBlocked(waiterPid: number): Promise<boolean> {
-  const rows = await executeRawRows(
-    db(),
-    sql`
-      SELECT cardinality(pg_blocking_pids(${waiterPid})) > 0 AS "blocked"
-    `,
-    blockedByPidRowSchema,
-  );
-  return rows[0]?.blocked ?? false;
-}
-
 async function pidIsDirectlyBlockedBy(
   waiterPid: number,
   holderPid: number,
@@ -1530,19 +1504,43 @@ export async function holdThreadSessionConversationClearFixture(args: {
  */
 export async function replaceThreadSessionBindingFixture(args: {
   readonly threadId: string;
+  readonly detachFromThreadId: string;
   readonly sessionId: string;
   readonly runId: string;
 }): Promise<void> {
+  await db().transaction(async (tx) => {
+    await tx
+      .update(chatThreads)
+      .set({ agentSessionId: null, agentSessionRunId: null })
+      .where(eq(chatThreads.id, args.detachFromThreadId));
+    const updated = await tx
+      .update(chatThreads)
+      .set({
+        agentSessionId: args.sessionId,
+        agentSessionRunId: args.runId,
+      })
+      .where(eq(chatThreads.id, args.threadId))
+      .returning({ id: chatThreads.id });
+    if (updated.length !== 1) {
+      throw new Error(
+        "Expected one chat thread session binding to be replaced",
+      );
+    }
+  });
+}
+
+/** Reproduces an existing thread reassignment before its next run is picked. */
+export async function reassignThreadAgentFixture(args: {
+  readonly threadId: string;
+  readonly agentId: string;
+}): Promise<void> {
   const updated = await db()
     .update(chatThreads)
-    .set({
-      agentSessionId: args.sessionId,
-      agentSessionRunId: args.runId,
-    })
+    .set({ agentId: args.agentId })
     .where(eq(chatThreads.id, args.threadId))
     .returning({ id: chatThreads.id });
   if (updated.length !== 1) {
-    throw new Error("Expected one chat thread session binding to be replaced");
+    throw new Error("Expected one chat thread agent to be reassigned");
   }
 }
 
@@ -1611,200 +1609,6 @@ export async function deleteAgentRunFixture(args: {
   if (deleted.length !== 1) {
     throw new Error("Expected one agent run to be deleted");
   }
-}
-
-async function readBoundThreadSessionConversation(threadId: string): Promise<{
-  readonly sessionId: string;
-  readonly conversationId: string;
-}> {
-  const [boundSession] = await db()
-    .select({
-      id: agentSessions.id,
-      conversationId: agentSessions.conversationId,
-    })
-    .from(chatThreads)
-    .innerJoin(agentSessions, eq(agentSessions.id, chatThreads.agentSessionId))
-    .where(eq(chatThreads.id, threadId))
-    .limit(1);
-  if (!boundSession?.conversationId) {
-    throw new Error("Expected a bound chat thread conversation");
-  }
-  return {
-    sessionId: boundSession.id,
-    conversationId: boundSession.conversationId,
-  };
-}
-
-async function holdThreadSessionConversationChangeStage(args: {
-  readonly sessionId: string;
-  readonly conversationId: string;
-  readonly index: number;
-  readonly stageRequest: Promise<void>;
-  readonly release: Promise<void>;
-  readonly markQueued: (holderPid: number) => void;
-  readonly markStaged: (holderPid: number) => void;
-  readonly markReleased: (holderPid: number) => void;
-}): Promise<void> {
-  await args.stageRequest;
-  const holderPid = await db().transaction(async (tx) => {
-    const rows = await executeRawRows(
-      tx,
-      sql`SELECT pg_backend_pid() AS "pid"`,
-      databasePidRowSchema,
-    );
-    const pid = rows[0]?.pid;
-    if (!pid) {
-      throw new Error("Expected the conversation change holder pid");
-    }
-    args.markQueued(pid);
-    const [session] = await tx
-      .update(agentSessions)
-      .set({
-        conversationId: args.index % 2 === 0 ? null : args.conversationId,
-      })
-      .where(eq(agentSessions.id, args.sessionId))
-      .returning({ id: agentSessions.id });
-    if (!session) {
-      throw new Error("Expected the bound agent session");
-    }
-    args.markStaged(pid);
-    await args.release;
-    return pid;
-  });
-  args.markReleased(holderPid);
-}
-
-async function waitForConversationChangeStages(
-  stages: readonly Promise<void>[],
-): Promise<void> {
-  await Promise.all(stages);
-}
-
-/**
- * Alternates the bound session's conversation snapshot while consecutive run
- * preparations reach final admission. This is the timing boundary for proving
- * the retry limit without mocking the resolver or admission service.
- */
-export async function holdThreadSessionConversationChangesFixture(args: {
-  readonly threadId: string;
-  readonly changeCount: number;
-  readonly signal: AbortSignal;
-}): Promise<{
-  readonly queueNextChange: () => void;
-  readonly release: () => void;
-  readonly releaseAll: () => void;
-  readonly done: Promise<void>;
-  readonly stagedChangeCount: () => number;
-  readonly blockedWaiterCount: () => Promise<number>;
-  readonly queuedChangeIsBlocked: () => Promise<boolean>;
-}> {
-  if (args.changeCount < 1) {
-    throw new Error("Expected at least one conversation snapshot change");
-  }
-  const boundSession = await readBoundThreadSessionConversation(args.threadId);
-
-  const firstStaged = createDeferredPromise<void>(args.signal);
-  const releases = Array.from({ length: args.changeCount }, () => {
-    return createDeferredPromise<void>(args.signal);
-  });
-  const stageRequests = Array.from({ length: args.changeCount }, () => {
-    return createDeferredPromise<void>(args.signal);
-  });
-  const stagePids: (number | undefined)[] = Array.from({
-    length: args.changeCount,
-  });
-  let currentHolderPid: number | null = null;
-  let requestedChanges = 1;
-  let lastQueuedIndex: number | null = null;
-  let stagedChanges = 0;
-  const firstStageRequest = stageRequests[0];
-  if (!firstStageRequest) {
-    throw new Error("Missing first conversation snapshot stage request");
-  }
-  firstStageRequest.resolve(undefined);
-  const stages = stageRequests.map(async (stageRequest, index) => {
-    const release = releases[index];
-    if (!release) {
-      throw new Error("Missing conversation snapshot release gate");
-    }
-    await holdThreadSessionConversationChangeStage({
-      sessionId: boundSession.sessionId,
-      conversationId: boundSession.conversationId,
-      index,
-      stageRequest: stageRequest.promise,
-      release: release.promise,
-      markQueued: (holderPid) => {
-        stagePids[index] = holderPid;
-      },
-      markStaged: (holderPid) => {
-        currentHolderPid = holderPid;
-        stagedChanges = index + 1;
-        if (!firstStaged.settled()) {
-          firstStaged.resolve(undefined);
-        }
-      },
-      markReleased: (holderPid) => {
-        if (currentHolderPid === holderPid) {
-          currentHolderPid = null;
-        }
-      },
-    });
-  });
-  const done = onRejection(waitForConversationChangeStages(stages), (error) => {
-    if (!firstStaged.settled()) {
-      firstStaged.reject(error);
-    }
-  });
-  await firstStaged.promise;
-
-  return {
-    queueNextChange: () => {
-      const stageRequest = stageRequests[requestedChanges];
-      if (!stageRequest) {
-        throw new Error("No remaining conversation snapshot change to queue");
-      }
-      lastQueuedIndex = requestedChanges;
-      requestedChanges += 1;
-      stageRequest.resolve(undefined);
-    },
-    release: () => {
-      const release = releases[stagedChanges - 1];
-      if (release && !release.settled()) {
-        release.resolve(undefined);
-      }
-    },
-    releaseAll: () => {
-      for (const stageRequest of stageRequests) {
-        if (!stageRequest.settled()) {
-          stageRequest.resolve(undefined);
-        }
-      }
-      for (const release of releases) {
-        if (!release.settled()) {
-          release.resolve(undefined);
-        }
-      }
-    },
-    done,
-    stagedChangeCount: () => {
-      return stagedChanges;
-    },
-    blockedWaiterCount: async () => {
-      return currentHolderPid === null
-        ? 0
-        : await directBlockedWaiterCount(currentHolderPid);
-    },
-    queuedChangeIsBlocked: async () => {
-      if (currentHolderPid === null || lastQueuedIndex === null) {
-        return false;
-      }
-      const queuedPid = stagePids[lastQueuedIndex];
-      if (!queuedPid || lastQueuedIndex < stagedChanges) {
-        return false;
-      }
-      return await pidIsBlocked(queuedPid);
-    },
-  };
 }
 
 /**

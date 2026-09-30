@@ -154,6 +154,7 @@ async function entitledChatMemberActor(): Promise<EntitledChatActor> {
     orgId: adminFixture.actor.orgId,
     orgRole: "org:member",
   });
+  await bdd.completeOnboarding(actor);
 
   const agent = await bdd.createAgent(actor, {
     displayName: "BDD member chat callback agent",

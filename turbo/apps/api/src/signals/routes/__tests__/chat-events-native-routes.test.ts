@@ -26,6 +26,7 @@ import type { ApiTestUser } from "./helpers/api-bdd";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { readThreadSessionBinding } from "./helpers/runtime-state";
+import { mockClaudeCodeTokenEndpoint } from "./helpers/api-bdd-auth-device";
 import {
   createChatEventsFixture,
   configureNativeCliArtifact,
@@ -881,7 +882,7 @@ describe("shared native Pi route activation", () => {
     90_000,
   );
 
-  it("rotates native Claude API Pi to personal Claude Code while preserving the logical model", async () => {
+  it("resets native Claude API Pi to personal Claude Code while preserving the session and logical model", async () => {
     const { actor, agentId, runnerGroup, providerId } =
       await entitledChatActor();
     configureNativeCliArtifact();
@@ -919,6 +920,7 @@ describe("shared native Pi route activation", () => {
       usagePricingResolution: await createGptUsagePricingResolution(),
     });
     const original = await readThreadSessionBinding(context, first.threadId);
+    mockClaudeCodeTokenEndpoint();
     await misc.upsertPersonalModelProvider(
       actor,
       {
@@ -938,7 +940,7 @@ describe("shared native Pi route activation", () => {
     expect(
       (await readThreadSessionBinding(context, first.threadId))
         .agent_session_id,
-    ).not.toBe(original.agent_session_id);
+    ).toBe(original.agent_session_id);
     expect(claimEnvironment(claim.claim).ANTHROPIC_MODEL).toBe(model);
     await expect(
       readRunModelSourceFixture(second.runId),

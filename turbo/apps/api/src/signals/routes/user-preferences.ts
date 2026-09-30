@@ -28,6 +28,7 @@ import {
   userPreferences,
 } from "../services/user-data.service";
 import { prepareMorningBriefEnrollment } from "../services/morning-brief-enrollment-retry.service";
+import { initializeMemberMemory$ } from "../services/member-memory-initialization.service";
 import { settle, tapError } from "../utils";
 
 const L = logger("user-preferences");
@@ -236,6 +237,13 @@ const initializeUserPreferencesInner$ = command(
       body.data,
     );
     signal.throwIfAborted();
+    if (writeOutcome.kind === "invalid-timezone") {
+      return badRequestMessage("Invalid timezone");
+    }
+    // Existing members without memory are initialized here on demand; this
+    // only creates missing memory or an empty HEAD and never rewrites content.
+    await set(initializeMemberMemory$, identity, signal);
+    signal.throwIfAborted();
     if (writeOutcome.kind === "unchanged") {
       const current = await get(userPreferences(identity));
       signal.throwIfAborted();
@@ -247,9 +255,6 @@ const initializeUserPreferencesInner$ = command(
           locale: writeOutcome.locale,
         },
       };
-    }
-    if (writeOutcome.kind === "invalid-timezone") {
-      return badRequestMessage("Invalid timezone");
     }
     await prepareMorningBriefEnrollment(db, identity);
     signal.throwIfAborted();

@@ -15,7 +15,7 @@ import {
   modelProviderSurfaces,
 } from "@okouai/db/schema/model-provider-gateway";
 import { and, eq, inArray, isNull } from "drizzle-orm";
-import type { Db } from "../external/db";
+import type { Db, ReadonlyDb } from "../external/db";
 import {
   catalogHasProviderRoute,
   isCatalogModelRunnable,
@@ -80,7 +80,7 @@ type ModelRouteMemberContext =
   | PreparedMemberModelRouteContext;
 
 export function prepareMemberModelRouteContext(
-  db: Db,
+  db: ReadonlyDb,
   orgId: string,
   userId: string,
 ): PreparedMemberModelRouteContext {
@@ -124,7 +124,7 @@ export function prepareMemberModelRouteContext(
 }
 
 export async function loadMemberModelRouteContext(
-  db: Db,
+  db: ReadonlyDb,
   orgId: string,
   userId: string,
 ): Promise<MemberModelRouteContext> {
@@ -143,7 +143,7 @@ export async function loadMemberModelRouteContext(
  * Never call account list/capture, decrypt, or probe a provider here. A type is
  * a candidate only while its logical provider has a connected account. */
 async function loadPersonalModelRouteSubscriptions(
-  db: Db,
+  db: ReadonlyDb,
   orgId: string,
   userId: string,
 ): Promise<readonly PersonalCandidate[]> {
@@ -277,7 +277,7 @@ function getLegacyOrgProviderId(params: {
     : null;
 }
 
-interface ModelRoutePolicy {
+export interface ModelRoutePolicy {
   readonly model: string;
   readonly defaultProviderType: string;
   readonly credentialScope: string;
@@ -500,4 +500,161 @@ export async function resolveEffectivePolicyRoute(params: {
         }
       : {}),
   };
+}
+
+/** Resolve routing from already-loaded facts without another database read. */
+export function resolveEffectivePolicyRouteFromSnapshot(params: {
+  readonly catalog: ModelCatalog;
+  readonly capabilities: Pick<
+    OrgPlanCapabilities,
+    "restrictedBuiltInModels" | "supportByok"
+  >;
+  readonly member: MemberModelRouteContext;
+  readonly policy: ModelRoutePolicy;
+  readonly orgProviderType?: string | null;
+  readonly customSurface?: {
+    readonly protocol: string;
+    readonly modelMappings: Readonly<Record<string, string>>;
+  } | null;
+}): ResolvedModelFirstPolicyRoute | null {
+  const { policy, member } = params;
+  if (!isCatalogModelRunnable(params.catalog, policy.model)) {
+    return null;
+  }
+  const { providerType, credentialScope } = parsePolicyRoute(policy);
+  if (member.memberScoped && credentialScope === "org") {
+    const personal = member.subscriptions.find((candidate) => {
+      return catalogServesModel(params.catalog, policy.model, candidate.type);
+    });
+    if (personal) {
+      return {
+        modelProviderId: personal.providerId,
+        modelProviderType: personal.type,
+        modelProviderCredentialScope: "member",
+        selectedModel: policy.model,
+        personalConnectionState: personal.needsReconnect
+          ? "reconnect_required"
+          : "capture_required",
+      };
+    }
+  }
+  if (
+    !policyRouteAllowedForPlan({
+      catalog: params.catalog,
+      policy,
+      providerType,
+      capabilities: params.capabilities,
+    })
+  ) {
+    return null;
+  }
+  if (policy.modelProviderSurfaceId) {
+    const surface = params.customSurface;
+    if (
+      credentialScope !== "org" ||
+      policy.modelProviderId !== null ||
+      isOAuthMemberProviderType(providerType) ||
+      !surface ||
+      providerTypeForSurfaceProtocol(surface.protocol) !== providerType ||
+      typeof surface.modelMappings[policy.model] !== "string"
+    ) {
+      return null;
+    }
+    return {
+      modelProviderId: policy.modelProviderSurfaceId,
+      modelProviderType: providerType,
+      modelProviderCredentialScope: credentialScope,
+      selectedModel: policy.model,
+    };
+  }
+  if (
+    !isLegacyPolicyRouteShapeValid({
+      credentialScope,
+      providerType,
+      modelProviderId: policy.modelProviderId,
+    })
+  ) {
+    return null;
+  }
+  if (
+    getLegacyOrgProviderId({
+      credentialScope,
+      providerType,
+      modelProviderId: policy.modelProviderId,
+    }) &&
+    params.orgProviderType !== providerType
+  ) {
+    return null;
+  }
+  const personal = member.subscriptions.find((candidate) => {
+    return candidate.type === providerType;
+  });
+  return {
+    modelProviderId: policy.modelProviderId,
+    modelProviderType: providerType,
+    modelProviderCredentialScope: credentialScope,
+    selectedModel: policy.model,
+    ...(credentialScope === "member" && member.memberScoped
+      ? {
+          personalConnectionState:
+            personalConnectionStateFromCandidate(personal),
+        }
+      : {}),
+  };
+}
+
+/** Whether the exact policy can use the member's logical subscription routes. */
+export function modelPolicyUsesPersonalMetadata(
+  catalog: ModelCatalog,
+  policy: ModelRoutePolicy,
+): boolean {
+  return policyCanUsePersonalMetadata({
+    catalog,
+    policy,
+    credentialScope: parsePolicyRoute(policy).credentialScope,
+  });
+}
+
+/** Share logical-account selection with queue graphs that own the batch read. */
+export function memberModelRouteContextFromAccounts(
+  userId: string,
+  accounts: readonly {
+    readonly type: string;
+    readonly providerId: string;
+    readonly isActive: boolean;
+    readonly needsReconnect: boolean;
+  }[],
+): MemberModelRouteContext {
+  return {
+    memberScoped:
+      userId !== "__no_preference__" && userId !== ORG_SENTINEL_USER_ID,
+    subscriptions: PERSONAL_TYPES.flatMap((type) => {
+      const connected = accounts.filter((account) => {
+        return account.type === type;
+      });
+      const first = connected[0];
+      return first
+        ? [
+            {
+              type,
+              providerId: first.providerId,
+              needsReconnect: connected.some((account) => {
+                return account.isActive && account.needsReconnect;
+              }),
+            },
+          ]
+        : [];
+    }),
+  };
+}
+
+function personalConnectionStateFromCandidate(
+  personal: PersonalCandidate | undefined,
+) {
+  if (!personal) {
+    return "unavailable" as const;
+  }
+  return personal.needsReconnect
+    ? ("reconnect_required" as const)
+    : ("capture_required" as const);
 }

@@ -171,7 +171,7 @@ export const releaseStaleTerminalActiveAgentRuns$ = command(
     );
     signal.throwIfAborted();
     if (outcome.ok) {
-      set(scheduleReleasedSlotPicks$, outcome.value.released);
+      set(scheduleReleasedSlotPicks$, outcome.value.released, signal);
       // The released run's cancellation recovery barrier is over; open chat
       // threads re-read their detail.
       const releasedRunIds = new Set(

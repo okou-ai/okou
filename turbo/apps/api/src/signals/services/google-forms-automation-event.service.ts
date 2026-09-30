@@ -1,10 +1,8 @@
 import { createHash } from "node:crypto";
-
 import { OAuth2Client } from "google-auth-library";
 import { command } from "ccstate";
 import { and, asc, eq, isNotNull, lte, ne, or, sql } from "drizzle-orm";
 import { z } from "zod";
-
 import {
   googleFormsResponseSubmittedEventConfigSchema,
   type GoogleFormsResponseSubmittedEventConfig,
@@ -20,7 +18,6 @@ import {
   workflowAutomations,
   workflows,
 } from "@okouai/db/schema/workflow";
-
 import { optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { testOverride } from "../../lib/singleton";
@@ -36,14 +33,16 @@ import {
   loadBuiltinConnectorCredentialValues,
   refreshBuiltinConnectorCredentialAccess,
 } from "./builtin-connector-credential-runtime.service";
-import type { WorkflowQueueAdmissionTransaction } from "./workflow-chat-event-queue.service";
+import type {
+  WorkflowQueueAdmissionTransaction,
+  AutomationRow,
+} from "./workflow-automation-enqueue.service";
 import {
   AutomationEventSourceTiming,
   type AutomationEventRunTiming,
 } from "./automation-event-source-timing.service";
 import { workflowAutomationCanFire } from "./workflow-automation-access.service";
 import { reprojectGoogleFormsAutomationsForOwner } from "./google-forms-automation-account.service";
-import type { AutomationRow } from "./workflow-automation-launch.service";
 import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
 import { ensureWorkflowUserAutomationThread } from "./workflow-user-automation-thread.service";
 import type { WorkflowAutomationContext } from "./workflow-automation-context.service";

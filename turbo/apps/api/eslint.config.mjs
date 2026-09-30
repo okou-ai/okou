@@ -229,6 +229,25 @@ export default [
   },
   ...config,
   {
+    files: [
+      "src/signals/services/pick-chat-run.service.ts",
+      "src/signals/services/claim-run-context.ts",
+    ],
+    plugins: { api: apiLintPlugin },
+    rules: {
+      // These two factories declare one owned graph. Keep the 128-line limit
+      // on every operational callback and ordinary function, while checking
+      // that the exempted owner itself contains only graph declarations.
+      "api/max-signal-owner-lines": [
+        "error",
+        {
+          max: 128,
+          owners: ["createPickObjects", "createClaimRunObjects"],
+        },
+      ],
+    },
+  },
+  {
     files: ["src/**/*.ts"],
     plugins: {
       api: apiLintPlugin,
@@ -691,10 +710,10 @@ export default [
         {
           patterns: [
             {
-              group: ["**/agent-runs-create.service"],
+              group: ["**/test-agent-run-fixture.service"],
               importNames: ["createTestFixtureAgentRun$"],
               message:
-                "Production run sources must use createQueueFirstAgentRun$ so every run is bound to a chat thread.",
+                "Production chat run sources must use createPickObjects so every run consumes a queued input.",
             },
           ],
         },
@@ -842,10 +861,10 @@ export default [
               message: productionRouteTestImportMessage,
             },
             {
-              group: ["**/agent-runs-create.service"],
+              group: ["**/test-agent-run-fixture.service"],
               importNames: ["createTestFixtureAgentRun$"],
               message:
-                "Production run sources must use createQueueFirstAgentRun$ so every run is bound to a chat thread.",
+                "Production chat run sources must use createPickObjects so every run consumes a queued input.",
             },
           ],
         },
@@ -887,10 +906,10 @@ export default [
               message: lowerLayerRouteImportMessage,
             },
             {
-              group: ["**/agent-runs-create.service"],
+              group: ["**/test-agent-run-fixture.service"],
               importNames: ["createTestFixtureAgentRun$"],
               message:
-                "Production run sources must use createQueueFirstAgentRun$ so every run is bound to a chat thread.",
+                "Production chat run sources must use createPickObjects so every run consumes a queued input.",
             },
           ],
         },

@@ -333,6 +333,61 @@ function s3ClientForBucket(
   return usePublicEndpoint ? publicS3Client$ : s3Client$;
 }
 
+export type PresignedGetUrlSigner = (
+  bucket: string,
+  key: string,
+  options?: {
+    readonly filename?: string;
+    readonly responseCacheControl?: string;
+    readonly signingDate?: Date;
+  },
+) => Promise<string>;
+
+function createPresignedGetUrlSigner(client$: Computed<S3Client>) {
+  return computed((get): PresignedGetUrlSigner => {
+    const client = get(client$);
+    return (bucket, key, options) => {
+      return signPresignedGetUrl(client, bucket, key, options);
+    };
+  });
+}
+
+const presignedGetUrlSigner$ = createPresignedGetUrlSigner(s3Client$);
+export const publicPresignedGetUrlSigner$ =
+  createPresignedGetUrlSigner(publicS3Client$);
+const userArtifactsGetUrlSigner$ = createPresignedGetUrlSigner(
+  userArtifactsS3Client$,
+);
+const userArtifactsPublicGetUrlSigner$ = createPresignedGetUrlSigner(
+  userArtifactsPublicS3Client$,
+);
+const privateArtifactsGetUrlSigner$ = createPresignedGetUrlSigner(
+  privateArtifactsS3Client$,
+);
+const privateArtifactsPublicGetUrlSigner$ = createPresignedGetUrlSigner(
+  privateArtifactsPublicS3Client$,
+);
+
+/** Select a preconstructed signer without creating request-scoped signals. */
+export function presignedGetUrlSignerForBucket(
+  bucket: string,
+  usePublicEndpoint = false,
+): Computed<PresignedGetUrlSigner> {
+  if (bucket === env("R2_PRIVATE_ARTIFACTS_BUCKET_NAME")) {
+    return usePublicEndpoint
+      ? privateArtifactsPublicGetUrlSigner$
+      : privateArtifactsGetUrlSigner$;
+  }
+  if (bucket === env("R2_USER_ARTIFACTS_BUCKET_NAME")) {
+    return usePublicEndpoint
+      ? userArtifactsPublicGetUrlSigner$
+      : userArtifactsGetUrlSigner$;
+  }
+  return usePublicEndpoint
+    ? publicPresignedGetUrlSigner$
+    : presignedGetUrlSigner$;
+}
+
 const hostedSitesS3Client$ = computed((): S3Client => {
   return createS3Client(
     env("S3_ENDPOINT") ?? defaultS3Endpoint(),
@@ -1114,23 +1169,36 @@ function generatePresignedGetUrlWithClient(
   },
 ): Computed<Promise<string>> {
   return computed((get): Promise<string> => {
-    const client = get(client$);
-    const command = new GetObjectCommand({
-      Bucket: bucket,
-      Key: key,
-      ...(options?.responseCacheControl
-        ? { ResponseCacheControl: options.responseCacheControl }
-        : {}),
-      ...(options?.filename
-        ? {
-            ResponseContentDisposition: `attachment; filename="${options.filename}"`,
-          }
-        : {}),
-    });
-    return getSignedUrl(client, command, {
-      expiresIn: PRESIGNED_URL_TTL_SECONDS,
-      ...(options?.signingDate ? { signingDate: options.signingDate } : {}),
-    });
+    return signPresignedGetUrl(get(client$), bucket, key, options);
+  });
+}
+
+/** Sign with an already resolved client without allocating a signal. */
+function signPresignedGetUrl(
+  client: S3Client,
+  bucket: string,
+  key: string,
+  options?: {
+    readonly filename?: string;
+    readonly responseCacheControl?: string;
+    readonly signingDate?: Date;
+  },
+): Promise<string> {
+  const command = new GetObjectCommand({
+    Bucket: bucket,
+    Key: key,
+    ...(options?.responseCacheControl
+      ? { ResponseCacheControl: options.responseCacheControl }
+      : {}),
+    ...(options?.filename
+      ? {
+          ResponseContentDisposition: `attachment; filename="${options.filename}"`,
+        }
+      : {}),
+  });
+  return getSignedUrl(client, command, {
+    expiresIn: PRESIGNED_URL_TTL_SECONDS,
+    ...(options?.signingDate ? { signingDate: options.signingDate } : {}),
   });
 }
 

@@ -95,7 +95,7 @@ Production `run_model_catalog` also holds three rows the code does not
 recognize: `gpt-5.6-terra`, `okou-1.0-pro` and `okou-1.0-max`. They were seeded
 by earlier migrations (1191 and 1194) and their code support was removed by
 #37363 and #37368. There is no generic delete of unrecognized rows: migration
-1296 keeps them, labels them with their own ID, sorts them after every
+1297 keeps them, labels them with their own ID, sorts them after every
 recognized model, sets `allow_new_org_policy = false` and gives them no
 `model_routes`, so nothing can execute them. They are not `replaced_by`
 anything, so `GET /api/model-catalog` lists them with `replacedBy` null, but
@@ -223,7 +223,7 @@ in `@okouai/core`.
 
 ## Stored-configuration migration
 
-Migration `1297_model_catalog_stored_selections` rewrites mutable stored
+Migration `1298_model_catalog_stored_selections` rewrites mutable stored
 selections of retired models to the final active model of their chain. It is
 re-runnable (it only selects rows that still reference a retired model) and
 takes the per-organization policy advisory locks in `org_id` order.
@@ -258,13 +258,13 @@ policy, member preference, agent or model provider references any of
 therefore rewrites zero production rows. The single-transaction thread scan
 needs no batching: measured on synthetic data at production and 5x scale it
 finishes in 0.2 s and 1.3 s (see `turbo/packages/db/MIGRATIONS.md`,
-"Migration 1297 performance evidence").
+"Migration 1298 performance evidence").
 
 ## Plan restriction
 
 `org_plan_entitlements.restricted_built_in_models` is a boolean that marks a
 restricted (limited-free) plan. Which models such a plan may run is catalog
-data (migration `1298_model_catalog_restricted_plans`, returned by
+data (migration `1299_model_catalog_restricted_plans`, returned by
 `GET /api/model-catalog`):
 
 - `built_in_on_restricted_plans` (default false): the model may run on

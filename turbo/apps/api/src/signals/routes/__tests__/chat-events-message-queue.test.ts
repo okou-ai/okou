@@ -167,6 +167,9 @@ describe("CHAT-02: queueing and recalling messages", () => {
       api.nextSteerableInput(claimed.claim.sandboxToken, active.runId),
     ).resolves.toStrictEqual(firstRead);
 
+    // Enqueue notifications run in waitUntil; finish them before counting the
+    // notifications owned by the concurrent steering declarations.
+    await flushWaitUntilForTest();
     context.mocks.ably.publish.mockClear();
     const declarations = await Promise.all([
       api.declareSteeredInput(
@@ -479,6 +482,7 @@ describe("CHAT-02: queueing and recalling messages", () => {
         prompt: "release only after teardown completion",
       },
     });
+    await flushWaitUntilForTest();
     context.mocks.ably.publish.mockClear();
     context.mocks.ably.publish.mockRejectedValueOnce(
       new DOMException("timeout cancel unavailable", "AbortError"),

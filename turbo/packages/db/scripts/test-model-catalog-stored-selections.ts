@@ -7,10 +7,10 @@ import { Client } from "pg";
 import { z } from "zod";
 
 const MIGRATION_FILE =
-  "../src/migrations/1297_model_catalog_stored_selections.sql";
+  "../src/migrations/1298_model_catalog_stored_selections.sql";
 
 /**
- * Migration 1297_model_catalog_stored_selections: retired selections move
+ * Migration 1298_model_catalog_stored_selections: retired selections move
  * along the replacement chain, duplicate policies merge, cross-provider
  * policies are dropped instead of transplanted, efforts convert, history stays
  * and a second run is a no-op. Runs on transaction-owned copies of the real

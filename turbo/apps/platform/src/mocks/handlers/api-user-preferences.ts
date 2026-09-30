@@ -27,6 +27,7 @@ let mockPreferences: UserPreferencesResponse = {
   theme: "system",
   colorTheme: null,
   captureNetworkBodiesRemaining: 0,
+  memoryInitialized: true,
 };
 
 function normalizePinnedAgentIds(ids: readonly string[]): string[] {
@@ -57,6 +58,7 @@ export function resetMockUserPreferences(): void {
     theme: "system",
     colorTheme: null,
     captureNetworkBodiesRemaining: 0,
+    memoryInitialized: true,
   };
 }
 
@@ -72,6 +74,7 @@ export const apiUserPreferencesHandlers = [
       ...mockPreferences,
       timezone: mockPreferences.timezone ?? body.timezone ?? null,
       locale: mockPreferences.locale ?? body.locale,
+      memoryInitialized: true,
     };
     return respond(200, mockPreferences);
   }),

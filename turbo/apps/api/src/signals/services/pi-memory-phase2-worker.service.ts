@@ -5,7 +5,6 @@ import {
 import { checkOrgCreditsForRunAdmission } from "./run-admission.service";
 import { loadModelCatalog } from "./model-catalog.service";
 import { piMemoryPhase2SelectionDigest } from "@okouai/pi-agent-runtime/api";
-import { PI_MEMORY_ROOT } from "@okouai/api-contracts/contracts/runners";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
@@ -17,10 +16,8 @@ import { logger } from "../../lib/log";
 import { now, nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import { settle } from "../utils";
-import {
-  createAgentRun$,
-  type PersistProducerRunBinding,
-} from "./agent-run-create.service";
+import { createAgentRun$ } from "./background-agent-run.service";
+import type { PersistProducerRunBinding } from "./agent-run-contracts";
 import { dispatchRunCallbacks$ } from "./agent-run-callback.service";
 import {
   PiMemoryPhase2CredentialError,
@@ -302,13 +299,6 @@ const dispatchClaim$ = command(
           triggerSource: "agent",
           // Private BYOK runs need an encrypted namespace for dynamic secrets.
           secrets: {},
-          artifacts: [
-            {
-              name: "memory",
-              version: claim.baseVersion.versionId,
-              mountPath: PI_MEMORY_ROOT,
-            },
-          ],
         },
         apiStartTime: now(),
         modelProviderType: credential.pin.modelProvider,
@@ -363,6 +353,7 @@ const dispatchClaim$ = command(
         piExecution: true,
         piLaunchConfig: { maintenance },
         artifactMissingRootPolicy: "fail",
+        pinnedMemoryVersionId: claim.baseVersion.versionId,
       },
       signal,
     );

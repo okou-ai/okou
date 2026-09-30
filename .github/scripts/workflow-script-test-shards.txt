@@ -9,6 +9,7 @@
 1 crates-runner-image-waiters-test.sh
 1 deploy-cli-workflow-test.sh
 1 discover-runner-pr-namespaces-test.sh
+1 embedded-cli-workflow-test.sh
 1 fetch-okou-desktop-artifact-test.sh
 1 kms-production-source-audit-test.sh
 1 neon-credential-mask-test.sh

@@ -2,7 +2,6 @@ import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { computed, type Computed } from "ccstate";
 import { eq } from "drizzle-orm";
-
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { db$, type Db } from "../external/db";
 
@@ -25,7 +24,7 @@ export interface OrgPlanCapabilities {
   readonly audioDailyDurationSeconds: number;
 }
 
-const CAPABILITY_SELECTION = {
+export const ORG_PLAN_CAPABILITY_SELECTION = {
   planKey: orgPlanEntitlements.planKey,
   status: orgPlanEntitlements.status,
   baseConcurrencyLimit: orgPlanEntitlements.baseConcurrencyLimit,
@@ -43,7 +42,7 @@ const CAPABILITY_SELECTION = {
   audioDailyDurationSeconds: orgPlanEntitlements.audioDailyDurationSeconds,
 } as const;
 
-function runtimeStatusForEntitlement(
+export function runtimeStatusForEntitlement(
   status: string,
 ): OrgPlanCapabilities["status"] {
   switch (status) {
@@ -67,7 +66,7 @@ export async function loadOrgPlanCapabilities(
   options?: { readonly forUpdate?: boolean },
 ): Promise<OrgPlanCapabilities | null> {
   const query = db
-    .select(CAPABILITY_SELECTION)
+    .select(ORG_PLAN_CAPABILITY_SELECTION)
     .from(orgPlanEntitlements)
     .where(eq(orgPlanEntitlements.orgId, orgId))
     .limit(1);

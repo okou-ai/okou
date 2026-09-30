@@ -423,7 +423,7 @@ function storedRouteUnchanged(
   );
 }
 
-function modelPolicyCapabilities(
+export function modelPolicyCapabilities(
   capabilities: OrgPlanCapabilities | null,
 ): Pick<OrgPlanCapabilities, "restrictedBuiltInModels" | "supportByok"> {
   if (capabilities?.status !== "active") {
@@ -491,6 +491,23 @@ function sortRowsByCatalog(
  * it; otherwise the plan and the policies are read in parallel. The system
  * default is projected, so reading policies never writes.
  */
+/** Build policy facts from rows already read with a run-scoped catalog. */
+export function orgModelPolicyFactsFromSnapshot(args: {
+  readonly catalog: ModelCatalog;
+  readonly orgId: string;
+  readonly orgPlanCapabilities: OrgPlanCapabilities | null;
+  readonly stored: readonly OrgModelPolicyRow[];
+}): EnsuredOrgModelPolicyFacts {
+  return {
+    orgPlanCapabilities: args.orgPlanCapabilities,
+    policies: projectPolicyRows(args.catalog, args.orgId, args.stored),
+    replacedPolicies: args.stored.filter((row) => {
+      return resolveCatalogModel(args.catalog, row.model).kind === "replaced";
+    }),
+    catalog: args.catalog,
+  };
+}
+
 export async function loadOrgModelPolicyFacts(
   db: Db,
   orgId: string,

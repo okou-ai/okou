@@ -743,27 +743,34 @@ export const processCanonicalFeishuIngress$ = command(
     });
     signal.throwIfAborted();
     const persisted = result.value;
-    set(scheduleEnqueuedChatThreadPick$, {
-      chatThreadId: persisted.chatThreadId,
-      afterPick: async (pick, pickSignal) => {
-        await notifyFeishuChatQueueWait(
-          {
-            db,
-            ingressId: args.ingressId,
-            message: persisted.message,
-            reason: pick.reason,
-          },
-          pickSignal,
-        );
+    set(
+      scheduleEnqueuedChatThreadPick$,
+      {
+        orgId: persisted.orgId,
+        chatThreadId: persisted.chatThreadId,
+        // The ingress id is the enqueued input's chat event id.
+        eventId: args.ingressId,
+        afterPick: async (pick, pickSignal) => {
+          await notifyFeishuChatQueueWait(
+            {
+              db,
+              ingressId: args.ingressId,
+              message: persisted.message,
+              reason: pick.reason,
+            },
+            pickSignal,
+          );
+        },
+        publish: async () => {
+          await publishChatThreadMessageCreatedSafely({
+            userId: persisted.userId,
+            orgId: persisted.orgId,
+            threadId: persisted.chatThreadId,
+          });
+        },
       },
-      publish: async () => {
-        await publishChatThreadMessageCreatedSafely({
-          userId: persisted.userId,
-          orgId: persisted.orgId,
-          threadId: persisted.chatThreadId,
-        });
-      },
-    });
+      signal,
+    );
     return true;
   },
 );
