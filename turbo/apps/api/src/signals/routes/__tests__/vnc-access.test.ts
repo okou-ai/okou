@@ -18,6 +18,7 @@ import { chatRemoteAccessRoutes } from "../chat-remote-access";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { inlineSshKey } from "./helpers/ssh-credential";
+import { certificateChain, privateKey } from "./helpers/vnc-synthetic-client";
 import {
   createVncRuntimeApi,
   initializeVncRuntimeTest,
@@ -89,6 +90,61 @@ async function visibility(agentId: string, value: "public" | "private") {
 }
 
 describe("live chat VNC Run inventory", () => {
+  it("advertises the exact client-certificate profile without revealing private material", async () => {
+    useSecretKmsProbe();
+    const f = await api.fixture({
+      defaultEnabled: false,
+      runtime: { chat: true },
+    });
+    await updateFeatureSwitchesForUser(context, f, {
+      [FeatureSwitchKey.VncAccess]: true,
+    });
+    api.authenticate(f);
+    const created = await accept(
+      api.connections().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          displayName: "Client certificate QEMU",
+          host: "qemu.example.com",
+          security: { type: "x509_none", trust: { mode: "system" } },
+          credential: {
+            create: {
+              name: "QEMU identity",
+              authentication: {
+                method: "client_certificate",
+                certificateChain,
+                privateKey,
+              },
+            },
+          },
+        },
+      }),
+      [201],
+    );
+    await accept(
+      setupApp({ context, routes: chatRemoteAccessRoutes })(
+        chatRemoteAccessContract,
+      ).updateHostDefault({
+        headers,
+        params: { protocol: "vnc", connectionId: created.body.id },
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    const result = await accept(inventory().list({ headers: token(f) }), [200]);
+    const item = result.body.hosts.find((host) => {
+      return host.id === created.body.id;
+    });
+    expect(item).toMatchObject({
+      authMethod: "client_certificate",
+      securityType: "x509_none",
+      availability: { status: "ready" },
+    });
+    expect(JSON.stringify(result.body)).not.toContain(privateKey);
+    expect(JSON.stringify(result.body)).not.toContain("certificateChain");
+  });
+
   it("filters live chat inventory by VNC access and the exact SSH dependency", async () => {
     const f = await api.fixture({
       defaultEnabled: false,

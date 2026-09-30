@@ -401,6 +401,81 @@ test("X509None is an explicit credentialless choice with persistent client-authe
   ]);
 });
 
+test.each([
+  [
+    "Client certificate without VNC password (X509None)",
+    "client_certificate",
+    "x509_none",
+    false,
+  ],
+  [
+    "Client certificate with VNC password (X509Vnc)",
+    "client_certificate_vnc_password",
+    "x509_vnc",
+    true,
+  ],
+] as const)(
+  "Owner explicitly selects %s without leaking the key to metadata",
+  async (label, method, type, passwordRequired) => {
+    mockSettings({ connections: [], credentials: [] });
+    const requests: unknown[] = [];
+    const certHost: CredentialedVncConnection = {
+      ...host,
+      credentialId: "d0000000-0000-4000-8000-000000000050",
+      credentialName: "QEMU identity",
+      security: { type, trust: { mode: "system" } },
+      clientCertificateAuthentication: method,
+    };
+    context.mocks.api(vncConnectionsContract.create, ({ body, respond }) => {
+      requests.push(body);
+      return respond(201, { ...certHost, id: body.id });
+    });
+    await openAddHostPage();
+    const dialog = await screen.findByRole("dialog", { name: "Add host" });
+    await fillHost(dialog);
+    await choose(dialog, "Security profile", label);
+    expect(within(dialog).getByRole("alert")).toHaveTextContent(
+      "does not prove that the VNC server checks it",
+    );
+    await choose(dialog, "Credential", "Create new credential");
+    await fill(
+      within(dialog).getByLabelText("Credential name"),
+      "QEMU identity",
+    );
+    await fill(
+      within(dialog).getByLabelText("Client certificate chain (PEM)"),
+      "-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----",
+    );
+    await fill(
+      within(dialog).getByLabelText("Unencrypted PKCS#8 private key (PEM)"),
+      "-----BEGIN PRIVATE KEY-----\nTEST\n-----END PRIVATE KEY-----",
+    );
+    expect(within(dialog).queryByLabelText("VNC password") === null).toBe(
+      !passwordRequired,
+    );
+    if (passwordRequired) {
+      await fill(within(dialog).getByLabelText("VNC password"), "secret");
+    }
+    click(getAction("button", "Save", dialog));
+    await waitFor(() => {
+      expect(requests).toHaveLength(1);
+    });
+    expect(requests[0]).toMatchObject({
+      credential: {
+        create: {
+          authentication: {
+            method,
+            certificateChain: expect.stringContaining("BEGIN CERTIFICATE"),
+            privateKey: expect.stringContaining("BEGIN PRIVATE KEY"),
+            ...(passwordRequired ? { password: "secret" } : {}),
+          },
+        },
+      },
+      security: { type },
+    });
+  },
+);
+
 test("An owner creates an SSH-backed route with a distinct RFB destination and certificate identity", async () => {
   mockSettings({ connections: [], sshConnections: [sshHost] });
   const requests: unknown[] = [];

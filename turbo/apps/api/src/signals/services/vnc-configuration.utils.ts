@@ -67,6 +67,11 @@ const failures = {
     code: VNC_ERROR_CODES.INVALID_TRUST,
     message: "VNC custom trust requires a bounded bundle of CA certificates",
   },
+  invalidClientIdentity: {
+    kind: "bad_request",
+    code: VNC_ERROR_CODES.INVALID_CLIENT_IDENTITY,
+    message: "Invalid VNC client certificate identity",
+  },
   profileMismatch: {
     kind: "bad_request",
     code: VNC_ERROR_CODES.PROFILE_MISMATCH,
@@ -295,6 +300,9 @@ export function isVncProfileCompatible(
 ): boolean {
   return (
     (authMethod === "none" && securityType === "x509_none") ||
+    (authMethod === "client_certificate" && securityType === "x509_none") ||
+    (authMethod === "client_certificate_vnc_password" &&
+      securityType === "x509_vnc") ||
     (authMethod === "vnc_password" && securityType === "x509_vnc") ||
     (authMethod === "vnc_password" && securityType === "apple_vnc_password") ||
     (authMethod === "username_password" && securityType === "x509_plain") ||

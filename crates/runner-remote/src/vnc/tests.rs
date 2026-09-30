@@ -208,6 +208,26 @@ async fn malformed_or_cross_paired_credentials_fail_before_dns_or_connect() {
             "authority_failure",
         ),
         (
+            json!({"method":"client_certificate","certificateChainDer":["AAAA"],"privateKeyPkcs8Der":"AAAA"}),
+            json!({"type":"x509_vnc","trust":{"mode":"system"}}),
+            "authority_failure",
+        ),
+        (
+            json!({"method":"client_certificate_vnc_password","certificateChainDer":["AAAA"],"privateKeyPkcs8Der":"AAAA","password":"secret"}),
+            json!({"type":"x509_none","trust":{"mode":"system"}}),
+            "authority_failure",
+        ),
+        (
+            json!({"method":"client_certificate","certificateChainDer":["AAAA"],"privateKeyPkcs8Der":"AAAA"}),
+            json!({"type":"x509_none","trust":{"mode":"system"}}),
+            "invalid_credential",
+        ),
+        (
+            json!({"method":"client_certificate_vnc_password","certificateChainDer":["AAAA"],"privateKeyPkcs8Der":"AAAA","password":"ninebytes"}),
+            json!({"type":"x509_vnc","trust":{"mode":"system"}}),
+            "invalid_credential",
+        ),
+        (
             json!({"method":"vnc_password","password":"ninebytes"}),
             json!({"type":"x509_vnc","trust":{"mode":"system"}}),
             "invalid_credential",

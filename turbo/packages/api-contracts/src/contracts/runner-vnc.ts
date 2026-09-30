@@ -3,7 +3,7 @@ import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import { runnerHeartbeatGenerationSchema } from "./runner-primitives";
 import { VNC_HOST_MAX_LENGTH, vncTrustSchema } from "./vnc-connections";
-import { vncAuthenticationSchema } from "./vnc-credentials";
+import { vncLegacyAuthenticationSchema } from "./vnc-credentials";
 
 const c = initContract();
 
@@ -31,9 +31,24 @@ export const runnerVncSecuritySchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("apple_rsa_srp") }).strict(),
 ]);
 
+const clientIdentityWire = {
+  certificateChainDer: z.array(z.base64()).min(1).max(8),
+  privateKeyPkcs8Der: z.base64(),
+} as const;
+
 const runnerX509AuthenticationSchema = z.discriminatedUnion("method", [
-  ...vncAuthenticationSchema.options,
+  ...vncLegacyAuthenticationSchema.options,
   z.object({ method: z.literal("none") }).strict(),
+  z
+    .object({ method: z.literal("client_certificate"), ...clientIdentityWire })
+    .strict(),
+  z
+    .object({
+      method: z.literal("client_certificate_vnc_password"),
+      ...clientIdentityWire,
+      password: z.string().min(1).max(8),
+    })
+    .strict(),
 ]);
 
 const commonRequestSchema = z
@@ -57,6 +72,8 @@ const supportedProfileSchema = z
       "apple_dh_username_password",
       "apple_srp_username_password",
       "apple_rsa_srp_username_password",
+      "client_certificate",
+      "client_certificate_vnc_password",
     ]),
     securityType: z.enum([
       "x509_none",
@@ -73,6 +90,10 @@ const supportedProfileSchema = z
   .refine((profile) => {
     return (
       (profile.authMethod === "none" && profile.securityType === "x509_none") ||
+      (profile.authMethod === "client_certificate" &&
+        profile.securityType === "x509_none") ||
+      (profile.authMethod === "client_certificate_vnc_password" &&
+        profile.securityType === "x509_vnc") ||
       (profile.authMethod === "vnc_password" &&
         profile.securityType === "x509_vnc") ||
       (profile.authMethod === "vnc_password" &&

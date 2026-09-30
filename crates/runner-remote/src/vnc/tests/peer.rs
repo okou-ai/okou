@@ -7,7 +7,9 @@ use std::{
 };
 
 use base64::Engine;
-use rustls::{ServerConfig, pki_types::PrivatePkcs8KeyDer};
+use rustls::{
+    RootCertStore, ServerConfig, pki_types::PrivatePkcs8KeyDer, server::WebPkiClientVerifier,
+};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
@@ -37,6 +39,7 @@ pub(crate) const PLAIN_PASSWORD: &str = " päss 界 ";
 pub(crate) struct Peer {
     pub(crate) address: std::net::SocketAddr,
     pub(crate) ca: String,
+    pub(super) client_identity: Option<(Vec<String>, String)>,
     pub(super) capture_gate: Arc<Mutex<Option<Arc<Semaphore>>>>,
     pub(super) refuse: Arc<AtomicBool>,
     pub(super) disconnect: CancellationToken,
@@ -46,18 +49,26 @@ pub(crate) struct Peer {
 
 impl Peer {
     pub(crate) async fn none() -> Self {
-        Self::with_profile(Profile::None).await
+        Self::with_profile(Profile::None, false).await
     }
 
     pub(crate) async fn new() -> Self {
-        Self::with_profile(Profile::Vnc).await
+        Self::with_profile(Profile::Vnc, false).await
     }
 
     pub(crate) async fn plain() -> Self {
-        Self::with_profile(Profile::Plain).await
+        Self::with_profile(Profile::Plain, false).await
     }
 
-    async fn with_profile(profile: Profile) -> Self {
+    pub(crate) async fn certificate_none() -> Self {
+        Self::with_profile(Profile::None, true).await
+    }
+
+    pub(crate) async fn certificate_vnc() -> Self {
+        Self::with_profile(Profile::Vnc, true).await
+    }
+
+    async fn with_profile(profile: Profile, client_auth: bool) -> Self {
         let root_key = rcgen::KeyPair::generate().unwrap();
         let mut root = rcgen::CertificateParams::default();
         root.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
@@ -71,17 +82,43 @@ impl Peer {
             .unwrap()
             .signed_by(&key, &rcgen::Issuer::from_params(&root, &root_key))
             .unwrap();
-        let config = ServerConfig::builder_with_provider(Arc::new(
+        let client_identity = if client_auth {
+            let client_key = rcgen::KeyPair::generate().unwrap();
+            let mut client =
+                rcgen::CertificateParams::new(vec!["owner.example.test".into()]).unwrap();
+            client.extended_key_usages = vec![rcgen::ExtendedKeyUsagePurpose::ClientAuth];
+            let client_certificate = client
+                .signed_by(&client_key, &rcgen::Issuer::from_params(&root, &root_key))
+                .unwrap();
+            Some((
+                vec![base64::engine::general_purpose::STANDARD.encode(client_certificate.der())],
+                base64::engine::general_purpose::STANDARD.encode(client_key.serialize_der()),
+            ))
+        } else {
+            None
+        };
+        let builder = ServerConfig::builder_with_provider(Arc::new(
             rustls::crypto::aws_lc_rs::default_provider(),
         ))
         .with_safe_default_protocol_versions()
-        .unwrap()
-        .with_no_client_auth()
-        .with_single_cert(
-            vec![certificate.der().clone()],
-            PrivatePkcs8KeyDer::from(key.serialize_der()).into(),
-        )
         .unwrap();
+        let builder = if client_auth {
+            let mut roots = RootCertStore::empty();
+            roots.add(root_certificate.der().clone()).unwrap();
+            builder.with_client_cert_verifier(
+                WebPkiClientVerifier::builder(Arc::new(roots))
+                    .build()
+                    .unwrap(),
+            )
+        } else {
+            builder.with_no_client_auth()
+        };
+        let config = builder
+            .with_single_cert(
+                vec![certificate.der().clone()],
+                PrivatePkcs8KeyDer::from(key.serialize_der()).into(),
+            )
+            .unwrap();
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let (events, receiver) = mpsc::unbounded_channel();
@@ -120,6 +157,7 @@ impl Peer {
                 "-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----\n",
                 base64::engine::general_purpose::STANDARD.encode(root_certificate.der())
             ),
+            client_identity,
             capture_gate,
             refuse,
             disconnect,
