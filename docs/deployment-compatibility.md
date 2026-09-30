@@ -181,9 +181,13 @@ Browser open/close now accept an empty request body and no longer echo
 `lifecycleEventId`; browser create/use responses also omit that field. The Web
 client floor is 0.982.0, above the 0.979.1 build at #37225 that stopped emitting
 browser lifecycle events. Supported clients do not require the echo. The new
-App must not reach a pre-#37225 API, which is already below the V8 rollback
-floor. Released CLIs using create/use ignore the extra response fields and do
-not require `lifecycleEventId`.
+App must not reach an API predating this empty-body contract: even earlier V8
+APIs require `eventId`. The `.github/rollback-floors/browser-session-mutations`
+marker raises the API rollback floor to the canonical main commit that adds
+this contract, matching the owner's forward-only release decision. The
+resolver rejects unresolved history and incompatible targets before artifact
+or host access. Released CLIs using create/use do not require
+`lifecycleEventId`.
 
 1286 release precheck: migration 1286 runs before API promotion, so the
 serving API must no longer write any retired type, context or source. The

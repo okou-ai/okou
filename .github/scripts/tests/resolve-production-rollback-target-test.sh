@@ -64,6 +64,8 @@ case "${1:-}" in
       [ "${MOCK_PI_API_FIRST_TURN_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1" ]; then
       [ "${MOCK_CHAT_EVENT_V8_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "1414141414141414141414141414141414141414" ]; then
+      [ "${MOCK_BROWSER_SESSION_MUTATIONS_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "1212121212121212121212121212121212121212" ]; then
       [ "${MOCK_RETIRED_INTEGRATION_AGENT_TABLES_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" ]; then
@@ -97,6 +99,8 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_PI_API_FIRST_TURN_COMMIT-9999999999999999999999999999999999999999}"
     elif [[ "$*" == *chat-event-v8* ]]; then
       printf '%s\n' "${MOCK_CHAT_EVENT_V8_COMMIT-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1}"
+    elif [[ "$*" == *browser-session-mutations* ]]; then
+      printf '%s\n' "${MOCK_BROWSER_SESSION_MUTATIONS_COMMIT-1414141414141414141414141414141414141414}"
     elif [[ "$*" == *1282_drop_retired_integration_agent_tables.sql* ]]; then
       printf '%s\n' "${MOCK_RETIRED_INTEGRATION_AGENT_TABLES_COMMIT-1212121212121212121212121212121212121212}"
     else
@@ -390,6 +394,20 @@ assert_failure "Rollback target predates the Chat Event V8 migration" \
 [ ! -s "${tmp_dir}/chat-event-v8-floor.output" ] || fail "pre-V8 API target must not publish outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "Chat Event V8 floor must fail before artifact or host access"
+fi
+
+for mutation_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged Browser session mutation contract" \
+    run_resolver "${tmp_dir}/browser-session-mutations-history.output" "MOCK_BROWSER_SESSION_MUTATIONS_COMMIT=${mutation_commit}"
+  [ ! -s "${tmp_dir}/browser-session-mutations-history.output" ] || fail "invalid Browser mutation history must not publish outputs"
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the Browser session mutation contract" \
+  run_resolver "${tmp_dir}/browser-session-mutations-floor.output" MOCK_BROWSER_SESSION_MUTATIONS_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/browser-session-mutations-floor.output" ] || fail "incompatible Browser mutation API must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "Browser mutation floor must fail before artifact or host access"
 fi
 
 for drop_commit in "" invalid; do

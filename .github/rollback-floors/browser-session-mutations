@@ -1,0 +1,4 @@
+The first-parent main commit that adds this marker is the minimum API rollback
+version for Browser viewer open/close requests with empty bodies. The current
+App uses this contract; earlier APIs require a request event ID. See
+docs/deployment-compatibility.md.
