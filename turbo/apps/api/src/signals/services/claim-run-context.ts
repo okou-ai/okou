@@ -4424,7 +4424,11 @@ export function createClaimRunObjects(claim: ThreadClaim) {
             runId: agentRuns.id,
             runStatus: agentRuns.status,
             isSuccess: isSuccessfulRun,
-            seqId: incompleteAnchorCandidate.seqId,
+            // candidateSource is an opaque SQL FROM fragment; a bare column
+            // cannot pass Drizzle's typed-source membership validation here.
+            seqId: sql`${incompleteAnchorCandidate.seqId}`.mapWith(
+              chatEvents.seqId,
+            ),
           })
           .from(candidateSource)
           .innerJoin(
