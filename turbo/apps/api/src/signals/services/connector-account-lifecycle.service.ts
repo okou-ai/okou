@@ -41,7 +41,10 @@ import {
 import { z } from "zod";
 
 import type { Tx } from "../../lib/db-types";
-import { pgBooleanDecoder } from "../../lib/db-structured-result";
+import {
+  pgBooleanDecoder,
+  pgTextDecoder,
+} from "../../lib/db-structured-result";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
@@ -76,15 +79,20 @@ const log = logger("connector-account-lifecycle");
 const accessTokenSecret = alias(secrets, "connector_account_access_token");
 const refreshTokenSecret = alias(secrets, "connector_account_refresh_token");
 const oauthScopesSchema = z.array(z.string());
+// The cursor carries created_at at full microsecond precision. Accounts
+// created concurrently commonly share a millisecond, so a JavaScript Date
+// boundary would skip rows between the truncated and the real timestamp.
 const cursorSchema = z
   .object({
-    createdAt: z.string().datetime(),
+    createdAt: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?Z?$/u),
     id: z.uuid(),
   })
   .strict();
 
 interface ConnectorAccountCursor {
-  readonly createdAt: Date;
+  readonly createdAt: string;
   readonly id: string;
 }
 
@@ -107,6 +115,10 @@ function accountSelection() {
     needsReconnect: connectors.needsReconnect,
     reconnectReason: connectors.reconnectReason,
     createdAt: connectors.createdAt,
+    createdAtCursor:
+      sql`to_char(${connectors.createdAt}, 'YYYY-MM-DD"T"HH24:MI:SS.US')`.mapWith(
+        pgTextDecoder,
+      ),
     updatedAt: connectors.updatedAt,
     definitionAuthMode: orgCustomConnectors.authMode,
     definitionMcpTransport: orgCustomConnectors.mcpTransport,
@@ -145,7 +157,7 @@ function parseOauthScopes(value: string | null): string[] | null {
 
 function encodeCursor(row: ConnectorAccountRow): string {
   return Buffer.from(
-    JSON.stringify({ createdAt: row.createdAt.toISOString(), id: row.id }),
+    JSON.stringify({ createdAt: row.createdAtCursor, id: row.id }),
     "utf8",
   ).toString("base64url");
 }
@@ -155,7 +167,7 @@ function decodeCursor(raw: string): ConnectorAccountCursor | null {
     safeJsonParse(Buffer.from(raw, "base64url").toString("utf8")),
   );
   return parsed.success
-    ? { createdAt: new Date(parsed.data.createdAt), id: parsed.data.id }
+    ? { createdAt: parsed.data.createdAt, id: parsed.data.id }
     : null;
 }
 
@@ -181,9 +193,9 @@ async function loadConnectorAccountRows(
     : undefined;
   const cursorCondition = args.cursor
     ? or(
-        lt(connectors.createdAt, args.cursor.createdAt),
+        lt(connectors.createdAt, sql`${args.cursor.createdAt}::timestamp`),
         and(
-          eq(connectors.createdAt, args.cursor.createdAt),
+          eq(connectors.createdAt, sql`${args.cursor.createdAt}::timestamp`),
           lt(connectors.id, args.cursor.id),
         ),
       )
