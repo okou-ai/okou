@@ -103,7 +103,10 @@ function ComposerModelPanelBody({
     selectedPolicy !== undefined &&
     isMemberModelPolicyConfigurable(selectedPolicy);
   const fastAvailable =
-    configurable && isCodexFastModeModel(selectedPolicy.model);
+    configurable &&
+    (selectedPolicy.subscriptionOptions
+      ? selectedPolicy.subscriptionOptions.serviceTier === "priority"
+      : isCodexFastModeModel(selectedPolicy.model));
   return (
     <>
       {/*

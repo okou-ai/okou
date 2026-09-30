@@ -11,6 +11,26 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.987.0](https://github.com/okou-ai/okou/compare/app-v0.986.1...app-v0.987.0) (2026-09-30)
+
+
+### Features
+
+* add organization auto model mode ([#37365](https://github.com/okou-ai/okou/issues/37365)) ([bf71a0b](https://github.com/okou-ai/okou/commit/bf71a0b9ceb6485a1ea19306175b816a8d7da677))
+
+
+### Bug Fixes
+
+* **app:** hide unconfigured model settings controls ([#37379](https://github.com/okou-ai/okou/issues/37379)) ([7bef426](https://github.com/okou-ai/okou/commit/7bef426e8df4e880350800d00f485d56bb714930))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.530.0
+    * @okouai/core bumped to 8.723.0
+
 ## [0.986.1](https://github.com/okou-ai/okou/compare/app-v0.986.0...app-v0.986.1) (2026-09-29)
 
 

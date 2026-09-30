@@ -2,18 +2,19 @@
 // ab684d009d767c968af2f7559576334038623124 (MIT; see ../LICENSE-vnc-rs).
 // DES is supplied by RustCrypto, not the upstream custom implementation.
 
-use std::future::Future;
+use std::{future::Future, sync::Arc};
 
 use des::cipher::{Block, BlockCipherEncrypt, KeyInit};
-use rustls::pki_types::ServerName;
+use rustls::{ClientConfig, pki_types::ServerName};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::time::Instant;
 use tokio_rustls::TlsConnector;
 use zeroize::Zeroizing;
 
 use crate::{
-    Authenticated, AuthenticatedStream, AuthenticationStage, Error, PlainCredentials, TrustRoots,
-    VncPassword, X509Authentication,
+    Authenticated, AuthenticatedStream, AuthenticationStage, ClientCertificateAuthentication,
+    ClientIdentity, Error, PlainCredentials, TrustRoots, VncPassword, X509Authentication,
+    trust::ClientAuthSelection,
 };
 
 const RFB_VERSION: &[u8; 12] = b"RFB 003.008\n";
@@ -21,7 +22,7 @@ const VENCRYPT: u8 = 19;
 const MAX_ERROR_BYTES: u32 = 4096;
 
 pub(crate) async fn authenticate<S>(
-    mut stream: S,
+    stream: S,
     server_name: &str,
     authentication: X509Authentication,
     roots: TrustRoots,
@@ -30,11 +31,53 @@ pub(crate) async fn authenticate<S>(
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
+    let config = roots.into_config()?;
+    authenticate_with_config(stream, server_name, authentication, config, None, deadline).await
+}
+
+pub(crate) async fn authenticate_with_client_certificate<S>(
+    stream: S,
+    server_name: &str,
+    authentication: ClientCertificateAuthentication,
+    roots: TrustRoots,
+    identity: ClientIdentity,
+    deadline: Instant,
+) -> Result<Authenticated<S>, Error>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    let (config, selection) = roots.into_client_auth_config(identity)?;
+    let authentication = match authentication {
+        ClientCertificateAuthentication::None => X509Authentication::None,
+        ClientCertificateAuthentication::VncPassword(password) => {
+            X509Authentication::VncPassword(password)
+        }
+    };
+    authenticate_with_config(
+        stream,
+        server_name,
+        authentication,
+        config,
+        Some(selection),
+        deadline,
+    )
+    .await
+}
+
+async fn authenticate_with_config<S>(
+    mut stream: S,
+    server_name: &str,
+    authentication: X509Authentication,
+    config: Arc<ClientConfig>,
+    client_auth: Option<Arc<ClientAuthSelection>>,
+    deadline: Instant,
+) -> Result<Authenticated<S>, Error>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
     let server_name = ServerName::try_from(server_name)
         .map_err(|_| Error::InvalidServerName)?
         .to_owned();
-    let config = roots.into_config()?;
-
     phase(
         AuthenticationStage::RfbVersion,
         deadline,
@@ -55,6 +98,11 @@ where
             .map_err(Error::Tls)
     })
     .await?;
+    // No password or SecurityResult may be processed for a required-client-cert
+    // profile unless this *handshake* received a request and selected the key.
+    if let Some(selection) = client_auth {
+        selection.require_selected()?;
+    }
     let stage = authentication.stage();
     phase(
         stage,

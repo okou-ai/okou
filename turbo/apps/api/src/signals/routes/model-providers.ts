@@ -12,6 +12,7 @@ import { getAllFeatureStates } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isStaffOrg } from "@okouai/core/staff-org";
 import { builtInModelCandidateCooldown } from "@okouai/db/schema/built-in-model-cooldown";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { and, asc, eq, gt } from "drizzle-orm";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
@@ -64,6 +65,14 @@ const staffRequired = Object.freeze({
 
 const listModelProvidersInner$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
+  const [org] = await get(db$)
+    .select({ mode: orgMetadata.modelMode })
+    .from(orgMetadata)
+    .where(eq(orgMetadata.orgId, auth.orgId))
+    .limit(1);
+  if (org?.mode === "auto") {
+    return { status: 200 as const, body: { modelProviders: [] } };
+  }
   const result = await get(modelProviders(auth.orgId));
   return { status: 200 as const, body: result };
 });
@@ -193,6 +202,17 @@ const upsertModelProviderInner$ = command(
     const auth = get(organizationAuthContext$);
     if (auth.orgRole !== "admin") {
       return adminRequired;
+    }
+    const [org] = await get(db$)
+      .select({ mode: orgMetadata.modelMode })
+      .from(orgMetadata)
+      .where(eq(orgMetadata.orgId, auth.orgId))
+      .limit(1);
+    signal.throwIfAborted();
+    if (org?.mode === "auto") {
+      return badRequestMessage(
+        "Provider connections cannot be configured in Auto mode",
+      );
     }
 
     const bodyResult = await get(

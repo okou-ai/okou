@@ -39,7 +39,7 @@ pub use framebuffer::{Cursor, FramebufferConnection};
 pub use input::{Input, InputOutcome, Key, MouseButton, ScrollAxis};
 pub use session::{Geometry, Session};
 pub use transport::AuthenticatedStream;
-pub use trust::TrustRoots;
+pub use trust::{ClientIdentity, TrustRoots};
 
 /// Maximum lifetime of the complete selected authentication negotiation.
 pub const MAX_HANDSHAKE_DURATION: Duration = Duration::from_secs(30);
@@ -306,7 +306,8 @@ impl fmt::Debug for X509Authentication {
 }
 
 /// An authenticated connection, positioned immediately after SecurityResult.
-/// It retains no client credentials. Dropping it drops the underlying owned stream.
+/// A certificate-authenticated TLS connection may retain its signing key until
+/// stream teardown. Dropping it drops the underlying owned stream.
 pub struct Authenticated<S> {
     stream: AuthenticatedStream<S>,
 }
@@ -316,6 +317,37 @@ impl<S> Authenticated<S> {
     /// The next client message is ClientInit; ServerInit has not been read.
     pub fn into_stream(self) -> AuthenticatedStream<S> {
         self.stream
+    }
+}
+
+/// Certificate-required X509 VeNCrypt authentication, distinct from the
+/// certificate-free [`X509Authentication`] policy.
+///
+/// Both variants verify the server and require a TLS client certificate.
+pub enum ClientCertificateAuthentication {
+    /// X509None (subtype 260), without an inner VNC credential.
+    None,
+    /// X509Vnc (subtype 261), with a classic VNC password inside mTLS.
+    VncPassword(VncPassword),
+}
+
+impl ClientCertificateAuthentication {
+    const fn stage(&self) -> AuthenticationStage {
+        match self {
+            Self::None => AuthenticationStage::X509NoneAuthentication,
+            Self::VncPassword(_) => AuthenticationStage::VncAuthentication,
+        }
+    }
+}
+
+impl fmt::Debug for ClientCertificateAuthentication {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::None => f.write_str("ClientCertificateAuthentication::None"),
+            Self::VncPassword(_) => {
+                f.write_str("ClientCertificateAuthentication::VncPassword([REDACTED])")
+            }
+        }
     }
 }
 
@@ -474,6 +506,51 @@ where
     Ok(authenticated)
 }
 
+/// Authenticate a caller-owned stream with required client-certificate TLS.
+///
+/// The key and chain must be constructed as [`ClientIdentity`] before calling.
+/// The saved server DNS name or IP is independent of the supplied stream's
+/// socket destination. TLS must both verify the server and request/select this
+/// client's identity. A successful handshake alone does not establish whether
+/// the remote server *enforces* client verification: the caller must independently
+/// verify its server-side `verify-peer=on` policy.
+///
+/// Shares the certificate-free entry point's single <=30s absolute deadline,
+/// exact subtype, SecurityResult boundary, cancellation and no-fallback contract.
+/// No product or Runner saved profile is enabled by this engine-only API.
+pub async fn authenticate_with_client_certificate<S>(
+    stream: S,
+    server_name: &str,
+    authentication: ClientCertificateAuthentication,
+    roots: TrustRoots,
+    identity: ClientIdentity,
+    deadline: Instant,
+) -> Result<Authenticated<S>, Error>
+where
+    S: AsyncRead + AsyncWrite + Unpin + 'static,
+{
+    let deadline = deadline.min(Instant::now() + MAX_HANDSHAKE_DURATION);
+    if deadline <= Instant::now() {
+        return Err(Error::AuthenticationDeadlineExceeded {
+            stage: AuthenticationStage::RfbVersion,
+        });
+    }
+    let final_stage = authentication.stage();
+    let authenticated = authentication::authenticate_with_client_certificate(
+        stream,
+        server_name,
+        authentication,
+        roots,
+        identity,
+        deadline,
+    )
+    .await?;
+    if deadline <= Instant::now() {
+        return Err(Error::AuthenticationDeadlineExceeded { stage: final_stage });
+    }
+    Ok(authenticated)
+}
+
 /// Bounded local error categories. Server-provided error text is never retained
 /// or included in Display/Debug output.
 #[derive(Debug, thiserror::Error)]
@@ -532,6 +609,14 @@ pub enum Error {
     InvalidServerName,
     #[error("custom trust requires 1-8 valid DER certificates totaling at most 64 KiB")]
     InvalidTrustRoots,
+    #[error(
+        "client identity requires a matching PKCS#8 key and 1-8 DER certificates within limits"
+    )]
+    InvalidClientIdentity,
+    #[error("TLS server did not request the required client certificate")]
+    ClientCertificateNotRequested,
+    #[error("no usable client signing scheme was selected for TLS client authentication")]
+    ClientCertificateNotSelected,
     #[error("unsupported RFB version for selected profile")]
     UnsupportedRfbVersion,
     #[error("server does not offer the required RFB security profile")]

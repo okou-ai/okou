@@ -286,6 +286,10 @@ import {
 } from "./connector-catalog-external-reader.service";
 import { ConnectorCatalogLoadTiming } from "./connector-catalog-load-timing.service";
 import {
+  isAutoPersonalSubscriptionRoute,
+  loadMemberSubscriptionModels,
+} from "./subscription-model-catalog.service";
+import {
   type CapturedConnectorCatalogIdentity,
   type ConnectorCatalogRuntimeProjectionRowsRead,
   projectionIdentityReadHook,
@@ -2604,7 +2608,10 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   const orgMetadata$ = computed(async (get) => {
     const { orgId } = get(queuedModelInputsInput$);
     const [org] = await get(db$)
-      .select({ credits: orgMetadata.credits })
+      .select({
+        credits: orgMetadata.credits,
+        modelMode: orgMetadata.modelMode,
+      })
       .from(orgMetadata)
       .where(eq(orgMetadata.orgId, orgId))
       .limit(1);
@@ -2700,10 +2707,13 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   const queuedMemberModelRoutesMemberAccountSnapshot$ = computed(
     async (get) => {
       const { orgId, userId } = get(queuedMemberModelRoutesInput$);
-      const policy = await get(queuedMemberModelRoutesPolicy$);
+      const [policy, org] = await Promise.all([
+        get(queuedMemberModelRoutesPolicy$),
+        get(orgMetadata$),
+      ]);
       if (
-        !policy ||
-        !modelPolicyUsesPersonalMetadata(policy) ||
+        ((!policy || !modelPolicyUsesPersonalMetadata(policy)) &&
+          org?.modelMode !== "auto") ||
         userId === "__no_preference__" ||
         userId === agentRunsCreateORG_SENTINEL_USER_ID
       ) {
@@ -2797,15 +2807,33 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       .limit(1);
     return surface ?? null;
   });
+  const subscriptionModels$ = computed(async (get) => {
+    const [org, member] = await Promise.all([
+      get(orgMetadata$),
+      get(queuedModelRoutingMemberRoutes$),
+    ]);
+    return org?.modelMode === "auto"
+      ? await loadMemberSubscriptionModels(get(db$), member)
+      : [];
+  });
   const queuedModelRoutingModelPin$ = computed(async (get) => {
-    const [selection, facts, member, orgProviderType, customSurface] =
-      await Promise.all([
-        get(queuedModelRoutingSelection$),
-        get(queuedModelRoutingPolicyFacts$),
-        get(queuedModelRoutingMemberRoutes$),
-        get(orgProviderType$),
-        get(customSurface$),
-      ]);
+    const [
+      selection,
+      facts,
+      member,
+      orgProviderType,
+      customSurface,
+      org,
+      subscriptionModels,
+    ] = await Promise.all([
+      get(queuedModelRoutingSelection$),
+      get(queuedModelRoutingPolicyFacts$),
+      get(queuedModelRoutingMemberRoutes$),
+      get(orgProviderType$),
+      get(customSurface$),
+      get(orgMetadata$),
+      get(subscriptionModels$),
+    ]);
     return selection
       ? resolveQueuedModelSelectionPinFromSnapshot({
           selectedModel: selection.selectedModel,
@@ -2813,6 +2841,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           member,
           orgProviderType,
           customSurface,
+          modelMode: org?.modelMode === "auto" ? "auto" : "custom",
+          subscriptionModels,
         })
       : badRequestMessage("Queued input is missing its model selection");
   });
@@ -3099,11 +3129,20 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         };
       }
     }
+    const autoPersonalSubscription =
+      pin.modelProviderCredentialScope === "member" &&
+      (await get(subscriptionModels$)).some((entry) => {
+        return (
+          entry.model === pin.selectedModel &&
+          entry.providerType === effectiveModelProvider
+        );
+      });
     const error = checkOrgPlanRunAdmission({
       capabilities: get(queuedProviderAdmissionPolicyFacts$)
         .orgPlanCapabilities,
       modelProviderType: effectiveModelProvider,
       selectedModel: pin.selectedModel,
+      autoPersonalSubscription,
     });
     if (error || !isBuiltInModelProviderType(effectiveModelProvider)) {
       return {
@@ -5669,7 +5708,10 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   const queuedModelInputsOrgMetadata$ = computed(async (get) => {
     const { orgId } = get(queuedModelInputsInput$2);
     const [org] = await get(db$)
-      .select({ credits: orgMetadata.credits })
+      .select({
+        credits: orgMetadata.credits,
+        modelMode: orgMetadata.modelMode,
+      })
       .from(orgMetadata)
       .where(eq(orgMetadata.orgId, orgId))
       .limit(1);
@@ -5765,10 +5807,13 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   const queuedMemberModelRoutesMemberAccountSnapshot$2 = computed(
     async (get) => {
       const { orgId, userId } = get(queuedMemberModelRoutesInput$2);
-      const policy = await get(queuedMemberModelRoutesPolicy$2);
+      const [policy, org] = await Promise.all([
+        get(queuedMemberModelRoutesPolicy$2),
+        get(queuedModelInputsOrgMetadata$),
+      ]);
       if (
-        !policy ||
-        !modelPolicyUsesPersonalMetadata(policy) ||
+        ((!policy || !modelPolicyUsesPersonalMetadata(policy)) &&
+          org?.modelMode !== "auto") ||
         userId === "__no_preference__" ||
         userId === agentRunsCreateORG_SENTINEL_USER_ID
       ) {
@@ -5862,15 +5907,33 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       .limit(1);
     return surface ?? null;
   });
+  const subscriptionModels$2 = computed(async (get) => {
+    const [org, member] = await Promise.all([
+      get(queuedModelInputsOrgMetadata$),
+      get(queuedModelRoutingMemberRoutes$2),
+    ]);
+    return org?.modelMode === "auto"
+      ? await loadMemberSubscriptionModels(get(db$), member)
+      : [];
+  });
   const queuedModelRoutingModelPin$2 = computed(async (get) => {
-    const [selection, facts, member, orgProviderType, customSurface] =
-      await Promise.all([
-        get(queuedModelRoutingSelection$2),
-        get(queuedModelRoutingPolicyFacts$2),
-        get(queuedModelRoutingMemberRoutes$2),
-        get(queuedModelRoutingOrgProviderType$),
-        get(queuedModelRoutingCustomSurface$),
-      ]);
+    const [
+      selection,
+      facts,
+      member,
+      orgProviderType,
+      customSurface,
+      org,
+      subscriptionModels,
+    ] = await Promise.all([
+      get(queuedModelRoutingSelection$2),
+      get(queuedModelRoutingPolicyFacts$2),
+      get(queuedModelRoutingMemberRoutes$2),
+      get(queuedModelRoutingOrgProviderType$),
+      get(queuedModelRoutingCustomSurface$),
+      get(queuedModelInputsOrgMetadata$),
+      get(subscriptionModels$2),
+    ]);
     return selection
       ? resolveQueuedModelSelectionPinFromSnapshot({
           selectedModel: selection.selectedModel,
@@ -5878,6 +5941,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           member,
           orgProviderType,
           customSurface,
+          modelMode: org?.modelMode === "auto" ? "auto" : "custom",
+          subscriptionModels,
         })
       : badRequestMessage("Queued input is missing its model selection");
   });
@@ -6167,11 +6232,20 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         };
       }
     }
+    const autoPersonalSubscription =
+      pin.modelProviderCredentialScope === "member" &&
+      (await get(subscriptionModels$2)).some((entry) => {
+        return (
+          entry.model === pin.selectedModel &&
+          entry.providerType === effectiveModelProvider
+        );
+      });
     const error = checkOrgPlanRunAdmission({
       capabilities: get(queuedProviderAdmissionPolicyFacts$2)
         .orgPlanCapabilities,
       modelProviderType: effectiveModelProvider,
       selectedModel: pin.selectedModel,
+      autoPersonalSubscription,
     });
     if (error || !isBuiltInModelProviderType(effectiveModelProvider)) {
       return {
@@ -11965,14 +12039,33 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     },
   );
   const runAdmissionResolveAvailability$ = capturedResolveUsageAllowance$2;
+  const runAdmissionAutoPersonalSubscription$ = computed(async (get) => {
+    const input = await get(capturedRunAdmissionReadInput$);
+    return await isAutoPersonalSubscriptionRoute({
+      db: input.db,
+      orgId: input.orgId,
+      userId: input.userId,
+      model: input.selectedModel,
+      providerType: input.modelProviderType,
+    });
+  });
   const runAdmissionCheckAdmission$ = command(
     async ({ get, set }, signal: AbortSignal) => {
-      const input = await get(capturedRunAdmissionReadInput$);
+      const [input, autoPersonalSubscription] = await Promise.all([
+        get(capturedRunAdmissionReadInput$),
+        get(runAdmissionAutoPersonalSubscription$),
+      ]);
       signal.throwIfAborted();
       if (!input.enforceBuiltInCredits) {
         const capabilities = await get(capturedRunAdmissionCapabilities$);
         signal.throwIfAborted();
-        return checkOrgPlanRunAdmission({ ...input, capabilities }) ?? null;
+        return (
+          checkOrgPlanRunAdmission({
+            ...input,
+            capabilities,
+            autoPersonalSubscription,
+          }) ?? null
+        );
       }
       const availability = await get(runAdmissionAvailability$);
       signal.throwIfAborted();
@@ -11985,6 +12078,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       const failure = checkOrgPlanRunAdmission({
         ...input,
         capabilities: availability,
+        autoPersonalSubscription,
       });
       if (failure) {
         return failure;

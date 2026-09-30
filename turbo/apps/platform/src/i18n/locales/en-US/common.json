@@ -4830,6 +4830,15 @@
         "upgradePro": "Upgrade Pro to use",
         "upgradeToPro": "Upgrade to Pro"
       },
+      "autoMode": {
+        "cancel": "Cancel",
+        "confirm": "Switch to Auto Model",
+        "confirmDescription": "This permanently deletes organization model policies, provider connections and their unused secrets. The only organization policy will be Auto. Members' personal subscriptions remain connected and can add models. Switching back to Custom will not restore deleted organization settings.",
+        "confirmTitle": "Switch this workspace to Auto Model?",
+        "description": "Use Auto as the organization policy. Connected personal subscriptions add models for each member.",
+        "failed": "Could not change the model mode. Refresh settings and try again.",
+        "title": "Auto Model"
+      },
       "deviceAuth": {
         "claude": {
           "approvalOpenError": "The approval page could not be opened. Use the link manually and paste the code here.",
@@ -4882,7 +4891,6 @@
         "description": "Connect an admin-managed gateway through Anthropic Messages, OpenAI Responses, or both.",
         "dialogDescription": "Configure each protocol with the API base URL used by Claude Code or Codex.",
         "editTitle": "Edit model provider",
-        "empty": "No custom model providers configured.",
         "errors": {
           "invalidMappings": "Model mappings must be a JSON object whose values are upstream model names.",
           "missingProtocol": "Enable at least one protocol.",
@@ -4933,6 +4941,7 @@
           "stale": "Attention",
           "week": "Week"
         },
+        "subscriptionsSectionTitle": "Personal Model Subscriptions",
         "useAccount": "Use"
       },
       "picker": {

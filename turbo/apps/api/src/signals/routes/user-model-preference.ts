@@ -62,6 +62,8 @@ function validatePriorityServiceTier(args: {
     return badRequestMessage("Invalid request");
   }
   if (
+    (args.configuredPolicy.subscriptionOptions &&
+      args.configuredPolicy.subscriptionOptions.serviceTier !== "priority") ||
     !isCodexFastServiceTierSupported({
       selectedModel: args.configuredPolicy.model,
     })
@@ -152,6 +154,17 @@ const updateUserModelPreferenceInner$ = command(
 
     const modelSettingsPatch = body.data.modelSettingsPatch;
     signal.throwIfAborted();
+    if (
+      modelSettingsPatch &&
+      configuredPolicy?.subscriptionOptions &&
+      !configuredPolicy.subscriptionOptions.efforts.includes(
+        modelSettingsPatch.effort,
+      )
+    ) {
+      return badRequestMessage(
+        "Reasoning effort is not available for this subscription",
+      );
+    }
 
     const modelSettingsError = validateModelSettingsPatch({
       patch: modelSettingsPatch,

@@ -12,6 +12,11 @@ import {
 } from "@okouai/api-contracts/contracts/model-providers";
 import { modelProviders } from "@okouai/db/schema/model-provider";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
+import {
+  loadMemberSubscriptionModels,
+  type MemberSubscriptionModel,
+} from "./subscription-model-catalog.service";
 import { and, eq, or } from "drizzle-orm";
 import { badRequestMessage, insufficientCredits } from "../../lib/error";
 import type { Db } from "../external/db";
@@ -71,6 +76,7 @@ interface ModelRoutingFacts {
   readonly orgPlanCapabilities: OrgPlanCapabilities | null;
   readonly policies: readonly OrgModelPolicyRow[];
   readonly member: PreparedMemberModelRouteContext;
+  readonly modelMode: "auto" | "custom";
   readonly [modelRoutingFactsSource]: Db;
 }
 
@@ -148,10 +154,19 @@ async function prepareModelRoutingFacts(params: {
           params.userId,
           params.orgPlanCapabilities,
         );
-  const [policyFacts, member] = await Promise.all([
+  const [policyFacts, org] = await Promise.all([
     policyFactsPromise,
-    prepareMemberModelRouteContext(params.db, params.orgId, params.userId),
+    params.db
+      .select({ mode: orgMetadata.modelMode })
+      .from(orgMetadata)
+      .where(eq(orgMetadata.orgId, params.orgId))
+      .limit(1),
   ]);
+  const member = prepareMemberModelRouteContext(
+    params.db,
+    params.orgId,
+    params.userId,
+  );
   return Object.freeze({
     identity: Object.freeze({
       orgId: params.orgId,
@@ -168,6 +183,7 @@ async function prepareModelRoutingFacts(params: {
       }),
     ),
     member,
+    modelMode: org[0]?.mode === "auto" ? "auto" : "custom",
     [modelRoutingFactsSource]: params.db,
   });
 }
@@ -186,14 +202,36 @@ async function resolveValidPolicyRoute(params: {
   const policy = params.facts.policies.find((candidate) => {
     return candidate.model === params.selectedModel;
   });
-  return policy
-    ? await resolveEffectivePolicyRoute({
-        db: params.facts[modelRoutingFactsSource],
-        orgId: params.facts.identity.orgId,
-        member: params.facts.member,
-        capabilities: params.capabilities,
-        policy,
-      })
+  if (policy) {
+    return await resolveEffectivePolicyRoute({
+      db: params.facts[modelRoutingFactsSource],
+      orgId: params.facts.identity.orgId,
+      member: params.facts.member,
+      capabilities: params.capabilities,
+      policy,
+    });
+  }
+  if (params.facts.modelMode !== "auto") {
+    return null;
+  }
+  const personal = (
+    await loadMemberSubscriptionModels(
+      params.facts[modelRoutingFactsSource],
+      params.facts.member,
+    )
+  ).find((entry) => {
+    return entry.model === params.selectedModel;
+  });
+  return personal
+    ? {
+        modelProviderId: personal.providerId,
+        modelProviderType: personal.providerType,
+        modelProviderCredentialScope: "member",
+        selectedModel: personal.model,
+        personalConnectionState: personal.needsReconnect
+          ? "reconnect_required"
+          : "capture_required",
+      }
     : null;
 }
 
@@ -237,8 +275,18 @@ export async function resolveDefaultModelFirstPin(
         selectedModel: preference.selectedModel,
       });
       if (preferredRoute) {
+        const catalogTier =
+          facts.modelMode === "auto" &&
+          preferredRoute.modelProviderCredentialScope === "member"
+            ? (await loadMemberSubscriptionModels(db, facts.member)).find(
+                (entry) => {
+                  return entry.model === preferredRoute.selectedModel;
+                },
+              )?.serviceTier
+            : undefined;
         const serviceTier =
           preference.serviceTier === "priority" &&
+          (facts.modelMode !== "auto" || catalogTier === "priority") &&
           isCodexFastServiceTierSupported({
             selectedModel: preferredRoute.selectedModel,
           })
@@ -323,6 +371,14 @@ export async function resolveModelSelectionPin(params: {
     return badRequestMessage(RETIRED_RUN_MODEL_MESSAGE);
   }
   if (modelSelection.modelProviderId !== MODEL_FIRST_SELECTION_PROVIDER_ID) {
+    const [org] = await db
+      .select({ mode: orgMetadata.modelMode })
+      .from(orgMetadata)
+      .where(eq(orgMetadata.orgId, orgId))
+      .limit(1);
+    if (org?.mode === "auto") {
+      return badRequestMessage("Use the available models for this workspace");
+    }
     const capabilities = modelRouteCapabilities(
       params.orgPlanCapabilities === undefined
         ? await loadOrgPlanCapabilities(db, orgId)
@@ -388,6 +444,8 @@ export async function resolveModelSelectionPin(params: {
   }
   const planCapabilities = modelRouteCapabilities(facts.orgPlanCapabilities);
   if (
+    (facts.modelMode === "auto" &&
+      route.modelProviderCredentialScope === "member") ||
     modelRouteAllowedForOrgPlan({
       capabilities: planCapabilities,
       selectedModel: route.selectedModel,
@@ -450,6 +508,10 @@ export function resolveQueuedModelSelectionPinFromSnapshot(params: {
     readonly protocol: string;
     readonly modelMappings: Readonly<Record<string, string>>;
   } | null;
+  /** Organization model mode read with the other pick facts. */
+  readonly modelMode: "auto" | "custom";
+  /** The member's catalog-listed subscription models; empty outside Auto. */
+  readonly subscriptionModels: readonly MemberSubscriptionModel[];
 }):
   | ModelFirstPin
   | ReturnType<typeof badRequestMessage>
@@ -463,6 +525,23 @@ export function resolveQueuedModelSelectionPinFromSnapshot(params: {
   const policy = params.facts.policies.find((candidate) => {
     return candidate.model === params.selectedModel;
   });
+  if (!policy && params.modelMode === "auto") {
+    // Auto: a model outside the org policies routes to the member's
+    // connected subscription, which is exempt from the plan restriction.
+    const personal = params.subscriptionModels.find((entry) => {
+      return entry.model === params.selectedModel;
+    });
+    return personal
+      ? {
+          modelProviderId: personal.providerId,
+          modelProviderType: personal.providerType,
+          modelProviderCredentialScope: "member",
+          selectedModel: personal.model,
+        }
+      : badRequestMessage(
+          "The selected model is not available in this workspace",
+        );
+  }
   const route = policy
     ? resolveEffectivePolicyRouteFromSnapshot({
         ...params,
@@ -479,6 +558,8 @@ export function resolveQueuedModelSelectionPinFromSnapshot(params: {
     params.facts.orgPlanCapabilities,
   );
   if (
+    (params.modelMode === "auto" &&
+      route.modelProviderCredentialScope === "member") ||
     modelRouteAllowedForOrgPlan({
       capabilities: planCapabilities,
       selectedModel: route.selectedModel,

@@ -4820,6 +4820,15 @@
         "upgradePro": "Pro をアップグレードして使用する",
         "upgradeToPro": "プロにアップグレード"
       },
+      "autoMode": {
+        "cancel": "キャンセル",
+        "confirm": "Auto Model に切り替える",
+        "confirmDescription": "組織のモデルポリシー、Provider Connections、不要になったシークレットを完全に削除します。組織ポリシーは Auto のみになります。メンバーの個人サブスクリプションは接続されたままで、モデルを追加できます。Custom に戻しても削除された組織設定は復元されません。",
+        "confirmTitle": "ワークスペースを Auto Model に切り替えますか？",
+        "description": "組織ポリシーに Auto を使用します。個人サブスクリプションからメンバーのモデルを追加できます。",
+        "failed": "モデルモードを変更できませんでした。設定を更新して再試行してください。",
+        "title": "Auto Model"
+      },
       "deviceAuth": {
         "claude": {
           "approvalOpenError": "承認ページを開けませんでした。リンクを手動で使用し、ここにコードを貼り付けます。",
@@ -4872,7 +4881,6 @@
         "description": "Anthropic Messages、OpenAI Responses、またはその両方を介して、管理者が管理するゲートウェイに接続します。",
         "dialogDescription": "Claude Code または Codex で使用する API ベース URL をプロトコルごとに設定します。",
         "editTitle": "モデルプロバイダーを編集",
-        "empty": "カスタムモデルプロバイダーは設定されていません。",
         "errors": {
           "invalidMappings": "モデルマッピングは、値がアップストリームのモデル名である JSON オブジェクトである必要があります。",
           "missingProtocol": "少なくとも 1 つのプロトコルを有効にしてください。",
@@ -4923,6 +4931,7 @@
           "stale": "注意",
           "week": "週"
         },
+        "subscriptionsSectionTitle": "個人モデルサブスクリプション",
         "useAccount": "使用"
       },
       "picker": {

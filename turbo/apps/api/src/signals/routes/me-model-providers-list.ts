@@ -13,6 +13,7 @@ import { refreshPersonalModelProviderSubscriptionUsage$ } from "../services/mode
 import { listPersonalModelProviderAccounts } from "../services/model-provider-account.service";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import { writeDb$ } from "../external/db";
+import { personalAccountsEnabledForOrg } from "../services/personal-accounts-availability.service";
 import type { RouteEntry } from "../route-entry";
 
 function isModelFirstPersonalProviderType(type: ModelProviderType): boolean {
@@ -35,10 +36,15 @@ const listInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     userFeatureSwitchContext(auth.orgId, auth.userId),
   );
   signal.throwIfAborted();
-  const accountsEnabled = isFeatureEnabled(
-    FeatureSwitchKey.PersonalModelProviderAccounts,
-    featureSwitchContext,
+  const accountsEnabled = await personalAccountsEnabledForOrg(
+    set(writeDb$),
+    auth.orgId,
+    isFeatureEnabled(
+      FeatureSwitchKey.PersonalModelProviderAccounts,
+      featureSwitchContext,
+    ),
   );
+  signal.throwIfAborted();
   const result = await listPersonalModelProviderAccounts({
     db: set(writeDb$),
     orgId: auth.orgId,

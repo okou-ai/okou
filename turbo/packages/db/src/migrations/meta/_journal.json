@@ -1496,8 +1496,15 @@
     {
       "idx": 1291,
       "version": "7",
-      "when": 1790692736460,
-      "tag": "1291_chat_thread_canonical_session",
+      "when": 1790691799289,
+      "tag": "1291_auto_subscription_catalog",
+      "breakpoints": true
+    },
+    {
+      "idx": 1292,
+      "version": "7",
+      "when": 1790732540916,
+      "tag": "1292_chat_thread_canonical_session",
       "breakpoints": true
     }
   ]

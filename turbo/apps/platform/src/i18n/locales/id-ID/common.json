@@ -4820,6 +4820,15 @@
         "upgradePro": "Upgrade ke Pro untuk menggunakan",
         "upgradeToPro": "Upgrade ke Pro"
       },
+      "autoMode": {
+        "cancel": "Batal",
+        "confirm": "Beralih ke Auto Model",
+        "confirmDescription": "Tindakan ini menghapus permanen kebijakan model organisasi, koneksi penyedia, dan rahasia yang tidak lagi digunakan. Hanya Auto yang menjadi kebijakan organisasi. Langganan pribadi anggota tetap terhubung dan dapat menambahkan model. Beralih kembali ke Custom tidak memulihkan pengaturan organisasi yang dihapus.",
+        "confirmTitle": "Beralih ke Auto Model untuk ruang kerja ini?",
+        "description": "Gunakan Auto sebagai kebijakan organisasi; langganan pribadi menambahkan model untuk anggota.",
+        "failed": "Mode model tidak dapat diubah. Segarkan pengaturan dan coba lagi.",
+        "title": "Auto Model"
+      },
       "deviceAuth": {
         "claude": {
           "approvalOpenError": "Halaman persetujuan tidak dapat dibuka. Gunakan tautan secara manual dan tempelkan kode di sini.",
@@ -4872,7 +4881,6 @@
         "description": "Hubungkan gateway yang dikelola admin melalui Anthropic Messages, OpenAI Responses, atau keduanya.",
         "dialogDescription": "Konfigurasikan setiap protokol dengan URL dasar API yang digunakan oleh Claude Code atau Codex.",
         "editTitle": "Edit penyedia model",
-        "empty": "Belum ada penyedia model kustom yang dikonfigurasi.",
         "errors": {
           "invalidMappings": "Pemetaan model harus berupa objek JSON dengan nilai berupa nama model upstream.",
           "missingProtocol": "Aktifkan setidaknya satu protokol.",
@@ -4923,6 +4931,7 @@
           "stale": "Perhatian",
           "week": "Minggu"
         },
+        "subscriptionsSectionTitle": "Langganan model pribadi",
         "useAccount": "Gunakan"
       },
       "picker": {

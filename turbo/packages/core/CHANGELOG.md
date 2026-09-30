@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.723.0](https://github.com/okou-ai/okou/compare/core-v8.722.1...core-v8.723.0) (2026-09-30)
+
+
+### Features
+
+* add organization auto model mode ([#37365](https://github.com/okou-ai/okou/issues/37365)) ([bf71a0b](https://github.com/okou-ai/okou/commit/bf71a0b9ceb6485a1ea19306175b816a8d7da677))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.530.0
+
 ## [8.722.1](https://github.com/okou-ai/okou/compare/core-v8.722.0...core-v8.722.1) (2026-09-29)
 
 

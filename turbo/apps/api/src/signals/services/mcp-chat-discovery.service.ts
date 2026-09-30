@@ -15,6 +15,7 @@ import {
 import { agentDisplayName } from "@okouai/core/brand-presentation";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
+import { loadMemberSubscriptionModels } from "./subscription-model-catalog.service";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
 import { and, asc, eq, gt, inArray, sql } from "drizzle-orm";
@@ -408,6 +409,63 @@ async function loadDiscoveryModelPolicies(
   return policies;
 }
 
+async function appendAutoMemberMcpModels({
+  tx,
+  budget,
+  principal,
+  member,
+  capabilities,
+  policiesByModel,
+  models,
+}: {
+  tx: Tx;
+  budget: ReadBudget;
+  principal: Principal;
+  member: MemberModelRouteContext;
+  capabilities: OrgPlanCapabilities | null;
+  policiesByModel: ReadonlyMap<string, unknown>;
+  models: McpListModelsOutput["models"];
+}): Promise<void> {
+  await budget.beforeQuery(tx);
+  const [org] = await tx
+    .select({ mode: orgMetadata.modelMode })
+    .from(orgMetadata)
+    .where(eq(orgMetadata.orgId, principal.orgId))
+    .limit(1);
+  if (org?.mode !== "auto") {
+    return;
+  }
+  await budget.beforeQuery(tx);
+  const personalModels = await loadMemberSubscriptionModels(tx, member);
+  budget.check();
+  for (const personal of personalModels) {
+    if (policiesByModel.has(personal.model)) {
+      continue;
+    }
+    const denied = checkOrgPlanRunAdmission({
+      capabilities,
+      selectedModel: personal.model,
+      modelProviderType: personal.providerType,
+      autoPersonalSubscription: true,
+    });
+    models.push({
+      id: personal.model,
+      name: personal.displayName,
+      selectable: true,
+      availability: denied
+        ? "plan_restricted"
+        : personal.needsReconnect
+          ? "reconnect_required"
+          : "available",
+      reason: denied
+        ? "This organization is not currently active."
+        : personal.needsReconnect
+          ? "Reconnect your personal model subscription before sending a message."
+          : null,
+    });
+  }
+}
+
 export async function listMcpModels(
   db: Db,
   principal: Principal,
@@ -502,6 +560,15 @@ export async function listMcpModels(
         }
         models.push(entry);
       }
+      await appendAutoMemberMcpModels({
+        tx,
+        budget,
+        principal,
+        member,
+        capabilities,
+        policiesByModel,
+        models,
+      });
       const preferred = models.find((model) => {
         return model.id === preference?.model && model.selectable;
       });

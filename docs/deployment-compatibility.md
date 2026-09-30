@@ -7320,7 +7320,7 @@ completion requests return the remaining delay without sending early.
 
 ## Canonical Chat application sessions
 
-Migration `1291_chat_thread_canonical_session` adds a unique index on
+Migration `1292_chat_thread_canonical_session` adds a unique index on
 `chat_threads.agent_session_id`. A thread may have no session before its first
 admitted run, and PostgreSQL continues to allow multiple null bindings. An
 application session may be the current binding of at most one thread. Historical

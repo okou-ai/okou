@@ -8,6 +8,35 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.699.0](https://github.com/okou-ai/okou/compare/api-v1.698.1...api-v1.699.0) (2026-09-30)
+
+
+### Features
+
+* add organization auto model mode ([#37365](https://github.com/okou-ai/okou/issues/37365)) ([bf71a0b](https://github.com/okou-ai/okou/commit/bf71a0b9ceb6485a1ea19306175b816a8d7da677))
+* **api:** initialize member memory before runs ([#37381](https://github.com/okou-ai/okou/issues/37381)) ([b81ce9b](https://github.com/okou-ai/okou/commit/b81ce9b64d57d6ab4bee45ce6ccdf42c519860fe))
+
+
+### Bug Fixes
+
+* **app:** hide unconfigured model settings controls ([#37379](https://github.com/okou-ai/okou/issues/37379)) ([7bef426](https://github.com/okou-ai/okou/commit/7bef426e8df4e880350800d00f485d56bb714930))
+
+
+### Refactoring
+
+* **api:** retire Cloudflare Access database triggers ([#37373](https://github.com/okou-ai/okou/issues/37373)) ([3103651](https://github.com/okou-ai/okou/commit/3103651f8015c3b3e241c216e82e52bd2c1d2dde))
+* **api:** retire pre-cutover mcp text-only retry fallback ([#37372](https://github.com/okou-ai/okou/issues/37372)) ([8dd84e0](https://github.com/okou-ai/okou/commit/8dd84e08569f012a90683a0b917f53b019b3761d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.530.0
+    * @okouai/core bumped to 8.723.0
+    * @okouai/db bumped to 1.314.0
+    * @okouai/pi-agent-runtime bumped to 1.43.2
+
 ## [1.698.1](https://github.com/okou-ai/okou/compare/api-v1.698.0...api-v1.698.1) (2026-09-29)
 
 

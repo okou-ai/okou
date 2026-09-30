@@ -4902,6 +4902,15 @@
         "upgradePro": "Passer à Pro pour utiliser",
         "upgradeToPro": "Passer à Pro"
       },
+      "autoMode": {
+        "cancel": "Annuler",
+        "confirm": "Passer à Auto Model",
+        "confirmDescription": "Cette action supprime définitivement les politiques de modèles de l’organisation, ses connexions aux fournisseurs et les secrets devenus inutiles. Auto restera sa seule politique. Les abonnements personnels des membres restent connectés et peuvent ajouter des modèles. Revenir à Custom ne restaurera pas les paramètres supprimés.",
+        "confirmTitle": "Passer cet espace de travail en mode Auto Model ?",
+        "description": "Utilisez Auto comme politique de l’organisation ; les abonnements personnels ajoutent des modèles pour les membres.",
+        "failed": "Impossible de changer de mode. Actualisez les paramètres et réessayez.",
+        "title": "Auto Model"
+      },
       "deviceAuth": {
         "claude": {
           "approvalOpenError": "La page d'approbation n'a pas pu être ouverte. Utilisez le lien manuellement et collez le code ici.",
@@ -4954,7 +4963,6 @@
         "description": "Connectez une passerelle gérée par un administrateur via Anthropic Messages, OpenAI Responses ou les deux.",
         "dialogDescription": "Configurez chaque protocole avec l'URL de base de l'API utilisée par Claude Code ou Codex.",
         "editTitle": "Modifier le fournisseur de modèles",
-        "empty": "Aucun fournisseur de modèles personnalisé n'est configuré.",
         "errors": {
           "invalidMappings": "Les mappages de modèles doivent être un objet JSON dont les valeurs sont les noms des modèles en amont.",
           "missingProtocol": "Activez au moins un protocole.",
@@ -5005,6 +5013,7 @@
           "stale": "Attention",
           "week": "Semaine"
         },
+        "subscriptionsSectionTitle": "Abonnements personnels aux modèles",
         "useAccount": "Utiliser"
       },
       "picker": {

@@ -1,6 +1,6 @@
 // oxlint-disable max-lines-per-function
 import type { ReactNode } from "react";
-import { useGet, useSet, useLoadable } from "ccstate-react";
+import { useGet, useLastResolved, useSet, useLoadable } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
   Dialog,
@@ -31,6 +31,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { isOrgAdmin$ } from "../../../../signals/org.ts";
 import { featureSwitch$ } from "../../../../signals/external/feature-switch.ts";
+import { orgModelPolicies$ } from "../../../../signals/external/org-model-policies.ts";
 import { billingPlansStandalone$ } from "../../../../signals/okou-page/settings/workspace-settings-state.ts";
 import {
   closeSettingsModal$,
@@ -153,6 +154,7 @@ function SettingsDialog({
     isAdminLoadable.state === "hasData" ? isAdminLoadable.data : false;
   const showDebug = features[FeatureSwitchKey.OkouDebug] ?? false;
   const showChat = features[FeatureSwitchKey.ChatPreference] ?? false;
+  const autoModel = useLastResolved(orgModelPolicies$)?.modelMode === "auto";
 
   const sectionMeta = {
     preference: {
@@ -347,6 +349,8 @@ function SettingsDialog({
       ? "preference"
       : availableSection;
   const meta = sectionMeta[resolvedSection];
+  // Auto workspaces have no organization model settings to introduce.
+  const showHeader = resolvedSection !== "model" || !autoModel;
 
   const handleSectionChange = (section: SettingsSection) => {
     setActiveSection(section);
@@ -463,17 +467,25 @@ function SettingsDialog({
 
           {/* Content area */}
           <div className="relative flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden bg-background">
-            <header className="shrink-0 px-4 sm:px-10 pt-6 sm:pt-8 pb-1">
-              <div className="flex min-h-7 items-center gap-2">
-                <h2 className="hidden h-7 items-center text-xl font-semibold tracking-tight text-foreground sm:flex">
-                  {meta.title}
-                </h2>
-              </div>
-              <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-                {meta.description}
-              </p>
-            </header>
-            <div className="flex-1 overflow-y-auto px-4 sm:px-10 pb-10 pt-4 sm:pt-6 [scrollbar-gutter:stable]">
+            {showHeader && (
+              <header className="shrink-0 px-4 sm:px-10 pt-6 sm:pt-8 pb-1">
+                <div className="flex min-h-7 items-center gap-2">
+                  <h2 className="hidden h-7 items-center text-xl font-semibold tracking-tight text-foreground sm:flex">
+                    {meta.title}
+                  </h2>
+                </div>
+                <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+                  {meta.description}
+                </p>
+              </header>
+            )}
+            <div
+              className={cn(
+                "flex-1 overflow-y-auto px-4 sm:px-10 pb-10 [scrollbar-gutter:stable]",
+                // Without a header, keep content clear of the close button.
+                showHeader ? "pt-4 sm:pt-6" : "pt-14 sm:pt-16",
+              )}
+            >
               <SectionContent section={resolvedSection} />
             </div>
           </div>

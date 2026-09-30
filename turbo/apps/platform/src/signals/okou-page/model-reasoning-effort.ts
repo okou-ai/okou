@@ -41,11 +41,16 @@ export function availableChatReasoningEfforts(
     runtimeProviderType,
     codexServiceTier: selection.codexServiceTier ?? undefined,
   });
-  return getRouteReasoningEfforts({
+  const routeEfforts = getRouteReasoningEfforts({
     model: selection.selectedModel,
     piExecution,
     runtimeProviderType,
   });
+  return policy.subscriptionOptions
+    ? routeEfforts.filter((effort) => {
+        return policy.subscriptionOptions?.efforts.includes(effort);
+      })
+    : routeEfforts;
 }
 
 /** Resolve the value this UI can execute without mutating the saved preference. */

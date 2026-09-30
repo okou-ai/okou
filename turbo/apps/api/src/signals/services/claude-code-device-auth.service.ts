@@ -36,6 +36,7 @@ import {
   type PersonalProviderAccountMutation,
 } from "./model-provider-account.service";
 import { userFeatureSwitchContext } from "./feature-switches.service";
+import { personalAccountsEnabledForOrg } from "./personal-accounts-availability.service";
 import {
   upsertOrgModelProvider$,
   upsertUserModelProvider$,
@@ -801,9 +802,13 @@ const importClaudeCodeOAuthToken$ = command(
     );
     signal.throwIfAborted();
     if (
-      isFeatureEnabled(
-        FeatureSwitchKey.PersonalModelProviderAccounts,
-        featureSwitchContext,
+      await personalAccountsEnabledForOrg(
+        set(writeDb$),
+        args.orgId,
+        isFeatureEnabled(
+          FeatureSwitchKey.PersonalModelProviderAccounts,
+          featureSwitchContext,
+        ),
       )
     ) {
       const result = await upsertPersonalModelProviderAccount(

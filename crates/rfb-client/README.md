@@ -12,10 +12,22 @@ default and product acceptance is recorded separately.
 ## Contract
 
 `authenticate` consumes an already connected, uniquely owned asynchronous stream,
-a certificate identity, one exact `X509Authentication`, explicit `TrustRoots`,
-and a deadline. The caller must validate its saved destination, profile and
-authorization before opening that stream. This crate never resolves a hostname
-or opens a second socket.
+a server certificate identity, one exact **certificate-free client**
+`X509Authentication`, explicit `TrustRoots`, and a deadline. The caller must
+validate its saved destination, profile and authorization before opening that
+stream. This crate never resolves a hostname or opens a second socket.
+
+`authenticate_with_client_certificate` is a separate **engine-only** entry point
+requiring an in-memory `ClientIdentity` for either X509None (260, no inner RFB
+credential) or X509Vnc (261, classic password). It does not reinterpret any
+existing saved X509None or X509Vnc profile, expose a new Runner profile or
+turn on the default-off `VncAccess` switch. `ClientIdentity::from_pkcs8_der`
+accepts 1–8 DER certificates totaling at most 64 KiB and an unencrypted,
+nonempty PKCS#8 key of at most 16 KiB; key/certificate match must be provable.
+PEM decoding, encrypted-key passphrases, owner rotation, at-rest encryption and
+product authorization remain for [#37375](https://github.com/okou-ai/okou/issues/37375).
+Do not pass a TLS trust root as a substitute for the client's key or reverse the
+original target name merely because an SSH tunnel carries the supplied stream.
 
 `authenticate_apple_dh` is a separate entry point for Apple's legacy ARD
 security type 30. `authenticate_apple_vnc_password` separately selects the
@@ -35,9 +47,23 @@ sent. Other offered X509 variants and insecure alternatives are never selected.
 The X509 entry point has no verification bypass or fallback to bare None,
 VncAuth, Plain, or anonymous TLS. The separate raw type-2 entry point requires
 explicit selection; it cannot be reached by downgrading an X509 or Apple profile.
-X509None verifies and encrypts the server channel but performs no
-inner VNC client authentication; engine support is not a decision to expose that
-profile in Runner or product configuration.
+Certificate-free X509None verifies and encrypts the server channel but performs
+no inner VNC client authentication; engine support is not a decision to expose
+that profile in Runner or product configuration.
+
+The certificate-required entry point uses fresh rustls client-auth resolution per
+connection. It rejects a completed TLS handshake **before** any inner VNC
+password or SecurityResult is processed when the server did not send a client
+CertificateRequest or the client did not select a usable signing scheme. It
+still verifies the server's chain/name with the selected `TrustRoots`, shares
+the <=30s absolute deadline and never falls back to certificate-free TLS or
+a raw/Plain security type. The resolver can prove only a request and usable
+signer, **not that QEMU enforces client certificate verification**. In a local
+pinned QEMU 8.2.2 fixture `verify-peer=off` sent CertificateRequest and accepted
+an unrelated-CA client. Operators must separately establish `verify-peer=on`
+and rejection of a bad client identity; the client cannot infer that server
+setting from a successful handshake. The independent synthetic-CA acceptance
+matrix and instructions are in [`tests/QEMU_MTLS.md`](tests/QEMU_MTLS.md).
 
 Public trust uses `webpki-roots`; custom trust replaces those roots with 1-8 DER
 certificates totaling at most 64 KiB. PEM parsing and its encoded-size limit belong
@@ -62,8 +88,12 @@ SecurityResult. Product configuration may impose a tighter username limit.
 
 Success returns `Authenticated::into_stream()`, positioned immediately after
 SecurityResult. The caller sends ClientInit next; ServerInit and framebuffer data
-are not consumed. The returned object retains no client credentials and starts no
-task. Its owned transport is fixed at authentication: verified TLS for X509 or
+are not consumed. The certificate-free returned object retains no client credentials; the
+certificate-required TLS connection may retain the client signing key until
+stream teardown. This crate retains no extra application-owned plaintext key
+buffer after key-provider import; Rustls/provider, compiler, kernel and TLS
+record copies are not guaranteed erasable. The engine starts no task. Its owned
+transport is fixed at authentication: verified TLS for X509 or
 the caller-supplied raw stream for Apple DH, Apple password/type 2 or either
 Apple SRP method. No fallback changes that variant.
 

@@ -48,6 +48,7 @@ import { openCodexDeviceAuthDialogPersonal$ } from "../../../../signals/okou-pag
 import { detach, Reason } from "../../../../signals/utils.ts";
 import { pageSignal$ } from "../../../../signals/page-signal.ts";
 import { featureSwitch$ } from "../../../../signals/external/feature-switch.ts";
+import { orgModelPolicies$ } from "../../../../signals/external/org-model-policies.ts";
 import { ConnectorEntryStatus } from "../settings/connector-entry-card.tsx";
 import { ProviderIcon } from "../settings/provider-icons.tsx";
 import { PersonalClaudeCodeDeviceAuthDialog } from "../settings/claude-code-device-auth-dialog.tsx";
@@ -78,19 +79,27 @@ export function PersonalProvidersTab() {
 
 function PersonalModelsHeading({
   accountTable = false,
+  subscriptions = false,
   action,
 }: {
   readonly accountTable?: boolean;
+  readonly subscriptions?: boolean;
   readonly action?: ReactNode;
 }) {
   const { t } = useTranslation();
   return (
     <SettingsSectionHeading
-      title={t(($) => {
-        return accountTable
-          ? $.settings.models.personal.accountsSectionTitle
-          : $.settings.models.personal.sectionTitle;
-      })}
+      title={
+        subscriptions
+          ? t(($) => {
+              return $.settings.models.personal.subscriptionsSectionTitle;
+            })
+          : t(($) => {
+              return accountTable
+                ? $.settings.models.personal.accountsSectionTitle
+                : $.settings.models.personal.sectionTitle;
+            })
+      }
       description={t(($) => {
         return accountTable
           ? $.settings.models.personal.accountsDescription
@@ -103,7 +112,9 @@ function PersonalModelsHeading({
 
 function OAuthCredentialsSection() {
   const featureSwitches = useGet(featureSwitch$);
-  return featureSwitches[FeatureSwitchKey.PersonalModelProviderAccounts] ? (
+  const modelMode = useLastLoadable(orgModelPolicies$);
+  return featureSwitches[FeatureSwitchKey.PersonalModelProviderAccounts] ||
+    (modelMode.state === "hasData" && modelMode.data.modelMode === "auto") ? (
     <OAuthAccountGroupsSection />
   ) : (
     <LegacyOAuthCredentialsSection />
@@ -135,6 +146,7 @@ function OAuthAccountGroupsSection() {
   );
   const openCodexDeviceAuthDialog = useSet(openCodexDeviceAuthDialogPersonal$);
   const activateAccount = useSet(activatePersonalOAuthCredentialAccount$);
+  const mode = useLastLoadable(orgModelPolicies$);
   const setDisconnectDialog = useSet(setPersonalAccountDisconnectDialog$);
   const setResetDialog = useSet(setSettingsCodexResetDialog$);
   const pageSignal = useGet(pageSignal$);
@@ -144,7 +156,9 @@ function OAuthAccountGroupsSection() {
     modelCapabilitiesLoadable.state === "loading";
   const providers =
     providersLoadable.state === "hasData" ? providersLoadable.data : [];
+  const auto = mode.state === "hasData" && mode.data.modelMode === "auto";
   const supportByok =
+    auto ||
     modelCapabilitiesLoadable.state !== "hasData" ||
     modelCapabilitiesLoadable.data.supportByok;
   const actionPending = actionLoadable.state === "loading";
@@ -197,7 +211,11 @@ function OAuthAccountGroupsSection() {
 
   return (
     <section className="flex flex-col gap-4">
-      <PersonalModelsHeading accountTable action={addAccountAction} />
+      <PersonalModelsHeading
+        accountTable
+        subscriptions={auto}
+        action={addAccountAction}
+      />
       <TooltipProvider delay={100}>
         <PersonalProviderAccountsTable
           accountGroups={accountGroups}

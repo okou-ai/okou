@@ -1,5 +1,5 @@
 {
-  "id": "ccd438eb-077d-40f4-b32a-56fba9b82054",
+  "id": "47d44b47-28c3-4047-b4a4-c2ab90a04dd1",
   "prevId": "8344e36a-b098-452e-a6df-48db285d72ce",
   "version": "7",
   "dialect": "postgresql",
@@ -8467,21 +8467,6 @@
         }
       },
       "indexes": {
-        "chat_threads_agent_session_unique": {
-          "name": "chat_threads_agent_session_unique",
-          "columns": [
-            {
-              "expression": "agent_session_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "idx_chat_threads_user_agent_pinned": {
           "name": "idx_chat_threads_user_agent_pinned",
           "columns": [
@@ -22653,6 +22638,13 @@
           "notNull": true,
           "default": false
         },
+        "model_mode": {
+          "name": "model_mode",
+          "type": "varchar(6)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'custom'"
+        },
         "onboarding_industry": {
           "name": "onboarding_industry",
           "type": "text",
@@ -22934,6 +22926,10 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
+        "chk_org_metadata_model_mode": {
+          "name": "chk_org_metadata_model_mode",
+          "value": "\"org_metadata\".\"model_mode\" IN ('auto', 'custom')"
+        },
         "chk_org_metadata_tier_not_pro_suspend": {
           "name": "chk_org_metadata_tier_not_pro_suspend",
           "value": "\"org_metadata\".\"tier\" <> 'pro-suspend'"
@@ -30519,6 +30515,107 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.subscription_model_catalog": {
+      "name": "subscription_model_catalog",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "subscription_type": {
+          "name": "subscription_type",
+          "type": "varchar(40)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "model": {
+          "name": "model",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "display_name": {
+          "name": "display_name",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "efforts": {
+          "name": "efforts",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "service_tier": {
+          "name": "service_tier",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sort_order": {
+          "name": "sort_order",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_subscription_model_catalog_type_model": {
+          "name": "idx_subscription_model_catalog_type_model",
+          "columns": [
+            {
+              "expression": "subscription_type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "model",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_subscription_model_catalog_type": {
+          "name": "chk_subscription_model_catalog_type",
+          "value": "\"subscription_model_catalog\".\"subscription_type\" IN ('claude-code-oauth-token', 'codex-oauth-token')"
+        },
+        "chk_subscription_model_catalog_service_tier": {
+          "name": "chk_subscription_model_catalog_service_tier",
+          "value": "\"subscription_model_catalog\".\"service_tier\" IS NULL OR \"subscription_model_catalog\".\"service_tier\" = 'priority'"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.system_storage_presigned_url_cache": {

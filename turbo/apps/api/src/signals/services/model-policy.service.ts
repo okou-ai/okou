@@ -10,6 +10,7 @@ import {
 import {
   loadMemberModelRouteContext,
   resolveEffectivePolicyRoute,
+  type MemberModelRouteContext,
   type ResolvedModelFirstPolicyRoute,
 } from "./effective-model-route.service";
 import { checkOrgPlanRunAdmission } from "./run-admission.service";
@@ -50,7 +51,12 @@ import {
   modelProviderSurfaces,
 } from "@okouai/db/schema/model-provider-gateway";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
+import {
+  loadMemberSubscriptionModels,
+  type MemberSubscriptionModel,
+} from "./subscription-model-catalog.service";
 import { runModelCatalog } from "@okouai/db/schema/run-model-catalog";
 import {
   conflict,
@@ -1141,6 +1147,79 @@ function memberRouteAvailability(params: {
     : "available";
 }
 
+function memberSubscriptionPolicy(
+  entry: MemberSubscriptionModel,
+  capabilities: OrgPlanCapabilities | null,
+): OrgModelPolicy {
+  const restricted = checkOrgPlanRunAdmission({
+    capabilities,
+    modelProviderType: entry.providerType,
+    selectedModel: entry.model,
+    autoPersonalSubscription: true,
+  });
+  return {
+    id: entry.id,
+    model: entry.model,
+    modelLabel: entry.displayName,
+    isDefault: false,
+    defaultProviderType: entry.providerType,
+    runtimeProviderType: entry.providerType,
+    credentialScope: "member",
+    modelProviderId: null,
+    modelProviderSurfaceId: null,
+    routeStatus: "valid",
+    routeStatusReason: null,
+    subscriptionOptions: {
+      efforts: [...entry.efforts],
+      serviceTier: entry.serviceTier === "priority" ? "priority" : null,
+    },
+    memberEffective: {
+      providerType: entry.providerType,
+      runtimeProviderType: entry.providerType,
+      credentialScope: "member",
+      availability: entry.needsReconnect
+        ? "reconnect_required"
+        : restricted
+          ? "plan_restricted"
+          : "available",
+      accountSelection: "capture_required",
+    },
+    createdAt: entry.createdAt.toISOString(),
+    updatedAt: entry.updatedAt.toISOString(),
+  };
+}
+
+async function loadAutoMemberPolicies(
+  db: Db,
+  member: MemberModelRouteContext,
+  capabilities: OrgPlanCapabilities | null,
+  policies: readonly OrgModelPolicy[],
+  auto: boolean,
+): Promise<OrgModelPolicy[]> {
+  if (!auto) {
+    return [];
+  }
+  const personalModels = await loadMemberSubscriptionModels(db, member);
+  return personalModels
+    .filter((entry) => {
+      return !policies.some((policy) => {
+        return policy.model === entry.model;
+      });
+    })
+    .map((entry) => {
+      return memberSubscriptionPolicy(entry, capabilities);
+    });
+}
+
+async function loadOrgModelMode(db: Db, orgId: string) {
+  const [org] = await db
+    .select({ modelMode: orgMetadata.modelMode })
+    .from(orgMetadata)
+    .where(eq(orgMetadata.orgId, orgId))
+    .limit(1);
+  return org?.modelMode === "auto" ? "auto" : "custom";
+}
+
 async function listOrgModelPolicies(
   db: Db,
   orgId: string,
@@ -1239,23 +1318,35 @@ async function listOrgModelPolicies(
     }),
   );
   const workspaceDefault = selectWorkspaceDefaultPolicy(policies);
-  const okouModelsEnabled = isFeatureEnabled(
-    FeatureSwitchKey.OkouModels,
-    featureSwitchContext,
+  const modelMode = await loadOrgModelMode(db, orgId);
+  const memberPolicies = await loadAutoMemberPolicies(
+    db,
+    member,
+    capabilities,
+    policies,
+    modelMode === "auto",
   );
 
   return {
-    policies,
+    modelMode,
+    policies: [...policies, ...memberPolicies],
     revision: policyRevision(persistedRows),
     // Permanent since the personal subscription priority rollout completed.
     // Removing the field needs its own client-compatibility window.
     writePreconditionRequired: true,
-    modelsAvailableToAdd: modelsAvailableToAdd(
-      persistedRows,
-      modelsAllowedForNewPolicy,
-    ).filter((model) => {
-      return okouModelsEnabled || !isOkouRunModel(model);
-    }),
+    modelsAvailableToAdd:
+      modelMode === "auto"
+        ? []
+        : modelsAvailableToAdd(persistedRows, modelsAllowedForNewPolicy).filter(
+            (model) => {
+              return (
+                isFeatureEnabled(
+                  FeatureSwitchKey.OkouModels,
+                  featureSwitchContext,
+                ) || !isOkouRunModel(model)
+              );
+            },
+          ),
     workspaceDefaultModel: workspaceDefault?.model ?? null,
     workspaceDefaultPolicyId: workspaceDefault?.id ?? null,
   };
@@ -1458,6 +1549,16 @@ export const updateOrgModelPolicies$ = command(
     }
     const written = await db.transaction(async (tx) => {
       await lockPolicyWrites(tx, params.orgId);
+      const [org] = await tx
+        .select({ mode: orgMetadata.modelMode })
+        .from(orgMetadata)
+        .where(eq(orgMetadata.orgId, params.orgId))
+        .limit(1);
+      if (org?.mode === "auto") {
+        return bad<OrgModelPoliciesResponse>(
+          "Model policies are managed automatically in Auto mode",
+        );
+      }
       await lockPolicyParents(tx, params.orgId);
       signal.throwIfAborted();
       const existing = await loadRows(tx, params.orgId, true);

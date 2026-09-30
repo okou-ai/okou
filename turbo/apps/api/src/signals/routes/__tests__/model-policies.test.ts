@@ -11,7 +11,10 @@ import {
   type ModelProviderWriteType,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
-import { modelProvidersByTypeContract } from "@okouai/api-contracts/contracts/model-provider-routes";
+import {
+  modelProvidersByTypeContract,
+  modelProvidersMainContract,
+} from "@okouai/api-contracts/contracts/model-provider-routes";
 import { modelProviderConnectionsMainContract } from "@okouai/api-contracts/contracts/model-provider-gateways";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import type { ImageModelId } from "@okouai/api-contracts/contracts/image-models";
@@ -170,6 +173,38 @@ async function createOrgProvider(
   return providerId;
 }
 
+/** Enter Auto the way production does: a Debug admin uses the mode route. */
+async function switchModelMode(
+  fixture: ModelPolicyFixture,
+  mode: "auto" | "custom",
+): Promise<void> {
+  await updateFeatureSwitchesForUser(context, fixture, {
+    [FeatureSwitchKey.OkouDebug]: true,
+  });
+  useSession(fixture);
+  await accept(
+    apiClient().updateMode({ headers: authHeaders(), body: { mode } }),
+    [200],
+  );
+}
+
+async function connectCodexSubscription(
+  fixture: ModelPolicyFixture,
+): Promise<void> {
+  await createMiscRoutesApi(context).upsertPersonalModelProvider(
+    fixture,
+    {
+      type: "codex-oauth-token",
+      authMethod: "auth_json",
+      secrets: {
+        CODEX_AUTH_JSON: makeCodexAuthJson({ accountId: randomUUID() }),
+      },
+    },
+    [200, 201],
+  );
+  useSession(fixture);
+}
+
 async function makeLimitedFreeWorkspace(
   fixture: ModelPolicyFixture,
 ): Promise<void> {
@@ -208,6 +243,324 @@ async function listSeededLimitedFreePolicies(): Promise<{
 }
 
 describe("GET/PUT /api/model-policies", () => {
+  it("keeps the org mode separate from policies and exposes Auto policies to members without the switch", async () => {
+    const fixture = seedFixture();
+    await seedOrgMetadata({ orgId: fixture.orgId, tier: "pro", credits: 0 });
+    useSession(fixture);
+    const client = apiClient();
+    const initial = await accept(
+      client.list({ headers: authHeaders() }),
+      [200],
+    );
+    expect(initial.body.modelMode).toBe("custom");
+    await createOrgProvider(fixture, "anthropic-api-key");
+    const gateways = setupApp({ context, routes: modelProviderGatewayRoutes })(
+      modelProviderConnectionsMainContract,
+    );
+    await accept(
+      gateways.create({
+        headers: authHeaders(),
+        body: {
+          displayName: "Legacy workspace gateway",
+          secret: "test-only-gateway-secret",
+          surfaces: [
+            {
+              protocol: "anthropic-messages",
+              apiBaseUrl: "https://gateway.example.com/anthropic",
+              authHeaderName: "Authorization",
+              authHeaderTemplate: "Bearer {{secret}}",
+              modelMappings: { "claude-sonnet-5": "legacy-sonnet" },
+            },
+          ],
+        },
+      }),
+      [201],
+    );
+
+    const unavailable = await client.updateMode({
+      headers: authHeaders(),
+      body: { mode: "auto" },
+    });
+    expect(unavailable.status).toBe(403);
+    await updateFeatureSwitchesForUser(context, fixture, {
+      [FeatureSwitchKey.OkouDebug]: true,
+    });
+    useSession(fixture);
+
+    await accept(
+      client.updateMode({
+        headers: authHeaders(),
+        body: { mode: "auto" },
+      }),
+      [200],
+    );
+    expect(
+      (await accept(gateways.list({ headers: authHeaders() }), [200])).body
+        .connections,
+    ).toStrictEqual([]);
+    const rejectedGateway = await accept(
+      gateways.create({
+        headers: authHeaders(),
+        body: {
+          displayName: "Auto workspace gateway",
+          secret: "test-only-gateway-secret",
+          surfaces: [
+            {
+              protocol: "anthropic-messages",
+              apiBaseUrl: "https://gateway.example.com/anthropic",
+              authHeaderName: "Authorization",
+              authHeaderTemplate: "Bearer {{secret}}",
+              modelMappings: {},
+            },
+          ],
+        },
+      }),
+      [400],
+    );
+    expect(rejectedGateway.body.error.message).toContain("Auto mode");
+    const auto = await accept(client.list({ headers: authHeaders() }), [200]);
+    expect(
+      auto.body.policies.map((policy) => {
+        return policy.model;
+      }),
+    ).toStrictEqual(["okou-1.0"]);
+    expect(
+      (
+        await client.update({
+          headers: authHeaders(),
+          body: {
+            revision: auto.body.revision,
+            policies: [makeBuiltInPolicy("gpt-6-luna", true)],
+          },
+        })
+      ).status,
+    ).toBe(400);
+    const memberFixture = { ...fixture, userId: `user_${randomUUID()}` };
+    useSession(memberFixture, "org:member");
+    const member = await accept(client.list({ headers: authHeaders() }), [200]);
+    expect(member.body.modelMode).toBe("auto");
+    expect(member.body.workspaceDefaultModel).toBe("okou-1.0");
+    expect(
+      member.body.policies.map((policy) => {
+        return policy.model;
+      }),
+    ).toStrictEqual(["okou-1.0"]);
+    expect(
+      (
+        await client.updateMode({
+          headers: authHeaders(),
+          body: { mode: "custom" },
+        })
+      ).status,
+    ).toBe(403);
+  });
+
+  it("projects the six subscription catalog entries only for the connected Auto member", async () => {
+    const fixture = seedFixture();
+    // Plan state is infrastructure-owned; Auto admits subscriptions on limited-free.
+    await seedOrgMetadata({
+      orgId: fixture.orgId,
+      tier: "limited-free-1",
+      credits: 0,
+    });
+    await switchModelMode(fixture, "auto");
+    const client = apiClient();
+    const before = await accept(client.list({ headers: authHeaders() }), [200]);
+    expect(
+      before.body.policies.map((policy) => {
+        return policy.model;
+      }),
+    ).toStrictEqual(["okou-1.0"]);
+    await createMiscRoutesApi(context).upsertPersonalModelProvider(
+      fixture,
+      { type: "claude-code-oauth-token", secret: "sk-ant-oat-auto-member" },
+      [200, 201],
+    );
+    await connectCodexSubscription(fixture);
+    const after = await accept(client.list({ headers: authHeaders() }), [200]);
+    expect(
+      after.body.policies.map((policy) => {
+        return policy.model;
+      }),
+    ).toStrictEqual([
+      "okou-1.0",
+      "claude-sonnet-5-5",
+      "gpt-6-luna",
+      "claude-opus-5-5",
+      "gpt-6-sol",
+      "claude-fable-5-1",
+      "gpt-6-astra",
+    ]);
+    expect(
+      after.body.policies.find((policy) => {
+        return policy.model === "claude-sonnet-5-5";
+      }),
+    ).toMatchObject({
+      modelLabel: "Claude Sonnet 5.5",
+      subscriptionOptions: {
+        efforts: ["low", "medium", "high", "extra", "max", "ultracode"],
+        serviceTier: null,
+      },
+      memberEffective: {
+        providerType: "claude-code-oauth-token",
+        availability: "available",
+      },
+    });
+    expect(
+      after.body.policies.find((policy) => {
+        return policy.model === "gpt-6-astra";
+      })?.subscriptionOptions,
+    ).toMatchObject({
+      efforts: ["low", "medium", "high", "xhigh", "max", "ultra"],
+      serviceTier: "priority",
+    });
+    const preferenceClient = setupApp({
+      context,
+      routes: userModelPreferenceRoutes,
+    })(userModelPreferenceContract);
+    const claudePreference = await accept(
+      preferenceClient.update({
+        headers: authHeaders(),
+        body: { selectedModel: "claude-sonnet-5-5", serviceTier: null },
+      }),
+      [200],
+    );
+    expect(claudePreference.body.selectedModel).toBe("claude-sonnet-5-5");
+    const codexPreference = await accept(
+      preferenceClient.update({
+        headers: authHeaders(),
+        body: { selectedModel: "gpt-6-astra", serviceTier: "priority" },
+      }),
+      [200],
+    );
+    expect(codexPreference.body.serviceTier).toBe("priority");
+    const outsideCatalogEffort = await accept(
+      preferenceClient.update({
+        headers: authHeaders(),
+        body: {
+          selectedModel: "gpt-6-luna",
+          serviceTier: null,
+          modelSettingsPatch: { model: "gpt-6-luna", effort: "ultra" },
+        },
+      }),
+      [400],
+    );
+    expect(outsideCatalogEffort.body).toMatchObject({
+      error: {
+        message: "Reasoning effort is not available for this subscription",
+      },
+    });
+    const other = { ...fixture, userId: `user_${randomUUID()}` };
+    useSession(other, "org:member");
+    const otherList = await accept(
+      client.list({ headers: authHeaders() }),
+      [200],
+    );
+    expect(
+      otherList.body.policies.map((policy) => {
+        return policy.model;
+      }),
+    ).toStrictEqual(["okou-1.0"]);
+  });
+
+  it("returns an Auto member to the org default after disconnecting the subscription", async () => {
+    const fixture = seedFixture();
+    await seedOrgMetadata({ orgId: fixture.orgId, tier: "pro", credits: 0 });
+    await switchModelMode(fixture, "auto");
+    await connectCodexSubscription(fixture);
+    const preferences = setupApp({
+      context,
+      routes: userModelPreferenceRoutes,
+    })(userModelPreferenceContract);
+    await accept(
+      preferences.update({
+        headers: authHeaders(),
+        body: { selectedModel: "gpt-6-sol", serviceTier: "priority" },
+      }),
+      [200],
+    );
+
+    await createMiscRoutesApi(context).deletePersonalModelProvider(
+      fixture,
+      "codex-oauth-token",
+      [204],
+    );
+    useSession(fixture);
+    const preference = await accept(
+      preferences.get({ headers: authHeaders() }),
+      [200],
+    );
+    expect(preference.body).toMatchObject({
+      selectedModel: "okou-1.0",
+      serviceTier: null,
+    });
+  });
+
+  it("returns subscription members to organization policies when Auto switches back to Custom", async () => {
+    const fixture = seedFixture();
+    await seedOrgMetadata({ orgId: fixture.orgId, tier: "pro", credits: 0 });
+    await switchModelMode(fixture, "auto");
+    await connectCodexSubscription(fixture);
+    const preferences = setupApp({
+      context,
+      routes: userModelPreferenceRoutes,
+    })(userModelPreferenceContract);
+    await accept(
+      preferences.update({
+        headers: authHeaders(),
+        body: { selectedModel: "gpt-6-sol", serviceTier: "priority" },
+      }),
+      [200],
+    );
+    const legacyProvider = await setupApp({
+      context,
+      routes: modelProvidersRoutes,
+    })(modelProvidersMainContract).upsert({
+      headers: authHeaders(),
+      body: { type: "anthropic-api-key", secret: "auto-workspace-key" },
+    });
+    expect(legacyProvider.status).toBe(400);
+
+    await switchModelMode(fixture, "custom");
+    const preference = await accept(
+      preferences.get({ headers: authHeaders() }),
+      [200],
+    );
+    expect(preference.body).toMatchObject({
+      selectedModel: "okou-1.0",
+      serviceTier: null,
+    });
+    const custom = await accept(
+      apiClient().list({ headers: authHeaders() }),
+      [200],
+    );
+    expect(custom.body.modelMode).toBe("custom");
+    expect(
+      custom.body.policies.map((policy) => {
+        return policy.model;
+      }),
+    ).toStrictEqual(["okou-1.0"]);
+    await createOrgProvider(fixture, "anthropic-api-key");
+    const updated = await accept(
+      apiClient().update({
+        headers: authHeaders(),
+        body: {
+          revision: custom.body.revision,
+          policies: [
+            makeBuiltInPolicy("okou-1.0", true),
+            makeBuiltInPolicy("gpt-6-luna"),
+          ],
+        },
+      }),
+      [200],
+    );
+    expect(
+      updated.body.policies.map((policy) => {
+        return policy.model;
+      }),
+    ).toStrictEqual(["okou-1.0", "gpt-6-luna"]);
+  });
+
   it("filters only the Add Model projection with a personal switch", async () => {
     const fixture = await seedFixture();
     useSession(fixture);
