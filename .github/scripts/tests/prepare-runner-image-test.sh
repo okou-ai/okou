@@ -641,4 +641,36 @@ if grep -Fq -- '--okou-cli-artifact' "$PREPARE"; then
   fail "runner build must use the embedded CLI, not a host artifact"
 fi
 
+# Reuse the private compile input for manifest metadata, but never send either
+# file to metal. A mismatched input must be rejected before any SSH call.
+cli_input="${TMPDIR}/cli-compile-input"
+mkdir -p "$cli_input"
+printf 'bundled CLI fixture\n' > "${cli_input}/package.tgz"
+cli_sha=$(sha256sum "${cli_input}/package.tgz" | awk '{print $1}')
+cli_size=$(stat -c '%s' "${cli_input}/package.tgz")
+jq -n --arg sha "$cli_sha" --argjson size "$cli_size" '{
+  commitSha: "abc",
+  package: {path: "package.tgz", sha256: $sha, size: $size},
+  versions: {cli: "9.353.0", piAgentRuntime: "1.36.0", piSdk: "0.86.1+okou.0123456789ab"}
+}' > "${cli_input}/manifest.json"
+metadata_case="${TMPDIR}/embedded-cli-metadata"
+prepare_remote_case "$metadata_case"
+GUEST_CLI_PATH="${cli_input}/package.tgz" \
+  GUEST_CLI_MANIFEST_PATH="${cli_input}/manifest.json" \
+  RUNNER_BINARY_GIT_REVISION=abc \
+  REMOTE_REACH_GC=1 REMOTE_GC_STATUSES=0 run_remote_case "$metadata_case"
+[ "$(< "${metadata_case}/upload-count")" -eq 1 ] || fail "compile input must not be uploaded to metal"
+if grep -Fq '/var/lib/vm0-runner/bin/pr-123/okou-cli' "${metadata_case}/ssh.log"; then
+  fail "compile input metadata must not cause a host artifact upload"
+fi
+
+printf 'tampered\n' > "${cli_input}/package.tgz"
+tampered_case="${TMPDIR}/embedded-cli-tampered"
+prepare_remote_case "$tampered_case"
+GUEST_CLI_PATH="${cli_input}/package.tgz" \
+  GUEST_CLI_MANIFEST_PATH="${cli_input}/manifest.json" \
+  RUNNER_BINARY_GIT_REVISION=abc run_remote_case "$tampered_case"
+grep -q 'embedded CLI compile input does not match' "${tampered_case}/err" || fail "tampered compile input must fail"
+[ ! -s "${tampered_case}/ssh.log" ] || fail "tampered compile input must fail before SSH"
+
 echo "prepare-runner-image-test: ok"
