@@ -10,13 +10,10 @@ import {
   getBuiltInConcreteProviderType,
   isCodexFastModeModel,
   isBuiltInModelProviderType,
-  getRunModelAccess,
   getRunModelRouteAccess,
-  RETIRED_RUN_MODEL_MESSAGE,
   isSupportedRunModel,
   isModelSupportedByProvider,
   modelProviderTypeSchema,
-  ORG_DEFAULT_RUN_MODEL,
   type ModelProviderCredentialScope,
   type ModelProviderWriteType,
 } from "@okouai/api-contracts/contracts/model-providers";
@@ -38,10 +35,15 @@ import { and, eq, or } from "drizzle-orm";
 import { badRequestMessage, insufficientCredits } from "../../lib/error";
 import type { Db } from "../external/db";
 import {
-  ensureOrgModelPolicyFacts,
   loadOrgModelPolicyFacts,
   type OrgModelPolicyRow,
 } from "./model-policy.service";
+import {
+  loadModelCatalog,
+  resolveCatalogModel,
+  resolveCatalogRunModel,
+  type ModelCatalog,
+} from "./model-catalog.service";
 import {
   checkOrgCreditsForRunAdmission,
   checkOrgPlanRunAdmission,
@@ -88,6 +90,8 @@ interface ModelRoutingFacts {
   };
   readonly orgPlanCapabilities: OrgPlanCapabilities | null;
   readonly policies: readonly OrgModelPolicyRow[];
+  readonly replacedPolicies: readonly OrgModelPolicyRow[];
+  readonly catalog: ModelCatalog;
   readonly member: PreparedMemberModelRouteContext;
   readonly modelMode: "auto" | "custom";
   readonly [modelRoutingFactsSource]: Db;
@@ -161,19 +165,11 @@ async function prepareModelRoutingFacts(params: {
   readonly selectedModel: string | null;
   readonly orgPlanCapabilities?: OrgPlanCapabilities | null;
 }): Promise<ModelRoutingFacts> {
-  const policyFactsPromise =
-    params.userId === "__no_preference__"
-      ? loadOrgModelPolicyFacts(
-          params.db,
-          params.orgId,
-          params.orgPlanCapabilities,
-        )
-      : ensureOrgModelPolicyFacts(
-          params.db,
-          params.orgId,
-          params.userId,
-          params.orgPlanCapabilities,
-        );
+  const policyFactsPromise = loadOrgModelPolicyFacts(
+    params.db,
+    params.orgId,
+    params.orgPlanCapabilities,
+  );
   const [policyFacts, org] = await Promise.all([
     policyFactsPromise,
     params.db
@@ -202,6 +198,8 @@ async function prepareModelRoutingFacts(params: {
         return Object.freeze({ ...policy });
       }),
     ),
+    catalog: policyFacts.catalog,
+    replacedPolicies: policyFacts.replacedPolicies,
     member,
     modelMode: org[0]?.mode === "auto" ? "auto" : "custom",
     [modelRoutingFactsSource]: params.db,
@@ -216,12 +214,24 @@ async function resolveValidPolicyRoute(params: {
   >;
   readonly selectedModel: string;
 }): Promise<ResolvedModelFirstPolicyRoute | null> {
-  if (!isSupportedRunModel(params.selectedModel)) {
+  // A stored or legacy selection resolves along the replacement chain; the
+  // route is then chosen among the final model's own routes.
+  const selectedModel = resolveCatalogRunModel(
+    params.facts.catalog,
+    params.selectedModel,
+  );
+  if (!selectedModel) {
     return null;
   }
   const policy = params.facts.policies.find((candidate) => {
-    return candidate.model === params.selectedModel;
+    return candidate.model === selectedModel;
   });
+  if (
+    selectedModel !== params.selectedModel &&
+    !replacementRouteCompatible(params.facts, params.selectedModel, policy)
+  ) {
+    return null;
+  }
   if (policy) {
     return await resolveEffectivePolicyRoute({
       db: params.facts[modelRoutingFactsSource],
@@ -240,7 +250,7 @@ async function resolveValidPolicyRoute(params: {
       params.facts.member,
     )
   ).find((entry) => {
-    return entry.model === params.selectedModel;
+    return entry.model === selectedModel;
   });
   return personal
     ? {
@@ -253,6 +263,41 @@ async function resolveValidPolicyRoute(params: {
           : "capture_required",
       }
     : null;
+}
+
+/**
+ * A replacement resolves only the model. When the replaced model was served
+ * by a non-Built-in route (BYOK, subscription or custom gateway), the
+ * replacement must be served by the same provider type; credentials never
+ * move across providers and the selection never falls back to Built-in
+ * billing.
+ */
+function replacementRouteCompatible(
+  facts: ModelRoutingFacts,
+  replacedModel: string,
+  replacementPolicy: OrgModelPolicyRow | undefined,
+): boolean {
+  const original = facts.replacedPolicies.find((candidate) => {
+    return candidate.model === replacedModel;
+  });
+  if (!original || isBuiltInModelProviderType(original.defaultProviderType)) {
+    return true;
+  }
+  return (
+    replacementPolicy !== undefined &&
+    replacementPolicy.defaultProviderType === original.defaultProviderType &&
+    replacementPolicy.credentialScope === original.credentialScope
+  );
+}
+
+/** Whether a selection names a model the catalog has replaced. */
+export function isReplacedModelSelection(
+  catalog: ModelCatalog,
+  model: string | null,
+): boolean {
+  return (
+    model !== null && resolveCatalogModel(catalog, model).kind === "replaced"
+  );
 }
 
 /**
@@ -336,7 +381,7 @@ export async function resolveDefaultModelFirstPin(
       };
 }
 
-/** The fixed org default resolves through its own policy route. */
+/** The DB system default resolves through its projected policy route. */
 async function resolveWorkspaceDefaultModelFirstRoute(params: {
   readonly facts: ModelRoutingFacts;
   readonly capabilities: Pick<
@@ -347,7 +392,7 @@ async function resolveWorkspaceDefaultModelFirstRoute(params: {
   return await resolveValidPolicyRoute({
     facts: params.facts,
     capabilities: params.capabilities,
-    selectedModel: ORG_DEFAULT_RUN_MODEL,
+    selectedModel: params.facts.catalog.systemDefaultModel,
   });
 }
 
@@ -386,10 +431,23 @@ export async function resolveModelSelectionPin(params: {
   | ReturnType<typeof badRequestMessage>
   | ReturnType<typeof insufficientCredits>
 > {
-  const { db, orgId, userId, modelSelection } = params;
-  if (getRunModelAccess(modelSelection.selectedModel) === "retired") {
-    return badRequestMessage(RETIRED_RUN_MODEL_MESSAGE);
+  const { db, orgId, userId } = params;
+  // Legacy clients can still send a replaced model ID: resolve it to the final
+  // active model. Only the model is replaced; the route below is chosen again
+  // for that model, and an incompatible explicit provider is rejected.
+  const resolvedModel = resolveCatalogRunModel(
+    await loadModelCatalog(db),
+    params.modelSelection.selectedModel,
+  );
+  if (!resolvedModel) {
+    return badRequestMessage(
+      `Unknown model "${params.modelSelection.selectedModel}"`,
+    );
   }
+  const modelSelection: ModelSelectionRequest = {
+    ...params.modelSelection,
+    selectedModel: resolvedModel,
+  };
   if (modelSelection.modelProviderId !== MODEL_FIRST_SELECTION_PROVIDER_ID) {
     const [org] = await db
       .select({ mode: orgMetadata.modelMode })

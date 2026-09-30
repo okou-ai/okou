@@ -10,13 +10,11 @@ import type {
   StripeInvoiceBillingReason,
   WorkflowSchedule,
 } from "@okouai/api-contracts/contracts/workflows";
-import { ORG_DEFAULT_RUN_MODEL } from "@okouai/api-contracts/contracts/model-providers";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   isFeatureEnabled,
   type FeatureSwitchContext,
 } from "@okouai/core/feature-switch";
-import { getModelDisplayName } from "@okouai/core/model-display-name";
 import {
   type WorkflowAutomationCreateRequest,
   type WorkflowAutomationSummary,
@@ -31,6 +29,11 @@ import {
   updateWorkflowAutomation,
 } from "../../../lib/api/domains/workflows";
 import { getChatThread } from "../../../lib/api/domains/chat";
+import { getModelCatalog } from "../../../lib/api/domains/model-catalog";
+import {
+  getCatalogModelDisplayName,
+  resolveCatalogModel,
+} from "../../../lib/domain/model-catalog-display";
 import { withErrorHandler } from "../../../lib/command/with-error-handler";
 import { decodeSandboxTokenPayload } from "../../../lib/api/sandbox-token";
 import { parseDurationSeconds } from "../../shared/duration";
@@ -199,14 +202,15 @@ async function loadWorkflowAutomationThreadModel(
     return undefined;
   }
 
-  const thread = await getChatThread({
-    threadId: automation.chatThreadId,
-  });
-  const modelId = thread.selectedModel ?? ORG_DEFAULT_RUN_MODEL;
+  const [thread, catalog] = await Promise.all([
+    getChatThread({ threadId: automation.chatThreadId }),
+    getModelCatalog(),
+  ]);
+  const modelId = resolveCatalogModel(catalog, thread.selectedModel);
 
   return {
     id: modelId,
-    label: getModelDisplayName(modelId),
+    label: getCatalogModelDisplayName(catalog, modelId),
     serviceTier: thread.serviceTier,
   };
 }

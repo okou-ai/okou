@@ -1,9 +1,6 @@
 import { Command } from "commander";
 import chalk from "chalk";
-import {
-  getBuiltInModelPriceTier,
-  ORG_DEFAULT_RUN_MODEL,
-} from "@okouai/api-contracts/contracts/model-providers";
+import { getModelCatalog } from "../../lib/api/domains/model-catalog";
 import { listModelPolicies } from "../../lib/api/domains/model-policies";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import {
@@ -11,10 +8,13 @@ import {
   formatModelProviderRoute,
   getModelProviderRouteKind,
 } from "../../lib/domain/model-policy-display";
-
-function formatPriceTier(tier: string | undefined): string {
-  return tier ?? "unknown";
-}
+import {
+  getCatalogModelDisplayName,
+  getCatalogModelPriceTier,
+  isCatalogModelActive,
+  isCatalogSystemDefaultModel,
+  sortByCatalogOrder,
+} from "../../lib/domain/model-catalog-display";
 
 const listCommand = new Command()
   .name("list")
@@ -22,9 +22,18 @@ const listCommand = new Command()
   .description("List models allowed by the current organization")
   .action(
     withErrorHandler(async () => {
-      const result = await listModelPolicies();
+      const [result, catalog] = await Promise.all([
+        listModelPolicies(),
+        getModelCatalog(),
+      ]);
+      const policies = sortByCatalogOrder(
+        catalog,
+        result.policies.filter((policy) => {
+          return isCatalogModelActive(catalog, policy.model);
+        }),
+      );
 
-      if (result.policies.length === 0) {
+      if (policies.length === 0) {
         console.log(chalk.dim("No models are allowed for this organization"));
         return;
       }
@@ -32,17 +41,19 @@ const listCommand = new Command()
       console.log(chalk.bold("Allowed Models:"));
       console.log();
 
-      for (const policy of result.policies) {
-        const defaultMarker =
-          policy.model === ORG_DEFAULT_RUN_MODEL ? chalk.dim(" (default)") : "";
+      for (const policy of policies) {
+        const defaultMarker = isCatalogSystemDefaultModel(catalog, policy.model)
+          ? chalk.dim(" (default)")
+          : "";
+        const name = getCatalogModelDisplayName(catalog, policy.model);
         console.log(
-          `  - ${policy.modelLabel} ${chalk.dim(`(${policy.model})`)}${defaultMarker}`,
+          `  - ${name} ${chalk.dim(`(${policy.model})`)}${defaultMarker}`,
         );
         console.log(`    provider: ${formatModelProviderRoute(policy)}`);
 
         if (getModelProviderRouteKind(policy) === "built-in") {
           console.log(
-            `    price tier: ${formatPriceTier(getBuiltInModelPriceTier(policy.model))}`,
+            `    price tier: ${getCatalogModelPriceTier(catalog, policy.model) ?? "unknown"}`,
           );
         }
 

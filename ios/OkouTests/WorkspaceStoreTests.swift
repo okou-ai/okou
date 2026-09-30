@@ -189,6 +189,7 @@ final class WorkspaceStoreTests: XCTestCase {
           body: """
             {"revision":"test","writePreconditionRequired":true,"policies":[{"model":"okou-1.0","routeStatus":"valid"}]}
             """)
+      case "/api/model-catalog": return modelCatalogResponse(systemDefaultModel: "okou-1.0")
       case "/api/chat-threads":
         guard request.httpMethod == "POST" else { throw URLError(.unsupportedURL) }
         createStarted.fulfill()

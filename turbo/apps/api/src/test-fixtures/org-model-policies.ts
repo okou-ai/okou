@@ -1,5 +1,4 @@
 import {
-  ORG_DEFAULT_RUN_MODEL,
   type ModelProviderType,
   type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
@@ -216,7 +215,7 @@ export async function stageUnrepairedOrgModelPolicyFixture(args: {
         ? eq(orgModelPolicies.orgId, args.orgId)
         : and(
             eq(orgModelPolicies.orgId, args.orgId),
-            eq(orgModelPolicies.model, ORG_DEFAULT_RUN_MODEL),
+            eq(orgModelPolicies.model, "okou-1.0"),
           ),
     );
 }

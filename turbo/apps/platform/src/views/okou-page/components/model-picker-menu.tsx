@@ -1,12 +1,11 @@
 import type { ReactNode } from "react";
 import { Check } from "lucide-react";
 import { DropdownMenuRadioGroup, DropdownMenuRadioItem } from "@okouai/ui";
-import type { SupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import { useTranslation } from "react-i18next";
 import type { ModelProviderSelection } from "./model-provider-picker.tsx";
 
 interface ModelPickerMenuOption {
-  readonly model: SupportedRunModel;
+  readonly model: string;
   readonly label: string;
   readonly content: ReactNode;
   readonly disabled: boolean;

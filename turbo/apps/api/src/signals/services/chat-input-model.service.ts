@@ -18,10 +18,16 @@ import {
   isCodexFastServiceTierSupported,
   resolveDefaultModelFirstPin,
   resolveModelSelectionPin,
+  isReplacedModelSelection,
 } from "./model-selection.service";
+import { loadModelCatalog } from "./model-catalog.service";
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 
-/** Capture an input's model once, using the fixed org default when unavailable. */
+/**
+ * Capture an input's model once. A replaced model resolves to its final
+ * replacement or fails explicitly; an unavailable active model uses the
+ * catalog system default.
+ */
 export async function resolveChatInputModelSelection(
   db: Db,
   args: {
@@ -49,6 +55,18 @@ export async function resolveChatInputModelSelection(
         orgPlanCapabilities: args.orgPlanCapabilities,
       })
     : null;
+  if (
+    selected &&
+    "status" in selected &&
+    selectedModel &&
+    isReplacedModelSelection(await loadModelCatalog(db), selectedModel)
+  ) {
+    // A replaced model with no compatible route is an explicit error; it never
+    // falls back to the system default or to Built-in billing.
+    return badRequestMessage(
+      `Model "${selectedModel}" was replaced and its replacement has no compatible route in this workspace`,
+    );
+  }
   if (!selected || "status" in selected) {
     const workspaceDefault = await resolveDefaultModelFirstPin(
       db,
@@ -59,17 +77,28 @@ export async function resolveChatInputModelSelection(
     );
     selectedModel = workspaceDefault.selectedModel;
     codexServiceTier = null;
+  } else {
+    // New writes store the final resolved model.
+    selectedModel = selected.selectedModel;
   }
   if (!selectedModel) {
     return badRequestMessage(
       "No valid model route is configured for this workspace",
     );
   }
+  // The replacement of a stored selection keeps the caller's explicit effort
+  // when its route accepts it.
+  const selectedIsReplacement =
+    selected !== null &&
+    !("status" in selected) &&
+    selectedModel !== args.selectedModel;
   const effort = resolveChatReasoningEffort({
     selectedModel,
     modelSettings: args.modelSettings,
     requested:
-      selectedModel === args.selectedModel ? args.reasoningEffort : undefined,
+      selectedModel === args.selectedModel || selectedIsReplacement
+        ? args.reasoningEffort
+        : undefined,
   });
   if ("status" in effort) {
     return effort;

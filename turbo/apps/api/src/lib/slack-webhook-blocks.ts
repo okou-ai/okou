@@ -1,4 +1,3 @@
-import { ORG_DEFAULT_RUN_MODEL } from "@okouai/api-contracts/contracts/model-providers";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 
 import type {
@@ -22,6 +21,7 @@ export const MODEL_PICKER_ACTION_ID = "model_select";
 interface ModelPickerOption {
   readonly model: string;
   readonly label: string;
+  readonly isDefault: boolean;
 }
 
 interface AppHomeOptions {
@@ -372,7 +372,7 @@ export function buildWelcomeMessage(
 }
 
 function formatModelPickerOptionLabel(option: ModelPickerOption): string {
-  if (option.model !== ORG_DEFAULT_RUN_MODEL) {
+  if (!option.isDefault) {
     return option.label.slice(0, 75);
   }
   const suffix = " (workspace default)";
@@ -401,8 +401,11 @@ export function buildModelPickerModal(args: {
         return option.value === args.currentSelectedModel;
       })
     : undefined;
+  const defaultModel = args.options.find((option) => {
+    return option.isDefault;
+  })?.model;
   const defaultOption = selectOptions.find((option) => {
-    return option.value === ORG_DEFAULT_RUN_MODEL;
+    return option.value === defaultModel;
   });
   const initialOption = currentOption ?? defaultOption ?? selectOptions[0];
 

@@ -7,7 +7,6 @@ import { piNativeFirewall } from "@okouai/api-contracts/contracts/pi-native-fire
 import {
   getBuiltInModelRouteCandidates,
   getBuiltInVendor,
-  ORG_DEFAULT_RUN_MODEL,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { command } from "ccstate";
 import {
@@ -62,6 +61,7 @@ import {
   isTestEndpointAllowed,
   testEndpointNotFoundResponse,
 } from "./test-endpoint-helpers";
+import { loadSystemDefaultRunModel } from "../services/model-catalog.service";
 
 // Test-only support actions for generic infrastructure fixtures.
 
@@ -105,7 +105,7 @@ async function seedBuiltInDefaultModelKey(
   return await seedBuiltInModelKey(
     db,
     fixtureId,
-    ORG_DEFAULT_RUN_MODEL,
+    await loadSystemDefaultRunModel(db),
     signal,
   );
 }

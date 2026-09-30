@@ -1,7 +1,6 @@
 import { isPiExecutionRoute } from "@okouai/core/pi-execution";
 import type { OrgModelPolicy } from "@okouai/api-contracts/contracts/model-providers";
 import {
-  defaultModelReasoningEffort,
   getRouteReasoningEfforts,
   modelReasoningEffort,
   type ReasoningEffort,
@@ -11,6 +10,15 @@ import {
   isMemberModelPolicyConfigurable,
 } from "@okouai/api-contracts/contracts/member-model-policy";
 import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
+import type { ModelCatalog } from "../external/model-catalog.ts";
+
+function catalogRouteQuery(policy: OrgModelPolicy) {
+  const route = getMemberModelPolicyRoute(policy);
+  return {
+    providerType: route.providerType,
+    concreteProviderType: route.runtimeProviderType,
+  };
+}
 
 /** Saved preferences remain independent of the route's current capability. */
 export function preferredChatReasoningEffort(
@@ -22,12 +30,22 @@ export function preferredChatReasoningEffort(
   );
 }
 
-/** Resolve the same model/provider runtime policy used by server admission. */
+/**
+ * The catalog route's efforts are the product authority. The execution-time
+ * narrowing (Pi and provider-specific rules) stays in code until the server
+ * applies it (docs/model-catalog.md, PR-B).
+ */
 export function availableChatReasoningEfforts(
   selection: ModelProviderSelection | null | undefined,
   policy: OrgModelPolicy | undefined,
+  catalog: ModelCatalog | null | undefined,
 ): readonly ReasoningEffort[] {
-  if (!selection || !policy || !isMemberModelPolicyConfigurable(policy)) {
+  if (
+    !selection ||
+    !policy ||
+    !catalog ||
+    !isMemberModelPolicyConfigurable(policy)
+  ) {
     return [];
   }
   const route = getMemberModelPolicyRoute(policy);
@@ -41,10 +59,16 @@ export function availableChatReasoningEfforts(
     runtimeProviderType,
     codexServiceTier: selection.codexServiceTier ?? undefined,
   });
+  const catalogEfforts = catalog.efforts(
+    selection.selectedModel,
+    catalogRouteQuery(policy),
+  );
   const routeEfforts = getRouteReasoningEfforts({
     model: selection.selectedModel,
     piExecution,
     runtimeProviderType,
+  }).filter((effort) => {
+    return catalogEfforts.includes(effort);
   });
   return policy.subscriptionOptions
     ? routeEfforts.filter((effort) => {
@@ -57,19 +81,23 @@ export function availableChatReasoningEfforts(
 export function effectiveChatReasoningEffort(
   selection: ModelProviderSelection | null | undefined,
   policy: OrgModelPolicy | undefined,
+  catalog: ModelCatalog | null | undefined,
 ): ReasoningEffort | undefined {
-  if (!selection) {
+  if (!selection || !policy || !catalog) {
     return undefined;
   }
-  const available = availableChatReasoningEfforts(selection, policy);
+  const available = availableChatReasoningEfforts(selection, policy, catalog);
   const preferred = preferredChatReasoningEffort(selection);
   if (preferred && available.includes(preferred)) {
     return preferred;
   }
-  const defaultEffort = defaultModelReasoningEffort(selection.selectedModel);
-  return defaultEffort && available.includes(defaultEffort)
-    ? defaultEffort
-    : undefined;
+  const defaultEffort = catalog.defaultEffort(
+    selection.selectedModel,
+    catalogRouteQuery(policy),
+  );
+  return available.find((effort) => {
+    return effort === defaultEffort;
+  });
 }
 
 /** Preserve the map across model and Fast changes; never copy one model's effort. */

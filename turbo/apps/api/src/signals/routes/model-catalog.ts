@@ -5,6 +5,7 @@ import { authRoute } from "../auth/auth-route";
 import { db$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import {
+  catalogBuiltInPriceTier,
   loadModelCatalog,
   resolveCatalogModel,
 } from "../services/model-catalog.service";
@@ -19,11 +20,16 @@ const getModelCatalogInner$ = command(async ({ get }, signal: AbortSignal) => {
       models: catalog.models.map((row) => {
         const resolution = resolveCatalogModel(catalog, row.model);
         return {
-          ...row,
+          model: row.model,
+          displayName: row.displayName,
+          sortOrder: row.sortOrder,
+          isSystemDefault: row.isSystemDefault,
+          replacedBy: row.replacedBy,
           resolvedModel:
-            resolution.kind === "replaced"
-              ? resolution.resolvedModel
-              : row.model,
+            resolution.kind === "unknown"
+              ? row.model
+              : resolution.resolvedModel,
+          priceTier: catalogBuiltInPriceTier(catalog, row.model),
         };
       }),
       routes: catalog.routes.map((route) => {
@@ -33,6 +39,7 @@ const getModelCatalogInner$ = command(async ({ get }, signal: AbortSignal) => {
           efforts: [...route.efforts],
         };
       }),
+      systemDefaultModel: catalog.systemDefault.model,
     },
   };
 });

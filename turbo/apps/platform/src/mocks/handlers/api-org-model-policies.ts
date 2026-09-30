@@ -1,9 +1,5 @@
 import {
-  ACTIVE_RUN_MODELS,
-  getCanonicalModelDisplayName,
-  getBuiltInConcreteProviderType,
   isBuiltInModelProviderType,
-  ORG_DEFAULT_RUN_MODEL,
   type OrgModelPolicy,
   type OrgModelMode,
   type OrgModelPoliciesResponse,
@@ -12,17 +8,68 @@ import {
 import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
 import { nowDate } from "../../lib/time.ts";
 import { mockApi } from "../msw-contract.ts";
+import { getMockModelCatalog } from "./api-model-catalog.ts";
+
+function catalogDisplayName(model: string): string {
+  return (
+    getMockModelCatalog().models.find((entry) => {
+      return entry.model === model;
+    })?.displayName ?? model
+  );
+}
+
+function catalogBuiltInConcreteProvider(model: string) {
+  const route = getMockModelCatalog()
+    .routes.filter((candidate) => {
+      return candidate.model === model && candidate.providerType === "built-in";
+    })
+    .sort((left, right) => {
+      return left.priority - right.priority;
+    })[0];
+  return (route?.concreteProviderType ?? null) as
+    | OrgModelPolicy["runtimeProviderType"]
+    | null;
+}
+
+function systemDefaultModel(): string {
+  return getMockModelCatalog().systemDefaultModel;
+}
 
 function policyId(index: number): string {
   return `00000000-0000-4000-a000-${String(index + 1).padStart(12, "0")}`;
 }
 
+// Org-configured rows only. The system default is projected by the server for
+// every organization (see `response()`), never stored as an org row.
 const SEEDED_MODELS = [
   "claude-fable-5-1",
   "gpt-6-astra",
   "gpt-6-luna",
-  ORG_DEFAULT_RUN_MODEL,
 ] as const;
+
+const SYSTEM_DEFAULT_POLICY_ID = "00000000-0000-4000-a000-0000000000d0";
+
+function makeBuiltInPolicy(
+  id: string,
+  model: string,
+  now: string,
+): OrgModelPolicy {
+  return {
+    id,
+    model,
+    modelLabel: catalogDisplayName(model),
+    isDefault: model === systemDefaultModel(),
+    defaultProviderType: "built-in",
+    runtimeProviderType: catalogBuiltInConcreteProvider(model),
+    credentialScope: "org",
+    modelProviderId: null,
+    modelProviderSurfaceId: null,
+    routeStatus: "valid",
+    routeStatusReason: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
 
 function makeDefaultPolicies(): OrgModelPolicy[] {
   const now = "2026-05-08T00:00:00.000Z";
@@ -30,10 +77,10 @@ function makeDefaultPolicies(): OrgModelPolicy[] {
     return {
       id: policyId(index),
       model,
-      modelLabel: getCanonicalModelDisplayName(model),
-      isDefault: model === ORG_DEFAULT_RUN_MODEL,
+      modelLabel: catalogDisplayName(model),
+      isDefault: false,
       defaultProviderType: "built-in",
-      runtimeProviderType: getBuiltInConcreteProviderType(model),
+      runtimeProviderType: catalogBuiltInConcreteProvider(model),
       credentialScope: "org",
       modelProviderId: null,
       modelProviderSurfaceId: null,
@@ -48,13 +95,32 @@ function makeDefaultPolicies(): OrgModelPolicy[] {
 let mockOrgModelPolicies: OrgModelPolicy[] = makeDefaultPolicies();
 let mockOrgModelMode: OrgModelMode = "custom";
 
+function projectedPolicies(): OrgModelPolicy[] {
+  const defaultModel = systemDefaultModel();
+  // A test may store an explicit row for the default model to shape its
+  // route; otherwise the server projects the Built-in system default.
+  const stored = mockOrgModelPolicies.find((policy) => {
+    return policy.model === defaultModel;
+  });
+  const systemDefault =
+    stored ??
+    makeBuiltInPolicy(
+      SYSTEM_DEFAULT_POLICY_ID,
+      defaultModel,
+      "2026-05-08T00:00:00.000Z",
+    );
+  return [
+    { ...systemDefault, isDefault: true },
+    ...mockOrgModelPolicies.filter((policy) => {
+      return policy.model !== defaultModel;
+    }),
+  ];
+}
+
 function response(): OrgModelPoliciesResponse {
-  const policies = [...mockOrgModelPolicies];
-  // Deprecated compat fields for released iOS clients mirror the fixed default.
-  const workspaceDefault =
-    policies.find((policy) => {
-      return policy.model === ORG_DEFAULT_RUN_MODEL;
-    }) ?? null;
+  const policies = projectedPolicies();
+  // Deprecated compat fields for released iOS clients mirror the system default.
+  const workspaceDefault = policies[0] ?? null;
   const configuredModels = new Set(
     policies.map((policy) => {
       return policy.model;
@@ -69,14 +135,13 @@ function response(): OrgModelPoliciesResponse {
       .join(","),
     writePreconditionRequired: false,
     policies,
-    modelsAvailableToAdd: ACTIVE_RUN_MODELS.filter((model) => {
-      return (
-        model !== "gpt-6-sol" &&
-        model !== "claude-opus-5-5" &&
-        model !== "gpt-6-luna" &&
-        !configuredModels.has(model)
-      );
-    }),
+    modelsAvailableToAdd: getMockModelCatalog()
+      .models.filter((entry) => {
+        return entry.replacedBy === null && !configuredModels.has(entry.model);
+      })
+      .map((entry) => {
+        return entry.model;
+      }),
     workspaceDefaultModel: workspaceDefault?.model ?? null,
     workspaceDefaultPolicyId: workspaceDefault?.id ?? null,
   };
@@ -103,11 +168,11 @@ function applyUpdate(policy: UpdateOrgModelPolicy): OrgModelPolicy {
   return {
     id: existing?.id ?? crypto.randomUUID(),
     model: policy.model,
-    modelLabel: getCanonicalModelDisplayName(policy.model),
-    isDefault: policy.model === ORG_DEFAULT_RUN_MODEL,
+    modelLabel: catalogDisplayName(policy.model),
+    isDefault: false,
     defaultProviderType: policy.defaultProviderType,
     ...(isBuiltInModelProviderType(policy.defaultProviderType)
-      ? { runtimeProviderType: getBuiltInConcreteProviderType(policy.model) }
+      ? { runtimeProviderType: catalogBuiltInConcreteProvider(policy.model) }
       : {}),
     credentialScope: policy.credentialScope,
     modelProviderId: policy.modelProviderId,
@@ -127,28 +192,22 @@ export const apiOrgModelPoliciesHandlers = [
   mockApi(modelPoliciesMainContract.updateMode, ({ body, respond }) => {
     mockOrgModelMode = body.mode;
     if (body.mode === "auto") {
-      mockOrgModelPolicies = [
-        applyUpdate({
-          model: ORG_DEFAULT_RUN_MODEL,
-          defaultProviderType: "built-in",
-          credentialScope: "org",
-          modelProviderId: null,
-          modelProviderSurfaceId: null,
-        }),
-      ];
+      // Auto keeps only the server-projected system default.
+      mockOrgModelPolicies = [];
     }
     return respond(200, { mode: body.mode });
   }),
 
   mockApi(modelPoliciesMainContract.update, ({ body, respond }) => {
+    const defaultModel = systemDefaultModel();
     if (
-      !body.policies.some((policy) => {
-        return policy.model === ORG_DEFAULT_RUN_MODEL;
+      body.policies.some((policy) => {
+        return policy.model === defaultModel;
       })
     ) {
       return respond(400, {
         error: {
-          message: `${ORG_DEFAULT_RUN_MODEL} cannot be removed`,
+          message: `${defaultModel} is the server-managed system default`,
           code: "BAD_REQUEST",
         },
       });

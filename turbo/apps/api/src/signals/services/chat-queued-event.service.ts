@@ -42,6 +42,10 @@ import {
   withRunModelAnnotation,
 } from "./chat-user-message.service";
 import { webChatQueueContextFromContextId } from "./web-chat-queue-context.service";
+import {
+  loadModelCatalog,
+  resolveCatalogRunModel,
+} from "./model-catalog.service";
 
 type DbTransaction = Tx;
 
@@ -306,8 +310,17 @@ async function materializeQueuedUserMessage(
     officialAgentClaim: officialAgentContext !== null,
   });
   const { requiredOfficialWorkflowIds: _storedClaim, ...queuedEvent } = event;
+  // Queued inputs re-check their captured model at dispatch: a model replaced
+  // after enqueue resolves to its final replacement before the run starts.
+  // An unknown model is left as captured so run admission rejects it.
+  const selectedModel =
+    event.selectedModel === null
+      ? null
+      : (resolveCatalogRunModel(await loadModelCatalog(db), event.selectedModel) ??
+        event.selectedModel);
   return {
     ...queuedEvent,
+    selectedModel,
     userMessage: event.userMessage,
     ...(requiredOfficialWorkflowIds === null
       ? {}

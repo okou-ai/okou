@@ -107,7 +107,6 @@ export {
   hasModelSelection,
   allowsCustomModel,
   getCustomModelPlaceholder,
-  ORG_DEFAULT_RUN_MODEL,
   getCanonicalModelDisplayName,
   getProvidersForModel,
   getProviderRuntimeModel,

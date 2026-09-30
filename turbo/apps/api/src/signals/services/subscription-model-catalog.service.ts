@@ -1,13 +1,13 @@
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import {
-  getRunModelAccess,
   isCodexFastModeModel,
   isModelSupportedByProvider,
   isSupportedRunModel,
-  ORG_DEFAULT_RUN_MODEL,
   type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
-import { subscriptionModelCatalog } from "@okouai/db/schema/subscription-model-catalog";
+import { modelRoutes } from "@okouai/db/schema/model-route";
+import { runModelCatalog } from "@okouai/db/schema/run-model-catalog";
+import { loadSystemDefaultRunModel } from "./model-catalog.service";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
@@ -51,33 +51,45 @@ export async function loadMemberSubscriptionModels(
   if (subscriptions.length === 0) {
     return [];
   }
+  // Personal subscription routes live in the global catalog; replaced
+  // models have no routes, and names and ordering come from the model row.
   const rows = await db
-    .select()
-    .from(subscriptionModelCatalog)
+    .select({
+      id: modelRoutes.id,
+      model: modelRoutes.model,
+      subscriptionType: modelRoutes.subscriptionType,
+      displayName: runModelCatalog.displayName,
+      efforts: modelRoutes.efforts,
+      serviceTiers: modelRoutes.serviceTiers,
+      createdAt: modelRoutes.createdAt,
+      updatedAt: modelRoutes.updatedAt,
+    })
+    .from(modelRoutes)
+    .innerJoin(runModelCatalog, eq(modelRoutes.model, runModelCatalog.model))
     .where(
-      inArray(
-        subscriptionModelCatalog.subscriptionType,
-        subscriptions.map((subscription) => {
-          return subscription.type;
-        }),
+      and(
+        eq(modelRoutes.enabled, true),
+        isNull(runModelCatalog.replacedBy),
+        inArray(
+          modelRoutes.subscriptionType,
+          subscriptions.map((subscription) => {
+            return subscription.type;
+          }),
+        ),
       ),
     )
-    .orderBy(
-      asc(subscriptionModelCatalog.sortOrder),
-      asc(subscriptionModelCatalog.model),
-    );
+    .orderBy(asc(runModelCatalog.sortOrder), asc(modelRoutes.model));
   return rows.flatMap((row) => {
     const subscription = subscriptions.find((candidate) => {
       return candidate.type === row.subscriptionType;
     });
     // Retired catalog models are a reachable state; they simply stop listing.
-    if (
-      !subscription ||
-      !isSupportedRunModel(row.model) ||
-      getRunModelAccess(row.model) !== "allowed"
-    ) {
+    if (!subscription || !isSupportedRunModel(row.model)) {
       return [];
     }
+    const serviceTier = row.serviceTiers.includes("priority")
+      ? "priority"
+      : null;
     if (
       !isModelSupportedByProvider(row.model, subscription.type) ||
       row.efforts.some((effort) => {
@@ -88,7 +100,7 @@ export async function loadMemberSubscriptionModels(
           )
         );
       }) ||
-      (row.serviceTier === "priority" &&
+      (serviceTier === "priority" &&
         (subscription.type !== "codex-oauth-token" ||
           !isCodexFastModeModel(row.model)))
     ) {
@@ -104,7 +116,7 @@ export async function loadMemberSubscriptionModels(
         efforts: row.efforts.map((effort) => {
           return reasoningEffortSchema.parse(effort);
         }),
-        serviceTier: row.serviceTier,
+        serviceTier,
         providerType: subscription.type,
         providerId: subscription.providerId,
         needsReconnect: subscription.needsReconnect,
@@ -206,7 +218,7 @@ export async function resetStaleAutoMemberSelection(
   await db
     .update(orgMembersMetadata)
     .set({
-      selectedModel: ORG_DEFAULT_RUN_MODEL,
+      selectedModel: await loadSystemDefaultRunModel(db),
       serviceTier: null,
       updatedAt: nowDate(),
     })

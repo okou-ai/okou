@@ -31,18 +31,42 @@ export async function validatePermanentModelCatalogConstraints(
 
   async function insertModel(
     name: string,
-    options: { replacedBy?: string; isSystemDefault?: boolean } = {},
+    options: {
+      rank?: number;
+      replacedBy?: string;
+      isSystemDefault?: boolean;
+    } = {},
   ) {
     await client.query(
-      `INSERT INTO run_model_catalog (model, display_name, sort_order, is_system_default, replaced_by)
-       VALUES ($1, $1, 1, $2, $3)`,
-      [id(name), options.isSystemDefault ?? false, options.replacedBy ?? null],
+      `INSERT INTO run_model_catalog (
+         model, display_name, sort_order, is_system_default, lineage_rank,
+         replaced_by, replaced_by_lineage_rank
+       )
+       SELECT $1, $1, 1, $2, $3, target.model, target.lineage_rank
+       FROM (SELECT 1) AS one
+       LEFT JOIN run_model_catalog AS target ON target.model = $4`,
+      [
+        id(name),
+        options.isSystemDefault ?? false,
+        options.rank ?? 100,
+        options.replacedBy ? id(options.replacedBy) : null,
+      ],
     );
   }
 
+  const insertReplaced = `INSERT INTO run_model_catalog (
+      model, display_name, sort_order, lineage_rank, replaced_by,
+      replaced_by_lineage_rank
+    ) VALUES ($1, $1, 1, $2, $3, $4)`;
+  const retire =
+    "UPDATE run_model_catalog SET replaced_by = $2, replaced_by_lineage_rank = $3 WHERE model = $1";
   const replacementFk = {
     code: "23503",
-    constraint: "fk_run_model_catalog_replaced_by_active",
+    constraint: "fk_run_model_catalog_replaced_by",
+  };
+  const rankCheck = {
+    code: "23514",
+    constraint: "chk_run_model_catalog_replacement_rank",
   };
 
   try {
@@ -52,39 +76,61 @@ export async function validatePermanentModelCatalogConstraints(
       "UPDATE run_model_catalog SET is_system_default = false WHERE is_system_default",
     );
     await insertModel("a", { isSystemDefault: true });
-    await insertModel("b", { replacedBy: id("a") });
+    await insertModel("c");
     await insertModel("d");
+    // Multi-hop chain x -> b -> c is accepted.
+    await insertModel("b", { rank: 50, replacedBy: "c" });
+    await insertModel("x", { rank: 10, replacedBy: "b" });
 
-    // Self-reference, a retired target and a missing target are rejected.
+    // Self-reference is rejected.
+    await rejects(insertReplaced, [id("self"), 1, id("self"), 1], {
+      code: "23514",
+      constraint: "chk_run_model_catalog_not_self_replaced",
+    });
+    // A dangling target, or a rank that is not the target's, is rejected.
     await rejects(
-      `INSERT INTO run_model_catalog (model, display_name, sort_order, replaced_by)
-       VALUES ($1, $1, 1, $1)`,
-      [id("self")],
+      insertReplaced,
+      [id("dangling"), 1, id("missing"), 100],
       replacementFk,
     );
     await rejects(
-      `INSERT INTO run_model_catalog (model, display_name, sort_order, replaced_by)
-       VALUES ($1, $1, 1, $2)`,
-      [id("chain"), id("b")],
+      insertReplaced,
+      [id("lying"), 1, id("c"), 150],
       replacementFk,
     );
+    // Both replacement columns are set together, so MATCH SIMPLE cannot skip
+    // the foreign key.
+    await rejects(insertReplaced, [id("unranked"), 1, id("c"), null], {
+      code: "23514",
+      constraint: "chk_run_model_catalog_replacement_pair",
+    });
+    await rejects(insertReplaced, [id("untargeted"), 1, null, 100], {
+      code: "23514",
+      constraint: "chk_run_model_catalog_replacement_pair",
+    });
+    // Cycles: A -> B -> A and a longer loop back to the chain start both need
+    // a hop that does not increase the rank.
+    await insertModel("p", { rank: 1 });
+    await insertModel("q", { rank: 2 });
+    await client.query(retire, [id("p"), id("q"), 2]);
+    await rejects(retire, [id("q"), id("p"), 1], rankCheck);
+    await rejects(retire, [id("q"), id("p"), 3], replacementFk);
+    await rejects(retire, [id("c"), id("x"), 10], rankCheck);
+    // Lowering a target's rank below a referrer's is rejected through the
+    // cascaded copy; raising it is always allowed and keeps referrers valid.
     await rejects(
-      `INSERT INTO run_model_catalog (model, display_name, sort_order, replaced_by)
-       VALUES ($1, $1, 1, $2)`,
-      [id("dangling"), id("missing")],
-      replacementFk,
+      "UPDATE run_model_catalog SET lineage_rank = 40 WHERE model = $1",
+      [id("c")],
+      rankCheck,
     );
-    // A cycle requires pointing at a retired row.
-    await rejects(
-      "UPDATE run_model_catalog SET replaced_by = $2 WHERE model = $1",
-      [id("d"), id("b")],
-      replacementFk,
+    await client.query(
+      "UPDATE run_model_catalog SET lineage_rank = 200 WHERE model = $1",
+      [id("c")],
     );
-    // A referenced replacement target can be neither deleted nor retired
-    // while its referrers still point at it.
+    // A referenced replacement target cannot be deleted.
     await rejects(
       "DELETE FROM run_model_catalog WHERE model = $1",
-      [id("a")],
+      [id("c")],
       replacementFk,
     );
 
@@ -94,20 +140,19 @@ export async function validatePermanentModelCatalogConstraints(
       [id("d")],
       { code: "23505", constraint: "idx_run_model_catalog_one_system_default" },
     );
+    await rejects(retire, [id("a"), id("c"), 200], {
+      code: "23514",
+      constraint: "chk_run_model_catalog_default_active",
+    });
     await rejects(
-      "UPDATE run_model_catalog SET replaced_by = $2 WHERE model = $1",
-      [id("a"), id("d")],
-      { code: "23514", constraint: "chk_run_model_catalog_default_active" },
-    );
-    await rejects(
-      `INSERT INTO run_model_catalog (model, display_name, sort_order, is_system_default, replaced_by)
-       VALUES ($1, $1, 1, false, NULL), ($2, $2, 1, true, $1)`,
-      [id("e"), id("f")],
+      `INSERT INTO run_model_catalog (model, display_name, sort_order, is_system_default, lineage_rank, replaced_by, replaced_by_lineage_rank)
+       VALUES ($1, $1, 1, true, 1, $2, 200)`,
+      [id("f"), id("c")],
       { code: "23514", constraint: "chk_run_model_catalog_default_active" },
     );
 
-    // Switch the default first, then retire the old default and repoint its
-    // referrer to the final active model within one transaction.
+    // Switch the default first, then retire the old default in one
+    // transaction; the chain resolves to the final active model.
     await client.query(
       "UPDATE run_model_catalog SET is_system_default = false WHERE model = $1",
       [id("a")],
@@ -116,29 +161,33 @@ export async function validatePermanentModelCatalogConstraints(
       "UPDATE run_model_catalog SET is_system_default = true WHERE model = $1",
       [id("d")],
     );
-    await rejects(
-      "UPDATE run_model_catalog SET replaced_by = $2 WHERE model = $1",
-      [id("a"), id("d")],
-      replacementFk,
-    );
-    await client.query(
-      "UPDATE run_model_catalog SET replaced_by = $2 WHERE model = $1",
-      [id("b"), id("d")],
-    );
-    await client.query(
-      "UPDATE run_model_catalog SET replaced_by = $2 WHERE model = $1",
-      [id("a"), id("d")],
-    );
+    await client.query(retire, [id("a"), id("c"), 200]);
     const resolved = await client.query(
-      `SELECT model, replaced_by, is_active FROM run_model_catalog
-       WHERE model LIKE $1 ORDER BY model`,
+      `WITH RECURSIVE chain (source, target) AS (
+         SELECT model, replaced_by FROM run_model_catalog
+         WHERE model LIKE $1 AND replaced_by IS NOT NULL
+         UNION ALL
+         SELECT chain.source, next.replaced_by FROM chain
+         JOIN run_model_catalog AS next
+           ON next.model = chain.target AND next.replaced_by IS NOT NULL
+       )
+       SELECT chain.source, chain.target FROM chain
+       JOIN run_model_catalog AS final
+         ON final.model = chain.target AND final.replaced_by IS NULL
+       ORDER BY chain.source`,
       [`${prefix}-%`],
     );
     assert.deepEqual(resolved.rows, [
-      { model: id("a"), replaced_by: id("d"), is_active: false },
-      { model: id("b"), replaced_by: id("d"), is_active: false },
-      { model: id("d"), replaced_by: null, is_active: true },
+      { source: id("a"), target: id("c") },
+      { source: id("b"), target: id("c") },
+      { source: id("p"), target: id("q") },
+      { source: id("x"), target: id("c") },
     ]);
+    const cascaded = await client.query(
+      "SELECT replaced_by_lineage_rank FROM run_model_catalog WHERE model = $1",
+      [id("b")],
+    );
+    assert.deepEqual(cascaded.rows, [{ replaced_by_lineage_rank: 200 }]);
 
     // Routes: model reference, identity, and value domains.
     const insertRoute = `INSERT INTO model_routes (
@@ -253,7 +302,7 @@ export async function validatePermanentModelCatalogConstraints(
     // A catalog row with routes cannot be deleted.
     await client.query(
       "DELETE FROM run_model_catalog WHERE model = ANY($1::varchar[])",
-      [[id("a"), id("b")]],
+      [[id("x"), id("b"), id("a"), id("p"), id("q")]],
     );
     await rejects("DELETE FROM run_model_catalog WHERE model = $1", [id("d")], {
       code: "23503",

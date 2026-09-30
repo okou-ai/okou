@@ -67,7 +67,9 @@ describe("okou chat get command", () => {
     );
     expect(output).toContain(`Agent:  ${AGENT_ID}`);
     expect(output).toContain("Title:  Launch plan");
-    expect(output).toContain("Model:  claude-sonnet-5 · effort extra");
+    expect(output).toContain(
+      "Model:  Claude Sonnet 5 (claude-sonnet-5) · effort extra",
+    );
   });
 
   it("shows the default effective effort without a saved override", async () => {
@@ -84,7 +86,7 @@ describe("okou chat get command", () => {
     );
     await chatCommand.parseAsync(["node", "cli", "get"]);
     expect(mockConsoleLog.mock.calls.flat().join("\n")).toContain(
-      "Model:  gpt-6-sol · effort max",
+      "Model:  GPT 6 Sol (gpt-6-sol) · effort max",
     );
   });
 
@@ -129,8 +131,29 @@ describe("okou chat get command", () => {
 
     const output = mockConsoleLog.mock.calls.flat().join("\n");
     expect(output).toContain("Title:  (untitled)");
-    expect(output).toContain("Model:  (default)");
+    expect(output).toContain("Model:  Auto (okou-1.0)");
     expect(output).not.toContain("effort");
+  });
+
+  it("shows a retired stored selection as the model it resolves to", async () => {
+    server.use(
+      http.get(GET_URL, () => {
+        return HttpResponse.json({
+          id: THREAD_ID,
+          agentId: AGENT_ID,
+          title: "Legacy thread",
+          selectedModel: "claude-opus-4-8",
+        });
+      }),
+    );
+
+    await chatCommand.parseAsync(["node", "cli", "get"]);
+
+    const output = mockConsoleLog.mock.calls.flat().join("\n");
+    expect(output).toContain(
+      "Model:  Claude Opus 5.5 (claude-opus-5-5) · effort medium",
+    );
+    expect(output).not.toContain("claude-opus-4-8");
   });
 
   it("loads another chat thread passed with --thread-id", async () => {

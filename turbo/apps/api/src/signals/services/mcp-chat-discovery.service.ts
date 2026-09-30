@@ -7,10 +7,8 @@ import type {
   McpListModelsOutput,
 } from "@okouai/api-contracts/contracts/mcp-chat-discovery";
 import {
-  ACTIVE_RUN_MODELS,
-  getCanonicalModelDisplayName,
   isBuiltInModelProviderType,
-  ORG_DEFAULT_RUN_MODEL,
+  isSupportedRunModel,
   type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { agentDisplayName } from "@okouai/core/brand-presentation";
@@ -45,6 +43,11 @@ import {
   type OrgPlanCapabilities,
 } from "./org-plan-entitlement-read.service";
 import { checkOrgPlanRunAdmission } from "./run-admission.service";
+import {
+  catalogDisplayName,
+  resolveCatalogRunModel,
+} from "./model-catalog.service";
+import { loadOrgModelPolicyFacts } from "./model-policy.service";
 
 interface Principal {
   readonly orgId: string;
@@ -320,6 +323,7 @@ function personalConnectionState(
 
 function describeModelAvailability(params: {
   readonly model: SupportedRunModel;
+  readonly name: string;
   readonly defaultProviderType: string;
   readonly route: ResolvedModelFirstPolicyRoute | null;
   readonly capabilities: OrgPlanCapabilities | null;
@@ -328,7 +332,7 @@ function describeModelAvailability(params: {
   const { model, route } = params;
   const entry: McpListModelsOutput["models"][number] = {
     id: model,
-    name: getCanonicalModelDisplayName(model),
+    name: params.name,
     selectable: route !== null,
     availability: "available",
     reason: null,
@@ -363,39 +367,9 @@ function describeModelAvailability(params: {
 }
 
 async function loadDiscoveryModelPolicies(tx: Tx, orgId: string) {
-  const policies = await tx
-    .select({
-      model: orgModelPolicies.model,
-      defaultProviderType: orgModelPolicies.defaultProviderType,
-      credentialScope: orgModelPolicies.credentialScope,
-      modelProviderId: orgModelPolicies.modelProviderId,
-      modelProviderSurfaceId: orgModelPolicies.modelProviderSurfaceId,
-    })
-    .from(orgModelPolicies)
-    .where(
-      and(
-        eq(orgModelPolicies.orgId, orgId),
-        inArray(orgModelPolicies.model, [...ACTIVE_RUN_MODELS]),
-      ),
-    )
-    .limit(ACTIVE_RUN_MODELS.length);
-  if (policies.length === 0) {
-    throw new DiscoveryUnavailable(
-      "No active model policies are configured for this organization. Open model settings before creating a conversation.",
-    );
-  }
-  // Selection adds the fixed default to policies written before it existed.
-  // A read must not describe the pre-repair list as the one selection uses.
-  if (
-    !policies.some((policy) => {
-      return policy.model === ORG_DEFAULT_RUN_MODEL;
-    })
-  ) {
-    throw new DiscoveryUnavailable(
-      "Model policies need to be synchronized. Open model settings, then retry discovery.",
-    );
-  }
-  return policies;
+  // The system default is projected, so every organization has a policy.
+  const { policies, catalog } = await loadOrgModelPolicyFacts(tx, orgId);
+  return { policies, catalog };
 }
 
 async function appendAutoMemberMcpModels({
@@ -472,7 +446,10 @@ export async function listMcpModels(
           ? capabilities
           : { restrictedBuiltInModels: false, supportByok: true };
       await budget.beforeQuery(tx);
-      const policies = await loadDiscoveryModelPolicies(tx, principal.orgId);
+      const { policies, catalog } = await loadDiscoveryModelPolicies(
+        tx,
+        principal.orgId,
+      );
       await budget.beforeQuery(tx);
       const [preference] = await tx
         .select({ model: orgMembersMetadata.selectedModel })
@@ -504,9 +481,9 @@ export async function listMcpModels(
           return [policy.model, policy];
         }),
       );
-      for (const model of ACTIVE_RUN_MODELS) {
-        const policy = policiesByModel.get(model);
-        if (!policy) {
+      for (const policy of policies) {
+        const model = policy.model;
+        if (!isSupportedRunModel(model)) {
           continue;
         }
         await budget.beforeQuery(tx);
@@ -520,6 +497,7 @@ export async function listMcpModels(
         budget.check();
         const entry = describeModelAvailability({
           model,
+          name: catalogDisplayName(catalog, model),
           defaultProviderType: policy.defaultProviderType,
           route,
           capabilities,
@@ -554,11 +532,14 @@ export async function listMcpModels(
         policiesByModel,
         models,
       });
+      const preferredModel = preference?.model
+        ? resolveCatalogRunModel(catalog, preference.model)
+        : null;
       const preferred = models.find((model) => {
-        return model.id === preference?.model && model.selectable;
+        return model.id === preferredModel && model.selectable;
       });
       const workspaceDefault = models.find((model) => {
-        return model.id === ORG_DEFAULT_RUN_MODEL && model.selectable;
+        return model.id === catalog.systemDefaultModel && model.selectable;
       });
       return {
         models,

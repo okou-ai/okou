@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 
 import { command } from "ccstate";
-import { ORG_DEFAULT_RUN_MODEL } from "@okouai/api-contracts/contracts/model-providers";
 import { SEED_INSTRUCTIONS } from "@okouai/core/seed-instructions";
 import {
   getInstructionsStorageName,
@@ -40,6 +39,7 @@ import {
 } from "./org-plan-entitlements.service";
 import type { Tx } from "../../lib/db-types";
 import { onRejection } from "../utils";
+import { loadSystemDefaultRunModel } from "./model-catalog.service";
 
 const L = logger("org-limited-free-bootstrap.service");
 
@@ -266,7 +266,7 @@ async function finalizeBootstrap(
             modelMode: sql`CASE WHEN EXISTS (
               SELECT 1 FROM ${orgModelPolicies}
               WHERE ${orgModelPolicies.orgId} = ${args.orgId}
-                AND ${orgModelPolicies.model} <> ${ORG_DEFAULT_RUN_MODEL}
+                AND ${orgModelPolicies.model} <> ${await loadSystemDefaultRunModel(tx)}
             ) THEN ${orgMetadataCanonicalWrites.modelMode} ELSE 'auto' END`,
             updatedAt: nowDate(),
           },
@@ -319,7 +319,7 @@ export const ensureOrgLimitedFreeBootstrap$ = command(
       {
         orgId: args.orgId,
         type: "built-in",
-        selectedModel: ORG_DEFAULT_RUN_MODEL,
+        selectedModel: await loadSystemDefaultRunModel(writeDb),
       },
       signal,
     );

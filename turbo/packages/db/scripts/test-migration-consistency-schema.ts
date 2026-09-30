@@ -46,6 +46,7 @@ import { validatePermanentOrgPlanEntitlementState } from "./test-org-plan-entitl
 import { validateGpt55Retirement } from "./test-gpt-55-retirement";
 import { validatePermanentModelCatalogConstraints } from "./test-model-catalog-permanent";
 import { validateModelCatalogSeed } from "./test-model-catalog-seed";
+import { validateModelCatalogStoredSelections } from "./test-model-catalog-stored-selections";
 import { validateSonnet46Opus48DeepSeekV4ProRetirement } from "./test-sonnet-46-opus-48-deepseek-v4-pro-retirement";
 import { validateXResourceUsageSchema } from "./test-x-resource-usage";
 
@@ -3060,6 +3061,7 @@ async function main(): Promise<void> {
     await validatePermanentOrgPlanEntitlementState(dbUrl1);
     await validatePermanentModelCatalogConstraints(dbUrl1);
     await validateModelCatalogSeed(dbUrl1);
+    await validateModelCatalogStoredSelections(dbUrl1);
     await validateGpt55Retirement(dbUrl1);
     await validateSonnet46Opus48DeepSeekV4ProRetirement(dbUrl1);
     await validateXResourceUsageSchema(dbUrl1);

@@ -162,14 +162,6 @@ const MODEL_PROVIDER_CODEX_RUNTIME_CONFIGS: Partial<
   },
 };
 
-/**
- * Every organization's fixed default model ("Auto"). It is not configurable:
- * each organization always keeps this built-in policy, and runs without a
- * thread pin or member preference use it.
- */
-export const ORG_DEFAULT_RUN_MODEL =
-  "okou-1.0" as const satisfies SupportedRunModel;
-
 export const supportedRunModelSchema = z.enum(SUPPORTED_RUN_MODELS);
 
 export const modelProviderCredentialScopeSchema = z.enum(["org", "member"]);
@@ -661,7 +653,6 @@ const BUILT_IN_MODEL_PROVIDER_CONFIG = {
   framework: "claude-code" as const,
   label: "Built-in model",
   models: [...ACTIVE_RUN_MODELS],
-  defaultModel: ORG_DEFAULT_RUN_MODEL,
 };
 
 export const MODEL_PROVIDER_TYPES = {
@@ -1632,7 +1623,8 @@ export const orgModelPolicySchema = z.object({
   model: supportedRunModelSchema,
   modelLabel: z.string(),
   // Deprecated compatibility field for released clients that decode it as
-  // required. Always `model === ORG_DEFAULT_RUN_MODEL`; new code must not read it.
+  // required. True only for the projected system default (the catalog's
+  // `is_system_default` model); new code must not read it.
   isDefault: z.boolean(),
   defaultProviderType: modelProviderTypeSchema,
   // Concrete built-in provider; other policies use defaultProviderType.
@@ -1703,9 +1695,8 @@ export const orgModelPoliciesResponseSchema = z.object({
   writePreconditionRequired: z.boolean(),
   policies: z.array(orgModelPolicySchema),
   modelsAvailableToAdd: z.array(supportedRunModelSchema),
-  // Deprecated compatibility fields for released clients. Always
-  // ORG_DEFAULT_RUN_MODEL and its policy ID when that policy is present; new
-  // code must not read them.
+  // Deprecated compatibility fields for released clients. Always the catalog
+  // system default and its projected policy ID; new code must not read them.
   workspaceDefaultModel: supportedRunModelSchema.nullable(),
   workspaceDefaultPolicyId: z.uuid().nullable(),
 });

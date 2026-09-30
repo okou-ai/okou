@@ -1,8 +1,14 @@
 import { getMemberModelPolicyRoute } from "@okouai/api-contracts/contracts/member-model-policy";
-import { ORG_DEFAULT_RUN_MODEL } from "@okouai/api-contracts/contracts/model-providers";
 import { Command } from "commander";
 import chalk from "chalk";
+import { getModelCatalog } from "../../lib/api/domains/model-catalog";
 import { listModelPolicies } from "../../lib/api/domains/model-policies";
+import {
+  getCatalogModelDisplayName,
+  isCatalogModelActive,
+  isCatalogSystemDefaultModel,
+  sortByCatalogOrder,
+} from "../../lib/domain/model-catalog-display";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import {
   formatModelPolicyStatus,
@@ -26,9 +32,18 @@ const listCommand = new Command()
   )
   .action(
     withErrorHandler(async () => {
-      const result = await listModelPolicies();
+      const [result, catalog] = await Promise.all([
+        listModelPolicies(),
+        getModelCatalog(),
+      ]);
+      const policies = sortByCatalogOrder(
+        catalog,
+        result.policies.filter((policy) => {
+          return isCatalogModelActive(catalog, policy.model);
+        }),
+      );
 
-      if (result.policies.length === 0) {
+      if (policies.length === 0) {
         console.log(
           chalk.dim(
             "No model provider routes are allowed for this organization",
@@ -40,11 +55,13 @@ const listCommand = new Command()
       console.log(chalk.bold("Model Provider Routes:"));
       console.log();
 
-      for (const policy of result.policies) {
-        const defaultMarker =
-          policy.model === ORG_DEFAULT_RUN_MODEL ? chalk.dim(" (default)") : "";
+      for (const policy of policies) {
+        const defaultMarker = isCatalogSystemDefaultModel(catalog, policy.model)
+          ? chalk.dim(" (default)")
+          : "";
+        const name = getCatalogModelDisplayName(catalog, policy.model);
         console.log(
-          `  - ${policy.modelLabel} ${chalk.dim(`(${policy.model})`)}${defaultMarker}`,
+          `  - ${name} ${chalk.dim(`(${policy.model})`)}${defaultMarker}`,
         );
         const route = getMemberModelPolicyRoute(policy);
         console.log(`    provider: ${getModelProviderRouteKind(policy)}`);

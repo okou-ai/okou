@@ -1,19 +1,24 @@
 import { isMemberModelPolicyAvailable } from "@okouai/api-contracts/contracts/member-model-policy";
-import { getModelReasoningEfforts } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import chalk from "chalk";
 import { Command } from "commander";
 import type { ChatThreadMetadata } from "@okouai/api-contracts/contracts/chat-threads";
-import {
-  ORG_DEFAULT_RUN_MODEL,
-  type OrgModelPoliciesResponse,
-  type OrgModelPolicy,
-} from "@okouai/api-contracts/contracts/model-providers";
-import { getModelDisplayName } from "@okouai/core/model-display-name";
+import type { ModelCatalogResponse } from "@okouai/api-contracts/contracts/model-catalog";
+import type { OrgModelPolicy } from "@okouai/api-contracts/contracts/model-providers";
 import {
   getChatThread,
   updateChatThreadModelSelection,
 } from "../../lib/api/domains/chat";
+import { getModelCatalog } from "../../lib/api/domains/model-catalog";
 import { listModelPolicies } from "../../lib/api/domains/model-policies";
+import {
+  formatCatalogThreadModel,
+  getCatalogModelDisplayName,
+  getCatalogModelEfforts,
+  isCatalogModelActive,
+  isCatalogSystemDefaultModel,
+  resolveCatalogModel,
+  sortByCatalogOrder,
+} from "../../lib/domain/model-catalog-display";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import {
   formatModelProviderRoute,
@@ -21,7 +26,7 @@ import {
 } from "../../lib/domain/model-policy-display";
 import { isUuid } from "../../lib/utils/uuid";
 import { getOkouChatThreadId } from "../../lib/okou-env";
-import { formatChatEffort, parseChatEffort } from "./shared";
+import { parseChatEffort } from "./shared";
 
 interface ModelOptions {
   readonly help?: boolean;
@@ -39,61 +44,74 @@ function printUsageError(message: string, hint: string): never {
   process.exit(1);
 }
 
-function switchablePolicies(policies: readonly OrgModelPolicy[]) {
-  return policies.filter((policy) => {
-    return isMemberModelPolicyAvailable(policy);
-  });
+/** Pickers only offer active catalog models the member can use. */
+function switchablePolicies(
+  catalog: ModelCatalogResponse,
+  policies: readonly OrgModelPolicy[],
+) {
+  return sortByCatalogOrder(
+    catalog,
+    policies.filter((policy) => {
+      return (
+        isCatalogModelActive(catalog, policy.model) &&
+        isMemberModelPolicyAvailable(policy)
+      );
+    }),
+  );
 }
 
-function formatModelName(policy: OrgModelPolicy): string {
-  return `${policy.modelLabel} ${chalk.dim(`(${policy.model})`)}`;
+function formatModelName(catalog: ModelCatalogResponse, model: string): string {
+  return `${getCatalogModelDisplayName(catalog, model)} ${chalk.dim(`(${model})`)}`;
 }
 
-function printSwitchableModels(policies: readonly OrgModelPolicy[]): void {
-  const switchable = switchablePolicies(policies);
+function printSwitchableModels(
+  catalog: ModelCatalogResponse,
+  policies: readonly OrgModelPolicy[],
+): void {
+  const switchable = switchablePolicies(catalog, policies);
   if (switchable.length === 0) {
     console.log(chalk.dim("No switchable models are available for this user"));
     return;
   }
 
   for (const policy of switchable) {
-    const defaultMarker =
-      policy.model === ORG_DEFAULT_RUN_MODEL ? chalk.dim(" (default)") : "";
-    console.log(`  - ${formatModelName(policy)}${defaultMarker}`);
+    const defaultMarker = isCatalogSystemDefaultModel(catalog, policy.model)
+      ? chalk.dim(" (default)")
+      : "";
+    const efforts = getCatalogModelEfforts(catalog, policy.model);
+    console.log(
+      `  - ${formatModelName(catalog, policy.model)}${defaultMarker}`,
+    );
     console.log(`    provider: ${formatModelProviderRoute(policy)}`);
     console.log(
-      `    efforts: ${getModelReasoningEfforts(policy.model).join(", ")}`,
+      `    efforts: ${efforts.length > 0 ? efforts.join(", ") : "none"}`,
     );
   }
 }
 
-function formatThreadModel(
-  thread: ChatThreadMetadata,
-  policies: OrgModelPoliciesResponse,
-): string {
-  const model = thread.selectedModel ?? ORG_DEFAULT_RUN_MODEL;
-  const policy = policies.policies.find((candidate) => {
-    return candidate.model === model;
-  });
-  return `${policy?.modelLabel ?? getModelDisplayName(model)} (${model})${formatChatEffort(thread.selectedModel, thread.modelSettings)}`;
-}
-
 function printCurrentModel(
   thread: ChatThreadMetadata,
-  policies: OrgModelPoliciesResponse,
+  catalog: ModelCatalogResponse,
 ): void {
   console.log(chalk.green("✓ Chat thread loaded"));
   console.log(chalk.dim(`  Thread: ${thread.id}`));
   console.log(chalk.dim(`  Title:  ${thread.title ?? "(untitled)"}`));
-  console.log(chalk.dim(`  Model:  ${formatThreadModel(thread, policies)}`));
+  console.log(
+    chalk.dim(
+      `  Model:  ${formatCatalogThreadModel(catalog, thread.selectedModel, thread.modelSettings)}`,
+    ),
+  );
 }
 
 async function printModelHelp(command: Command): Promise<void> {
-  const result = await listModelPolicies();
+  const [result, catalog] = await Promise.all([
+    listModelPolicies(),
+    getModelCatalog(),
+  ]);
   console.log(command.helpInformation().trimEnd());
   console.log();
   console.log(chalk.bold("Switchable models:"));
-  printSwitchableModels(result.policies);
+  printSwitchableModels(catalog, result.policies);
   console.log();
   console.log(
     "Effort levels depend on the model; Claude uses extra where Codex uses xhigh.",
@@ -110,15 +128,16 @@ async function printModelHelp(command: Command): Promise<void> {
 }
 
 async function printCurrentModelAndChoices(threadId: string): Promise<void> {
-  const [thread, result] = await Promise.all([
+  const [thread, result, catalog] = await Promise.all([
     getChatThread({ threadId }),
     listModelPolicies(),
+    getModelCatalog(),
   ]);
 
-  printCurrentModel(thread, result);
+  printCurrentModel(thread, catalog);
   console.log();
   console.log(chalk.bold("Switchable models:"));
-  printSwitchableModels(result.policies);
+  printSwitchableModels(catalog, result.policies);
   console.log();
   console.log("Switch models:");
   console.log(chalk.cyan(`  okou chat model --thread ${threadId} <model>`));
@@ -129,7 +148,17 @@ async function switchModel(
   model: string,
   effort?: string,
 ): Promise<void> {
-  const result = await listModelPolicies();
+  const [result, catalog] = await Promise.all([
+    listModelPolicies(),
+    getModelCatalog(),
+  ]);
+  const resolved = resolveCatalogModel(catalog, model);
+  if (resolved !== model) {
+    printUsageError(
+      `Model is retired: ${model}`,
+      `Use its replacement: okou chat model ${resolved}`,
+    );
+  }
   const policy = result.policies.find((candidate) => {
     return candidate.model === model;
   });
@@ -148,7 +177,9 @@ async function switchModel(
   }
 
   const reasoningEffort =
-    effort === undefined ? undefined : parseChatEffort(effort, model);
+    effort === undefined
+      ? undefined
+      : parseChatEffort(effort, { catalog, model });
   const updated = await updateChatThreadModelSelection({
     threadId,
     model,
@@ -159,7 +190,7 @@ async function switchModel(
   console.log(chalk.dim(`  Thread: ${updated.threadId}`));
   console.log(
     chalk.dim(
-      `  Model:  ${policy.modelLabel} (${model})${reasoningEffort ? ` · effort ${reasoningEffort}` : ""}`,
+      `  Model:  ${getCatalogModelDisplayName(catalog, model)} (${model})${reasoningEffort ? ` · effort ${reasoningEffort}` : ""}`,
     ),
   );
 }
@@ -168,24 +199,29 @@ async function updateCurrentEffort(
   threadId: string,
   effort: string,
 ): Promise<void> {
-  const thread = await getChatThread({ threadId });
+  const [thread, catalog] = await Promise.all([
+    getChatThread({ threadId }),
+    getModelCatalog(),
+  ]);
   if (!thread.selectedModel) {
     printUsageError(
       "This chat thread has no selected model",
       "Pass a model: okou chat model --thread <thread-id> <model> --effort <level>",
     );
   }
-  const reasoningEffort = parseChatEffort(effort, thread.selectedModel);
+  // A retired selection runs as its replacement, so the effort applies there.
+  const model = resolveCatalogModel(catalog, thread.selectedModel);
+  const reasoningEffort = parseChatEffort(effort, { catalog, model });
   await updateChatThreadModelSelection({
     threadId,
-    model: thread.selectedModel,
+    model,
     reasoningEffort,
   });
   console.log(chalk.green("✓ Chat model updated"));
   console.log(chalk.dim(`  Thread: ${threadId}`));
   console.log(
     chalk.dim(
-      `  Model:  ${getModelDisplayName(thread.selectedModel)} (${thread.selectedModel}) · effort ${reasoningEffort}`,
+      `  Model:  ${getCatalogModelDisplayName(catalog, model)} (${model}) · effort ${reasoningEffort}`,
     ),
   );
 }

@@ -1,12 +1,10 @@
 import chalk from "chalk";
+import type { ModelCatalogResponse } from "@okouai/api-contracts/contracts/model-catalog";
 import {
-  getModelReasoningEfforts,
-  isModelReasoningEffortSupported,
-  modelReasoningEffort,
   reasoningEffortSchema,
-  type ModelSettings,
   type ReasoningEffort,
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
+import { getCatalogModelEfforts } from "../../lib/domain/model-catalog-display";
 
 import { isUuid } from "../../lib/utils/uuid";
 import { getOkouChatThreadId } from "../../lib/okou-env";
@@ -17,19 +15,27 @@ export function printChatUsageError(message: string, hint: string): never {
   process.exit(1);
 }
 
+/**
+ * Parse `--effort`. With a target model, the catalog routes of that model are
+ * the authority for which efforts it accepts.
+ */
 export function parseChatEffort(
   value: string,
-  model?: string,
+  target?: {
+    readonly catalog: ModelCatalogResponse;
+    readonly model: string;
+  },
 ): ReasoningEffort {
   const effort = reasoningEffortSchema.safeParse(value);
-  if (
-    !effort.success ||
-    (model && !isModelReasoningEffortSupported(model, effort.data))
-  ) {
-    if (model) {
+  const supported = target
+    ? getCatalogModelEfforts(target.catalog, target.model)
+    : undefined;
+  if (!effort.success || (supported && !supported.includes(effort.data))) {
+    if (target) {
+      const choices = supported?.length ? supported.join(", ") : "none";
       printChatUsageError(
-        `Unsupported reasoning effort "${value}" for ${model}`,
-        `${model} supports: ${getModelReasoningEfforts(model).join(", ")}`,
+        `Unsupported reasoning effort "${value}" for ${target.model}`,
+        `${target.model} supports: ${choices}`,
       );
     }
     printChatUsageError(
@@ -38,14 +44,6 @@ export function parseChatEffort(
     );
   }
   return effort.data;
-}
-
-export function formatChatEffort(
-  model: string | null,
-  modelSettings: ModelSettings | undefined,
-): string {
-  const effort = modelReasoningEffort(model, modelSettings);
-  return effort ? ` · effort ${effort}` : "";
 }
 
 export function resolveChatThreadId(flagThreadId: string | undefined): string {

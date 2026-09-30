@@ -6,10 +6,7 @@ import { command } from "ccstate";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { v5 as uuidv5 } from "uuid";
 import {
-  getCanonicalModelDisplayName,
-  getBuiltInVisibleModels,
   isSupportedRunModel,
-  ORG_DEFAULT_RUN_MODEL,
   normalizeRunModelId,
   type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
@@ -1454,7 +1451,6 @@ const handleModelCommand$ = command(
     },
     signal: AbortSignal,
   ): Promise<void> => {
-    const visibleModels = new Set(getBuiltInVisibleModels());
     const chatId = String(args.message.chat.id);
     const replyToMessageId =
       args.message.chat.type === "private"
@@ -1489,7 +1485,6 @@ const handleModelCommand$ = command(
     const options = policies.policies.flatMap((policy) => {
       if (
         !isSupportedRunModel(policy.model) ||
-        !visibleModels.has(policy.model) ||
         policy.routeStatus !== "valid"
       ) {
         return [];
@@ -1497,6 +1492,7 @@ const handleModelCommand$ = command(
       return {
         model: policy.model,
         label: policy.modelLabel,
+        isDefault: policy.isDefault,
       };
     });
     if (options.length === 0) {
@@ -1604,6 +1600,7 @@ function findModelOption(
   options: readonly {
     readonly model: SupportedRunModel;
     readonly label: string;
+    readonly isDefault: boolean;
   }[],
   input: string,
 ) {
@@ -1615,17 +1612,14 @@ function findModelOption(
     compactLookupKey(normalizedInput),
   ]);
   return options.find((option) => {
-    return [
-      option.model,
-      normalizeRunModelId(option.model),
-      option.label,
-      getCanonicalModelDisplayName(option.model),
-    ].some((value) => {
-      return (
-        inputKeys.has(lookupKey(value)) ||
-        inputKeys.has(compactLookupKey(value))
-      );
-    });
+    return [option.model, normalizeRunModelId(option.model), option.label].some(
+      (value) => {
+        return (
+          inputKeys.has(lookupKey(value)) ||
+          inputKeys.has(compactLookupKey(value))
+        );
+      },
+    );
   });
 }
 
@@ -1633,13 +1627,14 @@ function formatTelegramModelOptionsMessage(
   options: readonly {
     readonly model: SupportedRunModel;
     readonly label: string;
+    readonly isDefault: boolean;
   }[],
   currentSelectedModel: string | null,
 ): string {
   const optionLines = options.map((option) => {
     const markers = [
       option.model === currentSelectedModel ? "current" : null,
-      option.model === ORG_DEFAULT_RUN_MODEL ? "workspace default" : null,
+      option.isDefault ? "workspace default" : null,
     ].filter((marker): marker is string => {
       return marker !== null;
     });
@@ -1650,7 +1645,9 @@ function formatTelegramModelOptionsMessage(
   });
 
   const current = currentSelectedModel
-    ? getCanonicalModelDisplayName(currentSelectedModel)
+    ? (options.find((option) => {
+        return option.model === currentSelectedModel;
+      })?.label ?? currentSelectedModel)
     : "workspace default";
   return [
     "<b>Available models</b>",

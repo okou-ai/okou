@@ -121,6 +121,12 @@ are enforced by the integration ingress tests.
   default and route constraints are permanent in
   `scripts/test-model-catalog-permanent.ts`.
 
+- `scripts/test-model-catalog-stored-selections.ts` protects migration
+  `1297_model_catalog_stored_selections`: retired selections move along the
+  replacement chain, duplicate policies merge, cross-provider policies are
+  dropped rather than transplanted, efforts convert, history rows stay and a
+  second run is a no-op. Delete it together with the seed validator.
+
 - `scripts/test-retire-v7-chat-event-snapshots.ts` protects migration
   `1294_retire_v7_chat_event_snapshots`: it proves missing V8 counterparts fail
   without deleting pointers, 6,001 V7 pointers are removed in committed batches
@@ -223,6 +229,47 @@ Keep shipped SQL, snapshots, journal and numbered external-data operation 014
 [completed 014 record](../../../docs/goal-archive-search-recovery.md) is not an
 execution entry for the contracted schema. Unrelated transition validators and
 the complete migration consistency command remain active.
+
+## Model catalog rollout compatibility
+
+Migrations 1295 to 1297 (#37416) keep the columns and tables that API versions
+from before the global model catalog still read:
+
+- `org_model_policies.is_default` stays with its existing values. 1295 copies
+  no per-organization default; the API projects the system default from
+  `run_model_catalog.is_system_default`. 1297 only moves the flag to a
+  surviving replacement policy when it merges a retired one. Drop the column
+  once no deployed API version reads or writes it.
+- `subscription_model_catalog` stays until no deployed API version reads it;
+  `model_routes` is authoritative for the new API.
+- `allow_new_org_policy` stays until readers use `replaced_by` only.
+
+Replacement chains: `replaced_by` may point at a retired row; the chain ends
+at the final active model. The self foreign key
+`(replaced_by, replaced_by_lineage_rank) → (model, lineage_rank)` (ON UPDATE
+CASCADE) rejects dangling targets, `replaced_by_lineage_rank > lineage_rank`
+rejects self-references and cycles, and both replacement columns must be set
+together. To retire X in favor of Y, raise Y's `lineage_rank` above X's if
+needed (raising a rank never invalidates referrers), then set `replaced_by`
+and `replaced_by_lineage_rank` on X in the same statement. To retire the
+system default, move `is_system_default` to an active model with an enabled
+Built-in route first, in the same transaction.
+
+Unrecognized catalog rows: 1296 no longer deletes rows outside the seed.
+Production may hold `gpt-5.6-terra`, `okou-1.0-pro` and `okou-1.0-max`
+(unverified here). They keep their row with `display_name = model`,
+`sort_order` from 1001 in model order, `lineage_rank = 100`,
+`replaced_by = NULL` and `allow_new_org_policy = false`, and they have no
+`model_routes`, so they are not addable today and not executable. Because
+`replaced_by = NULL` reads as active in the end state, the owner must decide
+per row whether to add routes or retire it into an approved replacement
+before `allow_new_org_policy` is dropped.
+
+1297 deliberately does not rewrite chat thread selections
+(`chat_threads.selected_model`, `model_settings`, provider pin) yet: a
+thread rewrite must also append `model_selection_updated` events to
+`chat_thread_events` with reserved sequence ranges, as 1213 did. Until then
+the API resolves them along the chain on read.
 
 ## Migration patterns
 

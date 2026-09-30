@@ -1,14 +1,6 @@
 import { Radio as RadioPrimitive } from "@base-ui/react/radio";
 import { ScrollArea } from "@base-ui/react/scroll-area";
-import {
-  getMemberModelPolicyRoute,
-  isMemberModelPolicyConfigurable,
-} from "@okouai/api-contracts/contracts/member-model-policy";
-import {
-  getCanonicalModelDisplayName,
-  isCodexFastModeModel,
-  type SupportedRunModel,
-} from "@okouai/api-contracts/contracts/model-providers";
+import { isMemberModelPolicyConfigurable } from "@okouai/api-contracts/contracts/member-model-policy";
 import {
   Button,
   MENU_ROW_HEIGHT_CLASS,
@@ -25,6 +17,11 @@ import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { orgModelPolicies$ } from "../../../signals/external/org-model-policies.ts";
+import { modelCatalog$ } from "../../../signals/external/model-catalog.ts";
+import {
+  isPolicyFastModeAvailable,
+  isPolicyUltrafastAvailable,
+} from "../../../signals/okou-page/model-default-selection.ts";
 import {
   DEFAULT_MODEL_PLAN_CAPABILITIES,
   modelPlanCapabilities$,
@@ -71,17 +68,20 @@ function ComposerModelPanelBody({
 }: Pick<ComposerModelPanelProps, "value" | "onChange" | "placeholder">) {
   const { t } = useTranslation();
   const policiesLoadable = useLastLoadable(orgModelPolicies$);
+  const catalogLoadable = useLastLoadable(modelCatalog$);
   const policyResponse = useLastResolved(orgModelPolicies$);
+  const catalog = useLastResolved(modelCatalog$);
   const modelCapabilities =
     useLastResolved(modelPlanCapabilities$) ?? DEFAULT_MODEL_PLAN_CAPABILITIES;
   const changeModel = useExplicitModelSelectionChange({ value, onChange });
   const chatModelsLabel = t(($) => {
     return $.settings.models.picker.chatModels;
   });
-  if (policyResponse === undefined) {
+  if (policyResponse === undefined || catalog === undefined) {
     return (
       <p role="status" className="px-2 py-2 text-sm text-muted-foreground">
-        {policiesLoadable.state === "loading"
+        {policiesLoadable.state === "loading" ||
+        catalogLoadable.state === "loading"
           ? t(($) => {
               return $.settings.models.picker.loading;
             })
@@ -94,6 +94,7 @@ function ComposerModelPanelBody({
   const state = resolveModelFirstModelPickerState({
     value,
     policyResponse,
+    catalog,
     modelCapabilities: DEFAULT_MODEL_PLAN_CAPABILITIES,
     placeholder,
     fastLabel: t(($) => {
@@ -109,13 +110,8 @@ function ComposerModelPanelBody({
   const ultrafastAvailable =
     selectedPolicy !== undefined &&
     configurable &&
-    selectedPolicy.model === "gpt-6-astra" &&
-    getMemberModelPolicyRoute(selectedPolicy).providerType === "openai-api-key";
-  const fastAvailable =
-    configurable &&
-    (selectedPolicy.subscriptionOptions
-      ? selectedPolicy.subscriptionOptions.serviceTier === "priority"
-      : isCodexFastModeModel(selectedPolicy.model));
+    isPolicyUltrafastAvailable(selectedPolicy, catalog);
+  const fastAvailable = isPolicyFastModeAvailable(selectedPolicy, catalog);
   return (
     <>
       {/*
@@ -139,7 +135,7 @@ function ComposerModelPanelBody({
             <RadioGroup
               aria-label={chatModelsLabel}
               value={state.selection?.selectedModel ?? null}
-              onValueChange={(model: SupportedRunModel) => {
+              onValueChange={(model: string) => {
                 changeModel(
                   value.selectedModel === model
                     ? value
@@ -293,11 +289,12 @@ export function ComposerModelPanel({
 }: ComposerModelPanelProps) {
   const { t } = useTranslation();
   const { effort } = useChatEffort(value);
+  const catalog = useLastResolved(modelCatalog$);
   const fastLabel = t(($) => {
     return $.settings.models.picker.fast;
   });
   const triggerAriaLabel = [
-    getCanonicalModelDisplayName(value.selectedModel),
+    catalog?.displayName(value.selectedModel) ?? value.selectedModel,
     effort === undefined ? undefined : formatChatEffort(effort),
     value.codexServiceTier === "fast"
       ? fastLabel

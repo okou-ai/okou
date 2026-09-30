@@ -64,15 +64,13 @@ actor ChatService {
     try await loadHistory(threadID: threadID)
   }
 
-  /// The organization default run model is fixed ("Auto") and cannot be changed.
-  static let orgDefaultRunModel = "okou-1.0"
-
   func createThread(agentID: String? = nil) async throws -> ChatThread {
     async let agentsRequest: [AgentRecord] = client.request("/api/agents")
     async let preferenceRequest: ModelPreference = client.request("/api/user-model-preference")
     async let policiesRequest: ModelPolicies = client.request("/api/model-policies")
-    let (agents, preference, policies) = try await (
-      agentsRequest, preferenceRequest, policiesRequest
+    async let catalogRequest: ModelCatalog = client.request("/api/model-catalog")
+    let (agents, preference, policies, catalog) = try await (
+      agentsRequest, preferenceRequest, policiesRequest, catalogRequest
     )
     guard
       let agent = agents.first(where: {
@@ -82,11 +80,17 @@ actor ChatService {
       if agentID != nil { throw ChatServiceError.agentUnavailable }
       throw ChatServiceError.noDefaultAgent
     }
-    let orgDefaultIsValid = policies.policies.contains {
-      $0.model == Self.orgDefaultRunModel && $0.routeStatus == "valid"
+    // A saved selection of a retired model resolves to its active replacement.
+    let savedModel = preference.selectedModel.map { catalog.resolve($0) }
+    let systemDefault = catalog.defaultModel.flatMap { model -> String? in
+      let routable = policies.policies.contains(where: {
+        $0.model == model && $0.routeStatus == "valid"
+      })
+      return routable ? model : nil
     }
-    let model = preference.selectedModel ?? (orgDefaultIsValid ? Self.orgDefaultRunModel : nil)
-    guard let model else { throw ChatServiceError.noDefaultModel }
+    guard let model = savedModel ?? systemDefault else {
+      throw ChatServiceError.noDefaultModel
+    }
     let body = CreateThreadBody(
       agentId: agent.agentId, clientThreadId: UUID().uuidString,
       eventId: UUID().uuidString, model: model,

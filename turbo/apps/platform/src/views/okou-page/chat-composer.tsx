@@ -245,7 +245,7 @@ import {
   isIntegrationManagedCustomConnector,
   type CustomConnectorResponse,
 } from "@okouai/api-contracts/contracts/custom-connectors";
-import { getModelDisplayName } from "@okouai/core/model-display-name";
+import { modelCatalog$ } from "../../signals/external/model-catalog.ts";
 import {
   ModelProviderPicker,
   type ModelProviderSelection,
@@ -8782,6 +8782,7 @@ function ComposerTemporaryModelNotice({
   const selection = useLastResolved(signals.model.modelSelection$);
   const policies = useLastResolved(orgModelPolicies$);
   const userPreference = useLastResolved(userModelPreference$);
+  const catalog = useLastResolved(modelCatalog$);
   const [updateLoadable, updatePreference] = useLoadableSet(
     updateUserModelPreference$,
   );
@@ -8789,17 +8790,18 @@ function ComposerTemporaryModelNotice({
   const defaultSelection = resolveDefaultModelSelection({
     userPreference,
     policies,
+    catalog,
   });
   const selectionServiceTier =
     selection?.codexServiceTier === "fast"
       ? "priority"
       : (selection?.codexServiceTier ?? null);
   const defaultServiceTier =
-    defaultSelection.codexServiceTier === "fast"
+    defaultSelection?.codexServiceTier === "fast"
       ? "priority"
-      : (defaultSelection.codexServiceTier ?? null);
+      : (defaultSelection?.codexServiceTier ?? null);
   const modelChanged =
-    selection?.selectedModel !== defaultSelection.selectedModel;
+    selection?.selectedModel !== defaultSelection?.selectedModel;
   const serviceTierChanged = selectionServiceTier !== defaultServiceTier;
   const effort = preferredChatReasoningEffort(selection);
   const defaultEffort = preferredChatReasoningEffort(defaultSelection);
@@ -8808,6 +8810,8 @@ function ComposerTemporaryModelNotice({
   // fixed Auto fallback would misreport the member's saved preference.
   if (
     !selection ||
+    !defaultSelection ||
+    catalog === undefined ||
     userPreference === undefined ||
     policies === undefined ||
     (!modelChanged && !serviceTierChanged && !effortChanged)
@@ -8815,7 +8819,7 @@ function ComposerTemporaryModelNotice({
     return withChatScrollLayout(null);
   }
   const updating = updateLoadable.state === "loading";
-  const modelName = getModelDisplayName(selection.selectedModel);
+  const modelName = catalog.displayName(selection.selectedModel);
   const runSpeedLabel = t(($) => {
     return selectionServiceTier === "priority"
       ? $.settings.models.picker.fast

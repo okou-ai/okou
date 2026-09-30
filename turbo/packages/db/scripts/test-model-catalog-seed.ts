@@ -25,15 +25,47 @@ export async function validateModelCatalogSeed(
   const client = new Client({ connectionString: databaseUrl });
   await client.connect();
   try {
-    const catalog = await client.query<{
+    const allRows = await client.query<{
       model: string;
       display_name: string;
+      sort_order: number;
       is_system_default: boolean;
       replaced_by: string | null;
+      allow_new_org_policy: boolean;
+      route_count: number;
     }>(
-      `SELECT model, display_name, is_system_default, replaced_by
-       FROM run_model_catalog ORDER BY sort_order, model`,
+      `SELECT catalog.model, catalog.display_name, catalog.sort_order,
+         catalog.is_system_default, catalog.replaced_by,
+         catalog.allow_new_org_policy,
+         (SELECT count(*)::integer FROM model_routes AS route
+          WHERE route.model = catalog.model) AS route_count
+       FROM run_model_catalog AS catalog ORDER BY sort_order, model`,
     );
+    const supported: readonly string[] = SUPPORTED_RUN_MODELS;
+    // Rows the code does not recognize (1191/1194 seeded gpt-5.6-terra,
+    // okou-1.0-pro and okou-1.0-max) are kept, sorted last, non-addable and
+    // without routes until the owner decides them.
+    for (const row of allRows.rows) {
+      if (supported.includes(row.model)) {
+        continue;
+      }
+      assert.deepEqual(
+        [
+          row.display_name,
+          row.replaced_by,
+          row.allow_new_org_policy,
+          row.route_count,
+        ],
+        [row.model, null, false, 0],
+      );
+      assert.ok(row.sort_order > 1000, row.model);
+      assert.equal(row.is_system_default, false);
+    }
+    const catalog = {
+      rows: allRows.rows.filter((row) => {
+        return supported.includes(row.model);
+      }),
+    };
     const active = catalog.rows.filter((row) => {
       return row.replaced_by === null;
     });

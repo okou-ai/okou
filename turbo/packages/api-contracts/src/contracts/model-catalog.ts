@@ -11,8 +11,13 @@ const modelCatalogModelSchema = z.object({
   isSystemDefault: z.boolean(),
   /** Direct replacement of a retired model; null when the model is active. */
   replacedBy: z.string().nullable(),
-  /** The active model a stored selection of this model resolves to. */
+  /**
+   * The final active model a stored selection of this model resolves to,
+   * following the whole replacement chain.
+   */
   resolvedModel: z.string(),
+  /** Display price tier of the model's Built-in route; null without one. */
+  priceTier: z.string().nullable(),
 });
 
 const modelCatalogRouteSchema = z.object({
@@ -33,6 +38,8 @@ const modelCatalogRouteSchema = z.object({
 export const modelCatalogResponseSchema = z.object({
   models: z.array(modelCatalogModelSchema),
   routes: z.array(modelCatalogRouteSchema),
+  /** The model every organization uses without a thread or member choice. */
+  systemDefaultModel: z.string(),
 });
 
 export type ModelCatalogResponse = z.infer<typeof modelCatalogResponseSchema>;

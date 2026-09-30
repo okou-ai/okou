@@ -15,18 +15,29 @@ import {
  * Global run model catalog: one row per stable model ID.
  *
  * `replaced_by` NULL marks an active model. A non-NULL value marks a retired
- * model whose stored selections resolve to that replacement. The composite
- * foreign key `(replaced_by, replacement_target_active)` →
- * `(model, is_active)` only matches active rows, so every replacement target
- * exists, is active, and is not the row itself: chains are a single hop and
- * cannot cycle. Retiring a target requires repointing its referrers first
- * (same transaction).
+ * model whose stored selections resolve along the chain to the final active
+ * model. Chains may have several hops; the constraints below keep them finite
+ * without triggers:
+ *
+ * - The self foreign key `(replaced_by, replaced_by_lineage_rank)` →
+ *   `(model, lineage_rank)` rejects dangling targets and copies the target's
+ *   rank (`ON UPDATE CASCADE` keeps the copy current).
+ * - `replaced_by_lineage_rank > lineage_rank` makes every hop strictly
+ *   increase the rank, so no path can return to a row: self-references and
+ *   cycles are impossible. `replaced_by <> model` states the self case
+ *   directly.
+ * - Both replacement columns are NULL or both are set, so `MATCH SIMPLE`
+ *   cannot skip the foreign key for a retired row.
+ *
+ * To retire X in favor of Y: if Y.lineage_rank <= X.lineage_rank, raise
+ * Y.lineage_rank first (raising a rank only widens the gap to its referrers),
+ * then set X.replaced_by = Y and X.replaced_by_lineage_rank = Y.lineage_rank.
  *
  * `is_system_default` marks the one model new organizations and unresolved
  * selections start from. At most one row can be the default and it must be
  * active; "exactly one" and "has an enabled Built-in route" are validated by
  * the API catalog loader. Switch the default by clearing the old row before
- * setting the new one inside one transaction.
+ * setting the new one inside one transaction, then retire the old default.
  *
  * Transitional: `allow_new_org_policy` still gates adding a new organization
  * policy for code-active models (see docs/model-catalog.md). It is dropped
@@ -40,30 +51,37 @@ export const runModelCatalog = pgTable(
     sortOrder: integer("sort_order").notNull(),
     isSystemDefault: boolean("is_system_default").notNull().default(false),
     replacedBy: varchar("replaced_by", { length: 255 }),
-    isActive: boolean("is_active")
-      .notNull()
-      .generatedAlwaysAs(sql`replaced_by IS NULL`),
-    // NULL for active rows (MATCH SIMPLE skips the FK), true otherwise.
-    replacementTargetActive: boolean(
-      "replacement_target_active",
-    ).generatedAlwaysAs(
-      sql`CASE WHEN replaced_by IS NULL THEN NULL ELSE true END`,
-    ),
+    /** Acyclicity rank: every replacement hop strictly increases it. */
+    lineageRank: integer("lineage_rank").notNull(),
+    /** The target's lineage_rank, maintained by the self foreign key. */
+    replacedByLineageRank: integer("replaced_by_lineage_rank"),
     allowNewOrgPolicy: boolean("allow_new_org_policy").notNull().default(false),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (table) => {
     return [
-      unique("uq_run_model_catalog_model_active").on(
+      unique("uq_run_model_catalog_model_lineage_rank").on(
         table.model,
-        table.isActive,
+        table.lineageRank,
       ),
       foreignKey({
-        name: "fk_run_model_catalog_replaced_by_active",
-        columns: [table.replacedBy, table.replacementTargetActive],
-        foreignColumns: [table.model, table.isActive],
-      }),
+        name: "fk_run_model_catalog_replaced_by",
+        columns: [table.replacedBy, table.replacedByLineageRank],
+        foreignColumns: [table.model, table.lineageRank],
+      }).onUpdate("cascade"),
+      check(
+        "chk_run_model_catalog_replacement_pair",
+        sql`(${table.replacedBy} IS NULL) = (${table.replacedByLineageRank} IS NULL)`,
+      ),
+      check(
+        "chk_run_model_catalog_not_self_replaced",
+        sql`${table.replacedBy} <> ${table.model}`,
+      ),
+      check(
+        "chk_run_model_catalog_replacement_rank",
+        sql`${table.replacedByLineageRank} > ${table.lineageRank}`,
+      ),
       uniqueIndex("idx_run_model_catalog_one_system_default")
         .on(table.isSystemDefault)
         .where(sql`${table.isSystemDefault}`),

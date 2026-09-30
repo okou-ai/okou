@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { http, HttpResponse } from "msw";
 import chalk from "chalk";
 import { server } from "../../../mocks/server";
+import { MODEL_CATALOG_RESPONSE } from "../../../mocks/handlers/model-catalog";
 import { switchCommand, modelCommand } from "../index";
 
 const MODEL_POLICIES_RESPONSE = {
@@ -131,6 +132,49 @@ describe("okou model command", () => {
     expect(output).not.toContain("price tier:");
     expect(output).not.toContain("provider: built-in");
     expect(output).not.toContain("provider: api key");
+  });
+
+  it("takes names, order, default, and retirement from the model catalog", async () => {
+    const retiredPolicy = {
+      ...MODEL_POLICIES_RESPONSE.policies[0]!,
+      id: "00000000-0000-4000-8000-000000000003",
+      model: "claude-opus-4-8",
+      modelLabel: "Claude Opus 4.8",
+    };
+    server.use(
+      http.get("http://localhost:3000/api/model-policies", () => {
+        return HttpResponse.json({
+          ...MODEL_POLICIES_RESPONSE,
+          policies: [...MODEL_POLICIES_RESPONSE.policies, retiredPolicy],
+        });
+      }),
+      http.get("http://localhost:3000/api/model-catalog", () => {
+        return HttpResponse.json({
+          ...MODEL_CATALOG_RESPONSE,
+          systemDefaultModel: "claude-sonnet-5",
+          models: MODEL_CATALOG_RESPONSE.models.map((entry) => {
+            return entry.model === "claude-sonnet-5"
+              ? { ...entry, displayName: "Sonnet Five", priceTier: "$$$$" }
+              : { ...entry, isSystemDefault: false };
+          }),
+        });
+      }),
+    );
+
+    await modelCommand.parseAsync(["node", "cli", "ls"]);
+
+    const output = mockConsoleLog.mock.calls.flat().join("\n");
+    expect(output).toContain("Sonnet Five (claude-sonnet-5) (default)");
+    expect(output).toContain("price tier: $$$$");
+    expect(output).toContain("Auto (okou-1.0)\n");
+    expect(output).not.toContain("Auto (okou-1.0) (default)");
+    expect(output).not.toContain("claude-opus-4-8");
+    expect(output.indexOf("okou-1.0")).toBeLessThan(
+      output.indexOf("claude-sonnet-5"),
+    );
+    expect(output.indexOf("claude-sonnet-5")).toBeLessThan(
+      output.indexOf("gpt-5.6-luna"),
+    );
   });
 
   it("should show Web switching guidance", async () => {

@@ -9,10 +9,6 @@ import {
   type State,
 } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import {
-  isSupportedRunModel,
-  ORG_DEFAULT_RUN_MODEL,
-} from "@okouai/api-contracts/contracts/model-providers";
 import { i18n } from "../../i18n/index.ts";
 import { onRejection, resetSignal, settle } from "../utils.ts";
 import { createHeaderAutomationSignals } from "./header-automation-menu.ts";
@@ -75,6 +71,7 @@ import { artifactReferenceLookupKey } from "../attachment-resource-url.ts";
 import { debounceCommand } from "../command-scheduling.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { orgModelPolicies$ } from "../external/org-model-policies.ts";
+import { modelCatalog$ } from "../external/model-catalog.ts";
 import {
   writeChatMessageToClipboard,
   type ChatClipboardPayload,
@@ -395,9 +392,18 @@ function createModelSelection(
   });
 
   const codexFastModeActive$ = computed(async (get): Promise<boolean> => {
-    const selectedModel = await get(selectedModel$);
-    const policies = await get(orgModelPolicies$);
-    if (!isCodexFastModeAvailableForSelection({ policies, selectedModel })) {
+    const [policies, catalog] = await Promise.all([
+      get(orgModelPolicies$),
+      get(modelCatalog$),
+    ]);
+    const selectedModel = catalog.resolve(get(selectedModel$));
+    if (
+      !isCodexFastModeAvailableForSelection({
+        policies,
+        catalog,
+        selectedModel,
+      })
+    ) {
       return false;
     }
     return get(threadMeta$)?.serviceTier === "priority";
@@ -430,9 +436,11 @@ function createModelSelectionForSend({
       { get },
       signal: AbortSignal,
     ): Promise<ModelProviderSelection | null> => {
-      const selectedModel = await get(selectedModel$);
+      const catalog = await get(modelCatalog$);
       signal.throwIfAborted();
-      if (!isSupportedRunModel(selectedModel)) {
+      // A pin of a retired model sends its catalog replacement.
+      const selectedModel = catalog.resolve(get(selectedModel$));
+      if (!selectedModel) {
         return null;
       }
       const codexFastModeActive = await get(codexFastModeActive$);
@@ -3595,16 +3603,22 @@ function createChatThreadComposerSignals(
   const { modelSelection, computerUseHostSelection, messageActions } = options;
   const composerModelSelection$ = computed(
     async (get): Promise<ModelProviderSelection | null> => {
-      const selectedModel = get(modelSelection.selectedModel$);
-      if (!isSupportedRunModel(selectedModel)) {
+      const [policies, catalog] = await Promise.all([
+        get(orgModelPolicies$),
+        get(modelCatalog$),
+      ]);
+      // Thread pins of retired models display their catalog replacement.
+      const selectedModel = catalog.resolve(
+        get(modelSelection.selectedModel$),
+      );
+      if (!selectedModel) {
         return null;
       }
-      const policies = await get(orgModelPolicies$);
       const effectiveModel = policies.policies.some((policy) => {
         return policy.model === selectedModel;
       })
         ? selectedModel
-        : ORG_DEFAULT_RUN_MODEL;
+        : catalog.systemDefaultModel;
       const modelSettings = get(modelSelection.modelSettings$);
       return {
         selectedModel: effectiveModel,

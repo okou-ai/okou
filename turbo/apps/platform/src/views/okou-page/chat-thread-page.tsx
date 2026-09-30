@@ -129,7 +129,10 @@ import type {
   ChatThreadWorkflowAutomation,
   WorkflowSchedule,
 } from "@okouai/api-contracts/contracts/workflows";
-import { getModelDisplayName } from "@okouai/core/model-display-name";
+import {
+  modelCatalog$,
+  type ModelCatalog,
+} from "../../signals/external/model-catalog.ts";
 import { emptyChatImg, thinkingSpinnerImg } from "./platform-assets.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { ChatThreadPinButton } from "./chat-thread-header-actions.tsx";
@@ -452,8 +455,10 @@ function fastModeEnabled(selection: ChatRunModelSelection): boolean {
 function runModelDisplayName(
   t: TFunction<"common">,
   selection: ChatRunModelSelection,
+  catalog: ModelCatalog | undefined,
 ): string {
-  const model = getModelDisplayName(selection.selectedModel);
+  const model =
+    catalog?.displayName(selection.selectedModel) ?? selection.selectedModel;
   if (selection.serviceTier === "ultrafast") {
     return `${model} ${t(($) => {
       return $.settings.models.picker.ultrafast;
@@ -3327,6 +3332,7 @@ function ChatThreadNextRunModelNotice({
   const runningSelection = useLastResolved(
     thread.composer.model.runningModelSelection$,
   );
+  const catalog = useLastResolved(modelCatalog$);
   if (
     selectedSelection === undefined ||
     selectedSelection === null ||
@@ -3350,7 +3356,7 @@ function ChatThreadNextRunModelNotice({
       ($) => {
         return $.chat.run.selectedModelAppliesAfterCurrentRun;
       },
-      { model: runModelDisplayName(t, selectedRunSelection) },
+      { model: runModelDisplayName(t, selectedRunSelection, catalog) },
     );
   } else if (
     selectedRunSelection.serviceTier === "ultrafast" ||
@@ -3364,7 +3370,7 @@ function ChatThreadNextRunModelNotice({
         return $.chat.run.selectedModelAppliesAfterCurrentRun;
       },
       {
-        model: runModelDisplayName(t, selectedRunSelection),
+        model: runModelDisplayName(t, selectedRunSelection, catalog),
       },
     );
   } else if (
@@ -3601,19 +3607,21 @@ function RunSectionDividerRow({
 
 function ModelChangeDividerRow({ change }: { change: RunModelChange }) {
   const { t } = useTranslation();
-  return <RunSectionDividerRow label={modelChangeLabel(t, change)} />;
+  const catalog = useLastResolved(modelCatalog$);
+  return <RunSectionDividerRow label={modelChangeLabel(t, change, catalog)} />;
 }
 
 function modelChangeLabel(
   t: TFunction<"common">,
   change: RunModelChange,
+  catalog: ModelCatalog | undefined,
 ): string {
   return change.kind === "model"
     ? t(
         ($) => {
           return $.chat.run.modelChangedTo;
         },
-        { model: runModelDisplayName(t, change.selection) },
+        { model: runModelDisplayName(t, change.selection, catalog) },
       )
     : change.enabled
       ? t(($) => {
@@ -3626,9 +3634,10 @@ function modelChangeLabel(
 
 function FoldedModelChangeDivider({ change }: { change: RunModelChange }) {
   const { t } = useTranslation();
+  const catalog = useLastResolved(modelCatalog$);
   return (
     <RunSectionDivider
-      label={modelChangeLabel(t, change)}
+      label={modelChangeLabel(t, change, catalog)}
       labelPosition="right"
     />
   );

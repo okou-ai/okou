@@ -43,7 +43,6 @@ import {
   upsertModelProviderRequestSchema,
   updateOrgModelPolicySchema,
   updateOrgModelPoliciesRequestSchema,
-  ORG_DEFAULT_RUN_MODEL,
   BUILT_IN_MODEL_TO_PROVIDER,
   CODEX_FAST_MODE_MODELS,
   MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS,
@@ -983,11 +982,10 @@ describe("model-first canonical catalog", () => {
     },
   );
 
-  it("uses the fixed Auto model as the built-in default", () => {
-    expect(ORG_DEFAULT_RUN_MODEL).toBe("okou-1.0");
-    expect(getDefaultModel("built-in")).toBe(ORG_DEFAULT_RUN_MODEL);
-    expect(getProvidersForModel(ORG_DEFAULT_RUN_MODEL)).toEqual(["built-in"]);
-    expect(isLimitedFree1RestrictedRunModel(ORG_DEFAULT_RUN_MODEL)).toBe(false);
+  it("leaves the built-in default to the model catalog", () => {
+    expect(getDefaultModel("built-in")).toBeUndefined();
+    expect(getProvidersForModel("okou-1.0")).toEqual(["built-in"]);
+    expect(isLimitedFree1RestrictedRunModel("okou-1.0")).toBe(false);
   });
 
   it("exposes price tiers for built-in reasoning models", () => {

@@ -1531,8 +1531,15 @@
     {
       "idx": 1296,
       "version": "7",
-      "when": 1790755789422,
+      "when": 1790757340020,
       "tag": "1296_global_model_catalog",
+      "breakpoints": true
+    },
+    {
+      "idx": 1297,
+      "version": "7",
+      "when": 1790757387215,
+      "tag": "1297_model_catalog_stored_selections",
       "breakpoints": true
     }
   ]

@@ -463,6 +463,10 @@ async function openProvidersTab(): Promise<void> {
       screen.getByRole("dialog", { name: "Settings" }),
     ).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Models" })).toBeInTheDocument();
+    // Policy rows render once the policies and the model catalog load.
+    expect(
+      document.querySelector('[data-testid^="org-model-policy-row-"]'),
+    ).not.toBeNull();
   });
 }
 
@@ -677,27 +681,65 @@ test("Deleting one legacy model preserves other restricted routes", async () => 
   ).toBeInTheDocument();
 });
 
-test("Keep Auto in Custom mode without a default-model setting", async () => {
-  mockApiKeyModelRouteStory();
+test("Keep the projected system default row locked and out of policy writes", async () => {
+  mockAdminOrg();
+  context.mocks.data.orgModelProviders([]);
+  context.mocks.data.orgModelPolicies([
+    builtInPolicy(
+      "00000000-0000-4000-a000-000000000211",
+      "gpt-5.6-luna",
+      "GPT 5.6 Luna",
+    ),
+    builtInPolicy(
+      "00000000-0000-4000-a000-000000000212",
+      "deepseek-v4-flash",
+      "DeepSeek V4 Flash",
+    ),
+  ]);
+  mockGatewayConnectionLifecycle([]);
+  const writes: UpdateOrgModelPoliciesRequest[] = [];
+  context.mocks.api(modelPoliciesMainContract.update, ({ body, respond }) => {
+    writes.push(body);
+    context.mocks.data.orgModelPolicies(
+      body.policies.map((policy, index) => {
+        return builtInPolicy(
+          `00000000-0000-4000-a000-00000000030${index}`,
+          policy.model,
+          policy.model,
+        );
+      }),
+    );
+    return respond(200, {
+      revision: "next",
+      writePreconditionRequired: false,
+      policies: [],
+      modelsAvailableToAdd: [],
+      workspaceDefaultModel: null,
+      workspaceDefaultPolicyId: null,
+    });
+  });
   await openProvidersTab();
 
+  // The server projects the catalog system default for every organization.
   const autoRow = await screen.findByTestId("org-model-policy-row-okou-1.0");
   expect(screen.queryByTestId("default-model-row")).not.toBeInTheDocument();
+  expect(within(autoRow).queryByLabelText("Actions for Auto")).toBeNull();
   expect(
-    screen.queryByRole("combobox", { name: "Default model" }),
-  ).not.toBeInTheDocument();
+    within(autoRow).getByLabelText("Auto can't be removed"),
+  ).toBeDisabled();
 
-  click(within(autoRow).getByLabelText("Actions for Auto"));
-  expect(menuItemByText("Edit model")).toBeInTheDocument();
-  expect(menuItemByText("Auto can't be removed")).toHaveAttribute(
-    "aria-disabled",
-    "true",
+  const row = await screen.findByTestId(
+    "org-model-policy-row-deepseek-v4-flash",
   );
+  click(within(row).getByLabelText("Delete model DeepSeek V4 Flash"));
+  await waitFor(() => {
+    expect(writes).toHaveLength(1);
+  });
   expect(
-    queryAllByRoleFast("menuitem").some((item) => {
-      return item.textContent?.trim() === "Delete model";
+    writes[0]?.policies.map((policy) => {
+      return policy.model;
     }),
-  ).toBeFalsy();
+  ).toStrictEqual(["gpt-5.6-luna"]);
 });
 
 test("Keep model configuration for a selected workspace API key", async () => {

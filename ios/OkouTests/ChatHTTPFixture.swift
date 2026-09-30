@@ -100,3 +100,28 @@ func chatRequestBody(_ request: URLRequest) -> Data {
   }
   return result
 }
+
+/// `/api/model-catalog` fixture with one retired model. `nil` omits the top-level default so
+/// the client must fall back to the flagged model.
+func modelCatalogResponse(systemDefaultModel: String?) -> ChatHTTPResponse {
+  let flagged = systemDefaultModel ?? "okou-1.0"
+  let entries: [(model: String, displayName: String, replacedBy: String?)] = [
+    ("okou-1.0", "Auto", nil),
+    ("claude-sonnet-5", "Claude Sonnet 5", nil),
+    ("gpt-5.6-sol", "GPT-5.6 Sol", nil),
+    ("claude-opus-5-5", "Claude Opus 5.5", nil),
+    ("claude-opus-4-8", "Claude Opus 4.8", "claude-opus-5-5"),
+  ]
+  let models = entries.enumerated().map { index, entry -> String in
+    let (model, displayName, replacedBy) = entry
+    let replacement = replacedBy.map { "\"\($0)\"" } ?? "null"
+    return """
+      {"model":"\(model)","displayName":"\(displayName)","sortOrder":\(index),\
+      "isSystemDefault":\(model == flagged),"replacedBy":\(replacement),\
+      "resolvedModel":"\(replacedBy ?? model)","priceTier":null}
+      """
+  }
+  let defaultField = systemDefaultModel.map { "\"systemDefaultModel\":\"\($0)\"," } ?? ""
+  return ChatHTTPResponse(
+    body: "{\(defaultField)\"models\":[\(models.joined(separator: ","))],\"routes\":[]}")
+}

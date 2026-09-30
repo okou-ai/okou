@@ -498,7 +498,6 @@ export {
   MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS,
   SUPPORTED_RUN_MODELS,
   BUILT_IN_MODEL_PRICE_TIER,
-  ORG_DEFAULT_RUN_MODEL,
   getFrameworkForType,
   getSecretNameForType,
   getModelProviderEnvBindings,

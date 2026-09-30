@@ -1,71 +1,78 @@
 # Deployment Compatibility
 
-## Organization default model fixed to `okou-1.0` (2026-09-30)
+## Global model catalog and projected system default (2026-09-30)
 
-The organization default model is no longer configurable. Every organization
-uses the built-in `okou-1.0` (Auto) policy as its default; model resolution is
-thread pin, then member preference, then `okou-1.0`. The `OkouModels` feature
-switch is removed, so `okou-1.0` is available to every organization. New
-organizations bootstrapped by the new API start in Auto mode, whose only
-organization policy is `okou-1.0`. `PUT /api/model-policies` rejects a policy
-list that omits `okou-1.0` or routes it off the built-in organization route,
-and no longer declares `isDefault`.
+The server model catalog (`run_model_catalog` plus `model_routes`, served by
+`GET /api/model-catalog`) becomes the only authority for model names, order,
+the system default, retirement and replacement, price tiers and route
+capabilities; code model lists, labels and `ORG_DEFAULT_RUN_MODEL` are no
+longer product authority. The organization default is not configurable: the
+catalog system default (`okou-1.0`, Auto) is projected into every
+organization's `GET /api/model-policies` as a non-deletable system policy and
+is not stored per organization. Resolution is thread selection, then member
+preference, then the system default. Stored selections of retired models
+resolve along the replacement chain (`claude-fable-5` → `claude-fable-5-1`,
+`claude-opus-4-8` → `claude-opus-5-5`, `claude-sonnet-4-6` →
+`claude-sonnet-5-5`, `deepseek-v4-pro` and `gpt-5.5` → `gpt-6-luna`); a
+replacement never transplants credentials, and a selection whose provider type
+has no route on the replacement fails explicitly. The `OkouModels` feature
+switch is removed. See [the design note](model-catalog.md).
 
-Migration `1295_okou_1_0_fixed_org_default` inserts the `okou-1.0` built-in
-policy for every organization in `org_metadata` or `org_model_policies` and
-makes it the only `is_default` row. It does not change `model_mode` or member
-preferences. The `is_default` column stays: the new API writes it as
-`model = 'okou-1.0'` and never reads it. Dropping it is a follow-up change.
+Migrations:
+
+- `1295_okou_1_0_fixed_org_default` intentionally changes no data. It copies
+  no per-organization default row and leaves `org_model_policies.is_default`
+  and its values untouched.
+- `1296_global_model_catalog` adds `display_name`, `sort_order`,
+  `is_system_default`, `replaced_by`, `lineage_rank` and
+  `replaced_by_lineage_rank` to `run_model_catalog` (rank-based acyclic
+  replacement chains, no triggers) and adds `model_routes`. It seeds every
+  recognized model, the system default, the approved replacements and routes
+  (Built-in candidates, BYOK compatibility and a copy of
+  `subscription_model_catalog`), and fails rather than dropping rows if that
+  table lists a model outside the active catalog. Existing
+  `allow_new_org_policy` values are preserved; unrecognized rows are kept
+  without routes and non-addable.
+- `1297_model_catalog_stored_selections` rewrites mutable stored selections of
+  retired models to their final replacement: `org_model_policies.model` (only
+  onto a replacement route of the same provider type; incompatible retired
+  policies are dropped and merged duplicates keep one row, moving the legacy
+  `is_default` flag onto the survivor), `org_members_metadata.selected_model`
+  and `model_settings`, `agents.selected_model` and
+  `model_providers.selected_model`. It is re-runnable and serializes with API
+  policy writes through the per-organization advisory lock. It never touches
+  history (`agent_runs`, `chat_events` including queued inputs, usage and
+  billing, session conversations), `org_plan_entitlements`, custom-gateway
+  `model_mappings`, or chat thread selections (`chat_threads` and
+  `chat_thread_events`); the API resolves those along the chain on read and
+  rechecks queued inputs at dispatch.
 
 Old and new versions during deploy:
 
-- Previous API after the migration: its default repair keeps `okou-1.0` as the
-  default, and the removed switch only gated Add Model. Organizations it
-  creates get the previous seed in Custom mode; the new API inserts `okou-1.0`
-  for them on the next policy read.
+- Previous API after the migrations: it ignores the new catalog columns and
+  `model_routes` and still reads `allow_new_org_policy`,
+  `subscription_model_catalog` and `is_default`, all of which are kept. After
+  1297 it no longer finds policies of the retired models, which its code
+  already treats as retired. The new API clears `is_default` on its policy
+  writes and does not store a default row; how the previous API's default
+  repair reacts to an organization without an `is_default` row was not
+  confirmed here (unverified).
 - Old App, iOS and CLI against the new API: responses keep the deprecated
   `isDefault`, `workspaceDefaultModel` and `workspaceDefaultPolicyId` fields,
-  derived from `okou-1.0`, because released iOS builds decode `isDefault` as
-  required. A request `isDefault` is stripped, so an old "set default" write is
-  a no-op; an old write that removes `okou-1.0` receives `400`.
-- Rollback: the schema is unchanged, and the previous API accepts Auto
-  organizations whose only policy is `okou-1.0`.
-
-## Global model catalog foundation (2026-09-30)
-
-Migration `1296_global_model_catalog` extends `run_model_catalog` with
-`display_name`, `sort_order`, `is_system_default`, `replaced_by` and two stored
-generated columns, and adds `model_routes`. It seeds every code-active model
-(labels and `SUPPORTED_RUN_MODELS` order), marks `okou-1.0` as the system
-default and seeds the owner-approved replacements for code-retired models:
-`claude-fable-5` to `claude-fable-5-1`, `claude-opus-4-8` to `claude-opus-5-5`,
-`claude-sonnet-4-6` to `claude-sonnet-5-5`, and both `deepseek-v4-pro` and
-`gpt-5.5` to `gpt-6-luna`. Replaced models have no routes; a replacement never
-copies credentials, provider routes or upstream IDs across providers. Routes
-are seeded from the Built-in candidates, model-first BYOK compatibility and a
-copy of `subscription_model_catalog`. The migration fails, rather than dropping
-rows, if that catalog lists a model outside the active catalog. See
-[the design note](model-catalog.md).
-
-- The change is additive. The only existing reader of `run_model_catalog`
-  selects `allow_new_org_policy` for `ACTIVE_RUN_MODELS`; existing values are
-  preserved and rows the migration inserts for missing active models default to
-  `false`, which matches today's fail-closed treatment of a missing row.
-- Every recognized model ID keeps a row, including the retired ones. Only rows
-  for IDs the code does not know are deleted (for example `gpt-5.6-terra`,
-  `okou-1.0-pro`, `okou-1.0-max`). The reader filters them out, so neither the
-  old nor the new API observes the deletion.
-- Nothing reads `replaced_by` yet: retired models are still rejected by the
-  code's retired set until the readers switch to the catalog.
-- `GET /api/model-catalog` is new and read-only; no client calls it yet.
-- `display_name` and `sort_order` are `NOT NULL` without defaults. No API writes
-  the catalog; manual operator inserts must now supply them.
-- Rollback: the previous API ignores the new columns and table. Rolling back
-  needs no schema change.
-- Transitional duplication: the catalog duplicates code lists and
-  `subscription_model_catalog` until PR-E. A migration-suite validator fails on
-  any divergence. `allow_new_org_policy` keeps gating new organization policies
-  until readers switch to `replaced_by` in PR-B.
+  derived from the catalog system default, because released iOS builds decode
+  `isDefault` as required. A request `isDefault` is stripped. Old clients that
+  still send the default policy in `PUT /api/model-policies` are accepted and
+  that entry is ignored; omitting it is no longer an error. A retired model
+  ID sent as a run or thread selection is resolved to its replacement, or
+  fails explicitly when no compatible route exists; adding a policy for a
+  retired model is rejected. Old clients keep showing their bundled labels
+  until upgraded.
+- New App, iOS and CLI require `GET /api/model-catalog`, which ships with this
+  API release; they are released after it.
+- Rollback: 1296 and 1297 are forward-only data changes that the previous API
+  tolerates (it ignores the new columns and table). Rewritten selections stay
+  on their replacements after a rollback; rows dropped by 1297 (retired
+  policies with no compatible replacement route) are not restored.
 
 ## Integration model commands are thread-scoped (2026-09-29)
 

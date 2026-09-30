@@ -1,7 +1,4 @@
 import type { McpChatThread } from "@okouai/api-contracts/contracts/mcp-chat-threads";
-import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
-import { ORG_DEFAULT_RUN_MODEL } from "@okouai/api-contracts/contracts/model-providers";
-import { and, eq, inArray } from "drizzle-orm";
 
 import type { Db } from "../external/db";
 import {
@@ -9,15 +6,16 @@ import {
   resolveEffectivePolicyRoute,
 } from "./effective-model-route.service";
 import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
+import { resolveCatalogRunModel } from "./model-catalog.service";
+import { loadOrgModelPolicyFacts } from "./model-policy.service";
 
 function modelProjection(
   selectedModel: string | null,
+  finalModel: string | null,
   resolved: ReadonlyMap<string, string | null>,
   orgDefault: string | null,
 ): McpChatThread["model"] {
-  const pinnedModel = selectedModel
-    ? (resolved.get(selectedModel) ?? null)
-    : null;
+  const pinnedModel = finalModel ? (resolved.get(finalModel) ?? null) : null;
   return {
     selectedModel,
     effectiveModel: pinnedModel ?? orgDefault,
@@ -38,27 +36,24 @@ export async function mcpChatThreadModels(
     return result;
   }
 
-  const candidateModels = [
-    ORG_DEFAULT_RUN_MODEL,
-    ...[...models].filter((model) => {
+  const { policies: projectedPolicies, catalog } =
+    await loadOrgModelPolicyFacts(db, principal.orgId);
+  // Stored pins resolve along the catalog replacement chain.
+  const finalModels = new Map<string, string | null>();
+  for (const model of models) {
+    if (model !== null) {
+      finalModels.set(model, resolveCatalogRunModel(catalog, model));
+    }
+  }
+  const candidateModels = new Set<string>([
+    catalog.systemDefaultModel,
+    ...[...finalModels.values()].filter((model): model is string => {
       return model !== null;
     }),
-  ];
-  const policies = await db
-    .select({
-      model: orgModelPolicies.model,
-      defaultProviderType: orgModelPolicies.defaultProviderType,
-      credentialScope: orgModelPolicies.credentialScope,
-      modelProviderId: orgModelPolicies.modelProviderId,
-      modelProviderSurfaceId: orgModelPolicies.modelProviderSurfaceId,
-    })
-    .from(orgModelPolicies)
-    .where(
-      and(
-        eq(orgModelPolicies.orgId, principal.orgId),
-        inArray(orgModelPolicies.model, candidateModels),
-      ),
-    );
+  ]);
+  const policies = projectedPolicies.filter((policy) => {
+    return candidateModels.has(policy.model);
+  });
   const capabilities = await loadOrgPlanCapabilities(db, principal.orgId);
   const member = await loadMemberModelRouteContext(
     db,
@@ -85,12 +80,14 @@ export async function mcpChatThreadModels(
     });
     resolved.set(policy.model, route?.selectedModel ?? null);
   }
-  const orgDefault = resolved.get(ORG_DEFAULT_RUN_MODEL) ?? null;
+  const orgDefault = resolved.get(catalog.systemDefaultModel) ?? null;
 
   for (const selectedModel of models) {
+    const finalModel =
+      selectedModel === null ? null : (finalModels.get(selectedModel) ?? null);
     result.set(
       selectedModel,
-      modelProjection(selectedModel, resolved, orgDefault),
+      modelProjection(selectedModel, finalModel, resolved, orgDefault),
     );
   }
   return result;

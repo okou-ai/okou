@@ -2692,14 +2692,13 @@ jobs:
           # Fresh Clerk organizations bootstrap onto limited-free-1, so the
           # deterministic runner policy must stay within that plan's catalog.
           # The model policy write precondition is mandatory, so send the
-          # revision this read observed. Every policy list must keep the fixed
-          # organization default (okou-1.0); the member preference makes
-          # DeepSeek the model new chats use.
+          # revision this read observed. The server projects the catalog system
+          # default into every policy list, so writes list only other models;
+          # the member preference makes DeepSeek the model new chats use.
           revision="$(curl -fsS "${headers[@]}" "${E2E_API_URL}/api/model-policies" | jq -er '.revision')"
           payload="$(jq -nc --arg revision "$revision" '{
             revision: $revision,
             policies: [
-              {model: "okou-1.0", defaultProviderType: "built-in", credentialScope: "org", modelProviderId: null},
               {model: "deepseek-v4-flash", defaultProviderType: "built-in", credentialScope: "org", modelProviderId: null},
               {model: "gpt-5.6-luna", defaultProviderType: "built-in", credentialScope: "org", modelProviderId: null}
             ]
@@ -2752,14 +2751,14 @@ jobs:
             <<< "$provider_response")
 
           policies=$(curl -fsS "${headers[@]}" "${api_url}/api/model-policies")
-          # Every policy list must keep the fixed organization default (okou-1.0).
+          # The server projects the catalog system default into every policy
+          # list and ignores it on writes, so listed policies are re-sent as-is.
           policy_payload=$(jq -c --arg providerId "$provider_id" '
             {
               revision,
               policies: (
                 [
                   .policies[] |
-                    select(.model != "okou-1.0") |
                     {
                       model,
                       defaultProviderType,
@@ -2773,13 +2772,6 @@ jobs:
                         modelProviderId: $providerId
                       }
                     else . end
-                ] + [
-                  {
-                    model: "okou-1.0",
-                    defaultProviderType: "built-in",
-                    credentialScope: "org",
-                    modelProviderId: null
-                  }
                 ]
               )
             }
@@ -2815,10 +2807,10 @@ jobs:
           revision=$(curl -fsS "${headers[@]}" "${api_url}/api/model-policies" | jq -er '.revision')
           # Native Codex runner contracts use the policy-excluded Astra route;
           # retain Luna for explicit Pi billing and provider-fallback coverage.
-          # Every policy list must keep the fixed organization default
-          # (okou-1.0); the member preference makes Astra the model new chats use.
+          # The server projects the catalog system default into every policy
+          # list; the member preference makes Astra the model new chats use.
           policy_payload=$(jq -nc --arg revision "$revision" --argjson policies \
-            '[{"model":"okou-1.0","defaultProviderType":"built-in","credentialScope":"org","modelProviderId":null}, {"model":"gpt-6-astra","defaultProviderType":"built-in","credentialScope":"org","modelProviderId":null}, {"model":"gpt-5.6-luna","defaultProviderType":"built-in","credentialScope":"org","modelProviderId":null}]' \
+            '[{"model":"gpt-6-astra","defaultProviderType":"built-in","credentialScope":"org","modelProviderId":null}, {"model":"gpt-5.6-luna","defaultProviderType":"built-in","credentialScope":"org","modelProviderId":null}]' \
             '{revision: $revision, policies: $policies}')
           curl -fsS "${headers[@]}" \
             -X PUT \
@@ -2855,13 +2847,14 @@ jobs:
           fi
 
           policies=$(curl -fsS "${headers[@]}" "${api_url}/api/model-policies")
-          # Every policy list must keep the fixed organization default (okou-1.0).
+          # The server projects the catalog system default into every policy
+          # list and ignores it on writes, so listed policies are re-sent as-is.
           policy_payload=$(jq -c --arg model "$claude_model" '
             {
               revision,
               policies: (
                 [.policies[] |
-                  select(.model != $model and .model != "okou-1.0") |
+                  select(.model != $model) |
                   {
                     model,
                     defaultProviderType,
@@ -2869,12 +2862,6 @@ jobs:
                     modelProviderId
                   }
                 ] + [
-                  {
-                    model: "okou-1.0",
-                    defaultProviderType: "built-in",
-                    credentialScope: "org",
-                    modelProviderId: null
-                  },
                   {
                     model: $model,
                     defaultProviderType: "built-in",

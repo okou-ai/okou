@@ -159,7 +159,7 @@ describe("okou chat model command", () => {
     expect(output).toContain(`okou chat model --thread ${THREAD_ID} <model>`);
   });
 
-  it("shows the fixed organization default for an unpinned thread", async () => {
+  it("shows the catalog system default for an unpinned thread", async () => {
     server.use(
       http.get(GET_URL, () => {
         return HttpResponse.json({
@@ -400,6 +400,50 @@ describe("okou chat model command", () => {
     expect(stderr).toContain("Run: okou chat model --help");
     expect(mockExit).toHaveBeenCalledWith(1);
   });
+  it("rejects a retired model and points to its catalog replacement", async () => {
+    server.use(
+      http.get(MODEL_POLICIES_URL, () => {
+        return HttpResponse.json(MODEL_POLICIES_RESPONSE);
+      }),
+      http.post(MODEL_SELECTION_URL, () => {
+        throw new Error("retired models must not be selected");
+      }),
+    );
+
+    await expect(async () => {
+      await chatCommand.parseAsync(["node", "cli", "model", "claude-opus-4-8"]);
+    }).rejects.toThrow("process.exit called");
+
+    const stderr = mockConsoleError.mock.calls.flat().join("\n");
+    expect(stderr).toContain("Model is retired: claude-opus-4-8");
+    expect(stderr).toContain("okou chat model claude-opus-5-5");
+    expect(mockExit).toHaveBeenCalledWith(1);
+  });
+
+  it("applies an effort-only change to the replacement of a retired selection", async () => {
+    server.use(
+      http.get(GET_URL, () => {
+        return HttpResponse.json({
+          id: THREAD_ID,
+          selectedModel: "claude-opus-4-8",
+        });
+      }),
+      http.post(MODEL_SELECTION_URL, async ({ request }) => {
+        expect(await request.json()).toStrictEqual({
+          model: "claude-opus-5-5",
+          reasoningEffort: "extra",
+        });
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+
+    await chatCommand.parseAsync(["node", "cli", "model", "--effort", "extra"]);
+
+    expect(mockConsoleLog.mock.calls.flat().join("\n")).toContain(
+      "Model:  Claude Opus 5.5 (claude-opus-5-5) · effort extra",
+    );
+  });
+
   it("offers and switches a personal candidate despite a missing administrative provider", async () => {
     server.use(
       http.get(MODEL_POLICIES_URL, () => {

@@ -2,7 +2,6 @@ import { command, computed, type Computed } from "ccstate";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import {
-  getBuiltInVisibleModels,
   isSupportedRunModel,
   type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
@@ -840,10 +839,10 @@ const slackModelPickerState$ = command(
     readonly options: readonly {
       readonly model: SupportedRunModel;
       readonly label: string;
+      readonly isDefault: boolean;
     }[];
     readonly currentSelectedModel: string | null;
   }> => {
-    const visibleModels = new Set(getBuiltInVisibleModels());
     const policies = await set(
       listOrgModelPolicies$,
       { orgId, userId },
@@ -855,7 +854,6 @@ const slackModelPickerState$ = command(
       options: policies.policies.flatMap((policy) => {
         if (
           !isSupportedRunModel(policy.model) ||
-          !visibleModels.has(policy.model) ||
           policy.routeStatus !== "valid"
         ) {
           return [];
@@ -863,6 +861,7 @@ const slackModelPickerState$ = command(
         return {
           model: policy.model,
           label: policy.modelLabel,
+          isDefault: policy.isDefault,
         };
       }),
       currentSelectedModel,
@@ -887,9 +886,7 @@ const isModelCommandAvailable$ = command(
     );
     return policies.policies.some((policy) => {
       return (
-        isSupportedRunModel(policy.model) &&
-        getBuiltInVisibleModels().includes(policy.model) &&
-        policy.routeStatus === "valid"
+        isSupportedRunModel(policy.model) && policy.routeStatus === "valid"
       );
     });
   },

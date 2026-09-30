@@ -15,18 +15,15 @@ import {
 import { checkOrgPlanRunAdmission } from "./run-admission.service";
 import { isCloudModelMappingValid } from "@okouai/api-contracts/contracts/cloud-model-mapping";
 import { command } from "ccstate";
-import { and, asc, eq, inArray, ne, notInArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, notInArray, sql } from "drizzle-orm";
 import {
   MODEL_PROVIDER_TYPES,
-  ACTIVE_RUN_MODELS,
-  ORG_DEFAULT_RUN_MODEL,
-  getCanonicalModelDisplayName,
   getFrameworkForType,
   getBuiltInConcreteProviderType,
   isBuiltInModelProviderType,
   isModelSupportedByProvider,
-  getRunModelAccess,
   getRunModelRouteAccess,
+  isSupportedRunModel,
   RETIRED_RUN_MODEL_MESSAGE,
   type ModelProviderCredentialScope,
   type OrgModelPoliciesResponse,
@@ -52,7 +49,16 @@ import {
   loadMemberSubscriptionModels,
   type MemberSubscriptionModel,
 } from "./subscription-model-catalog.service";
-import { runModelCatalog } from "@okouai/db/schema/run-model-catalog";
+import {
+  catalogActiveModels,
+  catalogDisplayName,
+  catalogHasProviderRoute,
+  catalogModelRank,
+  isCatalogModelAddable,
+  loadModelCatalog,
+  resolveCatalogModel,
+  type ModelCatalog,
+} from "./model-catalog.service";
 import {
   conflict,
   insufficientCredits,
@@ -126,9 +132,62 @@ const PREVIOUS_STANDARD_SEED_MODELS: readonly (readonly string[])[] = [
   ["claude-fable-5-1", "gpt-6-astra", "gpt-5.6-luna"],
 ];
 
-/** The write is_default value old API instances still read during rollout. */
-function isOrgDefaultRunModel(model: string): boolean {
-  return model === ORG_DEFAULT_RUN_MODEL;
+/**
+ * The system default is projected into every organization's policy list and
+ * never persisted per organization. Its identity is derived from the org and
+ * model so clients see a stable ID across reads.
+ */
+function projectedDefaultPolicyId(orgId: string, model: string): string {
+  const hex = createHash("sha256")
+    .update(`org-model-policy-default:${orgId}:${model}`)
+    .digest("hex");
+  const variant = ((parseInt(hex.slice(16, 17), 16) & 0x3) | 0x8).toString(16);
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-${variant}${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+}
+
+const PROJECTED_DEFAULT_TIMESTAMP = new Date(0);
+
+function projectedDefaultPolicy(
+  orgId: string,
+  model: SupportedRunModel,
+): OrgModelPolicyRow {
+  return {
+    id: projectedDefaultPolicyId(orgId, model),
+    orgId,
+    model,
+    defaultProviderType: "built-in",
+    credentialScope: "org",
+    modelProviderId: null,
+    modelProviderSurfaceId: null,
+    createdByUserId: ORG_SENTINEL_USER_ID,
+    updatedByUserId: ORG_SENTINEL_USER_ID,
+    createdAt: PROJECTED_DEFAULT_TIMESTAMP,
+    updatedAt: PROJECTED_DEFAULT_TIMESTAMP,
+  };
+}
+
+/**
+ * Effective organization policies: the projected system default first, then
+ * stored policies of other active models. Stored rows of replaced models are
+ * converted by the stored-configuration migration and are not policies; a
+ * stored row of the default model is superseded by the projection.
+ */
+function projectPolicyRows(
+  catalog: ModelCatalog,
+  orgId: string,
+  stored: readonly OrgModelPolicyRow[],
+): OrgModelPolicyRow[] {
+  const defaultModel = catalog.systemDefaultModel;
+  return sortRowsByCatalog(catalog, [
+    projectedDefaultPolicy(orgId, defaultModel),
+    ...stored.filter((row) => {
+      return (
+        row.model !== defaultModel &&
+        isCatalogModelAddable(catalog, row.model) &&
+        isSupportedRunModel(row.model)
+      );
+    }),
+  ]);
 }
 
 function ok<T>(data: T): ServiceResult<T> {
@@ -182,9 +241,12 @@ function parseProviderType(value: string): ModelProviderType | null {
   return value in MODEL_PROVIDER_TYPES ? (value as ModelProviderType) : null;
 }
 
-function parseSupportedModel(value: string): SupportedRunModel | null {
-  return ACTIVE_RUN_MODELS.includes(value as SupportedRunModel)
-    ? (value as SupportedRunModel)
+function parseSupportedModel(
+  catalog: ModelCatalog,
+  value: string,
+): SupportedRunModel | null {
+  return isSupportedRunModel(value) && isCatalogModelAddable(catalog, value)
+    ? value
     : null;
 }
 
@@ -194,11 +256,8 @@ function parseCredentialScope(
   return value === "org" || value === "member" ? value : null;
 }
 
-function loadRows(
-  db: Db,
-  orgId: string,
-  allModels = false,
-): Promise<OrgModelPolicyRow[]> {
+/** Every stored policy row of the organization, whatever its model. */
+function loadRows(db: Db, orgId: string): Promise<OrgModelPolicyRow[]> {
   return db
     .select({
       id: orgModelPolicies.id,
@@ -214,14 +273,7 @@ function loadRows(
       updatedAt: orgModelPolicies.updatedAt,
     })
     .from(orgModelPolicies)
-    .where(
-      and(
-        eq(orgModelPolicies.orgId, orgId),
-        allModels
-          ? undefined
-          : inArray(orgModelPolicies.model, [...ACTIVE_RUN_MODELS]),
-      ),
-    );
+    .where(eq(orgModelPolicies.orgId, orgId));
 }
 
 // Seeds and replacement writes share one organization-local fence. Normal
@@ -293,39 +345,18 @@ function policiesByModel(
   );
 }
 
-async function loadModelsAllowedForNewOrgPolicy(
-  db: Db,
-  lockRows = false,
-): Promise<ReadonlySet<SupportedRunModel>> {
-  const query = db
-    .select({
-      model: runModelCatalog.model,
-      allowNewOrgPolicy: runModelCatalog.allowNewOrgPolicy,
-    })
-    .from(runModelCatalog)
-    .where(inArray(runModelCatalog.model, [...ACTIVE_RUN_MODELS]));
-  const rows = lockRows ? await query.for("share") : await query;
-  const allowed = new Set<SupportedRunModel>();
-  for (const row of rows) {
-    const model = parseSupportedModel(row.model);
-    if (model && row.allowNewOrgPolicy) {
-      allowed.add(model);
-    }
-  }
-  return allowed;
-}
-
 function modelsAvailableToAdd(
+  catalog: ModelCatalog,
   rows: readonly OrgModelPolicyRow[],
-  allowed: ReadonlySet<SupportedRunModel>,
 ): SupportedRunModel[] {
   const configured = new Set(
     rows.map((row) => {
       return row.model;
     }),
   );
-  return ACTIVE_RUN_MODELS.filter((model) => {
-    return allowed.has(model) && !configured.has(model);
+  return catalog.models.flatMap((row) => {
+    const model = parseSupportedModel(catalog, row.model);
+    return model && !configured.has(model) ? [model] : [];
   });
 }
 
@@ -402,6 +433,9 @@ async function orgModelCapabilities(
 export interface EnsuredOrgModelPolicyFacts {
   readonly orgPlanCapabilities: OrgPlanCapabilities | null;
   readonly policies: readonly OrgModelPolicyRow[];
+  /** Stored policies of replaced models, kept to re-route their selections. */
+  readonly replacedPolicies: readonly OrgModelPolicyRow[];
+  readonly catalog: ModelCatalog;
 }
 
 function modelRouteAllowedForOrgPlan(
@@ -422,126 +456,42 @@ function modelRouteAllowedForOrgPlan(
   );
 }
 
-function getSupportedModelRank(model: string): number {
-  const catalogIndex = ACTIVE_RUN_MODELS.indexOf(model as SupportedRunModel);
-  return catalogIndex === -1 ? ACTIVE_RUN_MODELS.length : catalogIndex;
-}
-
-function sortRowsByCatalog(rows: OrgModelPolicyRow[]): OrgModelPolicyRow[] {
+function sortRowsByCatalog(
+  catalog: ModelCatalog,
+  rows: OrgModelPolicyRow[],
+): OrgModelPolicyRow[] {
   return [...rows].sort((a, b) => {
-    return getSupportedModelRank(a.model) - getSupportedModelRank(b.model);
-  });
-}
-
-function hasOrgDefaultPolicy(rows: readonly OrgModelPolicyRow[]): boolean {
-  return rows.some((row) => {
-    return isOrgDefaultRunModel(row.model);
-  });
-}
-
-/**
- * Every organization keeps the fixed built-in default policy. It seeds a new
- * organization and repairs one whose policies were written by an API that
- * predates the fixed default. The previous default flag moves to it so old
- * API instances agree during the rollout; the flag is never read here.
- */
-async function ensureOrgModelPoliciesLocked(
-  db: Db,
-  orgId: string,
-  userId: string,
-): Promise<EnsuredOrgModelPolicyFacts> {
-  const orgPlanCapabilities = await loadOrgPlanCapabilities(db, orgId);
-  const existing = await loadRows(db, orgId);
-  if (hasOrgDefaultPolicy(existing)) {
-    return {
-      orgPlanCapabilities,
-      policies: sortRowsByCatalog(existing),
-    };
-  }
-
-  const now = nowDate();
-  await db
-    .update(orgModelPolicies)
-    .set({ isDefault: false, updatedByUserId: userId, updatedAt: now })
-    .where(
-      and(
-        eq(orgModelPolicies.orgId, orgId),
-        eq(orgModelPolicies.isDefault, true),
-        ne(orgModelPolicies.model, ORG_DEFAULT_RUN_MODEL),
-      ),
+    return (
+      catalogModelRank(catalog, a.model) - catalogModelRank(catalog, b.model)
     );
-  await db
-    .insert(orgModelPolicies)
-    .values({
-      orgId,
-      model: ORG_DEFAULT_RUN_MODEL,
-      isDefault: true,
-      defaultProviderType: "built-in",
-      credentialScope: "org",
-      modelProviderId: null,
-      modelProviderSurfaceId: null,
-      createdByUserId: userId,
-      updatedByUserId: userId,
-      createdAt: now,
-      updatedAt: now,
-    })
-    .onConflictDoNothing({
-      target: [orgModelPolicies.orgId, orgModelPolicies.model],
-    });
-
-  return {
-    orgPlanCapabilities,
-    policies: sortRowsByCatalog(await loadRows(db, orgId)),
-  };
+  });
 }
 
 /**
  * A caller that already read the organization's plan in this request supplies
- * it; otherwise the plan and the policies are read in parallel.
+ * it; otherwise the plan and the policies are read in parallel. The system
+ * default is projected, so reading policies never writes.
  */
 export async function loadOrgModelPolicyFacts(
   db: Db,
   orgId: string,
   suppliedPlanCapabilities?: OrgPlanCapabilities | null,
 ): Promise<EnsuredOrgModelPolicyFacts> {
-  const [orgPlanCapabilities, policies] = await Promise.all([
+  const [orgPlanCapabilities, stored, catalog] = await Promise.all([
     suppliedPlanCapabilities === undefined
       ? loadOrgPlanCapabilities(db, orgId)
       : suppliedPlanCapabilities,
     loadRows(db, orgId),
+    loadModelCatalog(db),
   ]);
   return {
     orgPlanCapabilities,
-    policies: sortRowsByCatalog(policies),
+    policies: projectPolicyRows(catalog, orgId, stored),
+    replacedPolicies: stored.filter((row) => {
+      return resolveCatalogModel(catalog, row.model).kind === "replaced";
+    }),
+    catalog,
   };
-}
-
-export async function ensureOrgModelPolicyFacts(
-  db: Db,
-  orgId: string,
-  userId: string,
-  suppliedPlanCapabilities?: OrgPlanCapabilities | null,
-): Promise<EnsuredOrgModelPolicyFacts> {
-  const initial = await loadOrgModelPolicyFacts(
-    db,
-    orgId,
-    suppliedPlanCapabilities,
-  );
-  if (hasOrgDefaultPolicy(initial.policies)) {
-    return initial;
-  }
-  return db.transaction(async (tx) => {
-    await lockPolicyWrites(tx, orgId);
-    return ensureOrgModelPoliciesLocked(tx, orgId, userId);
-  });
-}
-
-export async function ensureOrgModelPolicies(
-  db: Db,
-  orgId: string,
-  userId: string,
-): Promise<readonly OrgModelPolicyRow[]> {
-  return (await ensureOrgModelPolicyFacts(db, orgId, userId)).policies;
 }
 
 async function listOrgProviderRoutes(
@@ -739,7 +689,7 @@ interface UpdatePolicyValidationContext {
     "restrictedBuiltInModels" | "supportByok"
   >;
   readonly existingRows: readonly OrgModelPolicyRow[];
-  readonly modelsAllowedForNewPolicy: ReadonlySet<SupportedRunModel>;
+  readonly catalog: ModelCatalog;
 }
 
 async function validateUpdatePolicies(
@@ -748,45 +698,20 @@ async function validateUpdatePolicies(
   policies: UpdateOrgModelPolicy[],
   context: UpdatePolicyValidationContext,
 ): Promise<ServiceResult<UpdateOrgModelPolicy[]>> {
-  const { capabilities, existingRows, modelsAllowedForNewPolicy } = context;
-  if (policies.length === 0) {
-    return bad("Request must include at least one model");
-  }
-
-  const orgDefault = policies.find((policy) => {
-    return isOrgDefaultRunModel(policy.model);
-  });
-  if (!orgDefault) {
-    return bad(
-      `Model "${ORG_DEFAULT_RUN_MODEL}" is the workspace default and cannot be removed`,
-    );
-  }
-  if (
-    orgDefault.defaultProviderType !== "built-in" ||
-    orgDefault.credentialScope !== "org" ||
-    orgDefault.modelProviderId !== null ||
-    (orgDefault.modelProviderSurfaceId ?? null) !== null
-  ) {
-    return bad(
-      `Model "${ORG_DEFAULT_RUN_MODEL}" must use the built-in workspace route`,
-    );
-  }
-
+  const { capabilities, existingRows, catalog } = context;
   const existingByModel = policiesByModel(existingRows);
   const seenModels = new Set<string>();
 
   for (const policy of policies) {
-    if (getRunModelAccess(policy.model) === "retired") {
-      return bad(RETIRED_RUN_MODEL_MESSAGE);
-    }
-    const model = parseSupportedModel(policy.model);
-    if (!model) {
+    const resolution = resolveCatalogModel(catalog, policy.model);
+    if (resolution.kind === "unknown" || !isSupportedRunModel(policy.model)) {
       return bad(`Unknown model "${policy.model}"`);
     }
-    const existing = existingByModel.get(policy.model);
-    if (!existingByModel.has(model) && !modelsAllowedForNewPolicy.has(model)) {
-      return bad(`Model "${model}" is not available to add`);
+    if (resolution.kind === "replaced") {
+      return bad(RETIRED_RUN_MODEL_MESSAGE);
     }
+    const model = policy.model;
+    const existing = existingByModel.get(policy.model);
     const providerType = parseProviderType(policy.defaultProviderType);
     if (!providerType) {
       return bad(`Unknown model provider type "${policy.defaultProviderType}"`);
@@ -811,6 +736,18 @@ async function validateUpdatePolicies(
       return bad(`Duplicate model "${policy.model}"`);
     }
     seenModels.add(policy.model);
+
+    // Custom gateway surfaces are organization-owned mappings validated
+    // below; every other route must exist in the global catalog.
+    if (
+      !existing &&
+      (policy.modelProviderSurfaceId ?? null) === null &&
+      !catalogHasProviderRoute(catalog, model, providerType)
+    ) {
+      return bad(
+        `Model "${model}" has no route for provider "${providerType}"`,
+      );
+    }
 
     const routeError = await validateOrgProviderRoute(db, orgId, policy);
     if (routeError) {
@@ -906,11 +843,12 @@ function getRouteStatus(params: {
 }
 
 function serializePolicy(
+  catalog: ModelCatalog,
   policy: OrgModelPolicyRow,
   providersById: Map<string, ProviderRouteInfo>,
   surfacesById: Map<string, SurfaceRouteInfo>,
 ): OrgModelPolicy {
-  const model = parseSupportedModel(policy.model);
+  const model = parseSupportedModel(catalog, policy.model);
   const providerType = parseProviderType(policy.defaultProviderType);
   const credentialScope = parseCredentialScope(policy.credentialScope);
   if (!model || !providerType || !credentialScope) {
@@ -930,8 +868,9 @@ function serializePolicy(
   return {
     id: policy.id,
     model,
-    modelLabel: getCanonicalModelDisplayName(model),
-    isDefault: isOrgDefaultRunModel(model),
+    modelLabel: catalogDisplayName(catalog, model),
+    // Deprecated: released iOS decodes it as required.
+    isDefault: model === catalog.systemDefaultModel,
     defaultProviderType: providerType,
     credentialScope,
     modelProviderId: policy.modelProviderId ?? null,
@@ -944,11 +883,12 @@ function serializePolicy(
 }
 
 function selectWorkspaceDefaultPolicy(
+  catalog: ModelCatalog,
   policies: OrgModelPolicy[],
 ): OrgModelPolicy | null {
   return (
     policies.find((policy) => {
-      return isOrgDefaultRunModel(policy.model);
+      return policy.model === catalog.systemDefaultModel;
     }) ?? null
   );
 }
@@ -1054,17 +994,11 @@ async function listOrgModelPolicies(
   userId: string,
   keyIdsByVendor: BuiltInModelKeyIdsByVendor,
 ): Promise<OrgModelPoliciesResponse> {
-  await ensureOrgModelPolicies(db, orgId, userId);
-  const persistedRows = await loadRows(db, orgId, true);
-  const rows = sortRowsByCatalog(
-    persistedRows.filter((row) => {
-      return (
-        parseSupportedModel(row.model) &&
-        getRunModelAccess(row.model) === "allowed"
-      );
-    }),
-  );
-  const modelsAllowedForNewPolicy = await loadModelsAllowedForNewOrgPolicy(db);
+  const [persistedRows, catalog] = await Promise.all([
+    loadRows(db, orgId),
+    loadModelCatalog(db),
+  ]);
+  const rows = projectPolicyRows(catalog, orgId, persistedRows);
   const member = await loadMemberModelRouteContext(db, orgId, userId);
   const featureSwitchContext = await loadUserFeatureSwitchContext(
     db,
@@ -1086,7 +1020,7 @@ async function listOrgModelPolicies(
   );
   const policies = await Promise.all(
     rows.map(async (row) => {
-      const policy = serializePolicy(row, providersById, surfacesById);
+      const policy = serializePolicy(catalog, row, providersById, surfacesById);
       const runtimeRoute = isBuiltInModelProviderType(
         policy.defaultProviderType,
       )
@@ -1145,7 +1079,7 @@ async function listOrgModelPolicies(
       } satisfies OrgModelPolicy;
     }),
   );
-  const workspaceDefault = selectWorkspaceDefaultPolicy(policies);
+  const workspaceDefault = selectWorkspaceDefaultPolicy(catalog, policies);
   const modelMode = await loadOrgModelMode(db, orgId);
   const memberPolicies = await loadAutoMemberPolicies(
     db,
@@ -1163,9 +1097,7 @@ async function listOrgModelPolicies(
     // Removing the field needs its own client-compatibility window.
     writePreconditionRequired: true,
     modelsAvailableToAdd:
-      modelMode === "auto"
-        ? []
-        : modelsAvailableToAdd(persistedRows, modelsAllowedForNewPolicy),
+      modelMode === "auto" ? [] : modelsAvailableToAdd(catalog, rows),
     workspaceDefaultModel: workspaceDefault?.model ?? null,
     workspaceDefaultPolicyId: workspaceDefault?.id ?? null,
   };
@@ -1176,44 +1108,56 @@ async function persistOrgModelPolicyUpdates(params: {
   readonly orgId: string;
   readonly userId: string;
   readonly policies: UpdateOrgModelPolicy[];
+  readonly systemDefaultModel: SupportedRunModel;
+  readonly activeModels: readonly string[];
   readonly now: Date;
 }): Promise<void> {
   const tx = params.db;
-  await tx
-    .insert(orgModelPolicies)
-    .values(
-      params.policies.map((policy) => {
-        return {
-          orgId: params.orgId,
-          model: policy.model,
-          isDefault: false,
-          defaultProviderType: policy.defaultProviderType,
-          credentialScope: policy.credentialScope,
-          modelProviderId: policy.modelProviderId,
-          modelProviderSurfaceId: policy.modelProviderSurfaceId ?? null,
-          createdByUserId: params.userId,
-          updatedByUserId: params.userId,
-          createdAt: params.now,
-          updatedAt: params.now,
-        };
-      }),
-    )
-    .onConflictDoNothing({
-      target: [orgModelPolicies.orgId, orgModelPolicies.model],
-    });
+  // The system default is projected, never persisted per organization.
+  const policies = params.policies.filter((policy) => {
+    return policy.model !== params.systemDefaultModel;
+  });
+  if (policies.length > 0) {
+    await tx
+      .insert(orgModelPolicies)
+      .values(
+        policies.map((policy) => {
+          return {
+            orgId: params.orgId,
+            model: policy.model,
+            isDefault: false,
+            defaultProviderType: policy.defaultProviderType,
+            credentialScope: policy.credentialScope,
+            modelProviderId: policy.modelProviderId,
+            modelProviderSurfaceId: policy.modelProviderSurfaceId ?? null,
+            createdByUserId: params.userId,
+            updatedByUserId: params.userId,
+            createdAt: params.now,
+            updatedAt: params.now,
+          };
+        }),
+      )
+      .onConflictDoNothing({
+        target: [orgModelPolicies.orgId, orgModelPolicies.model],
+      });
+  }
 
+  // Stored rows of replaced models belong to the stored-configuration
+  // migration, so a full-list write removes only active-model rows.
   const removedRows = await tx
     .delete(orgModelPolicies)
     .where(
       and(
         eq(orgModelPolicies.orgId, params.orgId),
-        inArray(orgModelPolicies.model, [...ACTIVE_RUN_MODELS]),
-        notInArray(
-          orgModelPolicies.model,
-          params.policies.map((policy) => {
-            return policy.model;
-          }),
-        ),
+        inArray(orgModelPolicies.model, [...params.activeModels]),
+        policies.length > 0
+          ? notInArray(
+              orgModelPolicies.model,
+              policies.map((policy) => {
+                return policy.model;
+              }),
+            )
+          : undefined,
       ),
     )
     .returning({ model: orgModelPolicies.model });
@@ -1225,7 +1169,7 @@ async function persistOrgModelPolicyUpdates(params: {
     await tx
       .update(orgMembersMetadata)
       .set({
-        selectedModel: ORG_DEFAULT_RUN_MODEL,
+        selectedModel: params.systemDefaultModel,
         serviceTier: null,
         updatedAt: params.now,
       })
@@ -1237,16 +1181,16 @@ async function persistOrgModelPolicyUpdates(params: {
       );
   }
 
+  // `is_default` is only kept for old API instances and is never read.
   await tx
     .update(orgModelPolicies)
     .set({ isDefault: false })
     .where(eq(orgModelPolicies.orgId, params.orgId));
 
-  for (const policy of params.policies) {
+  for (const policy of policies) {
     await tx
       .update(orgModelPolicies)
       .set({
-        isDefault: isOrgDefaultRunModel(policy.model),
         defaultProviderType: policy.defaultProviderType,
         credentialScope: policy.credentialScope,
         modelProviderId: policy.modelProviderId,
@@ -1263,7 +1207,10 @@ async function persistOrgModelPolicyUpdates(params: {
   }
 }
 
-function isUntouchedStandardSeed(rows: readonly OrgModelPolicyRow[]): boolean {
+function isUntouchedStandardSeed(
+  catalog: ModelCatalog,
+  rows: readonly OrgModelPolicyRow[],
+): boolean {
   if (
     !rows.every((row) => {
       return (
@@ -1282,7 +1229,7 @@ function isUntouchedStandardSeed(rows: readonly OrgModelPolicyRow[]): boolean {
         return row.model;
       })
       .filter((model) => {
-        return !isOrgDefaultRunModel(model);
+        return model !== catalog.systemDefaultModel && model !== "okou-1.0";
       }),
   );
   return (
@@ -1313,8 +1260,11 @@ export async function initializeOnboardingOrgModelPolicies(
   if ((await loadOrgModelMode(db, orgId)) === "auto") {
     return;
   }
-  const existing = await loadRows(db, orgId, true);
-  if (!isUntouchedStandardSeed(existing)) {
+  const [existing, catalog] = await Promise.all([
+    loadRows(db, orgId),
+    loadModelCatalog(db),
+  ]);
+  if (!isUntouchedStandardSeed(catalog, existing)) {
     return;
   }
 
@@ -1324,23 +1274,22 @@ export async function initializeOnboardingOrgModelPolicies(
     orgId,
     userId,
     now: nowDate(),
+    systemDefaultModel: catalog.systemDefaultModel,
+    activeModels: catalogActiveModels(catalog),
     policies: [
-      {
-        model: ORG_DEFAULT_RUN_MODEL,
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-        modelProviderSurfaceId: null,
-      },
-      ...seed.models.map((model) => {
-        return {
-          model,
-          defaultProviderType: seed.providerType,
-          credentialScope: "member" as const,
-          modelProviderId: null,
-          modelProviderSurfaceId: null,
-        };
-      }),
+      ...seed.models
+        .filter((model) => {
+          return isCatalogModelAddable(catalog, model);
+        })
+        .map((model) => {
+          return {
+            model,
+            defaultProviderType: seed.providerType,
+            credentialScope: "member" as const,
+            modelProviderId: null,
+            modelProviderSurfaceId: null,
+          };
+        }),
     ],
   });
 }
@@ -1401,30 +1350,33 @@ export const updateOrgModelPolicies$ = command(
       }
       await lockPolicyParents(tx, params.orgId);
       signal.throwIfAborted();
-      const existing = await loadRows(tx, params.orgId, true);
+      const [existing, catalog] = await Promise.all([
+        loadRows(tx, params.orgId),
+        loadModelCatalog(tx),
+      ]);
       if (
         params.revision !== undefined &&
         params.revision !== policyRevision(existing)
       ) {
         return refreshConflict();
       }
+      // The system default is projected; a client that still sends it is
+      // accepted and the row is ignored.
       const policies = resolveOmittedModelProviderSurfaceIds(
-        params.policies,
+        params.policies.filter((policy) => {
+          return policy.model !== catalog.systemDefaultModel;
+        }),
         existing,
       );
       const capabilities = await orgModelCapabilities(tx, params.orgId);
-      const modelsAllowedForNewPolicy = await loadModelsAllowedForNewOrgPolicy(
-        tx,
-        true,
-      );
       const validation = await validateUpdatePolicies(
         tx,
         params.orgId,
         policies,
         {
           capabilities,
-          existingRows: existing,
-          modelsAllowedForNewPolicy,
+          existingRows: projectPolicyRows(catalog, params.orgId, existing),
+          catalog,
         },
       );
       signal.throwIfAborted();
@@ -1436,6 +1388,8 @@ export const updateOrgModelPolicies$ = command(
         orgId: params.orgId,
         userId: params.userId,
         policies: validation.data,
+        systemDefaultModel: catalog.systemDefaultModel,
+        activeModels: catalogActiveModels(catalog),
         now: nowDate(),
       });
       signal.throwIfAborted();

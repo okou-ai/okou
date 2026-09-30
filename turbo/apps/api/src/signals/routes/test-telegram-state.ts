@@ -1,10 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { command } from "ccstate";
 import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
-import {
-  getBuiltInVendor,
-  ORG_DEFAULT_RUN_MODEL,
-} from "@okouai/api-contracts/contracts/model-providers";
+import { getBuiltInVendor } from "@okouai/api-contracts/contracts/model-providers";
 import {
   testTelegramStateContract,
   type TestTelegramStateActionBody,
@@ -45,6 +42,7 @@ import {
 } from "./test-endpoint-helpers";
 import { ensureAgentInstructionsStorageFixture } from "./test-agent-instructions-storage";
 import { writeOrgMetadataWithDefaultPlanEntitlement } from "../services/org-plan-entitlements.service";
+import { loadSystemDefaultRunModel } from "../services/model-catalog.service";
 
 const actionBody$ = bodyResultOf(testTelegramStateContract.action);
 
@@ -420,7 +418,7 @@ async function seedTelegramPostModelKeys(
 ): Promise<void> {
   await acquireBuiltInModelKeyFixture(db, seed.composeId, [
     {
-      vendor: getBuiltInVendor(ORG_DEFAULT_RUN_MODEL),
+      vendor: getBuiltInVendor(await loadSystemDefaultRunModel(db)),
       apiKey: `built-in-key-default-${seed.composeId}`,
     },
     {
@@ -822,15 +820,6 @@ async function seedModelPoliciesForAction(
     return actionBadRequest("org_id, user_id, and compose_id are required");
   }
   await db.insert(orgModelPolicies).values([
-    {
-      orgId: required.org_id!,
-      model: ORG_DEFAULT_RUN_MODEL,
-      isDefault: true,
-      defaultProviderType: "built-in",
-      credentialScope: "org",
-      createdByUserId: required.user_id!,
-      updatedByUserId: required.user_id!,
-    },
     {
       orgId: required.org_id!,
       model: "claude-sonnet-5",

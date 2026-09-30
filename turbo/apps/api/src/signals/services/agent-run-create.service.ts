@@ -98,7 +98,6 @@ import {
   isSupportedRunModel,
   MODEL_PROVIDER_TYPES,
   normalizeRunModelId,
-  ORG_DEFAULT_RUN_MODEL,
   type ModelProviderCodexRuntimeConfig,
   type ModelProviderEnvBindings,
   type ModelProviderCredentialScope,
@@ -371,6 +370,7 @@ import {
   resolveOrgCreditAvailability,
 } from "./run-admission.service";
 import { isAutoPersonalSubscriptionRoute } from "./subscription-model-catalog.service";
+import { loadSystemDefaultRunModel } from "./model-catalog.service";
 import { activateUsageAllowanceWindowsForRun } from "./usage-allowance.service";
 import {
   ApiDispatchPhaseCollector,
@@ -1544,15 +1544,18 @@ function modelProviderFramework(
   return getFrameworkForType(modelProvider.concreteType ?? modelProvider.type);
 }
 
-function frameworkForProviderSelection(
+async function frameworkForProviderSelection(
+  db: Db,
   providerType: ModelProviderType,
   selectedModel: string | null | undefined,
-): SupportedFramework | null {
+): Promise<SupportedFramework | null> {
   if (!isBuiltInModelProviderType(providerType)) {
     return getFrameworkForType(providerType);
   }
   return getFrameworkForType(
-    getBuiltInConcreteProviderType(selectedModel ?? ORG_DEFAULT_RUN_MODEL),
+    getBuiltInConcreteProviderType(
+      selectedModel ?? (await loadSystemDefaultRunModel(db)),
+    ),
   );
 }
 
@@ -1563,10 +1566,11 @@ async function resolveRequestedRunFramework(
 ): Promise<SupportedFramework> {
   if (args.modelProviderType && isModelProviderType(args.modelProviderType)) {
     return (
-      frameworkForProviderSelection(
+      (await frameworkForProviderSelection(
+        db,
         args.modelProviderType,
         args.selectedModelOverride,
-      ) ?? composeFramework
+      )) ?? composeFramework
     );
   }
 
@@ -1613,10 +1617,11 @@ async function resolveRequestedRunFramework(
   }
 
   return (
-    frameworkForProviderSelection(
+    (await frameworkForProviderSelection(
+      db,
       provider.type,
       args.selectedModelOverride ?? provider.selectedModel,
-    ) ?? composeFramework
+    )) ?? composeFramework
   );
 }
 
@@ -3100,7 +3105,9 @@ async function resolveCandidateModelProviderEnvironment(
 ): Promise<ResolvedModelProviderEnvironment | null> {
   if (isBuiltInModelProviderType(row.type)) {
     const selectedModel =
-      args.selectedModelOverride ?? row.selectedModel ?? ORG_DEFAULT_RUN_MODEL;
+      args.selectedModelOverride ??
+      row.selectedModel ??
+      (await loadSystemDefaultRunModel(db));
     const provider = await builtInModelProviderEnvironment(
       db,
       selectedModel,
@@ -3172,7 +3179,7 @@ async function resolveModelProviderEnvironment(
   if (isBuiltInModelProviderType(args.modelProviderType)) {
     const provider = await builtInModelProviderEnvironment(
       db,
-      args.selectedModelOverride ?? ORG_DEFAULT_RUN_MODEL,
+      args.selectedModelOverride ?? (await loadSystemDefaultRunModel(db)),
       args.featureSwitchContext,
       args.builtInModelRuntimeRoute,
     );

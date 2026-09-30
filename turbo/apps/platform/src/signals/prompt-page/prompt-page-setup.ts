@@ -1,5 +1,5 @@
 import { command } from "ccstate";
-import { isSupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
+import { modelCatalog$ } from "../external/model-catalog.ts";
 import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
 import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
@@ -171,8 +171,11 @@ export const setupPromptPage$ = command(
       return;
     }
 
-    if (isSupportedRunModel(requestedModel)) {
-      set(setChatPageModelSelection$, { selectedModel: requestedModel });
+    const catalog = await get(modelCatalog$);
+    signal.throwIfAborted();
+    const resolvedRequestedModel = catalog.resolve(requestedModel);
+    if (resolvedRequestedModel) {
+      set(setChatPageModelSelection$, { selectedModel: resolvedRequestedModel });
     } else {
       set(resetChatPageModelSelection$);
     }

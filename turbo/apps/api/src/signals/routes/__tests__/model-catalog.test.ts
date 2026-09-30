@@ -33,7 +33,8 @@ describe("GET /api/model-catalog", () => {
       [200],
     );
 
-    const { models, routes } = response.body;
+    const { models, routes, systemDefaultModel } = response.body;
+    expect(systemDefaultModel).toBe("okou-1.0");
     expect(
       models.filter((row) => {
         return row.isSystemDefault;
@@ -46,6 +47,7 @@ describe("GET /api/model-catalog", () => {
         isSystemDefault: true,
         replacedBy: null,
         resolvedModel: "okou-1.0",
+        priceTier: "$",
       },
     ]);
     expect(
@@ -59,6 +61,7 @@ describe("GET /api/model-catalog", () => {
       isSystemDefault: false,
       replacedBy: "claude-fable-5-1",
       resolvedModel: "claude-fable-5-1",
+      priceTier: null,
     });
     expect(
       models.find((row) => {

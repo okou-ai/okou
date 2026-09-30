@@ -7,9 +7,7 @@ import { command } from "ccstate";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { v5 as uuidv5 } from "uuid";
 import {
-  getBuiltInVisibleModels,
   isSupportedRunModel,
-  ORG_DEFAULT_RUN_MODEL,
   type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
 import type {
@@ -162,6 +160,7 @@ interface TeamsAgent {
 interface TeamsModelPickerOption {
   readonly model: SupportedRunModel;
   readonly label: string;
+  readonly isDefault: boolean;
 }
 
 type TeamsPromptFile = Omit<ChatTeamsMessageFile, "inCurrentMessage"> & {
@@ -239,7 +238,7 @@ function choiceLabel(value: string): string {
 }
 
 function modelLabel(option: TeamsModelPickerOption): string {
-  if (option.model !== ORG_DEFAULT_RUN_MODEL) {
+  if (!option.isDefault) {
     return choiceLabel(option.label);
   }
   const suffix = " (workspace default)";
@@ -801,7 +800,6 @@ const teamsModelPickerState$ = command(
     readonly options: readonly TeamsModelPickerOption[];
     readonly currentSelectedModel: string | null;
   }> => {
-    const visibleModels = new Set(getBuiltInVisibleModels());
     const policies = await set(
       listOrgModelPolicies$,
       { orgId, userId },
@@ -815,7 +813,6 @@ const teamsModelPickerState$ = command(
         .flatMap((policy) => {
           if (
             !isSupportedRunModel(policy.model) ||
-            !visibleModels.has(policy.model) ||
             policy.routeStatus !== "valid"
           ) {
             return [];
@@ -823,6 +820,7 @@ const teamsModelPickerState$ = command(
           return {
             model: policy.model,
             label: policy.modelLabel,
+            isDefault: policy.isDefault,
           };
         })
         .slice(0, TEAMS_MODEL_PICKER_MAX_OPTIONS),
