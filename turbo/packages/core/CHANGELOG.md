@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.724.0](https://github.com/okou-ai/okou/compare/core-v8.723.0...core-v8.724.0) (2026-09-30)
+
+
+### Features
+
+* add gpt 6.1 sol and astra ultrafast ([#37387](https://github.com/okou-ai/okou/issues/37387)) ([53d4d10](https://github.com/okou-ai/okou/commit/53d4d1053c8408f02ac66ee812cf601023aca3d2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.531.0
+
 ## [8.723.0](https://github.com/okou-ai/okou/compare/core-v8.722.1...core-v8.723.0) (2026-09-30)
 
 

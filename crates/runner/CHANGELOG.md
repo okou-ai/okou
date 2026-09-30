@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.215.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.214.6...runner-rs-v0.215.0) (2026-09-30)
+
+
+### Features
+
+* add gpt 6.1 sol and astra ultrafast ([#37387](https://github.com/okou-ai/okou/issues/37387)) ([53d4d10](https://github.com/okou-ai/okou/commit/53d4d1053c8408f02ac66ee812cf601023aca3d2))
+
 ## [0.214.6](https://github.com/okou-ai/okou/compare/runner-rs-v0.214.5...runner-rs-v0.214.6) (2026-09-30)
 
 ## [0.214.5](https://github.com/okou-ai/okou/compare/runner-rs-v0.214.4...runner-rs-v0.214.5) (2026-09-29)
