@@ -7147,26 +7147,43 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       );
     },
   );
+  const claimReadIdentity$ = computed(async (get) => {
+    const head = await get(head$);
+    if (!head) {
+      return null;
+    }
+    if (head.contextType === "automation") {
+      const input = await get(automationExecutionInput$);
+      return input
+        ? {
+            userId: input.due.automation.ownerUserId,
+            orgId: input.due.automation.orgId,
+            agentId: input.due.agentId,
+            checkedAt: new Date(head.apiStartTime),
+          }
+        : null;
+    }
+    const agent = await get(promptAgentAgent$);
+    return agent
+      ? {
+          userId: head.userId,
+          orgId: head.orgId,
+          agentId: agent.agentId,
+          checkedAt: new Date(head.apiStartTime),
+        }
+      : null;
+  });
   const preCreateBootstrapQueryArgsBootstrapQueryArgs$ = computed(
     async (get) => {
-      const { command } = await get(selectedIdentityInputIdentityInput$);
-      const agent = await get(preCreateAgentAgent$);
-      if (!agent) {
-        throw new Error("Agent disappeared after preparation authorization");
+      const identity = await get(claimReadIdentity$);
+      if (!identity) {
+        throw new Error("Bootstrap requires a captured execution identity");
       }
-      return {
-        userId: command.auth.userId,
-        orgId: command.auth.orgId,
-        agentId: agent.id,
-        checkedAt: new Date(command.apiStartTime),
-      };
+      return identity;
     },
   );
   const bootstrapCustomConnectorQuery$ = computed(async (get) => {
-    const [, args] = await Promise.all([
-      get(selectedIdentityInputIdentityInput$),
-      get(preCreateBootstrapQueryArgsBootstrapQueryArgs$),
-    ]);
+    const args = await get(preCreateBootstrapQueryArgsBootstrapQueryArgs$);
     const db = get(db$);
     return {
       query: db
@@ -7207,7 +7224,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   });
   const preCreateBootstrapMetadataRowsBootstrapMetadataRows$ = computed(
     async (get): Promise<BootstrapMetadataQueryRow[]> => {
-      await get(selectedIdentityInputIdentityInput$);
       const db = get(db$);
       const [args, featureContext, { query: customConnectorQuery }] =
         await Promise.all([
@@ -7313,7 +7329,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   );
   const preCreateWorkflowRowsWorkflowRows$ = computed(
     async (get): Promise<RunWorkflowSourceRow[]> => {
-      await get(selectedIdentityInputIdentityInput$);
       const db = get(db$);
       const args = await get(preCreateBootstrapQueryArgsBootstrapQueryArgs$);
       return await db
@@ -7364,14 +7379,14 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     },
   );
   const preCreateBootstrapMetadata$ = computed(async (get) => {
-    const { command } = await get(selectedIdentityInputIdentityInput$);
+    const identity = await get(preCreateBootstrapQueryArgsBootstrapQueryArgs$);
     const [metadataRows, featureContext] = await Promise.all([
       get(preCreateBootstrapMetadataRowsBootstrapMetadataRows$),
       get(featureSwitchContext$),
     ]);
     return materializeRunBootstrapContext(
       { metadataRows, workflowRows: [] },
-      { userId: command.auth.userId, orgId: command.auth.orgId },
+      { userId: identity.userId, orgId: identity.orgId },
       featureContext,
     );
   });
@@ -8277,8 +8292,8 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     preCreatePermissionPoliciesPermissionPolicies$;
   const preCreateExecutionWorkflowRows$ = preCreateWorkflowRowsWorkflowRows$;
   const scope$ = computed(async (get) => {
-    const { command } = await get(preCreateExecutionIdentityInput$);
-    return { orgId: command.auth.orgId, userId: command.auth.userId };
+    const identity = await get(preCreateBootstrapQueryArgsBootstrapQueryArgs$);
+    return { orgId: identity.orgId, userId: identity.userId };
   });
   const environmentInput$ = computed(async (get) => {
     const scope = await get(scope$);
@@ -12830,18 +12845,25 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   );
   const readClaimInputSources$ = command(
     async ({ get }, head: ChatQueueHeadContext, signal: AbortSignal) => {
+      const identity = await get(claimReadIdentity$);
+      signal.throwIfAborted();
+      if (!identity) {
+        return;
+      }
+      const commonReads = [
+        get(preCreateBootstrapMetadataRowsBootstrapMetadataRows$),
+        get(preCreateWorkflowRowsWorkflowRows$),
+        get(runMemberSnapshot$),
+        get(runDisabledPaidToolsSnapshot$),
+      ];
       if (head.contextType === "automation") {
-        const input = await get(automationExecutionInput$);
-        signal.throwIfAborted();
-        if (!input) {
-          return;
-        }
         await Promise.all([
           get(queuedModelSelection$),
           get(queuedModelCapabilities$),
           get(queuedModelInitialPolicies$),
           get(queuedModelFeatureSwitchContext$2),
           get(queuedModelMemberAccountSnapshot$2),
+          ...commonReads,
         ]);
       } else {
         await Promise.all([
@@ -12851,6 +12873,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           get(initialPolicies$),
           get(queuedModelFeatureSwitchContext$),
           get(queuedModelMemberAccountSnapshot$),
+          ...commonReads,
         ]);
       }
       signal.throwIfAborted();
