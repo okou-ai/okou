@@ -897,7 +897,7 @@ function usagePackAllocationAdditionCharge(
   };
 }
 
-export function usagePackBillingCompatibilityLockSql(orgId: string) {
+export function usagePackBillingLockSql(orgId: string) {
   // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
   return sql`SELECT pg_advisory_xact_lock(hashtextextended(${`usage_pack_billing:${orgId}`}, 0))`;
 }
@@ -906,7 +906,7 @@ export async function lockUsagePackBillingOrg(
   tx: Pick<WriteTx, "execute">,
   orgId: string,
 ): Promise<void> {
-  await tx.execute(usagePackBillingCompatibilityLockSql(orgId));
+  await tx.execute(usagePackBillingLockSql(orgId));
 }
 
 async function expireStaleUsagePackPreviews(
@@ -939,15 +939,30 @@ export async function getUsagePackManagement(
   if (!context) {
     return null;
   }
-  const changesByUserId = new Map(
-    context.changes
-      .filter((change) => {
-        return change.status !== "previewed";
-      })
-      .map((change) => {
-        return [change.userId, change] as const;
-      }),
-  );
+  const changesByUserId = new Map<string, UsagePackAllocationChangeRow>();
+  for (const change of context.changes) {
+    if (change.status === "previewed") {
+      continue;
+    }
+    const existing = changesByUserId.get(change.userId);
+    // A newer aggregate may copy an already accepted future downgrade while
+    // another member's upgrade awaits payment. That unpaid copy cannot turn
+    // the identical accepted schedule into a pending-payment promise. The
+    // partial unique index admits only one scheduled/applied change per user.
+    if (
+      existing?.status === "scheduled" &&
+      change.status === "pending_payment" &&
+      change.subscriptionChangeId !== null &&
+      existing.kind === change.kind &&
+      existing.sourceAllocationId === change.sourceAllocationId &&
+      existing.targetUsagePackUsd === change.targetUsagePackUsd &&
+      existing.targetStripePriceId === change.targetStripePriceId &&
+      existing.effectiveAt?.getTime() === change.effectiveAt?.getTime()
+    ) {
+      continue;
+    }
+    changesByUserId.set(change.userId, change);
+  }
   return {
     tier: context.subscription.tier,
     supportsFreeMembers: true,
@@ -3638,7 +3653,7 @@ async function commitUsagePackUpgradeInvoice(
   },
 ): Promise<void> {
   await db.transaction(async (tx) => {
-    await tx.execute(usagePackBillingCompatibilityLockSql(args.change.orgId));
+    await tx.execute(usagePackBillingLockSql(args.change.orgId));
     const [subscription] = await tx
       .select()
       .from(
@@ -3974,7 +3989,7 @@ export async function fulfillUsagePackSubscriptionChangeInvoice(
   const { expectedRoot, preparedGrants } =
     await prepareSubscriptionChangeFulfillment(db, args);
   await db.transaction(async (tx) => {
-    await tx.execute(usagePackBillingCompatibilityLockSql(expectedRoot.orgId));
+    await tx.execute(usagePackBillingLockSql(expectedRoot.orgId));
     const [subscription] = await tx
       .select()
       .from(
@@ -4514,7 +4529,7 @@ export const prepareUsagePackChangeConfirmation$ = command(
       // No row locks: all admission writers hold the retained
       // usage_pack_billing key; every transition below is conditional on the
       // previewed state it was decided from.
-      await tx.execute(usagePackBillingCompatibilityLockSql(args.orgId));
+      await tx.execute(usagePackBillingLockSql(args.orgId));
       const [found] = await tx
         .select({ change: usagePackAllocationChanges })
         .from(usagePackAllocationChanges)

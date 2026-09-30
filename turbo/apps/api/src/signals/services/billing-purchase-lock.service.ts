@@ -16,13 +16,11 @@ import type { Db } from "../external/db";
 import { BILLING_PURCHASE_PREVIEW_TTL_MS } from "./billing-purchase-preview-token.service";
 
 /**
- * R1 compatibility only: outgoing (pre-Release-1) Plan confirm and usage-pack
- * snapshot/confirm writers hold this key across their Stripe list/create.
- * Current writers take it only inside their short local claim/snapshot
- * transactions. Remove in Release 2 once no serving or rollback API version
- * holds billing_purchase across provider I/O.
+ * Unfinished R1 financial purchase arbitration. Plan and pack need shared
+ * durable business identity and recoverable provider outcomes before removal.
+ * This is not an outgoing-version compatibility or R2 drain exemption.
  */
-export function billingPurchaseCompatibilityLockSql(orgId: string) {
+export function billingPurchaseLockSql(orgId: string) {
   // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
   return sql`SELECT pg_advisory_xact_lock(hashtextextended(${`billing_purchase:${orgId}`}, 0))`;
 }

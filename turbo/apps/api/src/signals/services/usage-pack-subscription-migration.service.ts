@@ -49,7 +49,7 @@ import {
   type StripeSubscriptionUpdateItemParam,
 } from "../external/stripe-client";
 import { pgTextDecoder } from "../../lib/db-structured-result";
-import { usagePackBillingCompatibilityLockSql } from "./usage-pack-allocation-change.service";
+import { usagePackBillingLockSql } from "./usage-pack-allocation-change.service";
 import type { BillingReconciliationScope } from "./billing-reconciliation-scope";
 import {
   handleUsagePackInvoicePaid$,
@@ -1437,7 +1437,7 @@ const persistMigrationRevisionIntent$ = command(
     const db = set(writeDb$);
 
     const result = await db.transaction(async (tx) => {
-      await tx.execute(usagePackBillingCompatibilityLockSql(args.orgId));
+      await tx.execute(usagePackBillingLockSql(args.orgId));
       const [migration] = await tx
         .select(migrationColumnsWithRowVersion())
         .from(usagePackSubscriptionMigrations)
@@ -1829,7 +1829,7 @@ const materializeUsagePackSnapshot$ = command(
       selections,
     );
     await db.transaction(async (tx) => {
-      await tx.execute(usagePackBillingCompatibilityLockSql(migration.orgId));
+      await tx.execute(usagePackBillingLockSql(migration.orgId));
       // No row locks: materialization runs under the retained
       // usage_pack_billing key and the snapshot insert is keyed by the
       // migration id, so a duplicate materialization cannot insert twice.
@@ -2190,7 +2190,7 @@ const completeMigrationInvitations$ = command(
       selections,
     );
     await db.transaction(async (tx) => {
-      await tx.execute(usagePackBillingCompatibilityLockSql(migration.orgId));
+      await tx.execute(usagePackBillingLockSql(migration.orgId));
       const [locked] = await tx
         .select(migrationColumnsWithRowVersion())
         .from(usagePackSubscriptionMigrations)
@@ -2702,7 +2702,7 @@ const claimMigrationConfirmation$ = command(
   > => {
     const db = set(writeDb$);
     return await db.transaction(async (tx) => {
-      await tx.execute(usagePackBillingCompatibilityLockSql(args.orgId));
+      await tx.execute(usagePackBillingLockSql(args.orgId));
       const [migration] = await tx
         .select()
         .from(usagePackSubscriptionMigrations)

@@ -56,7 +56,7 @@ import {
   fulfillUsagePackSubscriptionChangeInvoice,
   reconcileUsagePackAllocationChangeSubscription,
   usagePackInvoiceFulfillmentExists,
-  usagePackBillingCompatibilityLockSql,
+  usagePackBillingLockSql,
   usagePackPreviewSubscriptionMatches,
   type UsagePackChangeInvoiceInput,
 } from "./usage-pack-allocation-change.service";
@@ -1107,7 +1107,7 @@ async function lockUsagePackBillingOrg(
   tx: Pick<WriteTx, "execute">,
   orgId: string,
 ): Promise<void> {
-  await tx.execute(usagePackBillingCompatibilityLockSql(orgId));
+  await tx.execute(usagePackBillingLockSql(orgId));
 }
 
 function retirePlanPreviewSql(orgId: string, at: Date) {
@@ -2293,7 +2293,7 @@ const markPreparedChangeApplying$ = command(
       // No row locks: every admission writer holds the retained
       // usage_pack_billing key, and each transition below is conditional on
       // the previewed state it was decided from.
-      await tx.execute(usagePackBillingCompatibilityLockSql(args.orgId));
+      await tx.execute(usagePackBillingLockSql(args.orgId));
       const [subscription] = await tx
         .select({ id: usagePackSubscriptions.id })
         .from(usagePackSubscriptions)

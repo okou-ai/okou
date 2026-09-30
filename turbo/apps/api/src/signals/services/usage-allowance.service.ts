@@ -428,6 +428,12 @@ async function applyPreparedUsageAllowanceRefresh(
   };
 }
 
+/** Unfinished R1 issuance protocol; not outgoing-version compatibility. */
+export function orgCreditLockSql(orgId: string) {
+  // eslint-disable-next-line api/no-new-advisory-lock -- Restore the original financial key after the distinct-Run overissuance regression; no new namespace.
+  return sql`SELECT pg_advisory_xact_lock(hashtext('credit_' || ${orgId}))`;
+}
+
 async function loadActiveUsageAllowanceEntitlement(
   tx: UsageAllowanceStore,
   orgId: string,
@@ -1015,6 +1021,7 @@ export async function activateUsageAllowanceWindowsForRun(
     readonly refresh?: PreparedUsageAllowanceRefresh;
   },
 ): Promise<UsageAllowanceAvailability | null> {
+  await tx.execute(orgCreditLockSql(args.orgId));
   const windows = await ensureWindowsForRun(tx, args);
   return windows ? availabilityFromWindows(windows) : null;
 }

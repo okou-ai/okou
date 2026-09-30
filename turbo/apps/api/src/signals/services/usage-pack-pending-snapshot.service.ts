@@ -5,7 +5,7 @@ import {
 import { and, eq, inArray, or } from "drizzle-orm";
 
 import type { ApiDb, Tx } from "../../lib/db-types";
-import { billingPurchaseCompatibilityLockSql } from "./billing-purchase-lock.service";
+import { billingPurchaseLockSql } from "./billing-purchase-lock.service";
 
 function isPending(status: string): boolean {
   return status === "checkout_pending" || status === "purchase_pending";
@@ -24,7 +24,7 @@ async function preparePendingSnapshotScope(
     // Initial Plan/pack admission still needs a shared recoverable purchase
     // identity. Retain the existing key until that financial mapping is done;
     // the count writes below must not become a replacement mutex.
-    await tx.execute(billingPurchaseCompatibilityLockSql(orgId));
+    await tx.execute(billingPurchaseLockSql(orgId));
   }
   const roots = await tx
     .select({

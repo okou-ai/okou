@@ -77,7 +77,7 @@ import { upsertOrgPlanEntitlement } from "./org-plan-entitlements.service";
 import { stripePreviewMetadata } from "./stripe-preview-metadata.service";
 import {
   handleUsagePackAllocationChangeInvoicePaid,
-  usagePackBillingCompatibilityLockSql,
+  usagePackBillingLockSql,
   reconcileUsagePackAllocationChanges,
   reconcileUsagePackAllocationChangeSubscription,
   reconcileUsagePackAllocationChangeSubscriptionDeleted,
@@ -93,7 +93,7 @@ import {
   writeUsagePackPendingSnapshots,
 } from "./usage-pack-pending-snapshot.service";
 import {
-  billingPurchaseCompatibilityLockSql,
+  billingPurchaseLockSql,
   inFlightPlanPurchaseQuery,
   inFlightUsagePackPurchaseQuery,
   PLAN_PURCHASE_CLAIM_STALE_MS,
@@ -995,7 +995,7 @@ async function correlateUsagePackCheckout(
   },
 ): Promise<UsagePackCheckoutCorrelation> {
   return await db.transaction(async (tx) => {
-    await tx.execute(billingPurchaseCompatibilityLockSql(args.orgId));
+    await tx.execute(billingPurchaseLockSql(args.orgId));
     const correlated = await tx
       .update(usagePackSubscriptions)
       .set({
@@ -2753,11 +2753,11 @@ const publishUsagePackCheckoutState$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     const db = set(writeDb$);
+    const { subscription } = args;
     await db.transaction(async (tx) => {
-      // No row locks: every pending-snapshot guard writer holds the retained
-      // billing_purchase key, and the snapshot write below is conditional on
+      // The unfinished purchase protocol also conditions this snapshot on
       // the root state this decision was made from.
-      await tx.execute(billingPurchaseCompatibilityLockSql(args.orgId));
+      await tx.execute(billingPurchaseLockSql(args.orgId));
       const roots = await tx
         .select()
         .from(usagePackSubscriptions)
@@ -2796,7 +2796,7 @@ const publishUsagePackCheckoutState$ = command(
       const counts = checkoutPendingSnapshotCounts(
         roots,
         args.usagePackSubscriptionId,
-        args.subscription.status,
+        subscription.status,
       );
       if (!guard || guard.pendingSnapshotCount !== counts.before) {
         throw new Error("Usage pack pending snapshot guard requires repair");
@@ -2814,7 +2814,7 @@ const publishUsagePackCheckoutState$ = command(
       const context = { subscription: localSubscription, allocations };
       validateUsagePackSubscriptionCorrelation(
         context,
-        args.subscription,
+        subscription,
         args.usagePackSubscriptionId,
       );
       if (
@@ -2826,21 +2826,16 @@ const publishUsagePackCheckoutState$ = command(
           `Checkout Session ${args.checkoutSessionId} does not match the local usage pack snapshot`,
         );
       }
-      const shape = requireUsagePackSubscriptionShape(
-        context,
-        args.subscription,
-      );
+      const shape = requireUsagePackSubscriptionShape(context, subscription);
       const updatedAt = nowDate();
-      const cancelAtPeriodEnd = usagePackSubscriptionWillCancel(
-        args.subscription,
-      );
+      const cancelAtPeriodEnd = usagePackSubscriptionWillCancel(subscription);
       const [published] = await tx
         .update(usagePackSubscriptions)
         .set({
           tier: shape.tier,
           stripePlanPriceId: shape.planPriceId,
-          stripeSubscriptionId: args.subscription.id,
-          subscriptionStatus: args.subscription.status,
+          stripeSubscriptionId: subscription.id,
+          subscriptionStatus: subscription.status,
           stripeCheckoutSessionId: args.checkoutSessionId,
           cancelAtPeriodEnd,
           updatedAt,
@@ -2854,14 +2849,14 @@ const publishUsagePackCheckoutState$ = command(
         await tx
           .update(orgMetadata)
           .set({
-            subscriptionStatus: args.subscription.status,
+            subscriptionStatus: subscription.status,
             cancelAtPeriodEnd,
             updatedAt,
           })
           .where(
             and(
               eq(orgMetadata.orgId, args.orgId),
-              eq(orgMetadata.stripeSubscriptionId, args.subscription.id),
+              eq(orgMetadata.stripeSubscriptionId, subscription.id),
             ),
           );
       }
@@ -3521,8 +3516,8 @@ const commitUsagePackPlanActivation$ = command(
       // and billing_purchase keys, and the subscription write below is
       // conditional on the root status and prepared allocation set it was
       // decided from.
-      await tx.execute(usagePackBillingCompatibilityLockSql(orgId));
-      await tx.execute(billingPurchaseCompatibilityLockSql(orgId));
+      await tx.execute(usagePackBillingLockSql(orgId));
+      await tx.execute(billingPurchaseLockSql(orgId));
       const roots = await tx
         .select()
         .from(usagePackSubscriptions)
@@ -3721,8 +3716,8 @@ const commitUsagePackFulfillment$ = command(
     const orgId = args.context.subscription.orgId;
     await set(expireFirstPaidUpgradeDebt$, orgId, signal);
     await db.transaction(async (tx) => {
-      await tx.execute(usagePackBillingCompatibilityLockSql(orgId));
-      await tx.execute(billingPurchaseCompatibilityLockSql(orgId));
+      await tx.execute(usagePackBillingLockSql(orgId));
+      await tx.execute(billingPurchaseLockSql(orgId));
       const roots = await tx
         .select()
         .from(usagePackSubscriptions)
@@ -3986,7 +3981,7 @@ const retireReconciledUsagePackSnapshot$ = command(
     await db.transaction(async (tx) => {
       // No row locks: guard writers hold the retained billing_purchase key and
       // the retirement below is a conditional status transition.
-      await tx.execute(billingPurchaseCompatibilityLockSql(args.orgId));
+      await tx.execute(billingPurchaseLockSql(args.orgId));
       const roots = await tx
         .select({
           id: usagePackSubscriptions.id,

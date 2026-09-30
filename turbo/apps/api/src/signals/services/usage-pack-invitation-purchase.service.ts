@@ -48,7 +48,7 @@ import {
 } from "../external/stripe-client";
 import {
   calculateUsagePackAdditionCreditGrant,
-  usagePackBillingCompatibilityLockSql,
+  usagePackBillingLockSql,
   previewUsagePackAllocationAddition$,
   syncUsagePackSubscriptionConfiguration$,
   type UsagePackAllocationAdditionChargePreview,
@@ -1425,7 +1425,7 @@ const refundPurchase$ = command(
       if (!identity) {
         return null;
       }
-      await tx.execute(usagePackBillingCompatibilityLockSql(identity.orgId));
+      await tx.execute(usagePackBillingLockSql(identity.orgId));
       const parentCount = (
         await tx.execute(invitationMutationSubscriptionSql(purchaseId))
       ).rowCount;
@@ -2205,7 +2205,7 @@ const claimAcceptedPurchaseActivation$ = command(
       if (!identity) {
         return null;
       }
-      await tx.execute(usagePackBillingCompatibilityLockSql(identity.orgId));
+      await tx.execute(usagePackBillingLockSql(identity.orgId));
       const parentCount = (
         await tx.execute(invitationMutationSubscriptionSql(purchaseId))
       ).rowCount;

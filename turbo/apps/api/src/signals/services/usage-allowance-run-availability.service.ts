@@ -20,7 +20,10 @@ import {
   planPreparedAllowanceEntitlement,
   type AllowanceEntitlement,
 } from "./usage-allowance-settlement-plan";
-import { prepareUsageAllowanceRefresh$ } from "./usage-allowance.service";
+import {
+  orgCreditLockSql,
+  prepareUsageAllowanceRefresh$,
+} from "./usage-allowance.service";
 
 function runWindowsQuery(
   orgId: string,
@@ -218,6 +221,7 @@ export const resolveUsageAllowanceAvailabilityForRun$ = command(
     signal?.throwIfAborted();
     const outcome = await settle(
       db.transaction(async (tx) => {
+        await tx.execute(orgCreditLockSql(args.orgId));
         const [run] = await tx
           .select({ createdAt: agentRuns.createdAt })
           .from(agentRuns)

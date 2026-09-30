@@ -38,7 +38,7 @@ import {
   completeBillingOperationInvoiceWithInvoice,
 } from "./billing-operation-invoice.service";
 import {
-  billingPurchaseCompatibilityLockSql,
+  billingPurchaseLockSql,
   inFlightUsagePackPurchaseQuery,
   PLAN_PURCHASE_CLAIM_STALE_MS,
   PLAN_PURCHASE_CLAIM_STATUS,
@@ -1204,7 +1204,7 @@ async function claimPlanPurchase(
     // section already in progress; the winner's Stripe read below then sees
     // its subscription. Remove in Release 2 once no serving or rollback API
     // version holds billing_purchase across provider I/O.
-    await tx.execute(billingPurchaseCompatibilityLockSql(orgId));
+    await tx.execute(billingPurchaseLockSql(orgId));
     const claimed = await tx
       .update(orgMetadata)
       .set({
