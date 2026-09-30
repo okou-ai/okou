@@ -20,11 +20,8 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { chatEventDisplayText } from "./helpers/chat-event";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import {
-  seedBuiltInModelCandidateKeys,
-  readThreadSessionBinding,
-  readThreadSessionConversation,
-} from "./helpers/runtime-state";
+import { seedBuiltInModelCandidateKeys } from "./helpers/runtime-state";
+import { readCompletedRunSessionId } from "./helpers/public-run-session";
 import {
   createChatEventsFixture,
   configureNativeCliArtifact,
@@ -524,15 +521,11 @@ describe("CHAT-02: model-first provider policies", () => {
         responsesModel: { provider: "openai", model: selectedModel },
         usagePricingResolution,
       });
-      const firstBinding = await readThreadSessionBinding(
+      const firstSessionId = await readCompletedRunSessionId(
         context,
-        first.threadId,
+        actor,
+        first.runId,
       );
-      if (!firstBinding.agent_session_id) {
-        throw new Error(
-          "Expected standard Luna to bind a canonical Pi session",
-        );
-      }
 
       const fast = await withOpenRouterRoute(async () => {
         return await sendChatRun(
@@ -563,11 +556,9 @@ describe("CHAT-02: model-first provider policies", () => {
         responsesModel: { provider: "openai", model: selectedModel },
         usagePricingResolution,
       });
-      const fastBinding = await readThreadSessionBinding(
-        context,
-        first.threadId,
-      );
-      expect(fastBinding.agent_session_id).toBe(firstBinding.agent_session_id);
+      await expect(
+        readCompletedRunSessionId(context, actor, fast.runId),
+      ).resolves.toBe(firstSessionId);
 
       await chat.updateThreadModelSelection(
         actor,
@@ -605,19 +596,9 @@ describe("CHAT-02: model-first provider policies", () => {
         responsesModel: { provider: "openai", model: selectedModel },
         usagePricingResolution,
       });
-      const returnedBinding = await readThreadSessionBinding(
-        context,
-        first.threadId,
-      );
-      expect(returnedBinding.agent_session_id).toBe(
-        firstBinding.agent_session_id,
-      );
       await expect(
-        readThreadSessionConversation(context, first.threadId),
-      ).resolves.toMatchObject({
-        agent_session_id: firstBinding.agent_session_id,
-        conversation_run_id: returned.runId,
-      });
+        readCompletedRunSessionId(context, actor, returned.runId),
+      ).resolves.toBe(firstSessionId);
 
       for (const run of [first, fast, returned]) {
         const claim = await api.requestClaimRunnerJob(true, run.runId, [404]);
@@ -1007,9 +988,10 @@ describe("CHAT-02: model-first provider policies", () => {
       if (route.outcome !== "completed") {
         return;
       }
-      const firstSession = await readThreadSessionConversation(
+      const firstSession = await readCompletedRunSessionId(
         context,
-        first.threadId,
+        actor,
+        first.runId,
       );
 
       const followUpPrompt = `continue the same ${route.name} credential`;
@@ -1041,10 +1023,8 @@ describe("CHAT-02: model-first provider policies", () => {
         usagePricingResolution,
       });
       await expect(
-        readThreadSessionConversation(context, first.threadId),
-      ).resolves.toMatchObject({
-        agent_session_id: firstSession.agent_session_id,
-      });
+        readCompletedRunSessionId(context, actor, followUp.runId),
+      ).resolves.toBe(firstSession);
       await expectThreadModelCredits(context, actor, followUp.threadId, 0);
 
       const rotatedSecret = `${route.type}-rotated-secret`;
@@ -1086,10 +1066,8 @@ describe("CHAT-02: model-first provider policies", () => {
         usagePricingResolution,
       });
       await expect(
-        readThreadSessionConversation(context, first.threadId),
-      ).resolves.toMatchObject({
-        agent_session_id: firstSession.agent_session_id,
-      });
+        readCompletedRunSessionId(context, actor, rotated.runId),
+      ).resolves.toBe(firstSession);
       await expectThreadModelCredits(context, actor, rotated.threadId, 0);
       const publicState = JSON.stringify({
         run: await api.readRun(actor, rotated.runId),

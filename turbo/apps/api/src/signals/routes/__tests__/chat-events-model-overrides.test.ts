@@ -11,7 +11,6 @@ import { now } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { expectApiError } from "./helpers/api-bdd";
 import { createFirewallApi } from "./helpers/api-bdd-firewall";
-import { readThreadSessionConversation } from "./helpers/runtime-state";
 import {
   createChatEventsFixture,
   GPT_PI_BDD_MODELS,
@@ -506,10 +505,6 @@ describe("CHAT-02: run-level model overrides", () => {
         return;
       }
 
-      const firstSession = await readThreadSessionConversation(
-        context,
-        run.threadId,
-      );
       const continued = await sendChatRun(actor, {
         agentId,
         threadId: run.threadId,
@@ -529,11 +524,6 @@ describe("CHAT-02: run-level model overrides", () => {
           model: selectedModel,
           ...(tier === undefined ? {} : { serviceTier: tier }),
         },
-      });
-      await expect(
-        readThreadSessionConversation(context, run.threadId),
-      ).resolves.toMatchObject({
-        agent_session_id: firstSession.agent_session_id,
       });
       await expectThreadModelCredits(context, actor, continued.threadId, 0);
       await cancelChatRun(

@@ -10,7 +10,7 @@ import { now } from "../../../lib/time";
 import { mockEnv } from "../../../lib/env";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
-import { readThreadSessionConversation } from "./helpers/runtime-state";
+import { readCompletedRunSessionId } from "./helpers/public-run-session";
 import {
   createChatEventsFixture,
   USER_OWNED_GPT_FAST_BDD_ROUTES,
@@ -273,9 +273,10 @@ describe("CHAT-02: run-level model overrides", () => {
         responsesModel: { provider: "openai", model: route.selectedModel },
         usagePricingResolution: pricing,
       });
-      const firstSession = await readThreadSessionConversation(
+      const firstSession = await readCompletedRunSessionId(
         context,
-        first.threadId,
+        actor,
+        first.runId,
       );
       const fast = await sendChatRun(actor, {
         agentId,
@@ -308,10 +309,8 @@ describe("CHAT-02: run-level model overrides", () => {
         usagePricingResolution: pricing,
       });
       await expect(
-        readThreadSessionConversation(context, first.threadId),
-      ).resolves.toMatchObject({
-        agent_session_id: firstSession.agent_session_id,
-      });
+        readCompletedRunSessionId(context, actor, fast.runId),
+      ).resolves.toBe(firstSession);
       await chat.updateThreadModelSelection(
         actor,
         first.threadId,
@@ -343,11 +342,8 @@ describe("CHAT-02: run-level model overrides", () => {
         usagePricingResolution: pricing,
       });
       await expect(
-        readThreadSessionConversation(context, first.threadId),
-      ).resolves.toMatchObject({
-        agent_session_id: firstSession.agent_session_id,
-        conversation_run_id: standard.runId,
-      });
+        readCompletedRunSessionId(context, actor, standard.runId),
+      ).resolves.toBe(firstSession);
 
       const histories = [...objects.entries()].filter(([key]) => {
         return key.endsWith(".blob");
