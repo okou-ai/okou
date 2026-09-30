@@ -230,6 +230,13 @@ order, before anything is committed. Automation launch arguments, which depend
 on official reconciliation, are the only write-derived prerequisite of the
 launch reads; storage mounts and KMS do not wait for them.
 
+Preparation writes no claim state once these reads have started. The token-free
+launch arguments are a computed join of the plan, run identity and resource
+admission, so Pi launch resources start from them immediately; the runner input
+that carries the run token is produced by its command and passed on as a plain
+value to storage and stored-context preparation. An automation's independent
+Get Started reward is recorded alongside the launch reads, not ahead of them.
+
 Dispatch timing collectors are created by the parent `pick$` after its claim
 and passed as plain arguments to `prepareRunContext$` and `createRun$`;
 `RunContext` does not carry them.
