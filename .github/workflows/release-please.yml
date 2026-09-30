@@ -2158,7 +2158,9 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: runner-release-cli-${{ github.run_id }}
-          path: runner-cli-intermediate/package.tgz
+          path: |
+            runner-cli-intermediate/package.tgz
+            runner-cli-intermediate/manifest.json
           overwrite: true
           if-no-files-found: error
           retention-days: 1
@@ -2193,8 +2195,8 @@ jobs:
           name: runner-release-cli-${{ github.run_id }}
           path: runner-cli-intermediate
 
-      - name: Check CLI package before compiling Runner
-        run: test -s runner-cli-intermediate/package.tgz
+      - name: Check CLI package and identity before compiling Runner
+        run: test -s runner-cli-intermediate/package.tgz && test -s runner-cli-intermediate/manifest.json
 
       - name: Resolve runner target metadata
         id: target-metadata
@@ -2263,6 +2265,8 @@ jobs:
         env:
           TARGET_TRIPLE: ${{ matrix.target }}
           GUEST_CLI_PATH: ${{ github.workspace }}/runner-cli-intermediate/package.tgz
+          GUEST_CLI_MANIFEST_PATH: ${{ github.workspace }}/runner-cli-intermediate/manifest.json
+          GUEST_CLI_SOURCE_SHA: ${{ needs.release-please.outputs.release_target }}
         run: |
           . .github/scripts/runner-guest-binaries.sh
           runner_guest_binaries_load

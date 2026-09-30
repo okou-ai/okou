@@ -23,14 +23,24 @@ esac
 revision="${RUNNER_BINARY_GIT_REVISION:-HEAD}"
 source_sha=$(git -C "$REPO_ROOT" rev-parse --verify "${revision}^{commit}")
 cli_package="${GUEST_CLI_PATH:-}"
-if [ -n "$cli_package" ]; then
+cli_manifest="${GUEST_CLI_MANIFEST_PATH:-}"
+if [ -n "$cli_package" ] || [ -n "$cli_manifest" ]; then
+  if [ -z "$cli_package" ] || [ -z "$cli_manifest" ]; then
+    echo "Runner CLI package and manifest must both be provided" >&2
+    exit 1
+  fi
   if [[ "$cli_package" != /* ]]; then
     cli_package="${REPO_ROOT}/${cli_package}"
   fi
-  if [ ! -f "$cli_package" ] || [ ! -s "$cli_package" ]; then
-    echo "runner CLI package is missing or empty: ${cli_package}" >&2
-    exit 1
+  if [[ "$cli_manifest" != /* ]]; then
+    cli_manifest="${REPO_ROOT}/${cli_manifest}"
   fi
+  for file in "$cli_package" "$cli_manifest"; do
+    if [ ! -f "$file" ] || [ ! -s "$file" ]; then
+      echo "runner CLI build input is missing or empty: ${file}" >&2
+      exit 1
+    fi
+  done
 fi
 binary_input_digest=$(
   {
@@ -38,7 +48,7 @@ binary_input_digest=$(
     "${SCRIPT_DIR}/context.sh" inventory "$REPO_ROOT" "$revision" || exit 1
     if [ -n "$cli_package" ]; then
       printf '%s\0' "$source_sha"
-      sha256sum "$cli_package" | awk '{print $1}'
+      sha256sum "$cli_package" "$cli_manifest" | awk '{print $1}'
     else
       printf 'local-build-without-cli\0'
     fi

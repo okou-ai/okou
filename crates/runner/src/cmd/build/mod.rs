@@ -132,7 +132,7 @@ pub struct BuildArgs {
         arg(long, help = "Path to runner-rpc-client binary (required)")
     )]
     runner_rpc_client: Option<PathBuf>,
-    /// Directory holding a versioned Okou CLI artifact (package.tgz + manifest.json) to install into the rootfs
+    /// Legacy CLI artifact directory for a Runner built without an embedded CLI
     #[arg(long, value_name = "DIR", conflicts_with = "warm_rootfs_cache")]
     okou_cli_artifact: Option<PathBuf>,
     /// Profile to build (determines VM resources and disk sizes)
@@ -420,9 +420,22 @@ pub async fn run_build(mut args: BuildArgs, provider: &dyn SnapshotProvider) -> 
         BuildMode::FullImage => Some(GuestBinaries::resolve(&mut args).await?),
         BuildMode::WarmRootfsCache => None,
     };
-    let okou_cli = match (mode, args.okou_cli_artifact.take()) {
-        (BuildMode::FullImage, Some(dir)) => Some(OkouCliArtifact::resolve(&dir).await?),
-        _ => None,
+    let okou_cli = match mode {
+        BuildMode::WarmRootfsCache => None,
+        BuildMode::FullImage => {
+            if let Some(embedded) = OkouCliArtifact::resolve_embedded().await? {
+                if args.okou_cli_artifact.is_some() {
+                    tracing::info!("using embedded CLI instead of legacy --okou-cli-artifact");
+                }
+                Some(embedded)
+            } else if let Some(dir) = args.okou_cli_artifact.take() {
+                Some(OkouCliArtifact::resolve(&dir).await?)
+            } else {
+                // Local/older Runners without an embedded bundle retain their
+                // historical CLI-free rootfs and Guest URL fallback.
+                None
+            }
+        }
     };
 
     let hashes = match mode {
@@ -519,6 +532,7 @@ pub async fn run_build(mut args: BuildArgs, provider: &dyn SnapshotProvider) -> 
         let rootfs_still_present = is_rootfs_present(rootfs_paths).await?;
         let _snapshot_lock = lock::acquire_shared(paths.snapshot_lock(snapshot_hash)).await?;
         if rootfs_still_present && provider.is_complete(snapshot_dir).await.unwrap_or(false) {
+            verify_cli_sidecar(rootfs_paths, okou_cli.as_ref()).await?;
             tracing::info!(
                 "[OK] image already built: rootfs={rootfs_hash}, snapshot={snapshot_hash}"
             );
@@ -608,6 +622,7 @@ pub async fn run_build(mut args: BuildArgs, provider: &dyn SnapshotProvider) -> 
                 )
                 .await?;
             } else {
+                verify_cli_sidecar(rootfs_paths, okou_cli.as_ref()).await?;
                 tracing::info!(
                     "[OK] rootfs already present: {}",
                     rootfs_paths.dir().display()
@@ -668,13 +683,9 @@ async fn ensure_rootfs_under_lock(
             release_template_lock.release();
             let work_dir_path = scripts.path().await?;
             customize_rootfs_staging(&input, &work_dir_path).await?;
-            verify_rootfs(
-                input.rootfs_paths,
-                &work_dir_path,
-                input.okou_cli.map(OkouCliArtifact::cli_version),
-            )
-            .await?;
+            verify_rootfs(input.rootfs_paths, &work_dir_path, input.okou_cli).await?;
             write_okou_cli_sidecar(input.rootfs_paths, input.okou_cli).await?;
+            verify_cli_sidecar(input.rootfs_paths, input.okou_cli).await?;
             // Commit the rootfs. Same-filesystem rename is POSIX-atomic, so
             // `rootfs.ext4` only becomes visible once customization and
             // verification have fully succeeded.
@@ -685,6 +696,7 @@ async fn ensure_rootfs_under_lock(
         .await;
         publish.finish_after_result(result).await?;
     } else {
+        verify_cli_sidecar(input.rootfs_paths, input.okou_cli).await?;
         tracing::info!(
             "[OK] rootfs already present: {}",
             input.rootfs_paths.dir().display()
@@ -1101,15 +1113,9 @@ async fn build_template_locally(
 async fn verify_rootfs(
     rootfs_paths: &RootfsPaths,
     work_dir: &RootfsScriptDir,
-    okou_cli_version: Option<&str>,
+    okou_cli: Option<&OkouCliArtifact>,
 ) -> RunnerResult<()> {
-    verify_rootfs_file(
-        &rootfs_paths.rootfs_staging(),
-        work_dir,
-        "rootfs",
-        okou_cli_version,
-    )
-    .await?;
+    verify_rootfs_file(&rootfs_paths.rootfs_staging(), work_dir, "rootfs", okou_cli).await?;
 
     let rootfs_sz = file_sizes(&rootfs_paths.rootfs_staging()).await;
     tracing::info!(
@@ -1138,7 +1144,7 @@ async fn verify_rootfs_file(
     rootfs: &Path,
     work_dir: &RootfsScriptDir,
     mode: &str,
-    okou_cli_version: Option<&str>,
+    okou_cli: Option<&OkouCliArtifact>,
 ) -> RunnerResult<()> {
     let mut cmd = rootfs_script_command(work_dir, "verify-rootfs.sh")?;
     cmd.command
@@ -1149,8 +1155,12 @@ async fn verify_rootfs_file(
     for definition in guest_definitions() {
         cmd.command.arg("--guest-dest").arg(definition.destination);
     }
-    if let Some(version) = okou_cli_version {
-        cmd.command.arg("--okou-cli-version").arg(version);
+    if let Some(okou_cli) = okou_cli {
+        cmd.command
+            .arg("--okou-cli-version")
+            .arg(okou_cli.cli_version())
+            .arg("--okou-cli-manifest")
+            .arg(okou_cli.installed_manifest_path());
     }
     let status = run_rootfs_script(cmd, "verify-rootfs.sh").await?;
 
@@ -1255,6 +1265,31 @@ async fn write_okou_cli_sidecar(
             ))),
         },
     }
+}
+
+/// Reject cached rootfs metadata that does not match the embedded package.
+/// The rootfs file is committed only after script verification and sidecar
+/// publication; a missing or altered sidecar cannot be used as a cache hit.
+async fn verify_cli_sidecar(
+    rootfs_paths: &RootfsPaths,
+    okou_cli: Option<&OkouCliArtifact>,
+) -> RunnerResult<()> {
+    if let Some(okou_cli) = okou_cli {
+        let path = rootfs_paths.okou_cli_manifest();
+        let actual = tokio::fs::read(&path).await.map_err(|e| {
+            RunnerError::Internal(format!(
+                "read cached Okou CLI sidecar {}: {e}",
+                path.display()
+            ))
+        })?;
+        if actual != okou_cli.installed_manifest_bytes() {
+            return Err(RunnerError::Internal(format!(
+                "cached Okou CLI sidecar does not match embedded bundle: {}",
+                path.display()
+            )));
+        }
+    }
+    Ok(())
 }
 
 /// Check whether rootfs.ext4 exists.

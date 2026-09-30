@@ -4686,15 +4686,21 @@ immutable: the publish step fails the release when the version already exists
 with different bytes, so one CLI version identifies exactly one bundle and the
 semantic version can serve as a compatibility identity.
 
-The runner build (`runner build --okou-cli-artifact DIR`) installs the versioned
-bundle into the rootfs customize layer at `/usr/local/lib/okou-cli/<version>/`
-with a `/usr/local/bin/okou` launcher and an installed manifest at
-`/usr/local/lib/okou-cli/installed.json`; the bundle bytes and the manifest are
-part of the rootfs hash, and `verify-rootfs.sh` asserts the install. Release
-runner builds install the CLI version tagged in `.release-please-manifest.json`
-at the same release commit; preview images install the commit artifact of their
-own head commit. A build without the artifact carries no CLI and keeps only the
-commit-addressed path below.
+A Runner compiled with source-bound embedded CLI bytes installs its own verified
+`package.tgz` into the rootfs customize layer at
+`/usr/local/lib/okou-cli/<version>/`, even when a legacy
+`--okou-cli-artifact DIR` argument is supplied. The compiled version, Pi SDK and
+session identity are validated against the package manifest during compilation;
+only the package bytes are embedded. `runner build` stages those bytes alongside
+the embedded Guest binaries and writes `/usr/local/bin/okou` and
+`/usr/local/lib/okou-cli/installed.json`. The package bytes and installed
+manifest are part of the rootfs hash, and `verify-rootfs.sh` checks the
+installed manifest against the verified identity. An older/local Runner without
+an embedded CLI may still install `--okou-cli-artifact DIR` or build a CLI-free
+rootfs; the Guest's commit-addressed compatibility path remains available.
+Release and preview orchestration may still stage the legacy host artifact
+until the separate cutover in #37342; it is not used as the install source by
+a source-bound Runner.
 
 Compatibility is negotiated per run rather than by deployment order:
 

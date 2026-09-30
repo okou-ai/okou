@@ -54,6 +54,8 @@ jq -e '
     .name == "Cross-compile runner with embedded guests and CLI for ${{ matrix.target }}" and
     .env.TARGET_TRIPLE == "${{ matrix.target }}" and
     .env.GUEST_CLI_PATH == "${{ github.workspace }}/runner-cli-intermediate/package.tgz" and
+    .env.GUEST_CLI_MANIFEST_PATH == "${{ github.workspace }}/runner-cli-intermediate/manifest.json" and
+    .env.GUEST_CLI_SOURCE_SHA == "${{ needs.release-please.outputs.release_target }}" and
     (.run | contains("runner_guest_binaries_load")) and
     (.run | contains("env \"${guest_env[@]}\" cargo build --release --target \"$TARGET_TRIPLE\" -p runner"))
   ) and
