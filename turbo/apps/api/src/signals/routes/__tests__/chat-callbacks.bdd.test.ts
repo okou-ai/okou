@@ -5663,7 +5663,7 @@ describe("CHAT-02: auto-send after failures", () => {
 
     pushGate.release();
     await flushWaitUntilForTest();
-    expect(context.mocks.webpush.sendNotification.mock.calls.length).toBe(1);
+    expect(context.mocks.webpush.sendNotification.mock.calls).toHaveLength(1);
 
     await queueChatEvent(actor, {
       agentId,
@@ -5689,7 +5689,7 @@ describe("CHAT-02: auto-send after failures", () => {
     await failChatRun(second.runId, secondHeaders, "boom");
     await flushWaitUntilForTest();
     await flushWaitUntilForTest();
-    expect(context.mocks.webpush.sendNotification.mock.calls.length).toBe(1);
+    expect(context.mocks.webpush.sendNotification.mock.calls).toHaveLength(1);
     const afterDuplicateFailure = await chat.listThreadEvents(
       actor,
       first.threadId,
@@ -6104,7 +6104,7 @@ describe("CHAT-02: push notification gating", () => {
     await completeChatRunOk(run.runId, sandboxHeaders);
 
     await flushWaitUntilForTest();
-    expect(context.mocks.webpush.sendNotification.mock.calls.length).toBe(2);
+    expect(context.mocks.webpush.sendNotification.mock.calls).toHaveLength(2);
     await flushWaitUntilForTest();
 
     for (const endpoint of endpoints) {
@@ -6165,7 +6165,7 @@ describe("CHAT-02: push notification gating", () => {
     await completeChatRunOk(second.runId, secondHeaders);
 
     await flushWaitUntilForTest();
-    expect(context.mocks.webpush.sendNotification.mock.calls.length).toBe(1);
+    expect(context.mocks.webpush.sendNotification.mock.calls).toHaveLength(1);
     expect(
       pushPayload(context.mocks.webpush.sendNotification.mock.calls[0]),
     ).toMatchObject({

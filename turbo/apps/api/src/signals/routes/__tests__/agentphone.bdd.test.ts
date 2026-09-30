@@ -404,9 +404,8 @@ async function waitForSendMatching(
   startIndex: number,
   predicate: (send: AgentPhoneProviderSend) => boolean,
 ): Promise<AgentPhoneProviderSend> {
-  let matched: AgentPhoneProviderSend | undefined;
   await flushWaitUntilForTest();
-  matched = sends.messages.slice(startIndex).find(predicate);
+  const matched = sends.messages.slice(startIndex).find(predicate);
   expect(matched).toBeDefined();
   if (!matched) {
     throw new Error("Expected a matching AgentPhone provider send");
