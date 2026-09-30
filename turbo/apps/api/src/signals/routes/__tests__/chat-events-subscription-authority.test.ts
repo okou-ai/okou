@@ -1,3 +1,4 @@
+import { expectThreadModelCredits } from "./helpers/public-thread-usage";
 import { randomUUID } from "node:crypto";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
@@ -13,7 +14,6 @@ import { readThreadSessionConversation } from "./helpers/runtime-state";
 import {
   createChatEventsFixture,
   USER_OWNED_GPT_FAST_BDD_ROUTES,
-  expectNoBuiltInModelUsage,
   createGptUsagePricingResolution,
   userMessages,
 } from "./helpers/chat-events-fixture";
@@ -169,7 +169,7 @@ describe("CHAT-02: run-level model overrides", () => {
         });
         expect(refreshAttempts).toBe(1);
         expect(f.captured.oauth.oauthToken).toHaveLength(1);
-        await expectNoBuiltInModelUsage(f.run.runId);
+        await expectThreadModelCredits(context, f.actor, f.run.threadId, 0);
         await cancelChatRun(f.actor, f.run.runId, f.sandboxHeaders);
       },
       30_000,
@@ -227,7 +227,7 @@ describe("CHAT-02: run-level model overrides", () => {
     expect(rejected.body).toMatchObject({
       error: { failureReason: "reconnect_required" },
     });
-    await expectNoBuiltInModelUsage(run.runId);
+    await expectThreadModelCredits(context, actor, run.threadId, 0);
     await cancelChatRun(actor, run.runId, sandboxHeaders);
   }, 30_000);
 
@@ -361,7 +361,7 @@ describe("CHAT-02: run-level model overrides", () => {
         expect(value.toString("utf8")).not.toContain(secret);
       }
       for (const run of [first, fast, standard]) {
-        await expectNoBuiltInModelUsage(run.runId);
+        await expectThreadModelCredits(context, actor, run.threadId, 0);
       }
     },
     90_000,
@@ -462,7 +462,7 @@ describe("CHAT-02: run-level model overrides", () => {
         serviceTier: fastTier,
       });
       await cancelChatRun(actor, promoted.runId, promotedClaim.sandboxHeaders);
-      await expectNoBuiltInModelUsage(promoted.runId);
+      await expectThreadModelCredits(context, actor, anchor.threadId, 0);
 
       const immediateId = randomUUID();
       const immediateBody = {
@@ -505,7 +505,12 @@ describe("CHAT-02: run-level model overrides", () => {
         serviceTier: fastTier,
       });
       await cancelChatRun(actor, immediateRunId, immediateClaim.sandboxHeaders);
-      await expectNoBuiltInModelUsage(immediateRunId);
+      await expectThreadModelCredits(
+        context,
+        actor,
+        immediate.body.threadId,
+        0,
+      );
       await cancelChatRun(actor, source.runId);
     },
     90_000,

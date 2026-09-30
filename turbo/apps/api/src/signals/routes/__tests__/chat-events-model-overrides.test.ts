@@ -1,3 +1,4 @@
+import { expectThreadModelCredits } from "./helpers/public-thread-usage";
 import { createHash } from "node:crypto";
 import { MODEL_PROVIDER_ENV_PLACEHOLDERS } from "@okouai/api-contracts/contracts/model-providers";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -15,7 +16,6 @@ import {
   createChatEventsFixture,
   GPT_PI_BDD_MODELS,
   type PiGptBddModel,
-  expectNoBuiltInModelUsage,
   claimEnvironment,
   eventBackedContents,
   assistantEvent,
@@ -351,7 +351,7 @@ describe("CHAT-02: run-level model overrides", () => {
         model: selectedModel,
         runOptions: { codexServiceTier: tier },
       });
-      await expectNoBuiltInModelUsage(run.runId);
+      await expectThreadModelCredits(context, actor, run.threadId, 0);
 
       await api.heartbeatRunner(runnerGroup);
       if (tier === "fast") {
@@ -498,7 +498,7 @@ describe("CHAT-02: run-level model overrides", () => {
         [200],
       );
       await flushWaitUntilForTest();
-      await expectNoBuiltInModelUsage(run.runId);
+      await expectThreadModelCredits(context, actor, run.threadId, 0);
       await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
         status: outcome,
       });
@@ -535,7 +535,7 @@ describe("CHAT-02: run-level model overrides", () => {
       ).resolves.toMatchObject({
         agent_session_id: firstSession.agent_session_id,
       });
-      await expectNoBuiltInModelUsage(continued.runId);
+      await expectThreadModelCredits(context, actor, continued.threadId, 0);
       await cancelChatRun(
         actor,
         continued.runId,

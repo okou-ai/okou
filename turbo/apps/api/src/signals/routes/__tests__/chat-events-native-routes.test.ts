@@ -1,3 +1,4 @@
+import { expectThreadModelCredits } from "./helpers/public-thread-usage";
 import { piNativeCatalogModelSchema } from "@okouai/api-contracts/contracts/pi-native-models";
 import {
   PI_NATIVE_CREDENTIAL_PLACEHOLDER,
@@ -32,7 +33,6 @@ import {
   createChatEventsFixture,
   configureNativeCliArtifact,
   requireOrgId,
-  expectNoBuiltInModelUsage,
   createGptUsagePricingResolution,
   createPiUsagePricingResolution,
   claimEnvironment,
@@ -336,8 +336,8 @@ describe("shared native Pi route activation", () => {
         threadId: first.threadId,
         prompt: "continue with the same history",
       });
-      await expectNoBuiltInModelUsage(first.runId);
-      await expectNoBuiltInModelUsage(second.runId);
+      await expectThreadModelCredits(context, actor, first.threadId, 0);
+      await expectThreadModelCredits(context, actor, second.threadId, 0);
       await flushWaitUntilForTest();
       const secondClaim = await claimChatRun(runnerGroup, second.runId);
       expect(secondClaim.claim).toMatchObject({
@@ -451,8 +451,8 @@ describe("shared native Pi route activation", () => {
       ).resolves.toMatchObject({
         modelSettings: { [model]: { effort: "extra" } },
       });
-      await expectNoBuiltInModelUsage(first.runId);
-      await expectNoBuiltInModelUsage(second.runId);
+      await expectThreadModelCredits(context, actor, first.threadId, 0);
+      await expectThreadModelCredits(context, actor, second.threadId, 0);
       for (const run of [first, second]) {
         await api.requestClaimRunnerJob(true, run.runId, [404], {
           capabilities: { piModelConfigGenerations: [4] },
@@ -641,7 +641,7 @@ describe("shared native Pi route activation", () => {
         },
         resolvedSecrets: [binding.secretName],
       });
-      await expectNoBuiltInModelUsage(run.runId);
+      await expectThreadModelCredits(context, actor, run.threadId, 0);
       const sandboxHeaders = { authorization: `Bearer ${claim.sandboxToken}` };
       if (type === "custom-anthropic-messages") {
         await completeNativeToolRun({
@@ -673,7 +673,7 @@ describe("shared native Pi route activation", () => {
         );
       });
       expect(terminal).toHaveLength(1);
-      await expectNoBuiltInModelUsage(run.runId);
+      await expectThreadModelCredits(context, actor, run.threadId, 0);
     },
     90_000,
   );
@@ -735,7 +735,7 @@ describe("shared native Pi route activation", () => {
         nativeModel: model,
         usagePricingResolution: await createGptUsagePricingResolution(),
       });
-      await expectNoBuiltInModelUsage(first.runId);
+      await expectThreadModelCredits(context, actor, first.threadId, 0);
       await expectExactPrivatePiMemoryAdmission({
         orgId: requireOrgId(actor),
         userId: actor.userId,
@@ -814,7 +814,7 @@ describe("shared native Pi route activation", () => {
               },
             },
       );
-      await expectNoBuiltInModelUsage(second.runId);
+      await expectThreadModelCredits(context, actor, second.threadId, 0);
       await cancelChatRun(actor, second.runId, sandboxHeaders);
     },
     90_000,
@@ -975,7 +975,7 @@ describe("shared native Pi route activation", () => {
       builtInModelKeyId: null,
     });
     await expectNoThreadModelUpdateEvent(actor, first.threadId, model);
-    await expectNoBuiltInModelUsage(second.runId);
+    await expectThreadModelCredits(context, actor, second.threadId, 0);
     await cancelChatRun(actor, second.runId, claim.sandboxHeaders);
   });
 
@@ -1146,7 +1146,7 @@ describe("shared native Pi route activation", () => {
         outcome: "skipped",
         reason: "non_interactive_source",
       });
-      await expectNoBuiltInModelUsage(runId);
+      await expectThreadModelCredits(context, actor, threadId, 0);
     },
     90_000,
   );

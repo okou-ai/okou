@@ -1,3 +1,4 @@
+import { expectThreadModelCredits } from "./helpers/public-thread-usage";
 import { createHash, randomUUID } from "node:crypto";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
@@ -29,7 +30,6 @@ import {
   configureNativeCliArtifact,
   GPT_API_KEY_BDD_ROUTES,
   requireOrgId,
-  expectNoBuiltInModelUsage,
   createGptUsagePricingResolution,
   claimEnvironment,
   userMessages,
@@ -203,7 +203,7 @@ describe("CHAT-02: model-first provider policies", () => {
             : "https://openrouter.ai/api/v1",
         model: `${selectedModel.startsWith("deepseek") ? "deepseek" : "openai"}/${selectedModel}`,
       });
-      await expectNoBuiltInModelUsage(run.runId);
+      await expectThreadModelCredits(context, actor, run.threadId, 0);
       await cancelChatRun(actor, run.runId);
     },
     90_000,
@@ -632,9 +632,9 @@ describe("CHAT-02: model-first provider policies", () => {
         }
       }
 
-      await expectNoBuiltInModelUsage(first.runId);
-      await expectNoBuiltInModelUsage(fast.runId);
-      await expectNoBuiltInModelUsage(returned.runId);
+      await expectThreadModelCredits(context, actor, first.threadId, 0);
+      await expectThreadModelCredits(context, actor, fast.threadId, 0);
+      await expectThreadModelCredits(context, actor, returned.threadId, 0);
 
       const visibleTurns = [
         { runId: first.runId, prompt: prompts[0], answer: answers[0] },
@@ -875,7 +875,7 @@ describe("CHAT-02: model-first provider policies", () => {
         runOptions: { codexServiceTier: route.tier },
       });
       await flushWaitUntilForTest();
-      await expectNoBuiltInModelUsage(first.runId);
+      await expectThreadModelCredits(context, actor, first.threadId, 0);
 
       await api.heartbeatRunner(runnerGroup);
       const claim = await claimGptPiSandbox(actor, first.runId, route.tier);
@@ -994,7 +994,7 @@ describe("CHAT-02: model-first provider policies", () => {
         [200],
       );
       await flushWaitUntilForTest();
-      await expectNoBuiltInModelUsage(first.runId);
+      await expectThreadModelCredits(context, actor, first.threadId, 0);
       const terminal = await api.readRun(actor, first.runId);
       expect(terminal).toMatchObject({ status: route.outcome });
       expect(
@@ -1045,7 +1045,7 @@ describe("CHAT-02: model-first provider policies", () => {
       ).resolves.toMatchObject({
         agent_session_id: firstSession.agent_session_id,
       });
-      await expectNoBuiltInModelUsage(followUp.runId);
+      await expectThreadModelCredits(context, actor, followUp.threadId, 0);
 
       const rotatedSecret = `${route.type}-rotated-secret`;
       const rotatedAt = now() + 1000;
@@ -1090,7 +1090,7 @@ describe("CHAT-02: model-first provider policies", () => {
       ).resolves.toMatchObject({
         agent_session_id: firstSession.agent_session_id,
       });
-      await expectNoBuiltInModelUsage(rotated.runId);
+      await expectThreadModelCredits(context, actor, rotated.threadId, 0);
       const publicState = JSON.stringify({
         run: await api.readRun(actor, rotated.runId),
         events: (await chat.listThreadEvents(actor, first.threadId)).events,

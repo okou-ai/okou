@@ -1,3 +1,4 @@
+import { expectThreadModelCredits } from "./helpers/public-thread-usage";
 import { createHash, randomUUID } from "node:crypto";
 import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
 import { describe, expect, it } from "vitest";
@@ -5,7 +6,6 @@ import { testContext } from "../../../__tests__/test-context";
 import { env } from "../../../lib/env";
 import {
   createChatEventsFixture,
-  expectNoBuiltInModelUsage,
   createGptUsagePricingResolution,
 } from "./helpers/chat-events-fixture";
 
@@ -182,7 +182,7 @@ describe("CHAT-02: model-first provider policies", () => {
       }),
     ).toStrictEqual([]);
     expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
-    await expectNoBuiltInModelUsage(run.runId);
+    await expectThreadModelCredits(context, actor, run.threadId, 0);
     await cancelChatRun(actor, run.runId, {
       authorization: `Bearer ${claim.sandboxToken}`,
     });

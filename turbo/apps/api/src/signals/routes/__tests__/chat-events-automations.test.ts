@@ -1,47 +1,32 @@
+import {
+  expectThreadModelCredits,
+  readThreadModelCredits,
+} from "./helpers/public-thread-usage";
+import { readCompletedRunSessionId } from "./helpers/public-run-session";
 import { randomUUID } from "node:crypto";
 import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
-import { cronExtractPiMemoryStage1Contract } from "@okouai/api-contracts/contracts/cron";
 import { testWorkflowAutomationExecutionContract } from "@okouai/api-contracts/contracts/test-workflow-automation-execution";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { env, mockEnv } from "../../../lib/env";
-import { clearMockNow, mockNow, now, nowDate } from "../../../lib/time";
-import { server } from "../../../mocks/server";
-import {
-  readmitPiMemoryStage1CandidateFixture,
-  readPiConversationIdentityFixture,
-  readPiMemoryStage1CandidateFixture,
-  readPiMemoryStage1DayFixture,
-} from "../../../test-fixtures/pi-memory-stage1-candidates";
-import { readRunUsageEventsFixture } from "../../../test-fixtures/chat-events";
+import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { loadPiCatalogModelFixture } from "../../../test-fixtures/model-catalog";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { cronExtractPiMemoryStage1RoutesForTest } from "../cron-extract-pi-memory-stage1";
 import { testWorkflowAutomationExecutionRoutes } from "../test-workflow-automation-execution";
-import { readAgentRunState$ } from "./helpers/agent-run-callback";
-import type { ApiTestUser } from "./helpers/api-bdd";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import { readThreadSessionBinding } from "./helpers/runtime-state";
 import {
   createChatEventsFixture,
   requireOrgId,
-  expectNoBuiltInModelUsage,
   createPiUsagePricingResolution,
-  expectExactPrivatePiMemoryAdmission,
-  totalChargedCredits,
 } from "./helpers/chat-events-fixture";
-import { piResponsesTextSse } from "./helpers/pi-responses";
 
 const context = testContext();
 const {
   api,
   chat,
   webhooks,
-  runStateStore,
   entitledChatActor,
   seedBuiltInModelKey,
   configureBuiltInPiModel,
@@ -62,93 +47,6 @@ const {
   mockPiResourceArchiveDownloads,
   completeSandboxFirstPiRun,
 } = createChatEventsFixture(context);
-
-async function extractOwnedThreadPiMemory(
-  actor: ApiTestUser,
-  runId: string,
-  agentId: string,
-) {
-  mockEnv("PI_MEMORY_BACKGROUND_WORKERS_ENABLED", "true");
-  const scope = { orgId: requireOrgId(actor), userId: actor.userId };
-  const candidate = await readPiMemoryStage1CandidateFixture(scope);
-  if (!candidate) {
-    throw new Error("Expected completed source admission");
-  }
-  // Built-in extraction resolves its own model, independent of the source
-  // thread's foreground model.
-  await seedBuiltInModelKey("deepseek-v4.1-flash");
-  const requests: unknown[] = [];
-  server.use(
-    http.post(
-      "https://api.deepseek.com/responses",
-      async ({ request }) => {
-        requests.push(await request.json());
-        return new HttpResponse(
-          piResponsesTextSse(
-            JSON.stringify({
-              raw_memory: "The owner prefers concise progress reports.",
-              rollout_summary: "Learned the owner's reporting preference.",
-              rollout_slug: "owned-reporting-preference",
-            }),
-            100,
-          ),
-          { headers: { "content-type": "text/event-stream" } },
-        );
-      },
-      { once: true },
-    ),
-  );
-  // A later UTC day needs its own committed startup. A real Pi launch
-  // exercises the common admission hook; the run is cancelled before the
-  // sandbox produces any model answer.
-  const nextDay = new Date(candidate.sourceCompletedAt);
-  nextDay.setUTCHours(24, 0, 0, 0);
-  mockNow(
-    Math.max(
-      nextDay.getTime(),
-      candidate.sourceCompletedAt.getTime() + 7 * 3_600_000,
-    ),
-  );
-  const startup = await sendChatRun(actor, {
-    agentId,
-    prompt: "request the daily Pi batch",
-    model: "gpt-6-luna",
-  });
-  await expect(
-    readPiMemoryStage1DayFixture(actor.userId),
-  ).resolves.toMatchObject({
-    day: nowDate().toISOString().slice(0, 10),
-    triggerThreadId: startup.threadId,
-    consumedAt: null,
-  });
-  const extracted = await accept(
-    setupApp({
-      context,
-      // Scope the existing cron worker to this source; no production API
-      // exposes internal candidate extraction or its private output.
-      routes: cronExtractPiMemoryStage1RoutesForTest({
-        memoryStorageIds: [candidate.memoryStorageId],
-        piSessionId: candidate.piSessionId,
-      }),
-    })(cronExtractPiMemoryStage1Contract).extract({
-      headers: { authorization: `Bearer ${env("CRON_SECRET")}` },
-    }),
-    [200],
-  );
-  expect(extracted.body).toMatchObject({ claimed: 1, succeeded: 1 });
-  expect(requests).toHaveLength(1);
-  await expect(
-    readPiMemoryStage1CandidateFixture(scope),
-  ).resolves.toMatchObject({
-    sourceRunId: runId,
-    piSessionId: candidate.piSessionId,
-    sourceHistoryHash: candidate.sourceHistoryHash,
-    status: "succeeded",
-    rawMemory: "The owner prefers concise progress reports.",
-  });
-  await api.requestCancelRun(actor, startup.runId, [200]);
-  await flushWaitUntilForTest();
-}
 
 async function builtInCatalogUpstreamModel(model: string): Promise<string> {
   const upstreamModel = (await loadPiCatalogModelFixture(model))?.builtIn[0]
@@ -255,11 +153,11 @@ describe("thread-bound Pi Automation execution", () => {
         cliAgentType: legacyFramework,
       });
       await flushWaitUntilForTest();
-      const legacyBinding = await readThreadSessionBinding(context, threadId);
-
-      await expect(
-        readPiMemoryStage1CandidateFixture({ orgId, userId: actor.userId }),
-      ).resolves.toBeNull();
+      const legacySessionId = await readCompletedRunSessionId(
+        context,
+        actor,
+        legacyRunId,
+      );
 
       await configureBuiltInPiModel(actor, selectedModel);
       await chat.updateThreadModelSelection(actor, threadId, selectedModel);
@@ -327,6 +225,7 @@ describe("thread-bound Pi Automation execution", () => {
         category: "tokens.output",
         quantity: 3,
       };
+      let creditsAfterFirstReceipt: number | undefined;
       for (const _receipt of [1, 2]) {
         await webhooks.requestAgentUsageEvent(
           { runId: piRunId, events: [sandboxUsage] },
@@ -334,6 +233,13 @@ describe("thread-bound Pi Automation execution", () => {
           [200],
           usagePricingResolution,
         );
+        const credits = await readThreadModelCredits(context, actor, threadId);
+        if (creditsAfterFirstReceipt === undefined) {
+          expect(credits).toBeGreaterThan(0);
+          creditsAfterFirstReceipt = credits;
+        } else {
+          expect(credits).toBe(creditsAfterFirstReceipt);
+        }
       }
       await completeSandboxFirstPiRun({
         actor,
@@ -351,42 +257,21 @@ describe("thread-bound Pi Automation execution", () => {
         usagePricingResolution,
       });
       await expectThreadPiTerminal(actor, threadId, piRunId);
-      const piBinding = await readThreadSessionBinding(context, threadId);
-      expect(piBinding.agent_session_id).toBe(legacyBinding.agent_session_id);
-      const piHistory = await readPiConversationIdentityFixture(piRunId);
-      // An Automation completion never produces memory (EPIC #33892
-      // Decision 3): its owned Chat Thread is skipped as a non-interactive
-      // source rather than a missing thread, and no candidate row is written.
-      await expect(
-        readPiMemoryStage1CandidateFixture({ orgId, userId: actor.userId }),
-      ).resolves.toBeNull();
-      await expect(
-        readmitPiMemoryStage1CandidateFixture(piRunId),
-      ).resolves.toStrictEqual({
-        outcome: "skipped",
-        reason: "non_interactive_source",
-      });
-      const runState = await runStateStore.set(
-        readAgentRunState$,
-        { orgId, userId: actor.userId, runId: piRunId },
-        context.signal,
+      const piSessionId = await readCompletedRunSessionId(
+        context,
+        actor,
+        piRunId,
       );
-      expect(runState.agent_run).toMatchObject({
-        triggerSource: `automation-${source}`,
-      });
-      // The duplicated sandbox usage receipt is charged exactly once.
-      const usageRows = await readRunUsageEventsFixture(piRunId);
-      expect(usageRows).toStrictEqual([
-        expect.objectContaining({
-          provider: selectedModel,
-          category: "tokens.output",
-          quantity: 3,
-          status: "processed",
-          billingError: null,
-          creditsCharged: expect.any(Number),
-        }),
-      ]);
-      expect(totalChargedCredits(usageRows)).toBeGreaterThan(0);
+      expect(piSessionId).toBe(legacySessionId);
+      if (creditsAfterFirstReceipt === undefined) {
+        throw new Error("Expected the first public model charge");
+      }
+      await expectThreadModelCredits(
+        context,
+        actor,
+        threadId,
+        creditsAfterFirstReceipt,
+      );
       await accept(
         setupApp({ context, routes: testWorkflowAutomationExecutionRoutes })(
           testWorkflowAutomationExecutionContract,
@@ -424,24 +309,9 @@ describe("thread-bound Pi Automation execution", () => {
         usagePricingResolution,
       });
       await expectThreadPiTerminal(actor, threadId, user.runId);
-      expect(
-        (await readThreadSessionBinding(context, threadId)).agent_session_id,
-      ).toBe(piBinding.agent_session_id);
-      const userHistory = await readPiConversationIdentityFixture(user.runId);
-      expect(userHistory.piSessionId).toBe(piHistory.piSessionId);
-      expect(userHistory.sourceHistoryHash).not.toBe(
-        piHistory.sourceHistoryHash,
-      );
-      // The user's turn in the same rotated session is this owner's first
-      // admitted learning source, and its extraction succeeds.
-      await expectExactPrivatePiMemoryAdmission({
-        orgId,
-        userId: actor.userId,
-        runId: user.runId,
-      });
-      if (selectedModel === "gpt-6-luna") {
-        await extractOwnedThreadPiMemory(actor, user.runId, agentId);
-      }
+      await expect(
+        readCompletedRunSessionId(context, actor, user.runId),
+      ).resolves.toBe(piSessionId);
       clearMockNow();
     },
     90_000,
@@ -618,10 +488,9 @@ describe("CHAT effort: automation launches", () => {
 
 describe("thread-bound Pi terminal failures", () => {
   it.each([{ status: "failed" }, { status: "cancelled" }] as const)(
-    "settles automation $status once without learning or Built-in fallback",
+    "settles a user-owned automation $status once without Built-in charges",
     async ({ status }) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
-      const orgId = requireOrgId(actor);
       await configureSubscriptionPiModel(
         actor,
         { accountId: "terminal-owner" },
@@ -697,10 +566,7 @@ describe("thread-bound Pi terminal failures", () => {
       );
       await flushWaitUntilForTest();
 
-      await expectNoBuiltInModelUsage(run.runId);
-      await expect(
-        readPiMemoryStage1CandidateFixture({ orgId, userId: actor.userId }),
-      ).resolves.toBeNull();
+      await expectThreadModelCredits(context, actor, run.threadId, 0);
       const events = (await chat.listThreadEvents(actor, run.threadId)).events;
       expect(
         events

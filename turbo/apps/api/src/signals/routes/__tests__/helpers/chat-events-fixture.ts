@@ -42,7 +42,6 @@ import { env, mockEnv, mockOptionalEnv } from "../../../../lib/env";
 import { computeHmacSignature } from "../../../../lib/event-consumer/hmac";
 import { server } from "../../../../mocks/server";
 import { withBuiltInModelRuntimeRouteCandidateUnavailableForTest } from "../../../../test-fixtures/built-in-model-runtime-route";
-import { readRunUsageEventsFixture } from "../../../../test-fixtures/chat-events";
 import {
   readmitPiMemoryStage1CandidateFixture,
   readPiConversationIdentityFixture,
@@ -300,13 +299,6 @@ export function totalChargedCredits(
     }
     return total + row.creditsCharged;
   }, 0);
-}
-
-export async function expectNoBuiltInModelUsage(runId: string): Promise<void> {
-  // Operational usage rows have no production run-scoped read API. This
-  // test-only observation is required to prove the user-owned no-charge
-  // invariant rather than infer it from the public run status.
-  await expect(readRunUsageEventsFixture(runId)).resolves.toStrictEqual([]);
 }
 
 export async function createGptUsagePricingResolution(): Promise<

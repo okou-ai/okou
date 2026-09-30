@@ -7,12 +7,11 @@ import type { ApiTestUser } from "./api-bdd";
 import { createRouteMocks } from "./route-test";
 
 /** User-visible model credits for one owned thread, across the full response. */
-export async function expectThreadModelCredits(
+export async function readThreadModelCredits(
   context: TestContext,
   actor: ApiTestUser,
   threadId: string,
-  expectedCredits: number,
-): Promise<void> {
+): Promise<number> {
   createRouteMocks(context).clerk.session(
     actor.userId,
     actor.orgId,
@@ -52,5 +51,16 @@ export async function expectThreadModelCredits(
     }
     page += 1;
   }
-  expect(credits).toBe(expectedCredits);
+  return credits;
+}
+
+export async function expectThreadModelCredits(
+  context: TestContext,
+  actor: ApiTestUser,
+  threadId: string,
+  expectedCredits: number,
+): Promise<void> {
+  await expect(readThreadModelCredits(context, actor, threadId)).resolves.toBe(
+    expectedCredits,
+  );
 }
