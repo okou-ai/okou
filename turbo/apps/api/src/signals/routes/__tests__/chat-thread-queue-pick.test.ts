@@ -8,6 +8,7 @@ import { mockEnv } from "../../../lib/env";
 import { computeHmacSignature } from "../../../lib/event-consumer/hmac";
 import { now } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { setQueuedInputModelSelectionFixture } from "../../../test-fixtures/chat-input-model-selection";
 import { holdEmptyQueuePickForTest } from "../../../test-fixtures/empty-queue-pick";
 import { createDeferredPromise } from "../../utils";
 import { chatEventsRoutes } from "../chat-events";
@@ -643,6 +644,37 @@ describe("CHAT-02: queued chat thread picks", () => {
     await finishRun(runnerGroup, picked.runId);
     const successorRun = await successor.launchedRun();
     await cancelChatRun(actor, successorRun.runId);
+  }, 90_000);
+
+  it("rejects a queued input whose recorded model was retired before its pick", async () => {
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    chatCallbacks.failIfChatCallbackRouteIsFetched();
+    const blocker = await sendChatRun(actor, {
+      agentId,
+      prompt: "occupy the only organization slot",
+    });
+    const waiting = await sendWaiting(actor, agentId, "retired model input");
+    // Okou 1.0 Pro was retired after this input recorded it at enqueue.
+    await setQueuedInputModelSelectionFixture(waiting.clientEventId, {
+      selectedModel: "okou-1.0-pro",
+      codexServiceTier: null,
+      reasoningEffort: null,
+    });
+
+    await finishRun(runnerGroup, blocker.runId);
+
+    const events = await chat.listThreadEvents(actor, waiting.threadId);
+    expect(events.events).toContainEqual(
+      expect.objectContaining({
+        eventType: "input.rejected",
+        revokesEventId: waiting.clientEventId,
+        error: "bad_request",
+      }),
+    );
+    await expect(threadRunIds(actor, waiting.threadId)).resolves.toStrictEqual(
+      [],
+    );
   }, 90_000);
 
   it("skips a recalled head and launches a later message on the thread", async () => {
