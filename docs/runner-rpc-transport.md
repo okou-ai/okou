@@ -18,10 +18,10 @@ not grant SSH access.
 
 ## Choosing a Guest/Runner transport for new work
 
-Both private Firecracker vsock ports connect the Guest to host CID 2. A vsock
-connection is bidirectional; choose by **operation ownership and lifetime**,
-not by which side can write bytes or by the product feature's name. Neither port
-is a public sandbox endpoint.
+The three private Firecracker vsock ports connect the Guest to host CID 2. A
+vsock connection is bidirectional; choose by **operation ownership and lifetime**,
+not by which side can write bytes or by the product feature's name. None is a
+public sandbox endpoint.
 
 Apply these questions in order:
 
@@ -38,6 +38,12 @@ Apply these questions in order:
    RPC on port **52001**. Add an explicitly authorized method/consumer, not a
    new port. `run.usage`, `ssh.*`, and `vnc.*` belong here; file methods use the
    existing opt-in binary stream contract.
+4. **Does the Runner attach an opaque, long-lived bidirectional channel to the
+   exact live Run rather than service one Guest RPC?** Use the separate private
+   duplex listener on **52002**. Its connection is not an RPC request and cannot
+   acquire an operation reservation until exact-run attachment; #37027 owns
+   ticket admission before any public WSS acknowledgement. See the
+   [duplex contract](runner-guest-duplex.md).
 
 Port 52000 has one accepted control connection: the Guest control service owns its
 end, and the host removes the listener after acceptance. Its current reader
@@ -52,18 +58,19 @@ new request as an existing response or reuse `process-control-ipc` as a general
 bridge. See the [control listener](../crates/guest-control-client/src/connection/listener.rs)
 and [host reader](../crates/guest-control-client/src/connection/mod.rs).
 
-Port 52001 is the private assignment-bound ingress for Guest-origin services.
+Port 52001 is the private assignment-bound ingress for one-shot Guest-origin services.
 The helper connects once per request, while the Runner owns the handler,
 capacity, current-Run authorization, normal-operation reservation, deadline,
 and cancellation. A new business method does not justify another vsock port.
 For run-scoped work, 52001 admission uses the control client's authoritative
-normal-operation tracker and the host's current Run assignment; a separate
+normal-operation tracker and the host's current Run assignment; 52002 uses that
+same authority with a separate listener and connection lifetime. A separate
 listener does not create a second source of authority. See the
 [helper](../crates/runner-rpc-client/src/lib.rs) and
 [dispatch owner](../crates/runner-remote/src/guest_rpc/mod.rs).
 
-**Before changing this split:** a smaller socket count is not evidence of lower
-latency or simpler maintenance. Moving only `run.usage` to 52000 would leave
+**Before changing control/RPC placement:** a smaller socket count is not evidence
+of lower latency or simpler maintenance. Moving only `run.usage` to 52000 would leave
 SSH/VNC on 52001 while adding a reverse-request bridge; it would not remove the
 52001 listener. A full consolidation must preserve the existing RPC terminal
 plus EOF, file streaming, deadlines, no-replay and exact-Run/park semantics,

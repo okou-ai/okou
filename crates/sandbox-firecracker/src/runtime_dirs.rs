@@ -346,11 +346,17 @@ fn validate_runtime_sock_id(sock_id: &str) -> io::Result<()> {
 }
 
 fn validate_runtime_vsock_listener_path_len(sock_id: &str, vsock_path: &Path) -> io::Result<()> {
-    // Both listeners use the same Firecracker UDS base, suffixed by _<port>.
+    // Every guest-facing listener uses the same Firecracker UDS base,
+    // suffixed by _<port>. Validate the longest before creating directories.
     let longest_port_len = guest_control_proto::VSOCK_PORT
         .to_string()
         .len()
-        .max(runner_rpc_proto::VSOCK_PORT.to_string().len());
+        .max(runner_rpc_proto::VSOCK_PORT.to_string().len())
+        .max(
+            guest_contracts::private_duplex::VSOCK_PORT
+                .to_string()
+                .len(),
+        );
     let listener_path_len = vsock_path.as_os_str().as_bytes().len() + 1 + longest_port_len;
     if listener_path_len > MAX_UNIX_SOCKET_PATH_BYTES {
         return Err(io::Error::new(
@@ -517,6 +523,11 @@ mod tests {
         let overlong_id = "a".repeat(71);
 
         assert!(checked_runtime_sock_dir(&runtime_paths, &valid_id).is_ok());
+        let duplex = SockPaths::new(runtime_paths.sock_dir(&valid_id)).guest_duplex();
+        assert_eq!(
+            duplex.as_os_str().as_bytes().len(),
+            MAX_UNIX_SOCKET_PATH_BYTES
+        );
         let err = checked_runtime_sock_dir(&runtime_paths, &overlong_id).unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
         assert!(err.to_string().contains("vsock listener path too long"));
