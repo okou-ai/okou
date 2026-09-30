@@ -25,9 +25,8 @@ public sandbox endpoint.
 
 Apply these questions in order:
 
-1. **Does it need to cross the Guest/Runner boundary?** If not, use neither
-   vsock port. Keep host-only work in the Runner and Guest-local work in the
-   Guest.
+1. **Does it need to cross the Guest/Runner boundary?** If not, use no vsock
+   port. Keep host-only work in the Runner and Guest-local work in the Guest.
 2. **Does the Runner direct or supervise work inside the Guest as part of
    sandbox control?** Use the long-lived control connection on port **52000**.
    Exec, Guest file writes, quiesce, restore, and shutdown belong here: the
