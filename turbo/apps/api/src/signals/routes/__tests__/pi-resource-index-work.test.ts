@@ -214,7 +214,7 @@ describe("Pi resource indexing of generic Storage commits", () => {
       throw new Error("Expected an organization-scoped actor");
     }
     const objects = new Map<string, Buffer>();
-    context.mocks.s3.send.mockImplementation(async (request: unknown) => {
+    context.mocks.s3.send.mockImplementation((request: unknown) => {
       if (request instanceof PutObjectCommand) {
         const { Key: key, Body: body } = request.input;
         if (!key || !(typeof body === "string" || body instanceof Uint8Array)) {
