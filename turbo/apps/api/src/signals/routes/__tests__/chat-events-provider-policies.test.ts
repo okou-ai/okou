@@ -25,7 +25,11 @@ import {
   upsertOrgPlanEntitlementFixture,
 } from "../../../test-fixtures/org-plan-entitlement";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
-import { holdPiContextPreparationStagesFixture } from "../../../test-fixtures/pi-context-preparation";
+import {
+  withDatabaseTransactionBarrierFixture,
+  barrierQueryText,
+  barrierQueryBinds,
+} from "../../../test-fixtures/database-transaction-barrier";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { expectApiError, type ApiTestUser } from "./helpers/api-bdd";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
@@ -663,49 +667,56 @@ describe("CHAT-02: model-first provider policies", () => {
         },
       ]);
 
-      const gate = holdPiContextPreparationStagesFixture({
-        userId: actor.userId,
-        orgId: requireOrgId(actor),
-        signal: context.signal,
-      });
-      // Pi eligibility is observed in parallel with credentials now. Hold the
-      // provider read itself so deletion happens before its frozen snapshot.
-      for (const stage of [
-        "subscription-account",
-        "post-authorization-context",
-        "thread-session",
-        "connector-contexts",
-        "user-timezone",
-        "image-model",
-        "official-workflow",
-      ] as const) {
-        gate.release(stage);
-      }
       const clientEventId = randomUUID();
-      const sent = await chat.requestSendEvent(
-        actor,
+      const sent = await withDatabaseTransactionBarrierFixture(
         {
-          agentId,
-          model: "deepseek-v4.1-flash",
-          clientEventId,
-          prompt: "Reject unavailable selected credentials",
+          select: (queryArgs) => {
+            const text = barrierQueryText(queryArgs);
+            return (
+              text.includes('from "model_providers"') &&
+              text.includes('"secret_id"') &&
+              text.includes('"auth_method"') &&
+              barrierQueryBinds(queryArgs, providerId)
+            );
+          },
+          stopAt: (_queryArgs, selecting) => {
+            return selecting;
+          },
+          work: async (barrier) => {
+            const sending = chat.requestSendEvent(
+              actor,
+              {
+                agentId,
+                model: "deepseek-v4.1-flash",
+                clientEventId,
+                prompt: "Reject unavailable selected credentials",
+              },
+              [201],
+            );
+            await barrier.entered;
+            const sent = await sending;
+            if (sent.status !== 201) {
+              throw new Error("Expected the V4.1 send to be accepted");
+            }
+            if (boundary === "deleted") {
+              await misc.deleteOrgModelProvider(
+                actor,
+                "openrouter-codex",
+                [204],
+              );
+            }
+            barrier.release();
+            return sent;
+          },
         },
-        [201],
-      );
-      if (sent.status !== 201) {
-        throw new Error("Expected the V4.1 send to be accepted");
-      }
-      await gate.arrival("model-provider");
-      if (boundary === "deleted") {
-        await misc.deleteOrgModelProvider(actor, "openrouter-codex", [204]);
-      }
-      gate.releaseAll();
-      const { picked } = await waitForPickedInput(
-        actor,
-        sent.body.threadId,
-        clientEventId,
+        context.signal,
       );
       await flushWaitUntilForTest();
+      const events = (await chat.listThreadEvents(actor, sent.body.threadId))
+        .events;
+      const picked = userMessages(events).find((message) => {
+        return message.revokesEventId === clientEventId;
+      });
       expect(picked).toMatchObject({
         eventType: "input.rejected",
         error: boundary === "deleted" ? "provider_unavailable" : "bad_request",

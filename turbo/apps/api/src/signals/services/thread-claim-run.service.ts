@@ -664,6 +664,31 @@ import { alias, unionAll } from "drizzle-orm/pg-core";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
+function isMigratedRegisteredSource(
+  type: string | undefined,
+  scope: string | undefined,
+): boolean {
+  return (
+    scope !== undefined &&
+    type !== undefined &&
+    [
+      "anthropic-api-key",
+      "openai-api-key",
+      "openrouter-api-key",
+      "openrouter-codex",
+      "vercel-ai-gateway",
+      "vercel-ai-gateway-codex",
+    ].includes(type)
+  );
+}
+
+function isMemberSubscriptionSource(
+  type: string,
+  scope: string | undefined,
+): boolean {
+  return isPersonalSubscriptionProviderType(type) && scope !== "org";
+}
+
 export interface ThreadClaim {
   readonly orgId: string;
   readonly chatThreadId: string;
@@ -8663,9 +8688,47 @@ export function createThreadClaimRunObjects(
   // temporary argument slot. Source identity/read graphs remain immutable.
   const internalPreparedConfiguredEnvironment$ =
     state<Promise<ResolvedModelProviderEnvironment | null> | null>(null);
+  const resolveModelCredentialValues$ = command(
+    async ({ get }, source: ModelSourceSnapshot, signal: AbortSignal) => {
+      const values: Record<string, string> = {};
+      for (const credential of source.credentials) {
+        if (credential.kind === "encrypted") {
+          values[credential.name] = await decryptStoredSecretValue(
+            credential.encryptedValue,
+          );
+        } else {
+          if (
+            source.identity.kind !== "built-in" ||
+            credential.modelKeyId !== source.identity.modelKeyId ||
+            source.configuration.kind !== "registered-provider"
+          ) {
+            throw new Error("Managed key identity mismatch");
+          }
+          const [key] = await get(db$)
+            .select({
+              vendor: builtInModelKeys.vendor,
+              apiKey: builtInModelKeys.apiKey,
+            })
+            .from(builtInModelKeys)
+            .where(eq(builtInModelKeys.id, credential.modelKeyId))
+            .limit(1);
+          signal.throwIfAborted();
+          if (!key?.apiKey) {
+            return null;
+          }
+          if (key.vendor !== source.configuration.managedVendor) {
+            throw new Error("Managed key vendor changed");
+          }
+          values[credential.name] = key.apiKey;
+        }
+        signal.throwIfAborted();
+      }
+      return values;
+    },
+  );
   const prepareRegisteredModelRuntime$ = command(
     async (
-      _context,
+      { set },
       source: ModelSourceSnapshot,
       selectedModel: string,
       options: {
@@ -8679,17 +8742,14 @@ export function createThreadClaimRunObjects(
       const type = modelProviderTypeSchema.parse(
         source.configuration.providerType,
       );
-      const credentials = Object.fromEntries(
-        await Promise.all(
-          source.credentials.map(async (credential) => {
-            const value = await decryptStoredSecretValue(
-              credential.encryptedValue,
-            );
-            signal.throwIfAborted();
-            return [credential.name, value] as const;
-          }),
-        ),
+      const credentials = await set(
+        resolveModelCredentialValues$,
+        source,
+        signal,
       );
+      if (!credentials) {
+        return null;
+      }
       const credentialName = getSecretNameForType(type);
       if (!credentialName || !credentials[credentialName]?.trim()) {
         return null;
@@ -8809,17 +8869,14 @@ export function createThreadClaimRunObjects(
       ) {
         return null;
       }
-      const credentials = Object.fromEntries(
-        await Promise.all(
-          source.credentials.map(async (credential) => {
-            const value = await decryptStoredSecretValue(
-              credential.encryptedValue,
-            );
-            signal.throwIfAborted();
-            return [credential.name, value] as const;
-          }),
-        ),
+      const credentials = await set(
+        resolveModelCredentialValues$,
+        source,
+        signal,
       );
+      if (!credentials) {
+        return null;
+      }
       const compiled = compileModelRuntime({
         source,
         selection: { kind: "configured", selectedModel },
@@ -8960,6 +9017,10 @@ export function createThreadClaimRunObjects(
     ]);
     const args = context?.environmentArgs;
     const type = args?.modelProviderType;
+    if (isMigratedRegisteredSource(type, args?.modelProviderCredentialScope)) {
+      return null;
+    }
+
     if (
       gatewayEnvironment ||
       !context ||
@@ -8967,8 +9028,7 @@ export function createThreadClaimRunObjects(
       !type ||
       !isModelProviderType(type) ||
       isBuiltInModelProviderType(type) ||
-      (isPersonalSubscriptionProviderType(type) &&
-        args.modelProviderCredentialScope !== "org")
+      isMemberSubscriptionSource(type, args.modelProviderCredentialScope)
     ) {
       return null;
     }

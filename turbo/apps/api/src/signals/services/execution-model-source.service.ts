@@ -8,11 +8,14 @@ import {
   modelProviderAccounts,
   modelProviderAccountSecrets,
 } from "@okouai/db/schema/model-provider-account";
+import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import { modelProviders } from "@okouai/db/schema/model-provider";
 import { secrets } from "@okouai/db/schema/secret";
 import {
   hasAuthMethods,
   modelProviderTypeSchema,
+  BUILT_IN_MODEL_ROUTE_PROVIDERS,
+  getSecretNameForType,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { db$, type ReadonlyDb } from "../external/db";
 import {
@@ -34,7 +37,16 @@ export interface ModelSourceRequest {
   readonly userId: string;
   readonly source: ModelSourceIdentity;
 }
+export type ModelSourceCredential =
+  | EncryptedModelCredential
+  | ManagedModelKeyReference;
+export interface ManagedModelKeyReference {
+  readonly kind: "managed-key";
+  readonly name: string;
+  readonly modelKeyId: string;
+}
 export interface EncryptedModelCredential {
+  readonly kind: "encrypted";
   readonly name: string;
   readonly encryptedValue: string;
 }
@@ -42,6 +54,7 @@ export interface RegisteredProviderConfiguration {
   readonly kind: "registered-provider";
   readonly providerType: string;
   readonly authMethod: string | null;
+  readonly managedVendor?: string;
 }
 export interface GatewayProviderConfiguration {
   readonly kind: "gateway";
@@ -60,7 +73,7 @@ export interface ModelSourceSnapshot {
   readonly identity: ModelSourceIdentity;
   readonly credentialOwner: "builtin" | "organization" | "member";
   readonly configuration: ModelSourceConfiguration;
-  readonly credentials: readonly EncryptedModelCredential[];
+  readonly credentials: readonly ModelSourceCredential[];
   readonly accountIdentity: string | null;
 }
 
@@ -115,10 +128,49 @@ async function loadGatewaySource(
     },
     credentials: [
       {
+        kind: "encrypted",
         name: GATEWAY_RUNTIME_SECRET_NAME,
         encryptedValue: row.encryptedValue,
       },
     ],
+    accountIdentity: null,
+  };
+}
+
+async function loadManagedSource(
+  db: Pick<ReadonlyDb, "select">,
+  source: Extract<ModelSourceIdentity, { kind: "built-in" }>,
+): Promise<ModelSourceSnapshot | null> {
+  const [key] = await db
+    .select({ id: builtInModelKeys.id, vendor: builtInModelKeys.vendor })
+    .from(builtInModelKeys)
+    .where(eq(builtInModelKeys.id, source.modelKeyId))
+    .limit(1);
+  if (!key) {
+    return null;
+  }
+  const provider = Object.entries(BUILT_IN_MODEL_ROUTE_PROVIDERS).find(
+    ([, config]) => {
+      return config.vendor === key.vendor;
+    },
+  );
+  if (!provider) {
+    throw new Error("Managed model key vendor is unsupported");
+  }
+  const name = getSecretNameForType(modelProviderTypeSchema.parse(provider[0]));
+  if (!name) {
+    throw new Error("Managed model key has no credential binding");
+  }
+  return {
+    identity: source,
+    credentialOwner: "builtin",
+    configuration: {
+      kind: "registered-provider",
+      providerType: "built-in",
+      authMethod: null,
+      managedVendor: key.vendor,
+    },
+    credentials: [{ kind: "managed-key", name, modelKeyId: key.id }],
     accountIdentity: null,
   };
 }
@@ -171,7 +223,9 @@ export function createModelSourceSnapshot(
           authMethod: first.account.authMethod,
         },
         credentials: rows.flatMap((row) => {
-          return row.secret ? [row.secret] : [];
+          return row.secret
+            ? [{ kind: "encrypted" as const, ...row.secret }]
+            : [];
         }),
         accountIdentity: first.account.externalAccountId,
       };
@@ -221,14 +275,15 @@ export function createModelSourceSnapshot(
           providerType: provider.type,
           authMethod: provider.authMethod,
         },
-        credentials,
+        credentials: credentials.map((credential) => {
+          return {
+            kind: "encrypted" as const,
+            ...credential,
+          };
+        }),
         accountIdentity: null,
       };
     }
-    // Builtin's current persisted key is not an encrypted credential. Its
-    // canonical Thread path remains separate until the lossless contract is resolved.
-    throw new Error(
-      "Builtin key representation is not supported by the encrypted source contract",
-    );
+    return await loadManagedSource(db, source);
   });
 }
