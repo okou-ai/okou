@@ -517,7 +517,7 @@ function ChatThreadItemLink({
         e.preventDefault();
         detach(openRename(pageSignal), Reason.DomCallback);
       }}
-      className={`col-span-2 col-start-1 row-start-1 grid h-8 grid-cols-subgrid items-center rounded-lg pl-2 text-left text-sm leading-5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${
+      className={`col-span-2 col-start-1 row-start-1 grid h-8 grid-cols-subgrid items-center rounded-lg pl-2 text-left text-sm leading-5 motion-safe:transition-colors motion-safe:duration-[180ms] motion-safe:ease-[cubic-bezier(0.2,0,0,1)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${
         isHighlighted
           ? "bg-state-selected text-sidebar-foreground font-medium"
           : isUnread
