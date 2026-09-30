@@ -398,7 +398,10 @@ cargo build --target "$TARGET_TRIPLE" \
   -p guest-agent -p guest-storage-apply -p guest-init -p claude-mock -p codex-mock -p guest-state-restore -p guest-tool-exec -p guest-write-file -p guest-workspace-mount -p runner-rpc-client \
   --profile ci
 
-# Step 2: build runner with embedded guests
+# Step 2: build runner with embedded Guest binaries and the CLI tarball.
+# Build package.tgz from this same checkout first (see the Runner Image workflow).
+# Set every path below, or omit all paths for a local build without embedded resources.
+GUEST_CLI_PATH="/absolute/path/to/package.tgz" \
 GUEST_AGENT_PATH="target/$TARGET_TRIPLE/ci/guest-agent" \
 GUEST_STORAGE_APPLY_PATH="target/$TARGET_TRIPLE/ci/guest-storage-apply" \
 GUEST_INIT_PATH="target/$TARGET_TRIPLE/ci/guest-init" \

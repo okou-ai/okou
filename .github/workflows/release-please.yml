@@ -2261,8 +2261,7 @@ jobs:
       - name: Cross-compile runner with embedded guests and CLI for ${{ matrix.target }}
         env:
           TARGET_TRIPLE: ${{ matrix.target }}
-          RUNNER_CLI_PACKAGE_PATH: ${{ github.workspace }}/runner-cli-intermediate/package.tgz
-          RUNNER_CLI_REQUIRED: "true"
+          GUEST_CLI_PATH: ${{ github.workspace }}/runner-cli-intermediate/package.tgz
         run: |
           . .github/scripts/runner-guest-binaries.sh
           runner_guest_binaries_load

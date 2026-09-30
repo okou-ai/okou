@@ -18,14 +18,11 @@ jq -e '
   $steps[$checkout].with.ref == "${{ steps.identity.outputs.source-head-sha }}" and
   ($steps[$build].run | contains("build-okou-cli-artifact.sh")) and
   $steps[$upload].with.path == "runner-cli-intermediate/package.tgz" and
-  $steps[$plan].env.RUNNER_CLI_PACKAGE_PATH == "runner-cli-intermediate/package.tgz" and
+  $steps[$plan].env.GUEST_CLI_PATH == "runner-cli-intermediate/package.tgz" and
   $steps[$plan].env.RUNNER_BINARY_GIT_REVISION == "${{ steps.identity.outputs.source-head-sha }}" and
-  $steps[$plan].env.RUNNER_CLI_REQUIRED == "true" and
-  .jobs.compile.env.RUNNER_CLI_REQUIRED == "true" and
   .jobs.compile.env.RUNNER_BINARY_GIT_REVISION == "${{ needs.prepare.outputs.source-head-sha }}" and
   (["compile", "build", "asset"] | all(.[]; . as $job |
-    $root.jobs[$job].env.RUNNER_CLI_REQUIRED == "true" and
-    $root.jobs[$job].env.RUNNER_CLI_PACKAGE_PATH == "runner-cli-intermediate/package.tgz" and
+    $root.jobs[$job].env.GUEST_CLI_PATH == "runner-cli-intermediate/package.tgz" and
     $root.jobs[$job].env.RUNNER_BINARY_GIT_REVISION == "${{ needs.prepare.outputs.source-head-sha }}" and
     any($root.jobs[$job].steps[]; .name == "Download private CLI build input")
   ))
@@ -45,8 +42,7 @@ jq -e '
     .name == "Download source-bound CLI build input") and
   any(.jobs["build-runner-release-assets"].steps[];
     .name == "Cross-compile runner with embedded guests and CLI for ${{ matrix.target }}" and
-    .env.RUNNER_CLI_REQUIRED == "true" and
-    .env.RUNNER_CLI_PACKAGE_PATH == "${{ github.workspace }}/runner-cli-intermediate/package.tgz") and
+    .env.GUEST_CLI_PATH == "${{ github.workspace }}/runner-cli-intermediate/package.tgz") and
   (.jobs["builds-complete"].needs | index("prepare-runner-cli") != null)
 ' <<<"$release_json" >/dev/null || {
   echo 'Release CLI producer/consumer ordering is invalid' >&2

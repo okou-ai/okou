@@ -32,14 +32,11 @@ if [[ ! "$RUNNER_BINARY_INPUT_DIGEST" =~ ^[0-9a-f]{64}$ ]]; then
   echo "invalid runner binary input digest: ${RUNNER_BINARY_INPUT_DIGEST}" >&2
   exit 2
 fi
-if [ -n "${RUNNER_CLI_PACKAGE_PATH:-}" ]; then
-  if [ ! -f "$RUNNER_CLI_PACKAGE_PATH" ] || [ ! -s "$RUNNER_CLI_PACKAGE_PATH" ]; then
-    echo "runner CLI package is missing or empty: ${RUNNER_CLI_PACKAGE_PATH}" >&2
+if [ -n "${GUEST_CLI_PATH:-}" ]; then
+  if [ ! -f "$GUEST_CLI_PATH" ] || [ ! -s "$GUEST_CLI_PATH" ]; then
+    echo "Guest CLI package is missing or empty: ${GUEST_CLI_PATH}" >&2
     exit 1
   fi
-elif [ "${RUNNER_CLI_REQUIRED:-false}" = "true" ]; then
-  echo "runner compilation requires a CLI package" >&2
-  exit 1
 fi
 
 inventory="${CRATES_DIR}/runner/guest-binaries.json"
@@ -81,8 +78,7 @@ echo "=== Cross-compiling runner with embedded guests and CLI for ${TARGET_TRIPL
 (
   cd "$CRATES_DIR"
   CARGO_INCREMENTAL=0 env "${guest_env[@]}" \
-    RUNNER_CLI_PACKAGE_PATH="${RUNNER_CLI_PACKAGE_PATH:-}" \
-    RUNNER_CLI_REQUIRED="${RUNNER_CLI_REQUIRED:-}" cargo build \
+    GUEST_CLI_PATH="${GUEST_CLI_PATH:-}" cargo build \
     --locked \
     --profile "$RUNNER_BINARY_PROFILE" \
     --target "$TARGET_TRIPLE" \

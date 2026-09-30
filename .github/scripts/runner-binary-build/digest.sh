@@ -22,7 +22,7 @@ esac
 
 revision="${RUNNER_BINARY_GIT_REVISION:-HEAD}"
 source_sha=$(git -C "$REPO_ROOT" rev-parse --verify "${revision}^{commit}")
-cli_package="${RUNNER_CLI_PACKAGE_PATH:-}"
+cli_package="${GUEST_CLI_PATH:-}"
 if [ -n "$cli_package" ]; then
   if [[ "$cli_package" != /* ]]; then
     cli_package="${REPO_ROOT}/${cli_package}"
@@ -31,9 +31,6 @@ if [ -n "$cli_package" ]; then
     echo "runner CLI package is missing or empty: ${cli_package}" >&2
     exit 1
   fi
-elif [ "${RUNNER_CLI_REQUIRED:-false}" = "true" ]; then
-  echo "runner binary build requires a CLI package" >&2
-  exit 1
 fi
 binary_input_digest=$(
   {

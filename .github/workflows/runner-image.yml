@@ -328,8 +328,7 @@ jobs:
           RUNNER_BINARY_CACHE_FORCE_MISS: ${{ vars.RUNNER_BINARY_CACHE_FORCE_MISS }}
           RUNNER_HOST_GROUPS_MATRIX: ${{ steps.host-groups.outputs.matrix }}
           RUNNER_BINARY_GIT_REVISION: ${{ steps.identity.outputs.source-head-sha }}
-          RUNNER_CLI_PACKAGE_PATH: runner-cli-intermediate/package.tgz
-          RUNNER_CLI_REQUIRED: "true"
+          GUEST_CLI_PATH: runner-cli-intermediate/package.tgz
         run: .github/scripts/runner-binary-cache-plan.sh
 
   compile:
@@ -357,8 +356,7 @@ jobs:
       TARGET_TRIPLE: ${{ matrix.target }}
       RUNNER_BINARY_ACTUAL_TOOLCHAIN_IMAGE: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20260825
       RUNNER_BINARY_GIT_REVISION: ${{ needs.prepare.outputs.source-head-sha }}
-      RUNNER_CLI_PACKAGE_PATH: runner-cli-intermediate/package.tgz
-      RUNNER_CLI_REQUIRED: "true"
+      GUEST_CLI_PATH: runner-cli-intermediate/package.tgz
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -461,8 +459,7 @@ jobs:
       TARGET_TRIPLE: ${{ matrix.target }}
       PROFILE: vm0/default
       RUNNER_BINARY_GIT_REVISION: ${{ needs.prepare.outputs.source-head-sha }}
-      RUNNER_CLI_PACKAGE_PATH: runner-cli-intermediate/package.tgz
-      RUNNER_CLI_REQUIRED: "true"
+      GUEST_CLI_PATH: runner-cli-intermediate/package.tgz
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -632,8 +629,7 @@ jobs:
         include: ${{ fromJSON(needs.prepare.outputs.runner-binary-compile-matrix) }}
     env:
       RUNNER_BINARY_GIT_REVISION: ${{ needs.prepare.outputs.source-head-sha }}
-      RUNNER_CLI_PACKAGE_PATH: runner-cli-intermediate/package.tgz
-      RUNNER_CLI_REQUIRED: "true"
+      GUEST_CLI_PATH: runner-cli-intermediate/package.tgz
     steps:
       - uses: actions/checkout@v7.0.1
         with:

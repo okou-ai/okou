@@ -380,28 +380,28 @@ expected_runtime_toolchain="ghcr.io/${GITHUB_REPOSITORY_OWNER:-okou-ai}/vm0-tool
 cli_package="${TMPDIR}/cli-intermediate/package.tgz"
 mkdir -p "$(dirname "$cli_package")"
 printf 'fixture CLI package\n' > "$cli_package"
-if RUNNER_CLI_REQUIRED=true digest_value "$repo" aarch64-unknown-linux-musl >/dev/null 2>&1; then
-  fail "a serving build without CLI bytes must fail"
-fi
-embedded_arm_digest=$(RUNNER_CLI_PACKAGE_PATH="$cli_package" RUNNER_CLI_REQUIRED=true \
+plain_arm_digest=$(digest_value "$repo" aarch64-unknown-linux-musl)
+embedded_arm_digest=$(GUEST_CLI_PATH="$cli_package" \
   digest_value "$repo" aarch64-unknown-linux-musl)
-embedded_x86_digest=$(RUNNER_CLI_PACKAGE_PATH="$cli_package" RUNNER_CLI_REQUIRED=true \
+embedded_x86_digest=$(GUEST_CLI_PATH="$cli_package" \
   digest_value "$repo" x86_64-unknown-linux-musl)
+[ "$plain_arm_digest" != "$embedded_arm_digest" ] \
+  || fail "bundled and unbundled Runner inputs must have different cache digests"
 [ "$embedded_arm_digest" != "$embedded_x86_digest" ] \
   || fail "architecture must remain part of the source-bound digest"
-stale_revision_digest=$(RUNNER_CLI_PACKAGE_PATH="$cli_package" \
+stale_revision_digest=$(GUEST_CLI_PATH="$cli_package" \
   digest_value "$repo" aarch64-unknown-linux-musl "$baseline_revision")
 [ "$stale_revision_digest" != "$embedded_arm_digest" ] \
   || fail "source revision must remain part of the Runner cache digest"
 printf 'changed bytes\n' >> "$cli_package"
-changed_cli_digest=$(RUNNER_CLI_PACKAGE_PATH="$cli_package" \
+changed_cli_digest=$(GUEST_CLI_PATH="$cli_package" \
   digest_value "$repo" aarch64-unknown-linux-musl)
 [ "$changed_cli_digest" != "$embedded_arm_digest" ] \
   || fail "CLI byte changes must invalidate the Runner cache digest"
 rm "$cli_package"
-if RUNNER_CLI_PACKAGE_PATH="$cli_package" RUNNER_CLI_REQUIRED=true \
+if GUEST_CLI_PATH="$cli_package" \
   digest_value "$repo" aarch64-unknown-linux-musl >/dev/null 2>&1; then
-  fail "a missing CLI package must fail"
+  fail "an explicitly provided missing CLI package must fail"
 fi
 
 echo "runner-binary-build-test: ok"
