@@ -221,6 +221,19 @@ Initial model preparation shares the claim object's already-read snapshots,
 while final admission owns its later snapshot. Commit-time locks and
 credit revalidation remain transaction-local.
 
+After authorization, runtime-secret KMS, credit admission, storage mounts and
+the launch reads (runner input, callbacks, assembly, identity, member,
+paid-tool and environment snapshots) start together in one `Promise.all`.
+Credit admission does not gate the pure storage reads; its failure is checked
+with the prepared resources, in plan, admission, storage and stored-context
+order, before anything is committed. Automation launch arguments, which depend
+on official reconciliation, are the only write-derived prerequisite of the
+launch reads; storage mounts and KMS do not wait for them.
+
+Dispatch timing collectors are created by the parent `pick$` after its claim
+and passed as plain arguments to `prepareRunContext$` and `createRun$`;
+`RunContext` does not carry them.
+
 Configured connector account fallback is selection among different authorized
 accounts; it does not retry failed queries. Runtime catalog selection uses fixed
 identity, requested-slug, projection-row, count, fresh-identity and complete-

@@ -8,7 +8,7 @@ import { mockEnv } from "../../../lib/env";
 import { computeHmacSignature } from "../../../lib/event-consumer/hmac";
 import { now } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { withEmptyQueuePickObserverForTest } from "../../services/empty-queue-pick-observer.service";
+import { holdEmptyQueuePickForTest } from "../../../test-fixtures/empty-queue-pick";
 import { createDeferredPromise } from "../../utils";
 import { chatEventsRoutes } from "../chat-events";
 import { chatThreadRoutes } from "../chat-threads";
@@ -705,9 +705,10 @@ describe("CHAT-02: queued chat thread picks", () => {
     const emptyRead = createDeferredPromise<void>(context.signal);
     const resumeDelete = createDeferredPromise<void>(context.signal);
     const arrivedId = randomUUID();
-    await withEmptyQueuePickObserverForTest(
-      async (chatThreadId) => {
-        if (chatThreadId !== recalled.threadId || emptyRead.settled()) {
+    await holdEmptyQueuePickForTest(
+      recalled.threadId,
+      async () => {
+        if (emptyRead.settled()) {
           return;
         }
         emptyRead.resolve(undefined);
