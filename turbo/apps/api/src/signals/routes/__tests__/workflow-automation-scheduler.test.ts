@@ -1353,13 +1353,14 @@ describe("okou workflow automation scheduler", () => {
         1,
         "insufficient_credits",
       );
-      await expect
-        .poll(async () => {
-          const read = await wf.readAutomation(automation.automationId);
-          return { enabled: read.enabled, nextRunAt: read.nextRunAt };
-        })
-        .toStrictEqual({ enabled: true, nextRunAt: expect.any(String) });
+      // The completion reschedules the loop in background work; drain it
+      // instead of polling on wall-clock intervals.
+      await flushWaitUntilForTest();
       const read = await wf.readAutomation(automation.automationId);
+      expect({
+        enabled: read.enabled,
+        nextRunAt: read.nextRunAt,
+      }).toStrictEqual({ enabled: true, nextRunAt: expect.any(String) });
       if (!read.nextRunAt) {
         throw new Error("Expected the next run after insufficient credits");
       }
