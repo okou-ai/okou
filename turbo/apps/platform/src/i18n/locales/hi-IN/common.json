@@ -4899,7 +4899,6 @@
         "description": "Anthropic Messages, OpenAI Responses या दोनों के माध्यम से एडमिन द्वारा प्रबंधित गेटवे कनेक्ट करें।",
         "dialogDescription": "हर प्रोटोकॉल को Claude Code या Codex द्वारा उपयोग किए जाने वाले API बेस URL के साथ कॉन्फ़िगर करें।",
         "editTitle": "मॉडल प्रदाता संपादित करें",
-        "empty": "कोई कस्टम मॉडल प्रदाता कॉन्फ़िगर नहीं है।",
         "errors": {
           "invalidMappings": "मॉडल मैपिंग एक JSON ऑब्जेक्ट होना चाहिए, जिसके मान अपस्ट्रीम मॉडल नाम हों।",
           "missingProtocol": "कम से कम एक प्रोटोकॉल चालू करें।",

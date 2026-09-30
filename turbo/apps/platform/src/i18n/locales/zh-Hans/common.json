@@ -4881,7 +4881,6 @@
         "description": "通过Anthropic Messages、OpenAI Responses或两者，连接由管理员管理的网关。",
         "dialogDescription": "为每个协议配置Claude Code或Codex使用的API基础URL。",
         "editTitle": "编辑模型服务商",
-        "empty": "还没有配置自定义模型服务商。",
         "errors": {
           "invalidMappings": "模型映射必须是一个JSON对象，其值为上游模型名称。",
           "missingProtocol": "请至少启用一个协议。",

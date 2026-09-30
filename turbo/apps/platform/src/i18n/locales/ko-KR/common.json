@@ -4881,7 +4881,6 @@
         "description": "Anthropic Messages, OpenAI Responses 또는 둘 다를 통해 관리자가 관리하는 게이트웨이를 연결합니다.",
         "dialogDescription": "Claude Code 또는 Codex에서 사용하는 API 기본 URL로 각 프로토콜을 구성하세요.",
         "editTitle": "모델 공급자 편집",
-        "empty": "구성된 사용자 지정 모델 공급자가 없습니다.",
         "errors": {
           "invalidMappings": "모델 매핑은 값이 업스트림 모델 이름인 JSON 객체여야 합니다.",
           "missingProtocol": "프로토콜을 하나 이상 활성화하세요.",

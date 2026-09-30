@@ -27,6 +27,7 @@ webpki-roots = { workspace = true }
 zeroize = { workspace = true, features = ["alloc"] }
 
 [dev-dependencies]
+base64 = { workspace = true, features = ["alloc"] }
 hex = { workspace = true, features = ["alloc"] }
 pbkdf2 = { version = "0.13" }
 rcgen = { workspace = true, features = ["crypto", "ring"] }

@@ -4963,7 +4963,6 @@
         "description": "Conecta un gateway gestionado por un administrador mediante Anthropic Messages, OpenAI Responses o ambos.",
         "dialogDescription": "Configura cada protocolo con la URL base de la API que usa Claude Code o Codex.",
         "editTitle": "Editar proveedor de modelos",
-        "empty": "No hay proveedores de modelos personalizados configurados.",
         "errors": {
           "invalidMappings": "Las asignaciones de modelos deben ser un objeto JSON cuyos valores sean nombres de modelos ascendentes.",
           "missingProtocol": "Habilita al menos un protocolo.",

@@ -4891,7 +4891,6 @@
         "description": "Connect an admin-managed gateway through Anthropic Messages, OpenAI Responses, or both.",
         "dialogDescription": "Configure each protocol with the API base URL used by Claude Code or Codex.",
         "editTitle": "Edit model provider",
-        "empty": "No custom model providers configured.",
         "errors": {
           "invalidMappings": "Model mappings must be a JSON object whose values are upstream model names.",
           "missingProtocol": "Enable at least one protocol.",
