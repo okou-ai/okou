@@ -529,9 +529,8 @@ describe("CHAT-02: thread connector account selection", () => {
     const failedPick = flushWaitUntilForTest();
     releaseProvider.resolve(undefined);
     await expect(failedPick).rejects.toBe(providerError);
-    // The background pick returns its first failure while the other started
-    // branch remains owned by Promise.all and has not been released yet.
-    expect(releaseThread.settled()).toBeFalsy();
+    // The first failure returned while the other started branch was still
+    // blocked; release it so its owned promise settles.
     releaseThread.resolve(undefined);
     await threadFinished.promise;
     expect(kms.decryptCalls).toBeGreaterThan(0);

@@ -13,10 +13,7 @@ import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { readCanonicalChatEventStorageFixture } from "../../../test-fixtures/chat-events";
 import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
-import {
-  holdQueuedChatThreadClaimFixture,
-  readQueuedChatThreadClaimFixture,
-} from "../../../test-fixtures/queued-chat-thread";
+import { holdQueuedChatThreadClaimFixture } from "../../../test-fixtures/queued-chat-thread";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import {
@@ -681,12 +678,10 @@ describe("CHAT-02: dispatch failure", () => {
       agent_session_run_id: null,
       run_session_id: null,
     });
-    await expect(
-      readQueuedChatThreadClaimFixture(threadId),
-    ).resolves.toStrictEqual({ claimId: null, claimExpiresAt: null });
     expect(routeRequests()).toBe(0);
 
-    // The next input on the thread is picked normally.
+    // The lease was released: the next input on the thread is picked
+    // immediately, without waiting for lease expiry.
     mockOptionalEnv("RUNNER_DEFAULT_GROUP", runnerGroup);
     const next = await sendChatRun(actor, {
       agentId,
@@ -700,19 +695,22 @@ describe("CHAT-02: dispatch failure", () => {
   it("leaves the input queued when a failed picker no longer holds the lease", async () => {
     const { actor, agentId } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
+    const heldAt = now();
+    mockNow(heldAt);
     const threadId = randomUUID();
     const messageId = randomUUID();
-    let heldClaimId: string | undefined;
     // A slow picker's lease was taken over before its transient KMS failure.
-    useSecretKmsProbe(async (_request, callNumber) => {
-      if (callNumber === 1) {
-        heldClaimId = await holdQueuedChatThreadClaimFixture({
+    useSecretKmsProbe((_request, callNumber) => {
+      if (callNumber !== 1) {
+        return undefined;
+      }
+      return (async () => {
+        await holdQueuedChatThreadClaimFixture({
           orgId: requireOrgId(actor),
           threadId,
         });
         throw new Error("KMS unavailable");
-      }
-      return await Promise.reject(new Error("Unexpected KMS call"));
+      })();
     });
     await chat.requestSendEvent(
       actor,
@@ -731,9 +729,24 @@ describe("CHAT-02: dispatch failure", () => {
         return message.revokesEventId === messageId;
       }),
     ).toBeFalsy();
-    await expect(
-      readQueuedChatThreadClaimFixture(threadId),
-    ).resolves.toMatchObject({ claimId: heldClaimId });
+
+    // The input stays pending behind the other picker's lease; once that
+    // lease expires, the next pick launches it.
+    mockNow(heldAt + 10_000);
+    await chat.requestSendEvent(
+      actor,
+      { agentId, threadId, prompt: "pick after the lease expires" },
+      [201],
+    );
+    await clearAllDetached();
+    const launched = await chat.listThreadEvents(actor, threadId);
+    const runId = userMessages(launched.events).find((message) => {
+      return message.revokesEventId === messageId;
+    })?.runId;
+    expect(runId).toStrictEqual(expect.any(String));
+    if (runId) {
+      await cancelChatRun(actor, runId);
+    }
   });
 
   it("keeps another picker's lease until it expires on the app clock", async () => {
@@ -748,14 +761,9 @@ describe("CHAT-02: dispatch failure", () => {
     await cancelChatRun(actor, first.runId);
     await clearAllDetached();
     const threadId = first.threadId;
-    const heldClaimId = await holdQueuedChatThreadClaimFixture({
+    await holdQueuedChatThreadClaimFixture({
       orgId: requireOrgId(actor),
       threadId,
-    });
-    const lease = await readQueuedChatThreadClaimFixture(threadId);
-    expect(lease).toStrictEqual({
-      claimId: heldClaimId,
-      claimExpiresAt: new Date(heldAt + 10_000),
     });
 
     // Before expiry, the next enqueue's pick cannot take the lease.
@@ -772,9 +780,6 @@ describe("CHAT-02: dispatch failure", () => {
       [201],
     );
     await clearAllDetached();
-    await expect(
-      readQueuedChatThreadClaimFixture(threadId),
-    ).resolves.toStrictEqual(lease);
     const blocked = await chat.listThreadEvents(actor, threadId);
     expect(
       userMessages(blocked.events).some((message) => {

@@ -26,7 +26,6 @@ import { waitUntil } from "../context/wait-until";
 import type { Tx } from "../../lib/db-types";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { isFreePlanForCreditAdmission } from "./run-admission.service";
-import { observeEmptyQueuePickForTest } from "./empty-queue-pick-observer.service";
 import { observePreparedLaunchPersistenceForTest } from "./prepared-launch-persistence-observer.service";
 import { now, nowDate } from "../../lib/time";
 import { conflict } from "../../lib/error";
@@ -133,9 +132,11 @@ type ClaimRunCommit =
 
 const log = logger("ChatQueueConsume");
 
-/** Shown when a picked input's preparation or commit failed unexpectedly. */
-const ABANDONED_HEAD_MESSAGE =
-  "This message could not be started because of an internal error. Please send it again.";
+/** A picked input whose preparation or commit failed unexpectedly. */
+const ABANDONED_HEAD_ERROR = {
+  code: "INTERNAL_ERROR",
+  message: "The input could not be started",
+} as const;
 
 /** Fixed chat thread lease; it is never renewed. See design §5.1. */
 const CHAT_THREAD_LEASE_MS = 10_000;
@@ -455,6 +456,18 @@ async function appendQueueHeadRejection(
   };
 }
 
+/** A picked queue head a rejection records, publishes and reports. */
+interface RejectedQueueHead {
+  readonly id: string;
+  readonly chatThreadId: string;
+  readonly orgId: string;
+  readonly userId: string;
+  /** Null once the thread's agent is deleted; the source reply needs it. */
+  readonly agentId: string | null;
+  readonly contextType: string | null;
+  readonly contextId: string | null;
+}
+
 /**
  * One pick's outcome: the launched run, a claim released because the
  * organization had no free concurrency slot, or nothing launched.
@@ -731,83 +744,6 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
     },
   );
 
-  const appendChatQueueHeadRejection$ = command(
-    async (
-      { set },
-      args: {
-        readonly chatThreadId: string;
-        readonly eventId: string;
-        readonly errorMarker: string;
-        readonly displayError: string;
-      },
-      signal: AbortSignal,
-    ): Promise<{ readonly assistantEventId: string } | null> => {
-      signal.throwIfAborted();
-      const result = await set(writeDb$).transaction(async (tx) => {
-        return await appendQueueHeadRejection(tx, args);
-      });
-      signal.throwIfAborted();
-      return result;
-    },
-  );
-
-  /**
-   * A picked head whose preparation or commit threw still ends terminal: in one
-   * transaction, reject it if nothing consumed it, then release this claim's
-   * lease; when the lease is no longer ours the transaction rolls back and
-   * nothing changes. The queue row is locked last, as enqueue does. A failure
-   * here is left to lease expiry.
-   */
-  const rejectAbandonedHead$ = command(
-    async (
-      { set },
-      args: {
-        readonly claim: LeasedThreadClaim;
-        readonly eventId: string;
-      },
-      signal: AbortSignal,
-    ): Promise<void> => {
-      signal.throwIfAborted();
-      const { claim } = args;
-      const rejected = await set(writeDb$).transaction(async (tx) => {
-        const appended = await appendQueueHeadRejection(tx, {
-          chatThreadId: claim.chatThreadId,
-          eventId: args.eventId,
-          errorMarker: "internal_error",
-          displayError: ABANDONED_HEAD_MESSAGE,
-        });
-        const [released] = await tx
-          .update(queuedChatThreads)
-          .set({ claimId: null, claimExpiresAt: null })
-          .where(
-            and(
-              eq(queuedChatThreads.orgId, claim.orgId),
-              eq(queuedChatThreads.chatThreadId, claim.chatThreadId),
-              eq(queuedChatThreads.claimId, claim.claimId),
-            ),
-          )
-          .returning({ chatThreadId: queuedChatThreads.chatThreadId });
-        if (!released) {
-          tx.rollback();
-        }
-        return appended;
-      });
-      signal.throwIfAborted();
-      // A rejected automation tick settles its schedule as other rejections do.
-      if (rejected?.contextType === "automation") {
-        await settleRejectedAutomationInput(
-          set(writeDb$),
-          {
-            contextId: rejected.contextId,
-            queueEventId: args.eventId,
-            error: { code: "INTERNAL_ERROR", message: ABANDONED_HEAD_MESSAGE },
-          },
-          signal,
-        );
-      }
-    },
-  );
-
   const publishChatQueueHeadConsumed$ = command(
     async (
       _context,
@@ -867,23 +803,27 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
     ].join("\n");
   });
 
-  const rejectEvent$ = command(
+  /**
+   * The one rejection of a picked queue head, for business rejections and
+   * unexpected preparation or commit failures alike: record the rejected input
+   * and its error message, settle an automation tick, publish the realtime
+   * event and deliver the failure to the source integration. With `lease`, the
+   * rejection and the release of that lease commit together, and only while
+   * the claim still holds it; otherwise the transaction rolls back and nothing
+   * changes. The queue row is locked last, as enqueue does.
+   */
+  const rejectChatQueueHead$ = command(
     async (
       { get, set },
-      context: RunContext,
-      error: { readonly code: string; readonly message: string },
+      args: {
+        readonly head: RejectedQueueHead;
+        readonly rejection: ChatQueueHeadRejection;
+        readonly lease?: LeasedThreadClaim;
+      },
       signal: AbortSignal,
     ): Promise<void> => {
-      const head = context.head;
-      const rejection: ChatQueueHeadRejection =
-        context.rejection.kind === "prompt"
-          ? queuedMessageRejection(
-              rejectedQueuedRunAdmissionFailure(
-                context.rejection.runInput,
-                error,
-              ),
-            )
-          : { userId: context.rejection.userId, error };
+      const { head, rejection, lease } = args;
+      const { error } = rejection;
       const displayError =
         error.code === "CONFLICT"
           ? error.message
@@ -901,16 +841,32 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
                 signal,
               );
       signal.throwIfAborted();
-      const rejected = await set(
-        appendChatQueueHeadRejection$,
-        {
+      const rejected = await set(writeDb$).transaction(async (tx) => {
+        const appended = await appendQueueHeadRejection(tx, {
           chatThreadId: head.chatThreadId,
           eventId: head.id,
           errorMarker: error.code.toLowerCase(),
           displayError,
-        },
-        signal,
-      );
+        });
+        if (lease) {
+          const [released] = await tx
+            .update(queuedChatThreads)
+            .set({ claimId: null, claimExpiresAt: null })
+            .where(
+              and(
+                eq(queuedChatThreads.orgId, lease.orgId),
+                eq(queuedChatThreads.chatThreadId, lease.chatThreadId),
+                eq(queuedChatThreads.claimId, lease.claimId),
+              ),
+            )
+            .returning({ chatThreadId: queuedChatThreads.chatThreadId });
+          if (!released) {
+            tx.rollback();
+          }
+        }
+        return appended;
+      });
+      signal.throwIfAborted();
       if (!rejected) {
         return;
       }
@@ -931,6 +887,7 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
         );
       }
       await set(publishChatQueueHeadConsumed$, head, signal);
+      const agentId = head.agentId;
       const delivery = rejection.delivery
         ? set(
             deliverQueuedPromptRejection$,
@@ -938,10 +895,13 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
             rejected.assistantEventId,
             signal,
           )
-        : error.code === "INTERNAL_ERROR"
+        : error.code === "INTERNAL_ERROR" && agentId !== null
           ? set(
               deliverUnexpectedQueuedPromptRejection$,
-              { head, assistantEventId: rejected.assistantEventId },
+              {
+                head: { ...head, agentId },
+                assistantEventId: rejected.assistantEventId,
+              },
               signal,
             )
           : undefined;
@@ -954,6 +914,30 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
           });
         });
       }
+    },
+  );
+
+  const rejectEvent$ = command(
+    async (
+      { set },
+      context: RunContext,
+      error: { readonly code: string; readonly message: string },
+      signal: AbortSignal,
+    ): Promise<void> => {
+      const rejection: ChatQueueHeadRejection =
+        context.rejection.kind === "prompt"
+          ? queuedMessageRejection(
+              rejectedQueuedRunAdmissionFailure(
+                context.rejection.runInput,
+                error,
+              ),
+            )
+          : { userId: context.rejection.userId, error };
+      await set(
+        rejectChatQueueHead$,
+        { head: context.head, rejection },
+        signal,
+      );
     },
   );
 
@@ -1229,8 +1213,6 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
         return { kind: "org-full" };
       }
       if (!event) {
-        await observeEmptyQueuePickForTest(claim.chatThreadId);
-        signal.throwIfAborted();
         await set(deleteEmptyQueue$, claim, signal);
         return { kind: "none" };
       }
@@ -1260,9 +1242,27 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
         signal,
       );
       if (!settled.ok) {
-        // The marking write's own failure is left to lease expiry.
+        // The picked head must not stay queued after an unexpected failure;
+        // it is rejected like any other head. The rejection's own failure is
+        // left to lease expiry, and the original error still propagates.
         await settle(
-          set(rejectAbandonedHead$, { claim, eventId: event.id }, signal),
+          set(
+            rejectChatQueueHead$,
+            {
+              head: {
+                id: event.id,
+                chatThreadId: claim.chatThreadId,
+                orgId: claim.orgId,
+                userId: event.userId,
+                agentId: event.agentId,
+                contextType: event.contextType,
+                contextId: event.contextId,
+              },
+              rejection: { userId: event.userId, error: ABANDONED_HEAD_ERROR },
+              lease: claim,
+            },
+            signal,
+          ),
           signal,
         );
         throw settled.error;

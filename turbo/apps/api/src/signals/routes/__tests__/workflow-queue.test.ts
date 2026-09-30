@@ -22,7 +22,7 @@ import { setOrgModelPolicyProviderTypeFixture } from "../../../test-fixtures/org
 import { readWorkflowRunTriggerSourceFixture } from "../../../test-fixtures/workflow-queue";
 import { withWorkflowQueueAssemblyFailureFixture } from "../../../test-fixtures/workflow-queue-assembly-failure";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { clearAllDetached, settle } from "../../utils";
+import { clearAllDetached } from "../../utils";
 import { chatEventsRoutes } from "../chat-events";
 import { chatThreadRoutes } from "../chat-threads";
 import { modelProvidersRoutes } from "../model-providers";
@@ -1803,7 +1803,7 @@ describe("workflow queue", () => {
     ).resolves.toStrictEqual([runningRunId]);
   });
 
-  it("keeps manual Run now behind the user message when enqueue races the cancellation pick", async () => {
+  it("keeps manual Run now behind the user message launched by the cancellation pick", async () => {
     const scenario = await setup();
     const automation = await createScheduleAutomation(scenario);
     expect(automation.threadId).toBeNull();
@@ -1836,20 +1836,16 @@ describe("workflow queue", () => {
     await flushWaitUntilForTest();
     expect(userMessage.body.runId).toBeNull();
 
-    // Cancelling frees the slot and schedules a pick. A concurrent enqueue
-    // can replace that lease; only one pick may consume the oldest input.
+    // Cancelling frees the slot; its pick launches the older user message.
     await runsApi.requestCancelRun(scenario.actor, firstRunId, [200]);
     await expect(
       runsApi.readRun(scenario.actor, firstRunId),
     ).resolves.toMatchObject({ status: "cancelled" });
+    await clearAllDetached();
 
+    // Manual Run now then queues behind that active run.
     const manual = await requestAutomationNow(automation.automationId);
-    const picked = await settle(clearAllDetached());
-    if (!picked.ok) {
-      expect(picked.error).toMatchObject({
-        message: "Chat thread session changed during run preparation",
-      });
-    }
+    await clearAllDetached();
     expect(manual.body).toStrictEqual({
       runId: null,
       chatThreadId: threadId,
@@ -1886,9 +1882,7 @@ describe("workflow queue", () => {
     await expect(
       runsApi.readRun(scenario.actor, userRunId),
     ).resolves.toMatchObject({ status: "completed" });
-    // If the losing request retained a lease, its expiration is the next
-    // admission boundary. Advance the test clock, then issue a separate wake.
-    mockNow(now() + 60_001);
+    // Issue a separate wake for the queued Run now.
     await refreshConcurrencyEntitlement(
       scenario.actor,
       scenario.customerId,

@@ -7374,7 +7374,7 @@ completion requests return the remaining delay without sending early.
 
 ## Canonical Chat application sessions
 
-Migration `1294_chat_thread_canonical_session` adds a unique index on
+Migration `1295_chat_thread_canonical_session` adds a unique index on
 `chat_threads.agent_session_id`. A thread may have no session before its first
 admitted run, and PostgreSQL continues to allow multiple null bindings. An
 application session may be the current binding of at most one thread. Historical
@@ -7393,9 +7393,12 @@ HAVING count(*) > 1;
 
 The migration rejects duplicates instead of assigning a different owner or
 silently detaching history. Any existing duplicates require an explicit repair
-based on their ownership and run provenance before rollout. The migration uses
-the repository's bounded transactional lock and statement timeouts; a failed
-index build does not authorize a longer timeout or production data changes.
+based on their ownership and run provenance before rollout. The migration is
+non-transactional and builds the index with `CREATE UNIQUE INDEX CONCURRENTLY`,
+so chat thread writes are not blocked while it waits for older transactions.
+A duplicate fails the build and leaves an INVALID index, which the migration
+drops (`DROP INDEX CONCURRENTLY IF EXISTS`) before its next attempt; a failed
+build does not authorize production data changes.
 
 New admission preserves the thread's valid application session ID when its
 agent, runtime, or model family changes. It resets the native conversation

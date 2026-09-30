@@ -1525,7 +1525,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(drained.body.job).toBeNull();
   });
 
-  it("rejects a queued AgentPhone input when launch preparation fails with debug enabled", async () => {
+  it("rejects a queued AgentPhone input and replies with the failure when launch preparation fails with debug enabled", async () => {
     mockEnv("APP_URL", "https://app.okou.ai");
     const ap = createAgentPhoneBddApi(context);
     const integrations = createBddIntegrationApi(context);
@@ -1560,7 +1560,13 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       .map((send) => {
         return send.body;
       });
-    expect(completionBodies).toStrictEqual(["Task completed successfully."]);
+    expect(completionBodies).toHaveLength(2);
+    expect(completionBodies).toStrictEqual(
+      expect.arrayContaining([
+        "Task completed successfully.",
+        "Oops, something went wrong. Please try again later.",
+      ]),
+    );
     const runList = await runs.listAgentRuns(actor, {
       status: "queued,pending,running,completed,failed,timeout,cancelled",
       limit: 100,
@@ -1604,7 +1610,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
   });
 
   it.each([false, true])(
-    "rejects input after an infrastructure failure without sending an admission error (unlinked: %s)",
+    "rejects input after an infrastructure failure with current AgentPhone authorization (unlinked: %s)",
     async (unlink) => {
       const runs = createRunsApi(context);
       const ap = createAgentPhoneBddApi(context);
@@ -1619,7 +1625,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         body: "finish before queue assembly",
       });
       const activeRun = await claimDispatchedRun(runnerGroup);
-      const queuedPrompt = "retain this input when loading delivery fails";
+      const queuedPrompt = "reject this input before loading delivery";
       await ap.postAgentPhoneInboundMessage({
         channel: "sms",
         from: phone,
@@ -1675,8 +1681,8 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
           id: pending.id,
         }),
       );
-      // The failure propagates and the picked input ends rejected without
-      // an integration admission reply.
+      // The failure propagates and the picked input ends rejected; a linked
+      // sender gets the unexpected-failure reply.
       expect(settled.events).toContainEqual(
         expect.objectContaining({
           eventType: "input.rejected",
@@ -1697,7 +1703,13 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
           replies.map((reply) => {
             return reply.body;
           }),
-        ).toStrictEqual(["Task completed successfully."]);
+        ).toStrictEqual(
+          expect.arrayContaining([
+            "Task completed successfully.",
+            "Oops, something went wrong. Please try again later.",
+          ]),
+        );
+        expect(replies).toHaveLength(2);
       }
       await runs.heartbeatRunner(runnerGroup);
       expect((await runs.pollRunner(runnerGroup)).body.job).toBeNull();
@@ -2536,6 +2548,32 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         return send.body === orgFullNotice;
       }),
     ).toHaveLength(1);
+  });
+
+  it("sends no wait notice when the input joins its thread's running run at the org limit", async () => {
+    // The only org slot is taken by this thread's own run.
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
+    const ap = createAgentPhoneBddApi(context);
+    const { phone, runnerGroup, sends } = await entitledLinkedActor();
+    const before = sends.messages.length;
+    await ap.postAgentPhoneInboundMessage({
+      channel: "sms",
+      from: phone,
+      body: "occupy the only org run slot",
+    });
+    const activeRun = await claimDispatchedRun(runnerGroup);
+
+    // The follow-up steers into the running run, so it is not waiting on the
+    // organization limit.
+    await ap.postAgentPhoneInboundMessage({
+      channel: "sms",
+      from: phone,
+      body: "follow up while the run is working",
+    });
+    await flushWaitUntilForTest();
+    expect(sends.messages.slice(before)).toStrictEqual([]);
+
+    await completeSandboxRun(activeRun.sandboxToken, activeRun.runId, 0);
   });
 
   it("skips completion delivery for runs whose phone link was disconnected mid-flight", async () => {

@@ -2480,7 +2480,6 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     async (
       { get },
       head: ChatQueueHeadContext,
-      createdAt: Date,
       timing: ApiDispatchTimingCollector,
       signal: AbortSignal,
     ) => {
@@ -2496,12 +2495,17 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         );
       }
       if (head.contextType === "automation") {
+        const picked = await get(pickedEvent$);
+        signal.throwIfAborted();
+        if (!picked) {
+          throw new Error("Prepared claim has no picked queue head");
+        }
         // Queue age includes enqueue work and legitimate FIFO waiting. It must
         // not be added to S1 or reported as enqueue-commit-to-consume latency.
         await recordWorkflowAdmissionDuration(
           timing,
           "api_dispatch_workflow_event_created_to_consume_start",
-          Math.max(0, apiStartTime - createdAt.getTime()),
+          Math.max(0, apiStartTime - picked.createdAt.getTime()),
         );
         signal.throwIfAborted();
       }
@@ -12981,7 +12985,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   );
   const prepareRunContext$ = command(
     async (
-      { get, set },
+      { set },
       timing: ClaimRunTiming,
       signal: AbortSignal,
     ): Promise<RunContext | { readonly kind: "passed" }> => {
@@ -13074,13 +13078,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       ) {
         throw new Error("Prepared claim is missing launch resources");
       }
-      await set(
-        recordQueuedInputAdmissionTiming$,
-        head,
-        (await get(pickedEvent$))?.createdAt ?? nowDate(),
-        timing.run,
-        signal,
-      );
+      await set(recordQueuedInputAdmissionTiming$, head, timing.run, signal);
       const preparedContext = await timing.run.measure(
         "api_dispatch_prepare_atomic_launch_persistence",
         "nested",

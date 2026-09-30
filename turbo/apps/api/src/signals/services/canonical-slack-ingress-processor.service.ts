@@ -840,8 +840,6 @@ export const processCanonicalSlackIngress$ = command(
           {
             orgId: ingress.orgId,
             chatThreadId: ingress.chatThreadId,
-            // The ingress id is the enqueued input's chat event id.
-            eventId: args.ingressId,
             afterPick: async (pick, pickSignal) => {
               await settleCanonicalSlackStatusAfterPick(
                 db,

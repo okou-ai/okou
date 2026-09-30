@@ -90,10 +90,12 @@ and the paid-subscription payment grace policy.
 A pick handles at most one input. Normal no-capacity, empty-queue and completed
 paths explicitly release or delete using the captured thread/token pair.
 A picked input always ends terminal. When preparation or commit throws after
-the head was read, one transaction rejects that head if nothing consumed it
-(`input.rejected` plus a visible `internal_error` message, and the usual
-schedule settlement for an automation tick) and then releases the lease on this
-claim's token; if the lease is no longer ours the transaction rolls back and
+the head was read, the head is rejected through the same rejection path as a
+business rejection (`input.rejected` plus a visible `internal_error` message,
+the usual schedule settlement for an automation tick, the realtime event, and
+the unexpected-failure reply to the source integration). The only difference
+is the lease: the rejection and the release on this claim's token commit in one
+transaction, and if the lease is no longer ours the transaction rolls back and
 nothing changes. The original error is then rethrown: there is no retry or
 fallback. Transient failures (KMS, a brief database outage) are handled the
 same way and the user sends again. The no-capacity exit never does this. If the
@@ -113,8 +115,13 @@ advances `queuedAt` (strictly, by at least 1 ms). The claim captures the
 - The pending transaction fences the lease as its first write: it clears the
   lease only while `claimId` is still this pick's token and throws, rolling back,
   when no row matches (the lease expired and was taken). It runs after the
-  admission locks that enqueue also takes before its queue upsert, so both
-  transactions lock the queue row last. The success path has no separate
+  admission locks that enqueue also takes before its queue upsert. Before the
+  fence, the pending transaction's input claim appends a chat event, which
+  locks the thread's `chat_event_sequences` row; every enqueue appends its
+  input first and takes the same row before it updates `chat_threads` or
+  upserts the queue row. That shared first lock orders the two transactions,
+  so the fence taking the queue row before the pending `chat_threads` update
+  cannot deadlock with an enqueue. The success path has no separate
   release; the active run protects the thread afterwards.
 - Empty queue: the delete also requires an unchanged `queuedAt`. When it misses
   while the lease is still ours, input arrived under the lease, so the picker
@@ -131,10 +138,11 @@ discovers new work; it is not a retry, and `pick$` never loops. A slow picker pa
 
 Integration wait notices (S1) do not use the enqueuer's `pick$` result, because
 another picker may hold the lease. After this enqueue's pick finishes (run,
-null or error), and before the realtime publish, S1 reads the chat event this
-enqueue created: consumed with a run means launched, consumed by
-`input.rejected` or a recall means rejected, and a still-pending input reports
-the current queue/capacity wait reason. A rescheduled pick only picks; it sends
+none or error), the sidebar touch and realtime publish run, then S1 reads the
+chat event this enqueue created: consumed with a run means launched, consumed
+by `input.rejected` or a recall means rejected, and a still-pending input on a
+thread with no active run and no valid lease is an org-full wait; a pending
+input on a busy or leased thread sends no notice. A rescheduled pick only picks; it sends
 no notice, running-run notification, sidebar touch or realtime event.
 
 An organization pass captures a finite count of currently pickable threads and

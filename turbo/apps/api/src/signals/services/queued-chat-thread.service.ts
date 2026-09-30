@@ -11,9 +11,11 @@ type ReadDb = Pick<Db, "selectDistinct">;
  * touches the lease: from claim to the pending commit the lease is the only
  * mutual exclusion, so a live lease stays with its picker and an empty or
  * expired lease is claimed as usual. `queuedAt` strictly advances (at least
- * 1 ms past the stored value, even under a frozen or skewed clock) so the
- * lease holder's release or empty-queue delete observes the new input and
- * schedules one new pick for the thread.
+ * 1 ms past the stored value, even under a frozen or skewed clock) so a lease
+ * holder's empty-queue delete misses the new input, releases its lease and
+ * schedules one new pick for the thread. A release after a launch, rejection
+ * or `passed` preparation schedules no pick; remaining input waits for the
+ * next enqueue, slot release or cron pass.
  */
 export async function markChatThreadQueued(
   db: Db | Tx,

@@ -1531,7 +1531,6 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       }),
     ).rejects.toBe(providerError);
     expect(kms.decryptCalls).toBeGreaterThan(0);
-    expect(releaseCatalog.settled()).toBeFalsy();
     releaseCatalog.resolve(undefined);
     await catalogFinished.promise;
     const runs = await api.listAgentRuns(actor, {
@@ -1997,7 +1996,6 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     expect(failed.status).toBe("failed");
     expect(failed.error).toBe(contextError.message);
     expect(storageStarted.settled()).toBeTruthy();
-    expect(releaseStorage.settled()).toBeFalsy();
     releaseStorage.resolve(undefined);
     await storageFinished.promise;
     const stored = await api.readRun(actor, failed.runId);
@@ -2150,7 +2148,6 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     const failed = await continuedRunPromise;
     expect(failed.status).toBe("failed");
     expect(failed.error).toBe(sessionError.message);
-    expect(releaseRequestPresign.settled()).toBeFalsy();
     releaseRequestPresign.resolve(undefined);
     await requestPresignFinished.promise;
     const stored = await api.readRun(actor, failed.runId);

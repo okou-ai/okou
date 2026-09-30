@@ -748,8 +748,6 @@ export const processCanonicalFeishuIngress$ = command(
       {
         orgId: persisted.orgId,
         chatThreadId: persisted.chatThreadId,
-        // The ingress id is the enqueued input's chat event id.
-        eventId: args.ingressId,
         afterPick: async (pick, pickSignal) => {
           await notifyFeishuChatQueueWait(
             {
