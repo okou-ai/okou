@@ -141,6 +141,12 @@ pub struct ExecutionContext {
     pub billable_firewalls: Vec<String>,
     #[serde(default)]
     pub model_usage_provider: Option<String>,
+    /// Total-input threshold at which `model_usage_provider` usage bills the
+    /// long-context tier, resolved by the API from the run's catalog data.
+    /// Absent from older APIs; the addon then falls back to its generated
+    /// map keyed by provider.
+    #[serde(default)]
+    pub model_usage_long_context_min_total_input_tokens: Option<u64>,
     #[serde(default)]
     pub codex_runtime_config: Option<CodexRuntimeConfig>,
     /// Raw Pi launch config retained so additive API fields survive forwarding

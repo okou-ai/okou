@@ -1,5 +1,37 @@
 # Deployment Compatibility
 
+## Long-context threshold in the Runner payload (2026-10-01)
+
+The claim and direct-run execution context gain the optional field
+`modelUsageLongContextMinTotalInputTokens`. The API resolves it per run from
+the route's pricing provider, the catalog model and the route's upstream model
+(`modelLongContextMinTotalInputTokens` in `@okouai/api-contracts`). The Runner
+copies it into the proxy registry sandbox entry. The mitm addon prefers it over
+its generated map keyed by `modelUsageProvider`. The registry and addon are
+runner-private and change atomically with the Runner binary (see
+[Runner process drain](#runner-process-drain)).
+Only the API → Runner hop crosses versions:
+
+| API | Runner | Behavior                                                                                                                                                                                                                              |
+| --- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| old | old    | Unchanged: the addon classifies by the generated map keyed by `modelUsageProvider`.                                                                                                                                                   |
+| old | new    | The field is absent and the addon falls back to the generated map. The old API sends the model ID or a mapped pricing provider, so classification is unchanged.                                                                       |
+| new | old    | The old Runner ignores the unknown top-level field (`ExecutionContext` is not `deny_unknown_fields`). Its addon classifies by the map. A pricing alias absent from the map then bills long-context input at the base-tier categories. |
+| new | new    | The addon classifies by the explicit threshold, so an alias bills `.long_context` categories.                                                                                                                                         |
+
+Do not point a Built-in route whose model has a long-context threshold at a
+new pricing alias until every serving Runner includes this change. Until then,
+keep the route's `pricing_provider` a key of the generated map. Rollback of
+either side returns to map-only classification, with the same alias caveat.
+Delete the generated Python map and the addon fallback when no supported API
+version omits the field and no Runner that needs it is a rollback target.
+
+Usage displays now name model usage rows by `agent_runs.selected_model`, joined
+by `run_id`. This is a read-time API projection: stored `usage_event`,
+`usage_event_hourly_rollup` rows and existing `usage.recorded` chat events are
+unchanged. An old App shows the new response values through its existing
+catalog mapping. No database migration is involved.
+
 ## Storage version reuse and reference-first Clerk cleanup
 
 Registered Storage versions are reused from their database metadata without an

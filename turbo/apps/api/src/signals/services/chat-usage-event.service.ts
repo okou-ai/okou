@@ -26,7 +26,6 @@ import {
   pgBooleanDecoder,
   pgIntegerDecoder,
   pgInt8ToSafeIntegerDecoder,
-  pgTextDecoder,
 } from "../../lib/db-structured-result";
 import { logger } from "../../lib/log";
 import { writeDb$ } from "../external/db";
@@ -37,6 +36,7 @@ import {
   buildFinalizedUsageRelation,
   type FinalizedUsageRelation,
 } from "./finalized-usage-relation";
+import { usageDisplayProviderExpr } from "./usage-reporting-breakdown";
 import type { Tx } from "../../lib/db-types";
 
 const L = logger("ChatUsageMessage");
@@ -119,21 +119,21 @@ async function loadUsageEventContext(tx: WriteTx, runId: string) {
 
 async function loadUsageBreakdownRows(tx: WriteTx, runId: string) {
   const usage = buildFinalizedUsageRelation();
+  const provider = usageDisplayProviderExpr(usage);
   return await tx
     .select({
       kind: usage.kind,
-      provider: sql`COALESCE(NULLIF(${usage.provider}, ''), 'unknown')`.mapWith(
-        pgTextDecoder,
-      ),
+      provider,
       credits:
         sql`COALESCE(${sum(usageCreditsExpression(usage))}, 0)::bigint`.mapWith(
           pgInt8ToSafeIntegerDecoder,
         ),
     })
     .from(usage)
+    .leftJoin(agentRuns, eq(agentRuns.id, usage.runId))
     .where(eq(usage.runId, runId))
-    .groupBy(usage.kind, usage.provider)
-    .orderBy(usage.kind, usage.provider);
+    .groupBy(usage.kind, provider)
+    .orderBy(usage.kind, provider);
 }
 
 export const maybeEmitRunUsageEvent$ = command(

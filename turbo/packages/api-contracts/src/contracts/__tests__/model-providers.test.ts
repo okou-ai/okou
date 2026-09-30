@@ -35,6 +35,7 @@ import {
   modelProviderTypeSchema,
   modelProviderFrameworkSchema,
 } from "../model-providers";
+import { modelLongContextMinTotalInputTokens } from "../model-price-tiers";
 import {
   findMatchingPermissions,
   matchFirewallRequestDecision,
@@ -247,6 +248,25 @@ describe("model-first canonical catalog", () => {
         "okou-1.0": 272_001,
       }),
     );
+  });
+
+  it("resolves a pricing alias's long-context threshold from the actual model", () => {
+    const alias = "catalog-pricing-alias";
+    expect(modelLongContextMinTotalInputTokens(alias, ["gpt-6-luna"])).toBe(
+      272_001,
+    );
+    expect(
+      modelLongContextMinTotalInputTokens(alias, [
+        "catalog-model",
+        "gpt-6-sol",
+      ]),
+    ).toBe(272_001);
+    expect(
+      modelLongContextMinTotalInputTokens(alias, ["claude-opus-5-5"]),
+    ).toBeUndefined();
+    expect(
+      modelLongContextMinTotalInputTokens(undefined, ["gpt-6-luna"]),
+    ).toBeUndefined();
   });
 });
 

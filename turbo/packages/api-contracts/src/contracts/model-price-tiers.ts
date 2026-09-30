@@ -3,16 +3,18 @@ export type ModelPriceTier = "$" | "$$" | "$$$" | "$$$$";
 
 /**
  * Inclusive total-input boundary for built-in model long-context pricing,
- * keyed by `usage_pricing` provider (a route's `pricing_provider`), which is
- * the key the Runner mitm addon bills model usage under. Total input includes
+ * keyed by `usage_pricing` provider or catalog model ID. Total input includes
  * uncached input, cache reads, and cache creation.
  *
- * This is billing protocol data compiled into the Runner through the
- * generated Python bindings (`generate:python`): the addon meters usage inside
- * the sandbox without an API round trip and receives no route or catalog data
- * at run time, so it cannot read the threshold from `model_routes`. It is not
- * a product list: a provider absent here bills a single tier, and admission,
- * names and availability never read it.
+ * The API resolves a run's threshold with
+ * `modelLongContextMinTotalInputTokens` and sends it to the Runner as
+ * `modelUsageLongContextMinTotalInputTokens`, so a route whose pricing
+ * provider is an alias of an actual model inherits that model's threshold
+ * without a new key here. The Runner mitm addon also compiles this map through
+ * the generated Python bindings (`generate:python`) as the fallback for claims
+ * from an API that does not send the threshold. It is not a product list: a
+ * provider absent here bills a single tier, and admission, names and
+ * availability never read it.
  */
 export const MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS: Readonly<
   Record<string, number>
@@ -26,3 +28,28 @@ export const MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS: Readonly<
   "gpt-5.6-sol": 272_001,
   "gpt-5.6-luna": 272_001,
 });
+
+/**
+ * The long-context threshold that applies to usage reported under
+ * `usageProvider`, looked up by the pricing provider first and then by the
+ * run's other model identities in order (the actual catalog model, then the
+ * Built-in route's upstream model). A pricing alias therefore follows the
+ * model it prices without a key of its own. `undefined` bills a single tier.
+ */
+export function modelLongContextMinTotalInputTokens(
+  usageProvider: string | undefined,
+  modelIdentities: readonly (string | undefined)[],
+): number | undefined {
+  if (!usageProvider) {
+    return undefined;
+  }
+  for (const key of [usageProvider, ...modelIdentities]) {
+    const threshold = key
+      ? MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS[key]
+      : undefined;
+    if (threshold !== undefined) {
+      return threshold;
+    }
+  }
+  return undefined;
+}

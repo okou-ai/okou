@@ -21,11 +21,14 @@ protocol runs end to end.
 Remaining model-keyed code data is protocol or billing data, not product
 authority:
 
-- `MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS` is keyed by `usage_pricing`
-  provider and compiled into the Runner mitm addon through the generated
-  Python bindings; the addon meters usage in the sandbox and receives no
-  route data, so the threshold cannot move to `model_routes` without a new
-  Runner protocol. A provider absent from it bills a single tier.
+- `MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS` (`@okouai/api-contracts`) is
+  keyed by `usage_pricing` provider or model ID. The API resolves a run's
+  threshold from it (`modelLongContextMinTotalInputTokens`: the route's
+  pricing provider, then the run's catalog model, then the route's upstream
+  model) and sends it to the Runner with the usage provider, so a pricing
+  alias needs no key of its own. The Runner mitm addon keeps a generated
+  Python copy only as the fallback for claims without the threshold. A run
+  with no match bills a single tier.
 - `OKOU_MODEL_METADATA` is the OpenRouter preset protocol metadata for
   `okou-1.0`: the preset upstream (`@preset/...`) is opaque, so the Pi and
   Codex runtimes need its context window, output limit and modalities from
@@ -89,19 +92,21 @@ through the pricing link of the route a run was assigned:
    `prepareModelUsageContext` (`agent-run-execution.service.ts`) reads that
    route's `pricing_provider` from the same catalog snapshot the claim uses
    for routing (`catalogBuiltInPricingProvider`) and sends it to the Runner as
-   `modelUsageProvider`, together with the billable firewalls. Only Built-in
+   `modelUsageProvider`, together with the billable firewalls and the
+   long-context threshold `modelUsageLongContextMinTotalInputTokens` (see
+   [Long-context classification](#long-context-classification)). Only Built-in
    runs have billable `model-provider:*` firewalls. The run's selected model,
    display name and upstream ID stay the actual model; only the usage label
    follows the pricing link. A Built-in run whose route has no pricing link
    fails before launch instead of reporting unpriced usage.
-2. **Runner addon.** The Runner passes `modelUsageProvider` to the mitm addon
-   as opaque sandbox metadata. For each billable model response the addon
-   emits one usage event per positive token category with `kind = "model"`,
-   `provider = modelUsageProvider` and a category from `tokens.input`,
-   `tokens.output`, `tokens.cache_read` and `tokens.cache_creation`, with the
-   `.long_context` infix when the provider appears in
-   `MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS` (keyed by `usage_pricing`
-   provider) and the `.fast` / `.ultrafast` suffix for service tiers.
+2. **Runner addon.** The Runner passes `modelUsageProvider` and the threshold
+   to the mitm addon through the proxy registry sandbox entry. For each
+   billable model response the addon emits one usage event per positive token
+   category with `kind = "model"`, `provider = modelUsageProvider` and a
+   category from `tokens.input`, `tokens.output`, `tokens.cache_read` and
+   `tokens.cache_creation`, with the `.long_context` infix when the response's
+   total input reaches the threshold and the `.fast` / `.ultrafast` suffix for
+   the observed service tier.
 3. **Usage webhook.** The addon posts the events to the sandbox usage webhook,
    which stores them in `usage_event` unchanged.
 4. **Settlement.** Settlement (`credit-usage.service.ts`) prices every pending
@@ -119,9 +124,42 @@ their `modelUsageProvider` stays the catalog model ID as before.
 constraint or migration check can prove that a linked provider has rows for
 every category a route can produce. The API catalog loader validates the link
 itself (Built-in: kind `model` and a provider; other routes: none);
-settlement surfaces a missing row as `missing_pricing`. The credit-usage view
-names a model usage row by its provider, so a pricing provider that is not a
-catalog model or route upstream ID is shown verbatim.
+settlement surfaces a missing row as `missing_pricing`. Usage displays name
+model usage by the run's actual model, not the pricing provider (see
+[Usage display](#usage-display)).
+
+### Long-context classification
+
+The addon cannot classify long context by looking up `modelUsageProvider`
+alone: a pricing alias is not a key of the generated map. The API therefore
+resolves the threshold per run and sends it explicitly:
+
+| Hop                                  | Field                                                                                                  |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| API claim / direct-run context       | `modelUsageLongContextMinTotalInputTokens` (positive integer, omitted for a single tier)               |
+| Runner `ExecutionContext` → registry | `model_usage_long_context_min_total_input_tokens` → sandbox `modelUsageLongContextMinTotalInputTokens` |
+| Addon flow metadata                  | `MODEL_USAGE_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS`                                                      |
+
+The addon prefers the explicit threshold for the registry's usage provider
+and falls back to the generated `MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS`
+by provider when it is absent or invalid. Service-tier suffixes come from the
+response's observed tier, not from a model-keyed table, so aliases need no
+tier data. A new alias of a model with a
+threshold needs no code change; a new model with long-context pricing needs
+a map entry (an API release, not a Runner release). Rollout order is in
+[deployment compatibility](deployment-compatibility.md#long-context-threshold-in-the-runner-payload-2026-10-01).
+
+### Usage display
+
+Usage records keep the provider they were billed under. The usage reports
+(`GET /api/usage/record` breakdowns, member usage breakdowns and new
+`usage.recorded` chat events) join model usage rows to `agent_runs` by
+`run_id` and name them by `agent_runs.selected_model`, the model the run
+actually used; usage without a run, or whose run row is gone, keeps its
+recorded provider. The App maps that model ID to its catalog display name, so
+a run billed under a pricing alias reads as the model's own name. Existing
+`usage.recorded` events are not rewritten and keep the provider they
+captured.
 
 ## API surface
 
@@ -313,7 +351,8 @@ History shows the model the run actually used, under that model's own name.
 Retired rows stay in the catalog with their own `display_name`, so a run or
 credit-usage row of `claude-opus-4-8` reads "Claude Opus 4.8", not the name of
 its replacement. The App's credit-usage rows (`lib/credit-usage-display.ts`)
-name run models only from the catalog: a recorded ID that is a catalog model
+name run models only from the catalog: an ID (the run's model, see
+[Usage display](#usage-display)) that is a catalog model
 uses that row; an upstream route ID such as `openai/gpt-6-luna` maps to the one
 catalog model whose `model_routes.upstream_model` it is; anything else is
 shown verbatim. Image and video generation models are not run models and are

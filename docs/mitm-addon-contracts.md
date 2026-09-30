@@ -450,6 +450,23 @@ unchanged, and old Runner instances keep their previous behavior until replaced.
 `test_mitmproxy_header_auth_failure_framing.py` covers incomplete Content-Length,
 chunked, and HTTP/2 uploads, including body data queued during the headers hook.
 
+## Model usage provider and long-context tier
+
+A registry sandbox entry carries `modelUsageProvider` (the `usage_pricing`
+provider every billable model usage event reports, which may be a pricing
+alias of the run's model) and optionally
+`modelUsageLongContextMinTotalInputTokens`. Request handling copies both into
+flow metadata when a firewall matches (`MODEL_USAGE_PROVIDER`,
+`MODEL_USAGE_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS`) and clears both for
+passthrough flows. Billing classifies a source as long-context when its total
+input (`tokens.input` + `tokens.cache_read` + `tokens.cache_creation`) reaches
+the threshold. The explicit threshold wins for the registry's usage provider.
+Without it (an API that does not send it), or with a value that is not a
+positive integer, the generated `MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS`
+map keyed by provider decides. A provider with no threshold bills a single
+tier. The `.fast` and `.ultrafast` suffixes follow the observed service tier.
+See [model catalog](model-catalog.md#long-context-classification).
+
 ## Model-provider failure reporting shutdown
 
 Failure reports are best-effort diagnostics with four reporter-owned daemon

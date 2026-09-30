@@ -1,4 +1,5 @@
 import { and, asc, eq, gt, inArray, sql, sum } from "drizzle-orm";
+import { agentRuns } from "@okouai/db/runtime/agent-run";
 
 import {
   pgInt8ToSafeIntegerDecoder,
@@ -21,6 +22,7 @@ import {
   buildUsageBreakdowns,
   usageBreakdownKindExpr,
   usageCreditsExpr,
+  usageDisplayProviderExpr,
   type UsageBreakdownSqlRow,
 } from "./usage-reporting-breakdown";
 
@@ -90,28 +92,23 @@ export async function getMemberUsageBreakdowns(
   );
   const kind = usageBreakdownKindExpr(usage);
   const credits = usageCreditsExpr(usage);
+  const provider = usageDisplayProviderExpr(usage);
   const rows: UsageBreakdownSqlRow[] = await db
     .select({
       key: sql`${usage.userId}`.mapWith(pgTextDecoder).as("key"),
       kind: kind.as("kind"),
       usageKind: sql`${usage.kind}`.mapWith(pgTextDecoder).as("usage_kind"),
-      provider: sql`COALESCE(NULLIF(${usage.provider}, ''), 'unknown')`
-        .mapWith(pgTextDecoder)
-        .as("provider"),
+      provider: provider.as("provider"),
       credits: sql`${sum(credits)}::bigint`
         .mapWith(pgInt8ToSafeIntegerDecoder)
         .as("credits"),
     })
     .from(usage)
+    .leftJoin(agentRuns, eq(agentRuns.id, usage.runId))
     .where(eq(usage.orgId, orgId))
-    .groupBy(usage.userId, kind, usage.kind, usage.provider)
+    .groupBy(usage.userId, kind, usage.kind, provider)
     .having(gt(sum(credits), sql`0`))
-    .orderBy(
-      asc(usage.userId),
-      asc(kind),
-      asc(usage.provider),
-      asc(usage.kind),
-    );
+    .orderBy(asc(usage.userId), asc(kind), asc(provider), asc(usage.kind));
 
   return buildUsageBreakdowns(rows);
 }

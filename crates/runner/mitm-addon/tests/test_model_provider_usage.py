@@ -190,6 +190,81 @@ class TestReportModelProviderUsage:
             f"tokens.cache_read{suffix}": 2,
         }
 
+    @pytest.mark.parametrize(
+        ("service_tier", "input_tokens", "expected_suffix"),
+        [
+            (None, 272_000, ""),
+            (None, 272_001, ".long_context"),
+            ("priority", 272_001, ".long_context.fast"),
+            ("ultrafast", 272_001, ".long_context.ultrafast"),
+        ],
+    )
+    def test_pricing_alias_uses_threshold_from_registry(
+        self,
+        tmp_path,
+        real_flow,
+        usage_webhook_api,
+        service_tier,
+        input_tokens,
+        expected_suffix,
+    ):
+        """A pricing alias absent from the generated map classifies from run data."""
+        flow = make_model_provider_usage_reporting_flow(
+            real_flow,
+            tmp_path,
+            host="api.openai.com",
+            original_url="https://api.openai.com/v1/responses",
+            firewall_name="model-provider:openai-api-key",
+            model_usage_provider="gpt-6-luna-pricing-alias",
+            usage={
+                **({"service_tier": service_tier} if service_tier else {}),
+                "tokens.input": input_tokens - 1_000,
+                "tokens.output": 7,
+                "tokens.cache_read": 1_000,
+            },
+        )
+        flow.metadata[metadata_keys.MODEL_USAGE_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS] = 272_001
+
+        with usage_webhook_api() as webhook:
+            usage.report_model_provider_usage(flow, "run-alias")
+            usage.flush_usage_events(trigger="test")
+
+        assert {
+            (event["provider"], event["category"]): event["quantity"]
+            for event in webhook.usage_events()
+        } == {
+            ("gpt-6-luna-pricing-alias", f"tokens.input{expected_suffix}"): input_tokens - 1_000,
+            ("gpt-6-luna-pricing-alias", f"tokens.output{expected_suffix}"): 7,
+            ("gpt-6-luna-pricing-alias", f"tokens.cache_read{expected_suffix}"): 1_000,
+        }
+
+    def test_registry_threshold_overrides_generated_threshold(
+        self,
+        tmp_path,
+        real_flow,
+        usage_webhook_api,
+    ):
+        """The API-resolved threshold is authoritative for a mapped provider too."""
+        flow = make_model_provider_usage_reporting_flow(
+            real_flow,
+            tmp_path,
+            host="api.openai.com",
+            original_url="https://api.openai.com/v1/responses",
+            firewall_name="model-provider:openai-api-key",
+            model_usage_provider="gpt-6-luna",
+            usage={"tokens.input": 200_001, "tokens.output": 7},
+        )
+        flow.metadata[metadata_keys.MODEL_USAGE_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS] = 200_001
+
+        with usage_webhook_api() as webhook:
+            usage.report_model_provider_usage(flow, "run-explicit-threshold")
+            usage.flush_usage_events(trigger="test")
+
+        assert {event["category"]: event["quantity"] for event in webhook.usage_events()} == {
+            "tokens.input.long_context": 200_001,
+            "tokens.output.long_context": 7,
+        }
+
     def test_output_without_input_skips_unclassifiable_terminal_billing(
         self,
         tmp_path,

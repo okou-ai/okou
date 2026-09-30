@@ -1368,10 +1368,19 @@ const storedExecutionContextObjectSchema = z.object({
   // Feature flags evaluated at job creation time (all switch states for user/org)
   featureFlags: z.record(z.string(), z.boolean()).optional(),
   billableFirewalls: z.array(z.string()).optional(),
-  // Canonical model id the proxy reports for model token usage. The API uses
-  // this model id for built-in billing rows; billing eligibility is decided
-  // from API-owned run context.
+  // Provider the proxy reports model token usage under: a Built-in route's
+  // `usage_pricing` provider (possibly an alias of the actual model), else the
+  // catalog model id. Billing eligibility is decided from API-owned run context.
   modelUsageProvider: z.string().optional(),
+  // Total-input threshold (input + cache read + cache creation) at which
+  // `modelUsageProvider` usage bills the `.long_context` categories, resolved
+  // by the API from run data. Absent: the proxy falls back to its generated
+  // map keyed by `modelUsageProvider` (older API).
+  modelUsageLongContextMinTotalInputTokens: z
+    .number()
+    .int()
+    .positive()
+    .optional(),
   // API-owned Codex provider/runtime metadata forwarded through the runner.
   codexRuntimeConfig: modelProviderCodexRuntimeConfigSchema
     .nullable()
@@ -1476,10 +1485,19 @@ const executionContextObjectSchema = z.object({
   // Feature flags evaluated at job creation time (all switch states for user/org)
   featureFlags: z.record(z.string(), z.boolean()).optional(),
   billableFirewalls: z.array(z.string()).optional(),
-  // Canonical model id the proxy reports for model token usage. The API uses
-  // this model id for built-in billing rows; billing eligibility is decided
-  // from API-owned run context.
+  // Provider the proxy reports model token usage under: a Built-in route's
+  // `usage_pricing` provider (possibly an alias of the actual model), else the
+  // catalog model id. Billing eligibility is decided from API-owned run context.
   modelUsageProvider: z.string().optional(),
+  // Total-input threshold (input + cache read + cache creation) at which
+  // `modelUsageProvider` usage bills the `.long_context` categories, resolved
+  // by the API from run data. Absent: the proxy falls back to its generated
+  // map keyed by `modelUsageProvider` (older API).
+  modelUsageLongContextMinTotalInputTokens: z
+    .number()
+    .int()
+    .positive()
+    .optional(),
   // API-owned Codex provider/runtime metadata forwarded through the runner.
   codexRuntimeConfig: modelProviderCodexRuntimeConfigSchema
     .nullable()
