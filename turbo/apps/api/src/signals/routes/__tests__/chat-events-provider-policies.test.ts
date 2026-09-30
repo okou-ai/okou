@@ -1608,6 +1608,31 @@ describe("CHAT-02: model-first provider policies", () => {
     },
   );
 
+  it("launches a free-plan okou-1.0 run on its Built-in route", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    await seedBuiltInModelCandidateKeys(context, "okou-1.0");
+    await preparePiResourceHandoff(actor, agentId);
+    await upsertOrgPlanEntitlementFixture({
+      orgId: requireOrgId(actor),
+      status: "active",
+      supportByok: true,
+      restrictedBuiltInModels: true,
+    });
+
+    const run = await sendChatRun(actor, {
+      agentId,
+      model: "okou-1.0",
+      prompt: "run the free plan's model",
+    });
+    const { claim } = await claimChatRun(runnerGroup, run.runId);
+    expect(claim.modelUsageProvider).toBe("okou-1.0");
+    expect(claim.piModelConfig).toMatchObject({ catalogModel: "okou-1.0" });
+    expect(claim.billableFirewalls).toContain(
+      "model-provider:openrouter-codex",
+    );
+    await cancelChatRun(actor, run.runId);
+  });
+
   it.each(
     (["deepseek-v4.1-flash", "deepseek-v4-flash"] as const).flatMap((model) => {
       return [false, true].flatMap((alternativeRoutingEnabled) => {

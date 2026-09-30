@@ -22,6 +22,8 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { now } from "../../../lib/time";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
+import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
+import { updateRestrictedPlanAccessFixture } from "../../../test-fixtures/model-route-capabilities";
 import {
   holdModelPolicyPreferenceFixture,
   stageUnrepairedOrgModelPolicyFixture,
@@ -1364,15 +1366,14 @@ describe("GET/PUT /api/model-policies", () => {
     );
   });
 
-  it("allows BYOK policy writes for restricted limited-free-1 models", async () => {
+  it("asks a limited-free-1 workspace for a paid plan or a subscription before an organization API-key route", async () => {
     const fixture = await seedFixture();
     await makeLimitedFreeWorkspace(fixture);
     await switchModelMode(fixture, "custom");
     const openAiProviderId = await createOrgProvider(fixture, "openai-api-key");
-    const client = apiClient();
 
     const response = await accept(
-      client.update({
+      apiClient().update({
         headers: authHeaders(),
         body: {
           revision: await currentPolicyRevision(),
@@ -1387,38 +1388,32 @@ describe("GET/PUT /api/model-policies", () => {
           ],
         },
       }),
-      [200],
+      [402],
     );
 
-    expect(response.body.policies).toContainEqual(
-      expect.objectContaining({
-        model: "gpt-6-astra",
-        defaultProviderType: "openai-api-key",
-        credentialScope: "org",
-        modelProviderId: openAiProviderId,
-        routeStatus: "valid",
-      }),
-    );
+    expect(response.body.error).toStrictEqual({
+      code: "PRO_REQUIRED",
+      message:
+        "GPT 6 Astra requires a paid plan. On the free plan, choose Auto or connect your own Claude Code or Codex subscription.",
+    });
   });
 
-  it("adds a BYOK route while a limited-free-1 workspace re-sends its stored restricted rows", async () => {
-    const { fixture, stored } = await listSeededLimitedFreePolicies();
-    const openAiProviderId = await createOrgProvider(fixture, "openai-api-key");
+  it("adds a catalog-freed Built-in model while a limited-free-1 workspace re-sends its stored restricted rows", async () => {
+    const { stored } = await listSeededLimitedFreePolicies();
+    // Free-plan Built-in access is the catalog row's flag.
+    onTestFinished(
+      await updateRestrictedPlanAccessFixture({
+        model: "gpt-5.6-sol",
+        builtInOnRestrictedPlans: true,
+      }),
+    );
 
     const response = await accept(
       apiClient().update({
         headers: authHeaders(),
         body: {
           revision: await currentPolicyRevision(),
-          policies: [
-            ...toUpdate(stored),
-            {
-              ...makeBuiltInPolicy("gpt-5.6-sol"),
-              defaultProviderType: "openai-api-key",
-              credentialScope: "org",
-              modelProviderId: openAiProviderId,
-            },
-          ],
+          policies: [...toUpdate(stored), makeBuiltInPolicy("gpt-5.6-sol")],
         },
       }),
       [200],
@@ -1433,8 +1428,7 @@ describe("GET/PUT /api/model-policies", () => {
     expect(response.body.policies).toContainEqual(
       expect.objectContaining({
         model: "gpt-5.6-sol",
-        defaultProviderType: "openai-api-key",
-        modelProviderId: openAiProviderId,
+        defaultProviderType: "built-in",
         routeStatus: "valid",
       }),
     );
@@ -1443,6 +1437,13 @@ describe("GET/PUT /api/model-policies", () => {
   it("rejects returning a stored restricted BYOK row to the built-in route", async () => {
     const { fixture, stored } = await listSeededLimitedFreePolicies();
     const openAiProviderId = await createOrgProvider(fixture, "openai-api-key");
+    // The API-key route was configured while the workspace was paid.
+    await upsertOrgPlanEntitlementFixture({
+      orgId: fixture.orgId,
+      status: "active",
+      supportByok: true,
+      restrictedBuiltInModels: false,
+    });
     const routed = await accept(
       apiClient().update({
         headers: authHeaders(),
@@ -1462,6 +1463,12 @@ describe("GET/PUT /api/model-policies", () => {
       }),
       [200],
     );
+    await upsertOrgPlanEntitlementFixture({
+      orgId: fixture.orgId,
+      status: "active",
+      supportByok: true,
+      restrictedBuiltInModels: true,
+    });
 
     const response = await accept(
       apiClient().update({
@@ -1482,7 +1489,7 @@ describe("GET/PUT /api/model-policies", () => {
       [200],
     );
 
-    expect(response.body.error.code).toBe("INSUFFICIENT_CREDITS");
+    expect(response.body.error.code).toBe("PRO_REQUIRED");
     expect(afterRejected.body.policies).toContainEqual(
       expect.objectContaining({
         model: "gpt-6-astra",
@@ -1510,7 +1517,7 @@ describe("GET/PUT /api/model-policies", () => {
       [200],
     );
 
-    expect(response.body.error.code).toBe("INSUFFICIENT_CREDITS");
+    expect(response.body.error.code).toBe("PRO_REQUIRED");
     expect(
       afterRejected.body.policies.map((policy) => {
         return policy.model;

@@ -349,19 +349,14 @@ test("Explain model availability by plan and provider", async () => {
   // is addressed by that name as a prefix.
   expect(modelMenuOption(/^GPT 5\.6 Luna/iu)).toBeVisible();
   expect(modelMenuOption(/^GPT 6 Astra.*Pro/iu)).toBeVisible();
-  expect(screen.getAllByText("Pro")).toHaveLength(3);
+  // The free plan runs only the catalog's free Built-in model; every listed
+  // Built-in model and the member's own API-key route ask for a paid plan.
+  expect(screen.getAllByText("Pro")).toHaveLength(6);
   expect(screen.getByText("BYOK")).toBeVisible();
-
   const byokOption = modelMenuOption(/^Claude Sonnet 5/iu);
-  expect(within(byokOption).queryByText("Pro")).toBeNull();
-  await user.click(byokOption);
-  await expect(modelPicker("Claude Sonnet 5")).resolves.toBeVisible();
-  expect(
-    screen.queryByRole("dialog", { name: "Choose a plan" }),
-  ).not.toBeInTheDocument();
+  expect(within(byokOption).getByText("Pro")).toBeVisible();
 
-  await user.click(await modelPicker("Claude Sonnet 5"));
-  await user.click(modelMenuOption(/^Claude Fable 5\.1/iu));
+  await user.click(byokOption);
   const planDialog = await screen.findByRole("dialog", {
     name: "Choose a plan",
   });
@@ -377,7 +372,7 @@ test("Explain model availability by plan and provider", async () => {
   expect(
     screen.queryByRole("dialog", { name: "Settings" }),
   ).not.toBeInTheDocument();
-  await expect(modelPicker("Claude Sonnet 5")).resolves.toBeVisible();
+  await expect(modelPicker("DeepSeek V4 Flash")).resolves.toBeVisible();
 });
 
 test("Switch chat models immediately and adjust Fast from settings", async () => {
