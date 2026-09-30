@@ -8,6 +8,8 @@ import { mockEnv } from "../../../lib/env";
 import { computeHmacSignature } from "../../../lib/event-consumer/hmac";
 import { now } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { withEmptyQueuePickObserverForTest } from "../../services/empty-queue-pick-observer.service";
+import { createDeferredPromise } from "../../utils";
 import { chatEventsRoutes } from "../chat-events";
 import { chatThreadRoutes } from "../chat-threads";
 import { webhooksWorkflowAutomationsRoutes } from "../webhooks-workflow-automations";
@@ -678,5 +680,69 @@ describe("CHAT-02: queued chat thread picks", () => {
       [later.runId],
     );
     await cancelChatRun(actor, later.runId);
+  }, 90_000);
+
+  it("re-picks input that arrives while the lease holder reads an empty queue", async () => {
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    chatCallbacks.failIfChatCallbackRouteIsFetched();
+    const blocker = await sendChatRun(actor, {
+      agentId,
+      prompt: "occupy the only organization slot",
+    });
+    // A recalled head leaves the thread queued with no pending input.
+    const recalled = await sendWaiting(actor, agentId, "recalled message");
+    await chat.requestSendEvent(
+      actor,
+      {
+        agentId,
+        threadId: recalled.threadId,
+        revokesEventId: recalled.clientEventId,
+        clientEventId: randomUUID(),
+      },
+      [201],
+    );
+    const emptyRead = createDeferredPromise<void>(context.signal);
+    const resumeDelete = createDeferredPromise<void>(context.signal);
+    const arrivedId = randomUUID();
+    await withEmptyQueuePickObserverForTest(
+      async (chatThreadId) => {
+        if (chatThreadId !== recalled.threadId || emptyRead.settled()) {
+          return;
+        }
+        emptyRead.resolve(undefined);
+        await resumeDelete.promise;
+      },
+      async () => {
+        // The slot release picks the thread; hold that picker after it read
+        // the empty queue and before its conditional delete.
+        const released = finishRun(runnerGroup, blocker.runId);
+        await emptyRead.promise;
+        // New input arrives under the lease; its enqueuer cannot claim.
+        await chat.requestSendEvent(
+          actor,
+          {
+            agentId,
+            threadId: recalled.threadId,
+            prompt: "arrives while the lease holder reads an empty queue",
+            clientEventId: arrivedId,
+          },
+          [201],
+        );
+        await expect(
+          runOfInput(actor, recalled.threadId, arrivedId),
+        ).resolves.toBeUndefined();
+        resumeDelete.resolve(undefined);
+        await released;
+      },
+    );
+    await flushWaitUntilForTest();
+    // The delete missed the advanced queuedAt, so the holder released its
+    // lease and scheduled one fresh pick that launched the new input.
+    const runId = await runOfInput(actor, recalled.threadId, arrivedId);
+    expect(runId).toStrictEqual(expect.any(String));
+    if (runId) {
+      await cancelChatRun(actor, runId);
+    }
   }, 90_000);
 });

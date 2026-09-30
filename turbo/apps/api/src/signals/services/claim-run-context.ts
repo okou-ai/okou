@@ -1676,16 +1676,14 @@ function automationSelectionCommand(
 }
 
 function workflowAutomationTiming(
-  args: Pick<AssembleWorkflowAutomationRunArgs, "apiStartTime" | "timing">,
+  timing: ApiDispatchTimingCollector,
+  apiStartTime: number,
 ): ApiDispatchTimingCollector {
-  const timing = args.timing ?? new ApiDispatchTimingCollector();
-  if (!args.timing) {
-    timing.recordElapsed(
-      "api_dispatch_pre_create_agent_workflow_automation_entrypoint_gap",
-      "nested",
-      args.apiStartTime,
-    );
-  }
+  timing.recordElapsed(
+    "api_dispatch_pre_create_agent_workflow_automation_entrypoint_gap",
+    "nested",
+    apiStartTime,
+  );
   return timing;
 }
 
@@ -1775,9 +1773,22 @@ function claimAssemblyRejection(
     : { userId: assembly.rejection.userId, error };
 }
 
+/**
+ * Dispatch timing for one pick, created by the parent after its claim and
+ * passed as a plain argument; it is not part of the prepared RunContext.
+ */
+export interface ClaimRunTiming {
+  readonly startedAt: number;
+  readonly run: ApiDispatchTimingCollector;
+  readonly phase: ApiDispatchPhaseCollector;
+}
+
 export interface RunContext {
   readonly kind: "prepared";
-  readonly input: Omit<RunPlan, "args" | "context"> & {
+  readonly input: Omit<
+    RunPlan,
+    "args" | "context" | "timing" | "phaseTiming"
+  > & {
     readonly context: CommitPreparedLaunchArgs["context"];
     readonly args: Omit<
       CommitPreparedLaunchArgs["createArgs"],
@@ -1823,9 +1834,25 @@ function claimCommitArguments(
   };
 }
 
+/**
+ * The first route error among prepared resources, in plan, credit admission,
+ * storage and stored-context order.
+ */
+function firstPreparationFailure(
+  results: readonly unknown[],
+): CreateRunErrorResult | null {
+  for (const result of results) {
+    if (isRouteError(result)) {
+      return result;
+    }
+  }
+  return null;
+}
+
 /** Encode the final pending payload before it crosses the claim boundary. */
 function finalizeClaimRunContext(
   context: Omit<RunContext, "persistence">,
+  timing: ApiDispatchTimingCollector,
 ): RunContext {
   return {
     ...context,
@@ -1836,7 +1863,7 @@ function finalizeClaimRunContext(
       identity: context.identity,
       callbackRows: context.callbackRows,
       launch: context.launch,
-      timing: context.input.timing,
+      timing,
     }),
   };
 }
@@ -2284,8 +2311,6 @@ function claimCommitInput(input: RunPlan): RunContext["input"] {
   return {
     args,
     enforceBuiltInCredits: input.enforceBuiltInCredits,
-    timing: input.timing,
-    phaseTiming: input.phaseTiming,
     context: {
       resolved: {
         agentId: input.context.resolved.agentId,
@@ -5018,6 +5043,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     async (
       { get, set },
       head: ChatQueueHeadContext,
+      runTiming: ApiDispatchTimingCollector,
       signal: AbortSignal,
     ): Promise<boolean> => {
       const db = set(writeDb$);
@@ -5026,7 +5052,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         db,
         head,
         timing,
-        runTiming: new ApiDispatchTimingCollector(),
+        runTiming,
       });
       set(promptInternalModelInternalModel$, null);
       set(promptInternalDiscordMaterialInternalDiscordMaterial$, null);
@@ -6819,11 +6845,15 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     async (
       { get, set },
       head: ChatQueueHeadContext,
+      runTiming: ApiDispatchTimingCollector,
       signal: AbortSignal,
     ): Promise<false> => {
       set(internalAutomationDatabase$, set(writeDb$));
       set(initializeQueuedAutomationInternalHead$, head);
-      set(internalTiming$, workflowAutomationTiming(head));
+      set(
+        internalTiming$,
+        workflowAutomationTiming(runTiming, head.apiStartTime),
+      );
       const input = await get(automationExecutionInput$);
       signal.throwIfAborted();
       if (!input) {
@@ -12810,22 +12840,19 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     },
   );
   const initializeRunPreparation$ = command(
-    async ({ get, set }, signal: AbortSignal) => {
+    async ({ get, set }, timing: ClaimRunTiming, signal: AbortSignal) => {
       signal.throwIfAborted();
-      set(internalStartedAt$, now());
+      set(internalStartedAt$, timing.startedAt);
       const head = await get(head$);
       signal.throwIfAborted();
       if (!head) {
         return null;
       }
-      set(
-        internalPhaseTiming$,
-        new ApiDispatchPhaseCollector(head.apiStartTime),
-      );
+      set(internalPhaseTiming$, timing.phase);
       const resolvePromptInputs =
         head.contextType === "automation"
-          ? await set(initializeAutomationExecution$, head, signal)
-          : await set(initializeQueuedPrompt$, head, signal);
+          ? await set(initializeAutomationExecution$, head, timing.run, signal)
+          : await set(initializeQueuedPrompt$, head, timing.run, signal);
       signal.throwIfAborted();
       const { identityInput, authorization } = await set(
         authorizeClaimIdentity$,
@@ -12949,9 +12976,10 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   const prepareRunContext$ = command(
     async (
       { get, set },
+      timing: ClaimRunTiming,
       signal: AbortSignal,
     ): Promise<RunContext | { readonly kind: "passed" }> => {
-      const head = await set(initializeRunPreparation$, signal);
+      const head = await set(initializeRunPreparation$, timing, signal);
       signal.throwIfAborted();
       if (!head) {
         return { kind: "passed" };
@@ -13005,14 +13033,12 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         );
         return { kind: "passed" };
       }
-      const failure = isRouteError(input)
-        ? input
-        : (admission ??
-          (isRouteError(storage)
-            ? storage
-            : isRouteError(contextDraft)
-              ? contextDraft
-              : null));
+      const failure = firstPreparationFailure([
+        input,
+        admission,
+        storage,
+        contextDraft,
+      ]);
       if (failure) {
         await set(
           rejectChatQueueHead$,
@@ -13044,30 +13070,33 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         recordQueuedInputAdmissionTiming$,
         head,
         (await get(pickedEvent$))?.createdAt ?? nowDate(),
-        input.timing,
+        timing.run,
         signal,
       );
-      const preparedContext = await input.timing.measure(
+      const preparedContext = await timing.run.measure(
         "api_dispatch_prepare_atomic_launch_persistence",
         "nested",
         () => {
           return Promise.resolve(
-            finalizeClaimRunContext({
-              kind: "prepared",
-              input: claimCommitInput(input),
-              identity,
-              callbackRows,
-              launch: finalizedMaterializedLaunch(storage, contextDraft),
-              head,
-              producerBinding: assembly.producerBinding,
-              rejection: claimRejectionContext(assembly.rejection),
-              launchRecord: claimLaunchRecord(assembly.launchRecord),
-            }),
+            finalizeClaimRunContext(
+              {
+                kind: "prepared",
+                input: claimCommitInput(input),
+                identity,
+                callbackRows,
+                launch: finalizedMaterializedLaunch(storage, contextDraft),
+                head,
+                producerBinding: assembly.producerBinding,
+                rejection: claimRejectionContext(assembly.rejection),
+                launchRecord: claimLaunchRecord(assembly.launchRecord),
+              },
+              timing.run,
+            ),
           );
         },
       );
       signal.throwIfAborted();
-      input.phaseTiming.checkpoint("api_dispatch_phase_prepare_launch", now());
+      timing.phase.checkpoint("api_dispatch_phase_prepare_launch", now());
       return preparedContext;
     },
   );

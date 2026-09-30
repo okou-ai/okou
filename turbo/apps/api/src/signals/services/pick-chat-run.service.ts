@@ -26,6 +26,7 @@ import { waitUntil } from "../context/wait-until";
 import type { Tx } from "../../lib/db-types";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { isFreePlanForCreditAdmission } from "./run-admission.service";
+import { observeEmptyQueuePickForTest } from "./empty-queue-pick-observer.service";
 import { observePreparedLaunchPersistenceForTest } from "./prepared-launch-persistence-observer.service";
 import { now, nowDate } from "../../lib/time";
 import { conflict } from "../../lib/error";
@@ -38,7 +39,12 @@ import {
   cappedBaseConcurrencyLimit,
 } from "./org-concurrency-entitlements.service";
 import {
+  ApiDispatchPhaseCollector,
+  ApiDispatchTimingCollector,
+} from "./api-dispatch-timing.service";
+import {
   createClaimRunObjects,
+  type ClaimRunTiming,
   type ThreadClaim,
   type RunContext,
 } from "./claim-run-context";
@@ -152,11 +158,12 @@ async function validateClaimedRunAdmission(
   claim: ThreadClaim,
   context: RunContext,
   preparedCommit: PreparedCommitPreparedLaunchArgs,
+  timing: ApiDispatchTimingCollector,
 ): Promise<ClaimRunAdmission> {
   const { input, identity, launch } = context;
   const { admissionTiming } = preparedCommit;
   const validateOfficialAdmission = () => {
-    return input.timing.measure(
+    return timing.measure(
       "api_dispatch_validate_official_workflow_admission",
       "nested",
       () => {
@@ -187,7 +194,7 @@ async function validateClaimedRunAdmission(
       return validateThreadSessionSnapshot(tx, {
         createArgs: input.args,
         identity,
-        timing: input.timing,
+        timing: timing,
       });
     },
   );
@@ -217,7 +224,7 @@ async function validateClaimedRunAdmission(
         sessionSnapshotState: validatedThreadSession
           ? "current"
           : "unvalidated",
-        timing: input.timing,
+        timing: timing,
       });
       return await claimQueueFirstRunAssociation(tx, {
         ...association,
@@ -232,7 +239,7 @@ async function validateClaimedRunAdmission(
                   : ("ultrafast" as const),
             }
           : {}),
-        timing: input.timing,
+        timing: timing,
       });
     },
   );
@@ -287,6 +294,7 @@ async function persistClaimedRun(
   context: RunContext,
   preparedCommit: PreparedCommitPreparedLaunchArgs,
   admission: AdmittedClaimRun,
+  timing: ApiDispatchTimingCollector,
 ): Promise<Extract<AtomicLaunchCommitResult, { kind: "pending" }>> {
   const { input, identity, launch } = context;
   const { admissionTiming, persistence } = preparedCommit;
@@ -319,7 +327,7 @@ async function persistClaimedRun(
         validatedAccountIdentity: admission.validatedAccountIdentity,
       };
       const ctes = buildAtomicLaunchCteContext(rows, creditAdmitted);
-      const rowsPersisted = await input.timing.measure(
+      const rowsPersisted = await timing.measure(
         "api_dispatch_persist_atomic_launch",
         "nested",
         () => {
@@ -337,7 +345,7 @@ async function persistClaimedRun(
               chatThreadId: input.args.chatThreadId,
               identity,
               resolution: input.args.threadSessionResolution,
-              timing: input.timing,
+              timing: timing,
             })
           : rowsPersisted.threadSessionBinding;
       return { ...rowsPersisted, threadSessionBinding };
@@ -351,7 +359,7 @@ async function persistClaimedRun(
         runId: persisted.run.id,
         runCreatedAt: persisted.run.createdAt,
       });
-      input.timing.recordElapsed(
+      timing.recordElapsed(
         "api_dispatch_activate_usage_allowance_windows",
         "nested",
         startedAt,
@@ -852,6 +860,7 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
       _store,
       context: RunContext,
       committed: AtomicLaunchCommitCompletion,
+      timing: ClaimRunTiming,
       signal: AbortSignal,
     ): ClaimRunCommit => {
       const { input, identity, launch } = context;
@@ -864,8 +873,8 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
           createArgs: input.args,
           identity,
           launch,
-          timing: input.timing,
-          phaseTiming: input.phaseTiming,
+          timing: timing.run,
+          phaseTiming: timing.phase,
         });
         return { kind: "passed" };
       }
@@ -873,8 +882,8 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
         createArgs: { ...input.args, body: input.context.body },
         committed: committed.result,
         transactionReturnedAt: committed.transactionReturnedAt,
-        timing: input.timing,
-        phaseTiming: input.phaseTiming,
+        timing: timing.run,
+        phaseTiming: timing.phase,
       });
       if (!result.pendingActivation) {
         throw new Error("Pending run is missing activation metadata");
@@ -894,9 +903,11 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
       {
         claim,
         context,
+        timing,
       }: {
         readonly claim: ThreadClaim;
         readonly context: RunContext;
+        readonly timing: ClaimRunTiming;
       },
       signal: AbortSignal,
     ): Promise<ClaimRunCommit> => {
@@ -918,7 +929,7 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
         identity,
         callbackRows,
         launch,
-        timing: input.timing,
+        timing: timing.run,
       };
       const admissionTiming = new AdmissionAttemptTiming({
         runId: identity.runId,
@@ -934,83 +945,84 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
         persistence: context.persistence,
         admissionTiming,
       };
-      const committed: AtomicLaunchCommitCompletion =
-        await input.timing.measure(
-          "api_dispatch_insert_run_with_concurrency",
-          "top_level",
-          async () => {
-            const result = await database.transaction(
-              async (tx): Promise<AtomicLaunchCommitCompletion["result"]> => {
-                admissionTiming.transactionStarted();
-                await acquireOfficialWorkflowRunCatalogAdmissionLock(
-                  tx,
-                  input.context.officialWorkflowRun,
-                );
-                // Keep credit-plan acquisition ahead of workflow/automation locks.
-                if (
-                  input.context.officialWorkflowRun &&
-                  input.enforceBuiltInCredits
-                ) {
-                  await loadOrgPlanCapabilities(tx, input.args.orgId, {
-                    forUpdate: true,
-                  });
-                }
-                admissionTiming.admissionStarted();
-                const admission = await validateClaimedRunAdmission(
-                  tx,
-                  claim,
-                  context,
-                  preparedCommit,
-                );
-                if (!("kind" in admission) || admission.kind !== "admitted") {
-                  admissionTiming.callbackFinished();
-                  return admission;
-                }
-                // Fence the lease before the first write. Admission above
-                // already took the automation/plan locks that enqueue takes
-                // before its queue upsert, so both orders end on this row.
-                const [fenced] = await tx
-                  .update(queuedChatThreads)
-                  .set({ claimId: null, claimExpiresAt: null })
-                  .where(
-                    and(
-                      eq(queuedChatThreads.orgId, claim.orgId),
-                      eq(queuedChatThreads.chatThreadId, claim.chatThreadId),
-                      eq(queuedChatThreads.claimId, claim.claimId),
-                    ),
-                  )
-                  .returning({ chatThreadId: queuedChatThreads.chatThreadId });
-                if (!fenced) {
-                  throw new Error(
-                    "Chat thread claim was lost before the pending commit",
-                  );
-                }
-                const pending = await persistClaimedRun(
-                  tx,
-                  context,
-                  preparedCommit,
-                  admission,
-                );
-                // This unique insert is deliberately the final SQL statement.
-                // A concurrent active run rolls the entire pending commit back.
-                await tx.insert(activeAgentRuns).values({
-                  runId: pending.run.id,
-                  orgId: input.args.orgId,
-                  userId: input.args.userId,
-                  chatThreadId: claim.chatThreadId,
-                  lastHeartbeatAt: pending.run.createdAt,
+      const committed: AtomicLaunchCommitCompletion = await timing.run.measure(
+        "api_dispatch_insert_run_with_concurrency",
+        "top_level",
+        async () => {
+          const result = await database.transaction(
+            async (tx): Promise<AtomicLaunchCommitCompletion["result"]> => {
+              admissionTiming.transactionStarted();
+              await acquireOfficialWorkflowRunCatalogAdmissionLock(
+                tx,
+                input.context.officialWorkflowRun,
+              );
+              // Keep credit-plan acquisition ahead of workflow/automation locks.
+              if (
+                input.context.officialWorkflowRun &&
+                input.enforceBuiltInCredits
+              ) {
+                await loadOrgPlanCapabilities(tx, input.args.orgId, {
+                  forUpdate: true,
                 });
+              }
+              admissionTiming.admissionStarted();
+              const admission = await validateClaimedRunAdmission(
+                tx,
+                claim,
+                context,
+                preparedCommit,
+                timing.run,
+              );
+              if (!("kind" in admission) || admission.kind !== "admitted") {
                 admissionTiming.callbackFinished();
-                return pending;
-              },
-            );
-            const transactionReturnedAt = now();
-            await admissionTiming.finish(admissionAttemptOutcome(result));
-            return { result, transactionReturnedAt };
-          },
-        );
+                return admission;
+              }
+              // Fence the lease before the first write. Admission above
+              // already took the automation/plan locks that enqueue takes
+              // before its queue upsert, so both orders end on this row.
+              const [fenced] = await tx
+                .update(queuedChatThreads)
+                .set({ claimId: null, claimExpiresAt: null })
+                .where(
+                  and(
+                    eq(queuedChatThreads.orgId, claim.orgId),
+                    eq(queuedChatThreads.chatThreadId, claim.chatThreadId),
+                    eq(queuedChatThreads.claimId, claim.claimId),
+                  ),
+                )
+                .returning({ chatThreadId: queuedChatThreads.chatThreadId });
+              if (!fenced) {
+                throw new Error(
+                  "Chat thread claim was lost before the pending commit",
+                );
+              }
+              const pending = await persistClaimedRun(
+                tx,
+                context,
+                preparedCommit,
+                admission,
+                timing.run,
+              );
+              // This unique insert is deliberately the final SQL statement.
+              // A concurrent active run rolls the entire pending commit back.
+              await tx.insert(activeAgentRuns).values({
+                runId: pending.run.id,
+                orgId: input.args.orgId,
+                userId: input.args.userId,
+                chatThreadId: claim.chatThreadId,
+                lastHeartbeatAt: pending.run.createdAt,
+              });
+              admissionTiming.callbackFinished();
+              return pending;
+            },
+          );
+          const transactionReturnedAt = now();
+          await admissionTiming.finish(admissionAttemptOutcome(result));
+          return { result, transactionReturnedAt };
+        },
+      );
       signal.throwIfAborted();
-      return set(recordRunCommit$, context, committed, signal);
+      return set(recordRunCommit$, context, committed, timing, signal);
     },
   );
 
@@ -1105,10 +1117,18 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
         return null;
       }
       if (!event) {
+        await observeEmptyQueuePickForTest(claim.chatThreadId);
+        signal.throwIfAborted();
         await set(deleteEmptyQueue$, claim, signal);
         return null;
       }
-      const context = await set(claimed.prepareRunContext$, signal);
+      const startedAt = now();
+      const timing: ClaimRunTiming = {
+        startedAt,
+        run: new ApiDispatchTimingCollector(),
+        phase: new ApiDispatchPhaseCollector(startedAt),
+      };
+      const context = await set(claimed.prepareRunContext$, timing, signal);
       signal.throwIfAborted();
       if (context.kind === "passed") {
         await set(releaseClaimAndSchedulePick$, claim, signal);
@@ -1116,7 +1136,7 @@ export function createPickObjects(orgId: string, fixedThreadId?: string) {
       }
       // A pending commit fences and clears this claim's lease in its own
       // transaction, so the success path has no separate release.
-      const pending = await set(createRun$, { claim, context }, signal);
+      const pending = await set(createRun$, { claim, context, timing }, signal);
       if (pending.kind !== "pending") {
         if (pending.kind === "rejected") {
           await set(rejectEvent$, context, pending.error, signal);
