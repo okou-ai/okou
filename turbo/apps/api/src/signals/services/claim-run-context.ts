@@ -12475,7 +12475,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       signal.throwIfAborted();
       // No initialization write can change these inputs. Start the actual
       // memoized mount/index/URL read graph, not a throwaway prefetch query.
-      await get(storagePlan$);
+      await get(storageMounts$);
       signal.throwIfAborted();
     },
   );
