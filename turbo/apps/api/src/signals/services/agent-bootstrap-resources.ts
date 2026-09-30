@@ -8,12 +8,12 @@ import { and, asc, eq, inArray, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { zodEnumDriverValueDecoder } from "../../lib/db-structured-result";
 import { db$ } from "../external/db";
-import {
-  ORG_SENTINEL_USER_ID,
-  type DisabledPaidToolsSnapshot,
-  type PersistedRunEnvironmentSecret,
-  type PersistedRunEnvironmentVariable,
-} from "./agent-run-execution.service";
+import { ORG_SENTINEL_USER_ID } from "./feature-switch-scope";
+import type {
+  BootstrapEnvironment,
+  BootstrapVariable,
+  BootstrapEncryptedSecret,
+} from "./agent-bootstrap.service";
 import {
   customConnectorDefinitionSelection,
   type CustomConnectorExecutionDefinition,
@@ -25,7 +25,7 @@ const environmentRowKindDecoder = zodEnumDriverValueDecoder(
 );
 
 export function createAgentDisabledPaidTools(userId: string, orgId: string) {
-  return computed(async (get): Promise<DisabledPaidToolsSnapshot> => {
+  return computed(async (get): Promise<readonly string[]> => {
     const rows = await get(db$)
       .select({ toolId: userDisabledPaidTools.toolId })
       .from(userDisabledPaidTools)
@@ -36,13 +36,9 @@ export function createAgentDisabledPaidTools(userId: string, orgId: string) {
         ),
       )
       .orderBy(asc(userDisabledPaidTools.toolId));
-    return {
-      orgId,
-      userId,
-      toolIds: rows.map((row) => {
-        return row.toolId;
-      }),
-    };
+    return rows.map((row) => {
+      return row.toolId;
+    });
   });
 }
 
@@ -127,20 +123,12 @@ export function createAgentCustomConnectorDefinitions(
   });
 }
 
-export interface AgentEnvironmentSnapshot {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly secretNames: readonly string[];
-  readonly variables: readonly PersistedRunEnvironmentVariable[];
-  readonly secrets: readonly PersistedRunEnvironmentSecret[];
-}
-
 export function createAgentEnvironment(
   userId: string,
   orgId: string,
   secretNames: readonly string[],
 ) {
-  return computed(async (get): Promise<AgentEnvironmentSnapshot> => {
+  return computed(async (get): Promise<BootstrapEnvironment> => {
     const db = get(db$);
     const variableQuery = db
       .select({
@@ -186,8 +174,8 @@ export function createAgentEnvironment(
               ),
           )
         : await variableQuery;
-    const variableRows: PersistedRunEnvironmentVariable[] = [];
-    const secretRows: PersistedRunEnvironmentSecret[] = [];
+    const variableRows: BootstrapVariable[] = [];
+    const secretRows: BootstrapEncryptedSecret[] = [];
     for (const row of rows) {
       if (row.kind === "variable") {
         variableRows.push({
@@ -204,9 +192,7 @@ export function createAgentEnvironment(
       }
     }
     return {
-      orgId,
-      userId,
-      secretNames,
+      requestedSecretNames: secretNames,
       variables: variableRows,
       secrets: secretRows,
     };

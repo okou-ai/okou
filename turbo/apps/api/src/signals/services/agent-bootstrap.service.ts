@@ -1,16 +1,12 @@
 import { computed, type Computed } from "ccstate";
-import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
-import {
-  runEnvironmentSecretNames,
-  type AgentRunRecord,
-} from "./agent-run-execution.service";
+import type { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { runEnvironmentSecretNames } from "./agent-run-execution.service";
 import { buildAgentExecutionConfig } from "./agent-execution-config";
 import { createBootstrapAgent } from "./agent-bootstrap-agent";
 import {
   createAgentDisabledPaidTools,
   createAgentCustomConnectorDefinitions,
   createAgentEnvironment,
-  type AgentEnvironmentSnapshot,
 } from "./agent-bootstrap-resources";
 import {
   createAgentCatalogIdentity,
@@ -42,18 +38,54 @@ import {
   type SelectedAgentWorkflow,
 } from "./execution-agent-workflows.service";
 
+export interface BootstrapAgent {
+  readonly id: string;
+  readonly orgId: string;
+  readonly owner: string;
+  readonly visibility: "public" | "private";
+  readonly name: string;
+  readonly displayName: string | null;
+  readonly description: string | null;
+  readonly sound: string | null;
+  readonly defaultAgentId: string | null;
+  readonly modelProviderId: string | null;
+  readonly selectedModel: string | null;
+}
+
+export interface BootstrapFeatureSwitchContext {
+  readonly userId: string;
+  readonly orgId: string;
+  readonly email?: string;
+  readonly overrides: Partial<Record<FeatureSwitchKey, boolean>>;
+}
+
+export interface BootstrapVariable {
+  readonly name: string;
+  readonly value: string;
+  readonly userId: string;
+}
+
+export interface BootstrapEncryptedSecret {
+  readonly name: string;
+  readonly encryptedValue: string;
+  readonly userId: string;
+}
+
+export interface BootstrapEnvironment {
+  readonly requestedSecretNames: readonly string[];
+  readonly variables: readonly BootstrapVariable[];
+  readonly secrets: readonly BootstrapEncryptedSecret[];
+}
+
 export interface AgentBootstrap {
   readonly memberMetadata: ExecutionMemberMetadata;
   readonly connectorSelection: AgentConnectorSelection;
   readonly permissionGrants: readonly ConnectorPermissionGrant[];
   readonly workflows: readonly SelectedAgentWorkflow[];
-  readonly featureSwitchContext: FeatureSwitchContext;
-  readonly agent: AgentRunRecord | null;
+  readonly featureSwitchContext: BootstrapFeatureSwitchContext;
+  readonly agent: BootstrapAgent | null;
   readonly disabledPaidToolIds: readonly string[];
-  readonly environment: Omit<
-    AgentEnvironmentSnapshot,
-    "orgId" | "userId" | "secretNames"
-  > & { readonly requestedSecretNames: readonly string[] };
+  readonly environment: BootstrapEnvironment;
   readonly customConnectorDefinitions: readonly CustomConnectorExecutionDefinition[];
   readonly catalog: AgentBootstrapCatalog;
 }
@@ -113,7 +145,7 @@ export function createAgentBootstrap(
   const disabledPaidTools$ = createAgentDisabledPaidTools(userId, orgId);
   const catalogIdentity$ = createAgentCatalogIdentity();
   const featureSwitchContext$ = computed(
-    async (get): Promise<FeatureSwitchContext> => {
+    async (get): Promise<BootstrapFeatureSwitchContext> => {
       const [member, overrides] = await Promise.all([
         get(memberMetadata$),
         get(featureSwitchOverrides$),
@@ -139,7 +171,7 @@ export function createAgentBootstrap(
       ),
     );
     return {
-      requestedSecretNames: snapshot.secretNames,
+      requestedSecretNames: snapshot.requestedSecretNames,
       variables: snapshot.variables,
       secrets: snapshot.secrets,
     };
@@ -215,7 +247,7 @@ export function createAgentBootstrap(
       permissionGrants,
       workflows,
       featureSwitchContext,
-      disabledPaidToolIds: disabledPaidTools.toolIds,
+      disabledPaidToolIds: disabledPaidTools,
       environment,
       customConnectorDefinitions,
       catalog,

@@ -3,11 +3,11 @@ import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { computed } from "ccstate";
 import { eq } from "drizzle-orm";
 import { db$ } from "../external/db";
-import type { AgentRunRecord } from "./agent-run-execution.service";
+import type { BootstrapAgent } from "./agent-bootstrap.service";
 
 /** Internal Agent facts remain independently readable before authorization. */
 export function createBootstrapAgent(agentId: string) {
-  return computed(async (get): Promise<AgentRunRecord | null> => {
+  return computed(async (get): Promise<BootstrapAgent | null> => {
     const [agent] = await get(db$)
       .select({
         id: agents.id,
