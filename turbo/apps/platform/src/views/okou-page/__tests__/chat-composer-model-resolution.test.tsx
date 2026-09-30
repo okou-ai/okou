@@ -1,4 +1,7 @@
-import { findModelMenuOption } from "./chat-model-menu-test-helpers.ts";
+import {
+  findModelMenuOption,
+  queryModelMenuOption,
+} from "./chat-model-menu-test-helpers.ts";
 import {
   getCanonicalModelDisplayName,
   type ModelProviderType,
@@ -137,6 +140,29 @@ test("Resolve the model shown for a chat", async () => {
 
   await readyComposer();
   await expect(modelPicker("Claude Opus 5.5")).resolves.toBeVisible();
+});
+
+test("Show Auto when an existing thread's model is no longer selectable", async () => {
+  const user = userEvent.setup({ delay: null });
+  installRunChat({ selectedModel: "deepseek-v4.1-flash" });
+  context.mocks.data.orgModelPolicies([
+    modelPolicy("okou-1.0", 1, { default: true }),
+    {
+      ...modelPolicy("gpt-6-sol", 2, {
+        providerType: "codex-oauth-token",
+        credentialScope: "member",
+      }),
+      subscriptionOptions: { efforts: ["low", "high"], serviceTier: null },
+    },
+  ]);
+  context.mocks.data.orgModelMode("auto");
+
+  await setupPage({ context, path: RUN_PATH });
+
+  await readyChat();
+  await user.click(await modelPicker("Auto"));
+  await expect(findModelMenuOption(/^GPT 6 Sol/iu)).resolves.toBeVisible();
+  expect(queryModelMenuOption(/DeepSeek/iu)).not.toBeInTheDocument();
 });
 
 test("Keep an existing thread's explicit model", async () => {
