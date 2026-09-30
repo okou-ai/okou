@@ -286,15 +286,32 @@ Storage selection and local URL signing perform no database writes. Discord acce
 delivery and typing notifications receive the request dispatcher instead of
 creating a Store inside the pick's work.
 
-Storage plan, request, presigned-cache and mount nodes are constructed with the
-claim factory. A valid cached URL is reused; a miss or expired row is signed in
-memory using local credentials, without an R2 request. Final URLs enter the
-runner payload directly. Fresh cache rows remain private to the child. Only a
-successfully committed pending run schedules `updatePresignedUrlCache$` through
-the existing request's `waitUntil`; rejected inputs and lost commits do not.
-The cache write does not delay activation. Its failure is logged without retry
-or changing the admitted run. This is the one explicit exception to preparation's
-fail-fast rule; the runner never needs the cache write to finish.
+Thread owns HEAD/prefix resolution, session/Official selection and display/persisted
+mount projections. It derives one `createExecutionStorageObjects(exactMounts)`
+instance from the selected ordinary identities. The resource exposes only
+`preparedMounts$` and `updatePresignedUrlCache$`: it batches exact-version reads,
+verifies actual owner/name/storage/version membership, validates mount configuration,
+and prepares URLs in request order. It does not select HEAD, initialize storage,
+repair versions, update a session or write a cache during preparation. Empty
+writeback versions remain empty mounts; read-only/archive mounts retain the actual
+archive metadata. Thread privately adapts the results to the existing Runner wire
+shape, including omission of unknown/zero archive sizes and optional default-fail
+root policy.
+
+A valid cached URL is reused; a miss or expired row is signed locally, without an
+R2 request. Existing system/workflow/readonly namespaces, cache keys and TTLs are
+reused; workflow-cache classification follows the reserved organization skill
+storage namespace, not a supplied business context. The resource shares private
+signing results and fresh cache rows with its command. Only a successfully
+committed run schedules that command through request-owned `waitUntil`; rejected
+inputs and lost commits do not. The write does not delay activation. Failure is
+logged without retry or changing the admitted run: the existing explicit exception
+to preparation fail-fast remains intact.
+
+Resource preparation adds a batched exact-version membership read after the
+business selection snapshot. This is an explicit round-trip change, not a latency
+claim. Thread measures the resource wait with `storage_manifest_signing_owner=execution_storage`; its former private per-scope cache/pool/signing stages are
+retired rather than exposed through an injected timing/context API.
 
 `execution-callbacks.service.ts:prepareCallbacks$` encrypts ordinary callback
 definitions and returns no run ID or persistence row. The Thread owner preserves

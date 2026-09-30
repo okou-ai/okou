@@ -1,3 +1,13 @@
+import {
+  createExecutionStorageObjects,
+  type ExecutionStorageRequest,
+  type PreparedExecutionStorageMount,
+} from "./execution-storage.service";
+import {
+  type StoredStorageMountEntry,
+  type PiMemoryRecallSelection,
+  piMemoryRecallSelectionSchema,
+} from "@okouai/api-contracts/contracts/runners";
 import { encryptExecutionSecrets$ } from "./execution-secrets.service";
 import {
   prepareCallbacks$ as prepareExecutionCallbacks$,
@@ -114,7 +124,6 @@ import {
   buildPreparedPermissionManifest,
   buildResolvedRunBody,
   buildStorageIndex,
-  buildSignedStorageEntries,
   storagePrefixVersionRequests,
   storageIndexWithPrefixVersions,
   buildStoredExecutionContextDraft,
@@ -144,7 +153,6 @@ import {
   finalizedMaterializedLaunch,
   finalizePreparedRunContext,
   finalizePreparedStorage,
-  finalStorageManifestPlans,
   frameworkApiKeyEnv,
   frameworkForProviderSelection,
   hasExplicitFrameworkApiKey,
@@ -186,7 +194,6 @@ import {
   prepareRunnerStorageInput,
   prepareRunOutputMetadata,
   priorPiMemoryRecall,
-  readOnlyStoragePresignedUrlRequest,
   regularProviderEnvironmentFromSnapshot,
   resolveProductAgentExecution,
   type ResolvedModelProviderEnvironment,
@@ -227,7 +234,6 @@ import {
   storageIndexKey,
   type StorageIndexRow,
   StorageManifestBuildStats,
-  storageManifestPresignedUrlRequests,
   storedConnectorContextFromSnapshot,
   storedConnectorCredentialReadGroups,
   type StoredConnectorEncryptedSecretRow,
@@ -242,10 +248,6 @@ import {
   withPaidToolPlatformEnvironment,
 } from "./agent-run-execution.service";
 import { CONVERSATION_GUIDANCE } from "../../lib/conversation-guidance";
-import {
-  type PgPoolAcquisitionCapture,
-  withPgPoolAcquisitionCapture,
-} from "../../lib/db-instrumentation";
 import { executeRawRows } from "../../lib/db-raw-rows";
 import {
   nullableDriverValueDecoder,
@@ -282,7 +284,6 @@ import {
   publishThreadListChangedSafely,
 } from "../external/realtime";
 import { recordBillingOperationTimings } from "../external/sandbox-op-log";
-import { publicPresignedGetUrlSigner$ } from "../external/s3";
 import type { SlackUserInfo } from "../external/slack-message-client";
 import { getOfficialTelegramBotConfig } from "../external/telegram-official";
 import { onRejection, safeSync, settle, tapError } from "../utils";
@@ -470,14 +471,6 @@ import {
   userPresentationTemplateVolumes,
 } from "./presentation-template-data.service";
 import {
-  planStorageManifestMixedLookup,
-  signStorageManifestPresignedUrls,
-  type SelectedStoragePresignedUrlCacheRow,
-  storageManifestCacheCountBucket,
-  storageManifestPresignedUrlCacheLookupPairs,
-  type StorageManifestPresignedUrlCacheScope,
-} from "./system-storage-presigned-url-cache.service";
-import {
   type TeamsDeliveryTarget,
   teamsDeliveryTargetSchema,
 } from "./teams-chat-callback-payload";
@@ -536,10 +529,6 @@ import {
   RETIRED_RUN_MODEL_MESSAGE,
 } from "@okouai/api-contracts/contracts/model-providers";
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
-import {
-  type PiMemoryRecallSelection,
-  piMemoryRecallSelectionSchema,
-} from "@okouai/api-contracts/contracts/runners";
 import { SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
 import { connectorCatalogArtifactFailureCode } from "@okouai/connectors/connector-catalog/artifacts/loader";
 import { permissionGrantsToFirewallPolicies } from "@okouai/connectors/firewall-metadata/policy";
@@ -627,7 +616,6 @@ import { slackChatThreadRoutes } from "@okouai/db/schema/slack-chat-thread-route
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
-import { systemStoragePresignedUrlCache } from "@okouai/db/schema/system-storage-presigned-url-cache";
 import { teamsChatThreadRoutes } from "@okouai/db/schema/teams-chat-thread-route";
 import { teamsOrgConnections } from "@okouai/db/schema/teams-org-connection";
 import { teamsOrgInstallations } from "@okouai/db/schema/teams-org-installation";
@@ -2389,33 +2377,6 @@ type RunnerInputResult =
   | CreateRunErrorResult
   | null;
 
-function storageManifestCacheLookupCondition(
-  pairs: readonly {
-    readonly scope: StorageManifestPresignedUrlCacheScope;
-    readonly cacheKey: string;
-  }[],
-) {
-  const keysByScope = new Map<
-    StorageManifestPresignedUrlCacheScope,
-    string[]
-  >();
-  for (const pair of pairs) {
-    const keys = keysByScope.get(pair.scope) ?? [];
-    keys.push(pair.cacheKey);
-    keysByScope.set(pair.scope, keys);
-  }
-  // The lookup planner supplies unique pairs and fixed-length generated keys.
-  // Grouping by scope preserves pair matching without one OR arm per key.
-  return or(
-    ...[...keysByScope].map(([scope, keys]) => {
-      return and(
-        eq(systemStoragePresignedUrlCache.scope, scope),
-        inArray(systemStoragePresignedUrlCache.cacheKey, keys),
-      );
-    }),
-  );
-}
-
 type PendingClaimRun = {
   readonly kind: "pending";
   readonly runId: string;
@@ -2762,6 +2723,48 @@ interface RejectedQueueHead {
   readonly agentId: string | null;
   readonly contextType: string | null;
   readonly contextId: string | null;
+}
+
+/** Private Runner adaptation; resource outputs carry no Thread context. */
+function storedMountFromPrepared(
+  prepared: PreparedExecutionStorageMount,
+  preserveExplicitMissingRootPolicy: boolean,
+): StoredStorageMountEntry {
+  const identity = {
+    orgId: prepared.orgId,
+    userId: prepared.userId,
+    storageId: prepared.storageId,
+    versionId: prepared.versionId,
+    name: prepared.name,
+    mountPath: prepared.mountPath,
+  };
+  if (prepared.writeback) {
+    const policy = preserveExplicitMissingRootPolicy
+      ? { missingRootPolicy: prepared.missingRootPolicy }
+      : {};
+    return prepared.empty
+      ? { ...identity, writeback: true, empty: true, ...policy }
+      : {
+          ...identity,
+          writeback: true,
+          archiveUrl: prepared.archiveUrl,
+          ...(prepared.archiveSize > 0
+            ? { archiveSize: prepared.archiveSize }
+            : {}),
+          ...policy,
+        };
+  }
+  return {
+    ...identity,
+    archiveUrl: prepared.archiveUrl,
+    ...(prepared.archiveSize > 0 ? { archiveSize: prepared.archiveSize } : {}),
+    ...(prepared.baselineCandidate
+      ? { baselineCandidate: prepared.baselineCandidate }
+      : {}),
+    ...(prepared.instructionsTargetFilename === undefined
+      ? {}
+      : { instructionsTargetFilename: prepared.instructionsTargetFilename }),
+  };
 }
 
 export interface ThreadClaimRunObjects {
@@ -10635,517 +10638,67 @@ export function createThreadClaimRunObjects(
       );
     },
   );
-  const sessionWritebackEntries$ = computed(async (get) => {
-    return (await get(agentRunStorageStoragePlan$)).sessionWriteback;
-  });
-  const requestedEntries$ = computed(async (get) => {
-    return (await get(agentRunStorageStoragePlan$)).requested;
-  });
-
-  const storagePresignedUrlStorageRequests$ = computed(async (get) => {
-    const entries = await get(requestedEntries$);
-    if (!entries) {
-      return undefined;
+  const selectedStorageMetadata$ = computed(async (get) => {
+    const plan = await get(storagePlan$);
+    if (isRouteError(plan)) {
+      return plan;
     }
-    const { composePlans, additionalPlans } = finalStorageManifestPlans(
-      entries.resolved,
-    );
-    const composeRequests = storageManifestPresignedUrlRequests({
-      bucket: entries.input.bucket,
-      plans: composePlans,
-    });
-    const additionalRequests = storageManifestPresignedUrlRequests({
-      bucket: entries.input.bucket,
-      plans: additionalPlans,
-    });
-    const artifactRequests = entries.resolved.artifactInputs.flatMap(
-      (input) => {
-        return input.resolved.fileCount === 0
-          ? []
-          : [
-              readOnlyStoragePresignedUrlRequest({
-                bucket: entries.input.bucket,
-                resolved: input.resolved,
-              }),
-            ];
-      },
-    );
-    return { entries, composeRequests, additionalRequests, artifactRequests };
-  });
-  const presignedCacheInput$ = computed(async (get) => {
-    const requests = await get(storagePresignedUrlStorageRequests$);
-    if (!requests) {
-      return undefined;
+    if (plan.missingArtifacts.length > 0) {
+      throw new Error(
+        `Run storage must be initialized before execution: ${plan.missingArtifacts
+          .map((artifact) => {
+            return artifact.name;
+          })
+          .join(", ")}`,
+      );
     }
-    const { entries } = requests;
-    const { composeRequests, additionalRequests, artifactRequests } = requests;
-    const groups = [
-      { kind: "system" as const, values: composeRequests.systemRequests },
-      {
-        kind: "workflow" as const,
-        values: composeRequests.workflowSkillRequests,
-      },
-      { kind: "readonly" as const, values: composeRequests.readOnlyRequests },
-      { kind: "system" as const, values: additionalRequests.systemRequests },
-      {
-        kind: "workflow" as const,
-        values: additionalRequests.workflowSkillRequests,
-      },
-      {
-        kind: "readonly" as const,
-        values: additionalRequests.readOnlyRequests,
-      },
-      { kind: "readonly" as const, values: artifactRequests },
-    ].filter((group) => {
-      return group.values.length > 0;
-    });
-    return {
-      db: entries.input.db,
-      input: {
-        systemRequests: [
-          ...composeRequests.systemRequests,
-          ...additionalRequests.systemRequests,
-        ],
-        workflowSkillRequests: [
-          ...composeRequests.workflowSkillRequests,
-          ...additionalRequests.workflowSkillRequests,
-        ],
-        readOnlyRequests: [
-          ...composeRequests.readOnlyRequests,
-          ...additionalRequests.readOnlyRequests,
-          ...artifactRequests,
-        ],
-        logicalLookupCount: groups.length,
-      },
-      groups,
-      observation: entries.input.timing
-        ? { timing: entries.input.timing, branch: entries.branch }
-        : undefined,
-    };
-  });
-  const mixedStorageManifestPresignedUrlCacheRows$ = computed(async (get) => {
-    const args = await get(presignedCacheInput$);
-    if (!args) {
-      return undefined;
-    }
-    const lookup = planStorageManifestMixedLookup(args);
-    if (!lookup) {
-      return undefined;
-    }
-    const { requestedCount, pairs, cacheKeysByRequest } = lookup;
-    const acquisitionCapture: PgPoolAcquisitionCapture = { acquisitions: [] };
-    const condition = storageManifestCacheLookupCondition(pairs);
-    const rows = await measureApiDispatchTiming(
-      args.observation?.timing,
-      "api_dispatch_prepare_storage_manifest_cache_mixed_lookup",
-      "nested",
-      async () => {
-        const lookup = async () => {
-          return await args.db
-            .select({
-              scope: systemStoragePresignedUrlCache.scope,
-              cacheKey: systemStoragePresignedUrlCache.cacheKey,
-              presignedUrl: systemStoragePresignedUrlCache.presignedUrl,
-              expiresAt: systemStoragePresignedUrlCache.expiresAt,
-            })
-            .from(systemStoragePresignedUrlCache)
-            .where(condition);
-        };
-        const query = args.observation
-          ? withPgPoolAcquisitionCapture(acquisitionCapture, lookup)
-          : lookup();
-        return await query.finally(() => {
-          for (const acquisition of acquisitionCapture.acquisitions) {
-            args.observation?.timing.recordDuration(
-              "api_dispatch_prepare_storage_manifest_cache_pool_acquire",
-              "nested",
-              acquisition.durationMs,
-              now(),
-              {
-                storage_manifest_branch:
-                  args.observation?.branch ?? "unobserved",
-                storage_manifest_cache_scope: "all_scopes",
-                storage_manifest_cache_lookup_kind: "mixed",
-                storage_manifest_cache_pool_acquire_path: acquisition.path,
-                storage_manifest_cache_requested_count_bucket:
-                  storageManifestCacheCountBucket(requestedCount),
-                storage_manifest_cache_unique_key_count_bucket:
-                  storageManifestCacheCountBucket(pairs.length),
-              },
-            );
-          }
-        });
-      },
-      () => {
-        return {
-          storage_manifest_branch: args.observation?.branch ?? "unobserved",
-          storage_manifest_cache_scope: "all_scopes",
-          storage_manifest_cache_requested_count_bucket:
-            storageManifestCacheCountBucket(requestedCount),
-          storage_manifest_cache_unique_key_count_bucket:
-            storageManifestCacheCountBucket(pairs.length),
-          storage_manifest_cache_logical_lookup_count_bucket:
-            storageManifestCacheCountBucket(args.input.logicalLookupCount),
-          storage_manifest_cache_pool_acquire_count_bucket:
-            storageManifestCacheCountBucket(
-              acquisitionCapture.acquisitions.length,
-            ),
-        };
-      },
-    );
-    const rowsByScope = new Map<
-      StorageManifestPresignedUrlCacheScope,
-      Map<string, SelectedStoragePresignedUrlCacheRow>
-    >();
-    for (const row of rows) {
-      const scope = row.scope as StorageManifestPresignedUrlCacheScope;
-      const rowsByCacheKey =
-        rowsByScope.get(scope) ??
-        new Map<string, SelectedStoragePresignedUrlCacheRow>();
-      rowsByCacheKey.set(row.cacheKey, {
-        cacheKey: row.cacheKey,
-        presignedUrl: row.presignedUrl,
-        expiresAt: row.expiresAt,
-      });
-      rowsByScope.set(scope, rowsByCacheKey);
-    }
-    return { rowsByScope, cacheKeysByRequest };
-  });
-  const storageManifestPresignedUrlCacheRows$ = computed(async (get) => {
-    const [args, mixedRows] = await Promise.all([
-      get(presignedCacheInput$),
-      get(mixedStorageManifestPresignedUrlCacheRows$),
-    ]);
-    if (!args || mixedRows) {
-      return mixedRows;
-    }
-    const { cacheKeysByRequest } = storageManifestPresignedUrlCacheLookupPairs(
-      args.input,
-      false,
-    );
-    const batches = await Promise.all(
-      args.groups.map(async (group) => {
-        const scope: StorageManifestPresignedUrlCacheScope =
-          group.kind === "system"
-            ? "system_storage"
-            : group.kind === "workflow"
-              ? "workflow_skill_storage"
-              : "readonly_storage";
-        const cacheKeys = [
-          ...new Set(
-            group.values.map((request) => {
-              const identity = cacheKeysByRequest.get(request);
-              if (!identity) {
-                throw new Error(
-                  "Storage cache request is outside the captured batch",
-                );
-              }
-              return identity.cacheKey;
-            }),
-          ),
-        ];
-        const rows =
-          cacheKeys.length === 0
-            ? []
-            : await args.db
-                .select({
-                  cacheKey: systemStoragePresignedUrlCache.cacheKey,
-                  presignedUrl: systemStoragePresignedUrlCache.presignedUrl,
-                  expiresAt: systemStoragePresignedUrlCache.expiresAt,
-                })
-                .from(systemStoragePresignedUrlCache)
-                .where(
-                  and(
-                    eq(systemStoragePresignedUrlCache.scope, scope),
-                    inArray(systemStoragePresignedUrlCache.cacheKey, cacheKeys),
-                  ),
-                );
-        return { scope, rows };
-      }),
-    );
-    const rowsByScope = new Map<
-      StorageManifestPresignedUrlCacheScope,
-      Map<string, SelectedStoragePresignedUrlCacheRow>
-    >();
-    for (const { scope, rows } of batches) {
-      const rowsByCacheKey =
-        rowsByScope.get(scope) ??
-        new Map<string, SelectedStoragePresignedUrlCacheRow>();
-      for (const row of rows) {
-        rowsByCacheKey.set(row.cacheKey, row);
-      }
-      rowsByScope.set(scope, rowsByCacheKey);
-    }
-    return { rowsByScope, cacheKeysByRequest };
-  });
-  const signedRequestedStorage$ = computed(async (get) => {
-    const [input, rows] = await Promise.all([
-      get(presignedCacheInput$),
-      get(storageManifestPresignedUrlCacheRows$),
-    ]);
-    if (!input || !rows) {
-      throw new Error("Requested storage cache snapshot is missing");
-    }
-    return await signStorageManifestPresignedUrls({
-      input: input.input,
-      prefetchedRows: rows,
-      sign: get(publicPresignedGetUrlSigner$),
-    });
-  });
-  const storagePresignedUrlStorageRequests$2 = computed(async (get) => {
-    const entries = await get(sessionWritebackEntries$);
-    if (!entries) {
-      return undefined;
-    }
-    const { composePlans, additionalPlans } = finalStorageManifestPlans(
-      entries.resolved,
-    );
-    const composeRequests = storageManifestPresignedUrlRequests({
-      bucket: entries.input.bucket,
-      plans: composePlans,
-    });
-    const additionalRequests = storageManifestPresignedUrlRequests({
-      bucket: entries.input.bucket,
-      plans: additionalPlans,
-    });
-    const artifactRequests = entries.resolved.artifactInputs.flatMap(
-      (input) => {
-        return input.resolved.fileCount === 0
-          ? []
-          : [
-              readOnlyStoragePresignedUrlRequest({
-                bucket: entries.input.bucket,
-                resolved: input.resolved,
-              }),
-            ];
-      },
-    );
-    return { entries, composeRequests, additionalRequests, artifactRequests };
-  });
-  const storagePresignedUrlPresignedCacheInput$ = computed(async (get) => {
-    const requests = await get(storagePresignedUrlStorageRequests$2);
-    if (!requests) {
-      return undefined;
-    }
-    const { entries } = requests;
-    const { composeRequests, additionalRequests, artifactRequests } = requests;
-    const groups = [
-      { kind: "system" as const, values: composeRequests.systemRequests },
-      {
-        kind: "workflow" as const,
-        values: composeRequests.workflowSkillRequests,
-      },
-      { kind: "readonly" as const, values: composeRequests.readOnlyRequests },
-      { kind: "system" as const, values: additionalRequests.systemRequests },
-      {
-        kind: "workflow" as const,
-        values: additionalRequests.workflowSkillRequests,
-      },
-      {
-        kind: "readonly" as const,
-        values: additionalRequests.readOnlyRequests,
-      },
-      { kind: "readonly" as const, values: artifactRequests },
-    ].filter((group) => {
-      return group.values.length > 0;
-    });
-    return {
-      db: entries.input.db,
-      input: {
-        systemRequests: [
-          ...composeRequests.systemRequests,
-          ...additionalRequests.systemRequests,
-        ],
-        workflowSkillRequests: [
-          ...composeRequests.workflowSkillRequests,
-          ...additionalRequests.workflowSkillRequests,
-        ],
-        readOnlyRequests: [
-          ...composeRequests.readOnlyRequests,
-          ...additionalRequests.readOnlyRequests,
-          ...artifactRequests,
-        ],
-        logicalLookupCount: groups.length,
-      },
-      groups,
-      observation: entries.input.timing
-        ? { timing: entries.input.timing, branch: entries.branch }
-        : undefined,
-    };
-  });
-  const capturedMixedStorageManifestPresignedUrlCacheRows$ = computed(
-    async (get) => {
-      const args = await get(storagePresignedUrlPresignedCacheInput$);
-      if (!args) {
-        return undefined;
-      }
-      const lookup = planStorageManifestMixedLookup(args);
-      if (!lookup) {
-        return undefined;
-      }
-      const { requestedCount, pairs, cacheKeysByRequest } = lookup;
-      const acquisitionCapture: PgPoolAcquisitionCapture = { acquisitions: [] };
-      const condition = storageManifestCacheLookupCondition(pairs);
-      const rows = await measureApiDispatchTiming(
-        args.observation?.timing,
-        "api_dispatch_prepare_storage_manifest_cache_mixed_lookup",
-        "nested",
-        async () => {
-          const lookup = async () => {
-            return await args.db
-              .select({
-                scope: systemStoragePresignedUrlCache.scope,
-                cacheKey: systemStoragePresignedUrlCache.cacheKey,
-                presignedUrl: systemStoragePresignedUrlCache.presignedUrl,
-                expiresAt: systemStoragePresignedUrlCache.expiresAt,
-              })
-              .from(systemStoragePresignedUrlCache)
-              .where(condition);
-          };
-          const query = args.observation
-            ? withPgPoolAcquisitionCapture(acquisitionCapture, lookup)
-            : lookup();
-          return await query.finally(() => {
-            for (const acquisition of acquisitionCapture.acquisitions) {
-              args.observation?.timing.recordDuration(
-                "api_dispatch_prepare_storage_manifest_cache_pool_acquire",
-                "nested",
-                acquisition.durationMs,
-                now(),
-                {
-                  storage_manifest_branch:
-                    args.observation?.branch ?? "unobserved",
-                  storage_manifest_cache_scope: "all_scopes",
-                  storage_manifest_cache_lookup_kind: "mixed",
-                  storage_manifest_cache_pool_acquire_path: acquisition.path,
-                  storage_manifest_cache_requested_count_bucket:
-                    storageManifestCacheCountBucket(requestedCount),
-                  storage_manifest_cache_unique_key_count_bucket:
-                    storageManifestCacheCountBucket(pairs.length),
-                },
-              );
-            }
+    const entries =
+      plan.sessionWriteback === undefined
+        ? storageEntriesMetadata(plan.requested)
+        : combinePreparedStorageEntries({
+            requested: storageEntriesMetadata(plan.requested),
+            sessionWriteback: storageEntriesMetadata(plan.sessionWriteback),
           });
-        },
-        () => {
-          return {
-            storage_manifest_branch: args.observation?.branch ?? "unobserved",
-            storage_manifest_cache_scope: "all_scopes",
-            storage_manifest_cache_requested_count_bucket:
-              storageManifestCacheCountBucket(requestedCount),
-            storage_manifest_cache_unique_key_count_bucket:
-              storageManifestCacheCountBucket(pairs.length),
-            storage_manifest_cache_logical_lookup_count_bucket:
-              storageManifestCacheCountBucket(args.input.logicalLookupCount),
-            storage_manifest_cache_pool_acquire_count_bucket:
-              storageManifestCacheCountBucket(
-                acquisitionCapture.acquisitions.length,
-              ),
-          };
-        },
-      );
-      const rowsByScope = new Map<
-        StorageManifestPresignedUrlCacheScope,
-        Map<string, SelectedStoragePresignedUrlCacheRow>
-      >();
-      for (const row of rows) {
-        const scope = row.scope as StorageManifestPresignedUrlCacheScope;
-        const rowsByCacheKey =
-          rowsByScope.get(scope) ??
-          new Map<string, SelectedStoragePresignedUrlCacheRow>();
-        rowsByCacheKey.set(row.cacheKey, {
-          cacheKey: row.cacheKey,
-          presignedUrl: row.presignedUrl,
-          expiresAt: row.expiresAt,
-        });
-        rowsByScope.set(scope, rowsByCacheKey);
-      }
-      return { rowsByScope, cacheKeysByRequest };
-    },
-  );
-  const capturedStorageManifestPresignedUrlCacheRows$ = computed(
-    async (get) => {
-      const [args, mixedRows] = await Promise.all([
-        get(storagePresignedUrlPresignedCacheInput$),
-        get(capturedMixedStorageManifestPresignedUrlCacheRows$),
-      ]);
-      if (!args || mixedRows) {
-        return mixedRows;
-      }
-      const { cacheKeysByRequest } =
-        storageManifestPresignedUrlCacheLookupPairs(args.input, false);
-      const batches = await Promise.all(
-        args.groups.map(async (group) => {
-          const scope: StorageManifestPresignedUrlCacheScope =
-            group.kind === "system"
-              ? "system_storage"
-              : group.kind === "workflow"
-                ? "workflow_skill_storage"
-                : "readonly_storage";
-          const cacheKeys = [
-            ...new Set(
-              group.values.map((request) => {
-                const identity = cacheKeysByRequest.get(request);
-                if (!identity) {
-                  throw new Error(
-                    "Storage cache request is outside the captured batch",
-                  );
-                }
-                return identity.cacheKey;
-              }),
-            ),
-          ];
-          const rows =
-            cacheKeys.length === 0
-              ? []
-              : await args.db
-                  .select({
-                    cacheKey: systemStoragePresignedUrlCache.cacheKey,
-                    presignedUrl: systemStoragePresignedUrlCache.presignedUrl,
-                    expiresAt: systemStoragePresignedUrlCache.expiresAt,
-                  })
-                  .from(systemStoragePresignedUrlCache)
-                  .where(
-                    and(
-                      eq(systemStoragePresignedUrlCache.scope, scope),
-                      inArray(
-                        systemStoragePresignedUrlCache.cacheKey,
-                        cacheKeys,
-                      ),
-                    ),
-                  );
-          return { scope, rows };
-        }),
-      );
-      const rowsByScope = new Map<
-        StorageManifestPresignedUrlCacheScope,
-        Map<string, SelectedStoragePresignedUrlCacheRow>
-      >();
-      for (const { scope, rows } of batches) {
-        const rowsByCacheKey =
-          rowsByScope.get(scope) ??
-          new Map<string, SelectedStoragePresignedUrlCacheRow>();
-        for (const row of rows) {
-          rowsByCacheKey.set(row.cacheKey, row);
-        }
-        rowsByScope.set(scope, rowsByCacheKey);
-      }
-      return { rowsByScope, cacheKeysByRequest };
-    },
-  );
-  const signedSessionStorage$ = computed(async (get) => {
-    const [input, rows] = await Promise.all([
-      get(storagePresignedUrlPresignedCacheInput$),
-      get(capturedStorageManifestPresignedUrlCacheRows$),
-    ]);
-    if (!input || !rows) {
-      return undefined;
+    const metadata = await finalizePreparedStorage({ entries });
+    return { plan, entries, metadata };
+  });
+  const executionStorageObjects$ = computed(async (get) => {
+    const selected = await get(selectedStorageMetadata$);
+    if (isRouteError(selected)) {
+      return selected;
     }
-    return await signStorageManifestPresignedUrls({
-      input: input.input,
-      prefetchedRows: rows,
-      sign: get(publicPresignedGetUrlSigner$),
-    });
+    const mounts = selected.metadata.storageMounts.map(
+      (mount): ExecutionStorageRequest => {
+        const identity = {
+          orgId: mount.orgId,
+          userId: mount.userId,
+          storageId: mount.storageId,
+          versionId: mount.versionId,
+          name: mount.name,
+          mountPath: mount.mountPath,
+        };
+        return mount.writeback
+          ? {
+              ...identity,
+              mode: "writeback",
+              missingRootPolicy: mount.missingRootPolicy ?? "fail",
+            }
+          : {
+              ...identity,
+              mode: "readonly",
+              ...(mount.baselineCandidate
+                ? { baselineCandidate: mount.baselineCandidate }
+                : {}),
+              ...(mount.instructionsTargetFilename === undefined
+                ? {}
+                : {
+                    instructionsTargetFilename:
+                      mount.instructionsTargetFilename,
+                  }),
+            };
+      },
+    );
+    return createExecutionStorageObjects(mounts);
   });
   const preparedStorage$ = computed(
     async (
@@ -11154,57 +10707,73 @@ export function createThreadClaimRunObjects(
       if (!(await get(resourceAllowed$))) {
         return null;
       }
-      const plan = await get(storagePlan$);
-      if (isRouteError(plan)) {
-        return plan;
-      }
-      if (plan.missingArtifacts.length > 0) {
-        throw new Error(
-          `Run storage must be initialized before execution: ${plan.missingArtifacts
-            .map((artifact) => {
-              return artifact.name;
-            })
-            .join(", ")}`,
-        );
-      }
-      const [signedRequested, signedSession] = await Promise.all([
-        get(signedRequestedStorage$),
-        get(signedSessionStorage$),
+      const [selected, storage] = await Promise.all([
+        get(selectedStorageMetadata$),
+        get(executionStorageObjects$),
       ]);
-      const requested = buildSignedStorageEntries(
-        plan.requested,
-        signedRequested.results,
+      if (isRouteError(selected)) {
+        return selected;
+      }
+      if (isRouteError(storage)) {
+        return storage;
+      }
+      const mounts = await measureApiDispatchTiming(
+        selected.plan.requested.input.timing,
+        "api_dispatch_prepare_storage_manifest_generate_compose_urls",
+        "nested",
+        () => {
+          return get(storage.preparedMounts$);
+        },
+        { storage_manifest_signing_owner: "execution_storage" },
       );
-      const sessionWriteback =
-        plan.sessionWriteback && signedSession
-          ? buildSignedStorageEntries(
-              plan.sessionWriteback,
-              signedSession.results,
-            )
-          : undefined;
-      const metadataEntries =
-        plan.sessionWriteback === undefined
-          ? storageEntriesMetadata(plan.requested)
-          : combinePreparedStorageEntries({
-              requested: storageEntriesMetadata(plan.requested),
-              sessionWriteback: storageEntriesMetadata(plan.sessionWriteback),
-            });
-      const [metadata, prepared] = await Promise.all([
-        finalizePreparedStorage({ entries: metadataEntries }),
-        finalizePreparedStorage({
-          entries:
-            sessionWriteback === undefined
-              ? requested
-              : combinePreparedStorageEntries({ requested, sessionWriteback }),
-          timing: plan.requested.input.timing,
-          stats: plan.requested.input.stats,
+      const byPath = new Map(
+        mounts.map((mount) => {
+          return [mount.mountPath, mount];
         }),
-      ]);
+      );
+      const attach = (
+        mount: MaterializedAgentRunStorage["resolved"]["metadata"]["storageMounts"][number],
+      ) => {
+        const prepared = byPath.get(mount.mountPath);
+        if (!prepared) {
+          throw new Error("Selected storage mount has no prepared result");
+        }
+        return storedMountFromPrepared(
+          prepared,
+          mount.missingRootPolicy !== undefined,
+        );
+      };
+      const entries = {
+        ...selected.entries,
+        composeEntries: selected.entries.composeEntries.map((entry) => {
+          return {
+            ...entry,
+            storedMount: attach(entry.storedMount),
+          };
+        }),
+        additionalEntries: selected.entries.additionalEntries.map((entry) => {
+          return {
+            ...entry,
+            storedMount: attach(entry.storedMount),
+          };
+        }),
+        writebackEntries: selected.entries.writebackEntries.map((entry) => {
+          return {
+            ...entry,
+            storedMount: attach(entry.storedMount),
+          };
+        }),
+      };
+      const prepared = await finalizePreparedStorage({
+        entries,
+        timing: selected.plan.requested.input.timing,
+        stats: selected.plan.requested.input.stats,
+      });
       return {
         resolved: {
-          metadata,
-          requested: plan.requested,
-          sessionWriteback: plan.sessionWriteback,
+          metadata: selected.metadata,
+          requested: selected.plan.requested,
+          sessionWriteback: selected.plan.sessionWriteback,
         },
         prepared,
       };
@@ -11212,56 +10781,14 @@ export function createThreadClaimRunObjects(
   );
   const updatePresignedUrlCache$ = command(
     async ({ get, set }, signal: AbortSignal) => {
-      const [requested, session] = await Promise.all([
-        get(signedRequestedStorage$),
-        get(signedSessionStorage$),
-      ]);
+      const storage = await get(executionStorageObjects$);
       signal.throwIfAborted();
-      const values = [
-        ...new Map(
-          [...requested.freshValues, ...(session?.freshValues ?? [])].map(
-            (value) => {
-              return [value.cacheKey, value];
-            },
-          ),
-        ).values(),
-      ].sort((left, right) => {
-        return left.cacheKey.localeCompare(right.cacheKey);
-      });
-      if (values.length === 0) {
-        return;
+      if (isRouteError(storage)) {
+        throw new Error(
+          "Committed execution is missing its storage preparation",
+        );
       }
-      const excluded = alias(systemStoragePresignedUrlCache, "excluded");
-      const write = await settle(
-        set(writeDb$)
-          .insert(systemStoragePresignedUrlCache)
-          .values(values)
-          .onConflictDoUpdate({
-            target: systemStoragePresignedUrlCache.cacheKey,
-            set: {
-              scope: excluded.scope,
-              bucket: excluded.bucket,
-              objectKey: excluded.objectKey,
-              storageVersionId: excluded.storageVersionId,
-              resolvedOrgId: excluded.resolvedOrgId,
-              publicEndpoint: excluded.publicEndpoint,
-              ttlSeconds: excluded.ttlSeconds,
-              presignedUrl: excluded.presignedUrl,
-              expiresAt: excluded.expiresAt,
-              refreshAfter: excluded.refreshAfter,
-              lastRequestedAt: excluded.lastRequestedAt,
-              updatedAt: excluded.updatedAt,
-            },
-          }),
-      );
-      signal.throwIfAborted();
-      if (!write.ok) {
-        log.error("Failed to update run storage presigned URL cache", {
-          orgId: claim.orgId,
-          chatThreadId: claim.chatThreadId,
-          error: write.error,
-        });
-      }
+      await set(storage.updatePresignedUrlCache$, signal);
     },
   );
   const storagePlan$ = computed(async (get) => {

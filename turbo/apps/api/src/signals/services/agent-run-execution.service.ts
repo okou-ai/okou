@@ -3276,44 +3276,6 @@ export const materializeStorageEntries$ = command(
 );
 
 /** Assemble runner mounts from immutable version plans and already signed URLs. */
-export function buildSignedStorageEntries(
-  plan: ResolvedStorageEntries,
-  urlsByCacheKey: ReadonlyMap<string, StoragePresignedUrlResult>,
-): PreparedStorageEntries {
-  const { composePlans, additionalPlans } = finalStorageManifestPlans(
-    plan.resolved,
-  );
-  const entries = (plans: readonly ResolvedManifestStoragePlan[]) => {
-    return plans.map((entry) => {
-      const args = {
-        bucket: plan.input.bucket,
-        plan: entry,
-        urlsByCacheKey,
-        stats: plan.input.stats,
-      };
-      if (isSystemOwnedStoragePlan(entry)) {
-        plan.input.stats?.recordSystemResolvedStorage(1);
-        return buildSystemStorageEntry(args);
-      }
-      return isWorkflowSkillStoragePlan(entry)
-        ? buildWorkflowSkillStorageEntry(args)
-        : buildReadOnlyStorageEntry(args);
-    });
-  };
-  return {
-    composeEntries: entries(composePlans),
-    additionalEntries: entries(additionalPlans),
-    writebackEntries: preparedWritebackStorageEntries({
-      bucket: plan.input.bucket,
-      inputs: plan.resolved.artifactInputs,
-      urlsByCacheKey,
-      stats: plan.input.stats,
-    }),
-    resolvedComposeEntryCount: plan.resolved.composePlans.length,
-    resolvedAdditionalEntryCount: plan.resolved.additionalPlans.length,
-  };
-}
-
 export function storageEntriesMetadata(
   plan: ResolvedStorageEntries,
 ): PreparedStorageEntries<StorageMountMetadata> {
