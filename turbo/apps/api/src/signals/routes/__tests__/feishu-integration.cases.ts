@@ -2324,10 +2324,12 @@ export function registerFeishuIntegrationTests(
           }),
           [200],
         );
+        // Successful repair learns the bot name; the registered skill
+        // content and Storage version are still reused without an R2 write.
         expect(connectorAfterRepair.body.connectors).toMatchObject([
           {
             id: initialConnector.id,
-            displayName: initialConnector.displayName,
+            displayName: `${provider.name}-Okou Feishu`,
             skillMarkdown: initialConnector.skillMarkdown,
           },
         ]);
