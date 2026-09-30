@@ -241,7 +241,8 @@ describe("GET /api/model-catalog", () => {
       })?.resolvedModel,
     ).toBe("claude-fable-5-1");
     // Retired models keep their row and resolve to the approved replacement,
-    // including the cross-provider DeepSeek V4 Pro -> GPT 6 Luna.
+    // including the cross-provider DeepSeek V4 Pro -> GPT 6 Luna and the
+    // former Okou 1.0 Pro and Max presets -> Auto.
     expect(
       models
         .filter((row) => {
@@ -256,6 +257,9 @@ describe("GET /api/model-catalog", () => {
       ["claude-sonnet-4-6", "claude-sonnet-5-5"],
       ["gpt-5.5", "gpt-6-luna"],
       ["deepseek-v4-pro", "gpt-6-luna"],
+      ["gpt-5.6-terra", "gpt-6-luna"],
+      ["okou-1.0-pro", "okou-1.0"],
+      ["okou-1.0-max", "okou-1.0"],
     ]);
     const sortOrders = models.map((row) => {
       return row.sortOrder;
@@ -370,6 +374,51 @@ describe("stored selections of replaced models", () => {
     const read = await api.readRun(actor, run.runId);
     expect(read.source.model).toBe("claude-fable-5-1");
     await cancelChatRun(actor, run.runId);
+  }, 90_000);
+
+  it("shows a thread stored with gpt-5.6-terra as gpt-6-luna", async () => {
+    const { actor, agentId } = await entitledNativeChatActor();
+    await api.updateOrgModelPolicies(actor, [
+      {
+        model: "gpt-6-luna",
+        defaultProviderType: "built-in",
+        credentialScope: "org",
+        modelProviderId: null,
+      },
+    ]);
+    const thread = await chat.createThread(actor, {
+      agentId,
+      model: "gpt-6-luna",
+    });
+    await stageLegacyChatThreadSelectedModelFixture({
+      threadId: thread.id,
+      model: "gpt-5.6-terra",
+    });
+
+    const projected = await mcpThread(actor, thread.id);
+    expect(projected.model).toStrictEqual({
+      selectedModel: "gpt-5.6-terra",
+      effectiveModel: "gpt-6-luna",
+      source: "thread",
+      admission: "checked_on_send",
+    });
+  }, 90_000);
+
+  it("stores a member preference for okou-1.0-pro as okou-1.0", async () => {
+    const { actor } = await entitledNativeChatActor();
+    const headers = { authorization: "Bearer clerk-session" };
+    mocks.clerk.session(actor.userId, requireOrgId(actor), actor.orgRole);
+
+    const preference = await accept(
+      setupApp({ context, routes: userModelPreferenceRoutes })(
+        userModelPreferenceContract,
+      ).update({
+        headers,
+        body: { selectedModel: "okou-1.0-pro", serviceTier: null },
+      }),
+      [200],
+    );
+    expect(preference.body.selectedModel).toBe("okou-1.0");
   }, 90_000);
 
   it("runs a queued input with the replacement of a model replaced before pick", async () => {

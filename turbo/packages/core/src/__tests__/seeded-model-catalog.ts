@@ -21,9 +21,6 @@ export const SEEDED_MODEL_CATALOG: PiCatalogSource = {
     { model: "gpt-5.6-luna", piRouteClass: "gpt-codex" },
     { model: "deepseek-v4.1-flash", piRouteClass: "deepseek" },
     { model: "deepseek-v4-flash", piRouteClass: "deepseek" },
-    { model: "gpt-5.6-terra", piRouteClass: null },
-    { model: "okou-1.0-max", piRouteClass: null },
-    { model: "okou-1.0-pro", piRouteClass: null },
   ],
   routes: [
     {

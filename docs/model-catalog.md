@@ -250,36 +250,20 @@ to be single-hop; nothing in the schema or the loader depends on that:
 | `claude-sonnet-4-6` | `claude-sonnet-5-5` |
 | `deepseek-v4-pro`   | `gpt-6-luna`        |
 | `gpt-5.5`           | `gpt-6-luna`        |
+| `gpt-5.6-terra`     | `gpt-6-luna`        |
+| `okou-1.0-pro`      | `okou-1.0`          |
+| `okou-1.0-max`      | `okou-1.0`          |
+
+`gpt-5.6-terra`, `okou-1.0-pro` and `okou-1.0-max` were seeded by migrations
+1191 and 1194 and lost their code support in #37363 and #37368. Migration 1298
+keeps their rows with their former labels (GPT 5.6 Terra, Okou 1.0 Pro, Okou
+1.0 Max), no routes and `allow_new_org_policy = false`, and retires them into
+the targets above (owner decision, 2026-10-01).
 
 Retiring X in favor of Y: if `Y.lineage_rank <= X.lineage_rank`, raise
 `Y.lineage_rank` first (raising a rank only widens the gap to its referrers;
 `ON UPDATE CASCADE` refreshes their copies), then set `X.replaced_by = Y` and
 `X.replaced_by_lineage_rank = Y.lineage_rank` in one statement.
-
-## Decisions
-
-Open owner (Ethan) decisions. Each row below **needs a replacement target**;
-none has been specified yet, so none is seeded or guessed:
-
-| Catalog row     | Status                   |
-| --------------- | ------------------------ |
-| `gpt-5.6-terra` | needs replacement target |
-| `okou-1.0-pro`  | needs replacement target |
-| `okou-1.0-max`  | needs replacement target |
-
-These rows were seeded by earlier migrations (1191 and 1194) and their code
-support was removed by #37363 and #37368. Until a target is decided they
-remain `replaced_by = NULL` with no `model_routes` and
-`allow_new_org_policy = false` (migration 1298 labels them with their own ID
-and sorts them after every recognized model). `GET /api/model-catalog`
-therefore lists them with `replacedBy` null, and the API never offers or
-accepts them for a policy or run because they have no route and no runtime
-adapter. This is a known conflict with the end state, where `replaced_by` is
-the only retirement description and `allow_new_org_policy` is dropped: the
-column cannot be dropped until each row is retired into its target. As of
-MaskDB on 2026-09-30 no row in `chat_threads`, `org_model_policies`,
-`org_members_metadata`, `agents` or `model_providers` references them
-(MaskDB does not expose `run_model_catalog` itself).
 
 ## System default
 
@@ -542,11 +526,11 @@ loaded per request so an operator change is visible to the next request.
 Only physical deletions justified by rolling deploys remain. Each is removed
 in a later change once its condition holds:
 
-| Item                                            | Kept because                                                                                    | Delete when                                                                                        |
-| ----------------------------------------------- | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| `org_model_policies.is_default` column          | API versions from before the catalog still read and write it during the rollout.                | No deployed API version reads or writes it (the release after this one is fully rolled out).       |
-| `run_model_catalog.allow_new_org_policy` column | Older API versions gate adding a policy with it; the new API uses `replaced_by`.                | No deployed API version reads it, and the owner has decided every unrecognized active-looking row. |
-| `subscription_model_catalog` table              | Older API versions list personal subscription models from it; the new API reads `model_routes`. | No deployed API version reads it.                                                                  |
+| Item                                            | Kept because                                                                                    | Delete when                                                                                  |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `org_model_policies.is_default` column          | API versions from before the catalog still read and write it during the rollout.                | No deployed API version reads or writes it (the release after this one is fully rolled out). |
+| `run_model_catalog.allow_new_org_policy` column | Older API versions gate adding a policy with it; the new API uses `replaced_by`.                | No deployed API version reads it.                                                            |
+| `subscription_model_catalog` table              | Older API versions list personal subscription models from it; the new API reads `model_routes`. | No deployed API version reads it.                                                            |
 
 The deprecated `GET /api/model-policies` response fields `isDefault`,
 `workspaceDefaultModel` and `workspaceDefaultPolicyId` are removed in this

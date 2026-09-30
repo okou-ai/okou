@@ -149,6 +149,16 @@ function assertRoutes(
     assertRoute(route);
   }
   for (const row of catalog) {
+    // Every active row is a real model with at least one route; a routeless
+    // row must be retired into its replacement instead.
+    if (row.replaced_by === null) {
+      assert.ok(
+        routes.some((route) => {
+          return route.model === row.model;
+        }),
+        `${row.model}: active model without a route`,
+      );
+    }
     const builtIn = routes.filter((route) => {
       return route.model === row.model && route.provider_type === "built-in";
     });

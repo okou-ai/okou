@@ -26,8 +26,12 @@ CREATE TEMP TABLE "model_catalog_seed" (
 -- Every recognized model in SUPPORTED_RUN_MODELS order with its current label.
 -- Retired models carry their owner-approved replacement: Fable 5 -> Fable 5.1,
 -- Opus 4.8 -> Opus 5.5, Sonnet 4.6 -> Sonnet 5.5, DeepSeek V4 Pro -> GPT 6
--- Luna and GPT 5.5 -> GPT 6 Luna. Replacement only resolves the model; it never
--- carries credentials, provider routes or upstream IDs across providers.
+-- Luna, GPT 5.5 -> GPT 6 Luna, GPT 5.6 Terra -> GPT 6 Luna, and Okou 1.0 Pro
+-- and Okou 1.0 Max -> okou-1.0. The last three are no longer in
+-- SUPPORTED_RUN_MODELS; their rows (seeded by 1191/1194) are kept with their
+-- former labels so history stays readable, and they get no routes.
+-- Replacement only resolves the model; it never carries credentials, provider
+-- routes or upstream IDs across providers.
 -- Active rows start at lineage rank 100 and retired rows at 0, so every
 -- approved hop increases the rank and later retirements have room on both
 -- sides.
@@ -50,7 +54,10 @@ INSERT INTO "model_catalog_seed" ("model", "display_name", "sort_order", "is_sys
   ('gpt-5.5', 'GPT 5.5', 160, false, 'gpt-6-luna', 0),
   ('deepseek-v4.1-flash', 'DeepSeek V4.1 Flash', 170, false, NULL, 100),
   ('deepseek-v4-pro', 'DeepSeek V4 Pro', 180, false, 'gpt-6-luna', 0),
-  ('deepseek-v4-flash', 'DeepSeek V4 Flash', 190, false, NULL, 100);--> statement-breakpoint
+  ('deepseek-v4-flash', 'DeepSeek V4 Flash', 190, false, NULL, 100),
+  ('gpt-5.6-terra', 'GPT 5.6 Terra', 200, false, 'gpt-6-luna', 0),
+  ('okou-1.0-pro', 'Okou 1.0 Pro', 210, false, 'okou-1.0', 0),
+  ('okou-1.0-max', 'Okou 1.0 Max', 220, false, 'okou-1.0', 0);--> statement-breakpoint
 INSERT INTO "run_model_catalog" ("model", "display_name", "sort_order", "is_system_default", "replaced_by", "lineage_rank", "replaced_by_lineage_rank")
 SELECT "seed"."model", "seed"."display_name", "seed"."sort_order", "seed"."is_system_default", "seed"."replaced_by", "seed"."lineage_rank", "target"."lineage_rank"
 FROM "model_catalog_seed" AS "seed"
@@ -63,13 +70,15 @@ ON CONFLICT ("model") DO UPDATE SET
   "lineage_rank" = EXCLUDED."lineage_rank",
   "replaced_by_lineage_rank" = EXCLUDED."replaced_by_lineage_rank",
   "updated_at" = now();--> statement-breakpoint
--- Rows outside the seed are IDs the code does not recognize (production may
--- hold gpt-5.6-terra, okou-1.0-pro or okou-1.0-max). They are kept, not
--- deleted: no replacement has been approved for them. They get their ID as
--- label, sort after every recognized model, stay without routes (so nothing
--- can execute them) and are made explicitly non-addable through
--- allow_new_org_policy. Retiring or activating them is an owner decision
--- recorded in MIGRATIONS.md.
+-- 1191/1194 made these three addable; the code no longer knows them, so
+-- older API instances must not offer them during the rolling deploy.
+UPDATE "run_model_catalog"
+SET "allow_new_org_policy" = false
+WHERE "model" IN ('gpt-5.6-terra', 'okou-1.0-pro', 'okou-1.0-max');--> statement-breakpoint
+-- Rows outside the seed are IDs the code does not recognize (none are known
+-- to exist). They are kept, not deleted: they get their ID as label, sort
+-- after every recognized model, stay without routes (so nothing can execute
+-- them) and are made explicitly non-addable through allow_new_org_policy.
 UPDATE "run_model_catalog" AS "catalog"
 SET
   "display_name" = left("catalog"."model", 128),

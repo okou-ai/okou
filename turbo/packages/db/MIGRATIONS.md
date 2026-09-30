@@ -242,7 +242,8 @@ from before the global model catalog still read:
   once no deployed API version reads or writes it.
 - `subscription_model_catalog` stays until no deployed API version reads it;
   `model_routes` is authoritative for the new API.
-- `allow_new_org_policy` stays until readers use `replaced_by` only.
+- `allow_new_org_policy` stays until no deployed API version reads it; the
+  new API uses `replaced_by` only.
 
 Replacement chains: `replaced_by` may point at a retired row; the chain ends
 at the final active model. The self foreign key
@@ -255,35 +256,18 @@ and `replaced_by_lineage_rank` on X in the same statement. To retire the
 system default, move `is_system_default` to an active model with an enabled
 Built-in route first, in the same transaction.
 
-Unrecognized catalog rows: 1298 no longer deletes rows outside the seed.
-Production may hold `gpt-5.6-terra`, `okou-1.0-pro` and `okou-1.0-max`
-(seeded by 1191 and 1194; MaskDB does not expose `run_model_catalog`, so their
-presence is unverified; MaskDB shows zero references to them in
-`chat_threads`, `org_model_policies`, `org_members_metadata`, `agents` and
-`model_providers`). They keep their row with `display_name = model`,
-`sort_order` from 1001 in model order, `lineage_rank = 100`,
-`replaced_by = NULL` and `allow_new_org_policy = false`, and they have no
-`model_routes`, so they are not addable today and not executable.
-
-Open conflict: the target rule is that `replaced_by` is the only retirement
-description. Under that rule `replaced_by = NULL` means active, so these rows
-read as active: `GET /api/model-catalog` lists them with `replacedBy: null`.
-They stay unusable only through two other facts, `allow_new_org_policy =
-false` (a column the end state removes) and the absence of routes. Once
-`allow_new_org_policy` is dropped, "active but routeless" is the only thing
-separating them from real models. Options for the owner (Ethan), per row:
-
-1. Delete the row. Safe today: nothing references them, and no `replaced_by`
-   points at them (the self foreign key would reject the delete otherwise).
-   The catalog then no longer names them in history; no stored history row
-   uses them either.
-2. Retire into an approved replacement X: set `replaced_by = X` and
-   `replaced_by_lineage_rank` (raise X's rank first if it is not above 100).
-   Any leftover or legacy selection then resolves to X.
-3. Keep as active models: add enabled `model_routes` rows (and a runtime
-   adapter in code), then they are addable and executable like any model.
-
-No option is applied here; their data is unchanged until the owner decides.
+Former Okou and Terra rows: `gpt-5.6-terra`, `okou-1.0-pro` and
+`okou-1.0-max` (seeded by 1191 and 1194, code support removed by #37363 and
+#37368) are in the 1298 seed as retired rows with their former labels (GPT
+5.6 Terra, Okou 1.0 Pro, Okou 1.0 Max), `lineage_rank = 0`, no
+`model_routes` and `allow_new_org_policy = false`, replaced by the
+owner-approved targets `gpt-6-luna`, `okou-1.0` and `okou-1.0` (active, rank
+100). The rows are kept, not deleted, so history stays named; 1299 rewrites
+any mutable selection of them to their target (MaskDB shows zero
+references in `chat_threads`, `org_model_policies`, `org_members_metadata`,
+`agents` and `model_providers`). 1298 still keeps any other row outside the
+seed with its ID as label, sorted last, `allow_new_org_policy = false` and no
+routes; none is known to exist.
 
 1299 rewrites chat thread selections (`chat_threads.selected_model` and
 `model_settings`) and appends one `model_selection_updated` event per
@@ -301,7 +285,7 @@ chat thread rewrite is one scan of `chat_threads` in the migration
 transaction, like 1213. Only rows still selecting a retired model are
 written, so re-running appends nothing. As of MaskDB on 2026-09-30 no chat
 thread, organization policy, member preference, agent or model provider
-references any retired or unrecognized catalog model (`claude-fable-5`,
+references any retired catalog model (`claude-fable-5`,
 `claude-opus-4-8`, `claude-sonnet-4-6`, `deepseek-v4-pro`, `gpt-5.5`,
 `gpt-5.6-terra`, `okou-1.0-pro`, `okou-1.0-max`), so 1299 rewrites zero
 production rows. See the performance evidence below for why it needs no

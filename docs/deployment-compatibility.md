@@ -154,14 +154,15 @@ Migrations:
   table lists a model outside the active catalog. Existing
   `allow_new_org_policy` values are preserved. There is no generic delete:
   unrecognized rows are kept with their ID as label, sorted last,
-  `allow_new_org_policy = false` and no routes. In production these are
-  `gpt-5.6-terra`, `okou-1.0-pro` and `okou-1.0-max` (seeded by migrations
-  1191 and 1194; code support removed by #37363 and #37368; MaskDB on
-  2026-09-30 shows zero references in `chat_threads`, `org_model_policies`,
-  `org_members_metadata`, `agents` and `model_providers`). Their retirement or
-  deletion is pending an owner decision (Ethan). They are not `replaced_by`
-  anything, so the catalog response lists them with `replacedBy` null; the
-  API does not offer or accept them because they have no adapter or route.
+  `allow_new_org_policy = false` and no routes. `gpt-5.6-terra`,
+  `okou-1.0-pro` and `okou-1.0-max` (seeded by migrations 1191 and 1194; code
+  support removed by #37363 and #37368; MaskDB on 2026-09-30 shows zero
+  references in `chat_threads`, `org_model_policies`, `org_members_metadata`,
+  `agents` and `model_providers`) are kept with their former labels, no
+  routes and `allow_new_org_policy = false`, and are retired into the
+  owner-approved targets `gpt-6-luna`, `okou-1.0` and `okou-1.0`. The previous
+  API does not offer them either: they have no adapter or route and are not
+  addable.
 - `1299_model_catalog_stored_selections` rewrites mutable stored selections of
   retired models to their final replacement: `org_model_policies.model` (only
   onto a replacement route of the same provider type; incompatible retired
@@ -201,12 +202,6 @@ Migrations:
   `run_model_catalog.pi_route_class` with a check constraint and seeds it
   from the former `@okouai/core` Pi policy. Additive; the previous API
   ignores the column and keeps its static Pi policy.
-- Unrecognized rows `gpt-5.6-terra`, `okou-1.0-pro`, `okou-1.0-max`: each
-  needs a replacement target from the owner (not yet decided, not seeded).
-  Until then they stay `replaced_by` null with no routes and
-  `allow_new_org_policy = false`, which reads as active under the end-state
-  rule; `allow_new_org_policy` cannot be dropped before they are retired.
-  See the design note's Decisions.
 - Queue pick: an input enqueued by the previous API is re-resolved by the new
   API against the catalog at the pick (provider-prefixed upstream IDs and
   replacements included); runs that already started are unaffected. The

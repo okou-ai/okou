@@ -54,6 +54,9 @@ const MODEL_ROWS: readonly (readonly [
   ["deepseek-v4.1-flash", "DeepSeek V4.1 Flash", 170, null],
   ["deepseek-v4-pro", "DeepSeek V4 Pro", 180, "gpt-6-luna"],
   ["deepseek-v4-flash", "DeepSeek V4 Flash", 190, null],
+  ["gpt-5.6-terra", "GPT 5.6 Terra", 200, "gpt-6-luna"],
+  ["okou-1.0-pro", "Okou 1.0 Pro", 210, "okou-1.0"],
+  ["okou-1.0-max", "Okou 1.0 Max", 220, "okou-1.0"],
 ];
 
 interface MockModelProfile {
