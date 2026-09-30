@@ -8,6 +8,23 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.700.0](https://github.com/okou-ai/okou/compare/api-v1.699.0...api-v1.700.0) (2026-09-30)
+
+
+### Features
+
+* add gpt 6.1 sol and astra ultrafast ([#37387](https://github.com/okou-ai/okou/issues/37387)) ([53d4d10](https://github.com/okou-ai/okou/commit/53d4d1053c8408f02ac66ee812cf601023aca3d2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.531.0
+    * @okouai/core bumped to 8.724.0
+    * @okouai/db bumped to 1.315.0
+    * @okouai/pi-agent-runtime bumped to 1.44.0
+
 ## [1.699.0](https://github.com/okou-ai/okou/compare/api-v1.698.1...api-v1.699.0) (2026-09-30)
 
 
