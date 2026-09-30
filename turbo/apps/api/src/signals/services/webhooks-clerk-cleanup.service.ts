@@ -643,7 +643,9 @@ async function deleteClerkStorageReferences(
       tx,
       inArray(
         storages.id,
-        rows.map((row) => row.id),
+        rows.map((row) => {
+          return row.id;
+        }),
       ),
     );
     signal.throwIfAborted();
@@ -699,7 +701,9 @@ async function deleteClerkExportReferences(
     await tx.delete(exportJobs).where(
       inArray(
         exportJobs.id,
-        rows.map((row) => row.id),
+        rows.map((row) => {
+          return row.id;
+        }),
       ),
     );
     signal.throwIfAborted();

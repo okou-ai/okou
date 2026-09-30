@@ -16,6 +16,7 @@ import {
   enqueueBackgroundJob,
   retryBackgroundJob,
   yieldBackgroundJob,
+  type ClaimedBackgroundJob,
 } from "./background-job.service";
 
 export const STORAGE_OBJECT_CLEANUP_JOB_KIND = "storage-object-cleanup";
@@ -124,6 +125,7 @@ const cleanPage$ = command(
     await assertUnreferenced(args.db, target, signal);
     if (target.kind === "key") {
       await get(deleteS3Objects(bucket, [target.value], signal));
+      signal.throwIfAborted();
       return true;
     }
     const prefix = `${target.value.replace(/\/+$/, "")}/`;
@@ -131,23 +133,66 @@ const cleanPage$ = command(
       listS3ObjectsPage(bucket, prefix, PAGE_SIZE, signal),
     );
     signal.throwIfAborted();
-    if (page.objects.some((object) => !object.key.startsWith(prefix))) {
+    if (
+      page.objects.some((object) => {
+        return !object.key.startsWith(prefix);
+      })
+    ) {
       throw new Error("Storage cleanup listing escaped its captured prefix");
     }
     if (page.objects.length > 0) {
       await get(
         deleteS3Objects(
           bucket,
-          page.objects.map((object) => object.key),
+          page.objects.map((object) => {
+            return object.key;
+          }),
           signal,
         ),
       );
+      signal.throwIfAborted();
     }
     // Delete-first pagination needs no continuation token. A retry lists only
     // remaining objects, including after a partial delete or a lost response.
     return !page.isTruncated;
   },
 );
+
+async function settleCleanupAttempt(
+  db: Db,
+  job: ClaimedBackgroundJob,
+  work: Promise<boolean>,
+): Promise<void> {
+  const attempt = await settleIncludingAbort(work);
+  // Cancellation ends the external work, not its persistence obligation.
+  // A crashed worker is reclaimed by the ordinary expired-lease path.
+  const persistenceSignal = AbortSignal.timeout(5000);
+  const saved = attempt.ok
+    ? attempt.value
+      ? await completeBackgroundJob(db, { job }, persistenceSignal)
+      : await yieldBackgroundJob(db, { job, checkpoint: {} }, persistenceSignal)
+    : await retryBackgroundJob(
+        db,
+        {
+          job,
+          error:
+            attempt.error instanceof Error
+              ? attempt.error.message
+              : "Storage object cleanup failed",
+          availableAt: new Date(
+            nowDate().getTime() +
+              Math.min(
+                15 * 60_000,
+                60_000 * 2 ** Math.min(job.failureCount, 4),
+              ),
+          ),
+        },
+        persistenceSignal,
+      );
+  if (!saved) {
+    throw new Error("Storage object cleanup lost its job lease");
+  }
+}
 
 export const executeStorageObjectCleanupWork$ = command(
   async (
@@ -172,47 +217,16 @@ export const executeStorageObjectCleanupWork$ = command(
         },
         workSignal,
       );
+      signal.throwIfAborted();
       if (!job) {
         continue;
       }
-      const attempt = await settleIncludingAbort(
-        (async () => {
-          const input = inputSchema.parse(job.input);
-          return await set(cleanPage$, { db, input }, workSignal);
-        })(),
-      );
-      // A cancelled attempt still releases its lease when possible. A crashed
-      // worker is reclaimed by the ordinary expired-lease path instead.
-      const persistenceSignal = AbortSignal.timeout(5000);
-      const saved = attempt.ok
-        ? attempt.value
-          ? await completeBackgroundJob(db, { job }, persistenceSignal)
-          : await yieldBackgroundJob(
-              db,
-              { job, checkpoint: {} },
-              persistenceSignal,
-            )
-        : await retryBackgroundJob(
-            db,
-            {
-              job,
-              error:
-                attempt.error instanceof Error
-                  ? attempt.error.message
-                  : "Storage object cleanup failed",
-              availableAt: new Date(
-                nowDate().getTime() +
-                  Math.min(
-                    15 * 60_000,
-                    60_000 * 2 ** Math.min(job.failureCount, 4),
-                  ),
-              ),
-            },
-            persistenceSignal,
-          );
-      if (!saved) {
-        throw new Error("Storage object cleanup lost its job lease");
-      }
+      const work = async () => {
+        const input = inputSchema.parse(job.input);
+        return await set(cleanPage$, { db, input }, workSignal);
+      };
+      await settleCleanupAttempt(db, job, work());
+      signal.throwIfAborted();
       processed++;
       workSignal.throwIfAborted();
     }

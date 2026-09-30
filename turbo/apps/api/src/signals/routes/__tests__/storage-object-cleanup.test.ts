@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { seedLegacyExportCleanupReferenceFixture } from "../../../test-fixtures/storage-object-cleanup";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { testStorageObjectCleanupRoutes } from "../test-storage-object-cleanup";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
@@ -24,7 +25,12 @@ const webhooks = createWebhookCallbackApi(context);
 
 function objectStore() {
   const objects = new Map<string, Buffer>();
-  let failure: "list" | "partial-delete" | "lost-delete-receipt" | undefined;
+  let failure:
+    | "list"
+    | "delete"
+    | "partial-delete"
+    | "lost-delete-receipt"
+    | undefined;
   let beforeList: (() => Promise<void>) | undefined;
   context.mocks.s3.send.mockImplementation(async (command: unknown) => {
     if (command instanceof HeadObjectCommand) {
@@ -49,23 +55,35 @@ function objectStore() {
       }
       const prefix = command.input.Prefix ?? "";
       const keys = [...objects.keys()]
-        .filter((key) => key.startsWith(prefix))
+        .filter((key) => {
+          return key.startsWith(prefix);
+        })
         .sort();
       const page = keys.slice(0, command.input.MaxKeys ?? 1000);
       return {
-        Contents: page.map((key) => ({
-          Key: key,
-          Size: objects.get(key)?.length ?? 0,
-          LastModified: new Date(0),
-        })),
+        Contents: page.map((key) => {
+          const body = objects.get(key);
+          if (!body) {
+            throw new Error("Expected a listed fixture object");
+          }
+          return {
+            Key: key,
+            Size: body.length,
+            LastModified: new Date(0),
+          };
+        }),
         IsTruncated: page.length < keys.length,
       };
     }
     if (command instanceof DeleteObjectsCommand) {
+      if (failure === "delete") {
+        failure = undefined;
+        throw new Error("R2 deletion failed before removing the object");
+      }
       const keys =
-        command.input.Delete?.Objects?.flatMap((object) =>
-          object.Key ? [object.Key] : [],
-        ) ?? [];
+        command.input.Delete?.Objects?.flatMap((object) => {
+          return object.Key ? [object.Key] : [];
+        }) ?? [];
       if (failure === "partial-delete") {
         failure = undefined;
         const [removed, remaining] = keys;
@@ -97,7 +115,9 @@ function objectStore() {
   });
   return {
     objects,
-    failNext(value: "list" | "partial-delete" | "lost-delete-receipt") {
+    failNext(
+      value: "list" | "delete" | "partial-delete" | "lost-delete-receipt",
+    ) {
       failure = value;
     },
     beforeListing(callback: () => Promise<void>) {
@@ -214,6 +234,46 @@ describe("Clerk Storage cleanup after reference deletion", () => {
     },
   );
 
+  it("retains an exact legacy export key for retry after its source row is deleted", async () => {
+    const actor = bdd.user();
+    const peer = bdd.user();
+    if (!actor.orgId || !peer.orgId) {
+      throw new Error("Expected organization-scoped export owners");
+    }
+    const s3 = objectStore();
+    const key = `exports/${randomUUID()}.zip`;
+    const peerKey = `exports/${randomUUID()}.zip`;
+    // The production endpoint no longer creates legacy one-call export rows.
+    // Only this historical setup crosses the fixture boundary.
+    await seedLegacyExportCleanupReferenceFixture(
+      {
+        userId: actor.userId,
+        orgId: actor.orgId,
+        s3Key: key,
+      },
+      context.signal,
+    );
+    await seedLegacyExportCleanupReferenceFixture(
+      {
+        userId: peer.userId,
+        orgId: peer.orgId,
+        s3Key: peerKey,
+      },
+      context.signal,
+    );
+    s3.objects.set(key, Buffer.from("legacy export"));
+    s3.objects.set(peerKey, Buffer.from("peer export"));
+    s3.failNext("delete");
+    await deleteOwner(actor, "user");
+    expect(s3.objects.has(key)).toBeTruthy();
+    await expect(retry(actor, "user")).resolves.toMatchObject({
+      body: { processed: 1 },
+    });
+    expect(s3.objects.has(key)).toBeFalsy();
+    expect(s3.objects.has(peerKey)).toBeTruthy();
+    await deleteOwner(peer, "user");
+  });
+
   it("retries only the remaining objects after a partial DeleteObjects response", async () => {
     const actor = bdd.user();
     const s3 = objectStore();
@@ -221,9 +281,9 @@ describe("Clerk Storage cleanup after reference deletion", () => {
     s3.failNext("partial-delete");
     await deleteOwner(actor, "user");
     expect(
-      [...s3.objects.keys()].filter((key) =>
-        key.startsWith(`${target.prefix}/`),
-      ),
+      [...s3.objects.keys()].filter((key) => {
+        return key.startsWith(`${target.prefix}/`);
+      }),
     ).toHaveLength(1);
     await retry(actor, "user");
     expect(s3.objects.has(target.archiveKey)).toBeFalsy();
@@ -258,15 +318,15 @@ describe("Clerk Storage cleanup after reference deletion", () => {
     }
     await deleteOwner(actor, "user");
     expect(
-      [...s3.objects.keys()].filter((key) =>
-        key.startsWith(`${target.prefix}/`),
-      ),
+      [...s3.objects.keys()].filter((key) => {
+        return key.startsWith(`${target.prefix}/`);
+      }),
     ).toHaveLength(3);
     await retry(actor, "user");
     expect(
-      [...s3.objects.keys()].filter((key) =>
-        key.startsWith(`${target.prefix}/`),
-      ),
+      [...s3.objects.keys()].filter((key) => {
+        return key.startsWith(`${target.prefix}/`);
+      }),
     ).toHaveLength(0);
   });
 });

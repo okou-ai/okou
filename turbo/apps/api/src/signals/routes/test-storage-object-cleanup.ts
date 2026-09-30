@@ -45,7 +45,11 @@ const retry$ = command(async ({ get, set }, signal: AbortSignal) => {
   signal.throwIfAborted();
   const result = await set(
     executeStorageObjectCleanupWork$,
-    { jobIds: jobs.map((job) => job.id) },
+    {
+      jobIds: jobs.map((job) => {
+        return job.id;
+      }),
+    },
     signal,
   );
   return { status: 200 as const, body: result };
