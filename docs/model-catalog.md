@@ -20,6 +20,27 @@ A retired model cannot be added, and stored selections of it resolve to its
 replacement. Replacement chains are a single hop to an active model, so no
 self-reference, cycle or dangling target can exist.
 
+Approved replacements (owner decisions, 2026-09-30):
+
+| Retired model       | Replacement         |
+| ------------------- | ------------------- |
+| `claude-fable-5`    | `claude-fable-5-1`  |
+| `claude-opus-4-8`   | `claude-opus-5-5`   |
+| `claude-sonnet-4-6` | `claude-sonnet-5-5` |
+| `deepseek-v4-pro`   | `gpt-6-luna`        |
+| `gpt-5.5`           | `gpt-6-luna`        |
+
+A replacement resolves only the model. The route is chosen again among the
+replacement's own `model_routes` under the caller's permissions, provider
+connections and plan; credentials, BYOK, subscription or custom-gateway
+bindings and upstream IDs of the retired model are never copied onto it. This
+matters for the cross-provider `deepseek-v4-pro` → `gpt-6-luna`: a DeepSeek
+BYOK route has no GPT counterpart, so such a selection fails with an explicit
+error instead of switching to the system default or to platform billing.
+Effort is kept only if the replacement's route accepts it, otherwise the
+request is rejected until the stored-configuration migration converts it.
+Historical runs, events and billing keep the original model ID.
+
 `model_routes` holds the executable routes of each model:
 
 | Column                                  | Meaning                                                                          |
@@ -77,7 +98,9 @@ unknown result; it never substitutes the system default.
 
 ## Phased rollout
 
-- **PR-A (this change):** additive schema, seed and a read-only
+The phases below ship in #37416 together, one step at a time.
+
+- **PR-A (merged into #37416):** additive schema, seed and a read-only
   `GET /api/model-catalog`. No existing reader changes.
 - **PR-B:** server readers switch to the catalog: the organization and
   new-organization default come from `is_system_default` (replacing
@@ -86,7 +109,7 @@ unknown result; it never substitutes the system default.
   dispatch.
 - **PR-C:** App, CLI and integrations consume the server catalog instead of
   code constants.
-- **PR-D:** retire Claude Fable 5 through `replaced_by`, then migrate stored
+- **PR-D:** make the approved replacements effective, then migrate stored
   configuration idempotently.
 - **PR-E:** delete the code model lists, `subscription_model_catalog`,
   `allow_new_org_policy` and `org_model_policies.is_default`.

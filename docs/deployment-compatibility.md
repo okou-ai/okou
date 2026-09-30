@@ -37,7 +37,11 @@ Migration `1296_global_model_catalog` extends `run_model_catalog` with
 `display_name`, `sort_order`, `is_system_default`, `replaced_by` and two stored
 generated columns, and adds `model_routes`. It seeds every code-active model
 (labels and `SUPPORTED_RUN_MODELS` order), marks `okou-1.0` as the system
-default and seeds `claude-fable-5` with `replaced_by = claude-fable-5-1`. Routes
+default and seeds the owner-approved replacements for code-retired models:
+`claude-fable-5` to `claude-fable-5-1`, `claude-opus-4-8` to `claude-opus-5-5`,
+`claude-sonnet-4-6` to `claude-sonnet-5-5`, and both `deepseek-v4-pro` and
+`gpt-5.5` to `gpt-6-luna`. Replaced models have no routes; a replacement never
+copies credentials, provider routes or upstream IDs across providers. Routes
 are seeded from the Built-in candidates, model-first BYOK compatibility and a
 copy of `subscription_model_catalog`. The migration fails, rather than dropping
 rows, if that catalog lists a model outside the active catalog. See
@@ -47,11 +51,12 @@ rows, if that catalog lists a model outside the active catalog. See
   selects `allow_new_org_policy` for `ACTIVE_RUN_MODELS`; existing values are
   preserved and rows the migration inserts for missing active models default to
   `false`, which matches today's fail-closed treatment of a missing row.
-- Rows outside the catalog are deleted: code-retired models without a confirmed
-  replacement (`claude-opus-4-8`, `claude-sonnet-4-6`, `deepseek-v4-pro`) and
-  IDs the code does not know (for example `gpt-5.6-terra`, `okou-1.0-pro`,
-  `okou-1.0-max`). The reader filters them out, so neither the old nor the new
-  API observes the deletion.
+- Every recognized model ID keeps a row, including the retired ones. Only rows
+  for IDs the code does not know are deleted (for example `gpt-5.6-terra`,
+  `okou-1.0-pro`, `okou-1.0-max`). The reader filters them out, so neither the
+  old nor the new API observes the deletion.
+- Nothing reads `replaced_by` yet: retired models are still rejected by the
+  code's retired set until the readers switch to the catalog.
 - `GET /api/model-catalog` is new and read-only; no client calls it yet.
 - `display_name` and `sort_order` are `NOT NULL` without defaults. No API writes
   the catalog; manual operator inserts must now supply them.

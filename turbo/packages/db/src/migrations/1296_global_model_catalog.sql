@@ -15,28 +15,34 @@ CREATE TEMP TABLE "model_catalog_seed" (
   "is_system_default" boolean NOT NULL,
   "replaced_by" varchar(255)
 ) ON COMMIT DROP;--> statement-breakpoint
--- Code-active models in SUPPORTED_RUN_MODELS order with their current labels,
--- plus Claude Fable 5, whose confirmed replacement is Claude Fable 5.1.
+-- Every recognized model in SUPPORTED_RUN_MODELS order with its current label.
+-- Retired models carry their owner-approved replacement: Fable 5 -> Fable 5.1,
+-- Opus 4.8 -> Opus 5.5, Sonnet 4.6 -> Sonnet 5.5, DeepSeek V4 Pro -> GPT 6
+-- Luna and GPT 5.5 -> GPT 6 Luna. Replacement only resolves the model; it never
+-- carries credentials, provider routes or upstream IDs across providers.
 INSERT INTO "model_catalog_seed" ("model", "display_name", "sort_order", "is_system_default", "replaced_by") VALUES
   ('okou-1.0', 'Auto', 10, true, NULL),
   ('claude-fable-5-1', 'Claude Fable 5.1', 20, false, NULL),
   ('claude-fable-5', 'Claude Fable 5', 30, false, 'claude-fable-5-1'),
   ('claude-opus-5-5', 'Claude Opus 5.5', 40, false, NULL),
   ('claude-opus-5', 'Claude Opus 5', 50, false, NULL),
-  ('claude-sonnet-5-5', 'Claude Sonnet 5.5', 60, false, NULL),
-  ('claude-sonnet-5', 'Claude Sonnet 5', 70, false, NULL),
-  ('gpt-6-astra', 'GPT 6 Astra', 80, false, NULL),
-  ('gpt-6.1-sol', 'GPT 6.1 Sol', 90, false, NULL),
-  ('gpt-6-sol', 'GPT 6 Sol', 100, false, NULL),
-  ('gpt-6-luna', 'GPT 6 Luna', 110, false, NULL),
-  ('gpt-5.6-sol', 'GPT 5.6 Sol', 120, false, NULL),
-  ('gpt-5.6-luna', 'GPT 5.6 Luna', 130, false, NULL),
-  ('deepseek-v4.1-flash', 'DeepSeek V4.1 Flash', 140, false, NULL),
-  ('deepseek-v4-flash', 'DeepSeek V4 Flash', 150, false, NULL);--> statement-breakpoint
--- Rows outside the catalog are retired models without a confirmed replacement
--- (claude-opus-4-8, claude-sonnet-4-6, deepseek-v4-pro, gpt-5.5) or IDs the
--- code does not recognize. The only reader filters by ACTIVE_RUN_MODELS, so
--- they have no effect today.
+  ('claude-opus-4-8', 'Claude Opus 4.8', 60, false, 'claude-opus-5-5'),
+  ('claude-sonnet-5-5', 'Claude Sonnet 5.5', 70, false, NULL),
+  ('claude-sonnet-5', 'Claude Sonnet 5', 80, false, NULL),
+  ('claude-sonnet-4-6', 'Claude Sonnet 4.6', 90, false, 'claude-sonnet-5-5'),
+  ('gpt-6-astra', 'GPT 6 Astra', 100, false, NULL),
+  ('gpt-6.1-sol', 'GPT 6.1 Sol', 110, false, NULL),
+  ('gpt-6-sol', 'GPT 6 Sol', 120, false, NULL),
+  ('gpt-6-luna', 'GPT 6 Luna', 130, false, NULL),
+  ('gpt-5.6-sol', 'GPT 5.6 Sol', 140, false, NULL),
+  ('gpt-5.6-luna', 'GPT 5.6 Luna', 150, false, NULL),
+  ('gpt-5.5', 'GPT 5.5', 160, false, 'gpt-6-luna'),
+  ('deepseek-v4.1-flash', 'DeepSeek V4.1 Flash', 170, false, NULL),
+  ('deepseek-v4-pro', 'DeepSeek V4 Pro', 180, false, 'gpt-6-luna'),
+  ('deepseek-v4-flash', 'DeepSeek V4 Flash', 190, false, NULL);--> statement-breakpoint
+-- Rows outside the catalog are IDs the code does not recognize (for example
+-- gpt-5.6-terra, okou-1.0-pro, okou-1.0-max). The only reader filters by
+-- ACTIVE_RUN_MODELS, so they have no effect today.
 DELETE FROM "run_model_catalog" AS "catalog"
 WHERE NOT EXISTS (
   SELECT 1 FROM "model_catalog_seed" AS "seed" WHERE "seed"."model" = "catalog"."model"

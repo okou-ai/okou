@@ -44,6 +44,13 @@ export async function validateModelCatalogSeed(
       }),
       [...ACTIVE_RUN_MODELS],
     );
+    // Every recognized ID, including retired ones, keeps a catalog row.
+    assert.deepEqual(
+      catalog.rows.map((row) => {
+        return row.model;
+      }),
+      [...SUPPORTED_RUN_MODELS],
+    );
     for (const row of catalog.rows) {
       assert.equal(row.display_name, getCanonicalModelDisplayName(row.model));
       assert.ok(
@@ -60,7 +67,13 @@ export async function validateModelCatalogSeed(
         .map((row) => {
           return [row.model, row.replaced_by];
         }),
-      [["claude-fable-5", "claude-fable-5-1"]],
+      [
+        ["claude-fable-5", "claude-fable-5-1"],
+        ["claude-opus-4-8", "claude-opus-5-5"],
+        ["claude-sonnet-4-6", "claude-sonnet-5-5"],
+        ["gpt-5.5", "gpt-6-luna"],
+        ["deepseek-v4-pro", "gpt-6-luna"],
+      ],
     );
     assert.deepEqual(
       catalog.rows

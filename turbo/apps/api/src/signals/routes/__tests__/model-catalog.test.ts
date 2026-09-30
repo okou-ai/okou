@@ -65,12 +65,32 @@ describe("GET /api/model-catalog", () => {
         return row.model === "claude-fable-5-1";
       })?.resolvedModel,
     ).toBe("claude-fable-5-1");
-    // Retired models without a confirmed replacement are not in the catalog.
+    // Retired models keep their row and resolve to the approved replacement,
+    // including the cross-provider DeepSeek V4 Pro -> GPT 6 Luna.
     expect(
-      models.map((row) => {
-        return row.model;
+      models
+        .filter((row) => {
+          return row.replacedBy !== null;
+        })
+        .map((row) => {
+          return [row.model, row.resolvedModel];
+        }),
+    ).toStrictEqual([
+      ["claude-fable-5", "claude-fable-5-1"],
+      ["claude-opus-4-8", "claude-opus-5-5"],
+      ["claude-sonnet-4-6", "claude-sonnet-5-5"],
+      ["gpt-5.5", "gpt-6-luna"],
+      ["deepseek-v4-pro", "gpt-6-luna"],
+    ]);
+    // A replaced model has no routes of its own; nothing is copied from the
+    // retired model's provider onto its replacement.
+    expect(
+      routes.filter((route) => {
+        return models.some((row) => {
+          return row.model === route.model && row.replacedBy !== null;
+        });
       }),
-    ).not.toContain("claude-opus-4-8");
+    ).toStrictEqual([]);
     const sortOrders = models.map((row) => {
       return row.sortOrder;
     });
