@@ -317,6 +317,86 @@ describe("private Runner VNC authority", () => {
     },
   );
 
+  it("requires independent SSH access and the exact certificate/SSH tuple before decrypting a client key", async () => {
+    const f = await api.fixture();
+    const ssh = await accept(
+      setupApp({ context, routes: sshConnectionsRoutes })(
+        sshConnectionsContract,
+      ).create({
+        headers: vncSessionHeaders,
+        body: {
+          id: randomUUID(),
+          displayName: "QEMU gateway",
+          host: "gateway.example.com",
+          credential: inlineSshKey("deploy", "private-key"),
+        },
+      }),
+      [201],
+    );
+    const created = await accept(
+      api.connections().create({
+        headers: vncSessionHeaders,
+        body: {
+          id: randomUUID(),
+          displayName: "Tunnelled QEMU",
+          host: "127.0.0.1",
+          transport: { type: "ssh", connectionId: ssh.body.id },
+          security: { type: "x509_none", trust: { mode: "system" } },
+          credential: {
+            create: {
+              name: "Tunnelled identity",
+              authentication: {
+                method: "client_certificate",
+                certificateChain,
+                privateKey,
+              },
+            },
+          },
+        },
+      }),
+      [201],
+    );
+    await api.enableDefault(f, "vnc", created.body.id);
+    const selected = { ...f, connectionId: created.body.id };
+    const kms = useSecretKmsProbe();
+    const profile = {
+      authMethod: "client_certificate" as const,
+      securityType: "x509_none" as const,
+      transportType: "ssh" as const,
+    };
+    await expect(
+      api.resolve(selected, { supportedProfiles: [profile] }),
+    ).resolves.toStrictEqual({ outcome: "unavailable" });
+    expect(kms.decryptCalls).toBe(0);
+    await accept(
+      setupApp({ context, routes: chatRemoteAccessRoutes })(
+        chatRemoteAccessContract,
+      ).updateHostDefault({
+        headers: vncSessionHeaders,
+        params: { protocol: "ssh", connectionId: ssh.body.id },
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    await expect(
+      api.resolve(selected, {
+        supportedProfiles: [{ ...profile, transportType: "direct" }],
+      }),
+    ).resolves.toStrictEqual({ outcome: "unsupported_profile" });
+    expect(kms.decryptCalls).toBe(0);
+    await expect(
+      api.resolve(selected, { supportedProfiles: [profile] }),
+    ).resolves.toMatchObject({
+      outcome: "resolved_transport",
+      authentication: {
+        method: "client_certificate",
+        privateKeyPkcs8Der: expect.any(String),
+      },
+      transport: { type: "ssh", connectionId: ssh.body.id },
+    });
+    expect(kms.decryptCalls).toBe(1);
+  });
+
   it("requires the SSH-specific X509None capability and independent SSH authority", async () => {
     const f = await api.fixture();
     const ssh = await accept(
