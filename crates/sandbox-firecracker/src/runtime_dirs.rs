@@ -52,10 +52,11 @@ const MAX_UNIX_SOCKET_PATH_BYTES: usize = 107;
 /// `runtime_paths.sock_base()/<sock_id>`, where [`RuntimePaths::sock_base`]
 /// supplies the base. This helper only derives and validates the path; it does
 /// not create, inspect, or modify filesystem entries. It also checks that the
-/// port-suffixed Guest control and Guest-to-Runner RPC listeners derived from
-/// [`SockPaths::vsock`] fit within the 107-byte usable Unix socket pathname
-/// limit. Because it does not inspect filesystem entries, it does not apply
-/// the directory ownership or access checks used by the preparation helpers.
+/// port-suffixed Guest control, Guest-to-Runner RPC and private Guest duplex
+/// listeners derived from [`SockPaths::vsock`] fit within the 107-byte usable
+/// Unix socket pathname limit. Because it does not inspect filesystem entries,
+/// it does not apply the directory ownership or access checks used by the
+/// preparation helpers.
 ///
 /// # Errors
 ///
@@ -139,13 +140,13 @@ pub(crate) fn prepare_runtime_socket_dir(sock_paths: &SockPaths) -> io::Result<(
 /// `vsock_bind_dir` must have the lexical shape
 /// `<sock-base>/<sock-id>/vsock`, where `<sock-base>` is supplied by
 /// [`RuntimePaths::sock_base`] and `sock-id` follows the same single-segment
-/// ASCII rule as [`checked_runtime_sock_dir`]. The port-suffixed Guest control
-/// and RPC listener paths must fit within the 107-byte usable Unix socket
-/// pathname limit. The socket base and per-ID directory are created or
-/// normalized to `0711`; the `vsock` directory is created or normalized to
-/// `0700`. Each checked directory must be a non-symlink directory owned by
-/// root or the effective UID and must be writable and traversable by the
-/// effective user.
+/// ASCII rule as [`checked_runtime_sock_dir`]. The port-suffixed Guest control,
+/// RPC and private duplex listener paths must fit within the 107-byte usable
+/// Unix socket pathname limit. The socket base and per-ID directory are
+/// created or normalized to `0711`; the `vsock` directory is created or
+/// normalized to `0700`. Each checked directory must be a non-symlink
+/// directory owned by root or the effective UID and must be writable and
+/// traversable by the effective user.
 ///
 /// This helper uses [`RuntimePaths::new`] and therefore validates against the
 /// default runtime socket base rather than an arbitrary base supplied by the
@@ -346,11 +347,17 @@ fn validate_runtime_sock_id(sock_id: &str) -> io::Result<()> {
 }
 
 fn validate_runtime_vsock_listener_path_len(sock_id: &str, vsock_path: &Path) -> io::Result<()> {
-    // Both listeners use the same Firecracker UDS base, suffixed by _<port>.
+    // Every guest-facing listener uses the same Firecracker UDS base,
+    // suffixed by _<port>. Validate the longest before creating directories.
     let longest_port_len = guest_control_proto::VSOCK_PORT
         .to_string()
         .len()
-        .max(runner_rpc_proto::VSOCK_PORT.to_string().len());
+        .max(runner_rpc_proto::VSOCK_PORT.to_string().len())
+        .max(
+            guest_contracts::private_duplex::VSOCK_PORT
+                .to_string()
+                .len(),
+        );
     let listener_path_len = vsock_path.as_os_str().as_bytes().len() + 1 + longest_port_len;
     if listener_path_len > MAX_UNIX_SOCKET_PATH_BYTES {
         return Err(io::Error::new(
@@ -517,6 +524,11 @@ mod tests {
         let overlong_id = "a".repeat(71);
 
         assert!(checked_runtime_sock_dir(&runtime_paths, &valid_id).is_ok());
+        let duplex = SockPaths::new(runtime_paths.sock_dir(&valid_id)).guest_duplex();
+        assert_eq!(
+            duplex.as_os_str().as_bytes().len(),
+            MAX_UNIX_SOCKET_PATH_BYTES
+        );
         let err = checked_runtime_sock_dir(&runtime_paths, &overlong_id).unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
         assert!(err.to_string().contains("vsock listener path too long"));

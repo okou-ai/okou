@@ -1640,6 +1640,10 @@ pub(super) async fn execute_prepared_sandbox_run_with_process_cancel_timeouts(
         .guest_rpc
         .as_ref()
         .and_then(|runtime| runtime.install(sandbox.as_ref(), context, &cleanup_cancel));
+    let guest_duplex_registration =
+        config
+            .guest_duplex
+            .register(context.run_id, sandbox.as_ref(), &cleanup_cancel);
     let reuse_result = start.reuse_result;
     let workspace_reuse_result = start.workspace_reuse_result;
 
@@ -1659,6 +1663,8 @@ pub(super) async fn execute_prepared_sandbox_run_with_process_cancel_timeouts(
     if let Some(guest_rpc) = guest_rpc {
         guest_rpc.shutdown().await;
     }
+    // Revoke before cleanup, park, or release to an idle/reused sandbox.
+    drop(guest_duplex_registration);
 
     let pre_process_resource_diagnostics = match result.as_ref() {
         Err(error) if explicit_enospc_evidence([error.to_string().as_str()]) => {

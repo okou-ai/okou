@@ -41,6 +41,7 @@ pub(in crate::executor::tests) async fn test_executor_config(dir: &Path) -> Exec
         mitm_jsonl_flush: None,
         connector_runtime_sync: None,
         guest_rpc: None,
+        guest_duplex: runner_remote::guest_duplex::RunGuestChannels::default(),
         session_history_cpu: super::super::super::SessionHistoryCpuPool::with_capacity(1),
         session_history_probe: super::super::super::SessionHistoryProbe::default(),
         fresh_archive_delivery: crate::storage_cache::FreshArchiveDeliveryAdmission::new(),

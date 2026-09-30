@@ -1,11 +1,16 @@
 use super::*;
 
 use std::os::unix::fs::PermissionsExt;
+use std::sync::atomic::AtomicU8;
 use std::time::Duration;
 
+use guest_control_client::GuestControlClient;
 use runner_rpc_proto::{Delivery, ErrorCode, Response, ResponseReader, ResponseWriter};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::UnixStream;
 use tokio::time::timeout;
+
+use crate::park_coordinator::ParkCoordinator;
 
 struct Fixture {
     _dir: tempfile::TempDir,
@@ -87,8 +92,8 @@ impl Fixture {
         fixture
     }
 
-    fn context(&self) -> GuestRpcContext {
-        GuestRpcContext {
+    fn context(&self) -> GuestEndpointContext {
+        GuestEndpointContext {
             sandbox_id: "sandbox-a".into(),
             state: Arc::clone(&self.state),
             guest: Arc::clone(&self.guest),
@@ -153,6 +158,28 @@ async fn repeated_fake_handler_requests_hold_the_real_park_reservation() {
         drop(writer);
         drop(fixture.host.try_fence_normal_operations().unwrap());
     }
+}
+
+#[tokio::test]
+async fn rpc_request_remains_byte_for_byte_on_its_dedicated_port() {
+    assert_ne!(
+        guest_contracts::private_duplex::VSOCK_PORT,
+        runner_rpc_proto::VSOCK_PORT
+    );
+    let fixture = Fixture::new().await;
+    let mut peer = UnixStream::connect(&fixture.path).await.unwrap();
+    let body = br#"{"version":1,"method":"run.usage","params":{}}"#;
+    peer.write_all(&(body.len() as u32).to_be_bytes())
+        .await
+        .unwrap();
+    peer.write_all(body).await.unwrap();
+    let mut accepted = fixture.acceptor("run-a").accept().await.unwrap();
+    let parsed = runner_rpc_proto::read_request(&mut accepted.stream)
+        .await
+        .unwrap();
+    assert_eq!(parsed.method, "run.usage");
+    assert_eq!(parsed.params.get(), "{}");
+    assert!(fixture.host.try_fence_normal_operations().is_err());
 }
 
 #[tokio::test]

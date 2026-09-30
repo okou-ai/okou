@@ -158,6 +158,8 @@ surface; the index does not replace their detailed rules.
   verify host-local concurrency and I/O capacity overrides.
 - [Runner WSS target resolution](./runner-wss-target-resolution.md): internal
   hostname-derived origin, claimed Runner/liveness checks and separate fleet and ingress gates.
+- [Private run-scoped Guest duplex](./runner-guest-duplex.md): exact live executor assignment,
+  bounded opaque framing, cancellation and the #37027 attachment contract.
 - [Guest memory policy](./runner-memory-policy.md): shared workload capacity,
   control/runtime reclaim protection, and tool OOM trade-offs.
 - [Workspace history restore telemetry](./workspace-history-restore-telemetry.md):
