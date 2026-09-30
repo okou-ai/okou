@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { modelRoutes } from "@okouai/db/schema/model-route";
 import { runModelCatalog } from "@okouai/db/schema/run-model-catalog";
+import { usagePricing } from "@okouai/db/schema/usage-pricing";
 import type { PiRouteClass } from "@okouai/api-contracts/contracts/model-catalog";
 import { piCatalogModel, type PiCatalogModel } from "@okouai/core/pi-execution";
 import { db } from "../lib/db";
@@ -168,9 +169,24 @@ export interface BuiltInRouteFixture {
   readonly efforts: readonly string[];
   readonly defaultEffort: string | null;
   readonly serviceTiers?: readonly ("priority" | "ultrafast")[];
-  /** `usage_pricing` provider of the route's pricing link; defaults to the model ID. */
+  /**
+   * `usage_pricing` provider of the route's pricing link. Defaults to the
+   * model ID, which the fixture prices for every category the route can
+   * bill; a test naming its own provider owns that provider's pricing.
+   */
   readonly pricingProvider?: string;
 }
+
+const FIXTURE_MODEL_PRICING_CATEGORIES = [
+  "tokens.input",
+  "tokens.output",
+  "tokens.cache_read",
+  "tokens.cache_creation",
+].flatMap((category) => {
+  return [category, `${category}.long_context`].flatMap((base) => {
+    return [base, `${base}.fast`, `${base}.ultrafast`];
+  });
+});
 
 /**
  * Operators launch a model on an already supported protocol purely by
@@ -209,9 +225,35 @@ export async function insertCatalogModelFixture(args: {
         };
       }),
     );
+    // Launching a model includes pricing its default (model ID) link.
+    if (
+      args.builtInRoutes.some((route) => {
+        return route.pricingProvider === undefined;
+      })
+    ) {
+      await tx.insert(usagePricing).values(
+        FIXTURE_MODEL_PRICING_CATEGORIES.map((category) => {
+          return {
+            kind: "model",
+            provider: args.model,
+            category,
+            unitPrice: 1,
+            unitSize: 1_000_000,
+          };
+        }),
+      );
+    }
   });
   return async () => {
     await db().transaction(async (tx) => {
+      await tx
+        .delete(usagePricing)
+        .where(
+          and(
+            eq(usagePricing.kind, "model"),
+            eq(usagePricing.provider, args.model),
+          ),
+        );
       await tx.delete(modelRoutes).where(eq(modelRoutes.model, args.model));
       await tx
         .delete(runModelCatalog)
@@ -239,6 +281,28 @@ export async function updateBuiltInRouteFixture(args: {
     .returning({ id: modelRoutes.id });
   if (updated.length !== 1) {
     throw new Error("Expected one Built-in route to be updated");
+  }
+}
+
+/** Operators relink a Built-in route's pricing directly in the database. */
+export async function updateBuiltInRoutePricingProviderFixture(args: {
+  readonly model: string;
+  readonly concreteProviderType: string;
+  readonly pricingProvider: string;
+}): Promise<void> {
+  const updated = await db()
+    .update(modelRoutes)
+    .set({ pricingProvider: args.pricingProvider })
+    .where(
+      and(
+        eq(modelRoutes.model, args.model),
+        eq(modelRoutes.providerType, "built-in"),
+        eq(modelRoutes.concreteProviderType, args.concreteProviderType),
+      ),
+    )
+    .returning({ id: modelRoutes.id });
+  if (updated.length !== 1) {
+    throw new Error("Expected one Built-in route to be relinked");
   }
 }
 

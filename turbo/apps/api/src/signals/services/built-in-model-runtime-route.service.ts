@@ -21,6 +21,10 @@ import {
   loadModelCatalog,
   type ModelCatalog,
 } from "./model-catalog.service";
+import {
+  isBuiltInRoutePriced,
+  type BuiltInRoutePricing,
+} from "./built-in-route-pricing";
 
 /** One enabled Built-in `model_routes` candidate with a known adapter. */
 interface BuiltInModelRouteTarget {
@@ -45,10 +49,16 @@ function isBuiltInModelRouteProviderType(
 export function getCatalogBuiltInModelRouteCandidates(
   catalog: ModelCatalog,
   selectedModel: string,
+  routePricing?: BuiltInRoutePricing,
 ): readonly BuiltInModelRouteTarget[] {
   return catalogBuiltInCandidates(catalog, selectedModel).flatMap((route) => {
     const providerType = route.concreteProviderType;
     if (!isBuiltInModelRouteProviderType(providerType)) {
+      return [];
+    }
+    // A new run must not execute on a route whose billable categories lack
+    // usage_pricing; like any unavailable candidate, it yields to the next.
+    if (routePricing && !isBuiltInRoutePriced(routePricing, route)) {
       return [];
     }
     return [
@@ -155,10 +165,12 @@ function eligibleBuiltInModelRouteCandidates(
   catalog: ModelCatalog,
   selectedModel: string,
   featureSwitchContext: FeatureSwitchContext,
+  routePricing: BuiltInRoutePricing | undefined,
 ): readonly BuiltInModelRouteTarget[] {
   const candidates = getCatalogBuiltInModelRouteCandidates(
     catalog,
     selectedModel,
+    routePricing,
   );
   const useAlternativeRouting =
     isFeatureEnabled(
@@ -233,18 +245,26 @@ export async function resolveBuiltInModelRuntimeRoute(
   );
 }
 
-/** For callers that already hold the request- or run-scoped catalog. */
+/**
+ * For callers that already hold the request- or run-scoped catalog. A new run
+ * passes its route pricing so unpriced candidates are skipped.
+ */
 export async function resolveBuiltInModelRuntimeRouteFromCatalog(
   db: ReadonlyDb,
   catalog: ModelCatalog,
   selectedModel: string,
   featureSwitchContext: FeatureSwitchContext,
+  routePricing?: BuiltInRoutePricing,
 ): Promise<BuiltInModelRuntimeRoute | null> {
-  return await resolveBuiltInModelRuntimeRouteWithKeys(
+  return await firstAvailableBuiltInModelRoute(
     db,
-    catalog,
     selectedModel,
-    featureSwitchContext,
+    eligibleBuiltInModelRouteCandidates(
+      catalog,
+      selectedModel,
+      featureSwitchContext,
+      routePricing,
+    ),
     await loadBuiltInModelKeyIdsByVendor(db),
   );
 }
@@ -256,11 +276,26 @@ export async function resolveBuiltInModelRuntimeRouteWithKeys(
   featureSwitchContext: FeatureSwitchContext,
   keyIdsByVendor: BuiltInModelKeyIdsByVendor,
 ): Promise<BuiltInModelRuntimeRoute | null> {
-  const candidates = eligibleBuiltInModelRouteCandidates(
-    catalog,
+  return await firstAvailableBuiltInModelRoute(
+    db,
     selectedModel,
-    featureSwitchContext,
-  ).filter((target) => {
+    eligibleBuiltInModelRouteCandidates(
+      catalog,
+      selectedModel,
+      featureSwitchContext,
+      undefined,
+    ),
+    keyIdsByVendor,
+  );
+}
+
+async function firstAvailableBuiltInModelRoute(
+  db: ReadonlyDb,
+  selectedModel: string,
+  eligible: readonly BuiltInModelRouteTarget[],
+  keyIdsByVendor: BuiltInModelKeyIdsByVendor,
+): Promise<BuiltInModelRuntimeRoute | null> {
+  const candidates = eligible.filter((target) => {
     return (
       !runtimeRouteUnavailableForTest(target) &&
       keyIdsByVendor.has(target.vendor)
@@ -313,11 +348,14 @@ export function builtInModelRuntimeRouteFromSnapshot(args: {
     readonly modelRuntimeProvider: string;
     readonly modelRuntimeModel: string;
   }[];
+  /** A new run's route pricing; unpriced candidates are skipped. */
+  readonly routePricing?: BuiltInRoutePricing;
 }): BuiltInModelRuntimeRoute | null {
   for (const target of eligibleBuiltInModelRouteCandidates(
     args.catalog,
     args.selectedModel,
     args.featureSwitchContext,
+    args.routePricing,
   )) {
     if (runtimeRouteUnavailableForTest(target)) {
       continue;

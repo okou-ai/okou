@@ -21,6 +21,7 @@ import { usageRecordRoutes } from "../usage-record";
 import {
   insertCatalogModelFixture,
   updateBuiltInRouteFixture,
+  updateBuiltInRoutePricingProviderFixture,
 } from "../../../test-fixtures/model-catalog";
 import { seedBuiltInModelCandidateKeys } from "./helpers/runtime-state";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
@@ -48,6 +49,43 @@ function catalogApi() {
 function policiesApi() {
   return setupApp({ context, routes: modelPoliciesRoutes })(
     modelPoliciesMainContract,
+  );
+}
+
+const BASE_TOKEN_CATEGORIES = [
+  "tokens.input",
+  "tokens.output",
+  "tokens.cache_read",
+  "tokens.cache_creation",
+] as const;
+
+/** Seed test-owned model pricing rows and delete them after the test. */
+async function seedModelPricingFixture(
+  provider: string,
+  prices: Readonly<Record<string, number>>,
+): Promise<void> {
+  await seedUsagePricingRows(
+    Object.entries(prices).map(([category, unitPrice]) => {
+      return { kind: "model", provider, category, unitPrice, unitSize: 1 };
+    }),
+  );
+  onTestFinished(async () => {
+    await deleteUsagePricingRows({
+      kind: "model",
+      provider,
+      categories: Object.keys(prices),
+    });
+  });
+}
+
+function uniformPrices(
+  categories: readonly string[],
+  unitPrice: number,
+): Record<string, number> {
+  return Object.fromEntries(
+    categories.map((category) => {
+      return [category, unitPrice];
+    }),
   );
 }
 
@@ -416,7 +454,9 @@ describe("model catalog authority", () => {
             credits: expectedCredits,
             providers: [
               {
-                provider: pricingProvider,
+                // Usage is named by the run's model; the pricing provider
+                // only selects the usage_pricing rows.
+                provider: model,
                 credits: expectedCredits,
                 usageKinds: [{ kind: "model", credits: expectedCredits }],
               },
@@ -425,5 +465,207 @@ describe("model catalog authority", () => {
         ],
       }),
     ]);
+  });
+  async function launchCatalogModel(args: {
+    readonly model: string;
+    readonly routes: Parameters<
+      typeof insertCatalogModelFixture
+    >[0]["builtInRoutes"];
+  }) {
+    const chatActor = await chatEvents.entitledChatActor();
+    const restore = await insertCatalogModelFixture({
+      model: args.model,
+      displayName: "Catalog Priced",
+      sortOrder: 100_000,
+      builtInRoutes: args.routes,
+    });
+    onTestFinished(restore);
+    await seedBuiltInModelCandidateKeys(context, args.model);
+    await chatEvents.api.updateOrgModelPolicies(chatActor.actor, [
+      {
+        model: args.model,
+        preferred: true,
+        defaultProviderType: "built-in",
+        credentialScope: "org",
+        modelProviderId: null,
+      },
+    ]);
+    return chatActor;
+  }
+
+  it("bills a priority-tier run at the route's fast pricing rows", async () => {
+    const model = `catalog-fast-${randomUUID()}`;
+    const pricingProvider = `catalog-fast-pricing-${randomUUID()}`;
+    await seedModelPricingFixture(pricingProvider, {
+      ...uniformPrices(BASE_TOKEN_CATEGORIES, 1),
+      ...uniformPrices(
+        BASE_TOKEN_CATEGORIES.map((category) => {
+          return `${category}.fast`;
+        }),
+        3,
+      ),
+    });
+    const { actor, agentId, runnerGroup } = await launchCatalogModel({
+      model,
+      routes: [
+        {
+          concreteProviderType: "openai-api-key",
+          upstreamModel: `catalog-fast-upstream-${randomUUID()}`,
+          priority: 0,
+          efforts: ["low", "medium", "high"],
+          defaultEffort: "medium",
+          serviceTiers: ["priority"],
+          pricingProvider,
+        },
+      ],
+    });
+
+    const run = await chatEvents.sendChatRun(actor, {
+      agentId,
+      prompt: "bill the fast tier",
+      model,
+      runOptions: { codexServiceTier: "fast" },
+    });
+    const { claim, sandboxHeaders } = await chatEvents.claimChatRun(
+      runnerGroup,
+      run.runId,
+    );
+    expect(claim.modelUsageProvider).toBe(pricingProvider);
+
+    // The addon reports priority-tier usage under the `.fast` categories.
+    await webhooks.requestAgentUsageEvent(
+      {
+        runId: run.runId,
+        events: [
+          { category: "tokens.input.fast", quantity: 100 },
+          { category: "tokens.output.fast", quantity: 10 },
+        ].map((event) => {
+          return {
+            idempotencyKey: randomUUID(),
+            kind: "model" as const,
+            provider: pricingProvider,
+            ...event,
+          };
+        }),
+      },
+      sandboxHeaders,
+      [200],
+    );
+    await billing.processOrgUsageEvents(actor);
+
+    if (!actor.orgId) {
+      throw new Error("Expected an organization member");
+    }
+    mocks.clerk.session(actor.userId, actor.orgId);
+    const record = await accept(
+      setupApp({ context, routes: usageRecordRoutes })(usageRecordContract).get(
+        { query: {}, headers: authHeaders() },
+      ),
+      [200],
+    );
+    // (100 + 10) tokens at the fast rate of 3 credits per token.
+    expect(record.body.totalCredits).toBe(330);
+  });
+
+  it("runs on the next priced Built-in candidate when the first is unpriced", async () => {
+    const model = `catalog-unpriced-${randomUUID()}`;
+    const pricedProvider = `catalog-priced-${randomUUID()}`;
+    const secondUpstream = `catalog-priced-upstream-${randomUUID()}`;
+    await seedModelPricingFixture(
+      pricedProvider,
+      uniformPrices(BASE_TOKEN_CATEGORIES, 1),
+    );
+    const { actor, agentId, runnerGroup } = await launchCatalogModel({
+      model,
+      routes: [
+        {
+          // First priority, but its pricing link has no usage_pricing rows.
+          concreteProviderType: "openrouter-codex",
+          upstreamModel: `catalog-unpriced-upstream-${randomUUID()}`,
+          priority: 0,
+          efforts: [],
+          defaultEffort: null,
+          pricingProvider: `catalog-unpriced-pricing-${randomUUID()}`,
+        },
+        {
+          concreteProviderType: "openai-api-key",
+          upstreamModel: secondUpstream,
+          priority: 1,
+          efforts: [],
+          defaultEffort: null,
+          pricingProvider: pricedProvider,
+        },
+      ],
+    });
+
+    const run = await chatEvents.sendChatRun(actor, {
+      agentId,
+      prompt: "run on a priced route",
+      model,
+    });
+    await expect(
+      readRunModelRuntimeRouteFixture(run.runId),
+    ).resolves.toMatchObject({
+      selectedModel: model,
+      modelRuntimeProvider: "openai-api-key",
+      modelRuntimeModel: secondUpstream,
+    });
+    const { claim } = await chatEvents.claimChatRun(runnerGroup, run.runId);
+    expect(claim).toMatchObject({
+      environment: { OPENAI_MODEL: secondUpstream },
+      modelUsageProvider: pricedProvider,
+    });
+  });
+
+  it("keeps a started run's pricing identity when the route is relinked", async () => {
+    const model = `catalog-relink-${randomUUID()}`;
+    const originalProvider = `catalog-relink-original-${randomUUID()}`;
+    const relinkedProvider = `catalog-relink-new-${randomUUID()}`;
+    await seedModelPricingFixture(
+      originalProvider,
+      uniformPrices(BASE_TOKEN_CATEGORIES, 1),
+    );
+    await seedModelPricingFixture(
+      relinkedProvider,
+      uniformPrices(BASE_TOKEN_CATEGORIES, 2),
+    );
+    const { actor, agentId, runnerGroup } = await launchCatalogModel({
+      model,
+      routes: [
+        {
+          concreteProviderType: "openai-api-key",
+          upstreamModel: `catalog-relink-upstream-${randomUUID()}`,
+          priority: 0,
+          efforts: [],
+          defaultEffort: null,
+          pricingProvider: originalProvider,
+        },
+      ],
+    });
+    const started = await chatEvents.sendChatRun(actor, {
+      agentId,
+      prompt: "start before the relink",
+      model,
+    });
+
+    await updateBuiltInRoutePricingProviderFixture({
+      model,
+      concreteProviderType: "openai-api-key",
+      pricingProvider: relinkedProvider,
+    });
+
+    // The run was admitted and captured before the relink: its claim still
+    // reports usage under the original pricing identity.
+    const { claim } = await chatEvents.claimChatRun(runnerGroup, started.runId);
+    expect(claim.modelUsageProvider).toBe(originalProvider);
+
+    // A run created after the relink bills under the new link.
+    const next = await chatEvents.sendChatRun(actor, {
+      agentId,
+      prompt: "start after the relink",
+      model,
+    });
+    const nextClaim = await chatEvents.claimChatRun(runnerGroup, next.runId);
+    expect(nextClaim.claim.modelUsageProvider).toBe(relinkedProvider);
   });
 });

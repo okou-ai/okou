@@ -144,6 +144,7 @@ import {
   type PreparedRunContext,
   type PreparedRuntimeContext,
   prepareModelUsageContext,
+  loadRunRoutePricing,
   type PreparePiLaunchResourcesArgs,
   prepareRequestStorageResolution,
   type PrepareRunContextInput,
@@ -209,6 +210,8 @@ import {
   withoutLegacyAgentRunEnvironmentEntries,
   withPaidToolPlatformEnvironment,
 } from "./agent-run-execution.service";
+import { loadBuiltInRoutePricing } from "./built-in-route-pricing";
+import { usagePricingResolution$ } from "../context/usage-pricing-resolution";
 import {
   observeAgentRunPiExecutionSnapshot,
   observeAgentRunPreCreateParallelStage,
@@ -3127,6 +3130,15 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     ) {
       return undefined;
     }
+    const catalog = await get(claimCatalog$);
+    // A new run skips Built-in candidates whose billable categories for the
+    // requested service tier lack usage_pricing, like any unavailable one.
+    const routePricing = await loadBuiltInRoutePricing(get(db$), {
+      catalog,
+      model: pin.selectedModel,
+      serviceTier: (await get(queuedModelRuntimeSelection$))?.codexServiceTier,
+      resolution: get(usagePricingResolution$),
+    });
     const [featureSwitchContext, keyIdsByVendor, cooldowns] = await Promise.all(
       [
         get(queuedModelRuntimeFeatureSwitchContext$),
@@ -3135,11 +3147,12 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       ],
     );
     return builtInModelRuntimeRouteFromSnapshot({
-      catalog: await get(claimCatalog$),
+      catalog,
       selectedModel: pin.selectedModel,
       featureSwitchContext,
       keyIdsByVendor,
       cooldowns,
+      routePricing,
     });
   });
   const runtime = {
@@ -6125,6 +6138,15 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     ) {
       return undefined;
     }
+    const catalog = await get(claimCatalog$);
+    // A new run skips Built-in candidates whose billable categories for the
+    // requested service tier lack usage_pricing, like any unavailable one.
+    const routePricing = await loadBuiltInRoutePricing(get(db$), {
+      catalog,
+      model: pin.selectedModel,
+      serviceTier: (await get(queuedModelRuntimeSelection$2))?.codexServiceTier,
+      resolution: get(usagePricingResolution$),
+    });
     const [featureSwitchContext, keyIdsByVendor, cooldowns] = await Promise.all(
       [
         get(queuedModelRuntimeFeatureSwitchContext$2),
@@ -6133,11 +6155,12 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       ],
     );
     return builtInModelRuntimeRouteFromSnapshot({
-      catalog: await get(claimCatalog$),
+      catalog,
       selectedModel: pin.selectedModel,
       featureSwitchContext,
       keyIdsByVendor,
       cooldowns,
+      routePricing,
     });
   });
   const queuedModelRuntime = {
@@ -11640,10 +11663,17 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       if (isRouteError(connectors)) {
         return connectors;
       }
+      const catalog = await get(claimCatalog$);
       const usage = prepareModelUsageContext({
-        catalog: await get(claimCatalog$),
+        catalog,
         modelProvider,
         permissionManifest: connectors.permissionManifest,
+        routePricing: await loadRunRoutePricing(get(db$), {
+          catalog,
+          modelProvider,
+          serviceTier: (await get(contextInput$)).args.codexServiceTier,
+          resolution: get(usagePricingResolution$),
+        }),
       });
       if (isRouteError(usage)) {
         return usage;

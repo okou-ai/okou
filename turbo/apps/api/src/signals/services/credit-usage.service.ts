@@ -32,6 +32,7 @@ import {
 import type { Tx } from "../../lib/db-types";
 import { writeOrgMetadataWithDefaultPlanEntitlement } from "./org-plan-entitlements.service";
 import { lockUsageEventCompaction } from "./usage-event-compaction-lock.service";
+import { findUsagePricing, usagePricingByKey } from "./built-in-route-pricing";
 
 const L = logger("CreditUsage");
 
@@ -310,14 +311,7 @@ function priceUsageEvents(
   orgId: string,
   pricingResolution: UsagePricingResolution,
 ): PricedUsageEvent[] {
-  const pricingByKey = new Map(
-    pricingRecords.map((pricing) => {
-      return [
-        `${pricing.kind}|${pricing.provider}|${pricing.category}`,
-        pricing,
-      ];
-    }),
-  );
+  const pricingByKey = usagePricingByKey(pricingRecords);
   const pricedEvents: PricedUsageEvent[] = [];
   for (const record of records) {
     if (
@@ -342,14 +336,14 @@ function priceUsageEvents(
       record.kind,
       record.provider,
     );
-    const exactPricing = pricingByKey.get(
-      `${record.kind}|${lookupProvider}|${record.category}`,
+    const lookup = findUsagePricing(
+      pricingByKey,
+      record.kind,
+      lookupProvider,
+      record.category,
     );
-    const pricing =
-      exactPricing ??
-      pricingByKey.get(`${record.kind}|${lookupProvider}|__fallback__`);
 
-    if (!pricing) {
+    if (!lookup) {
       L.error("Missing usage_pricing — charged zero", {
         ...usageUnderbillingFields("missing_pricing", "confirmed"),
         orgId,
@@ -369,7 +363,8 @@ function priceUsageEvents(
       continue;
     }
 
-    if (!exactPricing) {
+    const { pricing, exact } = lookup;
+    if (!exact) {
       L.error("Missing usage_pricing — billed at fallback rate", {
         ...usageUnderbillingFields("fallback_pricing", "confirmed"),
         orgId,
@@ -389,7 +384,7 @@ function priceUsageEvents(
       grossCredits: Math.ceil(
         (record.quantity * pricing.unitPrice) / pricing.unitSize,
       ),
-      billingError: exactPricing ? null : "fallback_pricing",
+      billingError: exact ? null : "fallback_pricing",
     });
   }
   return pricedEvents;

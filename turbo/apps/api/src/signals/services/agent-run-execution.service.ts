@@ -200,12 +200,22 @@ import {
 } from "./built-in-model-runtime-route.service";
 import {
   catalogBuiltInCandidates,
-  catalogBuiltInPricingProvider,
+  catalogBuiltInRoute,
   catalogHasProviderRoute,
   loadModelCatalog,
   catalogProviderUpstreamModel,
   type ModelCatalog,
+  type CatalogRoute,
 } from "./model-catalog.service";
+import {
+  type BuiltInRoutePricing,
+  loadBuiltInRoutePricing,
+  unpricedBuiltInRouteCategories,
+} from "./built-in-route-pricing";
+import {
+  usagePricingResolution$,
+  type UsagePricingResolution,
+} from "../context/usage-pricing-resolution";
 import { isCatalogUltrafastServiceTierSupported } from "./model-route-capabilities.service";
 import { resolveRunSelectionModel } from "./model-selection.service";
 import {
@@ -6208,7 +6218,13 @@ async function builtInModelProviderEnvironment(
   catalog: ModelCatalog,
   selectedModel: string,
   featureSwitchContext: FeatureSwitchContext,
-  resolvedRoute?: BuiltInModelRuntimeRoute,
+  {
+    resolvedRoute,
+    newRunPricing,
+  }: {
+    readonly resolvedRoute: BuiltInModelRuntimeRoute | undefined;
+    readonly newRunPricing: NewRunRoutePricingRequest | undefined;
+  },
 ): Promise<ResolvedModelProviderEnvironment | null> {
   if (resolvedRoute && resolvedRoute.selectedModel !== selectedModel) {
     return null;
@@ -6228,6 +6244,14 @@ async function builtInModelProviderEnvironment(
       catalog,
       selectedModel,
       featureSwitchContext,
+      newRunPricing
+        ? await loadBuiltInRoutePricing(db, {
+            catalog,
+            model: selectedModel,
+            serviceTier: newRunPricing.serviceTier,
+            resolution: newRunPricing.resolution,
+          })
+        : undefined,
     ));
   if (!route) {
     return null;
@@ -6251,9 +6275,19 @@ async function builtInModelProviderEnvironment(
   });
 }
 
+/**
+ * A new run's Built-in route selection skips candidates whose billable
+ * categories for the requested service tier lack usage_pricing.
+ */
+interface NewRunRoutePricingRequest {
+  readonly serviceTier: CodexServiceTier | undefined;
+  readonly resolution: UsagePricingResolution;
+}
+
 export interface ResolveModelProviderEnvironmentArgs {
   /** Loaded once per run and shared by every candidate route. */
   readonly catalog: ModelCatalog;
+  readonly newRunPricing?: NewRunRoutePricingRequest;
   readonly orgId: string;
   readonly userId: string;
   readonly framework: SupportedFramework;
@@ -6554,7 +6588,10 @@ async function resolveCandidateModelProviderEnvironment(
       args.catalog,
       selectedModel,
       args.featureSwitchContext,
-      args.builtInModelRuntimeRoute,
+      {
+        resolvedRoute: args.builtInModelRuntimeRoute,
+        newRunPricing: args.newRunPricing,
+      },
     );
     return provider?.concreteType &&
       getFrameworkForType(provider.concreteType) === args.framework
@@ -6594,7 +6631,10 @@ async function resolveModelProviderEnvironment(
       args.catalog,
       args.selectedModelOverride ?? args.catalog.systemDefaultModel,
       args.featureSwitchContext,
-      args.builtInModelRuntimeRoute,
+      {
+        resolvedRoute: args.builtInModelRuntimeRoute,
+        newRunPricing: args.newRunPricing,
+      },
     );
     return provider?.concreteType &&
       getFrameworkForType(provider.concreteType) === args.framework
@@ -9441,33 +9481,130 @@ export function prepareModelUsageContext(args: {
   readonly catalog: ModelCatalog;
   readonly modelProvider: ResolvedModelProviderEnvironment | null;
   readonly permissionManifest: PermissionManifest | undefined;
+  /**
+   * The run's Built-in route pricing, read from the same catalog snapshot;
+   * required for a Built-in run (null for every other run).
+   */
+  readonly routePricing: BuiltInRoutePricing | null;
 }): ModelUsageContext | CreateRunErrorResult {
   const billableFirewalls = billableFirewallsForPermissions({
     modelProvider: args.modelProvider,
     permissions: args.permissionManifest,
   });
-  const modelUsageProvider = modelUsageProviderForContext(
-    args.catalog,
-    args.modelProvider,
-  );
-  const validation = validateModelUsageProviderInvariant({
-    modelProvider: args.modelProvider,
-    billableFirewalls,
-    modelUsageProvider,
-  });
+  const route = builtInRouteForContext(args.catalog, args.modelProvider);
+  const modelUsageProvider = isBuiltInModelProviderType(
+    args.modelProvider?.type,
+  )
+    ? (route?.pricingProvider ?? undefined)
+    : catalogModelUsageProvider(args.catalog, args.modelProvider);
+  const validation =
+    validateModelUsageProviderInvariant({
+      modelProvider: args.modelProvider,
+      billableFirewalls,
+      modelUsageProvider,
+    }) ??
+    validateBuiltInRoutePricing({
+      billableFirewalls,
+      route,
+      routePricing: args.routePricing,
+    });
 
   return validation ?? { billableFirewalls, modelUsageProvider };
 }
 
 /**
- * The provider the Runner addon reports model usage events under, which
- * settlement uses as the `usage_pricing` provider. A Built-in run takes it
- * from the pricing link of the concrete route it was assigned, read from the
- * same catalog snapshot as the route itself; the selected model stays the
- * run's model. Other runs are not platform-billed (only Built-in runs have
+ * The pricing snapshot of a Built-in run's model candidates (one read), or
+ * null for every other run.
+ */
+export async function loadRunRoutePricing(
+  db: ReadonlyDb,
+  args: {
+    readonly catalog: ModelCatalog;
+    readonly modelProvider: ResolvedModelProviderEnvironment | null;
+    readonly serviceTier: CodexServiceTier | undefined;
+    readonly resolution: UsagePricingResolution;
+  },
+): Promise<BuiltInRoutePricing | null> {
+  const selectedModel = args.modelProvider?.selectedModel;
+  if (!selectedModel || !isBuiltInModelProviderType(args.modelProvider?.type)) {
+    return null;
+  }
+  return await loadBuiltInRoutePricing(db, {
+    catalog: args.catalog,
+    model: normalizeRunModelId(selectedModel),
+    serviceTier: args.serviceTier,
+    resolution: args.resolution,
+  });
+}
+
+/**
+ * Final new-run admission: every usage category the assigned Built-in route
+ * can report for this run's service tier must resolve to a `usage_pricing`
+ * row (or the provider's `__fallback__` row) with settlement's lookup, so a
+ * run never executes into `missing_pricing`. Route selection already skips
+ * unpriced candidates; this also covers a route captured earlier.
+ */
+function validateBuiltInRoutePricing(args: {
+  readonly billableFirewalls: readonly string[];
+  readonly route: CatalogRoute | null;
+  readonly routePricing: BuiltInRoutePricing | null;
+}): CreateRunErrorResult | null {
+  if (
+    !args.route ||
+    !args.billableFirewalls.some(isModelProviderFirewallName)
+  ) {
+    return null;
+  }
+  if (!args.routePricing) {
+    throw new Error("A Built-in run requires its route pricing snapshot");
+  }
+  const unpriced = unpricedBuiltInRouteCategories(
+    args.routePricing,
+    args.route,
+  );
+  if (unpriced.length === 0) {
+    return null;
+  }
+  return providerUnavailable(
+    `Built-in model route ${args.route.model} ${args.route.concreteProviderType} has no usage pricing for ${unpriced.join(", ")}`,
+  );
+}
+
+/**
+ * The catalog Built-in route a Built-in run was assigned. Its pricing link is
+ * the provider the Runner addon reports model usage events under, which
+ * settlement uses as the `usage_pricing` provider; it is read from the same
+ * catalog snapshot as the route itself, and the selected model stays the
+ * run's model.
+ */
+function builtInRouteForContext(
+  catalog: ModelCatalog,
+  modelProvider: ResolvedModelProviderEnvironment | null,
+): CatalogRoute | null {
+  if (
+    !modelProvider?.selectedModel ||
+    !isBuiltInModelProviderType(modelProvider.type)
+  ) {
+    return null;
+  }
+  const concreteProviderType =
+    modelProvider.builtInModelRuntimeRoute?.providerType ??
+    modelProvider.concreteType;
+  if (!concreteProviderType) {
+    return null;
+  }
+  return catalogBuiltInRoute(
+    catalog,
+    normalizeRunModelId(modelProvider.selectedModel),
+    concreteProviderType,
+  );
+}
+
+/**
+ * Runs other than Built-in are not platform-billed (only Built-in runs have
  * billable model firewalls) and keep reporting under the catalog model ID.
  */
-function modelUsageProviderForContext(
+function catalogModelUsageProvider(
   catalog: ModelCatalog,
   modelProvider: ResolvedModelProviderEnvironment | null,
 ): string | undefined {
@@ -9477,22 +9614,7 @@ function modelUsageProviderForContext(
     return undefined;
   }
   const model = normalizeRunModelId(modelProvider.selectedModel);
-  if (!catalog.byModel.has(model)) {
-    return undefined;
-  }
-  if (!isBuiltInModelProviderType(modelProvider.type)) {
-    return model;
-  }
-  const concreteProviderType =
-    modelProvider.builtInModelRuntimeRoute?.providerType ??
-    modelProvider.concreteType;
-  if (!concreteProviderType) {
-    return undefined;
-  }
-  return (
-    catalogBuiltInPricingProvider(catalog, model, concreteProviderType) ??
-    undefined
-  );
+  return catalog.byModel.has(model) ? model : undefined;
 }
 
 function sessionStorageMountsForPersistence(args: {
@@ -11441,6 +11563,7 @@ async function resolveRunModelProvider(
     readonly content: agentRunCreateAgentExecutionConfig;
     readonly framework: SupportedFramework;
     readonly featureSwitchContext: FeatureSwitchContext;
+    readonly usagePricingResolution: UsagePricingResolution;
   },
 ): Promise<ResolvedModelProviderEnvironment | null | CreateRunErrorResult> {
   const hasFrameworkKey = hasExplicitFrameworkApiKey(
@@ -11470,6 +11593,10 @@ async function resolveRunModelProvider(
         piExecution: args.piExecution,
         retainedRunId: args.retainedRunId,
         featureSwitchContext: options.featureSwitchContext,
+        newRunPricing: {
+          serviceTier: args.codexServiceTier,
+          resolution: options.usagePricingResolution,
+        },
       })
     : null;
 
@@ -11765,6 +11892,7 @@ export async function resolvePreparedRunModelProvider(args: {
     PreparedRunBodyContext,
     "requestedFramework" | "featureSwitchContext"
   > & { readonly content: agentRunCreateAgentExecutionConfig };
+  readonly usagePricingResolution: UsagePricingResolution;
 }): Promise<ResolvedModelProviderEnvironment | null | CreateRunErrorResult> {
   const { content, requestedFramework, featureSwitchContext } =
     args.bodyContext;
@@ -11783,6 +11911,7 @@ export async function resolvePreparedRunModelProvider(args: {
         content,
         framework: requestedFramework,
         featureSwitchContext,
+        usagePricingResolution: args.usagePricingResolution,
       });
     },
   );
@@ -13062,6 +13191,7 @@ function createRunModelProviderObjects(
               requestedFramework: context.requestedFramework,
               featureSwitchContext: context.featureSwitchContext,
             },
+            usagePricingResolution: get(usagePricingResolution$),
           }),
     );
     if (!providerResult.ok) {
@@ -14615,10 +14745,17 @@ function createRunRuntimeObjects(
       if (isRouteError(connectors)) {
         return connectors;
       }
+      const input = await get(input$);
       const usage = prepareModelUsageContext({
-        catalog: (await get(input$)).args.catalog,
+        catalog: input.args.catalog,
         modelProvider,
         permissionManifest: connectors.permissionManifest,
+        routePricing: await loadRunRoutePricing(input.db, {
+          catalog: input.args.catalog,
+          modelProvider,
+          serviceTier: input.args.codexServiceTier,
+          resolution: get(usagePricingResolution$),
+        }),
       });
       if (isRouteError(usage)) {
         return usage;

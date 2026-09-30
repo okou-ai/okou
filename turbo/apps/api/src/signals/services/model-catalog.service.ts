@@ -184,21 +184,21 @@ function validateRoutePricingLink(route: CatalogRoute): void {
 }
 
 /**
- * The `usage_pricing` provider that bills a Built-in run of `model` on the
- * concrete route it was assigned, or null when the catalog has no such
- * enabled route. Model usage events of the run are reported under it.
+ * The enabled Built-in route of `model` on the concrete provider a run was
+ * assigned, or null when the catalog has no such route. Its pricing link is
+ * the `usage_pricing` provider the run's model usage events are reported and
+ * billed under.
  */
-export function catalogBuiltInPricingProvider(
+export function catalogBuiltInRoute(
   catalog: ModelCatalog,
   model: string,
   concreteProviderType: string,
-): string | null {
-  const route = catalogRoutesFor(catalog, model, "built-in").find(
-    (candidate) => {
+): CatalogRoute | null {
+  return (
+    catalogRoutesFor(catalog, model, "built-in").find((candidate) => {
       return candidate.concreteProviderType === concreteProviderType;
-    },
+    }) ?? null
   );
-  return route?.pricingProvider ?? null;
 }
 
 /**
