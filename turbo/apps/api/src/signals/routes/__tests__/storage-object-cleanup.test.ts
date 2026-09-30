@@ -181,27 +181,31 @@ describe("Clerk Storage cleanup after reference deletion", () => {
       const siblingKey = `${target.prefix}-sibling/keep.txt`;
       s3.objects.set(siblingKey, Buffer.from("outside the deleted prefix"));
       s3.beforeListing(async () => {
-        expect(await storages.listStorages(actor, "user")).not.toContainEqual(
+        await expect(
+          storages.listStorages(actor, "user"),
+        ).resolves.not.toContainEqual(
           expect.objectContaining({ name: target.storageName }),
         );
       });
       s3.failNext("list");
       await deleteOwner(actor, kind);
-      expect(await storages.listStorages(actor, "user")).not.toContainEqual(
+      await expect(
+        storages.listStorages(actor, "user"),
+      ).resolves.not.toContainEqual(
         expect.objectContaining({ name: target.storageName }),
       );
-      expect(s3.objects.has(target.archiveKey)).toBe(true);
+      expect(s3.objects.has(target.archiveKey)).toBeTruthy();
       // The retry resolves only durable cleanup inventory: no Storage row
       // remains from which to recover the prefix after a worker restart.
       await expect(retry(actor, kind)).resolves.toMatchObject({
         body: { processed: 1 },
       });
-      expect(s3.objects.has(target.archiveKey)).toBe(false);
-      expect(s3.objects.has(target.manifestKey)).toBe(false);
-      expect(s3.objects.has(retained.archiveKey)).toBe(true);
-      expect(s3.objects.has(retained.manifestKey)).toBe(true);
-      expect(s3.objects.has(siblingKey)).toBe(true);
-      expect(await storages.listStorages(peer, "user")).toContainEqual(
+      expect(s3.objects.has(target.archiveKey)).toBeFalsy();
+      expect(s3.objects.has(target.manifestKey)).toBeFalsy();
+      expect(s3.objects.has(retained.archiveKey)).toBeTruthy();
+      expect(s3.objects.has(retained.manifestKey)).toBeTruthy();
+      expect(s3.objects.has(siblingKey)).toBeTruthy();
+      await expect(storages.listStorages(peer, "user")).resolves.toContainEqual(
         expect.objectContaining({ name: retained.storageName }),
       );
       await expect(retry(actor, kind)).resolves.toMatchObject({
@@ -222,8 +226,8 @@ describe("Clerk Storage cleanup after reference deletion", () => {
       ),
     ).toHaveLength(1);
     await retry(actor, "user");
-    expect(s3.objects.has(target.archiveKey)).toBe(false);
-    expect(s3.objects.has(target.manifestKey)).toBe(false);
+    expect(s3.objects.has(target.archiveKey)).toBeFalsy();
+    expect(s3.objects.has(target.manifestKey)).toBeFalsy();
   });
 
   it("completes a retry after a successful R2 delete loses its response", async () => {
@@ -232,8 +236,8 @@ describe("Clerk Storage cleanup after reference deletion", () => {
     const target = await publish(actor, s3.objects);
     s3.failNext("lost-delete-receipt");
     await deleteOwner(actor, "user");
-    expect(s3.objects.has(target.archiveKey)).toBe(false);
-    expect(s3.objects.has(target.manifestKey)).toBe(false);
+    expect(s3.objects.has(target.archiveKey)).toBeFalsy();
+    expect(s3.objects.has(target.manifestKey)).toBeFalsy();
     await expect(retry(actor, "user")).resolves.toMatchObject({
       body: { processed: 1 },
     });

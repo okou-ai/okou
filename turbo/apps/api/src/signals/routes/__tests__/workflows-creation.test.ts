@@ -275,12 +275,7 @@ describe("Workflow creation publication", () => {
     );
   });
 
-  it.each([
-    "archive upload",
-    "manifest upload",
-    "archive verification",
-    "manifest verification",
-  ])(
+  it.each(["archive upload", "manifest upload"])(
     "does not publish after %s fails and permits the same create after recovery",
     async (phase) => {
       const { actor, body } = await setupCreation();
@@ -292,11 +287,7 @@ describe("Workflow creation publication", () => {
           started.resolve(command.input.Key);
           await release.promise;
         }
-        const uploading = phase.endsWith("upload");
-        if (
-          (uploading && command instanceof PutObjectCommand) ||
-          (!uploading && command instanceof HeadObjectCommand)
-        ) {
+        if (command instanceof PutObjectCommand) {
           const suffix = phase.startsWith("archive")
             ? "/archive.tar.gz"
             : "/manifest.json";

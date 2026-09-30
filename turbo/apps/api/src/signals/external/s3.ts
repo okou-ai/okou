@@ -1814,35 +1814,6 @@ export function hostedSitesS3ObjectExists(
   return s3ObjectExistsWithClient(hostedSitesS3Client$, bucket, key);
 }
 
-export function verifyS3FilesExist(
-  bucket: string,
-  s3Key: string,
-  fileCount: number,
-  options?: {
-    readonly allowMissingObjectsForEmptyVersion?: boolean;
-  },
-): Computed<Promise<boolean>> {
-  return computed(async (get): Promise<boolean> => {
-    if (
-      fileCount === 0 &&
-      options?.allowMissingObjectsForEmptyVersion === true
-    ) {
-      return true;
-    }
-
-    const manifestKey = `${s3Key}/manifest.json`;
-    const archiveKey = `${s3Key}/archive.tar.gz`;
-    const [manifestExists, archiveExists] = await Promise.all([
-      get(s3ObjectExists(bucket, manifestKey)),
-      fileCount > 0
-        ? get(s3ObjectExists(bucket, archiveKey))
-        : Promise.resolve(true),
-    ]);
-
-    return manifestExists && archiveExists;
-  });
-}
-
 /** One small page, including uploads whose creation receipt was never saved. */
 export function listMultipartS3UploadsPage(
   bucket: string,
