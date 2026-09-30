@@ -388,8 +388,8 @@ describe("GET/PUT /api/model-policies", () => {
       "gpt-6-luna",
       "claude-opus-5-5",
       "gpt-6.1-sol",
-      "gpt-6-sol",
       "claude-fable-5-1",
+      "gpt-6-sol",
       "gpt-6-astra",
     ]);
     expect(

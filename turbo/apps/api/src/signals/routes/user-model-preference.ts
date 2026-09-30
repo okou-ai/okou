@@ -51,6 +51,27 @@ function validateModelSettingsPatch(args: {
   return undefined;
 }
 
+function validateUltrafastServiceTier(args: {
+  readonly requested: boolean;
+  readonly configuredPolicy: OrgModelPolicy | undefined;
+}): ReturnType<typeof badRequestMessage> | undefined {
+  if (!args.requested) {
+    return undefined;
+  }
+  if (
+    !args.configuredPolicy ||
+    !isMemberModelPolicyConfigurable(args.configuredPolicy) ||
+    args.configuredPolicy.model !== "gpt-6-astra" ||
+    getMemberModelPolicyRoute(args.configuredPolicy).providerType !==
+      "openai-api-key"
+  ) {
+    return badRequestMessage(
+      "Astra Ultrafast requires a direct OpenAI API-key route",
+    );
+  }
+  return undefined;
+}
+
 function validatePriorityServiceTier(args: {
   readonly requested: boolean;
   readonly configuredPolicy: OrgModelPolicy | undefined;
@@ -177,23 +198,15 @@ const updateUserModelPreferenceInner$ = command(
       return modelSettingsError;
     }
 
-    if (body.data.serviceTier === "ultrafast") {
-      if (
-        !configuredPolicy ||
-        !isMemberModelPolicyConfigurable(configuredPolicy) ||
-        configuredPolicy.model !== "gpt-6-astra" ||
-        getMemberModelPolicyRoute(configuredPolicy).providerType !==
-          "openai-api-key"
-      ) {
-        return badRequestMessage(
-          "Astra Ultrafast requires a direct OpenAI API-key route",
-        );
-      }
-    }
-    const serviceTierError = validatePriorityServiceTier({
-      requested: body.data.serviceTier === "priority",
-      configuredPolicy,
-    });
+    const serviceTierError =
+      validateUltrafastServiceTier({
+        requested: body.data.serviceTier === "ultrafast",
+        configuredPolicy,
+      }) ??
+      validatePriorityServiceTier({
+        requested: body.data.serviceTier === "priority",
+        configuredPolicy,
+      });
     if (serviceTierError) {
       return serviceTierError;
     }

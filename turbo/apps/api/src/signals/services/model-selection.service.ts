@@ -669,5 +669,7 @@ export function validateCodexServiceTier(params: {
   ) {
     return undefined;
   }
-  return badRequestMessage("Fast mode is unavailable for this model");
+  return badRequestMessage(
+    "Codex fast mode is only available for GPT 5.6 runs",
+  );
 }
