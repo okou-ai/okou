@@ -80,9 +80,9 @@ Clerk webhook redelivery, and pagination loops.
 
 The allowance window entitlement lock is replaced by the unique index
 `uq_org_usage_allowance_windows_entitlement_kind_starts` on existing columns
-(migration 1298) with `INSERT … ON CONFLICT`. Before releasing, verify that
+(migration 1299) with `INSERT … ON CONFLICT`. Before releasing, verify that
 production has no duplicate `(entitlement_id, kind, starts_at)` windows.
-The [preflight query and duplicate handling](./advisory-lock-release-1-key-retirement.md#allowance-index-1298-preflight)
+The [preflight query and duplicate handling](./advisory-lock-release-1-key-retirement.md#allowance-index-1299-preflight)
 are required before deployment admission; this change did not query production.
 
 After `4f263928`, both newly introduced empty UPDATEs (connector selection and

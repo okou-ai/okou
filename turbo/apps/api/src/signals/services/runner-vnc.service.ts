@@ -5,14 +5,15 @@ import {
   type RunnerVncResolveRequest,
   type RunnerVncResolveResponse,
 } from "@okouai/api-contracts/contracts/runner-vnc";
-import { vncAuthenticationSchema } from "@okouai/api-contracts/contracts/vnc-credentials";
+import { vncLegacyAuthenticationSchema } from "@okouai/api-contracts/contracts/vnc-credentials";
 import type { Db } from "../external/db";
 import type { ClerkClient } from "../external/clerk";
 import { decryptStoredSecretValue } from "./crypto.utils";
-import { settle } from "../utils";
+import { settle, safeSync } from "../utils";
 import { hasCurrentVncMembership } from "./vnc-owner-lifecycle.service";
 import { currentRunnerVncAuthority } from "./runner-vnc-authority.service";
 import { isVncProfileCompatible } from "./vnc-configuration.utils";
+import { parseStoredVncClientIdentity } from "./vnc-client-identity.service";
 
 type CurrentVncAuthority = NonNullable<
   Awaited<ReturnType<typeof currentRunnerVncAuthority>>
@@ -216,7 +217,61 @@ async function decryptRunnerAuthentication(
   if (row.authMethod === "none") {
     return { method: "none" as const };
   }
-  if (row.encryptedPassword === null) {
+  if (
+    row.authMethod === "client_certificate" ||
+    row.authMethod === "client_certificate_vnc_password"
+  ) {
+    if (
+      row.encryptedClientIdentity === null ||
+      (row.authMethod === "client_certificate"
+        ? row.encryptedPassword !== null
+        : row.encryptedPassword === null)
+    ) {
+      throw new Error("VNC client certificate credential is missing");
+    }
+    // No database transaction or lock spans KMS; no KMS work before the exact capability check.
+    const identity = await settle(
+      decryptStoredSecretValue(row.encryptedClientIdentity),
+      signal,
+    );
+    if (!identity.ok) {
+      throw new Error("VNC client certificate decryption failed");
+    }
+    const parsed = safeSync(() => {
+      return parseStoredVncClientIdentity(identity.value);
+    });
+    if (!("ok" in parsed)) {
+      throw new Error("Invalid stored VNC client certificate identity");
+    }
+    const wire = parsed.ok;
+    signal.throwIfAborted();
+    if (row.authMethod === "client_certificate") {
+      return { method: "client_certificate" as const, ...wire };
+    }
+    const password = await settle(
+      decryptStoredSecretValue(row.encryptedPassword!),
+      signal,
+    );
+    if (!password.ok) {
+      throw new Error("VNC credential decryption failed");
+    }
+    signal.throwIfAborted();
+    const valid = vncLegacyAuthenticationSchema.options[0]!.safeParse({
+      method: "vnc_password",
+      password: password.value,
+    });
+    if (!valid.success) {
+      throw new Error(
+        "VNC credential has an invalid stored authentication shape",
+      );
+    }
+    return {
+      method: "client_certificate_vnc_password" as const,
+      ...wire,
+      password: valid.data.password,
+    };
+  }
+  if (row.encryptedPassword === null || row.encryptedClientIdentity !== null) {
     throw new Error("VNC connection credential is missing");
   }
   // No database transaction or row lock spans KMS. Never log this value or its validation issues.
@@ -230,7 +285,7 @@ async function decryptRunnerAuthentication(
     throw new Error("VNC credential decryption failed");
   }
   signal.throwIfAborted();
-  const authentication = vncAuthenticationSchema.safeParse(
+  const authentication = vncLegacyAuthenticationSchema.safeParse(
     row.authMethod === "username_password" ||
       row.authMethod === "apple_dh_username_password" ||
       row.authMethod === "apple_srp_username_password" ||

@@ -25,6 +25,8 @@ import {
   VNC_USERNAME_PASSWORD_MAX_BYTES,
   APPLE_DH_FIELD_MAX_BYTES,
   APPLE_RSA_SRP_USERNAME_MAX_BYTES,
+  VNC_CLIENT_CHAIN_PEM_MAX_LENGTH,
+  VNC_CLIENT_KEY_PEM_MAX_LENGTH,
   type VncCredentialResponse,
 } from "@okouai/api-contracts/contracts/vnc-credentials";
 import {
@@ -42,6 +44,7 @@ import {
   vncCredentials$,
   invalidateVnc$,
   mountVncSecret$,
+  mountVncCertificateSecret$,
   vncAuthMethodForProfile,
   vncCredentialMatchesProfile,
   type VncProfile,
@@ -250,6 +253,20 @@ export function VncEndpointFields({
   );
 }
 
+export function VncClientCertificateWarning() {
+  const { t } = useTranslation();
+  return (
+    <p
+      role="alert"
+      className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+    >
+      {t(($) => {
+        return $.vnc.security.clientCertificateHelp;
+      })}
+    </p>
+  );
+}
+
 export function VncX509NoneWarning() {
   const { t } = useTranslation();
   return (
@@ -260,6 +277,46 @@ export function VncX509NoneWarning() {
       {t(($) => {
         return $.vnc.security.x509NoneHelp;
       })}
+    </p>
+  );
+}
+
+function VncSecurityProfileHelp({ profile }: { readonly profile: VncProfile }) {
+  const { t } = useTranslation();
+  if (profile === "x509_none") {
+    return <VncX509NoneWarning />;
+  }
+  if (
+    profile === "client_certificate_none" ||
+    profile === "client_certificate_vnc"
+  ) {
+    return <VncClientCertificateWarning />;
+  }
+  return (
+    <p className="text-sm text-muted-foreground">
+      {profile === "apple_vnc_password"
+        ? t(($) => {
+            return $.vnc.security.appleVncPasswordHelp;
+          })
+        : profile === "apple_dh"
+          ? t(($) => {
+              return $.vnc.security.appleDhHelp;
+            })
+          : profile === "apple_srp"
+            ? t(($) => {
+                return $.vnc.security.appleSrpHelp;
+              })
+            : profile === "apple_rsa_srp"
+              ? t(($) => {
+                  return $.vnc.security.appleRsaSrpHelp;
+                })
+              : profile === "x509_vnc"
+                ? t(($) => {
+                    return $.vnc.security.x509VncHelp;
+                  })
+                : t(($) => {
+                    return $.vnc.security.x509PlainHelp;
+                  })}
     </p>
   );
 }
@@ -284,6 +341,18 @@ export function VncSecurityProfileField({
       value: "x509_vnc",
       label: t(($) => {
         return $.vnc.security.x509Vnc;
+      }),
+    },
+    {
+      value: "client_certificate_none",
+      label: t(($) => {
+        return $.vnc.security.clientCertificateNone;
+      }),
+    },
+    {
+      value: "client_certificate_vnc",
+      label: t(($) => {
+        return $.vnc.security.clientCertificateVnc;
       }),
     },
     {
@@ -331,6 +400,8 @@ export function VncSecurityProfileField({
           if (
             value !== "x509_none" &&
             value !== "x509_vnc" &&
+            value !== "client_certificate_none" &&
+            value !== "client_certificate_vnc" &&
             value !== "x509_plain" &&
             value !== "apple_vnc_password" &&
             value !== "apple_dh" &&
@@ -357,35 +428,7 @@ export function VncSecurityProfileField({
           })}
         </SelectContent>
       </Select>
-      {profile === "x509_none" ? (
-        <VncX509NoneWarning />
-      ) : (
-        <p className="text-sm text-muted-foreground">
-          {profile === "apple_vnc_password"
-            ? t(($) => {
-                return $.vnc.security.appleVncPasswordHelp;
-              })
-            : profile === "apple_dh"
-              ? t(($) => {
-                  return $.vnc.security.appleDhHelp;
-                })
-              : profile === "apple_srp"
-                ? t(($) => {
-                    return $.vnc.security.appleSrpHelp;
-                  })
-                : profile === "apple_rsa_srp"
-                  ? t(($) => {
-                      return $.vnc.security.appleRsaSrpHelp;
-                    })
-                  : profile === "x509_vnc"
-                    ? t(($) => {
-                        return $.vnc.security.x509VncHelp;
-                      })
-                    : t(($) => {
-                        return $.vnc.security.x509PlainHelp;
-                      })}
-        </p>
-      )}
+      <VncSecurityProfileHelp profile={profile} />
     </>
   );
 }
@@ -704,6 +747,18 @@ function VncAuthenticationMethodSelector({
       }),
     },
     {
+      value: "client_certificate_none",
+      label: t(($) => {
+        return $.vnc.security.clientCertificateNone;
+      }),
+    },
+    {
+      value: "client_certificate_vnc",
+      label: t(($) => {
+        return $.vnc.security.clientCertificateVnc;
+      }),
+    },
+    {
       value: "apple_dh",
       label: t(($) => {
         return $.vnc.credential.appleDhMethod;
@@ -735,6 +790,8 @@ function VncAuthenticationMethodSelector({
         onValueChange={(value, details) => {
           if (
             value !== "x509_vnc" &&
+            value !== "client_certificate_none" &&
+            value !== "client_certificate_vnc" &&
             value !== "x509_plain" &&
             value !== "apple_dh" &&
             value !== "apple_srp" &&
@@ -778,25 +835,33 @@ function VncAuthenticationMethod({
         })}
       </span>
       <span>
-        {method === "vnc_password"
+        {method === "client_certificate"
           ? t(($) => {
-              return $.vnc.credential.method;
+              return $.vnc.security.clientCertificateNone;
             })
-          : method === "apple_dh_username_password"
+          : method === "client_certificate_vnc_password"
             ? t(($) => {
-                return $.vnc.credential.appleDhMethod;
+                return $.vnc.security.clientCertificateVnc;
               })
-            : method === "apple_srp_username_password"
+            : method === "vnc_password"
               ? t(($) => {
-                  return $.vnc.credential.appleSrpMethod;
+                  return $.vnc.credential.method;
                 })
-              : method === "apple_rsa_srp_username_password"
+              : method === "apple_dh_username_password"
                 ? t(($) => {
-                    return $.vnc.credential.appleRsaSrpMethod;
+                    return $.vnc.credential.appleDhMethod;
                   })
-                : t(($) => {
-                    return $.vnc.credential.usernamePasswordMethod;
-                  })}
+                : method === "apple_srp_username_password"
+                  ? t(($) => {
+                      return $.vnc.credential.appleSrpMethod;
+                    })
+                  : method === "apple_rsa_srp_username_password"
+                    ? t(($) => {
+                        return $.vnc.credential.appleRsaSrpMethod;
+                      })
+                    : t(($) => {
+                        return $.vnc.credential.usernamePasswordMethod;
+                      })}
       </span>
     </div>
   );
@@ -834,6 +899,113 @@ function VncAuthenticationReplacement({
   );
 }
 
+function VncClientCertificateInputs() {
+  const { t } = useTranslation();
+  const mountSecret = useSet(mountVncCertificateSecret$);
+  return (
+    <>
+      <label className="grid gap-2 text-sm">
+        <span>
+          {t(($) => {
+            return $.vnc.credential.certificateChain;
+          })}
+        </span>
+        <Textarea
+          ref={mountSecret}
+          name="certificateChain"
+          required
+          maxLength={VNC_CLIENT_CHAIN_PEM_MAX_LENGTH}
+          className="min-h-32 font-mono text-xs"
+          autoComplete="off"
+        />
+      </label>
+      <label className="grid gap-2 text-sm">
+        <span>
+          {t(($) => {
+            return $.vnc.credential.privateKey;
+          })}
+        </span>
+        <Textarea
+          ref={mountSecret}
+          name="privateKey"
+          required
+          maxLength={VNC_CLIENT_KEY_PEM_MAX_LENGTH}
+          className="min-h-32 font-mono text-xs"
+          autoComplete="off"
+        />
+      </label>
+      <p className="text-sm text-muted-foreground">
+        {t(($) => {
+          return $.vnc.credential.clientKeyHelp;
+        })}
+      </p>
+    </>
+  );
+}
+
+function VncPasswordInput({
+  method,
+}: {
+  readonly method: VncCredentialResponse["authMethod"];
+}) {
+  const { t } = useTranslation();
+  const mountSecret = useSet(mountVncSecret$);
+  const classic =
+    method === "vnc_password" || method === "client_certificate_vnc_password";
+  return (
+    <div className="grid gap-2 text-sm">
+      <label htmlFor="vnc-password">
+        {classic
+          ? t(($) => {
+              return $.vnc.credential.password;
+            })
+          : t(($) => {
+              return $.vnc.credential.usernamePassword;
+            })}
+      </label>
+      <Input
+        ref={mountSecret}
+        id="vnc-password"
+        name="password"
+        type="password"
+        required
+        autoComplete="new-password"
+        aria-describedby="vnc-password-help"
+        maxLength={
+          classic
+            ? undefined
+            : method === "apple_dh_username_password"
+              ? APPLE_DH_FIELD_MAX_BYTES
+              : VNC_USERNAME_PASSWORD_MAX_BYTES
+        }
+        pattern={classic ? "[ -~]{1,8}" : undefined}
+        placeholder={
+          classic
+            ? t(($) => {
+                return $.vnc.credential.passwordHint;
+              })
+            : t(($) => {
+                return $.vnc.credential.usernamePasswordHint;
+              })
+        }
+      />
+      <p id="vnc-password-help" className="text-muted-foreground">
+        {classic
+          ? t(($) => {
+              return $.vnc.credential.passwordHelp;
+            })
+          : method === "apple_dh_username_password"
+            ? t(($) => {
+                return $.vnc.credential.appleDhFieldHelp;
+              })
+            : t(($) => {
+                return $.vnc.credential.usernamePasswordHelp;
+              })}
+      </p>
+    </div>
+  );
+}
+
 function VncAuthenticationInputs({
   credential,
   method,
@@ -842,10 +1014,13 @@ function VncAuthenticationInputs({
   readonly method: VncCredentialResponse["authMethod"];
 }) {
   const { t } = useTranslation();
-  const mountSecret = useSet(mountVncSecret$);
+  const certificate =
+    method === "client_certificate" ||
+    method === "client_certificate_vnc_password";
   return (
     <div key={method} className="grid gap-4">
-      {method !== "vnc_password" && (
+      {certificate && <VncClientCertificateInputs />}
+      {method !== "vnc_password" && !certificate && (
         <div className="grid gap-2 text-sm">
           <label htmlFor="vnc-username">
             {t(($) => {
@@ -864,9 +1039,7 @@ function VncAuthenticationInputs({
                   : VNC_USERNAME_MAX_BYTES
             }
             defaultValue={
-              credential && credential.authMethod !== "vnc_password"
-                ? credential.username
-                : ""
+              credential && "username" in credential ? credential.username : ""
             }
             aria-describedby="vnc-username-help"
             placeholder={t(($) => {
@@ -888,56 +1061,7 @@ function VncAuthenticationInputs({
           </p>
         </div>
       )}
-      <div className="grid gap-2 text-sm">
-        <label htmlFor="vnc-password">
-          {method === "vnc_password"
-            ? t(($) => {
-                return $.vnc.credential.password;
-              })
-            : t(($) => {
-                return $.vnc.credential.usernamePassword;
-              })}
-        </label>
-        <Input
-          ref={mountSecret}
-          id="vnc-password"
-          name="password"
-          type="password"
-          required
-          autoComplete="new-password"
-          aria-describedby="vnc-password-help"
-          maxLength={
-            method === "vnc_password"
-              ? undefined
-              : method === "apple_dh_username_password"
-                ? APPLE_DH_FIELD_MAX_BYTES
-                : VNC_USERNAME_PASSWORD_MAX_BYTES
-          }
-          pattern={method === "vnc_password" ? "[ -~]{1,8}" : undefined}
-          placeholder={
-            method === "vnc_password"
-              ? t(($) => {
-                  return $.vnc.credential.passwordHint;
-                })
-              : t(($) => {
-                  return $.vnc.credential.usernamePasswordHint;
-                })
-          }
-        />
-        <p id="vnc-password-help" className="text-muted-foreground">
-          {method === "vnc_password"
-            ? t(($) => {
-                return $.vnc.credential.passwordHelp;
-              })
-            : method === "apple_dh_username_password"
-              ? t(($) => {
-                  return $.vnc.credential.appleDhFieldHelp;
-                })
-              : t(($) => {
-                  return $.vnc.credential.usernamePasswordHelp;
-                })}
-        </p>
-      </div>
+      {method !== "client_certificate" && <VncPasswordInput method={method} />}
     </div>
   );
 }

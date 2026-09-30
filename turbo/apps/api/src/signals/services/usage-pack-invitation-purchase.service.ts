@@ -781,6 +781,8 @@ function validateSuccessfulPayment(
   }
 }
 
+class InvitationPaymentPublicationChanged extends Error {}
+
 const persistSuccessfulPayment$ = command(
   async (
     { set },
@@ -904,7 +906,10 @@ const persistSuccessfulPayment$ = command(
         )
         .returning();
       if (!updated) {
-        throw new Error("Failed to record invitation payment");
+        // Roll back every mutation in this delivery, including retirement of
+        // a competing email slot. The outer command resolves one receipt,
+        // never retries this financial transaction.
+        throw new InvitationPaymentPublicationChanged();
       }
       return updated;
     });
@@ -925,7 +930,42 @@ const recordSuccessfulPayment$ = command(
     args: SuccessfulPaymentArgs,
     signal?: AbortSignal,
   ): Promise<UsagePackInvitationPurchaseRow> => {
-    return await set(persistSuccessfulPayment$, args, signal);
+    const result = await settle(
+      set(persistSuccessfulPayment$, args, signal),
+      signal,
+    );
+    signal?.throwIfAborted();
+    if (result.ok) {
+      return result.value;
+    }
+    if (!(result.error instanceof InvitationPaymentPublicationChanged)) {
+      throw result.error;
+    }
+    const db = set(writeDb$);
+    const [published] = await db
+      .select()
+      .from(usagePackInvitationPurchases)
+      .where(eq(usagePackInvitationPurchases.id, args.purchaseId))
+      .limit(1);
+    signal?.throwIfAborted();
+    if (
+      !published ||
+      published.stripePaymentIntentId !== args.paymentIntentId ||
+      published.amountPaidCents !== args.amountPaidCents
+    ) {
+      throw result.error;
+    }
+    const [subscription] = await db
+      .select({ stripeCustomerId: usagePackSubscriptions.stripeCustomerId })
+      .from(usagePackSubscriptions)
+      .where(eq(usagePackSubscriptions.id, published.usagePackSubscriptionId))
+      .limit(1);
+    signal?.throwIfAborted();
+    validateSuccessfulPayment(published, subscription?.stripeCustomerId, args);
+    // A matching immutable payment was already committed and may now be
+    // creating its invitation, accepted or refunded. Delivery is idempotent;
+    // status must never move backwards to payment_succeeded.
+    return published;
   },
 );
 

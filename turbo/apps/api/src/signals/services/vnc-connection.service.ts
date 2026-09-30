@@ -35,7 +35,10 @@ import {
   inspectVncCreationId$,
   resolveVncCreationConflict$,
 } from "./vnc-creation.service";
-import { prepareVncCredentialSelection } from "./vnc-credential.service";
+import {
+  prepareVncCredentialSelection,
+  validVncClientAuthentication,
+} from "./vnc-credential.service";
 import {
   vncMemberIdentityWhere,
   type VncOwner,
@@ -140,7 +143,7 @@ function response(
   ) {
     throw new Error("VNC connection has an invalid stored transport");
   }
-  const credentialless = row.securityType === "x509_none";
+  const credentialless = row.authMethod === "none";
   if (credentialless !== (row.credentialId === null && credential === null)) {
     throw new Error(
       "VNC connection has an invalid stored credential reference",
@@ -161,7 +164,14 @@ function response(
     port: row.port,
     ...(credentialless
       ? { credential: { type: "none" } }
-      : { credentialId: row.credentialId, credentialName: credential?.name }),
+      : {
+          credentialId: row.credentialId,
+          credentialName: credential?.name,
+          ...(row.authMethod === "client_certificate" ||
+          row.authMethod === "client_certificate_vnc_password"
+            ? { clientCertificateAuthentication: row.authMethod }
+            : {}),
+        }),
     security: responseSecurity(row),
     generation: row.generation,
     createdAt: row.createdAt.toISOString(),
@@ -222,13 +232,15 @@ function validCreateCredentialProfile(
   credential: CreateVncConnectionRequest["credential"],
   securityType: Metadata["securityType"],
 ): boolean {
+  if ("type" in credential) {
+    return securityType === "x509_none";
+  }
   return (
-    (securityType === "x509_none") === "type" in credential &&
-    (!("create" in credential) ||
-      isVncProfileCompatible(
-        credential.create.authentication.method,
-        securityType,
-      ))
+    !("create" in credential) ||
+    isVncProfileCompatible(
+      credential.create.authentication.method,
+      securityType,
+    )
   );
 }
 
@@ -236,11 +248,9 @@ function validSelectedCredentialProfile(
   credential: CredentialMetadata | null,
   securityType: Metadata["securityType"],
 ): boolean {
-  return (
-    (credential === null) === (securityType === "x509_none") &&
-    (credential === null ||
-      isVncProfileCompatible(credential.authMethod, securityType))
-  );
+  return credential === null
+    ? securityType === "x509_none"
+    : isVncProfileCompatible(credential.authMethod, securityType);
 }
 
 function credentialDatabaseValues(credential: CredentialMetadata | null) {
@@ -255,10 +265,14 @@ function validUpdatedCredentialProfile(
   credential: UpdateVncConnectionRequest["credential"],
   securityType: Metadata["securityType"],
 ) {
-  const credentialless = securityType === "x509_none";
-  return credential === undefined
-    ? credentialless === (currentCredentialId === null)
-    : credentialless === "type" in credential;
+  if (credential !== undefined && "type" in credential) {
+    return securityType === "x509_none";
+  }
+  return (
+    credential !== undefined ||
+    currentCredentialId !== null ||
+    securityType === "x509_none"
+  );
 }
 
 async function hasOwnedSshConnection(
@@ -347,6 +361,12 @@ const prepareCreateVncConnection$ = command(
       )
     ) {
       return vncFailure("profileMismatch");
+    }
+    if (
+      "create" in args.body.credential &&
+      !validVncClientAuthentication(args.body.credential.create.authentication)
+    ) {
+      return vncFailure("invalidClientIdentity");
     }
     const preparedCredential =
       "type" in args.body.credential
@@ -522,6 +542,13 @@ const prepareUpdateVncConnection$ = command(
     }
     if (initial.generation !== args.body.expectedGeneration) {
       return vncFailure("generationConflict");
+    }
+    if (
+      args.body.credential &&
+      "create" in args.body.credential &&
+      !validVncClientAuthentication(args.body.credential.create.authentication)
+    ) {
+      return vncFailure("invalidClientIdentity");
     }
     const preparedCredential =
       args.body.credential === undefined || "type" in args.body.credential

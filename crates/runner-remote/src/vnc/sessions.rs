@@ -232,6 +232,22 @@ impl Run {
                         )
                         .await
                     }
+                    Authentication::ClientCertificate {
+                        server_name,
+                        authentication,
+                        roots,
+                        identity,
+                    } => {
+                        rfb_client::authenticate_with_client_certificate(
+                            stream,
+                            &server_name,
+                            authentication,
+                            roots,
+                            identity,
+                            scope.deadline,
+                        )
+                        .await
+                    }
                     Authentication::AppleVncPassword(password) => {
                         rfb_client::authenticate_apple_vnc_password(
                             stream,

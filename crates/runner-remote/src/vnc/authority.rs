@@ -5,10 +5,11 @@ use api_contracts::generated::{
 };
 use base64::Engine;
 use rfb_client::{
-    AppleDhCredentials, AppleRsaSrpCredentials, AppleSrpCredentials, PlainCredentials, TrustRoots,
-    VncPassword, X509Authentication,
+    AppleDhCredentials, AppleRsaSrpCredentials, AppleSrpCredentials,
+    ClientCertificateAuthentication, ClientIdentity, PlainCredentials, TrustRoots, VncPassword,
+    X509Authentication,
 };
-use rustls::pki_types::CertificateDer;
+use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
 use serde::{Serialize, de::DeserializeOwned};
 use uuid::Uuid;
 use zeroize::Zeroizing;
@@ -23,6 +24,41 @@ const MAX_API_BYTES: usize = 512 * 1024;
 const MAX_CA_BYTES: usize = 64 * 1024;
 const MAX_CA_CERTIFICATES: usize = 8;
 const MAX_PLAIN_USERNAME_BYTES: usize = 255;
+
+fn client_identity(
+    certificate_chain_der: Vec<String>,
+    private_key_pkcs8_der: api_contracts::SecretUtf8Text<24576>,
+) -> Result<ClientIdentity, Failure> {
+    if !(1..=8).contains(&certificate_chain_der.len()) {
+        return Err(Failure::InvalidCredential);
+    }
+    let mut total = 0usize;
+    let mut certificates = Vec::with_capacity(certificate_chain_der.len());
+    for encoded in certificate_chain_der {
+        if encoded.len() > 88_000 {
+            return Err(Failure::InvalidCredential);
+        }
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(encoded)
+            .map_err(|_| Failure::InvalidCredential)?;
+        total += bytes.len();
+        if total > 64 * 1024 {
+            return Err(Failure::InvalidCredential);
+        }
+        certificates.push(CertificateDer::from(bytes));
+    }
+    let encoded = private_key_pkcs8_der.into_zeroizing();
+    let mut bytes = Zeroizing::new(
+        base64::engine::general_purpose::STANDARD
+            .decode(encoded.as_bytes())
+            .map_err(|_| Failure::InvalidCredential)?,
+    );
+    if !(1..=16 * 1024).contains(&bytes.len()) {
+        return Err(Failure::InvalidCredential);
+    }
+    let key = PrivatePkcs8KeyDer::from(std::mem::take(&mut *bytes));
+    ClientIdentity::from_pkcs8_der(certificates, key).map_err(|_| Failure::InvalidCredential)
+}
 
 pub(super) struct Authority {
     http: HttpClient,
@@ -40,11 +76,22 @@ pub(super) struct Credential {
     pub(super) authentication: Authentication,
 }
 
+enum X509Choice {
+    Legacy(X509Authentication),
+    Certificate(ClientCertificateAuthentication, ClientIdentity),
+}
+
 pub(super) enum Authentication {
     X509 {
         server_name: String,
         authentication: X509Authentication,
         roots: TrustRoots,
+    },
+    ClientCertificate {
+        server_name: String,
+        authentication: ClientCertificateAuthentication,
+        roots: TrustRoots,
+        identity: ClientIdentity,
     },
     AppleVncPassword(VncPassword),
     AppleDh(AppleDhCredentials),
@@ -689,6 +736,16 @@ impl Authority {
                 security_type: ResolveRequestSupportedProfileSecurityType::X509Plain,
                 transport_type: ResolveRequestSupportedProfileTransportType::Direct,
             },
+            ResolveRequestSupportedProfile {
+                auth_method: ResolveRequestSupportedProfileAuthMethod::ClientCertificate,
+                security_type: ResolveRequestSupportedProfileSecurityType::X509None,
+                transport_type: ResolveRequestSupportedProfileTransportType::Direct,
+            },
+            ResolveRequestSupportedProfile {
+                auth_method: ResolveRequestSupportedProfileAuthMethod::ClientCertificateVncPassword,
+                security_type: ResolveRequestSupportedProfileSecurityType::X509Vnc,
+                transport_type: ResolveRequestSupportedProfileTransportType::Direct,
+            },
         ];
         if supports_ssh {
             supported_profiles.extend([
@@ -705,6 +762,17 @@ impl Authority {
                 ResolveRequestSupportedProfile {
                     auth_method: ResolveRequestSupportedProfileAuthMethod::UsernamePassword,
                     security_type: ResolveRequestSupportedProfileSecurityType::X509Plain,
+                    transport_type: ResolveRequestSupportedProfileTransportType::Ssh,
+                },
+                ResolveRequestSupportedProfile {
+                    auth_method: ResolveRequestSupportedProfileAuthMethod::ClientCertificate,
+                    security_type: ResolveRequestSupportedProfileSecurityType::X509None,
+                    transport_type: ResolveRequestSupportedProfileTransportType::Ssh,
+                },
+                ResolveRequestSupportedProfile {
+                    auth_method:
+                        ResolveRequestSupportedProfileAuthMethod::ClientCertificateVncPassword,
+                    security_type: ResolveRequestSupportedProfileSecurityType::X509Vnc,
                     transport_type: ResolveRequestSupportedProfileTransportType::Ssh,
                 },
                 ResolveRequestSupportedProfile {
@@ -847,14 +915,17 @@ impl Authority {
             (
                 ResolveResponseResolvedTransportAuthentication::None,
                 ResolveResponseResolvedTransportSecurity::X509None { trust },
-            ) => (X509Authentication::None, trust),
+            ) => (X509Choice::Legacy(X509Authentication::None), trust),
             (
                 ResolveResponseResolvedTransportAuthentication::VncPassword { password },
                 ResolveResponseResolvedTransportSecurity::X509Vnc { trust },
             ) => {
                 let password = VncPassword::new_zeroizing(password.into_zeroizing())
                     .map_err(|_| Failure::InvalidCredential)?;
-                (X509Authentication::VncPassword(password), trust)
+                (
+                    X509Choice::Legacy(X509Authentication::VncPassword(password)),
+                    trust,
+                )
             }
             (
                 ResolveResponseResolvedTransportAuthentication::UsernamePassword {
@@ -871,7 +942,41 @@ impl Authority {
                 let credentials =
                     PlainCredentials::new_zeroizing(username, password.into_zeroizing())
                         .map_err(|_| Failure::InvalidCredential)?;
-                (X509Authentication::Plain(credentials), trust)
+                (
+                    X509Choice::Legacy(X509Authentication::Plain(credentials)),
+                    trust,
+                )
+            }
+            (
+                ResolveResponseResolvedTransportAuthentication::ClientCertificate {
+                    certificate_chain_der,
+                    private_key_pkcs8_der,
+                },
+                ResolveResponseResolvedTransportSecurity::X509None { trust },
+            ) => (
+                X509Choice::Certificate(
+                    ClientCertificateAuthentication::None,
+                    client_identity(certificate_chain_der, private_key_pkcs8_der)?,
+                ),
+                trust,
+            ),
+            (
+                ResolveResponseResolvedTransportAuthentication::ClientCertificateVncPassword {
+                    certificate_chain_der,
+                    private_key_pkcs8_der,
+                    password,
+                },
+                ResolveResponseResolvedTransportSecurity::X509Vnc { trust },
+            ) => {
+                let password = VncPassword::new_zeroizing(password.into_zeroizing())
+                    .map_err(|_| Failure::InvalidCredential)?;
+                (
+                    X509Choice::Certificate(
+                        ClientCertificateAuthentication::VncPassword(password),
+                        client_identity(certificate_chain_der, private_key_pkcs8_der)?,
+                    ),
+                    trust,
+                )
             }
             _ => return Err(Failure::Authority),
         };
@@ -888,10 +993,20 @@ impl Authority {
             port,
             generation,
             transport,
-            authentication: Authentication::X509 {
-                server_name,
-                authentication,
-                roots,
+            authentication: match authentication {
+                X509Choice::Legacy(authentication) => Authentication::X509 {
+                    server_name,
+                    authentication,
+                    roots,
+                },
+                X509Choice::Certificate(authentication, identity) => {
+                    Authentication::ClientCertificate {
+                        server_name,
+                        authentication,
+                        roots,
+                        identity,
+                    }
+                }
             },
         })
     }
@@ -973,6 +1088,40 @@ fn custom_roots(bundle: Zeroizing<String>) -> Result<TrustRoots, Failure> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn certificate_handoff_requires_bounded_matching_pkcs8_before_network() {
+        let key = rcgen::KeyPair::generate().unwrap();
+        let certificate = rcgen::CertificateParams::new(vec!["client.example.test".into()])
+            .unwrap()
+            .self_signed(&key)
+            .unwrap();
+        let encoded_cert = base64::engine::general_purpose::STANDARD.encode(certificate.der());
+        let encoded_key = base64::engine::general_purpose::STANDARD.encode(key.serialize_der());
+        let parse = |certificates: Vec<String>, encoded: String| {
+            let secret = serde_json::from_value(serde_json::json!(encoded)).unwrap();
+            client_identity(certificates, secret)
+        };
+        assert!(parse(vec![encoded_cert.clone()], encoded_key.clone()).is_ok());
+        let wrong_key = rcgen::KeyPair::generate().unwrap();
+        assert!(matches!(
+            parse(
+                vec![encoded_cert.clone()],
+                base64::engine::general_purpose::STANDARD.encode(wrong_key.serialize_der())
+            ),
+            Err(Failure::InvalidCredential)
+        ));
+        for certificates in [vec![], vec![encoded_cert.clone(); 9], vec!["AAAA".into()]] {
+            assert!(matches!(
+                parse(certificates, encoded_key.clone()),
+                Err(Failure::InvalidCredential)
+            ));
+        }
+        assert!(matches!(
+            parse(vec![encoded_cert], "AAAA".into()),
+            Err(Failure::InvalidCredential)
+        ));
+    }
 
     #[test]
     fn custom_trust_requires_only_bounded_complete_certificate_blocks() {

@@ -47,6 +47,7 @@ export async function currentRunnerVncAuthority(
       joinedCredentialId: vncCredentials.id,
       username: vncCredentials.username,
       encryptedPassword: vncCredentials.encryptedPassword,
+      encryptedClientIdentity: vncCredentials.encryptedClientIdentity,
     })
     .from(agentRuns)
     .innerJoin(

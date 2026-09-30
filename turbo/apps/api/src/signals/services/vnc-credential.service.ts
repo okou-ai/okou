@@ -22,7 +22,8 @@ import { command } from "ccstate";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { safeSqlStateCode } from "../../lib/pg-errors";
 import { writeDb$, type ReadonlyDb } from "../external/db";
-import { settle } from "../utils";
+import { settle, safeSync } from "../utils";
+import { parseVncClientIdentity } from "./vnc-client-identity.service";
 import { encryptStoredSecretValue } from "./crypto.utils";
 import {
   isVncProfileCompatible,
@@ -148,10 +149,36 @@ export const listVncCredentials$ = command(
   },
 );
 
+export function validVncClientAuthentication(
+  authentication: VncAuthentication,
+): boolean {
+  if (
+    authentication.method !== "client_certificate" &&
+    authentication.method !== "client_certificate_vnc_password"
+  ) {
+    return true;
+  }
+  const result = safeSync(() => {
+    return parseVncClientIdentity(
+      authentication.certificateChain,
+      authentication.privateKey,
+    );
+  });
+  return "ok" in result;
+}
+
 async function encryptAuthentication(
   authentication: VncAuthentication,
   featureContext: FeatureSwitchContext,
 ) {
+  const identity =
+    authentication.method === "client_certificate" ||
+    authentication.method === "client_certificate_vnc_password"
+      ? parseVncClientIdentity(
+          authentication.certificateChain,
+          authentication.privateKey,
+        )
+      : null;
   return {
     authMethod: authentication.method,
     username:
@@ -161,10 +188,20 @@ async function encryptAuthentication(
       authentication.method === "apple_rsa_srp_username_password"
         ? authentication.username
         : null,
-    encryptedPassword: await encryptStoredSecretValue(
-      authentication.password,
-      featureContext,
-    ),
+    encryptedPassword:
+      authentication.method === "client_certificate"
+        ? null
+        : await encryptStoredSecretValue(
+            authentication.password,
+            featureContext,
+          ),
+    encryptedClientIdentity:
+      identity === null
+        ? null
+        : await encryptStoredSecretValue(
+            JSON.stringify(identity),
+            featureContext,
+          ),
   };
 }
 
@@ -268,6 +305,9 @@ export const createVncCredential$ = command(
     if (!preflight.value) {
       return { ok: true, value: undefined };
     }
+    if (!validVncClientAuthentication(args.body.authentication)) {
+      return vncFailure("invalidClientIdentity");
+    }
     const prepared = await prepareCredential(args.body, args.featureContext);
     signal.throwIfAborted();
     const [member] = await db
@@ -360,6 +400,12 @@ export const updateVncCredential$ = command(
     }
     if (initial.revision !== expectedRevision) {
       return vncFailure("credentialConflict");
+    }
+    if (
+      args.body.authentication &&
+      !validVncClientAuthentication(args.body.authentication)
+    ) {
+      return vncFailure("invalidClientIdentity");
     }
     const encrypted =
       args.body.authentication === undefined

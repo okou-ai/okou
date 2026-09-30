@@ -61,6 +61,12 @@ export const vncTypeBindings = [
           apple_rsa_srp_username_password: [
             "Apple RSA/SRP username/password authentication with a 234-byte username bound.",
           ],
+          client_certificate: [
+            "Required TLS client certificate with X509None.",
+          ],
+          client_certificate_vnc_password: [
+            "Required TLS client certificate and classic VNC password.",
+          ],
         },
       },
       {
@@ -100,6 +106,7 @@ export const vncTypeBindings = [
     sensitive: true,
     fieldTypeOverrides: {
       password: `crate::SecretUtf8Text<${VNC_USERNAME_PASSWORD_MAX_BYTES}>`,
+      privateKeyPkcs8Der: "crate::SecretUtf8Text<24576>",
     },
     declarations: [
       {
@@ -170,6 +177,12 @@ export const vncTypeBindings = [
           password: [
             "Bounded zeroizing password, preserving exact UTF-8 bytes and spaces.",
           ],
+          certificateChainDer: [
+            "Bounded base64-encoded DER client certificate chain.",
+          ],
+          privateKeyPkcs8Der: [
+            "Base64-encoded unencrypted PKCS#8 key, private and zeroizing.",
+          ],
         },
         variants: {
           none: ["No inner client authentication or secret."],
@@ -185,6 +198,12 @@ export const vncTypeBindings = [
           ],
           apple_rsa_srp_username_password: [
             "Apple RSA/SRP username/password fields; the Runner validates 234/1023-byte bounds.",
+          ],
+          client_certificate: [
+            "Required client identity; no inner RFB credential.",
+          ],
+          client_certificate_vnc_password: [
+            "Required client identity and classic VNC password.",
           ],
         },
       },
