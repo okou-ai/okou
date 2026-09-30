@@ -699,8 +699,7 @@ export async function insertInitialChatThreadConnectorSelections(
     readonly selections: readonly PreparedChatThreadConnectorSelection[];
   },
 ): Promise<void> {
-  // Account rows are written in id order, so concurrent creators selecting
-  // the same accounts never wait on each other in opposite orders.
+  // Stable insertion order for the finite prepared selection set.
   const ordered = [...args.selections].sort((a, b) => {
     return a.connectionId < b.connectionId
       ? -1
@@ -709,10 +708,16 @@ export async function insertInitialChatThreadConnectorSelections(
         : 0;
   });
   for (const selection of ordered) {
-    // Initial thread creation omits accounts deleted since preparation: the
-    // account-first write (selectionWriteSql) inserts nothing for them, and
-    // the thread and its other selections are kept.
-    await selectionWriteSql(tx, args.chatThreadId, selection, "none");
+    // Losing an account between the source SELECT and FK check omits only
+    // this selection, not the thread or its other still-valid accounts.
+    const inserted = await settle(
+      tx.transaction(async (sp) => {
+        await selectionWriteSql(sp, args.chatThreadId, selection, "none");
+      }),
+    );
+    if (!inserted.ok && selectionParentMissing(inserted.error) !== "account") {
+      throw inserted.error;
+    }
   }
 }
 

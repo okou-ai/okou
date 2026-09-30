@@ -1548,6 +1548,13 @@
       "when": 1790754947799,
       "tag": "1298_connector_selection_delete_cascade",
       "breakpoints": true
+    },
+    {
+      "idx": 1299,
+      "version": "7",
+      "when": 1790756050247,
+      "tag": "1299_connector_selection_deferred_references",
+      "breakpoints": true
     }
   ]
 }

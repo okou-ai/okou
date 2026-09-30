@@ -4,7 +4,7 @@ import { googleFormsAutomationCursors } from "@okouai/db/schema/google-forms-eve
 import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { secrets } from "@okouai/db/schema/secret";
 import { variables } from "@okouai/db/schema/variable";
-import { and, eq, gte, inArray, isNotNull, sql, type SQL } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, sql, type SQL } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
@@ -153,73 +153,74 @@ async function deleteConnectorOwnedCredentialRowsWhere(
 }
 
 /**
- * Delete visible selections before their accounts in one statement. The
- * cascading account FK also clears a reference committed after this statement's
- * snapshot; an insert after deletion fails its ordinary FK check. Returns the
- * number of selections explicitly resolved by this statement's snapshot.
+ * Actually delete the account, then resolve its references in the next SQL
+ * snapshot. The existing deferred account FK is checked at commit. A selection
+ * committed before the deletion's ordinary parent-row mutation is included in
+ * the child DELETE; a later insert fails its FK check. No lock-only write or
+ * SELECT lock is used, and the exact returned count includes late references.
  */
 async function deleteConnectorCredentialStorageConnectionsWhere(
   db: Db,
   conditions: ConnectorCredentialStorageDeleteConditions,
   signal: AbortSignal,
 ): Promise<number> {
-  await deleteConnectorOwnedCredentialRowsWhere(db, conditions, signal);
-  const deletedSelections = db
-    .$with("deleted_connector_selections")
-    .as(
-      db
-        .delete(chatThreadConnectorSelections)
-        .where(conditions.selection)
-        .returning({ connectorId: chatThreadConnectorSelections.connectorId }),
+  return await db.transaction(async (tx) => {
+    await deleteConnectorOwnedCredentialRowsWhere(tx, conditions, signal);
+    await tx.execute(
+      sql`SET CONSTRAINTS fk_chat_thread_connector_selections_connector_slug, fk_chat_thread_connector_selections_custom_connector DEFERRED`,
     );
-  const deletedConnections = db.$with("deleted_connector_accounts").as(
-    db
+    const deleted = await tx
       .delete(connectors)
-      .where(
-        and(
-          conditions.connection,
-          // Consume the child mutation before deleting its parent, so the
-          // returned count describes this statement's resolved selections.
-          gte(db.$count(deletedSelections), 0),
-        ),
-      )
-      .returning({ id: connectors.id }),
-  );
-  const deleted = await db
-    .with(deletedSelections, deletedConnections)
-    .select({
-      id: deletedConnections.id,
-      selectionCount: db.$count(deletedSelections),
-    })
-    .from(deletedConnections);
-  if (deleted.length > 0) {
-    // FK deletion has already cleared event_connector_id. Use the retained
-    // source config to invalidate only cursors belonging to deleted accounts.
-    // A subsequent projection onto a new account is a different source.
-    await db.delete(googleFormsAutomationCursors).where(
-      inArray(
-        googleFormsAutomationCursors.automationId,
-        db
-          .select({ id: workflowAutomations.id })
-          .from(workflowAutomations)
-          .where(
-            and(
-              eq(
-                workflowAutomations.eventType,
-                "google-forms-response-submitted",
-              ),
-              sql`${workflowAutomations.eventConfig} ->> 'connectorId' = ANY(${sql.param(
+      .where(conditions.connection)
+      .returning({ id: connectors.id });
+    const selections =
+      deleted.length === 0
+        ? []
+        : await tx
+            .delete(chatThreadConnectorSelections)
+            .where(
+              inArray(
+                chatThreadConnectorSelections.connectorId,
                 deleted.map((row) => {
                   return row.id;
                 }),
-              )}::text[])`,
-            ),
-          ),
-      ),
+              ),
+            )
+            .returning({
+              connectorId: chatThreadConnectorSelections.connectorId,
+            });
+    await tx.execute(
+      sql`SET CONSTRAINTS fk_chat_thread_connector_selections_connector_slug, fk_chat_thread_connector_selections_custom_connector IMMEDIATE`,
     );
-  }
-  signal.throwIfAborted();
-  return deleted[0]?.selectionCount ?? 0;
+    if (deleted.length > 0) {
+      // FK deletion has already cleared event_connector_id. Use the retained
+      // source config to invalidate only cursors belonging to deleted accounts.
+      // A subsequent projection onto a new account is a different source.
+      await tx.delete(googleFormsAutomationCursors).where(
+        inArray(
+          googleFormsAutomationCursors.automationId,
+          tx
+            .select({ id: workflowAutomations.id })
+            .from(workflowAutomations)
+            .where(
+              and(
+                eq(
+                  workflowAutomations.eventType,
+                  "google-forms-response-submitted",
+                ),
+                sql`${workflowAutomations.eventConfig} ->> 'connectorId' = ANY(${sql.param(
+                  deleted.map((row) => {
+                    return row.id;
+                  }),
+                )}::text[])`,
+              ),
+            ),
+        ),
+      );
+    }
+    signal.throwIfAborted();
+    return selections.length;
+  });
 }
 
 export async function deleteConnectorOwnedCredentialRows(

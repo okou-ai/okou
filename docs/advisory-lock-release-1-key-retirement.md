@@ -79,16 +79,26 @@ this table is reassigned to R2. Two rolling releases remain the deployment model
 Thread selection now uses a read-only `INSERT … SELECT` source. Its ordinary
 connector FK check or zero selected rows yields the existing unavailable-account
 result when deletion wins; no connector timestamp is rewritten to serialize it.
-Migration 1298 changes only the two existing selection-to-account FK deletion
-actions from RESTRICT to CASCADE. This makes an account deletion also clear a
-reference committed after its statement snapshot; an insert after deletion
-fails its FK check. Visible selection deletion and account deletion still share
-one statement, with an explicit child-mutation dependency. The returned resolved
-count describes selections explicitly deleted from that statement's snapshot.
-The migration must precede the R1 API deployment, following the normal two-release
-DB-first sequence. Outgoing API deletions already explicitly clear these owned
-selections, so CASCADE does not change another resource's deletion authority.
-No fields, indexes or application-defined triggers are added by 1298.
+Migration 1298 first generated CASCADE, but API testing showed that cascade
+cleanup cannot report the exact number of late references outside a statement's
+snapshot. Migration 1299 therefore declares the same two account FKs as
+`NO ACTION DEFERRABLE INITIALLY IMMEDIATE`. Only account deletion defers their
+checks for its two mutations, then restores immediate checking before returning.
+Ordinary selection writes retain statement-time FK errors and deterministic
+unavailable-account responses. A short transaction actually deletes
+the account, then deletes/counts selections in the next SQL snapshot. A reference
+committed before the ordinary parent DELETE is included; an insert after it
+fails its FK check at commit. No lock-only statement, row lock or retry is used.
+The concurrent selection/deletion API count assertion is unchanged.
+
+Apply the complete migration chain before R1 API deployment, following the
+normal two-release DB-first sequence. Outgoing API deletions already explicitly
+clear these owned selections inside their transactions, so the final constraint
+still rejects a committed orphan. Drizzle does not emit deferrability: the
+current SQL declaration is `src/constraints/connector-selection.sql`; fresh-schema
+validation installs that declaration and still compares full constraint SQL
+against migration replay. No comparison is weakened or deferral ignored.
+No fields, indexes or application-defined triggers are added by these changes.
 
 Legacy Plan invoice publication no longer performs `updated_at = updated_at`.
 It performs the actual metadata/receipt transition with the original admission

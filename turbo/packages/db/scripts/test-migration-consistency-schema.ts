@@ -960,6 +960,26 @@ async function generateFreshMigrations(): Promise<void> {
   // Generate new migrations (non-interactive)
   execCommand("pnpm drizzle-kit generate", { cwd: PACKAGE_DIR });
   await addExtensionPreludesToGeneratedMigrations();
+  // Drizzle models the account FK identity/action, but not PostgreSQL deferral.
+  // Install the same checked-in current-schema contract on the generated side;
+  // normalized comparison must still compare the complete constraint definition.
+  const generatedSql = (await fs.readdir(MIGRATIONS_DIR))
+    .filter((file) => {
+      return file.endsWith(".sql");
+    })
+    .sort();
+  const finalSql = generatedSql.at(-1);
+  if (finalSql === undefined) {
+    throw new Error("Generated schema has no SQL migration");
+  }
+  const deferral = await fs.readFile(
+    path.join(PACKAGE_DIR, "src/constraints/connector-selection.sql"),
+    "utf-8",
+  );
+  await fs.appendFile(
+    path.join(MIGRATIONS_DIR, finalSql),
+    `\n--> statement-breakpoint\n${deferral}`,
+  );
 }
 
 async function validateSnapshotFiles(): Promise<void> {
