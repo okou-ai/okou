@@ -40,7 +40,9 @@ function record(value: unknown): Record<string, unknown> | undefined {
 }
 
 function allowed<T extends string>(value: unknown, values: readonly T[]) {
-  return values.find((candidate) => candidate === value);
+  return values.find((candidate) => {
+    return candidate === value;
+  });
 }
 
 /** Inspect at most four causes; never retain arbitrary names, messages or objects. */
