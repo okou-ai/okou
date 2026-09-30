@@ -275,11 +275,11 @@ jobs:
       # not GitHub's synthetic PR merge commit used by the image CI check.
       - name: Checkout source revision for CLI and Runner
         if: steps.needed.outputs.current-runner-image-needed == 'true'
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ steps.identity.outputs.source-head-sha }}
 
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         if: steps.needed.outputs.current-runner-image-needed == 'true'
         with:
           version: 10.33.4
@@ -305,7 +305,7 @@ jobs:
 
       - name: Upload private CLI build input
         if: steps.needed.outputs.current-runner-image-needed == 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: runner-cli-${{ github.run_id }}
           path: runner-cli-intermediate/package.tgz
