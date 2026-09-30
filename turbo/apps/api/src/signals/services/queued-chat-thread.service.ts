@@ -1,5 +1,5 @@
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
-import { asc, gt } from "drizzle-orm";
+import { asc, gt, sql } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
 import type { Tx } from "../../lib/db-types";
 import type { Db } from "../external/db";
@@ -7,25 +7,31 @@ import type { Db } from "../external/db";
 type ReadDb = Pick<Db, "selectDistinct">;
 
 /**
- * Record the latest enqueue time for the thread's pending input.
- * New input also clears any lease: a picker that read the queue as empty
- * before this input committed then deletes or releases zero rows, the row
- * survives, and the enqueuer's own pick can take the lease.
+ * Record the latest enqueue time for the thread's pending input. Enqueue never
+ * touches the lease: from claim to the pending commit the lease is the only
+ * mutual exclusion, so a live lease stays with its picker and an empty or
+ * expired lease is claimed as usual. `queuedAt` strictly advances (at least
+ * 1 ms past the stored value, even under a frozen or skewed clock) so the
+ * lease holder's release or empty-queue delete observes the new input and
+ * schedules one new pick for the thread.
  */
 export async function markChatThreadQueued(
   db: Db | Tx,
   args: { readonly chatThreadId: string; readonly orgId: string },
 ): Promise<void> {
+  const queuedAt = nowDate();
   await db
     .insert(queuedChatThreads)
     .values({
       chatThreadId: args.chatThreadId,
       orgId: args.orgId,
-      queuedAt: nowDate(),
+      queuedAt,
     })
     .onConflictDoUpdate({
       target: queuedChatThreads.chatThreadId,
-      set: { queuedAt: nowDate(), claimId: null, claimExpiresAt: null },
+      set: {
+        queuedAt: sql`greatest(${sql.param(queuedAt, queuedChatThreads.queuedAt)}, ${queuedChatThreads.queuedAt} + interval '1 millisecond')`,
+      },
     });
 }
 
