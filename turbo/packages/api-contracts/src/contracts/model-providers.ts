@@ -8,8 +8,6 @@ import {
 } from "./okou-model-metadata";
 import {
   MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS,
-  SUPPORTED_RUN_MODELS,
-  type SupportedRunModel,
   type ModelPriceTier,
 } from "./model-price-tiers";
 import {
@@ -69,12 +67,7 @@ const DEEPSEEK_MODEL_CATALOG = {
   ],
 };
 
-export {
-  MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS,
-  SUPPORTED_RUN_MODELS,
-  type SupportedRunModel,
-  type ModelPriceTier,
-};
+export { MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS, type ModelPriceTier };
 
 /**
  * Secret field configuration for multi-secret providers
@@ -159,8 +152,6 @@ const MODEL_PROVIDER_CODEX_RUNTIME_CONFIGS: Partial<
   },
 };
 
-export const supportedRunModelSchema = z.enum(SUPPORTED_RUN_MODELS);
-
 /**
  * A run model ID on the wire. The global model catalog (served by
  * `GET /api/model-catalog`) is the authority; the API validates and resolves
@@ -175,15 +166,9 @@ export type ModelProviderCredentialScope = z.infer<
   typeof modelProviderCredentialScopeSchema
 >;
 
-const SUPPORTED_RUN_MODEL_SET: ReadonlySet<string> = new Set(
-  SUPPORTED_RUN_MODELS,
-);
-
 export { OKOU_RUN_MODELS, type OkouRunModel };
 
-const OKOU_RUN_MODEL_SET: ReadonlySet<string> = new Set(
-  OKOU_RUN_MODELS satisfies readonly SupportedRunModel[],
-);
+const OKOU_RUN_MODEL_SET: ReadonlySet<string> = new Set(OKOU_RUN_MODELS);
 
 export function isOkouRunModel(
   model: string | null | undefined,
@@ -228,12 +213,6 @@ export function getCatalogRunModelRouteAccess(
   return !ownRoute && access?.builtInOnRestrictedPlans === true
     ? "allowed"
     : "pro_required";
-}
-
-export function isSupportedRunModel(
-  model: string | null | undefined,
-): model is SupportedRunModel {
-  return typeof model === "string" && SUPPORTED_RUN_MODEL_SET.has(model);
 }
 
 /**
@@ -286,7 +265,7 @@ export const BUILT_IN_MODEL_ALIAS_TO_MODEL = {
   "anthropic/claude-sonnet-5": "claude-sonnet-5",
   "anthropic/claude-sonnet-4.6": "claude-sonnet-4-6",
   "deepseek/deepseek-v4-pro": "deepseek-v4-pro",
-} as const satisfies Record<string, SupportedRunModel>;
+} as const satisfies Record<string, string>;
 
 const BUILT_IN_MODEL_ALIAS_LOOKUP: Readonly<Record<string, string>> =
   BUILT_IN_MODEL_ALIAS_TO_MODEL;
@@ -761,20 +740,19 @@ export function getModelProviderPresentationLabel(
   return MODEL_PROVIDER_TYPES[type].label;
 }
 
-const CANONICAL_RUN_MODEL_ALIASES: Readonly<Record<string, SupportedRunModel>> =
-  {
-    "deepseek/deepseek-v4.1-flash": "deepseek-v4.1-flash",
-    "deepseek/deepseek-v4-flash": "deepseek-v4-flash",
-    "deepseek/deepseek-v4-pro": "deepseek-v4-pro",
-    "anthropic/claude-fable-5.1": "claude-fable-5-1",
-    "anthropic/claude-fable-5": "claude-fable-5",
-    "anthropic/claude-opus-5.5": "claude-opus-5-5",
-    "anthropic/claude-opus-5": "claude-opus-5",
-    "anthropic/claude-opus-4.8": "claude-opus-4-8",
-    "anthropic/claude-sonnet-5-5": "claude-sonnet-5-5",
-    "anthropic/claude-sonnet-5": "claude-sonnet-5",
-    "anthropic/claude-sonnet-4.6": "claude-sonnet-4-6",
-  };
+const CANONICAL_RUN_MODEL_ALIASES: Readonly<Record<string, string>> = {
+  "deepseek/deepseek-v4.1-flash": "deepseek-v4.1-flash",
+  "deepseek/deepseek-v4-flash": "deepseek-v4-flash",
+  "deepseek/deepseek-v4-pro": "deepseek-v4-pro",
+  "anthropic/claude-fable-5.1": "claude-fable-5-1",
+  "anthropic/claude-fable-5": "claude-fable-5",
+  "anthropic/claude-opus-5.5": "claude-opus-5-5",
+  "anthropic/claude-opus-5": "claude-opus-5",
+  "anthropic/claude-opus-4.8": "claude-opus-4-8",
+  "anthropic/claude-sonnet-5-5": "claude-sonnet-5-5",
+  "anthropic/claude-sonnet-5": "claude-sonnet-5",
+  "anthropic/claude-sonnet-4.6": "claude-sonnet-4-6",
+};
 
 export function normalizeRunModelId(model: string): string {
   return CANONICAL_RUN_MODEL_ALIASES[model] ?? model;

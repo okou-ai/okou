@@ -292,7 +292,7 @@ import {
 } from "./connector-catalog-external-reader.service";
 import { ConnectorCatalogLoadTiming } from "./connector-catalog-load-timing.service";
 import {
-  isAutoPersonalSubscriptionRoute,
+  isPersonalSubscriptionRoute,
   loadMemberSubscriptionModels,
 } from "./subscription-model-catalog.service";
 import {
@@ -340,6 +340,7 @@ import {
 } from "./discord-chat-callback-payload";
 import { DiscordQueuedLaunchUnavailableError } from "./discord-queued-launch-context.service";
 import {
+  isMemberSubscriptionRoute,
   memberModelRouteContextFromAccounts,
   modelPolicyUsesPersonalMetadata,
   providerTypeForSurfaceProtocol,
@@ -3165,21 +3166,21 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     customSurface$: queuedProviderAdmissionCustomSurface$,
   } = routing;
   const { creditBalance$: queuedProviderAdmissionCreditBalance$ } = credits;
-  /** Auto: the member's catalog subscription route is plan-exempt. */
-  const autoPersonalSubscription$ = computed(async (get) => {
-    const [pin, subscriptionModels] = await Promise.all([
+  /** Auto or Custom: the member's own valid subscription route is plan-exempt. */
+  const personalSubscription$ = computed(async (get) => {
+    const [pin, member, catalog] = await Promise.all([
       get(queuedProviderAdmissionModelPin$),
-      get(subscriptionModels$),
+      get(queuedModelRoutingMemberRoutes$),
+      get(claimCatalog$),
     ]);
     return (
       !("status" in pin) &&
-      pin.modelProviderCredentialScope === "member" &&
-      subscriptionModels.some((entry) => {
-        return (
-          entry.model === pin.selectedModel &&
-          entry.providerType === pin.modelProviderType &&
-          !entry.needsReconnect
-        );
+      isMemberSubscriptionRoute({
+        catalog,
+        member,
+        model: pin.selectedModel,
+        providerType: pin.modelProviderType,
+        credentialScope: pin.modelProviderCredentialScope,
       })
     );
   });
@@ -3239,14 +3240,14 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         };
       }
     }
-    const autoPersonalSubscription = await get(autoPersonalSubscription$);
+    const personalSubscription = await get(personalSubscription$);
     const error = checkOrgPlanRunAdmission({
       catalog: await get(claimCatalog$),
       capabilities: get(queuedProviderAdmissionPolicyFacts$)
         .orgPlanCapabilities,
       modelProviderType: effectiveModelProvider,
       selectedModel: pin.selectedModel,
-      autoPersonalSubscription,
+      personalSubscription,
     });
     if (error || !isBuiltInModelProviderType(effectiveModelProvider)) {
       return {
@@ -6226,21 +6227,21 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   } = queuedModelRouting;
   const { creditBalance$: queuedProviderAdmissionCreditBalance$2 } =
     queuedModelCredits;
-  /** Auto: the member's catalog subscription route is plan-exempt. */
-  const autoPersonalSubscription$2 = computed(async (get) => {
-    const [pin, subscriptionModels] = await Promise.all([
+  /** Auto or Custom: the member's own valid subscription route is plan-exempt. */
+  const personalSubscription$2 = computed(async (get) => {
+    const [pin, member, catalog] = await Promise.all([
       get(queuedProviderAdmissionModelPin$2),
-      get(subscriptionModels$2),
+      get(queuedModelRoutingMemberRoutes$2),
+      get(claimCatalog$),
     ]);
     return (
       !("status" in pin) &&
-      pin.modelProviderCredentialScope === "member" &&
-      subscriptionModels.some((entry) => {
-        return (
-          entry.model === pin.selectedModel &&
-          entry.providerType === pin.modelProviderType &&
-          !entry.needsReconnect
-        );
+      isMemberSubscriptionRoute({
+        catalog,
+        member,
+        model: pin.selectedModel,
+        providerType: pin.modelProviderType,
+        credentialScope: pin.modelProviderCredentialScope,
       })
     );
   });
@@ -6300,14 +6301,14 @@ export function createClaimRunObjects(claim: ThreadClaim) {
         };
       }
     }
-    const autoPersonalSubscription = await get(autoPersonalSubscription$2);
+    const personalSubscription = await get(personalSubscription$2);
     const error = checkOrgPlanRunAdmission({
       catalog: await get(claimCatalog$),
       capabilities: get(queuedProviderAdmissionPolicyFacts$2)
         .orgPlanCapabilities,
       modelProviderType: effectiveModelProvider,
       selectedModel: pin.selectedModel,
-      autoPersonalSubscription,
+      personalSubscription,
     });
     if (error || !isBuiltInModelProviderType(effectiveModelProvider)) {
       return {
@@ -11982,10 +11983,11 @@ export function createClaimRunObjects(claim: ThreadClaim) {
     },
   );
   const runAdmissionResolveAvailability$ = capturedResolveUsageAllowance$2;
-  const runAdmissionAutoPersonalSubscription$ = computed(async (get) => {
+  const runAdmissionPersonalSubscription$ = computed(async (get) => {
     const input = await get(capturedRunAdmissionReadInput$);
-    return await isAutoPersonalSubscriptionRoute({
+    return await isPersonalSubscriptionRoute({
       db: get(db$),
+      catalog: input.catalog,
       orgId: input.orgId,
       userId: input.userId,
       model: input.selectedModel,
@@ -11994,9 +11996,9 @@ export function createClaimRunObjects(claim: ThreadClaim) {
   });
   const runAdmissionCheckAdmission$ = command(
     async ({ get, set }, signal: AbortSignal) => {
-      const [input, autoPersonalSubscription] = await Promise.all([
+      const [input, personalSubscription] = await Promise.all([
         get(capturedRunAdmissionReadInput$),
-        get(runAdmissionAutoPersonalSubscription$),
+        get(runAdmissionPersonalSubscription$),
       ]);
       signal.throwIfAborted();
       if (!input.enforceBuiltInCredits) {
@@ -12006,7 +12008,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
           checkOrgPlanRunAdmission({
             ...input,
             capabilities,
-            autoPersonalSubscription,
+            personalSubscription,
           }) ?? null
         );
       }
@@ -12022,7 +12024,7 @@ export function createClaimRunObjects(claim: ThreadClaim) {
       const failure = checkOrgPlanRunAdmission({
         ...input,
         capabilities: availability,
-        autoPersonalSubscription,
+        personalSubscription,
       });
       if (failure) {
         return failure;

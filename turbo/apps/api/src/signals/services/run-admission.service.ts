@@ -25,7 +25,7 @@ import {
   type OrgPlanCapabilities,
 } from "./org-plan-entitlement-read.service";
 import { getSpendableUsagePackCredits } from "./usage-pack-credit.service";
-import { isAutoPersonalSubscriptionRoute } from "./subscription-model-catalog.service";
+import { isPersonalSubscriptionRoute } from "./subscription-model-catalog.service";
 import {
   createUsageAllowanceObjects,
   resolveUsageAllowanceAvailability,
@@ -189,10 +189,11 @@ export function createRunAdmissionObjects(input$: RunAdmissionInputObject) {
     createRunAdmissionUsagePackObject(readInput$),
   );
   const { resolveAvailability$ } = createUsageAllowanceObjects(readInput$);
-  const autoPersonalSubscription$ = computed(async (get) => {
+  const personalSubscription$ = computed(async (get) => {
     const input = await get(readInput$);
-    return await isAutoPersonalSubscriptionRoute({
+    return await isPersonalSubscriptionRoute({
       db: get(db$),
+      catalog: input.catalog,
       orgId: input.orgId,
       userId: input.userId,
       model: input.selectedModel,
@@ -200,9 +201,9 @@ export function createRunAdmissionObjects(input$: RunAdmissionInputObject) {
     });
   });
   const checkAdmission$ = command(async ({ get, set }, signal: AbortSignal) => {
-    const [input, autoPersonalSubscription] = await Promise.all([
+    const [input, personalSubscription] = await Promise.all([
       get(readInput$),
-      get(autoPersonalSubscription$),
+      get(personalSubscription$),
     ]);
     signal.throwIfAborted();
     if (!input.enforceBuiltInCredits) {
@@ -212,7 +213,7 @@ export function createRunAdmissionObjects(input$: RunAdmissionInputObject) {
         checkOrgPlanRunAdmission({
           ...input,
           capabilities,
-          autoPersonalSubscription,
+          personalSubscription,
         }) ?? null
       );
     }
@@ -228,7 +229,7 @@ export function createRunAdmissionObjects(input$: RunAdmissionInputObject) {
     const failure = checkOrgPlanRunAdmission({
       ...input,
       capabilities: availability,
-      autoPersonalSubscription,
+      personalSubscription,
     });
     if (failure) {
       return failure;
@@ -385,8 +386,9 @@ export async function checkResolvedOrgCreditsForRunAdmission(params: {
   readonly selectedModel?: string | null;
   readonly availability: OrgCreditAvailability | null;
 }): Promise<RunAdmissionFailure | undefined> {
-  const autoPersonalSubscription = await isAutoPersonalSubscriptionRoute({
+  const personalSubscription = await isPersonalSubscriptionRoute({
     db: params.db,
+    catalog: params.catalog,
     orgId: params.orgId,
     userId: params.userId,
     model: params.selectedModel,
@@ -394,7 +396,7 @@ export async function checkResolvedOrgCreditsForRunAdmission(params: {
   });
   return await checkResolvedOrgCreditsForRunAdmissionWithAllowance({
     ...params,
-    autoPersonalSubscription,
+    personalSubscription,
     resolveAllowance: async () => {
       return await resolveUsageAllowanceAvailability(params.db, params.orgId);
     },
@@ -407,7 +409,7 @@ async function checkResolvedOrgCreditsForRunAdmissionWithAllowance(params: {
   readonly modelProviderType: string | null | undefined;
   readonly selectedModel?: string | null;
   readonly availability: OrgCreditAvailability | null;
-  readonly autoPersonalSubscription: boolean;
+  readonly personalSubscription: boolean;
   readonly resolveAllowance: () => Promise<{
     readonly remainingUnits: number;
   } | null>;
@@ -423,7 +425,7 @@ async function checkResolvedOrgCreditsForRunAdmissionWithAllowance(params: {
     capabilities: availability,
     modelProviderType: params.modelProviderType,
     selectedModel: params.selectedModel,
-    autoPersonalSubscription: params.autoPersonalSubscription,
+    personalSubscription: params.personalSubscription,
   });
   if (planAdmission) {
     return planAdmission;
@@ -520,19 +522,19 @@ export function checkOrgPlanRunAdmission(params: {
   readonly modelProviderType: string | null | undefined;
   readonly selectedModel: string | null | undefined;
   /**
-   * The run uses the member's own connected subscription on the model's
-   * catalog subscription route, verified by the caller
-   * (`isAutoPersonalSubscriptionRoute` or the claim's member pin). It is the
-   * only route a free plan may use besides its free Built-in models.
+   * The run uses the member's own connected, valid subscription on the
+   * model's catalog subscription route (Auto or Custom), verified by the
+   * caller through `isMemberSubscriptionRoute`. It is the only route a free
+   * plan may use besides its free Built-in models.
    */
-  readonly autoPersonalSubscription?: boolean;
+  readonly personalSubscription?: boolean;
 }): RunAdmissionFailure | undefined {
   const { capabilities } = params;
   const modelAccess = catalogRunModelRouteAccess(
     params.catalog,
     params.selectedModel,
     params.modelProviderType,
-    capabilities?.restrictedBuiltInModels && !params.autoPersonalSubscription,
+    capabilities?.restrictedBuiltInModels && !params.personalSubscription,
   );
   const routeFailure = checkCatalogRunRoute(params.catalog, params);
   if (routeFailure) {
@@ -556,7 +558,7 @@ export function checkOrgPlanRunAdmission(params: {
     );
   }
   return (!capabilities.supportByok &&
-    !params.autoPersonalSubscription &&
+    !params.personalSubscription &&
     !isBuiltInModelProviderType(params.modelProviderType)) ||
     modelAccess === "pro_required"
     ? insufficientCredits()

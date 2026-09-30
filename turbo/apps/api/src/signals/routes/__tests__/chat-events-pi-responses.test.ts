@@ -1,19 +1,27 @@
 import { createHash, randomUUID } from "node:crypto";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { env } from "../../../lib/env";
 import { now, withMockNowForTest } from "../../../lib/time";
 import { stagePreAddabilityModelPolicyFixture } from "../../../test-fixtures/org-model-policies";
 import { replacePiSessionHistoryJsonlFixture } from "../../../test-fixtures/chat-events";
-import { setModelPiRouteClassFixture } from "../../../test-fixtures/model-catalog";
+import {
+  insertCatalogModelFixture,
+  setModelPiRouteClassFixture,
+} from "../../../test-fixtures/model-catalog";
+import {
+  readRunModelLaunchOptionsFixture,
+  readRunModelRuntimeRouteFixture,
+} from "../../../test-fixtures/agent-runs";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { chatEventDisplayText } from "./helpers/chat-event";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import {
   readRunLaunchSnapshotFixture,
+  seedBuiltInModelCandidateKeys,
   readThreadSessionBinding,
   readThreadSessionConversation,
 } from "./helpers/runtime-state";
@@ -245,6 +253,79 @@ describe("CHAT-02: model-first provider policies", () => {
       provider: "openrouter",
       model: "openai/gpt-6-luna",
     });
+  });
+
+  it("launches a catalog-only model on Pi through its route's upstream model", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    // Only run_model_catalog and model_routes rows exist for this model: no
+    // static list names it. Its Built-in route reuses the OpenRouter Codex
+    // protocol and an upstream model the pinned Pi runtime resolves.
+    const model = `catalog-pi-${randomUUID()}`;
+    const restore = await insertCatalogModelFixture({
+      model,
+      displayName: "Catalog Pi",
+      sortOrder: 100_000,
+      piRouteClass: "gpt-codex",
+      builtInRoutes: [
+        {
+          concreteProviderType: "openrouter-codex",
+          upstreamModel: "openai/gpt-6-luna",
+          priority: 0,
+          efforts: ["low", "medium", "high"],
+          defaultEffort: "medium",
+        },
+      ],
+    });
+    onTestFinished(restore);
+    await seedBuiltInModelCandidateKeys(context, model);
+    await api.updateOrgModelPolicies(actor, [
+      {
+        model,
+        preferred: true,
+        defaultProviderType: "built-in",
+        credentialScope: "org",
+        modelProviderId: null,
+      },
+    ]);
+    mockPiResourceArchiveDownloads();
+    mockPiCheckpointObjectStore();
+
+    const run = await sendChatRun(actor, {
+      agentId,
+      prompt: "run the catalog-only model on Pi",
+      model,
+      runOptions: { reasoningEffort: "high" },
+    });
+    await flushWaitUntilForTest();
+
+    await expect(
+      readRunLaunchSnapshotFixture(context, run.runId),
+    ).resolves.toMatchObject({ launch_snapshot: { framework: "pi" } });
+    await expect(
+      readRunModelRuntimeRouteFixture(run.runId),
+    ).resolves.toMatchObject({
+      modelProvider: "built-in",
+      selectedModel: model,
+      modelRuntimeProvider: "openrouter-codex",
+      modelRuntimeModel: "openai/gpt-6-luna",
+    });
+    await expect(
+      readRunModelLaunchOptionsFixture(run.runId),
+    ).resolves.toMatchObject({ reasoningEffort: "high" });
+    const { claim } = await claimChatRun(runnerGroup, run.runId);
+    expect(claim).toMatchObject({
+      cliAgentType: "pi",
+      // Built-in usage is billed under the route's pricing link
+      // (`usage_pricing` provider = the model ID).
+      modelUsageProvider: model,
+    });
+    expect(claim.piModelConfig).toMatchObject({
+      provider: "openrouter",
+      baseUrl: "https://openrouter.ai/api/v1",
+      model: "openai/gpt-6-luna",
+      thinkingLevel: "high",
+    });
+    await cancelChatRun(actor, run.runId);
   });
 
   it("transfers pre-migration OpenRouter Chat JSONL by reference", async () => {

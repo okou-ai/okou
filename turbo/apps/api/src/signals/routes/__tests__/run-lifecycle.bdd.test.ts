@@ -15,7 +15,6 @@ import { connectorCheckContract } from "@okouai/api-contracts/contracts/connecto
 import {
   getModelProviderFirewall,
   type ModelProviderType,
-  type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
 import {
   BUILTIN_FIREWALL_CATALOG_MAX_BYTES,
@@ -6078,7 +6077,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     // sandbox Pi claim.
     preparePiSandboxClaim();
 
-    async function claimModel(model: SupportedRunModel) {
+    async function claimModel(model: string) {
       const sent = await chat.sendAndLaunch(actor, {
         agentId,
         prompt: `recognition eligibility for ${model}`,

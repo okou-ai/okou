@@ -7,6 +7,7 @@ import {
   type BuiltInModelKeyIdsByVendor,
 } from "./built-in-model-runtime-route.service";
 import {
+  isMemberSubscriptionRoute,
   loadMemberModelRouteContext,
   resolveEffectivePolicyRoute,
   type MemberModelRouteContext,
@@ -28,7 +29,6 @@ import {
   type OrgModelPoliciesResponse,
   type OrgModelPolicy,
   type OrgModelPolicyRouteStatus,
-  type SupportedRunModel,
   type UpdateOrgModelPolicy,
   type ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
@@ -125,7 +125,7 @@ const ONBOARDING_MODEL_POLICY_SEEDS = {
 } as const satisfies Record<
   OnboardingSubscriptionProvider,
   {
-    readonly models: readonly SupportedRunModel[];
+    readonly models: readonly string[];
     readonly providerType: ModelProviderType;
   }
 >;
@@ -156,7 +156,7 @@ function projectedDefaultPolicyId(orgId: string, model: string): string {
 
 function projectedDefaultPolicy(
   orgId: string,
-  model: SupportedRunModel,
+  model: string,
 ): OrgModelPolicyRow {
   return {
     id: projectedDefaultPolicyId(orgId, model),
@@ -458,6 +458,31 @@ export interface EnsuredOrgModelPolicyFacts {
   readonly catalog: ModelCatalog;
 }
 
+/**
+ * A member-scope policy on the model's catalog subscription route carries no
+ * credential: each member runs it only with their own valid subscription,
+ * verified per run (`isMemberSubscriptionRoute`), so any plan may configure it.
+ */
+function isMemberSubscriptionPolicyRoute(
+  catalog: ModelCatalog,
+  model: string,
+  providerType: ModelProviderType,
+  credentialScope: string,
+): boolean {
+  return (
+    credentialScope === "member" &&
+    (providerType === "claude-code-oauth-token" ||
+      providerType === "codex-oauth-token") &&
+    catalog.routes.some((route) => {
+      return (
+        route.enabled &&
+        route.model === model &&
+        route.subscriptionType === providerType
+      );
+    })
+  );
+}
+
 function modelRouteAllowedForOrgPlan(
   catalog: ModelCatalog,
   model: string,
@@ -694,6 +719,7 @@ async function validateOrgProviderRoute(
         policy.model,
         policy.defaultProviderType,
       ),
+      catalog.byModel,
     )
   ) {
     return "Cloud route requires an explicit compatible saved deployment or profile";
@@ -728,6 +754,12 @@ function planRestrictedWrite(params: {
       params.policy.model,
       params.providerType,
       params.capabilities,
+    ) ||
+    isMemberSubscriptionPolicyRoute(
+      params.catalog,
+      params.policy.model,
+      params.providerType,
+      params.policy.credentialScope,
     )
   ) {
     return false;
@@ -899,6 +931,7 @@ function getRouteStatus(params: {
       model,
       provider.selectedModel,
       catalogHasProviderRoute(catalog, model, providerType),
+      catalog.byModel,
     )
   ) {
     return {
@@ -981,7 +1014,9 @@ function memberSubscriptionPolicy(
     capabilities,
     modelProviderType: entry.providerType,
     selectedModel: entry.model,
-    autoPersonalSubscription: true,
+    // Listed from the member's connected account and catalog subscription
+    // route; a reconnect-required account reports that state first.
+    personalSubscription: true,
   });
   return {
     id: entry.id,
@@ -1049,7 +1084,7 @@ async function loadOrgModelMode(db: Db, orgId: string) {
 export interface OrgModelPolicyListing {
   readonly response: OrgModelPoliciesResponse;
   /** The catalog system default the listing was projected from. */
-  readonly systemDefaultModel: SupportedRunModel;
+  readonly systemDefaultModel: string;
 }
 
 async function listOrgModelPolicies(
@@ -1121,6 +1156,13 @@ async function listOrgModelPolicies(
         capabilities,
         modelProviderType: providerType,
         selectedModel: policy.model,
+        personalSubscription: isMemberSubscriptionRoute({
+          catalog,
+          member,
+          model: policy.model,
+          providerType,
+          credentialScope,
+        }),
       });
       const availability = memberRouteAvailability({
         planDenied: !!planDenied,
@@ -1174,7 +1216,7 @@ async function persistOrgModelPolicyUpdates(params: {
   readonly orgId: string;
   readonly userId: string;
   readonly policies: UpdateOrgModelPolicy[];
-  readonly systemDefaultModel: SupportedRunModel;
+  readonly systemDefaultModel: string;
   readonly activeModels: readonly string[];
   readonly now: Date;
 }): Promise<void> {

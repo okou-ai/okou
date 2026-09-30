@@ -7,7 +7,6 @@ import {
   type DiscordCommandInteraction,
   type DiscordComponentInteraction,
 } from "@okouai/api-contracts/contracts/discord-interactions";
-import { isSupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import { delay } from "signal-timers";
 
 import { env } from "../../lib/env";
@@ -327,10 +326,7 @@ const discordModelPicker$ = command(
     const policies = await set(listOrgModelPolicies$, args.binding, signal);
     signal.throwIfAborted();
     const options = policies.policies.flatMap((policy) => {
-      if (
-        !isSupportedRunModel(policy.model) ||
-        policy.routeStatus !== "valid"
-      ) {
+      if (policy.routeStatus !== "valid") {
         return [];
       }
       return [{ label: policy.modelLabel, value: policy.model }];

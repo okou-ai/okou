@@ -17,7 +17,6 @@ import {
   type Indicators,
   type ChatSearchResponse,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { isSupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-rows";
 import type { ChatEventCursor } from "@okouai/api-contracts/contracts/chat-event-schema-version";
@@ -48,13 +47,6 @@ type ChatEventRowsPage =
       readonly hasMore: boolean;
     }
   | { readonly kind: "expired" };
-
-function requireSupportedModel(model: string) {
-  if (!isSupportedRunModel(model)) {
-    throw new Error(`Unsupported chat model: ${model}`);
-  }
-  return model;
-}
 
 interface ChatThreadCreateResult {
   readonly threadId: string;
@@ -168,9 +160,7 @@ export async function createChatThread(options: {
     body: {
       agentId: options.agentId,
       title: options.title,
-      ...(options.model === undefined
-        ? {}
-        : { model: requireSupportedModel(options.model) }),
+      ...(options.model === undefined ? {} : { model: options.model }),
       ...(options.serviceTier === undefined
         ? {}
         : { serviceTier: options.serviceTier }),
@@ -328,12 +318,11 @@ export async function updateChatThreadModelSelection(options: {
 }): Promise<{ threadId: string; selectedModel: string | null }> {
   const config = await getClientConfig();
   const client = initClient(chatThreadModelSelectionContract, config);
-  const model =
-    options.model === null ? null : requireSupportedModel(options.model);
+  // The API validates the ID against the global model catalog.
   const result = await client.update({
     params: { id: options.threadId },
     body: {
-      model,
+      model: options.model,
       ...(options.reasoningEffort === undefined
         ? {}
         : { reasoningEffort: options.reasoningEffort }),
@@ -342,7 +331,7 @@ export async function updateChatThreadModelSelection(options: {
   if (result.status === 204) {
     return {
       threadId: options.threadId,
-      selectedModel: model,
+      selectedModel: options.model,
     };
   }
   handleError(result, "Failed to update chat thread model");

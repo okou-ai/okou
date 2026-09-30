@@ -1,7 +1,8 @@
 import { asc, sql } from "drizzle-orm";
 import {
-  isSupportedRunModel,
-  type SupportedRunModel,
+  getBuiltInRouteProviderVendor,
+  isBuiltInModelProviderType,
+  modelProviderTypeSchema,
 } from "@okouai/api-contracts/contracts/model-providers";
 import type { MemberModelPolicyCatalog } from "@okouai/api-contracts/contracts/member-model-policy";
 import { modelRoutes } from "@okouai/db/schema/model-route";
@@ -39,12 +40,8 @@ export type ModelCatalog = Readonly<{
   models: readonly CatalogModel[];
   routes: readonly CatalogRoute[];
   systemDefault: CatalogModel;
-  /**
-   * The system default narrowed to a model whose protocol adapter this API
-   * knows. Runtime execution (framework, env bindings, context limits) stays
-   * in code, so an operator default the code cannot execute is an error.
-   */
-  systemDefaultModel: SupportedRunModel;
+  /** The system default's model ID; it always has a runnable Built-in route. */
+  systemDefaultModel: string;
   byModel: ReadonlyMap<string, CatalogModel>;
 }>;
 
@@ -131,17 +128,12 @@ function validateModelCatalog(
     return (
       route.model === systemDefault.model &&
       route.providerType === "built-in" &&
-      route.enabled
+      isCatalogRouteExecutable(route)
     );
   });
   if (!hasBuiltInRoute) {
     throw new ModelCatalogInvariantError(
-      `system default ${systemDefault.model} has no enabled Built-in route`,
-    );
-  }
-  if (!isSupportedRunModel(systemDefault.model)) {
-    throw new ModelCatalogInvariantError(
-      `system default ${systemDefault.model} has no runtime adapter`,
+      `system default ${systemDefault.model} has no enabled Built-in route with a runtime adapter`,
     );
   }
   return {
@@ -151,6 +143,30 @@ function validateModelCatalog(
     systemDefaultModel: systemDefault.model,
     byModel,
   };
+}
+
+/**
+ * Whether code can execute an enabled route. Adapters are keyed by provider,
+ * never by model ID: a Built-in route needs a concrete provider with a vendor
+ * key pool and environment bindings, and any other route needs a provider
+ * type this code knows. A model added only as catalog rows on an existing
+ * protocol is therefore executable without a code change.
+ */
+export function isCatalogRouteExecutable(
+  route: Pick<
+    CatalogRoute,
+    "enabled" | "providerType" | "concreteProviderType"
+  >,
+): boolean {
+  if (!route.enabled) {
+    return false;
+  }
+  if (isBuiltInModelProviderType(route.providerType)) {
+    return (
+      getBuiltInRouteProviderVendor(route.concreteProviderType) !== undefined
+    );
+  }
+  return modelProviderTypeSchema.safeParse(route.providerType).success;
 }
 
 /**
@@ -178,8 +194,9 @@ export function resolveCatalogModel(
 
 /**
  * The final active model for a stored selection when it is runnable: the
- * catalog resolves it to an active model with at least one enabled route.
- * Route-specific checks (the chosen provider type) happen at route selection.
+ * catalog resolves it to an active model with at least one enabled route that
+ * has a runtime adapter (`isCatalogRouteExecutable`). Route-specific checks
+ * (the chosen provider type) happen at route selection.
  */
 export function resolveCatalogRunModel(
   catalog: ModelCatalog,
@@ -190,7 +207,10 @@ export function resolveCatalogRunModel(
     return null;
   }
   return catalog.routes.some((route) => {
-    return route.enabled && route.model === resolution.resolvedModel;
+    return (
+      route.model === resolution.resolvedModel &&
+      isCatalogRouteExecutable(route)
+    );
   })
     ? resolution.resolvedModel
     : null;
@@ -377,6 +397,6 @@ export async function loadModelCatalog(
 /** The DB-owned system default every organization uses. */
 export async function loadSystemDefaultRunModel(
   db: ReadonlyDb,
-): Promise<SupportedRunModel> {
+): Promise<string> {
   return (await loadModelCatalog(db)).systemDefaultModel;
 }

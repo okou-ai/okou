@@ -11,6 +11,7 @@ import chalk from "chalk";
 import { HttpResponse, http } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { MODEL_CATALOG_RESPONSE } from "../../../mocks/handlers/model-catalog";
 import { server } from "../../../mocks/server";
 import { chatCommand } from "../index";
 
@@ -394,6 +395,88 @@ describe("okou chat model command", () => {
     expect(stderr).toContain("Run: okou chat model --help");
     expect(mockExit).toHaveBeenCalledWith(1);
   });
+  it("lists and switches to a model that exists only in the catalog", async () => {
+    vi.stubEnv("OKOU_CHAT_THREAD_ID", undefined);
+    const model = "acme-nova-1";
+    server.use(
+      http.get("http://localhost:3000/api/model-catalog", () => {
+        return HttpResponse.json({
+          ...MODEL_CATALOG_RESPONSE,
+          models: [
+            ...MODEL_CATALOG_RESPONSE.models,
+            {
+              model,
+              displayName: "Acme Nova",
+              sortOrder: 100_000,
+              isSystemDefault: false,
+              replacedBy: null,
+              resolvedModel: model,
+              priceTier: "$",
+              builtInOnRestrictedPlans: false,
+            },
+          ],
+          routes: [
+            ...MODEL_CATALOG_RESPONSE.routes,
+            {
+              model,
+              providerType: "built-in",
+              concreteProviderType: "openrouter-codex",
+              upstreamModel: "openai/gpt-6-luna",
+              enabled: true,
+              priority: 0,
+              serviceTiers: [],
+              efforts: ["low", "high"],
+              defaultEffort: "high",
+              priceTier: "$",
+            },
+          ],
+        });
+      }),
+      http.get(MODEL_POLICIES_URL, () => {
+        return HttpResponse.json({
+          policies: [
+            ...MODEL_POLICIES_RESPONSE.policies,
+            {
+              id: "00000000-0000-4000-8000-000000000110",
+              model,
+              modelLabel: "Acme Nova",
+              defaultProviderType: "built-in",
+              credentialScope: "org",
+              modelProviderId: null,
+              routeStatus: "valid",
+              routeStatusReason: null,
+              createdAt: "2026-01-01T00:00:00.000Z",
+              updatedAt: "2026-01-01T00:00:00.000Z",
+            },
+          ],
+        });
+      }),
+      http.post(OTHER_MODEL_SELECTION_URL, async ({ request }) => {
+        await expect(request.json()).resolves.toStrictEqual({ model });
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+
+    await chatCommand.parseAsync(["node", "cli", "model", "--help"]);
+    expect(mockConsoleLog.mock.calls.flat().join("\n")).toContain(
+      "Acme Nova (acme-nova-1)",
+    );
+    mockConsoleLog.mockClear();
+
+    await chatCommand.parseAsync([
+      "node",
+      "cli",
+      "model",
+      "--thread",
+      OTHER_THREAD_ID,
+      model,
+    ]);
+
+    const output = mockConsoleLog.mock.calls.flat().join("\n");
+    expect(output).toContain("Chat model updated");
+    expect(output).toContain("Model:  Acme Nova (acme-nova-1)");
+  });
+
   it("applies an effort-only change to the replacement of a retired selection", async () => {
     server.use(
       http.get(GET_URL, () => {

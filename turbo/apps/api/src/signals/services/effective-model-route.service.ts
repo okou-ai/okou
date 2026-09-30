@@ -361,15 +361,92 @@ async function memberContextForPolicy(
   return { memberScoped: true, subscriptions: loaded.subscriptions };
 }
 
+/** The member's loaded logical subscriptions (none for sentinel contexts). */
+export async function loadedMemberModelRouteContext(
+  member: ModelRouteMemberContext,
+): Promise<MemberModelRouteContext> {
+  if (!("personalMetadata" in member)) {
+    return member;
+  }
+  if (member.personalMetadata.kind === "not-applicable") {
+    return { memberScoped: false, subscriptions: [] };
+  }
+  const loaded = await member.personalMetadata.load();
+  return { memberScoped: true, subscriptions: loaded.subscriptions };
+}
+
+/**
+ * The one free-plan exemption besides free Built-in models, for Auto and
+ * Custom alike: the route uses the requesting member's own connected, valid
+ * (not reconnect-required) Claude Code or Codex account with member credential
+ * scope, and the model has an enabled catalog subscription route
+ * (`model_routes.subscription_type`) of that type. A model name or provider
+ * type alone is never exempt; API keys, custom gateways and organization
+ * credentials never are.
+ */
+export function isMemberSubscriptionRoute(args: {
+  readonly catalog: ModelCatalog;
+  readonly member: MemberModelRouteContext;
+  readonly model: string | null | undefined;
+  readonly providerType: string | null | undefined;
+  /** The route's credential scope when the caller knows it. */
+  readonly credentialScope?: string | null;
+}): boolean {
+  const { model } = args;
+  const type = PERSONAL_TYPES.find((candidate) => {
+    return candidate === args.providerType;
+  });
+  if (
+    !model ||
+    !type ||
+    !args.member.memberScoped ||
+    (args.credentialScope !== undefined &&
+      args.credentialScope !== null &&
+      args.credentialScope !== "member") ||
+    !isCatalogModelRunnable(args.catalog, model)
+  ) {
+    return false;
+  }
+  return (
+    args.member.subscriptions.some((candidate) => {
+      return candidate.type === type && !candidate.needsReconnect;
+    }) &&
+    args.catalog.routes.some((route) => {
+      return (
+        route.enabled &&
+        route.model === model &&
+        route.subscriptionType === type
+      );
+    })
+  );
+}
+
 function policyRouteAllowedForPlan(args: {
   readonly catalog: ModelCatalog;
   readonly policy: ModelRoutePolicy;
   readonly providerType: ModelProviderType;
+  readonly credentialScope: ModelProviderCredentialScope;
+  readonly member: MemberModelRouteContext;
   readonly capabilities: Pick<
     OrgPlanCapabilities,
     "restrictedBuiltInModels" | "supportByok"
   >;
 }): boolean {
+  if (
+    isMemberSubscriptionRoute({
+      catalog: args.catalog,
+      member: args.member,
+      model: args.policy.model,
+      providerType: args.providerType,
+      credentialScope: args.credentialScope,
+    })
+  ) {
+    return catalogServesModel(
+      args.catalog,
+      args.policy.model,
+      args.providerType,
+    );
+  }
   return (
     catalogRunModelRouteAccess(
       args.catalog,
@@ -433,6 +510,8 @@ export async function resolveEffectivePolicyRoute(params: {
       catalog: params.catalog,
       policy,
       providerType,
+      credentialScope,
+      member,
       capabilities: params.capabilities,
     })
   ) {
@@ -543,6 +622,8 @@ export function resolveEffectivePolicyRouteFromSnapshot(params: {
       catalog: params.catalog,
       policy,
       providerType,
+      credentialScope,
+      member,
       capabilities: params.capabilities,
     })
   ) {

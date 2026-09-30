@@ -12,7 +12,6 @@ import {
   CHAT_RUN_EXECUTION_TIMEOUT_MESSAGE,
   CHAT_RUN_USAGE_LIMIT_MESSAGE,
 } from "@okouai/api-contracts/contracts/errors";
-import type { SupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import { CANCELLATION_RECOVERY_STALE_AFTER_MS } from "@okouai/api-contracts/contracts/runners";
 import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
@@ -196,7 +195,7 @@ async function startChatRun(
     readonly prompt: string;
     readonly clientEventId?: string;
     readonly threadId?: string;
-    readonly selectedModel?: SupportedRunModel;
+    readonly selectedModel?: string;
     readonly userMessage?: UserMessageInputDocument;
     readonly revokesEventId?: string;
   },
@@ -209,7 +208,7 @@ async function startChatRun(
   readonly messageId: string;
 }> {
   const messageId = body.clientEventId ?? randomUUID();
-  const selectedModel: SupportedRunModel | undefined =
+  const selectedModel: string | undefined =
     body.selectedModel ??
     (body.threadId === undefined ? "claude-fable-5-1" : undefined);
   const requestBody = {
@@ -4480,7 +4479,7 @@ describe("CHAT-02: failed chat callbacks", () => {
       readonly error: string;
       readonly expectedError?: string;
       readonly failureReason?: RunFailureReasonToken;
-      readonly selectedModel?: SupportedRunModel;
+      readonly selectedModel?: string;
     }[] = [
       { prompt: "round one", error: actionableError },
       {
@@ -4849,7 +4848,7 @@ describe("CHAT-02: failed chat callbacks", () => {
       readonly prompt: string;
       readonly errorMessage?: string;
       readonly failureReason?: RunFailureReasonToken;
-      readonly selectedModel?: SupportedRunModel;
+      readonly selectedModel?: string;
       readonly orgRole?: TestOrgRole;
       readonly configureProvider?: (
         fixture: EntitledChatActor,

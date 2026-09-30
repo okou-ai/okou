@@ -27,6 +27,7 @@ import { awaitWithSignal, safeJsonParse, settle } from "../utils";
 import { visibleJoinedAgentCondition } from "./agent-data.service";
 import { resolveBuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
 import {
+  isMemberSubscriptionRoute,
   loadMemberModelRouteContext,
   resolveEffectivePolicyRoute,
   type MemberModelRouteContext,
@@ -344,6 +345,16 @@ function describeModelAvailability(params: {
       capabilities: params.capabilities,
       selectedModel: model,
       modelProviderType: route?.modelProviderType ?? params.defaultProviderType,
+      personalSubscription:
+        route !== null &&
+        isMemberSubscriptionRoute({
+          catalog: params.catalog,
+          // Sentinel contexts carry no subscriptions, so they never match.
+          member: { memberScoped: true, subscriptions: params.subscriptions },
+          model,
+          providerType: route.modelProviderType,
+          credentialScope: route.modelProviderCredentialScope,
+        }),
     })
   ) {
     entry.availability = "plan_restricted";
@@ -411,7 +422,7 @@ async function appendAutoMemberMcpModels({
       capabilities,
       selectedModel: personal.model,
       modelProviderType: personal.providerType,
-      autoPersonalSubscription: true,
+      personalSubscription: true,
     });
     models.push({
       id: personal.model,

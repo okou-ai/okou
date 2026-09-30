@@ -1,11 +1,10 @@
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
-import {
-  isSupportedRunModel,
-  type SupportedRunModel,
-} from "@okouai/api-contracts/contracts/model-providers";
 import { modelRoutes } from "@okouai/db/schema/model-route";
 import { runModelCatalog } from "@okouai/db/schema/run-model-catalog";
-import { loadSystemDefaultRunModel } from "./model-catalog.service";
+import {
+  loadSystemDefaultRunModel,
+  type ModelCatalog,
+} from "./model-catalog.service";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
@@ -16,6 +15,7 @@ import {
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import type { Db, ReadonlyDb } from "../external/db";
 import {
+  isMemberSubscriptionRoute,
   loadMemberModelRouteContext,
   type MemberModelRouteContext,
   type PreparedMemberModelRouteContext,
@@ -23,7 +23,7 @@ import {
 
 export type MemberSubscriptionModel = Readonly<{
   id: string;
-  model: SupportedRunModel;
+  model: string;
   displayName: string;
   efforts: readonly ReasoningEffort[];
   serviceTier: string | null;
@@ -81,7 +81,7 @@ export async function loadMemberSubscriptionModels(
       return candidate.type === row.subscriptionType;
     });
     // Retired catalog models are a reachable state; they simply stop listing.
-    if (!subscription || !isSupportedRunModel(row.model)) {
+    if (!subscription) {
       return [];
     }
     const serviceTier = row.serviceTiers.includes("priority")
@@ -120,12 +120,13 @@ export async function loadMemberSubscriptionModels(
 }
 
 /**
- * Only an Auto member's connected, valid (not reconnect-required) personal
- * subscription on the model's catalog subscription route is plan-exempt.
- * The provider type alone never is: the member must hold that account.
+ * Admission read of `isMemberSubscriptionRoute` from current connection facts:
+ * in Auto and Custom mode alike, only the member's own valid subscription on
+ * the model's catalog subscription route is plan-exempt.
  */
-export async function isAutoPersonalSubscriptionRoute(args: {
+export async function isPersonalSubscriptionRoute(args: {
   db: ReadonlyDb;
+  catalog: ModelCatalog;
   orgId: string;
   userId: string;
   model: string | null | undefined;
@@ -138,26 +139,12 @@ export async function isAutoPersonalSubscriptionRoute(args: {
   ) {
     return false;
   }
-  const [org] = await args.db
-    .select({ mode: orgMetadata.modelMode })
-    .from(orgMetadata)
-    .where(eq(orgMetadata.orgId, args.orgId))
-    .limit(1);
-  if (org?.mode !== "auto") {
-    return false;
-  }
-  const member = await loadMemberModelRouteContext(
-    args.db,
-    args.orgId,
-    args.userId,
-  );
-  const models = await loadMemberSubscriptionModels(args.db, member);
-  return models.some((entry) => {
-    return (
-      entry.model === args.model &&
-      entry.providerType === args.providerType &&
-      !entry.needsReconnect
-    );
+  return isMemberSubscriptionRoute({
+    catalog: args.catalog,
+    member: await loadMemberModelRouteContext(args.db, args.orgId, args.userId),
+    model: args.model,
+    providerType: args.providerType,
+    credentialScope: "member",
   });
 }
 

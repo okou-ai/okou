@@ -492,12 +492,10 @@ export {
   updateOrgModelPolicySchema,
   orgModelPoliciesResponseSchema,
   updateOrgModelPoliciesRequestSchema,
-  supportedRunModelSchema,
   runModelIdSchema,
   modelProviderCredentialScopeSchema,
   MODEL_PROVIDER_TYPES,
   MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS,
-  SUPPORTED_RUN_MODELS,
   getFrameworkForType,
   getSecretNameForType,
   getModelProviderEnvBindings,
@@ -507,7 +505,6 @@ export {
   allowsCustomModel,
   getCustomModelPlaceholder,
   // Provider compatibility
-  isSupportedRunModel,
   normalizeRunModelId,
   // Selectable provider filtering
   getSelectableProviderTypes,
@@ -533,7 +530,6 @@ export {
   type UpdateOrgModelPolicy,
   type OrgModelPoliciesResponse,
   type UpdateOrgModelPoliciesRequest,
-  type SupportedRunModel,
   type ModelProviderCredentialScope,
   type BuiltInModelRouteProviderType,
   // Multi-auth provider types

@@ -6,11 +6,7 @@ import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { command } from "ccstate";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { v5 as uuidv5 } from "uuid";
-import {
-  isSupportedRunModel,
-  normalizeRunModelId,
-  type SupportedRunModel,
-} from "@okouai/api-contracts/contracts/model-providers";
+import { normalizeRunModelId } from "@okouai/api-contracts/contracts/model-providers";
 import { agents } from "@okouai/db/schema/agent";
 import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
@@ -1072,7 +1068,7 @@ function compactLookupKey(value: string): string {
 
 function findModelOption(
   options: readonly {
-    readonly model: SupportedRunModel;
+    readonly model: string;
     readonly label: string;
     readonly isDefault: boolean;
   }[],
@@ -1099,7 +1095,7 @@ function findModelOption(
 
 function formatAgentPhoneModelOptionsMessage(
   options: readonly {
-    readonly model: SupportedRunModel;
+    readonly model: string;
     readonly label: string;
     readonly isDefault: boolean;
   }[],
@@ -1170,10 +1166,7 @@ const handleModelCommand$ = command(
     signal.throwIfAborted();
 
     const options = policies.policies.flatMap((policy) => {
-      if (
-        !isSupportedRunModel(policy.model) ||
-        policy.routeStatus !== "valid"
-      ) {
+      if (policy.routeStatus !== "valid") {
         return [];
       }
       return {

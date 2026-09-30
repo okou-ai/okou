@@ -12,7 +12,6 @@ import {
   modelSupportsImageInput,
   getSelectableProviderTypes,
   getBuiltInModelRouteVendors,
-  isSupportedRunModel,
   getCatalogRunModelRouteAccess,
   normalizeRunModelId,
   getAuthMethodsForType,
@@ -25,13 +24,11 @@ import {
   modelProviderCredentialScopeSchema,
   modelProviderResponseSchema,
   orgModelPolicySchema,
-  supportedRunModelSchema,
   modelProviderWriteTypeSchema,
   upsertModelProviderRequestSchema,
   updateOrgModelPolicySchema,
   updateOrgModelPoliciesRequestSchema,
   MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS,
-  SUPPORTED_RUN_MODELS,
   MODEL_PROVIDER_FIREWALL_CONFIGS,
   MODEL_PROVIDER_ENV_PLACEHOLDERS,
   MODEL_PROVIDER_TYPES,
@@ -68,66 +65,7 @@ describe("model-first canonical catalog", () => {
     ).toHaveLength(1);
   });
 
-  it("exposes the curated flat model list only", () => {
-    expect(SUPPORTED_RUN_MODELS).toEqual([
-      "okou-1.0",
-      "claude-fable-5-1",
-      "claude-fable-5",
-      "claude-opus-5-5",
-      "claude-opus-5",
-      "claude-opus-4-8",
-      "claude-sonnet-5-5",
-      "claude-sonnet-5",
-      "claude-sonnet-4-6",
-      "gpt-6-astra",
-      "gpt-6.1-sol",
-      "gpt-6-sol",
-      "gpt-6-luna",
-      "gpt-5.6-sol",
-      "gpt-5.6-luna",
-      "gpt-5.5",
-      "deepseek-v4.1-flash",
-      "deepseek-v4-pro",
-      "deepseek-v4-flash",
-    ]);
-  });
-
-  it("validates canonical models and credential scopes", () => {
-    expect(supportedRunModelSchema.safeParse("custom-model").success).toBe(
-      false,
-    );
-    expect(supportedRunModelSchema.safeParse("gpt-6-astra").success).toBe(true);
-    expect(supportedRunModelSchema.safeParse("gpt-6-sol").success).toBe(true);
-    expect(supportedRunModelSchema.safeParse("gpt-6-luna").success).toBe(true);
-    expect(supportedRunModelSchema.safeParse("gpt-5.6-sol").success).toBe(true);
-    expect(supportedRunModelSchema.safeParse("gpt-5.6-luna").success).toBe(
-      true,
-    );
-    expect(supportedRunModelSchema.safeParse("gpt-5.5").success).toBe(true);
-    expect(supportedRunModelSchema.safeParse("claude-sonnet-5").success).toBe(
-      true,
-    );
-    expect(supportedRunModelSchema.safeParse("claude-fable-5-1").success).toBe(
-      true,
-    );
-    expect(supportedRunModelSchema.safeParse("claude-fable-5").success).toBe(
-      true,
-    );
-    expect(supportedRunModelSchema.safeParse("claude-opus-5-5").success).toBe(
-      true,
-    );
-    expect(supportedRunModelSchema.safeParse("claude-opus-5").success).toBe(
-      true,
-    );
-    expect(
-      supportedRunModelSchema.safeParse("deepseek-v4.1-flash").success,
-    ).toBe(true);
-    expect(supportedRunModelSchema.safeParse("deepseek-v4-flash").success).toBe(
-      true,
-    );
-    expect(supportedRunModelSchema.safeParse("deepseek-v4-pro").success).toBe(
-      true,
-    );
+  it("validates credential scopes", () => {
     expect(modelProviderCredentialScopeSchema.safeParse("org").success).toBe(
       true,
     );
@@ -174,18 +112,6 @@ describe("model-first canonical catalog", () => {
       "deepseek-v4.1-flash",
     );
     expect(normalizeRunModelId("custom/model")).toBe("custom/model");
-    expect(isSupportedRunModel("claude-fable-5-1")).toBe(true);
-    expect(isSupportedRunModel("claude-fable-5")).toBe(true);
-    expect(isSupportedRunModel("claude-opus-5-5")).toBe(true);
-    expect(isSupportedRunModel("claude-opus-5")).toBe(true);
-    expect(isSupportedRunModel("gpt-6-astra")).toBe(true);
-    expect(isSupportedRunModel("gpt-6-sol")).toBe(true);
-    expect(isSupportedRunModel("gpt-6-luna")).toBe(true);
-    expect(isSupportedRunModel("gpt-5.6-sol")).toBe(true);
-    expect(isSupportedRunModel("openai/gpt-5.6-sol")).toBe(false);
-    expect(isSupportedRunModel("deepseek-v4.1-flash")).toBe(true);
-    expect(isSupportedRunModel("deepseek-v4-flash")).toBe(true);
-    expect(isSupportedRunModel("deepseek-v4-pro")).toBe(true);
   });
 
   it("decides restricted-plan access from the catalog model's policy", () => {

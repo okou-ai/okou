@@ -6094,6 +6094,7 @@ function resolveMultiAuthRuntimeModel(
         selectedModel,
         runtimeModel,
         catalogHasProviderRoute(args.catalog, selectedModel, args.type),
+        args.catalog.byModel,
       ))
   ) {
     throw new PiNativeConfigurationError(

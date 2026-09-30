@@ -33,7 +33,16 @@ The server model catalog (`run_model_catalog` plus `model_routes`, served by
 the system default, retirement and replacement, price tiers and route
 capabilities; code model labels and `ORG_DEFAULT_RUN_MODEL` are no longer
 product authority, and the system default is the DB row with
-`is_system_default = true`. Code still owns runtime adapters. Free-plan
+`is_system_default = true`. Code still owns runtime adapters, keyed by
+provider (Built-in concrete provider vendor pool, BYOK/subscription provider
+type), never by model ID: `SUPPORTED_RUN_MODELS`, `SupportedRunModel`,
+`isSupportedRunModel` and `supportedRunModelSchema` are removed, so a model
+added only as catalog and route rows on an existing protocol is configurable
+and runnable by the new API, IM model pickers and CLI (Pi too, when its route's
+upstream model is one the pinned Pi runtime resolves). No schema change; the
+previous API still rejects such a row as unsupported, so operators add
+catalog-only models after this API is fully deployed. The CLI no longer
+pre-rejects model IDs outside its bundled list; an old CLI still does. Free-plan
 model access is catalog data (`built_in_on_restricted_plans`, migration 1299,
 true only for `okou-1.0`), read by model policy writes, run admission and the
 Platform; the static `isLimitedFree1RestrictedRunModel` allowlist is gone and

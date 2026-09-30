@@ -10,7 +10,6 @@ import {
   type UserMessageInputDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { cronProjectChatEventSearchContract } from "@okouai/api-contracts/contracts/cron";
-import type { SupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import { CANCELLATION_RECOVERY_STALE_AFTER_MS } from "@okouai/api-contracts/contracts/runners";
 import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
 import { testChatThreadSnapshotCompactionContract } from "@okouai/api-contracts/contracts/test-chat-thread-snapshot-compaction";
@@ -211,7 +210,7 @@ async function sendChatRun(
     readonly prompt: string;
     readonly threadId?: string;
     readonly chatThreadSortEventId?: string;
-    readonly model?: SupportedRunModel;
+    readonly model?: string;
   },
 ): Promise<{ readonly runId: string; readonly threadId: string }> {
   const { runId, threadId } = await chat.sendAndLaunch(actor, body);

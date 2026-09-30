@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 
-import type { SupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import { ALL_RUN_STATUSES } from "@okouai/api-contracts/contracts/runs";
 import { describe, expect, it, onTestFinished } from "vitest";
 
@@ -45,7 +44,7 @@ async function sendRejectedByUnavailableModel(
   body: {
     readonly agentId: string;
     readonly prompt: string;
-    readonly model: SupportedRunModel;
+    readonly model: string;
   },
 ) {
   const clientEventId = randomUUID();

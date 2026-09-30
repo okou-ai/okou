@@ -12,10 +12,7 @@ import { readRunUsageEventsFixture } from "../../../test-fixtures/chat-events";
 import { http, HttpResponse } from "msw";
 import { server } from "../../../mocks/server";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import type {
-  OrgModelPolicy,
-  SupportedRunModel,
-} from "@okouai/api-contracts/contracts/model-providers";
+import type { OrgModelPolicy } from "@okouai/api-contracts/contracts/model-providers";
 
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { holdSubscriptionKmsBatch } from "./helpers/subscription-kms-batch";
@@ -60,7 +57,7 @@ const firewall = createFirewallApi(context);
 /** The configured policy, not the fixed default every workspace keeps. */
 function configuredPolicy(
   response: { readonly policies: readonly OrgModelPolicy[] },
-  model: SupportedRunModel,
+  model: string,
 ): OrgModelPolicy | undefined {
   return response.policies.find((policy) => {
     return policy.model === model;
@@ -102,7 +99,7 @@ async function sendRejectedAtPick(
   actor: ApiTestUser,
   body: {
     readonly agentId: string;
-    readonly model: SupportedRunModel;
+    readonly model: string;
     readonly prompt: string;
   },
 ) {
@@ -457,6 +454,73 @@ describe("personal subscription run identity", () => {
       await runs.heartbeatRunner(runnerGroup);
       const claim = await runs.claimRunnerJob(sent.runId);
       // The member's own subscription account serves the run, not Built-in.
+      expect(accountId(claim, type)).toBe(connected.id);
+      await finish(actor, sent.runId, claim, "failed");
+    },
+  );
+
+  it.each([
+    ["claude-code-oauth-token", "claude-opus-5-5"],
+    ["codex-oauth-token", "gpt-6-sol"],
+  ] as const)(
+    "runs a free-plan Custom member's %s subscription policy on the member's account",
+    async (type, model) => {
+      const bdd = createBddApi(context);
+      const actor = bdd.user();
+      if (!actor.orgId) {
+        throw new Error("Expected an organization-scoped actor");
+      }
+      bdd.acceptAgentStorageWrites();
+      expect((await bdd.completeOnboarding(actor)).status).toBe(200);
+      runs.acceptStorageDownloads();
+      runs.acceptTelemetryIngest();
+      const runnerGroup = runs.configureRunnerGroup();
+      await seedOrgMetadata({
+        orgId: actor.orgId,
+        tier: "limited-free-1",
+        credits: 0,
+      });
+      await support.updateFeatureSwitches(actor, {
+        [FeatureSwitchKey.OkouDebug]: true,
+        [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
+      });
+      await runs.updateOrgModelMode(actor, "custom");
+      const connected = await connect(actor, type, "identity-custom");
+      // A member-scope policy carries no credential; each member runs it with
+      // their own subscription, which the free plan allows.
+      await runs.updateOrgModelPolicies(actor, [
+        {
+          model,
+          preferred: true,
+          defaultProviderType: type,
+          credentialScope: "member",
+          modelProviderId: null,
+        },
+      ]);
+      const policies =
+        await createMiscRoutesApi(context).listModelPolicies(actor);
+      expect(
+        policies.policies.find((policy) => {
+          return policy.model === model;
+        })?.memberEffective,
+      ).toMatchObject({
+        providerType: type,
+        credentialScope: "member",
+        availability: "available",
+      });
+      const agent = await bdd.createAgent(actor, {
+        displayName: "Custom subscription",
+        visibility: "private",
+      });
+      const sent = await createChatFilesBddApi(context).sendAndLaunch(actor, {
+        agentId: agent.agentId,
+        prompt: "use my subscription policy",
+        model,
+      });
+      const state = await runs.readRun(actor, sent.runId);
+      expect(state.status, JSON.stringify(state)).toBe("pending");
+      await runs.heartbeatRunner(runnerGroup);
+      const claim = await runs.claimRunnerJob(sent.runId);
       expect(accountId(claim, type)).toBe(connected.id);
       await finish(actor, sent.runId, claim, "failed");
     },

@@ -44,7 +44,6 @@ import {
   type ArtifactSummary,
 } from "@okouai/api-contracts/contracts/artifact-catalog";
 import type { ApiErrorResponse } from "@okouai/api-contracts/contracts/errors";
-import type { SupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
 import {
   agentsMainContract,
@@ -297,7 +296,7 @@ interface ModelSelectionRequestOptions {
 }
 
 function modelSelectionBody(
-  model: SupportedRunModel | null,
+  model: string | null,
   options: ModelSelectionRequestOptions | undefined,
 ) {
   return {
@@ -1126,7 +1125,7 @@ export function createChatFilesBddApi(context: TestContext) {
     async updateThreadModelSelection(
       actor: ApiTestUser,
       threadId: string,
-      model: SupportedRunModel | null,
+      model: string | null,
       options?: ModelSelectionRequestOptions,
     ): Promise<void> {
       await accept(
@@ -1141,7 +1140,7 @@ export function createChatFilesBddApi(context: TestContext) {
 
     async updateUserModelPreference(
       actor: ApiTestUser,
-      selectedModel: SupportedRunModel | null,
+      selectedModel: string | null,
       selectedImageModel?: ImageModelId | null,
     ): Promise<void> {
       await accept(
@@ -1160,7 +1159,7 @@ export function createChatFilesBddApi(context: TestContext) {
     async requestUpdateThreadModelSelection(
       actor: ApiTestUser | null,
       threadId: string,
-      model: SupportedRunModel | null,
+      model: string | null,
       statuses: readonly (204 | 400 | 401 | 402 | 404)[],
       options?: ModelSelectionRequestOptions,
     ) {

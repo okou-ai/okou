@@ -5,10 +5,7 @@ import {
 import { command } from "ccstate";
 import { and, eq, isNull, or } from "drizzle-orm";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
-import {
-  isSupportedRunModel,
-  type SupportedRunModel,
-} from "@okouai/api-contracts/contracts/model-providers";
+import {} from "@okouai/api-contracts/contracts/model-providers";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 import { agents } from "@okouai/db/schema/agent";
@@ -97,7 +94,7 @@ export interface FeishuDispatchConnection {
 }
 
 interface FeishuModelOption {
-  readonly model: SupportedRunModel;
+  readonly model: string;
   readonly label: string;
   readonly isDefault: boolean;
 }
@@ -634,10 +631,7 @@ const feishuModelPickerState$ = command(
     return {
       options: policies.policies
         .flatMap((policy) => {
-          if (
-            !isSupportedRunModel(policy.model) ||
-            policy.routeStatus !== "valid"
-          ) {
+          if (policy.routeStatus !== "valid") {
             return [];
           }
           return {

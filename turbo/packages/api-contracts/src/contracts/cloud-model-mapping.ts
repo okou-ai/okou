@@ -1,20 +1,19 @@
-import {
-  isSupportedRunModel,
-  normalizeRunModelId,
-  type ModelProviderType,
-} from "./model-providers";
+import { normalizeRunModelId, type ModelProviderType } from "./model-providers";
 
 /**
  * A policy explicitly binds its catalog model to one saved cloud deployment.
  * `catalogRouteEnabled` is whether the catalog has an enabled route of this
  * cloud provider type for the model (`model_routes`); a model without one is
- * never mapped.
+ * never mapped. `catalogModels` is the global model catalog: an Azure
+ * deployment named after a different catalog model is rejected so that one
+ * model's policy never silently runs another catalog model.
  */
 export function isCloudModelMappingValid(
   type: ModelProviderType,
   catalogModel: string,
   configuredModel: string | null,
   catalogRouteEnabled: boolean,
+  catalogModels: { has(model: string): boolean },
 ): boolean {
   if (type !== "azure-foundry" && type !== "aws-bedrock") return true;
   if (!catalogRouteEnabled || !configuredModel) return false;
@@ -23,7 +22,7 @@ export function isCloudModelMappingValid(
       return false;
     const upstreamCatalogModel = normalizeRunModelId(configuredModel);
     return (
-      !isSupportedRunModel(upstreamCatalogModel) ||
+      !catalogModels.has(upstreamCatalogModel) ||
       upstreamCatalogModel === catalogModel
     );
   }

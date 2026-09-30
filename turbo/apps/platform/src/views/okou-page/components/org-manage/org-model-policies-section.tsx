@@ -92,6 +92,7 @@ import {
   DEFAULT_MODEL_PLAN_CAPABILITIES,
   modelAllowedForPlan,
   modelPlanCapabilities$,
+  memberSubscriptionRouteAllowed,
   modelPolicyAllowedForPlan,
   type ModelPlanCapabilities,
 } from "../../../../signals/okou-page/model-plan-capabilities.ts";
@@ -1006,9 +1007,28 @@ function modelRouteRequiresProUpgrade(params: {
   if (params.model === null) {
     return false;
   }
-  return params.routeKind === "built-in"
-    ? !modelAllowedForPlan(params.model, params.modelCapabilities)
-    : !params.modelCapabilities.supportByok;
+  if (params.routeKind === "built-in") {
+    return !modelAllowedForPlan(params.model, params.modelCapabilities);
+  }
+  return (
+    !params.modelCapabilities.supportByok &&
+    !(
+      params.routeKind === "oauth" &&
+      oauthSubscriptionRouteAllowed(params.model, params.modelCapabilities)
+    )
+  );
+}
+
+/** Any plan may route a model to members' own subscriptions. */
+function oauthSubscriptionRouteAllowed(
+  model: string,
+  modelCapabilities: ModelPlanCapabilities,
+): boolean {
+  return (["claude-code-oauth-token", "codex-oauth-token"] as const).some(
+    (type) => {
+      return memberSubscriptionRouteAllowed(model, type, modelCapabilities);
+    },
+  );
 }
 
 function getDialogPrimaryLabel(params: {
@@ -1180,6 +1200,7 @@ function ProviderRouteChoices({
   oauthTypes,
   gatewayCount,
   supportByok,
+  oauthRequiresPro,
   builtInRequiresPro,
   onChoose,
 }: {
@@ -1188,6 +1209,7 @@ function ProviderRouteChoices({
   oauthTypes: ModelProviderType[];
   gatewayCount: number;
   supportByok: boolean;
+  oauthRequiresPro: boolean;
   builtInRequiresPro: boolean;
   onChoose: (routeKind: ModelPolicyRouteKind) => void;
 }) {
@@ -1253,8 +1275,8 @@ function ProviderRouteChoices({
         {oauthTypes.length > 0 && (
           <RouteChoiceButton
             active={routeKind === "oauth"}
-            pro={!supportByok}
-            upgrade={!supportByok}
+            pro={oauthRequiresPro}
+            upgrade={oauthRequiresPro}
             title={
               oauthRouteKind === "codex"
                 ? t(($) => {
@@ -1588,6 +1610,13 @@ function ModelPolicyRouteDialog({
             oauthTypes={oauthTypes}
             gatewayCount={gatewayOptions.length}
             supportByok={modelCapabilities.supportByok}
+            oauthRequiresPro={
+              !modelCapabilities.supportByok &&
+              !(
+                selectedModel !== null &&
+                oauthSubscriptionRouteAllowed(selectedModel, modelCapabilities)
+              )
+            }
             builtInRequiresPro={
               selectedModel !== null &&
               !modelAllowedForPlan(selectedModel, modelCapabilities)

@@ -179,6 +179,7 @@ export async function insertCatalogModelFixture(args: {
   readonly model: string;
   readonly displayName: string;
   readonly sortOrder: number;
+  readonly piRouteClass?: PiRouteClass;
   readonly builtInRoutes: readonly BuiltInRouteFixture[];
 }): Promise<() => Promise<void>> {
   await db().transaction(async (tx) => {
@@ -187,6 +188,7 @@ export async function insertCatalogModelFixture(args: {
       displayName: args.displayName,
       sortOrder: args.sortOrder,
       lineageRank: 0,
+      piRouteClass: args.piRouteClass ?? null,
     });
     await tx.insert(modelRoutes).values(
       args.builtInRoutes.map((route) => {

@@ -6,12 +6,44 @@ is the only product authority for model names, ordering, the system default,
 retirement and replacement, display price tiers and route capabilities
 (service tiers and reasoning efforts). App, iOS, CLI and integrations read it
 instead of code constants for names, order, the default and replacement. Code
-still keeps runtime knowledge that is not catalog data: the protocol adapter
-of each executable model (framework, environment bindings, context limits).
-Plan access of restricted plans is catalog data too (see
-[Plan restriction](#plan-restriction)). A
-catalog model without an adapter cannot be the system default, is never
-offered for a new policy and is rejected when selected.
+still keeps runtime knowledge that is not catalog data: protocol adapters
+keyed by provider, never by model ID (framework, environment bindings, Built-in
+vendor key pools). A catalog model is runnable iff it resolves to an active row
+with an enabled route whose provider has an adapter
+(`isCatalogRouteExecutable` in `model-catalog.service.ts`: a Built-in route's
+`concrete_provider_type` has a vendor key pool, any other route's
+`provider_type` is a known provider type). There is no static list of run
+models; IM model pickers (Slack, Teams, Feishu, Discord, Telegram,
+AgentPhone) and the CLI list the org's valid policies with catalog display
+names, and a model added only as catalog and route rows on an existing
+protocol runs end to end.
+
+Remaining model-keyed code data is protocol or billing data, not product
+authority:
+
+- `MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS` is keyed by `usage_pricing`
+  provider and compiled into the Runner mitm addon through the generated
+  Python bindings; the addon meters usage in the sandbox and receives no
+  route data, so the threshold cannot move to `model_routes` without a new
+  Runner protocol. A provider absent from it bills a single tier.
+- `OKOU_MODEL_METADATA` is the OpenRouter preset protocol metadata for
+  `okou-1.0`: the preset upstream (`@preset/...`) is opaque, so the Pi and
+  Codex runtimes need its context window, output limit and modalities from
+  code.
+- `PI_RUNTIME_RESOLVABLE_MODELS` (`@okouai/core`) mirrors what the pinned Pi
+  runtime can resolve, keyed by Pi provider and the identity the runtime is
+  asked for. Built-in and API-key Responses routes ask for the route's
+  `upstream_model`, so a catalog-only model whose route points at a known
+  upstream (for example `openrouter-codex` → `openai/gpt-6-luna`) runs on
+  Pi when its row has a `pi_route_class`; routes that pin `catalogModel`
+  (native Claude, Codex subscription, custom gateways, presets) resolve by
+  the catalog model ID. Capabilities (context window, output tokens,
+  modalities, reasoning) are not catalog columns: the runtime takes them from
+  its pinned provider catalog for the upstream model.
+  Plan access of restricted plans is catalog data too (see
+  [Plan restriction](#plan-restriction)). A
+  catalog model without an executable route cannot be the system default, is
+  never offered for a new policy and is rejected when selected.
 
 ## Catalog tables
 
@@ -301,10 +333,12 @@ A free organization may run a model only on:
 2. **The member's own personal subscription**: a connected, valid (not
    reconnect-required) Claude Code or Codex account held by the requesting
    member, used with member credential scope through the model's catalog
-   subscription route (`model_routes.subscription_type`). The API verifies the
-   account and the route (`isAutoPersonalSubscriptionRoute`, and the claim's
-   member pin against `loadMemberSubscriptionModels`); a model name or provider
-   type alone is never exempt. Such a run is billed to the subscription, never
+   subscription route (`model_routes.subscription_type`), in Auto and Custom
+   mode alike (a Custom member-scope Claude Code or Codex policy qualifies).
+   One predicate, `isMemberSubscriptionRoute`, decides it from current
+   connection facts for policy projections, explicit selection, pre-queue
+   admission, the queue pick and the claim; a model name or provider type
+   alone is never exempt. Such a run is billed to the subscription, never
    to Built-in usage, and does not fall back to Built-in.
 
 Organization API keys (BYOK), organization-scoped credentials and custom

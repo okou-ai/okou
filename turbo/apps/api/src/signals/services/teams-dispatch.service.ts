@@ -5,10 +5,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { command } from "ccstate";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { v5 as uuidv5 } from "uuid";
-import {
-  isSupportedRunModel,
-  type SupportedRunModel,
-} from "@okouai/api-contracts/contracts/model-providers";
+import {} from "@okouai/api-contracts/contracts/model-providers";
 import type {
   ChatTeamsMessageFile,
   ChatTeamsMessageFiles,
@@ -156,7 +153,7 @@ interface TeamsAgent {
 }
 
 interface TeamsModelPickerOption {
-  readonly model: SupportedRunModel;
+  readonly model: string;
   readonly label: string;
   readonly isDefault: boolean;
 }
@@ -809,10 +806,7 @@ const teamsModelPickerState$ = command(
       enabled: true,
       options: policies.policies
         .flatMap((policy) => {
-          if (
-            !isSupportedRunModel(policy.model) ||
-            policy.routeStatus !== "valid"
-          ) {
+          if (policy.routeStatus !== "valid") {
             return [];
           }
           return {

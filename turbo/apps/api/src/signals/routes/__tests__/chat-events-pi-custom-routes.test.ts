@@ -1,9 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { modelProviderConnectionsByIdContract } from "@okouai/api-contracts/contracts/model-provider-gateways";
-import {
-  MODEL_PROVIDER_ENV_PLACEHOLDERS,
-  type SupportedRunModel,
-} from "@okouai/api-contracts/contracts/model-providers";
+import { MODEL_PROVIDER_ENV_PLACEHOLDERS } from "@okouai/api-contracts/contracts/model-providers";
 import { DEFAULT_PROFILE } from "@okouai/api-contracts/contracts/runners";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { describe, expect, it, onTestFinished } from "vitest";
@@ -58,7 +55,7 @@ const {
 
 async function configureCustomPiModel(
   actor: ApiTestUser,
-  selectedModel: SupportedRunModel,
+  selectedModel: string,
   upstreamModel = `company-${selectedModel}-production`,
 ) {
   if (selectedModel === "deepseek-v4.1-flash") {

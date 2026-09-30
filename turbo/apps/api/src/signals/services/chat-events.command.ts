@@ -16,7 +16,6 @@ import {
   type ModelSettingsPatch,
   type ReasoningEffort,
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
-import type { SupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import {
   chatEvents,
@@ -122,7 +121,7 @@ interface NormalSendBody {
   readonly chatThreadEventId?: string;
   readonly chatThreadSortEventId?: string;
   readonly sourceRunId?: string;
-  readonly model?: SupportedRunModel;
+  readonly model?: string;
   readonly runOptions?: {
     readonly codexServiceTier?: CodexServiceTier;
     readonly reasoningEffort?: ReasoningEffort;

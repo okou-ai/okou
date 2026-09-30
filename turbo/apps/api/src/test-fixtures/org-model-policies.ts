@@ -1,7 +1,4 @@
-import type {
-  ModelProviderType,
-  SupportedRunModel,
-} from "@okouai/api-contracts/contracts/model-providers";
+import type { ModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
 import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
 import { and, count, eq, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -19,7 +16,7 @@ import { db } from "../lib/db";
 export async function stagePreAddabilityModelPolicyFixture(args: {
   readonly orgId: string;
   readonly userId: string;
-  readonly model: SupportedRunModel;
+  readonly model: string;
 }): Promise<void> {
   const inserted = await db()
     .insert(orgModelPolicies)
@@ -47,7 +44,7 @@ export async function stagePreAddabilityModelPolicyFixture(args: {
  */
 export async function setOrgModelPolicyProviderTypeFixture(args: {
   readonly orgId: string;
-  readonly model: SupportedRunModel;
+  readonly model: string;
   readonly defaultProviderType: ModelProviderType;
 }): Promise<void> {
   const updated = await db()
@@ -171,7 +168,7 @@ export async function readUnrepairedOrgModelPolicyFixture(orgId: string) {
 export async function setOrgMemberRunModelOutsidePolicyFixture(args: {
   readonly orgId: string;
   readonly userId: string;
-  readonly selectedModel: SupportedRunModel;
+  readonly selectedModel: string;
 }): Promise<void> {
   await db()
     .insert(orgMembersMetadata)

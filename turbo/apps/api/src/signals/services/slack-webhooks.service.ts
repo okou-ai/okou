@@ -1,10 +1,7 @@
 import { command, computed, type Computed } from "ccstate";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
-import {
-  isSupportedRunModel,
-  type SupportedRunModel,
-} from "@okouai/api-contracts/contracts/model-providers";
+import {} from "@okouai/api-contracts/contracts/model-providers";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
@@ -840,7 +837,7 @@ const slackModelPickerState$ = command(
   ): Promise<{
     readonly enabled: boolean;
     readonly options: readonly {
-      readonly model: SupportedRunModel;
+      readonly model: string;
       readonly label: string;
       readonly isDefault: boolean;
     }[];
@@ -855,10 +852,7 @@ const slackModelPickerState$ = command(
     return {
       enabled: true,
       options: policies.policies.flatMap((policy) => {
-        if (
-          !isSupportedRunModel(policy.model) ||
-          policy.routeStatus !== "valid"
-        ) {
+        if (policy.routeStatus !== "valid") {
           return [];
         }
         return {
@@ -888,9 +882,7 @@ const isModelCommandAvailable$ = command(
       signal,
     );
     return policies.policies.some((policy) => {
-      return (
-        isSupportedRunModel(policy.model) && policy.routeStatus === "valid"
-      );
+      return policy.routeStatus === "valid";
     });
   },
 );

@@ -34,7 +34,6 @@ import {
   type GithubOauthConnectQuery,
   type GithubOauthInstallQuery,
 } from "@okouai/api-contracts/contracts/github-oauth";
-import type { SupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import { testSlackStateContract } from "@okouai/api-contracts/contracts/test-slack-state";
 import {
   integrationsAgentPhoneContract,
@@ -1241,7 +1240,7 @@ export function createBddIntegrationApi(context: TestContext) {
 
     async updateUserModelPreference(
       actor: ApiTestUser,
-      selectedModel: SupportedRunModel | null,
+      selectedModel: string | null,
       serviceTier: "priority" | null = null,
     ): Promise<void> {
       const client = setupApp({

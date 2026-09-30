@@ -1,5 +1,7 @@
 import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import {
+  isMemberSubscriptionRoute,
+  loadedMemberModelRouteContext,
   prepareMemberModelRouteContext,
   providerTypeForSurfaceProtocol,
   resolveEffectivePolicyRoute,
@@ -535,8 +537,13 @@ export async function resolveModelSelectionPin(params: {
   }
   const planCapabilities = modelRouteCapabilities(facts.orgPlanCapabilities);
   if (
-    (facts.modelMode === "auto" &&
-      route.modelProviderCredentialScope === "member") ||
+    isMemberSubscriptionRoute({
+      catalog: facts.catalog,
+      member: await loadedMemberModelRouteContext(facts.member),
+      model: route.selectedModel,
+      providerType: route.modelProviderType,
+      credentialScope: route.modelProviderCredentialScope,
+    }) ||
     modelRouteAllowedForOrgPlan({
       catalog: facts.catalog,
       capabilities: planCapabilities,
@@ -667,8 +674,13 @@ export function resolveQueuedModelSelectionPinFromSnapshot(params: {
     params.facts.orgPlanCapabilities,
   );
   if (
-    (params.modelMode === "auto" &&
-      route.modelProviderCredentialScope === "member") ||
+    isMemberSubscriptionRoute({
+      catalog: params.catalog,
+      member: params.member,
+      model: route.selectedModel,
+      providerType: route.modelProviderType,
+      credentialScope: route.modelProviderCredentialScope,
+    }) ||
     modelRouteAllowedForOrgPlan({
       catalog: params.catalog,
       capabilities: planCapabilities,
