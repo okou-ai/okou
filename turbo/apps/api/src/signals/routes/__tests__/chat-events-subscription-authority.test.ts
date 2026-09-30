@@ -79,19 +79,28 @@ describe("CHAT-02: run-level model overrides", () => {
           });
         },
       );
+      // The public queue reaches the existing unavailable-subscription
+      // conflict, before any captured account can authorize launch.
       expect(page.events).toContainEqual(
         expect.objectContaining({
           eventType: "input.rejected",
           revokesEventId: clientEventId,
-          error: "provider_unavailable",
+          error: "conflict",
         }),
       );
       expect(page.events).toContainEqual(
         expect.objectContaining({
           eventType: "output.error",
-          error: "provider_unavailable",
+          error: "conflict",
+          content:
+            "The selected subscription account is unavailable. Reconnect it before starting another run.",
         }),
       );
+      expect(
+        page.events.filter((event) => {
+          return event.runId !== undefined;
+        }),
+      ).toStrictEqual([]);
     });
   });
 
