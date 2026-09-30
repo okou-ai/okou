@@ -611,15 +611,18 @@ try {
     await db.query("DROP TABLE cloudflare_access_configs");
   }
   // VNC is optional only when its entire table predates the recovery snapshot.
-  // Current snapshots require its exact primary key and password ciphertext.
+  // The current migration exposes both nullable ciphertext columns; rotation
+  // must process each non-null envelope and reject a missing declared column.
   await db.query(
-    "CREATE TABLE vnc_credentials (id uuid PRIMARY KEY, auth_method text NOT NULL, username text, encrypted_password text NOT NULL)",
+    "CREATE TABLE vnc_credentials (id uuid PRIMARY KEY, auth_method text NOT NULL, username text, encrypted_password text, encrypted_client_identity text)",
   );
   const vncId = randomUUID();
   const usernameVncId = randomUUID();
+  const certId = randomUUID();
+  const certAndPasswordId = randomUUID();
   await db.query(
-    "INSERT INTO vnc_credentials VALUES ($1, 'vnc_password', NULL, $3), ($2, 'username_password', 'operator', $3)",
-    [vncId, usernameVncId, sshTarget],
+    "INSERT INTO vnc_credentials (id,auth_method,username,encrypted_password,encrypted_client_identity) VALUES ($1,'vnc_password',NULL,$5,NULL), ($2,'username_password','operator',$5,NULL), ($3,'client_certificate',NULL,NULL,$5), ($4,'client_certificate_vnc_password',NULL,$5,$5)",
+    [vncId, usernameVncId, certId, certAndPasswordId, sshTarget],
   );
   try {
     const before: unknown[] = (await db.query("SELECT * FROM vnc_credentials"))
@@ -629,28 +632,39 @@ try {
       "--recovery-schema",
     ]);
     assert.equal(vncRecovery.databaseVerifiedOnTarget, true);
-    assert.equal(object(vncRecovery.totals).verified, 2);
+    assert.equal(object(vncRecovery.totals).verified, 5);
     assert.equal(object(vncRecovery.totals).updated, 0);
     assert.deepEqual(
       (await db.query("SELECT * FROM vnc_credentials")).rows,
       before,
       "Recovery verification must preserve VNC ciphertext",
     );
-    await db.query("UPDATE vnc_credentials SET encrypted_password=$1", [
-      sshSource,
-    ]);
+    await db.query(
+      "UPDATE vnc_credentials SET encrypted_password=$1 WHERE encrypted_password IS NOT NULL",
+      [sshSource],
+    );
+    await db.query(
+      "UPDATE vnc_credentials SET encrypted_client_identity=$1 WHERE encrypted_client_identity IS NOT NULL",
+      [sshSource],
+    );
     const sourceVnc = await cli("recovery-source-vnc", [
       "--verify",
       "--recovery-schema",
     ]);
     assert.equal(sourceVnc.databaseVerifiedOnTarget, false);
-    assert.equal(object(sourceVnc.totals).source, 2);
+    assert.equal(object(sourceVnc.totals).source, 5);
     assert.equal(object(sourceVnc.totals).updated, 0);
-    await db.query("UPDATE vnc_credentials SET encrypted_password=$1", [
-      sshTarget,
-    ]);
+    await db.query(
+      "UPDATE vnc_credentials SET encrypted_password=$1 WHERE encrypted_password IS NOT NULL",
+      [sshTarget],
+    );
+    await db.query(
+      "UPDATE vnc_credentials SET encrypted_client_identity=$1 WHERE encrypted_client_identity IS NOT NULL",
+      [sshTarget],
+    );
     for (const [column, code] of [
       ["encrypted_password", "storage_manifest_mismatch"],
+      ["encrypted_client_identity", "storage_manifest_mismatch"],
       ["id", "primary_key_manifest_mismatch"],
     ]) {
       await db.query(
