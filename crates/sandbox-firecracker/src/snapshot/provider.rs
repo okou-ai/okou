@@ -13,7 +13,7 @@ use super::{SnapshotError, create_uncommitted_snapshot};
 ///
 /// Snapshot creation uses [`SnapshotCreateConfig::id`] as the runtime socket
 /// directory identifier. See that field for the Firecracker ID requirements,
-/// including the `_1000` guest-control listener suffix and the limits of early
+/// including the `_52000` guest-control listener suffix and the limits of early
 /// validation. Other [`SnapshotProvider`] implementations may impose different
 /// requirements on the same provider-neutral configuration type.
 ///
